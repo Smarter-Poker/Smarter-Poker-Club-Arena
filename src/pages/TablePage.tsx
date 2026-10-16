@@ -23965,6 +23965,10 @@ function LiveTablePage({
   const [lightningPrefersWatch, setLightningPrefersWatch] = useState(
     () => readLightningPrefs().preferFoldWatch
   );
+  const lightningFoldHandId =
+    lightningRoom && lightningHandLive
+      ? lightningHandId(engineSnapshot as LightningSnapshotFields)
+      : null;
   const handleLightningFold = useCallback(
     async (kind: LightningFoldKind) => {
       if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
@@ -23977,7 +23981,7 @@ function LiveTablePage({
         writeLightningPrefs({ preferFoldWatch: kind === 'fold_watch' }).preferFoldWatch
       );
       try {
-        const result = await sendLightningFold(tableId, userId, kind);
+        const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
           toast.warning(result.error || 'That Action Could Not Be Confirmed');
         } else if (
@@ -23994,7 +23998,7 @@ function LiveTablePage({
         setLightningFoldBusy(false);
       }
     },
-    [tableId, userId, toast, isMultiTable, isActive, lightningCaps]
+    [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
   );
   /* LIGHTNING PHASE 12 (spec HOTKEYS): Shift+F and Shift+V run the strip's
      own handler, only while the strip offers that fold and the platform row

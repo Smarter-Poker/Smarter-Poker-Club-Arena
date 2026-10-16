@@ -4,6 +4,12 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Hand-Bound Fold Candidate (2026-10-16 16:11 UTC)
+
+- Separate stale-fold source nowcaptures actualrenderedhand UUID synchronously andsendsstable lightning-hand:<uuid> viaexistingactionContext throughHTTPfingerprint/SeatProxy. Host rejects missing/stale tokens beforeanyflags/timestamps/foldsideeffects; ordinaryturncontexts andhorseinputunchanged. Samehandearlyfold remainsvalidacrossotherturns. No legacycontextlessfallback.
+- Before2serverregressionsfailonoldsource; afterfocused107testsplusnewrealproxyhandoff/HTTPidempotency43tests pass; rootbroaderaffectedclient1092tests/46filespassed. BothTypeScriptcompilerspassed. RootbroaderLightningengine initiallyexposed5existingload-inputadapterfailures fromcontextlessspecialfoldfixture. Updatedthatinputdevice tocaptureactualhosthandonceandretainitforduplicatedelivery;2newfixturetests failbefore/passafter. Finalall282Lightningenginetests/20filespass, includingunchangedstrictlatencylegassertions; finalserverTypeScriptpasses. No UIredesign/financialfixture/productionfaultinjection.
+- FreshglobalproductionSELECTreturnsnoenabledLightninggame andnoLightning/pending/draining/frozencluster, so thisclosedprivatepilotrequiresbothnewclientandnewsealedenginebeforeactivationwithoutinterruptingexistingLightninghands. Parent7114 current9bCI38928034189stillrunningnoobservedfailure; keepitsindependentjoinguarddelivery. Thisbranchretains9bancestryandwillnotreplaceprivate-joincandidate.
+
 ## Hosted Wrapper Portability Recovery (2026-10-16 16:13 UTC)
 
 - CI38928034189 accounting3 failed onlynewprivatejoinwrapper line19: rgnotinstalledonhostedrunner. Earlieractualnativeparity/calibration/discovery sectionsallpassed; this isnewtestwrapperdependencyfailure, notinstalledproductfailure. Replacedboth rg -q withportable grep -q matchingexistingnativewrappers, noassertionchange. Requalifiedwrapper with PATH=/usr/bin:/bin andexternalTMPDIR (no rgavailable); exactnativebefore/after/replaypasses. Correctedsourcewillnormalpush7114andretireonlyobsoleteownCIafterpushsucceeds. No unchangedretry/bypass.

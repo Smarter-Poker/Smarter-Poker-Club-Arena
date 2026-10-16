@@ -570,7 +570,7 @@ export async function submitAction(
 
     /* ONLY A DECISION-BOUND ACTION IS RE-SENT (2026-10-05). The engine
        refuses a re-send whose turn has moved on only when the action carries
-       its decision context. A context-less action (the Lightning fast fold:
+       its decision context. A context-less action (a legacy Lightning fast fold:
        the pool session id outlives the hand) would otherwise be delivered to
        whichever hand that seat is in NOW, and fold a hand the player has not
        seen. Those are sent once; an undelivered one is reported, not repeated. */

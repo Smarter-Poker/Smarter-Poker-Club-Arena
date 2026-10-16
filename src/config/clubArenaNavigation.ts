@@ -263,7 +263,7 @@ export function getClubArenaNavigation({
       operationItems.push({
         label: 'Banner Displays',
         path: clubPath('/banner-displays'),
-        description: 'Manage Your Club Banner And Rotating Banners',
+        description: 'Manage Your Club Banner And Ad Visibility',
       });
     }
 

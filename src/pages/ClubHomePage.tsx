@@ -5796,7 +5796,7 @@ function ClubHomePageContent({
       ═══════════════════════════════════════════════════════════════════ */}
         <HouseAdRotator
           slot="lobby_strip"
-          clubSettings={club.settings}
+          visible={club.settings?.show_smarter_poker_ads !== false}
           clubId={resolvedClubId || club.id}
           onNavigate={(path) => {
             haptic.selection();

@@ -455,7 +455,7 @@ describe('boot reconciliation (the restarted engine converges the DB view)', () 
     expect(warns).toHaveLength(1);
   });
 
-  it('hasClusterSocket is the socket truth the pass compares against', async () => {
+  it('hasClusterSocket exposes the room-socket half of presence', async () => {
     const reg = new LightningRegistry({
       viewAccess: async () => true,
       roomOwner: async () => ({ playerId: P1, clusterId: CLUSTER }),

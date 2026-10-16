@@ -155,8 +155,7 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
     family,
     title: heading.title,
     subtitle: heading.subtitle,
-    styleNote:
-      (entry.kind === 'cash' ? cashTemplateNote(entry.game?.template) : null) || undefined,
+    styleNote: (entry.kind === 'cash' ? cashTemplateNote(entry.game?.template) : null) || undefined,
     gameType: entry.gameLabel,
     stakes: entry.stakesLabel || undefined,
     players: entry.capacity > 0 ? `${entry.players}/${entry.capacity}` : String(entry.players),

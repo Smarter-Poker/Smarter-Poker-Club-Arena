@@ -110,7 +110,8 @@ function NlhActionLabel({ text }: { text: string }) {
 
 export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
   const titleRef = useFitText<HTMLElement>(data.title, TITLE_SCALE_X);
-  const titleZone = data.subtitle || data.styleNote ? NLH_PREMIUM_ZONES.titleNoDot : NLH_PREMIUM_ZONES.titleAlone;
+  const titleZone =
+    data.subtitle || data.styleNote ? NLH_PREMIUM_ZONES.titleNoDot : NLH_PREMIUM_ZONES.titleAlone;
 
   return (
     <div className="agc-nlh-premium">

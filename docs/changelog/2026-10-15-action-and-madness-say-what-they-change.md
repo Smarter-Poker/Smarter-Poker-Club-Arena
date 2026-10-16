@@ -20,6 +20,7 @@ ACTION, CLASSIC and MADNESS.
   Madness is a BB ante, 50% VPIP floor and a 2-board bomb every orbit. The
   note carries no figures, so a host override of a number never makes a card
   say something untrue.
+
 - The lobby card data (`ArenaGameCardData.styleNote`) carries it for every
   cash game.
 - Phone cards: the spade PLO, four-bay PLO and spade NLH cards print the

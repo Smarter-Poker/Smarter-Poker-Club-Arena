@@ -685,6 +685,7 @@ async function measureChrome(page: Page) {
       sortbarIsTopmost: sortbar === hit || sortbar.contains(hit),
       deckTop: r('.club-lobby-command-top__controls').top,
       deckBottom: r('.club-lobby-command-top__controls').bottom,
+      headerBottom: r('.fx-header').bottom,
       frameBottom: r('.bottomNav .artwork').bottom,
       viewportBottom: edgeBottom,
     };
@@ -693,6 +694,55 @@ async function measureChrome(page: Page) {
 
 test.describe('mobile lobby chrome', () => {
   test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true });
+
+  for (const width of [375, 393]) {
+    for (const inTab of [false, true]) {
+      test(`the ticker band clears the entire sticky deck and row at ${width}px ${inTab ? 'in a tab' : 'standalone'}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 852 });
+        await page.setContent(
+          lobby({ countText: '5 Balances', publishControlsHeight: true, inTab })
+        );
+        for (const height of [38, 54, 0]) {
+          await page.evaluate(
+            (h) => document.documentElement.style.setProperty('--mtt-ticker-h', `${h}px`),
+            height
+          );
+          await page.evaluate(() => window.scrollTo(0, 700));
+          const m = await measureChrome(page);
+          expect(
+            Math.abs(m.deckTop - m.headerBottom - height),
+            'the ticker covers the selector deck'
+          ).toBeLessThan(1);
+          expect(
+            Math.abs(m.sortbarTop - m.deckBottom),
+            'the sort row does not follow the shifted deck'
+          ).toBeLessThan(1);
+          expect(m.sortbarIsTopmost).toBe(true);
+          if (!inTab) {
+            const focus = await page.evaluate(() => {
+              const root = document.documentElement;
+              const row = document.querySelector('.lobby-sortbar')!.getBoundingClientRect();
+              root.setAttribute('data-lobby-scrollport', 'true');
+              root.style.setProperty('--ca-lobby-sortbar-h', `${row.height}px`);
+              return {
+                padding: parseFloat(getComputedStyle(root).scrollPaddingTop),
+                bottom: row.bottom,
+                // Mobile WebKit reports client rects relative to its panned
+                // visual viewport; scroll padding uses layout coordinates.
+                visualOffset: window.visualViewport?.offsetTop ?? 0,
+              };
+            });
+            expect(
+              Math.abs(focus.padding - focus.bottom - focus.visualOffset),
+              'native focus scrolls behind the ticker'
+            ).toBeLessThan(1);
+          }
+        }
+      });
+    }
+  }
 
   test('the wallets count is centred on the painted title and never clipped', async ({ page }) => {
     for (const countText of ['1 Balance', '5 Balances', '12 Balances']) {

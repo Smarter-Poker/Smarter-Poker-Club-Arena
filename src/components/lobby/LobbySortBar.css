@@ -308,7 +308,7 @@
    control was gone.
 
    The offset is the deck's bottom edge, written the way the deck writes its
-   own top: the measured global header height, plus the measured height of the
+   own top: the measured global header and ticker heights, plus the height of the
    controls block, which ClubLobbyCommandTop publishes as
    `--ca-lobby-controls-h` (its rows change with the tab and the club, so this
    can never be a constant). The header fallback chain is character-for-
@@ -330,7 +330,7 @@
           --ca-global-header-height,
           var(--ca-in-tab-header-height, calc(env(safe-area-inset-top, 0px) + 10.2vw))
         ) +
-        var(--ca-lobby-controls-h, 0px) + var(--ca-lobby-sortbar-h, 0px)
+        var(--mtt-ticker-h, 0px) + var(--ca-lobby-controls-h, 0px) + var(--ca-lobby-sortbar-h, 0px)
     );
     scroll-padding-bottom: var(--bottom-nav-clearance, 74px);
   }
@@ -348,7 +348,7 @@
           --ca-global-header-height,
           var(--ca-in-tab-header-height, calc(env(safe-area-inset-top, 0px) + 10.2vw))
         ) +
-        var(--ca-lobby-controls-h, 0px)
+        var(--mtt-ticker-h, 0px) + var(--ca-lobby-controls-h, 0px)
     );
     z-index: 29;
   }

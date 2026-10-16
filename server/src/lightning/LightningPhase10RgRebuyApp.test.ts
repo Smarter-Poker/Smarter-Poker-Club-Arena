@@ -294,7 +294,14 @@ describe('the host reports the settled boundary, between hands only', () => {
     const waiting = st.players.find(
       (p) => p.seat !== st.currentPlayerSeat && st.currentBet - p.bet > 0 && !p.is_folded
     )!;
-    expect(t.host.handlePlayerAction(waiting.user_id, 'fast_fold').success).toBe(true);
+    expect(
+      t.host.handlePlayerAction(
+        waiting.user_id,
+        'fast_fold',
+        undefined,
+        `lightning-hand:${t.host.currentHandId}`
+      ).success
+    ).toBe(true);
     await playOut(t.host, mulberry32(22), (_u, legal) =>
       legal.includes('check') ? 'check' : 'call'
     );

@@ -63,7 +63,13 @@ describe('LAW: a Lightning hand’s cards reach only their owners', () => {
       const waiting = st.players.find(
         (p) => p.seat !== st.currentPlayerSeat && st.currentBet - p.bet > 0
       );
-      if (waiting && seed % 2 === 0) t.host.handlePlayerAction(waiting.user_id, 'fast_fold');
+      if (waiting && seed % 2 === 0)
+        t.host.handlePlayerAction(
+          waiting.user_id,
+          'fast_fold',
+          undefined,
+          `lightning-hand:${t.host.currentHandId}`
+        );
       await kit.playOut(t.host, rnd);
       await kit.flush();
       const ownerOf = new Map(t.participants.map((p) => [p.poolSessionId, p.playerId]));

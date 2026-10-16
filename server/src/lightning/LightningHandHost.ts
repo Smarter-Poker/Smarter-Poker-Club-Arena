@@ -1619,6 +1619,19 @@ export class LightningHandHost {
       return { success: false, error: 'Player not found at this table' };
     const normalized = String(action ?? '').toLowerCase();
     if (normalized === 'fast_fold' || normalized === 'fold_watch') {
+      // A pool room survives many hands. A delayed first delivery must never
+      // fold the hand that replaced the one the player actually saw. This is
+      // hand-only intent: early folds remain valid while other turns advance.
+      if (actionContext !== `lightning-hand:${this.handId}`) {
+        return {
+          success: false,
+          code: actionContext == null ? 'ACTION_CONTEXT_REQUIRED' : 'STALE_ACTION',
+          error:
+            actionContext == null
+              ? 'The table view is out of date. Reload to continue.'
+              : 'That hand has ended. Review the current hand before folding.',
+        };
+      }
       // LIGHTNING PHASE 13: an operator switched this control off. Refused
       // before anything is marked or moved; the ordinary fold still stands.
       const flags = this.foldFlagsNow();

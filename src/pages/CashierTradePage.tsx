@@ -5245,9 +5245,11 @@ function CashierTradeWorkspace() {
                               <div className={styles.rowInfo}>
                                 <span className={styles.rowName}>{row.to_name}</span>
                                 <span className={styles.rowSub}>
-                                  {row.destination === 'agent_wallet'
-                                    ? 'Agent Wallet'
-                                    : 'Player Wallet'}{' '}
+                                  {row.destination === 'promo_wallet'
+                                    ? 'Promo Wallet'
+                                    : row.destination === 'agent_wallet'
+                                      ? 'Agent Wallet'
+                                      : 'Player Wallet'}{' '}
                                   &middot; {mm}:{ss} Left
                                 </span>
                               </div>

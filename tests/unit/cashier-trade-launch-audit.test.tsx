@@ -1618,6 +1618,20 @@ describe('Simple And Advanced Action Recovery Audit', () => {
     seconds_left: 500,
   };
 
+  it('names the actual Promo Wallet on a reversible Agent Wallet send', async () => {
+    state.myRole = 'agent';
+    state.reversible = async () => ({
+      data: [{ ...recentSend, destination: 'promo_wallet' }],
+      error: null,
+    });
+    mountCashier();
+    await synchronized();
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Back', exact: true }));
+    const dialog = await screen.findByRole('dialog', { name: 'Claim Back', exact: true });
+    await within(dialog).findByText('Recent Recipient');
+    expect(dialog).toHaveTextContent('Promo Wallet');
+  });
+
   it('reports a rejected Claim Back read and allows a successful Retry', async () => {
     state.reversible = async () => {
       throw new Error('Transport Rejected');

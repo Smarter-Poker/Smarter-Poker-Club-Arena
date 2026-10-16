@@ -25,3 +25,9 @@
 - The Cron Health roster move for the two daily-digest jobs is left to #7078,
   which carries the same 134 -> 136 change (live `cron.job`: 138 total, 136
   active) together with the Schema Integrity fix.
+- `20261016110416_the_invoice_deliverer_is_callable_by_the_service_role_only`
+  states the grant `fn_deliver_accounting_invoice` already has on production
+  (EXECUTE for service_role only; CREATE OR REPLACE in `20261015184608` kept it).
+  `check-definer-authorization.mjs` reads the repository, could not see an
+  inherited grant, and refused the recorded migration. Applied at 11:04 UTC as a
+  no-op with a readback.

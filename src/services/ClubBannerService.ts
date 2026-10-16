@@ -1,5 +1,10 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
+import {
+  readRotatingBanners,
+  validateRotatingBanners,
+  type ClubRotatingBanner,
+} from '../utils/clubRotatingBanners';
 
 export const CLUB_BANNER_MAX_BYTES = 2 * 1024 * 1024;
 const IMAGE_EXTENSIONS: Record<string, string> = {
@@ -21,12 +26,13 @@ export interface ClubBannerRecord {
   name: string;
   owner_id: string;
   banner_url: string | null;
+  settings?: Record<string, unknown> | null;
 }
 
 export async function readClubBanner(clubId: string): Promise<ClubBannerRecord> {
   const { data, error } = await supabase
     .from('clubs')
-    .select('id, name, owner_id, banner_url')
+    .select('id, name, owner_id, banner_url, settings')
     .eq('id', clubId)
     .maybeSingle();
   if (error) throw error;
@@ -49,6 +55,8 @@ export async function uploadClubBannerImage(clubId: string, file: File): Promise
   return supabase.storage.from('club-assets').getPublicUrl(data.path).data.publicUrl;
 }
 
+// Presentation saves refresh the lobby without restarting membership guards.
+// CLUB_UPDATED is also an access-change signal and can unmount an in-flight editor.
 export async function saveClubBanner(
   clubId: string,
   ownerId: string,
@@ -61,7 +69,9 @@ export async function saveClubBanner(
     .eq('id', clubId)
     .eq('owner_id', ownerId);
   query = expectedUrl === null ? query.is('banner_url', null) : query.eq('banner_url', expectedUrl);
-  const { data, error } = await query.select('id, name, owner_id, banner_url').maybeSingle();
+  const { data, error } = await query
+    .select('id, name, owner_id, banner_url, settings')
+    .maybeSingle();
   if (error) throw error;
   if (!data) {
     // A lost response may have committed this exact image already. Read the
@@ -69,9 +79,54 @@ export async function saveClubBanner(
     const current = await readClubBanner(clubId);
     if (current.owner_id !== ownerId || current.banner_url !== nextUrl)
       throw new Error('Banner Changed Or Access Was Removed. Reload Before Saving.');
-    masterBus.emit('CLUB_UPDATED', { clubId });
+    masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
     return current;
   }
-  masterBus.emit('CLUB_UPDATED', { clubId });
+  masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
+  return data as ClubBannerRecord;
+}
+
+/** Compare the complete settings snapshot so unrelated concurrent edits are never lost. */
+export async function saveClubRotatingBanners(
+  clubId: string,
+  ownerId: string,
+  expectedSettings: Record<string, unknown> | null,
+  banners: ClubRotatingBanner[]
+): Promise<ClubBannerRecord> {
+  validateRotatingBanners(banners, clubId);
+  const settings = { ...expectedSettings, rotating_banners: banners };
+  let query = supabase.from('clubs').update({ settings }).eq('id', clubId).eq('owner_id', ownerId);
+  query =
+    expectedSettings === null
+      ? query.is('settings', null)
+      : query.eq('settings', JSON.stringify(expectedSettings));
+  const { data, error } = await query
+    .select('id, name, owner_id, banner_url, settings')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    const current = await readClubBanner(clubId);
+    validateRotatingBanners(current.settings?.rotating_banners as ClubRotatingBanner[], clubId);
+    // A response can be lost after commit. Accept the identical desired list,
+    // preserving any later unrelated settings, but never overwrite another list.
+    if (
+      current.owner_id !== ownerId ||
+      JSON.stringify(
+        readRotatingBanners(current.settings, clubId).map(({ id, title, imageUrl, enabled }) => ({
+          id,
+          title,
+          imageUrl,
+          enabled,
+        }))
+      ) !==
+        JSON.stringify(
+          banners.map(({ id, title, imageUrl, enabled }) => ({ id, title, imageUrl, enabled }))
+        )
+    )
+      throw new Error('Banner Displays Changed Or Access Was Removed. Reload Before Saving.');
+    masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
+    return current;
+  }
+  masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
   return data as ClubBannerRecord;
 }

@@ -29,6 +29,19 @@ const pushMocks = vi.hoisted(() => ({
   isWebPushSupported: vi.fn(),
   notificationPermission: vi.fn(),
 }));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    from: () => {
+      const q: any = {
+        select: () => q,
+        eq: () => q,
+        maybeSingle: async () => ({ data: { phone_verified: true }, error: null }),
+      };
+      return q;
+    },
+  },
+}));
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/lib/pushClient', () => pushMocks);
 // The analytics question exists in the app build only.
 vi.mock('../../src/lib/appBase', async (importOriginal) => ({
@@ -115,6 +128,7 @@ describe('first-run sheets: one at a time', () => {
   it('a sign-out takes every sheet with it', async () => {
     localStorage.setItem('ca.consent.analytics.v1', 'denied'); // question already answered
     const view = render(tree(false));
+    await advance(0);
     await advance(21_000);
     expect(push()).not.toBeNull();
 

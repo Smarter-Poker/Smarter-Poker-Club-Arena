@@ -8,6 +8,17 @@ import {
   acceptDesignatedTerms,
 } from './lightning-pilot-access.mjs';
 import { EventEmitter } from 'node:events';
+const ownerPoolStatus = () => ({
+  then: (resolve, reject) =>
+    Promise.resolve({
+      data: {
+        players: 0,
+        status: 'BUILDING',
+        joinable: false,
+        multi_table_limit: { desktop: 4, tablet: 2, mobile: 1 },
+      },
+    }).then(resolve, reject),
+});
 const TOKEN = 'TEST_TOKEN_NOT_A_CREDENTIAL';
 function fixture(mode) {
   const calls = [];
@@ -149,6 +160,7 @@ test('a pending-request transport failure retains unknown outcome and cleans onl
   const game = '00000000-0000-4000-8000-000000000011';
   let cancel = 0;
   f.client.rpc = async (name) => {
+    if (name === 'fn_lightning_pool_status') return { data: null };
     if (name === 'fn_join_club_atomic') return { error: { message: TOKEN } };
     if (name === 'fn_cash_game_join')
       return { error: { code: '23514', message: 'INSUFFICIENT_CHIPS:1' } };
@@ -160,7 +172,12 @@ test('a pending-request transport failure retains unknown outcome and cleans onl
   };
   f.admin.from = (table) => {
     const q = {
-      select: () => q,
+      select: (columns) => {
+        if (table === 'club_members') {
+          assert.equal(columns, 'club_id,user_id,joined_at,status,chip_balance');
+        }
+        return q;
+      },
       eq: () => q,
       in: () => q,
       maybeSingle: async () => ({
@@ -180,6 +197,7 @@ test('a pending-request transport failure retains unknown outcome and cleans onl
     return q;
   };
   const player = {
+    rpc: ownerPoolStatus,
     auth: {
       getSession: async () => ({
         data: {
@@ -264,6 +282,7 @@ test('both outsider states stay unapproved and unfunded, with pending cancellati
   const operations = [];
   f.client.rpc = async (name, args) => {
     operations.push({ name, args });
+    if (name === 'fn_lightning_pool_status') return { data: null };
     if (name === 'fn_join_club_atomic') {
       row = { status: 'pending', chip_balance: 0 };
       return { data: { success: true } };
@@ -278,7 +297,12 @@ test('both outsider states stay unapproved and unfunded, with pending cancellati
   };
   f.admin.from = (table) => {
     const q = {
-      select: () => q,
+      select: (columns) => {
+        if (table === 'club_members') {
+          assert.equal(columns, 'club_id,user_id,joined_at,status,chip_balance');
+        }
+        return q;
+      },
       eq: () => q,
       in: () => q,
       maybeSingle: async () => ({
@@ -300,6 +324,7 @@ test('both outsider states stay unapproved and unfunded, with pending cancellati
   const r = await runPilotAccess({
     admin: f.admin,
     player: {
+      rpc: ownerPoolStatus,
       auth: {
         getSession: async () => ({
           data: {
@@ -331,7 +356,14 @@ test('both outsider states stay unapproved and unfunded, with pending cancellati
   assert.equal(row, null);
   assert.deepEqual(
     operations.map((x) => x.name),
-    ['fn_cash_game_join', 'fn_join_club_atomic', 'fn_cash_game_join', 'fn_cancel_club_join_request']
+    [
+      'fn_lightning_pool_status',
+      'fn_cash_game_join',
+      'fn_join_club_atomic',
+      'fn_lightning_pool_status',
+      'fn_cash_game_join',
+      'fn_cancel_club_join_request',
+    ]
   );
   assert.doesNotMatch(JSON.stringify(r), new RegExp(TOKEN));
 });
@@ -537,6 +569,7 @@ test('failed join replies retain sanitized diagnostics and earlier browser/socke
   ]) {
     const f = fixture();
     f.client.rpc = async (name) => {
+      if (name === 'fn_lightning_pool_status') return { data: null };
       if (name === 'fn_cash_game_join') return reply;
       if (name === 'fn_cash_game_leave_waitlist') return { data: { ok: true, cancelled: 0 } };
       throw new Error('Unexpected RPC');
@@ -562,6 +595,7 @@ test('failed join replies retain sanitized diagnostics and earlier browser/socke
       await runPilotAccess({
         admin: f.admin,
         player: {
+          rpc: ownerPoolStatus,
           auth: {
             getSession: async () => ({
               data: { session: { access_token: 'OWNER_TEST', user: { id: ownerId } } },
@@ -603,6 +637,7 @@ test('private membership guard requires its exact SQLSTATE on nonmember and pend
   const operations = [];
   f.client.rpc = async (name, args) => {
     operations.push({ name, args });
+    if (name === 'fn_lightning_pool_status') return { data: null };
     if (name === 'fn_join_club_atomic') {
       row = { status: 'pending', chip_balance: 0 };
       return { data: { success: true } };
@@ -617,7 +652,12 @@ test('private membership guard requires its exact SQLSTATE on nonmember and pend
   };
   f.admin.from = (table) => {
     const q = {
-      select: () => q,
+      select: (columns) => {
+        if (table === 'club_members') {
+          assert.equal(columns, 'club_id,user_id,joined_at,status,chip_balance');
+        }
+        return q;
+      },
       eq: () => q,
       in: () => q,
       maybeSingle: async () => ({
@@ -639,6 +679,7 @@ test('private membership guard requires its exact SQLSTATE on nonmember and pend
   const r = await runPilotAccess({
     admin: f.admin,
     player: {
+      rpc: ownerPoolStatus,
       auth: {
         getSession: async () => ({
           data: {
@@ -675,7 +716,253 @@ test('private membership guard requires its exact SQLSTATE on nonmember and pend
   assert.equal(row, null);
   assert.deepEqual(
     operations.map((x) => x.name),
-    ['fn_cash_game_join', 'fn_join_club_atomic', 'fn_cash_game_join', 'fn_cancel_club_join_request']
+    [
+      'fn_lightning_pool_status',
+      'fn_cash_game_join',
+      'fn_join_club_atomic',
+      'fn_lightning_pool_status',
+      'fn_cash_game_join',
+      'fn_cancel_club_join_request',
+    ]
   );
   assert.doesNotMatch(JSON.stringify(r), new RegExp(TOKEN));
+});
+
+const thenOnly = (value) => ({
+  then: (resolve, reject) => Promise.resolve(value).then(resolve, reject),
+});
+function recoveryFixture(initial = null, receiptPatch = {}) {
+  const f = fixture();
+  const club = '00000000-0000-4000-8000-000000000010',
+    game = '00000000-0000-4000-8000-000000000011';
+  const requestId = '00000000-0000-4000-8000-000000000012';
+  let row = initial;
+  const operations = [];
+  const receipt = {
+    user_id: PILOT_OUTSIDER,
+    request_id: requestId,
+    club_id: club,
+    result: {
+      success: true,
+      status: 'pending',
+      club: { id: club },
+      membership: initial ? { ...initial } : null,
+    },
+    ...receiptPatch,
+  };
+  f.admin.from = (table) => {
+    const q = {
+      select: (columns) => {
+        if (table === 'club_members') {
+          assert.equal(columns, 'club_id,user_id,joined_at,status,chip_balance');
+        }
+        return q;
+      },
+      eq: () => q,
+      in: () => q,
+      maybeSingle: async () => ({
+        data:
+          table === 'clubs'
+            ? {
+                id: club,
+                owner_id: '2d1cd6c3-5700-4af9-a271-d4863fdab20d',
+                is_public: false,
+                requires_approval: true,
+              }
+            : table === 'club_join_idempotency'
+              ? receipt
+              : row,
+      }),
+      then: (resolve, reject) =>
+        Promise.resolve({ data: [{ id: game, cluster_id: game }] }).then(resolve, reject),
+    };
+    return q;
+  };
+  f.client.rpc = (name) => {
+    operations.push(name);
+    if (name === 'fn_lightning_pool_status') return { data: null };
+    if (name === 'fn_join_club_atomic') {
+      row = { status: 'pending', chip_balance: 0 };
+      return thenOnly({ data: { success: true } });
+    }
+    if (name === 'fn_cancel_club_join_request') {
+      row = null;
+      return thenOnly({ data: true });
+    }
+    if (name === 'fn_cash_game_join')
+      return thenOnly({ error: { code: '42501', message: 'PRIVATE_MEMBERSHIP_REQUIRED' } });
+    throw new Error('Unexpected RPC');
+  };
+  return {
+    ...f,
+    club,
+    operations,
+    getRow: () => row,
+    args: {
+      admin: f.admin,
+      player: {
+        rpc: ownerPoolStatus,
+        auth: {
+          getSession: async () => ({
+            data: {
+              session: {
+                access_token: 'OWNER_TEST',
+                user: { id: '2d1cd6c3-5700-4af9-a271-d4863fdab20d' },
+              },
+            },
+          }),
+        },
+      },
+      createClient: f.factory,
+      url: 'https://example.invalid',
+      games: [{ id: game, club_id: club, ruleset_snapshot: { options: { is_private: true } } }],
+      requestId,
+      operationId: 'operation',
+      observeBrowser: async () => [],
+      observeSocket: async (_ws, _id, token) =>
+        token === 'OWNER_TEST'
+          ? { outcome: 'opened', status: 101 }
+          : { outcome: 'refused', status: 403 },
+    },
+  };
+}
+test('then-only RPC cleanup preserves the primary report and still signs out locally', async () => {
+  const { runPilotAccess } = await import('./lightning-pilot-access.mjs');
+  const f = recoveryFixture();
+  f.args.observeBrowser = async () => {
+    if (f.getRow()) throw new Error(TOKEN);
+    return [];
+  };
+  await assert.rejects(runPilotAccess(f.args), (error) => {
+    const report = error.pilotAccessReport;
+    assert.equal(report.phase, 'pending_browser');
+    assert.equal(report.verdict, 'failed_or_unknown');
+    assert.equal(report.cleanup.pendingRequest, 'removed_and_absence_verified');
+    assert.equal(report.cleanup.outsiderSession, 'local_signout_confirmed');
+    assert.doesNotMatch(JSON.stringify(report), new RegExp(TOKEN));
+    return true;
+  });
+  assert.equal(f.getRow(), null);
+  assert.equal(f.operations.filter((name) => name === 'fn_cancel_club_join_request').length, 1);
+  assert.deepEqual(f.calls.at(-1), ['signOut', { scope: 'local' }]);
+});
+test('exact same-operation persisted pending membership recovers cleanup only', async () => {
+  const { runPilotAccess } = await import('./lightning-pilot-access.mjs');
+  const member = {
+    club_id: '00000000-0000-4000-8000-000000000010',
+    user_id: PILOT_OUTSIDER,
+    joined_at: '2026-10-16T17:10:29.040468+00:00',
+    status: 'pending',
+    chip_balance: 0,
+  };
+  const f = recoveryFixture(member);
+  f.args.observeBrowser = async () => {
+    throw new Error('Recovery Must Never Start Browser Proof');
+  };
+  await assert.rejects(runPilotAccess(f.args), (error) => {
+    assert.equal(error.pilotAccessReport.verdict, 'cleanup_only');
+    assert.equal(error.pilotAccessReport.phase, 'startup_owned_pending_recovery');
+    assert.equal(error.pilotAccessReport.cleanup.pendingRequest, 'removed_and_absence_verified');
+    assert.equal(error.pilotAccessReport.cleanup.outsiderSession, 'local_signout_confirmed');
+    assert.deepEqual(error.pilotAccessReport.states, []);
+    return true;
+  });
+  assert.equal(f.getRow(), null);
+  assert.deepEqual(f.operations, ['fn_cancel_club_join_request']);
+});
+test('changed, funded, foreign or timestamp-mismatched pending ownership never cancels', async () => {
+  const { runPilotAccess } = await import('./lightning-pilot-access.mjs');
+  const member = {
+    club_id: '00000000-0000-4000-8000-000000000010',
+    user_id: PILOT_OUTSIDER,
+    joined_at: '2026-10-16T17:10:29.040468+00:00',
+    status: 'pending',
+    chip_balance: 0,
+  };
+  for (const [rowPatch, receiptPatch] of [
+    [{ chip_balance: 1 }, {}],
+    [{ status: 'active' }, {}],
+    [{}, { request_id: 'different-request' }],
+    [{}, { user_id: 'different-user' }],
+    [
+      {},
+      {
+        result: {
+          success: true,
+          status: 'pending',
+          club: { id: member.club_id },
+          membership: { ...member, joined_at: '2026-10-16T17:10:29.040469+00:00' },
+        },
+      },
+    ],
+  ]) {
+    const f = recoveryFixture({ ...member, ...rowPatch }, receiptPatch);
+    await assert.rejects(runPilotAccess(f.args), (error) => {
+      assert.equal(
+        error.pilotAccessReport.cleanup.pendingRequest,
+        'unowned_or_changed_no_cancellation'
+      );
+      return true;
+    });
+    assert.deepEqual(f.operations, []);
+    assert.equal(f.calls.length, 0);
+    assert.notEqual(f.getRow(), null);
+  }
+});
+
+test('actual BUILDING owner shape without cluster_mode passes; scoped then-only null refusals and exposure/errors remain distinct', async () => {
+  const { runPilotAccess } = await import('./lightning-pilot-access.mjs');
+  for (const scenario of ['null', 'exposed', 'error']) {
+    const f = recoveryFixture();
+    const originalRpc = f.client.rpc;
+    const calls = [];
+    let reads = 0;
+    f.client.rpc = (name, args) => {
+      if (name !== 'fn_lightning_pool_status') return originalRpc(name, args);
+      calls.push(args);
+      reads++;
+      return thenOnly(
+        reads === 1 || scenario === 'null'
+          ? { data: null }
+          : scenario === 'error'
+            ? { error: { message: TOKEN }, data: null }
+            : {
+                data: {
+                  players: 0,
+                  status: 'BUILDING',
+                  joinable: false,
+                  multi_table_limit: { desktop: 4, tablet: 2, mobile: 1 },
+                  secret: TOKEN,
+                },
+              }
+      );
+    };
+    const check = (report) => {
+      assert.deepEqual(report.poolStatusOwner, [
+        { clusterId: f.args.games[0].id, outcome: 'positive' },
+      ]);
+      const states = report.states.filter((state) => state.state !== 'owner');
+      assert.equal(states[0].poolStatus[0].outcome, 'refused');
+      assert.equal(
+        states[1].poolStatus[0].outcome,
+        scenario === 'null' ? 'refused' : scenario === 'error' ? 'unknown' : 'exposed'
+      );
+      assert.deepEqual(
+        calls,
+        Array.from({ length: 2 }, () => ({ p_cluster_id: f.args.games[0].id }))
+      );
+      assert.equal(report.cleanup.pendingRequest, 'removed_and_absence_verified');
+      assert.equal(report.cleanup.outsiderSession, 'local_signout_confirmed');
+      assert.doesNotMatch(JSON.stringify(report), new RegExp(TOKEN));
+      assert.equal(f.getRow(), null);
+    };
+    if (scenario === 'null') check(await runPilotAccess(f.args));
+    else
+      await assert.rejects(runPilotAccess(f.args), (error) => {
+        assert.equal(error.pilotAccessReport.phase, 'pending_pool_status');
+        assert.equal(error.pilotAccessReport.verdict, 'failed_or_unknown');
+        check(error.pilotAccessReport);
+        return true;
+      });
+  }
 });

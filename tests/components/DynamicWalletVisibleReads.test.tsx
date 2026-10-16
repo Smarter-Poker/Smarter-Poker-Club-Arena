@@ -161,15 +161,31 @@ describe('wallet displays follow authenticated reads, not unpublished channels',
     expect(fixture.channel).not.toHaveBeenCalled();
   });
 
-  it('keeps exact balance state while printing forward-facing Cashier figures without cents', async () => {
+  it('repaints exact wallet values from the existing receipt event without a refresh or timer', async () => {
+    const view = render(<DynamicWallet {...base} variant="club" />);
+    await flush();
+    fixture.bank = 1000.25;
+    fixture.agent = 250.5;
+    const binding = vi
+      .mocked(useMasterBusSubscriptions)
+      .mock.calls.filter(([events]) => events.includes('BALANCE_UPDATED'))
+      .at(-1);
+    expect(binding).toBeDefined();
+    await act(async () => binding![1]({ userId: 'user-1' }));
+    await flush();
+    expect(value(view.container, 'club_bank')).toHaveTextContent('1,000.25');
+    expect(value(view.container, 'agent_wallet')).toHaveTextContent('250.50');
+  });
+
+  it('keeps exact balance state while printing forward-facing Cashier figures with exact cents', async () => {
     fixture.bank = 1299.99;
     fixture.agent = 23.75;
     const view = render(<DynamicWallet {...base} variant="club" />);
     await flush();
-    expect(value(view.container, 'club_bank')).toHaveTextContent('1.2K');
+    expect(value(view.container, 'club_bank')).toHaveTextContent('1,299.99');
     expect(value(view.container, 'agent_wallet')).toHaveTextContent('23');
-    expect(view.container).not.toHaveTextContent('1,299.99');
-    expect(view.container).not.toHaveTextContent('23.75');
+    expect(view.container).toHaveTextContent('1,299.99');
+    expect(view.container).toHaveTextContent('23.75');
   });
 
   it('refreshes the union bank through the existing permission-aware money panel', async () => {

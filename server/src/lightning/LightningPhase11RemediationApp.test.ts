@@ -347,7 +347,14 @@ describe('finding 8c: every *_to_next_hand leg starts at the fold request', () =
       (p) => p.user_id !== current.user_id && st.currentBet - p.bet > 0 && !p.is_folded
     )!;
     const requestedAt = clock;
-    expect(t.host.handlePlayerAction(waiting.user_id, 'fast_fold').success).toBe(true);
+    expect(
+      t.host.handlePlayerAction(
+        waiting.user_id,
+        'fast_fold',
+        undefined,
+        `lightning-hand:${t.host.currentHandId}`
+      ).success
+    ).toBe(true);
     await flush();
     expect(clock).toBe(requestedAt + 250);
     clock += 400;

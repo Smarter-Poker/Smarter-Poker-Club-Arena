@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   storage: vi.fn(),
@@ -12,6 +12,7 @@ vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: mocks.emit } }))
 import {
   readClubBanner,
   saveClubBanner,
+  saveClubRotatingBanners,
   uploadClubBannerImage,
   validateClubBanner,
 } from '../../src/services/ClubBannerService';
@@ -22,7 +23,18 @@ function query(result: unknown) {
   return q;
 }
 const club = { id: 'club', name: 'Club', owner_id: 'owner', banner_url: '/new.png' };
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubEnv('VITE_SUPABASE_URL', 'https://test.supabase.co');
+});
+afterEach(() => vi.unstubAllEnvs());
+
+function expectPresentationNotification(clubId: string) {
+  // CLUB_UPDATED revalidates membership and unmounts the active editor. A
+  // presentation save must refresh its lobby consumer without discarding a
+  // draft or interrupting the next banner upload.
+  expect(mocks.emit.mock.calls).toEqual([['CLUB_SETTINGS_UPDATED', { clubId }]]);
+}
 describe('club banner persistence', () => {
   it('uses the granted immutable storage namespace and the actual 2 MB limit', async () => {
     mocks.storage.mockReturnValue({
@@ -51,7 +63,7 @@ describe('club banner persistence', () => {
       ['owner_id', 'owner'],
       ['banner_url', '/old.png'],
     ]);
-    expect(mocks.emit).toHaveBeenCalledWith('CLUB_UPDATED', { clubId: 'club' });
+    expectPresentationNotification('club');
   });
   it('uses SQL null semantics for the initial default banner', async () => {
     const q = query({ data: club, error: null });
@@ -73,11 +85,45 @@ describe('club banner persistence', () => {
       .mockReturnValueOnce(query({ data: null, error: null }))
       .mockReturnValueOnce(query({ data: club, error: null }));
     await expect(saveClubBanner('club', 'owner', '/old.png', '/new.png')).resolves.toEqual(club);
+    expectPresentationNotification('club');
   });
   it('propagates database refusal and never emits success', async () => {
     mocks.from.mockReturnValue(query({ data: null, error: new Error('denied') }));
     await expect(saveClubBanner('club', 'owner', null, '/new.png')).rejects.toThrow('denied');
     await expect(readClubBanner('club')).rejects.toThrow('denied');
     expect(mocks.emit).not.toHaveBeenCalled();
+  });
+});
+
+describe('rotating banner save notifications preserve editor continuity', () => {
+  const clubId = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+  const banner = {
+    id: 'first',
+    title: 'Club Promotion',
+    imageUrl: `https://test.supabase.co/storage/v1/object/public/club-assets/club-cards/${clubId}-banner-abc123.png`,
+    enabled: true,
+  };
+  const saved = {
+    ...club,
+    id: clubId,
+    settings: { unrelated: 'preserved', rotating_banners: [banner] },
+  };
+
+  it('announces a persisted rotating save through the existing settings event only', async () => {
+    mocks.from.mockReturnValue(query({ data: saved, error: null }));
+    await expect(
+      saveClubRotatingBanners(clubId, 'owner', { unrelated: 'preserved' }, [banner])
+    ).resolves.toEqual(saved);
+    expectPresentationNotification(clubId);
+  });
+
+  it('uses the same settings event after recovering an already committed rotating save', async () => {
+    mocks.from
+      .mockReturnValueOnce(query({ data: null, error: null }))
+      .mockReturnValueOnce(query({ data: saved, error: null }));
+    await expect(
+      saveClubRotatingBanners(clubId, 'owner', { unrelated: 'preserved' }, [banner])
+    ).resolves.toEqual(saved);
+    expectPresentationNotification(clubId);
   });
 });

@@ -136,12 +136,21 @@ beforeEach(() => {
 });
 
 describe('routable agent wallet', () => {
+  it('shows exact business and play wallet amounts below a million', async () => {
+    m.agentBalance = 1250.5;
+    m.memberBalance = 1000;
+    mount();
+    await screen.findByText('1,000.00');
+    expect(screen.getByText('1,250.50')).toBeInTheDocument();
+    expect(screen.queryByText('1K')).toBeNull();
+  });
+
   it('uses the selected club and the canonical member balance', async () => {
     m.send.mockResolvedValue(true);
     mount();
-    await screen.findByText('456');
+    await screen.findByText('456.00');
     expect(m.filters).toContainEqual(['agents', 'club_id', '20000000-0000-4000-8000-000000000001']);
-    expect(screen.queryByText('999,999')).toBeNull();
+    expect(screen.queryByText('999,999.00')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Transfer' }));
@@ -153,7 +162,7 @@ describe('routable agent wallet', () => {
     m.agentBalance = 0;
     m.send.mockResolvedValue(true);
     mount();
-    await screen.findByText('456');
+    await screen.findByText('456.00');
     fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Transfer' }));
@@ -171,14 +180,14 @@ describe('routable agent wallet', () => {
     m.readDebt.mockRejectedValue(new Error('Debt Read Refused'));
     mount();
     expect(await screen.findByRole('alert')).toHaveTextContent('Debt Read Refused');
-    expect(screen.queryByText('456')).toBeNull();
+    expect(screen.queryByText('456.00')).toBeNull();
     expect(screen.queryByRole('button', { name: /Transfer To Play/ })).toBeNull();
   });
 
   it('reports a failed commission source instead of rendering a zero total', async () => {
     m.readCommissions.mockReturnValue({ data: null, error: new Error('Commission Read Refused') });
     mount();
-    await screen.findByText('456');
+    await screen.findByText('456.00');
     expect(await screen.findByText(/Commission Read Refused/)).toBeInTheDocument();
     expect(screen.queryByText('Total: 0 Chips')).toBeNull();
   });
@@ -189,7 +198,7 @@ describe('routable agent wallet', () => {
       error: null,
     });
     mount();
-    await screen.findByText('456');
+    await screen.findByText('456.00');
     expect(await screen.findByText(/Commission Date Could Not Be Verified/)).toBeInTheDocument();
     expect(screen.queryByText('Total: 0 Chips')).toBeNull();
   });
@@ -204,8 +213,8 @@ describe('routable agent wallet', () => {
     });
     mount();
     const credit = await screen.findByRole('region', { name: 'Credit Line' });
-    expect(within(credit).getByText('Used').nextElementSibling).toHaveTextContent('75');
-    expect(within(credit).getByText('Available').nextElementSibling).toHaveTextContent('19.9K');
+    expect(within(credit).getByText('Used').nextElementSibling).toHaveTextContent('75.23');
+    expect(within(credit).getByText('Available').nextElementSibling).toHaveTextContent('19,924.77');
     expect(within(credit).getByText('Drawn Credit')).toBeInTheDocument();
     expect(within(credit).queryByText('Invoice Due')).toBeNull();
   });
@@ -233,7 +242,7 @@ describe('agent page response ordering', () => {
       filters.club_id === clubB ? clubBRead.promise : memberResult(456)
     );
     const view = mount();
-    await screen.findByText('456');
+    await screen.findByText('456.00');
 
     m.clubId = clubB;
     view.rerender(
@@ -241,9 +250,9 @@ describe('agent page response ordering', () => {
         <AgentPortalPage />
       </MemoryRouter>
     );
-    await waitFor(() => expect(screen.queryByText('456')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('456.00')).toBeNull());
     await act(async () => clubBRead.resolve(memberResult(789)));
-    expect(await screen.findByText('789')).toBeInTheDocument();
+    expect(await screen.findByText('789.00')).toBeInTheDocument();
   });
 
   it('keeps club B selected when a transfer started in club A finishes late', async () => {
@@ -253,7 +262,7 @@ describe('agent page response ordering', () => {
       memberResult(filters.club_id === clubB ? 789 : 456)
     );
     const view = mount();
-    await screen.findByText('456');
+    await screen.findByText('456.00');
     fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Transfer' }));
@@ -265,12 +274,12 @@ describe('agent page response ordering', () => {
         <AgentPortalPage />
       </MemoryRouter>
     );
-    await screen.findByText('789');
+    await screen.findByText('789.00');
     await act(async () => {
       transfer.resolve(true);
     });
-    expect(screen.getByText('789')).toBeInTheDocument();
-    expect(screen.queryByText('456')).toBeNull();
+    expect(screen.getByText('789.00')).toBeInTheDocument();
+    expect(screen.queryByText('456.00')).toBeNull();
     expect(m.success).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: /Transfer To Play/ }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '6' } });
@@ -280,7 +289,7 @@ describe('agent page response ordering', () => {
 
   it('keeps the latest balance when an older read in the same club finishes later', async () => {
     mount();
-    await screen.findByText('456');
+    await screen.findByText('456.00');
     const older = deferred<ReturnType<typeof memberResult>>();
     m.readMember.mockReturnValueOnce(older.promise).mockReturnValueOnce(memberResult(900));
     const calls = m.readMember.mock.calls.length;
@@ -291,11 +300,11 @@ describe('agent page response ordering', () => {
     act(() => {
       m.balanceRefresh();
     });
-    await screen.findByText('900');
+    await screen.findByText('900.00');
     await act(async () => {
       older.resolve(memberResult(600));
     });
-    expect(screen.getByText('900')).toBeInTheDocument();
+    expect(screen.getByText('900.00')).toBeInTheDocument();
     expect(screen.queryByText('600')).toBeNull();
   });
 

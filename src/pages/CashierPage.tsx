@@ -87,7 +87,7 @@ import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips } from '../utils/format';
 import { enumToTitleCase, titleCase } from '../utils/titleCase';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
@@ -221,7 +221,7 @@ function newOpId(): string {
 }
 
 /** #ClubArenaConsole chip reading for every forward-facing non-felt figure. */
-const chipFigure = compactChips;
+const chipFigure = formatWalletChips;
 
 const CATEGORY_LABELS: Record<string, string> = {
   buyin: 'Buy-In',
@@ -289,8 +289,8 @@ function CashierContent() {
   const { loadBalances: loadWalletBalances } = useWalletStore();
   const [walletRevision, setWalletRevision] = useState(0);
   const loadBalances = useCallback(
-    async (userId: string) => {
-      await loadWalletBalances(userId);
+    async (userId: string, force = false) => {
+      await loadWalletBalances(userId, { force });
       setWalletRevision((revision) => revision + 1);
     },
     [loadWalletBalances]
@@ -1457,8 +1457,20 @@ function CashierContent() {
   });
   useMasterBusSubscriptions(['MEMBER_ROLE_CHANGED', 'AGENT_UPDATED'], refreshCashierAuthority);
 
-  // Cashier history and balance reads follow initial navigation, explicit
-  // refresh and completed user commands. No background event reloads the page.
+  // The existing own-account realtime stream announces receipts from other
+  // browsers too. Refresh money without invalidating authority or the send form.
+  useMasterBusSubscriptions(
+    ['BALANCE_UPDATED'],
+    (payload) => {
+      const event = payload as { userId?: string };
+      if (!user?.id || (event?.userId && event.userId !== user.id)) return;
+      clearClubChipBalanceCache();
+      void loadBalances(user.id, true);
+      setClubChipsNonce((value) => value + 1);
+      void loadTransactions();
+    },
+    { debounce: 200 }
+  );
 
   // ─────────────────────────────────────────────────────────────────────────────
   // DETERMINE AVAILABLE TABS
@@ -2341,7 +2353,6 @@ function CashierContent() {
       {user?.id && clubId && (
         <div className={styles.walletHeader}>
           <DynamicWallet
-            manualOnly
             actionClassName={styles.wordAction}
             refreshKey={walletRevision}
             userId={user.id}
@@ -2506,7 +2517,6 @@ function CashierContent() {
             clubId &&
             user?.id && (
               <AgentPromoPanel
-                manualOnly
                 actionClassName={styles.wordAction}
                 clubId={clubId}
                 userId={user.id}
@@ -2599,10 +2609,7 @@ function CashierContent() {
                     >
                       <strong>{selectedRecipientData.username}</strong>
                       <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
-                      <span>
-                        Destination:{' '}
-                        {SEND_DESTINATION_LABELS[distributeDestination]}
-                      </span>
+                      <span>Destination: {SEND_DESTINATION_LABELS[distributeDestination]}</span>
                       {canHoldAgentWallet(selectedRecipientData.role) && (
                         <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
                       )}
@@ -2861,10 +2868,7 @@ function CashierContent() {
                     >
                       <strong>{selectedRecipientData.username}</strong>
                       <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
-                      <span>
-                        Destination:{' '}
-                        {SEND_DESTINATION_LABELS[distributeDestination]}
-                      </span>
+                      <span>Destination: {SEND_DESTINATION_LABELS[distributeDestination]}</span>
                       {distributeDestination !== 'player_wallet' && (
                         <span>
                           The Player Wallet Above Is Separate From Their{' '}

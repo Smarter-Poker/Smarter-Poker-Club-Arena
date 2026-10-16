@@ -13,17 +13,24 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const sql = readFileSync(
-  join(process.cwd(), 'supabase/migrations/20261016152326_the_weeks_tournament_clubs_are_read_from_an_index.sql'),
+  join(
+    process.cwd(),
+    'supabase/migrations/20261016152326_the_weeks_tournament_clubs_are_read_from_an_index.sql'
+  ),
   'utf8'
 );
 
 describe("the week's tournament clubs are read from an index", () => {
   it('builds the index concurrently before one guarded transaction', () => {
-    const create = sql.indexOf('CREATE INDEX CONCURRENTLY IF NOT EXISTS accounting_tournament_fee_sources_coordinator_club');
+    const create = sql.indexOf(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS accounting_tournament_fee_sources_coordinator_club'
+    );
     const begin = sql.indexOf('\nBEGIN;');
     expect(create).toBeGreaterThan(0);
     expect(begin).toBeGreaterThan(create);
-    expect(sql).toContain('ON public.accounting_tournament_fee_sources (coordinator_union_id, club_id) WHERE coordinator_union_id IS NOT NULL;');
+    expect(sql).toContain(
+      'ON public.accounting_tournament_fee_sources (coordinator_union_id, club_id) WHERE coordinator_union_id IS NOT NULL;'
+    );
     expect(sql.match(/^BEGIN;$/gm)?.length).toBe(1);
     expect(sql.trim().endsWith('COMMIT;')).toBe(true);
   });

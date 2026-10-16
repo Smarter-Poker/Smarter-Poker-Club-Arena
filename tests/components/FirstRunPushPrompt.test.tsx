@@ -5,7 +5,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FirstRunPushPrompt from '../../src/components/notifications/FirstRunPushPrompt';
 import { requestPushNudge } from '../../src/lib/pushNudgePolicy';
 
-const auth = vi.hoisted(() => ({ id: 'player-1' }));
+const auth = vi.hoisted(() => ({ id: 'player-1', phoneVerified: true }));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    from: () => {
+      const q: any = {
+        select: () => q,
+        eq: () => q,
+        maybeSingle: async () => ({ data: { phone_verified: auth.phoneVerified }, error: null }),
+      };
+      return q;
+    },
+  },
+}));
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
 const pushMocks = vi.hoisted(() => ({
   enablePush: vi.fn(),
@@ -33,6 +46,7 @@ describe('FirstRunPushPrompt', () => {
     pushMocks.isIosStandalonePwa.mockReset().mockReturnValue(false);
     pushMocks.isOptedOut.mockReset().mockReturnValue(false);
     auth.id = 'player-1';
+    auth.phoneVerified = true;
     // happy-dom reports navigator.webdriver = true, i.e. an automated browser,
     // which the prompt never asks. These tests model a person's browser.
     Object.defineProperty(window.navigator, 'webdriver', { configurable: true, get: () => false });
@@ -42,6 +56,20 @@ describe('FirstRunPushPrompt', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('waits for phone verification before spending the first notification ask', async () => {
+    auth.phoneVerified = false;
+    renderPrompt('/clubs/club-1');
+    await settle(25_000);
+    expect(dialog()).not.toBeInTheDocument();
+    expect(localStorage.getItem('sp_firstrun_notif_v2_player-1')).toBeNull();
+    auth.phoneVerified = true;
+    act(() => window.dispatchEvent(new Event('profile-updated')));
+    await settle(0);
+    await settle(0);
+    await settle(20_000);
+    expect(dialog()).toBeInTheDocument();
   });
 
   it('does not block the app when browser notifications are already denied', async () => {
@@ -119,6 +147,7 @@ describe('FirstRunPushPrompt', () => {
       })
     );
     renderPrompt('/clubs/club-1');
+    await settle(0);
     await settle(20_000);
     fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
     fireEvent.click(dialog()!);
@@ -160,6 +189,7 @@ describe('FirstRunPushPrompt', () => {
       })
     );
     const view = renderPrompt('/clubs/club-1');
+    await settle(0);
     await settle(20_000);
     fireEvent.click(screen.getByRole('button', { name: 'Enable' }));
     auth.id = 'player-2';
@@ -168,6 +198,7 @@ describe('FirstRunPushPrompt', () => {
         <FirstRunPushPrompt />
       </MemoryRouter>
     );
+    await settle(0);
     await settle(20_000);
     expect(screen.getByRole('button', { name: 'Enable' })).toBeEnabled();
     await act(async () => resolve({ ok: true }));

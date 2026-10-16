@@ -651,7 +651,7 @@ describe('P-10: the figure a user confirms is the figure that moves', () => {
     expect(exactChipFigure(Number.NaN)).toBe('0');
     expect(TRADE).toContain('{exactChipFigure(receipt.amount)}');
     // Head zones and list rows keep the console reading.
-    expect(TRADE).toContain('const fmt = compactChips;');
+    expect(TRADE).toContain('const fmt = formatWalletChips;');
   });
 });
 
@@ -1198,9 +1198,9 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
     within(card).getByRole('combobox', { name: 'Recipient Wallet For First Agent' })
   ).toHaveValue('agent_wallet');
   expect(card).not.toHaveTextContent('Sending To');
-  expect(within(card).getByRole('option', { name: 'Promo Wallet: 80' })).toBeInTheDocument();
+  expect(within(card).getByRole('option', { name: 'Promo Wallet: 80.00' })).toBeInTheDocument();
   fireEvent.change(within(card).getByRole('combobox'), { target: { value: 'player_wallet' } });
-  expect(within(card).getByRole('option', { name: 'Player Wallet: 120' })).toBeInTheDocument();
+  expect(within(card).getByRole('option', { name: 'Player Wallet: 120.00' })).toBeInTheDocument();
   expect(within(dialog).getByRole('region', { name: 'From Your Agent Wallet' })).toHaveTextContent(
     '500'
   );
@@ -1589,9 +1589,12 @@ describe('Simple Cashier Default', () => {
     expect(screen.getByPlaceholderText('Search Name Or ID')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Manage Player 1' })).toHaveTextContent('ID: P-1');
     expect(
-      within(screen.getByRole('link', { name: 'Manage Player 1' }).parentElement!).getByText('75', {
-        exact: true,
-      })
+      within(screen.getByRole('link', { name: 'Manage Player 1' }).parentElement!).getByText(
+        '75.00',
+        {
+          exact: true,
+        }
+      )
     ).toBeInTheDocument();
     const css = readFileSync('src/pages/CashierTradePage.module.css', 'utf8');
     expect(css).toContain('.page.simple .glass .rowSub:not(.simpleId)');
@@ -1866,7 +1869,7 @@ it.each(['player', 'agent'])(
     fireEvent.click(entry);
     const sheet = await screen.findByRole('dialog', { name: 'Request Cashout' });
     expect(within(sheet).getByText('Available Balance')).toBeInTheDocument();
-    expect(within(sheet).getByText('250 Chips')).toBeInTheDocument();
+    expect(within(sheet).getByText('250.00 Chips')).toBeInTheDocument();
     expect(within(sheet).getByRole('textbox', { name: /Amount/i })).toBeInTheDocument();
     expect(
       within(sheet).getByText(/Chips Will Be Locked Until Your Agent Approves/i)
@@ -1886,7 +1889,7 @@ it.each(['club_bank', 'promo_wallet', 'club_promo_wallet', 'player_wallet'] as c
     expect(sourceSelect).toHaveValue('agent_wallet');
     await waitFor(() =>
       expect(
-        within(sourceSelect).getByRole('option', { name: /From The Main Bank: 1K/ })
+        within(sourceSelect).getByRole('option', { name: /From The Main Bank: 1,000\.00/ })
       ).toBeInTheDocument()
     );
     fireEvent.change(sourceSelect, { target: { value: source } });
@@ -1926,7 +1929,7 @@ it('keeps each batch recipient identity, selected wallet and current balance tog
     expect(cards[index]).toHaveTextContent(`ID: P-${index + 1}`);
     await waitFor(() =>
       expect(
-        within(cards[index]).getByRole('option', { name: 'Agent Wallet: 340' })
+        within(cards[index]).getByRole('option', { name: 'Agent Wallet: 340.00' })
       ).toBeInTheDocument()
     );
     expect(within(cards[index]).getByRole('combobox')).toHaveValue('agent_wallet');

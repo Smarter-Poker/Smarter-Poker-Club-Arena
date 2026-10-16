@@ -265,6 +265,40 @@ describe('DailyBonusSheet', () => {
     expect(screen.getByText('Streak Locked In For Today.')).toBeTruthy();
   });
 
+  it('closes the modal after successful Claim All and the full reward animation', async () => {
+    const close = vi.fn();
+    mocks.claimAll.mockResolvedValue({
+      success: true,
+      results: [{ success: true, idempotent: false }],
+      status: {
+        ...status,
+        unclaimed: 0,
+        claimed_today: true,
+        tiles: status.tiles.map((t) => ({ ...t, claimed: !t.locked })),
+      },
+    });
+    render(<DailyBonusSheet mode="modal" open onClose={close} />);
+    await screen.findByText('+5');
+    fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
+    await waitFor(() => expect(mocks.toast.success).toHaveBeenCalled());
+    expect(close).not.toHaveBeenCalled();
+    await waitFor(() => expect(close).toHaveBeenCalledTimes(1), { timeout: 2500 });
+  });
+
+  it('keeps a partial Claim All receipt open', async () => {
+    const close = vi.fn();
+    mocks.claimAll.mockResolvedValue({
+      success: true,
+      results: [{ success: true }, { success: false, reason: 'daily_cap' }],
+      status,
+    });
+    render(<DailyBonusSheet mode="modal" open onClose={close} />);
+    await screen.findByText('+5');
+    fireEvent.click(screen.getByRole('button', { name: 'Claim All' }));
+    await waitFor(() => expect(mocks.toast.info).toHaveBeenCalled());
+    expect(close).not.toHaveBeenCalled();
+  });
+
   it('surfaces a server refusal in the server’s words and leaves the tile claimable', async () => {
     mocks.claim.mockResolvedValue({ success: false, reason: 'daily_cap' });
     render(<DailyBonusSheet mode="inline" />);

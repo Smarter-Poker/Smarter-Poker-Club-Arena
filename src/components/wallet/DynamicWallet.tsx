@@ -77,7 +77,7 @@ import { useSpinsWallet } from '../../hooks/useSpinsWallet';
 import { useArenaHasChipWallet } from '../arena/arenaAccess';
 import './DynamicWallet.css';
 import { reportError } from '../../utils/errorReporter';
-import { compactChips } from '../../utils/format';
+import { formatWalletChips } from '../../utils/format';
 import { ClubBBJShell, ClubWalletShell, type ClubWalletArtworkKind } from './ClubWalletArtwork';
 
 // All bus events that should trigger a wallet refresh
@@ -403,7 +403,7 @@ function formatBalance(num: number): string {
      surface is worse than none - so they render as unknown, the same mark
      every unreadable figure already uses. */
   if (!Number.isFinite(num)) return '-';
-  return compactChips(num);
+  return formatWalletChips(num);
 }
 
 /* Dan 2026-08-24: "DIAMONDS ARE ALWAYS WHOLE NUMBERS SO YOU CAN DELETE THE

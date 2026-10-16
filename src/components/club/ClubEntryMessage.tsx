@@ -1,52 +1,10 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ENTRY MESSAGE — the club speaks once, at the door (Dan, 2026-09-03)
- * ═══════════════════════════════════════════════════════════════════════════════
- *
- * Dan, verbatim: "Club Message should appear as a 'full screen pop up' when you
- * enter the club, not anywhere 'baked into the screen'. [...] leave padding
- * around all edges top and bottom and create an 'X' off the message button. as
- * well as a don't show me this message again. and the only time a new pop up
- * will be displayed is if the club owner, co owner or admin creates a new
- * message."
- *
- * WHAT THIS REPLACES. The club message was baked into the lobby in THREE
- * places, and they disagreed with each other:
- *
- *   .club-mobile-owner-message   a phone strip with its own inline editor
- *   <ClubOwnerMessage>           a desktop button in the rail, opening a modal
- *   .lobby-top__notice           the welcome block, editable in place
- *
- * Three editors on one column, with three different length caps - 72, 240 and
- * 72 - against a server that accepts 240. A message written in the desktop
- * modal and then touched on a phone was silently cut to 72 characters. One
- * surface, one cap, and that whole class of bug goes with it.
- *
- * WHEN IT SPEAKS. `fn_get_club_entry_message` answers `should_show`, and the
- * client does not second-guess it. The rule lives in one place because it has
- * to be the same rule for every device the person owns: show when a message
- * exists and this person has not retired THIS revision of it. Revisions come
- * from `clubs.message_revision`, which both staff writers already bump, so
- * "the owner wrote a new message" is a fact the database already knows rather
- * than something the client has to infer from changed text.
- *
- * THE TWO WAYS OUT, which are not the same promise:
- *
- *   X            close it now. Nothing is written. The message is still the
- *                club's current message, so it greets them again next visit -
- *                that is what a day's message is for.
- *   Do Not Show  writes the dismissal. Silent until staff write a NEW message,
- *                at which point the club has something else to say and says it.
- *
- * Collapsing those two into one control was the tempting simplification and it
- * would have been wrong: an X that silences a club forever is a trap, and a
- * greeting with no quick way out is an obstacle.
- */
-
 import { useCallback, useEffect, useState } from 'react';
 import Modal from '../common/Modal';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import { SpadeConsole } from '../console/SpadeConsole';
+import { useAuthUser } from '../../hooks/useAuthUser';
+import { titleCase } from '../../utils/titleCase';
 import './ClubEntryMessage.css';
 
 /**
@@ -78,9 +36,12 @@ export default function ClubEntryMessage({
   clubName,
   canEdit,
   onMessageSaved,
-  onOpenAnnouncements,
   onToast,
 }: ClubEntryMessageProps) {
+  const { user } = useAuthUser();
+  const [announcements, setAnnouncements] = useState<
+    Array<{ id: string; title: string; content: string }>
+  >([]);
   const [entry, setEntry] = useState<EntryMessageState | null>(null);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -94,7 +55,20 @@ export default function ClubEntryMessage({
     typo is an interruption, not a greeting. The door is the door.
   */
   useEffect(() => {
-    if (!clubId) return;
+    setOpen(false);
+    setEntry(null);
+    setAnnouncements([]);
+    if (!clubId || !user?.id) return;
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    const dailyKey = `sp-club-greeting-day:${user.id}:${clubId}`;
+    const alreadyShown = () => {
+      try {
+        return localStorage.getItem(dailyKey) === today;
+      } catch {
+        return false;
+      }
+    };
+    if (alreadyShown()) return;
     let live = true;
     void (async () => {
       try {
@@ -109,10 +83,27 @@ export default function ClubEntryMessage({
           revision?: number | null;
           should_show?: boolean;
         };
-        if (!result.ok || !result.should_show) return;
-        const text = result.message?.trim();
-        if (!text) return;
+        if (!result.ok) return;
+        const text = result.should_show ? result.message?.trim() || '' : '';
+        const { data: posts, error: postsError } = await supabase
+          .from('club_announcements')
+          .select('id,title,content')
+          .eq('club_id', clubId)
+          .order('is_pinned', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(200);
+        if (postsError) reportError(postsError, 'ClubEntryMessage.announcements');
+        if (!live || alreadyShown()) return;
+        const available = postsError ? [] : posts || [];
+        if (!text && !available.length) return;
+        // Mark at the actual show transition, never on an empty or failed read.
+        try {
+          localStorage.setItem(dailyKey, today);
+        } catch {
+          /* Private storage. */
+        }
         setEntry({ message: text, revision: Number(result.revision ?? 0) });
+        setAnnouncements(available);
         setOpen(true);
       } catch (e) {
         /* The greeting is the least important thing on this page. A failed
@@ -124,7 +115,7 @@ export default function ClubEntryMessage({
     return () => {
       live = false;
     };
-  }, [clubId]);
+  }, [clubId, user?.id]);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -204,22 +195,22 @@ export default function ClubEntryMessage({
       className="club-entry-message-modal"
       ariaLabel={`Club Message From ${clubName}`}
     >
-      <div className="club-entry-message">
-        {/* The X. Its own control, in the corner, above everything, and large
-            enough to hit on a phone without aiming. */}
-        <button
-          type="button"
-          className="club-entry-message__close"
-          onClick={close}
-          aria-label="Close Club Message"
-        >
-          <span aria-hidden="true">&#215;</span>
-        </button>
-
+      <SpadeConsole
+        className="club-entry-message"
+        eyebrow={titleCase(clubName)}
+        title="Club Message"
+        pill="Today"
+        onClose={close}
+        plates={{
+          secondary: {
+            label: dismissing ? 'Saving' : 'Do Not Show Again',
+            disabled: dismissing,
+            onClick: () => void dismissForever(),
+          },
+          primary: { label: 'Enter Lobby', onClick: close },
+        }}
+      >
         <div className="club-entry-message__body">
-          <span className="club-entry-message__eyebrow">A Message From</span>
-          <h2 className="club-entry-message__club">{clubName}</h2>
-
           {editing ? (
             <div className="club-entry-message__editor">
               {/* No apostrophe: check-title-case reads an escaped apostrophe as
@@ -260,7 +251,7 @@ export default function ClubEntryMessage({
               </div>
             </div>
           ) : (
-            <p className="club-entry-message__copy">{entry.message}</p>
+            <p className="club-entry-message__copy">{titleCase(entry.message)}</p>
           )}
         </div>
 
@@ -278,29 +269,14 @@ export default function ClubEntryMessage({
             </button>
           )}
 
-          <button
-            type="button"
-            className="club-entry-message__btn"
-            onClick={() => {
-              close();
-              onOpenAnnouncements();
-            }}
-          >
-            View Club Announcements
-          </button>
-
-          {/* The other way out, and deliberately worded as the promise it
-              makes: quiet until the club has something NEW to say. */}
-          <button
-            type="button"
-            className="club-entry-message__btn club-entry-message__btn--quiet"
-            disabled={dismissing}
-            onClick={() => void dismissForever()}
-          >
-            {dismissing ? 'Saving' : 'Do Not Show Me This Message Again'}
-          </button>
+          {announcements.map((post) => (
+            <article className="club-entry-message__announcement" key={post.id}>
+              <h3 className="sc-label sc-ink--blue">{titleCase(post.title)}</h3>
+              <p className="sc-copy sc-ink--silver">{titleCase(post.content)}</p>
+            </article>
+          ))}
         </div>
-      </div>
+      </SpadeConsole>
     </Modal>
   );
 }

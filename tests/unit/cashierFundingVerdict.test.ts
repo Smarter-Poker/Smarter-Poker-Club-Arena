@@ -70,6 +70,6 @@ describe('the production cashier canary derives the batch verdict from the print
     );
     expect(row).toContain('aria-label={label}');
     expect(row.match(/<strong/g)?.length).toBe(1);
-    expect(row).toContain("balance === null ? '-' : compactChips(balance)");
+    expect(row).toContain("balance === null ? '-' : formatWalletChips(balance)");
   });
 });

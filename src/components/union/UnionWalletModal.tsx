@@ -45,7 +45,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { reportError } from '../../utils/errorReporter';
-import { fmt } from '../../utils/format';
+import { fmt, formatWalletChips } from '../../utils/format';
 import { unionApi } from '../../services/UnionApiService';
 import { classifyCashierRpcFailure } from '../../services/CashierResilience';
 import {
@@ -475,7 +475,7 @@ export function UnionWalletModal({
       return 'Enter An Amount In Whole Cents.';
     }
     if (mode === 'send' && amt > liveBalance)
-      return `This Wallet Only Holds ${money(liveBalance)}.`;
+      return `This Wallet Only Holds ${formatWalletChips(liveBalance)}.`;
     return null;
   }, [amount, target, mode, kind, liveBalance]);
 
@@ -798,7 +798,7 @@ export function UnionWalletModal({
           className="uwm-console"
           family="riveted"
           eyebrow={walletLabel}
-          title={money(liveBalance)}
+          title={formatWalletChips(liveBalance)}
           pill="Union"
           pillInk="blue"
           foot="plates"
@@ -838,7 +838,7 @@ export function UnionWalletModal({
               figure for a screen reader, which cannot be given a live region
               through a painted zone. */}
           <span className="uwm-live" aria-live="polite">
-            {walletLabel} Balance {money(liveBalance)}
+            {walletLabel} Balance {formatWalletChips(liveBalance)}
           </span>
 
           <p className="uwm-sub">
@@ -1073,10 +1073,10 @@ export function UnionWalletModal({
                     {Number(amount) > 0 && target && !amountRefusal && (
                       <div className="uwm-blurb">
                         {mode === 'pull'
-                          ? `Pulling ${money(Number(amount))} From ${targetName}. This Wallet Would Hold ${money(liveBalance + Number(amount))} Afterwards.`
+                          ? `Pulling ${money(Number(amount))} From ${targetName}. This Wallet Would Hold ${formatWalletChips(liveBalance + Number(amount))} Afterwards.`
                           : kind === 'diamonds'
                             ? `Sending ${fmt(Number(amount))} Diamonds To ${targetName}.`
-                            : `Sending ${money(Number(amount))} To ${targetName}. This Wallet Would Hold ${money(liveBalance - Number(amount))} Afterwards.`}
+                            : `Sending ${money(Number(amount))} To ${targetName}. This Wallet Would Hold ${formatWalletChips(liveBalance - Number(amount))} Afterwards.`}
                       </div>
                     )}
                   </div>
@@ -1144,7 +1144,7 @@ export function UnionWalletModal({
                             {r.notes && <span>{titleCase(r.notes)}</span>}
                             {r.actor_name && <span>By {titleCase(r.actor_name)}</span>}
                             {r.balance_after != null && (
-                              <span>Wallet After {money(Number(r.balance_after))}</span>
+                              <span>Wallet After {formatWalletChips(Number(r.balance_after))}</span>
                             )}
                           </div>
                         </div>
@@ -1188,7 +1188,9 @@ export function UnionWalletModal({
                       </div>
                       <div className="uwm-tx-mid sc-ink--muted">
                         <span className="uwm-tx-when">{when(r.created_at)}</span>
-                        {r.balance_after != null && <span>Balance {money(r.balance_after)}</span>}
+                        {r.balance_after != null && (
+                          <span>Balance {formatWalletChips(r.balance_after)}</span>
+                        )}
                       </div>
                     </div>
                   );

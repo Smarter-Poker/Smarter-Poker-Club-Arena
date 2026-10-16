@@ -62,7 +62,7 @@ import {
 import { diamondBonusFloor } from '../utils/diamondBonusPayout';
 import { diamondGameTitle } from '../utils/diamondGameTitles';
 import { randomClientSeed } from '../utils/wheelFairness';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletDiamonds } from '../utils/format';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
@@ -1247,7 +1247,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       <GamePanel
         title="Your Game"
         pill="Rules"
-        eyebrow={`${compactChips(state?.diamonds ?? 0)} Diamonds`}
+        eyebrow={`${formatWalletDiamonds(state?.diamonds ?? 0)} Diamonds`}
         foot="foot"
       >
         <p className="sc-copy">

@@ -10,3 +10,5 @@ renderer), that all six house campaigns ship all four creative shapes, and that
 a tap opens the interstitial without logging, the popup's button is the only
 place a click becomes a click, closing is a dismiss, and the rotation holds
 while the popup is open.
+
+Owner-authored club banners use the same rotator and popup; only the exact club storage namespace is admitted alongside same-origin campaign art. Club banners never create paid campaign events.

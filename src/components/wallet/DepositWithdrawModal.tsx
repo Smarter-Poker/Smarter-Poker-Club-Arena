@@ -1,3 +1,4 @@
+import { formatWalletChips } from '../../utils/format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * DEPOSIT/WITHDRAW MODAL - the chips-in and chips-out sheet
@@ -341,7 +342,7 @@ export default function DepositWithdrawModal({
       return;
     }
     if (mode === 'withdraw' && numericAmount > currentBalance) {
-      setError(`Insufficient Balance. Available: ${currentBalance.toLocaleString()}`);
+      setError(`Insufficient Balance. Available: ${formatWalletChips(currentBalance)}`);
       triggerHaptic([30, 50, 30]);
       return;
     }
@@ -532,7 +533,7 @@ export default function DepositWithdrawModal({
           <div className={styles.row}>
             <span className="sc-label sc-ink--blue">Current Balance</span>
             <strong className={`${styles.value} sc-ink--silver`}>
-              {currentBalance.toLocaleString()}
+              {formatWalletChips(currentBalance)}
             </strong>
           </div>
 

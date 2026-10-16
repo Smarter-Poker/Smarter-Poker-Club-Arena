@@ -8,6 +8,7 @@ import { getClubArenaNavigation } from '../../src/config/clubArenaNavigation';
 const mocks = vi.hoisted(() => ({
   read: vi.fn(),
   save: vi.fn(),
+  saveRotating: vi.fn(),
   upload: vi.fn(),
   success: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock('../../src/services/ClubBannerService', async (original) => ({
   ...(await original<typeof import('../../src/services/ClubBannerService')>()),
   readClubBanner: mocks.read,
   saveClubBanner: mocks.save,
+  saveClubRotatingBanners: mocks.saveRotating,
   uploadClubBannerImage: mocks.upload,
 }));
 const record = {
@@ -41,7 +43,10 @@ function open() {
     </MemoryRouter>
   );
 }
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllEnvs();
+});
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.read.mockResolvedValue(record);
@@ -125,4 +130,80 @@ describe('club banner displays', () => {
     await screen.findByRole('alert');
     expect(mocks.upload).not.toHaveBeenCalled();
   });
+});
+
+it('preserves independently saved rotating banners when the top banner response arrives later', async () => {
+  vi.stubEnv('VITE_SUPABASE_URL', 'https://test.supabase.co');
+  const banner = {
+    id: 'original',
+    title: 'Before',
+    enabled: true,
+    imageUrl:
+      'https://test.supabase.co/storage/v1/object/public/club-assets/club-cards/club-uuid-banner-abc123.png',
+  };
+  const initial = { ...record, settings: { rotating_banners: [banner] } };
+  mocks.read.mockResolvedValue(initial);
+  let finishTop!: (value: unknown) => void;
+  mocks.save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishTop = resolve;
+      })
+  );
+  mocks.saveRotating.mockResolvedValue({
+    ...initial,
+    settings: { rotating_banners: [{ ...banner, title: 'Updated Promotion' }] },
+  });
+  open();
+  fireEvent.click(await screen.findByRole('button', { name: 'Use Default Banner' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save Banner' }));
+  fireEvent.change(screen.getByLabelText('Banner Title 1'), {
+    target: { value: 'Updated Promotion' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save Rotating Banners' }));
+  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Rotating Banners Saved'));
+  finishTop({ ...initial, banner_url: null });
+  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Banner Display Saved'));
+  expect((screen.getByLabelText('Banner Title 1') as HTMLInputElement).value).toBe(
+    'Updated Promotion'
+  );
+});
+
+it('preserves the saved top banner when the rotating-banner response arrives later', async () => {
+  vi.stubEnv('VITE_SUPABASE_URL', 'https://test.supabase.co');
+  const banner = {
+    id: 'original',
+    title: 'Before',
+    enabled: true,
+    imageUrl:
+      'https://test.supabase.co/storage/v1/object/public/club-assets/club-cards/club-uuid-banner-abc123.png',
+  };
+  const initial = { ...record, settings: { rotating_banners: [banner] } };
+  mocks.read.mockResolvedValue(initial);
+  let finishRotating!: (value: unknown) => void;
+  mocks.saveRotating.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishRotating = resolve;
+      })
+  );
+  open();
+  fireEvent.change(await screen.findByLabelText('Banner Title 1'), {
+    target: { value: 'Updated Promotion' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Save Rotating Banners' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Use Default Banner' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save Banner' }));
+  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Banner Display Saved'));
+  finishRotating({
+    ...initial,
+    settings: { rotating_banners: [{ ...banner, title: 'Updated Promotion' }] },
+  });
+  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Rotating Banners Saved'));
+  expect(screen.getByAltText('Club Lobby Banner Preview').getAttribute('src')).toContain(
+    'shark-club-championship'
+  );
+  expect((screen.getByLabelText('Banner Title 1') as HTMLInputElement).value).toBe(
+    'Updated Promotion'
+  );
 });

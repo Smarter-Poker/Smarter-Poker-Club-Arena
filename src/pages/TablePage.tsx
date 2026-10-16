@@ -1,6 +1,6 @@
 import { winnerViewportPoint, potViewportPoint } from '../lib/chipAwardGeometry';
 import { observeDealPresentationTiming } from '../utils/dealPresentationTiming';
-import { formatPrizeAtUnit } from '../utils/format';
+import { formatPrizeAtUnit, formatWalletChips } from '../utils/format';
 import {
   getTournamentFormatKind,
   getTournamentEntryCapacity,
@@ -23995,6 +23995,10 @@ function LiveTablePage({
   const [lightningPrefersWatch, setLightningPrefersWatch] = useState(
     () => readLightningPrefs().preferFoldWatch
   );
+  const lightningFoldHandId =
+    lightningRoom && lightningHandLive
+      ? lightningHandId(engineSnapshot as LightningSnapshotFields)
+      : null;
   const handleLightningFold = useCallback(
     async (kind: LightningFoldKind) => {
       if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
@@ -24007,7 +24011,7 @@ function LiveTablePage({
         writeLightningPrefs({ preferFoldWatch: kind === 'fold_watch' }).preferFoldWatch
       );
       try {
-        const result = await sendLightningFold(tableId, userId, kind);
+        const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
           toast.warning(result.error || 'That Action Could Not Be Confirmed');
         } else if (
@@ -24024,7 +24028,7 @@ function LiveTablePage({
         setLightningFoldBusy(false);
       }
     },
-    [tableId, userId, toast, isMultiTable, isActive, lightningCaps]
+    [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
   );
   /* LIGHTNING PHASE 12 (spec HOTKEYS): Shift+F and Shift+V run the strip's
      own handler, only while the strip offers that fold and the platform row
@@ -27003,7 +27007,11 @@ function LiveTablePage({
                     telling a funded player "Your Balance 0" beside an enabled
                     spend button. */}
                 <span className="sc-label sc-ink--silver">
-                  {accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}
+                  {accountBalance === null
+                    ? 'Unknown'
+                    : tableState.arenaAsset === 'diamonds'
+                      ? Number(accountBalance).toLocaleString()
+                      : formatWalletChips(accountBalance)}
                 </span>
               </div>
               {buyInSecondsLeft !== null && (

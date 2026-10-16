@@ -22,7 +22,7 @@ import './AdminDashboardPage.css';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { fmt, timeAgo } from '../utils/format';
+import { fmt, formatWalletChips, timeAgo } from '../utils/format';
 import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
 import UnionTreasuryDetailModal, {
   type TreasuryDetailMode,
@@ -1331,7 +1331,7 @@ export default function UnionDashboardPage() {
                       }
                     >
                       <div className="admin-stat-value" style={{ color: w.color }}>
-                        {fmt(w.value)}
+                        {formatWalletChips(w.value)}
                       </div>
                       <div className="admin-stat-label">{w.label} ›</div>
                     </button>
@@ -1377,7 +1377,7 @@ export default function UnionDashboardPage() {
                     onClick={() => setTab('settings')}
                   >
                     <div className="admin-stat-value" style={{ color: '#39d17a' }}>
-                      {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
+                      {unionSpins.state === null ? '-' : formatWalletChips(unionSpins.balance)}
                     </div>
                     <div className="admin-stat-label">Spins Wallet ›</div>
                   </button>
@@ -1394,7 +1394,7 @@ export default function UnionDashboardPage() {
                     }
                   >
                     <div className="admin-stat-value" style={{ color: '#39d17a' }}>
-                      {fmt(wallets.spin_reserve_wallet)}
+                      {formatWalletChips(wallets.spin_reserve_wallet)}
                     </div>
                     <div className="admin-stat-label">Spin Reserve ›</div>
                   </button>
@@ -1421,7 +1421,9 @@ export default function UnionDashboardPage() {
                     <div className="admin-stat-value" style={{ color: '#39d17a' }}>
                       {unionSpins.state === null
                         ? '-'
-                        : fmt((wallets.spin_reserve_wallet || 0) + unionSpins.balance)}
+                        : formatWalletChips(
+                            (wallets.spin_reserve_wallet || 0) + unionSpins.balance
+                          )}
                     </div>
                     <div className="admin-stat-label">Spins Treasury ›</div>
                   </button>
@@ -1789,7 +1791,7 @@ export default function UnionDashboardPage() {
                       }
                     >
                       <div className="admin-stat-value" style={{ color: w.color }}>
-                        {fmt(w.value)}
+                        {formatWalletChips(w.value)}
                       </div>
                       <div className="admin-stat-label">{w.label} ›</div>
                     </button>
@@ -1815,7 +1817,7 @@ export default function UnionDashboardPage() {
                     onClick={() => setTab('settings')}
                   >
                     <div className="admin-stat-value" style={{ color: '#39d17a' }}>
-                      {unionSpins.state === null ? '-' : fmt(unionSpins.balance)}
+                      {unionSpins.state === null ? '-' : formatWalletChips(unionSpins.balance)}
                     </div>
                     <div className="admin-stat-label">Spins Wallet ›</div>
                   </button>
@@ -1832,7 +1834,7 @@ export default function UnionDashboardPage() {
                     }
                   >
                     <div className="admin-stat-value" style={{ color: '#39d17a' }}>
-                      {fmt(wallets.spin_reserve_wallet)}
+                      {formatWalletChips(wallets.spin_reserve_wallet)}
                     </div>
                     <div className="admin-stat-label">Spin Reserve ›</div>
                   </button>
@@ -1936,7 +1938,9 @@ export default function UnionDashboardPage() {
                   </h3>
                   <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
                     Move Chips Into The Wallet That Seeds Every Spin Bonus Pool This Union Owns.
-                    {wallets ? ` Reserve Holds ${fmt(wallets.spin_reserve_wallet)}.` : ''}
+                    {wallets
+                      ? ` Reserve Holds ${formatWalletChips(wallets.spin_reserve_wallet)}.`
+                      : ''}
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <select

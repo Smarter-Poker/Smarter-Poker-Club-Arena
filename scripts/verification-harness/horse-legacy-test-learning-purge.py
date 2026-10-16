@@ -96,6 +96,8 @@ MIGRATION = Path('supabase/migrations/20261015212515_one_time_legacy_test_learni
 LEDGER = 'smarter_private.horse_adaptive_legacy_learning_purges'
 PURGE = 'smarter_private.purge_legacy_horse_learning'
 CACHE_MIGRATION = Path('supabase/migrations/20261016131548_legacy_learning_retirement_validates_each_locked_batch_once_.sql')
+REQUESTED_MIGRATION = Path('supabase/migrations/20261016171029_legacy_learning_requested_hands_are_keyed_once.sql')
+COMPACTION_MIGRATION = Path('supabase/migrations/20261016184329_legacy_learning_compaction_keys_purged_hands_once.sql')
 
 def qualify(e, base):
  checks=[]
@@ -156,6 +158,11 @@ def qualify(e, base):
  assert code!=0, 'migration replay unexpectedly accepted'
  checks.append('legacy-migration-replay-refused')
  e.sql(d,file=ROOT/CACHE_MIGRATION,label='legacy-locked-batch-cache-migration')
+ e.sql(d,file=ROOT/REQUESTED_MIGRATION,label='legacy-requested-keyset-migration')
+ proof=next(line.split(': ',1)[1] for line in (ROOT/COMPACTION_MIGRATION).read_text().splitlines() if line.startswith('-- @live-proof: '))
+ yes(d,'SELECT NOT ('+proof+');','compaction-live-proof-false-before')
+ e.sql(d,file=ROOT/COMPACTION_MIGRATION,label='legacy-compaction-keyset-migration')
+ yes(d,'SELECT ('+proof+');','compaction-live-proof-true-after')
  code,_,err=e.sql(d,file=ROOT/CACHE_MIGRATION,label='legacy-cache-migration-replay-refused',check=False)
  assert code!=0 and 'LEGACY_BATCH_CACHE_PREIMAGE_CHANGED' in err,err
  checks.append('legacy-cache-migration-replay-refused')
@@ -247,6 +254,8 @@ def qualify(e, base):
  e.report['qualified_postimages']=json.loads(read(d,postimage_query,'legacy-exact-seven-qualified-postimages'))
  assert len(e.report['qualified_postimages'])==7
  e.report['legacy_test_learning_purge']={'proven':checks,'receipt':r,'cutoff_ms':1791158399999}
+ e.report['source_sha256'][str(COMPACTION_MIGRATION)]=sha(ROOT/COMPACTION_MIGRATION)
+ e.report['source_sha256'][str(REQUESTED_MIGRATION)]=sha(ROOT/REQUESTED_MIGRATION)
  e.report['source_sha256'][str(MIGRATION)]=sha(ROOT/MIGRATION)
  e.report['source_sha256'][str(Path(__file__).relative_to(ROOT))]=sha(Path(__file__))
  e.discard(d)
@@ -257,7 +266,7 @@ def run_icu(e):
  try:
   checks=qualify(e,base)
   cached=module(ROOT/'scripts/verification-harness/horse-legacy-batch-cache.py','legacy_cache_comparison')
-  checks+=cached.qualify(e,base,SimpleNamespace(ROOT=ROOT,MIGRATION=MIGRATION,CACHE_MIGRATION=CACHE_MIGRATION,PROTECTED_SNAPSHOT=PROTECTED_SNAPSHOT,PURGE=PURGE,fixture=fixture,lit=lit))
+  checks+=cached.qualify(e,base,SimpleNamespace(ROOT=ROOT,MIGRATION=MIGRATION,CACHE_MIGRATION=CACHE_MIGRATION,REQUESTED_MIGRATION=REQUESTED_MIGRATION,COMPACTION_MIGRATION=COMPACTION_MIGRATION,PROTECTED_SNAPSHOT=PROTECTED_SNAPSHOT,PURGE=PURGE,fixture=fixture,lit=lit))
   return checks
  finally:e.discard(base)
 

@@ -1,3 +1,4 @@
+import { formatWalletChips } from '../../utils/format';
 /**
  * ♠ CLUB ARENA — Player Search (Admin)
  * Search and manage players across clubs - Real Supabase integration
@@ -344,7 +345,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
                 <div className="player-meta">
                   <span>Joined: {formatDate(player.joinedAt)}</span>
                   <span>Clubs: {player.clubs.length}</span>
-                  <span>Balance: {player.balance.toLocaleString()}</span>
+                  <span>Balance: {formatWalletChips(player.balance)}</span>
                 </div>
               </div>
               <div className="player-actions">

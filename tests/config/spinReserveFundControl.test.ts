@@ -184,7 +184,7 @@ describe('the union can see and fund the wallet', () => {
   });
 
   it('renders the balance', () => {
-    expect(page).toMatch(/fmt\(wallets\.spin_reserve_wallet\)/);
+    expect(page).toMatch(/formatWalletChips\(wallets\.spin_reserve_wallet\)/);
     expect(page).toMatch(/Spin Reserve/);
   });
 

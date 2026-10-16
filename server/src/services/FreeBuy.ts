@@ -61,20 +61,6 @@ export interface FreeBuyConfig {
 export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
   standard: {
     tier: 'standard',
-    guarantee: 250,
-    buyIn: 0,
-    startingChips: 3000,
-    rebuyCost: 1,
-    rebuyChips: 3000,
-    addOnCost: 1,
-    addOnChips: 10000,
-    lateRegMinutes: 60,
-    blindStructure: 'FREE_BUY',
-    maxPlayers: 200,
-    minPlayers: 10,
-  },
-  feature: {
-    tier: 'feature',
     guarantee: 500,
     buyIn: 0,
     startingChips: 3000,
@@ -85,6 +71,20 @@ export const FREE_BUY_TIERS: Record<FreeBuyTier, FreeBuyConfig> = {
     lateRegMinutes: 60,
     blindStructure: 'FREE_BUY',
     maxPlayers: 300,
+    minPlayers: 10,
+  },
+  feature: {
+    tier: 'feature',
+    guarantee: 1000,
+    buyIn: 0,
+    startingChips: 3000,
+    rebuyCost: 1,
+    rebuyChips: 3000,
+    addOnCost: 1,
+    addOnChips: 10000,
+    lateRegMinutes: 60,
+    blindStructure: 'FREE_BUY',
+    maxPlayers: 500,
     minPlayers: 10,
   },
 };
@@ -103,6 +103,11 @@ export interface FreeBuySlot {
 /** Dan: "EVERY 4 HOURS STARTING AT 8 AM, 12PM, 4PM 8PM, 12AM. SO 5 FREE ROLLS
  *  A DAY $250'S EACH. 8PM IS $500."
  *
+ *  2026-10-16 (Dan): the schedule now follows the real US rooms, which run
+ *  nothing between 1 AM and 8 AM, so the midnight slot is retired; and "DOUBLE
+ *  ALL THE OTHER CURRENT GUARANTEES, THEN ROUND THEM ALL UP TO THE NEAREST 1000
+ *  OR 500", so the standard tier guarantees 500 and the 8 PM feature 1,000.
+ *
  *  These are CHICAGO hours, not UTC. The existing recurring board matches on
  *  `getUTCHours()`, which would drift by an hour twice a year and quietly move
  *  the 8PM feature event to 7PM every November. */
@@ -111,7 +116,6 @@ export const FREE_BUY_SLOTS: FreeBuySlot[] = [
   { chicagoHour: 12, tier: 'standard', label: 'Midday Free Buy' },
   { chicagoHour: 16, tier: 'standard', label: 'Afternoon Free Buy' },
   { chicagoHour: 20, tier: 'feature', label: 'Prime Time Free Buy' },
-  { chicagoHour: 0, tier: 'standard', label: 'Midnight Free Buy' },
 ];
 
 /**
@@ -138,7 +142,7 @@ export function slotForChicagoHour(hour: number): FreeBuySlot | null {
   return FREE_BUY_SLOTS.find((s) => s.chicagoHour === hour) ?? null;
 }
 
-/** Guarantee exposure per host per day. 4 x 250 + 500 = 1,500. */
+/** Guarantee exposure per host per day. 3 x 500 + 1,000 = 2,500. */
 export function dailyGuaranteePerHost(): number {
   return FREE_BUY_SLOTS.reduce((sum, s) => sum + FREE_BUY_TIERS[s.tier].guarantee, 0);
 }
@@ -325,8 +329,8 @@ function chicagoOffsetMs(ms: number): number {
  * standard way to do this without a timezone library.
  *
  * Neither DST discontinuity can bite here. The spring-forward gap is
- * 02:00-03:00 and the fall-back repeat is 01:00-02:00; the five Free Buy
- * hours are 00, 08, 12, 16 and 20, so no slot ever lands on a wall-clock time
+ * 02:00-03:00 and the fall-back repeat is 01:00-02:00; the Free Buy
+ * hours are 08, 12, 16 and 20, so no slot ever lands on a wall-clock time
  * that either does not exist or happens twice.
  */
 export function chicagoWallClockToUtcMs(dayKey: string, hour: number): number {
@@ -710,7 +714,7 @@ export function auditFreeBuyRow(
   const at = chicagoParts(startMs);
   const slot = slotForChicagoHour(at.hour);
   if (!slot) {
-    problems.push(`starts at ${at.hour}:00 Chicago, which is not one of the five slots`);
+    problems.push(`starts at ${at.hour}:00 Chicago, which is not one of the board slots`);
     return problems;
   }
   if (at.minute !== 0) problems.push(`starts at ${at.hour}:${at.minute}, not on the hour`);

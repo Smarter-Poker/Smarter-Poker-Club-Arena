@@ -343,15 +343,40 @@ export function timedSpawnsDue(
 export interface ScheduleTimeChange {
   previous: string[];
   from: string;
+  /**
+   * The timetable before `previous` (`retiredStartTimes`, 2026-10-16): a date
+   * that already has an occurrence at one of these was planned under that
+   * older timetable and takes nothing more. Absent when the schedule has
+   * moved only once.
+   */
+  retired?: string[];
 }
 
-export function scheduleTimeChange(cfg: Record<string, unknown>): ScheduleTimeChange | null {
+const HH_MM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
+export function scheduleTimeChange(
+  cfg: Record<string, unknown>,
+  currentTimes: readonly string[] = []
+): ScheduleTimeChange | null {
   const prev = cfg.previousStartTimes;
   const from = cfg.startTimesEffectiveFrom;
-  if (!Array.isArray(prev) || prev.length === 0 || typeof from !== 'string') return null;
+  // An EMPTY previous list is a schedule that did not exist before `from`
+  // (2026-10-16): a new event that must not start on dates already planned
+  // under the old timetable. Absent, by contrast, means no change at all.
+  if (!Array.isArray(prev) || typeof from !== 'string') return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return null;
-  const previous = prev.map(String).filter((t) => /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(t));
-  return previous.length === prev.length ? { previous, from } : null;
+  const previous = prev.map(String).filter((t) => HH_MM.test(t));
+  if (previous.length !== prev.length) return null;
+  const rawRetired = cfg.retiredStartTimes;
+  if (rawRetired === undefined) return { previous, from };
+  if (!Array.isArray(rawRetired)) return null;
+  const retiredAll = rawRetired.map(String);
+  if (!retiredAll.every((t) => HH_MM.test(t))) return null;
+  // A retired time that is also a current one says nothing about which
+  // timetable a date was planned under, so it never freezes a date.
+  const current = new Set([...previous, ...currentTimes.map(String)]);
+  const retired = retiredAll.filter((t) => !current.has(t));
+  return retired.length > 0 ? { previous, from, retired } : { previous, from };
 }
 
 /**
@@ -365,13 +390,15 @@ export function previousDayKeys(
   due: readonly SpawnDue[]
 ): string[] {
   const dates = [...new Set(due.map((d) => d.localDate))];
-  return dates.flatMap((date) => change.previous.map((tm) => `${scheduleId}:${date}:${tm}`));
+  const times = [...change.previous, ...(change.retired ?? [])];
+  return dates.flatMap((date) => times.map((tm) => `${scheduleId}:${date}:${tm}`));
 }
 
 /**
  * PURE. Which occurrences to spawn across a time change: a date before
  * `from`, or a date with any old-time occurrence already claimed, keeps the
- * old times; every other date takes the new ones. One date is never on both.
+ * old times; every other date takes the new ones. One date is never on both,
+ * and a date that already ran on the retired timetable takes neither.
  */
 export function resolveTimeChange(
   dueNew: readonly SpawnDue[],
@@ -382,9 +409,12 @@ export function resolveTimeChange(
 ): SpawnDue[] {
   const onOld = (date: string) =>
     date < change.from || change.previous.some((tm) => claimed.has(`${scheduleId}:${date}:${tm}`));
+  // A date that already ran on the retired timetable is finished planning.
+  const onRetired = (date: string) =>
+    (change.retired ?? []).some((tm) => claimed.has(`${scheduleId}:${date}:${tm}`));
   return [
-    ...duePrev.filter((d) => onOld(d.localDate)),
-    ...dueNew.filter((d) => !onOld(d.localDate)),
+    ...duePrev.filter((d) => !onRetired(d.localDate) && onOld(d.localDate)),
+    ...dueNew.filter((d) => !onRetired(d.localDate) && !onOld(d.localDate)),
   ].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 }
 
@@ -982,7 +1012,7 @@ export class ScheduledTournamentService {
        look-ahead. A row carrying a time change keeps each date on the old
        times when it is before the change or already has an old-time
        occurrence, and moves a date only when nothing of it exists yet. */
-    const change = scheduleTimeChange(cfg);
+    const change = scheduleTimeChange(cfg, schedule.start_times_utc ?? []);
     const duePrev = change
       ? timedSpawnsDue({ ...schedule, start_times_utc: change.previous }, now, aheadMs).filter(
           onCadence

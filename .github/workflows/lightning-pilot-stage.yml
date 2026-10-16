@@ -11,6 +11,11 @@ on:
         required: true
         type: choice
         options: [report, shadow, form, drain, off, control, review, access]
+      accept_outsider_terms:
+        description: 'Explicit owner-authorized normal TOS and Privacy acceptance for the designated outsider only; access stage only'
+        required: false
+        type: boolean
+        default: false
       control_action:
         description: 'One explicit recovery/rehearsal control; used only with stage=control'
         required: false
@@ -63,6 +68,7 @@ jobs:
           SP_EMAIL: ${{ secrets.SP_EMAIL }}
           SP_PASS: ${{ secrets.SP_PASS }}
           PILOT_STAGE: ${{ inputs.stage }}
+          PILOT_ACCEPT_OUTSIDER_TERMS: ${{ inputs.accept_outsider_terms }}
           PILOT_CONTROL_ACTION: ${{ inputs.control_action }}
           PILOT_SIGNAL_ID: ${{ inputs.signal_id }}
           PILOT_OPERATION_ID: ${{ inputs.operation_id }}

@@ -4,22 +4,33 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **Section U (directly below) is the newest state and overrides anything older in sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Resume Checkpoint (2026-10-15)
+
+- Owner: Codex chat `01a1416e-f22c-73f0-977e-8f478fdb909f`; branch `codex/lightning-resume-20261015`; owned SSD checkout `/Volumes/SmarterWork/agent-work/lightning-resume-20261015-01a1416e/repo`, base `7e7dd5547`.
+- Scope: recover private-pilot evidence, repair B1/B2 and the demonstrated A/A bias, then continue the eight-phase programme. Public-club activation, new horses/funding and general availability retain the explicit scope limits in section 7.
+- Current policy read: canonical four files in `/Users/smarter.poker/Documents`, policy 2.9, reader emitted `2026-10-15T21:19:24.330Z`; manifest SHA256 `a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`. Owner SHA256 `b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349`; operating law `a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5`; hardening `d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e`; index `adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555`. Repository entrypoints, CLAUDE.md, publishing, deployment paths and Lightning handoff/phase/register/rollout/review/catalog read. SSD verified on separate mounted disk before writes.
+- Recovered report run `38800898759`: terminal success, actual report at `20:39:15Z`; BOTH readiness verdicts `no_go`. 6-max: one high integrity signal, 132 A/A comparisons, delta -0.03, calibrated. 9-max: three high signals, 91 comparisons, delta -2.55, `calibration_bias`. This supersedes the earlier zero-delta calibration claim for current readiness.
+- Fresh database observation: seven open high TIMING_CORRELATION signals. Signal 1's correlation 0.9949 comes from one four-hand window, while readiness is gated by accumulated shared-hand counts across windows without correlation evidence. Horse timing is not yet established as the cause; do not randomize it or dismiss the signals to hide an aggregation defect.
+- Drain dispatched through existing `lightning-pilot-stage.yml`, run `38809119759`, operation `abc32089-b9d7-4a2f-a09b-d0196d8a5e10`, targets 6 and 9. Terminal success, completed at 21:28:56 UTC. Both persisted drains are complete/drained with steps 1-8 and eight corresponding ledger events each; both games are MUST-MOVE and Lightning disabled. Recorded chips remained 40.60 (6-max) and 125.41 (9-max). No hand or pool session was in flight at request, so this does not supply the still-required mid-hand rehearsal. All 2,832 prior settled hands (1,070/1,762) have history links and zero nonconserving receipts; rake 3.62/21.32. Last settlements were around 20:53, before the 20:55 restart; investigate pilot return after maintenance before reactivation. Reattach to this operation, never duplicate it after an unknown outcome.
+- Dan selected **3 seconds** as the formation maximum wait. B1 regression reproduced: 5 failures / 2 passes on baseline; model repair now passes all 7 focused cases. SQL and model now pass PostgreSQL 17 parity (10 sections, 8 captured snapshots, 49 identical groups), all 258 Lightning engine tests, 1,093 client/Lightning contracts and both TypeScript checks. Seeded 10,000-hand simulations completed for 6-max populations 18/25/50 and 9-max 27/50; these are isolated measurements, not live proof. Required hosted checks, protected merge, installation, engine publication and fresh A/A remain pending. No current hands count toward the final launch-matcher 5,000-hand sample.
+- Evidence root: `/Volumes/SmarterArchives/agent-evidence/lightning-resume-20261015-01a1416e`, recovered artifact in `stage-report/lightning-pilot-stage.json`.
+
 ## U. Update At 20:30 UTC: Lightning Is Dealing Real Hands In The Pilot
 
 ### U.1 What Happened Since 17:30
 
-| Time (UTC) | Event |
-| --- | --- |
-| 18:11 | The other session restored the global fleet (`enabled=true`). Pilot horse wallets were NOT reset to 10,000 (pilot wallets 14,322.45 at 19:46). |
-| 18:14:55 | 6-max cluster `babb43f1` converted `must_move` to `lightning` with 18 live; 18 pool sessions opened; the shadow worker began comparisons at 18:15:00. |
-| 19:02:11 | 9-max cluster `3330ff9f` converted with 27 live; 27 pool sessions; comparisons from 19:03:01. |
-| 19:22 | PR #6992 merged (squash `19f21fdcee41a4a9cfed6feeaf7da172a01f79bc`). |
-| 19:46 | A/A calibration read from `lightning_matcher_shadow_comparison`: 6-max 85 comparisons, 9-max 44, every one nonempty (for example 156 groups, 1,352 seated per window), m1 vs m1-port, mean quality delta 0.000 on both. Calibrated. |
-| 19:47:20 | Stage 2 dispatched: `lightning-pilot-stage.yml` `stage=form`, operation `3715c610-a445-4a23-85fd-e330e45bbbc7`, run 38796724234. Succeeded (its readiness gate accepted the post-calibration reasons). |
-| 20:03 | First install of `20261015172330` (run 38793372623) was refused by the break window at exactly :03; nothing committed. |
-| 20:08 | Re-dispatched once: run 38799510609, success. `@live-proof` true; the nine Classic games are closed. |
-| 20:10:55 | **First real Lightning hands** formed on both clusters (a full 6-handed and a full 9-handed hand first). |
-| 20:29 | 1,313 Lightning hands settled across both clusters; 0 settled-but-stale; every settled hand has a `hand_history_id`; zero abandoned instances. |
+| Time (UTC) | Event                                                                                                                                                                                                                               |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 18:11      | The other session restored the global fleet (`enabled=true`). Pilot horse wallets were NOT reset to 10,000 (pilot wallets 14,322.45 at 19:46).                                                                                      |
+| 18:14:55   | 6-max cluster `babb43f1` converted `must_move` to `lightning` with 18 live; 18 pool sessions opened; the shadow worker began comparisons at 18:15:00.                                                                               |
+| 19:02:11   | 9-max cluster `3330ff9f` converted with 27 live; 27 pool sessions; comparisons from 19:03:01.                                                                                                                                       |
+| 19:22      | PR #6992 merged (squash `19f21fdcee41a4a9cfed6feeaf7da172a01f79bc`).                                                                                                                                                                |
+| 19:46      | A/A calibration read from `lightning_matcher_shadow_comparison`: 6-max 85 comparisons, 9-max 44, every one nonempty (for example 156 groups, 1,352 seated per window), m1 vs m1-port, mean quality delta 0.000 on both. Calibrated. |
+| 19:47:20   | Stage 2 dispatched: `lightning-pilot-stage.yml` `stage=form`, operation `3715c610-a445-4a23-85fd-e330e45bbbc7`, run 38796724234. Succeeded (its readiness gate accepted the post-calibration reasons).                              |
+| 20:03      | First install of `20261015172330` (run 38793372623) was refused by the break window at exactly :03; nothing committed.                                                                                                              |
+| 20:08      | Re-dispatched once: run 38799510609, success. `@live-proof` true; the nine Classic games are closed.                                                                                                                                |
+| 20:10:55   | **First real Lightning hands** formed on both clusters (a full 6-handed and a full 9-handed hand first).                                                                                                                            |
+| 20:29      | 1,313 Lightning hands settled across both clusters; 0 settled-but-stale; every settled hand has a `hand_history_id`; zero abandoned instances.                                                                                      |
 
 ### U.2 Phase 3 Status
 
@@ -35,11 +46,13 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 ### U.3 New Launch Blockers Found In The First Hands
 
 **B1. Hands form mostly heads-up.** After the first full hand at 20:10:55, the matcher deals small hands from a full pool. Of the first 593 hands: 6-max 188 heads-up, 21 three-handed, 8 four, 2 five, 2 six (average 2.24 dealt); 9-max 258 heads-up, 101 three, 35 four, 7 five, 2 each of six, seven and nine, 1 eight (average 2.55). `lightning_instance.target_size` equals the dealt count, so it is the plan, not a drop-out.
+
 - Cause, read from the code: the matcher packs every legal idle player each pass with `instance_min = 2` (`LIGHTNING_MATCHER_PARAM_DEFAULTS` in `server/src/lightning/LightningMatcherModel.ts`, mirrored by the SQL m1 matcher and `fn_lightning_config` keys `instance_min`, `instance_target`, `instance_max`; group sizing in `lightningGroupSizes`). Passes run often, and fast-folded players return one or two at a time, so whenever two are idle they are dealt a heads-up hand instead of waiting a moment for a fuller table. 18 players end up in about six concurrent small hands.
 - This is a launch blocker for a fast-fold product (players expect near-full rings) and it skews every downstream statistic (rake, VPIP, latency, fairness, the 5,000-hand sample).
 - Fix direction (needs a reviewed matcher phase, because ROLLOUT says m1 changes ship as their own reviewed phase, and because the wait-versus-fullness trade-off is Dan's product call): form a group only when idle legal players reach the target size for the current pool (for example the table size, or the pool size if smaller), OR when the oldest idle player has waited past a bounded aging limit; keep queue aging so nobody starves; implement in both the SQL m1 matcher and the engine port, keep parity (`scripts/dev/test-lightning-matcher-parity.sh`) and the fairness sims (`LightningMatcherSim.ts`) green, and re-run A/A calibration after the change. Ask Dan to choose the maximum wait (a number of seconds) in one short question with a recommended value.
 
 **B2. One high integrity signal is open.** `lightning_integrity_signal` id 1, 6-max cluster, `TIMING_CORRELATION`, players `0097309f-2864-4d09-b02b-56bca012a9c3` and `19de9af5-6576-4ebb-92c6-1fe53599f782` (both pilot horses), suspicion 90, `latency_corr` 0.9949, 27 hands together, status open. Readiness reports `INTEGRITY_HIGH_SIGNALS_OPEN` while it is open, and the Stage 2 exit needs no open high signal.
+
 - Treat it as real (CLAUDE.md 10.5 and PHASE5 contract rule 4: two horses that correlate is a HorseBehavior defect an operator must see; never filter horses out of the scan). Likely cause to verify: horse action timing in the engine (`scheduleHorseAction` and HorseLogic think-time) is too uniform, so two horses' decision latencies correlate. Fix the timing at its source with a regression test, then review and resolve the signal with a note.
 - Also check how B1 inflates it: heads-up hands put the same two horses together repeatedly.
 
@@ -59,15 +72,15 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 ## 1. Who, Where, What
 
-| Item | Value |
-| --- | --- |
-| Owner | Dan (Daniel Bekavac). He does no manual steps. Do not offer him options: decide, act, report. No interim updates on long tasks. Written deliverables use Title Case headings and no em dashes. |
-| Repository | `Smarter-Poker/Smarter-Poker-Club-Arena`, default branch `main` |
-| Production database | Supabase project PokerIQ-Production, ref `kuklfnapbkmacvwxktbh` |
-| Engine | Hetzner VPS, `https://engine.smarter.poker/health`. Latest sealed release `3002fe25f06cc958b2708026e80e9904bac6c518`; it contains the Phase 13 engine change (prerequisite met). |
-| Client | `https://smarter.poker/hub/club-arena/` (rewrite to `https://ca-static.smarter.poker`), published by `publish-club-arena.yml` |
-| Service identity for scripts | `daniel@smarter.poker`, user id `2d1cd6c3-5700-4af9-a271-d4863fdab20d` (role god). Never Dan's personal account. Scripts sign out with `{ scope: 'local' }`. |
-| Workflow secrets used | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SP_EMAIL`, `SP_PASS` |
+| Item                         | Value                                                                                                                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Owner                        | Dan (Daniel Bekavac). He does no manual steps. Do not offer him options: decide, act, report. No interim updates on long tasks. Written deliverables use Title Case headings and no em dashes. |
+| Repository                   | `Smarter-Poker/Smarter-Poker-Club-Arena`, default branch `main`                                                                                                                                |
+| Production database          | Supabase project PokerIQ-Production, ref `kuklfnapbkmacvwxktbh`                                                                                                                                |
+| Engine                       | Hetzner VPS, `https://engine.smarter.poker/health`. Latest sealed release `3002fe25f06cc958b2708026e80e9904bac6c518`; it contains the Phase 13 engine change (prerequisite met).               |
+| Client                       | `https://smarter.poker/hub/club-arena/` (rewrite to `https://ca-static.smarter.poker`), published by `publish-club-arena.yml`                                                                  |
+| Service identity for scripts | `daniel@smarter.poker`, user id `2d1cd6c3-5700-4af9-a271-d4863fdab20d` (role god). Never Dan's personal account. Scripts sign out with `{ scope: 'local' }`.                                   |
+| Workflow secrets used        | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SP_EMAIL`, `SP_PASS`                                                                                                                             |
 
 ## 2. Rules That Bind Every Step
 
@@ -94,53 +107,53 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 ### 3.1 The Pilot Club
 
-| Field | Value |
-| --- | --- |
-| Name | Lightning Internal Pilot |
-| Club id | `e14bc9f7-736d-425f-8f2c-e78305ebac1d` (slug `lightning-internal-pilot-95087`) |
-| Visibility | `is_public=false`, `requires_approval=true`, no union |
-| Owner | `2d1cd6c3-5700-4af9-a271-d4863fdab20d` (service identity) |
-| Treasury | 84,830.64 (read 17:25 UTC) |
-| Member wallets total | 14,516.14 (read 17:25 UTC): 72 horses at about 200 each plus owner |
-| Spins | Off (`spins_enabled=false`, Spin pool inactive) since migration `20261015152535` |
-| House board | Yes: added to `fn_ca_house_board_allows_automation` by Dan's ruling (migration `20261015032740`) |
-| Fleet policy (club row) | `occupancy_bias` 9 (migration `20261015141154`) |
-| Roster | Owner plus 72 horses: 50 `cash` lane, 22 `both` lane, all `role='player'`, `status='active'`. No other humans. |
-| Designated outsider (for access proofs) | `00bc0957-1913-4beb-a4d1-acab94950690` ("tacomaadam"), a horse that is not a member |
-| Pilot creation request id | `84ad2b53-990b-4fae-91cf-e7fd5509d105` |
+| Field                                   | Value                                                                                                          |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Name                                    | Lightning Internal Pilot                                                                                       |
+| Club id                                 | `e14bc9f7-736d-425f-8f2c-e78305ebac1d` (slug `lightning-internal-pilot-95087`)                                 |
+| Visibility                              | `is_public=false`, `requires_approval=true`, no union                                                          |
+| Owner                                   | `2d1cd6c3-5700-4af9-a271-d4863fdab20d` (service identity)                                                      |
+| Treasury                                | 84,830.64 (read 17:25 UTC)                                                                                     |
+| Member wallets total                    | 14,516.14 (read 17:25 UTC): 72 horses at about 200 each plus owner                                             |
+| Spins                                   | Off (`spins_enabled=false`, Spin pool inactive) since migration `20261015152535`                               |
+| House board                             | Yes: added to `fn_ca_house_board_allows_automation` by Dan's ruling (migration `20261015032740`)               |
+| Fleet policy (club row)                 | `occupancy_bias` 9 (migration `20261015141154`)                                                                |
+| Roster                                  | Owner plus 72 horses: 50 `cash` lane, 22 `both` lane, all `role='player'`, `status='active'`. No other humans. |
+| Designated outsider (for access proofs) | `00bc0957-1913-4beb-a4d1-acab94950690` ("tacomaadam"), a horse that is not a member                            |
+| Pilot creation request id               | `84ad2b53-990b-4fae-91cf-e7fd5509d105`                                                                         |
 
 ### 3.2 The Pilot Games (Lightning Clusters)
 
-| Field | 6-max | 9-max |
-| --- | --- | --- |
-| Name | Lightning Pilot NLH 6 | Lightning Pilot NLH 9 |
-| Cluster (cash_games) id | `babb43f1-368e-406f-a97a-a0d5013648b2` | `3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb` |
-| Blinds, buy-in | 0.01/0.02, 0.80 to 4.00 | 0.02/0.04, 1.60 to 8.00 |
-| Main table | `d78448e2-42da-4bd0-b702-98f8b37d6da7` | `a84ebe4c-020e-41d4-bd2c-898b4c93b7bc` |
-| Feeder table | `f018bc61-69d7-4184-81ad-8a8d9e0118d9` (closed) | none |
-| Private | `ruleset_snapshot.options.is_private=true` | same |
-| `shadow_window_ms` | 60000 (op `aaf6c3a2-b098-4d65-8e47-647a6834900b`) | 60000 (op `fbb0c5d2-5e32-4852-88a1-2077e620a4c3`) |
-| Integrity telemetry | on (op `b5e5c106-183e-4f9c-a37b-d72189567369`) | on (op `5ded3c91-dcb0-437a-b192-b072ec7b8ac9`) |
-| Thresholds (on / off) | 18 / 12 | 27 / 18 |
-| Stage 1 applied | 17:07 UTC, run 38773675895, operation `816d4942-2a60-47ec-a7a5-4fc89499d97c` | same |
-| Now | `lightning_enabled=true`, worker `shadow`, `lightning_shadow_matcher` on, shadow version `m1-port`, live matcher `m1`, `cluster_mode='must_move'`, state `dormant`, 0 seated | same |
-| Readiness after Stage 1 | `insufficient_evidence`: `WORKER_SHADOW_ONLY`, `NO_AA_CALIBRATION`, `NO_LATENCY_EVIDENCE` (all accepted for Stage 1) | same |
+| Field                   | 6-max                                                                                                                                                                        | 9-max                                             |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Name                    | Lightning Pilot NLH 6                                                                                                                                                        | Lightning Pilot NLH 9                             |
+| Cluster (cash_games) id | `babb43f1-368e-406f-a97a-a0d5013648b2`                                                                                                                                       | `3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb`            |
+| Blinds, buy-in          | 0.01/0.02, 0.80 to 4.00                                                                                                                                                      | 0.02/0.04, 1.60 to 8.00                           |
+| Main table              | `d78448e2-42da-4bd0-b702-98f8b37d6da7`                                                                                                                                       | `a84ebe4c-020e-41d4-bd2c-898b4c93b7bc`            |
+| Feeder table            | `f018bc61-69d7-4184-81ad-8a8d9e0118d9` (closed)                                                                                                                              | none                                              |
+| Private                 | `ruleset_snapshot.options.is_private=true`                                                                                                                                   | same                                              |
+| `shadow_window_ms`      | 60000 (op `aaf6c3a2-b098-4d65-8e47-647a6834900b`)                                                                                                                            | 60000 (op `fbb0c5d2-5e32-4852-88a1-2077e620a4c3`) |
+| Integrity telemetry     | on (op `b5e5c106-183e-4f9c-a37b-d72189567369`)                                                                                                                               | on (op `5ded3c91-dcb0-437a-b192-b072ec7b8ac9`)    |
+| Thresholds (on / off)   | 18 / 12                                                                                                                                                                      | 27 / 18                                           |
+| Stage 1 applied         | 17:07 UTC, run 38773675895, operation `816d4942-2a60-47ec-a7a5-4fc89499d97c`                                                                                                 | same                                              |
+| Now                     | `lightning_enabled=true`, worker `shadow`, `lightning_shadow_matcher` on, shadow version `m1-port`, live matcher `m1`, `cluster_mode='must_move'`, state `dormant`, 0 seated | same                                              |
+| Readiness after Stage 1 | `insufficient_evidence`: `WORKER_SHADOW_ONLY`, `NO_AA_CALIBRATION`, `NO_LATENCY_EVIDENCE` (all accepted for Stage 1)                                                         | same                                              |
 
 ### 3.3 The Classic Games In The Pilot Club (Being Closed)
 
 Nine 0.50/1.00 cash games, all 0 seated, main tables already `closed` by the 16:55 wallet reset but the games still `enabled=true`, `state='live'`:
 
-| Game | Cluster id | Main table |
-| --- | --- | --- |
-| Classic NLH | `e639c83c-f66a-42f9-9ea1-38eed4e26f27` | `b8e47104-0791-4977-958d-992a6954e3e4` |
-| Classic FLH | `60178ffc-883c-4357-b79e-52ccade254ee` | `ee3f3551-1865-4a82-9b1f-8a4f49763237` |
-| Classic PLO4 | `abac480c-f049-4e2a-9d62-958304b8188f` | `d2440ad5-f2e7-4e9b-b292-fdd0ea53809b` |
-| Classic PLO5 | `9869e373-9cfa-4492-aa97-ba5541dbed9e` | `660d6f21-9c0e-4926-b231-3fdd62858591` |
-| Classic PLO6 | `36d337b4-9b1b-434b-92fd-b6ed33e0e3c9` | `2ffc6747-9bcb-4fc0-8fe1-c5a3b29bcad7` |
-| Classic PLO8 | `037bc558-ead6-4143-96e4-3e2d641d0daa` | `10f94f40-cfd9-4153-bb2d-bbdab87c61f9` |
-| Classic FLO8 | `966d8e6b-74c0-42cd-90f2-743ce7378fde` | `a262d787-4e03-4dc7-b47b-62231efacaf8` |
+| Game               | Cluster id                             | Main table                             |
+| ------------------ | -------------------------------------- | -------------------------------------- |
+| Classic NLH        | `e639c83c-f66a-42f9-9ea1-38eed4e26f27` | `b8e47104-0791-4977-958d-992a6954e3e4` |
+| Classic FLH        | `60178ffc-883c-4357-b79e-52ccade254ee` | `ee3f3551-1865-4a82-9b1f-8a4f49763237` |
+| Classic PLO4       | `abac480c-f049-4e2a-9d62-958304b8188f` | `d2440ad5-f2e7-4e9b-b292-fdd0ea53809b` |
+| Classic PLO5       | `9869e373-9cfa-4492-aa97-ba5541dbed9e` | `660d6f21-9c0e-4926-b231-3fdd62858591` |
+| Classic PLO6       | `36d337b4-9b1b-434b-92fd-b6ed33e0e3c9` | `2ffc6747-9bcb-4fc0-8fe1-c5a3b29bcad7` |
+| Classic PLO8       | `037bc558-ead6-4143-96e4-3e2d641d0daa` | `10f94f40-cfd9-4153-bb2d-bbdab87c61f9` |
+| Classic FLO8       | `966d8e6b-74c0-42cd-90f2-743ce7378fde` | `a262d787-4e03-4dc7-b47b-62231efacaf8` |
 | Classic Short Deck | `36e26d8d-ca2f-4f32-9f20-3b224796075f` | `c1872504-6e92-4fb9-9273-9730d3179a55` |
-| Classic Pineapple | `da86d705-d554-402a-845c-b090d0c72958` | `35085133-43bc-46b2-b621-3a0b335a2318` |
+| Classic Pineapple  | `da86d705-d554-402a-845c-b090d0c72958` | `35085133-43bc-46b2-b621-3a0b335a2318` |
 
 Why they matter: an enabled game is stake supply to the horse fleet (`HorseFleetManager.ts` builds `bandsWithAGameByHost` from every open table of an enabled game). Their 'low' band supply stopped the pilot's low and mid band horses from projecting down to the micro pilot games (`projectStakeBandOnto` in `HorseBehavior.ts` steps a horse down only when its own band has no game on that host). That is why the pilot fill stalled at 8 and 8. Dan approved closing them at 12:19 Chicago. Fix: PR #6992 (section 4.1). Also present in the pilot: 3 "Daily 25 Chip Freezeout" MTTs in REGISTERING with 0 players. Tournaments are not cash stake supply, so they do not block; leave them unless a later fact says otherwise.
 
@@ -184,17 +197,17 @@ Before the shutdown: `563279fc-c09a-48a6-b487-c4f34f289095` (NLH 1/2 Madness, 6-
 
 ### 4.4 Pilot Roster, Funding And Fill Fixes (All Installed)
 
-| PR | Migration | What | Installed |
-| --- | --- | --- | --- |
-| #6910 | `20261015032740_the_lightning_pilot_club_is_a_house_board` | Pilot added to `fn_ca_house_board_allows_automation`; 72 horses admitted via `join_club` source; funded to 40 | yes |
-| #6910 | none | `scripts/ops/lightning-pilot-stage.mjs` (+ test), `.github/workflows/lightning-pilot-stage.yml`; setup script accepts owner plus admitted horses | merged |
-| #6919 | `20261015053941_..._funded_to_the_fleet_bankroll_floo` | Top-up to 200; refused by the ledger guard; marked `SUPERSEDED BY 20261015093554` | never applied |
-| #6930 | `20261015093554_horse_treasury_funding_locks_the_wallets_it_reads_pilot_top_` | Root fix: `fn_seed_horses_to_floor` locks the club row and horse wallets first; then top-up to 200 (moved 11,826.30; treasury 96,820.00 to 84,993.70) | 13:06 UTC |
-| #6956 | `20261015121542_lightning_phase_12_load_chaos_a_seat_waits_for_the_mode_chan` | Race fix: per-cluster advisory lock `hashtextextended('lightning_cluster_mode:'||cluster_id,0)`, shared in the seat trigger, exclusive in the three mode-commit functions. Regression `scripts/dev/fixtures/lightning-mode-change-race.sql` (M1 to M6) in section MR of `scripts/dev/test-lightning-phase12-load-chaos.sh` | 15:24 UTC |
-| #6963 | `20261015141154_lightning_pilot_tables_are_kept_full` | Pilot club fleet policy `occupancy_bias` 9 | 15:05 UTC |
-| #6971 | `20261015152535_lightning_pilot_spins_are_switched_off` | `fn_spin_deactivate` on the pilot | 16:05 UTC |
-| #6971 | `20261015152540_lightning_pilot_roster_plays_cash` | 25 events-lane horses left via `fn_member_leave_to_treasury`; 25 idle cash-lane horses joined; all funded to 200 | 16:26 UTC |
-| #6982 | none | Stage tool reads readiness after preparation, before `enable_lightning` | merged 16:53 |
+| PR    | Migration                                                                     | What                                                                                                                                                  | Installed     |
+| ----- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| #6910 | `20261015032740_the_lightning_pilot_club_is_a_house_board`                    | Pilot added to `fn_ca_house_board_allows_automation`; 72 horses admitted via `join_club` source; funded to 40                                         | yes           |
+| #6910 | none                                                                          | `scripts/ops/lightning-pilot-stage.mjs` (+ test), `.github/workflows/lightning-pilot-stage.yml`; setup script accepts owner plus admitted horses      | merged        |
+| #6919 | `20261015053941_..._funded_to_the_fleet_bankroll_floo`                        | Top-up to 200; refused by the ledger guard; marked `SUPERSEDED BY 20261015093554`                                                                     | never applied |
+| #6930 | `20261015093554_horse_treasury_funding_locks_the_wallets_it_reads_pilot_top_` | Root fix: `fn_seed_horses_to_floor` locks the club row and horse wallets first; then top-up to 200 (moved 11,826.30; treasury 96,820.00 to 84,993.70) | 13:06 UTC     |
+| #6956 | `20261015121542_lightning_phase_12_load_chaos_a_seat_waits_for_the_mode_chan` | Race fix: per-cluster advisory lock `hashtextextended('lightning_cluster_mode:'                                                                       |               | cluster_id,0)`, shared in the seat trigger, exclusive in the three mode-commit functions. Regression `scripts/dev/fixtures/lightning-mode-change-race.sql`(M1 to M6) in section MR of`scripts/dev/test-lightning-phase12-load-chaos.sh` | 15:24 UTC |
+| #6963 | `20261015141154_lightning_pilot_tables_are_kept_full`                         | Pilot club fleet policy `occupancy_bias` 9                                                                                                            | 15:05 UTC     |
+| #6971 | `20261015152535_lightning_pilot_spins_are_switched_off`                       | `fn_spin_deactivate` on the pilot                                                                                                                     | 16:05 UTC     |
+| #6971 | `20261015152540_lightning_pilot_roster_plays_cash`                            | 25 events-lane horses left via `fn_member_leave_to_treasury`; 25 idle cash-lane horses joined; all funded to 200                                      | 16:26 UTC     |
+| #6982 | none                                                                          | Stage tool reads readiness after preparation, before `enable_lightning`                                                                               | merged 16:53  |
 
 Race fix verified postimage `md5(prosrc)`: trigger fn `b6c664923a5407e83a1f41de840fa9a7`, commit_lightning `4d0f4e028c7a0411ac19ca598167a0cb`, abort_pending_off `4ed812c85c1e419f1d6e868463409629`, commit_must_move `0fa9c8d280bcbfd48a72375869b5cf87`.
 
@@ -216,6 +229,7 @@ Phase reporting rule (`FUNCTIONAL-BUILD-PHASES.md`): report "Phase N Of 8 Is Don
 ### 5.3 Phase 3: Calibration And First Real Lightning Hands (In Progress)
 
 Order:
+
 1. **3a. PR #6992** merged and installed (4.1).
 2. **3b. Fleet back on** (3.4). Then confirm the pilot fills: live eligible at least 18 on the 6-max and 27 on the 9-max. Read `fn_cash_cluster_live_eligible(cluster)` and seated counts. Read `ca_horse_fleet_heartbeat` (`detail->>'reason'`, `detail->'gates'`) and `ca_horse_fleet_state` for the 72 pilot horses to see why any horse is not seated (band, rest day, daily cap, activity window `isActiveNow`, four-game limit, one seat per game).
    - If still short after the Classic closure: the next levers each need Dan's own-words approval: swap horses that are busy elsewhere for idle cash-lane horses with suitable activity windows (same pattern as `20261015152540`), or add horses. Do not change the global policy.

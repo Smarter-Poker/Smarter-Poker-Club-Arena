@@ -1,0 +1,22 @@
+{
+  "before": "f481e023244f76359626544c661f9c0f",
+  "after": "7124884d909fa278904c724a8f846f50",
+  "swaps": [
+    {
+      "old": "  v_prev_crit   numeric;\n  v_confirmed   boolean := false;",
+      "new": "  v_prev_crit   numeric;\n  v_prev_crit_001 numeric;\n  v_confirmed   boolean := false;\n  v_critical_confirmed boolean := false;"
+    },
+    {
+      "old": "        v_confirmed := v_prev_chi > v_prev_crit;",
+      "new": "        v_confirmed := v_prev_chi > v_prev_crit;\n        -- The independent window must cross the same critical line, using\n        -- its own pooled degrees of freedom. No overlapping observations.\n        v_prev_crit_001 := (ARRAY[10.828, 13.816, 16.266, 18.467, 20.515,\n                                  22.458, 24.322, 26.125])[LEAST(GREATEST(v_prev_cells - 1, 1), 8)];\n        v_critical_confirmed := v_prev_chi > v_prev_crit_001;"
+    },
+    {
+      "old": "  ELSIF v_n >= 2000 AND v_chi > v_crit_001 THEN",
+      "new": "  ELSIF v_n >= 2000 AND v_chi > v_crit_001 AND v_critical_confirmed THEN"
+    },
+    {
+      "old": "    'prior_window_confirms',   v_confirmed,",
+      "new": "    'prior_window_confirms',   v_confirmed,\n    'prior_window_crit_p001',   v_prev_crit_001,\n    'prior_window_confirms_critical', v_critical_confirmed,\n    'current_window_critical', COALESCE(v_n >= 2000 AND v_chi > v_crit_001, false),"
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 import { pathToFileURL } from 'node:url';
 import { isAbsolute } from 'node:path';
+import { readFileSync } from 'node:fs';
 import {
   readHorseJournalHand,
+  readHorseJournalHandReplay,
   readHorsePlanEffects,
 } from '../services/horseDecisionJournal/review.js';
 import { HorseDecisionJournalStore } from '../services/horseDecisionJournal/store.js';
@@ -68,6 +70,34 @@ export function runHorseJournalReview(args: readonly string[]): { code: number; 
       code: result.gaps.includes('invalid_records') ? 3 : result.gaps.length ? 2 : 0,
       output: JSON.stringify(result) + '\n',
     };
+  }
+  if (args[0] === '--replay') {
+    // P15-A: one retained hand joined to exact-replay verdicts, read-only.
+    if (
+      args.length !== 4 ||
+      !isAbsolute(args[1]!) ||
+      !/^[0-9a-f]{64}$/.test(args[2]!) ||
+      !isAbsolute(args[3]!)
+    )
+      return {
+        code: 64,
+        output:
+          'Usage: horseJournalReview --replay <absolute-private-journal-directory> <SHA256-hand-coordinate> <absolute-exact-replay-verdicts.json>\n',
+      };
+    let verdicts: unknown;
+    try {
+      verdicts = JSON.parse(readFileSync(args[3]!, 'utf8'));
+    } catch {
+      verdicts = null;
+    }
+    if (!Array.isArray(verdicts))
+      return {
+        code: 3,
+        output:
+          JSON.stringify({ replayVerified: false, unverified: { verdicts_unreadable: 1 } }) + '\n',
+      };
+    const result = readHorseJournalHandReplay(args[1]!, args[2]!, verdicts);
+    return { code: result.replayVerified ? 0 : 2, output: JSON.stringify(result) + '\n' };
   }
   if (args.length !== 2 || !isAbsolute(args[0]!) || !/^[0-9a-f]{64}$/.test(args[1]!))
     return {

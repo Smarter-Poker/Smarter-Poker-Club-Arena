@@ -593,15 +593,15 @@ export default function FindPlayerModal({
                                 <dl className={styles.facts}>
                                   <Fact
                                     label="Player"
-                                    value={compactChips(account.wallets.player_wallet)}
+                                    value={formatWalletChips(account.wallets.player_wallet)}
                                   />
                                   <Fact
                                     label="Agent"
-                                    value={compactChips(account.wallets.agent_wallet)}
+                                    value={formatWalletChips(account.wallets.agent_wallet)}
                                   />
                                   <Fact
                                     label="Promo"
-                                    value={compactChips(account.wallets.promo_wallet)}
+                                    value={formatWalletChips(account.wallets.promo_wallet)}
                                   />
                                   <Fact
                                     label="Club Chips"

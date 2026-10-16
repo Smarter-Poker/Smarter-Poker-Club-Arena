@@ -23,7 +23,7 @@ import { reportError } from '../utils/errorReporter';
 import { useUserStore } from '../stores/useUserStore';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { SpadeConsole } from '../components/console/SpadeConsole';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips } from '../utils/format';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { titleCase } from '../utils/titleCase';
 import styles from './AgentPortalPage.module.css';
@@ -508,21 +508,21 @@ export default function AgentPortalPage() {
                   <strong>Business Wallet</strong>
                   <small>Commissions And Settlements</small>
                 </span>
-                <b className="sc-ink--silver">{compactChips(wallet.agentBal)}</b>
+                <b className="sc-ink--silver">{formatWalletChips(wallet.agentBal)}</b>
               </div>
               <div className={styles.moneyRow}>
                 <span>
                   <strong>Play Wallet</strong>
                   <small>Selected Club Balance</small>
                 </span>
-                <b className="sc-ink--blue">{compactChips(wallet.playerBal)}</b>
+                <b className="sc-ink--blue">{formatWalletChips(wallet.playerBal)}</b>
               </div>
               <div className={styles.moneyRow}>
                 <span>
                   <strong>Promo Wallet</strong>
                   <small>Non-Cashable Giveaways</small>
                 </span>
-                <b className="sc-ink--gold">{compactChips(wallet.promoBal)}</b>
+                <b className="sc-ink--gold">{formatWalletChips(wallet.promoBal)}</b>
               </div>
             </section>
 
@@ -535,19 +535,21 @@ export default function AgentPortalPage() {
               <div className={styles.moneyRow}>
                 <span>Limit</span>
                 <b className="sc-ink--silver">
-                  {wallet.isPrepaid ? 'Prepaid' : compactChips(wallet.creditLimit)}
+                  {wallet.isPrepaid ? 'Prepaid' : formatWalletChips(wallet.creditLimit)}
                 </b>
               </div>
               <div className={styles.moneyRow}>
                 <span>Used</span>
-                <b className="sc-ink--red">{compactChips(wallet.isPrepaid ? 0 : wallet.debt)}</b>
+                <b className="sc-ink--red">
+                  {formatWalletChips(wallet.isPrepaid ? 0 : wallet.debt)}
+                </b>
               </div>
               <div className={styles.moneyRow}>
                 <span>Available</span>
                 <b className="sc-ink--green">
                   {wallet.isPrepaid
                     ? 'Not Applicable'
-                    : compactChips(Math.max(0, wallet.creditLimit - wallet.debt))}
+                    : formatWalletChips(Math.max(0, wallet.creditLimit - wallet.debt))}
                 </b>
               </div>
               {!wallet.isPrepaid && wallet.debt > 0 && (
@@ -555,7 +557,7 @@ export default function AgentPortalPage() {
                   <span>
                     <strong className="sc-ink--red">Drawn Credit</strong>
                     <small>
-                      {compactChips(wallet.debt)} Chips Currently Used. Payable Invoices Appear
+                      {formatWalletChips(wallet.debt)} Chips Currently Used. Payable Invoices Appear
                       Below.
                     </small>
                   </span>
@@ -655,7 +657,7 @@ export default function AgentPortalPage() {
                 }}
               >
                 <p id="agent-transfer-description" className="sc-copy sc-copy--center">
-                  Available: {compactChips(wallet.agentBal)} Chips
+                  Available: {formatWalletChips(wallet.agentBal)} Chips
                 </p>
                 <label className={styles.amountLabel} htmlFor="agent-transfer-amount">
                   Amount

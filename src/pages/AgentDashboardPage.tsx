@@ -66,7 +66,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
-import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { fmt, fmtChips, formatWalletChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import AgentBackOffice from '../components/agent/AgentBackOffice';
 
@@ -1416,7 +1416,7 @@ function AgentDashboardContent() {
                       >
                         <span>
                           {' '}
-                          {p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}
+                          {p.chip_balance !== undefined ? formatWalletChips(p.chip_balance) : '...'}
                         </span>
                         <span> {timeAgo(p.profile?.last_played)}</span>
                       </div>
@@ -1688,7 +1688,11 @@ function AgentDashboardContent() {
                           <td style={{ fontWeight: 600 }}>
                             {p.profile ? playerDisplayName(p.profile) : p.user_id?.substring(0, 8)}
                           </td>
-                          <td>{p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}</td>
+                          <td>
+                            {p.chip_balance !== undefined
+                              ? formatWalletChips(p.chip_balance)
+                              : '...'}
+                          </td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                             {timeAgo(lastSeen)}
                           </td>
@@ -1729,7 +1733,8 @@ function AgentDashboardContent() {
                   {agents.map((a: DownlineMember) => (
                     <option key={a.user_id} value={a.user_id}>
                       {a.profile ? playerDisplayName(a.profile) : a.user_id?.slice(0, 8)} (
-                      {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'} Chips)
+                      {a.chip_balance !== undefined ? formatWalletChips(a.chip_balance) : '...'}{' '}
+                      Chips)
                     </option>
                   ))}
                 </select>
@@ -1819,7 +1824,9 @@ function AgentDashboardContent() {
                                   : 'var(--text-secondary)',
                             }}
                           >
-                            {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'}
+                            {a.chip_balance !== undefined
+                              ? formatWalletChips(a.chip_balance)
+                              : '...'}
                           </td>
                         </tr>
                       ))}
@@ -1889,76 +1896,71 @@ function AgentDashboardContent() {
                   />
                 </div>
                 <button
-                    className="admin-btn admin-btn-primary"
-                    disabled={processing || !creditTarget || !creditAmount}
-                    style={{ marginTop: '4px' }}
-                    onClick={async () => {
-                      if (!user?.id || !clubId || walletOperationInFlightRef.current) return;
-                      walletOperationInFlightRef.current = true;
-                      setProcessing(true);
-                      setError(null);
-                      try {
-                        const amt = Number(creditAmount);
-                        assertChipAmount(amt);
-                        /* Every agent is prepaid with no credit line (Dan,
+                  className="admin-btn admin-btn-primary"
+                  disabled={processing || !creditTarget || !creditAmount}
+                  style={{ marginTop: '4px' }}
+                  onClick={async () => {
+                    if (!user?.id || !clubId || walletOperationInFlightRef.current) return;
+                    walletOperationInFlightRef.current = true;
+                    setProcessing(true);
+                    setError(null);
+                    try {
+                      const amt = Number(creditAmount);
+                      assertChipAmount(amt);
+                      /* Every agent is prepaid with no credit line (Dan,
                            October 2026). Funding an agent means sending chips
                            into their agent wallet through fn_agent_wallet_send. */
-                        const resolvedCreditClub = await resolveClubUUID(clubId || '');
-                        const note = creditNotes.trim() || undefined;
-                        await runAgentWalletOperation(
+                      const resolvedCreditClub = await resolveClubUUID(clubId || '');
+                      const note = creditNotes.trim() || undefined;
+                      await runAgentWalletOperation(
+                        {
+                          userId: user.id,
+                          clubId: resolvedCreditClub,
+                          targetId: creditTarget,
+                          kind: 'agent_send',
+                          destination: 'agent_wallet',
+                          amount: amt,
+                        },
+                        async (operation) => {
+                          const { data, error: fundError } = await supabase.rpc(
+                            'fn_agent_wallet_send',
                             {
-                              userId: user.id,
-                              clubId: resolvedCreditClub,
-                              targetId: creditTarget,
-                              kind: 'agent_send',
-                              destination: 'agent_wallet',
-                              amount: amt,
-                            },
-                            async (operation) => {
-                              const { data, error: fundError } = await supabase.rpc(
-                                'fn_agent_wallet_send',
-                                {
-                                  p_club_id: resolvedCreditClub,
-                                  p_to_user_id: creditTarget,
-                                  p_amount: amt,
-                                  p_destination: 'agent_wallet',
-                                  p_reason: note || 'Prepaid funding',
-                                  p_op_id: operation.operationId,
-                                }
-                              );
-                              if (fundError) throw fundError;
-                              if (
-                                !confirmedAgentWalletReceipt(
-                                  data,
-                                  amt,
-                                  'agent_send',
-                                  'agent_wallet'
-                                )
-                              ) {
-                                throw new Error(
-                                  data?.error || 'The Cashier Did Not Confirm That Funding'
-                                );
-                              }
+                              p_club_id: resolvedCreditClub,
+                              p_to_user_id: creditTarget,
+                              p_amount: amt,
+                              p_destination: 'agent_wallet',
+                              p_reason: note || 'Prepaid funding',
+                              p_op_id: operation.operationId,
                             }
                           );
-                        setSuccess(`Prepaid Chips Sent - ${fmtChips(amt)} Chips`);
-                        masterBus.emit('CREDIT_UPDATED', {
-                          clubId: clubId || '',
-                          userId: creditTarget,
-                        });
-                        setCreditAmount('');
-                        setCreditNotes('');
-                        loadDashboard(clubId);
-                      } catch (err: unknown) {
-                        setError(safeErrorMessage(err));
-                      } finally {
-                        walletOperationInFlightRef.current = false;
-                        setProcessing(false);
-                      }
-                    }}
-                  >
-                    {processing ? 'Processing...' : 'Send Prepaid Chips'}
-                  </button>
+                          if (fundError) throw fundError;
+                          if (
+                            !confirmedAgentWalletReceipt(data, amt, 'agent_send', 'agent_wallet')
+                          ) {
+                            throw new Error(
+                              data?.error || 'The Cashier Did Not Confirm That Funding'
+                            );
+                          }
+                        }
+                      );
+                      setSuccess(`Prepaid Chips Sent - ${fmtChips(amt)} Chips`);
+                      masterBus.emit('CREDIT_UPDATED', {
+                        clubId: clubId || '',
+                        userId: creditTarget,
+                      });
+                      setCreditAmount('');
+                      setCreditNotes('');
+                      loadDashboard(clubId);
+                    } catch (err: unknown) {
+                      setError(safeErrorMessage(err));
+                    } finally {
+                      walletOperationInFlightRef.current = false;
+                      setProcessing(false);
+                    }
+                  }}
+                >
+                  {processing ? 'Processing...' : 'Send Prepaid Chips'}
+                </button>
               </div>
             </div>
           </div>

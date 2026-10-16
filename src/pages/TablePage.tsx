@@ -1,6 +1,6 @@
 import { winnerViewportPoint, potViewportPoint } from '../lib/chipAwardGeometry';
 import { observeDealPresentationTiming } from '../utils/dealPresentationTiming';
-import { formatPrizeAtUnit } from '../utils/format';
+import { formatPrizeAtUnit, formatWalletChips } from '../utils/format';
 import {
   getTournamentFormatKind,
   getTournamentEntryCapacity,
@@ -27007,7 +27007,11 @@ function LiveTablePage({
                     telling a funded player "Your Balance 0" beside an enabled
                     spend button. */}
                 <span className="sc-label sc-ink--silver">
-                  {accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}
+                  {accountBalance === null
+                    ? 'Unknown'
+                    : tableState.arenaAsset === 'diamonds'
+                      ? Number(accountBalance).toLocaleString()
+                      : formatWalletChips(accountBalance)}
                 </span>
               </div>
               {buyInSecondsLeft !== null && (

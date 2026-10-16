@@ -981,6 +981,18 @@
         "check-migrations-applied: fn_ca_operator_floor_park_holds and fn_ca_operator_floor_park_share absent from the stale schema snapshot"
       ],
       "liveVerdict": "Read-only production check 2026-10-16: schema_migrations holds exactly these 17360 bytes (MD5 9bcbe6631a8f538fc9b188b4682d9bbe), identical to the authored file in open PR #7050. fn_ca_operator_floor_park_holds(uuid,uuid) exists live, postgres-owned, not SECURITY DEFINER, search_path=public, pg_temp, service_role EXECUTE only. fn_ca_operator_floor_park_share() exists live, postgres-owned SECURITY DEFINER with search_path=public, pg_temp and statement_timeout=10s, service_role EXECUTE only, no anon or authenticated EXECUTE. Nothing is installed or replayed by this recording."
+    },
+    {
+      "version": "20261015180754",
+      "name": "weekly_statement_settled_and_messenger_invoice_threads",
+      "file": "supabase/migrations/20261015180754_weekly_statement_settled_and_messenger_invoice_threads.sql",
+      "md5": "922e8c28f55e49a2c8a88d01fd12071b",
+      "appliedToProductionAt": null,
+      "recoveredOn": "2026-10-16",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7130",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-16: schema_migrations holds this version with a NULL name and ONE statement of exactly 73 bytes, the file name itself (MD5 922e8c28f55e49a2c8a88d01fd12071b). This file is that record and nothing else; it is not executable SQL, records no change, and must never be replayed (the installer reports the version ALREADY-APPLIED). The SQL that ran under this version was not stored by production. What is live from it: public.fn_weekly_statement_issue_settled() (prosrc MD5 9a23bbfc5575db47afe7cd9067f65d82, not SECURITY DEFINER, search_path=public) and trg_weekly_statement_issue_settled BEFORE INSERT ON public.settlement_invoices, which issues a new club_weekly_accounting statement as paid. An authored source whose function body matches that live body byte for byte is on branch agent/antigravity/fix/record-missing-installed-migrations-20261016; it is not recorded here because production does not hold it and later migrations replaced its other function bodies."
     }
   ]
 }

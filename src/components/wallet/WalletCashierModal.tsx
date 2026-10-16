@@ -1,3 +1,4 @@
+import { formatCashierAmountInput, cashierAmountInputValue } from '../../utils/cashierAmount';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  CLUB BANK CASHIER (Dan 2026-08-23, BINDING; Claim Back + Promo Send 2026-08-24)
@@ -545,6 +546,7 @@ export default function WalletCashierModal({
   // every hand's treasury/agent updates across the platform. Money commands
   // still authorize and lock the actual balance inside their transaction.
   const loadClub = useVisibleRead({
+    manualOnly: true,
     scopeKey: `${clubId}:${user?.id}:${walletType}`,
     enabled: isOpen && allowed && Boolean(clubId && user?.id),
     read: (signal) => readCashierBalances(clubId, user!.id, walletType, signal),
@@ -1266,7 +1268,10 @@ export default function WalletCashierModal({
             : `Claimed ${fmtWhole(amt)} Chips Back From ${titleCase(recipient.name)} Into The Club Bank`
           : res.replayed
             ? `That Send Had Already Gone Through. ${fmtWhole(amt)} Chips Are With ${titleCase(recipient.name)}`
-            : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`
+            : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`,
+        undefined,
+        undefined,
+        operation.operationId
       );
       masterBus.emit('CHIPS_DISTRIBUTED', {
         clubId: clubUuid,
@@ -1365,8 +1370,12 @@ export default function WalletCashierModal({
       toast?.success?.(
         res.replayed
           ? `That Claim Had Already Gone Through. ${fmtWhole(Number(res.amount) || 0)} Chips Are Back In Your Agent Wallet`
-          : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${titleCase(row.to_name)}`
+          : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${titleCase(row.to_name)}`,
+        undefined,
+        undefined,
+        operation.operationId
       );
+      addRecipient(row.to_user_id);
       masterBus.emit('BALANCE_UPDATED', { source: 'agent_wallet_claim', userId: user?.id || '' });
       masterBus.emit('BALANCE_UPDATED', {
         source: 'agent_wallet_claim',
@@ -1651,6 +1660,9 @@ export default function WalletCashierModal({
                 : undefined
             }
           >
+            <button type="button" className="cbc-word" disabled={inFlight} onClick={refresh}>
+              Refresh Balances
+            </button>
             <div className="cbc-bank">
               <span>
                 {walletType === 'promo_wallet'
@@ -1948,15 +1960,15 @@ export default function WalletCashierModal({
                     <input
                       id="cbc-amount"
                       className="cbc-input"
-                      type="number"
+                      type="text"
                       /* Whole chips only (see amountIsWhole), so the keypad that
                          comes up is the numeric one rather than the decimal one
                          offering a point the field will then reject. */
                       inputMode="numeric"
                       min={1}
                       step={1}
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
+                      value={formatCashierAmountInput(amount)}
+                      onChange={(e) => setAmount(cashierAmountInputValue(e.target.value))}
                       placeholder="Whole Chips"
                       /* aria-label was the EMPTY STRING, which is worse than
                          absent: it overrides the visible <label> and announces an

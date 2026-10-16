@@ -172,7 +172,12 @@ export function LayeredStyleLine({
     );
   }
   return (
-    <LayeredZoneBox canvas={canvas} zone={noteZone} name="subtitle" className="agc-layered__style-row">
+    <LayeredZoneBox
+      canvas={canvas}
+      zone={noteZone}
+      name="subtitle"
+      className="agc-layered__style-row"
+    >
       {subtitle && (
         <span className="agc-layered__style-word">
           <LayeredFitText

@@ -23,7 +23,7 @@
  *
  * Every colour is an ink the kit already owns (SpadeConsole.css): silver
  * #e4e7ec, white #f4f7fb, blue #45adff, green #c8ffd2, red #ff5b6e, gold
- * #ffd700, muted #9aa5b3. Sizes are cqw against the console. No :hover.
+ * #45adff, muted #9aa5b3. Sizes are cqw against the console. No :hover.
  *
  * metallic-popups.css bevels, wells, rounds and recolours every button and
  * input inside a `[role='dialog']` with `!important` from a zero-specificity
@@ -293,9 +293,9 @@
   font-size: 3.4cqw;
   font-weight: 600;
   text-align: center;
-  color: #ffd700;
+  color: #45adff;
   text-shadow:
-    0 0 1cqw rgb(255 215 0 / 70%),
+    0 0 1cqw rgb(69 173 255 / 30%),
     0 0.25cqw 0 rgb(0 0 0 / 70%);
 }
 
@@ -843,4 +843,12 @@
   .cbc-panel.wcm.ac-popup {
     max-height: 94vh;
   }
+}
+
+.cbc-word {
+  border: 0;
+  background: transparent;
+  color: #45adff;
+  font: inherit;
+  min-height: 44px;
 }

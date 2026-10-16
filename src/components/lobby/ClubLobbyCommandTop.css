@@ -2406,8 +2406,8 @@
    owns the campaign banner, so leaving it as the sticky containing block
    releases the controls as soon as that short wrapper scrolls away. Flatten
    only the wrapper and pin the complete selector deck below whichever real
-   GlobalHeader is mounted (standalone page or "+" tab). GlobalHeader measures
-   its rendered height, including the safe area; the aspect-ratio fallback
+   GlobalHeader is mounted (standalone page or "+" tab) and the visible ticker.
+   GlobalHeader measures its rendered height, including the safe area; the aspect-ratio fallback
    covers the first frame before that measurement lands. */
 @media (max-width: 900px) {
   .club-lobby-machine > .club-lobby-command-top {
@@ -2427,9 +2427,12 @@
 
   .club-lobby-machine > .club-lobby-command-top > .club-lobby-command-top__controls {
     position: sticky;
-    top: var(
-      --ca-global-header-height,
-      var(--ca-in-tab-header-height, calc(env(safe-area-inset-top, 0px) + 10.2vw))
+    top: calc(
+      var(
+          --ca-global-header-height,
+          var(--ca-in-tab-header-height, calc(env(safe-area-inset-top, 0px) + 10.2vw))
+        ) +
+        var(--mtt-ticker-h, 0px)
     );
     z-index: 30;
     isolation: isolate;
@@ -2459,7 +2462,7 @@
    (useHideFooterOnScroll), and only once the deck is pinned under the header.
    This is the whole of the motion: the deck rises by exactly its own height and
    the sort row by its own height plus the deck's, so both park behind the
-   global header (z-index 390, above the deck's 30 and the row's 29). Nothing
+   global header and ticker (both above the deck's 30 and the row's 29). Nothing
    else changes. A sticky element keeps its slot in the flow whatever its
    transform does, so no card moves when they go, and `position`, `top` and
    z-index above are untouched, which is what keeps the sticky pins exact.

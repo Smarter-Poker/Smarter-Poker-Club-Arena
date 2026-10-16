@@ -443,12 +443,10 @@ describe('D-18 .. D-23: the low findings on the dialog slice', () => {
     expect(agent).not.toContain('setProcessing(null)');
   });
 
-  it('the cashout sheet listens to this player and reloads for this club, resolved to a uuid first (G-02)', () => {
+  it('the cashout sheet never auto-refreshes on row or balance events', () => {
     const src = read(CASHOUT);
-    expect(src).toContain("import { resolveClubUUID } from '../../utils/clubIdResolver';");
-    expect(src).toContain('filter: `player_id=eq.${playerId}`,');
-    expect(src).not.toContain('`club_id=eq.${resolved}`');
-    expect(src).toContain('if (!resolved || rowClub === undefined || rowClub === resolved) {');
-    expect(src).toContain('const resolved = clubId ? await resolveClubUUID(clubId) : null;');
+    expect(src).not.toContain("'postgres_changes'");
+    expect(src).not.toContain('masterBus.subscribeDebounced(');
+    expect(src).toContain('void loadPendingCashouts();');
   });
 });

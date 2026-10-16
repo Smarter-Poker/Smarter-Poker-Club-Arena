@@ -97,6 +97,14 @@ export interface LightningIntegrityPairSignal {
   sequential_actions: number;
   fast_follows: number;
   latency_corr: number | null;
+  /** Additive per-hand means in seconds; SQL pools these, never correlations.
+   * n counts only hands where BOTH players actually made a timed decision. */
+  corr_n: number;
+  corr_sx: number;
+  corr_sy: number;
+  corr_sxx: number;
+  corr_syy: number;
+  corr_sxy: number;
 }
 
 export interface LightningIntegritySignals {
@@ -181,8 +189,10 @@ export class LightningIntegrityWindow {
     const acted = [...hand.perPlayer.entries()].map(([id, [s, c]]) => [id, s / c] as const);
     for (let i = 0; i < acted.length; i++)
       for (let j = i + 1; j < acted.length; j++) {
-        const [key, a] = pairKey(acted[i][0], acted[j][0]);
-        const pair = this.pairs.get(key);
+        const [, a] = pairKey(acted[i][0], acted[j][0]);
+        // A hand can finish after reset cleared its deal-window pair. Keep
+        // its paired sample in the completion window exactly once.
+        const pair = this.pair(acted[i][0], acted[j][0]);
         if (!pair) continue;
         const x = a === acted[i][0] ? acted[i][1] : acted[j][1];
         const y = a === acted[i][0] ? acted[j][1] : acted[i][1];
@@ -222,7 +232,7 @@ export class LightningIntegrityWindow {
         };
       });
     const pairs: LightningIntegrityPairSignal[] = [...this.pairs.entries()]
-      .filter(([, p]) => p.hands >= LIGHTNING_INTEGRITY_REPORT_PAIR_MIN_HANDS)
+      .filter(([, p]) => p.hands >= LIGHTNING_INTEGRITY_REPORT_PAIR_MIN_HANDS || p.n > 0)
       .sort((x, y) => y[1].hands - x[1].hands || (x[0] < y[0] ? -1 : 1))
       .slice(0, LIGHTNING_INTEGRITY_REPORT_MAX_PAIRS)
       .map(([key, p]) => {
@@ -234,6 +244,12 @@ export class LightningIntegrityWindow {
           sequential_actions: p.sequential,
           fast_follows: p.fastFollows,
           latency_corr: pearson(p),
+          corr_n: p.n,
+          corr_sx: p.sx / 1_000,
+          corr_sy: p.sy / 1_000,
+          corr_sxx: p.sxx / 1_000_000,
+          corr_syy: p.syy / 1_000_000,
+          corr_sxy: p.sxy / 1_000_000,
         };
       });
     return {

@@ -5,3 +5,6 @@ the Players-style CashierWorkspace directory layout with no large enclosing
 frames. Cashier-owned confirmation and wallet dialogs retain their approved
 SpadeConsole masters, crest, focus handling, number-spinner suppression and
 financial safeguards. No second painted console framework or flat close glyph.
+
+October 15 owner direction: Cashier amounts are grouped as they are typed,
+retain decimal keypads, and use crisp silver/blue ink. No yellow Cashier text.

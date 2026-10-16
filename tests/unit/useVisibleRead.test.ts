@@ -23,6 +23,124 @@ describe('visible authoritative reads', () => {
       await Promise.resolve();
     });
 
+  it.each(['hidden', 'offline'])(
+    'manual Cashier navigation still attempts its first read when %s',
+    async (state) => {
+      visibility = state === 'hidden' ? 'hidden' : 'visible';
+      online = state !== 'offline';
+      const read = vi.fn().mockResolvedValue(100);
+      const onData = vi.fn();
+      const hook = renderHook(() =>
+        useVisibleRead({
+          scopeKey: 'initial-cashier',
+          enabled: true,
+          manualOnly: true,
+          read,
+          onData,
+          onError: vi.fn(),
+        })
+      );
+      await settle();
+      expect(read).toHaveBeenCalledOnce();
+      expect(onData).toHaveBeenLastCalledWith(100, 'initial');
+      act(() => hook.result.current());
+      await settle();
+      expect(read).toHaveBeenCalledTimes(2);
+      expect(onData).toHaveBeenLastCalledWith(100, 'refresh');
+      visibility = 'visible';
+      online = true;
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+        window.dispatchEvent(new Event('online'));
+      });
+      await act(() => vi.advanceTimersByTimeAsync(60_000));
+      expect(read).toHaveBeenCalledTimes(2);
+      hook.unmount();
+    }
+  );
+
+  it('coalesces explicit command readbacks behind an initial hidden Cashier read', async () => {
+    visibility = 'hidden';
+    let finish!: (value: number) => void;
+    const read = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<number>((resolve) => {
+            finish = resolve;
+          })
+      )
+      .mockResolvedValue(80);
+    const hook = renderHook(() =>
+      useVisibleRead({
+        scopeKey: 'hidden-command-cashier',
+        enabled: true,
+        manualOnly: true,
+        read,
+        onData: vi.fn(),
+        onError: vi.fn(),
+      })
+    );
+    act(() => {
+      hook.result.current();
+      hook.result.current();
+    });
+    expect(read).toHaveBeenCalledOnce();
+    await act(async () => finish(100));
+    expect(read).toHaveBeenCalledTimes(2);
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(read).toHaveBeenCalledTimes(2);
+    hook.unmount();
+  });
+
+  it('a deferred cached Cashier read never schedules a background read', async () => {
+    const read = vi.fn().mockResolvedValue(100);
+    const hook = renderHook(() =>
+      useVisibleRead({
+        scopeKey: 'cached-cashier',
+        enabled: true,
+        manualOnly: true,
+        deferInitial: () => true,
+        read,
+        onData: vi.fn(),
+        onError: vi.fn(),
+      })
+    );
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    expect(read).not.toHaveBeenCalled();
+    act(() => hook.result.current());
+    await settle();
+    expect(read).toHaveBeenCalledOnce();
+    hook.unmount();
+  });
+
+  it('Cashier manual mode never reads on time, focus, visibility or reconnect', async () => {
+    const read = vi.fn().mockResolvedValue(100);
+    const hook = renderHook(() =>
+      useVisibleRead({
+        scopeKey: 'cashier',
+        enabled: true,
+        manualOnly: true,
+        read,
+        onData: vi.fn(),
+        onError: vi.fn(),
+      })
+    );
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    act(() => {
+      window.dispatchEvent(new Event('focus'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('online'));
+    });
+    await settle();
+    expect(read).toHaveBeenCalledTimes(1);
+    act(() => hook.result.current());
+    await settle();
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it('reads another session’s changed balance while the view stays open', async () => {
     const read = vi.fn().mockResolvedValueOnce(100).mockResolvedValue(70);
     const onData = vi.fn();

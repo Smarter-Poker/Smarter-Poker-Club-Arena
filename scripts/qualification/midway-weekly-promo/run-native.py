@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Native PG17 weekly promo: actual disbursement, ledger and close trigger.
+Only the due-time dependency is controlled to exercise future weekly closes.
+No remote connection, production players or production writes.
+"""
+import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile
+P=pathlib.Path(__file__).resolve().parent
+R=P.parents[2]
+a=argparse.ArgumentParser();a.add_argument('--output',type=pathlib.Path,required=True);args=a.parse_args()
+O=args.output.resolve();O.mkdir(parents=True,exist_ok=True)
+if os.environ.get('DATABASE_URL'):raise RuntimeError('remote database input forbidden')
+if sys.platform=='darwin' and not str(O).startswith('/Volumes/SmarterWork/agent-work/'):raise RuntimeError('owned SSD output required')
+pg=pathlib.Path(os.environ.get('PG_BIN','/opt/homebrew/opt/postgresql@17/bin' if sys.platform=='darwin' else str(pathlib.Path(shutil.which('psql')).parent)))
+assert ' 17.' in subprocess.check_output([str(pg/'postgres'),'--version'],text=True)
+C=pathlib.Path(tempfile.mkdtemp(prefix='midway-pg-',dir=O.parent));S=C/'s';S.mkdir();port='56743';started=False
+q=[pg/'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-h',S,'-p',port,'-U','postgres','-d','r46_mtt_midway_promo']
+def run(cmd,name,input=None,expect=None,timeout=180):
+ r=subprocess.run([str(x) for x in cmd],input=input,text=True,capture_output=True,timeout=timeout)
+ (O/(name+'.stdout')).write_text(r.stdout);(O/(name+'.stderr')).write_text(r.stderr)
+ if expect:assert r.returncode!=0 and expect in r.stderr,(name,r.stderr[-3000:])
+ else:assert r.returncode==0,(name,r.stderr[-3000:])
+ return r.stdout.strip()
+def sql(s,name,expect=None):return run(q,name,s,expect)
+try:
+ run([pg/'initdb','-D',C/'d','-U','postgres','-A','trust','--no-locale','-E','UTF8'],'init')
+ run([pg/'pg_ctl','-D',C/'d','-l',C/'server.log','-o',f"-k {S} -p {port} -h ''",'-w','start'],'start');started=True
+ run([pg/'createdb','-h',S,'-p',port,'-U','postgres','r46_mtt_midway_promo'],'createdb')
+ foundation=(R/'scripts/qualification/retained18-correction/fixtures/foundation.sql').read_text()
+ # Load the complete captured financial base and its catalog assertions.
+ # Its later tournament-only supplements and synthetic venue are unrelated.
+ foundation=foundation[:foundation.index('SET LOCAL session_replication_role=replica;')]+ 'COMMIT;\n'
+ sql(foundation,'actual-financial-foundation')
+ # Current weekly coordinator added standalone scope after the captured base.
+ sql('ALTER TABLE union_accounting_runs ADD COLUMN standalone_club_id uuid;','current-weekly-run-shape')
+ stores=json.loads((P/'store-coverage.json').read_text())
+ sql("INSERT INTO ca_chip_store_coverage SELECT * FROM jsonb_populate_recordset(NULL::ca_chip_store_coverage,$coverage$"+json.dumps(stores)+"$coverage$) ON CONFLICT(store) DO NOTHING;",'actual-store-coverage')
+ auth=json.loads((P/'authorities.json').read_text())+json.loads((P/'ledger-authorities.json').read_text())
+ for row in auth:
+  assert hashlib.md5(row['definition'].encode()).hexdigest()==row['definition_md5']
+  signature='public.'+row['signature']
+  grants='REVOKE ALL ON FUNCTION '+signature+' FROM PUBLIC,anon,authenticated,service_role;'
+  for role in ['PUBLIC','anon','authenticated','service_role']:
+   if row['acl'] is None and role=='PUBLIC' or row['acl'] and (('=X/' in row['acl'] and role=='PUBLIC' and '{=X/' in row['acl']) or role+'=X/' in row['acl']):
+    grants+='GRANT EXECUTE ON FUNCTION '+signature+' TO '+role+';'
+  sql(row['definition']+';'+grants,row['signature'].split('(')[0]+'-captured-authority')
+  assert sql("SELECT md5(pg_get_functiondef('public."+row['signature']+"'::regprocedure));",row['signature'].split('(')[0]+'-pin')==row['definition_md5']
+ migration=(R/'supabase/migrations/20261016132743_midway_weekly_horse_promo_distribution.sql').read_text()
+ sql(migration.replace('COMMIT;','ROLLBACK;'),'exact-installer-rollback')
+ assert sql("SELECT to_regclass('union_weekly_horse_promo_runs') IS NULL;",'rollback-absence')=='t'
+ sql(migration,'exact-installer')
+ sql(migration,'installer-replay','midway_promo_install_replay')
+ sql((P/'fixture.sql').read_text(),'fixture')
+ sql((P/'regression.sql').read_text(),'regression')
+ import time,importlib.util
+ began=time.monotonic();sql((P/'scale.sql').read_text(),'scale')
+ (O/'scale-duration.json').write_text(json.dumps({'wallets':2002,'seconds':time.monotonic()-began}))
+ spec=importlib.util.spec_from_file_location('midway_concurrency',P/'concurrency.py');race=importlib.util.module_from_spec(spec);spec.loader.exec_module(race);race.qualify(sql,q,O)
+ # Restore the authentic due-time dependency and verify premature payment refusal.
+ calendar=next(x for x in auth if x['signature'].startswith('fn_union_accounting_run_at'))
+ sql(calendar['definition']+';','authentic-due-time-restored')
+ sql("INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result) VALUES('fade0000-0000-0000-0000-000000000001','2099-01-05 08:00Z','2099-01-12 08:00Z','2099-01-12 10:00Z','complete',1,'{\"success\":true}');",'premature-future-close','midway_promo_invalid_completed_week')
+ sql("SELECT jsonb_agg(jsonb_build_object('signature',oid::regprocedure::text,'definition_md5',md5(pg_get_functiondef(oid)),'acl',proacl::text,'security_definer',prosecdef,'config',proconfig,'owner',pg_get_userbyid(proowner))) FROM pg_proc WHERE oid IN('fn_midway_weekly_horse_promo_close()'::regprocedure,'fn_promo_disburse(text,uuid,text,uuid,numeric,text,uuid,uuid)'::regprocedure);",'qualified-postimages')
+ print('PASS native PG17 weekly promo installer, actual money/ledger path and regression')
+ (O/'result.json').write_text(json.dumps({'status':'passed','migration_sha256':hashlib.sha256(migration.encode()).hexdigest(),'production_writes':False,'controlled_dependency':'weekly due-time only; future weekly close simulation','source_authorities':{x['signature']:x['definition_md5'] for x in auth}},indent=2))
+finally:
+ if started:run([pg/'pg_ctl','-D',C/'d','-m','immediate','-w','stop'],'stop')
+ if (C/'server.log').exists():shutil.copyfile(C/'server.log',O/'server.log')
+ shutil.rmtree(C)

@@ -162,6 +162,20 @@ describe('the Diamond Arena prices a fixed-board occurrence at its real total', 
     if (mapped.ok) expect(mapped.config.buyIn).toBe(total);
   });
 
+  it('the 8 PM Prime Time Free Buy is spawnable in the arena: rebuy and add-on at one Diamond', () => {
+    const name = 'Prime Time Free Buy (NLH)';
+    const row = fixedBoardRow(arenaSchedule(name), { fixedBoard: name }, START)!;
+    expect(row.rebuy_cost).toBe(2); // the Midway feature tier
+    const mapped = diamondSpawnConfig(row, { fixedBoard: name }, START);
+    expect(mapped.ok).toBe(true);
+    if (mapped.ok) {
+      expect(mapped.config.buyIn).toBe(0);
+      expect(mapped.config.rebuyCost).toBe(1);
+      expect(mapped.config.addonCost).toBe(1);
+      expect(mapped.config.addonChips).toBe(10000);
+    }
+  });
+
   it('a Free Buy stays free', () => {
     const name = 'Midnight Free Buy (NLH)';
     const row = fixedBoardRow(arenaSchedule(name), { fixedBoard: name }, START)!;

@@ -209,6 +209,19 @@ export function diamondSpawnConfig(
     if (cost === null) return { ok: false, reason: 'diamond_schedule_addon_cost_not_whole' };
     config.addOn = true;
     config.addonCost = cost;
+  }
+  /* AN ARENA FREEROLL'S REBUY AND ADD-ON ARE ONE DIAMOND (Dan 2026-10-06,
+     recorded in ca_diamond_economics: "one_diamond_to_the_prize_pool"). The
+     creation door refuses any other price with
+     diamond_freeroll_rebuy_and_addon_cost_one_diamond, so the Midway Prime
+     Time Free Buy's 2-chip rebuy and add-on (its feature tier) made the
+     arena's 8 PM Free Buy unspawnable every day. The arena's own rule wins
+     for the arena's own event. */
+  if (total === 0) {
+    if (config.rebuyCost !== undefined) config.rebuyCost = 1;
+    if (config.addonCost !== undefined) config.addonCost = 1;
+  }
+  if (addOn) {
     config.addonChips = Math.floor(num(row.addon_chips));
     if (row.addon_levels != null) config.addonLevels = Math.floor(num(row.addon_levels));
   }

@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import {
   completedNaturalRuns,
+  naturalMultiRunEngineIdentity,
   installNaturalMultiRunWitness,
 } from '../e2e/support/naturalMultiRunMobile';
 
@@ -103,4 +104,23 @@ it('observes the visible table rather than a retained hidden table', async () =>
     hands: [],
     violations: [],
   });
+});
+
+const engineSha = '5780828e02d0f9c076f08bb503a4507599465928';
+it('binds actual health with a short display version to its full immutable release', () => {
+  expect(
+    naturalMultiRunEngineIdentity(
+      { version: engineSha.slice(0, 8), releaseSha: engineSha },
+      engineSha
+    )
+  ).toBe(engineSha);
+});
+it.each([
+  { version: engineSha },
+  { version: engineSha, releaseSha: engineSha.slice(0, 8) },
+  { version: engineSha, releaseSha: '0'.repeat(40) },
+])('refuses missing, abbreviated or different immutable engine identity: %j', (health) => {
+  expect(() => naturalMultiRunEngineIdentity(health, engineSha)).toThrow(
+    /exact serving engine releaseSha/
+  );
 });

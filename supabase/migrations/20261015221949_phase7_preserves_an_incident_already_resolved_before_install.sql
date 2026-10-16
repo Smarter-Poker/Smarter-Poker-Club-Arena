@@ -1,5 +1,5 @@
 -- Successor of 20261015182553: preserve already-resolved incidents under row lock.
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_ca_launch_health()'::regprocedure))='8a0ef4270d9396ef148276482c1346c1' AND md5(pg_get_functiondef('public.fn_ca_operator_floor_hold_watchdog()'::regprocedure))='548f8211e96c5856776d7d5725ba9c20' AND to_regprocedure('public.fn_ca_launch_health_tournament_held(uuid,uuid)') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.financial_alerts WHERE id IN ('38fd1e96-4a87-4561-a7bc-31cd1a1c2772','67c3926b-770e-40f4-bffb-c386ba1f56fe','1af6c215-3001-4bc0-b96f-99377501c076','95ae599f-f683-46fd-b60d-8b00be0309d7') AND resolved IS NOT TRUE))
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_ca_launch_health()'::regprocedure))='8a0ef4270d9396ef148276482c1346c1' AND md5(pg_get_functiondef('public.fn_ca_operator_floor_hold_watchdog()'::regprocedure)) IN ('548f8211e96c5856776d7d5725ba9c20','a75ce8a90eaf1bbf6f6b28187233628e') AND to_regprocedure('public.fn_ca_launch_health_tournament_held(uuid,uuid)') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.financial_alerts WHERE id IN ('38fd1e96-4a87-4561-a7bc-31cd1a1c2772','67c3926b-770e-40f4-bffb-c386ba1f56fe','1af6c215-3001-4bc0-b96f-99377501c076','95ae599f-f683-46fd-b60d-8b00be0309d7') AND resolved IS NOT TRUE))
 -- 20261015182553_a_parked_floor_is_not_an_overdue_start_and_the_verified_aler.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
@@ -173,12 +173,18 @@ DECLARE
                         AND EXISTS (SELECT 1 FROM public.tables t WHERE t.id = c.table_id));$anchor$;
  before text;
 BEGIN
+ -- The later owner-lease revision already ignores deleted table closes.
+ -- Keep its lease/page behavior and every byte intact.
+ IF md5(def)='a75ce8a90eaf1bbf6f6b28187233628e' THEN
+  IF NOT EXISTS(SELECT FROM pg_proc WHERE oid=sig AND proowner='postgres'::regrole AND prosecdef AND provolatile='v' AND proconfig=ARRAY['search_path=public, pg_temp','statement_timeout=30s'] AND proacl::text='{postgres=X/postgres,service_role=X/postgres}') THEN RAISE EXCEPTION 'watchdog_security_refused';END IF;
+ ELSE
  IF md5(def)<>'9f8b378e6a8cf3a340fe9c007e680e8a' THEN RAISE EXCEPTION 'watchdog_preimage_refused';END IF;
  IF (length(def)-length(replace(def,o,'')))/length(o)<>1 THEN RAISE EXCEPTION 'watchdog_anchor_refused';END IF;
  SELECT string_agg(concat_ws('|',p.proowner::regrole,p.prosecdef,p.provolatile,array_to_string(p.proconfig,','),array_to_string(p.proacl,',')),';') INTO before FROM pg_proc p WHERE p.oid=sig;
  EXECUTE replace(def,o,n);
  IF md5(pg_get_functiondef(sig))<>'548f8211e96c5856776d7d5725ba9c20' THEN RAISE EXCEPTION 'watchdog_postimage_refused';END IF;
  IF (SELECT string_agg(concat_ws('|',p.proowner::regrole,p.prosecdef,p.provolatile,array_to_string(p.proconfig,','),array_to_string(p.proacl,',')),';') FROM pg_proc p WHERE p.oid=sig) IS DISTINCT FROM before THEN RAISE EXCEPTION 'watchdog_security_refused';END IF;
+ END IF;
 END $watchdog$;
 
 -- 3A. Guard definition drift: the change is a merged, installed migration.

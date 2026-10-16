@@ -353,15 +353,20 @@ END $$;
 DO $$
 DECLARE v_g uuid; p jsonb; i integer;
 BEGIN
-  -- Six passes of history: every one of the twenty has paid a big blind, so
+  -- Eight passes of full-ring history: every one of the twenty has paid a big blind, so
   -- the newcomers (never paid one) lead P2.
-  v_g := pp.cluster('FIRST', 6, 20, 6, '{"first_entry_rule": "big_blind"}'::jsonb);
+  v_g := pp.cluster('FIRST', 6, 20, 8, '{"first_entry_rule": "big_blind"}'::jsonb);
   -- ARRIVALS (fixture boundary): ten newcomers, every second a horse - more
   -- than the pass has big blinds, and holding the rest costs no hand.
   SET CONSTRAINTS ALL DEFERRED;
   FOR i IN 1 .. 10 LOOP PERFORM lc.arrive(v_g, i % 2 = 0); END LOOP;
   SET CONSTRAINTS ALL IMMEDIATE;
   PERFORM public.fx9_pool(v_g);
+  -- TIME TRAVEL: the formation deadline has elapsed, so this fixture
+  -- isolates first-entry fairness rather than fresh-arrival fullness.
+  UPDATE public.lightning_pool_slot SET opened_at = LEAST(opened_at,clock_timestamp() - interval '4 seconds'),
+         idle_since = clock_timestamp() - interval '3 seconds'
+   WHERE cluster_id = v_g AND closed_at IS NULL;
   p := pp.capture('first-entry rule big_blind with ten newcomers (6-max, 30)', v_g);
   IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(p -> 'diagnosis') d WHERE d ->> 'reason_code' = 'FIRST_ENTRY_WAITS_FOR_BB') THEN
     RAISE EXCEPTION 'FAIL 06: no newcomer was held for the big blind, so the rule is not exercised: %', p -> 'diagnosis';
@@ -438,6 +443,36 @@ BEGIN
   END IF;
 END $$;
 \echo '  ok  09 A NEW EPOCH  a real reversion and reconversion; the old epoch''s hands are outside P5''s window'
+-- 10 FULLNESS: exact deadline and legal queue age on the real SQL plan.
+DO $$
+DECLARE g uuid; t timestamptz := clock_timestamp(); ids uuid[]; blocked uuid[]; p jsonb;
+BEGIN
+  g := pp.cluster('FULLNESS',6,18,0);
+  t := clock_timestamp();
+  ids := pp.open_players(g);
+  blocked := ids[3:18];
+  -- TIME TRAVEL: two connected legal players have just become idle. Other
+  -- players are disconnected through the real legality input, not deleted.
+  UPDATE public.lightning_pool_slot SET idle_since=t WHERE cluster_id=g AND closed_at IS NULL;
+  p := public.fn_lightning_match_plan(g,t+interval '2.999 seconds',blocked,'m1',NULL,NULL);
+  IF jsonb_array_length(p->'groups') <> 0 OR (p->>'legal_count')::integer <> 2 THEN
+    RAISE EXCEPTION 'FAIL 10: freshly idle pair formed before deadline: %',p;
+  END IF;
+  p := public.fn_lightning_match_plan(g,t+interval '3 seconds',blocked,'m1',NULL,NULL);
+  IF jsonb_array_length(p->'groups') <> 1 OR jsonb_array_length(p->'groups'->0->'players') <> 2 THEN
+    RAISE EXCEPTION 'FAIL 10: aged pair did not form at deadline: %',p;
+  END IF;
+  -- An old disconnected player cannot release a fresh legal pair early.
+  UPDATE public.lightning_pool_slot SET opened_at=t-interval '2 hours', idle_since=t-interval '1 hour'
+   WHERE cluster_id=g AND player_id=blocked[1] AND closed_at IS NULL;
+  p := public.fn_lightning_match_plan(g,t,blocked,'m1',NULL,NULL);
+  IF jsonb_array_length(p->'groups') <> 0 THEN RAISE EXCEPTION 'FAIL 10: disconnected age released pair'; END IF;
+  IF public.fn_lightning_formation_sizes(8,2,6,6,t,t) <> ARRAY[6]
+     OR public.fn_lightning_formation_sizes(11,2,9,9,t,t) <> ARRAY[9] THEN
+    RAISE EXCEPTION 'FAIL 10: fresh full ring split into short hands';
+  END IF;
+END $$;
+\echo '  ok  10 FULLNESS  real legality and exact 3-second deadline; fresh full rings retain leftovers'
 ASSERT
 
 chain=(-f "$base_fixture" -f "$pop_fixture" -f "$p5_fixture"
@@ -446,6 +481,7 @@ chain=(-f "$base_fixture" -f "$pop_fixture" -f "$p5_fixture"
   -f "$r2a" -f "$r2b" -f "$r2c" -f "$r2d" -f "$p6_fixture" -f "$p6" -f "$s6_fixture" -f "$s6" -f "$s6r" -f "$p7"
   -f "$phase8" -f "$p7r" -f "$fix" -f "$p9d" -f "$p10" -f "$p9r2"
   -f "$fixture/p11-ground.sql" -f "$p11" -f "$p12rg" -f "$fixture/ops-ground.sql" -f "$p12ops" -f "$p12lc"
+  -f "$M/20261015212230_lightning_waits_three_seconds_for_full_rings.sql"
   -f "$fixture/lc-ground.sql" -f "$fixture/parity.sql")
 set +e
 "${PSQL[@]}" "${chain[@]}" > "$fixture/build.out" 2>&1
@@ -457,8 +493,8 @@ if [ "$status" != 0 ]; then
   echo "FAIL: the chain or a fixture did not build (psql exited $status)"
   exit 1
 fi
-oks=$(grep -c -E '^  ok  0[1-9] ' "$fixture/build.out" || true)
-[ "$oks" = 9 ] || { echo "FAIL: $oks of the 9 sections reported"; exit 1; }
+oks=$(grep -c -E '^  ok  (0[1-9]|10) ' "$fixture/build.out" || true)
+[ "$oks" = 10 ] || { echo "FAIL: $oks of the 10 sections reported"; exit 1; }
 n=$(Q "SELECT count(*) FROM pp.out")
 Q "SELECT jsonb_build_object('fixtures', jsonb_agg(doc || jsonb_build_object('discriminates', discriminates) ORDER BY n)) FROM pp.out" > "$fixture/fixtures.json"
 groups=$(Q "SELECT sum(jsonb_array_length(doc -> 'plan' -> 'groups')) FROM pp.out")
@@ -479,4 +515,4 @@ grep -q "^PARITY $n fixtures $groups groups identical" "$fixture/parity.out" \
   || { echo "FAIL: the parity check did not cover every fixture and group ($n fixtures, $groups groups)"; exit 1; }
 grep -q '^DISCRIMINATES ' "$fixture/parity.out" \
   || { echo "FAIL: the pre-remediation port was not shown to differ on the tie fixtures"; exit 1; }
-echo "PASS: the TypeScript matcher port (m1-port and m1) decides exactly what the real fn_lightning_match_plan decides, on PostgreSQL 17 over the real Lightning chain through 20261009151825 under production's default ACLs and autorevoke trigger: $n fixtures ($players open-pool players, $horses of them horses at capture), $groups groups, every group's seats, big blind, small blind and button identical, the same legal count and pool diversity score - ties on idle_since and pool entry, blind debt, several groups per pass, the thin, medium and large bands, the first-entry rule, nine-handed tables, two hands at one instant and a new epoch; and the port without the remediation's keys (the Cluster join, the slot's opening, the hand ids) is shown to differ on the two tie fixtures"
+echo "PASS: the TypeScript matcher port (m1-port and m1) decides exactly what the real fn_lightning_match_plan decides, on PostgreSQL 17 over the real Lightning chain through the 20261015212230 full-ring correction under production's default ACLs and autorevoke trigger: 10 sections, $n fixtures ($players open-pool players, $horses of them horses at capture), $groups groups, every group's seats, big blind, small blind and button identical, the same legal count and pool diversity score - ties on idle_since and pool entry, blind debt, several groups per pass, the thin, medium and large bands, the first-entry rule, nine-handed tables, two hands at one instant and a new epoch; and the port without the remediation's keys (the Cluster join, the slot's opening, the hand ids) is shown to differ on the two tie fixtures"

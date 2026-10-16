@@ -685,6 +685,7 @@ async function measureChrome(page: Page) {
       sortbarIsTopmost: sortbar === hit || sortbar.contains(hit),
       deckTop: r('.club-lobby-command-top__controls').top,
       deckBottom: r('.club-lobby-command-top__controls').bottom,
+      headerBottom: r('.fx-header').bottom,
       frameBottom: r('.bottomNav .artwork').bottom,
       viewportBottom: edgeBottom,
     };
@@ -711,7 +712,7 @@ test.describe('mobile lobby chrome', () => {
           await page.evaluate(() => window.scrollTo(0, 700));
           const m = await measureChrome(page);
           expect(
-            Math.abs(m.deckTop - HEADER_HEIGHT_PX - height),
+            Math.abs(m.deckTop - m.headerBottom - height),
             'the ticker covers the selector deck'
           ).toBeLessThan(1);
           expect(
@@ -728,10 +729,13 @@ test.describe('mobile lobby chrome', () => {
               return {
                 padding: parseFloat(getComputedStyle(root).scrollPaddingTop),
                 bottom: row.bottom,
+                // Mobile WebKit reports client rects relative to its panned
+                // visual viewport; scroll padding uses layout coordinates.
+                visualOffset: window.visualViewport?.offsetTop ?? 0,
               };
             });
             expect(
-              Math.abs(focus.padding - focus.bottom),
+              Math.abs(focus.padding - focus.bottom - focus.visualOffset),
               'native focus scrolls behind the ticker'
             ).toBeLessThan(1);
           }

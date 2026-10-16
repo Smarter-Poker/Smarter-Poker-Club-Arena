@@ -14,7 +14,7 @@
  *           cards_id, face_deck_id
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import {
   TABLE_SKINS,
   TABLE_BACKGROUNDS,
@@ -39,6 +39,7 @@ import {
   isCardBackUnlocked,
 } from './CardImage';
 import { supabase } from '../../lib/supabase';
+import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import { useToast } from '../common/Toast';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './ControlThemeTokens.css';
@@ -708,7 +709,17 @@ export function ThemeSettingsModal({
   const toast = useToast();
   const [activeTab, setActiveTab] = useState<ThemeTab>('themes');
   const [backgroundGroup, setBackgroundGroup] = useState<BackgroundGroup>('places-rooms');
-  const [gameType, setGameType] = useState<string>('ALL');
+  const scopeKey = `ca_table_studio_scope:${userId || 'guest'}`;
+  const readScope = () => {
+    const saved = getLocalStorage<string>(scopeKey, 'ALL');
+    return (GAME_TYPES as readonly string[]).includes(saved) ? saved : 'ALL';
+  };
+  const [gameType, setGameType] = useState<string>(readScope);
+  useLayoutEffect(() => {
+    setGameType(readScope());
+    // Read only on account handoff; opening the Studio keeps this selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey]);
   const [selection, setSelection] = useState<ThemeSelection>({ ...DEFAULT_SELECTION });
   const [saving, setSaving] = useState(false);
   const [previewFinalTable, setPreviewFinalTable] = useState(false);
@@ -2158,6 +2169,7 @@ export function ThemeSettingsModal({
                   value={gameType}
                   onChange={(e) => {
                     gameTypeRef.current = e.target.value;
+                    setLocalStorage(scopeKey, e.target.value);
                     setGameType(e.target.value);
                   }}
                 >

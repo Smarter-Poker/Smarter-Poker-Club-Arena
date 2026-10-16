@@ -98,3 +98,15 @@ DO $$ DECLARE c uuid:='00000000-0000-0000-0000-000000000001'; a uuid:='00000000-
  r:=fn_agent_wallet_claim_back_phase2_core_20260831(c,tx,NULL,NULL,gen_random_uuid()); ASSERT r->>'success'='false';
 END $$;
 SELECT 'selected-wallet-credit-and-expiry-passed';
+-- A Player Wallet send owns its journal context just as the retained agent
+-- core does. An outer tournament/settlement must never mark these chip legs.
+DO $$ DECLARE operation uuid:=gen_random_uuid(); r jsonb; BEGIN
+ PERFORM set_config('app.ledger_tournament','00000000-0000-0000-0000-000000000abc',true);
+ PERFORM set_config('app.ledger_settlement','00000000-0000-0000-0000-000000000def',true);
+ r:=fn_cashier_player_wallet_send('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000003',1,'promo_wallet',NULL,operation);
+ ASSERT r->>'success'='true',r::text;
+ ASSERT (SELECT tournament_id IS NULL FROM journal WHERE journal.op='cashier_player_send:'||operation::text),'Player Wallet Send Inherited An Outer Tournament';
+ ASSERT current_setting('app.ledger_tournament',true)='00000000-0000-0000-0000-000000000abc';
+ ASSERT current_setting('app.ledger_settlement',true)='00000000-0000-0000-0000-000000000def';
+END $$;
+SELECT 'selected-player-wallet-context-passed';

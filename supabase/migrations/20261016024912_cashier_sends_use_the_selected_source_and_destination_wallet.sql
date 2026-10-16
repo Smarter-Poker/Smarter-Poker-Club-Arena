@@ -1290,7 +1290,9 @@ BEGIN
  IF (p_destination='player_wallet' AND target_role='admin') OR (p_destination<>'player_wallet' AND target_role NOT IN ('owner','co_owner','admin','super_agent','agent','sub_agent')) THEN RETURN jsonb_build_object('success',false,'error','Recipient Does Not Hold That Wallet'); END IF;
  SELECT coalesce(chip_balance,0) INTO before_balance FROM public.club_members WHERE club_id=p_club_id AND user_id=actor;
  IF before_balance IS NULL OR before_balance<p_amount THEN RETURN jsonb_build_object('success',false,'error','Insufficient Player Wallet Balance'); END IF;
- SELECT jsonb_object_agg(k,coalesce(current_setting(k,true),'')) INTO context FROM unnest(ARRAY['app.ledger_category','app.ledger_counterparty','app.ledger_counterparty_entity','app.ledger_counterparty_label','app.ledger_correlation','app.ledger_idempotency_key','app.ledger_autoskip_agents','app.ledger_autoskip_club_members']) settings(k);
+ SELECT jsonb_object_agg(k,coalesce(current_setting(k,true),'')) INTO context FROM unnest(ARRAY['app.ledger_category','app.ledger_counterparty','app.ledger_counterparty_entity','app.ledger_counterparty_label','app.ledger_correlation','app.ledger_idempotency_key','app.ledger_autoskip_agents','app.ledger_autoskip_club_members','app.ledger_tournament','app.ledger_settlement']) settings(k);
+ PERFORM set_config('app.ledger_tournament','',true);
+ PERFORM set_config('app.ledger_settlement','',true);
  PERFORM public.fn_ca_declare_ledger('transfer','player_wallet',actor,NULL,'cashier_player_send:'||p_op_id::text,ARRAY['club_members','agents']);
  PERFORM set_config('app.ledger_correlation',p_op_id::text,true);
  UPDATE public.club_members SET chip_balance=coalesce(chip_balance,0)-p_amount,updated_at=now() WHERE club_id=p_club_id AND user_id=actor RETURNING chip_balance INTO after_balance;
@@ -1313,7 +1315,6 @@ $function$;
 REVOKE ALL ON FUNCTION public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid) TO authenticated,service_role;
 
-COMMIT;
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_agent_wallet_send_core_20260830(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '2d807b4c20c90e6fd5bc65c7257ee25f')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_agent_wallet_send_phase2_core_20260831(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '745d085a40e2134c08b0cf4bd7ab7baa')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_agent_wallet_claim_back_phase2_core_20260831(uuid,uuid,numeric,text,uuid)'::regprocedure)) = '5de5e8e5528036ef643e43150e5f37cf')
@@ -1322,4 +1323,5 @@ COMMIT;
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_batch_transfer(uuid,text,jsonb,uuid)'::regprocedure)) = '859bb844228d65085bf134c4dbd8b32b')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_operation_intent_guard()'::regprocedure)) = '60350724279387da3b548bd370d082db')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_recipient_wallet_balances(uuid,uuid[])'::regprocedure)) = '54b0da3ecb0744f88ada5cdf391e531c')
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '1e91c2c8b643c70d149cfe3c5e2e1eeb')
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '2697ce061ec1b7436fc8ae825129d649')
+COMMIT;

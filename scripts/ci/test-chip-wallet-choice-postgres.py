@@ -78,6 +78,7 @@ try:
     selected_migration=(ROOT/'supabase/migrations/20261016024912_cashier_sends_use_the_selected_source_and_destination_wallet.sql').read_text()
     if not args.selected_baseline:
         query(selected_migration)
+        print('NEW_PLAYER_FUNCTION_HASH',query("SELECT md5(pg_get_functiondef('public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)'::regprocedure));").strip(),flush=True)
         for proof in re.findall(r'^-- @live-proof: (.+)$', selected_migration, re.M):
             assert query('SELECT '+proof+';').strip() == 't', proof
     if args.intent_guard_baseline:

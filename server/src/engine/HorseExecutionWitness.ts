@@ -582,9 +582,24 @@ export function createHorseExecutionWitness(
   };
 }
 
+/**
+ * WHY A WITNESS WAS RETIRED, PER LANE (2026-10-16).
+ *
+ * `not_executed` alone could not tell a defect from design: on 2026-10-16
+ * (horse_brain_telemetry) 102,855 of 105,737 deep second looks ended
+ * `not_executed`, and the counter could not say whether those were second
+ * looks that agreed with the fast answer (the deep witness is retired
+ * `second_look_unchanged` by design: the fast decision executes), deep
+ * results that came back after the turn moved on (`response_fence`,
+ * `caller_settled`) or failures (`brain_exception`). Each retirement now also
+ * counts its reason under the lane's family, e.g.
+ * `phase15_deep_execution_retired_second_look_unchanged`.
+ */
 function countFinal(witness: HorseExecutionWitness): void {
   noteFire(`phase15_execution_${witness.executionStatus}`);
   noteFire(`phase15_${witness.identity.lane}_execution_${witness.executionStatus}`);
+  if (witness.executionStatus === 'not_executed' && witness.retirementReason)
+    noteFire(`phase15_${witness.identity.lane}_execution_retired_${witness.retirementReason}`);
   const callback = finalizers.get(witness);
   finalizers.delete(witness);
   try {

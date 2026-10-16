@@ -6,11 +6,22 @@
 // operation replays instead of acting twice. Readiness is read and recorded
 // before any enable. It only ever touches the two named private pilot games of
 // the Lightning Internal Pilot club; any other Cluster, a public game, a
-// no_go verdict or a blocking reason stops it before the first action.
+// no_go verdict or a blocking reason stops activation. Explicit recovery and
+// review actions stay available through their existing audited doors.
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { PILOT, PILOT_TARGETS, pilotServiceFetch } from './prepare-lightning-private-pilot.mjs';
+
+export const PILOT_RECOVERY_CONTROLS = Object.freeze([
+  'pause',
+  'resume',
+  'disable_joins',
+  'enable_joins',
+  'freeze',
+  'unfreeze',
+  'rollback_matcher_version',
+]);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -35,8 +46,23 @@ export const STAGE_PLAN = Object.freeze({
     ]),
     gated: Object.freeze([['enable_lightning', {}]]),
   }),
-  form: Object.freeze({ prepare: Object.freeze([]), gated: Object.freeze([['set_worker_mode', { mode: 'form' }]]) }),
-  drain: Object.freeze({ prepare: Object.freeze([['drain', {}]]), gated: Object.freeze([]), ungated: true }),
+  form: Object.freeze({
+    prepare: Object.freeze([]),
+    gated: Object.freeze([['set_worker_mode', { mode: 'form' }]]),
+  }),
+  drain: Object.freeze({
+    prepare: Object.freeze([['drain', {}]]),
+    gated: Object.freeze([]),
+    ungated: true,
+  }),
+  access: Object.freeze({ prepare: Object.freeze([]), gated: Object.freeze([]), ungated: true }),
+  off: Object.freeze({
+    prepare: Object.freeze([['set_worker_mode', { mode: 'off' }]]),
+    gated: Object.freeze([]),
+    ungated: true,
+  }),
+  review: Object.freeze({ prepare: Object.freeze([]), gated: Object.freeze([]), ungated: true }),
+  control: Object.freeze({ prepare: Object.freeze([]), gated: Object.freeze([]), ungated: true }),
   report: Object.freeze({ prepare: Object.freeze([]), gated: Object.freeze([]), ungated: true }),
 });
 
@@ -62,9 +88,7 @@ export function assertStageReadiness(stage, readiness) {
   if (!accepted) return;
   const reasons = Array.isArray(readiness.reasons) ? readiness.reasons : null;
   if (!reasons) throw new Error('Readiness Reasons Unreadable; No Stage Action Taken');
-  const blocking = reasons.filter(
-    (r) => r?.severity === 'blocking' || !accepted.includes(r?.code)
-  );
+  const blocking = reasons.filter((r) => r?.severity === 'blocking' || !accepted.includes(r?.code));
   if (readiness.verdict !== 'go' && blocking.length > 0)
     throw new Error(
       `Readiness Has Reasons This Stage Does Not Accept: ${blocking.map((r) => r?.code).join(',')}`
@@ -89,13 +113,18 @@ export function assertStageTarget(game, clubId) {
   return target;
 }
 
-export async function runPilotStage(env = process.env, clientFactory) {
+export async function runPilotStage(env = process.env, clientFactory, accessRunner) {
   const stage = env.PILOT_STAGE;
   if (!Object.hasOwn(STAGE_ACTIONS, stage)) throw new Error('Unknown Pilot Stage');
+  const controlAction = env.PILOT_CONTROL_ACTION ?? '';
+  if (stage === 'control' && !PILOT_RECOVERY_CONTROLS.includes(controlAction))
+    throw new Error('An Explicit Supported Pilot Recovery Control Is Required');
   const operationId = env.PILOT_OPERATION_ID ?? '';
   if (stage !== 'report' && !UUID.test(operationId))
     throw new Error('A Stage Action Requires An Operation UUID');
   const reason = (env.PILOT_REASON ?? '').trim();
+  if (stage === 'review' && reason.length > 1800)
+    throw new Error('Review Note Exceeds Its Recorded Bound');
   if (stage !== 'report' && reason.length < 12) throw new Error('A Stage Action Requires A Reason');
   if (
     env.SP_EMAIL?.toLowerCase() !== PILOT.ownerEmail ||
@@ -124,16 +153,33 @@ export async function runPilotStage(env = process.env, clientFactory) {
     .map((s) => Number(s.trim()))
     .filter((n) => n === 6 || n === 9);
   if (wanted.length === 0) throw new Error('No Pilot Target Selected');
-  const report = { stage, operationId: operationId || null, startedAt: new Date().toISOString(), clusters: [] };
+  const signalId = Number(env.PILOT_SIGNAL_ID);
+  if (
+    stage === 'review' &&
+    (wanted.length !== 1 || !Number.isSafeInteger(signalId) || signalId < 1 || signalId > 7)
+  )
+    throw new Error('Review Requires One Target And One Of The Seven Investigated Pilot Findings');
+  const report = {
+    stage,
+    operationId: operationId || null,
+    startedAt: new Date().toISOString(),
+    clusters: [],
+  };
   let primaryError;
   try {
     const login = must(
       await player.auth.signInWithPassword({ email: env.SP_EMAIL, password: env.SP_PASS }),
       'Service Login'
     );
-    if (login.user?.id !== PILOT.ownerId) throw new Error('Authenticated Service Identity Mismatch');
+    if (login.user?.id !== PILOT.ownerId)
+      throw new Error('Authenticated Service Identity Mismatch');
     const club = must(
-      await admin.from('clubs').select('id,owner_id,name,is_public').eq('owner_id', PILOT.ownerId).eq('name', PILOT.name).maybeSingle(),
+      await admin
+        .from('clubs')
+        .select('id,owner_id,name,is_public')
+        .eq('owner_id', PILOT.ownerId)
+        .eq('name', PILOT.name)
+        .maybeSingle(),
       'Pilot Club'
     );
     if (!club?.id || club.is_public !== false) throw new Error('Pilot Club Missing Or Public');
@@ -154,6 +200,79 @@ export async function runPilotStage(env = process.env, clientFactory) {
       report.clusters.push(entry);
       staged.push({ game, entry });
     }
+    if (stage === 'access') {
+      const run = accessRunner ?? (await import('./lightning-pilot-access.mjs')).runPilotAccess;
+      const chromium = accessRunner ? null : (await import('@playwright/test')).chromium;
+      const WebSocket = accessRunner ? null : (await import('ws')).default;
+      try {
+        report.access = await run({
+          admin,
+          player,
+          createClient,
+          url: env.SUPABASE_URL,
+          games: staged.map((s) => s.game),
+          operationId,
+          requestId: stageRequestId(operationId, club.id, 'pending_access_proof'),
+          chromium,
+          WebSocket,
+        });
+      } catch (error) {
+        report.access = error.pilotAccessReport ?? { verdict: 'unknown' };
+        throw error;
+      }
+    }
+    // A review is an explicit operator judgment on one investigated finding,
+    // never a bulk clear or launch certificate. Preserve the original evidence.
+    if (stage === 'review') {
+      const { game, entry } = staged[0];
+      const detail = must(
+        await player.rpc('fn_lightning_operator_cluster', {
+          p_cluster_id: game.id,
+          p_from: '2026-10-15T20:00:00Z',
+          p_to: new Date().toISOString(),
+        }),
+        'Signal Evidence'
+      );
+      const note = `${reason} [operation ${operationId}]`;
+      const matches = Array.isArray(detail?.integrity_signals)
+        ? detail.integrity_signals.filter((s) => Number(s.id) === signalId)
+        : [];
+      const signal = matches[0];
+      if (
+        game.cluster_mode !== 'must_move' ||
+        game.lightning_enabled !== false ||
+        !Number.isFinite(Date.parse(signal?.evidence?.latest_window_end)) ||
+        Date.parse(signal.evidence.latest_window_end) > Date.parse('2026-10-15T20:55:08.098Z') ||
+        signal.evidence.correlation_method != null ||
+        detail?.ok !== true ||
+        detail.cluster_id !== game.id ||
+        matches.length !== 1 ||
+        signal.pattern_type !== 'TIMING_CORRELATION' ||
+        signal.source !== 'engine' ||
+        signal.severity !== 'high' ||
+        !['open', 'reviewed'].includes(signal.status) ||
+        (signal.status === 'reviewed' && signal.notes !== note)
+      )
+        throw new Error(
+          'Investigated Signal Evidence Missing, Changed Or Already Reviewed By Another Operation'
+        );
+      entry.signalBefore = signal;
+      const answer = must(
+        await player.rpc('fn_lightning_operator_signal_review', {
+          p_signal_id: signalId,
+          p_status: 'reviewed',
+          p_note: note,
+        }),
+        'Signal Review'
+      );
+      entry.actions.push({ action: 'signal_review', signalId, answer });
+      if (
+        answer?.ok !== true ||
+        Number(answer.signal_id) !== signalId ||
+        answer.status !== 'reviewed'
+      )
+        throw new Error('Signal Review Refused Or Unreadable; Recover This Same Operation');
+    }
     const act = async (game, entry, action, args) => {
       const requestId = stageRequestId(operationId, game.id, action);
       const answer = must(
@@ -170,7 +289,14 @@ export async function runPilotStage(env = process.env, clientFactory) {
         throw new Error(`${action} Still In Progress; Retry The Same Operation ID`);
       if (answer?.ok !== true) throw new Error(`${action} Refused: ${answer?.code ?? 'UNKNOWN'}`);
     };
-    const plan = STAGE_PLAN[stage];
+    // Recovery controls do not enable Lightning or form hands. Like drain,
+    // they remain available when readiness is no_go. One action per dispatch
+    // preserves the original request on a partial result; never auto-restore
+    // an earlier state after an unknown or refused answer.
+    const plan =
+      stage === 'control'
+        ? { prepare: [], gated: [[controlAction, {}]], ungated: true }
+        : STAGE_PLAN[stage];
     for (const { game, entry } of staged)
       for (const [action, args] of plan.prepare) await act(game, entry, action, args);
     // Readiness, read and recorded on every target, gates the stage's gated actions.
@@ -198,9 +324,11 @@ export async function runPilotStage(env = process.env, clientFactory) {
     report.error = String(error?.message ?? error);
   } finally {
     const out = await player.auth.signOut({ scope: 'local' }).catch((e) => ({ error: e }));
+    report.serviceSessionCleanup = out?.error ? 'unverified' : 'local_signout_confirmed';
     if (out?.error && !primaryError) primaryError = new Error('Service Session Cleanup Failed');
     report.completedAt = new Date().toISOString();
-    if (env.PILOT_STAGE_REPORT_PATH) writeFileSync(env.PILOT_STAGE_REPORT_PATH, JSON.stringify(report, null, 2) + '\n');
+    if (env.PILOT_STAGE_REPORT_PATH)
+      writeFileSync(env.PILOT_STAGE_REPORT_PATH, JSON.stringify(report, null, 2) + '\n');
   }
   if (primaryError) throw primaryError;
   return report;
@@ -208,7 +336,17 @@ export async function runPilotStage(env = process.env, clientFactory) {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   runPilotStage().then(
-    (r) => console.log(JSON.stringify({ stage: r.stage, clusters: r.clusters.map((c) => ({ handedness: c.handedness, clusterId: c.clusterId, actions: c.actions.map((a) => [a.action, a.answer?.ok]) })) })),
+    (r) =>
+      console.log(
+        JSON.stringify({
+          stage: r.stage,
+          clusters: r.clusters.map((c) => ({
+            handedness: c.handedness,
+            clusterId: c.clusterId,
+            actions: c.actions.map((a) => [a.action, a.answer?.ok]),
+          })),
+        })
+      ),
     (e) => {
       console.error(String(e?.message ?? e));
       process.exitCode = 1;

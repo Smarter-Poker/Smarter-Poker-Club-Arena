@@ -1,0 +1,7 @@
+# Lightning Boot Keeps Connected Anchor Presence
+
+All 45 pilot sessions expired as disconnected at 21:00:55 UTC after the October 15 hourly restart. The regular matcher already reads connected anchor-engine and Lightning-room reports, with a connected observation winning over a stale disconnect. GameServer's one boot presence pass instead supplied only `lightningRooms.hasClusterSocket`. A player with a live anchor input but no Lightning-room socket was therefore marked disconnected and later expired, even though the normal matcher could see them.
+
+The boot pass now consumes GameServer's same complete presence source through the existing LightningPresence merger. It snapshots the reports once per pass, preserves cluster scope and CONNECTED precedence, and treats an unreadable source as unknown rather than inventing disconnect observations. It keeps the existing one-shot boot timing and ordinary reporter path. No horse flag, exemption, presence override, repair loop, new scheduler or money/session write was introduced.
+
+Three baseline regressions fail and pass after repair: connected anchor presence without a room socket, unreadable authority, and production caller wiring. The absent/other-cluster counterexample still disconnects. The existing nineteen reconnect/presence regressions also pass. Actual post-release maintenance recovery remains required; these tests do not certify a live restart or reopen the drained pilot.

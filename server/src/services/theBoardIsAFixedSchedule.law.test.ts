@@ -395,6 +395,19 @@ describe('no two tournaments start at the same time, and the starts are spread t
     }
   });
 
+  it("the clubs' own events were moved onto exactly the reserved weekly slots", () => {
+    const file = readdirSync(migrationsDir).find((f) =>
+      f.includes('the_clubs_own_events_move_off_the_board_slots')
+    );
+    expect(file, 'migration 20261016210343').toBeTruthy();
+    const sql = readFileSync(join(migrationsDir, file!), 'utf8');
+    const m = /IF v_slots IS DISTINCT FROM ARRAY\[([^\]]+)\]::text\[\]/.exec(sql);
+    expect(m, 'the reserved-slot assertion').toBeTruthy();
+    const slots = m![1].split(',').map((x) => x.trim().replace(/'/g, ''));
+    expect(slots).toEqual([...WEEKLY_EVENT_SLOTS]);
+    expect(sql).toContain("'startTimesEffectiveFrom', '2026-10-17'");
+  });
+
   it('the five Free Buys keep their five hours', () => {
     for (const slot of FREE_BUY_SLOTS) {
       const e = FIXED_BOARD.find((x) => x.name === freeBuyBoardName(slot))!;

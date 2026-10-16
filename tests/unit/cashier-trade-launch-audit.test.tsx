@@ -82,6 +82,20 @@ vi.mock('../../src/core/MasterBus', () => ({
   },
   useMasterBusSubscription: vi.fn(),
 }));
+vi.mock('../../src/services/cashierBalanceRead', async (original) => ({
+  ...(await original<typeof import('../../src/services/cashierBalanceRead')>()),
+  readCashierBalances: vi.fn(async () => ({
+    bank: state.agentWallet,
+    clubBank: 1000,
+    promoFloat: 300,
+    promoPot: 400,
+    credit: 0,
+    hasFloat: true,
+    clubId: CLUB_A,
+    name: 'Alpha Club',
+    inUnion: false,
+  })),
+}));
 vi.mock('../../src/services/UnionService', () => ({
   UnionService: { getOwnedUnions: vi.fn(async () => []) },
 }));
@@ -227,7 +241,10 @@ beforeEach(() => {
       table === 'club_members'
         ? { data: { role: state.myRole, chip_balance: 250 }, error: null }
         : table === 'agents'
-          ? { data: { agent_wallet_balance: state.agentWallet }, error: null }
+          ? {
+              data: { agent_wallet_balance: state.agentWallet, promo_wallet_balance: 300 },
+              error: null,
+            }
           : { data: null, error: null }
     );
     builder.then = (done: (value: unknown) => unknown, fail: (reason: unknown) => unknown) => {
@@ -247,6 +264,19 @@ beforeEach(() => {
               owner_id: USER_ID,
             },
           })),
+          error: null,
+        };
+      } else if (table === 'club_members' && call.columns === 'user_id, chip_balance') {
+        value = { data: state.roster, error: null };
+      } else if (table === 'agents' && call.columns.includes('user_id,')) {
+        value = {
+          data: state.roster
+            .filter((row) => row.role !== 'player')
+            .map((row) => ({
+              user_id: row.user_id,
+              agent_wallet_balance: 340,
+              promo_wallet_balance: 80,
+            })),
           error: null,
         };
       } else if (table === 'chip_requests' && call.head) {
@@ -269,6 +299,16 @@ beforeEach(() => {
   vi.mocked(supabase.rpc).mockImplementation((name: string, args?: unknown) => {
     const params = (args ?? {}) as Record<string, unknown>;
     state.rpcCalls.push({ name, args: params });
+    if (name === 'fn_cashier_recipient_wallet_balances')
+      return Promise.resolve({
+        data: state.roster.map((row) => ({
+          user_id: row.user_id,
+          player_wallet: row.chip_balance,
+          agent_wallet: row.role !== 'player' ? 340 : null,
+          promo_wallet: row.role !== 'player' ? 80 : null,
+        })),
+        error: null,
+      }) as never;
     if (name === 'fn_cashier_conservation_report') {
       return Promise.resolve({
         data: {
@@ -1150,8 +1190,14 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   // sender's own balance, and no paragraph of words.
   const card = within(dialog).getByRole('region', { name: 'Selected Player' });
   expect(card).toHaveTextContent('First Agent');
-  expect(card).toHaveTextContent('120');
-  expect(card).toHaveTextContent('Player Wallet, Sending To Agent Wallet');
+  await waitFor(() => expect(card).toHaveTextContent('340'));
+  expect(
+    within(card).getByRole('combobox', { name: 'Recipient Wallet For First Agent' })
+  ).toHaveValue('agent_wallet');
+  expect(card).not.toHaveTextContent('Sending To');
+  expect(within(card).getByRole('option', { name: 'Promo Wallet: 80' })).toBeInTheDocument();
+  fireEvent.change(within(card).getByRole('combobox'), { target: { value: 'player_wallet' } });
+  expect(within(card).getByRole('option', { name: 'Player Wallet: 120' })).toBeInTheDocument();
   expect(within(dialog).getByRole('region', { name: 'From Your Agent Wallet' })).toHaveTextContent(
     '500'
   );
@@ -1572,6 +1618,20 @@ describe('Simple And Advanced Action Recovery Audit', () => {
     seconds_left: 500,
   };
 
+  it('names the actual Promo Wallet on a reversible Agent Wallet send', async () => {
+    state.myRole = 'agent';
+    state.reversible = async () => ({
+      data: [{ ...recentSend, destination: 'promo_wallet' }],
+      error: null,
+    });
+    mountCashier();
+    await synchronized();
+    fireEvent.click(screen.getByRole('button', { name: 'Claim Back', exact: true }));
+    const dialog = await screen.findByRole('dialog', { name: 'Claim Back', exact: true });
+    await within(dialog).findByText('Recent Recipient');
+    expect(dialog).toHaveTextContent('Promo Wallet');
+  });
+
   it('reports a rejected Claim Back read and allows a successful Retry', async () => {
     state.reversible = async () => {
       throw new Error('Transport Rejected');
@@ -1728,6 +1788,28 @@ describe('Simple And Advanced Action Recovery Audit', () => {
   );
 });
 
+it('the sender chooses a recipient agent player wallet and the batch retains that destination', async () => {
+  state.roster = [{ ...player(0, 10, 'Player 1'), role: 'agent' }];
+  state.agentWallet = 5000;
+  mountCashier();
+  await synchronized();
+  const dialog = await openSendOut('5', 1);
+  fireEvent.change(
+    within(dialog).getByRole('combobox', { name: 'Recipient Wallet For Player 1' }),
+    {
+      target: { value: 'player_wallet' },
+    }
+  );
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm', exact: true }));
+  await waitFor(() =>
+    expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(true)
+  );
+  const batch = state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')!;
+  expect(batch.args.p_items).toEqual([
+    expect.objectContaining({ user_id: PLAYER_IDS[0], destination: 'player_wallet' }),
+  ]);
+});
+
 it('preloads the most recent own ticket, send and claim counterparties before high balances', async () => {
   state.roster = [player(0, 9000), player(1, 5), player(2, 10)];
   state.recentMoves = [
@@ -1789,3 +1871,65 @@ it.each(['player', 'agent'])(
     expect(state.rpcCalls.some((call) => call.name === 'fn_cashout_request_v2')).toBe(false);
   }
 );
+
+it.each(['club_bank', 'promo_wallet', 'club_promo_wallet', 'player_wallet'] as const)(
+  'Send Out binds selected %s source, balance and recipient promo wallet',
+  async (source) => {
+    state.roster = [{ ...player(0, 120), role: 'agent' }];
+    mountCashier();
+    await synchronized();
+    const dialog = await openSendOut('5', 1);
+    const sourceSelect = within(dialog).getByRole('combobox', { name: 'Send From' });
+    expect(sourceSelect).toHaveValue('agent_wallet');
+    await waitFor(() =>
+      expect(
+        within(sourceSelect).getByRole('option', { name: /From The Main Bank: 1K/ })
+      ).toBeInTheDocument()
+    );
+    fireEvent.change(sourceSelect, { target: { value: source } });
+    fireEvent.change(
+      within(dialog).getByRole('combobox', { name: 'Recipient Wallet For Player 1' }),
+      { target: { value: 'promo_wallet' } }
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm', exact: true }));
+    await waitFor(() =>
+      expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(true)
+    );
+    expect(
+      state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')?.args.p_items
+    ).toEqual([expect.objectContaining({ source, destination: 'promo_wallet', amount: 5 })]);
+  }
+);
+it('Send Out gives an agent only their own sending wallets', async () => {
+  state.myRole = 'agent';
+  mountCashier();
+  await synchronized();
+  const dialog = await openSendOut('5', 1);
+  const source = within(dialog).getByRole('combobox', { name: 'Send From' });
+  expect(within(source).getAllByRole('option')).toHaveLength(3);
+  expect(source).toHaveValue('agent_wallet');
+  expect(within(source).queryByRole('option', { name: /Main Bank/ })).toBeNull();
+});
+
+it('keeps each batch recipient identity, selected wallet and current balance together', async () => {
+  state.roster = [0, 1].map((index) => ({ ...player(index, 10), role: 'agent' }));
+  mountCashier();
+  await synchronized();
+  const dialog = await openSendOut('5', 2);
+  const cards = within(dialog).getAllByRole('region', { name: 'Selected Player' });
+  expect(cards).toHaveLength(2);
+  for (let index = 0; index < 2; index++) {
+    expect(cards[index]).toHaveTextContent(`Player ${index + 1}`);
+    expect(cards[index]).toHaveTextContent(`ID: P-${index + 1}`);
+    await waitFor(() =>
+      expect(
+        within(cards[index]).getByRole('option', { name: 'Agent Wallet: 340' })
+      ).toBeInTheDocument()
+    );
+    expect(within(cards[index]).getByRole('combobox')).toHaveValue('agent_wallet');
+  }
+  fireEvent.change(within(cards[1]).getByRole('combobox'), { target: { value: 'promo_wallet' } });
+  expect(within(cards[0]).getByRole('combobox')).toHaveValue('agent_wallet');
+  expect(within(cards[1]).getByRole('combobox')).toHaveValue('promo_wallet');
+  expect(within(dialog).getByRole('textbox', { name: 'Amount For Player 2' })).toHaveValue('5');
+});

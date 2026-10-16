@@ -1960,3 +1960,57 @@
   opacity: 1;
   text-shadow: none;
 }
+
+/* Identity owns the upper line; exactly one selected wallet owns the lower. */
+.console .playerCardPlate {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1cqw;
+}
+.console .playerCardIdentity {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2cqw;
+}
+.console .playerCardName {
+  font-size: 4.5cqw;
+}
+.console .playerCardId {
+  flex: 0 0 auto;
+  font-size: 2.8cqw;
+}
+.console .playerCardBalance {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2cqw;
+}
+.console .playerCardBalance strong {
+  font-size: 4.5cqw;
+}
+.console select.walletSelect {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: var(--ink-silver) !important;
+  font:
+    700 3cqw/1.3 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif !important;
+  text-overflow: ellipsis;
+  appearance: auto;
+}
+.console select.walletSelect option {
+  background: #0a0b0d;
+  color: var(--ink-white);
+}
+.console select.walletSelect:focus-visible {
+  outline: 1px solid var(--ink-blue);
+}

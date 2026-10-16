@@ -185,7 +185,9 @@ describe('the drill-in carries everything the route carried', () => {
     // OPEN_LOBBY_TAB used to focus the tab and leave lobbyTournamentId set, so
     // "+" reopened whatever tournament the tab was parked on — or, if that tab
     // was already active, did nothing visible at all.
-    expect(MULTI).toContain('cur.map((t) => (isLobbyTab(t) ? clearLobbyTournaments(t) : t))');
+    expect(MULTI).toMatch(
+      /isLobbyTab\(t\)\s*\? \{ \.\.\.clearLobbyTournaments\(t\), lobbyPageHistory: undefined \}/
+    );
   });
 
   it('drill-ins use a functional updater, so two in one tick cannot lose one', () => {

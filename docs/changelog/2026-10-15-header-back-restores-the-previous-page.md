@@ -1,0 +1,7 @@
+# Header Back Restores The Previous Page
+
+The header inside a table lobby tab could call browser Back after exhausting its drill-in stacks. Opening that lobby had never added a browser-history entry, so Back skipped the table and could land in an older, unrelated club. Opening a tab from the pinned strip also replaced the current browser entry, erasing the outside page that Back should restore. The two independent arena and tournament stacks could also restore pages out of order.
+
+The table container now records the exact visible tab a lobby opened from, including tab selection and swipe entry. Header Back restores that tab after popping a single chronological history of arena and tournament pages. Snapshots retain the displayed club and tournament search parameters, so later club preferences cannot change their destination. Embedded numeric Back uses the same owner. Pinned-strip navigation from an outside page pushes a browser entry; switching between already visible table tabs keeps its existing replacement behavior. Returning from an outside route clears an obsolete internal return target; a closed target is never replaced with an arbitrary open table or cached club.
+
+Regression protection executes the actual root Back callback, exercises mixed arena/tournament snapshots and a real React Router embedded navigation consumer, and preserves the existing action-bar/no-auto-switch laws. The root-handler regression fails on the prior source. Client-only delivery uses the existing publisher; no engine or database changes.

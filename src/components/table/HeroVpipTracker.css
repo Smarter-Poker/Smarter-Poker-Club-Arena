@@ -34,7 +34,12 @@
   position: absolute;
   z-index: 6;
   pointer-events: none;
-  transform: translate(calc(-100% - var(--sp-hero-half) - 3px), -50%);
+  width: 106px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: var(--vpip-badge-size);
+  transform: translate(-100%, -50%);
 }
 
 @media (max-width: 640px) {
@@ -56,4 +61,28 @@
     --sp-hero-half: 40px;
     --vpip-badge-size: 40px;
   }
+}
+
+/* Printed on the felt below VPIP; it never covers the player's plate. */
+.hero-vpip__clock {
+  width: 100%;
+  max-width: 106px;
+  margin-top: -4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Arial, sans-serif;
+  font-size: 8px;
+  line-height: 1.1;
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+}
+
+.hero-vpip__clock time {
+  color: #45adff;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }

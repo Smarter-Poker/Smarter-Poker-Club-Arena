@@ -75,9 +75,33 @@ export interface FixedBoardEvent {
   name: string;
   /** Chicago wall-clock start times, HH:MM, every day. */
   times: readonly string[];
+  /**
+   * The times this event ran at before the 2026-10-16 respacing. Dates that
+   * already have an occurrence at one of them keep them; every later date
+   * takes `times` (ScheduledTournamentService resolveTimeChange). Absent for
+   * an event whose times did not move.
+   */
+  previousTimes?: readonly string[];
   /** Field head start the scheduler gives an event inside its last hour. */
   horses: number;
 }
+
+/**
+ * THE BOARD IS SPREAD OUT (Dan 2026-10-16): "REDO THEM SO TOURNAMENT DO NOT
+ * START AT THE SAME TIME, THAT THEY ARE SPREAD OUT ACCORDINGLY THROUGHOUT THE
+ * DAY."
+ *
+ * The first board started two events at the same minute 19 times a day, and
+ * named events for a time of day they did not run at (the Early Bird Freeroll
+ * at 10:30 PM, Lunch Rush at 7:30 AM, the Prime Time Main Event at 1:30 PM).
+ *
+ * Every start is now on a 20-minute grid (:00, :20, :40), one event per grid
+ * slot, across the WHOLE day in each club: these 53 board starts plus the
+ * club's own scheduled events, whose slots are reserved in WEEKLY_EVENT_SLOTS
+ * below. The five Free Buys keep their five hours. Each event runs in the part
+ * of the day its name says, its repeats at least an hour apart.
+ */
+export const FIXED_BOARD_TIMES_EFFECTIVE_FROM = '2026-10-17';
 
 export const FIXED_BOARD: readonly FixedBoardEvent[] = [
   { name: 'Midnight Free Buy (NLH)', times: ['00:00'], horses: 0 },
@@ -85,27 +109,143 @@ export const FIXED_BOARD: readonly FixedBoardEvent[] = [
   { name: 'Midday Free Buy (NLH)', times: ['12:00'], horses: 0 },
   { name: 'Afternoon Free Buy (NLH)', times: ['16:00'], horses: 0 },
   { name: 'Prime Time Free Buy (NLH)', times: ['20:00'], horses: 0 },
-  { name: 'Early Bird Freeroll (NLH)', times: ['22:30', '23:45', '01:00'], horses: 20 },
-  { name: 'Pre-Dawn Mystery Bounty (PLO5)', times: ['22:30', '23:45', '01:00'], horses: 15 },
-  { name: 'Sunrise Bounty (NLH)', times: ['01:30', '02:50', '04:10'], horses: 16 },
-  { name: 'Morning Grinder (PLO)', times: ['01:30', '02:50', '04:10'], horses: 14 },
-  { name: 'Mid-Morning Turbo (6-Max NLH)', times: ['04:30', '05:50', '07:10'], horses: 12 },
-  { name: 'Brunch Special PKO (PLO8)', times: ['04:30', '05:50', '07:10'], horses: 15 },
-  { name: 'Union Morning Classic (NLH)', times: ['05:30'], horses: 20 },
-  { name: 'Lunch Rush (NLH Deep)', times: ['07:30'], horses: 20 },
-  { name: 'Union PKO Afternoon (PLO4)', times: ['09:30'], horses: 18 },
-  { name: 'Afternoon Bounty (NLH)', times: ['10:30', '11:50', '13:10'], horses: 18 },
-  { name: 'Coffee Break Freeroll (PLO4)', times: ['10:30', '11:45', '13:00'], horses: 14 },
-  { name: 'Prime Time Main Event (NLH)', times: ['13:30'], horses: 30 },
-  { name: 'Evening Mystery Bounty (PLO5)', times: ['13:30', '14:50', '16:10'], horses: 18 },
-  { name: 'Union Grand Championship (NLH)', times: ['14:30'], horses: 30 },
-  { name: 'Union Mystery Bounty (PLO5)', times: ['14:30', '15:50'], horses: 22 },
-  { name: 'Night Owl Special (NLH)', times: ['16:30', '17:50', '19:10'], horses: 25 },
-  { name: 'Late Night PKO (PLO4)', times: ['16:30', '17:50', '19:10'], horses: 20 },
-  { name: 'Union Late Night Turbo (NLH)', times: ['17:30', '18:50'], horses: 16 },
-  { name: 'Late Night Grind (PLO4)', times: ['19:30', '20:40', '21:50'], horses: 10 },
-  { name: 'Midnight Bounty (NLH)', times: ['19:30', '20:45', '22:00'], horses: 12 },
+  // Overnight, 12:40 AM - 4:40 AM.
+  {
+    name: 'Midnight Bounty (NLH)',
+    times: ['00:40', '02:20', '23:40'],
+    previousTimes: ['19:30', '20:45', '22:00'],
+    horses: 12,
+  },
+  {
+    name: 'Late Night Grind (PLO4)',
+    times: ['01:00', '03:00', '23:20'],
+    previousTimes: ['19:30', '20:40', '21:50'],
+    horses: 10,
+  },
+  {
+    name: 'Pre-Dawn Mystery Bounty (PLO5)',
+    times: ['01:20', '03:20', '04:40'],
+    previousTimes: ['22:30', '23:45', '01:00'],
+    horses: 15,
+  },
+  {
+    name: 'Night Owl Special (NLH)',
+    times: ['01:40', '03:40', '22:20'],
+    previousTimes: ['16:30', '17:50', '19:10'],
+    horses: 25,
+  },
+  {
+    name: 'Late Night PKO (PLO4)',
+    times: ['02:00', '04:20', '21:40'],
+    previousTimes: ['16:30', '17:50', '19:10'],
+    horses: 20,
+  },
+  // Morning, 4:00 AM - 10:40 AM.
+  {
+    name: 'Early Bird Freeroll (NLH)',
+    times: ['04:00', '05:20', '07:00'],
+    previousTimes: ['22:30', '23:45', '01:00'],
+    horses: 20,
+  },
+  {
+    name: 'Sunrise Bounty (NLH)',
+    times: ['05:00', '06:40', '07:40'],
+    previousTimes: ['01:30', '02:50', '04:10'],
+    horses: 16,
+  },
+  { name: 'Union Morning Classic (NLH)', times: ['05:40'], previousTimes: ['05:30'], horses: 20 },
+  {
+    name: 'Morning Grinder (PLO)',
+    times: ['06:00', '07:20', '08:40'],
+    previousTimes: ['01:30', '02:50', '04:10'],
+    horses: 14,
+  },
+  {
+    name: 'Mid-Morning Turbo (6-Max NLH)',
+    times: ['08:20', '09:40', '10:40'],
+    previousTimes: ['04:30', '05:50', '07:10'],
+    horses: 12,
+  },
+  {
+    name: 'Coffee Break Freeroll (PLO4)',
+    times: ['09:20', '11:00', '13:20'],
+    previousTimes: ['10:30', '11:45', '13:00'],
+    horses: 14,
+  },
+  // Midday, 10:20 AM - 3:40 PM.
+  {
+    name: 'Brunch Special PKO (PLO8)',
+    times: ['10:20', '11:20', '12:40'],
+    previousTimes: ['04:30', '05:50', '07:10'],
+    horses: 15,
+  },
+  { name: 'Lunch Rush (NLH Deep)', times: ['11:40'], previousTimes: ['07:30'], horses: 20 },
+  {
+    name: 'Afternoon Bounty (NLH)',
+    times: ['13:40', '14:40', '15:40'],
+    previousTimes: ['10:30', '11:50', '13:10'],
+    horses: 18,
+  },
+  { name: 'Union PKO Afternoon (PLO4)', times: ['14:20'], previousTimes: ['09:30'], horses: 18 },
+  {
+    name: 'Union Mystery Bounty (PLO5)',
+    times: ['15:20', '16:20'],
+    previousTimes: ['14:30', '15:50'],
+    horses: 22,
+  },
+  // Evening, 4:40 PM - 7:40 PM.
+  {
+    name: 'Evening Mystery Bounty (PLO5)',
+    times: ['16:40', '17:40', '19:40'],
+    previousTimes: ['13:30', '14:50', '16:10'],
+    horses: 18,
+  },
+  {
+    name: 'Union Grand Championship (NLH)',
+    times: ['17:00'],
+    previousTimes: ['14:30'],
+    horses: 30,
+  },
+  { name: 'Prime Time Main Event (NLH)', times: ['18:40'], previousTimes: ['13:30'], horses: 30 },
+  // Late night, 9:20 PM - 10:40 PM (the rest of the night is above).
+  {
+    name: 'Union Late Night Turbo (NLH)',
+    times: ['21:20', '22:40'],
+    previousTimes: ['17:30', '18:50'],
+    horses: 16,
+  },
 ];
+
+/**
+ * The Chicago start slots each club's OWN scheduled events hold every day
+ * (tournament_schedules rows that are not the board, pinned to Chicago time by
+ * migration 20261016170754), so the board can never be laid on top of them:
+ * the four 100 Guarantee Freerolls, the Sunday Deep Stack satellites, the
+ * Sunday 200 Deep Stack (Sundays), and the one weekly event each night at
+ * 2:40 AM, 9 AM, 3 PM, 7 PM, 8:20 PM, 9 PM, 10 PM and 11 PM.
+ */
+export const WEEKLY_EVENT_SLOTS: readonly string[] = [
+  '00:20',
+  '02:40',
+  '06:20',
+  '09:00',
+  '10:00',
+  '12:20',
+  '13:00',
+  '14:00',
+  '15:00',
+  '18:00',
+  '18:20',
+  '19:00',
+  '20:20',
+  '20:40',
+  '21:00',
+  '22:00',
+  '23:00',
+];
+
+/** Minutes between two board-or-weekly starts in one club, at least. */
+export const BOARD_START_SPACING_MINUTES = 20;
 
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
 
@@ -120,7 +260,13 @@ export interface FixedBoardRow {
   start_times_utc: string[];
   interval_minutes: null;
   time_zone: string;
-  config: { type: 'fixed_board'; fixedBoard: string; horsesToRegister: number };
+  config: {
+    type: 'fixed_board';
+    fixedBoard: string;
+    horsesToRegister: number;
+    previousStartTimes?: string[];
+    startTimesEffectiveFrom?: string;
+  };
 }
 
 export function fixedBoardRowFor(club: FixedBoardClub, event: FixedBoardEvent): FixedBoardRow {
@@ -134,7 +280,17 @@ export function fixedBoardRowFor(club: FixedBoardClub, event: FixedBoardEvent): 
     start_times_utc: [...event.times],
     interval_minutes: null,
     time_zone: FIXED_BOARD_TIME_ZONE,
-    config: { type: 'fixed_board', fixedBoard: event.name, horsesToRegister: event.horses },
+    config: {
+      type: 'fixed_board',
+      fixedBoard: event.name,
+      horsesToRegister: event.horses,
+      ...(event.previousTimes
+        ? {
+            previousStartTimes: [...event.previousTimes],
+            startTimesEffectiveFrom: FIXED_BOARD_TIMES_EFFECTIVE_FROM,
+          }
+        : {}),
+    },
   };
 }
 
@@ -157,6 +313,9 @@ export interface FixedBoardSyncPlan {
 
 const sameList = (a: readonly unknown[] | null, b: readonly unknown[]) =>
   Array.isArray(a) && a.length === b.length && a.every((v, i) => v === b[i]);
+
+const sameOptionalList = (a: unknown, b: readonly unknown[] | undefined) =>
+  b === undefined ? a === undefined : Array.isArray(a) && sameList(a, b);
 
 /**
  * PURE. What has to change in tournament_schedules so it holds exactly the
@@ -189,7 +348,9 @@ export function planFixedBoardSync(
         sameList(anchor.days_of_week, want.days_of_week) &&
         sameList(anchor.start_times_utc, want.start_times_utc) &&
         anchor.config?.type === want.config.type &&
-        anchor.config?.horsesToRegister === want.config.horsesToRegister;
+        anchor.config?.horsesToRegister === want.config.horsesToRegister &&
+        sameOptionalList(anchor.config?.previousStartTimes, want.config.previousStartTimes) &&
+        anchor.config?.startTimesEffectiveFrom === want.config.startTimesEffectiveFrom;
       if (!current) plan.updates.push({ id: anchor.id, row: want });
     }
   }

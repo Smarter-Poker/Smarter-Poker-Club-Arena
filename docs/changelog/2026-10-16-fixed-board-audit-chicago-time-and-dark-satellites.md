@@ -79,3 +79,35 @@ showed is below, with what was done about each.
 config recognition, the database guard),
 `server/src/services/aScheduledEventThatWillNotExistIsPaged.law.test.ts`
 (a cancelled target pages).
+
+## The Board Is Spread Out (Same Day, Second Request)
+
+Dan: "REDO THEM SO TOURNAMENT DO NOT START AT THE SAME TIME, THAT THEY ARE
+SPREAD OUT ACCORDINGLY THROUGHOUT THE DAY."
+
+The first board started two events at the same minute 19 times a day, and the
+clubs' own events landed on top of it at midnight, noon and 8 PM. It also ran
+events at the wrong time of day for their names: the Early Bird Freeroll at
+10:30 PM, Lunch Rush at 7:30 AM, the Prime Time Main Event at 1:30 PM.
+
+- Every start in each club is now on a 20-minute grid (:00, :20, :40) with one
+  event per slot: 53 board starts plus 17 slots held by the club's own events,
+  70 starts a day, one to three in every hour, the two quietest slots at
+  5:20 PM and 7:20 PM beside the Prime Time Free Buy.
+- The five Free Buys keep their five hours. Every other board event runs in
+  the part of the day its name says, its repeats at least an hour apart.
+- The clubs' own events move off the board's slots: the 100 Guarantee
+  Freerolls to 12:20 AM, 6:20 AM, 12:20 PM and 6:20 PM (renamed to match), the
+  2:30 AM graveyard events to 2:40 AM, the 8 PM weekly event to 8:20 PM, the
+  8 PM Sunday Deep Stack Satellite to 8:40 PM, and the Sunday 200 Deep Stack
+  to 1:00 PM (the Midday Free Buy keeps noon).
+- No date is doubled by the move. A moved schedule carries its old times and
+  the first date the new ones may take; any date that already has an
+  occurrence at an old time keeps the old times, and only a date with nothing
+  on the board yet takes the new ones (`resolveTimeChange`). An unreadable
+  claim list waits a poll rather than guess.
+
+Pinned in `theBoardIsAFixedSchedule.law.test.ts`: one event per slot across the
+board and the reserved weekly slots, every start on the grid, one to three
+starts every hour, the Free Buys on their hours, repeats an hour apart, and
+the migration's slot list equal to the engine's.

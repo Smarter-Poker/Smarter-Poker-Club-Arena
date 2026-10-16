@@ -334,6 +334,60 @@ export function timedSpawnsDue(
   return due;
 }
 
+/**
+ * A schedule's pending time change (2026-10-16): the times it ran at before
+ * (`previousStartTimes`, 'HH:MM' on the schedule's own calendar) and the
+ * first calendar date the new start_times_utc may take (`startTimesEffectiveFrom`,
+ * 'YYYY-MM-DD'). Null when the config carries none or carries it malformed.
+ */
+export interface ScheduleTimeChange {
+  previous: string[];
+  from: string;
+}
+
+export function scheduleTimeChange(cfg: Record<string, unknown>): ScheduleTimeChange | null {
+  const prev = cfg.previousStartTimes;
+  const from = cfg.startTimesEffectiveFrom;
+  if (!Array.isArray(prev) || prev.length === 0 || typeof from !== 'string') return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return null;
+  const previous = prev.map(String).filter((t) => /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(t));
+  return previous.length === prev.length ? { previous, from } : null;
+}
+
+/**
+ * Every old-time spawn key on each calendar date the look-ahead touches, the
+ * whole date and not just its due part, so a date whose earlier old-time
+ * occurrence already ran still reads as "on the old times".
+ */
+export function previousDayKeys(
+  scheduleId: string,
+  change: ScheduleTimeChange,
+  due: readonly SpawnDue[]
+): string[] {
+  const dates = [...new Set(due.map((d) => d.localDate))];
+  return dates.flatMap((date) => change.previous.map((tm) => `${scheduleId}:${date}:${tm}`));
+}
+
+/**
+ * PURE. Which occurrences to spawn across a time change: a date before
+ * `from`, or a date with any old-time occurrence already claimed, keeps the
+ * old times; every other date takes the new ones. One date is never on both.
+ */
+export function resolveTimeChange(
+  dueNew: readonly SpawnDue[],
+  duePrev: readonly SpawnDue[],
+  change: ScheduleTimeChange,
+  claimed: ReadonlySet<string>,
+  scheduleId: string
+): SpawnDue[] {
+  const onOld = (date: string) =>
+    date < change.from || change.previous.some((tm) => claimed.has(`${scheduleId}:${date}:${tm}`));
+  return [
+    ...duePrev.filter((d) => onOld(d.localDate)),
+    ...dueNew.filter((d) => !onOld(d.localDate)),
+  ].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+}
+
 /** timedSpawnsDue for a schedule whose days and times are in `zone`. */
 function zonedSpawnsDue(
   scheduleId: string,
@@ -915,10 +969,28 @@ export class ScheduledTournamentService {
     const monthlyDay = Math.min(31, Math.max(1, Number(cfg.recurrenceDayOfMonth) || 1));
     // The day of month is read on the schedule's own calendar (UTC for a
     // NULL zone, so unchanged there).
-    const due = timedSpawnsDue(schedule, new Date(), spawnAheadMsFor(cfg)).filter((spawn) =>
-      cadence === 'monthly' ? Number(spawn.localDate.slice(8, 10)) === monthlyDay : true
-    );
-    if (due.length === 0) return;
+    const now = new Date();
+    const aheadMs = spawnAheadMsFor(cfg);
+    const onCadence = (spawn: SpawnDue) =>
+      cadence === 'monthly' ? Number(spawn.localDate.slice(8, 10)) === monthlyDay : true;
+    const dueNew = timedSpawnsDue(schedule, now, aheadMs).filter(onCadence);
+
+    /* A SCHEDULE'S TIMES CAN MOVE WITHOUT A DAY OF DOUBLES (2026-10-16).
+       Occurrences are spawned up to days ahead, keyed on their start time. A
+       row whose times change would otherwise spawn the NEW times beside the
+       old occurrences already on the board for every date in the
+       look-ahead. A row carrying a time change keeps each date on the old
+       times when it is before the change or already has an old-time
+       occurrence, and moves a date only when nothing of it exists yet. */
+    const change = scheduleTimeChange(cfg);
+    const duePrev = change
+      ? timedSpawnsDue({ ...schedule, start_times_utc: change.previous }, now, aheadMs).filter(
+          onCadence
+        )
+      : [];
+    const prevDayKeys = change ? previousDayKeys(schedule.id, change, [...dueNew, ...duePrev]) : [];
+    const candidates = [...dueNew, ...duePrev];
+    if (candidates.length === 0) return;
 
     // 2026-08-31: pre-filter instances whose spawn key is already claimed.
     // The INSERT + UNIQUE(spawn_key) in claimSpawn remains the atomic claim —
@@ -934,13 +1006,16 @@ export class ScheduledTournamentService {
     const { data: claimedRows, error: claimedErr } = await supabase
       .from('tournament_schedule_spawns')
       .select('spawn_key')
-      .in(
-        'spawn_key',
-        due.map((d) => d.spawnKey)
-      );
+      .in('spawn_key', [...new Set([...candidates.map((d) => d.spawnKey), ...prevDayKeys])]);
     if (!claimedErr && Array.isArray(claimedRows)) {
       claimedSet = new Set(claimedRows.map((r: { spawn_key: string }) => r.spawn_key));
     }
+    // A time change cannot be resolved without knowing what exists: an
+    // unreadable answer waits for the next poll rather than guess and double.
+    if (change && !claimedSet) return;
+    const due = change
+      ? resolveTimeChange(dueNew, duePrev, change, claimedSet!, schedule.id)
+      : dueNew;
 
     for (const spawn of due) {
       if (this.retiredScheduleIds.has(schedule.id)) return; // deleted mid-pass

@@ -19,7 +19,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { fixedBoardRow } from './ScheduledTournamentService.js';
+import {
+  fixedBoardRow,
+  previousDayKeys,
+  resolveTimeChange,
+  scheduleTimeChange,
+} from './ScheduledTournamentService.js';
 import {
   MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE,
   fixedBoardTemplate,
@@ -33,6 +38,8 @@ import {
   FIXED_BOARD,
   FIXED_BOARD_CLUBS,
   FIXED_BOARD_RESYNC_MS,
+  FIXED_BOARD_TIMES_EFFECTIVE_FROM,
+  WEEKLY_EVENT_SLOTS,
   isFixedBoardConfig,
   fixedBoardRowFor,
   planFixedBoardSync,
@@ -48,7 +55,9 @@ const migrationFile = readdirSync(migrationsDir).find((f) =>
   f.includes('the_midway_board_and_the_diamond_arena_board_are_a_fixed_sch')
 );
 const migration = migrationFile ? readFileSync(join(migrationsDir, migrationFile), 'utf8') : '';
-const scheduledNames = [...migration.matchAll(/^\s+\('([^']+)', ARRAY\[([^\]]*)\]::text\[\], (\d+)\)/gm)];
+const scheduledNames = [
+  ...migration.matchAll(/^\s+\('([^']+)', ARRAY\[([^\]]*)\]::text\[\], (\d+)\)/gm),
+];
 
 const midwaySchedule = (name: string) => ({
   id: '11111111-1111-1111-1111-111111111111',
@@ -129,22 +138,36 @@ describe('every scheduled name builds the event the timer used to make', () => {
   });
 
   it('a lobby MTT is the timer row; a union MTT keeps its union flag', () => {
-    const lobby = fixedBoardRow(midwaySchedule('Night Owl Special (NLH)'), { fixedBoard: 'Night Owl Special (NLH)' }, START)!;
+    const lobby = fixedBoardRow(
+      midwaySchedule('Night Owl Special (NLH)'),
+      { fixedBoard: 'Night Owl Special (NLH)' },
+      START
+    )!;
     const lobbyTemplate = fixedBoardTemplate('Night Owl Special (NLH)')!;
     expect(lobby).toEqual({
-      ...recurringMttRow(lobbyTemplate.config, START, { clubId: MIDWAY, unionId: MIDWAY, xmtt: false }),
+      ...recurringMttRow(lobbyTemplate.config, START, {
+        clubId: MIDWAY,
+        unionId: MIDWAY,
+        xmtt: false,
+      }),
       schedule_id: '11111111-1111-1111-1111-111111111111',
     });
     expect(lobby.is_xmtt).toBeUndefined();
     expect(lobby.late_reg_levels).toBe(8);
 
-    const union = fixedBoardRow(midwaySchedule('Union Grand Championship (NLH)'), { fixedBoard: 'Union Grand Championship (NLH)' }, START)!;
+    const union = fixedBoardRow(
+      midwaySchedule('Union Grand Championship (NLH)'),
+      { fixedBoard: 'Union Grand Championship (NLH)' },
+      START
+    )!;
     expect(union.is_xmtt).toBe(true);
     expect(union.late_reg_levels).toBe(10);
   });
 
   it('an unknown template is refused, never guessed', () => {
-    expect(fixedBoardRow(midwaySchedule('x'), { fixedBoard: 'No Such Event (NLH)' }, START)).toBeNull();
+    expect(
+      fixedBoardRow(midwaySchedule('x'), { fixedBoard: 'No Such Event (NLH)' }, START)
+    ).toBeNull();
     expect(fixedBoardRow(midwaySchedule('x'), { fixedBoard: '' }, START)).toBeNull();
   });
 });
@@ -159,7 +182,9 @@ describe('the timers stand down for what the schedule owns', () => {
   it('the lobby board, the union board and the Free Buy board each check it', () => {
     expect(src).toMatch(/if \(MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE\) return;/);
     expect(src).toMatch(/MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE && union\.id === MIDWAY_UNION_ID/);
-    expect(src).toMatch(/MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE && host\.clubId === MIDWAY_UNION_ID/);
+    expect(src).toMatch(
+      /MIDWAY_BOARD_IS_ON_THE_FIXED_SCHEDULE && host\.clubId === MIDWAY_UNION_ID/
+    );
   });
 });
 
@@ -206,25 +231,39 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
     expect(FIXED_BOARD_CLUBS.map((c) => c.clubId)).toEqual([MIDWAY, ARENA]);
   });
 
-  it('is the same board the migration first installed', () => {
+  it('keeps every event the migration first installed, with its old times as its previous times', () => {
     const fromMigration = scheduledNames.map((m) => [
       m[1],
       m[2].split(',').map((t) => t.replace(/'/g, '')),
       Number(m[3]),
     ]);
-    expect(FIXED_BOARD.map((e) => [e.name, [...e.times], e.horses])).toEqual(fromMigration);
+    expect(FIXED_BOARD.map((e) => [e.name, [...(e.previousTimes ?? e.times)], e.horses])).toEqual(
+      // The board was regrouped by time of day on 2026-10-16; same events.
+      [...fromMigration].sort(
+        (a, b) =>
+          FIXED_BOARD.findIndex((e) => e.name === a[0]) -
+          FIXED_BOARD.findIndex((e) => e.name === b[0])
+      )
+    );
   });
 
   it('every hard-coded event builds a row in both clubs: no unknown template can ship', () => {
     for (const club of FIXED_BOARD_CLUBS) {
       for (const event of FIXED_BOARD) {
         const sched = { id: 'x', club_id: club.clubId, union_id: club.unionId, name: event.name };
-        expect(fixedBoardRow(sched, fixedBoardRowFor(club, event).config, START), event.name).not.toBeNull();
+        expect(
+          fixedBoardRow(sched, fixedBoardRowFor(club, event).config, START),
+          event.name
+        ).not.toBeNull();
       }
     }
   });
 
-  const asExisting = (id: string, club: (typeof FIXED_BOARD_CLUBS)[number], e: (typeof FIXED_BOARD)[number]): ExistingFixedBoardRow => {
+  const asExisting = (
+    id: string,
+    club: (typeof FIXED_BOARD_CLUBS)[number],
+    e: (typeof FIXED_BOARD)[number]
+  ): ExistingFixedBoardRow => {
     const r = fixedBoardRowFor(club, e);
     return {
       id,
@@ -266,7 +305,11 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
       FIXED_BOARD.map((e, ei) => asExisting(`${ci}-${ei}`, c, e))
     );
     existing.push({ ...existing[0], id: 'dup' });
-    existing.push({ ...existing[1], id: 'gone', config: { type: 'fixed_board', fixedBoard: 'Retired Event (NLH)' } });
+    existing.push({
+      ...existing[1],
+      id: 'gone',
+      config: { type: 'fixed_board', fixedBoard: 'Retired Event (NLH)' },
+    });
     expect(planFixedBoardSync(existing).deactivate.sort()).toEqual(['dup', 'gone']);
   });
 
@@ -274,7 +317,9 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
     const src = readFileSync(join(__dirname, 'ScheduledTournamentService.ts'), 'utf8');
     const poll = src.slice(src.indexOf('private async poll('));
     expect(poll.indexOf('this.syncFixedBoard()')).toBeGreaterThan(-1);
-    expect(poll.indexOf('this.syncFixedBoard()')).toBeLessThan(poll.indexOf(".from('tournament_schedules')"));
+    expect(poll.indexOf('this.syncFixedBoard()')).toBeLessThan(
+      poll.indexOf(".from('tournament_schedules')")
+    );
   });
 
   it('a running engine writes the board again every ten minutes, not once per process', () => {
@@ -282,15 +327,21 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
     // off after boot stayed wrong until the next release.
     expect(FIXED_BOARD_RESYNC_MS).toBe(10 * 60_000);
     const src = readFileSync(join(__dirname, 'ScheduledTournamentService.ts'), 'utf8');
-    const poll = src.slice(src.indexOf('private async poll('), src.indexOf('private async syncFixedBoard('));
+    const poll = src.slice(
+      src.indexOf('private async poll('),
+      src.indexOf('private async syncFixedBoard(')
+    );
     expect(poll).toMatch(/Date\.now\(\) - this\.fixedBoardSyncedAt >= FIXED_BOARD_RESYNC_MS/);
-    expect(poll).toMatch(/if \(await this\.syncFixedBoard\(\)\) this\.fixedBoardSyncedAt = Date\.now\(\);/);
+    expect(poll).toMatch(
+      /if \(await this\.syncFixedBoard\(\)\) this\.fixedBoardSyncedAt = Date\.now\(\);/
+    );
     expect(src).not.toMatch(/fixedBoardSynced\s*=\s*(true|false)/);
   });
 
   it('knows a board row when it sees one', () => {
     for (const club of FIXED_BOARD_CLUBS) {
-      for (const event of FIXED_BOARD) expect(isFixedBoardConfig(fixedBoardRowFor(club, event).config)).toBe(true);
+      for (const event of FIXED_BOARD)
+        expect(isFixedBoardConfig(fixedBoardRowFor(club, event).config)).toBe(true);
     }
     expect(isFixedBoardConfig({ type: 'mtt', name: 'Sunday 200 Deep Stack' })).toBe(false);
     expect(isFixedBoardConfig(null)).toBe(false);
@@ -303,9 +354,154 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
     );
     expect(file, 'the 2026-10-16 board-guard migration').toBeTruthy();
     const sql = readFileSync(join(migrationsDir, file!), 'utf8');
-    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.fn_tournament_schedule_board_is_hard_coded\(\)/);
+    expect(sql).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.fn_tournament_schedule_board_is_hard_coded\(\)/
+    );
     expect(sql).toMatch(/auth\.role\(\)[\s\S]{0,120}'authenticated'[\s\S]{0,40}'anon'/);
     expect(sql).toMatch(/'fixed_board'/);
     expect(sql).toMatch(/BEFORE INSERT OR UPDATE OR DELETE ON public\.tournament_schedules/);
+  });
+});
+
+/**
+ * THE BOARD IS SPREAD OUT (Dan, 2026-10-16): "REDO THEM SO TOURNAMENT DO NOT
+ * START AT THE SAME TIME, THAT THEY ARE SPREAD OUT ACCORDINGLY THROUGHOUT THE
+ * DAY."
+ */
+describe('no two tournaments start at the same time, and the starts are spread through the day', () => {
+  const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
+  const starts = [
+    ...FIXED_BOARD.flatMap((e) => e.times.map((t) => ({ t, who: e.name }))),
+    ...WEEKLY_EVENT_SLOTS.map((t) => ({ t, who: `weekly ${t}` })),
+  ];
+
+  it('one event per start time, board and weekly events together', () => {
+    const seen = new Map<string, string>();
+    for (const s of starts) {
+      expect(seen.get(s.t), `${s.who} and ${seen.get(s.t)} both start at ${s.t}`).toBeUndefined();
+      seen.set(s.t, s.who);
+    }
+  });
+
+  it('every start is on the 20-minute grid, so any two are at least 20 minutes apart', () => {
+    for (const s of starts) expect(toMin(s.t) % 20, `${s.who} at ${s.t}`).toBe(0);
+  });
+
+  it('no hour of the day is empty or crowded: one to three starts in every hour', () => {
+    for (let h = 0; h < 24; h++) {
+      const n = starts.filter((s) => Math.floor(toMin(s.t) / 60) === h).length;
+      expect(n, `hour ${h}`).toBeGreaterThanOrEqual(1);
+      expect(n, `hour ${h}`).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("the migration moves the clubs' own events onto exactly the reserved weekly slots", () => {
+    const file = readdirSync(migrationsDir).find((f) =>
+      f.includes('the_hard_coded_board_and_the_weekly_events_keep_chicago_time')
+    )!;
+    const sql = readFileSync(join(migrationsDir, file), 'utf8');
+    const m = /IF v_slots IS DISTINCT FROM ARRAY\[([^\]]+)\]::text\[\]/.exec(sql);
+    expect(m, 'the reserved-slot assertion').toBeTruthy();
+    const slots = m![1].split(',').map((x) => x.trim().replace(/'/g, ''));
+    expect(slots).toEqual([...WEEKLY_EVENT_SLOTS]);
+    expect(sql).toContain("'startTimesEffectiveFrom', '2026-10-17'");
+  });
+
+  it('the five Free Buys keep their five hours', () => {
+    for (const slot of FREE_BUY_SLOTS) {
+      const e = FIXED_BOARD.find((x) => x.name === freeBuyBoardName(slot))!;
+      expect(e.times).toEqual([`${String(slot.chicagoHour).padStart(2, '0')}:00`]);
+      expect(e.previousTimes).toBeUndefined();
+    }
+  });
+
+  it('a repeated event is never back to back: its starts are at least an hour apart', () => {
+    for (const e of FIXED_BOARD) {
+      const m = e.times.map(toMin).sort((a, b) => a - b);
+      for (let i = 0; i < m.length; i++) {
+        const next = i + 1 < m.length ? m[i + 1] : m[0] + 1440;
+        expect(next - m[i], e.name).toBeGreaterThanOrEqual(60);
+      }
+    }
+  });
+
+  it('every moved event carries its old times and the date the change may start', () => {
+    expect(FIXED_BOARD_TIMES_EFFECTIVE_FROM).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    for (const club of FIXED_BOARD_CLUBS) {
+      for (const e of FIXED_BOARD.filter((x) => x.previousTimes)) {
+        const change = scheduleTimeChange(fixedBoardRowFor(club, e).config);
+        expect(change, e.name).toEqual({
+          previous: [...e.previousTimes!],
+          from: FIXED_BOARD_TIMES_EFFECTIVE_FROM,
+        });
+      }
+    }
+  });
+});
+
+describe('a schedule whose times move never doubles a date', () => {
+  const id = 'sched';
+  const at = (date: string, tm: string) => ({
+    spawnKey: `${id}:${date}:${tm}`,
+    startTime: new Date(`${date}T${tm}:00Z`),
+    localDate: date,
+  });
+  const change = { previous: ['22:30'], from: '2026-10-17' };
+
+  it('a date before the change keeps the old times', () => {
+    const due = resolveTimeChange(
+      [at('2026-10-16', '04:00')],
+      [at('2026-10-16', '22:30')],
+      change,
+      new Set(),
+      id
+    );
+    expect(due.map((d) => d.spawnKey)).toEqual([`${id}:2026-10-16:22:30`]);
+  });
+
+  it('a later date that already has an old-time occurrence keeps the old times', () => {
+    const claimed = new Set([`${id}:2026-10-18:22:30`]);
+    const due = resolveTimeChange(
+      [at('2026-10-18', '04:00')],
+      [at('2026-10-18', '22:30')],
+      change,
+      claimed,
+      id
+    );
+    expect(due.map((d) => d.spawnKey)).toEqual([`${id}:2026-10-18:22:30`]);
+  });
+
+  it('a date with nothing on the board yet takes the new times', () => {
+    const due = resolveTimeChange(
+      [at('2026-10-20', '04:00')],
+      [at('2026-10-20', '22:30')],
+      change,
+      new Set(),
+      id
+    );
+    expect(due.map((d) => d.spawnKey)).toEqual([`${id}:2026-10-20:04:00`]);
+  });
+
+  it('reads the whole date, so an old time that already ran still holds the date', () => {
+    const keys = previousDayKeys(id, { previous: ['01:00', '22:30'], from: '2026-10-17' }, [
+      at('2026-10-19', '04:00'),
+    ]);
+    expect(keys).toEqual([`${id}:2026-10-19:01:00`, `${id}:2026-10-19:22:30`]);
+  });
+
+  it('a malformed change is no change', () => {
+    expect(scheduleTimeChange({})).toBeNull();
+    expect(
+      scheduleTimeChange({ previousStartTimes: ['25:00'], startTimesEffectiveFrom: '2026-10-17' })
+    ).toBeNull();
+    expect(
+      scheduleTimeChange({ previousStartTimes: ['22:30'], startTimesEffectiveFrom: 'soon' })
+    ).toBeNull();
+  });
+
+  it('the scheduler waits rather than guess when it cannot read what exists', () => {
+    const src = readFileSync(join(__dirname, 'ScheduledTournamentService.ts'), 'utf8');
+    expect(src).toMatch(/if \(change && !claimedSet\) return;/);
+    expect(src).toMatch(/resolveTimeChange\(dueNew, duePrev, change, claimedSet!, schedule\.id\)/);
   });
 });

@@ -57,6 +57,11 @@ import {
   confirmedAgentWalletReceipt,
 } from '../../services/AgentWalletIntent';
 import { resolveClubIdFilter, resolveClubUUID } from '../../utils/clubIdResolver';
+import { SEND_DESTINATION_LABELS } from '../../utils/cashierSendWallets';
+import {
+  useRecipientWalletBalances,
+  walletOptionLabel,
+} from '../../hooks/useRecipientWalletBalances';
 import './ChipTransferModal.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -492,38 +497,43 @@ export default function ChipTransferModal({
   const previewDestination: ClubBankRecipientWallet = selectedRecipientData
     ? clubBankDestinationFor(selectedRecipientData.role, chosenWallet)
     : 'player_wallet';
-  const destinationIsAgentWallet = !!selectedRecipientData && previewDestination === 'agent_wallet';
+  const destinationLabel = SEND_DESTINATION_LABELS[previewDestination];
+  // Every wallet the recipient holds, with its current balance, from the same
+  // cashier read the Send Out screen uses (Dan 2026-10-15: "AND IT SHOULD HAVE
+  // THERE CURRENT CHIP BALANCES AS WELL").
+  const [balanceRefresh, setBalanceRefresh] = useState(0);
+  const recipientBalances = useRecipientWalletBalances(
+    isOpen ? clubId : null,
+    selectedRecipientData?.id,
+    balanceRefresh
+  );
 
   // A different recipient starts from their default wallet again.
   useEffect(() => {
     setChosenWallet(null);
   }, [selectedRecipient]);
   useEffect(() => {
-    let cancelled = false;
-    setDestinationBalance(null);
-    if (!selectedRecipientData) return;
-    if (!destinationIsAgentWallet) {
-      setDestinationBalance(selectedRecipientData.balance);
+    if (!selectedRecipientData) {
+      setDestinationBalance(null);
       return;
     }
-    (async () => {
-      const resolvedClub = await resolveClubUUID(clubId);
-      const { data, error: floatErr } = await supabase
-        .from('agents')
-        .select('agent_wallet_balance')
-        .eq('club_id', resolvedClub)
-        .eq('user_id', selectedRecipientData.id)
-        .maybeSingle();
-      if (cancelled) return;
-      // No agents row yet is a float of zero (fn_ensure_agent_row creates it
-      // on the send); a row that could not be read stays unknown.
-      if (!floatErr) setDestinationBalance(Number(data?.agent_wallet_balance ?? 0) || 0);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    const read = recipientBalances?.[previewDestination];
+    if (read !== undefined) {
+      setDestinationBalance(read);
+    } else if (previewDestination === 'player_wallet') {
+      // The roster row already carries the player wallet; an unread agent or
+      // promo wallet stays Unknown rather than a fabricated zero.
+      setDestinationBalance(selectedRecipientData.balance);
+    } else {
+      setDestinationBalance(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRecipientData?.id, destinationIsAgentWallet, clubId]);
+  }, [
+    selectedRecipientData?.id,
+    selectedRecipientData?.balance,
+    previewDestination,
+    recipientBalances,
+  ]);
 
   const getTransferDescription = () => {
     const recipientData = selectedRecipientData;
@@ -655,7 +665,8 @@ export default function ChipTransferModal({
       setAmount('');
       setNote('');
 
-      // Refresh sender balance
+      // Refresh sender balance, and the recipient's wallets beside the choice.
+      setBalanceRefresh((n) => n + 1);
       await loadSenderInfo();
 
       if (onTransferComplete) onTransferComplete();
@@ -765,7 +776,7 @@ export default function ChipTransferModal({
           <div className="agent-balance">
             <span>To {selectedRecipientData.username}:</span>
             <span className="balance-amount">
-              {destinationIsAgentWallet ? 'Agent Wallet' : 'Player Wallet'}
+              {destinationLabel}
             </span>
           </div>
         )}
@@ -792,7 +803,11 @@ export default function ChipTransferModal({
                     className={previewDestination === wallet ? 'is-on' : undefined}
                     onClick={() => setChosenWallet(wallet)}
                   >
-                    {wallet === 'agent_wallet' ? 'Into Agent Wallet' : 'Into Player Wallet'}
+                    {walletOptionLabel(
+                      `Into ${SEND_DESTINATION_LABELS[wallet]}`,
+                      recipientBalances,
+                      wallet
+                    )}
                   </button>
                 ))}
               </div>
@@ -908,7 +923,7 @@ export default function ChipTransferModal({
               <div className="preview-row">
                 <span>
                   {selectedRecipientData.username} (
-                  {destinationIsAgentWallet ? 'Agent Wallet' : 'Player Wallet'}):
+                  {destinationLabel}):
                 </span>
                 <span>
                   {destinationBalance === null

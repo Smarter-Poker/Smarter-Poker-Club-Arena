@@ -24,11 +24,17 @@ def qualify(e,base,q):
  newer=e.database(d)
  instrumented=e.database(d)
  malformed=e.database(d)
+ prior=e.database(d)
+ e.sql(prior,file=q.ROOT/q.CACHE_MIGRATION,label='requested-prior-cache-installed')
  e.sql(newer,file=q.ROOT/q.CACHE_MIGRATION,label='cache-followup-installed')
+ e.sql(newer,file=q.ROOT/q.REQUESTED_MIGRATION,label='requested-keyset-installed')
+ edges=e.database(newer)
  def call(db,label):
   start=time.perf_counter();v=json.loads(e.sql(db,'SELECT '+q.PURGE+'(ARRAY['+','.join(map(q.lit,ids))+']::uuid[]);',label=label)[1]);return v,time.perf_counter()-start
  before=e.sql(d,q.PROTECTED_SNAPSHOT,label='cache-protected-before')[1]
- a,at=call(d,'cache-original-transition');b,bt=call(newer,'cache-cached-transition')
+ a,at=call(d,'cache-original-transition');c,ct=call(prior,'requested-prior-cache-transition');b,bt=call(newer,'cache-cached-transition')
+ assert a==c==b
+ checks.append('requested-keyset-prior-cache-and-new-receipts-identical')
  assert a==b,(a,b)
  assert a['handsPurged']==247 and ids[-2] in a['protectedHands'] and ids[-1] in a['protectedHands'],a
  checks.append('cache-old-new-receipts-identical-shared250-with-newer-and-late-protected')
@@ -36,10 +42,13 @@ def qualify(e,base,q):
   return e.sql(db,"SELECT jsonb_build_object('journal',(SELECT jsonb_agg(to_jsonb(j) ORDER BY observation_id) FROM horse_adaptive_observation_journal j),'batches',(SELECT jsonb_agg(to_jsonb(b) ORDER BY batch_key) FROM horse_adaptive_observation_batches b),'exceptions',(SELECT jsonb_agg(to_jsonb(p)-'purged_at' ORDER BY hand_id) FROM smarter_private.horse_adaptive_legacy_learning_purges p));",label=label)[1]
  assert snapshot(d,'cache-original-postimage')==snapshot(newer,'cache-optimized-postimage')
  checks.append('cache-old-new-entire-raw-batch-ledger-postimages-byte-identical-except-transition-time')
+ assert snapshot(prior,'requested-prior-cache-postimage')==snapshot(newer,'requested-keyset-postimage')
+ checks.append('requested-keyset-prior-cache-entire-postimages-identical-except-time')
  assert before==e.sql(newer,q.PROTECTED_SNAPSHOT,label='cache-protected-after')[1]
  checks.append('cache-financial-human-normal-evidence-unchanged')
  # Native-only instrumentation uses the identical unpurged clone.
  e.sql(instrumented,file=q.ROOT/q.CACHE_MIGRATION,label='cache-instrumented-followup')
+ e.sql(instrumented,file=q.ROOT/q.REQUESTED_MIGRATION,label='requested-instrumented-followup')
  src=e.sql(newer,"SELECT pg_get_functiondef('smarter_private.purge_legacy_horse_learning(uuid[])'::regprocedure);",label='cache-exact-function')[1]
  assert src.count('FOR v IN SELECT value FROM jsonb_array_elements(b.canonical_payload::jsonb->7) LOOP')==1
  assert 'IF NOT batch_cache ? cache_key THEN' in src
@@ -68,13 +77,38 @@ def qualify(e,base,q):
  first=e.sql(malformed,'SELECT batch_key FROM horse_adaptive_observation_batches ORDER BY batch_key LIMIT 1;',label='cache-malformed-key')[1].strip()
  e.sql(malformed,"UPDATE horse_adaptive_observation_batches SET canonical_payload=jsonb_set(canonical_payload::jsonb,'{7,0}',to_jsonb('not-json'::text))::text WHERE batch_key="+q.lit(first)+';',label='cache-malformed-original-payload')
  e.sql(malformed,file=q.ROOT/q.CACHE_MIGRATION,label='cache-malformed-followup')
+ e.sql(malformed,file=q.ROOT/q.REQUESTED_MIGRATION,label='requested-malformed-followup')
  code,_,err=e.sql(malformed,'SELECT '+q.PURGE+'(ARRAY['+','.join(map(q.lit,ids))+']::uuid[]);',label='cache-malformed-refused',check=False)
  assert code!=0 and 'invalid input syntax for type json' in err,err
  assert e.sql(malformed,'SELECT count(*) FROM smarter_private.horse_adaptive_legacy_learning_purges;',label='cache-malformed-no-partial-ledger')[1].strip()=='0'
  checks.append('cache-malformed-source-aborts-without-partial-ledger')
 
+ # Requested-key boundaries through the real final owner.
+ def edge_call(values,label):
+  return json.loads(e.sql(edges,'SELECT '+q.PURGE+'('+values+');',label=label)[1])
+ assert edge_call('ARRAY[]::uuid[]','requested-empty')['handsPurged']==0
+ checks.append('requested-keyset-empty-request-remains-empty')
+ assert edge_call('ARRAY['+q.lit(ids[0])+']::uuid[]','requested-single')['handsPurged']==1
+ checks.append('requested-keyset-single-request-preserved')
+ assert edge_call('ARRAY['+q.lit(ids[1])+','+q.lit(ids[1])+']::uuid[]','requested-duplicate')['handsPurged']==1
+ checks.append('requested-keyset-duplicate-request-purges-once')
+ for value,label in [('NULL::uuid[]','null-request'),('ARRAY[NULL]::uuid[]','null-element')]:
+  code,_,err=e.sql(edges,'SELECT '+q.PURGE+'('+value+');',label='requested-'+label,check=False)
+  assert code!=0 and 'LEGACY_LEARNING_INVALID_IDS' in err,err
+ checks.append('requested-keyset-null-request-and-element-original-refusal')
+ # A canonical NULL hand stays retained; membership NULL never means a match.
+ null_tuple=json.dumps(['unknown','unknown',None,0,0,1790000000000])
+ key=e.sql(edges,"SELECT batch_key FROM smarter_private.horse_adaptive_batch_hand_membership WHERE hand_digest=encode(sha256(convert_to("+q.lit(ids[2])+",'UTF8')),'hex') ORDER BY batch_key LIMIT 1;",label='requested-null-hand-batch')[1].strip()
+ e.sql(edges,"UPDATE horse_adaptive_observation_batches SET canonical_payload=jsonb_set(canonical_payload::jsonb,'{7}',(canonical_payload::jsonb->7)||jsonb_build_array("+q.lit(null_tuple)+"::text))::text WHERE batch_key="+q.lit(key)+';',label='requested-null-hand-tuple')
+ r=edge_call('ARRAY['+q.lit(ids[2])+']::uuid[]','requested-null-hand-canonical')
+ assert r['handsPurged']==1,r
+ assert e.sql(edges,"SELECT EXISTS(SELECT 1 FROM horse_adaptive_observation_batches b CROSS JOIN LATERAL jsonb_array_elements(b.canonical_payload::jsonb->7) v WHERE b.batch_key="+q.lit(key)+" AND (v.value#>>'{}')::jsonb->>2 IS NULL);",label='requested-null-hand-retained')[1].strip()=='t'
+ checks.append('requested-keyset-null-canonical-hand-is-not-selected')
+ code,_,err=e.sql(newer,file=q.ROOT/q.REQUESTED_MIGRATION,label='requested-keyset-replay-refused',check=False)
+ assert code!=0 and 'LEGACY_REQUESTED_SET_PREIMAGE_CHANGED' in err,err
+ checks.append('requested-keyset-migration-replay-refused')
  # Current performance recorded rather than a fragile wall-time pass threshold.
- e.report['legacy_batch_cache']={'checks':checks,'original_seconds':at,'cached_seconds':bt,'shape':{'hands':250,'shared_batches':3,'facts_per_hand_per_batch':2},'same_receipt':a}
+ e.report['legacy_batch_cache']={'checks':checks,'original_seconds':at,'cached_seconds':bt,'prior_cache_seconds':ct,'shape':{'hands':250,'shared_batches':3,'facts_per_hand_per_batch':2},'same_receipt':a}
  e.report['source_sha256']['scripts/verification-harness/horse-legacy-batch-cache.py']=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
- e.discard(d);e.discard(newer);e.discard(instrumented);e.discard(malformed)
+ e.discard(d);e.discard(newer);e.discard(instrumented);e.discard(malformed);e.discard(prior);e.discard(edges)
  return checks

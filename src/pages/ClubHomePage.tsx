@@ -189,8 +189,11 @@ import { gameManagementService } from '../services/GameManagementService';
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
    wide CARD graphic being cropped into a square avatar slot, so most of the
    art was thrown away by object-fit. shark-club-logo.jpg is the square
-   emblem and fills the box as intended. */
-const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
+   emblem and fills the box as intended.
+   Dan 2026-10-16: the Shark Club logo is now his new emblem,
+   shark-club-logo-v2.png, which clubs.logo_url and the club's social page
+   also carry. */
+const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo-v2.png`;
 
 // Club Arena is deployed beneath /hub/club-arena/. Root-relative /assets URLs
 // bypass Vite's configured base path in production and silently 404, leaving

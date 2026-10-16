@@ -123,7 +123,7 @@ function MobileLobbyReview({
             <ClubIdentityCard
               className="lobby-top__identity"
               clubName="Shark Club"
-              logoUrl={`${MOBILE_REVIEW_ROOT}images/shark-club-logo.jpg`}
+              logoUrl={`${MOBILE_REVIEW_ROOT}images/shark-club-logo-v2.png`}
               /* A HANDLE, not a real name. The prop is called `pokerAlias`, and
                  this showcase is what the next person copies from - seeding it
                  with "Dan Bekavac" is the habit that put a legal name on the

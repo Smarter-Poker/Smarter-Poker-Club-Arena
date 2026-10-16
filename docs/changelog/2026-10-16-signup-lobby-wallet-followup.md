@@ -14,3 +14,5 @@ The required push browser harness now supplies a local persisted-profile adapter
 ### Connected wallet displays
 
 The active Diamond Spins lobby, wheel, crash and choice-game account readouts, wallet entry button, agent hierarchy and union wallet tiles now use the same wallet display contract. Chip and promo balances retain commas and two decimal places below one million; Diamond wallet counts stay whole and exact below one million. Unknown formatter inputs remain distinct from zero. Game prices, table stacks, transaction amounts and aggregate statistics retain their existing format. Mounted lobby, union modal, agent tree and wallet-entry regressions cover the connected readouts.
+
+The same precision applies to active operator owner-Diamond, promo and bank wallet readouts, the verified Diamond Vault and detailed union rake/BBJ bank balances. Aggregate cover, commitments, revenue, prices and transfers retain their established display. Six affected existing test files pass (80 tests).

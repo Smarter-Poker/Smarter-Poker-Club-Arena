@@ -47,7 +47,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { reportError } from '../../utils/errorReporter';
-import { fmt } from '../../utils/format';
+import { fmt, formatWalletChips } from '../../utils/format';
 import unionApi from '../../services/UnionApiService';
 
 export type TreasuryDetailMode = 'rake' | 'bbj' | 'backup';
@@ -293,7 +293,7 @@ export default function UnionTreasuryDetailModal({
     if (amt > available) {
       // Checked here for a fast, specific message. fn_union_bbj_backup_transfer
       // checks it again inside the transaction, and that is the one that counts.
-      setNotice({ ok: false, text: `Backup Holds Only ${fmt(available)}.` });
+      setNotice({ ok: false, text: `Backup Holds Only ${formatWalletChips(available)}.` });
       return;
     }
     setBusy(true);
@@ -393,7 +393,11 @@ export default function UnionTreasuryDetailModal({
         {!loading && mode === 'rake' && rake && (
           <>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Stat label="Wallet Balance" value={fmt(rake.balance)} color="#31A24C" />
+              <Stat
+                label="Wallet Balance"
+                value={formatWalletChips(rake.balance)}
+                color="#31A24C"
+              />
               <Stat label="Ledger Credits" value={fmt(rake.ledger?.credits ?? 0)} color="#4599FF" />
               <Stat label="Ledger Debits" value={fmt(rake.ledger?.debits ?? 0)} color="#F7C52A" />
               <Stat
@@ -475,13 +479,21 @@ export default function UnionTreasuryDetailModal({
         {!loading && isBbj && bbj && (
           <>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Stat label="Main Jackpot" value={fmt(bbj.banks.main)} color="#F7C52A" />
-              <Stat label="Backup" value={fmt(bbj.banks.backup)} color="#4599FF" />
+              <Stat
+                label="Main Jackpot"
+                value={formatWalletChips(bbj.banks.main)}
+                color="#F7C52A"
+              />
+              <Stat label="Backup" value={formatWalletChips(bbj.banks.backup)} color="#4599FF" />
               {/* The POOL's promo bank (bbj_pools.promo_balance), which is NOT
                   the union Promo Wallet on the dashboard. Backup -> Promo
                   credits union_wallets.promo_wallet, so this figure does not
                   move when that transfer runs; labelled to say so. */}
-              <Stat label="Pool Promo Bank" value={fmt(bbj.banks.promo)} color="#C084FC" />
+              <Stat
+                label="Pool Promo Bank"
+                value={formatWalletChips(bbj.banks.promo)}
+                color="#C084FC"
+              />
               <Stat label="Banked Total" value={fmt(bbj.banks.total)} color="#39d17a" />
             </div>
             <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 8 }}>

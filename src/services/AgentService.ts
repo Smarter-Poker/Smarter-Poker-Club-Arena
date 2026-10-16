@@ -349,7 +349,9 @@ export interface CreateAgentInput {
   /* Optional since 2026-10-15: the agent sets what their own players receive
      (fn_agent_set_player_rakeback). Omitted, the server starts it at 0. */
   playerRakebackRate?: number;
-  creditLimit: number; // MANDATORY
+  /* Dan, October 2026: agents have no credit lines; every agent is prepaid.
+     Kept for callers that still pass it; anything above 0 is refused. */
+  creditLimit?: number;
   isPrepaid?: boolean;
 }
 
@@ -564,13 +566,13 @@ class AgentServiceClass {
 
   /**
    * Create a new agent (promote player to agent)
-   * REQUIRES: commissionRate, creditLimit. The player rakeback is the agent's
+   * REQUIRES: commissionRate. Every agent is prepaid with no credit line
+   * (Dan, October 2026). The player rakeback is the agent's
    * own choice (Dan, 2026-10-15) and is normally left out.
    */
   async createAgent(input: CreateAgentInput): Promise<Agent> {
     // Validate mandatory fields
     if (input.commissionRate === undefined) throw new Error('Commission rate is required');
-    if (input.creditLimit === undefined) throw new Error('Credit limit is required');
 
     // Validate ranges (must be non-negative and within caps)
     const commissionRate = numericValue(input.commissionRate, 'create.commission_rate', {
@@ -580,14 +582,15 @@ class AgentServiceClass {
       input.playerRakebackRate === undefined
         ? null
         : numericValue(input.playerRakebackRate, 'create.player_rakeback_rate', { scale: 4 });
-    const creditLimit = numericValue(input.creditLimit, 'create.credit_limit', {
+    const creditLimit = numericValue(input.creditLimit ?? 0, 'create.credit_limit', {
       scale: 2,
     });
     if (commissionRate < 0 || commissionRate > 0.7)
       throw new Error('Commission rate must be between 0% and 70%');
     if (playerRakebackRate !== null && (playerRakebackRate < 0 || playerRakebackRate > 0.5))
       throw new Error('Rakeback rate must be between 0% and 50%');
-    if (creditLimit < 0) throw new Error('Credit limit cannot be negative');
+    if (creditLimit !== 0 || input.isPrepaid === false)
+      throw new Error('Agents Are Prepaid. Credit Lines Are Not Offered.');
     const userId = uuidValue(input.userId, 'create.user_id');
     if (input.role !== 'super_agent' && input.role !== 'agent' && input.role !== 'sub_agent') {
       return malformedAgentPayload('create.role');
@@ -616,8 +619,8 @@ class AgentServiceClass {
       p_parent_agent_id: parentAgentId ?? null,
       p_commission_rate: commissionRate,
       p_player_rakeback_rate: playerRakebackRate,
-      p_credit_limit: creditLimit,
-      p_is_prepaid: input.isPrepaid ?? false,
+      p_credit_limit: 0,
+      p_is_prepaid: true,
     });
 
     if (error) {

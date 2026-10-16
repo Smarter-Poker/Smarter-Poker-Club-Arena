@@ -195,7 +195,6 @@ function AgentDashboardContent() {
 
   // Credit management (owner-only)
   const [creditTarget, setCreditTarget] = useState('');
-  const [creditAction, setCreditAction] = useState('issue_credit');
   const [creditAmount, setCreditAmount] = useState('');
   const [creditNotes, setCreditNotes] = useState('');
   const creditInputEpoch = useRef(0);
@@ -1806,12 +1805,12 @@ function AgentDashboardContent() {
         {tab === 'credit' && isOwner && (
           <div className="admin-tab-content">
             <div className="admin-card" style={{ padding: '20px' }}>
-              <h3 className="admin-card-title">Agent Credit Management</h3>
+              <h3 className="admin-card-title">Agent Funding</h3>
               <div
                 className="admin-text-secondary"
                 style={{ marginBottom: '16px', lineHeight: 1.5 }}
               >
-                Issue Credit Lines, Add Prepaid Balances, Or Revoke Credit For Agents.
+                Every Agent Is Prepaid. Send Chips Into An Agent Wallet From Here.
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <div>
@@ -1831,21 +1830,6 @@ function AgentDashboardContent() {
                         {a.role}
                       </option>
                     ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="admin-label">Action</label>
-                  <select
-                    className="admin-input"
-                    value={creditAction}
-                    onChange={(e) => {
-                      invalidateCreditInput();
-                      setCreditAction(e.target.value);
-                    }}
-                  >
-                    <option value="issue_credit">Set Credit Line To</option>
-                    <option value="add_prepaid">Send Prepaid Chips</option>
-                    <option value="revoke_credit">Reduce Credit Line By</option>
                   </select>
                 </div>
                 <div>
@@ -1874,22 +1858,7 @@ function AgentDashboardContent() {
                     placeholder="Reason..."
                   />
                 </div>
-                {user?.id && clubId && (
-                  <CreditReductionControls
-                    key={`${user.id}:${clubId}`}
-                    actorId={user.id}
-                    clubId={clubId}
-                    targetUserId={creditTarget}
-                    amount={creditAmount}
-                    note={creditNotes}
-                    enabled={creditAction === 'revoke_credit'}
-                    isCurrent={isCurrent}
-                    revision={creditInputRevision}
-                    getRevision={() => creditInputEpoch.current}
-                  />
-                )}
-                {creditAction !== 'revoke_credit' && (
-                  <button
+                <button
                     className="admin-btn admin-btn-primary"
                     disabled={processing || !creditTarget || !creditAmount}
                     style={{ marginTop: '4px' }}
@@ -1901,38 +1870,12 @@ function AgentDashboardContent() {
                       try {
                         const amt = Number(creditAmount);
                         assertChipAmount(amt);
-                        /*
-                        ALL THREE OF THESE WERE WRONG, EACH IN ITS OWN WAY.
-
-                        ISSUE CREDIT was the only one that could work, and it
-                        passed the raw route param where a uuid was expected -
-                        CreditService looks the agent up with
-                        .eq('club_id', clubId), so on a slug or code URL it
-                        found no row and told the operator "No agent found for
-                        this club" about an agent that exists.
-
-                        ADD PREPAID could never succeed at all. It called
-                        setCreditLine(..., isPrepaid: true) with the amount as
-                        the LIMIT, and fn_admin_update_agent refuses exactly
-                        that pair: "a prepaid agent carries no credit line".
-                        Any positive amount was rejected. Funding a prepaid
-                        agent means sending them chips, which is
-                        fn_agent_wallet_send into their agent wallet.
-
-                        Credit reductions use the prepared operation controls below.
-                      */
+                        /* Every agent is prepaid with no credit line (Dan,
+                           October 2026). Funding an agent means sending chips
+                           into their agent wallet through fn_agent_wallet_send. */
                         const resolvedCreditClub = await resolveClubUUID(clubId || '');
                         const note = creditNotes.trim() || undefined;
-                        if (creditAction === 'issue_credit') {
-                          await CreditService.setCreditLine(
-                            creditTarget,
-                            resolvedCreditClub,
-                            amt,
-                            false,
-                            note
-                          );
-                        } else if (creditAction === 'add_prepaid') {
-                          await runAgentWalletOperation(
+                        await runAgentWalletOperation(
                             {
                               userId: user.id,
                               clubId: resolvedCreditClub,
@@ -1968,12 +1911,7 @@ function AgentDashboardContent() {
                               }
                             }
                           );
-                        }
-                        const labels: Record<string, string> = {
-                          issue_credit: 'Credit line set to',
-                          add_prepaid: 'Prepaid balance sent',
-                        };
-                        setSuccess(`${labels[creditAction] || 'Done'} - ${fmtChips(amt)} chips`);
+                        setSuccess(`Prepaid Chips Sent - ${fmtChips(amt)} Chips`);
                         masterBus.emit('CREDIT_UPDATED', {
                           clubId: clubId || '',
                           userId: creditTarget,
@@ -1989,15 +1927,8 @@ function AgentDashboardContent() {
                       }
                     }}
                   >
-                    {processing
-                      ? 'Processing...'
-                      : creditAction === 'issue_credit'
-                        ? 'Set Credit Line'
-                        : creditAction === 'add_prepaid'
-                          ? 'Send Prepaid Chips'
-                          : 'Reduce Credit Line'}
+                    {processing ? 'Processing...' : 'Send Prepaid Chips'}
                   </button>
-                )}
               </div>
             </div>
           </div>

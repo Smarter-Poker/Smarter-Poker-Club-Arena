@@ -28,7 +28,14 @@ import {
   recurringMttRow,
 } from './TournamentRecurringService.js';
 import { FREE_BUY_SLOTS, freeBuyBoardName } from './FreeBuy.js';
-import { diamondSpawnConfig } from './diamondScheduledSpawn.js';
+import { DIAMOND_FREEROLL_REBUY_DIAMONDS, diamondSpawnConfig } from './diamondScheduledSpawn.js';
+import {
+  FIXED_BOARD,
+  FIXED_BOARD_CLUBS,
+  fixedBoardRowFor,
+  planFixedBoardSync,
+  type ExistingFixedBoardRow,
+} from '../config/fixedBoard.js';
 
 const MIDWAY = 'fade0000-0000-0000-0000-000000000001';
 const ARENA = '002c2d27-9584-4e52-835a-bb2be148fc81';
@@ -113,6 +120,9 @@ describe('every scheduled name builds the event the timer used to make', () => {
     expect(row.free_buy).toBe(true);
     expect(row.buy_in_amount).toBe(0);
     expect(row.guaranteed_prize).toBe(500);
+    // Dan 2026-10-16: "ALL REBUY ADD ON'S FOR MIDWAY UNION ARE 1 CHIP".
+    expect(row.rebuy_cost).toBe(1);
+    expect(row.addon_cost).toBe(1);
     expect(row.starting_chips).toBe(3000);
   });
 
@@ -162,17 +172,16 @@ describe('the Diamond Arena prices a fixed-board occurrence at its real total', 
     if (mapped.ok) expect(mapped.config.buyIn).toBe(total);
   });
 
-  it('the 8 PM Prime Time Free Buy is spawnable in the arena: rebuy and add-on at one Diamond', () => {
+  it('the 8 PM Prime Time Free Buy is on the arena board: rebuy and add-on at 100 Diamonds', () => {
     const name = 'Prime Time Free Buy (NLH)';
     const row = fixedBoardRow(arenaSchedule(name), { fixedBoard: name }, START)!;
-    expect(row.rebuy_cost).toBe(2); // the Midway feature tier
     const mapped = diamondSpawnConfig(row, { fixedBoard: name }, START);
     expect(mapped.ok).toBe(true);
     if (mapped.ok) {
       expect(mapped.config.buyIn).toBe(0);
-      expect(mapped.config.rebuyCost).toBe(1);
-      expect(mapped.config.addonCost).toBe(1);
-      expect(mapped.config.addonChips).toBe(10000);
+      expect(mapped.config.rebuyCost).toBe(100);
+      expect(mapped.config.addonCost).toBe(100);
+      expect(DIAMOND_FREEROLL_REBUY_DIAMONDS).toBe(100);
     }
   });
 
@@ -185,5 +194,84 @@ describe('the Diamond Arena prices a fixed-board occurrence at its real total', 
       expect(mapped.config.buyIn).toBe(0);
       expect(mapped.config.freeBuy).toBe(true);
     }
+  });
+});
+
+describe('the board is hard coded in the engine, so it can never run ahead of its code', () => {
+  it('carries 25 events and 53 starts a day, for both clubs', () => {
+    expect(FIXED_BOARD.length).toBe(25);
+    expect(FIXED_BOARD.reduce((n, e) => n + e.times.length, 0)).toBe(53);
+    expect(FIXED_BOARD_CLUBS.map((c) => c.clubId)).toEqual([MIDWAY, ARENA]);
+  });
+
+  it('is the same board the migration first installed', () => {
+    const fromMigration = scheduledNames.map((m) => [
+      m[1],
+      m[2].split(',').map((t) => t.replace(/'/g, '')),
+      Number(m[3]),
+    ]);
+    expect(FIXED_BOARD.map((e) => [e.name, [...e.times], e.horses])).toEqual(fromMigration);
+  });
+
+  it('every hard-coded event builds a row in both clubs: no unknown template can ship', () => {
+    for (const club of FIXED_BOARD_CLUBS) {
+      for (const event of FIXED_BOARD) {
+        const sched = { id: 'x', club_id: club.clubId, union_id: club.unionId, name: event.name };
+        expect(fixedBoardRow(sched, fixedBoardRowFor(club, event).config, START), event.name).not.toBeNull();
+      }
+    }
+  });
+
+  const asExisting = (id: string, club: (typeof FIXED_BOARD_CLUBS)[number], e: (typeof FIXED_BOARD)[number]): ExistingFixedBoardRow => {
+    const r = fixedBoardRowFor(club, e);
+    return {
+      id,
+      club_id: r.club_id,
+      active: true,
+      days_of_week: r.days_of_week,
+      start_times_utc: r.start_times_utc,
+      time_zone: r.time_zone,
+      config: r.config,
+    };
+  };
+
+  it('an empty table gets all 50 rows', () => {
+    const plan = planFixedBoardSync([]);
+    expect(plan.inserts).toHaveLength(50);
+    expect(plan.updates).toEqual([]);
+    expect(plan.deactivate).toEqual([]);
+  });
+
+  it('a table that already holds the board is left alone', () => {
+    const existing = FIXED_BOARD_CLUBS.flatMap((c, ci) =>
+      FIXED_BOARD.map((e, ei) => asExisting(`${ci}-${ei}`, c, e))
+    );
+    expect(planFixedBoardSync(existing)).toEqual({ inserts: [], updates: [], deactivate: [] });
+  });
+
+  it('a row whose times differ from the code is rewritten to the code', () => {
+    const existing = FIXED_BOARD_CLUBS.flatMap((c, ci) =>
+      FIXED_BOARD.map((e, ei) => asExisting(`${ci}-${ei}`, c, e))
+    );
+    existing[3] = { ...existing[3], start_times_utc: ['09:15'] };
+    const plan = planFixedBoardSync(existing);
+    expect(plan.updates.map((u) => u.id)).toEqual(['0-3']);
+    expect(plan.updates[0].row.start_times_utc).toEqual([...FIXED_BOARD[3].times]);
+  });
+
+  it('a fixed-board row the code no longer lists is retired, and a duplicate too', () => {
+    const existing = FIXED_BOARD_CLUBS.flatMap((c, ci) =>
+      FIXED_BOARD.map((e, ei) => asExisting(`${ci}-${ei}`, c, e))
+    );
+    existing.push({ ...existing[0], id: 'dup' });
+    existing.push({ ...existing[1], id: 'gone', config: { type: 'fixed_board', fixedBoard: 'Retired Event (NLH)' } });
+    expect(planFixedBoardSync(existing).deactivate.sort()).toEqual(['dup', 'gone']);
+  });
+
+  it('the scheduler writes the board before it reads a schedule', () => {
+    const src = readFileSync(join(__dirname, 'ScheduledTournamentService.ts'), 'utf8');
+    const poll = src.slice(src.indexOf('private async poll('));
+    expect(poll.indexOf('this.syncFixedBoard()')).toBeGreaterThan(-1);
+    expect(poll.indexOf('this.syncFixedBoard()')).toBeLessThan(poll.indexOf(".from('tournament_schedules')"));
   });
 });

@@ -490,18 +490,17 @@ describe('the row a Free Buy is created as', () => {
     expect(row.addon_chips).toBe(10000);
   });
 
-  it('carries the feature tier price at 20:00', () => {
+  it('carries the feature tier guarantee at 20:00, at the same 1 chip rebuy and add-on (Dan 2026-10-16)', () => {
     const row = rowFor(0, 20);
     expect(row.guaranteed_prize).toBe(500);
-    expect(row.rebuy_cost).toBe(2);
-    expect(row.addon_cost).toBe(2);
+    expect(row.rebuy_cost).toBe(1);
+    expect(row.addon_cost).toBe(1);
     expect(row.addon_chips).toBe(10000);
   });
 
   it('sets free_buy AND a positive rebuy_cost together, or the trigger reprices it to 1.00', () => {
-    // fn_freerolls_are_free_buy only leaves a price alone when
-    // free_buy = true AND rebuy_cost > 0. Either half alone is a $2 event
-    // that silently becomes a $1 one.
+    // Every Midway freeroll rebuy and add-on is 1 chip (Dan 2026-10-16), and
+    // fn_freerolls_are_free_buy forces exactly that; the row states it too.
     const row = rowFor(0, 20);
     expect(row.free_buy).toBe(true);
     expect(Number(row.rebuy_cost)).toBeGreaterThan(0);

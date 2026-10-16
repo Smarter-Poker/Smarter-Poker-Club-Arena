@@ -229,12 +229,14 @@ describe('the calls that answer a clock cannot wait for ever', () => {
     const late = api.ENGINE_CLOCKED_CALL_TIMEOUT_MS + 2_000;
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation(
-        () =>
-          new Promise((resolve) =>
-            setTimeout(() => resolve(ok({ success: true, newDeadline: 1 })), late)
-          )
-      )
+      vi
+        .fn()
+        .mockImplementation(
+          () =>
+            new Promise((resolve) =>
+              setTimeout(() => resolve(ok({ success: true, newDeadline: 1 })), late)
+            )
+        )
     );
 
     const res = await settle(api.activateTimeBank('table-1'));
@@ -302,5 +304,67 @@ describe('"no game for this table" is an answer, not an outage', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(res.success).toBe(false);
     expect(res.code).toBeUndefined();
+  });
+});
+
+describe('Lightning fold intent stays bound to its rendered hand', () => {
+  const room = '11111111-1111-4111-8111-111111111111';
+  const handA = '22222222-2222-4222-8222-222222222222';
+  const handB = '33333333-3333-4333-8333-333333333333';
+  it('retains the original hand through the delay before the first HTTP write', async () => {
+    const { sendLightningFold } = await import('../src/lightning/lightningActions');
+    const fetchMock = vi.fn().mockResolvedValue(ok());
+    vi.stubGlobal('fetch', fetchMock);
+    await settle(api.submitAction(room, 'u1', 'check', undefined, 'ordinary-turn'));
+    let renderedHand = handA;
+    const fold = sendLightningFold(room, 'u1', 'fast_fold', renderedHand);
+    renderedHand = handB;
+    expect((await settle(fold)).success).toBe(true);
+    const writes = fetchMock.mock.calls.map((call) =>
+      JSON.parse(String((call[1] as RequestInit).body))
+    );
+    expect(writes).toHaveLength(2);
+    expect(writes[0].actionContext).toBe('ordinary-turn');
+    expect(writes[1]).toMatchObject({
+      tableId: room,
+      action: 'fast_fold',
+      actionContext: `lightning-hand:${handA}`,
+    });
+    expect(writes[1].actionContext).not.toContain(renderedHand);
+  });
+  it('a 429 retry carries the same original hand and idempotency key after handoff', async () => {
+    const { sendLightningFold } = await import('../src/lightning/lightningActions');
+    let renderedHand = handA;
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        renderedHand = handB;
+        return Promise.resolve(status(429));
+      })
+      .mockResolvedValue(
+        status(400, { success: false, code: 'STALE_ACTION', error: 'The hand has changed' })
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await settle(sendLightningFold(room, 'u1', 'fold_watch', renderedHand));
+    expect(result).toMatchObject({ success: false, code: 'STALE_ACTION' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse(String((call[1] as RequestInit).body))
+    );
+    expect(bodies[0].actionContext).toBe(`lightning-hand:${handA}`);
+    expect(bodies[1]).toEqual(bodies[0]);
+    expect(bodies[1].actionContext).not.toContain(renderedHand);
+  });
+  it('unknown or malformed rendered hands make no authentication or HTTP action request', async () => {
+    const { sendLightningFold } = await import('../src/lightning/lightningActions');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    for (const hand of [null, undefined, '', 'n:42', 'not-a-hand']) {
+      expect(await sendLightningFold(room, 'u1', 'fast_fold', hand)).toMatchObject({
+        success: false,
+        code: 'ACTION_CONTEXT_REQUIRED',
+      });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -182,8 +182,10 @@ describe('LIGHTNING FOLD availability and payload', () => {
       amount: 0,
     });
     const send = vi.fn(async () => ({ success: true }));
-    await sendLightningFold(POOL, 'user-1', 'fast_fold', send);
-    expect(send).toHaveBeenCalledWith(POOL, 'user-1', 'fast_fold', 0);
+    await sendLightningFold(POOL, 'user-1', 'fast_fold', CLUSTER, send);
+    expect(send).toHaveBeenCalledWith(POOL, 'user-1', 'fast_fold', 0, `lightning-hand:${CLUSTER}`);
+    await sendLightningFold(POOL, 'user-1', 'fold_watch', CLUSTER, send);
+    expect(send).toHaveBeenCalledWith(POOL, 'user-1', 'fold_watch', 0, `lightning-hand:${CLUSTER}`);
   });
 });
 

@@ -36,6 +36,8 @@ Schedules: `sp-daily-metrics-snapshot` (12:15 AM Central) and `sp-daily-digest-w
 
 - `20261016042936`: chip supply drift pages the phone only from 100 chips (setting `supply_page_threshold_chips`). 6 of 72 hourly snapshots over 3 days carried 3.60 to 6.20 unexplained chips; any non-zero drift still shows in the morning digest and goes to the fleet. The first page (3.60 chips) was closed unsent with `fn_sp_critical_mark`.
 
+- `20261016050452`: attention copy carries no dollar sign (Club Arena rule, enforced by `check-ui-dollar` over migration SQL). The payment item reads "Payments: 0.00 USD refunded, ...". The same text replaced the earlier wording in the two files that first defined `fn_sp_digest_attention`.
+
 Backfill: `sp_daily_metrics` holds 2026-10-01 through 2026-10-14. Oct 12 was checked against independent queries (cash rake 217,185.27, tournament rake 100,004.56, hands 1,030,503, diamonds given 368,574, tournaments completed 21,971): all identical.
 
 ## Findings From The Deep Dive That Shaped It

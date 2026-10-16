@@ -481,7 +481,7 @@ BEGIN
   v2 := COALESCE((p_metrics#>>'{sales,disputes}')::numeric,0) + COALESCE((p_metrics#>>'{sales,stripe_events,not_completed}')::numeric,0);
   IF v > 0 OR v2 > 0 THEN
     a := a || jsonb_build_object('rule','payment_problem','severity','critical',
-      'title', format('Payments: $%s refunded, %s disputes or failed Stripe events', to_char(v,'FM999,990.00'), v2), 'detail', jsonb_build_object('refunds_usd', v, 'issues', v2));
+      'title', format('Payments: %s USD refunded, %s disputes or failed Stripe events', to_char(v,'FM999,990.00'), v2), 'detail', jsonb_build_object('refunds_usd', v, 'issues', v2));
   END IF;
 
   -- Signups vs 7 day average (only once there is history)

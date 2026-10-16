@@ -106,7 +106,7 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
       if (!mounted.current) return;
       const saved = await saveClubBanner(club.id, userId, club.banner_url, next);
       if (!mounted.current) return;
-      setClub(saved);
+      setClub((current) => (current ? { ...current, banner_url: saved.banner_url } : saved));
       setFile(null);
       setUseDefault(false);
       uploaded.current = null;
@@ -201,7 +201,13 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
                 Use Default Banner
               </button>
               <p>Banner Taps Open Your Club Announcements.</p>
-              <ClubRotatingBannerEditor club={club} ownerId={userId!} onSaved={setClub} />
+              <ClubRotatingBannerEditor
+                club={club}
+                ownerId={userId!}
+                onSaved={(saved) =>
+                  setClub((current) => (current ? { ...current, settings: saved.settings } : saved))
+                }
+              />
             </>
           )}
           {!loading && (

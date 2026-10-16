@@ -7,3 +7,5 @@ The existing owner-only clubs RLS authorizes writes. Full-settings compare-and-s
 Enabled club banners take priority in the existing three-image rotator and fullscreen preview. Resolver-selected platform promotions fill unused slots, and remain the fallback when no club banner is enabled. They never produce paid-ad events. Disabled banners are excluded, broken images leave rotation, and route changes discard stale requests.
 
 Regression coverage includes storage validation, owner/CAS/refusal/recovery, the real editor, shared rotator and isolated production upload, order, toggle, reload, lobby readback, removal and cleanup.
+
+Independent banner saves merge only the field they wrote, so a delayed top-banner response cannot replace newer rotating-banner settings in the editor. A real-component regression fails before this fix and passes after it.

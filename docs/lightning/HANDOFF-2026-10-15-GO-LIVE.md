@@ -4,6 +4,31 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Private Join Repair Locally Qualified (2026-10-16 15:57 UTC)
+
+- Reserved20261016155403_private_cash_join_requires_approved_membership.sql guards exactlivepredecessor pg_get_functiondef MD521778e534332e0caffce932b05faee93 and inserts privategame/privateclub owner-or-activeapprovedmembership beforeenabled/seat/wallet/hold/queue paths. Singletransaction3slocktimeout/20sstatementtimeout; preservesfunctionownership/ACL/SECURITYDEFINER/search_path andexistingDiamondchecks. DiamondArena is_publictrue/all17gamesunmarkedprivate independentlyconfirmed, soordinarypublicDiamondpathunchanged.
+- NewisolatedPG17native actualfullpredecessorFAILBEFORE admitsnonmemberseat viafundedwalletstub; PASSAFTER deniespending/nonmemberbeforewallet/hold/waitlist, acceptsowner/active/approved/public, separatelyprovesprivateclub/privategame boundaries, andrefusesreplaywithoutdefinitionchange. Hookedintoexistingrequiredmatcherparityharness. Rootintegratednativeharness passes8snapshots/49groups plusbothprivateguards;84focusedaccess/stage/setupchecks0skip androotTypeScriptpass. Logsprivate-join-native-integrated.log/private-join-ops-final.log/private-join-typecheck.log.
+- Accesscollector nowretains fixedsanitizedjoinoutcomes beforeassertion andsuccessfulintermediatebrowser/socketproof. NewprivateguardreasonrequiresEXACT PRIVATE_MEMBERSHIP_REQUIRED withSQLSTATE42501; lookalike/wrong/missingcodesremainfailed. Noassertionweakened. Actualaccessstillfaileduntilprotectedmerge/install/explicitretry. Noadditionalagreementacceptance oractivation.
+
+## Private Join Defect And Continued Recovery (2026-10-16 15:54 UTC)
+
+- Discovery installer38913126048 succeeded: SQL committed14:09:40.599Z in111ms, exactversionrecorded. Independent14:10:32Z readback confirms exact rawMD5804b5dd05068cc9151fca226cdd8c924, policydefinition5461a57e076c9d7a338b8030a3579e10, onlyauthenticatedSELECTpolicy, RLSenabled/liveprooftrue. Never replay.
+- Access38913648505 / operationf124054c-cf6d-4930-8261-2f57fccbaee6 failed atnonmember_joins. All16owneranchor sockets101 and both375ownerbrowser routes passed. Nonmemberbrowser/discovery/socket steps passed before join assertion; originaltool didnotretainthose successfulintermediate observations separately onfailure. NormalcurrentTerms/Privacy acceptancefor23040e91 persisted14:14:03.692Z, independentlyread back. No newacceptance needed for thatidentity;009playeracceptance stillpending.
+- Actual privatejoindefect: live SECURITYDEFINER fn_cash_game_join lacksprivateclubmembershipcheck. Itswalletcovers path fallsbacktofn_player_home_club throughfn_seat_club_for_user. Fresh15:53readonlyconfirms outsiderother-clubwalletcovers true onbothpilots despiteabsentpilotmembership. 6-max table_waitlist rowleft/holdnull corroborates admittedholdthen normalwitnesscancellation; noactivehold, waitlistor pilotmembership remains. No chips moved/newfunding. Rootfixmustguard privateowner/activeapprovedmembership beforeseat/wallet/hold writes; publicsemanticsunchanged. Remainsdisableduntil actualaccesspasses.
+- #7107 allrequired exacte5headchecks passed, CI38912695687 SUCCESS. Protectedmerged77192bb1a99dd49ed53dec3d51eb76a5492dfb7e at14:54:54Z. Witness tooling hasno runtime/DDLdependency. Followupownedbranchcodex/lightning-private-join-access-20261016 startsprotectedmain6296f0e060478495c3de9c5d5146e1f7ae4e7785 containing771; preservesotherwriters. RootsoleGit/prodwriter, agentsallocatednewnativeSQL and accessdiagnostics only.
+
+## Private Discovery Installation In Progress (2026-10-16 14:09 UTC)
+
+- One guarded installation dispatched14:06:41Z, owning38913126048, exact target20261016124818 onprotectedmain6d9b43128fbc9ee4ba0cfd36c9a62963ae8471b5. Sourceapplier/workflow unchangedfromreviewed755, targetrawMD5still804b5dd05068cc9151fca226cdd8c924. Admitted14:09:03Z afterrunnerqueue. No duplicate; actualcommit/readback pending.
+- Current7107e5 owningCI38912695687; obsolete d3run38911173965 normalcancelignored, explicitforcecancel nowterminalcancelled withzeroactivejobs. PRdescriptionupdated59focusedchecks andnormalrevokedconsumerproof. No newsourcechange or repeatedsuite.
+- Independent14:07liveproof: engine0279795ec6b20bea07eda41fbffd613eb8ef0040 healthy/includesB1+7025; bothclientstamps5780828e02d0f9c076f08bb503a4507599465928 via successfulpublisher38909138350 alsoincludeB1+7025. Unrelatedengine38909588241 stillowns later578target, notaprerequisiteforcurrenttooling.
+- Saved14:08:15Z preconversionbaseline exactseats+cashsessions/obligations. BothMUSTMOVEepoch2/disabled,pools0,current-boundAA0,highintegrity0/alerts0;eligible52/61. Theseareobservations,nofabricatedreadinessorconversioncausality. Noagreementacceptedandnoreactivationyet.
+
+## Continued Delivery Receipt (2026-10-16 14:07 UTC)
+
+- Fresh canonical full reader emitted14:05:51.278Z, policy2.9 with unchanged manifest/four hashes retained below. Actual repository entrypoints/fullCLAUDE/publishing/deploypaths/storage and full Lightning checkpoint/phase/register/rollout/review/catalog freshly read; canonical comparison passes. Both external SSD volumes mounted on own disk5s4/s3, Work6.9GiB available. HEAD e5f6bdd882111684e88d969fdd9d4adbcb1ce01e pushed on7107. Root retains sole production/Git ownership.
+- Fresh14:06:32Z database read: not frozen, target discovery ledger0, exact predecessor MD5f1ff2b6f7d2976ab5a3c7deab313d9c5. No nonterminal installer among current latest5; preparing one explicit guarded main installation. No agreements accepted or pilot activation yet.
+
 ## Final Recovery Consumer Proof Adjustment (2026-10-16 14:03 UTC)
 
 - Directreview found an evidencegap, not a demonstratedproductdefect: initialrecoveryprovedrawsocket4401 butclosednormalbrowserbeforeobservingitsrevocationconsumer. Finalsource keepsbrowseralive, locallyrevokesonlyitsownsyntheticsession, drops/restoresactualtransport, requiresnormal/auth/login?authError=no_session pluslocal-storage-authclearedboolean, thenfreshverifiedsamepoolrecovery. One-timeoriginpinnedinitialization prevents theharnessfromreinsertingrevokedtokensonlogin navigation. No productengine/clientchange.

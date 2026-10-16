@@ -41,3 +41,4 @@ UPDATE club_members SET chip_balance=1000 WHERE role='owner';
 SELECT set_config('app.ledger_autoskip_club_members','',false);
 
 CREATE VIEW public.cashier_rpc_operation_intents AS SELECT id AS operation_id,actor AS actor_user_id,club AS club_id,intent->>'action' AS action,intent AS operation_intent,receipt FROM test_intents;
+ALTER TABLE journal ADD COLUMN tournament_id uuid DEFAULT nullif(current_setting('app.ledger_tournament',true),'')::uuid;

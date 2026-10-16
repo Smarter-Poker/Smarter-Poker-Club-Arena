@@ -1,5 +1,10 @@
 import { expect, test, type Locator, type TestInfo } from '@playwright/test';
-import { BATCH_VERDICTS, batchVerdictFor, fundingCoverage } from './support/cashierFundingVerdict';
+import {
+  BATCH_VERDICTS,
+  batchVerdictFor,
+  fundingCoverage,
+  printedFundingFigure,
+} from './support/cashierFundingVerdict';
 import {
   attachCashierScreenshot,
   expectCashierAxeClean,
@@ -33,9 +38,15 @@ async function expectBatchVerdictFromFunding(
   testInfo: TestInfo,
   name: string
 ): Promise<void> {
-  const text = (await dialog.innerText()).replace(/\s+/g, ' ');
-  // The funding wallet prints as its own painted row: label, then figure.
-  const figure = new RegExp(`${fundingLabel} (\\S+)`).exec(text)?.[1] ?? '';
+  // The funding wallet prints as its own painted row (CashierWalletRow): a
+  // region named by its label, holding the figure in its value element. Read
+  // the figure from that element. The dialog's innerText is not a source: the
+  // painted label is text-transform: uppercase and sits flush against the
+  // figure, so a label-then-figure match on innerText finds nothing and every
+  // run reported an empty figure (Post-Deploy E2E, 2026-10-15).
+  const fundingRow = dialog.getByRole('region', { name: fundingLabel, exact: true });
+  await expect(fundingRow).toBeVisible();
+  const figure = printedFundingFigure(await fundingRow.locator('strong').allTextContents());
   const coverage = fundingCoverage(figure, total);
   const verdict = batchVerdictFor(coverage, recipients);
   await testInfo.attach(`${name}-funding-verdict.json`, {

@@ -267,14 +267,22 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
       });
     const offSaved = savedChoice(false);
     await toggles.nth(0).click();
-    await offSaved;
+    const offResponse = await offSaved;
+    const ownerId = offResponse.request().postDataJSON().user_id;
+    expect(ownerId).toEqual(expect.any(String));
     await expect(toggles.nth(1)).toHaveAttribute('aria-checked', 'false');
-    const restored = page.waitForResponse(
-      (response) =>
-        response.url().includes('/rest/v1/user_table_settings') &&
+    const restored = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      // The shell also reads a partial settings projection without this
+      // preference. Only the account's complete row proves its saved choice.
+      return (
+        url.pathname.endsWith('/rest/v1/user_table_settings') &&
+        url.searchParams.get('select') === '*' &&
+        url.searchParams.get('user_id') === `eq.${ownerId}` &&
         response.request().method() === 'GET' &&
         response.ok()
-    );
+      );
+    });
     await page.reload();
     const row = await (await restored).json();
     expect(Array.isArray(row) ? row[0]?.auto_time_bank : row?.auto_time_bank).toBe(false);

@@ -33,6 +33,8 @@ import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+export type BuyInConfirmation = boolean | void | { status: 'rejected'; message: string };
+
 export interface BuyInModalProps {
   isOpen: boolean;
   /** Cash bust rebuys share the owner-approved purchase artwork. */
@@ -40,7 +42,7 @@ export interface BuyInModalProps {
   externalProcessing?: boolean;
   recovery?: { amount: number; seat: number } | null;
   onClose: () => void;
-  onConfirm: (amount: number, autoRebuy: boolean) => boolean | void | Promise<boolean | void>;
+  onConfirm: (amount: number, autoRebuy: boolean) => BuyInConfirmation | Promise<BuyInConfirmation>;
   tableName?: string;
   minBuyIn: number;
   maxBuyIn: number;
@@ -300,7 +302,9 @@ export function BuyInModal({
         reportError(audioError, 'BuyInModal.confirm_sound_failed');
       }
       const confirmed = await onConfirm(clampedBuyIn, autoRebuy);
-      if (confirmed === false) {
+      if (confirmed && typeof confirmed === 'object' && confirmed.status === 'rejected') {
+        setConfirmError(confirmed.message);
+      } else if (confirmed === false) {
         setConfirmError('Buy-In Not Yet Confirmed.');
         reportError(new Error('Buy-In Not Yet Confirmed.'), 'BuyInModal.buy_in_not_confirmed', {
           code: 'BUY_IN_NOT_CONFIRMED',

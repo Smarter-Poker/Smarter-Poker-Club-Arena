@@ -1,3 +1,4 @@
+import { viewportPointInFrame } from '../../lib/chipAwardGeometry';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CHIP ANIMATION — Premium Poker Chip Movement Effects
@@ -11,7 +12,7 @@
  * - Supports chip-to-pot and pot-to-winner flows
  */
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
 import {
   breakChips,
   chipDenominationFor,
@@ -34,6 +35,8 @@ interface Position {
 }
 
 interface ChipAnimationProps {
+  recipientId?: string;
+  flightId?: string;
   from: Position;
   to: Position;
   amount: number;
@@ -91,6 +94,8 @@ function easeOutCubic(t: number): number {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export default function ChipAnimation({
+  recipientId,
+  flightId,
   from,
   to,
   amount,
@@ -225,7 +230,7 @@ export default function ChipAnimation({
     };
 
     // intentionally read through onCompleteRef; see CHIP-GLITCH FIX above.
-  }, [from, to, duration, delay, useArc, arcHeight]);
+  }, [from.x, from.y, to.x, to.y, duration, delay, useArc, arcHeight]);
 
   if (!isVisible) return null;
 
@@ -238,6 +243,9 @@ export default function ChipAnimation({
   return (
     <div
       ref={containerRef}
+      data-chip-recipient={recipientId}
+      data-chip-flight={flightId}
+      data-chip-phase={position.x === to.x && position.y === to.y ? 'landed' : 'flying'}
       className={styles.chipContainer}
       style={{
         transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
@@ -270,6 +278,8 @@ export default function ChipAnimation({
 
 export interface ChipAnimationEvent {
   id: string;
+  /** The actual recipient, retained across a deferred multi-board launch. */
+  recipientId?: string;
   from: Position;
   to: Position;
   amount: number;
@@ -287,20 +297,68 @@ export interface ChipAnimationEvent {
 
 interface ChipAnimationManagerProps {
   animations: ChipAnimationEvent[];
+  floats?: Array<{
+    id: number;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    label: string;
+  }>;
   onAnimationComplete?: (id: string) => void;
 }
 
+const NO_POT_FLOATS: NonNullable<ChipAnimationManagerProps['floats']> = [];
+
 export function ChipAnimationManager({
   animations,
+  floats = NO_POT_FLOATS,
   onAnimationComplete,
 }: ChipAnimationManagerProps) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const [frame, setFrame] = useState({
+    left: 0,
+    top: 0,
+    width: 1,
+    height: 1,
+    localWidth: 1,
+    localHeight: 1,
+  });
+  useLayoutEffect(() => {
+    const element = frameRef.current;
+    if (!element) return;
+    const measure = () => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0)
+        setFrame({
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+          localWidth: element.offsetWidth || rect.width,
+          localHeight: element.offsetHeight || rect.height,
+        });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [animations, floats]);
+  const local = (point: Position) =>
+    viewportPointInFrame(point, frame, frame.localWidth, frame.localHeight);
   return (
-    <div className={styles.manager}>
+    <div ref={frameRef} className={styles.manager}>
       {animations.map((anim) => (
         <ChipAnimation
           key={anim.id}
-          from={anim.from}
-          to={anim.to}
+          recipientId={anim.recipientId}
+          flightId={anim.id}
+          from={local(anim.from)}
+          to={local(anim.to)}
           amount={anim.amount}
           chipColor={anim.chipColor}
           denomValue={anim.denomValue}
@@ -313,6 +371,28 @@ export function ChipAnimationManager({
           onComplete={() => onAnimationComplete?.(anim.id)}
         />
       ))}
+      {floats.map((float) => {
+        const from = local({ x: float.fromX, y: float.fromY });
+        const to = local({ x: float.toX, y: float.toY });
+        return (
+          <div
+            key={float.id}
+            className="pot-win-float"
+            aria-hidden="true"
+            style={
+              {
+                position: 'absolute',
+                '--pwf-from-x': `${from.x}px`,
+                '--pwf-from-y': `${from.y}px`,
+                '--pwf-to-x': `${to.x}px`,
+                '--pwf-to-y': `${to.y}px`,
+              } as React.CSSProperties
+            }
+          >
+            {float.label}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -431,7 +511,7 @@ export function createPotToWinnerEvent(
       y: potPos.y + (Math.random() - 0.5) * 10,
     },
     to: {
-      x: winnerPos.x + (Math.random() - 0.5) * 15,
+      x: winnerPos.x,
       y: winnerPos.y,
     },
     amount: Math.round(amount / chipCount),

@@ -13,6 +13,7 @@
  *   3. TablePage paints only URLs the loader has decoded and covers the
  *      table until both have.
  */
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -35,6 +36,37 @@ describe('TablePage paints the art the loader decoded, and waits for it', () => 
     );
     expect(page).toContain('src={tableArt.skinSrc || undefined}');
     expect(page).toContain('resolveBackgroundLayersForUrl(tableArt.backgroundSrc)');
+  });
+  it('the cover is executable JSX and its preloader is an actual import', () => {
+    const ast = ts.createSourceFile(
+      'TablePage.tsx',
+      page,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
+    );
+    let cover = false;
+    let preloader = false;
+    const visit = (node: ts.Node) => {
+      if (
+        ts.isJsxAttribute(node) &&
+        node.name.getText(ast) === 'className' &&
+        node.initializer &&
+        ts.isStringLiteral(node.initializer) &&
+        node.initializer.text === 'table-art-cover'
+      )
+        cover = true;
+      if (
+        ts.isImportDeclaration(node) &&
+        ts.isStringLiteral(node.moduleSpecifier) &&
+        node.moduleSpecifier.text.endsWith('/ButtonImagePreloader')
+      )
+        preloader = true;
+      ts.forEachChild(node, visit);
+    };
+    visit(ast);
+    expect(cover, 'a JSX-shaped string inside <style> renders no loading cover').toBe(true);
+    expect(preloader, 'an import inside a comment warms no artwork').toBe(true);
   });
   it('covers the table until the art can be revealed', () => {
     expect(page).toContain('{!tableArt.reveal && !tableLoadFailure && (');

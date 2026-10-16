@@ -13,6 +13,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import './TableMenu.css';
+import { useSeatChangeVisibility } from '../../hooks/useSeatChangeVisibility';
 import { haptic, soundService } from '../../services/SoundService';
 import {
   SitOutIcon,
@@ -317,6 +318,8 @@ export function TableMenu({
   onOpenIdentity,
 }: TableMenuProps) {
   const hamburgerIcon = useButtonImage('icon-hamburger');
+  const { visible: seatChangeVisible, setVisible: setSeatChangeVisible } =
+    useSeatChangeVisibility();
   /* `activeSection` / `setActiveSection` deleted 2026-08-25: state written by
      nobody and read by nobody since the file was written. */
   const menuRef = useRef<HTMLDivElement>(null);
@@ -440,6 +443,18 @@ export function TableMenu({
       ] as MenuAction[],
     },
     ...propSections,
+    {
+      title: 'Table Controls',
+      actions: [
+        {
+          id: 'seat-change-visibility',
+          label: 'Seat Change',
+          icon: <SettingsIcon />,
+          badge: seatChangeVisible ? 'ON' : 'OFF',
+          onClick: () => setSeatChangeVisible(!seatChangeVisible),
+        },
+      ],
+    },
   ];
 
   // Sound cue on menu open
@@ -612,7 +627,12 @@ export function TableMenu({
                       return (
                         <button
                           key={action.id}
-                          role="menuitem"
+                          role={
+                            action.id === 'seat-change-visibility' ? 'menuitemcheckbox' : 'menuitem'
+                          }
+                          aria-checked={
+                            action.id === 'seat-change-visibility' ? seatChangeVisible : undefined
+                          }
                           className={`table-menu__action ${action.danger ? 'table-menu__action--danger' : ''} ${action.disabled ? 'table-menu__action--disabled' : ''}`}
                           onClick={() => handleActionClick(action)}
                           disabled={action.disabled}

@@ -172,6 +172,7 @@ function declarationsOf(prop: string): Array<{ selector: string; value: string }
  * a component STATE can change is a table that resizes under the player.
  */
 const GEOMETRY_PROPS = [
+  '--sp-tabbar-h',
   '--sp-table-bottom',
   '--sp-table-h',
   '--sp-page-h',

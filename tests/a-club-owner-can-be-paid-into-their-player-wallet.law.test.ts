@@ -138,10 +138,10 @@ describe('no Club Bank screen picks the wallet from the role alone', () => {
     const trade = read('src/pages/CashierTradePage.tsx');
     expect(trade).toContain("currentClub?.entityType === 'club' && canSeeClubBank(myRole)");
     // Dan 2026-10-15: the owner's own row is selectable like any other, and a
-    // Send Out to yourself is paid by the Club Bank into your player wallet.
+    // A selected Club Bank source pays the chosen eligible wallet, including self.
     expect(trade).toContain('const selectable = !r.isSelf || selfCanFundPlayerWallet;');
-    expect(trade).toContain(
-      "if (kind === 'send' && targets.length === 1 && selfCanFundPlayerWallet) {"
+    expect(trade).toMatch(
+      /kind === 'send' &&\s*targets.length === 1 &&\s*selfCanFundPlayerWallet &&\s*sendSource === 'club_bank'/
     );
     expect(trade).toContain("supabase.rpc('fn_club_bank_send', {");
     expect(trade).toContain('p_destination: transferDestination(picked[0]),');

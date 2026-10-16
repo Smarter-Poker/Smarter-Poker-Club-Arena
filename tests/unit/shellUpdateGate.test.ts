@@ -48,6 +48,16 @@ describe('mayReloadForShell — never mid-hand, never unseen, never in a loop', 
     expect(mayReloadForShell({ ...base, pathname: '/table/abc' })).toBe(false);
   });
 
+  it.each([
+    '/hub/club-arena/cashier',
+    '/hub/club-arena/clubs/club-jaqk/cashier',
+    '/hub/club-arena/clubs/club-jaqk/cashier/statements',
+    '/hub/club-arena/clubs/club-jaqk/cashier-classic',
+    '/clubs/club-jaqk/cashier-classic/',
+  ])('never automatically reloads a Cashier page: %s', (pathname) => {
+    expect(mayReloadForShell({ ...base, pathname })).toBe(false);
+  });
+
   it('never burns the update on a hidden tab', () => {
     expect(mayReloadForShell({ ...base, visible: false })).toBe(false);
   });

@@ -62,7 +62,7 @@ import {
   multiplierLabel,
   oneInRangeLabel,
 } from '../utils/diamondGamesFairness';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips, formatWalletDiamonds } from '../utils/format';
 import FloorFeed, { BiggestWins } from '../components/games/FloorFeed';
 import { useGameFloor } from '../hooks/useGameFloor';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -321,18 +321,18 @@ export default function DiamondGamesPage() {
         aria-labelledby="diamond-games-title"
       >
         <div className={styles.rows}>
-          <Row label="Your Diamonds" value={compactChips(diamonds)} ink="blue" />
+          <Row label="Your Diamonds" value={formatWalletDiamonds(diamonds)} ink="blue" />
           {purchasedOnly ? (
             <Row
               label="Ready To Play"
-              value={compactChips(spendable)}
+              value={formatWalletDiamonds(spendable)}
               ink="white"
               meta="Purchased Diamonds Only"
             />
           ) : null}
           <Row
             label="Club Chips"
-            value={memberChips === null ? 'Join To Play' : compactChips(memberChips)}
+            value={memberChips === null ? 'Join To Play' : formatWalletChips(memberChips)}
             ink="silver"
           />
         </div>

@@ -50,7 +50,7 @@ import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import { SpadeConsole } from '../console/SpadeConsole';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatWalletChips } from '../../utils/format';
 import styles from './FindPlayerModal.module.css';
 
 interface FindPlayerModalProps {
@@ -593,19 +593,19 @@ export default function FindPlayerModal({
                                 <dl className={styles.facts}>
                                   <Fact
                                     label="Player"
-                                    value={compactChips(account.wallets.player_wallet)}
+                                    value={formatWalletChips(account.wallets.player_wallet)}
                                   />
                                   <Fact
                                     label="Agent"
-                                    value={compactChips(account.wallets.agent_wallet)}
+                                    value={formatWalletChips(account.wallets.agent_wallet)}
                                   />
                                   <Fact
                                     label="Promo"
-                                    value={compactChips(account.wallets.promo_wallet)}
+                                    value={formatWalletChips(account.wallets.promo_wallet)}
                                   />
                                   <Fact
                                     label="Club Chips"
-                                    value={compactChips(account.wallets.chip_balance)}
+                                    value={formatWalletChips(account.wallets.chip_balance)}
                                   />
                                   <Fact
                                     label="Direct"

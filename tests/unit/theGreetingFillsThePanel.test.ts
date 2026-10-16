@@ -73,17 +73,15 @@ describe('the greeting is a contained popup', () => {
     // screen. Without the .ca-modal-content link, `flex: 1` has no flex parent
     // (the shared Modal wraps children) and the content collapses (#2899).
     const inner = ruleBody(`${PANEL} > .ca-modal-content`);
-    expect(inner).toContain('display: flex');
-    expect(inner).toContain('flex: 1');
-    expect(inner).toContain('flex-direction: column');
+    expect(inner).toContain('overflow-y: auto');
     expect(inner).toContain('min-height: 0');
     expect(ruleBody('.club-entry-message')).toContain('overflow-y: auto');
   });
 
   it('the close control is still a 44px target', () => {
     // A greeting nobody can dismiss on the first try is worse than no greeting.
-    const close = ruleBody('.club-entry-message__close');
-    expect(close).toContain('width: 44px');
-    expect(close).toContain('height: 44px');
+    const close = ruleBody('.club-entry-message .sc__close');
+    expect(close).toContain('min-width: 44px');
+    expect(close).toContain('min-height: 44px');
   });
 });

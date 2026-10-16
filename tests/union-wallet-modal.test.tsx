@@ -102,6 +102,13 @@ beforeEach(() => {
 });
 
 describe('UnionWalletModal', () => {
+  it('prints the chip wallet to cents while transaction amounts retain their ledger format', async () => {
+    render(<UnionWalletModal {...base} balance={1000} />);
+    expect(await screen.findByText('1,000.00')).toBeTruthy();
+    expect(screen.getByText('Weekly Rake Wallet Balance 1,000.00')).toBeTruthy();
+    expect(screen.queryByText('1K')).toBeNull();
+  });
+
   it('loads the union-wide roster with roles when opened', async () => {
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('Danny')).toBeTruthy());
@@ -200,7 +207,7 @@ describe('UnionWalletModal', () => {
       fireEvent.click(screen.getByText('Fish'));
       fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '9000' } });
 
-      expect(screen.getByRole('alert').textContent).toBe('This Wallet Only Holds 5,000.');
+      expect(screen.getByRole('alert').textContent).toBe('This Wallet Only Holds 5,000.00.');
       expect(screen.queryByText(/Would Hold/)).toBeNull();
       expect(document.body.textContent).not.toMatch(/-4,000/);
       const plate = screen.getByRole('button', { name: /send to fish/i });
@@ -231,7 +238,7 @@ describe('UnionWalletModal', () => {
       fireEvent.click(screen.getByText('Fish'));
       fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '12.50' } });
       expect(screen.queryByRole('alert')).toBeNull();
-      expect(screen.getByText(/Would Hold 4,987\.5 Afterwards/)).toBeTruthy();
+      expect(screen.getByText(/Would Hold 4,987\.50 Afterwards/)).toBeTruthy();
     });
   });
 
@@ -574,7 +581,7 @@ describe('UnionWalletModal', () => {
     );
     expect(rpc).not.toHaveBeenCalledWith('fn_union_clawback_from_club', expect.anything());
     expect((await screen.findByRole('status')).textContent).toMatch(/promo wallet/i);
-    expect(screen.getByText('33,000')).toBeTruthy();
+    expect(screen.getByText('33,000.00')).toBeTruthy();
   });
 
   it('pulls from the club bank when opened on the union bank, with an op id', async () => {
@@ -596,7 +603,7 @@ describe('UnionWalletModal', () => {
         expect.objectContaining({ p_club_id: 'c-2', p_amount: 10, p_op_id: expect.any(String) })
       )
     );
-    expect(await screen.findByText('70,000')).toBeTruthy();
+    expect(await screen.findByText('70,000.00')).toBeTruthy();
   });
 
   it('reuses the clawback operation id after an ambiguous transport failure', async () => {

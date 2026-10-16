@@ -135,7 +135,7 @@ describe('ClubQuickLinkTile', () => {
     // Right-click is the pointer path to the quick-switch popover
     fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(await screen.findByText(/1\.2K Chips/i)).toBeInTheDocument();
+    expect(await screen.findByText(/1,234\.00 Chips/i)).toBeInTheDocument();
     await user.click(screen.getByRole('menuitem', { name: /Bravo Club/ }));
     expect(onSelect).toHaveBeenCalledWith(B);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
@@ -215,7 +215,7 @@ describe('ClubQuickLinkTile', () => {
     await waitFor(() => expect(retry).toHaveFocus());
     await user.keyboard('{Enter}');
 
-    expect(await screen.findByRole('menuitem', { name: /77 Chips/i })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: /77\.00 Chips/i })).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(inMock).toHaveBeenCalledTimes(2);
   });
@@ -248,7 +248,7 @@ describe('ClubQuickLinkTile', () => {
     act(() => finishRead());
     expect(screen.getByRole('button', { name: /Retry/i })).toHaveFocus();
     await user.keyboard('{Enter}');
-    expect(await screen.findByRole('menuitem', { name: /77 Chips/i })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: /77\.00 Chips/i })).toBeInTheDocument();
     expect(props.onSelect).not.toHaveBeenCalled();
     expect(inMock).toHaveBeenCalledOnce();
   });
@@ -260,7 +260,7 @@ describe('ClubQuickLinkTile', () => {
       .mockReturnValueOnce(nextRead.promise);
     const rendered = renderTile({ clubs: [A], targetClub: A });
     fireEvent.contextMenu(screen.getByRole('button', { name: /Hold To Choose A Wallet/ }));
-    expect(await screen.findByRole('menuitem', { name: /1\.2K Chips/i })).toBeInTheDocument();
+    expect(await screen.findByRole('menuitem', { name: /1,234\.00 Chips/i })).toBeInTheDocument();
 
     authState.userId = 'next-user-456';
     rendered.rerender(<ClubQuickLinkTile {...(rendered.props as never)} />);
@@ -273,7 +273,7 @@ describe('ClubQuickLinkTile', () => {
       await nextRead.promise;
     });
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-    expect(screen.queryByText(/1\.2K Chips/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1,234\.00 Chips/i)).not.toBeInTheDocument();
   });
 
   it('shows a refreshing state instead of cached rows while the directory is pending', async () => {

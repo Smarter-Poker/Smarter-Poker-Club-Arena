@@ -305,7 +305,7 @@ describe('house rules the compiler cannot enforce', () => {
   });
 
   it('every chip amount on screen goes through toLocaleString', () => {
-    expect(MODAL).toContain('currentBalance!.toLocaleString()');
+    expect(MODAL).toContain('formatWalletChips(currentBalance)');
     expect(MODAL).toContain('cashout.amount.toLocaleString()');
     expect(PANEL).toContain('cashout.amount.toLocaleString()');
   });

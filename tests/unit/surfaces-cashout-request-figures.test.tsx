@@ -180,5 +180,5 @@ it('prints the available balance the same way', async () => {
   expect(screen.queryByText(`${(1000.5).toLocaleString()} Chips`)).toBeNull();
   cleanup();
   await mount(25000);
-  expect(screen.getByText(`${(25000).toLocaleString()} Chips`)).toBeTruthy();
+  expect(screen.getByText('25,000.00 Chips')).toBeTruthy();
 });

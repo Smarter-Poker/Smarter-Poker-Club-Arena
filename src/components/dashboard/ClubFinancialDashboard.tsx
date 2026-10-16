@@ -20,7 +20,7 @@ import { reportError } from '../../utils/errorReporter';
 import { clubGamesOrFilter } from '../../utils/unionScope';
 import { resolveClubUUIDStrict } from '../../utils/strictClubIdResolver';
 import { isUUID } from '../../utils/clubIdResolver';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatWalletDiamonds } from '../../utils/format';
 import {
   parseClubFinancialsPayload,
   type FinancialsPayload,
@@ -317,7 +317,7 @@ export const ClubFinancialDashboard = ({
         <dl className="cfd__facts" aria-label="Verified Club Financial Summary">
           <div className="cfd__fact">
             <dt className="sc-label sc-ink--blue">Diamond Vault</dt>
-            <dd className="sc-ink--silver">{compactChips(reading.diamondBalance)}</dd>
+            <dd className="sc-ink--silver">{formatWalletDiamonds(reading.diamondBalance)}</dd>
           </div>
           <div className="cfd__fact">
             <dt className="sc-label sc-ink--blue">Seven Day Gross Rake</dt>

@@ -128,7 +128,7 @@ import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips } from '../utils/format';
 import {
   exactChipFigure,
   parseTradeAmount,
@@ -260,7 +260,7 @@ type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 /* #ClubArenaConsole law: chip figures outside the felt never print decimal
    points. The authoritative ledger keeps its cents; this display deliberately
    uses the shared rounded-down K/M/B reading without changing stored values. */
-const fmt = compactChips;
+const fmt = formatWalletChips;
 
 /**
  * The ledger note on every Send Out row (regression review 2026-10-10, G-07).
@@ -318,7 +318,7 @@ function CashierPlayerCard({
           <strong>
             {walletBalance === null
               ? 'Unavailable'
-              : compactChips(walletBalance ?? row.chipBalance)}
+              : formatWalletChips(walletBalance ?? row.chipBalance)}
           </strong>
         </span>
       </span>
@@ -347,7 +347,7 @@ function CashierWalletRow({
       <span className={styles.walletRowPlate}>
         {children || <span className={styles.walletRowLabel}>{label}</span>}
         <strong className={styles.walletRowValue}>
-          {balance === null ? '-' : compactChips(balance)}
+          {balance === null ? '-' : formatWalletChips(balance)}
         </strong>
       </span>
     </section>
@@ -2073,7 +2073,7 @@ function CashierTradeWorkspace() {
           {SEND_DESTINATION_LABELS[wallet]}:{' '}
           {targetBalances[target.userId]?.[wallet] === undefined
             ? 'Unavailable'
-            : compactChips(targetBalances[target.userId][wallet]!)}
+            : formatWalletChips(targetBalances[target.userId][wallet]!)}
         </option>
       ))}
     </select>
@@ -4877,7 +4877,7 @@ function CashierTradeWorkspace() {
                                   From {SEND_SOURCE_LABELS[source]}:{' '}
                                   {sourceBalanceFor(source) === null
                                     ? 'Unavailable'
-                                    : compactChips(sourceBalanceFor(source)!)}
+                                    : formatWalletChips(sourceBalanceFor(source)!)}
                                 </option>
                               ))}
                             </select>
@@ -5178,7 +5178,7 @@ function CashierTradeWorkspace() {
                         )
                       }
                     >
-                      Claim All {compactChips(managementClaimTarget.chipBalance)}
+                      Claim All {formatWalletChips(managementClaimTarget.chipBalance)}
                     </button>
                   </>
                 )}

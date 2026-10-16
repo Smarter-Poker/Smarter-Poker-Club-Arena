@@ -300,7 +300,7 @@ describe('D-03: nothing from the previous club survives a reopen', () => {
     const { view } = await openCashier();
     fireEvent.click(screen.getByText('Transaction Ledger'));
     await waitFor(() => expect(screen.getByText('Test Club')).toBeTruthy());
-    await waitFor(() => expect(document.body.textContent).toContain('Bank After 9.5K'));
+    await waitFor(() => expect(document.body.textContent).toContain('Bank After 9,500.00'));
 
     // Club B: balances and ledger never answer, so whatever prints is a leak.
     fx.balances.mockReturnValue(new Promise(() => {}));
@@ -340,7 +340,7 @@ describe('D-04: the holder figure follows the roster after a claim', () => {
     fireEvent.click(screen.getByText('Player Wallet', { selector: '.cbc-seg button' }));
     const player = await screen.findByText('Fish Finder');
     fireEvent.click(player);
-    await waitFor(() => expect(screen.getByText(/Holds 1K In That Wallet/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Holds 1,000\.00 In That Wallet/)).toBeTruthy());
 
     fireEvent.change(screen.getByLabelText('Chips To Claim Back'), { target: { value: '500' } });
     await settle();
@@ -348,7 +348,7 @@ describe('D-04: the holder figure follows the roster after a claim', () => {
     await settle();
     fireEvent.click(screen.getByText('Yes, Claim It', { selector: '.sc-plate__text' }));
     await waitFor(() => expect(claimed).toBe(true));
-    await waitFor(() => expect(screen.getByText(/Holds 500 In That Wallet/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Holds 500\.00 In That Wallet/)).toBeTruthy());
   });
 });
 

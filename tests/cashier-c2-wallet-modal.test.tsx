@@ -195,7 +195,7 @@ describe('C2-1: the Agent Wallet sends against the float plus the credit line', 
     openCashier({ role: 'agent', walletType: 'agent_wallet' });
     await pick(/Kingfish/);
     typeAmount('101');
-    expect(await screen.findByText(/Cover 100 Chips/)).toBeTruthy();
+    expect(await screen.findByText(/Cover 100\.00 Chips/)).toBeTruthy();
     expect(plate('Send Chips')).toBeDisabled();
   });
 });
@@ -330,10 +330,10 @@ describe('C2-17: the modal, item by item', () => {
     expect(view.container.contains(overlay)).toBe(false);
   });
 
-  it('prints balances the house way: compact, never with decimals', async () => {
+  it('prints exact wallet amounts below one million', async () => {
     fx.club = { ...fx.club, chip_treasury: 12500.5 };
     openCashier({ walletType: 'club_bank' });
-    await waitFor(() => expect(bankFigure()).toHaveTextContent('12.5K'));
+    await waitFor(() => expect(bankFigure()).toHaveTextContent('12,500.50'));
   });
 
   it('reads a missing agents row as an empty wallet, not an unknown one', async () => {

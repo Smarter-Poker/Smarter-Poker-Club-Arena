@@ -42,6 +42,7 @@ const bundle = await build({
           path: join(ROOT, 'public', path.slice(1)),
         }));
         b.onResolve({ filter: /hooks\/useAuthUser$/ }, () => ({ path: join(HERE, 'harnessAuth.ts') }));
+        b.onResolve({ filter: /lib\/supabase$/ }, () => ({ path: join(HERE, 'harnessProfile.ts') }));
       },
     },
   ],
@@ -55,6 +56,7 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('push', (e) => e.waitUntil(self.registration.showNotification('Harness')));`;
 
 const requests = [];
+const profiles = new Map();
 const send = (res, status, type, body) => {
   res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
   res.end(body);
@@ -63,6 +65,8 @@ const send = (res, status, type, body) => {
 createServer((req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   if (url.pathname === '/hub/club-arena/' || url.pathname === '/hub/club-arena/index.html') {
+    const uid = url.searchParams.get('uid') || 'harness-player-0001';
+    if (!profiles.has(uid)) profiles.set(uid, { phone_verified: url.searchParams.get('phone') !== 'unverified' });
     return send(res, 200, 'text/html', `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Push Harness</title>
 <link rel="stylesheet" href="/hub/club-arena/harness.css"></head>
@@ -82,6 +86,12 @@ createServer((req, res) => {
       send(res, 200, 'application/json', JSON.stringify({ ok: true, subscribed: req.method === 'POST' }));
     });
     return undefined;
+  }
+  if (url.pathname === '/__harness/profile') {
+    const uid = url.searchParams.get('uid');
+    if (!uid || !profiles.has(uid)) return send(res, 404, 'application/json', '{}');
+    if (req.method === 'POST') profiles.set(uid, { phone_verified: true });
+    return send(res, 200, 'application/json', JSON.stringify(profiles.get(uid)));
   }
   if (url.pathname === '/__harness/requests') return send(res, 200, 'application/json', JSON.stringify(requests));
   if (url.pathname === '/__harness/key') return send(res, 200, 'application/json', JSON.stringify({ key: VAPID_PUBLIC_KEY }));

@@ -7,6 +7,7 @@ import {
   validatePlayer,
   witnessPlayer,
   acceptPlayerTerms,
+  CONSENT_PLAYERS,
 } from './lightning-pilot-player.mjs';
 import { readFileSync } from 'node:fs';
 
@@ -31,8 +32,9 @@ function termsPage(initial = 'not_accepted', identity = true) {
     page: {
       waitForFunction: async () => {},
       locator: () => ({ getAttribute: async () => status }),
-      evaluate: async () => {
+      evaluate: async (_fn, args) => {
         calls.push('identity');
+        Object.defineProperty(calls, 'identityId', { value: args.id, configurable: true });
         return identity;
       },
       getByRole: () => dialog,
@@ -347,4 +349,47 @@ test('a horse/action race refuses honestly, stops further action and cleans its 
   assert.equal(r.devices[0].actions[0].accepted, false);
   assert.equal(b.calls.filter((v) => ['fast_fold', 'fold_watch'].includes(v)).length, 1);
   assert.deepEqual(f.calls, [{ scope: 'local' }]);
+});
+
+test('Samantha consent requires exact authorized pin and matching browser identity', async () => {
+  const samantha = { ...pin, playerId: 'a23ca5c9-b748-482f-9b59-9db35f7aa996' };
+  assert.deepEqual(CONSENT_PLAYERS, [pin.playerId, samantha.playerId]);
+  assert.equal(Object.isFrozen(CONSENT_PLAYERS), true);
+  const f = termsPage();
+  const result = await acceptPlayerTerms(
+    f.page,
+    { user: { id: samantha.playerId } },
+    samantha,
+    'https://example.invalid',
+    true
+  );
+  assert.equal(result.acceptedNow, true);
+  assert.equal(f.calls.identityId, samantha.playerId);
+  assert.deepEqual(Array.from(f.calls), ['identity', 'visible', 'scroll', 'check', 'accept']);
+  const noFlag = termsPage();
+  await assert.rejects(
+    acceptPlayerTerms(
+      noFlag.page,
+      { user: { id: samantha.playerId } },
+      samantha,
+      'https://example.invalid'
+    )
+  );
+  assert.deepEqual(noFlag.calls, []);
+  for (const [actorPin, sessionId] of [
+    [samantha, pin.playerId],
+    [{ ...pin, playerId: pin.poolSessionId }, pin.poolSessionId],
+  ]) {
+    const denied = termsPage();
+    await assert.rejects(
+      acceptPlayerTerms(
+        denied.page,
+        { user: { id: sessionId } },
+        actorPin,
+        'https://example.invalid',
+        true
+      )
+    );
+    assert.deepEqual(denied.calls, []);
+  }
 });

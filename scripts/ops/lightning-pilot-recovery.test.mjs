@@ -326,3 +326,60 @@ test('missing phase remains unknown without retrying or changing normal reconnec
     dealing: 'unknown',
   });
 });
+
+test('Samantha uses her own prior-consent profile; no new consent is written', async () => {
+  const samantha = 'a23ca5c9-b748-482f-9b59-9db35f7aa996';
+  for (const accepted of [false, true]) {
+    let opened = false;
+    const admin = {
+      from: (table) => {
+        assert.equal(table, 'profiles');
+        const q = {
+          select: () => q,
+          eq: (key, value) => {
+            assert.equal(key, 'id');
+            assert.equal(value, samantha);
+            return q;
+          },
+          maybeSingle: async () => ({
+            data: { id: samantha, club_arena_tos_accepted_at: accepted ? '2026-01-01' : null },
+          }),
+        };
+        return q;
+      },
+      rpc: async () => ({ error: true }),
+    };
+    const report = await witnessRecovery({
+      admin,
+      pins: pins.map((p) => ({ ...p, playerId: samantha })),
+      validate: async () => {},
+      openSession: async () => {
+        opened = true;
+        throw new Error('fixture');
+      },
+    });
+    assert.equal(opened, accepted);
+    assert.equal(report.status, 'unknown');
+  }
+});
+
+test('recovery refuses mixed approved player identities before profile or auth reads', async () => {
+  let reads = 0;
+  const report = await witnessRecovery({
+    pins: [pins[0], { ...pins[1], playerId: 'a23ca5c9-b748-482f-9b59-9db35f7aa996' }],
+    admin: {
+      from: () => {
+        reads++;
+        throw new Error();
+      },
+    },
+    validate: async () => {
+      reads++;
+    },
+    openSession: async () => {
+      reads++;
+    },
+  });
+  assert.equal(report.status, 'unknown');
+  assert.equal(reads, 0);
+});

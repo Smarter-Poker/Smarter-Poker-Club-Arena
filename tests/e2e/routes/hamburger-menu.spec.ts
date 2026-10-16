@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { selectsUserTableSettingsColumn } from '../support/userTableSettingsRead';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -271,7 +272,7 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
     await expect(toggles.nth(1)).toHaveAttribute('aria-checked', 'false');
     const restored = page.waitForResponse(
       (response) =>
-        response.url().includes('/rest/v1/user_table_settings') &&
+        selectsUserTableSettingsColumn(response.url(), 'auto_time_bank') &&
         response.request().method() === 'GET' &&
         response.ok()
     );

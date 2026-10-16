@@ -108,8 +108,9 @@ export const ROSTER_PAIRS = Object.freeze(
 );
 const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
 const PUBLIC_KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
+class RosterFailure extends Error {}
 const fail = (code) => {
-  throw new Error(code);
+  throw new RosterFailure(code);
 };
 const hash = (x) => createHash('sha256').update(JSON.stringify(x)).digest('hex');
 export function rosterRequestId(kind, user) {
@@ -397,8 +398,14 @@ export async function executeRoster({
   await save();
   return report;
 }
-const data = (r) => {
-  if (r?.error || r?.data == null) fail('READ_UNAVAILABLE');
+const readFailure = (r, context) => {
+  const code = /^(?:[0-9A-Z]{5}|PGRST[0-9]{3})$/.test(r?.error?.code ?? '')
+    ? r.error.code
+    : 'UNKNOWN';
+  fail(`${context}_UNAVAILABLE_${code}`);
+};
+const data = (r, context = 'READ') => {
+  if (r?.error || r?.data == null) readFailure(r, context);
   return r.data;
 };
 /** Real normal authenticated doors; admin is SELECT/auth only, never financial RPC. */
@@ -415,23 +422,24 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
   }
   const count = async (table, apply) => {
     const r = await apply(admin.from(table).select('*', { count: 'exact', head: true }));
-    if (r.error || !Number.isSafeInteger(r.count)) fail('COUNT_UNAVAILABLE');
+    if (r.error || !Number.isSafeInteger(r.count)) readFailure(r, `COUNT_${table.toUpperCase()}`);
     return r.count;
   };
   async function validateIncoming(id) {
     if (!ROSTER_PAIRS.some((p) => p.incoming === id)) fail('UNPINNED_HORSE');
     const p = data(
-      await admin.from('profiles').select('id,is_horse,status').eq('id', id).maybeSingle()
+      await admin.from('profiles').select('id,is_horse,status').eq('id', id).maybeSingle(),
+      'INCOMING_PROFILE'
     );
-    const u = data(await admin.auth.admin.getUserById(id)).user;
+    const u = data(await admin.auth.admin.getUserById(id), 'INCOMING_AUTH').user;
     const [cap, count] = await Promise.all([
       admin.rpc('fn_club_membership_cap'),
       admin.rpc('fn_club_membership_count', { p_user_id: id, p_excluding_club: ROSTER_CLUB }),
     ]);
     if (
-      !Number.isSafeInteger(data(cap)) ||
-      !Number.isSafeInteger(data(count)) ||
-      data(count) >= data(cap)
+      !Number.isSafeInteger(data(cap, 'MEMBERSHIP_CAP')) ||
+      !Number.isSafeInteger(data(count, 'MEMBERSHIP_COUNT')) ||
+      data(count, 'MEMBERSHIP_COUNT') >= data(cap, 'MEMBERSHIP_CAP')
     )
       fail('HORSE_MEMBERSHIP_CAP_REACHED');
     if (
@@ -439,7 +447,8 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
       p.is_horse !== true ||
       p.status !== 'active' ||
       u?.id !== id ||
-      !/@(?:bot|horses|hydra)\.smarter\.poker$/.test(u.email ?? '') ||
+      typeof u.email !== 'string' ||
+      !u.email.trim() ||
       (u.banned_until &&
         (!Number.isFinite(Date.parse(u.banned_until)) || Date.parse(u.banned_until) > Date.now()))
     )
@@ -516,7 +525,7 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
           .limit(75),
         admin.from('cash_games').select('id,club_id,lightning_enabled').in('id', CLUSTERS),
       ]);
-      const memberRows = data(members);
+      const memberRows = data(members, 'MEMBERS');
       const profiles = data(
         await admin
           .from('profiles')
@@ -525,7 +534,8 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
             'id',
             memberRows.map((m) => m.user_id)
           )
-          .limit(75)
+          .limit(75),
+        'ROSTER_PROFILES'
       );
       const [freeze, admission] = await Promise.all([
         admin.rpc('fn_platform_frozen'),
@@ -536,12 +546,12 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
         }),
       ]);
       const result = {
-        club: data(club),
+        club: data(club, 'CLUB'),
         members: memberRows,
-        games: data(games),
+        games: data(games, 'GAMES'),
         profiles,
-        frozen: data(freeze),
-        admission: data(admission),
+        frozen: data(freeze, 'FREEZE'),
+        admission: data(admission, 'ADMISSION'),
       };
       if (hazardsFor) {
         const base = (q) => q.eq('club_id', ROSTER_CLUB);
@@ -664,6 +674,7 @@ export async function rosterMain(env = process.env, clientFactory) {
   let owner;
   let result;
   let cleanup = 'not_opened';
+  let phase = 'input';
   try {
     if (
       !['prepare', 'execute'].includes(env.PILOT_ROSTER_PHASE) ||
@@ -679,6 +690,7 @@ export async function rosterMain(env = process.env, clientFactory) {
       !env.SUPABASE_SERVICE_ROLE_KEY
     )
       fail('CONFIGURED_AUTH_REQUIRED');
+    phase = 'authentication';
     const createClient = clientFactory ?? (await import('@supabase/supabase-js')).createClient;
     const end = Date.now() + 540000;
     const boundedFetch =
@@ -702,15 +714,17 @@ export async function rosterMain(env = process.env, clientFactory) {
     owner = createClient(env.SUPABASE_URL, PUBLIC_KEY, options);
     cleanup = 'unknown';
     const login = data(
-      await owner.auth.signInWithPassword({ email: env.SP_EMAIL, password: env.SP_PASS })
+      await owner.auth.signInWithPassword({ email: env.SP_EMAIL, password: env.SP_PASS }),
+      'OWNER_LOGIN'
     );
     if (
       login.user?.id !== PILOT.ownerId ||
       login.session?.user?.id !== PILOT.ownerId ||
-      data(await owner.auth.getUser()).user?.id !== PILOT.ownerId
+      data(await owner.auth.getUser(), 'OWNER_SESSION').user?.id !== PILOT.ownerId
     )
       fail('OWNER_AUTH_MISMATCH');
     const adapter = createRosterAdapter({ admin, owner, createClient, url: env.SUPABASE_URL });
+    phase = env.PILOT_ROSTER_PHASE;
     if (env.PILOT_ROSTER_PHASE === 'prepare') {
       const baseline = await prepareRoster({
         adapter,
@@ -742,8 +756,14 @@ export async function rosterMain(env = process.env, clientFactory) {
         },
       });
     }
-  } catch {
-    result = { ...result, status: 'stopped', cause: 'INPUT_AUTH_OR_EXECUTION_UNVERIFIED' };
+  } catch (error) {
+    result = {
+      ...result,
+      status: 'stopped',
+      cause: 'INPUT_AUTH_OR_EXECUTION_UNVERIFIED',
+      phase,
+      diagnostic: error instanceof RosterFailure ? error.message : 'UNEXPECTED_FAILURE',
+    };
   } finally {
     if (owner)
       try {

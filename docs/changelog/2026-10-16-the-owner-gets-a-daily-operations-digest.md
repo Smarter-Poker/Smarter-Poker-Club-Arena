@@ -54,3 +54,7 @@ SELECT cron.unschedule('sp-daily-metrics-snapshot');
 SELECT cron.unschedule('sp-daily-digest-watchdog');
 ```
 Removing the two World Hub crons from `vercel.json` stops the email and pager. The tables and functions are inert without callers.
+
+## Follow Up: The Online View Matches The Email
+
+Attention items found live at send time (cashouts, stuck tournaments, funding) are now saved to the day's record, so the "View This Digest Online" page and any re-send show the same list as the email. The "digest was not delivered" rule now only counts days after the first digest ran, so launch day does not raise a false alarm.

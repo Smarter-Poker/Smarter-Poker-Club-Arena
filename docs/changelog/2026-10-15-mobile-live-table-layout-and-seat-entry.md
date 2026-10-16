@@ -13,3 +13,5 @@ The artwork loading cover and button preloader were written inside a CSS string 
 Seat Change dismissal and the ON/OFF hamburger switch share one account-scoped preference across mounted tables and browser storage events. Hiding the optional control leaves pending-move notices and waiting-list status visible.
 
 Validation evidence and exact delivery identities are retained in the task checkpoint. Local renders are fixtures using the actual components and styles, not production or real-chip purchase evidence. This change contains no engine or database replacement.
+
+The production cash-table certificate now measures the deployed, occupied table at 375, 393 and 430 pixels after its existing real-hand/reconnect proof, tests the actual Seat Change menu toggle, and retains mobile screenshots and measurements on successful runs. This uses the existing isolated spectator and makes no chip or seat writes. Its added read-only UI budget does not extend the causal-hand deadlines.

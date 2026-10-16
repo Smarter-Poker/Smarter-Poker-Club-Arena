@@ -1,3 +1,4 @@
+import { certifyMobileLiveTableLayout } from './support/mobileLiveTableLayout';
 import {
   devices,
   expect,
@@ -2043,6 +2044,9 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
           `expected one live game transport, got ${journal.openTransportUrls().join(', ')}`
         ).toBe(1);
         await expect(banner).toBeHidden();
+        // Layout proof follows continuity; its UI reads do not extend any hand deadline.
+        testInfo.setTimeout(testInfo.timeout + 45_000);
+        await certifyMobileLiveTableLayout(page, testInfo);
       } finally {
         if (offline) await context.setOffline(false).catch(() => {});
       }

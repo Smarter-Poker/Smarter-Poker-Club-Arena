@@ -3357,13 +3357,13 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
     ],
   ] as const;
 
-  // 2026-10-16: the opponent-exploit change moved the Phase 10 policy digest,
-  // so the committed generation 2 selection is refused (policy_digest_mismatch)
+  // 2026-10-16: the opponent-exploit and declared-work changes moved the
+  // Phase 10 policy digest, so the PLO4 selection is null (precedent #6777)
   // and every live PLO4 decision is the shadow reference until the locked
   // matrix requalifies this source. The candidate path is pinned below with
   // the genuinely qualified test fixture.
   it.each(LIVE_STATES)(
-    'live behaviour under the committed selection (refused since 2026-10-16, shadow): %s',
+    'the unselected committed policy retains the reference action in shadow: %s',
     async (_name, format, cards, changed, mainAction) => {
       const request = format === 'cash' ? plo4Cash(601, cards) : plo4Tournament(601, cards);
       const live = await decideThrough(request, () => admitHorsePhase10ReleaseAuthority());
@@ -3374,13 +3374,14 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
       expect(receipt.changed).toBe(changed);
       expect(receipt.finalAction).toBe(live.decision.action);
       expect(live.result.phase10Authority).toMatchObject({
-        state: 'refused',
-        reason: 'policy_digest_mismatch',
+        state: 'unselected',
         continuationVersion: 'plo4-policy-round3-v2',
       });
-      expect(receipt.authority).toMatchObject({ state: 'refused' });
+      expect(receipt.authority).toMatchObject({ state: 'unselected' });
       expect(live.h.decisionOpts[0].phase10Plo4).toBe('shadow');
       expect(receipt).toMatchObject({ mode: 'shadow', applied: false });
+      // Even the cash spot whose shadow proposal changes the reference fold
+      // must execute that fold until the declared-work source is requalified.
       expect(act(live.decision)).toEqual(mainAction);
       expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
     }

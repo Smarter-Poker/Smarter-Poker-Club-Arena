@@ -4,7 +4,10 @@ import {
   HorseQualifiedAuthorityHolder,
   type HorseAuthorityReceipt,
 } from '../../HorseQualifiedAuthority.js';
-import { admitHorsePhase10ReleaseAuthority } from '../../HorsePhase10Authority.js';
+import {
+  admitHorsePhase10ReleaseAuthority,
+  PHASE10_PROTECTED_RELEASE_SELECTION,
+} from '../../HorsePhase10Authority.js';
 import {
   p10QualificationBytes,
   p10Reader,
@@ -59,6 +62,13 @@ const decision = (receipt?: HorseAuthorityReceipt) =>
   }) as unknown as HorseDecision;
 
 describe('qualified replay restores recorded holder identity without granting authority', () => {
+  it('the committed selection is null, so a recorded usable receipt cannot be replayed by default', () => {
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
+    const { receipt } = qualifiedReceipt();
+    const factory = qualifiedReplayAuthorityHolders(decision(receipt), 'plo4');
+    expect(() => factory('phase10', null, PLO4_POLICY_PACK.version, EPOCH)).toThrow(/^phase10:/);
+  });
+
   it('preserves a real refreshed epoch/generation; duplicate admission and stale receipts retain the live laws', () => {
     const { admission, receipt } = qualifiedReceipt();
     const factory = qualifiedReplayAuthorityHolders(decision(receipt), 'plo4', testAdmissions);

@@ -147,7 +147,7 @@ describe('the bust prompt refuses the Diamond arena', () => {
     expect(mocks.entry).toHaveBeenCalledWith(DIAMOND_ARENA_CLUB_ID, false);
   });
 
-  it('still invites a felted chip club member, exactly as before', () => {
+  it('never treats arrival at a chip club as a shortage', () => {
     mocks.entryRow = eligible;
     render(
       <MemoryRouter>
@@ -156,7 +156,7 @@ describe('the bust prompt refuses the Diamond arena', () => {
         </ArenaAccessProvider>
       </MemoryRouter>
     );
-    expect(screen.getByRole('dialog', { name: 'Diamond Spins' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Diamond Spins' })).toBeNull();
     expect(mocks.entry).toHaveBeenCalledWith('chip', true);
   });
 
@@ -167,7 +167,7 @@ describe('the bust prompt refuses the Diamond arena', () => {
         <DiamondBustPrompt clubId="chip" />
       </MemoryRouter>
     );
-    expect(screen.getByRole('dialog', { name: 'Diamond Spins' })).toBeTruthy();
+    expect(screen.queryByRole('dialog', { name: 'Diamond Spins' })).toBeNull();
   });
 });
 

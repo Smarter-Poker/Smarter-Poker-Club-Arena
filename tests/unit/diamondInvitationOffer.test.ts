@@ -115,22 +115,16 @@ describe('the Diamond Spins offer is settled before the lobby is measured', () =
     expect(quiet.removeLocatorHandler).not.toHaveBeenCalled();
   });
 
-  it('waits for an offered invitation, retires the handler and takes the real Not Now', async () => {
-    const offered = page(['pending', 'open']);
+  it('requires the arrival invitation to stay hidden even when the empty wallet is eligible', async () => {
+    const arrival = page(['pending']);
+    hidden.mockClear();
     await expect(
-      settleDiamondSpinsOffer(offered.page, Promise.resolve(response(200, OFFER)))
-    ).resolves.toBe('declined');
-    expect(offered.evaluate).toHaveBeenCalledTimes(2);
-    expect(offered.removeLocatorHandler).toHaveBeenCalledTimes(1);
-    expect(offered.click).toHaveBeenCalledWith({ timeout: DIAMOND_DECLINE_CLICK_TIMEOUT_MS });
+      settleDiamondSpinsOffer(arrival.page, Promise.resolve(response(200, OFFER)))
+    ).resolves.toBe('not offered');
+    expect(arrival.evaluate).not.toHaveBeenCalled();
+    expect(arrival.removeLocatorHandler).toHaveBeenCalledTimes(1);
+    expect(arrival.click).not.toHaveBeenCalled();
     expect(hidden).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not click again when the handler already declined it', async () => {
-    const declined = page(['declined']);
-    await settleDiamondSpinsOffer(declined.page, Promise.resolve(response(200, OFFER)));
-    expect(declined.removeLocatorHandler).toHaveBeenCalledTimes(1);
-    expect(declined.click).not.toHaveBeenCalled();
   });
 
   it('retains an original handler failure when retirement sees the invitation already hidden', async () => {

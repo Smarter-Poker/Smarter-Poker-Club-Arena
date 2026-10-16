@@ -16790,7 +16790,11 @@ function LiveTablePage({
                 holeCards:
                   sp.user_id === userId
                     ? sp.cards?.length
-                      ? heroDisplayHoleCards(sp.cards, existing?.holeCards, !!cardsPreSortRef.current)
+                      ? heroDisplayHoleCards(
+                          sp.cards,
+                          existing?.holeCards,
+                          !!cardsPreSortRef.current
+                        )
                       : heroHoldIsExpired(existing?.holeCards)
                         ? []
                         : existing?.holeCards || []
@@ -24897,20 +24901,20 @@ function LiveTablePage({
                 height (.hud-seat-change-dock, TableHUD.css). */}
             {!tableState.isTournament && tableState.clusterId && (
               <div className="hud-seat-change-dock">
-              <CashClusterHUD
-                gameId={tableState.clusterId}
-                refreshKey={clusterRefreshKey}
-                onOpenLobby={() => setShowMustMoveLobby(true)}
-                onSeatChange={() => setShowMustMoveLobby(true)}
-                onGoToTable={(dest) => {
-                  if (dest === tableId) return;
-                  if (embeddedTableId) {
-                    onTableInfoUpdate?.({ movedToTableId: dest });
-                    return;
-                  }
-                  navigate(`/table/${dest}`);
-                }}
-              />
+                <CashClusterHUD
+                  gameId={tableState.clusterId}
+                  refreshKey={clusterRefreshKey}
+                  onOpenLobby={() => setShowMustMoveLobby(true)}
+                  onSeatChange={() => setShowMustMoveLobby(true)}
+                  onGoToTable={(dest) => {
+                    if (dest === tableId) return;
+                    if (embeddedTableId) {
+                      onTableInfoUpdate?.({ movedToTableId: dest });
+                      return;
+                    }
+                    navigate(`/table/${dest}`);
+                  }}
+                />
               </div>
             )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
@@ -26753,6 +26757,8 @@ function LiveTablePage({
             tableId={tableId}
             heroSeated={tableState.heroSeat > 0}
             isTournament={tableState.isTournament}
+            leaveClockRemainingMs={heroLeaveLocked ? heroLeaveMs : null}
+            leaveClockRunning={heroLeave?.running === true}
             handNumber={tableState.handNumber ?? 0}
             heroPos={
               tableState.heroSeat > 0 ? (seatPositions[tableState.heroSeat - 1] ?? null) : null

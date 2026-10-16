@@ -63,7 +63,8 @@ describe('the complete route manifest inherits one global header', () => {
     // and run the catalog. A staff page, behind PlatformStaffGuard, in the shell.
     // +1 for diamond-staff-desk (2026-09-29): platform staff run Diamond games,
     // incidents, books and adjustments. Behind PlatformStaffGuard, in the shell.
-    expect(allPaths).toHaveLength(155); // Includes the public, explicitly shared bonus replay. +1: cashier statements, +1: the Lightning route, +1: the Lightning operator dashboard, +1: the Club Data full report (2026-10-15), +1: the Share & Invite short link /i/:code (2026-10-15)
+    // +2: scoped and global Custom Welcome Message creation, both in AppLayout.
+    expect(allPaths).toHaveLength(157); // Includes the public, explicitly shared bonus replay. +1: cashier statements, +1: the Lightning route, +1: the Lightning operator dashboard, +1: the Club Data full report (2026-10-15), +1: the Share & Invite short link /i/:code (2026-10-15)
     expect(allPaths).toContain('clubs/:clubId/applicants');
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
@@ -71,7 +72,9 @@ describe('the complete route manifest inherits one global header', () => {
   });
 
   it('puts every shell route under AppLayout', () => {
-    expect(shellPaths).toHaveLength(144); // +1: the Club Data full report at clubs/:clubId/data/advanced (2026-10-15), +1: cashier statements, +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise, +6: diamond games, +2: club and union diamond costs, +1: commerce desk, +1: diamond staff desk, +1: the Lightning route, +1: the Lightning operator dashboard
+    expect(shellPaths).toHaveLength(146); // +1: the Club Data full report at clubs/:clubId/data/advanced (2026-10-15), +1: cashier statements, +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise, +6: diamond games, +2: club and union diamond costs, +1: commerce desk, +1: diamond staff desk, +1: the Lightning route, +1: the Lightning operator dashboard
+    expect(shellPaths).toContain('welcome-messages');
+    expect(shellPaths).toContain('clubs/:clubId/welcome-message');
     expect(APP_LAYOUT).toContain('{showGlobalHeader && <GlobalHeader />}');
   });
 
@@ -85,7 +88,7 @@ describe('the complete route manifest inherits one global header', () => {
       (path) => !applicable.has(path) && !intentionalExceptions.has(path)
     );
 
-    expect(applicable.size).toBe(145); // +1: the Club Data full report (2026-10-15), +1: cashier statements, +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise, +6: diamond games, +2: club and union diamond costs, +1: commerce desk, +1: diamond staff desk, +1: the Lightning route, +1: the Lightning operator dashboard
+    expect(applicable.size).toBe(147); // +1: the Club Data full report (2026-10-15), +1: cashier statements, +2: club and union table-management consoles, +1: union data, +1: hand review, +1: club advertise, +1: sponsor advertise, +6: diamond games, +2: club and union diamond costs, +1: commerce desk, +1: diamond staff desk, +1: the Lightning route, +1: the Lightning operator dashboard
     expect(unclassified).toEqual([]);
   });
 

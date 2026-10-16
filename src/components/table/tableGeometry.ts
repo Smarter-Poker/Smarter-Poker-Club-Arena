@@ -370,7 +370,19 @@ export function seatPodPx(viewportWidthPx: number, isHero: boolean, canvasWidthP
   if (!canvasWidthPx || !Number.isFinite(canvasWidthPx)) return pod;
   const avatar = Math.min(124, Math.max(50, canvasWidthPx * 0.158));
   const proportionalWidth = isHero ? avatar * (4 / 3) * (8 / 7) : avatar * 1.143;
-  return { ...pod, w: Math.max(pod.w, proportionalWidth) };
+  const minWidth = Math.min(112, Math.max(66, canvasWidthPx * 0.235));
+  const mobile = viewportWidthPx <= 640;
+  const minimumHeight = mobile ? Math.min(48, Math.max(40, canvasWidthPx * 0.105)) : 54;
+  const nameFont = mobile ? Math.min(14, Math.max(12, canvasWidthPx * 0.033)) : 14;
+  const stackFont = mobile ? Math.min(16, Math.max(14, canvasWidthPx * 0.04)) : 16;
+  const padding = mobile ? Math.min(7, Math.max(3, canvasWidthPx * 0.012)) : 8;
+  // Two 1.3-line-height lines, both vertical pads and the 1.5px border.
+  const plateHeight = Math.max(minimumHeight, (nameFont + stackFont) * 1.3 + padding * 2 + 3);
+  const slot = isHero ? avatar * (4 / 3) : avatar;
+  return {
+    w: Math.max(minWidth, proportionalWidth),
+    h: slot + plateHeight - Math.max(3, slot * 0.0714),
+  };
 }
 
 /** Keep a widened player pod inside the viewport without changing its chair's

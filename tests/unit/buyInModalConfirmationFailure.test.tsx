@@ -125,3 +125,23 @@ it('a cash rebuy amount remains editable before its minimum is applied on blur',
   expect(amount.valueAsNumber).toBe(137.5);
   expect(screen.getByRole('button', { name: 'Rebuy 137.50' })).toBeTruthy();
 });
+
+it('keeps a definitive refusal distinct from an unknown purchase and allows correction in place', async () => {
+  const onConfirm = vi
+    .fn()
+    .mockResolvedValueOnce({
+      status: 'rejected',
+      message: 'That Seat Was Taken. Please Choose Another Seat.',
+    })
+    .mockResolvedValueOnce(true);
+  render(<BuyInModal {...base} onConfirm={onConfirm} />);
+  await act(async () => {
+    fireEvent.click(screen.getByText('Buy Chips'));
+  });
+  expect(screen.getByRole('alert').textContent).toContain('That Seat Was Taken');
+  expect(screen.getByRole('alert').textContent).not.toContain('Not Yet Confirmed');
+  await act(async () => {
+    fireEvent.click(screen.getByText('Buy Chips'));
+  });
+  expect(onConfirm).toHaveBeenCalledTimes(2);
+});

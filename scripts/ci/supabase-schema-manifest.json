@@ -2147,6 +2147,7 @@
     "fn_agent_credit_control_revision_v1",
     "fn_agent_credit_reduction_receipt_v1",
     "fn_agent_credit_reduction_snapshot_v1",
+    "fn_agent_default_prepaid",
     "fn_agent_downline_commission",
     "fn_agent_downline_rake",
     "fn_agent_downline_rake_summary",

@@ -226,6 +226,9 @@ export default function MessengerChat({ actorId, identity, conversation, service
             <button type="button" aria-label="Minimize Conversation" onClick={onMinimize}><Minus size={20} /></button>
             <button type="button" aria-label="Close Conversation" onClick={onClose}><X size={20} /></button>
         </header>
+        {conversation.relationshipTags?.length > 0 && <div className="dock-chat-relationships" aria-label="Club Relationships">
+            {conversation.relationshipTags.map(tag => <p key={tag.clubId}>{tag.label}</p>)}
+        </div>}
         {error && <div className="dock-chat-error" role="alert">{error} <button type="button" onClick={() => { void load(); void markVisible(); }}>Retry</button></div>}
         {draft.conflict && <div className="dock-chat-error" role="alert">Draft Changed In Another Window <button type="button" onClick={() => continuity.resolve(id, 'draft', true)}>Keep This Draft</button> <button type="button" onClick={() => continuity.resolve(id, 'draft', false)}>Use Synced Draft</button></div>}
         {!draft.conflict && [...continuity.errors.values()].length > 0 && <div className="dock-chat-error" role="status">Conversation Sync Needs Attention <button type="button" onClick={() => { void continuity.read(id); void continuity.write(id, 'draft'); void continuity.write(id, 'position'); }}>Retry</button></div>}

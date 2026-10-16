@@ -49,6 +49,7 @@ import {
 import { useToast } from '../common/Toast';
 import { useCashGameLobby } from './useCashGameLobby';
 import './CashClusterHUD.css';
+import { useSeatChangeVisibility } from '../../hooks/useSeatChangeVisibility';
 
 export const CASH_CLUSTER_HUD_POLL_MS = 10_000;
 
@@ -74,6 +75,8 @@ export function CashClusterHUD({
   onGoToTable,
 }: CashClusterHUDProps) {
   const toast = useToast();
+  const { visible: seatChangeVisible, setVisible: setSeatChangeVisible } =
+    useSeatChangeVisibility();
   const {
     lobby,
     busy: joining,
@@ -156,30 +159,50 @@ export function CashClusterHUD({
           {moveNotice}
         </div>
       )}
-      {seatChangeAvailable && (
-        <button
-          type="button"
-          className="cch-seat-change cch-seat-change--control"
-          onClick={onSeatChange}
-          aria-label="Seat Change - Request A Table Change"
-        >
-          <img
-            className="cch-seat-change__art"
-            src={`${import.meta.env.BASE_URL}assets/club-buttons/seat-change-black-v1.webp`}
-            alt=""
-            aria-hidden="true"
-          />
-          <span className="cch-seat-change__label">Seat Change</span>
-        </button>
+      {seatChangeAvailable && seatChangeVisible && (
+        <div className="cch-seat-change-control">
+          <button
+            type="button"
+            className="cch-seat-change cch-seat-change--control"
+            onClick={onSeatChange}
+            aria-label="Seat Change - Request A Table Change"
+          >
+            <img
+              className="cch-seat-change__art"
+              src={`${import.meta.env.BASE_URL}assets/club-buttons/seat-change-black-v1.webp`}
+              alt=""
+              aria-hidden="true"
+            />
+            <span className="cch-seat-change__label">Seat Change</span>
+          </button>
+          <button
+            type="button"
+            className="cch-seat-change-close"
+            aria-label="Hide Seat Change"
+            onClick={() => setSeatChangeVisible(false)}
+          >
+            X
+          </button>
+        </div>
       )}
-      {listed && (
-        <button
-          type="button"
-          className="cch-seat-change cch-seat-change--listed"
-          onClick={onOpenLobby}
-        >
-          Seat Change: #{listed.position ?? '-'} On The List
-        </button>
+      {listed && seatChangeVisible && (
+        <div className="cch-seat-change-control">
+          <button
+            type="button"
+            className="cch-seat-change cch-seat-change--listed"
+            onClick={onOpenLobby}
+          >
+            Seat Change: #{listed.position ?? '-'} On The List
+          </button>
+          <button
+            type="button"
+            className="cch-seat-change-close"
+            aria-label="Hide Seat Change"
+            onClick={() => setSeatChangeVisible(false)}
+          >
+            X
+          </button>
+        </div>
       )}
       {onWaitlist && (
         <button

@@ -96,7 +96,11 @@ const SIZES = [2, 3, 4, 5, 6, 7, 8, 9] as const;
  * 380 / 480 / 640 rungs), because over-stating the box only ever makes these
  * assertions stricter.
  */
-const seatBoxWPx = (feltW: number) => Math.max(98, feltW * 0.158 * 1.143);
+const seatBoxWPx = (feltW: number) =>
+  Math.max(
+    Math.min(112, Math.max(66, feltW * 0.235)),
+    Math.min(124, Math.max(50, feltW * 0.158)) * 1.143
+  );
 
 const SEAT_CSS = readFileSync(resolve(__dirname, '../src/components/table/SeatSlot.css'), 'utf8');
 
@@ -135,7 +139,9 @@ describe('the seat box this file measures against is the one the stylesheet draw
       'seatBoxWPx() above models the readable floor and --seat-avatar-full * 1.143; if this ' +
         'changed, update that function and re-read the failures'
     ).toBe('max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143))');
-    expect(seatRule![1]).toMatch(/--seat-plate-min-width:\s*98px/);
+    expect(seatRule![1]).toMatch(
+      /--seat-plate-min-width:\s*clamp\(66px, calc\(var\(--table-w, 360px\) \* 0\.235\), 112px\)/
+    );
   });
 });
 

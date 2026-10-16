@@ -960,7 +960,8 @@ describe('P-11, P-15, P-24: the player wallet', () => {
       "unavailable: { status: 'Wallet Ledger // Unavailable', ink: 'gold' }"
     );
     expect(WALLET).toContain("offline: { status: 'Wallet Ledger // Offline', ink: 'red' }");
-    expect(WALLET).toContain('status={LEDGER_STATUS[ledgerState].status}');
+    // The Cashier dock's own line prints it (Dan 2026-10-16, the wallet desk).
+    expect(WALLET).toContain("{LEDGER_STATUS[ledgerState].status.replace(' // ', ' ')}");
     expect(WALLET).toContain(
       "const ledgerState: LedgerReadState | 'offline' = isOnline ? ledgerRead : 'offline';"
     );

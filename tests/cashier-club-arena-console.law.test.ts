@@ -307,6 +307,7 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     const wallet = read('src/pages/PlayerWalletPage.css');
     expect(wallet).toMatch(/\.vault-btn\.small \{[^}]*min-height: 44px;/);
     expect(wallet).toMatch(/\.wallet-plate__cta \{[^}]*min-height: 44px;/);
+    expect(wallet).toMatch(/\.wallet-dock__action \{[^}]*min-height: 44px;/);
   });
 
   it('names every routed Cashier document', () => {

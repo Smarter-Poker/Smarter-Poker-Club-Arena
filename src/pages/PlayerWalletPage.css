@@ -1,600 +1,959 @@
 /*
- * PLAYER WALLET / #SMARTERCASINOREALISM
- * Black-first vault room, gunmetal structure, chrome type, electric-blue energy.
- * The rendered vault and the rendered wallet plates supply the physical realism;
- * CSS frames them and lays live ledger data into their bays. Nothing here
- * pretends to be the artwork.
+ * PLAYER WALLET / THE CASHIER DESK (Dan 2026-10-16)
  *
- * Palette (house tokens): Obsidian #05070a, Carbon #0d1218, Gunmetal #27313c,
- * Chrome #b8c3cd, Energy Cyan #00d4ff, Club Blue #4169e1, VIP Gold #ffc93c.
+ * "it needs a complete upgrade and enhancement to be like what you created
+ * with the pages within this chat ... balances aren't centered or font sized
+ * correctly inside their frames and there are too many flat basic and boring
+ * button's frames and fonts."
+ *
+ * So the wallet is printed on the routed Cashier's desk and nothing else: the
+ * CashierWorkspace head, black glass, hairline rows (#080b0f on a 1px #27313c
+ * rule, no radius), the Cashier's inks, and the painted Cashier action dock
+ * (cashier-action-dock-v1.png and its tall phone cut) for every action. No
+ * frame is drawn around a frame, no button is drawn in CSS, no gradient paints
+ * a control, and nothing has a hover state.
+ *
+ * Inks (the Cashier's own): blue #45adff, silver #e4e7ec, white #f4f7fb,
+ * muted #9aa5b3 (the roster's "522 Available"), red #ff5b6e, green #c8ffd2.
  */
 
 .wallet-page {
-  --vault-obsidian: #05070a;
-  --vault-carbon: #0d1218;
-  --vault-panel: #0b1017;
-  --vault-panel-raised: #111925;
-  --vault-gunmetal: #27313c;
-  --vault-chrome: #b8c3cd;
-  --vault-chrome-hot: #e6edf3;
-  --vault-cyan: #00d4ff;
-  --vault-blue: #4169e1;
-  --vault-gold: #ffc93c;
-  --vault-green: #35d48a;
-  --vault-muted: #7f8c9b;
-  --vault-radius: 8px;
-  --vault-font-display: 'Rajdhani', 'Roboto Condensed', Inter, system-ui, sans-serif;
-  --vault-font-label: 'Roboto Condensed', 'Rajdhani', Inter, system-ui, sans-serif;
-  --vault-font-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --ink-blue: #45adff;
+  --ink-silver: #e4e7ec;
+  --ink-white: #f4f7fb;
+  --ink-muted: #9aa5b3;
+  --ink-red: #ff5b6e;
+  --ink-green: #c8ffd2;
+  --ink-gold: #ffd700;
+  --ink-muted-shadow: 0 1px 1.5px rgb(0 0 0 / 80%);
+  --desk-glow: 0 0 5px rgb(140 210 255 / 90%), 0 1px 0 rgb(0 0 0 / 70%);
+  --desk-row: #080b0f;
+  --desk-well: #05070a;
+  --desk-rule: #27313c;
+  --desk-font: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  --desk-copy: Inter, system-ui, sans-serif;
+  --desk-heading: Rajdhani, 'Roboto Condensed', system-ui, sans-serif;
 
-  position: relative;
-  isolation: isolate;
-  width: min(100%, 1280px);
+  width: min(100%, 1000px);
   min-height: 100dvh;
   margin: 0 auto;
-  padding: 16px 20px calc(190px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 8px calc(190px + env(safe-area-inset-bottom, 0px));
   overflow-x: clip;
-  color: #f1f5f8;
-  font-family: var(--vault-font-body);
-  background:
-    radial-gradient(circle at 18% 6%, rgba(0, 212, 255, 0.08), transparent 30rem),
-    linear-gradient(180deg, #070a0f 0%, var(--vault-obsidian) 60%, #020304 100%);
+  background: #000;
+  color: var(--ink-white);
+  font-family: var(--desk-font);
 }
 
-.wallet-page::before {
-  position: fixed;
-  z-index: -1;
-  inset: 0;
-  content: '';
-  pointer-events: none;
-  opacity: 0.28;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: linear-gradient(to bottom, black, transparent 70%);
+.wallet-page .cashier-workspace__content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-/* ── Vault hero: rendered room, live console ─────────────────────────── */
+/* ── The balance: one centred figure ────────────────────────────────── */
 
-.vault-hero {
+.wallet-balance {
   position: relative;
-  min-height: 400px;
-  margin-top: 16px;
+  isolation: isolate;
   overflow: hidden;
-  border: 1px solid #4a5868;
-  border-radius: var(--vault-radius);
-  background: #030405;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
-    inset 0 -1px 0 rgba(0, 212, 255, 0.3),
-    0 28px 70px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 12px 18px;
+  border: 1px solid var(--desk-rule);
+  background: var(--desk-well);
+  text-align: center;
 }
 
-.vault-hero::before,
-.vault-hero::after {
+/* The vault render sits behind the figure the way the Cashier head carries
+   its own art: faint, masked to black at every edge, never a panel. */
+.wallet-balance__art {
   position: absolute;
-  z-index: 3;
-  content: '';
-  pointer-events: none;
-}
-
-.vault-hero::before {
-  inset: 6px;
-  border: 1px solid rgba(184, 195, 205, 0.2);
-  border-radius: 4px;
-  clip-path: polygon(0 0, 31% 0, 33% 4px, 67% 4px, 69% 0, 100% 0, 100% 100%, 0 100%);
-}
-
-.vault-hero::after {
-  right: 6px;
-  bottom: 6px;
-  left: 6px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--vault-cyan), transparent);
-  box-shadow: 0 0 18px rgba(0, 212, 255, 0.8);
-}
-
-.vault-hero__art {
-  position: absolute;
-  z-index: 0;
+  z-index: -1;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: left center;
-  filter: saturate(0.92) contrast(1.06);
-}
-
-.vault-hero__hardware {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
+  object-position: center;
+  opacity: 0.32;
   pointer-events: none;
-  background:
-    linear-gradient(
-      270deg,
-      rgba(2, 3, 5, 0.98) 0%,
-      rgba(2, 3, 5, 0.9) 30%,
-      rgba(2, 3, 5, 0.3) 62%,
-      rgba(2, 3, 5, 0.02) 100%
-    ),
-    linear-gradient(180deg, rgba(2, 3, 5, 0.55) 0%, transparent 30%, rgba(2, 3, 5, 0.7) 100%);
+  mask-image: radial-gradient(ellipse at center, #000 30%, transparent 78%);
 }
 
-.vault-hero__console {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: min(100%, 560px);
-  margin-left: auto;
-  padding: 30px 30px 26px;
-}
-
-.vault-hero__eyebrow {
+.wallet-balance__label {
   margin: 0;
-  color: var(--vault-cyan);
-  font-family: var(--vault-font-label);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.22em;
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-shadow: var(--ink-muted-shadow);
   text-transform: uppercase;
 }
 
-.vault-hero__label {
-  margin: 0;
-  color: var(--vault-chrome);
-  font-family: var(--vault-font-label);
-  font-size: 0.86rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.vault-hero__figure {
-  margin: 0;
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-display);
-  font-size: clamp(2.6rem, 6vw, 4.4rem);
-  font-weight: 700;
+.wallet-balance__figure {
+  color: var(--ink-silver);
+  font-size: clamp(38px, 11cqw, 60px);
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  letter-spacing: 0.01em;
-  text-shadow:
-    0 0 24px rgba(0, 212, 255, 0.28),
-    0 2px 0 rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.02em;
 }
 
-.vault-hero__meta {
+.wallet-balance__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 22px;
-  margin: 2px 0 0;
-  padding: 0;
+  justify-content: center;
+  gap: 10px 28px;
+  margin: 6px 0 0;
 }
 
-.vault-hero__meta-item {
+.wallet-balance__item {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
-.vault-hero__meta-item dt {
-  color: var(--vault-muted);
-  font-family: var(--vault-font-label);
-  font-size: 0.66rem;
+.wallet-balance__item dt {
+  color: var(--ink-muted);
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
+  text-shadow: var(--ink-muted-shadow);
   text-transform: uppercase;
 }
 
-.vault-hero__meta-item dd {
+.wallet-balance__item dd {
   margin: 0;
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-display);
-  font-size: 1.25rem;
-  font-weight: 700;
+  color: var(--ink-silver);
+  font-size: 20px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
-.vault-hero__meta-item.live dd {
-  color: var(--vault-green);
+.wallet-balance__item.is-diamond dd {
+  color: var(--ink-blue);
 }
 
-.vault-hero__meta-item.diamond dd {
-  color: var(--vault-cyan);
-}
-
-.vault-hero__meta-item.escrow dd {
-  color: var(--vault-gold);
-  font-size: 0.95rem;
+.wallet-balance__item.is-held dd {
+  max-width: 28ch;
+  color: var(--ink-gold);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .hero-diamonds {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
 }
 
-.diamond-glyph {
-  color: var(--vault-cyan);
-  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.7));
+/* ── The action dock: the Cashier's painted dock art ───────────────── */
+
+.wallet-dock {
+  display: grid;
+  grid-template-rows: 28px 44px;
+  width: 100%;
+  min-height: 92px;
+  padding: 10px 3.4%;
+  background: url('/images/cashier-actions/cashier-action-dock-v1.png') center / 100% 100% no-repeat;
 }
 
-.vault-hero__actions {
+.wallet-dock__line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-blue);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wallet-dock__line.is-gold {
+  color: var(--ink-gold);
+}
+
+.wallet-dock__line.is-red {
+  color: var(--ink-red);
+}
+
+.wallet-dock__actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.wallet-dock__action {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-silver);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wallet-dock__action.is-lit {
+  color: var(--ink-blue);
+}
+
+.wallet-dock__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.wallet-diamond-games {
+  margin: 0 auto;
+}
+
+/* ── Tabs: lit words, the chosen one white ─────────────────────────── */
+
+.wallet-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 4px 22px;
+  padding: 2px 0 6px;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.wallet-tabs button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.wallet-tabs button.active {
+  color: var(--ink-white);
+  text-shadow: var(--desk-glow);
+}
+
+.wallet-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Wallet rows ───────────────────────────────────────────────────── */
+
+.wallet-rows {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.wallet-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--desk-rule);
+  background: var(--desk-row);
+}
+
+.wallet-row__main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.wallet-row__art {
+  flex: 0 0 auto;
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+
+.wallet-row__info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wallet-row__name {
+  color: var(--ink-silver);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.wallet-row__sub {
+  color: var(--ink-muted);
+  font-family: var(--desk-copy);
+  font-size: 12px;
+  line-height: 1.35;
+  text-shadow: var(--ink-muted-shadow);
+}
+
+.wallet-row__figure {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 48%;
+  text-align: right;
+}
+
+.wallet-row__value {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink-silver);
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallet-row__value.is-diamond {
+  color: var(--ink-blue);
+}
+
+.wallet-row__label {
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Two figures under the name, on the engraved rule the Cashier rows use. */
+.wallet-row__split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.wallet-row__split > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wallet-row__split dt {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.wallet-row__split dd {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-silver);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wallet-row__split dd.is-live {
+  color: var(--ink-blue);
+}
+
+.wallet-row__meter {
+  height: 2px;
+  overflow: hidden;
+  background: #000;
+}
+
+.wallet-row__meter-fill {
+  height: 100%;
+  background: var(--ink-blue);
+  transition: width 0.6s ease;
+}
+
+.wallet-row__doors {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
+  justify-content: center;
+  gap: 8px 12px;
 }
 
-/* ── Buttons ─────────────────────────────────────────────────────────── */
+.wallet-row__note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.wallet-row__desc {
+  color: var(--ink-muted);
+  font-family: var(--desk-copy);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+  text-shadow: var(--ink-muted-shadow);
+}
+
+/* ── The painted plate: the Cashier's Request Cash Out art ──────────
+   cashier-action-dock-v1.png at its own 1916 x 334 ratio. The label is the
+   roster's muted ink; the lit plate prints in the Cashier's blue. */
+.vault-btn.primary,
+.wallet-plate__cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 320px;
+  max-width: 100%;
+  min-height: 44px;
+  aspect-ratio: 1916 / 334;
+  padding: 0 7%;
+  border: 0;
+  background: url('/images/cashier-actions/cashier-action-dock-v1.png') center / 100% 100% no-repeat;
+  color: var(--ink-muted);
+  font-family: var(--desk-font);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.2;
+  text-align: center;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.vault-btn.primary,
+.wallet-plate__cta.is-lit {
+  color: var(--ink-blue);
+  text-shadow: none;
+}
+
+.wallet-plate__cta:disabled,
+.vault-btn.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Lit words: every secondary control ───────────────────────────── */
 
 .vault-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  padding: 0 16px;
-  border: 1px solid var(--vault-gunmetal);
-  border-radius: 6px;
-  background: linear-gradient(180deg, #1a2430, #0e141c);
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-label);
-  font-size: 0.8rem;
-  font-weight: 700;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-blue);
+  font-family: var(--desk-font);
+  font-size: 13px;
+  font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   cursor: pointer;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 6px 14px rgba(0, 0, 0, 0.4);
-  transition:
-    transform 0.15s ease,
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-/* No hover anywhere in Club Arena (Dan 2026-08-29): a press is the feedback. */
-.vault-btn:active {
-  border-color: #4d5c6d;
-  transform: translateY(1px);
-}
-
-.vault-btn:focus-visible {
-  outline: 2px solid var(--vault-cyan);
-  outline-offset: 2px;
-}
-
-/* A continuation control belongs to the list above it, so it spans the list
-   rather than sitting beside it as an unrelated action. */
-.vault-btn--wide {
-  display: flex;
-  width: 100%;
-  margin-top: 12px;
 }
 
 .vault-btn:disabled {
-  cursor: not-allowed;
   opacity: 0.45;
-  transform: none;
-}
-
-.vault-btn.primary {
-  border-color: rgba(0, 212, 255, 0.6);
-  background: linear-gradient(180deg, #1b6fd4, #0f3f8f);
-  color: #fff;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 0 18px rgba(0, 212, 255, 0.28),
-    0 6px 14px rgba(0, 0, 0, 0.4);
-}
-
-.vault-btn.ghost {
-  background: rgba(13, 18, 24, 0.7);
+  cursor: not-allowed;
 }
 
 /* 44px: the thumb target the Cashier sheets hold everywhere else (launch
-   audit 2026-10-09, P-11). */
+   audit 2026-10-09, P-11). A small word is a filter or a Copy: muted at rest,
+   white when it is the chosen one. */
 .vault-btn.small {
+  min-width: 44px;
   min-height: 44px;
-  padding: 0 12px;
-  font-size: 0.7rem;
+  padding: 0 4px;
+  color: var(--ink-blue);
+  font-size: 12px;
+}
+
+.vault-btn.small.primary {
+  width: auto;
+  aspect-ratio: auto;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--ink-white);
+  text-shadow: var(--desk-glow);
+}
+
+.vault-btn.small.ghost {
+  color: var(--ink-muted);
+}
+
+/* A continuation control belongs to the list above it, so it spans the list. */
+.vault-btn--wide {
+  display: flex;
+  width: 100%;
+  margin-top: 4px;
 }
 
 .vault-link {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--vault-cyan);
+  color: var(--ink-blue);
   font: inherit;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  font-weight: 700;
   cursor: pointer;
 }
 
-.vault-link:focus-visible {
-  outline: 2px solid var(--vault-cyan);
+.wallet-page
+  :is(.vault-btn, .wallet-plate__cta, .wallet-dock__action, .vault-link, .earn-door):focus-visible,
+.wallet-tabs button:focus-visible {
+  outline: 2px solid var(--ink-blue);
   outline-offset: 2px;
 }
 
-/* ── Tabs ────────────────────────────────────────────────────────────── */
+/* ── Panes (send / receive / earn / ledger) ───────────────────────── */
 
-.wallet-tabs {
-  display: flex;
-  gap: 4px;
-  margin: 16px 0 0;
-  padding: 4px;
-  overflow-x: auto;
-  border: 1px solid var(--vault-gunmetal);
-  border-radius: var(--vault-radius);
-  background: linear-gradient(180deg, #0f151d, #090d12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  scrollbar-width: none;
-}
-
-.wallet-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.wallet-tabs button {
-  flex: 1 0 auto;
-  min-height: 44px;
-  padding: 0 18px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--vault-muted);
-  font-family: var(--vault-font-label);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
-}
-
-.wallet-tabs button:active {
-  color: var(--vault-chrome);
-}
-
-.wallet-tabs button:focus-visible {
-  outline: 2px solid var(--vault-cyan);
-  outline-offset: -2px;
-}
-
-.wallet-tabs button.active {
-  border-color: rgba(0, 212, 255, 0.35);
-  background: linear-gradient(180deg, #17222f, #0f161f);
-  color: var(--vault-chrome-hot);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 0 14px rgba(0, 212, 255, 0.12);
-}
-
-.wallet-content {
-  margin-top: 16px;
-}
-
-/* ── Wallet plates ───────────────────────────────────────────────────── */
-
-.wallet-plates {
+.wallet-grid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 22px 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
+  align-items: start;
 }
 
-.wallet-plate {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+.wallet-grid.single {
+  grid-template-columns: 1fr;
 }
 
-.wallet-plate__art {
-  display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1088 / 548;
-  object-fit: cover;
-}
-
-/* The plate render ends in an empty machined bay; the bay below is drawn in
-   its palette so the live figures read as etched into the same hardware. */
-/* ── THE BAY IS IN THE ARTWORK, SO THE READOUT GOES IN THE ARTWORK ────────
- *
- * Every plate is drawn with an empty machined bay across its lower half. The
- * figures used to sit in a `__bay` block BELOW the whole image, so the bay the
- * art exists to fill rendered empty on all four plates while the totals were
- * listed underneath them.
- *
- * The insets below are MEASURED from the shipped artwork, not guessed. Sampling
- * luminance down the centre of each 1088x548 plate and walking out to the lit
- * machined frame gives the inner slot as:
- *
- *   diamonds       top 52.0%  bottom 92.5%  left 5.2%  right 94.9%
- *   player-wallet  top 51.3%  bottom 93.1%  left 6.1%  right 93.7%
- *   promo-wallet   top 52.0%  bottom 93.2%  left 3.8%  right 96.2%
- *   agent-wallet   top 51.8%  bottom 92.3%  left 5.1%  right 94.9%
- *
- * One inset has to clear the tightest of all four, so it takes the largest top
- * (52.0), the largest left/right (6.1) and the largest bottom margin (7.7),
- * each with a little air: 53% / 7.5% / 8.5%.
- */
-
-.wallet-plate__frame {
-  position: relative;
-  /* The readout sizes itself in cqw, so the type scales with the PLATE rather
-     than the viewport. Without this the numbers overflow the slot the moment
-     the grid goes two-up on a tablet. */
-  container-type: inline-size;
-}
-
-.wallet-plate__readout {
-  position: absolute;
-  inset: 53% 7.5% 8.5%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2.2cqw;
-}
-
-.wallet-plate__footer {
+/* A pane is a heading and its rows on the glass. It draws no box of its own,
+   so a row inside it is never a frame on a frame. */
+.vault-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 16px 16px;
-  border-top: 1px solid rgba(184, 195, 205, 0.12);
-  background: linear-gradient(180deg, #0a0e14, #06090d);
-}
-
-.wallet-plate__row {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 3cqw;
-}
-
-.wallet-plate__stat {
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  gap: 0.4cqw;
   min-width: 0;
 }
 
-.wallet-plate__stat.wide {
-  flex: 2 1 0;
+.vault-panel.span2 {
+  grid-column: 1 / -1;
 }
 
-.wallet-plate__value {
-  overflow: hidden;
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-display);
-  font-size: 1.35rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.05;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* IN THE BAY the type is sized against the PLATE (cqw), not the viewport, so a
-   two-up grid on a tablet shrinks it correctly instead of overflowing the slot.
-   The floors are legibility floors, arrived at by measuring: with three stats
-   in this bay the labels computed to 6.4px, which is why there is only one. */
-.wallet-plate__readout .wallet-plate__value {
-  font-size: clamp(1rem, 5.6cqw, 1.85rem);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-}
-
-.wallet-plate__readout .wallet-plate__label {
-  color: var(--vault-chrome);
-  font-size: clamp(0.5rem, 2.1cqw, 0.68rem);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
-}
-
-.wallet-plate__value.available {
-  color: var(--vault-green);
-}
-
-.wallet-plate__value.locked {
-  color: var(--vault-gold);
-}
-
-/* The diamond plate carries ONE figure in the same slot, so it gets the room
-   the three-up plates cannot have. */
-.wallet-plate__value.diamond {
-  color: var(--vault-cyan);
-  font-size: clamp(0.95rem, 6cqw, 1.9rem);
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.85),
-    0 0 16px rgba(0, 212, 255, 0.3);
-}
-
-.wallet-plate__label {
-  overflow: hidden;
-  color: var(--vault-muted);
-  font-family: var(--vault-font-label);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.vault-panel__title {
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
+  color: #dfe9f2;
+  font-family: var(--desk-heading);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
 }
 
-.wallet-plate__meter {
-  height: clamp(2px, 0.7cqw, 4px);
-  overflow: hidden;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.55);
-  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
+.vault-panel__sub {
+  margin: 0;
+  color: var(--ink-muted);
+  font-family: var(--desk-copy);
+  font-size: 13px;
+  line-height: 1.5;
+  text-shadow: var(--ink-muted-shadow);
 }
 
-.wallet-plate__meter-fill {
+.vault-panel > .vault-btn.primary {
+  align-self: center;
+}
+
+.vault-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vault-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vault-field__label {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.vault-select,
+.vault-input {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 14px;
+  border: 1px solid var(--desk-rule);
+  border-radius: 0;
+  background: var(--desk-well);
+  color: var(--ink-white);
+  font-family: var(--desk-copy);
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.vault-select {
+  appearance: none;
+  padding-right: 36px;
+}
+
+.vault-select:disabled {
+  opacity: 0.55;
+}
+
+.vault-select:focus-visible,
+.vault-input:focus-visible {
+  border-color: var(--ink-blue);
+  outline: none;
+}
+
+.vault-input::placeholder {
+  color: var(--ink-muted);
+}
+
+.vault-form__row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.vault-form__hint {
+  color: var(--ink-muted);
+  font-family: var(--desk-copy);
+  font-size: 12px;
+  line-height: 1.45;
+  text-shadow: var(--ink-muted-shadow);
+}
+
+/* SCOPED, because `.message` is not a name this page can own: ChipTransferModal.css
+   declares it bare too (tests/global-css-does-not-leak-across-pages.law.test.ts). */
+.wallet-page .message {
+  padding: 10px 12px;
+  border: 1px solid var(--desk-rule);
+  background: var(--desk-row);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.wallet-page .message.success {
+  color: var(--ink-green);
+}
+
+.wallet-page .message.error {
+  color: var(--ink-red);
+}
+
+.vault-empty {
+  padding: 18px 8px;
+  color: var(--ink-muted);
+  font-family: var(--desk-copy);
+  font-size: 14px;
+  text-align: center;
+}
+
+/* ── Receive ───────────────────────────────────────────────────────── */
+
+.receive-ids {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.receive-ids__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--desk-rule);
+  background: var(--desk-row);
+}
+
+.receive-ids__row dt {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.receive-ids__row dd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+}
+
+.receive-ids__value {
+  min-width: 0;
+  color: var(--ink-silver);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.receive-ids__value.mono {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: normal;
+  user-select: all;
+}
+
+.receive-ids__row .vault-btn {
+  flex-shrink: 0;
+}
+
+/* ── Ledger rows (received, sent, the arena statement) ─────────────── */
+
+.incoming-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* THE PREFETCH SENTINEL. An invisible 1px marker at the foot of a paged
+   diamond ledger (src/components/wallet/DiamondLedgerMore.tsx). It is
+   aria-hidden, never focusable and never a control; the "Load Older" word is
+   the affordance. Height must be non-zero so an observer has a box. */
+.ledger-prefetch-sentinel {
+  width: 100%;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.incoming-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 12px;
+  border: 1px solid var(--desk-rule);
+  background: var(--desk-row);
+}
+
+.incoming-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.incoming-row__label {
+  min-width: 0;
+  color: var(--ink-white);
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.incoming-row__desc {
+  overflow-wrap: anywhere;
+  color: var(--ink-muted);
+  font-family: var(--desk-copy);
+  font-size: 12px;
+  line-height: 1.45;
+  text-shadow: var(--ink-muted-shadow);
+  white-space: normal;
+}
+
+.incoming-row__side {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.incoming-row__amount {
+  color: var(--ink-blue);
+  font-size: 16px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Diamonds LEAVING. The same row read the other way, so the colour carries
+   the direction: the Cashier's debit red. */
+.incoming-row__amount.is-outgoing {
+  color: var(--ink-red);
+}
+
+.incoming-row__time {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
+/* ── Earn ──────────────────────────────────────────────────────────── */
+
+.earn-stats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 110px), 1fr));
+  margin: 0;
+}
+
+.earn-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 8px;
+  border: 1px solid var(--desk-rule);
+  background: var(--desk-row);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.earn-stat dt {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.earn-stat dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-silver);
+  font-size: 18px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.earn-stat dd.positive,
+.earn-stat dd.diamond {
+  color: var(--ink-blue);
+}
+
+.earn-meter {
+  height: 2px;
+  overflow: hidden;
+  background: #000;
+}
+
+.earn-meter__fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--vault-blue), var(--vault-cyan));
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+  background: var(--ink-blue);
   transition: width 0.6s ease;
 }
 
-.wallet-plate.promo .wallet-plate__meter-fill {
-  background: linear-gradient(90deg, #7a5cff, #c084fc);
+.earn-doors {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
 }
 
-.wallet-plate.business .wallet-plate__meter-fill {
-  background: linear-gradient(90deg, #ffa500, var(--vault-gold));
-}
-
-.wallet-plate__desc {
-  color: var(--vault-muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
-.wallet-plate__cta {
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid rgba(0, 212, 255, 0.55);
-  border-radius: 6px;
-  background: linear-gradient(180deg, #1b6fd4, #0f3f8f);
-  color: #fff;
-  font-family: var(--vault-font-label);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  white-space: nowrap;
+/* A door is a desk row a player taps: the name, what it pays, and the Cashier's
+   own Select word on the right. */
+.earn-door {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+  min-height: 64px;
+  padding: 8px 12px;
+  border: 1px solid var(--desk-rule);
+  background: var(--desk-row);
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  box-shadow: 0 0 16px rgba(0, 212, 255, 0.25);
 }
 
-.wallet-plate__cta:focus-visible {
-  outline: 2px solid var(--vault-cyan);
-  outline-offset: 2px;
+.earn-door::after {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  content: 'Open';
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-/* The Diamond Arena statement (phase 4): the Earn tab's stat rows, stacked. */
+.earn-door:active {
+  border-color: var(--ink-blue);
+}
+
+.earn-door__title {
+  color: var(--ink-white);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.earn-door__sub {
+  color: var(--ink-muted);
+  font-family: var(--desk-copy);
+  font-size: 12px;
+  line-height: 1.4;
+  text-shadow: var(--ink-muted-shadow);
+}
+
+/* The Diamond Arena statement (phase 4): the stat rows, stacked. */
 .arena-statement {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-/* ── Where Your Diamonds Go (phase 5) ───────────────────────────────────
-   Every diamond spent by what it bought and earned by where it came from,
-   lifetime or the last 30 days. A bar is a share of its own side, so the
-   longest bar on each side is always the biggest sink or source. DIAMONDS
-   ONLY: the panel has no chip vocabulary. */
+/* ── Where Your Diamonds Go (phase 5): every diamond spent by what it bought
+   and earned by where it came from. DIAMONDS ONLY. ─────────────────── */
 .flow-panel {
   display: flex;
   flex-direction: column;
@@ -604,7 +963,8 @@
 .flow-toggle {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  justify-content: center;
+  gap: 4px 18px;
 }
 
 .flow-columns {
@@ -618,6 +978,9 @@
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--desk-rule);
+  background: var(--desk-row);
 }
 
 .flow-side__head {
@@ -625,29 +988,29 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid rgba(184, 195, 205, 0.12);
+  padding-bottom: 8px;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .flow-side__title {
-  color: var(--vault-muted);
-  font-family: var(--vault-font-label);
-  font-size: 0.66rem;
+  color: var(--ink-muted);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.16em;
+  text-shadow: var(--ink-muted-shadow);
   text-transform: uppercase;
 }
 
 .flow-side__total {
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-display);
-  font-size: 1rem;
-  font-weight: 700;
+  color: var(--ink-silver);
+  font-size: 16px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
 .flow-side__total.positive {
-  color: var(--vault-green);
+  color: var(--ink-blue);
 }
 
 .flow-list {
@@ -673,12 +1036,12 @@
   gap: 8px;
 }
 
-/* A money label wraps rather than clips: "Daily Rewards And Challenges"
-   beside a six-figure amount at 375px must still read in full. */
+/* A money label wraps rather than clips at 375px. */
 .flow-row__label {
   min-width: 0;
-  color: var(--vault-chrome-hot);
-  font-size: 0.82rem;
+  color: var(--ink-white);
+  font-family: var(--desk-copy);
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.25;
   overflow-wrap: anywhere;
@@ -686,562 +1049,74 @@
 
 .flow-row__amount {
   flex: none;
-  color: var(--vault-cyan);
-  font-family: var(--vault-font-display);
-  font-size: 0.95rem;
-  font-weight: 700;
+  color: var(--ink-silver);
+  font-size: 15px;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
 .flow-bar {
-  height: 6px;
+  height: 2px;
   overflow: hidden;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.06);
+  background: #000;
 }
 
 .flow-bar__fill {
   height: 100%;
-  border-radius: 3px;
-  background: linear-gradient(90deg, var(--vault-blue), var(--vault-cyan));
+  background: var(--ink-red);
   transition: width 0.3s ease;
 }
 
 .flow-bar__fill.earned {
-  background: linear-gradient(90deg, #1d7a4f, var(--vault-green));
+  background: var(--ink-blue);
 }
 
 .flow-row__count {
-  color: var(--vault-muted);
-  font-family: var(--vault-font-label);
-  font-size: 0.62rem;
+  color: var(--ink-muted);
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-/* Two doors on the diamonds plate: Buy Diamonds and the Diamond Arena. They
-   wrap at 375px rather than shrink; a door is a tap target, not a label. */
-.wallet-plate__doors {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+/* The statement paints its own console; the wallet provides placement only. */
+.wallet-page .vault-panel--statement {
+  padding-inline: 0;
 }
 
-/* The arena is closed: a sentence in the plate's own muted ink, no chrome, so
-   nobody reads a dead button as a broken one. */
-.wallet-plate__door-note {
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 4px;
-  color: var(--vault-muted);
-  font-family: var(--vault-font-label);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-/* ── Panels (send / receive / earn / ledger) ────────────────────────── */
-
-.wallet-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-}
-
-.wallet-grid.single {
-  grid-template-columns: 1fr;
-}
-
-.vault-panel {
-  position: relative;
-  padding: 18px 18px 16px;
-  border: 1px solid var(--vault-gunmetal);
-  border-radius: var(--vault-radius);
-  background: linear-gradient(180deg, var(--vault-panel-raised), var(--vault-panel));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 18px 40px rgba(0, 0, 0, 0.4);
-}
-
-.vault-panel::before {
-  position: absolute;
-  top: 0;
-  right: 18px;
-  left: 18px;
-  height: 1px;
-  content: '';
-  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.45), transparent);
-}
-
-.vault-panel.accent {
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 24px rgba(0, 212, 255, 0.1),
-    0 18px 40px rgba(0, 0, 0, 0.4);
-}
-
-.vault-panel.span2 {
-  grid-column: 1 / -1;
-}
-
-.vault-panel__title {
-  margin: 0 0 4px;
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-display);
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.vault-panel__sub {
-  margin: 0 0 14px;
-  color: var(--vault-muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-.vault-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.vault-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.vault-field__label {
-  color: var(--vault-muted);
-  font-family: var(--vault-font-label);
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.vault-select,
-.vault-input {
-  width: 100%;
-  min-height: 46px;
-  padding: 0 14px;
-  border: 1px solid var(--vault-gunmetal);
-  border-radius: 6px;
-  background: linear-gradient(180deg, #070a0f, #0b1017);
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-display);
-  font-size: 1.05rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
-}
-
-.vault-select {
-  appearance: none;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--vault-chrome) 50%),
-    linear-gradient(135deg, var(--vault-chrome) 50%, transparent 50%);
-  background-position:
-    calc(100% - 20px) 50%,
-    calc(100% - 15px) 50%;
-  background-repeat: no-repeat;
-  background-size:
-    5px 5px,
-    5px 5px;
-  padding-right: 36px;
-}
-
-.vault-select:disabled {
-  opacity: 0.55;
-}
-
-.vault-select:focus-visible,
-.vault-input:focus-visible {
-  border-color: var(--vault-cyan);
-  outline: none;
-  box-shadow:
-    inset 0 2px 6px rgba(0, 0, 0, 0.5),
-    0 0 0 3px rgba(0, 212, 255, 0.2);
-}
-
-.vault-input::placeholder {
-  color: #4e5a68;
-}
-
-.vault-form__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.vault-form__hint {
-  color: var(--vault-muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
-}
-
-/* SCOPED, because `.message` is not a name this page can own.
-   ChipTransferModal.css declares `.message` bare too, with different padding
-   (0.875rem 1rem), weight (500) and a different error red (#ef4444 against this
-   sheet's #ff8a8a). Both are plain .css, so both are global the moment their
-   chunk loads, and the winner was whichever route the player visited last:
-   open the agent chip-transfer modal and then the wallet, and the wallet's send
-   banner came out in the modal's metrics - or the reverse.
-   Two lines, exactly as tests/global-css-does-not-leak-across-pages.law.test.ts
-   prescribes. */
-.wallet-page .message {
-  padding: 10px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.wallet-page .message.success {
-  border: 1px solid rgba(53, 212, 138, 0.35);
-  background: rgba(53, 212, 138, 0.1);
-  color: var(--vault-green);
-}
-
-.wallet-page .message.error {
-  border: 1px solid rgba(255, 99, 99, 0.35);
-  background: rgba(255, 99, 99, 0.1);
-  color: #ff8a8a;
-}
-
-.vault-empty {
-  padding: 22px 12px;
-  border: 1px dashed rgba(184, 195, 205, 0.18);
-  border-radius: 6px;
-  color: var(--vault-muted);
-  font-size: 0.84rem;
-  text-align: center;
-}
-
-/* ── Receive ─────────────────────────────────────────────────────────── */
-
-.receive-ids {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0 0 14px;
-}
-
-.receive-ids__row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid rgba(184, 195, 205, 0.12);
-  border-radius: 6px;
-  background: rgba(3, 5, 8, 0.6);
-}
-
-.receive-ids__row dt {
-  color: var(--vault-muted);
-  font-family: var(--vault-font-label);
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.receive-ids__row dd {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 0;
-}
-
-.receive-ids__value {
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-display);
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-
-.receive-ids__value.mono {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.78rem;
-  font-weight: 500;
-  line-height: 1.5;
-  white-space: normal;
-  user-select: all;
-}
-
-.incoming-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* THE PREFETCH SENTINEL.
-   An invisible 1px marker at the foot of a paged diamond ledger. When it
-   comes within LEDGER_PREFETCH_RUNWAY_PX of the viewport, the next page is
-   fetched (src/components/wallet/DiamondLedgerMore.tsx). It is aria-hidden,
-   never focusable and never a control: the "Load Older" button beside it is
-   the affordance, and it stays. Height must be non-zero so an observer has a
-   box to intersect. */
-.ledger-prefetch-sentinel {
-  width: 100%;
-  height: 1px;
-  margin: 0;
-  pointer-events: none;
-}
-
-.incoming-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(184, 195, 205, 0.1);
-  border-radius: 6px;
-  background: rgba(3, 5, 8, 0.6);
-}
-
-.incoming-row__body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.incoming-row__label {
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-label);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.incoming-row__desc {
-  overflow-wrap: anywhere;
-  color: var(--vault-muted);
-  font-size: 0.76rem;
-  line-height: 1.5;
-  white-space: normal;
-}
-
-.incoming-row__side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.incoming-row__amount {
-  color: var(--vault-green);
-  font-family: var(--vault-font-display);
-  font-size: 1.1rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Diamonds LEAVING. The same row, read the other way, so the colour has to
-   carry the direction: a send rendered in the credit green tells a player
-   their balance went up. Chrome rather than red - a gift is not an error. */
-.incoming-row__amount.is-outgoing {
-  color: var(--vault-chrome);
-}
-
-.incoming-row__time {
-  color: var(--vault-muted);
-  font-size: 0.7rem;
-}
-
-/* ── Earn ────────────────────────────────────────────────────────────── */
-
-.earn-stats {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
-  margin: 0 0 12px;
-}
-
-.earn-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border: 1px solid rgba(184, 195, 205, 0.12);
-  border-radius: 6px;
-  background: rgba(3, 5, 8, 0.6);
-}
-
-.earn-stat dt {
-  color: var(--vault-muted);
-  font-family: var(--vault-font-label);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.earn-stat dd {
-  margin: 0;
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-display);
-  font-size: 1.15rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.earn-stat dd.positive {
-  color: var(--vault-green);
-}
-
-.earn-stat dd.diamond {
-  color: var(--vault-cyan);
-}
-
-.earn-meter {
-  height: 6px;
-  margin: 0 0 12px;
-  overflow: hidden;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.earn-meter__fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--vault-blue), var(--vault-cyan));
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
-  transition: width 0.6s ease;
-}
-
-.earn-doors {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
-}
-
-.earn-door {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 72px;
-  padding: 12px 14px;
-  border: 1px solid var(--vault-gunmetal);
-  border-radius: 6px;
-  background: linear-gradient(180deg, #121a25, #0a0f16);
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  transition:
-    border-color 0.15s ease,
-    transform 0.15s ease;
-}
-
-.earn-door:active {
-  border-color: rgba(0, 212, 255, 0.45);
-  transform: translateY(1px);
-}
-
-.earn-door:focus-visible {
-  outline: 2px solid var(--vault-cyan);
-  outline-offset: 2px;
-}
-
-.earn-door__title {
-  color: var(--vault-chrome-hot);
-  font-family: var(--vault-font-display);
-  font-size: 1rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.earn-door__sub {
-  color: var(--vault-muted);
-  font-size: 0.76rem;
-  line-height: 1.4;
-}
-
-/* ── Responsive ──────────────────────────────────────────────────────── */
-
-@media (max-width: 900px) {
-  .vault-hero {
-    min-height: 0;
-  }
-
-  .vault-hero__art {
-    object-position: 30% center;
-  }
-
-  .vault-hero__hardware {
-    background: linear-gradient(
-      180deg,
-      rgba(2, 3, 5, 0.35) 0%,
-      rgba(2, 3, 5, 0.86) 45%,
-      rgba(2, 3, 5, 0.97) 100%
-    );
-  }
-
-  .vault-hero__console {
-    width: 100%;
-    margin-top: 120px;
-    padding: 20px 18px 22px;
-  }
-}
+/* ── Phone ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 640px) {
   .wallet-page {
-    padding-right: 12px;
-    padding-left: 12px;
+    padding-right: 6px;
+    padding-left: 6px;
   }
 
-  .vault-hero__console {
-    margin-top: 96px;
+  .wallet-dock {
+    background-image: url('/images/cashier-actions/cashier-action-dock-tall-v1.png');
   }
 
-  .vault-hero__actions .vault-btn {
-    flex: 1 1 calc(50% - 8px);
-    padding: 0 10px;
-    font-size: 0.72rem;
+  .wallet-dock__action {
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
   }
 
   .earn-stats {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .flow-columns {
     grid-template-columns: 1fr;
   }
 
-  /* `.wallet-plate__value` used to be forced to 1.15rem here. It is sized in
-     cqw against the plate now, which already narrows it correctly at every
-     width - and a fixed rem inside a media query would win over that clamp and
-     push the figures back out of the machined bay at exactly this breakpoint,
-     which is the bug this whole pass exists to fix. Deliberately not replaced. */
-
   .receive-ids__row dd {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  /* EVERY TAB ON SCREEN AT 375 AND 393 (cashier launch B-3, 2026-10-11). The
-     five tabs asked for about 455px at desktop spacing inside a 369px strip
-     whose scrollbar is hidden, so "Ledger" sat off-screen with nothing saying
-     it was there. On a phone the five share the strip equally and the label
-     tightens to fit; every tab keeps its 44px height. */
+  /* EVERY TAB ON SCREEN AT 375 AND 393 (cashier launch B-3, 2026-10-11). On
+     a phone the five words share the strip equally and the label tightens to
+     fit; every tab keeps its 44px height. */
   .wallet-tabs {
     gap: 2px;
   }
@@ -1250,8 +1125,8 @@
     flex: 1 1 0;
     min-width: 0;
     padding: 0 2px;
-    font-size: 0.68rem;
-    letter-spacing: 0.04em;
+    font-size: 12.5px;
+    letter-spacing: 0.06em;
     white-space: nowrap;
   }
 }
@@ -1264,34 +1139,4 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
-
-  .vault-btn:active,
-  .earn-door:active {
-    transform: none;
-  }
-}
-
-/* The statement paints its own console; the wallet provides placement only. */
-.wallet-page .vault-panel--statement {
-  border: 0;
-  border-radius: 0;
-  padding-inline: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.wallet-page .vault-panel--statement::before {
-  display: none;
-}
-.receive-ids__row .vault-btn {
-  flex-shrink: 0;
-}
-.earn-stat,
-.earn-stat dd,
-.incoming-row__label {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.incoming-row__side {
-  flex-shrink: 0;
 }

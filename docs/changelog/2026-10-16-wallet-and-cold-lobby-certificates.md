@@ -1,0 +1,9 @@
+# Exact wallet and cold lobby certificates
+
+The member-balance realtime journey still expected an unformatted whole amount, so the owner-required `0.00` display failed against `0`. Preserve its authoritative total, locked, available and reconnect assertions, and independently format the expected playable wallet with grouped cents below one million and compact millions.
+
+The Chromium cold-lobby journey failed in restoration while WebKit passed. Its retained artifact has no trace or preference transitions, so it cannot establish which initial transition failed: an exception from `finally` could replace the actual journey failure. The certificate now preserves that first failure, still fails a restoration-only failure, and records bounded phase/response receipts without credentials or request bodies. Saves require the actual dedicated owner, club and selected tab, not any preference POST. Both original-tab restoration and the cold-document target assertion remain mandatory.
+
+Each preference save now has a bounded thirty-second response deadline. The journey envelope accounts for two existing 120-second document/readiness allocations and both saves; no individual navigation or readiness deadline increases. This avoids borrowing the entire remaining test deadline for one save and leaving no restoration budget. No retry, page replacement, assertion skip, or production preference implementation change is added.
+
+Focused regressions cover exact zero/cents/grouping/million boundaries, wrong-owner/club/tab and malformed save rejection, and preservation of an initial error when restoration also fails. Compilation, spec collection, ordinary hooks and protected checks are required. Corrected hosted live journeys remain pending until their actual execution; no production financial action is part of this repair. The Club Bank Transaction Ledger and approved artwork are unchanged.

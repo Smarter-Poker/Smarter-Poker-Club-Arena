@@ -10,7 +10,7 @@ import { readAppearanceRoots } from './support/appearancePreviewObservation';
 import { rawProfileHeading } from './support/rawProfileHeading';
 import { navigateToRenderedProfile } from './support/renderedProfileNavigation';
 import { readProfileInterfaceMode } from './support/profileInterfaceMode';
-import { walletPlayableAmount } from './support/walletPlayableAmount';
+import { expectedPlayableWalletFigure, walletPlayableAmount } from './support/walletPlayableAmount';
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
@@ -1038,7 +1038,7 @@ test.describe('production Table Studio realtime contract', () => {
         { waitUntil: 'domcontentloaded' }
       );
       await expect(walletPlayableAmount(primaryPage)).toHaveText(
-        Math.max(0, total - locked).toLocaleString(),
+        expectedPlayableWalletFigure(Math.max(0, total - locked)),
         {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         }

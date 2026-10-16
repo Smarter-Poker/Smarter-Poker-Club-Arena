@@ -2,6 +2,12 @@ import { test, expect, devices, type Page } from '@playwright/test';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { observeCashierFailure } from './support/cashierFailureDiagnostics';
 import { diamondEntryRead, settleDiamondSpinsOffer } from './support/diamondInvitationOffer';
+import {
+  isLobbyPreferenceSave,
+  LOBBY_COLD_RETURN_TIMEOUT_MS,
+  LOBBY_SAVE_TIMEOUT_MS,
+  withLobbyPreferenceRestoration,
+} from './support/lobbyPreferenceCertificate';
 
 /**
  * THE THREE THINGS DAN PHOTOGRAPHED, ON THE LIVE LOBBY (2026-09-10).
@@ -90,32 +96,87 @@ test.describe('the mobile lobby chrome on production', () => {
   test.describe.configure({ mode: 'default', timeout: 120_000 });
 
   test('the selected game list survives a cold return to the lobby', async ({ page }, testInfo) => {
+    // Two independently bounded lobby opens, two bounded saves, and restoration.
+    // No individual navigation/readiness or persistence assertion is relaxed.
+    test.setTimeout(LOBBY_COLD_RETURN_TIMEOUT_MS);
     await openLobby(page);
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
     const target = original === 'PLO' ? 'NLH' : 'PLO';
-    const save = () =>
-      page.waitForResponse(
-        (response) =>
-          response.ok() &&
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname.endsWith('/rest/v1/user_lobby_filters')
+    const owner = await page.evaluate(() => {
+      const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || 'null');
+      return session?.user?.id || session?.currentSession?.user?.id || null;
+    });
+    expect(owner).toMatch(/^[0-9a-f-]{36}$/);
+    let phase = 'initial selection';
+    const transitions: Array<{ phase: string; selected: string; event: string; status?: number }> =
+      [];
+    const save = (selected: string) => {
+      if (transitions.length === 16) transitions.shift();
+      transitions.push({ phase, selected, event: 'started' });
+      return page.waitForResponse(
+        (response) => {
+          if (
+            response.request().method() !== 'POST' ||
+            !new URL(response.url()).pathname.endsWith('/rest/v1/user_lobby_filters')
+          )
+            return false;
+          const matches = isLobbyPreferenceSave(
+            response.request().postDataJSON(),
+            owner,
+            CLUB_ID,
+            selected
+          );
+          if (!matches) return false;
+          if (transitions.length === 16) transitions.shift();
+          transitions.push({ phase, selected, event: 'response', status: response.status() });
+          return response.ok();
+        },
+        { timeout: LOBBY_SAVE_TIMEOUT_MS }
       );
+    };
     let returningPage: Page | undefined;
     let returningDiagnostics: ReturnType<typeof observeCashierFailure> | undefined;
     try {
-      await Promise.all([save(), tabs.getByRole('tab', { name: target, exact: true }).click()]);
-      // A new document has no mounted filter state or tab session cache.
-      // Reusing the old document raced its legitimate chunk recovery with
-      // goto(), which aborted that recovery and the requested navigation.
-      returningPage = await page.context().newPage();
-      returningDiagnostics = observeCashierFailure(returningPage);
-      await openLobby(returningPage);
-      await expect(
-        returningPage
-          .getByRole('tablist', { name: 'Game Type', exact: true })
-          .getByRole('tab', { name: target, exact: true })
-      ).toHaveAttribute('aria-selected', 'true');
+      await withLobbyPreferenceRestoration(
+        async () => {
+          await Promise.all([
+            save(target),
+            tabs.getByRole('tab', { name: target, exact: true }).click(),
+          ]);
+          await expect(tabs.getByRole('tab', { name: target, exact: true })).toHaveAttribute(
+            'aria-selected',
+            'true'
+          );
+          phase = 'cold return';
+          // A new document has no mounted filter state or tab session cache.
+          // Reusing the old document raced its legitimate chunk recovery with
+          // goto(), which aborted that recovery and the requested navigation.
+          returningPage = await page.context().newPage();
+          returningDiagnostics = observeCashierFailure(returningPage);
+          await openLobby(returningPage);
+          await expect(
+            returningPage
+              .getByRole('tablist', { name: 'Game Type', exact: true })
+              .getByRole('tab', { name: target, exact: true })
+          ).toHaveAttribute('aria-selected', 'true');
+        },
+        async () => {
+          phase = 'restore';
+          returningDiagnostics?.stop();
+          await returningPage?.close();
+          // Restore through the real UI and require the exact owner's original-tab
+          // write. A restore failure cannot replace a preceding journey failure.
+          await Promise.all([
+            save(original),
+            tabs.getByRole('tab', { name: original, exact: true }).click(),
+          ]);
+          await expect(tabs.getByRole('tab', { name: original, exact: true })).toHaveAttribute(
+            'aria-selected',
+            'true'
+          );
+        }
+      );
     } catch (error) {
       if (returningDiagnostics)
         await testInfo.attach('cold-return-network-diagnostics', {
@@ -125,10 +186,10 @@ test.describe('the mobile lobby chrome on production', () => {
       throw error;
     } finally {
       returningDiagnostics?.stop();
-      await returningPage?.close();
-      // This is the isolated certificate account; restore its original view
-      // so the next maintained journey inherits the same starting preference.
-      await Promise.all([save(), tabs.getByRole('tab', { name: original, exact: true }).click()]);
+      await testInfo.attach('lobby-preference-transitions', {
+        body: Buffer.from(JSON.stringify({ phase, original, target, transitions })),
+        contentType: 'application/json',
+      });
     }
   });
 

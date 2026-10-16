@@ -135,6 +135,59 @@
     0 4px 10px rgba(0, 0, 0, 0.5);
 }
 
+/* The available action matches Lobby, Message and Previous Hand. The artwork
+   owns the frame; the label stays accessible live text inside its lower face. */
+.cch-seat-change.cch-seat-change--control {
+  width: var(--sp-hud-tile-size, 66px);
+  height: var(--sp-hud-tile-size, 66px);
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+  letter-spacing: 0;
+  container-type: inline-size;
+}
+
+.cch-seat-change--control::after {
+  content: none;
+}
+
+.cch-seat-change__art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.cch-seat-change__label {
+  position: absolute;
+  left: 13%;
+  right: 13%;
+  bottom: 15%;
+  color: #e4e7ec;
+  font-size: 12cqw;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.cch-seat-change--control:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+
+.cch-seat-change.cch-seat-change--control:active:not(:disabled) {
+  box-shadow: none;
+  filter: brightness(0.92);
+  transform: scale(0.96);
+}
+
 /* THE FELT SAYS A MOVE IS COMING (Dan 2026-09-05): the pending-move sentence
    in the corner, on the felt until the move executes. A gunmetal plate lit
    blue from inside, the sentence engraved in chrome: the one thing in the

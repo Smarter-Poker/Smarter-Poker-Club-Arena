@@ -4,15 +4,15 @@ import { remainingInitialTableReadinessMs } from './initialTableReadiness';
 /** Cold starts are sequential; all six pages stay open for the observation. */
 export async function initializeNaturalMultiRunObservers<T>(
   tables: T[],
-  initialize: (table: T, navigationBudgetMs: number) => Promise<void>,
+  initialize: (table: T, navigationBudgetMs: number, remainingSetup: () => number) => Promise<void>,
   setupStartedAt: number,
   now = Date.now
 ): Promise<void> {
   if (tables.length !== 6) throw new Error('Natural multirun proof requires all six observers');
+  const remainingSetup = () => remainingInitialTableReadinessMs(setupStartedAt, 120_000, now());
   for (const table of tables) {
-    const remaining = remainingInitialTableReadinessMs(setupStartedAt, 120_000, now());
-    await initialize(table, Math.min(12_000, remaining));
-    remainingInitialTableReadinessMs(setupStartedAt, 120_000, now());
+    await initialize(table, Math.min(12_000, remainingSetup()), remainingSetup);
+    remainingSetup();
   }
 }
 

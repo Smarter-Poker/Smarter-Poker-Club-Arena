@@ -1,7 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { EngineSocketJournal, whileInitialTableConnects } from './support/liveTableRealtime';
+import {
+  EngineSocketJournal,
+  whileInitialTableConnects,
+  whileConnectionBannerStaysHidden,
+} from './support/liveTableRealtime';
 import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
 import {
   installNaturalMultiRunWitness,
@@ -21,7 +25,8 @@ async function openNaturalMultiRunObserver(
   page: Page,
   journal: EngineSocketJournal,
   tableId: string,
-  budgetMs: number
+  budgetMs: number,
+  remainingSetup: () => number
 ): Promise<void> {
   const startedAt = Date.now();
   const remaining = () => remainingInitialTableReadinessMs(startedAt, budgetMs);
@@ -54,6 +59,14 @@ async function openNaturalMultiRunObserver(
       await expect(page.getByTestId('table-connection-banner')).toBeHidden({
         timeout: remaining(),
       });
+    })(),
+    `${tableId} natural observer initial connection`
+  );
+  // Decoded media is additional setup, not part of baseline wire admission.
+  // Every observer consumes the same original setup deadline; no new budget.
+  await whileConnectionBannerStaysHidden(
+    page,
+    (async () => {
       await expect
         .poll(
           () =>
@@ -67,16 +80,16 @@ async function openNaturalMultiRunObserver(
                   images[0].naturalHeight > 0
               ),
           {
-            timeout: remaining(),
+            timeout: remainingSetup(),
             message: 'The actual table felt must load before natural observation',
           }
         )
         .toBe(true);
       await expect(page.locator('.table-art-cover:visible')).toHaveCount(0, {
-        timeout: remaining(),
+        timeout: remainingSetup(),
       });
     })(),
-    `${tableId} natural observer initial connection`
+    `${tableId} natural observer media readiness`
   );
 }
 
@@ -159,12 +172,18 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
   try {
     await initializeNaturalMultiRunObservers(
       selected,
-      async (table, navigationBudgetMs) => {
+      async (table, navigationBudgetMs, remainingSetup) => {
         const page = await context.newPage();
         const journal = new EngineSocketJournal(page);
         await installNaturalMultiRunWitness(page);
         pages.push({ page, tableId: table.id, journal, packets: [] });
-        await openNaturalMultiRunObserver(page, journal, table.id, navigationBudgetMs);
+        await openNaturalMultiRunObserver(
+          page,
+          journal,
+          table.id,
+          navigationBudgetMs,
+          remainingSetup
+        );
       },
       setupStartedAt
     );

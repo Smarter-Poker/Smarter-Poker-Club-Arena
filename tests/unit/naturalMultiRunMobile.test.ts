@@ -109,6 +109,22 @@ it('observes the visible table rather than a retained hidden table', async () =>
 });
 
 const engineSha = '5780828e02d0f9c076f08bb503a4507599465928';
+it('keeps the baseline navigation budget separate from the single remaining media setup budget', async () => {
+  let now = 1_000;
+  await initializeNaturalMultiRunObservers(
+    [1, 2, 3, 4, 5, 6],
+    async (_table, navigationBudget, remainingSetup) => {
+      expect(navigationBudget).toBe(12_000);
+      const beforeMedia = remainingSetup();
+      now += 13_000; // Actual decoded art may finish after protocol admission.
+      expect(remainingSetup()).toBe(beforeMedia - 13_000);
+    },
+    1_000,
+    () => now
+  );
+  expect(now).toBe(79_000);
+});
+
 it('finishes each cold observer admission before starting the next, retaining all six', async () => {
   const events: string[] = [];
   let active = 0;

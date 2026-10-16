@@ -196,4 +196,9 @@ BEGIN
   RETURN a;
 END $fn$;
 
+-- Explicit per-function grants (service_role only), restated literally so the
+-- definer-authorization gate can read them.
+REVOKE ALL ON FUNCTION public.fn_sp_digest_attention(date, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_digest_attention(date, jsonb) TO service_role;
+
 COMMIT;

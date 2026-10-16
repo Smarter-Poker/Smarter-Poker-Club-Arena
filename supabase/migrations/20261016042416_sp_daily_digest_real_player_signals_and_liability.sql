@@ -286,4 +286,9 @@ BEGIN
     'computed_at', clock_timestamp());
 END $fn$;
 
+-- Explicit per-function grants (service_role only), restated literally so the
+-- definer-authorization gate can read them.
+REVOKE ALL ON FUNCTION public.fn_sp_daily_metrics_compute(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_daily_metrics_compute(date) TO service_role;
+
 COMMIT;

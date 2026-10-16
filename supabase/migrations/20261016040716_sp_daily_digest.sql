@@ -851,4 +851,29 @@ SELECT cron.schedule('sp-daily-metrics-snapshot', '15,45 5,6 * * *',
 SELECT cron.schedule('sp-daily-digest-watchdog', '15 13,14 * * *',
   $c$SELECT public.fn_sp_digest_watchdog() WHERE to_char(clock_timestamp() AT TIME ZONE 'America/Chicago','HH24:MI') = '08:15';$c$);
 
+-- Explicit per-function grants (service_role only), restated literally so the
+-- definer-authorization gate can read them.
+REVOKE ALL ON FUNCTION public.fn_sp_setting(text, numeric) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_setting(text, numeric) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_daily_metrics_compute(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_daily_metrics_compute(date) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_digest_attention(date, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_digest_attention(date, jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_daily_metrics_snapshot(date) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_daily_metrics_snapshot(date) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_dispatch_attention(date, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_dispatch_attention(date, jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_daily_digest(date, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_daily_digest(date, boolean) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_digest_claim(date, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_digest_claim(date, boolean) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_digest_finish(date, text, text, text[], text, text, jsonb, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_digest_finish(date, text, text, text[], text, text, jsonb, text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_critical_scan() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_critical_scan() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_critical_mark(bigint, boolean, boolean, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_critical_mark(bigint, boolean, boolean, text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_digest_watchdog() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_digest_watchdog() TO service_role;
+
 COMMIT;

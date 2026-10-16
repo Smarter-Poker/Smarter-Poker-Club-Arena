@@ -66,4 +66,9 @@ BEGIN
                            AND detected_at > now() - interval '1 day'), '[]'::jsonb));
 END $fn$;
 
+-- Explicit per-function grants (service_role only), restated literally so the
+-- definer-authorization gate can read them.
+REVOKE ALL ON FUNCTION public.fn_sp_critical_scan() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_critical_scan() TO service_role;
+
 COMMIT;

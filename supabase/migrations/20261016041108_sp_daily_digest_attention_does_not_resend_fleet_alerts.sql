@@ -335,4 +335,13 @@ UPDATE public.operational_alert_events
    AND alertname IN ('DailyDigest.critical_alert_rising','DailyDigest.drift_past_deadline')
    AND investigation_status = 'new';
 
+-- Explicit per-function grants (service_role only), restated literally so the
+-- definer-authorization gate can read them.
+REVOKE ALL ON FUNCTION public.fn_sp_digest_attention(date, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_digest_attention(date, jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_dispatch_attention(date, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_dispatch_attention(date, jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sp_daily_digest(date, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sp_daily_digest(date, boolean) TO service_role;
+
 COMMIT;

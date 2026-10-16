@@ -1,4 +1,4 @@
-# Recorded Anti-Cheat Exemption, Anon Revoke And Cron Roster (2026-10-16)
+# Recorded Anti-Cheat Exemption And Anon Revoke (2026-10-16)
 
 ## What Was Wrong
 
@@ -12,9 +12,6 @@
   DEFINER trigger function, so the hourly Production Integrity Audit reported
   `anon_definers=1`: the one anon-executable definer not on
   `docs/security/anon-executable-definers.json`.
-- `20261016040716_sp_daily_digest` (#7070) scheduled `sp-daily-metrics-snapshot`
-  and `sp-daily-digest-watchdog` without moving the scheduled-work roster, so
-  Cron Health failed with "A pg_cron job appeared or vanished on production".
 
 ## What Changed
 
@@ -25,5 +22,6 @@
   readback. Applied to production at 10:03 UTC; the live anon-executable definer
   set is now exactly the 24 allowlisted signatures. The trigger still fires with
   the definer's rights, so KingFish and Danimal remain exempt.
-- `docs/attestation/cron-roster.tsv` and `ACTIVE_JOBS` move 134 -> 136 for the
-  two digest jobs, read live (`cron.job`: 138 total, 136 active).
+- The Cron Health roster move for the two daily-digest jobs is left to #7078,
+  which carries the same 134 -> 136 change (live `cron.job`: 138 total, 136
+  active) together with the Schema Integrity fix.

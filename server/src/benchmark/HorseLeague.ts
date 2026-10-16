@@ -1164,6 +1164,11 @@ const CLAIM_EVIDENCE: Record<string, { table: string; column: string; dateColumn
   league: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
   league_pm: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
   daily_audit: { table: 'horse_daily_audit', column: 'day', dateColumn: 'day' },
+  reference_agreement: {
+    table: 'horse_reference_agreement_daily',
+    column: 'day',
+    dateColumn: 'day',
+  },
   self_tuner: {
     table: 'horse_tuner_study_completions',
     column: 'run_date',

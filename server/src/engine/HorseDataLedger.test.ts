@@ -69,6 +69,8 @@ const BRAIN_FILES = [
   'engine/horseDecision/client.ts',
   // Phase 15 final outcomes are emitted by the shared private witness owner.
   'engine/HorseExecutionWitness.ts',
+  // Phase 15 reference agreement is counted by the main-thread ledger observer.
+  'engine/HorsePolicyLedgerObserver.ts',
   // The decision journal publisher counts its own phase15_journal_* receipts,
   // including paused-at-quota apart from failed (2026-09-26).
   'services/HorseDecisionJournal.ts',

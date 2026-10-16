@@ -2534,6 +2534,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase15'
   ),
   receipt(
+    'phase15_reference_agreement_*',
+    'fn_run_horse_reference_agreement (HorseReferenceAgreementReport, daily)',
+    'one per validated live FAST decision: <variant>_<cash|tournament>_<exact|action|differ|unrecorded>, the final policy action against the action the graph reference node produced (HorsePolicyLedgerObserver); agreement with the reference is not strength and not GTO',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_reference_divergence_*',
+    'fn_run_horse_reference_agreement (HorseReferenceAgreementReport, daily)',
+    'for a live FAST decision that left the reference action or amount, <variant>_<node>: the first policy graph node whose transition changed it',
+    'Phase15'
+  ),
+  receipt(
     'phase15_deep_brain_exception_retired',
     'ServerTableEngineTurns.scheduleHorseAction',
     'a failed deep evaluation was retired while the original fast decision and its execution authority were retained',
@@ -2549,7 +2561,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     receipt(
       `phase15_${lane}_execution_*`,
       'HorseExecutionWitness.countFinal',
-      `terminal execution-witness outcomes from the ${lane} lane; failed or discarded computation is distinct from accepted policy intent`,
+      `terminal execution-witness outcomes from the ${lane} lane, and for not_executed the retirement reason (retired_<reason>); failed or discarded computation is distinct from accepted policy intent`,
       'Phase15'
     )
   ),

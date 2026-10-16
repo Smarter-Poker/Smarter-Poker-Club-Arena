@@ -2555,3 +2555,168 @@ groups:
             then read examples with SELECT received_at, code, source, route, message, context
             FROM public.client_error_events WHERE code = '<code>' ORDER BY received_at DESC LIMIT 20;
           runbook: 'docs/runbooks/client-errors.md'
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # HORSE BRAIN PHASE 15: OUT-OF-DOMAIN AND SILENCE ALARMS (2026-10-16)
+  # ═══════════════════════════════════════════════════════════════════════
+  # docs/horse-brain-round1-playbook.md, Phase 15, requires "OOD and silence
+  # alarms" over the policy ledger. The brain counted its policy outcome per
+  # variant only into the daily horse_brain_telemetry table, which no rule can
+  # read. HorsePolicyLedgerObserver now counts every validated live FAST
+  # decision into two always-on, zero-seeded series:
+  #   poker_horse_policy_decisions_total{variant,outcome}
+  #     outcome = reference | disabled | computed | outside_domain |
+  #               unavailable | unregistered
+  #   poker_horse_reference_agreement_total{variant,format,agreement}
+  #     agreement = exact | action | differ | unrecorded
+  # Both series are NEW in this release, so Prometheus holds no history of
+  # them. Every threshold below is derived from the same counts measured where
+  # they already existed, written beside each rule:
+  #   (a) horse_brain_telemetry phase15_policy_<variant>_<outcome>, the same
+  #       per-decision outcome HorseLogic counts, eight days 2026-10-09..16;
+  #   (b) the private decision journal, a read-only copy of 18:50Z to 19:04Z
+  #       2026-10-16 (31,156 decision records), per 5-minute bucket;
+  #   (c) Prometheus poker_actions_fleet_total{audience="horse"}, 7 days to
+  #       2026-10-16 19:10Z at a 1-minute step, maintenance breaks excluded.
+  # Re-derive (a) and (b) from the new series once they hold a week.
+  # Runbook: docs/runbooks/horse-brain-phase15.md
+  - name: horse-brain-phase15
+    interval: 60s
+    rules:
+      - alert: HorseBrainPolicyLedgerSilent
+        # Horses act but no live decision reaches the policy ledger: the
+        # observer, the graph or the worker result path went quiet while play
+        # continued. (c): horse actions/min outside breaks, 10,080 minutes:
+        # p0.1 13.8, p1 94, p5 161, median 3,301, max 5,508; under 30 in 11
+        # minutes of the week. Every horse action that is not a check/fold
+        # fallback is a FAST decision, so 0 decisions against more than 30
+        # actions a minute for 10 minutes is a silent ledger, not a quiet floor.
+        expr: |
+          sum(rate(poker_actions_fleet_total{audience="horse"}[10m])) * 60 > 30
+          and on() sum(rate(poker_horse_policy_decisions_total[10m])) == 0
+          unless on() max_over_time(poker_maintenance_break_active[6m]) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: 'Horses act but no live decision reached the Phase 15 policy ledger for 10 minutes'
+          description: |
+            poker_horse_policy_decisions_total has not moved for 10 minutes while
+            horses act more than 30 times a minute. Read /health liveHorseDecision
+            (phase, completedJobs) and poker_horse_decision_fallbacks_total: if
+            every action is a fallback, HorseDecisionFallbacks owns it.
+          runbook: docs/runbooks/horse-brain-phase15.md
+
+      - alert: HorseBrainVariantSilent
+        # A variant that was deciding stopped. (b): decisions per active minute
+        # in the copy, lowest median flh 50 (min 7), flo8 58, pineapple 70,
+        # short_deck 96, plo8 110; (a): the smallest full day of any variant was
+        # flh 19,233 on 2026-10-16 (13/min). Gate: at least 5 a minute over the
+        # previous hour, then none for 15 minutes outside a break.
+        expr: |
+          sum by (variant) (rate(poker_horse_policy_decisions_total{variant!="other"}[1h] offset 15m)) * 60 > 5
+          unless on(variant) sum by (variant) (rate(poker_horse_policy_decisions_total[15m])) > 0
+          unless on() max_over_time(poker_maintenance_break_active[20m]) == 1
+        for: 15m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: 'Horse {{ $labels.variant }} decisions stopped after an hour of play'
+          description: |
+            No live {{ $labels.variant }} decision reached the policy ledger for
+            15 minutes after the previous hour averaged more than 5 a minute. Its
+            tables may have closed (check poker_dealable_tables and the lobby), or
+            that variant's decisions are failing before the ledger.
+          runbook: docs/runbooks/horse-brain-phase15.md
+
+      - alert: HorseBrainOutsideDomainSurge
+        # Out-of-domain: a decision its registered policy pack refused as
+        # outside the pack's domain (seat count, depth or ante, multiboard,
+        # spin, discard). (a): highest daily share of any variant 17.98%
+        # (short_deck), then pineapple 17.34%, plo8 12.63%; nlh 0 (the
+        # reference owns every nlh decision). (b): highest 5-minute share
+        # 19.7% (pineapple). 40% over an hour with at least 300 decisions is
+        # more than twice any measured share: the domain the fleet plays moved.
+        expr: |
+          (
+            sum by (variant) (increase(poker_horse_policy_decisions_total{outcome="outside_domain"}[1h]))
+            / sum by (variant) (increase(poker_horse_policy_decisions_total[1h]))
+          ) > 0.40
+          and on(variant) sum by (variant) (increase(poker_horse_policy_decisions_total[1h])) >= 300
+        for: 15m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of horse {{ $labels.variant }} decisions were outside their policy domain this hour'
+          description: |
+            The registered pack refused more than 40% of this variant's live
+            decisions as outside its domain over the last hour; the measured
+            maximum is 18%. Those decisions fell back to the reference brain.
+            Find what changed in the tables being dealt (seat counts, stacks,
+            antes, bomb pots or multiboard) or in the pack's domain.
+          runbook: docs/runbooks/horse-brain-phase15.md
+
+      - alert: HorseBrainPolicyUnavailableSurge
+        # Unavailable: the pack was in its domain but did not compute (work
+        # budget, missing evidence, refused input). (a): highest daily share
+        # 0.75% (flo8), 0.57% (pineapple), 0.32% (flh). (b): highest 5-minute
+        # share 1.85% (plo8). 5% over an hour with at least 300 decisions is
+        # 2.7 times the highest 5-minute share.
+        expr: |
+          (
+            sum by (variant) (increase(poker_horse_policy_decisions_total{outcome="unavailable"}[1h]))
+            / sum by (variant) (increase(poker_horse_policy_decisions_total[1h]))
+          ) > 0.05
+          and on(variant) sum by (variant) (increase(poker_horse_policy_decisions_total[1h])) >= 300
+        for: 15m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of horse {{ $labels.variant }} decisions found their policy pack unavailable this hour'
+          description: |
+            The variant's pack was in domain but produced no proposal for more
+            than 5% of decisions this hour (measured maximum 1.9%). The usual
+            cause is the pack's wall-clock work budget under load: read
+            poker_horse_decision_worker_event_loop_delay_p99_ms and the
+            equity governor scale on /health.
+          runbook: docs/runbooks/horse-brain-phase15.md
+
+      - alert: HorseBrainPolicyUnregistered
+        # A live decision with no registered policy owner. (a): the brain's
+        # phase15_policy_unregistered never fired in the eight days measured,
+        # and every decision of every variant carried a registered outcome.
+        expr: sum(increase(poker_horse_policy_decisions_total{outcome="unregistered"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: 'Horse decisions reached the table with no registered policy owner'
+          description: |
+            {{ $value | printf "%.0f" }} live horse decisions in 15 minutes carried no
+            policyOwnership receipt, or were for a variant outside the registry.
+            Read the variant label: `other` is a variant the registry does not know.
+          runbook: docs/runbooks/horse-brain-phase15.md
+
+      - alert: HorseBrainPolicyGraphUnrecorded
+        # A live decision whose policy graph was missing or incomplete, so its
+        # reference agreement cannot be known. (a): phase15_graph_started equals
+        # phase15_graph_completed on every day 2026-10-09..16 (3.8 to 4.9
+        # million a day), 0 failed; (b): every FAST record carried all eight
+        # transitions.
+        expr: sum(increase(poker_horse_reference_agreement_total{agreement="unrecorded"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: club-arena-engine
+        annotations:
+          summary: 'Horse decisions reached the table without a complete policy graph'
+          description: |
+            {{ $value | printf "%.0f" }} live horse decisions in 15 minutes had no
+            sealed eight-node policy graph. The Phase 15 ledger cannot say what the
+            reference proposed or which layer changed it.
+          runbook: docs/runbooks/horse-brain-phase15.md

@@ -13,16 +13,21 @@ const migration = readFileSync(
 );
 describe('The Sender Chooses The Recipient Wallet', () => {
   it.each(['owner', 'co_owner', 'super_agent', 'agent', 'sub_agent'])(
-    'offers both held wallets for %s',
+    'offers every held wallet for %s',
     (role) => {
-      expect(clubBankRecipientWallets(role)).toEqual(['agent_wallet', 'player_wallet']);
+      expect(clubBankRecipientWallets(role)).toEqual([
+        'agent_wallet',
+        'promo_wallet',
+        'player_wallet',
+      ]);
       expect(clubBankDestinationFor(role, 'player_wallet')).toBe('player_wallet');
       expect(clubBankDestinationFor(role, 'agent_wallet')).toBe('agent_wallet');
+      expect(clubBankDestinationFor(role, 'promo_wallet')).toBe('promo_wallet');
       expect(coercesToAgentWallet('agent_wallet', 'send', true)).toBe(false);
     }
   );
   it('keeps ineligible wallets unavailable', () => {
-    expect(clubBankRecipientWallets('admin')).toEqual(['agent_wallet']);
+    expect(clubBankRecipientWallets('admin')).toEqual(['agent_wallet', 'promo_wallet']);
     expect(clubBankRecipientWallets('player')).toEqual(['player_wallet']);
     expect(cashierDestinations('club_bank')).toEqual([
       'agent_wallet',

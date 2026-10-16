@@ -74,6 +74,11 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { EmptyState } from '../components/common/EmptyState';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { resolvePageClubId, pickPreferredClubId } from '../utils/resolvePageClubId';
+import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
+import type { ClubBankRecipientWallet } from '../components/wallet/cashierModes';
+import { useRecipientWalletBalances, walletOptionLabel } from '../hooks/useRecipientWalletBalances';
+
+const TRANSFER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type AgentTab =
   | 'overview'
   | 'players'
@@ -192,6 +197,25 @@ function AgentDashboardContent() {
   const [transferAmount, setTransferAmount] = useState('');
   const [transferNotes, setTransferNotes] = useState('');
   const walletOperationInFlightRef = useRef(false);
+  // THE SENDER CHOOSES THE RECIPIENT'S WALLET (Dan 2026-10-15: "SELECTABLE TO
+  // SEND TO ANY WALLET I WANT THAT THE USER HAS (PLAYER WALLET, AGENT WALLET,
+  // PROMO WALLET ETC)"). This form used to send every transfer into the Agent
+  // Wallet with no choice and no balance. The wallets offered are the ones the
+  // cashier read says the recipient holds, each with its balance; until that
+  // read answers all three are offered and the server refuses one they lack.
+  const [transferWallet, setTransferWallet] = useState<ClubBankRecipientWallet>('agent_wallet');
+  const transferTargetId = TRANSFER_UUID.test(transferTarget.trim())
+    ? transferTarget.trim().toLowerCase()
+    : null;
+  const transferBalances = useRecipientWalletBalances(clubId, transferTargetId);
+  const transferWallets: ClubBankRecipientWallet[] = transferBalances
+    ? (['agent_wallet', 'promo_wallet', 'player_wallet'] as const).filter(
+        (wallet) => transferBalances[wallet] !== undefined
+      )
+    : ['agent_wallet', 'promo_wallet', 'player_wallet'];
+  const transferDestination: ClubBankRecipientWallet = transferWallets.includes(transferWallet)
+    ? transferWallet
+    : transferWallets[0] ?? 'agent_wallet';
 
   // Credit management (owner-only)
   const [creditTarget, setCreditTarget] = useState('');
@@ -836,8 +860,8 @@ function AgentDashboardContent() {
    * all, from a form that asks for a club member.
    *
    * fn_agent_wallet_send is the send the platform actually uses. It is
-   * definer, it is granted, it enforces the downline server-side, it derives
-   * the destination wallet from the recipient's role, and it takes a retry key
+   * definer, it is granted, it enforces the downline server-side, it credits
+   * the wallet the sender chose (2026-10-16), and it takes a retry key
    * so a repeated call replays rather than sending twice. The note the form
    * has always collected and thrown away is now the send's reason.
    */
@@ -863,7 +887,7 @@ function AgentDashboardContent() {
           clubId: resolvedClub,
           targetId: transferTarget,
           kind: 'agent_send',
-          destination: 'agent_wallet',
+          destination: transferDestination,
           amount: amt,
         },
         async (operation) => {
@@ -871,12 +895,12 @@ function AgentDashboardContent() {
             p_club_id: resolvedClub,
             p_to_user_id: transferTarget,
             p_amount: amt,
-            p_destination: 'agent_wallet',
+            p_destination: transferDestination,
             p_reason: transferNotes.trim() || 'Agent transfer',
             p_op_id: operation.operationId,
           });
           if (sendError) throw sendError;
-          if (!confirmedAgentWalletReceipt(data, amt, 'agent_send', 'agent_wallet')) {
+          if (!confirmedAgentWalletReceipt(data, amt, 'agent_send', transferDestination)) {
             throw new Error(data?.error || 'The Cashier Did Not Confirm That Transfer');
           }
         }
@@ -887,6 +911,7 @@ function AgentDashboardContent() {
       setTransferTarget('');
       setTransferAmount('');
       setTransferNotes('');
+      setTransferWallet('agent_wallet');
       loadDashboard(clubId);
     } catch (err: unknown) {
       setError(safeErrorMessage(err));
@@ -999,6 +1024,30 @@ function AgentDashboardContent() {
                     onChange={(e) => setTransferTarget(e.target.value)}
                     placeholder="UUID Of Receiving Agent"
                   />
+                </div>
+                <div>
+                  <label className="admin-label" htmlFor="agent-transfer-recipient-wallet">
+                    Recipient Wallet
+                  </label>
+                  <select
+                    id="agent-transfer-recipient-wallet"
+                    className="admin-input"
+                    value={transferDestination}
+                    disabled={processing}
+                    onChange={(event) =>
+                      setTransferWallet(event.target.value as ClubBankRecipientWallet)
+                    }
+                  >
+                    {transferWallets.map((wallet) => (
+                      <option key={wallet} value={wallet}>
+                        {walletOptionLabel(
+                          SEND_DESTINATION_LABELS[wallet],
+                          transferBalances,
+                          wallet
+                        )}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="admin-label">Amount (Chips)</label>

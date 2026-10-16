@@ -55,7 +55,10 @@ vi.mock('../../src/lib/supabase', () => ({
     rpc: (...args: unknown[]) =>
       args[0] === 'fn_profile_presence'
         ? Promise.resolve({ data: [], error: null })
-        : mocks.rpc(...args),
+        : // The recipient's wallet balances (2026-10-16) are a read, not a send.
+          args[0] === 'fn_cashier_recipient_wallet_balances'
+          ? Promise.resolve({ data: [], error: null })
+          : mocks.rpc(...args),
     from: (table: string) => {
       let selection = '';
       const query: Record<string, unknown> = {};

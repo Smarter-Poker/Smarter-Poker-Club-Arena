@@ -66,10 +66,20 @@ describe('a club owner is a recipient, not a hole in the list', () => {
   });
 
   it('a Club Bank send to an owner offers the player wallet, and defaults to the float', () => {
-    expect(clubBankRecipientWallets('owner')).toEqual(['agent_wallet', 'player_wallet']);
-    expect(clubBankRecipientWallets('co_owner')).toEqual(['agent_wallet', 'player_wallet']);
+    // 2026-10-16: the Promo Wallet an agent-capable recipient holds is offered too.
+    expect(clubBankRecipientWallets('owner')).toEqual([
+      'agent_wallet',
+      'promo_wallet',
+      'player_wallet',
+    ]);
+    expect(clubBankRecipientWallets('co_owner')).toEqual([
+      'agent_wallet',
+      'promo_wallet',
+      'player_wallet',
+    ]);
     expect(clubBankRecipientWallets('player')).toEqual(['player_wallet']);
-    expect(clubBankRecipientWallets('admin')).toEqual(['agent_wallet']);
+    expect(clubBankRecipientWallets('admin')).toEqual(['agent_wallet', 'promo_wallet']);
+    expect(clubBankDestinationFor('owner', 'promo_wallet')).toBe('promo_wallet');
     expect(clubBankDestinationFor('owner', 'player_wallet')).toBe('player_wallet');
     expect(clubBankDestinationFor('owner', null)).toBe('agent_wallet');
     // A stale choice never routes chips to a wallet the recipient lacks.

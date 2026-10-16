@@ -57,6 +57,8 @@ import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
+import { useRecipientWalletBalances, walletOptionLabel } from '../hooks/useRecipientWalletBalances';
 import {
   resolveTargetClub,
   readCachedQuickLinkClubs,
@@ -1576,6 +1578,9 @@ function CashierContent() {
   const distributeDestination: ClubBankRecipientWallet = selectedRecipientData
     ? clubBankDestinationFor(selectedRecipientData.role, distributeWallet)
     : 'player_wallet';
+  // Each wallet the recipient holds, with its current balance (Dan 2026-10-15:
+  // "AND IT SHOULD HAVE THERE CURRENT CHIP BALANCES AS WELL").
+  const distributeBalances = useRecipientWalletBalances(clubId, selectedRecipientData?.id);
 
   // ── Keyboard navigation for tabs (Arrow Left/Right, Home/End) ──
   const tabNavRef = useRef<HTMLElement | null>(null);
@@ -2596,9 +2601,7 @@ function CashierContent() {
                       <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
                       <span>
                         Destination:{' '}
-                        {distributeDestination === 'agent_wallet'
-                          ? 'Agent Wallet'
-                          : 'Player Wallet'}
+                        {SEND_DESTINATION_LABELS[distributeDestination]}
                       </span>
                       {canHoldAgentWallet(selectedRecipientData.role) && (
                         <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
@@ -2670,7 +2673,11 @@ function CashierContent() {
                         disabled={isProcessing}
                         onClick={() => setDistributeWallet(wallet)}
                       >
-                        {wallet === 'agent_wallet' ? 'Agent Wallet' : 'Player Wallet'}
+                        {walletOptionLabel(
+                          SEND_DESTINATION_LABELS[wallet],
+                          distributeBalances,
+                          wallet
+                        )}
                       </button>
                     ))}
                   </div>
@@ -2856,12 +2863,13 @@ function CashierContent() {
                       <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
                       <span>
                         Destination:{' '}
-                        {distributeDestination === 'agent_wallet'
-                          ? 'Agent Wallet'
-                          : 'Player Wallet'}
+                        {SEND_DESTINATION_LABELS[distributeDestination]}
                       </span>
-                      {distributeDestination === 'agent_wallet' && (
-                        <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
+                      {distributeDestination !== 'player_wallet' && (
+                        <span>
+                          The Player Wallet Above Is Separate From Their{' '}
+                          {SEND_DESTINATION_LABELS[distributeDestination]}.
+                        </span>
                       )}
                     </section>
                   )}
@@ -2880,7 +2888,11 @@ function CashierContent() {
                           className={`${styles.presetBtn} ${distributeDestination === wallet ? 'sc-ink--blue' : 'sc-ink--muted'}`}
                           onClick={() => setDistributeWallet(wallet)}
                         >
-                          {wallet === 'agent_wallet' ? 'Into Agent Wallet' : 'Into Player Wallet'}
+                          {walletOptionLabel(
+                            `Into ${SEND_DESTINATION_LABELS[wallet]}`,
+                            distributeBalances,
+                            wallet
+                          )}
                         </button>
                       ))}
                     </div>

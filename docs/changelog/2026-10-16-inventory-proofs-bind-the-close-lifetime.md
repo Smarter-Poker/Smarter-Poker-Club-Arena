@@ -1,33 +1,28 @@
-# Inventory proofs bind the installed weekly-close lifetime
+# Preserve the sealed inventory certificate reader
 
-The 72-hour weekly-close proof lifetime changed the certificate reader from
+The 72-hour weekly-close proof change altered the certificate reader from
 `7b4a5f4572a45db069b6058899614021` to `f4d3b9bd8722bb1d8f13f0615ff9537f`.
-The inventory authority still pinned the old definition. Production readback
-found exactly that one mismatch among its 40 sources. The resulting null
-generation disabled inventory cache reads and writes. A self-aborting diagnostic
-of the original union week timed out rebuilding raw inventory before payment.
+Exactly one of the inventory authority's 40 source pins then differed. The null
+generation disabled cache reads and writes, repeatedly rebuilding raw inventory
+before the original union week could prepare or pay.
 
-Migration `20261016132741` replaces only that pin and adds the exact lifetime
-helper as dependency 41. Its preimage is `4a98179afccf2d31c127f50ed5ab9270`;
-its postimage is `3399cc47118164e0fff885520fdab271`. It preserves the other 39
-pins, owner checks, security metadata, scheduler and settlement locks, freeze
-guards, proof expiry and transaction budgets. The matcher participates in the
-generation, so cached proofs are recertified through the existing accounting
-path. This migration writes no financial, certificate or inventory rows.
+Installed migration `20261016133404` restores the exact sealed certificate
+reader. This PR records its applied SQL byte for byte and adds connected native
+regression protection. The inventory matcher, generation, source witnesses,
+security metadata, existing cached evidence and financial rows are preserved.
+The other nine weekly-close proof functions retain the installed 72-hour helper;
+the sealed P&L certificate reader retains its original 12-hour lifetime.
+No replay of the installed migration is needed or authorized by this source PR.
 
-The exact migration is selected by the existing bounded transaction admission
-helper, with the same before/after maintenance checks and source-byte refusal.
+PostgreSQL 17 qualification loads all 40 actual source definitions, reproduces
+the null generation, runs the actual installed restoration and verifies a valid
+generation and fresh certificate cache read. It tests rollback, unknown-reader
+and other-source drift refusal, wrong-generation and expired-proof refusal,
+unchanged matcher and idempotent already-sealed behavior. The existing required
+launch-floor accounting step directly runs this regression, together with the
+Phase 7 prior/concurrent-resolution and installed-watchdog qualification.
 
-`test-inventory-proof-lifetime-postgres.py` loads all 40 actual source definitions
-and the actual installed certificate reader and lifetime helper on PostgreSQL 17.
-It reproduces the failure, qualifies the whole migration, proves generation
-invalidation and real 24-hour cached certificate reads, and refuses stale
-generations, 73-hour proofs, source and ACL drift, unauthorized requests,
-duplicate history, and concurrent owning locks. Whole-migration rollback and
-duplicate refusal are tested. The existing required launch-floor accounting
-step invokes this regression directly; no scheduled repair was added.
-
-Verified: native PostgreSQL regression, TypeScript compilation, six admission
-unit tests and ten existing recovery contracts passed locally. Hosted checks,
-protected merge, installation and financial verification are separate evidence
-recorded in the owning checkpoint.
+Local TypeScript, focused admission tests and native qualifications are recorded
+in the task checkpoint; protected integration and live financial receipts remain
+separate completion evidence. An earlier uninstalled 41-source proposal was
+withdrawn after the installed restoration made it unnecessary.

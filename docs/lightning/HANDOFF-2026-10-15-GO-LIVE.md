@@ -4,6 +4,42 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Private Access Failure And Source Recovery (2026-10-16 12:49 UTC)
+
+- Access38902576640 completed failure at nonmember_browser. Owner375px routes and all16anchor sockets passed; pending membership notcreated, outsider and service local-signout confirmed. Artifact access-38902576640/lightning-pilot-stage.json. Failure lacked exact browser substep, so maintained witness adds enumerated sanitized diagnostics without error/page/token/URL copying or relaxed assertions.79 access/operator/setup tests and TypeScript pass.
+- Read production cash_games_read: pending membership counts as admission for discovery. New reserved migration20261016124818 restricts private discovery to active/approved membership or actual club owner, retains public/service behavior and guards exact predecessor qual MD5f1ff2b6f7d2976ab5a3c7deab313d9c5. Native predecessor fail-before/pass-after with denied states and owner/member/public/service positive controls passes through the actual required matcher-parity harness;8snapshots/49groups unchanged. Not installed.
+- Legacy finding1 reviewed through audited door, run38903105631 operation800bb576-db84-481a-bad6-308bdb4f2517,12:48:56.725Z, statusreviewed; evidence retained, no exoneration. Finding2 requested once operation60dbb583-12bf-4d24-9838-e9913397d99a, pending owning outcome. No activation.
+- AA installer38902664108 still owning checkout/execution; do not duplicate. All authorized delivery continues; private access remains failed/unknown pending source qualification and actual retry.
+
+## Correlation Installed And Access Invoked (2026-10-16 12:44 UTC)
+
+- B2 installer38902553449 succeeded; committed12:44:10.045Z in141ms and recorded20261015213334. Independent readback12:44:28.871Z confirms exact raw SQL MD581598b5b631862c4a869e1f5ca0e7d71 and live proof true. Existing findings untouched.
+- Authoritative-calibration installer38902664108 dispatched once12:44:30Z, pending behind another task’s existing Spin installer38902554580. Preserve owning run; no duplicate.
+- Explicit private access run38902576640, operation040f29f7-8007-402a-b137-463be41a20bb, dispatched12:43:48Z, actual browser preparation running. This uses existing outsider23040e91 and service owner, no membership approval/funding/buy-in.
+- Current engine0279795e contains #7025 by verified ancestry. Client8041514e includes #7025; publisher38891287876 succeeded. Existing postdeploy38895550335 passed4mobile WebKit live-table/reconnect cases and verified isolated-account deletion; broader client browser still running. Earlier exact-engine38892046511 cancelled after unrelated Cashier browser failure and never supplies a pass.
+
+## Resumed Delivery (2026-10-16 12:42 UTC)
+
+- Fresh canonical policy reader emitted `2026-10-16T12:42:21.826Z`, policy2.9, unchanged manifest/four hashes recorded below. Full actual repository entrypoints, CLAUDE, publishing, deploy paths, storage guide, complete checkpoint and Lightning phase/register/rollout/review/catalog read; canonical comparison passes. SSD separately mounted with12GiB free.
+- #7025 protected merged as `a3f10e061b905983ea8cab1dad19d7dec3205307`; exact head `a1e86ac35be86273d58e04cb701f4da5e0f41309` all required checks passed, including corrected client shard3. No repeated local qualification needed.
+- User explicitly authorized parallel agents; three read-only scopes recover engine receipts, client publication and pilot prerequisites. This chat retains sole mutation/dispatch ownership.
+- Current sealed engine `0279795ec6b20bea07eda41fbffd613eb8ef0040` contains both B1 and #7025 (local ancestry exit0); release38887335016 sealed. Original B1 receiver retired safely because a newer containing release already existed; never retry old release. Both public client stamps8041514e include #7025, publisher38891287876 success.
+- B1 installed; fresh agent production read finds B2/AA absent, pilots MUST-MOVE/disabled with0open sessions/instances. Existing designated outsider has other-club memberships but no pilot membership; preserve identity and recheck actual access preconditions.
+
+## Formation Migration Installed (2026-10-16 01:50 UTC)
+
+- B1 guarded retry `38834574194` terminal SUCCESS. Exact SQL sent once at `01:49:58.364Z`, committed in 599ms at `01:49:59.003Z`, recorded version `20261015212230`; no override or replay.
+- Independent production readback `2026-10-16T01:50:54.892133Z`: exact recorded raw SQL MD5 `0d34777f2cf890c23435d064a27102f3`, one statement, live proof true (2.999-second empty, 3-second pair, fresh 8 forms 6). Helper definition MD5 `65f6a1c0edc7a0be584bfffedf2f7184`, matcher plan MD5 `2e77ad138bb0c5a0941c1935e8594fe9`. Both owned by postgres, invoker rights, search_path public/pg_temp; helper IMMUTABLE, plan STABLE. Helper authenticated/service execution and plan service-only execution verified; anon denied.
+- Installation log `formation-installer-success.log`. Do not replay B1. B2 and authoritative calibration remain unmerged/uninstalled. Engine receiver still owns deployment; both pilots remain disabled pending containing adoption and qualified fresh evidence.
+
+## Corrected Candidate Submitted (2026-10-16 01:36 UTC)
+
+- Normal hooks passed and pushed correction `a1e86ac35be86273d58e04cb701f4da5e0f41309` into existing #7025. Current CI owner `38836051523`; PR remains mergeable/blocked pending exact-head checks. PR description updated with failure, guarded source correction and passing before/after/native evidence.
+- Superseded failed CI `38828275996` ignored normal cancellation; explicit force-cancel completed. Verified terminal cancelled with no nonterminal jobs. All four engine shards, production build, Diamond browser and CSS source suite passed on the old head, but those results do not replace current-head required checks after the SQL/harness change.
+- B1 retry `38834574194` has been admitted to the runner queue, pending actual installation. Receiver `38832686277` has all four engine-check shards passed; production-door gate queued. No private activation or new serving revision claimed.
+
+- Corrected authoritative-calibration raw SQL MD5: `bc1e26b30a8eeadbe3ddedfe7b8898f3`; prepared exact installation readback updated. Neither this migration nor B2 is installed.
+
 ## Current-Head Signature Failure Recovery (2026-10-16 01:35 UTC)
 
 - CI `38828275996` client shard 3 failed one of 8,927 tests: existing one-overload law cannot infer the Phase 8 dynamic retirement. Local reproduction fails identically. Fresh production catalog confirms exactly one matcher door, the five-argument signature. This is an uninstalled migration source qualification gap, not demonstrated production overload ambiguity.

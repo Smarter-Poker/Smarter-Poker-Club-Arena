@@ -136,7 +136,7 @@ test('browser observer refuses visible private discovery and closes its isolated
       [{ id: 'pilot' }],
       'https://example.invalid'
     ),
-    /Discover/
+    (error) => error.browserDiagnostic?.cause === 'private_discovery_visible'
   );
   assert.equal(closed, 1);
 });
@@ -333,4 +333,48 @@ test('both outsider states stay unapproved and unfunded, with pending cancellati
     ['fn_cash_game_join', 'fn_join_club_atomic', 'fn_cash_game_join', 'fn_cancel_club_join_request']
   );
   assert.doesNotMatch(JSON.stringify(r), new RegExp(TOKEN));
+});
+
+test('browser locator failure retains bounded diagnostics without raw browser secrets', async () => {
+  let closed = false;
+  const chromium = {
+    launch: async () => ({
+      newContext: async () => ({
+        addInitScript: async () => {},
+        newPage: async () => ({
+          goto: async () => {},
+          url: () => `https://smarter.poker/auth?token=${TOKEN}`,
+          locator: () => ({
+            waitFor: async () => {
+              throw new Error(TOKEN);
+            },
+          }),
+          evaluate: async () => ({ entryVisible: false, refusalVisible: false, token: TOKEN }),
+        }),
+      }),
+      close: async () => {
+        closed = true;
+      },
+    }),
+  };
+  await assert.rejects(
+    browserAccess(
+      chromium,
+      { access_token: TOKEN, user: { id: PILOT_OUTSIDER } },
+      'outsider',
+      [{ id: 'pilot' }],
+      'https://example.invalid'
+    ),
+    (error) => {
+      assert.equal(error.browserDiagnostic.subphase, 'entry_locator');
+      assert.equal(error.browserDiagnostic.cause, 'entry_locator_failed');
+      assert.equal(error.browserDiagnostic.clusterId, 'pilot');
+      assert.equal(error.browserDiagnostic.path, 'other');
+      assert.equal(error.browserDiagnostic.entryVisible, false);
+      assert.doesNotMatch(JSON.stringify(error), new RegExp(TOKEN));
+      assert.doesNotMatch(error.message, new RegExp(TOKEN));
+      return true;
+    }
+  );
+  assert.equal(closed, true);
 });

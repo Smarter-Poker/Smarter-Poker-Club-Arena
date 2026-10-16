@@ -104,119 +104,201 @@ export async function browserAccess(chromium, session, actor, games, url) {
     const page = await context.newPage();
     const results = [];
     for (const game of games) {
-      await page.goto(`https://smarter.poker/hub/club-arena/lightning/${game.id}`, {
-        waitUntil: 'domcontentloaded',
-        timeout: 45000,
-      });
-      await page
-        .locator('[data-testid="lightning-entry"]')
-        .waitFor({ state: 'visible', timeout: 30000 });
-      if (!new URL(page.url()).pathname.endsWith(`/lightning/${game.id}`))
-        fail('Browser Did Not Stay On The Authenticated Pilot Route');
-      await page.waitForFunction(
-        ({ actor, name }) => {
-          const text = document.querySelector('[data-testid="lightning-entry"]')?.textContent ?? '';
-          return actor === 'owner'
-            ? Boolean(name && text.includes(name))
-            : /Game Unavailable|Not Available|Not A Member|Members Only|Game Is Closed/i.test(text);
-        },
-        { actor, name: game.name },
-        { timeout: 30000 }
-      );
-      const observed = await page.evaluate(
-        async ({ base, key, token, gameId, tableId }) => {
-          const headers = { apikey: key, Authorization: `Bearer ${token}` };
-          const identity = await fetch(`${base}/auth/v1/user`, {
-            headers,
-            signal: AbortSignal.timeout(15000),
-          });
-          const user = await identity.json();
-          const read = await fetch(`${base}/rest/v1/cash_games?id=eq.${gameId}&select=id`, {
-            headers,
-            signal: AbortSignal.timeout(15000),
-          });
-          const rows = await read.json();
-          const socket = await new Promise((resolve) => {
-            let finished = false,
-              failed = false,
-              messages = 0;
-            const ws = new WebSocket(`wss://engine.smarter.poker/ws/table/${tableId}`, [
-              'bearer',
-              token,
-            ]);
-            const finish = (value) => {
-              if (finished) return;
-              finished = true;
-              clearTimeout(timer);
-              try {
-                ws.close();
-              } catch {}
-              resolve({ ...value, messages });
-            };
-            const timer = setTimeout(
-              () => finish({ opened: null, closedCode: null, observedError: failed }),
-              18000
-            );
-            ws.onmessage = () => {
-              messages++;
-            };
-            ws.onerror = () => {
-              failed = true;
-            };
-            ws.onopen = () => finish({ opened: true, closedCode: null, observedError: false });
-            ws.onclose = (event) =>
-              finish({ opened: false, closedCode: event.code, observedError: failed });
-          });
-          return {
-            socket,
-            userId: identity.ok ? user.id : null,
-            status: read.status,
-            ids: Array.isArray(rows) ? rows.map((x) => x.id) : null,
-          };
-        },
-        {
-          base: url,
-          key: PUBLIC_KEY,
-          token: session.access_token,
-          gameId: game.id,
-          tableId: game.accessTableIds?.[0],
-        }
-      );
-      if (
-        observed.userId !== session.user.id ||
-        observed.status !== 200 ||
-        !Array.isArray(observed.ids)
-      )
-        fail('Authenticated Browser Observation Unavailable');
-      const entryText = (await page.locator('[data-testid="lightning-entry"]').innerText()).slice(
-        0,
-        1000
-      );
-      if (actor === 'outsider' && observed.ids.includes(game.id))
-        fail('Outsider Can Discover A Private Pilot Game');
-      if (actor === 'owner' && !observed.ids.includes(game.id))
-        fail('Owner Cannot Discover Their Private Pilot Game');
-      if (
-        actor === 'outsider' &&
-        !/Game Unavailable|Not Available|Not A Member|Members Only|Game Is Closed/i.test(entryText)
-      )
-        fail('Outsider Browser Did Not Refuse The Private Route');
-      if (actor === 'owner' && observed.socket?.opened !== true)
-        fail('Owner Browser Socket Positive Control Failed');
-      if (
-        actor === 'outsider' &&
-        (observed.socket?.opened !== false || observed.socket.messages !== 0)
-      )
-        fail('Outsider Browser Socket Did Not Remain Closed');
-      results.push({
+      const diagnostic = {
         clusterId: game.id,
-        actor,
-        browserSocket: observed.socket,
-        viewport: 375,
-        authenticated: true,
-        discovery: observed.ids.includes(game.id) ? 'visible' : 'hidden',
-        entry: actor === 'outsider' ? 'refused' : 'rendered',
-      });
+        subphase: 'navigation',
+        cause: 'navigation_failed',
+        path: 'unknown',
+        entryVisible: null,
+        refusalVisible: null,
+        identityMatches: null,
+        readStatus: null,
+        discoveryVisible: null,
+        socketOutcome: 'unknown',
+      };
+      const refuse = (message, cause) => {
+        diagnostic.cause = cause;
+        fail(message);
+      };
+      try {
+        await page.goto(`https://smarter.poker/hub/club-arena/lightning/${game.id}`, {
+          waitUntil: 'domcontentloaded',
+          timeout: 45000,
+        });
+        diagnostic.subphase = 'entry_locator';
+        diagnostic.cause = 'entry_locator_failed';
+        await page
+          .locator('[data-testid="lightning-entry"]')
+          .waitFor({ state: 'visible', timeout: 30000 });
+        diagnostic.entryVisible = true;
+        diagnostic.subphase = 'route';
+        diagnostic.cause = 'route_mismatch';
+        diagnostic.path = new URL(page.url()).pathname.endsWith(`/lightning/${game.id}`)
+          ? 'expected_pilot'
+          : 'other';
+        if (diagnostic.path !== 'expected_pilot')
+          refuse('Browser Did Not Stay On The Authenticated Pilot Route', 'route_mismatch');
+        diagnostic.subphase = 'entry_content';
+        diagnostic.cause =
+          actor === 'outsider' ? 'refusal_not_observed' : 'owner_content_not_observed';
+        await page.waitForFunction(
+          ({ actor, name }) => {
+            const text =
+              document.querySelector('[data-testid="lightning-entry"]')?.textContent ?? '';
+            return actor === 'owner'
+              ? Boolean(name && text.includes(name))
+              : /Game Unavailable|Not Available|Not A Member|Members Only|Game Is Closed/i.test(
+                  text
+                );
+          },
+          { actor, name: game.name },
+          { timeout: 30000 }
+        );
+        diagnostic.subphase = 'authenticated_observation';
+        diagnostic.cause = 'observation_failed';
+        const observed = await page.evaluate(
+          async ({ base, key, token, gameId, tableId }) => {
+            const headers = { apikey: key, Authorization: `Bearer ${token}` };
+            const identity = await fetch(`${base}/auth/v1/user`, {
+              headers,
+              signal: AbortSignal.timeout(15000),
+            });
+            const user = await identity.json();
+            const read = await fetch(`${base}/rest/v1/cash_games?id=eq.${gameId}&select=id`, {
+              headers,
+              signal: AbortSignal.timeout(15000),
+            });
+            const rows = await read.json();
+            const socket = await new Promise((resolve) => {
+              let finished = false,
+                failed = false,
+                messages = 0;
+              const ws = new WebSocket(`wss://engine.smarter.poker/ws/table/${tableId}`, [
+                'bearer',
+                token,
+              ]);
+              const finish = (value) => {
+                if (finished) return;
+                finished = true;
+                clearTimeout(timer);
+                try {
+                  ws.close();
+                } catch {}
+                resolve({ ...value, messages });
+              };
+              const timer = setTimeout(
+                () => finish({ opened: null, closedCode: null, observedError: failed }),
+                18000
+              );
+              ws.onmessage = () => {
+                messages++;
+              };
+              ws.onerror = () => {
+                failed = true;
+              };
+              ws.onopen = () => finish({ opened: true, closedCode: null, observedError: false });
+              ws.onclose = (event) =>
+                finish({ opened: false, closedCode: event.code, observedError: failed });
+            });
+            return {
+              socket,
+              userId: identity.ok ? user.id : null,
+              status: read.status,
+              ids: Array.isArray(rows) ? rows.map((x) => x.id) : null,
+            };
+          },
+          {
+            base: url,
+            key: PUBLIC_KEY,
+            token: session.access_token,
+            gameId: game.id,
+            tableId: game.accessTableIds?.[0],
+          }
+        );
+        diagnostic.identityMatches = observed.userId === session.user.id;
+        diagnostic.readStatus =
+          Number.isInteger(observed.status) && observed.status >= 100 && observed.status <= 599
+            ? observed.status
+            : null;
+        diagnostic.discoveryVisible = Array.isArray(observed.ids)
+          ? observed.ids.includes(game.id)
+          : null;
+        diagnostic.socketOutcome =
+          observed.socket?.opened === true
+            ? 'opened'
+            : observed.socket?.opened === false
+              ? 'closed'
+              : 'unknown';
+        diagnostic.subphase = 'identity_and_discovery';
+        if (
+          observed.userId !== session.user.id ||
+          observed.status !== 200 ||
+          !Array.isArray(observed.ids)
+        )
+          refuse('Authenticated Browser Observation Unavailable', 'identity_or_read_unverified');
+        const entryText = (await page.locator('[data-testid="lightning-entry"]').innerText()).slice(
+          0,
+          1000
+        );
+        diagnostic.refusalVisible =
+          /Game Unavailable|Not Available|Not A Member|Members Only|Game Is Closed/i.test(
+            entryText
+          );
+        if (actor === 'outsider' && observed.ids.includes(game.id))
+          refuse('Outsider Can Discover A Private Pilot Game', 'private_discovery_visible');
+        if (actor === 'owner' && !observed.ids.includes(game.id))
+          refuse('Owner Cannot Discover Their Private Pilot Game', 'owner_discovery_missing');
+        if (
+          actor === 'outsider' &&
+          !/Game Unavailable|Not Available|Not A Member|Members Only|Game Is Closed/i.test(
+            entryText
+          )
+        )
+          refuse('Outsider Browser Did Not Refuse The Private Route', 'refusal_not_observed');
+        diagnostic.subphase = 'socket_assertion';
+        if (actor === 'owner' && observed.socket?.opened !== true)
+          refuse('Owner Browser Socket Positive Control Failed', 'owner_socket_not_opened');
+        if (
+          actor === 'outsider' &&
+          (observed.socket?.opened !== false || observed.socket.messages !== 0)
+        )
+          refuse('Outsider Browser Socket Did Not Remain Closed', 'outsider_socket_not_closed');
+        results.push({
+          clusterId: game.id,
+          actor,
+          browserSocket: observed.socket,
+          viewport: 375,
+          authenticated: true,
+          discovery: observed.ids.includes(game.id) ? 'visible' : 'hidden',
+          entry: actor === 'outsider' ? 'refused' : 'rendered',
+        });
+      } catch {
+        // Retain only enumerated context. Browser errors can contain tokens or URLs.
+        try {
+          diagnostic.path = new URL(page.url()).pathname.endsWith(`/lightning/${game.id}`)
+            ? 'expected_pilot'
+            : 'other';
+          const visibility = await page.evaluate(() => {
+            const entry = document.querySelector('[data-testid="lightning-entry"]');
+            return {
+              entryVisible: Boolean(entry && entry.getClientRects().length),
+              refusalVisible: Boolean(
+                entry &&
+                /Game Unavailable|Not Available|Not A Member|Members Only|Game Is Closed/i.test(
+                  entry.textContent ?? ''
+                )
+              ),
+            };
+          });
+          if (typeof visibility?.entryVisible === 'boolean')
+            diagnostic.entryVisible = visibility.entryVisible;
+          if (typeof visibility?.refusalVisible === 'boolean')
+            diagnostic.refusalVisible = visibility.refusalVisible;
+        } catch {}
+        const sanitized = new Error('Private Pilot Browser Observation Failed');
+        sanitized.browserDiagnostic = diagnostic;
+        throw sanitized;
+      }
     }
     await context.close();
     return results;
@@ -378,6 +460,7 @@ export async function runPilotAccess({
   } catch (error) {
     primary = error;
     report.error = 'PRIVATE_ACCESS_PROOF_FAILED_OR_UNKNOWN';
+    if (error?.browserDiagnostic) report.browserDiagnostic = error.browserDiagnostic;
   } finally {
     if (requested) {
       const before = await membership().catch(() => undefined);

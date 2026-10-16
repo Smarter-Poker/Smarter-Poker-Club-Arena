@@ -35,7 +35,7 @@ try:
  sql('ALTER TABLE union_accounting_runs ADD COLUMN standalone_club_id uuid;','current-weekly-run-shape')
  stores=json.loads((P/'store-coverage.json').read_text())
  sql("INSERT INTO ca_chip_store_coverage SELECT * FROM jsonb_populate_recordset(NULL::ca_chip_store_coverage,$coverage$"+json.dumps(stores)+"$coverage$) ON CONFLICT(store) DO NOTHING;",'actual-store-coverage')
- auth=json.loads((P/'authorities.json').read_text())+json.loads((P/'ledger-authorities.json').read_text())
+ auth=json.loads((P/'authorities.json').read_text())+json.loads((P/'ledger-authorities.json').read_text())+json.loads((P/'weekly-tick-authority.json').read_text())
  for row in auth:
   assert hashlib.md5(row['definition'].encode()).hexdigest()==row['definition_md5']
   signature='public.'+row['signature']
@@ -51,6 +51,12 @@ try:
  sql(migration,'exact-installer')
  sql(migration,'installer-replay','midway_promo_install_replay')
  sql((P/'fixture.sql').read_text(),'fixture')
+ due_start=migration.index('CREATE FUNCTION public.fn_midway_weekly_horse_promo_due(')
+ due_end=migration.index('END $function$;',due_start)+len('END $function$;')
+ due_source=migration[due_start:due_end].replace('CREATE FUNCTION','CREATE OR REPLACE FUNCTION',1)
+ sql(due_source.replace('p_period_end timestamptz DEFAULT NULL',"p_period_end timestamptz DEFAULT '2026-10-19 07:00Z'::timestamptz"),'future-clock-default-only')
+ sql((P/'weekly-tick.sql').read_text(),'weekly-tick')
+ sql(due_source,'restore-production-clock-default')
  sql((P/'regression.sql').read_text(),'regression')
  import time,importlib.util
  began=time.monotonic();sql((P/'scale.sql').read_text(),'scale')
@@ -60,7 +66,7 @@ try:
  calendar=next(x for x in auth if x['signature'].startswith('fn_union_accounting_run_at'))
  sql(calendar['definition']+';','authentic-due-time-restored')
  sql("INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result) VALUES('fade0000-0000-0000-0000-000000000001','2099-01-05 08:00Z','2099-01-12 08:00Z','2099-01-12 10:00Z','complete',1,'{\"success\":true}');",'premature-future-close','midway_promo_invalid_completed_week')
- sql("SELECT jsonb_agg(jsonb_build_object('signature',oid::regprocedure::text,'definition_md5',md5(pg_get_functiondef(oid)),'acl',proacl::text,'security_definer',prosecdef,'config',proconfig,'owner',pg_get_userbyid(proowner))) FROM pg_proc WHERE oid IN('fn_midway_weekly_horse_promo_close()'::regprocedure,'fn_promo_disburse(text,uuid,text,uuid,numeric,text,uuid,uuid)'::regprocedure);",'qualified-postimages')
+ sql("SELECT jsonb_agg(jsonb_build_object('signature',oid::regprocedure::text,'definition_md5',md5(pg_get_functiondef(oid)),'acl',proacl::text,'security_definer',prosecdef,'config',proconfig,'owner',pg_get_userbyid(proowner))) FROM pg_proc WHERE oid IN('fn_midway_weekly_horse_promo_close()'::regprocedure,'fn_midway_weekly_horse_promo(timestamptz,timestamptz)'::regprocedure,'fn_midway_weekly_horse_promo_due(timestamptz)'::regprocedure,'fn_union_settlement_cascade_due()'::regprocedure,'fn_promo_disburse(text,uuid,text,uuid,numeric,text,uuid,uuid)'::regprocedure);",'qualified-postimages')
  print('PASS native PG17 weekly promo installer, actual money/ledger path and regression')
  (O/'result.json').write_text(json.dumps({'status':'passed','migration_sha256':hashlib.sha256(migration.encode()).hexdigest(),'production_writes':False,'controlled_dependency':'weekly due-time only; future weekly close simulation','source_authorities':{x['signature']:x['definition_md5'] for x in auth}},indent=2))
 finally:

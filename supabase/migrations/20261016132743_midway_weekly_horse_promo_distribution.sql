@@ -1,8 +1,9 @@
--- Owner request 2026-10-16: at each weekly Midway close, split half of the
+-- Owner request 2026-10-16: at each weekly Midway due time, split half of the
 -- Union Promo Wallet equally over enabled horse wallets under 10,000 chips.
 -- Eligibility is per club wallet, explicitly confirmed by the owner.
 -- This is new scheduled business behavior on the existing weekly close,
--- not a second scheduler or a repair sweep. First payable week ends Oct 19.
+-- not a second scheduler or a repair sweep. A payout owns its tick independently
+-- of any older book still certifying. First payable week ends Oct 19.
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='60s';
@@ -296,8 +297,8 @@ ALTER TABLE public.union_weekly_horse_promo_recipients ENABLE ROW LEVEL SECURITY
 REVOKE ALL ON TABLE public.union_weekly_horse_promo_runs,public.union_weekly_horse_promo_recipients FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT ON TABLE public.union_weekly_horse_promo_runs,public.union_weekly_horse_promo_recipients TO service_role;
 
-CREATE FUNCTION public.fn_midway_weekly_horse_promo_close()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public
+CREATE FUNCTION public.fn_midway_weekly_horse_promo(p_from timestamptz,p_to timestamptz)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public
 AS $function$
 DECLARE
  v_midway constant uuid := 'fade0000-0000-0000-0000-000000000001';
@@ -306,23 +307,19 @@ DECLARE
  v_run uuid; v_op uuid; v_wallets jsonb; v_wallet jsonb; v_result jsonb; v_prior jsonb;
  v_saved jsonb; v_key text; v_note text;
 BEGIN
- IF NEW.union_id IS DISTINCT FROM v_midway OR NEW.standalone_club_id IS NOT NULL
-    OR NEW.status IS DISTINCT FROM 'complete'
-    OR NEW.period_end<'2026-10-19 07:00:00+00'::timestamptz THEN RETURN NEW; END IF;
  IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'midway_promo_service_required' USING ERRCODE='42501'; END IF;
- IF NEW.period_start IS NULL OR NEW.period_end IS NULL
-    OR NEW.period_start IS DISTINCT FROM public.fn_union_week_start(NEW.period_start)
-    OR NEW.period_end IS DISTINCT FROM public.fn_union_week_start(NEW.period_start+interval '8 days')
-    OR clock_timestamp()<public.fn_union_accounting_run_at(NEW.period_end)
-    OR NEW.result->>'success' IS DISTINCT FROM 'true' THEN
+ IF p_from IS NULL OR p_to IS NULL
+    OR p_from IS DISTINCT FROM public.fn_union_week_start(p_from)
+    OR p_to IS DISTINCT FROM public.fn_union_week_start(p_from+interval '8 days')
+    OR clock_timestamp()<public.fn_union_accounting_run_at(p_to)
+    OR p_to<'2026-10-19 07:00:00+00'::timestamptz THEN
   RAISE EXCEPTION 'midway_promo_invalid_completed_week' USING ERRCODE='23514';
  END IF;
- PERFORM pg_advisory_xact_lock(hashtextextended('midway-weekly-promo:'||extract(epoch FROM NEW.period_end)::text,0));
+ PERFORM pg_advisory_xact_lock(hashtextextended('midway-weekly-promo:'||extract(epoch FROM p_to)::text,0));
  SELECT result INTO v_prior FROM public.union_weekly_horse_promo_runs
-  WHERE union_id=v_midway AND period_start=NEW.period_start AND period_end=NEW.period_end;
+  WHERE union_id=v_midway AND period_start=p_from AND period_end=p_to;
  IF FOUND THEN
-  NEW.result:=NEW.result||jsonb_build_object('weekly_horse_promo',v_prior);
-  RETURN NEW;
+  RETURN v_prior||jsonb_build_object('replayed',true);
  END IF;
  IF public.fn_platform_frozen() THEN RAISE EXCEPTION 'midway_promo_platform_frozen'; END IF;
  SELECT promo_wallet INTO v_open FROM public.union_wallets WHERE union_id=v_midway FOR UPDATE;
@@ -344,9 +341,9 @@ BEGIN
    ORDER BY m.club_id,m.user_id FOR UPDATE OF m FOR SHARE OF p,c
  )w;
  v_n:=jsonb_array_length(v_wallets); v_run:=gen_random_uuid();
- v_note:='Midway Weekly Promo Distribution: '||to_char(NEW.period_start AT TIME ZONE 'America/Los_Angeles','YYYY-MM-DD');
+ v_note:='Midway Weekly Promo Distribution: '||to_char(p_from AT TIME ZONE 'America/Los_Angeles','YYYY-MM-DD');
  INSERT INTO public.union_weekly_horse_promo_runs(id,union_id,period_start,period_end,opening_promo,budget,paid,eligible_wallets,paid_wallets,result)
- VALUES(v_run,v_midway,NEW.period_start,NEW.period_end,v_open,v_budget,0,v_n,0,'{}');
+ VALUES(v_run,v_midway,p_from,p_to,v_open,v_budget,0,v_n,0,'{}');
  -- Save/restore the caller's transaction-local ledger declaration.
  SELECT jsonb_object_agg(k,COALESCE(current_setting(k,true),'')) INTO v_saved FROM unnest(ARRAY[
   'app.ledger_category','app.ledger_counterparty','app.ledger_counterparty_entity',
@@ -359,7 +356,7 @@ BEGIN
   FOR v_wallet IN SELECT value FROM jsonb_array_elements(v_wallets) LOOP
    v_i:=v_i+1; v_amount:=(v_each+CASE WHEN v_i<=v_extra THEN 1 ELSE 0 END)::numeric/100;
    IF v_amount=0 THEN CONTINUE; END IF;
-   v_op:=md5('midway-weekly-promo:'||extract(epoch FROM NEW.period_end)::text||':'||(v_wallet->>'club_id')||':'||(v_wallet->>'user_id'))::uuid;
+   v_op:=md5('midway-weekly-promo:'||extract(epoch FROM p_to)::text||':'||(v_wallet->>'club_id')||':'||(v_wallet->>'user_id'))::uuid;
    v_result:=public.fn_promo_disburse('union',v_midway,'player',(v_wallet->>'user_id')::uuid,
     v_amount,v_note,(v_wallet->>'club_id')::uuid,v_op);
    IF v_result->>'success' IS DISTINCT FROM 'true' OR v_result->>'replayed'='true' THEN
@@ -380,13 +377,71 @@ BEGIN
   'paid',v_paid,'eligible_wallets',v_n,'paid_wallets',v_paid_n,'remaining_promo',v_open-v_paid,
   'eligibility','each_club_chip_balance_under_10000','reason',CASE WHEN v_n=0 THEN 'no_eligible_wallets' WHEN v_cents=0 THEN 'no_distributable_chips' ELSE 'paid' END);
  UPDATE public.union_weekly_horse_promo_runs SET paid=v_paid,paid_wallets=v_paid_n,result=v_result WHERE id=v_run;
- NEW.result:=NEW.result||jsonb_build_object('weekly_horse_promo',v_result);
+ RETURN v_result||jsonb_build_object('replayed',false);
+END $function$;
+REVOKE ALL ON FUNCTION public.fn_midway_weekly_horse_promo(timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+CREATE FUNCTION public.fn_midway_weekly_horse_promo_close()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public
+AS $function$
+DECLARE v_result jsonb;
+BEGIN
+ IF NEW.union_id IS DISTINCT FROM 'fade0000-0000-0000-0000-000000000001'::uuid
+  OR NEW.standalone_club_id IS NOT NULL OR NEW.status IS DISTINCT FROM 'complete'
+  OR NEW.period_end<'2026-10-19 07:00:00+00'::timestamptz THEN RETURN NEW; END IF;
+ IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'midway_promo_service_required' USING ERRCODE='42501';END IF;
+ IF NEW.result->>'success' IS DISTINCT FROM 'true' THEN
+  RAISE EXCEPTION 'midway_promo_invalid_completed_week' USING ERRCODE='23514';END IF;
+ v_result:=public.fn_midway_weekly_horse_promo(NEW.period_start,NEW.period_end);
+ NEW.result:=NEW.result||jsonb_build_object('weekly_horse_promo',v_result-'replayed');
  RETURN NEW;
 END $function$;
 REVOKE ALL ON FUNCTION public.fn_midway_weekly_horse_promo_close() FROM PUBLIC,anon,authenticated,service_role;
+
+-- The schedule is the product. A newly due payout owns one existing weekly
+-- tick and commits before any potentially long accounting/certification work.
+-- The optional period identifies a bounded server-side operation; the core's
+-- real calendar guard still refuses spending before that week's due time.
+CREATE FUNCTION public.fn_midway_weekly_horse_promo_due(p_period_end timestamptz DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public
+AS $function$
+DECLARE v_to timestamptz:=COALESCE(p_period_end,public.fn_union_week_start(clock_timestamp()));
+ v_from timestamptz;v_result jsonb;
+BEGIN
+ IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'midway_promo_service_required' USING ERRCODE='42501';END IF;
+ IF v_to<'2026-10-19 07:00:00+00'::timestamptz OR clock_timestamp()<public.fn_union_accounting_run_at(v_to) THEN
+  RETURN jsonb_build_object('success',true,'advanced',false,'reason','not_due');END IF;
+ IF EXISTS(SELECT FROM public.union_weekly_horse_promo_runs WHERE union_id='fade0000-0000-0000-0000-000000000001' AND period_end=v_to) THEN
+  RETURN jsonb_build_object('success',true,'advanced',false,'reason','already_paid');END IF;
+ IF public.fn_platform_frozen() THEN
+  RETURN jsonb_build_object('success',true,'advanced',false,'owns_tick',true,'reason','maintenance_window');END IF;
+ IF NOT pg_try_advisory_xact_lock(hashtextextended('union-accounting-scheduler',0)) THEN
+  RETURN jsonb_build_object('success',true,'advanced',false,'owns_tick',true,'reason','already_running');END IF;
+ v_from:=public.fn_union_week_start(v_to-interval '1 day');
+ v_result:=public.fn_midway_weekly_horse_promo(v_from,v_to);
+ RETURN jsonb_build_object('success',true,'advanced',v_result->>'replayed' IS DISTINCT FROM 'true',
+  'owns_tick',true,'weekly_horse_promo',v_result-'replayed');
+END $function$;
+REVOKE ALL ON FUNCTION public.fn_midway_weekly_horse_promo_due(timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_midway_weekly_horse_promo_due(timestamptz) TO service_role;
+
 CREATE TRIGGER midway_weekly_horse_promo_close
  BEFORE INSERT OR UPDATE OF status,result ON public.union_accounting_runs
  FOR EACH ROW WHEN(NEW.status='complete') EXECUTE FUNCTION public.fn_midway_weekly_horse_promo_close();
+-- Preserve the exact current owning tick, inserting only the new business
+-- step ahead of its unchanged certification and accounting continuation.
+DO $weekly_tick$
+DECLARE d text;
+BEGIN
+ d:=pg_get_functiondef('public.fn_union_settlement_cascade_due()'::regprocedure);
+ IF md5(d)<>'4e48f73890bd1b928653327f3a0a388b' THEN RAISE EXCEPTION 'midway_promo_weekly_tick_preimage_changed';END IF;
+ d:=replace(d,'DECLARE v_advance jsonb;','DECLARE v_advance jsonb; v_promo jsonb;');
+ d:=replace(d,$old$ v_advance:=public.fn_accounting_close_windows_advance_due();$old$,
+ $new$ v_promo:=public.fn_midway_weekly_horse_promo_due();
+ IF v_promo->>'advanced'='true' OR v_promo->>'owns_tick'='true' THEN RETURN v_promo;END IF;
+ v_advance:=public.fn_accounting_close_windows_advance_due();$new$);
+ IF d NOT LIKE '%v_promo:=public.fn_midway_weekly_horse_promo_due();%' THEN RAISE EXCEPTION 'midway_promo_weekly_tick_anchor_missing';END IF;
+ EXECUTE d;
+END $weekly_tick$;
 COMMENT ON TABLE public.union_weekly_horse_promo_runs IS
- 'Midway weekly 50% promo distribution. Per-club active horse chip_balance <10000; first week ends 2026-10-19. Atomic with existing weekly close. No eligible wallet leaves funds untouched; no historical payouts.';
+ 'Midway weekly 50% promo distribution. Per-club active horse chip_balance <10000; first week ends 2026-10-19. Own bounded step in existing weekly tick; close completion attaches the same receipt. No eligible wallet leaves funds untouched; no historical payouts.';
 COMMIT;

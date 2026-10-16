@@ -1,5 +1,9 @@
 {
   "_owner": "feat/midway-weekly-promo-20261016; weekly completion trigger, per-club horse eligibility and durable receipts",
   "tables": ["union_weekly_horse_promo_runs", "union_weekly_horse_promo_recipients"],
-  "functions": ["fn_midway_weekly_horse_promo_close"]
+  "functions": [
+    "fn_midway_weekly_horse_promo_close",
+    "fn_midway_weekly_horse_promo",
+    "fn_midway_weekly_horse_promo_due"
+  ]
 }

@@ -5,12 +5,14 @@ const migration = readFileSync(
   'utf8'
 );
 const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
-describe('Midway weekly promo is an atomic part of the existing weekly close', () => {
+describe('Midway weekly promo is an atomic step in the existing due weekly tick', () => {
   it('keeps the native money and ledger regression in the required CI workflow', () => {
     expect(workflow).toContain('scripts/qualification/midway-weekly-promo/run-native.py');
     expect(migration).toContain(
       'BEFORE INSERT OR UPDATE OF status,result ON public.union_accounting_runs'
     );
+    expect(migration).toContain('v_promo:=public.fn_midway_weekly_horse_promo_due();');
+    expect(migration).toContain("v_promo->>'owns_tick'='true' THEN RETURN v_promo");
     expect(migration).not.toMatch(/cron\.(schedule|alter_job)/i);
   });
   it('restricts financial receipts and preserves the existing disbursement door', () => {

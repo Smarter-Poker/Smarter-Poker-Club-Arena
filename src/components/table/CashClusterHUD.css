@@ -169,7 +169,8 @@
   right: 13%;
   bottom: 15%;
   color: #e4e7ec;
-  font-size: 12cqw;
+  font-size: 14cqw;
+  text-transform: none;
   line-height: 1;
   letter-spacing: 0;
   text-align: center;

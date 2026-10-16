@@ -1623,6 +1623,8 @@ describe('LiveHorseDecisionWorkerClient', () => {
       workerFactory: () => worker,
       maxInFlight: 1,
       jobTimeoutMs: 10,
+      // Effect jobs carry the observation deadline (effect lane, 2026-10-16).
+      observationDeadlineMs: 10,
     });
     try {
       worker.emitMessage(ready);
@@ -1667,7 +1669,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
     }
   });
 
-  it('orders an accepted action effect after older work and before synchronous successors', async () => {
+  it('orders an accepted action effect ahead of older unposted work and before synchronous successors', async () => {
     const worker = new FakeWorker();
     const client = new LiveHorseDecisionWorkerClient({
       workerFactory: () => worker,
@@ -1687,9 +1689,8 @@ describe('LiveHorseDecisionWorkerClient', () => {
 
     worker.emitMessage(fastResult(2, 'active'));
     await active;
-    expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
-    worker.emitMessage(fastResult(3, 'older'));
-    await older;
+    // The effect lane: the accepted commit (5) waits only for the posted job,
+    // not for the older unposted decision (3).
     expect(worker.sent.at(-1)).toMatchObject({
       type: 'COMMIT_DECISION_EFFECTS',
       requestId: 5,
@@ -1704,9 +1705,137 @@ describe('LiveHorseDecisionWorkerClient', () => {
       planDisposition: 'applied_volatile',
     });
     await committed;
+    expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
+    worker.emitMessage(fastResult(3, 'older'));
+    await older;
     expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 4 });
     worker.emitMessage(fastResult(4, 'successor'));
     await successor;
+  });
+
+  describe('the effect lane (2026-10-16: posted commits without receipts were queue expiry)', () => {
+    // Production 2026-10-16 (horse_brain_telemetry): 262,544 commits posted,
+    // 262,080 receipts, no worker refusal; /health named COMMIT_DECISION_EFFECTS
+    // as the last job expired while queued. The barrier index put the commit
+    // behind the whole unposted backlog with the 8-second decision deadline.
+    const backlog = (client: LiveHorseDecisionWorkerClient, n: number) =>
+      Array.from({ length: n }, (_, i) =>
+        client
+          .decideFast(snapshot(`backlog-${i}`), undefined, { deadlineMs: 600_000 })
+          .catch(() => undefined)
+      );
+
+    it('posts an accepted commit next, ahead of a backlog older than the decision deadline, and does not expire it', async () => {
+      vi.useFakeTimers();
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        maxInFlight: 1,
+        jobTimeoutMs: 1_000,
+      });
+      try {
+        worker.emitMessage(ready);
+        const owned = await transportOnlyCommitFixture(client, worker); // 1
+        const active = client.decideFast(snapshot('lane-active'), undefined, {
+          deadlineMs: 600_000,
+        }); // 2, posted
+        backlog(client, 40); // 3 .. 42, unposted
+        let committed!: ReturnType<typeof client.commitDecisionEffects>;
+        client.runWithDispatchBarrier(() => {
+          committed = client.commitDecisionEffects(owned, acceptanceOf(owned)); // 43
+        });
+        await vi.advanceTimersByTimeAsync(900);
+        worker.emitMessage(fastResult(2, 'lane-active'));
+        await active;
+        // Next after the posted job, not after the 40 older decisions (which
+        // at ~0.9 s each would have kept it queued past its old deadline).
+        expect(worker.sent.at(-1)).toMatchObject({
+          type: 'COMMIT_DECISION_EFFECTS',
+          requestId: 43,
+          fence: owned.fence,
+        });
+        // 1.4 s after enqueue: past the 1 s decision deadline it used to carry.
+        await vi.advanceTimersByTimeAsync(500);
+        expect(client.status().expiredJobs).toBe(0);
+        worker.emitMessage({
+          type: 'ACK',
+          requestId: 43,
+          generation: 7,
+          fence: owned.fence,
+          operation: 'COMMIT_DECISION_EFFECTS',
+          planDisposition: 'applied_volatile',
+        });
+        await expect(committed).resolves.toMatchObject({ planDisposition: 'applied_volatile' });
+        expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
+        expect(client.status().expiredJobs).toBe(0);
+      } finally {
+        client.stop().catch(() => undefined);
+        vi.useRealTimers();
+      }
+    });
+
+    it('queues a commit_unconfirmed retirement ahead of the backlog too, so it is confirmed', async () => {
+      vi.useFakeTimers();
+      enableBrainTelemetry();
+      drainFires();
+      const worker = new FakeWorker();
+      const client = new LiveHorseDecisionWorkerClient({
+        workerFactory: () => worker,
+        maxInFlight: 1,
+        jobTimeoutMs: 1_000,
+      });
+      try {
+        worker.emitMessage(ready);
+        const owned = await transportOnlyCommitFixture(client, worker); // 1
+        let committed!: ReturnType<typeof client.commitDecisionEffects>;
+        client.runWithDispatchBarrier(() => {
+          committed = client.commitDecisionEffects(owned, acceptanceOf(owned)); // 2, posted
+        });
+        const rejected = expect(committed).rejects.toThrow('issue_absent');
+        backlog(client, 40); // 3 .. 42
+        worker.emitMessage({
+          type: 'ERROR',
+          requestId: 2,
+          generation: 7,
+          fence: owned.fence,
+          message: 'Horse plan batch refused: issue_absent',
+          recoverable: true,
+          planRefusal: 'issue_absent',
+        });
+        await rejected;
+        // The worker's answer let the next queued decision (3) post at once;
+        // the retirement (43) is queued next, ahead of the 39 older decisions.
+        expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 3 });
+        expect((client as any).queue[0].request).toMatchObject({
+          type: 'RETIRE_DECISION_EFFECTS',
+          requestId: 43,
+          reason: 'commit_unconfirmed',
+        });
+        worker.emitMessage(fastResult(3, 'backlog-0'));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(worker.sent.at(-1)).toMatchObject({
+          type: 'RETIRE_DECISION_EFFECTS',
+          requestId: 43,
+        });
+        await vi.advanceTimersByTimeAsync(500);
+        worker.emitMessage({
+          type: 'ACK',
+          requestId: 43,
+          generation: 7,
+          fence: owned.fence,
+          operation: 'RETIRE_DECISION_EFFECTS',
+          planDisposition: 'issue_absent',
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(drainFires().map((row) => row.feature)).not.toContain(
+          'phase15_plan_retirement_unconfirmed'
+        );
+        expect(worker.sent.at(-1)).toMatchObject({ type: 'DECIDE_FAST', requestId: 4 });
+      } finally {
+        client.stop().catch(() => undefined);
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('the capture lane (2026-09-29, engine c0c986ad: capture_unavailable was queue expiry)', () => {
@@ -1770,7 +1899,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
       await waitingB;
     });
 
-    it('keeps capture jobs in their own order and puts a barrier commit where it was', async () => {
+    it('keeps capture jobs in their own order and puts a barrier commit in the front lane', async () => {
       const worker = new FakeWorker();
       const client = journalClient(worker);
       worker.emitMessage(ready);
@@ -1790,9 +1919,10 @@ describe('LiveHorseDecisionWorkerClient', () => {
       const queued = ((client as any).queue as Array<{ request: { requestId: number } }>).map(
         (job) => job.request.requestId
       );
-      // captures 100 and 101 first, in the order they arrived; then the work
-      // queued before the barrier (3), the commit (5) and its successor (4).
-      expect(queued).toEqual([100, 101, 3, 5, 4]);
+      // the front lane first, in arrival order: captures 100 and 101 and the
+      // effect commit (5); then the work queued before the barrier (3) and the
+      // commit's successor (4).
+      expect(queued).toEqual([100, 101, 5, 3, 4]);
       void active;
       void older;
       void successor;
@@ -2402,11 +2532,9 @@ describe('LiveHorseDecisionWorkerClient pipelined lane', () => {
     await running;
     worker.emitMessage(fastResult(3, 'older'));
     await older;
-    // Older work first (4), then the commit (6), then its causal successor (5).
-    expect(requestIds(worker)).toEqual([1, 2, 3, 4, 6]);
-    worker.emitMessage(fastResult(4, 'older-still'));
-    await olderStill;
-    expect(requestIds(worker)).toEqual([1, 2, 3, 4, 6, 5]);
+    // The commit (6) in the effect lane, then the older work (4), then the
+    // commit's causal successor (5).
+    expect(requestIds(worker)).toEqual([1, 2, 3, 6, 4]);
     worker.emitMessage({
       type: 'ACK',
       requestId: 6,
@@ -2416,6 +2544,9 @@ describe('LiveHorseDecisionWorkerClient pipelined lane', () => {
       planDisposition: 'applied_volatile',
     });
     await committed;
+    worker.emitMessage(fastResult(4, 'older-still'));
+    await olderStill;
+    expect(requestIds(worker)).toEqual([1, 2, 3, 6, 4, 5]);
     worker.emitMessage(fastResult(5, 'successor'));
     await successor;
   });

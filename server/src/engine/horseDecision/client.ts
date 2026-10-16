@@ -12,6 +12,7 @@ import { horsePhase6AttributionMismatch } from '../HorsePhase6Attribution.js';
 import { Worker } from 'node:worker_threads';
 import { HorseCommittedDecisionTracker } from '../HorseCommittedDecisionTracker.js';
 import { noteFire } from '../BrainTelemetry.js';
+import { observeHorsePolicyDecision } from '../HorsePolicyLedgerObserver.js';
 import {
   horseDecisionJournalConfigured,
   relayHorseDecisionJournalHealth,
@@ -209,6 +210,8 @@ interface QueuedJob {
   executionDeadlineCheck: ReturnType<typeof setImmediate> | null;
   /** Queued in the capture lane, ahead of every unposted decision (see HORSE_CAPTURE_LANE_TYPES). */
   captureLane?: boolean;
+  /** Queued in the effect lane, ahead of every unposted decision (see HORSE_EFFECT_LANE_TYPES). */
+  effectLane?: boolean;
 }
 
 /**
@@ -280,8 +283,57 @@ export const HORSE_MIND_MIRROR_MAX_PENDING = 1024;
 export const HORSE_CAPTURE_LANE_MAX_QUEUED = 1024;
 /** Deadline, from enqueue, for observation and capture jobs (never below `jobTimeoutMs`). */
 export const HORSE_OBSERVATION_DEADLINE_MS = 60_000;
+/**
+ * THE ACCEPTED PLAN DOES NOT WAIT BEHIND THE DECISION BACKLOG EITHER
+ * (2026-10-16, engine 4c3509e5 / 5780828e).
+ *
+ * An effect commit is posted only after the table controller accepted the
+ * exact wager that issued it, and its retirement only after the decision is
+ * finished with. Until today both took the decision FIFO's tail: the commit
+ * at the dispatch-barrier index, which is `queue.length` when the barrier
+ * opens (after EVERY unposted job, not only the ones it must follow), and the
+ * retirement at the plain tail; both carried the 8-second decision deadline.
+ *
+ * Measured the same day (`horse_brain_telemetry`, 2026-10-16, and engine
+ * /health on 4c3509e5):
+ *
+ *     phase15_plan_commit_posted          262,544
+ *     phase15_plan_receipt_applied        262,080   (464 commits never reached the worker)
+ *     phase15_plan_refused_*              0         (the worker refused none)
+ *     phase15_plan_retirement_unconfirmed 154       (the retirement expired as well)
+ *     /health lastExpiredRequestType      COMMIT_DECISION_EFFECTS, phase queued
+ *     worker FIFO                         ~100 .. 491 deep, oldest 1.7 .. 6.8 s
+ *
+ * The worker refused nothing and failed nothing: every posted commit without a
+ * receipt is a commit that expired in the queue before dispatch, and its
+ * `commit_unconfirmed` retirement then queued at the tail of the same backlog
+ * with the same deadline. An accepted wager's plan was lost (the horse plays
+ * its later streets without the intent it bet with) and, past the retirement's
+ * own expiry, its issue slot stayed open.
+ *
+ * THE EFFECT LANE. Commit and retirement queue ahead of every unposted job,
+ * in arrival order among the front-lane jobs (capture and effect), so they wait
+ * only for the jobs already posted to the worker. The ordering the dispatch
+ * barrier exists for is kept and strengthened: a commit still precedes the
+ * TURN_CHANGE work its own action enqueues (it now also precedes older
+ * unposted work). Moving it ahead of older unposted work moves nothing those
+ * jobs read: an effect is keyed by its own `plan-hand-v1:<table>:<hand>`, no
+ * older job can be a decision of the same horse in the same hand (that seat
+ * acted only now), and a second look reads the FAST view it retained, never
+ * live plan state. A commit and its own retirement keep their relative order
+ * (the retirement is enqueued only after the commit fails). The lane is
+ * naturally bounded by the worker's issued-batch bound (128 per shard), so it
+ * has no separate cap. Both kinds get the observation deadline: nobody waits
+ * on their answer, and FIFO order, not the deadline, is what keeps a commit
+ * ahead of the next decision.
+ */
+const HORSE_EFFECT_LANE_TYPES: ReadonlySet<string> = new Set([
+  'COMMIT_DECISION_EFFECTS',
+  'RETIRE_DECISION_EFFECTS',
+]);
 const HORSE_OBSERVATION_TYPES: ReadonlySet<string> = new Set([
   ...HORSE_CAPTURE_LANE_TYPES,
+  ...HORSE_EFFECT_LANE_TYPES,
   'OBSERVE_COMPLETED_HAND',
 ]);
 
@@ -367,9 +419,10 @@ function errorMessage(error: unknown): string {
  *     predecessor is not charged that predecessor's compute; charging it would
  *     fail a healthy worker, and a failed worker restarts the whole fleet (see
  *     onJobDeadline).
- *   - The dispatch barrier still holds every post, so a priority effect commit
- *     still lands after older work and before the TURN_CHANGE work it must
- *     precede.
+ *   - The dispatch barrier still holds every post, so an effect commit still
+ *     lands before the TURN_CHANGE work it must precede (since 2026-10-16 it
+ *     queues in the effect lane, ahead of older unposted work as well; see
+ *     HORSE_EFFECT_LANE_TYPES).
  * The worker turns its event loop between jobs (HorseDecisionWorkerRuntime
  * .receive), so a full window can never starve its timers, its CANCEL handling
  * or its governor's sampler.
@@ -1015,14 +1068,17 @@ export class LiveHorseDecisionWorkerClient {
         job.abortListener = () => this.abort(job);
         signal.addEventListener('abort', job.abortListener, { once: true });
       }
-      const captureIndex = HORSE_CAPTURE_LANE_TYPES.has(request.type)
-        ? this.captureLaneInsertIndex()
-        : null;
-      if (captureIndex !== null) {
-        job.captureLane = true;
-        this.queue.splice(captureIndex, 0, job);
+      const capture = HORSE_CAPTURE_LANE_TYPES.has(request.type);
+      const frontIndex =
+        capture || HORSE_EFFECT_LANE_TYPES.has(request.type)
+          ? this.frontLaneInsertIndex(capture)
+          : null;
+      if (frontIndex !== null) {
+        if (capture) job.captureLane = true;
+        else job.effectLane = true;
+        this.queue.splice(frontIndex, 0, job);
         // Keep the barrier pointing at the same job it pointed at.
-        if (this.priorityInsertIndex !== null && captureIndex <= this.priorityInsertIndex)
+        if (this.priorityInsertIndex !== null && frontIndex <= this.priorityInsertIndex)
           this.priorityInsertIndex += 1;
       } else if (priority && this.priorityInsertIndex !== null) {
         this.queue.splice(this.priorityInsertIndex, 0, job);
@@ -1034,11 +1090,19 @@ export class LiveHorseDecisionWorkerClient {
     });
   }
 
-  /** After the capture jobs already waiting, or null once the lane is full. */
-  private captureLaneInsertIndex(): number | null {
+  /** After the capture and effect jobs already waiting, in arrival order; null
+   * for a capture job once the capture lane holds its bound. */
+  private frontLaneInsertIndex(capture: boolean): number | null {
     let index = 0;
-    while (index < this.queue.length && this.queue[index].captureLane) index++;
-    return index >= HORSE_CAPTURE_LANE_MAX_QUEUED ? null : index;
+    let captures = 0;
+    while (
+      index < this.queue.length &&
+      (this.queue[index].captureLane || this.queue[index].effectLane)
+    ) {
+      if (this.queue[index].captureLane) captures++;
+      index++;
+    }
+    return capture && captures >= HORSE_CAPTURE_LANE_MAX_QUEUED ? null : index;
   }
 
   private abort(job: QueuedJob): void {
@@ -1559,6 +1623,11 @@ export class LiveHorseDecisionWorkerClient {
       });
       message.decision.executionWitness = witness;
       this.committedDecisions.track(witness);
+      // Phase 15 policy ledger: the OOD/silence alarms and the live reference
+      // agreement read every validated FAST decision once (a DEEP second look
+      // re-decides the same turn). Read-only; it never changes the decision.
+      if (message.type === 'FAST_RESULT')
+        observeHorsePolicyDecision(active.request.gameState, message.decision);
       const ownedFast =
         message.type === 'FAST_RESULT' && message.planIssueDisposition === 'issued'
           ? message

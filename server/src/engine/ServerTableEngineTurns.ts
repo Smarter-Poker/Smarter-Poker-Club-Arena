@@ -4265,8 +4265,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             ) {
               // HorseMind intent is speculative until this exact wager lands.
               // performAction emits TURN_CHANGE synchronously, so the client
-              // dispatch barrier inserts this commit after older FIFO work and
-              // before any decision that event enqueued. Rejected or degraded
+              // dispatch barrier holds every post until this commit is queued
+              // in the effect lane, ahead of any decision that event enqueued
+              // (and of the older unposted backlog). Rejected or degraded
               // actions never alter future-street plans.
               if (fastResult.effects.length === 0) {
                 noteFire('phase15_plan_accepted_no_effects');

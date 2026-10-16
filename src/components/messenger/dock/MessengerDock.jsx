@@ -223,7 +223,7 @@ export default function MessengerDock({ services }) {
         const beforeRoom = style.getPropertyValue('--sp-messenger-toast-room');
         const active = actorId && dockHasSurface(chats, previews, inbox);
         const notice = dockPreviewLayout(window.innerHeight, bottom, !!(layout.expanded.length || inbox));
-        const noticeTopClearance = notice.bottom + Math.min(notice.maxHeight, previews.length * 100) + 12;
+        const noticeTopClearance = notice.bottom + Math.min(notice.maxHeight, previews.length * 72 + 16) + 12;
         const notifications = previews.length ? { bottom: noticeTopClearance, maxHeight: Math.max(60, window.innerHeight - noticeTopClearance - 12) } : dockNotificationLayout(window.innerHeight, bottom, layout.height);
         style.setProperty('--sp-messenger-toast-clearance', `${active ? notifications.bottom : 0}px`);
         style.setProperty('--sp-messenger-toast-room', `${active ? notifications.maxHeight : window.innerHeight - 12}px`);
@@ -253,10 +253,10 @@ export default function MessengerDock({ services }) {
         {previews.length > 0 && <aside className="messenger-previews" aria-label="New Messages" aria-live="polite" style={previewPlacement}>
             {error && <p role="alert" className="dock-preview-error">{error}</p>}
             {previews.map(conversation => <article className="dock-preview" key={conversation.id}>
-                <button type="button" className="dock-preview-open" aria-label={`Open Message From ${dockName(conversation)}`} onClick={() => resolve(conversation.id)}>
-                    <Portrait conversation={conversation} /><span><small>New Message</small><strong>{dockName(conversation)}</strong><span>{conversation.last_message_preview || 'Open Conversation'}</span></span>
+                <button type="button" className="dock-preview-open" title={`New Message From ${dockName(conversation)}`} aria-label={`Open Message From ${dockName(conversation)}`} onClick={() => resolve(conversation.id)}>
+                    <MessageCircle size={26} />{conversation.unreadCount > 1 && <b className="dock-count">{conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}</b>}
                 </button>
-                <button type="button" className="dock-preview-close" aria-label={`Dismiss Message From ${dockName(conversation)}`} onClick={() => dismissPreview(conversation.id)}><X size={20} /></button>
+                <button type="button" className="dock-preview-close" aria-label={`Dismiss Message From ${dockName(conversation)}`} onClick={() => dismissPreview(conversation.id)}><X size={12} /></button>
             </article>)}
         </aside>}
         {(chats.length > 0 || inbox) &&

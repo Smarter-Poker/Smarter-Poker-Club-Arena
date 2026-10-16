@@ -12,7 +12,7 @@
  * who never went anywhere.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
 
@@ -21,11 +21,16 @@ const PLAYER = 'player-1';
 
 describe('away-blind cap', () => {
   let eng: DisconnectEngine;
+  let now: number;
 
   beforeEach(() => {
+    now = 1_800_000_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
     eng = new DisconnectEngine(new PreciseActionTimer());
     eng.registerPlayer(TABLE, PLAYER);
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   // ── The cap must never touch a player who is present ─────────────────────
 
@@ -56,6 +61,8 @@ describe('away-blind cap', () => {
     eng.markDisconnected(TABLE, PLAYER);
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
+    now += 30_000;
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
   });
 
@@ -67,13 +74,13 @@ describe('away-blind cap', () => {
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
   });
 
-  it('evicts an AFK player - connected but timing out twice - after one SB and one BB', () => {
+  it('routes two unanswered turns to sit-out before the away-blind cap', () => {
     eng.recordConnectedTimeout(TABLE, PLAYER);
     eng.recordConnectedTimeout(TABLE, PLAYER); // nobody home
-    expect(eng.isAway(TABLE, PLAYER)).toBe(true);
+    expect(eng.getFsmState(TABLE, PLAYER)?.state).toBe('SAT_OUT');
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
-    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
   });
 
   it('evicts a player who left the page/app after one SB and one BB', () => {
@@ -81,6 +88,8 @@ describe('away-blind cap', () => {
     expect(eng.isAway(TABLE, PLAYER)).toBe(true);
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
+    now += 30_000;
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
   });
 
@@ -89,6 +98,29 @@ describe('away-blind cap', () => {
     // must not wait, or the first blind after the tab closes goes uncounted.
     eng.markPageLeft(TABLE, PLAYER);
     expect(eng.isConnected(TABLE, PLAYER)).toBe(false);
+  });
+
+  it('retains the seat until the absolute reconnect deadline, without replenishing on flaps', () => {
+    eng.markPageLeft(TABLE, PLAYER);
+    eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
+    eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
+    now += 29_999;
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
+    eng.heartbeat(TABLE, PLAYER);
+    eng.markPageLeft(TABLE, PLAYER);
+    now += 1;
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
+  });
+
+  it('retains a VIP seat for its full 45-second reconnect allowance', () => {
+    eng.registerPlayer(TABLE, PLAYER, { is_vip: true, vip_expires_at: null });
+    eng.markPageLeft(TABLE, PLAYER);
+    eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
+    eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
+    now += 44_999;
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
+    now += 1;
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
   });
 
   // ── Coming back must refund the budget ───────────────────────────────────
@@ -122,6 +154,8 @@ describe('away-blind cap', () => {
     eng.markDisconnected(TABLE, PLAYER);
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
     // One SB and one BB across the two absences is the whole budget.
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
+    now += 30_000;
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
   });
 
@@ -163,6 +197,8 @@ describe('away-blind cap', () => {
     eng.markDisconnected(TABLE, PLAYER);
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
+    now += 30_000;
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
     eng.heartbeat(TABLE, PLAYER);
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
@@ -199,6 +235,8 @@ describe('away-blind cap', () => {
     eng.markDisconnected(TABLE, PLAYER);
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'sb');
     eng.noteBlindChargedWhileAway(TABLE, PLAYER, 'bb');
+    expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
+    now += 30_000;
     expect(eng.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
     expect(eng.collectAwayBlindEvictions(OTHER, [PLAYER])).toEqual([]);
   });

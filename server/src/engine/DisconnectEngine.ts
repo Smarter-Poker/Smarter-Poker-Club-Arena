@@ -905,6 +905,9 @@ export class DisconnectEngine {
       if (!state) continue;
       if (state.awayBlindSbCharged !== true || state.awayBlindBbCharged !== true) continue;
       if (!this.isAway(tableId, playerId)) continue;
+      // Keep the seat throughout its existing absolute reconnect allowance.
+      // Spent blinds still evict after grace; reconnect flapping cannot refill it.
+      if (this.getFsmState(tableId, playerId)?.state === 'MISSING') continue;
       evict.push(playerId);
     }
     return evict;

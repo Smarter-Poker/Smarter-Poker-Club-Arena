@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/weekly-close-proofs-outlive-the-close",
+  "functions": ["fn_accounting_close_proof_lifetime"]
+}

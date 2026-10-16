@@ -33,6 +33,8 @@
 -- Idempotent: a (club, name) already carried by an active schedule row is
 -- left alone. No DDL; data only.
 --
+-- @live-proof: (SELECT count(*) FROM public.tournament_schedules WHERE active AND config ? 'fixedBoard' AND club_id IN ('fade0000-0000-0000-0000-000000000001', '002c2d27-9584-4e52-835a-bb2be148fc81')) = 50
+--
 -- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten
 -- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).

@@ -103,10 +103,10 @@ export interface FreeBuySlot {
 /** Dan: "EVERY 4 HOURS STARTING AT 8 AM, 12PM, 4PM 8PM, 12AM. SO 5 FREE ROLLS
  *  A DAY $250'S EACH. 8PM IS $500."
  *
- *  2026-10-16 (Dan): the schedule now follows the real US rooms, which run
- *  nothing between 1 AM and 8 AM, so the midnight slot is retired; and "DOUBLE
- *  ALL THE OTHER CURRENT GUARANTEES, THEN ROUND THEM ALL UP TO THE NEAREST 1000
- *  OR 500", so the standard tier guarantees 500 and the 8 PM feature 1,000.
+ *  2026-10-16 (Dan): the five slots start on the half hour, 8:30 AM to 12:30
+ *  AM (FREE_BUY_SLOT_MINUTE), and "DOUBLE ALL THE OTHER CURRENT GUARANTEES,
+ *  THEN ROUND THEM ALL UP TO THE NEAREST 1000 OR 500", so the standard tier
+ *  guarantees 500 and the 8:30 PM feature 1,000.
  *
  *  These are CHICAGO hours, not UTC. The existing recurring board matches on
  *  `getUTCHours()`, which would drift by an hour twice a year and quietly move
@@ -116,7 +116,21 @@ export const FREE_BUY_SLOTS: FreeBuySlot[] = [
   { chicagoHour: 12, tier: 'standard', label: 'Midday Free Buy' },
   { chicagoHour: 16, tier: 'standard', label: 'Afternoon Free Buy' },
   { chicagoHour: 20, tier: 'feature', label: 'Prime Time Free Buy' },
+  { chicagoHour: 0, tier: 'standard', label: 'Midnight Free Buy' },
 ];
+
+/**
+ * THE FREE BUYS START ON THE HALF HOUR (Dan 2026-10-16): "MAKE SURE THE FREE
+ * BUY TOURNAMENTS ARE STILL RUNNING AT THE SAME TIMES EVERY DAY. AT 8:30AM,
+ * 12:30PM 4:30PM 8:30PM AND 12:30AM EVERY DAY." Every slot is
+ * `chicagoHour`:30.
+ */
+export const FREE_BUY_SLOT_MINUTE = 30;
+
+/** 'HH:MM' Chicago start of a slot. */
+export function freeBuySlotTime(slot: FreeBuySlot): string {
+  return `${String(slot.chicagoHour).padStart(2, '0')}:${String(FREE_BUY_SLOT_MINUTE).padStart(2, '0')}`;
+}
 
 /**
  * The name a slot's event is published under (`freeBuyTournamentRow`), and so
@@ -142,7 +156,7 @@ export function slotForChicagoHour(hour: number): FreeBuySlot | null {
   return FREE_BUY_SLOTS.find((s) => s.chicagoHour === hour) ?? null;
 }
 
-/** Guarantee exposure per host per day. 3 x 500 + 1,000 = 2,500. */
+/** Guarantee exposure per host per day. 4 x 500 + 1,000 = 3,000. */
 export function dailyGuaranteePerHost(): number {
   return FREE_BUY_SLOTS.reduce((sum, s) => sum + FREE_BUY_TIERS[s.tier].guarantee, 0);
 }
@@ -329,13 +343,13 @@ function chicagoOffsetMs(ms: number): number {
  * standard way to do this without a timezone library.
  *
  * Neither DST discontinuity can bite here. The spring-forward gap is
- * 02:00-03:00 and the fall-back repeat is 01:00-02:00; the Free Buy
- * hours are 08, 12, 16 and 20, so no slot ever lands on a wall-clock time
+ * 02:00-03:00 and the fall-back repeat is 01:00-02:00; the Free Buys
+ * start at 00:30, 08:30, 12:30, 16:30 and 20:30, so no slot ever lands on a wall-clock time
  * that either does not exist or happens twice.
  */
-export function chicagoWallClockToUtcMs(dayKey: string, hour: number): number {
+export function chicagoWallClockToUtcMs(dayKey: string, hour: number, minute = 0): number {
   const [y, m, d] = dayKey.split('-').map(Number);
-  const naive = Date.UTC(y, m - 1, d, hour, 0, 0);
+  const naive = Date.UTC(y, m - 1, d, hour, minute, 0);
   const first = naive - chicagoOffsetMs(naive);
   return naive - chicagoOffsetMs(first);
 }
@@ -379,13 +393,13 @@ export function freeBuySlotsDue(
   leadMs: number = FREE_BUY_PUBLISH_LEAD_MS
 ): DueFreeBuy[] {
   const out: DueFreeBuy[] = [];
-  // Today AND tomorrow in Chicago: the 00:00 slot belongs to the NEXT calendar
-  // day and comes inside the lead at 21:00 the evening before, so a scheduler
+  // Today AND tomorrow in Chicago: the 00:30 slot belongs to the NEXT calendar
+  // day and comes inside the lead at 21:30 the evening before, so a scheduler
   // reading only "today" would never see the midnight event at all.
   const days = new Set([chicagoDayKey(nowMs), chicagoDayKey(nowMs + 24 * 60 * 60 * 1000)]);
   for (const dayKey of days) {
     for (const slot of FREE_BUY_SLOTS) {
-      const startMs = chicagoWallClockToUtcMs(dayKey, slot.chicagoHour);
+      const startMs = chicagoWallClockToUtcMs(dayKey, slot.chicagoHour, FREE_BUY_SLOT_MINUTE);
       if (startMs <= nowMs) continue;
       if (startMs - nowMs > leadMs) continue;
       out.push({ slot, dayKey, startMs });
@@ -714,10 +728,15 @@ export function auditFreeBuyRow(
   const at = chicagoParts(startMs);
   const slot = slotForChicagoHour(at.hour);
   if (!slot) {
-    problems.push(`starts at ${at.hour}:00 Chicago, which is not one of the board slots`);
+    problems.push(
+      `starts at ${at.hour}:${String(at.minute).padStart(2, '0')} Chicago, which is not one of the board slots`
+    );
     return problems;
   }
-  if (at.minute !== 0) problems.push(`starts at ${at.hour}:${at.minute}, not on the hour`);
+  if (at.minute !== FREE_BUY_SLOT_MINUTE)
+    problems.push(
+      `starts at ${at.hour}:${String(at.minute).padStart(2, '0')}, not on the half hour`
+    );
 
   const cfg = FREE_BUY_TIERS[slot.tier];
   const say = (ok: boolean, msg: string) => {
@@ -822,7 +841,7 @@ export function auditFreeBuyBoard(
   const today = chicagoDayKey(nowMs);
   for (const host of hosts) {
     for (const slot of FREE_BUY_SLOTS) {
-      const startMs = chicagoWallClockToUtcMs(today, slot.chicagoHour);
+      const startMs = chicagoWallClockToUtcMs(today, slot.chicagoHour, FREE_BUY_SLOT_MINUTE);
       const shouldExist = startMs <= nowMs && nowMs - startMs < 12 * 60 * 60_000;
       if (!shouldExist) continue;
       const key = `${host.clubId}|${slot.chicagoHour}|${today}`;

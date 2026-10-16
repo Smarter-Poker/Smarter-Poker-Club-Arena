@@ -506,20 +506,6 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         payoutStructure: PAYOUT_STRUCTURES.FIVE,
         bountyPercent: 30,
       },
-      {
-        name: 'Late Night Grind (PLO4)',
-        type: 'mtt',
-        gameVariant: 'plo4',
-        buyIn: 3,
-        rake: 0.3,
-        guarantee: 500,
-        startingStack: 2000,
-        maxPlayers: 30,
-        minPlayers: 6,
-        horsesToRegister: 10,
-        blindStructure: BLIND_STRUCTURES.TURBO,
-        payoutStructure: PAYOUT_STRUCTURES.FIVE,
-      },
     ],
   },
   {
@@ -616,7 +602,8 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
       /* Added 2026-10-16 (Dan): the board follows the real US rooms, one real
          tournament on every :00 and :30 from 8 AM to 1 AM, and satellites only
          on the :15 and :45. These four fill the half hours the old board left
-         empty. */
+         empty; "TOURNAMENTS FROM 6PM -10PM SHOULD BE LARGER BUY IN" prices the
+         6:30 PM one at 20 + 2. */
       {
         name: 'Midday Turbo (NLH)',
         type: 'mtt',
@@ -664,9 +651,9 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         name: 'Dinner Break PLO (PLO4)',
         type: 'mtt',
         gameVariant: 'plo4',
-        buyIn: 10,
-        rake: 1.0,
-        guarantee: 1000,
+        buyIn: 20,
+        rake: 2.0,
+        guarantee: 2000,
         startingStack: 5000,
         maxPlayers: 150,
         minPlayers: 10,
@@ -717,9 +704,9 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         name: 'Prime Time Main Event (NLH)',
         type: 'mtt',
         gameVariant: 'nlh',
-        buyIn: 25,
-        rake: 2.5,
-        guarantee: 2000,
+        buyIn: 30,
+        rake: 3.0,
+        guarantee: 2500,
         startingStack: 10000,
         maxPlayers: 150,
         minPlayers: 20,
@@ -768,9 +755,9 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         name: 'Late Night PKO (PLO4)',
         type: 'progressive_bounty',
         gameVariant: 'plo4',
-        buyIn: 18,
-        rake: 1.8,
-        guarantee: 1000,
+        buyIn: 20,
+        rake: 2.0,
+        guarantee: 1500,
         startingStack: 7500,
         maxPlayers: 70,
         minPlayers: 12,

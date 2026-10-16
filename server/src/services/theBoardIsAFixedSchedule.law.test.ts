@@ -32,7 +32,7 @@ import {
   fixedFreeBuyRow,
   recurringMttRow,
 } from './TournamentRecurringService.js';
-import { FREE_BUY_SLOTS, freeBuyBoardName } from './FreeBuy.js';
+import { FREE_BUY_SLOTS, freeBuyBoardName, freeBuySlotTime } from './FreeBuy.js';
 import { DIAMOND_FREEROLL_REBUY_DIAMONDS, diamondSpawnConfig } from './diamondScheduledSpawn.js';
 import {
   FIXED_BOARD,
@@ -40,7 +40,7 @@ import {
   FIXED_BOARD_RESYNC_MS,
   FIXED_BOARD_TIMES_EFFECTIVE_FROM,
   WEEKLY_EVENT_SLOTS,
-  WEEKLY_SLOTS_SHARED_WITH_THE_BOARD,
+  WEEKLY_EVENT_DAYS,
   SATELLITE_MINUTES,
   BOARD_DAY_OPENS,
   BOARD_DAY_CLOSES,
@@ -231,11 +231,11 @@ describe('the Diamond Arena prices a fixed-board occurrence at its real total', 
 });
 
 describe('the board is hard coded in the engine, so it can never run ahead of its code', () => {
-  it('carries 26 events, each once a day (25 on Sunday), for both clubs', () => {
+  it('carries 26 events, each once a day (11 on Sunday, the Sunday Funday day), for both clubs', () => {
     expect(FIXED_BOARD.length).toBe(26);
     expect(FIXED_BOARD.every((e) => e.times.length === 1)).toBe(true);
     const onDay = (d: number) => FIXED_BOARD.filter((e) => !e.days || e.days.includes(d)).length;
-    expect(onDay(0)).toBe(25);
+    expect(onDay(0)).toBe(11);
     for (const d of [1, 2, 3, 4, 5, 6]) expect(onDay(d)).toBe(26);
     expect(FIXED_BOARD_CLUBS.map((c) => c.clubId)).toEqual([MIDWAY, ARENA]);
   });
@@ -378,10 +378,10 @@ describe("a real room's day: a real tournament every half hour from 8 AM to 1 AM
     ...FIXED_BOARD.filter((e) => !e.days || e.days.includes(day)).flatMap((e) =>
       e.times.map((t) => ({ t, who: e.name }))
     ),
-    ...WEEKLY_EVENT_SLOTS.filter((t) => {
-      const only = WEEKLY_SLOTS_SHARED_WITH_THE_BOARD[t];
-      return !only || only.includes(day);
-    }).map((t) => ({ t, who: `weekly ${t}` })),
+    ...WEEKLY_EVENT_SLOTS.filter((t) => WEEKLY_EVENT_DAYS[t].includes(day)).map((t) => ({
+      t,
+      who: `weekly ${t}`,
+    })),
   ];
   // 08:00, 08:30 ... 23:30, 00:00, 00:30, 01:00.
   const dayOfSlots = [...Array.from({ length: 32 }, (_, i) => 8 * 60 + i * 30), 0, 30, 60].map(
@@ -419,11 +419,38 @@ describe("a real room's day: a real tournament every half hour from 8 AM to 1 AM
     expect([...SATELLITE_MINUTES]).toEqual(['15', '45']);
   });
 
-  it('the Free Buys keep their hours', () => {
+  it('the five Free Buys run every day at 8:30 AM, 12:30 PM, 4:30 PM, 8:30 PM and 12:30 AM', () => {
+    expect(FREE_BUY_SLOTS.map(freeBuySlotTime).sort()).toEqual([
+      '00:30',
+      '08:30',
+      '12:30',
+      '16:30',
+      '20:30',
+    ]);
     for (const slot of FREE_BUY_SLOTS) {
       const e = FIXED_BOARD.find((x) => x.name === freeBuyBoardName(slot))!;
-      expect(e.times).toEqual([`${String(slot.chicagoHour).padStart(2, '0')}:00`]);
-      expect(e.previousTimes).toBeUndefined();
+      expect(e.times).toEqual([freeBuySlotTime(slot)]);
+      expect(e.days).toBeUndefined();
+      expect(e.previousTimes).toEqual([`${String(slot.chicagoHour).padStart(2, '0')}:00`]);
+    }
+  });
+
+  it('6 PM to 10 PM is the dearest part of the day: every paid board event there costs 22 or more', () => {
+    for (const e of FIXED_BOARD) {
+      const m = toMin(e.times[0]);
+      if (m < 18 * 60 || m > 22 * 60) continue;
+      if (FREE_BUY_SLOTS.some((s) => freeBuyBoardName(s) === e.name)) continue;
+      const t = fixedBoardTemplate(e.name)!;
+      expect(t.config.buyIn + t.config.rake, e.name).toBeGreaterThanOrEqual(22);
+    }
+  });
+
+  it('every board guarantee is a whole 500 (Dan: "NO 25 75 OR 50 AMOUNTS")', () => {
+    for (const e of FIXED_BOARD) {
+      const t = fixedBoardTemplate(e.name);
+      if (!t) continue; // a Free Buy
+      expect(t.config.guarantee % 500, e.name).toBe(0);
+      expect(t.config.guarantee, e.name).toBeGreaterThan(0);
     }
   });
 

@@ -26,9 +26,10 @@ import {
   isRemainingPolicyVariant,
   type RemainingPolicyVariant,
 } from './remainingVariants/RemainingVariantPolicyPack.js';
+import { HORSE_REFERENCE_DECISION_SOURCE_REASONS } from './HorseReferenceDecisionSources.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE12_POLICY_DIGEST_DEFINITION = 'horse-phase12-policy-digest-v1';
+export const HORSE_PHASE12_POLICY_DIGEST_DEFINITION = 'horse-phase12-policy-digest-v2';
 
 /**
  * The code that determines Phase 12 candidate behaviour, as server-relative
@@ -80,6 +81,13 @@ export const HORSE_PHASE12_POLICY_SOURCE_REASONS: Readonly<Record<string, string
   'src/config/tableSeating.ts': 'the cash seat ceilings remainingVariantSeatCap reads',
   'src/engine/remainingVariants/RemainingVariantActionEconomics.ts':
     'the P12-B net-action economics priced after the decision on the FLH/FLO8 river, and the validator the worker boundary applies to them (an invalid applied receipt fails closed)',
+  // v2 (2026-10-16): the reference decision's own sources (the digest hole):
+  // the packs return the reference wherever they do not deviate.
+  ...Object.fromEntries(
+    Object.entries(HORSE_REFERENCE_DECISION_SOURCE_REASONS).filter(
+      ([f]) => !['src/engine/BettingStructure.ts', 'src/engine/VariantRules.ts'].includes(f)
+    )
+  ),
 });
 
 /**

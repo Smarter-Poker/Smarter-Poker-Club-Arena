@@ -27,6 +27,7 @@
  * heuristic (`calibratedConfidence: null`); a qualification is a paired
  * after-rake comparison against the deployed reference, not a solver claim.
  */
+import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { posix } from 'node:path';
@@ -73,9 +74,11 @@ export const PHASE10_RUNNING_CONTRACT_DIGEST: string = plo4StrengthContractDiges
  * the engine image cannot recompute; a qualification recorded under it (the
  * 2026-10-03 strength evidence) carries no `policyDigestDefinition` and is
  * refused as `policy_digest_mismatch`. Bump this whenever the file list or the
- * hashing below changes.
+ * hashing below changes. v3 (2026-10-16) adds the reference decision's own
+ * sources (HorseReferenceDecisionSources.ts): the PLO4 pack returns the
+ * reference wherever it does not deviate, and those files decide it.
  */
-export const HORSE_PHASE10_POLICY_DIGEST_DEFINITION = 'horse-phase10-policy-digest-v2';
+export const HORSE_PHASE10_POLICY_DIGEST_DEFINITION = 'horse-phase10-policy-digest-v3';
 
 /**
  * The code that determines PLO4 candidate behaviour, as server-relative source
@@ -104,6 +107,8 @@ export const HORSE_PHASE10_POLICY_SOURCE_FILES: readonly string[] = Object.freez
   'src/engine/HorseObservationWindow.ts',
   'src/engine/HorseTournamentUtilityEvidence.ts',
   'src/engine/HorseMind.ts',
+  // v3 (2026-10-16): the reference decision's own sources (the digest hole).
+  ...HORSE_REFERENCE_DECISION_SOURCE_FILES,
 ]);
 
 /** Reads a server-relative source path. Throws on failure. */

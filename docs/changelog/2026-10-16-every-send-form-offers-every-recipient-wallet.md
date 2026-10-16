@@ -17,7 +17,7 @@ did not:
 | Chip Transfer modal (Member and Agent Management) | Agent or Player only, no balances on the choice | Agent, Promo, Player, each with its balance |
 | Classic Cashier distribute | Agent or Player only, no balances | Agent, Promo, Player, each with its balance |
 | Super Agent dashboard Transfers | Agent or Player only, no balances | Agent, Promo, Player, each with its balance |
-| Agent Dashboard transfer | Always Agent Wallet, no choice, no balance | The wallets the recipient holds, each with its balance |
+| Agent Dashboard transfer | Always Agent Wallet, no choice | Agent, Promo or Player, Agent by default (no balances; see below) |
 
 All four read their choices from `clubBankRecipientWallets`, which left out the
 Promo Wallet every agent-capable member holds. Both RPCs behind them
@@ -42,10 +42,13 @@ have made the whole claim-back list fail to load. It now accepts it.
   and Agent key is byte-identical and a Promo send never shares a Player key.
 - The Agent Dashboard's owner-only "Send Prepaid Chips" control is unchanged:
   it funds the agent float by the prepaid-agents rule.
+- The Agent Dashboard transfer form takes a raw member ID and does not read
+  balances: its durable-transfer fixture is pinned by the weekly accounting
+  source binding, and a balance read would change that pinned file. The
+  server still refuses a wallet the recipient does not hold.
 
 ## Tests
 
-Updated in the same change: the two helper pins, the one-money-path key pin and
-the Agent Dashboard send counter. New: Promo key identity and receipt checks,
+Updated in the same change: the two helper pins and the one-money-path key pin. New: Promo key identity and receipt checks,
 a reversible Promo row, and the Chip Transfer modal offering all three wallets
 with balances and sending into the Promo Wallet.

@@ -28,7 +28,7 @@ def verify_agent_context(run):
   correct=" AND ".join(f"current_setting('app.ledger_{k}',true)='{v}'" for k,v in zip(keys,values))
   state="jsonb_build_array("+",".join(f"(SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb) FROM {n} t)" for n in ["club_members","agents","chip_transactions","chip_ledger"])+")"
   count=0
-  for dest in ["player_wallet","agent_wallet"]:
+  for dest in ["player_wallet","agent_wallet","promo_wallet"]:
    seed=f"INSERT INTO clubs(id) VALUES('{C}');INSERT INTO club_members(id,user_id,club_id,role) VALUES('{I}','{I}','{C}','owner'),('{H}','{H}','{C}','{'player' if dest=='player_wallet' else 'agent'}');INSERT INTO agents(club_id,user_id,agent_wallet_balance) VALUES('{C}','{I}',2),('{C}','{H}',20);SELECT set_config('test.actor','{I}',true);"
    send=f"fn_agent_wallet_send_core_20260830('{C}','{H}',5,'{dest}',NULL,'{O}')"
    claim=f"fn_agent_wallet_claim_back_phase2_core_20260831('{C}',(SELECT id FROM chip_transactions WHERE transaction_type='agent_wallet_send'),NULL,NULL,'{Q}')"

@@ -159,9 +159,10 @@ describe('a player arrives at the new table as the player who left the old one',
     expect(s.consecutiveTimeouts).toBe(2);
     expect(s.awayBlindSbCharged).toBe(true);
     expect(s.awayBlindBbCharged).toBe(false);
-    // So the very next big blind taken while away ends the seat, exactly as
-    // it would have at the table they left.
+    // The spent budget and the original reconnect deadline both survive the move.
     main2.noteBlindChargedWhileAway(MAIN2, PLAYER, 'bb');
+    expect(main2.collectAwayBlindEvictions(MAIN2, [PLAYER])).toEqual([]);
+    vi.advanceTimersByTime(30_000);
     expect(main2.collectAwayBlindEvictions(MAIN2, [PLAYER])).toEqual([PLAYER]);
   });
 

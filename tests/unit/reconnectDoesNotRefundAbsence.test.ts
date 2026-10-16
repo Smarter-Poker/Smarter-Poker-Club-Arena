@@ -27,7 +27,7 @@
  * Nothing failed when it went. That is what a test is for.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { DisconnectEngine } from '../../server/src/engine/DisconnectEngine';
 import { PreciseActionTimer } from '../../server/src/engine/PreciseActionTimer';
 import { readFileSync } from 'node:fs';
@@ -35,6 +35,7 @@ import { resolve } from 'node:path';
 
 const TABLE = 'table-1';
 const PLAYER = 'player-1';
+afterEach(() => vi.restoreAllMocks());
 
 function seated() {
   const engine = new DisconnectEngine(new PreciseActionTimer());
@@ -62,6 +63,9 @@ describe('a reconnect is not a refund', () => {
     // so the eviction is only ever asked about a seat that is currently gone.
     engine.markDisconnected(TABLE, PLAYER);
 
+    expect(engine.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([]);
+    const deadline = engine.getFsmState(TABLE, PLAYER)!.graceDeadlineMs!;
+    vi.spyOn(Date, 'now').mockReturnValue(deadline);
     expect(engine.collectAwayBlindEvictions(TABLE, [PLAYER])).toEqual([PLAYER]);
   });
 

@@ -1268,6 +1268,15 @@ GRANT EXECUTE ON FUNCTION public.fn_cashier_recipient_wallet_balances(uuid,uuid[
 
 -- The sender's own player balance is a distinct source. Reuse the established
 -- exact-intent and declared-journal owners; never debit an arbitrary user.
+-- Register the new writer before CREATE so the production DDL guard admits it.
+INSERT INTO public.ca_money_rpc_registry(proname,status,notes)
+VALUES ('fn_cashier_player_wallet_send','approved','Authenticated cashier sends only their own Player Wallet chips to an eligible downline or their own other wallet. Exact-intent replay and role, hierarchy and maintenance guards; fn_ca_declare_ledger and one peer_transfer journal, atomic with the transaction receipt.')
+ON CONFLICT (proname) DO NOTHING;
+DO $registry$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.ca_money_rpc_registry WHERE proname='fn_cashier_player_wallet_send' AND status='approved') THEN
+  RAISE EXCEPTION 'Player wallet send registry is not approved';
+ END IF;
+END $registry$;
 CREATE OR REPLACE FUNCTION public.fn_cashier_player_wallet_send(p_club_id uuid,p_to_user_id uuid,p_amount numeric,p_destination text,p_reason text,p_op_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public','pg_temp'
 AS $function$
@@ -1324,4 +1333,5 @@ GRANT EXECUTE ON FUNCTION public.fn_cashier_player_wallet_send(uuid,uuid,numeric
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_operation_intent_guard()'::regprocedure)) = '60350724279387da3b548bd370d082db')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_recipient_wallet_balances(uuid,uuid[])'::regprocedure)) = '54b0da3ecb0744f88ada5cdf391e531c')
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_cashier_player_wallet_send(uuid,uuid,numeric,text,text,uuid)'::regprocedure)) = '2697ce061ec1b7436fc8ae825129d649')
+-- @live-proof: (SELECT EXISTS(SELECT 1 FROM public.ca_money_rpc_registry WHERE proname='fn_cashier_player_wallet_send' AND status='approved'))
 COMMIT;

@@ -108,3 +108,12 @@ export function expectCompactCashierFigure(value: string, name: string): void {
     /^[-+]?(?:\d{1,3}(?:,\d{3})*|\d+(?:\.\d)?[KMB])$/
   );
 }
+
+export function expectCashierAmountPresets(values: string[]): void {
+  const labels = values.map((value) => value.trim());
+  const isMax = (label: string) => /^max$/i.test(label);
+  expect(labels.filter(isMax), 'Amount presets must include one MAX action').toHaveLength(1);
+  const amounts = labels.filter((label) => !isMax(label));
+  expect(amounts.length, 'Amount presets must include numeric choices').toBeGreaterThan(0);
+  for (const amount of amounts) expectCompactCashierFigure(amount, 'Amount Preset');
+}

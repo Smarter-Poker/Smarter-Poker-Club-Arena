@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 // runner/transform service inside the unit runner. Browser locator checks run
 // in the existing hosted Cashier certificate.
 vi.mock('@playwright/test', async () => ({ expect: (await import('vitest')).expect }));
-import { expectCashierWalletFigure as certifyWallet } from '../e2e/support/cashierProductionCertification';
+import {
+  expectCashierAmountPresets as certifyPresets,
+  expectCashierWalletFigure as certifyWallet,
+} from '../e2e/support/cashierProductionCertification';
 
 describe('production Cashier wallet certificate', () => {
   it.each([
@@ -64,5 +67,30 @@ describe('production Cashier wallet certificate', () => {
   it.each(['0.00', '12.50', '1234', '12,34', '1K', '1,000,000', '-'])(
     'rejects a malformed or fractional Diamond count: %s',
     (value) => expect(() => certifyWallet(value, 'Diamonds', 'diamonds')).toThrow()
+  );
+});
+
+describe('production Cashier amount presets', () => {
+  it.each(['Max', 'MAX', 'max', '  MAX  '])(
+    'distinguishes the rendered %s action from compact numeric presets',
+    (action) => {
+      expect(() => certifyPresets(['100', '1K', '12.5K', action])).not.toThrow();
+    }
+  );
+
+  it.each([
+    { labels: [] },
+    { labels: ['MAX'] },
+    { labels: ['100', '1K'] },
+    { labels: ['100', 'Max', 'MAX'] },
+  ])('refuses a missing amount or missing/duplicate MAX action: $labels', ({ labels }) => {
+    expect(() => certifyPresets(labels)).toThrow();
+  });
+
+  it.each(['100.00', '1,00', '1.23K', 'Unavailable', 'MAX 100', ''])(
+    'still refuses each malformed numeric preset: %s',
+    (amount) => {
+      expect(() => certifyPresets(['MAX', '100', amount])).toThrow();
+    }
   );
 });

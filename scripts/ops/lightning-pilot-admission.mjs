@@ -311,109 +311,117 @@ export async function witnessAdmission({
           throw new Error('Join Unknown Or Waitlisted');
         }
         report.join = { outcome: joined.action, tableId: joined.table_id };
-        report.phase = 'buy_in';
-        await bound(
-          page.waitForURL(
-            (location) =>
-              location.origin === 'https://smarter.poker' &&
-              location.pathname === `/hub/club-arena/table/${joined.table_id}`,
-            { timeout: remaining() }
-          )
-        );
-        const dialog = page.getByRole('dialog', { name: 'Buy-In', exact: true });
-        // Entry routes do not always request TablePage's automatic buy-in.
-        // Wait for actual offered UI, then make at most one normal chair tap.
-        await bound(
-          page.waitForFunction(
-            () => {
-              const visible = (node) => !!node && node.getClientRects().length > 0;
-              return (
-                visible(
-                  document.querySelector('[role="dialog"][aria-labelledby="buy-in-modal-title"]')
-                ) ||
-                Array.from(document.querySelectorAll('[role="button"][aria-label]')).some(
-                  (node) =>
-                    /^Seat [0-9]+: Open - Click To Sit$/.test(
-                      node.getAttribute('aria-label') ?? ''
-                    ) && visible(node)
-                )
-              );
-            },
-            null,
-            { timeout: remaining() }
-          )
-        );
-        if (!(await dialog.isVisible())) {
-          const offered =
-            Number.isInteger(joined.seat_number) && joined.seat_number > 0
-              ? page.getByRole('button', {
-                  name: `Seat ${joined.seat_number}: Open - Click To Sit`,
-                  exact: true,
-                })
-              : null;
-          const chair =
-            offered && (await offered.isVisible())
-              ? offered
-              : page
-                  .locator('[role="button"][aria-label$=": Open - Click To Sit"]:visible')
-                  .first();
-          await bound(chair.click({ timeout: remaining() }));
-        }
-        await bound(dialog.waitFor({ state: 'visible', timeout: remaining() }));
-        let payload = null;
-        const capture = (r) => {
-          if (rpcPath(r, 'atomic_table_buyin')) {
-            try {
-              payload ??= r.postDataJSON();
-              // Retain the actual retry identity before awaiting a possibly lost response.
-              if (UUID.test(payload?.p_idempotency_key))
-                report.buyIn.requestId = payload.p_idempotency_key;
-            } catch {}
-          }
-        };
-        page.on('request', capture);
-        const purchase = page
-          .waitForResponse((r) => rpcPath(r.request(), 'atomic_table_buyin'), {
-            timeout: Math.min(30000, remaining()),
-          })
-          .catch(() => null);
-        report.buyIn.outcome = 'unknown';
-        await bound(
-          dialog
-            .getByRole('button', { name: 'Buy Chips', exact: true })
-            .click({ timeout: remaining() })
-        ).catch(() => null);
-        const bought = await bound(purchase);
-        page.off('request', capture);
-        if (
-          !payload ||
-          payload.p_user_id !== pin.playerId ||
-          payload.p_table_id !== joined.table_id ||
-          payload.p_club_id !== CLUB ||
-          !UUID.test(payload.p_idempotency_key) ||
-          !Number.isInteger(payload.p_seat_number) ||
-          !finite(payload.p_amount) ||
-          Number(payload.p_amount) <= 0 ||
-          typeof payload.p_auto_rebuy !== 'boolean'
-        )
-          throw new Error('Buy In Intent Unverified');
-        report.buyIn.requestId = payload.p_idempotency_key;
-        report.buyIn.outcome = bought ? 'reply_observed' : 'reply_unknown';
-        const receipt = await bound(
-          client.rpc('fn_ca_cash_buyin_receipt', {
-            p_idempotency_key: payload.p_idempotency_key,
-            p_table_id: payload.p_table_id,
-          })
-        );
-        report.buyIn.receipt =
-          !receipt.error && admissionReceiptMatches(payload, receipt.data)
-            ? 'confirmed_exact_intent'
-            : 'unknown';
+        // Ordinary horse input may have purchased a seat while join was in flight.
+        // A seated reply never authorizes a second buy-in.
         report.pool = await bound(readOwnPool(admin, pin));
-        report.walletAfter = await bound(validateScope(admin, pin));
-        if (report.buyIn.receipt !== 'confirmed_exact_intent' || !report.pool)
-          throw new Error('Persisted Admission Unverified');
-        report.status = 'admitted';
+        if (report.pool) {
+          report.status = 'read_only_resume';
+        } else {
+          if (joined.action === 'seated') throw new Error('Existing Seat Pool Unverified');
+          report.phase = 'buy_in';
+          await bound(
+            page.waitForURL(
+              (location) =>
+                location.origin === 'https://smarter.poker' &&
+                location.pathname === `/hub/club-arena/table/${joined.table_id}`,
+              { timeout: remaining() }
+            )
+          );
+          const dialog = page.getByRole('dialog', { name: 'Buy-In', exact: true });
+          // Entry routes do not always request TablePage's automatic buy-in.
+          // Wait for actual offered UI, then make at most one normal chair tap.
+          await bound(
+            page.waitForFunction(
+              () => {
+                const visible = (node) => !!node && node.getClientRects().length > 0;
+                return (
+                  visible(
+                    document.querySelector('[role="dialog"][aria-labelledby="buy-in-modal-title"]')
+                  ) ||
+                  Array.from(document.querySelectorAll('[role="button"][aria-label]')).some(
+                    (node) =>
+                      /^Seat [0-9]+: Open - Click To Sit$/.test(
+                        node.getAttribute('aria-label') ?? ''
+                      ) && visible(node)
+                  )
+                );
+              },
+              null,
+              { timeout: remaining() }
+            )
+          );
+          if (!(await dialog.isVisible())) {
+            const offered =
+              Number.isInteger(joined.seat_number) && joined.seat_number > 0
+                ? page.getByRole('button', {
+                    name: `Seat ${joined.seat_number}: Open - Click To Sit`,
+                    exact: true,
+                  })
+                : null;
+            const chair =
+              offered && (await offered.isVisible())
+                ? offered
+                : page
+                    .locator('[role="button"][aria-label$=": Open - Click To Sit"]:visible')
+                    .first();
+            await bound(chair.click({ timeout: remaining() }));
+          }
+          await bound(dialog.waitFor({ state: 'visible', timeout: remaining() }));
+          let payload = null;
+          const capture = (r) => {
+            if (rpcPath(r, 'atomic_table_buyin')) {
+              try {
+                payload ??= r.postDataJSON();
+                // Retain the actual retry identity before awaiting a possibly lost response.
+                if (UUID.test(payload?.p_idempotency_key))
+                  report.buyIn.requestId = payload.p_idempotency_key;
+              } catch {}
+            }
+          };
+          page.on('request', capture);
+          const purchase = page
+            .waitForResponse((r) => rpcPath(r.request(), 'atomic_table_buyin'), {
+              timeout: Math.min(30000, remaining()),
+            })
+            .catch(() => null);
+          report.buyIn.outcome = 'unknown';
+          await bound(
+            dialog
+              .getByRole('button', { name: 'Buy Chips', exact: true })
+              .click({ timeout: remaining() })
+          ).catch(() => null);
+          const bought = await bound(purchase);
+          page.off('request', capture);
+          if (
+            !payload ||
+            payload.p_user_id !== pin.playerId ||
+            payload.p_table_id !== joined.table_id ||
+            payload.p_club_id !== CLUB ||
+            !UUID.test(payload.p_idempotency_key) ||
+            !Number.isInteger(payload.p_seat_number) ||
+            !finite(payload.p_amount) ||
+            Number(payload.p_amount) <= 0 ||
+            typeof payload.p_auto_rebuy !== 'boolean'
+          )
+            throw new Error('Buy In Intent Unverified');
+          report.buyIn.requestId = payload.p_idempotency_key;
+          report.buyIn.outcome = bought ? 'reply_observed' : 'reply_unknown';
+          const receipt = await bound(
+            client.rpc('fn_ca_cash_buyin_receipt', {
+              p_idempotency_key: payload.p_idempotency_key,
+              p_table_id: payload.p_table_id,
+            })
+          );
+          report.buyIn.receipt =
+            !receipt.error && admissionReceiptMatches(payload, receipt.data)
+              ? 'confirmed_exact_intent'
+              : 'unknown';
+          report.pool = await bound(readOwnPool(admin, pin));
+          report.walletAfter = await bound(validateScope(admin, pin));
+          if (report.buyIn.receipt !== 'confirmed_exact_intent' || !report.pool)
+            throw new Error('Persisted Admission Unverified');
+          report.status = 'admitted';
+        }
       }
     }
     const currentPool = await bound(readOwnPool(admin, pin));

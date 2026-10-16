@@ -45,12 +45,12 @@ function fixture({
   gate = 'accepted',
   joinAction = 'seat',
   needsChair = false,
+  joinedExistingPool = false,
 } = {}) {
   const actions = [],
     cleanup = [],
     rpc = [],
     events = new Map();
-  let poolReads = 0;
   const request = (name) => ({
     method: () => 'POST',
     url: () => `https://example.invalid/rest/v1/rpc/${name}`,
@@ -157,8 +157,9 @@ function fixture({
     pin,
     validateScope: async () => 200,
     readOwnPool: async () => {
-      poolReads++;
-      return preexisting || (poolAfter && poolReads >= 3)
+      return preexisting ||
+        (joinedExistingPool && actions.includes('join')) ||
+        (poolAfter && actions.includes('buy'))
         ? { poolSessionId: POOL, cashPlayerSessionId: CASH }
         : null;
     },
@@ -448,10 +449,11 @@ test('session injection is origin-pinned and request identity is captured before
 
 test('a pool lost after the acknowledged buy-in cannot reach the player callback', async () => {
   const f = fixture();
-  let reads = 0;
+  let readsAfterBuy = 0;
   f.args.readOwnPool = async () => {
-    reads += 1;
-    return reads === 3 ? { poolSessionId: POOL, cashPlayerSessionId: CASH } : null;
+    if (!f.actions.includes('buy')) return null;
+    readsAfterBuy += 1;
+    return readsAfterBuy === 1 ? { poolSessionId: POOL, cashPlayerSessionId: CASH } : null;
   };
   const r = await witnessAdmission({
     ...f.args,
@@ -461,4 +463,17 @@ test('a pool lost after the acknowledged buy-in cannot reach the player callback
   assert.equal(r.buyIn.requestId, OP);
   assert.deepEqual(f.actions, ['join', 'buy']);
   assert.equal(r.cleanup, 'local_session_and_browser_closed');
+});
+
+test('a seated join resumes only its actual pool and never purchases another seat', async () => {
+  for (const joinedExistingPool of [true, false]) {
+    const f = fixture({ joinAction: 'seated', joinedExistingPool });
+    const report = await witnessAdmission(f.args);
+    assert.equal(report.status, joinedExistingPool ? 'observed' : 'unknown');
+    if (joinedExistingPool) assert.equal(report.admissionOutcome, 'read_only_resume');
+    assert.deepEqual(f.actions, ['join']);
+    assert.equal(report.buyIn.outcome, 'not_requested');
+    assert.deepEqual(f.rpc, []);
+    assert.equal(report.cleanup, 'local_session_and_browser_closed');
+  }
 });

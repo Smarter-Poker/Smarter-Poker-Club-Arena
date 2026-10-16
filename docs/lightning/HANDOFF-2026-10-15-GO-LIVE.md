@@ -4,6 +4,11 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Continued Delivery Receipt (2026-10-16 22:22 UTC)
+
+- Fresh full canonical reader emitted2026-10-16T22:18:18.585Z, policy2.9 manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b; four policy hashes unchanged from retained full receipt. Actual repository AGENTS/AGENT-PLAYBOOK/fullCLAUDE/PUBLISHING/deploypaths/storage/fullcheckpoint/phase/register/rollout/review/catalog read; canonical comparison passes. Current owned browser-admission HEAD1c27d67f2; root sole Git/production/checkpoint writer. Both SSD own disks mounted, Work6.1GiB/Archives203GiB available.
+- Parent7151 exact1afd all six required contexts now SUCCESS including ServerEngine117219799499 completed22:15:46Z. Final nonrequired run summary running; no current failed check. Protected merge and roster execution are next, not yet claimed. Latest admission seating-race correction remains local in two files, agent12focusedPASS; root final review/checks pending.
+
 ## Admission Followup Locally Qualified (2026-10-16 22:12 UTC)
 
 - Parent7151exact1afd passesall4engine/all4client/all4accounting/build/CSS/TS/moneycontexts; requiredServerEngineaggregate117219799499 stillqueued. Protectedmerge/rosteroperationNOTyetdone; no failedcurrentjob. KeeponecurrentCI38970595425, nobypass/retry. Parentnewruntime/clientreplacementnotrequired.

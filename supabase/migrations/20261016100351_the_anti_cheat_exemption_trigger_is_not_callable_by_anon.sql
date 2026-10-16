@@ -42,4 +42,5 @@ BEGIN
 END
 $verify$;
 
+-- @live-proof: (SELECT NOT has_function_privilege('anon', 'public.fn_anti_cheat_flags_skip_exempt()', 'EXECUTE') AND NOT has_function_privilege('authenticated', 'public.fn_anti_cheat_flags_skip_exempt()', 'EXECUTE'))
 COMMIT;

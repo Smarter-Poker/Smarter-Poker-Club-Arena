@@ -8,3 +8,5 @@ Daily Bonus closes after successful Claim All completes its full reward animatio
 
 Wallet precision also covers all authorized Find Player wallet fields, Agent Portal business/play/promo wallets and credit availability, and agent downline wallet balances. Transaction amounts and aggregate statistics retain their existing display policy.
 Chip transfer balance previews, promotional wallets, chip deposit/cashout balances, super-agent wallets, player balance lookup and the table seat confirmation also use exact chip wallet amounts. Diamond unit formatting remains whole.
+
+The required push browser harness now supplies a local persisted-profile adapter, so the new phone gate does not load an unconfigured production Supabase client. Browser coverage includes an unverified account staying unprompted until the fixture saves verification; existing opt-in and cooldown checks remain intact.

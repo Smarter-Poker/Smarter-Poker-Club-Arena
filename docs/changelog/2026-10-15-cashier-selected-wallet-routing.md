@@ -1,0 +1,7 @@
+# Send Out Uses The Selected Wallets
+
+The owner expanded Send Out to select an authorized source and a held recipient wallet, with balances. The retained batch now binds each item's source while preserving the established exact-intent wrappers and legacy default Agent Wallet behavior. Bank, Agent, personal Promo, Club Promo and the operator's own Player Wallet are distinct sources. Promo aliases preserve older clients' historical agent_wallet spelling. Agent-to-Promo retains reversal and credit repayment. Player source debits only the authenticated cashier's own player balance and posts one declared transfer journal.
+
+The scoped recipient balance reader checks cashier authority, active membership and downline access for at most25recipients. Current balances are data, never inferred from the recipient's player balance. Admins do not hold player wallets. Existing bank, role, downline and freeze protections remain authoritative.
+
+Qualification: isolated PostgreSQL17 exercises15source/destination combinations, source and recipient balances, exact replay and conflicting-source refusal, journal fault rollback, two simultaneous physical sessions, credit repayment, expiry, balance-read authorization and migration replay refusal. A baseline batch that ignores source fails the conflicting-source assertion. These local results do not assert production installation or publication. Both wallet-choice migrations must be installed and read back before exposing the client controls.

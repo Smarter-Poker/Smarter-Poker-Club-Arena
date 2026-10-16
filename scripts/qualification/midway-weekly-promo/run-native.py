@@ -65,7 +65,7 @@ try:
  # Restore the authentic due-time dependency and verify premature payment refusal.
  calendar=next(x for x in auth if x['signature'].startswith('fn_union_accounting_run_at'))
  sql(calendar['definition']+';','authentic-due-time-restored')
- sql("INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result) VALUES('fade0000-0000-0000-0000-000000000001','2099-01-05 08:00Z','2099-01-12 08:00Z','2099-01-12 10:00Z','complete',1,'{\"success\":true}');",'premature-future-close','midway_promo_invalid_completed_week')
+ sql("SELECT public.fn_midway_weekly_horse_promo('2099-01-05 08:00Z','2099-01-12 08:00Z');",'premature-future-close','midway_promo_invalid_completed_week')
  sql("SELECT jsonb_agg(jsonb_build_object('signature',oid::regprocedure::text,'definition_md5',md5(pg_get_functiondef(oid)),'acl',proacl::text,'security_definer',prosecdef,'config',proconfig,'owner',pg_get_userbyid(proowner))) FROM pg_proc WHERE oid IN('fn_midway_weekly_horse_promo_close()'::regprocedure,'fn_midway_weekly_horse_promo(timestamptz,timestamptz)'::regprocedure,'fn_midway_weekly_horse_promo_due(timestamptz)'::regprocedure,'fn_union_settlement_cascade_due()'::regprocedure,'fn_promo_disburse(text,uuid,text,uuid,numeric,text,uuid,uuid)'::regprocedure);",'qualified-postimages')
  print('PASS native PG17 weekly promo installer, actual money/ledger path and regression')
  (O/'result.json').write_text(json.dumps({'status':'passed','migration_sha256':hashlib.sha256(migration.encode()).hexdigest(),'production_writes':False,'controlled_dependency':'weekly due-time only; future weekly close simulation','source_authorities':{x['signature']:x['definition_md5'] for x in auth}},indent=2))

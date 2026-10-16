@@ -42,6 +42,7 @@ BEGIN
  SELECT promo_wallet INTO before_promo FROM union_wallets WHERE union_id='fade0000-0000-0000-0000-000000000001';
  SELECT count(*) INTO before_tx FROM chip_transactions; SELECT count(*) INTO before_ledger FROM chip_ledger;
  BEGIN
+ PERFORM public.fn_midway_weekly_horse_promo('2026-10-19 07:00Z','2026-10-26 07:00Z');
  INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
  EXCEPTION WHEN OTHERS THEN IF SQLERRM<>'fixture_late_receipt_failure' THEN RAISE; END IF;caught:=true;END;
@@ -55,6 +56,7 @@ ROLLBACK;
 
 BEGIN;
 UPDATE club_members SET is_active=false WHERE membership_lifecycle_status='active' AND is_active IS TRUE AND club_id IN('a0000000-0000-0000-0000-000000000001','a41434bb-8d0c-400a-8f0d-e8b3d65afed4','fade0000-0000-0000-0000-000000000001');
+SELECT public.fn_midway_weekly_horse_promo('2026-10-19 07:00Z','2026-10-26 07:00Z');
 INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
 DO $$ BEGIN IF NOT EXISTS(SELECT FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z' AND paid=0 AND eligible_wallets=0 AND result->>'reason'='no_eligible_wallets')
@@ -89,12 +91,14 @@ ROLLBACK;
 -- Two cents in the wallet makes a one-cent budget, apportioned without loss.
 BEGIN;
 SELECT fn_promo_disburse('union','fade0000-0000-0000-0000-000000000001','player',md5('midway-native-3')::uuid,50,NULL,'a0000000-0000-0000-0000-000000000001',gen_random_uuid());
+SELECT public.fn_midway_weekly_horse_promo('2026-10-19 07:00Z','2026-10-26 07:00Z');
 INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
 DO $$ BEGIN IF NOT EXISTS(SELECT FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z' AND budget=.01 AND paid=.01 AND paid_wallets=1 AND eligible_wallets=3) THEN RAISE EXCEPTION 'tiny split failed';END IF;RAISE NOTICE 'PASS tiny budget, deterministic cent allocation and zero-size shares';END $$;
 ROLLBACK;
 BEGIN;
 SELECT fn_promo_disburse('union','fade0000-0000-0000-0000-000000000001','player',md5('midway-native-3')::uuid,50.01,NULL,'a0000000-0000-0000-0000-000000000001',gen_random_uuid());
+SELECT public.fn_midway_weekly_horse_promo('2026-10-19 07:00Z','2026-10-26 07:00Z');
 INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
 DO $$ BEGIN IF NOT EXISTS(SELECT FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z' AND budget=0 AND paid=0 AND result->>'reason'='no_distributable_chips') THEN RAISE EXCEPTION 'zero budget failed';END IF;RAISE NOTICE 'PASS indivisible half-cent retained';END $$;
@@ -104,7 +108,8 @@ INSERT INTO engine_maintenance_break(id,phase,announced_at,break_started_at,brea
  VALUES(true,'counting_down',clock_timestamp()-interval '3 minutes',clock_timestamp()-interval '1 minute',clock_timestamp()+interval '3 minutes','native promo freeze',clock_timestamp(),true,gen_random_uuid());
 DO $$ DECLARE caught boolean:=false;BEGIN
  IF NOT fn_platform_frozen() THEN RAISE EXCEPTION 'fixture freeze not active';END IF;
- BEGIN INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
+ BEGIN PERFORM public.fn_midway_weekly_horse_promo('2026-10-19 07:00Z','2026-10-26 07:00Z');
+ INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
  EXCEPTION WHEN OTHERS THEN IF SQLERRM<>'midway_promo_platform_frozen' THEN RAISE;END IF;caught:=true;END;
  IF NOT caught OR (SELECT count(*) FROM union_weekly_horse_promo_runs)<>1 THEN RAISE EXCEPTION 'freeze bypass';END IF;
@@ -113,7 +118,8 @@ ROLLBACK;
 BEGIN;
 SELECT set_config('request.jwt.claims','{"role":"authenticated"}',true);
 DO $$ DECLARE caught boolean:=false;BEGIN
- BEGIN INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
+ BEGIN PERFORM public.fn_midway_weekly_horse_promo('2026-10-19 07:00Z','2026-10-26 07:00Z');
+ INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
  EXCEPTION WHEN insufficient_privilege THEN IF SQLERRM<>'midway_promo_service_required' THEN RAISE;END IF;caught:=true;END;
  IF NOT caught THEN RAISE EXCEPTION 'request authorization bypass';END IF;RAISE NOTICE 'PASS trigger refuses browser request context';END $$;
@@ -124,4 +130,11 @@ DO $$ DECLARE caught boolean:=false;BEGIN
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":false}');
  EXCEPTION WHEN check_violation THEN IF SQLERRM<>'midway_promo_invalid_completed_week' THEN RAISE;END IF;caught:=true;END;
  IF NOT caught THEN RAISE EXCEPTION 'failed result accepted';END IF;RAISE NOTICE 'PASS failed close result cannot pay';END $$;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
+ VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
+DO $$ BEGIN IF EXISTS(SELECT FROM union_weekly_horse_promo_runs WHERE period_end='2026-10-26 07:00Z')
+ OR NOT EXISTS(SELECT FROM union_accounting_runs WHERE period_end='2026-10-26 07:00Z' AND result->'weekly_horse_promo'->>'pending'='true') THEN RAISE EXCEPTION 'completed book initiated unscheduled payout';END IF;RAISE NOTICE 'PASS book completion observes receipts and cannot start a late payout';END $$;
 ROLLBACK;

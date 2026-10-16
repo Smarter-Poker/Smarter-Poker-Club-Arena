@@ -4,7 +4,7 @@ import json,subprocess,time,select
 def qualify(sql,q,O,env):
     address="union_id='fade0000-0000-0000-0000-000000000001' AND period_end='2026-10-26 07:00Z'"
     sql("INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result) VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','running',1,'{}');",'race-running-record')
-    update="UPDATE union_accounting_runs SET status='complete',result='{\"success\":true}' WHERE "+address+';'
+    update="WITH payout AS MATERIALIZED(SELECT public.fn_midway_weekly_horse_promo('2026-10-19 07:00Z','2026-10-26 07:00Z')) UPDATE union_accounting_runs SET status='complete',result='{\"success\":true}' FROM payout WHERE "+address+';'
     first=subprocess.Popen([str(x) for x in q],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1,env=env)
     second=None
     try:

@@ -391,7 +391,11 @@ BEGIN
  IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'midway_promo_service_required' USING ERRCODE='42501';END IF;
  IF NEW.result->>'success' IS DISTINCT FROM 'true' THEN
   RAISE EXCEPTION 'midway_promo_invalid_completed_week' USING ERRCODE='23514';END IF;
- v_result:=public.fn_midway_weekly_horse_promo(NEW.period_start,NEW.period_end);
+ -- Completion observes the weekly payment; it never starts a late payment
+ -- from today's wallet for an old book whose scheduled step was not run.
+ SELECT result INTO v_result FROM public.union_weekly_horse_promo_runs
+  WHERE union_id=NEW.union_id AND period_start=NEW.period_start AND period_end=NEW.period_end;
+ IF NOT FOUND THEN v_result:=jsonb_build_object('success',false,'pending',true,'period_end',NEW.period_end);END IF;
  NEW.result:=NEW.result||jsonb_build_object('weekly_horse_promo',v_result-'replayed');
  RETURN NEW;
 END $function$;

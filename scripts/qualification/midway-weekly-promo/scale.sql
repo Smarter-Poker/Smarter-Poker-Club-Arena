@@ -8,6 +8,7 @@ SELECT set_config('app.club_membership_source','join_club',true);
 INSERT INTO club_members(club_id,user_id,is_active,status,membership_lifecycle_status,chip_balance)
  SELECT c.club_id,md5('midway-scale-'||i)::uuid,true,'active','active',0 FROM generate_series(1,1000)i
  CROSS JOIN(VALUES('a0000000-0000-0000-0000-000000000001'::uuid),('a41434bb-8d0c-400a-8f0d-e8b3d65afed4'::uuid))c(club_id);
+SELECT public.fn_midway_weekly_horse_promo('2026-10-19 07:00Z','2026-10-26 07:00Z');
 INSERT INTO union_accounting_runs(union_id,period_start,period_end,scheduled_at,status,attempts,result)
  VALUES('fade0000-0000-0000-0000-000000000001','2026-10-19 07:00Z','2026-10-26 07:00Z','2026-10-26 09:00Z','complete',1,'{"success":true}');
 SET CONSTRAINTS ALL IMMEDIATE;

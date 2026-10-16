@@ -332,6 +332,7 @@ function harness(intendedActionAccepted: boolean) {
   };
   engine.disconnectEngine = { isSittingOut: () => false, recordPlayerActed: vi.fn() };
   engine.timeBankEngine = {
+    isAutoActivateEnabled: () => true,
     isArmed: () => false,
     getPlayerBank: () => null,
   };

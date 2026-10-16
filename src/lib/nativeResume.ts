@@ -14,8 +14,20 @@
  * native shell's lazy chunk.
  */
 export const NATIVE_RESUME_EVENT = 'ca:native-resume';
+export const NATIVE_PAUSE_EVENT = 'ca:native-pause';
+let nativeAppActive = true;
+
+export function isNativeAppActive(): boolean {
+  return nativeAppActive;
+}
+
+export function announceNativePause(): void {
+  nativeAppActive = false;
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(NATIVE_PAUSE_EVENT));
+}
 
 export function announceNativeResume(): void {
+  nativeAppActive = true;
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new Event(NATIVE_RESUME_EVENT));
 }

@@ -91,7 +91,11 @@ function harness(variant: 'flh' | 'flo8', situation: 'short_open' | 'short_raise
   engine.seatedPlayers = [player];
   engine.handController = hc;
   engine.disconnectEngine = { isSittingOut: () => false, recordPlayerActed: vi.fn() };
-  engine.timeBankEngine = { isArmed: () => false, getPlayerBank: () => null };
+  engine.timeBankEngine = {
+    isAutoActivateEnabled: () => true,
+    isArmed: () => false,
+    getPlayerBank: () => null,
+  };
   engine.getEngineLeaseAuthority = () => ({ verified: true, generation: '9' });
   engine.humansSeated = () => 0;
   engine.tableFormat = () => 'cash';

@@ -109,7 +109,11 @@ function harness(spot: 'may_reopen' | 'may_not_reopen') {
   engine.seatedPlayers = [player];
   engine.handController = hc;
   engine.disconnectEngine = { isSittingOut: () => false, recordPlayerActed: vi.fn() };
-  engine.timeBankEngine = { isArmed: () => false, getPlayerBank: () => null };
+  engine.timeBankEngine = {
+    isAutoActivateEnabled: () => true,
+    isArmed: () => false,
+    getPlayerBank: () => null,
+  };
   engine.getEngineLeaseAuthority = () => ({ verified: true, generation: '9' });
   engine.humansSeated = () => 0;
   engine.tableFormat = () => 'cash';

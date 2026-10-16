@@ -1497,6 +1497,22 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
           {/* Use Real Name Toggle */}
           <div className={styles.settingRow}>
+            <span className={styles.settingLabel}>Auto Time Bank</span>
+            <button
+              type="button"
+              onClick={() => toggleTableSetting('auto_time_bank')}
+              aria-label="Auto Time Bank"
+              aria-checked={tableSettings.auto_time_bank}
+              role="switch"
+              className={styles.toggleButton}
+            >
+              <span className={styles.toggleTrack} aria-hidden="true">
+                <span className={styles.toggleThumb} />
+              </span>
+            </button>
+          </div>
+
+          <div className={styles.settingRow}>
             <span className={styles.settingLabel}>Show Real Name On Social</span>
             <button
               type="button"

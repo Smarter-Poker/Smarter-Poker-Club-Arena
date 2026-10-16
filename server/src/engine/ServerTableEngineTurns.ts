@@ -962,7 +962,6 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             // grinding at four stale tables at once). A time-bank expiry is a
             // timeout too — count it toward the auto-sit-out cap.
             this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
-            if (!tbCanCheck) this.disconnectEngine.sitOut(this.tableId, userId, 'forced');
             this.noteHorseTurnTimeout(userId, 'timebank');
             this.notePlayerTurnTimeout(userId, 'timebank');
 
@@ -1327,7 +1326,6 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
            aHorseActionReleasesItsClocks pins that counter to the two expiry
            sites a horse can reach. */
         this.disconnectEngine.recordConnectedTimeout(this.tableId, userId);
-        if (!tbCanCheck) this.disconnectEngine.sitOut(this.tableId, userId, 'forced');
         this.notePlayerTurnTimeout(userId, 'timebank');
 
         // FIX 149: Wire telemetry — manual time bank expiry
@@ -1459,7 +1457,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
      * already resolves the table engine. A second endpoint would be a second
      * thing to keep alive for the sake of one boolean.
      */
-    opts?: {
+    presenceOptions?: {
       turnRendered?: boolean;
       /**
        * 2026-09-04 (second sweep, Dan: "my rebuy said it failed to load ...
@@ -1471,6 +1469,8 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
        * being defended, and the sweep waits while this is fresh.
        */
       rebuyPromptOpen?: boolean;
+      autoTimeBank?: boolean;
+      transportOnly?: boolean;
     }
   ): {
     success: boolean;
@@ -1486,11 +1486,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
        on-demand registration sitOut() and notifyPageLeft() already do. A
        spectator's heartbeat still registers nothing. */
     this.registerSeatedPlayerOnDemand(userId);
-    this.disconnectEngine.heartbeat(this.tableId, userId);
-    if (opts?.turnRendered) {
+    if (
+      typeof presenceOptions?.autoTimeBank === 'boolean' &&
+      this.disconnectEngine.getState(this.tableId, userId)
+    ) {
+      this.timeBankEngine.setAutoActivate(this.tableId, userId, presenceOptions.autoTimeBank);
+    }
+    this.disconnectEngine.heartbeat(this.tableId, userId, presenceOptions?.transportOnly);
+    if (presenceOptions?.turnRendered) {
       this.disconnectEngine.noteTurnRendered(this.tableId, userId);
     }
-    if (opts?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());
+    if (presenceOptions?.rebuyPromptOpen) this.rebuyPromptOpenAt.set(userId, Date.now());
     const connected = this.disconnectEngine.isConnected(this.tableId, userId);
     return { success: true, connected, gracePeriodRemaining: 0 };
   }
@@ -2314,6 +2320,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
   /** Transfer the current decision to the unspent, server-owned outage deadline. */
   protected armRemainingReconnectProtection(userId: string): boolean {
+    this.disconnectEngine.protectExpiredTurn(this.tableId, userId);
     if (!this.handController || this.disconnectEngine.isConnected(this.tableId, userId))
       return false;
     const state = this.handController.getState();
@@ -3622,6 +3629,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           protectedDeadlineMs === undefined &&
           this.timeBankSuppressedThisTurn !== true &&
           this.tableInfo?.time_bank_enabled !== false &&
+          this.timeBankEngine.isAutoActivateEnabled(this.tableId, player.user_id) &&
           bank != null &&
           (bank as { isActive?: boolean }).isActive !== true &&
           ((bank as { streetActivations?: number }).streetActivations ?? 0) < 2 &&

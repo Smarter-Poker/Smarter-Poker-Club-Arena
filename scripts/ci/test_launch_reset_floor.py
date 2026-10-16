@@ -136,3 +136,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-window-r2-digests-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-window-earned-digests-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-window-digest-install-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Historical routing membership and indexed exact-view earning witnesses.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-routing-period-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

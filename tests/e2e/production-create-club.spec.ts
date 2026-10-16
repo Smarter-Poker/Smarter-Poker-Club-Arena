@@ -325,21 +325,21 @@ test.describe('Production Create A Club Certificate', () => {
       expect(upload.ok()).toBe(true);
       const update = await updateResponse;
       expect(update.ok()).toBe(true);
-      const rows = await update.json();
-      expect(rows).toHaveLength(1);
-      savedClubId = rows[0].id;
-      expect(rows[0].banner_url).toContain(uploadedPath);
+      const savedBanner = await update.json();
+      expect(typeof savedBanner.id).toBe('string');
+      savedClubId = savedBanner.id;
+      expect(savedBanner.banner_url).toContain(uploadedPath);
       await expect(page.getByRole('button', { name: 'Save Banner', exact: true })).toBeDisabled();
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect(page.getByAltText('Club Lobby Banner Preview')).toHaveAttribute(
         'src',
-        rows[0].banner_url,
+        savedBanner.banner_url,
         { timeout: 30_000 }
       );
       await page.getByRole('button', { name: 'Back To Club', exact: true }).click();
       await expect(page.locator('.club-lobby-command-top__campaign-button img')).toHaveAttribute(
         'src',
-        rows[0].banner_url,
+        savedBanner.banner_url,
         { timeout: 30_000 }
       );
       await page.goto(`./clubs/${createdClubRef}/banner-displays`, {
@@ -354,7 +354,7 @@ test.describe('Production Create A Club Certificate', () => {
       await page.getByRole('button', { name: 'Save Banner', exact: true }).click();
       const reset = await resetResponse;
       expect(reset.ok()).toBe(true);
-      expect((await reset.json())[0].banner_url).toBeNull();
+      expect((await reset.json()).banner_url).toBeNull();
     } finally {
       // Delete only this exact disposable club's image, including a failed
       // persistence attempt. Never leave an auth-owned object blocking teardown.

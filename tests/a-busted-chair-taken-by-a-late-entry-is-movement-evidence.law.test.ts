@@ -142,6 +142,11 @@ describe('a busted chair taken by a late entry is movement evidence', () => {
           'FUNCTION smarter_private.f06_movement_prior('
         )
       );
-    expect(later).toEqual([]);
+    // 20261016183932 (a mid-hand add-on rebase) is the one successor, and it
+    // refuses to run unless the installed body is exactly this post-image.
+    expect(later).toEqual(['20261016183932_a_mid_hand_add_on_rebase_is_movement_evidence.sql']);
+    expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(
+      `md5(p.prosrc) = '${POST_MD5}'`
+    );
   });
 });

@@ -32,7 +32,9 @@
 -- GUARDS: refuses in the break window; each class must match its count
 -- exactly or nothing is resolved.
 --
--- @live-proof: (SELECT count(*) FROM public.financial_alerts WHERE resolved AND resolution LIKE '%migration 20261016214507_the_freeroll_and_satellite_alerts_close_on_their_evidence%') = 12
+-- The two drift-incident mirrors carry this resolution text too (the trigger
+-- copies it), so the proof counts the originals only.
+-- @live-proof: (SELECT count(*) FROM public.financial_alerts WHERE resolved AND source NOT LIKE 'drift_incident:%' AND resolution LIKE '%migration 20261016214507_the_freeroll_and_satellite_alerts_close_on_their_evidence%') = 12
 
 BEGIN;
 SET LOCAL lock_timeout = '3s';

@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/every-referral-is-paid",
+  "_comment": "Migration 20261017223126: referrals are recorded and paid when the new player confirms. Installed after merge through Apply Merged Migration.",
+  "functions": [
+    "fn_signup_referrer",
+    "fn_settle_signup_referral",
+    "tr_auth_user_confirmed_settles_referral"
+  ]
+}

@@ -26,7 +26,8 @@ import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdR
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { type RosterConnectionState } from '../utils/rosterReadReliability';
-import { feeFigure } from '../utils/format';
+import { feeFigure, winLossChips } from '../utils/format';
+import { useRosterWinLoss } from '../hooks/useRosterWinLoss';
 import { titleCase } from '../utils/titleCase';
 import {
   MAX_ROSTER_SELECTION,
@@ -41,6 +42,8 @@ import ClubRosterService, {
   type RosterMember,
   type RosterSort,
   type RosterSummary,
+  type WinLossFigure,
+  type WinLossPeriod,
 } from '../services/ClubRosterService';
 import { purgeRosterCache, readRosterCache, writeRosterCache } from '../lib/rosterCache';
 import { RosterSummaryCoordinator, settleRosterReadsIndependently } from '../lib/rosterLoadPolicy';
@@ -73,6 +76,20 @@ const FILTER_LABEL: Record<RosterFilter, string> = {
   inactive_60: 'Inactive 60d',
   inactive_90: 'Inactive 90d',
   high_fees: 'Fees 100+',
+};
+
+/** The Win / Loss windows on the Players list (Dan 2026-10-16). Days are UTC. */
+const WIN_LOSS_LABEL: Record<WinLossPeriod, string> = {
+  overall: 'Win / Loss Overall',
+  month: 'Win / Loss This Month',
+  week: 'Win / Loss This Week',
+  today: 'Win / Loss Today',
+};
+const WIN_LOSS_SHORT: Record<WinLossPeriod, string> = {
+  overall: 'Win / Loss',
+  month: 'Month W/L',
+  week: 'Week W/L',
+  today: 'Today W/L',
 };
 
 const SORT_LABEL: Record<RosterSort, string> = {
@@ -166,6 +183,7 @@ export default function ClubMembersPage() {
   const [filter, setFilter] = useState<RosterFilter>(() => readFilter(searchParams.get('view')));
   const [sortKey, setSortKey] = useState<RosterSort>(() => readSort(searchParams.get('sort')));
   const [simpleMode, setSimpleMode] = useState(true);
+  const [winLossPeriod, setWinLossPeriod] = useState<WinLossPeriod>('overall');
   const [searchQuery, setSearchQuery] = useState('');
   const [columns, setColumns] = useState<Set<OptionalColumn>>(
     () => new Set(defaultRosterWorkspace().columns)
@@ -1054,6 +1072,8 @@ export default function ClubMembersPage() {
   });
 
   const canUseFinancialViews = summary.capabilities.can_view_financials;
+  // Win / loss for the loaded rows, in the chosen window (Dan 2026-10-16).
+  const winLoss = useRosterWinLoss(resolvedClubId, members, winLossPeriod, canUseFinancialViews);
   const isAgent = AGENT_ROLES.includes(summary.viewer_role);
   const filters = useMemo(
     () =>
@@ -1450,6 +1470,22 @@ export default function ClubMembersPage() {
               Group By Role
             </button>
           )}
+          {canUseFinancialViews && (
+            <label className="members-sort members-winloss-period">
+              <span className="members-sort__label">Win / Loss</span>
+              <select
+                aria-label="Win And Loss Period"
+                value={winLossPeriod}
+                onChange={(event) => setWinLossPeriod(event.target.value as WinLossPeriod)}
+              >
+                {(Object.keys(WIN_LOSS_LABEL) as WinLossPeriod[]).map((value) => (
+                  <option key={value} value={value}>
+                    {WIN_LOSS_LABEL[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label className="members-sort">
             <span className="members-sort__label">Sort By</span>
             <select
@@ -1549,9 +1585,9 @@ export default function ClubMembersPage() {
                 Excluding This Player.
               </p>
               <p>
-                Fees Are Read From The Club Fee Ledgers That Pay Agents And Rakeback. They Count From
-                The Week Of October 12, 2026 (Monday Midnight Pacific) And Keep Accumulating From
-                Then On, With No Weekly Reset. Wallets And Fees Are In Club Chips.
+                Fees Are Read From The Club Fee Ledgers That Pay Agents And Rakeback. They Count
+                From The Week Of October 12, 2026 (Monday Midnight Pacific) And Keep Accumulating
+                From Then On, With No Weekly Reset. Wallets And Fees Are In Club Chips.
               </p>
               <p>
                 Recent Activity Uses Login Time When Available, Otherwise Presence Or Club Activity
@@ -1695,6 +1731,8 @@ export default function ClubMembersPage() {
                 selected={selected.has(member.user_id)}
                 onSelect={toggleSelected}
                 columns={columns}
+                winLoss={winLoss.get(member.user_id)}
+                winLossLabel={WIN_LOSS_SHORT[winLossPeriod]}
               />
             ))}
             <div aria-hidden="true" style={{ height: virtual.paddingBottom }} />
@@ -1771,8 +1809,13 @@ export const MemberRow = memo(function MemberRow({
   onSelect,
   columns,
   simpleMode = false,
+  winLoss,
+  winLossLabel = 'Win / Loss',
 }: {
   simpleMode?: boolean;
+  /** The net for the chosen window; undefined while it loads. */
+  winLoss?: WinLossFigure;
+  winLossLabel?: string;
   member: RosterMember;
   position: number;
   total: number;
@@ -1783,6 +1826,12 @@ export const MemberRow = memo(function MemberRow({
   onSelect: (id: string) => void;
   columns: Set<OptionalColumn>;
 }) {
+  const winLossTone =
+    !winLoss || winLoss.net === 0
+      ? ''
+      : winLoss.net > 0
+        ? ' member-winloss--up'
+        : ' member-winloss--down';
   const initial = (member.alias || '?')[0]?.toUpperCase() ?? '?';
   /* The roster's is_online is "seated OR fresh presence"; off a seat it is the
      presence door's answer, re-asked every minute while the row is shown so
@@ -1864,10 +1913,19 @@ export const MemberRow = memo(function MemberRow({
                   Downline {feeFigure(member.downline_fees)}
                 </span>
               )}
+              <span className={`member-simple-balance__winloss${winLossTone}`}>
+                {winLossLabel} {winLoss ? winLossChips(winLoss.net) : '...'}
+              </span>
             </span>
           )}
           {!simpleMode && member.can_view_financials && (
             <span className="member-metrics">
+              <span className={`member-metric member-metric--winloss${winLossTone}`}>
+                <span className="member-metric__value">
+                  {winLoss ? winLossChips(winLoss.net) : '...'}
+                </span>
+                <span className="member-metric__label">{winLossLabel}</span>
+              </span>
               {columns.has('downlines') && (
                 <Metric label="Downlines" value={chips(member.downline_total)} />
               )}

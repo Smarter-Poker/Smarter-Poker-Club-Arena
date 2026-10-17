@@ -334,6 +334,32 @@ export interface DownlineMember {
   is_online: boolean;
 }
 
+/** A win / loss window. Days are UTC calendar days; the week starts Monday. */
+export type WinLossPeriod = 'today' | 'week' | 'month' | 'overall';
+
+/** One window of a member's results, in club chips. Positive is a win. */
+export interface WinLossFigure {
+  /** Signed cash hand results, after rake. */
+  cash: number;
+  /** Tournament money: prizes, bounties and refunds minus buy-ins, rebuys and add-ons. */
+  mtt: number;
+  /** cash + mtt. */
+  net: number;
+}
+
+export interface MemberWinLoss {
+  as_of: string | null;
+  today: WinLossFigure;
+  week: WinLossFigure;
+  month: WinLossFigure;
+  overall: WinLossFigure;
+}
+
+function winLossFigure(value: unknown): WinLossFigure {
+  const row = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
+  return { cash: num(row.cash), mtt: num(row.mtt), net: num(row.net) };
+}
+
 export const ClubRosterService = {
   async getSummary(clubId: string, signal?: AbortSignal): Promise<RosterSummary | null> {
     const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
@@ -449,6 +475,67 @@ export const ClubRosterService = {
     const data = await readMemberRpc('ca_club_members_overview', { p_club_id: clubId }, signal);
     if (!Array.isArray(data)) throw new Error('The Roster Response Was Incomplete');
     return data.map((row: Record<string, unknown>) => mapRosterRow(row));
+  },
+
+  /**
+   * Win / loss for one member: Today, This Week, This Month and Overall
+   * (ca_club_member_win_loss). Null when the viewer may not see this member's
+   * financials - the same rule that hides the record's wallets.
+   */
+  async getMemberWinLoss(
+    clubId: string,
+    userId: string,
+    signal?: AbortSignal
+  ): Promise<MemberWinLoss | null> {
+    let request = supabase.rpc('ca_club_member_win_loss', {
+      p_club_id: clubId,
+      p_user_id: userId,
+    });
+    if (signal && typeof (request as any).abortSignal === 'function') {
+      request = (request as any).abortSignal(signal);
+    }
+    const { data, error } = await request;
+    if (error) throw new Error(error.message || 'Could not load win and loss.');
+    if (!data || typeof data !== 'object') return null;
+    const row = data as Record<string, unknown>;
+    return {
+      as_of: (row.as_of as string) ?? null,
+      today: winLossFigure(row.today),
+      week: winLossFigure(row.week),
+      month: winLossFigure(row.month),
+      overall: winLossFigure(row.overall),
+    };
+  },
+
+  /**
+   * Net win / loss for up to 100 members over one window
+   * (ca_club_members_win_loss). Members the viewer may not see are simply
+   * absent from the map.
+   */
+  async getMembersWinLoss(
+    clubId: string,
+    userIds: string[],
+    period: WinLossPeriod,
+    signal?: AbortSignal
+  ): Promise<Map<string, WinLossFigure>> {
+    const out = new Map<string, WinLossFigure>();
+    const ids = [...new Set(userIds.filter(Boolean))];
+    for (let start = 0; start < ids.length; start += 100) {
+      let request = supabase.rpc('ca_club_members_win_loss', {
+        p_club_id: clubId,
+        p_user_ids: ids.slice(start, start + 100),
+        p_period: period,
+      });
+      if (signal && typeof (request as any).abortSignal === 'function') {
+        request = (request as any).abortSignal(signal);
+      }
+      const { data, error } = await request;
+      if (error) throw new Error(error.message || 'Could not load win and loss.');
+      for (const row of (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>) {
+        if (typeof row.user_id === 'string') out.set(row.user_id, winLossFigure(row));
+      }
+    }
+    return out;
   },
 
   async getMemberDetail(

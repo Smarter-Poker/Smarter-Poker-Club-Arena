@@ -52,6 +52,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import PlayerChangeHistory from '../components/club/PlayerChangeHistory';
 import ChipTransferModal from '../components/agent/ChipTransferModal';
+import MemberWinLossCard from '../components/club/MemberWinLossCard';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
@@ -619,6 +620,16 @@ export default function MemberManagementPage() {
       </section>
 
       <div className="mm-ledger-grid" key={`ledger:${clubId}:${userId}:${user?.id}`}>
+        {/* ── Win / loss (Dan 2026-10-16) ──────────────────────────────────── */}
+
+        {detail!.capabilities.can_view_financials && resolvedClubId && identity!.user_id && (
+          <MemberWinLossCard
+            key={`winloss:${resolvedClubId}:${identity!.user_id}`}
+            clubId={resolvedClubId}
+            userId={identity!.user_id}
+          />
+        )}
+
         {/* ── Nickname and remark ──────────────────────────────────────────── */}
 
         {detail!.capabilities.can_view_notes && (
@@ -1548,8 +1559,8 @@ function RoleSection({
                 />
               </label>
               <p className="mm-roles__rates-note">
-                This Rate Covers The Agent Account And Every Sub Agent Under Them. The
-                Agent Sets The Rakeback Their Players Receive From Their Agent Dashboard.
+                This Rate Covers The Agent Account And Every Sub Agent Under Them. The Agent Sets
+                The Rakeback Their Players Receive From Their Agent Dashboard.
               </p>
               <p className="mm-roles__rates-note">
                 Every Agent Is Prepaid. They Send Only Chips They Already Hold.

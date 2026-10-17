@@ -1479,3 +1479,33 @@
   color: var(--ca-cyan);
   overflow-wrap: anywhere;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   WIN / LOSS (Dan 2026-10-16). Each window is a stat row with its cash and
+   tournament halves on a quiet second line. Up is arena cyan, down is the
+   danger red, exactly as the Activity card's winnings rows.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.mm-winloss__row {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.mm-winloss__row .mm-stat__value {
+  font-size: 1.12rem;
+}
+
+.mm-winloss__split {
+  flex: 1 1 100%;
+  color: var(--ca-text-dim);
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-winloss__note {
+  margin: 8px 0 0;
+  color: var(--ca-text-dim);
+  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
+  font-size: 0.74rem;
+}

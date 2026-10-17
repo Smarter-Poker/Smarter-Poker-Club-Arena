@@ -41,3 +41,26 @@ Measured before writing: Overall tournament net for the heaviest tournament
 player of the day took 159 ms.
 
 Tests: `tests/components/PlayerWinLoss.test.tsx`.
+
+## Review fixes (same day)
+
+- **Agents saw a loading mark for ever.** The list only fetched figures when the
+  roster summary granted the club-wide financial view. An agent can see their
+  own downline's financials without it, so those rows waited on a fetch that
+  never started. The window selector and the fetch now follow any financially
+  visible row.
+- **Figures went stale.** A loaded window is now re-asked in full after two
+  minutes (`WIN_LOSS_TTL_MS`), keeping the old figures on screen until the new
+  ones land.
+- `tests/components/playerCommandWalletUpdates.test.tsx` captured whichever
+  broadcast channel registered last; `PlayerChangeHistory` renders inside the
+  page with its own, so any page re-render handed those cases the wrong
+  handler. The mock now captures only the roster's `wallet_changed` channel.
+
+## Not yet live
+
+The migration must be applied before this branch can be pushed: the pre-push
+gate (`check-migrations-applied`) refuses code that calls functions production
+does not have, and direct application from the agent session was refused by
+the session's permission policy on 2026-10-17. Once applied, push
+`agent/claude/player-win-loss` and merge as usual.

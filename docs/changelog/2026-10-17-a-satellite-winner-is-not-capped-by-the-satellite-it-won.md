@@ -14,7 +14,7 @@ winner the ticket's value in whole Diamonds. Satellite 10 then completed at
 03:41:13 UTC with a 200 cash award to its winner.
 
 On 04:16 UTC, the installer refused this migration because the live body was
-no longer its pinned preimage (`8fb5cdbc...`). Nothing was sent. The
-migration, its law test and its registry entry are removed, so main carries
-no migration that can never apply. The cause, the fix and its law live with
-#7211.
+no longer its pinned preimage (`8fb5cdbc...`). Nothing was sent. The file
+now opens with `-- SUPERSEDED BY 20261017033733` (history is never deleted),
+and its law test and registry entry are removed. The cause, the fix and its
+law live with #7211.

@@ -1,0 +1,12 @@
+{
+  "_owner": "claude/club-data-report-and-speed. Migration 20261017204111_the_club_data_report_reads_what_the_club_played: the Report's daily tables rebuilt from the Club Data facts, one club per tournament row, the whole-club Report for the owner and admins; installed through apply-merged-migration after merge.",
+  "tables": [],
+  "functions": [
+    "fn_ca_club_data_facts_from",
+    "fn_ca_tournament_reporting_club",
+    "ca_can_view_whole_club_report",
+    "ca_can_read_whole_club_production",
+    "fn_ca_reporting_rollups_from_facts"
+  ],
+  "columns": {}
+}

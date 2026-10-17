@@ -72,19 +72,29 @@ describe('cash buy-ins and cash-outs reach Club Data live', () => {
 });
 
 describe('the hourly job never rewrites the live day', () => {
-  it('the rebuild declines today unless the one-off seed opts in', () => {
+  it('the rebuild declines today', () => {
+    // 20261017204111: the hourly catch-up rebuilds a covered past day from the
+    // Club Data facts and never touches the live day.
     const b = latest('fn_club_table_daily_refresh_day');
-    expect(b).toContain("current_setting('ca.club_data_seed_live_day', true)");
     expect(b).toContain("'skipped', 'live_day_is_kept_by_triggers'");
     expect(b.indexOf('live_day_is_kept_by_triggers')).toBeLessThan(
-      b.indexOf('DELETE FROM club_table_daily')
+      b.indexOf('fn_ca_reporting_rollups_from_facts(p_day)')
     );
   });
 
-  it('a rebuild merges with a trigger that lands while it runs', () => {
-    const b = latest('fn_club_table_daily_refresh_day');
-    expect(b).toContain('ON CONFLICT (club_id, table_id, stat_date) DO UPDATE');
-    expect(b).toContain('DELETE FROM ca_club_table_player_daily WHERE stat_date = p_day');
+  it('a rebuild cannot lose a row a trigger writes while it runs', () => {
+    // Moved 20261017204111 from ON CONFLICT merging to the lock every range
+    // rebuild takes: a day a live trigger may still write (today, or yesterday
+    // within ten minutes of midnight) waits for every in-flight reporting
+    // trigger before it deletes, and the triggers wait for it to commit.
+    const b = latest('fn_ca_reporting_rollups_from_facts');
+    expect(b).toMatch(
+      /IF now\(\) < v_hi \+ interval '10 minutes' THEN\s+PERFORM pg_advisory_xact_lock\(918273645\);/
+    );
+    expect(b.indexOf('pg_advisory_xact_lock(918273645)')).toBeLessThan(
+      b.indexOf('DELETE FROM public.club_table_daily WHERE stat_date = p_day')
+    );
+    expect(b).toContain('DELETE FROM public.ca_club_table_player_daily WHERE stat_date = p_day');
   });
 });
 
@@ -115,7 +125,7 @@ describe('the everyday screen lists what was played, live first', () => {
     expect(b).toContain('ORDER BY live DESC, activity_at DESC NULLS LAST');
     expect(b).toContain('FROM public.ca_club_data_fact d');
     // the felt is still part of the result
-    expect(b).toContain('COALESCE(g.winnings, 0) + COALESCE(fe.felt, 0)');
+    expect(b).toContain('COALESCE(gg.winnings, 0) + COALESCE(fe.felt, 0)');
   });
 });
 

@@ -5,7 +5,9 @@
  * they owe the union at the end of the week.
  *
  * Data comes from two RPCs, both gated server-side by
- * ca_can_view_club_finances (owner / admin / super_agent, or platform admin):
+ * ca_can_view_whole_club_report (owner / co-owner / admin, or platform admin;
+ * since 20261017204111 never an agent of any rank - agents read their own and
+ * their downline's figures on the Club Data screen):
  *
  *   ca_club_data_snapshot     summary tiles + one row per game, and the same
  *                             summary for the equal-length window immediately
@@ -2275,7 +2277,7 @@ export default function ClubDataPage() {
       }
 
       // Club is unconditional: this page is already gated on
-      // ca_can_view_club_finances, so reaching here IS the club answer.
+      // ca_can_view_whole_club_report, so reaching here IS the club answer.
       next.push('club');
 
       try {

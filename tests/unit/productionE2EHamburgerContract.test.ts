@@ -18,3 +18,23 @@ describe('production hamburger certification contract', () => {
     expect(source).toContain('toHaveURL(/\\/community');
   });
 });
+
+it('waits for its complete authenticated settings row before inspecting panel readiness', () => {
+  const journey = source.slice(
+    source.indexOf("test('Auto Time Bank defaults"),
+    source.indexOf("test('should toggle Sounds")
+  );
+  expect(journey).toContain(
+    'const initialSettingsRead = page.waitForResponse(isCompleteSettingsRead)'
+  );
+  expect(journey.indexOf('const initialSettingsRead')).toBeLessThan(
+    journey.indexOf('await navigateAndWait')
+  );
+  expect(
+    journey.indexOf('await requireOwnSettingsRow(await initialSettingsRead, certificateOwner)')
+  ).toBeLessThan(journey.indexOf('await expandSettings();'));
+  expect(journey).toContain("toHaveAttribute('aria-busy', 'false')");
+  expect(journey).toContain('expect(ownerId).toBe(certificateOwner)');
+  expect(journey).not.toContain('setTimeout');
+  expect(journey).not.toContain('waitForTimeout');
+});

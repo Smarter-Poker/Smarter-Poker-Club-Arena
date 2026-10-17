@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/deleted-accounts-leave-every-club",
+  "_comment": "Migrations 20261016224731 (a deleted account leaves every club and every list) and 20261017002119 (a deletion locks only the banks it pays), both applied to production 2026-10-17 00:16-00:25 UTC.",
+  "functions": [
+    "fn_ca_deleted_account_leaves_every_club",
+    "fn_ca_deleted_profile_leaves_every_club",
+    "fn_ca_try_lock_bank"
+  ]
+}

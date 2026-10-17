@@ -1,0 +1,10 @@
+{
+  "_owner": "fix/a-ready-report-is-proved-once-a-half-hour. OBSERVED installed 2026-10-17 16:06 UTC through the Supabase MCP with the owner's approval, recorded as 20261017160607 a_ready_report_is_proved_once_a_half_hour; readback: fn_process_weekly_accounting_scope md5 31c800832cef83681bf0a492a41fe076, accounting_close_report_receipts present with RLS on.",
+  "tables": ["accounting_close_report_receipts"],
+  "functions": [
+    "fn_accounting_close_report_memo_key",
+    "fn_accounting_close_report_is_ready",
+    "fn_accounting_close_report_seed",
+    "fn_accounting_close_report_keep"
+  ]
+}

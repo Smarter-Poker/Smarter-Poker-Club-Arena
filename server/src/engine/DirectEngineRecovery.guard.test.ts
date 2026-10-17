@@ -56,7 +56,12 @@ describe('direct table-engine terminal recovery', () => {
     expect(remove).toBeGreaterThan(release);
     expect(readmit).toBeGreaterThan(remove);
     expect(recovery).toContain('if (this.tournamentOwnedTables.has(tableId)) return;');
-    expect(recovery).toContain('if (deferReadmission)');
+    // A failed start, or a repeat death on a table that never proved
+    // itself, is deferred; a healthy table's first death is replaced now.
+    expect(recovery).toContain(
+      'if (deferReadmission || this.directTableRestartBackoff.isRepeating(tableId))'
+    );
+    expect(recovery).toContain('this.directTableRestartBackoff.recordFailure(tableId);');
     expect(recovery).toContain('this.scheduleDirectTableRecovery(tableId, reason);');
     expect(recovery).toContain('if (!engine.hasReleasedProcessOwnership()) throw error;');
     expect(recovery).not.toContain('setInterval(');
@@ -80,7 +85,10 @@ describe('direct table-engine terminal recovery', () => {
     expect(schedule).toContain('this.ensureCashTableEngineAdmission(tableId)');
     expect(schedule).toContain("outcome === 'retryable_failure'");
     expect(schedule).toContain('timer.unref?.()');
-    expect(schedule).toContain('15_000');
+    // The wait is the table's failure streak (engine/TableRestartBackoff.ts),
+    // never a function of the attempt count, which ready clears (2026-10-13).
+    expect(schedule).toContain('this.directTableRestartBackoff.recordFailure(tableId)');
+    expect(schedule).not.toMatch(/2 \*\* Math\.min\(attempt/);
     expect(schedule).not.toContain('setInterval(');
     expect(finish).toContain("outcome === 'retryable_failure'");
     expect(finish).toContain('this.clearDirectTableRecovery(tableId)');

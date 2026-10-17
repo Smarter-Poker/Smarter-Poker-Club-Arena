@@ -121,7 +121,9 @@ export function pilotTemplateMatches(game, target) {
     s.vpip_floor === (action ? 30 : 50) &&
     s.vpip_window === 10 &&
     s.bombs?.enabled === true &&
-    s.bombs.trigger === (action ? 'timed_15m' : 'every_orbit') &&
+    // Owner cadence, 2026-10-17 (#7263, migration 20261017105834): Action
+    // bombs every twenty minutes, Madness every ten.
+    s.bombs.trigger === (action ? 'timed_20m' : 'timed_10m') &&
     s.bombs.ante_bb === (action ? 2 : 3) &&
     s.bombs.boards === 2
   );

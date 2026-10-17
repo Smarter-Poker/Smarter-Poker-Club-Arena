@@ -4,21 +4,32 @@ import { pathToFileURL } from 'node:url';
 import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 import { PILOT, pilotServiceFetch } from './prepare-lightning-private-pilot.mjs';
 import { assertPlayerPin, witnessPlayer, CONSENT_PLAYERS } from './lightning-pilot-player.mjs';
+import { witnessFinancial } from './lightning-pilot-financial.mjs';
 import { witnessAdmission, ADMISSION_PLAYER } from './lightning-pilot-admission.mjs';
 import { witnessLatencyWorkload } from './lightning-pilot-latency-workload.mjs';
 import { witnessCycle } from './lightning-pilot-cycle.mjs';
 import { witnessRecovery } from './lightning-pilot-recovery.mjs';
 import { collectReplayBatch } from './lightning-pilot-replay-batch.mjs';
+const FINANCIAL_MODES = Object.freeze({
+  financial_top_up: 'top_up',
+  financial_cash_out: 'cash_out',
+  financial_auto_top_up: 'auto_top_up',
+  financial_stop_playing: 'stop_playing',
+});
 const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
 const KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function runPilotWitness(env = process.env, dependencies = {}) {
+  const inputMode = env.PILOT_WITNESS_MODE;
+  const action = Object.hasOwn(FINANCIAL_MODES, inputMode) ? FINANCIAL_MODES[inputMode] : null;
+  const mode = action
+    ? 'financial'
+    : ['player', 'replay', 'cycle', 'recovery', 'latency', 'admission'].includes(inputMode)
+      ? inputMode
+      : 'invalid';
   const report = {
-    mode: ['player', 'replay', 'cycle', 'recovery', 'latency', 'admission'].includes(
-      env.PILOT_WITNESS_MODE
-    )
-      ? env.PILOT_WITNESS_MODE
-      : 'invalid',
+    mode,
+    ...(action ? { inputMode, action, qualification: 'single_action_sample_only' } : {}),
     status: 'unknown',
     startedAt: new Date().toISOString(),
     cleanup: 'not_started',
@@ -50,7 +61,8 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
       if (mode === 'admission') {
         if (pin.playerId !== ADMISSION_PLAYER) throw new Error();
       } else assertPlayerPin(pin);
-      if (mode === 'latency' && !CONSENT_PLAYERS.includes(pin.playerId)) throw new Error();
+      if (['latency', 'financial'].includes(mode) && !CONSENT_PLAYERS.includes(pin.playerId))
+        throw new Error();
       if (
         mode === 'recovery' &&
         (!CONSENT_PLAYERS.includes(pin.playerId) ||
@@ -101,7 +113,12 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
         pin,
         timeoutMs: 240000,
       };
-      if (mode === 'admission')
+      if (mode === 'financial')
+        report.result = await (dependencies.witnessFinancial ?? witnessFinancial)({
+          ...common,
+          action,
+        });
+      else if (mode === 'admission')
         report.result = await (dependencies.witnessAdmission ?? witnessAdmission)({
           ...common,
           acceptTerms,
@@ -172,7 +189,7 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
       const expectedCleanup =
         mode === 'recovery'
           ? 'local_sessions_and_browser_closed'
-          : ['latency', 'admission'].includes(mode)
+          : ['latency', 'admission', 'financial'].includes(mode)
             ? 'local_session_and_browser_closed'
             : 'local_session_closed';
       report.cleanup = report.result?.cleanup === expectedCleanup ? expectedCleanup : 'unknown';
@@ -180,6 +197,7 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
         report.result?.status === 'observed' && report.cleanup === expectedCleanup
           ? 'observed'
           : 'unknown';
+      if (mode === 'financial' && report.result?.action !== action) report.status = 'unknown';
       if (mode === 'latency') {
         report.qualification = 'not_asserted';
         report.status =

@@ -258,12 +258,7 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
     const drawer = page.getByRole('dialog', { name: 'Poker Arena' });
     const expandSettings = async () => {
       await drawer.locator('span:text-is("Table Settings")').first().click();
-      // The canonical settings owner permits an 8s read. Give its settlement
-      // the ordinary 5s DOM assertion allowance before testing persistence;
-      // the implicit 5s budget could fail while that read was still permitted.
-      await expect(drawer.locator('.tsp-inline')).toHaveAttribute('aria-busy', 'false', {
-        timeout: 13_000,
-      });
+      await expect(drawer.locator('.tsp-inline')).toHaveAttribute('aria-busy', 'false');
     };
     await expandSettings();
     const toggles = drawer.getByRole('switch', { name: 'Auto Time Bank', exact: true });

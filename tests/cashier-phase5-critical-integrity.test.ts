@@ -47,6 +47,21 @@ describe('cashier Phase 1 critical integrity contracts', () => {
 });
 
 describe('cashier Phase 5 production certification contracts', () => {
+  it('pins only the qualified conservation preimage and cutoff-statistics replacement', () => {
+    const canary = source('scripts/verification-harness/cashier-release-contract.sql');
+    const entry = canary.match(
+      /'signature', 'public\.fn_cashier_conservation_report\(uuid\)'([\s\S]*?)\n {4}\)/
+    );
+    expect(entry).not.toBeNull();
+    expect(
+      [...entry![1].matchAll(/'(?:replacement_)?hash', '([a-f0-9]{32})'/g)].map((match) => match[1])
+    ).toEqual(['9bc52994306a0c6519cbea5e031dce21', 'f3728357280a30789ff8d7bb30140eae']);
+    // An unqualified third definition must still raise rather than certify.
+    expect(canary).toContain(
+      "IF v_actual_hash <> v_item ->> 'hash'\n       AND v_actual_hash <> coalesce(v_item ->> 'replacement_hash', '') THEN\n      RAISE EXCEPTION 'cashier function drift: % expected %, got %'"
+    );
+  });
+
   it('pins the launch wallet wrappers after the global intent lock', () => {
     const authority = source(
       'supabase/migrations/20261004124327_cashier_authority_and_retry_keys_are_exact.sql'

@@ -72,11 +72,11 @@ BEGIN
   v_contract := jsonb_build_array(
     jsonb_build_object(
       'signature', 'public.fn_cashier_conservation_report(uuid)',
-      -- Same report contract; 20261015022628 also checks members who joined
-      -- after the club baseline from zero at the existing cutoff (they were
-      -- permanently "unverified" before).
-      'hash', '7e64f42dd89bd5b50d4e92c8971ca5e5',
-      'replacement_hash', '9bc52994306a0c6519cbea5e031dce21'
+      -- Same report contract; qualified 20261016230420 reads cutoff statistics
+      -- from the analyzed baseline table, preserving the exact report. The
+      -- exact preimage and installed replacement are the only accepted definitions.
+      'hash', '9bc52994306a0c6519cbea5e031dce21',
+      'replacement_hash', 'f3728357280a30789ff8d7bb30140eae'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_recovery_receipts(uuid,uuid[],text[])',

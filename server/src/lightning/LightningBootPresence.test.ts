@@ -5,6 +5,27 @@ const { reconcileLightningPresence } = await import('./LightningPresenceReconcil
 const C = '00000000-0000-4000-8000-000000000001';
 const P = '00000000-0000-4000-8000-000000000002';
 
+/**
+ * From `anchor` through the balanced `{ ... }` that follows it. Inlined: the
+ * client tree's tests/helpers/sourceWindow cannot be imported from server/src,
+ * and byte-count windows are refused by tests/unit/noFixedSizeSourceWindows.
+ */
+function blockAfter(src: string, anchor: string): string {
+  const start = src.indexOf(anchor);
+  if (start < 0) throw new Error(`blockAfter: "${anchor}" not found`);
+  const open = src.indexOf('{', start);
+  if (open < 0) return src.slice(start);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  return src.slice(start);
+}
+
 describe('boot presence uses the same authority as the matcher', () => {
   it('keeps a connected anchor seat without a room socket, including a stale room disconnect', async () => {
     const report = { disconnected: vi.fn(), reconnected: vi.fn() };
@@ -68,9 +89,8 @@ describe('boot presence uses the same authority as the matcher', () => {
   });
   it('GameServer waits out the maintenance freeze before the boot pass judges anyone', () => {
     const source = readFileSync(new URL('../GameServer.ts', import.meta.url), 'utf8');
-    const start = source.indexOf('const scheduleLightningPresenceReconcile');
-    const body = source.slice(start, start + 1200);
-    expect(start).toBeGreaterThan(0);
+    const body = blockAfter(source, 'const scheduleLightningPresenceReconcile = (): void =>');
+    expect(body.length).toBeGreaterThan(0);
     expect(body.indexOf('isMaintenanceFrozen()')).toBeGreaterThan(0);
     expect(body.indexOf('isMaintenanceFrozen()')).toBeLessThan(
       body.indexOf('reconcileLightningPresence(')

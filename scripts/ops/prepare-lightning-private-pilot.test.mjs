@@ -6,6 +6,7 @@ import {
   PILOT,
   PILOT_TARGETS,
   pilotServiceFetch,
+  selectSetupTargets,
   selectPilotGame,
   preparePilot,
 } from './prepare-lightning-private-pilot.mjs';
@@ -490,6 +491,7 @@ async function runTwoTargetFlow(estate, options = {}) {
         SP_PASS: 'isolated_fixture',
         SUPABASE_URL: 'https://isolated.invalid',
         SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test_fixture',
+        ...(options.setupTargets ? { PILOT_SETUP_TARGETS: options.setupTargets } : {}),
       },
       factory
     );
@@ -920,4 +922,41 @@ test('retirement refuses an active or drifted nine-seat game instead of closing 
       runTwoTargetFlow([game, { ...retired9, ...patch }], { retiredTables: retiredMain })
     );
   }
+});
+
+test('setup can prepare Madness alone while Action is live in a stage, leaving Action untouched', async () => {
+  const liveAction = { ...game, cluster_mode: 'lightning', lightning_enabled: true };
+  await assert.rejects(
+    runTwoTargetFlow([liveAction, { ...retired9 }], { retiredTables: retiredMain }),
+    /Pilot Is Already Active/
+  );
+  const estate = [liveAction, { ...retired9 }];
+  const { receipt, calls } = await runTwoTargetFlow(estate, {
+    setupTargets: 'madness',
+    retiredTables: retiredMain,
+  });
+  assert.ok(calls.every((c) => c.args?.p_cluster_id !== game.id && c.args?.p_game_id !== game.id));
+  assert.deepEqual(
+    calls.filter((c) => c.name === 'fn_cash_game_create').map((c) => c.args.p_name),
+    ['Lightning Pilot NLH Madness 6']
+  );
+  assert.deepEqual(
+    receipt.targets.map((t) => t.gameName),
+    ['Lightning Pilot NLH Madness 6']
+  );
+  assert.equal(estate[0], liveAction);
+  assert.equal(liveAction.lightning_enabled, true);
+});
+
+test('setup target selection names templates exactly and defaults to both', () => {
+  assert.deepEqual(
+    selectSetupTargets(undefined).map((t) => t.templateName),
+    ['action', 'madness']
+  );
+  assert.deepEqual(
+    selectSetupTargets(' Madness ').map((t) => t.templateName),
+    ['madness']
+  );
+  for (const bad of ['', 'classic', 'madness,classic', '9'])
+    assert.throws(() => selectSetupTargets(bad), /Must Name Action, Madness Or Both/);
 });

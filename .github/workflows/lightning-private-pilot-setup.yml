@@ -1,6 +1,12 @@
 name: Lightning Private Pilot Setup
 on:
   workflow_dispatch:
+    inputs:
+      targets:
+        description: 'Pilot targets to prepare, comma separated: action, madness or action,madness'
+        required: false
+        default: 'action,madness'
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -24,6 +30,7 @@ jobs:
           SP_EMAIL: ${{ secrets.SP_EMAIL }}
           SP_PASS: ${{ secrets.SP_PASS }}
           PILOT_RECEIPT_PATH: lightning-private-pilot-receipt.json
+          PILOT_SETUP_TARGETS: ${{ inputs.targets }}
         run: node scripts/ops/prepare-lightning-private-pilot.mjs
       - uses: actions/upload-artifact@v4
         if: always()

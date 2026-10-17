@@ -13408,7 +13408,7 @@ function LiveTablePage({
                 { userId, tableId }
               );
             }
-            const walletBalance = balance.balance ?? 0;
+            const walletBalance = balance.balance ?? NaN;
 
             let cost = Math.round(Number(addonData.addOnCost)) || 0;
             let chips = Number(addonData.addOnChips) || 0;

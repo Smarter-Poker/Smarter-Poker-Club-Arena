@@ -29,31 +29,6 @@
   font-variant-numeric: tabular-nums;
   box-shadow: inset 0 2px 5px #0007;
 }
-.double {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 40px;
-  cursor: pointer;
-}
-.double input {
-  width: 20px;
-  height: 20px;
-  accent-color: #30b9ff;
-  flex: none;
-}
-.offer {
-  min-height: 44px;
-  padding: 8px 0;
-  background: transparent;
-  color: #45adff;
-  border: 0;
-  text-align: left;
-  font:
-    700 18px 'Roboto Condensed',
-    sans-serif;
-  cursor: pointer;
-}
 /* The Plinko drop selector (R6): the same plate the console's bays use for a
    control, printed with the value and the drops it makes. Nothing is pressed
    until the player presses it. */

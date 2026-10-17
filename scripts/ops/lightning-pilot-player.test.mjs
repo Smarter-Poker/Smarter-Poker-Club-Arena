@@ -92,7 +92,7 @@ const pin = {
   clubId: 'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
   clusterId: 'babb43f1-368e-406f-a97a-a0d5013648b2',
 };
-function fixture(change = {}) {
+function fixture(change = {}, userPatch = {}) {
   const calls = [];
   const rows = {
     clubs: {
@@ -136,7 +136,7 @@ function fixture(change = {}) {
     },
     ...change,
   };
-  const user = { id: pin.playerId, email: 'existing@bot.smarter.poker' };
+  const user = { id: pin.playerId, email: 'existing@bot.smarter.poker', ...userPatch };
   const client = {
     auth: {
       verifyOtp: async () => ({ data: { user, session: { user, access_token: 'fixture-only' } } }),
@@ -409,4 +409,53 @@ test('Classic cannot be selected as an active Lightning pilot before authenticat
   const f = fixture({ cash_games: { ...game, template_name: 'classic' } });
   await assert.rejects(openPlayerSession(f.admin, () => f.client, 'https://example.invalid', pin));
   assert.deepEqual(f.calls, []);
+});
+
+test('verified existing horse may use its actual alternate domain', async () => {
+  const f = fixture({}, { email: 'existing@smarter.poker' });
+  const opened = await openPlayerSession(f.admin, () => f.client, 'https://example.invalid', pin);
+  assert.equal(opened.session.user.id, pin.playerId);
+});
+
+test('empty nonstring wrong-account and banned Auth users refuse before magiclink or session creation', async () => {
+  for (const patch of [
+    { email: '' },
+    { email: '   ' },
+    { email: null },
+    { email: 42 },
+    { id: pin.clubId },
+    { banned_until: '2999-01-01T00:00:00Z' },
+    { banned_until: 'unreadable' },
+  ]) {
+    const f = fixture({}, patch);
+    let links = 0,
+      clients = 0;
+    f.admin.auth.admin.generateLink = async () => {
+      links++;
+      assert.fail('invalid Auth identity reached magiclink');
+    };
+    await assert.rejects(
+      openPlayerSession(
+        f.admin,
+        () => {
+          clients++;
+          return f.client;
+        },
+        'https://example.invalid',
+        pin
+      ),
+      /Pilot Player Auth Identity Mismatch/
+    );
+    assert.equal(links, 0);
+    assert.equal(clients, 0);
+    assert.deepEqual(f.calls, []);
+  }
+});
+test('expired historical ban does not exclude an otherwise verified existing horse', async () => {
+  const f = fixture({}, { email: 'existing@horse.ai', banned_until: '2000-01-01T00:00:00Z' });
+  assert.equal(
+    (await openPlayerSession(f.admin, () => f.client, 'https://example.invalid', pin)).session.user
+      .id,
+    pin.playerId
+  );
 });

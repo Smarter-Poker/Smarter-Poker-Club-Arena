@@ -11,6 +11,8 @@ import './RebuyModal.css';
 
 interface RebuyModalProps {
   isOpen: boolean;
+  /** Canonical funding asset; tournament playing stacks always remain Chips. */
+  arenaAsset?: 'chips' | 'diamonds';
   /** Base rebuy cost - the part that feeds the prize pool. */
   rebuyCost: number;
   /**
@@ -47,6 +49,7 @@ interface RebuyModalProps {
 
 const RebuyModal: React.FC<RebuyModalProps> = ({
   isOpen,
+  arenaAsset,
   rebuyCost,
   rebuyFee = 0,
   rebuyChips,
@@ -67,7 +70,10 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
   const totalCost = Math.round((Number(rebuyCost) + Number(rebuyFee)) * 100) / 100;
   // Gate on the TOTAL - this is the number the server debits.
   const balanceUnknown = walletBalance === null || !Number.isFinite(walletBalance);
-  const canAfford = balanceUnknown || (walletBalance as number) >= totalCost;
+  const fundingUnit =
+    arenaAsset === 'diamonds' ? 'Diamonds' : arenaAsset === 'chips' ? 'Chips' : null;
+  const canAfford =
+    fundingUnit !== null && (balanceUnknown || (walletBalance as number) >= totalCost);
   const canConfirm = purchaseUnconfirmed || canAfford;
   const dismiss = () => {
     if (isProcessing || purchaseUnconfirmed) return;
@@ -77,7 +83,9 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
     ? 'Working'
     : purchaseUnconfirmed
       ? 'Retry Confirmation'
-      : `Rebuy ${money(totalCost)}`;
+      : !fundingUnit
+        ? 'Rebuy Unavailable'
+        : `Rebuy ${money(totalCost)}`;
 
   return (
     <div className="rebuy-modal__overlay addon-console__overlay" onClick={dismiss}>
@@ -108,9 +116,11 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
                     ? 'Working'
                     : purchaseUnconfirmed
                       ? 'Pending'
-                      : canAfford
-                        ? 'Ready'
-                        : 'Balance Low'}
+                      : !fundingUnit
+                        ? 'Unavailable'
+                        : canAfford
+                          ? 'Ready'
+                          : 'Balance Low'}
                 </PurchaseText>
               </strong>
               <span>{purchaseUnconfirmed ? 'Confirmation Needed' : 'Rebuy Status'}</span>
@@ -120,7 +130,9 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
             <React.Fragment key="cost">
               <span>Rebuy Cost</span>
               <strong>
-                <PurchaseText>{`${money(totalCost)} Chips`}</PurchaseText>
+                <PurchaseText>
+                  {fundingUnit ? `${money(totalCost)} ${fundingUnit}` : 'Unavailable'}
+                </PurchaseText>
               </strong>
             </React.Fragment>,
             <React.Fragment key="chips">
@@ -133,7 +145,9 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
               <span>Your Balance</span>
               <strong>
                 <PurchaseText>
-                  {balanceUnknown ? '--' : `${money(walletBalance as number)} Chips`}
+                  {balanceUnknown || !fundingUnit
+                    ? '--'
+                    : `${money(walletBalance as number)} ${fundingUnit}`}
                 </PurchaseText>
               </strong>
             </React.Fragment>,
@@ -160,10 +174,13 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
               {purchaseUnconfirmed && (
                 <p role="alert">Rebuy Not Confirmed. Retry To Check The Same Purchase.</p>
               )}
-              {!canAfford && !purchaseUnconfirmed && (
+              {!fundingUnit && !purchaseUnconfirmed && (
+                <p role="alert">Tournament Currency Unavailable. Cannot Purchase Right Now.</p>
+              )}
+              {fundingUnit && !canAfford && !purchaseUnconfirmed && (
                 <p role="alert">Insufficient Balance. You Need {money(totalCost)} To Rebuy.</p>
               )}
-              {!canAfford && onPlayDiamonds && (
+              {!canAfford && arenaAsset === 'chips' && onPlayDiamonds && (
                 <DiamondsToChipsButton
                   clubId={diamondGamesClubId}
                   enabled={isOpen && !isProcessing}

@@ -134,10 +134,6 @@ describe('a won Plinko game on a board that cannot draw', () => {
     render(<DiamondPlinkoPage />);
     await advance();
     expect(screen.getByText(/The 3D Scene Is Unavailable/)).toBeInTheDocument();
-    const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-    fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Play Without' }));
-    await advance();
     // The player chooses their drops and presses Drop (R1, R6)...
     fireEvent.click(screen.getByRole('button', { name: '20 Diamonds Per Drop, 10 Drops' }));
     await advance();

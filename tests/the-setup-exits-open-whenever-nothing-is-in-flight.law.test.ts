@@ -5,10 +5,9 @@
  * money in flight holds the page; a won game starts itself. The exit guard
  * (useLiveBonusGuard) holds a won game that could start so that it can start
  * itself, and BonusSetup's own exits navigated straight into it. On Donkey
- * Cross, Mines, Plinko and Crash the Double Down offer's Buy More, shown to a
- * player short of the diamonds to double, answered "Finish Your Bonus Game
- * Before Leaving." and opened nothing; so did Buy More and Earn Diamonds under
- * the award.
+ * Cross, Mines, Plinko and Crash the Double Down offer's Buy More (the offer is
+ * retired, 2026-10-16), Buy More and Earn Diamonds under the award all
+ * answered "Finish Your Bonus Game Before Leaving." and opened nothing.
  *
  * The setup now cannot navigate by itself. Every exit leaves through the page's
  * leave(to), which lets go of the hold and navigates, and the setup never calls
@@ -60,7 +59,6 @@ describe('the setup exits open whenever nothing is in flight', () => {
       '`/clubs/${clubId}/earn-diamonds`',
     ])
       expect(setup).toContain(`exit(${to})`);
-    expect(setup).toContain("onBuyMore={() => exit('/marketplace?tab=diamonds')}");
   });
 
   it.each(PAGES)(

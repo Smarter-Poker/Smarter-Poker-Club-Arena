@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { isCompleteSettingsRead, requireOwnSettingsRow } from '../support/tableSettingsReadProof';
+import { readLobbyPreferenceOwner as readSignedInOwner } from '../support/lobbyPreferenceProof';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -242,9 +244,17 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
   test('Auto Time Bank defaults on and persists between menu and table settings after reload', async ({
     page,
   }) => {
+    // The native complete-row read may take eight seconds. Observe it before
+    // navigation; only then apply the unchanged five-second UI assertion.
+    // The journey retains Playwright's original overall deadline.
+    const initialSettingsRead = page.waitForResponse(isCompleteSettingsRead);
+    void initialSettingsRead.catch(() => {});
     await navigateAndWait(page, '/');
     await expect(page).not.toHaveURL(/\/auth(?:[/?#]|$)/);
     await openMenuOrSkip(page);
+    const certificateOwner = await readSignedInOwner(page);
+    const initialRow = await requireOwnSettingsRow(await initialSettingsRead, certificateOwner);
+    expect(initialRow?.auto_time_bank ?? true).toBe(true);
     const drawer = page.getByRole('dialog', { name: 'Poker Arena' });
     const expandSettings = async () => {
       await drawer.locator('span:text-is("Table Settings")').first().click();
@@ -270,22 +280,13 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
     const offResponse = await offSaved;
     const ownerId = offResponse.request().postDataJSON().user_id;
     expect(ownerId).toEqual(expect.any(String));
+    expect(ownerId).toBe(certificateOwner);
     await expect(toggles.nth(1)).toHaveAttribute('aria-checked', 'false');
-    const restored = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      // The shell also reads a partial settings projection without this
-      // preference. Only the account's complete row proves its saved choice.
-      return (
-        url.pathname.endsWith('/rest/v1/user_table_settings') &&
-        url.searchParams.get('select') === '*' &&
-        url.searchParams.get('user_id') === `eq.${ownerId}` &&
-        response.request().method() === 'GET' &&
-        response.ok()
-      );
-    });
+    const restored = page.waitForResponse((response) => isCompleteSettingsRead(response, ownerId));
+    void restored.catch(() => {});
     await page.reload();
-    const row = await (await restored).json();
-    expect(Array.isArray(row) ? row[0]?.auto_time_bank : row?.auto_time_bank).toBe(false);
+    const row = await requireOwnSettingsRow(await restored, certificateOwner);
+    expect(row?.auto_time_bank).toBe(false);
     await openMenuOrSkip(page);
     await expandSettings();
     await expect(toggles.nth(0)).toHaveAttribute('aria-checked', 'false');

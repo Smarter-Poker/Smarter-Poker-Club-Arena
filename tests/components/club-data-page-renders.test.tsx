@@ -1758,12 +1758,12 @@ describe('ClubDataPage', () => {
   it('aborts a protected request when its response deadline expires', async () => {
     vi.useFakeTimers();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    let snapshotSignal: AbortSignal | undefined;
+    const snapshotSignals: AbortSignal[] = [];
     const pending = new Promise<never>(() => undefined);
     const abortableSnapshot = {
       then: pending.then.bind(pending),
       abortSignal(signal: AbortSignal) {
-        snapshotSignal = signal;
+        snapshotSignals.push(signal);
         return this;
       },
     };
@@ -1777,11 +1777,24 @@ describe('ClubDataPage', () => {
     try {
       render(<ClubDataPage />);
       fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(55_000);
-      });
-
-      expect(snapshotSignal?.aborted).toBe(true);
+      // Settle request-starting effects before advancing the clock. A single
+      // large advance inside act can defer a React effect until after the
+      // deadline and replace the captured signal with a newly started retry.
+      await act(async () => undefined);
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        expect(snapshotSignals).toHaveLength(attempt + 1);
+        expect(snapshotSignals[attempt].aborted).toBe(false);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(12_000);
+        });
+        expect(snapshotSignals[attempt].aborted).toBe(true);
+        if (attempt < 3) {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(350 * 2 ** attempt);
+          });
+        }
+      }
+      expect(snapshotSignals).toHaveLength(4);
       expect(
         screen.getByText('Club Data Took Too Long To Respond. Try Again.')
       ).toBeInTheDocument();
@@ -2172,7 +2185,9 @@ describe('ClubDataPage', () => {
       error: null,
     });
 
-    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+    // Two hundred ledger rows render after the page lands; under a loaded CI
+    // runner that took longer than the default 1s (publish run 38981365558).
+    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' }, { timeout: 5000 });
     expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_game_page')).toHaveLength(
       pageCallsBeforeClick
     );
@@ -2215,7 +2230,13 @@ describe('ClubDataPage', () => {
         name: 'Load More Games - 100 Of 250',
       });
       fireEvent.click(loadMore);
-      await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+      // Two hundred ledger rows render after the page lands; under a loaded CI
+      // runner that took longer than the default 1s (publish run 38981365558).
+      await screen.findByRole(
+        'button',
+        { name: 'Load More Games - 200 Of 250' },
+        { timeout: 5000 }
+      );
 
       // IdentityDNA replaces the same signed-in user's object when delayed
       // profile hydration or a token refresh lands. That is not a new ledger
@@ -2224,13 +2245,25 @@ describe('ClubDataPage', () => {
       authState.current = { user: { id: 'owner-1' }, isHydrating: false };
       rerender(<ClubDataPage />);
       fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
-      await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+      // Two hundred ledger rows render after the page lands; under a loaded CI
+      // runner that took longer than the default 1s (publish run 38981365558).
+      await screen.findByRole(
+        'button',
+        { name: 'Load More Games - 200 Of 250' },
+        { timeout: 5000 }
+      );
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(60_000);
       });
 
-      await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+      // Two hundred ledger rows render after the page lands; under a loaded CI
+      // runner that took longer than the default 1s (publish run 38981365558).
+      await screen.findByRole(
+        'button',
+        { name: 'Load More Games - 200 Of 250' },
+        { timeout: 5000 }
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -2504,7 +2537,9 @@ describe('ClubDataPage', () => {
     });
     await waitFor(() => expect(rankedLoadMore).toBeEnabled());
     fireEvent.click(rankedLoadMore);
-    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+    // Two hundred ledger rows render after the page lands; under a loaded CI
+    // runner that took longer than the default 1s (publish run 38981365558).
+    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' }, { timeout: 5000 });
   });
 
   it('retires stale player pagination when a sort establishes a new cursor', async () => {
@@ -2637,7 +2672,9 @@ describe('ClubDataPage', () => {
     ).length;
     fireEvent.click(loadMore);
 
-    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+    // Two hundred ledger rows render after the page lands; under a loaded CI
+    // runner that took longer than the default 1s (publish run 38981365558).
+    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' }, { timeout: 5000 });
     expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_game_page')).toHaveLength(
       rankedCallsBeforeClick
     );

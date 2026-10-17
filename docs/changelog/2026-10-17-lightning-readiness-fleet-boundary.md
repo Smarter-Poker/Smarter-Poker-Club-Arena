@@ -1,0 +1,7 @@
+# Readiness recognizes the exact authorized fleet control
+
+The live Lightning certificate rejected law 10.5 after the authorized 72-player pilot assignment was installed. Its readiness scan treated every horse-identification marker as a gameplay exemption. The only matching installed function is the operator control that validates the already approved horse manifest; common gameplay does not branch on it.
+
+A new guarded migration recognizes only that exact function signature and complete reviewed definition MD5. Unknown horse-sensitive functions, altered control definitions, and even unreviewed comment revisions of that control still fail the original broad guard. All other readiness source and owner, ACL, security-definer, volatility and search-path attributes must survive exact reverse substitution. The browser's invariant assertion is unchanged.
+
+The existing pilot-assignment native harness evaluates the real readiness catalog expression against the actual installed control definition. It proves the old false verdict, corrected true verdict, new-function and changed-definition rejection, comment stripping, predecessor refusal and replay refusal, alongside the unchanged assignment and withdrawal qualification. No production assignment, pilot gameplay, participant, seat, booking or financial state is changed by this source repair. Installation and live readback remain separate delivery steps.

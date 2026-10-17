@@ -38,6 +38,45 @@ export type HudTournamentQualification = {
   category: HudClockRejectionCategory;
 };
 
+export type HudTableQualification = {
+  tableId: string;
+  clock: HudClock | null;
+  row: Row | null;
+  levelCapMs: number;
+  category: HudClockRejectionCategory;
+};
+
+/** Population qualification may expire before the mandatory HUD witness starts. */
+export function provenPreHudAttrition(
+  admitted: TournamentBoardFacts | null | undefined,
+  qualification: HudTableQualification | undefined,
+  now: number
+): boolean {
+  const row = qualification?.row;
+  if (
+    !admitted ||
+    admitted.tournamentStatus !== 'RUNNING' ||
+    admitted.tableStatus !== 'running' ||
+    admitted.endedAt !== null ||
+    !Number.isSafeInteger(admitted.currentPlayers) ||
+    Number(admitted.currentPlayers) < 4 ||
+    !qualification ||
+    qualification.category !== 'insufficient_players' ||
+    qualification.clock ||
+    qualification.tableId !== admitted.tableId ||
+    !row ||
+    row.id !== admitted.tournamentId ||
+    row.status !== 'RUNNING' ||
+    !Number.isSafeInteger(row.current_players) ||
+    Number(row.current_players) < 1 ||
+    Number(row.current_players) >= 4
+  )
+    return false;
+  // Qualify every other field with the unchanged floor. This never admits a
+  // three-player HUD witness: it only proves why a new subject is necessary.
+  return eligibleHudClock({ ...row, current_players: 4 }, now, qualification.levelCapMs) !== null;
+}
+
 export type HudQualificationBatchEvidence = {
   requestedTableCount: number;
   readableTableCount: number;
@@ -444,13 +483,7 @@ export async function createHudClockReader() {
     if (data.session) await client.auth.signOut({ scope: 'local' });
     throw new Error('HUD reserved account authentication failed');
   }
-  const qualifications: Array<{
-    tableId: string;
-    clock: HudClock | null;
-    row: Row | null;
-    levelCapMs: number;
-    category: HudClockRejectionCategory;
-  }> = [];
+  const qualifications: HudTableQualification[] = [];
   const qualificationBatches: HudQualificationBatchEvidence[] = [];
   const discoveries: HudDiscoveryEvidence[] = [];
   const tournamentClockColumns =

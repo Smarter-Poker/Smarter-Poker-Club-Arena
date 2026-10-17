@@ -844,27 +844,43 @@ function PlayerWalletAccount({
   const loadFriends = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [{ data: out, error: e1 }, { data: inn, error: e2 }] = await Promise.all([
-        supabase
-          .from('friendships')
-          .select('friend_id')
-          .eq('user_id', user.id)
-          .eq('status', 'accepted')
-          .limit(500),
-        supabase
-          .from('friendships')
-          .select('user_id')
-          .eq('friend_id', user.id)
-          .eq('status', 'accepted')
-          .limit(500),
-      ]);
-      if (e1 || e2) throw e1 || e2;
-      const ids = Array.from(
-        new Set([
-          ...(out || []).map((r) => r.friend_id as string),
-          ...(inn || []).map((r) => r.user_id as string),
-        ])
-      ).filter((id) => id && id !== user.id);
+      /* EVERY FRIEND, NOT THE FIRST 500 (2026-10-17). Each direction was read
+         with .limit(500), and the profile names with one .in() over every id,
+         which PostgREST also caps at 1,000 rows: a player with 1,118 accepted
+         friends saw 502 of them in this picker. Each direction now pages to
+         its end on the unique id, and the names are read in chunks. */
+      const FRIEND_PAGE = 500;
+      const readSide = async (side: 'out' | 'in'): Promise<string[]> => {
+        const found: string[] = [];
+        for (let from = 0; from < 50_000; from += FRIEND_PAGE) {
+          const page =
+            side === 'out'
+              ? await supabase
+                  .from('friendships')
+                  .select('id, friend_id')
+                  .eq('user_id', user.id)
+                  .eq('status', 'accepted')
+                  .order('id', { ascending: true })
+                  .range(from, from + FRIEND_PAGE - 1)
+              : await supabase
+                  .from('friendships')
+                  .select('id, user_id')
+                  .eq('friend_id', user.id)
+                  .eq('status', 'accepted')
+                  .order('id', { ascending: true })
+                  .range(from, from + FRIEND_PAGE - 1);
+          if (page.error) throw page.error;
+          const rows = (page.data || []) as Array<{ friend_id?: string; user_id?: string }>;
+          for (const row of rows) {
+            const id = side === 'out' ? row.friend_id : row.user_id;
+            if (id) found.push(id);
+          }
+          if (rows.length < FRIEND_PAGE) break;
+        }
+        return found;
+      };
+      const [out, inn] = await Promise.all([readSide('out'), readSide('in')]);
+      const ids = Array.from(new Set([...out, ...inn])).filter((id) => id && id !== user.id);
       if (ids.length === 0) {
         if (ownsAccount()) {
           setFriends([]);
@@ -872,12 +888,17 @@ function PlayerWalletAccount({
         }
         return;
       }
-      const { data: profiles, error: e3 } = await supabase
-        .from('profiles')
-        .select(`id, ${PLAYER_NAME_COLUMNS}, player_number`)
-        .in('id', ids);
-      if (e3) throw e3;
-      const options: FriendOption[] = (profiles || [])
+      const NAME_CHUNK = 200;
+      const profiles: unknown[] = [];
+      for (let i = 0; i < ids.length; i += NAME_CHUNK) {
+        const { data, error: e3 } = await supabase
+          .from('profiles')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, player_number`)
+          .in('id', ids.slice(i, i + NAME_CHUNK));
+        if (e3) throw e3;
+        profiles.push(...(data || []));
+      }
+      const options: FriendOption[] = profiles
         .map((p) => {
           const row = p as unknown as Record<string, unknown> & {
             id: string;

@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-sweep/fork-h-1017",
+  "_comment": "Migration 20261017040354 (NOT yet applied when this was written; installed after merge through apply-merged-migration.yml): read-only Rake Treasury reconciliation, checkpoint + tail + wallet in one snapshot.",
+  "functions": ["fn_union_rake_ledger_reconciliation"]
+}

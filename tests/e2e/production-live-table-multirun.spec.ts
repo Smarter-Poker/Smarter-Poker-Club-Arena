@@ -19,6 +19,7 @@ import {
   initializeNaturalMultiRunObservers,
   naturalMultiRunCandidateQuery,
   eligibleNaturalMultiRunTable,
+  naturalMultiRunTransportEvidence,
   type NaturalMultiRunCandidate,
   type NaturalRunPacket,
 } from './support/naturalMultiRunMobile';
@@ -245,6 +246,9 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
       before
     );
   } finally {
+    const transport = pages.map(({ tableId, journal }) =>
+      naturalMultiRunTransportEvidence(journal, tableId)
+    );
     // Snapshot all surviving pages before closing any possible shared-lock owner.
     const authAdmission = await Promise.all(
       pages.map(async (item) => ({
@@ -274,6 +278,7 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
           before,
           observedAt: new Date().toISOString(),
           authAdmission,
+          transport,
           coverage: [...coverage.values()],
           observations,
         },

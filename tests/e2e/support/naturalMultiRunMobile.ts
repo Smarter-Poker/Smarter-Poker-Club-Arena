@@ -1,5 +1,24 @@
 import type { Page } from '@playwright/test';
+import type { EngineSocketJournal } from './liveTableRealtime';
 import { remainingInitialTableReadinessMs } from './initialTableReadiness';
+
+/** Snapshot before page cleanup; retain protocol facts, never frame payloads. */
+export function naturalMultiRunTransportEvidence(
+  journal: Pick<EngineSocketJournal, 'summary' | 'frames'>,
+  tableId: string
+) {
+  return {
+    ...journal.summary(tableId),
+    physicalControlFrames: journal.frames
+      .filter(({ message }) => message.type === 'PING' || message.type === 'PONG')
+      .map(({ at, socketId, direction, message }) => ({
+        at,
+        socketId,
+        direction,
+        type: message.type,
+      })),
+  };
+}
 
 export interface NaturalMultiRunCandidate {
   id: string;
@@ -48,7 +67,7 @@ export function eligibleNaturalMultiRunTable(table: NaturalMultiRunCandidate): b
   );
 }
 
-/** Cold starts are sequential; all six pages stay open for the observation. */
+/** At most two cold starts share one deadline; all six remain open for observation. */
 export async function initializeNaturalMultiRunObservers<T>(
   tables: T[],
   initialize: (table: T, navigationBudgetMs: number, remainingSetup: () => number) => Promise<void>,
@@ -57,12 +76,28 @@ export async function initializeNaturalMultiRunObservers<T>(
 ): Promise<void> {
   if (tables.length !== 6) throw new Error('Natural multirun proof requires all six observers');
   const remainingSetup = () => remainingInitialTableReadinessMs(setupStartedAt, 120_000, now());
-  for (const table of tables) {
-    // This optional observer uses its original shared setup allocation. The
-    // ordinary four-case baseline owns its separate connection-latency law.
-    await initialize(table, remainingSetup(), remainingSetup);
-    remainingSetup();
-  }
+  let next = 0;
+  let failed = false;
+  let failure: unknown;
+  const startNext = async () => {
+    while (!failed && next < tables.length) {
+      const table = tables[next++];
+      try {
+        // Every active start consumes the same original allocation. The
+        // ordinary baseline retains its separate connection-latency law.
+        await initialize(table, remainingSetup(), remainingSetup);
+        remainingSetup();
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          failure = error;
+        }
+      }
+    }
+  };
+  // Both workers settle before the caller can close their pages on failure.
+  await Promise.all([startNext(), startNext()]);
+  if (failed) throw failure;
 }
 
 export interface NaturalMultiRunHistoryRow {

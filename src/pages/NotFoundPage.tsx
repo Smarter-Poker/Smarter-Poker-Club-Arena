@@ -1,5 +1,6 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '../components/common/EmptyState';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /**
  * A route failure is still part of the product experience.
@@ -9,7 +10,7 @@ import { EmptyState } from '../components/common/EmptyState';
  * from the rest of Club Arena.
  */
 export default function NotFoundPage() {
-  const location = useLocation();
+  usePageTitle('Page Not Found');
   const navigate = useNavigate();
 
   return (
@@ -17,7 +18,10 @@ export default function NotFoundPage() {
       icon="404"
       eyebrow="Route Not Found"
       title="This Arena Door Is Closed"
-      description={`No Current Page Matches ${location.pathname}. The Destination May Have Moved, Or The Link May Be Incomplete.`}
+      /* The path stays in the address bar. Printed here it went through the
+         card's Title Case and read "/clubs/shark-Club/leaderboard", a path
+         that does not exist (2026-10-17). */
+      description="No Current Page Matches This Address. The Destination May Have Moved, Or The Link May Be Incomplete."
       action={{ label: 'Return To Club Arena', onClick: () => navigate('/', { replace: true }) }}
       secondaryAction={{ label: 'Go Back', onClick: () => navigate(-1) }}
     />

@@ -13,6 +13,7 @@ import RebuyModal from '../../src/components/table/RebuyModal';
 function open(walletBalance: number | null) {
   return render(
     <RebuyModal
+      arenaAsset="chips"
       isOpen
       rebuyCost={90}
       rebuyFee={10}
@@ -50,8 +51,12 @@ describe('an unknown balance does not block a tournament rebuy', () => {
       'utf8'
     );
     expect(layer).toContain('walletBalance={accountBalance}');
+    expect(layer).toMatch(/<RebuyModal\s+arenaAsset=\{arenaAsset\}/);
+    expect(layer).toMatch(/<AddOnModal\s+arenaAsset=\{arenaAsset\}/);
     expect(layer).not.toContain('walletBalance={accountBalance || 0}');
     const page = readFileSync(join(__dirname, '..', '..', 'src', 'pages', 'TablePage.tsx'), 'utf8');
     expect(page).toContain('if (showRebuyModal) retryAccountBalance();');
+    expect(page).toContain('const walletBalance = balance.balance ?? NaN;');
+    expect(page).not.toContain('const walletBalance = balance.balance ?? 0;');
   });
 });

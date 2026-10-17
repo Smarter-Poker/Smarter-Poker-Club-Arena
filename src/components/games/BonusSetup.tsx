@@ -9,8 +9,6 @@ import {
 } from '../../utils/bonusGameBudget';
 import { diamondGameTitle, type DiamondBonusGame } from '../../utils/diamondGameTitles';
 import type { BonusGuarantee } from '../../services/WheelBonusEntryService';
-import { useState } from 'react';
-import DoubleDownOffer from './DoubleDownOffer';
 import styles from './BonusSetup.module.css';
 
 /** The sentence a player reads before Start: what the game pays whatever happens. */
@@ -32,16 +30,16 @@ export function guaranteeCopy(
 }
 /**
  * THE ENTRY FLOW OF A WON BONUS GAME (Dan 2026-09-21, R9). After Play Game on
- * the wheel: screen one is the Double Your Diamonds decision, screen two is
- * the game's setup (for Plinko, the drop selector), and only the player's own
- * tap on Start begins play. The step is derived from what is known, never from
- * a timer: an award whose offer has not been answered is on 'offer'; an
- * answered one is on 'setup'. A round already started is resumed by the page.
+ * the wheel the game's setup opens (for Plinko, the drop selector), and only
+ * the player's own tap on Start begins play. A round already started is
+ * resumed by the page.
+ *
+ * DOUBLE DIAMONDS IS RETIRED (Dan 2026-10-16: "REMOVE THE DOUBLE DIAMONDS
+ * FUNCTIONALITY FOR THE BONUS GAMES ON THE DIAMOND SPINS. ITS CONFUSING TO
+ * SOME PLAYERS."). There is no Double Your Diamonds offer and no Double Down
+ * box: a won game plays exactly the diamonds the wheel funded, and the server
+ * refuses a new start that asks for the add-on.
  */
-export type BonusEntryStep = 'offer' | 'setup';
-export function bonusEntryStep(budget: BonusBudget, offerAnswered: boolean): BonusEntryStep {
-  return budget.award && !offerAnswered ? 'offer' : 'setup';
-}
 
 /**
  * THE PLINKO DROP SELECTOR (R6): every drop value that splits the stake, with
@@ -105,8 +103,6 @@ export default function BonusSetup({
   awardLoading = false,
   awardError,
   leave,
-  offerAnswered = true,
-  onOfferAnswered,
   dropsDocked = false,
 }: {
   budget: BonusBudget;
@@ -127,15 +123,10 @@ export default function BonusSetup({
    * 2026-09-22). Called only while the setup is enabled: every page disables it
    * while money is in flight and takes it off screen while a round is open. */
   leave: (to: string) => void;
-  /** Whether the Double Your Diamonds offer for `budget.award` has been answered. */
-  offerAnswered?: boolean;
-  /** Records the answer for `budget.award`, so a refresh does not ask again. */
-  onOfferAnswered?: (awardId: string) => void;
   /** Plinko: the page prints PlinkoDropSelector in the console's pinned bar
    * instead, so this panel leaves it out rather than print it twice. */
   dropsDocked?: boolean;
 }) {
-  const [revisiting, setRevisiting] = useState<string | null>(null);
   const valid = validBonusBudget(budget),
     total = bonusTotal(budget);
   const plinko = game === 'plinko';
@@ -145,12 +136,6 @@ export default function BonusSetup({
   };
   const debit = bonusWalletDebit(budget);
   const promise = guarantee ? guaranteeCopy(game, guarantee) : null;
-  const step = bonusEntryStep(budget, offerAnswered);
-  const offerOpen =
-    Boolean(budget.award) &&
-    valid &&
-    !disabled &&
-    (step === 'offer' || revisiting === budget.award?.id);
   const drops = plinko ? plinkoDrops(budget) : null;
   if (!entryReady)
     return (
@@ -178,7 +163,7 @@ export default function BonusSetup({
       </section>
     );
   return (
-    <section className={styles.setup} aria-label="Your Bonus Setup" data-bonus-step={step}>
+    <section className={styles.setup} aria-label="Your Bonus Setup" data-bonus-step="setup">
       {budget.award ? (
         <div className={styles.entry} data-guarantee={guarantee?.guarantee}>
           <span>{diamondGameTitle(game, budget.award.boostMultiplier)} Award</span>
@@ -205,34 +190,7 @@ export default function BonusSetup({
           />
         </label>
       )}
-      {budget.award ? (
-        <button
-          type="button"
-          className={styles.offer}
-          disabled={disabled || !valid || step === 'offer'}
-          onClick={() => setRevisiting(budget.award?.id ?? null)}
-        >
-          {step === 'offer'
-            ? 'Choose Whether To Double Your Diamonds'
-            : budget.doubled
-              ? 'Diamonds Added: Change'
-              : 'Playing Without Extra Diamonds: Change'}
-        </button>
-      ) : (
-        <label className={styles.double}>
-          <input
-            type="checkbox"
-            checked={budget.doubled}
-            disabled={disabled || !valid}
-            onChange={(event) => change({ ...budget, doubled: event.target.checked })}
-          />
-          <span>
-            Double Down
-            {valid ? ` · +${budget.base.toLocaleString()} Diamonds` : ''}
-          </span>
-        </label>
-      )}
-      {plinko && valid && step === 'setup' && !dropsDocked && (
+      {plinko && valid && !dropsDocked && (
         <PlinkoDropSelector budget={budget} onChange={change} disabled={disabled} />
       )}
       <p className={styles.total} aria-live="polite">
@@ -240,9 +198,7 @@ export default function BonusSetup({
           ? plinko
             ? drops !== null && budget.denomination !== null
               ? `${drops.toLocaleString()} ${drops === 1 ? 'Drop' : 'Drops'} × ${budget.denomination.toLocaleString()} ${budget.denomination === 1 ? 'Diamond' : 'Diamonds'} = ${total.toLocaleString()} Diamonds`
-              : step === 'offer'
-                ? `${total.toLocaleString()} Diamonds To Drop. Answer The Offer First.`
-                : `Choose Your Diamonds Per Drop To Play ${total.toLocaleString()} Diamonds.`
+              : `Choose Your Diamonds Per Drop To Play ${total.toLocaleString()} Diamonds.`
             : `${total.toLocaleString()} Diamonds In This Round`
           : 'Enter 25-2,500 Whole Diamonds.'}
       </p>
@@ -263,20 +219,6 @@ export default function BonusSetup({
           Earn Diamonds
         </button>
       </div>
-      {offerOpen && budget.award && (
-        <DoubleDownOffer
-          key={budget.award.id}
-          budget={budget}
-          diamonds={diamonds}
-          onChoose={(doubled) => {
-            const awardId = budget.award!.id;
-            setRevisiting(null);
-            onOfferAnswered?.(awardId);
-            change({ ...budget, doubled });
-          }}
-          onBuyMore={() => exit('/marketplace?tab=diamonds')}
-        />
-      )}
     </section>
   );
 }

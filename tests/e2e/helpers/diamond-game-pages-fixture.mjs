@@ -130,9 +130,8 @@ export function diamondGamePagesFixture() {
           act:async()=>{throw new Error('This Layout Fixture Cannot Wager')}};`,
       // A pending wheel award for this game, quoted by the server, which
       // returns the game's own state with it (WheelBonusEntryService.state).
-      // The Double Your Diamonds answer is the player's, from useBonusBudget,
-      // exactly as awardBudget reads it: an answer for another award answers
-      // nothing.
+      // The award plays exactly what the wheel funded: the Double Diamonds
+      // add-on is retired (Dan 2026-10-16), so it is never quoted.
       useEarnedBonus: `
         import {plinkoBudget} from './src/utils/bonusGameBudget';
         import {fixtureGameState} from 'DiamondGamesService';
@@ -141,7 +140,7 @@ export function diamondGamePagesFixture() {
         const quote={guarantee:'standard',minimumPayoutChips:0.5,mode:null,plinkoTable:4,payoutVersion:4,paidDiamonds:100,cashoutFloorCents:111};
         export const useEarnedBonus=(club,game,preference)=>{
           const own=preference.award&&preference.award.id===award.id;
-          const budget=plinkoBudget({base:100,doubled:own?preference.doubled:false,denomination:own?preference.denomination:null,award});
+          const budget=plinkoBudget({base:100,doubled:false,denomination:own?preference.denomination:null,award});
           const gameState=game==='mines'||game==='crossing'?fixtureChoiceState:fixtureGameState;
           return {budget,award,required:true,ready:true,refresh:async()=>{},consume:()=>{},
             gameState,quote,recoveredResult:null,error:null,loading:false};

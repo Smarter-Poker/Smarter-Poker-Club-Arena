@@ -48,15 +48,16 @@ function request(receipt: Receipt): BonusStart {
   return {
     clubId: raw.club_id as string,
     game: receipt.game,
-    // The player's answers are bound to the award they were given for (R9/R6):
-    // a preference for another award is not carried over. The recorded drop
+    // A doubled receipt is a round an older page started WITH the Double
+    // Diamonds add-on, retired 2026-10-16: awardBudget no longer quotes it, so
+    // the request is the one that page saved and replays exactly. The recorded drop
     // value is sent exactly as the receipt was dealt: a fixture sealed under an
     // older drop rule (750 a drop on a 7,500 stake) replays through the saved
     // request, which never re-derives or clears the value it was sent with.
     budget: {
       ...awardBudget(state.value.award as EarnedGameAward, {
         base: 100,
-        doubled: receipt.double,
+        doubled: false,
         denomination: null,
         award: {
           id: (state.value.award as EarnedGameAward).id,
@@ -64,6 +65,7 @@ function request(receipt: Receipt): BonusStart {
           boostMultiplier: (state.value.award as EarnedGameAward).boost_multiplier as 1 | 2,
         },
       }),
+      doubled: receipt.double,
       denomination: (raw.diamonds_per_drop as number | undefined) ?? null,
     },
     commitId: fairness.commit_id as string,

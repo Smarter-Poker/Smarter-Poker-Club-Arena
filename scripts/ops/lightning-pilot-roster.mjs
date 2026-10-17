@@ -7,106 +7,113 @@ import { pathToFileURL } from 'node:url';
 import { supabaseServerHeaders } from '../ci/supabase-auth-headers.mjs';
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
+import { assertCurrentPilotTarget } from './lightning-pilot-targets.mjs';
 import { assertPilotClub, PILOT } from './prepare-lightning-private-pilot.mjs';
 export const ROSTER_CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
-export const ROSTER_OPERATION = 'lightning-approved-roster-20261016';
+export const ROSTER_OPERATION = 'lightning-action-madness-roster-amended-20261017';
+export const ROSTER_MANIFEST_SHA256 =
+  'd86d1becf8bca8c0f05d29309a18f10133b9f18eed72e57e7b1a2b3fffeda049';
 export const ROSTER_PAIRS = Object.freeze(
   [
     {
-      outgoing: '005428fe-a366-461f-a23d-ef08f837a94b',
-      incoming: '3086452e-9b29-47eb-b6f8-5a9692889753',
+      outgoing: '01bd8786-371e-4ba2-85d6-baab469bba07',
+      incoming: '2db815f9-4302-40c8-b2e3-4bb992e1cff2',
     },
     {
-      outgoing: '00bc0957-1913-4beb-a4d1-acab94950690',
-      incoming: '3c1d70c8-c46a-4e2c-bcc8-dbe53798799a',
+      outgoing: '02c8d806-24c7-40bd-b5b5-30cf96811e3e',
+      incoming: '30064fc2-f1cd-45b3-90d0-c83416a420d3',
     },
     {
-      outgoing: '01809c11-71bc-42a6-ad86-2130737d8cf9',
-      incoming: '3e4ff3e2-f212-4966-abe7-4988e5a62704',
+      outgoing: '032b7ef6-ef40-4eb7-9a44-21605be733c8',
+      incoming: '39c25042-f5b7-4f48-9ac0-e8e2560937c4',
     },
     {
-      outgoing: '023a16c3-4ddb-427f-a9f8-cd7b1d9072f1',
-      incoming: '3faa1e32-afb8-4b21-9530-2a9fd81c5766',
+      outgoing: '03951af5-7cf1-4164-aaf0-571b647d98d5',
+      incoming: '39ce9f37-11f8-4f84-a192-b4312a93ba31',
     },
     {
-      outgoing: '06c09311-deea-4402-a759-e188148757a0',
-      incoming: '47dd33b3-1bd6-41a7-951e-8582dae98c5a',
+      outgoing: '04910a99-8757-4581-8c84-12ba8a454a75',
+      incoming: '58bf72d7-7815-46f1-8fb0-91b2bf565a3a',
     },
     {
-      outgoing: '0a8005e8-5d79-4d8f-809e-e9951ef74651',
-      incoming: '4a686160-2102-4cba-b3e5-cfa3b1856602',
+      outgoing: '05835920-da9b-4739-8fa2-2901b844d11d',
+      incoming: '5e65716f-140b-44d9-8e9a-2aacf8b50d8d',
     },
     {
-      outgoing: '0ce13c54-930f-48b5-93a9-df7a38e90b7f',
-      incoming: '4ce9fa05-703f-40e4-a14e-40cffc3ba305',
+      outgoing: '05a38e8e-ce5f-44fb-82de-782369bf9fab',
+      incoming: '5ff11777-a6c2-41cd-b2b0-56c3576e73ae',
     },
     {
-      outgoing: '0d8a22d1-8ea8-40d7-a821-10547198ff6c',
-      incoming: '4ed0fef4-d9fd-41d0-852d-4a52f4193dd2',
+      outgoing: '060c946d-db8d-4d27-b1ec-a203435764f1',
+      incoming: '685612fb-e4cb-4265-af14-e6132539bad1',
     },
     {
-      outgoing: '0d94b1d9-c7a6-472f-94c7-8728718c92f8',
-      incoming: '4ffcc7ec-15a1-4c80-8309-e893ef9db022',
+      outgoing: '06f16138-70cd-49e5-89b3-aec698118b81',
+      incoming: '6be16e8f-d589-48d8-b7bc-61fe0ceca3b2',
     },
     {
-      outgoing: '0f5f1d65-7ce1-4250-93fe-49078f4f14d1',
-      incoming: '6162b471-d011-41f7-ad89-9a8d856c9ffb',
+      outgoing: '07534039-d056-45bb-adcd-1415ed6a8a08',
+      incoming: '8037b1c0-ddb7-46c1-a068-f11080d7771c',
     },
     {
-      outgoing: '0fb78895-f4e0-4759-9403-a49a5612e0b5',
-      incoming: '62f0d4da-b736-4629-ad14-894e432d0f04',
+      outgoing: '085524dc-e663-4dad-abc5-8442450cc9f1',
+      incoming: '8bdb54a1-d614-4932-84fa-795dd4728828',
     },
     {
-      outgoing: '10f7c3e0-b291-4039-a157-42e5609fe531',
-      incoming: '697d34f5-fe65-422a-b624-5a4957ef4196',
+      outgoing: '0860d731-0d86-409a-8384-41a17b99a1f4',
+      incoming: '948bf927-81cb-46d8-b033-08d5f8b35bf0',
     },
     {
-      outgoing: '11d2e4ff-a1f7-4845-bb96-a0626eee0d57',
-      incoming: '6d301010-3315-4694-b55d-812ae56110c5',
+      outgoing: '096d7521-f924-461e-8c3d-5386a7770170',
+      incoming: '9585521c-a98d-4880-a915-c7248289a162',
     },
     {
-      outgoing: '137ca64e-eb2a-48a1-84ad-1db2b59aa51e',
-      incoming: '778f8033-c9e2-45fa-98ca-935f38e2b8ca',
+      outgoing: '09dd202d-115b-49ae-afa8-cb528c7b8f72',
+      incoming: 'a45c237c-495f-4696-8fc1-b73f8a39fe62',
     },
     {
-      outgoing: '1545d652-3c85-429f-9354-a753dd6c8afe',
-      incoming: '78d65d90-7234-4d43-816e-9c29e81dd33d',
+      outgoing: '09faf9f3-ed77-4582-9242-c464cb88fa93',
+      incoming: 'e23ec3e7-72c2-4e2d-85e7-8b902cc6fe33',
     },
     {
-      outgoing: '1beebb19-4155-47eb-be8a-4af53ab30432',
-      incoming: '7d1b678f-cea8-41fc-873e-2ec47ea5c318',
+      outgoing: '0a1e9f3a-87c2-4a4b-b386-3b88de4ed054',
+      incoming: '6516567b-4394-404e-8170-e2a21dae7b48',
     },
     {
-      outgoing: '1cdb67d7-27af-4709-817c-9270bd915249',
-      incoming: '7d7a80a2-092c-4338-878a-0416611b249c',
+      outgoing: '0a558bc1-50c5-4201-b6ca-c7a1e7de1c22',
+      incoming: '67d92504-ee81-4d7f-99ca-f79c752cb265',
     },
     {
-      outgoing: '1cf5f118-0af5-482b-9ab9-8cc7043fb20b',
-      incoming: '82861181-5a96-4e7b-bfa4-b75ca2bd145f',
+      outgoing: '0a714eff-ef23-4928-b2a7-addecc97b467',
+      incoming: 'c97784d9-45ce-488f-ad17-130d569e16be',
     },
     {
-      outgoing: '20f6af61-75e1-4954-b61a-9042f8a9e638',
-      incoming: '84385ab0-d3ea-44c1-8e93-6fa6b1d25457',
+      outgoing: '0a9625c9-f679-4d98-9ebe-d8bb005c45b6',
+      incoming: 'f1e78390-98b7-48dd-82b9-a5aadbe95c51',
     },
     {
-      outgoing: '2421e6ad-5126-43b5-94a2-80d8edaf490f',
-      incoming: '86468a23-14cb-4602-92f7-7e270197fc3c',
+      outgoing: '0b1a64c2-8970-4f89-a396-9863e3aa2ccc',
+      incoming: '2af500e1-1665-4468-84d1-e346e64fcb68',
     },
     {
-      outgoing: '25842c55-5295-4c44-ba0d-540dfaebb24a',
-      incoming: '8e5a0e02-7832-416d-970f-f6f74e181dcb',
+      outgoing: '0bea449d-73af-4654-bf19-61db087d7d45',
+      incoming: '6e53238e-0b78-4a67-b7a2-eed9e8e7d9b3',
     },
     {
-      outgoing: '27ebd8e0-2d90-4c96-882d-cff35f91c53b',
-      incoming: '92cd4964-6206-4989-9730-b7959bae6dc5',
+      outgoing: '0c7ad36f-7ad2-4faa-963f-69ee2f9f5062',
+      incoming: 'c73bc8f4-5cb7-462f-8405-7b4716b35d5d',
     },
     {
-      outgoing: '28413120-b60a-4ae1-a2e4-3c771aed4c5b',
-      incoming: 'a23ca5c9-b748-482f-9b59-9db35f7aa996',
+      outgoing: '0f14f372-0c43-47ff-9257-1324a7e94488',
+      incoming: '4381b30d-631e-4146-a2de-2f01dd1a36e9',
     },
   ].map(Object.freeze)
 );
-const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
+export const ROSTER_CLUSTERS = Object.freeze([
+  '56d5d6f0-23e9-41b0-b407-852aa1026c2a',
+  '0cdc133d-ad23-4ace-bb85-312d0f221edd',
+]);
+const CLUSTERS = ROSTER_CLUSTERS;
 const PUBLIC_KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 class RosterFailure extends Error {}
 const fail = (code) => {
@@ -124,6 +131,30 @@ export function rosterCents(value) {
   if (!Number.isSafeInteger(n)) fail('INVALID_MONEY');
   return n;
 }
+/** Values captured by UPDATE ... RETURNING inside the one bank-send transaction,
+ * not a claim about a wallet after ordinary play resumes. */
+export function rosterFundingReadback(r) {
+  const amount = rosterCents(r?.amount),
+    bankBefore = rosterCents(r?.bank_before),
+    bankAfter = rosterCents(r?.bank_after),
+    walletAfter = rosterCents(r?.recipient_balance_after);
+  if (
+    r?.success !== true ||
+    amount !== 20000 ||
+    r.destination !== 'player_wallet' ||
+    !r.transaction_id ||
+    r.replayed === true ||
+    walletAfter !== 20000 ||
+    bankBefore - bankAfter !== 20000
+  )
+    fail('FUND_RECEIPT_INVALID');
+  return {
+    transactionId: r.transaction_id,
+    walletAfterAtFunding: walletAfter / 100,
+    bankBeforeAtFunding: bankBefore / 100,
+    bankAfterAtFunding: bankAfter / 100,
+  };
+}
 function member(m) {
   return {
     user_id: m.user_id,
@@ -135,6 +166,77 @@ function member(m) {
     credit_used: rosterCents(m.credit_used),
     locked_chips: rosterCents(m.locked_chips),
     held_chips: rosterCents(m.held_chips),
+    promo_balance: rosterCents(m.promo_balance ?? 0),
+    diamonds: rosterCents(m.diamonds ?? 0),
+  };
+}
+/** Normal HorseBehavior activity hours and StableHandTags day rules. Host clock,
+ * not a database-time certificate; no invented minimum activity duration. */
+export function assertIncomingEligibility(
+  { id, profile, state, load, activeCashSeats, openCashSessions },
+  nowMs
+) {
+  if (!Number.isFinite(nowMs)) fail('INCOMING_CLOCK_UNAVAILABLE');
+  if (!['cash', 'both'].includes(profile?.horse_profile?.lane)) fail('INCOMING_CASH_LANE_REQUIRED');
+  if (!Number.isSafeInteger(load) || load < 0 || load > 2) fail('INCOMING_GAME_LOAD_CHANGED');
+  if (activeCashSeats !== 0 || openCashSessions !== 0) fail('INCOMING_CASH_EXPOSURE_CHANGED');
+  const at = new Date(nowMs),
+    hourUTC = at.getUTCHours();
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  if ((hourUTC - (h % 24) + 24) % 24 >= 10 + ((h >>> 5) % 8)) fail('INCOMING_ASLEEP');
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      weekday: 'short',
+    })
+      .formatToParts(at)
+      .map((p) => [p.type, p.value])
+  );
+  const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday);
+  const day = `${parts.year}-${parts.month}-${parts.day}`;
+  if (state !== null && state !== undefined) {
+    if (state.horse_id !== id) fail('INCOMING_DAY_IDENTITY_CHANGED');
+    if (
+      state.rest_weekday != null &&
+      (!Number.isInteger(Number(state.rest_weekday)) ||
+        Number(state.rest_weekday) < 0 ||
+        Number(state.rest_weekday) > 6)
+    )
+      fail('INCOMING_DAY_STATE_UNREADABLE');
+    if (
+      state.daily_cap_minutes != null &&
+      (!Number.isFinite(Number(state.daily_cap_minutes)) || Number(state.daily_cap_minutes) < 0)
+    )
+      fail('INCOMING_DAY_STATE_UNREADABLE');
+    if (
+      !Number.isFinite(Number(state.minutes_played_today)) ||
+      Number(state.minutes_played_today) < 0
+    )
+      fail('INCOMING_DAY_STATE_UNREADABLE');
+    if (
+      state.rest_weekday !== null &&
+      state.rest_weekday !== undefined &&
+      Number(state.rest_weekday) === weekday
+    )
+      fail('INCOMING_REST_DAY');
+    if (
+      state.counters_reset_on === day &&
+      state.daily_cap_minutes !== null &&
+      state.daily_cap_minutes !== undefined &&
+      Number(state.minutes_played_today) >= Number(state.daily_cap_minutes)
+    )
+      fail('INCOMING_DAILY_CAP');
+  }
+  return {
+    observedAt: at.toISOString(),
+    clock: 'host_normal_fleet_clock',
+    hourUTC,
+    chicagoDay: day,
+    gameLoad: load,
   };
 }
 function checked(s) {
@@ -147,9 +249,16 @@ function checked(s) {
     s.games.length !== 2 ||
     CLUSTERS.some(
       (id) =>
-        !s.games.some(
-          (g) => g.id === id && g.club_id === ROSTER_CLUB && g.lightning_enabled === false
-        )
+        !s.games.some((g) => {
+          if (g.id !== id) return false;
+          assertCurrentPilotTarget(g, ROSTER_CLUB, { active: false });
+          return (
+            g.enabled === true &&
+            !g.closed_at &&
+            g.lightning_enabled === false &&
+            g.cluster_mode === 'must_move'
+          );
+        })
     )
   )
     fail('PILOT_MUST_BE_DISABLED');
@@ -179,11 +288,16 @@ function checked(s) {
 }
 function assertHazards(s, id) {
   const m = s.members.find((m) => m.user_id === id);
-  if (!m || [m.credit_used, m.locked_chips, m.held_chips].some((x) => rosterCents(x) !== 0))
+  if (
+    !m ||
+    [m.credit_used, m.locked_chips, m.held_chips, m.promo_balance ?? 0, m.diamonds ?? 0].some(
+      (x) => rosterCents(x) !== 0
+    )
+  )
     fail('OUTGOING_FINANCIAL_OBLIGATION');
   if (
     !s.hazards ||
-    Object.keys(s.hazards).length !== 6 ||
+    Object.keys(s.hazards).length !== 7 ||
     Object.values(s.hazards).some((n) => n !== 0)
   )
     fail('OUTGOING_NOT_SETTLED');
@@ -198,13 +312,24 @@ const requestManifest = () =>
     fundRequestId: rosterRequestId('fund', incoming),
   }));
 const membershipIdentity = (s) =>
-  s.members.map(({ chip_balance, credit_used, locked_chips, held_chips, ...identity }) => identity);
+  s.members.map(
+    ({
+      chip_balance,
+      credit_used,
+      locked_chips,
+      held_chips,
+      promo_balance,
+      diamonds,
+      ...identity
+    }) => identity
+  );
 export async function prepareRoster({ adapter, sourceRunId, operationId, now = () => Date.now() }) {
   if (!/^[0-9a-f-]{36}$/i.test(operationId ?? '')) fail('OPERATION_ID_REQUIRED');
   if (!/^\d+$/.test(String(sourceRunId))) fail('PREPARE_RUN_ID_REQUIRED');
   const raw = await adapter.snapshot();
   const initial = checked(raw);
   if (initial.members.length !== 73) fail('EXACT_72_HORSES_REQUIRED');
+  const incomingEligibility = [];
   for (const { outgoing, incoming } of ROSTER_PAIRS) {
     if (
       !initial.members.some((m) => m.user_id === outgoing && m.status === 'active') ||
@@ -214,7 +339,8 @@ export async function prepareRoster({ adapter, sourceRunId, operationId, now = (
     const s = await adapter.snapshot(outgoing);
     same(membershipIdentity(checked(s)), membershipIdentity(initial));
     assertHazards(s, outgoing);
-    await adapter.validateIncoming(incoming);
+    const verified = await adapter.validateIncoming(incoming);
+    incomingEligibility.push({ userId: incoming, ...verified?.eligibility });
   }
   // Gross send budget must be available without relying on speculative returns.
   if (initial.treasury < 460000) fail('INSUFFICIENT_GROSS_TREASURY');
@@ -227,6 +353,8 @@ export async function prepareRoster({ adapter, sourceRunId, operationId, now = (
     preparedAt: now(),
     pairs: ROSTER_PAIRS,
     requests: requestManifest(),
+    incomingEligibility,
+    manifestSha256: ROSTER_MANIFEST_SHA256,
     initial,
   };
   return { ...baseline, digest: hash(baseline) };
@@ -246,6 +374,7 @@ export async function executeRoster({
     body.operation !== ROSTER_OPERATION ||
     body.clubId !== ROSTER_CLUB ||
     body.version !== 1 ||
+    body.manifestSha256 !== ROSTER_MANIFEST_SHA256 ||
     !isDeepStrictEqual(body.pairs, ROSTER_PAIRS) ||
     !isDeepStrictEqual(body.requests, requestManifest()) ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.operationId ?? '')
@@ -367,18 +496,14 @@ export async function executeRoster({
         incoming,
         (id) => adapter.fund(incoming, id),
         async (r) => {
-          if (
-            rosterCents(r.amount) !== 20000 ||
-            r.destination !== 'player_wallet' ||
-            !r.transaction_id ||
-            r.replayed === true ||
-            report.grossFundingCents + 20000 > 460000
-          )
-            fail('FUND_RECEIPT_INVALID');
+          const atomic = rosterFundingReadback(r);
+          if (report.grossFundingCents + 20000 > 460000) fail('FUND_RECEIPT_INVALID');
           expected.members.find((m) => m.user_id === incoming).chip_balance += 20000;
           expected.treasury -= 20000;
           report.grossFundingCents += 20000;
-          await adapter.verifyFunding(incoming, rosterRequestId('fund', incoming));
+          const proof = await adapter.verifyFunding(incoming, rosterRequestId('fund', incoming), r);
+          same(proof, atomic);
+          Object.assign(report.steps.at(-1), proof);
         }
       );
     }
@@ -409,7 +534,14 @@ const data = (r, context = 'READ') => {
   return r.data;
 };
 /** Real normal authenticated doors; admin is SELECT/auth only, never financial RPC. */
-export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs = 15000 }) {
+export function createRosterAdapter({
+  admin,
+  owner,
+  createClient,
+  url,
+  timeoutMs = 15000,
+  now = () => Date.now(),
+}) {
   const authOptions = {
     auth: { persistSession: false, autoRefreshToken: false },
     global: {
@@ -428,18 +560,22 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
   async function validateIncoming(id) {
     if (!ROSTER_PAIRS.some((p) => p.incoming === id)) fail('UNPINNED_HORSE');
     const p = data(
-      await admin.from('profiles').select('id,is_horse,status').eq('id', id).maybeSingle(),
+      await admin
+        .from('profiles')
+        .select('id,is_horse,status,horse_profile')
+        .eq('id', id)
+        .maybeSingle(),
       'INCOMING_PROFILE'
     );
     const u = data(await admin.auth.admin.getUserById(id), 'INCOMING_AUTH').user;
-    const [cap, count] = await Promise.all([
+    const [cap, membershipCount] = await Promise.all([
       admin.rpc('fn_club_membership_cap'),
       admin.rpc('fn_club_membership_count', { p_user_id: id, p_excluding_club: ROSTER_CLUB }),
     ]);
     if (
       !Number.isSafeInteger(data(cap, 'MEMBERSHIP_CAP')) ||
-      !Number.isSafeInteger(data(count, 'MEMBERSHIP_COUNT')) ||
-      data(count, 'MEMBERSHIP_COUNT') >= data(cap, 'MEMBERSHIP_CAP')
+      !Number.isSafeInteger(data(membershipCount, 'MEMBERSHIP_COUNT')) ||
+      data(membershipCount, 'MEMBERSHIP_COUNT') >= data(cap, 'MEMBERSHIP_CAP')
     )
       fail('HORSE_MEMBERSHIP_CAP_REACHED');
     if (
@@ -453,7 +589,65 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
         (!Number.isFinite(Date.parse(u.banned_until)) || Date.parse(u.banned_until) > Date.now()))
     )
       fail('HORSE_IDENTITY_CHANGED');
-    return u;
+    const stateRead = await admin
+      .from('stable_hand_horse_state')
+      .select('horse_id,rest_weekday,daily_cap_minutes,minutes_played_today,counters_reset_on')
+      .eq('horse_id', id)
+      .maybeSingle();
+    if (stateRead.error) readFailure(stateRead, 'INCOMING_DAY_STATE');
+    const [loadRead, memberRead, seatsRead, openCashSessions] = await Promise.all([
+      admin.rpc('fn_concurrent_game_load', {
+        p_user_id: id,
+        p_exclude_seat_id: null,
+        p_exclude_table_id: null,
+        p_exclude_tournament_id: null,
+      }),
+      admin
+        .from('club_members')
+        .select('user_id')
+        .eq('club_id', ROSTER_CLUB)
+        .eq('user_id', id)
+        .maybeSingle(),
+      admin
+        .from('table_seats')
+        .select('id,table_id,stack::text')
+        .eq('user_id', id)
+        .is('left_at', null)
+        .limit(100),
+      count('cash_player_session', (q) => q.eq('player_id', id).is('closed_at', null)),
+    ]);
+    if (memberRead.error) readFailure(memberRead, 'INCOMING_MEMBERSHIP');
+    if (memberRead.data !== null) fail('INCOMING_ALREADY_PILOT_MEMBER');
+    const seats = data(seatsRead, 'INCOMING_CASH_SEATS');
+    if (!Array.isArray(seats) || seats.length >= 100) fail('INCOMING_SEATS_UNREADABLE');
+    let activeCashSeats = 0;
+    if (seats.length) {
+      const tables = data(
+        await admin
+          .from('tables')
+          .select('id,status,tournament_id,club_id')
+          .in('id', [...new Set(seats.map((s) => s.table_id))]),
+        'INCOMING_SEAT_TABLES'
+      );
+      if (!Array.isArray(tables) || seats.some((s) => !tables.some((t) => t.id === s.table_id)))
+        fail('INCOMING_SEATS_UNREADABLE');
+      activeCashSeats = seats.filter((s) => {
+        const t = tables.find((t) => t.id === s.table_id);
+        return t.status !== 'closed' && t.tournament_id === null;
+      }).length;
+    }
+    const eligibility = assertIncomingEligibility(
+      {
+        id,
+        profile: p,
+        state: stateRead.data,
+        load: data(loadRead, 'INCOMING_GAME_LOAD'),
+        activeCashSeats,
+        openCashSessions,
+      },
+      now()
+    );
+    return { ...u, eligibility };
   }
   async function horseJoin(id, requestId) {
     const u = await validateIncoming(id);
@@ -490,7 +684,7 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
         await admin
           .from('club_members')
           .select(
-            'club_id,user_id,role,status,joined_at,created_at,chip_balance::text,credit_used::text,locked_chips::text,held_chips::text'
+            'club_id,user_id,role,status,joined_at,created_at,chip_balance::text,credit_used::text,locked_chips::text,held_chips::text,promo_balance::text,diamonds::text'
           )
           .eq('club_id', ROSTER_CLUB)
           .eq('user_id', id)
@@ -519,11 +713,11 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
         admin
           .from('club_members')
           .select(
-            'user_id,role,status,joined_at,created_at,chip_balance::text,credit_used::text,locked_chips::text,held_chips::text'
+            'user_id,role,status,joined_at,created_at,chip_balance::text,credit_used::text,locked_chips::text,held_chips::text,promo_balance::text,diamonds::text'
           )
           .eq('club_id', ROSTER_CLUB)
           .limit(75),
-        admin.from('cash_games').select('id,club_id,lightning_enabled').in('id', CLUSTERS),
+        admin.from('cash_games').select('*').in('id', CLUSTERS),
       ]);
       const memberRows = data(members, 'MEMBERS');
       const profiles = data(
@@ -554,6 +748,27 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
         admission: data(admission, 'ADMISSION'),
       };
       if (hazardsFor) {
+        const tournamentRows = data(
+          await admin
+            .from('tournaments')
+            .select('id,status')
+            .eq('club_id', ROSTER_CLUB)
+            .limit(1000),
+          'PILOT_EVENTS'
+        );
+        if (!Array.isArray(tournamentRows) || tournamentRows.length >= 1000)
+          fail('PILOT_EVENTS_UNREADABLE');
+        const liveEvents = tournamentRows
+          .filter((t) => !['COMPLETED', 'CANCELLED'].includes(String(t.status).toUpperCase()))
+          .map((t) => t.id);
+        const eventCount = liveEvents.length
+          ? await count('tournament_players', (q) =>
+              q
+                .eq('user_id', hazardsFor)
+                .in('tournament_id', liveEvents)
+                .in('status', ['registered', 'playing'])
+            )
+          : 0;
         const base = (q) => q.eq('club_id', ROSTER_CLUB);
         const counts = await Promise.all([
           count('table_seats', (q) => base(q).eq('user_id', hazardsFor).is('left_at', null)),
@@ -570,7 +785,10 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
           ),
         ]);
         result.hazards = Object.fromEntries(
-          ['seats', 'uncashed', 'escrow', 'holds', 'cashouts', 'pool'].map((k, i) => [k, counts[i]])
+          ['seats', 'uncashed', 'escrow', 'holds', 'cashouts', 'pool', 'events'].map((k, i) => [
+            k,
+            [...counts, eventCount][i],
+          ])
         );
       }
       return result;
@@ -624,7 +842,7 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
         fail('LEAVE_LEDGER_UNVERIFIED');
       return { transactionId: rows[0].id };
     },
-    async verifyFunding(id, op) {
+    async verifyFunding(id, op, response) {
       const intent = data(
         await admin
           .from('cashier_rpc_operation_intents')
@@ -635,7 +853,7 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
       const tx = data(
         await admin
           .from('chip_transactions')
-          .select('id,from_user_id,to_user_id,amount::text,metadata')
+          .select('id,from_user_id,to_user_id,amount::text,metadata,balance_after::text')
           .eq('club_id', ROSTER_CLUB)
           .eq('transaction_type', 'club_bank_send')
           .eq('metadata->>op_id', op)
@@ -660,9 +878,25 @@ export function createRosterAdapter({ admin, owner, createClient, url, timeoutMs
         tx[0].from_user_id !== PILOT.ownerId ||
         tx[0].to_user_id !== id ||
         rosterCents(tx[0].amount) !== 20000 ||
-        tx[0].metadata?.destination !== 'player_wallet'
+        tx[0].metadata?.destination !== 'player_wallet' ||
+        tx[0].metadata?.op_id !== op
       )
         fail('DURABLE_FUNDING_UNVERIFIED');
+      const proof = rosterFundingReadback(response);
+      same(rosterFundingReadback(intent.receipt), proof);
+      same(
+        rosterFundingReadback({
+          ...tx[0].metadata,
+          success: true,
+          amount: tx[0].amount,
+          destination: tx[0].metadata.destination,
+          transaction_id: tx[0].id,
+        }),
+        proof
+      );
+      if (rosterCents(tx[0].balance_after) !== rosterCents(response.bank_after))
+        fail('DURABLE_FUNDING_UNVERIFIED');
+      return proof;
     },
   };
 }

@@ -48,8 +48,6 @@ const NO_X_BY_DESIGN: Record<string, string> = {
     'a legal welcome that is acknowledged once through I Understand, never dismissed',
   'src/components/games/BonusCompletion.tsx':
     'a paid reveal with closeOnOverlay/closeOnEscape false; the plates are the only exits',
-  'src/components/games/DoubleDownOffer.tsx':
-    'a wager choice with closeOnOverlay/closeOnEscape false; declining is a plate',
 };
 
 const BUSY_FLAGS = [

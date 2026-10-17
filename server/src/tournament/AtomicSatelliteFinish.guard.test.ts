@@ -206,19 +206,36 @@ describe('every full ticket has one immutable delivery line', () => {
     expect(RECEIPT).toContain('malformed target-entry evidence');
   });
 
-  it('fails closed before seating into a bounty or Spin target', () => {
-    for (const flag of [
-      'v_target.is_bounty IS DISTINCT FROM false',
-      'v_target.is_pko IS DISTINCT FROM false',
-      'v_target.is_mystery_bounty IS DISTINCT FROM false',
-      'v_target.is_premium_spin IS DISTINCT FROM false',
+  it('fails closed before seating into a Spin target or one whose flags are unknown', () => {
+    // The stage-one authority above refused bounty targets too. Since
+    // 20261017004440 the CURRENT authorities seat a bounty target exactly like
+    // a paid entry (tests/a-satellite-seats-a-bounty-target-like-a-paid-entry),
+    // and still refuse a Spin, a premium Spin and unknown flags by name.
+    const current = readFileSync(
+      join(MIGRATIONS, '20261017004440_satellites_seat_bounty_targets.sql'),
+      'utf8'
+    );
+    for (const name of [
+      'fn_settle_satellite_tournament_pre_money_path_gate',
+      'fn_ca_settle_satellite_cohort',
     ]) {
-      expect(SETTLE).toContain(flag);
+      const start = current.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+      expect(start, name).toBeGreaterThan(-1);
+      const settle = current.slice(start, current.indexOf('$function$;', start));
+      for (const flag of [
+        'v_target.is_bounty IS NULL',
+        'v_target.is_pko IS NULL',
+        'v_target.is_mystery_bounty IS NULL',
+        'v_target.is_premium_spin IS DISTINCT FROM false',
+      ]) {
+        expect(settle).toContain(flag);
+      }
+      expect(settle).toContain("lower(COALESCE(v_target.variant,'')) = 'spin'");
+      expect(settle).toContain("upper(COALESCE(v_target.tournament_type,'')) = 'SPIN'");
+      expect(settle).toContain('uses an unsupported Spin or unknown entry split');
+      expect(settle).not.toContain('uses an unsupported bounty or Spin entry split');
     }
-    expect(SETTLE).toContain("lower(COALESCE(v_target.variant,'')) = 'spin'");
-    expect(SETTLE).toContain("upper(COALESCE(v_target.tournament_type,'')) = 'SPIN'");
-    expect(SETTLE).toContain('uses an unsupported bounty or Spin entry split');
-    expect(ROLLBACK_PROBE).toContain('bounty target split was not refused before any write');
+    expect(ROLLBACK_PROBE).toContain('Spin target split was not refused before any write');
   });
 
   it('proves the exact target aggregate and escrow transition before success', () => {

@@ -118,6 +118,9 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Unchanged weekly receipt freshness predicates use the actual concurrent indexes.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+# Original-week bank receipt verification keeps ALL correlation legs indexed.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-bank-correlation-index-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('weekly-bank-correlation-index-qualification.json'))], text=True))
+
 # Installed proof lifetime remains connected to the finite inventory authority.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-inventory-proof-lifetime-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
 # Historical earning-club discovery uses exact indexed event witnesses.
@@ -142,3 +145,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Completed-week and statement club discovery share already accepted cash witnesses.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-first-clubs-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Each touched identity is proved once while every original event still counts.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-touched-identities-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

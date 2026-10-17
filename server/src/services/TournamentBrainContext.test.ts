@@ -39,6 +39,44 @@ const row = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('TournamentBrainContext V12 - derivation', () => {
+  it.each([undefined, null])(
+    'does not mistake unread Diamond entry prices for a known freeroll: %s',
+    (missing) => {
+      const context = deriveContext(
+        row({
+          buy_in_amount: missing,
+          buy_in_fee: missing,
+          rebuy_cost: 100,
+          rebuy_chips: 5_000,
+          starting_chips: 10_000,
+          unit_cents: 100,
+        }) as never,
+        4,
+        4,
+        40_000
+      );
+      expect(context.rebuyPrizeContributionCents).toBe(9_000);
+    }
+  );
+  it('quotes a Diamond freeroll rebuy wholly into the prize pool for horses', () => {
+    const context = deriveContext(
+      row({
+        buy_in_amount: 0,
+        buy_in_fee: 0,
+        rebuy_cost: 100,
+        rebuy_chips: 5_000,
+        starting_chips: 10_000,
+        unit_cents: 100,
+      }) as never,
+      4,
+      4,
+      40_000
+    );
+    expect(context.rebuyCostCents).toBe(10_000);
+    expect(context.rebuyPrizeContributionCents).toBe(10_000);
+    expect(context.rebuyBountyContributionCents).toBe(0);
+  });
+
   it('derives formats: spin, multi-seat sng, hu_sng, mtt', () => {
     expect(
       deriveContext(

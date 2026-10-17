@@ -1353,6 +1353,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {/* Tournament Add-On Modal */}
       {isTournament && addOnPeriod.active && (
         <AddOnModal
+          arenaAsset={arenaAsset}
           isVisible={addOnPeriod.active}
           addOnCost={addOnPeriod.addOnCost}
           addOnFee={addOnPeriod.addOnFee ?? 0}
@@ -1370,6 +1371,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       {/* Tournament Rebuy Modal */}
       {rebuyData && (
         <RebuyModal
+          arenaAsset={arenaAsset}
           isOpen={showRebuyModal}
           rebuyCost={rebuyData.cost}
           rebuyFee={rebuyData.fee ?? 0}

@@ -49,6 +49,7 @@ import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription'
 import './TransactionHistory.css';
 import { reportError } from '../../utils/errorReporter';
 import { formatPopupText } from '../../utils/popupStyle';
+import { exactChipFigure } from '../../utils/cashierAmount';
 
 interface TransactionHistoryProps {
   /**
@@ -442,9 +443,11 @@ function TransactionHistoryInner({ walletId, limit = 20 }: TransactionHistoryPro
               <div className="amounts">
                 <span className={`amount ${tx.type === 'credit' ? 'positive' : 'negative'}`}>
                   {tx.type === 'credit' ? '+' : '-'}
-                  {tx.amount.toLocaleString()}
+                  {/* Both cent digits or none (launch audit P-24): a bare
+                      toLocaleString printed 411.80 as "411.8". */}
+                  {exactChipFigure(Math.abs(tx.amount))}
                 </span>
-                <span className="balance">Bal: {tx.balance.toLocaleString()}</span>
+                <span className="balance">Bal: {exactChipFigure(tx.balance)}</span>
               </div>
               <span className="time">
                 {tx.createdAt.toLocaleDateString()}{' '}

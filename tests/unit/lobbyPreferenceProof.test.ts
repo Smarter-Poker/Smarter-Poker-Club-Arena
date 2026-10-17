@@ -49,6 +49,8 @@ function fixture({
   closeFailure = false,
   responseMode = 'normal',
   clickFailure = false,
+  clickDelayMs = 0,
+  requestDelayMs = 0,
 } = {}) {
   const emitter = new EventEmitter();
   const frame = {};
@@ -84,6 +86,7 @@ function fixture({
             await new Promise((resolve) => setTimeout(resolve, 30_000));
             throw new Error('Click timeout: header intercepts pointer events');
           }
+          if (clickDelayMs) await new Promise((resolve) => setTimeout(resolve, clickDelayMs));
           selected = options.name!;
           const value = exchange({
             ownerId: postOwner,
@@ -94,8 +97,12 @@ function fixture({
             value.request.response = () =>
               responseMode === 'null' ? Promise.resolve(null) : new Promise(() => {});
           }
-          emitter.emit('request', value.request);
-          emitter.emit('response', value.response);
+          const send = () => {
+            emitter.emit('request', value.request);
+            emitter.emit('response', value.response);
+          };
+          if (requestDelayMs) setTimeout(send, requestDelayMs);
+          else send();
         },
       }),
     }),
@@ -128,6 +135,7 @@ function fixture({
     events,
     read,
     navigate,
+    requestListeners: () => emitter.listenerCount('request'),
     setPostOwner: (value: string) => {
       postOwner = value;
     },
@@ -233,7 +241,7 @@ describe('cold-return preference proof', () => {
       );
       await vi.advanceTimersByTimeAsync(30_000);
       expect((await outcome).message).toMatch(
-        mode === 'pending' ? /save response.*30s/ : /request timeout/
+        mode === 'pending' ? /save response.*30s/ : /save request.*30s/
       );
       expect(f.events).toEqual(['click']);
     } finally {
@@ -242,7 +250,7 @@ describe('cold-return preference proof', () => {
     }
   });
 
-  it('retains both request and click failures plus geometry before closing restoration', async () => {
+  it('retains the actual failed click and geometry before closing without waiting for an unissued save', async () => {
     vi.useFakeTimers();
     const f = fixture({ clickFailure: true });
     f.read();
@@ -259,17 +267,10 @@ describe('cold-return preference proof', () => {
       }).catch((error) => error);
       await vi.advanceTimersByTimeAsync(30_000);
       const failure = await outcome;
-      expect(failure).toBeInstanceOf(AggregateError);
-      expect(failure.errors.map((error: Error) => error.message)).toEqual([
-        'Preference request timeout',
-        'Click timeout: header intercepts pointer events',
-      ]);
+      expect(failure.message).toBe('Click timeout: header intercepts pointer events');
+      expect(f.requestListeners()).toBe(1);
       expect(f.proof.snapshot().events).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({
-            kind: 'selection-request-failed',
-            message: 'Preference request timeout',
-          }),
           expect.objectContaining({
             kind: 'selection-click-failed',
             message: 'Click timeout: header intercepts pointer events',
@@ -281,6 +282,51 @@ describe('cold-return preference proof', () => {
         ])
       );
       expect(f.events.at(-1)).toBe('close');
+    } finally {
+      f.proof.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives the save its existing network budget after a slow successful click', async () => {
+    vi.useFakeTimers();
+    const f = fixture({ clickDelayMs: 21_000, requestDelayMs: 12_000 });
+    f.read();
+    try {
+      const outcome = selectLobbyPreference(f.page, club, 'PLO', owner, f.proof).then(
+        () => 'passed',
+        (error) => error.message
+      );
+      await vi.advanceTimersByTimeAsync(33_000);
+      expect(await outcome).toBe('passed');
+      expect(f.requestListeners()).toBe(1);
+      expect(f.events).toEqual(['click']);
+      expect(f.proof.snapshot().events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'intended-response', status: 200 }),
+        ])
+      );
+    } finally {
+      f.proof.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('shares one 30-second network budget between a delayed request and its response', async () => {
+    vi.useFakeTimers();
+    const f = fixture({ clickDelayMs: 21_000, requestDelayMs: 20_000, responseMode: 'pending' });
+    f.read();
+    let failure: Error | undefined;
+    try {
+      const outcome = selectLobbyPreference(f.page, club, 'PLO', owner, f.proof).catch((error) => {
+        failure = error;
+      });
+      await vi.advanceTimersByTimeAsync(50_999);
+      expect(failure).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await outcome;
+      expect(failure?.message).toMatch(/save response.*30s/);
+      expect(f.requestListeners()).toBe(1);
     } finally {
       f.proof.stop();
       vi.useRealTimers();

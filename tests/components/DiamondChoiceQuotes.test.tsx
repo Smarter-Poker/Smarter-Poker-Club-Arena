@@ -67,11 +67,11 @@ vi.mock('../../src/services/DiamondWheelService', () => ({
   default: { getStateV2: () => Promise.resolve({ pending_awards: [] }) },
 }));
 vi.mock('../../src/services/SoundService', () => ({ soundService: { playWin: vi.fn() } }));
-/** Screen one of a won game (R9): the offer is answered by the player's own tap. */
-const answerOffer = (choice: 'Play Without' | 'Add The Diamonds' = 'Play Without') => {
-  const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-  fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-  fireEvent.click(within(offer).getByRole('button', { name: choice }));
+/** Double Diamonds is retired (Dan 2026-10-16): a won game has no offer
+ * screen, and nothing on the page offers the add-on. */
+const noOffer = () => {
+  expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+  expect(screen.queryByText(/Double Down|Double Your Diamonds|Add The Diamonds/)).toBeNull();
 };
 vi.mock('../../src/components/games/SealedPrize', () => ({ default: () => null }));
 vi.mock('../../src/components/games/DiamondSpinsTabs', () => ({ default: () => null }));
@@ -472,10 +472,8 @@ describe('choice games consume wheel-funded entry', () => {
           line.textContent?.includes(sentence)
         )
       ).toBe(true);
-      // Screen one (R9): the offer holds Start Round until it is answered by a tap.
-      expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
-      answerOffer();
-      await act(async () => {});
+      // No offer screen stands in front of Start Round (Double Diamonds retired).
+      noOffer();
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
       expect(screen.queryByLabelText('Entry Diamonds')).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
@@ -535,8 +533,8 @@ describe('choice games consume wheel-funded entry', () => {
   it.each(['mines', 'crossing'] as const)(
     'never starts a %s round by itself: two idle minutes on each entry screen start nothing (R1)',
     async (game) => {
-      // Dan 2026-09-21, R1: "Games can NEVER auto start." Screen one is the
-      // offer and screen two is the Start plate; neither moves on a clock.
+      // Dan 2026-09-21, R1: "Games can NEVER auto start." The Start plate
+      // never moves on a clock.
       vi.useFakeTimers();
       backend.awardState.mockResolvedValue({
         enabled: true,
@@ -558,15 +556,7 @@ describe('choice games consume wheel-funded entry', () => {
       });
       render(<DiamondChoicePage game={game} />);
       await act(async () => {});
-      expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(120_000);
-      });
-      expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
-      expect(backend.start).not.toHaveBeenCalled();
-      expect(backend.navigate).not.toHaveBeenCalled();
-      answerOffer();
-      await act(async () => {});
+      noOffer();
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(120_000);
@@ -574,6 +564,7 @@ describe('choice games consume wheel-funded entry', () => {
       expect(backend.start).not.toHaveBeenCalled();
       expect(backend.navigate).not.toHaveBeenCalled();
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
+      noOffer();
     }
   );
   it.each(['mines', 'crossing'] as const)(

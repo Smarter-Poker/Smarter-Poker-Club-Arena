@@ -27,12 +27,6 @@
   padding: 0;
   overflow: visible;
 }
-.offerDialog.dialog[role='dialog'] {
-  width: min(500px, calc(100vw - 20px), calc(100dvh * 0.66));
-}
-.offerPrize.prize {
-  width: 48%;
-}
 .opening {
   transform-origin: 50% 12%;
   animation-name: prize-pop-open;
@@ -177,10 +171,9 @@
    be is three screens tall, so its plates sat below the fold of a dialog that
    scrolled. Sideways, the card is held to the width whose height fits the
    screen, and the prize art gives up the most height, so the title, the
-   picture, the copy and the plates are one view. The Double Down offer keeps
-   its own width rule. */
+   picture, the copy and the plates are one view. */
 @media (orientation: landscape) and (max-height: 500px) {
-  .dialog.dialog[role='dialog']:not(.offerDialog) {
+  .dialog.dialog[role='dialog'] {
     width: min(580px, calc(100vw - 20px), calc((100dvh - 24px) * 0.98));
   }
   .prize {

@@ -585,15 +585,29 @@ export function playHand(
       // 0.00 +/- 0.00 every night from 2026-09-13 to 09-21: the two arms played
       // byte-identical poker because neither could see a read. Same scope
       // derivation as HorseLogic.decide: variant x dealt count.
-      HorseMind.runInSandbox(sandbox, () =>
-        HorseMind.observeHandComplete(
-          `league:${ts}`,
-          history,
-          BB,
-          showdown,
-          readScopeOf(gameVariant, seats.length)
-        )
-      );
+      // 2026-10-17: complete the action stream the way production does
+      // (workerRuntime observeCompletedHand). observe() only ever saw the
+      // prefix each decision was taken on, so the action that ENDS a hand
+      // (a river call, a fold to a bet) never reached league memory: every
+      // fold/call counter missed its last entry and riverBetOpps stayed 0 for
+      // every seat (riverFoldRate null on all 159 reads of a 400-pair probe).
+      // With this, 641 of 818 reads in a 2,000-pair probe return a rate.
+      // v23_river_reads still changes no decision in self-play: league horses
+      // fold rivers 43-88%, so the read only raises bluffScale, which every
+      // consumer clamps at 1.2-1.3 where it already sits. Same scope as the
+      // decisions; no identity, so the per-action keys equal the ones the
+      // decisions recorded and nothing is counted twice.
+      const handScope = readScopeOf(gameVariant, seats.length);
+      HorseMind.runInSandbox(sandbox, () => {
+        const previousScope = HorseMind.currentScope();
+        HorseMind.setDecisionScope(handScope);
+        try {
+          HorseMind.observe(history, []);
+        } finally {
+          HorseMind.setDecisionScope(previousScope);
+        }
+        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown, handScope);
+      });
     } catch {
       /* the harness is measurement plumbing — never let it break a deal */
     }

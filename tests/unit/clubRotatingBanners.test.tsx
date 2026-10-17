@@ -56,7 +56,9 @@ it('always resolves platform ads even if legacy club flags and creative props ar
   await screen.findByAltText('Smarter Promotion');
   expect(mocks.resolve).toHaveBeenCalledWith('lobby_strip', 'club', 6);
   expect(screen.queryByAltText('Owner Replacement')).toBeNull();
-  expect(mocks.impression).toHaveBeenCalledWith({ adId: 'house' }, 'lobby_strip', 'club');
+  await waitFor(() =>
+    expect(mocks.impression).toHaveBeenCalledWith({ adId: 'house' }, 'lobby_strip', 'club')
+  );
 });
 it('renders only resolver-selected same-origin images and keeps paid impression/click/dismiss semantics', async () => {
   mocks.resolve.mockResolvedValue([
@@ -67,7 +69,9 @@ it('renders only resolver-selected same-origin images and keeps paid impression/
   render(<HouseAdRotator slot="lobby_strip" clubId="club" onNavigate={navigate} />);
   await screen.findByAltText('Smarter Promotion');
   expect(screen.queryByRole('tab')).toBeNull();
-  expect(mocks.impression).toHaveBeenCalledWith({ adId: 'house' }, 'lobby_strip', 'club');
+  await waitFor(() =>
+    expect(mocks.impression).toHaveBeenCalledWith({ adId: 'house' }, 'lobby_strip', 'club')
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Smarter Promotion', exact: true }));
   await screen.findByRole('dialog', { name: 'Smarter Promotion' });
   expect(mocks.click).not.toHaveBeenCalled();

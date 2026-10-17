@@ -15,7 +15,7 @@
    gutter as the content so the "?" lines up with the desk's right edge. */
 .cashier-workspace > .ca-page-bar {
   margin: 0;
-  padding: 8px 24px 0;
+  padding: 0 24px;
 }
 .cashier-workspace .sc-copy {
   font-size: 14px;
@@ -39,7 +39,7 @@
     padding: 16px 12px;
   }
   .cashier-workspace > .ca-page-bar {
-    padding: 6px 12px 0;
+    padding: 0 12px;
   }
 }
 

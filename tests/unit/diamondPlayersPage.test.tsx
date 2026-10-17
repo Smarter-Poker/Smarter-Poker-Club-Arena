@@ -103,7 +103,9 @@ describe('the Diamond Arena Players page', () => {
       container.querySelector('.members-hero, .members-hero__art, .members-eyebrow')
     ).toBeNull();
     expect(screen.queryByText('Diamond Arena')).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Players' })).toHaveClass('sr-only');
+    expect(screen.getByRole('heading', { level: 1, name: 'Players' })).toHaveClass(
+      'ca-page-bar__title'
+    );
     expect(screen.getByRole('button', { name: 'Page Help' })).toBeInTheDocument();
     const bar = container.querySelector('.ca-page-bar');
     expect(bar?.querySelector('[aria-label="Players Live Summary"]')).not.toBeNull();

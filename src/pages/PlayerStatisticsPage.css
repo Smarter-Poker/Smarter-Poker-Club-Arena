@@ -367,7 +367,7 @@
 
 /* What the hero became: the back door on the left, the "?" on the right. */
 .ps-page-bar {
-  margin-top: 12px;
+  margin-top: 0;
 }
 
 .ps-page-bar,

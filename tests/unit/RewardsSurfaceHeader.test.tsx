@@ -22,7 +22,7 @@ describe('Rewards pages print a page bar, not an introduction', () => {
       />
     );
     const heading = screen.getByRole('heading', { level: 1, name: 'Wallet' });
-    expect(heading.className).toBe('sr-only');
+    expect(heading.className).toBe('ca-page-bar__title');
     expect(screen.getByRole('status').textContent).toBe('SYNCING');
     expect(screen.getByRole('status').getAttribute('data-tone')).toBe('attention');
     expect(screen.getByText('1,234')).toBeTruthy();

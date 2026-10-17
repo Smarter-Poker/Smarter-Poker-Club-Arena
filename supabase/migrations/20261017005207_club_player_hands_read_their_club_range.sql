@@ -58,9 +58,12 @@
 --   ca_club_player_page_core_20261006: a9cb30a01d41b5b5d1d6c4b815229933
 --   ca_club_player_export_start:       ce83a312514da0262ecead6ef1d49da8
 --
--- @live-proof: md5(pg_get_functiondef('public.ca_club_player_breakdown(uuid,date,date,integer)'::regprocedure)) = 'eeae15ae895151d2194c5962f2247b1d'
--- @live-proof: md5(pg_get_functiondef('public.ca_club_player_page_core_20261006(uuid,date,date,text,text,jsonb,integer)'::regprocedure)) = '4c5af1a0f2c251df57e02d18a048b9fc'
--- @live-proof: md5(pg_get_functiondef('public.ca_club_player_export_start(uuid,date,date,text,uuid)'::regprocedure)) = 'a16b4b91e70e7bdd9df55dd5c605022f'
+-- (Postimages eeae15ae895151d2194c5962f2247b1d / 4c5af1a0f2c251df57e02d18a048b9fc /
+-- a16b4b91e70e7bdd9df55dd5c605022f were later patched by 20261017160101, which keeps this
+-- range read, so the proofs read the range itself.)
+-- @live-proof: position('WHERE s.club_id IN (SELECT hc.club_id FROM hand_clubs hc)' in pg_get_functiondef('public.ca_club_player_breakdown(uuid,date,date,integer)'::regprocedure)) > 0
+-- @live-proof: position('WHERE s.club_id IN (SELECT hc.club_id FROM hand_clubs hc)' in pg_get_functiondef('public.ca_club_player_page_core_20261006(uuid,date,date,text,text,jsonb,integer)'::regprocedure)) > 0
+-- @live-proof: position('WHERE s.club_id IN (SELECT hc.club_id FROM hand_clubs hc)' in pg_get_functiondef('public.ca_club_player_export_start(uuid,date,date,text,uuid)'::regprocedure)) > 0
 
 BEGIN;
 

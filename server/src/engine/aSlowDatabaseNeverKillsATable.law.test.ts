@@ -330,6 +330,19 @@ describe('both engine owners drive the wait from the streak, not from the ready-
     expect(recovery).toContain('this.directTableRestartBackoff.isRepeating(tableId)');
   });
 
+  it('tournament manager admission: the same streak, ended only by an admitted, running manager', () => {
+    // The manager's attempt count is cleared when a retry wins its lease, before
+    // the start that may throw again - the table loop, one level up.
+    const schedule = sliceMethod(GAME_SERVER, 'private scheduleTournamentManagerAdmissionRetry(');
+    expect(schedule).toContain('this.tournamentManagerRestartBackoff.recordFailure(tournamentId)');
+    expect(schedule).not.toMatch(/2 \*\* Math\.min\(attempt/);
+    const finish = sliceMethod(GAME_SERVER, 'private async finishTournamentManagerAdmission(');
+    expect(finish).toContain('this.tournamentManagerRestartBackoff.recordReady(tournamentId)');
+    expect(finish.indexOf('recordReady')).toBeGreaterThan(
+      finish.lastIndexOf('!manager.isRunning()')
+    );
+  });
+
   it('tournament: the same, without touching the in-flight roster the stage gate reads', () => {
     const schedule = sliceMethod(MANAGER, 'private scheduleManagedTableEngineRecovery(');
     expect(schedule).toContain('this.tableRestartBackoff.recordFailure(tableId)');

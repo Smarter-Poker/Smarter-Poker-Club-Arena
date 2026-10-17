@@ -1,5 +1,6 @@
 import { DiamondJackpotReadout } from '../components/bbj/DiamondJackpotReadout';
 import { subscribeDiamondJackpot, type DiamondJackpotSnapshot } from '../lib/diamondJackpotFeed';
+import { isNamedReferralId, referralIdFor } from '../lib/referralId';
 import { isDiamondJackpotAdvertTarget } from '../components/bbj/diamondJackpotAdvertDoor';
 import { tournamentEntryWindowOpen } from '../utils/tournamentEntryWindow';
 import {
@@ -5163,7 +5164,7 @@ function ClubHomePageContent({
                called pokerAlias; it now actually carries one. */
             pokerAlias={playerDisplayName(currentUser, 'arena')}
             clubId={club.club_id}
-            playerId={currentUser?.player_number}
+            playerId={referralIdFor(currentUser?.player_number)}
             level={clubLevel?.level}
             playersPlaying={playersPlaying}
             arenaStats={
@@ -5188,8 +5189,10 @@ function ClubHomePageContent({
             onCopyPlayerId={
               currentUser?.player_number
                 ? () => {
-                    navigator.clipboard.writeText(currentUser.player_number!.toString());
-                    toast.success('Player Number Copied');
+                    const referralId = referralIdFor(currentUser.player_number) ?? '';
+                    navigator.clipboard.writeText(referralId);
+                    if (isNamedReferralId(referralId)) toast.success('Referral ID Copied');
+                    else toast.success('Player Number Copied');
                   }
                 : undefined
             }

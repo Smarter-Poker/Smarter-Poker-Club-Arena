@@ -133,6 +133,14 @@ function fixturePath(environment) {
   );
 }
 
+/** The first-run account's own record, so its cleanup never touches the main one. */
+function firstRunFixturePath(environment) {
+  return (
+    environment.FIRST_RUN_ACCOUNT_FILE ||
+    join(environment.RUNNER_TEMP || process.cwd(), 'club-arena-production-first-run-account.json')
+  );
+}
+
 function reserved(email) {
   return (
     (email.startsWith(ACCOUNT_PREFIX) && email.endsWith(ACCOUNT_SUFFIX)) ||
@@ -1321,6 +1329,7 @@ export async function createProductionE2EAccount({
   environment = process.env,
   fetchImpl = fetch,
   wait = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds)),
+  firstRun = false,
 } = {}) {
   const configuration = requireEnvironment(environment);
   if (!environment.GITHUB_ENV) throw new Error('GITHUB_ENV is required to share the account.');
@@ -1332,7 +1341,7 @@ export async function createProductionE2EAccount({
   const suffix = `${Date.now()}-${randomUUID()}`;
   const email = `${ACCOUNT_PREFIX}${suffix}${ACCOUNT_SUFFIX}`;
   const password = `Ca!${randomUUID()}aA7`;
-  const alias = `PostDeploy${suffix.slice(-8)}`;
+  const alias = `${firstRun ? 'FirstRun' : 'PostDeploy'}${suffix.slice(-8)}`;
   let account;
 
   try {
@@ -1359,16 +1368,27 @@ export async function createProductionE2EAccount({
     if (!id) throw new Error('Supabase Auth created no user id for the post-deploy account.');
     account = { id, email, password, createdAt: new Date().toISOString() };
     await waitForProfile(configuration, id, fetchImpl, wait);
-    await normalizeProfile(configuration, id, fetchImpl);
+    // A FIRST-RUN account is left exactly as a brand-new sign-up arrives: its
+    // alias chosen on the sign-up form and NO arena avatar, so the profile gate
+    // stands in front of it. Every other certification account is normalized
+    // past that gate, which is why the gate itself went uncertified until a
+    // real iPhone player found ENTER ARENA dead (2026-10-17).
+    if (!firstRun) await normalizeProfile(configuration, id, fetchImpl);
 
-    const path = fixturePath(environment);
+    const path = firstRun ? firstRunFixturePath(environment) : fixturePath(environment);
     writeFileSync(path, `${JSON.stringify(account)}\n`, { mode: 0o600 });
     process.stdout.write(`::add-mask::${email}\n::add-mask::${password}\n`);
     appendFileSync(
       environment.GITHUB_ENV,
-      `SP_EMAIL=${email}\nSP_PASS=${password}\nE2E_TEST_ACCOUNT_FILE=${path}\n`
+      firstRun
+        ? `FIRST_RUN_EMAIL=${email}\nFIRST_RUN_PASS=${password}\nFIRST_RUN_ACCOUNT_FILE=${path}\n`
+        : `SP_EMAIL=${email}\nSP_PASS=${password}\nE2E_TEST_ACCOUNT_FILE=${path}\n`
     );
-    console.log('[production-e2e-account] isolated account created and normalized.');
+    console.log(
+      firstRun
+        ? '[production-e2e-account] isolated first-run account created (no arena avatar).'
+        : '[production-e2e-account] isolated account created and normalized.'
+    );
     return account;
   } catch (error) {
     if (account) {
@@ -1388,6 +1408,11 @@ export async function createProductionE2EAccount({
 async function main() {
   const command = process.argv[2];
   if (command === 'create') return createProductionE2EAccount();
+  if (command === 'create-first-run') return createProductionE2EAccount({ firstRun: true });
+  if (command === 'cleanup-first-run')
+    return cleanupProductionE2EAccount({
+      environment: { ...process.env, E2E_TEST_ACCOUNT_FILE: firstRunFixturePath(process.env) },
+    });
   if (command === 'prepare-staff') return prepareProductionE2EStaffMembership();
   if (command === 'prepare-spectator') return prepareProductionE2ESpectatorMembership();
   if (command === 'prepare-lightning-staff') return prepareProductionE2ELightningMembership();
@@ -1395,7 +1420,7 @@ async function main() {
   if (command === 'retire-create-clubs') return retireProductionCreateClubFixtures();
   if (command === 'cleanup') return cleanupProductionE2EAccount();
   throw new Error(
-    'Usage: production-e2e-account.mjs <create|prepare-staff|prepare-spectator|prepare-lightning-staff|prepare-template-staff|retire-create-clubs|cleanup>'
+    'Usage: production-e2e-account.mjs <create|create-first-run|cleanup-first-run|prepare-staff|prepare-spectator|prepare-lightning-staff|prepare-template-staff|retire-create-clubs|cleanup>'
   );
 }
 

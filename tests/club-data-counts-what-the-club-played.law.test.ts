@@ -75,11 +75,14 @@ describe('the club is read from the money, the guess is only a last resort', () 
       'supabase/migrations/20261017160125_club_data_counts_what_the_club_played.sql'
     );
     expect(sql).toContain(
-      'CREATE TRIGGER ca_club_data_fact_rake AFTER INSERT ON public.rake_records'
+      'CREATE OR REPLACE TRIGGER ca_club_data_fact_rake AFTER INSERT ON public.rake_records'
     );
     expect(sql).toContain(
-      'CREATE TRIGGER ca_club_data_fact_wallet AFTER INSERT ON public.wallet_transactions'
+      'CREATE OR REPLACE TRIGGER ca_club_data_fact_wallet AFTER INSERT ON public.wallet_transactions'
     );
+    // Dropping a trigger takes ACCESS EXCLUSIVE on a money table even when there
+    // is nothing to drop; it deadlocked the first install (2026-10-17 18:07 UTC).
+    expect(sql).not.toMatch(/DROP TRIGGER/i);
     for (const fn of ['trg_ca_club_data_fact_rake', 'trg_ca_club_data_fact_wallet']) {
       expect(latest(fn)).toMatch(/EXCEPTION WHEN OTHERS THEN\s+RAISE WARNING/);
     }

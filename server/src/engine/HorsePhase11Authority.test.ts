@@ -109,21 +109,52 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P11.3 the declared-work change (2026-10-16) requires fresh qualification of every previously selected pack', () => {
+describe('P11.3 the declared-work source d9190c9e requalifies each previously selected pack at generation 3', () => {
   const selected = HORSE_PHASE11_VARIANTS.filter((v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null);
 
-  it('every pack is unselected, and its retained generations 1 and 2 are refused under the running contract', () => {
+  it('PLO8 and PLO5 are selected at generation 3 on d9190c9e, PLO6 stays unselected, and every retained generation 1 and 2 is refused under the running contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE11_VARIANTS) {
-      expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
-      expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
-        status: 'refused',
-        reason: 'unselected',
-        transient: false,
-      });
+      const current = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant];
+      if (variant === 'plo8' || variant === 'plo5') {
+        expect(Object.isFrozen(current)).toBe(true);
+        expect(current, variant).toMatchObject({
+          schema: 'horse-qualified-authority-selection-v1',
+          phase: 'phase11',
+          variant,
+          sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
+          packVersion: OMAHA_VARIANT_PACKS[variant].version,
+          contractDigest: PHASE11_RUNNING_CONTRACT_DIGEST,
+          approvalGeneration: 3,
+          expiresAt: null,
+          withdrawn: null,
+        });
+        const admitted = admitHorsePhase11ReleaseAuthority(variant);
+        expect(admitted.status, variant).toBe('admitted');
+        expect(selectedHorsePhase11Authority(variant, admitted), variant).toMatchObject({
+          sourceSha: current!.sourceSha,
+          evidenceSha256: current!.qualificationSha256,
+          approvalGeneration: 3,
+        });
+        for (const [path, digest] of [
+          [current!.qualificationPath, current!.qualificationSha256],
+          [current!.completionPath!, current!.completionSha256!],
+        ])
+          for (const root of ['../../../', '../../release-evidence/']) {
+            const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
+            expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
+          }
+      } else {
+        expect(current, variant).toBeNull();
+        expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        });
+      }
       const retired = RETIRED_2026_10_16_PHASE11_SELECTIONS[variant];
       for (const [selection, generation] of [
         [PREVIOUS_PHASE11_SELECTIONS[variant]!, 1],
@@ -186,12 +217,12 @@ describe('P11.3 the declared-work change (2026-10-16) requires fresh qualificati
     ).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('each live main-scheduler gate refuses its selection until requalified (digest moved 2026-10-16)', () => {
+  it('each live main-scheduler gate is usable exactly when its pack is selected', () => {
     for (const variant of HORSE_PHASE11_VARIANTS) {
       const gate = liveHorsePhase11Authorities[variant];
       gate.refresh();
       expect(gate.mainState(), variant).toBe(
-        PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] === null ? 'unselected' : 'refused'
+        PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] === null ? 'unselected' : 'usable'
       );
     }
   });

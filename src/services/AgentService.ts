@@ -11,6 +11,7 @@
  */
 
 import { supabase, getAuthUser } from '../lib/supabase';
+import { playerNumberForReferralId } from '../lib/referralId';
 import { readPresence } from '../lib/ownProfile';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -797,9 +798,12 @@ class AgentServiceClass {
     if (typeof referralCode === 'string' && referralCode.includes('-')) {
       agentProfileQuery = agentProfileQuery.eq('id', referralCode);
     } else {
+      // "KingFish" is player 1's referral ID (src/lib/referralId.ts).
       agentProfileQuery = agentProfileQuery.eq(
         'player_number',
-        typeof referralCode === 'string' ? parseInt(referralCode, 10) : referralCode
+        typeof referralCode === 'string'
+          ? parseInt(playerNumberForReferralId(referralCode), 10)
+          : referralCode
       );
     }
     const { data: agentProfile } = await agentProfileQuery.maybeSingle();

@@ -249,12 +249,21 @@
   box-shadow: inset 3px 0 0 #2ed573;
 }
 
-/* The cash card's second title line: the table's own name. */
+/* The cash card's second title line: the table's own name. On the desktop
+   board it wraps instead of clipping (live check 2026-10-17: the Action note
+   was cut to "...30% Minimum VPIP, Double" and lost its bomb timing, the part
+   Dan asked to be stated). The row is height: auto for cash titles, so it
+   grows by a line rather than hiding the end of the description. */
 .lt-name__table {
+  max-width: 100%;
   font-size: 0.75rem;
   font-weight: 500;
+  line-height: 1.25;
   color: var(--text-secondary, #c8ccd4);
   letter-spacing: 0.01em;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* What an Action or Madness game changes, next to the style word

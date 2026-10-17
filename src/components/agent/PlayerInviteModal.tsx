@@ -28,6 +28,7 @@
 import { useState, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
+import { referralIdFor } from '../../lib/referralId';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { AgentService } from '../../services/AgentService';
 import styles from './PlayerInviteModal.module.css';
@@ -220,7 +221,7 @@ export default function PlayerInviteModal({
         .eq('id', agentUserId)
         .maybeSingle();
 
-      const ref = profile?.player_number || agentUserId;
+      const ref = referralIdFor(profile?.player_number) || agentUserId;
       let link = `${publicOrigin()}/hub/club-arena/invite/${resolvedClubId}?ref=${ref}`;
 
       // SHARE & INVITE (Dan 2026-10-15): an agent inviting for THEMSELVES

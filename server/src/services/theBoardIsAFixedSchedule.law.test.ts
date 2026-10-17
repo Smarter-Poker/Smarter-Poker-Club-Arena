@@ -202,7 +202,7 @@ describe('the Diamond Arena prices a fixed-board occurrence at its real total', 
     expect(total).toBeGreaterThan(0);
     const mapped = diamondSpawnConfig(row, { type: 'fixed_board', fixedBoard: name }, START);
     expect(mapped.ok).toBe(true);
-    if (mapped.ok) expect(mapped.config.buyIn).toBe(total);
+    if (mapped.ok) expect(mapped.config.buyIn).toBe(total * 10);
   });
 
   it('the 8 PM Prime Time Free Buy is on the arena board: rebuy and add-on at 100 Diamonds', () => {

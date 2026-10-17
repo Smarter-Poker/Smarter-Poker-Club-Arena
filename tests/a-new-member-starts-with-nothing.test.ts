@@ -159,6 +159,8 @@ describe('the shareable invite link an agent hands out', () => {
 
   it('carries the agent player_number the redemption RPC matches on', () => {
     expect(MODAL).toMatch(/select\('player_number'\)/);
-    expect(MODAL).toMatch(/profile\?\.player_number \|\| agentUserId/);
+    // The referral ID: the player number, or "KingFish" for player 1 (Dan
+    // 2026-10-16); fn_redeem_club_invite_code maps the name back to player 1.
+    expect(MODAL).toMatch(/referralIdFor\(profile\?\.player_number\) \|\| agentUserId/);
   });
 });

@@ -72,7 +72,7 @@ function fixture({
                       vpip_window: 10,
                       bombs: {
                         enabled: true,
-                        trigger: second ? 'every_orbit' : 'timed_15m',
+                        trigger: second ? 'timed_10m' : 'timed_20m',
                         ante_bb: second ? 3 : 2,
                         boards: 2,
                       },

@@ -43,7 +43,7 @@ function targetReader(index = 0, patch = {}) {
       vpip_window: 10,
       bombs: {
         enabled: true,
-        trigger: a ? 'timed_15m' : 'every_orbit',
+        trigger: a ? 'timed_20m' : 'timed_10m',
         ante_bb: a ? 2 : 3,
         boards: 2,
       },

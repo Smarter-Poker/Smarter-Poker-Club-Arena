@@ -23,7 +23,7 @@ function templateSnapshot(template) {
     vpip_window: 10,
     bombs: {
       enabled: true,
-      trigger: action ? 'timed_15m' : 'every_orbit',
+      trigger: action ? 'timed_20m' : 'timed_10m',
       ante_bb: action ? 2 : 3,
       boards: 2,
     },

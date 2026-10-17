@@ -78,6 +78,11 @@
 -- PINNED LIVE md5(pg_get_functiondef(oid)) BEFORE THIS MIGRATION:
 --   fn_settle_satellite_tournament_pre_money_path_gate  384887d62082eec9a0d61a9d49d955a2
 --   fn_ca_settle_satellite_cohort                       e8986b5b177c88acbde1ac80fe7e029f
+--
+-- LIVE AFTER THIS MIGRATION (the @live-proof reader runs these against
+-- production; both must hold or the migration is reported not live):
+-- @live-proof: md5(pg_get_functiondef('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)'::regprocedure)) = '8fb5cdbc0fd4caae36d1e6191a1e9b6d'
+-- @live-proof: md5(pg_get_functiondef('public.fn_ca_settle_satellite_cohort(uuid,uuid[])'::regprocedure)) = '22063fc9eca98d335f633772aae2d19d'
 -- ============================================================================
 
 DO $do$

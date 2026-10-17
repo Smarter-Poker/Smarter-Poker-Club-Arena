@@ -408,13 +408,36 @@ export interface HorsePhase11AuthoritySelection {
  * window predeclared in
  * docs/evidence/phase12/declaration-completion-requal-bundle-2026-10-17.txt
  * (2026-10-17 04:02 to 04:50Z) completed every eligible decision on every
- * street (lowest Wilson bound 0.9799, river). PLO5 and PLO6 stay null until
- * their matrices finish on the same source.
+ * street (lowest Wilson bound 0.9799, river).
+ *
+ * PLO5 generation 3: the locked P11.2 PLO5 matrix on d9190c9e (run
+ * 38988213699, 2,379,456 pairs) qualifies with no reasons: +5.34 [+4.21,
+ * +6.46] bb/100 cash after rake, at policy digest 5a870516.... Its completion
+ * record in the same window completed every eligible decision on every street
+ * (lowest Wilson bound 0.9853, river). PLO6 stays null until its matrix
+ * finishes on the same source.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
 > = Object.freeze({
-  plo5: null,
+  plo5: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo5',
+    sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
+    packVersion: 'plo5-high-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
+    domain: 'plo5-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/d9190c9e/phase11-qualification-2026-10-17-plo5.json',
+    qualificationSha256: '205a57fbcd3e24ea8ce5e9da8a3db799a543e063cebdae6a63aef577ae79de67',
+    completionPath: 'docs/evidence/phase11/d9190c9e/phase11-completion-2026-10-17-plo5.json',
+    completionSha256: '1d2d6ba92528485c85e3cca84538efb47b35db3f8923b693050fa4e6831e245e',
+    approvalGeneration: 3,
+    issuedAt: '2026-10-17T17:30:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   plo6: null,
   plo8: Object.freeze({
     schema: 'horse-qualified-authority-selection-v1',

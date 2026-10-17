@@ -741,22 +741,15 @@ export default function TournamentResultsPage() {
       }}
     >
       <CasinoSurfaceHeader
-        unframed
-        crest="vip"
-        eyebrow="Play & Review / Results"
         title="Tournament Archive"
         description="Inspect Completed Fields, Standings, Total Payouts, Bounty Awards, Spin Outcomes, And Recorded Hands Without Flattening Format-Specific Results."
-        artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
         status="RESULTS LEDGER // LIVE"
-        metrics={[
-          { label: 'Events Loaded', value: tournaments.length, tone: 'live' },
-          { label: 'View', value: filter === 'mine' ? 'My Results' : 'All Results' },
-          { label: 'Format', value: typeFilter === 'all' ? 'All' : typeFilter.toUpperCase() },
-        ]}
       />
-      {/* Header */}
+      {/* Back */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
         <button
+          type="button"
+          aria-label="Back"
           onClick={() => navigate(-1)}
           style={{
             background: 'none',
@@ -771,7 +764,6 @@ export default function TournamentResultsPage() {
         >
           ←
         </button>
-        <h2 style={{ margin: 0, color: '#fff', fontSize: '18px' }}>Tournament Results</h2>
       </div>
 
       {/* Filters */}

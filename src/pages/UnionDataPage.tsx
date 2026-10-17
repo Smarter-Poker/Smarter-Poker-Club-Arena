@@ -109,14 +109,10 @@ export default function UnionDataPage() {
     return (
       <main className={styles.page}>
         <CasinoSurfaceHeader
-          crest="flat"
-          family="shark"
-          eyebrow="Union Network / Data"
           title="Union Data"
           description="Choose A Union To Read Its Verified Production Ledger."
           status="UNION PRODUCTION // CHECKING"
           pill="No Union"
-          pillInk="muted"
           plates={{
             primary: {
               label: canOperateUnionNetwork ? 'Return To Unions' : 'Return To Community',
@@ -131,9 +127,6 @@ export default function UnionDataPage() {
   return (
     <main className={styles.page}>
       <CasinoSurfaceHeader
-        crest="spade"
-        family="riveted"
-        eyebrow="Union Network / Data"
         title="Union Data"
         description="What Every Club Beneath This Union Produced In Rake, For The Day, The Week, The Month Or The Year."
         status="UNION PRODUCTION // LIVE"

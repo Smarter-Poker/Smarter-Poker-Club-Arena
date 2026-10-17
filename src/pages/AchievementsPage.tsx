@@ -634,38 +634,23 @@ export default function AchievementsPage() {
   return (
     <StandardContentLayout className="achievements-page">
       <RewardsSurfaceHeader
-        eyebrow="Rewards Circuit / Achievements"
         title="Achievement Archive"
         description="A Live Record Of Milestones Earned Across Play, Competition, Community, Loyalty, And Special Events, With Every Badge Still Driven By The Existing Achievement Services."
-        art="diamonds"
         status="MILESTONE INDEX // LIVE"
         metrics={[
           { label: 'Unlocked', value: animatedUnlocked, tone: 'live' },
           { label: 'Total', value: animatedTotal },
-          {
-            label: 'Login Streak',
-            value:
-              dailyStreak === null
-                ? 'Unavailable'
-                : `${dailyStreak} ${dailyStreak === 1 ? 'Day' : 'Days'}`,
-            tone: 'attention',
-          },
         ]}
       />
 
       {/* ── The streak: one console, three milestone ROWS, and the heatmap ── */}
       <SpadeConsole
         className="ach-console"
-        eyebrow="Rewards Circuit"
         title="Daily Login Streak"
         pill={dailyStreak === null ? 'Unavailable' : `${dailyStreak} Days`}
         pillInk={dailyStreak !== null && dailyStreak > 0 ? 'gold' : 'muted'}
         foot="foot"
       >
-        <p className="sc-copy">
-          Track Your Consecutive Login Days And Recorded Achievement Activity.
-        </p>
-
         <div className="ach-streak">
           <StreakFire streakCount={dailyStreak ?? 0} size="lg" showLabel />
         </div>

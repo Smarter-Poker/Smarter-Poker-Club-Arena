@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import styles from './LegalDocumentLayout.module.css';
-import { mediaUrl } from '../../utils/mediaBase';
+import PageBar from '../help/PageBar';
 import { resolveSeo } from '../../lib/seo';
 
 export interface LegalDocumentSection {
@@ -12,7 +12,6 @@ export interface LegalDocumentSection {
 
 interface LegalDocumentLayoutProps {
   documentCode: string;
-  eyebrow: string;
   title: string;
   summary: string;
   lastUpdated: string;
@@ -28,7 +27,6 @@ const DOCUMENTS = [
 
 export default function LegalDocumentLayout({
   documentCode,
-  eyebrow,
   title,
   summary,
   lastUpdated,
@@ -54,43 +52,20 @@ export default function LegalDocumentLayout({
 
   return (
     <div className={styles.page}>
-      <header className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <nav className={styles.breadcrumbs} aria-label="Breadcrumb">
-            <Link to="/legal">Legal Center</Link>
-            <span aria-hidden="true">/</span>
-            <span aria-current="page">{title}</span>
-          </nav>
-          <span className={styles.eyebrow}>{eyebrow}</span>
-          <h1>{title}</h1>
-          <p>{summary}</p>
-          <dl className={styles.metadata}>
-            <div>
-              <dt>Document</dt>
-              <dd>{documentCode}</dd>
-            </div>
-            <div>
-              <dt>Effective</dt>
-              <dd>{lastUpdated}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>
-                <span aria-hidden="true" /> Current
-              </dd>
-            </div>
-          </dl>
-        </div>
-        <div className={styles.heroArt} aria-hidden="true">
-          <img src={mediaUrl('images/bg-vault.jpg')} alt="" />
-          <span className={styles.seal}>{documentCode}</span>
-        </div>
-      </header>
+      {/* Dan, 2026-10-17: no eyebrow, no giant title, no summary paragraph.
+          The breadcrumb names the document; what it covers is behind the "?";
+          the effective date prints with the document, in its footer. */}
+      <PageBar title={title} summary={summary}>
+        <nav className={styles.breadcrumbs} aria-label="Breadcrumb">
+          <Link to="/legal">Legal Center</Link>
+          <span aria-hidden="true">/</span>
+          <span aria-current="page">{title}</span>
+        </nav>
+      </PageBar>
 
       <div className={styles.documentGrid}>
         <aside className={styles.indexRail}>
           <div className={styles.indexPlate}>
-            <span className={styles.indexEyebrow}>Document Index</span>
             <nav aria-label={`${title} Sections`}>
               {sections.map((section, index) => (
                 <a href={`#${section.id}`} key={section.id}>
@@ -114,7 +89,9 @@ export default function LegalDocumentLayout({
           ))}
 
           <footer className={styles.documentFooter}>
-            <span>Last Updated: {lastUpdated}</span>
+            <span>
+              {documentCode} · Effective {lastUpdated}
+            </span>
             <a href="mailto:support@smarter.poker">Support@Smarter.Poker</a>
           </footer>
         </article>

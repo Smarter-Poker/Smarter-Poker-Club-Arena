@@ -3386,12 +3386,11 @@ function CashierTradeWorkspace() {
     >
       <CashierWorkspace
         compact={!advanced}
-        eyebrow="Secure Cashier"
         title="Cashier"
+        summary="Move Chips Between Your Club Wallets, Answer Chip Requests, Redeem Tickets And Check Every Ledger Entry."
         // Dan 2026-10-16: no "Live Ledger" pill. A locked cashier still says so.
         pill={isOnline ? undefined : 'Locked'}
-        pillInk="red"
-        foot="foot"
+        pillTone="danger"
         className={styles.console}
       >
         <div className={styles.glass}>
@@ -3406,8 +3405,7 @@ function CashierTradeWorkspace() {
           )}
           <section
             className={styles.hero}
-            aria-labelledby={advanced ? 'cashier-title' : undefined}
-            aria-label={advanced ? undefined : 'Club Cashier'}
+            aria-label={advanced ? 'Wallet Command' : 'Club Cashier'}
           >
             <div className={styles.header}>
               <button
@@ -3474,13 +3472,6 @@ function CashierTradeWorkspace() {
             )}
             {advanced && (
               <div className={styles.heroContent}>
-                <h2 className={`${styles.heroTitle} sc-ink--silver`} id="cashier-title">
-                  Wallet Command
-                </h2>
-                <p className={`${styles.heroCopy} sc-copy`}>
-                  Move Chips Through The Correct Wallet, Answer Requests, Redeem Tickets, And Verify
-                  Every Ledger Entry From One Secure Desk.
-                </p>
                 <div
                   className={`${styles.securityLine} ${cashierNeedsAttention && !loading && !isHydrating ? styles.securityDotWarning : ''}`}
                   role="status"

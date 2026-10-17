@@ -273,12 +273,9 @@ export default function RakebackPage() {
   return (
     <div className="rakeback-page">
       <RewardsSurfaceHeader
-        eyebrow="Rewards Circuit / Rakeback"
         title="Rakeback Engine"
         description="See The Value Returning From Completed Play And Inspect Every Earning Period. Rakeback Is Settled Automatically Every Monday At 4:00 AM Central Time."
-        art="diamonds"
         status="RAKEBACK ENGINE // LIVE"
-        crest="flat"
         metrics={[
           { label: 'Recent Earnings', value: totalEarned.toLocaleString(), tone: 'live' },
           { label: 'Latest Period Rate', value: rateLabel(currentRate) },

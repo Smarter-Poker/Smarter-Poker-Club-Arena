@@ -133,7 +133,6 @@ export default function PromotionsPage() {
   return (
     <LegalDocumentLayout
       documentCode="CA-PRM-02"
-      eyebrow="Campaign Governance"
       title="Promotion Rules"
       summary="The Eligibility, Live-Term Authority, Abuse Controls, And Dispute Process For Platform And Club Offers."
       lastUpdated="August 29, 2026"

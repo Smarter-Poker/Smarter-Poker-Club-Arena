@@ -41,7 +41,8 @@ describe('cinematic retained route families', () => {
     // with the pages within this chat": the Cashier's workspace, not the
     // Rewards Circuit console.
     const source = readFileSync('src/pages/PlayerWalletPage.tsx', 'utf8');
-    expect(source).toContain('<CashierWorkspace compact eyebrow="Secure Wallet" title="Wallet">');
+    // 2026-10-17: no eyebrow (Dan: "PAGES DON'T NEED TITLES LIKE THIS").
+    expect(source).toMatch(/<CashierWorkspace\s+compact\s+title="Wallet"\s+summary="[^"]+"/);
     expect(source).toContain('data-arena-surface="wallet"');
   });
 
@@ -112,23 +113,32 @@ describe('cinematic retained route families', () => {
     expect(homeCss).toMatch(/\.tileImageNative\s*\{[^}]*object-fit:\s*contain/s);
   });
 
-  it.each(UNION_PAGES)('%s uses the Union Network visual anchor', (path) => {
+  it.each(UNION_PAGES)('%s opens on the shared page bar, not a hero', (path) => {
+    // 2026-10-17, Dan: "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL
+    // DESCRIPTIONS". The union pages keep their header component, which now
+    // prints the page bar and the "?"; the union-bank hero art is gone.
     const source = readFileSync(path, 'utf8');
     expect(source).toContain('CasinoSurfaceHeader');
-    expect(source).toContain('wallet-union-bank-v1.webp');
+    expect(source).not.toMatch(/<CasinoSurfaceHeader\b[^>]*?\b(?:eyebrow|artPath)=/);
   });
 
   it('resolves cinematic artwork through the deploy- and CDN-aware media base', () => {
     // The Rewards header prints on the spade console (#ClubArenaConsole,
-    // 2026-09-09) and carries no art of its own, so it left this list.
-    const account = readFileSync('src/components/account/AccountSurfaceHeader.tsx', 'utf8');
-    const community = readFileSync('src/components/community/CommunitySurfaceHeader.tsx', 'utf8');
-    const workspaces = readFileSync('src/pages/workspaces/ArenaWorkspacePages.tsx', 'utf8');
+    // 2026-09-09) and carries no art of its own, so it left this list. On
+    // 2026-10-17 the account, community and workspace heroes left it too:
+    // they are page bars now (Dan: "PAGES DON'T NEED TITLES LIKE THIS") and
+    // paint no artwork, which the second loop pins.
     // The Daily Challenges artwork prints from its dashboard units.
     const missions = readDailyChallengesSurface();
-
-    for (const source of [account, community, workspaces, missions]) {
-      expect(source).toContain('mediaUrl(');
+    expect(missions).toContain('mediaUrl(');
+    for (const path of [
+      'src/components/account/AccountSurfaceHeader.tsx',
+      'src/components/community/CommunitySurfaceHeader.tsx',
+      'src/pages/workspaces/ArenaWorkspacePages.tsx',
+    ]) {
+      const source = readFileSync(path, 'utf8');
+      expect(source, path).toMatch(/import PageBar from '[./]+(?:components\/)?help\/PageBar';/);
+      expect(source, path).not.toContain('mediaUrl(');
     }
     for (const path of [
       'public/assets/club-buttons/wallets/desktop/wallet-diamonds-v1.webp',

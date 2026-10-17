@@ -72,7 +72,10 @@ describe('Support And Trust Workspace', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Legal Center' })).toHaveAttribute('href', '/legal');
-    expect(screen.getAllByText(documentCode)).toHaveLength(2);
+    // 2026-10-17: the hero (eyebrow, summary, metadata, seal) is gone; the
+    // document code prints once, with the effective date, in the footer.
+    expect(screen.getByText(new RegExp(`^${documentCode} · Effective `))).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: title })).toHaveClass('sr-only');
     expect(screen.getByRole('navigation', { name: `${title} Sections` })).toBeInTheDocument();
     expect(screen.getByRole('article', { name: title })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Legal Documents' })).toBeInTheDocument();

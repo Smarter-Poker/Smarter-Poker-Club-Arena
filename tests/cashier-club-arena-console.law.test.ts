@@ -327,7 +327,7 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
   it('prints wallet amounts through the exact wallet formatter', () => {
     for (const { tsx } of CASHIER_SURFACES) {
       for (const tag of consoleTags(read(tsx))) {
-        for (const zone of ['eyebrow', 'subtitle', 'pill']) {
+        for (const zone of ['eyebrow', 'subtitle', 'context', 'pill']) {
           const value = tag.match(new RegExp(`\\b${zone}=\\{([^}]*)\\}`))?.[1] ?? '';
           expect(value, `${tsx} ${zone}`).not.toMatch(/toLocaleString|toFixed/);
         }
@@ -343,7 +343,7 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
       'return compactChips(Number(value));'
     );
     expect(read('src/pages/CashierPage.tsx')).toContain(
-      "subtitle={titleCase(clubName || 'Club Wallet')}"
+      "context={titleCase(clubName || 'Club Wallet')}"
     );
 
     const wallet = read('src/components/wallet/DynamicWallet.tsx');

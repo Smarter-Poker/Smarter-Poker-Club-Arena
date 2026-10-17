@@ -404,10 +404,8 @@ function PromotionsAccount({
           offer and its claim on the glass, and the two doors on its painted
           plates. Nothing on this page is drawn. */}
       <RewardsSurfaceHeader
-        eyebrow="Rewards Circuit / Promotions"
         title="Promotions"
         description="Active Club Offers, Scheduled Events, Referral Rewards And Leaderboard Races, With The Live Eligibility And Claim Workflows Beneath Them."
-        art="market"
         status="OFFER INDEX // LIVE"
         crest="flat"
         pill={`${filteredPromos.length} ${filter}`}

@@ -267,7 +267,6 @@ export default function PrivacyPolicyPage() {
   return (
     <LegalDocumentLayout
       documentCode="CA-PRV-01"
-      eyebrow="Data Stewardship"
       title="Privacy Policy"
       summary="How Club Arena Collects, Uses, Protects, Retains, And Gives You Control Over Information."
       lastUpdated={PRIVACY_LAST_UPDATED}

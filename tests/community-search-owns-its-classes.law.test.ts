@@ -89,10 +89,13 @@ describe('the numbers on the page are measured, not assumed', () => {
     expect(PAGE).not.toMatch(/username\.ilike/);
   });
 
-  it('measures Live Indexes from which indexes answered, never a literal', () => {
-    expect(PAGE).not.toMatch(/label: 'Live Indexes',\s*value: 4/);
-    expect(PAGE).toContain("indexStatus[key] === 'live'");
-    expect(PAGE).toContain("indexStatus[key] === 'failed'");
+  it('measures index health from which indexes answered, never a literal', () => {
+    // 2026-10-17: the header's "Live Indexes" figure is gone with the hero
+    // (Dan: "ALL THESE WORDS ARE DISTRACTING"). Each index still reports its
+    // own measured state, and a failed index still says so in its section.
+    expect(PAGE).not.toMatch(/label: 'Live Indexes'/);
+    expect(PAGE).toContain("status[key] === 'failed'");
+    expect(PAGE).toContain("section.status === 'failed'");
     expect(PAGE).toContain('index_health');
   });
 

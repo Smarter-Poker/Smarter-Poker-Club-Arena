@@ -271,11 +271,8 @@ export default function SessionHistoryPage() {
   return (
     <div className="session-history-page" data-arena-surface="play">
       <CasinoSurfaceHeader
-        unframed
-        eyebrow="Play & Review / Sessions"
         title="Session Ledger"
         description="Review Complete Sessions, Loaded Performance Trends, And Table-Level Results With CSV Export And The Existing Live Session Record Pipeline Intact."
-        artPath="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
         status="SESSION INDEX // SYNCHRONIZED"
         metrics={[
           { label: 'Sessions', value: totalSessions },

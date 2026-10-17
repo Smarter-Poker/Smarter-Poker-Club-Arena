@@ -221,7 +221,6 @@
   text-shadow: var(--ink-muted-shadow);
 }
 
-.heroTitle,
 .sectionTitle,
 .recoveryTitle {
   margin: 0;
@@ -231,10 +230,6 @@
   letter-spacing: 0.03em;
   text-shadow: var(--ink-silver-bevel);
   text-transform: uppercase;
-}
-
-.heroTitle {
-  font-size: min(5.6cqw, 28px);
 }
 
 .sectionTitle,
@@ -363,10 +358,6 @@
   flex-direction: column;
   gap: min(1.8cqw, 9px);
   min-width: 0;
-}
-
-.heroCopy {
-  margin: 0;
 }
 
 /* The live synchronisation line. Its warning state reads red; the class name
@@ -1170,19 +1161,12 @@
 .page .header {
   grid-column: 1 / -1;
 }
-.page .heroTitle {
-  font-size: clamp(24px, 4cqw, 32px);
-  font-weight: 400;
-  text-transform: none;
-  text-shadow: none;
-}
+
 .page .heroMetrics {
   padding: 0;
   align-content: center;
 }
-.page .heroCopy {
-  max-width: 620px;
-}
+
 .page .recoveryConsole {
   padding-block: 14px;
 }
@@ -1423,10 +1407,6 @@
   .page .stripValue {
     font-size: 16px;
     flex-wrap: wrap;
-  }
-  .page .heroCopy {
-    font-size: 14px;
-    line-height: 1.4;
   }
 }
 

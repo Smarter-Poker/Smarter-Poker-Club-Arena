@@ -149,7 +149,6 @@ export default function FairGamingPage() {
   return (
     <LegalDocumentLayout
       documentCode="CA-FGP-02"
-      eyebrow="Integrity Standard"
       title="Fair Gaming Policy"
       summary="The Live-Deal Safeguards, Review Records, Prohibited Conduct, And Reporting Paths That Protect Social Poker."
       lastUpdated="August 29, 2026"

@@ -47,6 +47,7 @@ import {
   orderByEndurance,
   selectableWhileRunning,
   type TournamentBoardFacts,
+  classifyAddOnBreakHold,
 } from './support/tournamentBoardEnding';
 import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
 import {
@@ -1016,6 +1017,22 @@ class NaturalCompletionDuringObservation extends Error {
   }
 }
 
+/**
+ * The tournament entered its persisted add-on break while watched. The break
+ * is an authoritative hold, so this case takes another running board inside
+ * the same bounded case deadline, exactly like a natural ending. Nothing here
+ * passes the case: the replacement board must satisfy every assertion.
+ */
+class AuthoritativeHoldDuringObservation extends Error {
+  constructor(
+    message: string,
+    readonly evidence: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'AuthoritativeHoldDuringObservation';
+  }
+}
+
 /** A valid admitted clock lost its population qualification before HUD observation. */
 class PreHudCandidateAttrition extends Error {
   constructor(readonly evidence: Record<string, unknown>) {
@@ -1044,6 +1061,7 @@ async function certifyReadOnlyTournamentFormat(
   const watched: string[] = [];
   const endings: Array<Record<string, unknown>> = [];
   const attritions: Array<Record<string, unknown>> = [];
+  const holds: Array<Record<string, unknown>> = [];
   const pages: Page[] = [];
   try {
     for (let attempt = 0; ; attempt++) {
@@ -1062,10 +1080,12 @@ async function certifyReadOnlyTournamentFormat(
       } catch (error) {
         if (
           !(error instanceof NaturalCompletionDuringObservation) &&
-          !(error instanceof PreHudCandidateAttrition)
+          !(error instanceof PreHudCandidateAttrition) &&
+          !(error instanceof AuthoritativeHoldDuringObservation)
         )
           throw error;
         if (error instanceof PreHudCandidateAttrition) attritions.push(error.evidence);
+        else if (error instanceof AuthoritativeHoldDuringObservation) holds.push(error.evidence);
         else endings.push(error.evidence);
         // Reselection shares the existing case deadline, including any clock
         // already admitted by the HUD; it never resets the case.
@@ -1078,7 +1098,8 @@ async function certifyReadOnlyTournamentFormat(
             new Error(
               `${gameFormat.toUpperCase()} candidates became unavailable before qualification completed and no ` +
                 `further board could be observed: ${decision.reason}. Endings: ${JSON.stringify(endings)}. ` +
-                `Pre-HUD attrition: ${JSON.stringify(attritions)}`
+                `Pre-HUD attrition: ${JSON.stringify(attritions)}. ` +
+                `Add-on break holds: ${JSON.stringify(holds)}`
             ),
             { cause: error }
           );
@@ -1092,6 +1113,11 @@ async function certifyReadOnlyTournamentFormat(
     if (endings.length)
       await testInfo.attach(`${gameFormat}-natural-completions`, {
         body: Buffer.from(JSON.stringify(endings, null, 2)),
+        contentType: 'application/json',
+      });
+    if (holds.length)
+      await testInfo.attach(`${gameFormat}-add-on-break-holds`, {
+        body: Buffer.from(JSON.stringify(holds, null, 2)),
         contentType: 'application/json',
       });
     if (attritions.length)
@@ -1703,12 +1729,38 @@ async function observeTournamentBoard(
       atFailure,
       lastGameplayEventType,
     });
+    /* Only a gameplay-silence failure on a board the database still shows
+       running can be an add-on break hold; every other failure keeps its
+       existing classification. */
+    let addOnBreakHold: ReturnType<typeof classifyAddOnBreakHold> | null = null;
+    const tournamentId = atFailure?.tournamentId ?? selected.boardFacts?.tournamentId ?? null;
+    if (
+      outcome.kind === 'unproven' &&
+      boardReader &&
+      tournamentId &&
+      /no live poker event for \d+ms/.test(original.message)
+    ) {
+      try {
+        const window = await boardReader.addOnBreakWindow(tournamentId);
+        addOnBreakHold = classifyAddOnBreakHold({
+          addonPeriodEndsAt: window?.addonPeriodEndsAt,
+          addonBreakMinutes: window?.addonBreakMinutes,
+          silenceStartedAt: lastGameplayAt ?? Number.NaN,
+          observedAt: Date.now(),
+          maxSilenceMs: MAX_GAMEPLAY_SILENCE_MS,
+        });
+      } catch {
+        // An unreadable window cannot excuse a continuity failure.
+        addOnBreakHold = null;
+      }
+    }
     await testInfo.attach(`${tag}-failure-classification`, {
       body: Buffer.from(
         JSON.stringify(
           {
             tableId: candidate.id,
             outcome,
+            addOnBreakHold,
             lastGameplayEventType,
             atSelection: selected.boardFacts,
             atFailure,
@@ -1726,6 +1778,17 @@ async function observeTournamentBoard(
         reason: outcome.reason,
         atSelection: selected.boardFacts,
         atFailure,
+        failure: original.message.split('\n')[0],
+      });
+    }
+    if (addOnBreakHold?.held) {
+      throw new AuthoritativeHoldDuringObservation(`${candidate.name}: ${addOnBreakHold.reason}`, {
+        tableId: candidate.id,
+        tournamentId,
+        reason: addOnBreakHold.reason,
+        breakStartedAt: new Date(addOnBreakHold.breakStartedAt).toISOString(),
+        breakEndsAt: new Date(addOnBreakHold.breakEndsAt).toISOString(),
+        lastGameplayEventType,
         failure: original.message.split('\n')[0],
       });
     }

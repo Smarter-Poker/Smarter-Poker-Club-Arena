@@ -142,3 +142,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Completed-week and statement club discovery share already accepted cash witnesses.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-first-clubs-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Each touched identity is proved once while every original event still counts.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-touched-identities-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

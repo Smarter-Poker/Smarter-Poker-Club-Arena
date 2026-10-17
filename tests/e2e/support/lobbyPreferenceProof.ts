@@ -232,32 +232,55 @@ export async function selectLobbyPreference(
   const tab = tabs.getByRole('tab', { name: label, exact: true });
   const before = await tabs.getByRole('tab', { selected: true }).textContent();
   proof.record('selection-before', { selected: before?.trim(), intended: label });
-  const started = Date.now();
-  const [requestOutcome, clickOutcome] = await Promise.allSettled([
-    page.waitForRequest((r) => isLobbySelectionRequest(r, clubId, label, ownerId), {
-      timeout: SAVE_TIMEOUT_MS,
-    }),
-    tab.click({ timeout: SAVE_TIMEOUT_MS }).then(async () => {
-      proof.record('selection-clicked', {
-        intended: label,
-        ariaSelected: await tab.getAttribute('aria-selected'),
-      });
-    }),
-  ]);
-  const failures: unknown[] = [];
-  for (const [operation, outcome] of [
-    ['request', requestOutcome],
-    ['click', clickOutcome],
-  ] as const) {
-    if (outcome.status === 'rejected') {
-      failures.push(outcome.reason);
-      proof.record(`selection-${operation}-failed`, {
-        name: outcome.reason instanceof Error ? outcome.reason.name : 'Error',
-        message: String(outcome.reason instanceof Error ? outcome.reason.message : outcome.reason),
-      });
-    }
-  }
-  if (failures.length) {
+
+  // Observe before the action, including a write that precedes click completion.
+  // Start the existing network budget only after the action has succeeded.
+  let receiveRequest!: (request: Request) => void;
+  const requested = new Promise<Request>((resolve) => {
+    receiveRequest = resolve;
+  });
+  const observeRequest = (request: Request) => {
+    if (isLobbySelectionRequest(request, clubId, label, ownerId)) receiveRequest(request);
+  };
+  page.on('request', observeRequest);
+  let phase = 'click';
+  try {
+    await tab.click({ timeout: SAVE_TIMEOUT_MS });
+    const saveStarted = Date.now();
+    phase = 'request';
+    proof.record('selection-clicked', {
+      intended: label,
+      ariaSelected: await tab.getAttribute('aria-selected'),
+    });
+    const request = await bounded(
+      requested,
+      SAVE_TIMEOUT_MS - (Date.now() - saveStarted),
+      'save request'
+    );
+    proof.record('intended-request', {
+      ownerMatches: true,
+      clubMatches: true,
+      tab: TAB_KEYS[label],
+    });
+    phase = 'response';
+    const response = await bounded(
+      request.response(),
+      SAVE_TIMEOUT_MS - (Date.now() - saveStarted),
+      'save response'
+    );
+    if (!response) throw new Error('Lobby preference save ended without a response');
+    proof.record('intended-response', { status: response.status() });
+    if (!response.ok()) throw new Error(`Lobby preference save returned HTTP ${response.status()}`);
+    phase = 'state';
+    const after = await tab.getAttribute('aria-selected');
+    proof.record('selection-after', { selected: label, ariaSelected: after });
+    if (after !== 'true')
+      throw new Error(`Lobby preference ${label} was saved but is not selected`);
+  } catch (error) {
+    proof.record(`selection-${phase}-failed`, {
+      name: error instanceof Error ? error.name : 'Error',
+      message: error instanceof Error ? error.message : String(error),
+    });
     // Observe the isolated tab before restoration closes its document. Do not
     // trigger locator handlers, retry the action or read player/account text.
     try {
@@ -295,25 +318,10 @@ export async function selectLobbyPreference(
         message: error instanceof Error ? error.message : String(error),
       });
     }
-    if (failures.length > 1)
-      throw new AggregateError(failures, 'Lobby preference request and click failed');
-    throw failures[0];
+    throw error;
+  } finally {
+    page.off('request', observeRequest);
   }
-  if (requestOutcome.status !== 'fulfilled')
-    throw new Error('Lobby preference request is unavailable');
-  const request = requestOutcome.value;
-  proof.record('intended-request', { ownerMatches: true, clubMatches: true, tab: TAB_KEYS[label] });
-  const response = await bounded(
-    request.response(),
-    SAVE_TIMEOUT_MS - (Date.now() - started),
-    'save response'
-  );
-  if (!response) throw new Error('Lobby preference save ended without a response');
-  proof.record('intended-response', { status: response.status() });
-  if (!response.ok()) throw new Error(`Lobby preference save returned HTTP ${response.status()}`);
-  const after = await tab.getAttribute('aria-selected');
-  proof.record('selection-after', { selected: label, ariaSelected: after });
-  if (after !== 'true') throw new Error(`Lobby preference ${label} was saved but is not selected`);
 }
 
 /** Keep the ready cold-return document alive until restoration and independent readback finish. */

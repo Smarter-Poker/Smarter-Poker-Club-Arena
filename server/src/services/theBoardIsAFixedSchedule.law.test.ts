@@ -417,6 +417,59 @@ describe("a real room's day: a real tournament every half hour from 8 AM to 1 AM
 
   it('satellites start only on the :15 and the :45', () => {
     expect([...SATELLITE_MINUTES]).toEqual(['15', '45']);
+    const file = readdirSync(migrationsDir).find((f) => f.includes('a_real_rooms_day'));
+    expect(file, 'the 2026-10-16 schedule migration').toBeTruthy();
+    const sql = readFileSync(join(migrationsDir, file!), 'utf8');
+    const sats = [
+      ...sql.matchAll(/^\s+\('(?:[^']+)', '(?:[^']+)', ARRAY\[[^\]]*\], ARRAY\[([^\]]+)\]/gm),
+    ];
+    expect(sats.length).toBeGreaterThan(0);
+    for (const m of sats)
+      for (const t of m[1].split(',').map((x) => x.trim().replace(/'/g, '')))
+        expect(['15', '45'], t).toContain(t.slice(3));
+  });
+
+  it("the clubs' own events were moved onto exactly the weekly slots", () => {
+    const file = readdirSync(migrationsDir).find((f) => f.includes('a_real_rooms_day'));
+    const sql = readFileSync(join(migrationsDir, file!), 'utf8');
+    const m = /IF v_slots IS DISTINCT FROM ARRAY\[([^\]]+)\]::text\[\]/.exec(sql);
+    expect(m, 'the weekly-slot assertion').toBeTruthy();
+    const slots = m![1].split(',').map((x) => x.trim().replace(/'/g, ''));
+    expect(slots).toEqual([...WEEKLY_EVENT_SLOTS]);
+  });
+
+  it('every plain event of 25 or more has a satellite, and no satellite is named like its target', () => {
+    const file = readdirSync(migrationsDir).find((f) => f.includes('a_real_rooms_day'));
+    const sql = readFileSync(join(migrationsDir, file!), 'utf8');
+    const rows = [
+      ...sql.matchAll(/^\s+\('([^']+)', '([^']+)', ARRAY\[[^\]]*\], ARRAY\[[^\]]+\]/gm),
+    ];
+    const targets = new Set(rows.map((m) => m[2]));
+    for (const m of rows) expect(m[1].startsWith(m[2]), m[1]).toBe(false);
+    for (const t of [
+      'Prime Time Main Event',
+      'Nightly 10K (NLH)',
+      'Friday Fight Night Opener',
+      'Saturday Stackfest Opener',
+      'Wednesday Feature',
+      'Six-Card Feature',
+      'Friday Night Feature',
+      'Saturday Night Big Stack',
+      'Sunday Funday PLO Classic',
+      'Sunday Funday Turbo',
+      'Sunday Funday Big Stack',
+      'Sunday Funday Six-Max',
+      'Sunday Funday Championship',
+      'Sunday Funday Happy Hour',
+      'Sunday Funday Prime Time',
+      'Sunday Funday PLO High Roller',
+      'Sunday Funday PLO Opener',
+      'Sunday Funday Warm-Up',
+      'Sunday Funday Main Event',
+      'Sunday Funday PLO5 Big Stack',
+      'Sunday Funday Six-Card Closer',
+    ])
+      expect(targets.has(t), t).toBe(true);
   });
 
   it('the five Free Buys run every day at 8:30 AM, 12:30 PM, 4:30 PM, 8:30 PM and 12:30 AM', () => {

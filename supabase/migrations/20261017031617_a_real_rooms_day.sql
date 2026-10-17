@@ -57,6 +57,7 @@
 --
 -- No DDL. One transaction.
 
+-- @live-proof: (SELECT (SELECT count(*) FROM public.tournament_schedules s WHERE s.active AND s.name = 'Nightly 10K (NLH)' AND s.club_id IN ('fade0000-0000-0000-0000-000000000001', '002c2d27-9584-4e52-835a-bb2be148fc81')) = 2 AND NOT EXISTS (SELECT 1 FROM public.tournament_schedules s WHERE s.active AND s.name LIKE '100 % Guarantee Freeroll%' AND s.club_id IN ('fade0000-0000-0000-0000-000000000001', '002c2d27-9584-4e52-835a-bb2be148fc81')))
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';

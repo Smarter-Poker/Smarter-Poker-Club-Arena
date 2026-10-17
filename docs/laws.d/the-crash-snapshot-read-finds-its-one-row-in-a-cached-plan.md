@@ -1,0 +1,3 @@
+# tests/the-crash-snapshot-read-finds-its-one-row-in-a-cached-plan.db.law.test.ts
+
+The engine's boot read of a table's unfinished hand (getActiveHandSnapshotFull) reaches PostgREST as `table_id = $1 AND is_complete = $2`, and a cached generic plan cannot use the partial unique index on unfinished snapshots, so on 2026-10-17 12:57Z it walked up to 10,523 snapshots per table and hit the 8 s statement timeout 57 times (74 engine kills). The law pins migration 20261017170945's online-built (table_id, is_complete) index that the parameterised plan can use, the engine read still filtering by exactly those two columns, and the native PostgreSQL proof (scripts/ci/test-crash-snapshot-read-plan-postgres.py) staying wired into CI.

@@ -10,14 +10,6 @@
   cursor: default;
 }
 
-.summary-stat--tables {
-  box-shadow: inset 0 -2px 0 var(--members-blue);
-}
-
-.summary-stat--tables .stat-value {
-  color: #a8baff;
-}
-
 .members-count.diamond-players__more {
   display: flex;
   flex-wrap: wrap;

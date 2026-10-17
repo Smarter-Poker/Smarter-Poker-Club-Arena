@@ -18,6 +18,8 @@ import { useRosterWalletUpdates } from '../hooks/useRosterWalletUpdates';
 import { useToast } from '../components/common/Toast';
 import { useVirtualScroll } from '../hooks/useVirtualScroll';
 import PageSkeleton from '../components/common/PageSkeleton';
+import PageBar from '../components/help/PageBar';
+import type { TutorialStep } from '../components/help/PageHelp';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import RosterConnectionStatus from '../components/club/RosterConnectionStatus';
 import PlayerChangeHistory from '../components/club/PlayerChangeHistory';
@@ -61,7 +63,56 @@ import {
 } from '../lib/rosterWorkspace';
 import './ClubMembersPage.css';
 
-const ROSTER_OPERATIONS_ART = `${import.meta.env.BASE_URL}images/club-members/roster-ledger-desk-v2.webp`;
+/* The page's tour. The controls that matter here are a toggle, a search, a
+   filter and a list, none of them a section heading, so the generic tour
+   would miss them (Dan 2026-10-17: the words moved behind the "?"). */
+const SHARED_TOUR_HEAD: TutorialStep[] = [
+  {
+    title: 'Simple Or Advanced',
+    body: 'Simple Is A Compact Directory. Advanced Opens The Full Desk With Totals, Saved Views, Columns, Export And Player History.',
+    target: '.members-mode-toggle',
+  },
+  {
+    title: 'Search',
+    body: 'Find A Player By Name, Number, Club Or Upline.',
+    target: '.members-search',
+  },
+];
+const SHARED_TOUR_TAIL: TutorialStep[] = [
+  {
+    title: 'Sort And Refresh',
+    body: 'Order The List, Group It By Role Or Refresh It From The Server.',
+    target: '.members-toolbar',
+  },
+  {
+    title: 'The Directory',
+    body: 'Tap A Player To Open The Controls Behind Their Seat.',
+    target: '.members-list',
+  },
+];
+const SIMPLE_TOUR: TutorialStep[] = [
+  ...SHARED_TOUR_HEAD,
+  {
+    title: 'Player Views',
+    body: 'Switch Between Every Player, Your Agents And Pending Applicants.',
+    target: '.members-simple-tabs',
+  },
+  ...SHARED_TOUR_TAIL,
+];
+const ADVANCED_TOUR: TutorialStep[] = [
+  ...SHARED_TOUR_HEAD,
+  {
+    title: 'Saved Views',
+    body: 'Filter The Roster To Online Players, Players At Tables, Agents And More.',
+    target: '.members-view-filter',
+  },
+  {
+    title: 'Columns And Export',
+    body: 'Choose The Columns You Read And Export Every Matching Player As A CSV.',
+    target: '.members-columns',
+  },
+  ...SHARED_TOUR_TAIL,
+];
 const PAGE_SIZE = 80;
 const ROW_HEIGHT = ROSTER_ROW_HEIGHT;
 
@@ -1318,9 +1369,37 @@ export default function ClubMembersPage() {
       aria-busy={loading}
       data-players-mode={simpleMode ? 'simple' : 'advanced'}
     >
-      <div className="members-mode-heading">
-        {simpleMode ? <h1>Player Management</h1> : <span>Player Management</span>}
-        <div role="group" aria-label="Player Management Mode">
+      <PageBar
+        className="members-page-bar"
+        title="Player Management"
+        titleId="members-page-title"
+        summary="Find Any Member, Read Their Live Club Status, And Open The Controls Behind Their Seat."
+        status={simpleMode ? undefined : (summaryStatusMessage ?? undefined)}
+        statusTone={
+          summaryFreshness === 'failed'
+            ? 'danger'
+            : summaryFreshness === 'stale'
+              ? 'attention'
+              : 'default'
+        }
+        metrics={
+          simpleMode
+            ? []
+            : [
+                { label: 'Total Members', value: stat(summary.counts.total) },
+                { label: 'Online Now', value: stat(summary.counts.online), tone: 'live' },
+                { label: 'At Tables', value: stat(summary.counts.seated) },
+                { label: 'Agents', value: stat(summary.counts.agents) },
+              ]
+        }
+        steps={simpleMode ? SIMPLE_TOUR : ADVANCED_TOUR}
+      >
+        {!simpleMode && summary.capabilities.can_manage_members && (
+          <Link className="members-applicants" to={`/clubs/${routeClubId}/applicants`}>
+            Review Applicants
+          </Link>
+        )}
+        <div className="members-mode-toggle" role="group" aria-label="Player Management Mode">
           <button type="button" aria-pressed={simpleMode} onClick={() => setSimpleMode(true)}>
             Simple
           </button>
@@ -1328,63 +1407,7 @@ export default function ClubMembersPage() {
             Advanced
           </button>
         </div>
-      </div>
-      {!simpleMode && (
-        <section className="members-hero" aria-labelledby="members-page-title">
-          <img
-            className="members-hero__art"
-            src={ROSTER_OPERATIONS_ART}
-            alt=""
-            aria-hidden="true"
-            width="1774"
-            height="887"
-            loading="eager"
-            decoding="async"
-            fetchPriority="high"
-          />
-          <div className="members-hero__content">
-            <div className="members-hero__copy">
-              <span className="members-eyebrow">Club Players</span>
-              <h1 id="members-page-title">Player Command</h1>
-              {summary.capabilities.can_manage_members && (
-                <Link className="members-applicants" to={`/clubs/${routeClubId}/applicants`}>
-                  Review Applicants
-                </Link>
-              )}
-
-              <p>
-                Find Any Member, Read Their Live Club Status, And Open The Controls Behind Their
-                Seat.
-              </p>
-            </div>
-            <div className="members-summary-shell">
-              <dl
-                className="members-summary"
-                aria-label="Roster Summary"
-                aria-busy={summaryFreshness === 'loading'}
-              >
-                <SummaryStat value={stat(summary.counts.total)} label="Total Members" />
-                <SummaryStat
-                  value={stat(summary.counts.online)}
-                  label="Online Now"
-                  modifier="online"
-                />
-                <SummaryStat
-                  value={stat(summary.counts.seated)}
-                  label="At Tables"
-                  modifier="seated"
-                />
-                <SummaryStat value={stat(summary.counts.agents)} label="Agents" modifier="agents" />
-              </dl>
-              {summaryStatusMessage && (
-                <span className="members-summary__status" role="status" aria-live="polite">
-                  {summaryStatusMessage}
-                </span>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
+      </PageBar>
 
       <section
         className="members-console"
@@ -1393,10 +1416,7 @@ export default function ClubMembersPage() {
       >
         {!simpleMode && (
           <div className="members-console__heading">
-            <div>
-              <span className="members-eyebrow">Member Directory</span>
-              <h2 id="members-directory-title">Find A Player</h2>
-            </div>
+            <h2 id="members-directory-title">Find A Player</h2>
             <span className="members-result-count" aria-live="polite">
               {loading && !hasVerifiedDirectory
                 ? 'Loading...'
@@ -1751,23 +1771,6 @@ export default function ClubMembersPage() {
             : `Loaded ${members.length.toLocaleString()} Of ${filteredTotal.toLocaleString()}`}
         </div>
       )}
-    </div>
-  );
-}
-
-function SummaryStat({
-  value,
-  label,
-  modifier,
-}: {
-  value: string;
-  label: string;
-  modifier?: string;
-}) {
-  return (
-    <div className={`summary-stat${modifier ? ` summary-stat--${modifier}` : ''}`}>
-      <dt className="stat-label">{label}</dt>
-      <dd className="stat-value">{value}</dd>
     </div>
   );
 }

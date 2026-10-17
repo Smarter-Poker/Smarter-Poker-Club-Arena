@@ -232,9 +232,10 @@ async function openMembers(page: Page, probe: MembersProbe): Promise<number> {
     );
   }
   await page.getByRole('button', { name: 'Advanced', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Player Command', exact: true })).toBeVisible({
-    timeout: 45_000,
-  });
+  // The page hero is gone (Dan 2026-10-17); its title is a hidden h1 and the
+  // Advanced desk adds the live totals to the page bar.
+  await expect(page.locator('[data-players-mode="advanced"]')).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole('heading', { level: 1, name: 'Player Management' })).toHaveCount(1);
   await expect(page.getByRole('list', { name: 'Club Member Directory' })).toBeVisible();
   await expect
     .poll(() => probe.pageRpcSuccessfulCompletions, {
@@ -331,18 +332,11 @@ test.describe('Production Shark Club Players', () => {
     expect(probe.pageRpcCalls, 'the directory RPC never ran').toBeGreaterThanOrEqual(1);
     expect(probe.summaryRpcCalls, 'the summary RPC never ran').toBeGreaterThanOrEqual(1);
 
-    const art = page.locator('.members-hero__art');
-    // The owner's frameless directory hides this illustration in both modes.
-    // Advanced restores the controls and summaries, not the removed artwork.
-    await expect(art).toBeHidden();
-    await expect
-      .poll(
-        () => art.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
-        { timeout: 15_000, message: 'the roster hero artwork did not decode' }
-      )
-      .toBe(true);
+    // No hero, no hero artwork: the totals print in the page bar beside the "?".
+    await expect(page.locator('.members-hero, .members-hero__art')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Page Help' })).toBeVisible();
 
-    const summary = page.locator('[aria-label="Roster Summary"]');
+    const summary = page.locator('[aria-label="Player Management Live Summary"]');
     await expect(summary.getByText('Total Members', { exact: true })).toBeVisible();
     await expect(summary.getByText('Online Now', { exact: true })).toBeVisible();
     await expect(summary.getByText('At Tables', { exact: true })).toBeVisible();
@@ -591,7 +585,7 @@ test.describe('Production Shark Club Players', () => {
       const frame = await page.locator('.club-members-page').boundingBox();
       expect(frame, 'the roster page must have a rendered containing block').not.toBeNull();
       for (const selector of [
-        '.members-hero',
+        '.members-page-bar',
         '.members-console',
         '.members-list',
         '.members-count[role="status"]',
@@ -684,9 +678,9 @@ test.describe('Production Shark Club Players', () => {
       ).toBeGreaterThanOrEqual(44);
     }
 
-    const chromeText = (await page.locator('.members-hero, .members-console').allInnerTexts()).join(
-      '\n'
-    );
+    const chromeText = (
+      await page.locator('.members-page-bar, .members-console').allInnerTexts()
+    ).join('\n');
     expect(chromeText, 'em dash punctuation is forbidden in player UI copy').not.toContain(
       '\u2014'
     );

@@ -1,0 +1,50 @@
+Horse Brain Requalification Bundle (#7166) Natural Completion Windows, Phases 11 and 12: Declaration
+Written (date -u on Dan's Mac, before any window opened and before any journal or telemetry of any window was read): 2026-10-17T00:52:29Z
+Writer: Horse Brain lead agent, session https://claude.ai/code/session_01DuY3i97p1P8d8UeLEg6uXm
+Merge under test: PR #7166, merged 2026-10-17T00:48:36Z as d9190c9ef413abbb38c63128b3532df8f9b4756c (source S).
+Serving engine when written: fad2dd1e445204bbae6a6363952f0a9c084fb0ea (does not contain S).
+
+1. Release
+The release is the first club-arena-engine release that serves S, proven by
+git merge-base --is-ancestor d9190c9ef413abbb38c63128b3532df8f9b4756c <releaseSha> (exit 0), where releaseSha is the
+engine host's /health releaseSha and equals the container label sp.release.sha, AND whose Phase 11 and Phase 12 policy
+digests recomputed from that release's own tree equal section 5 (a later release that changed no hashed file qualifies).
+
+2. Window
+The window is [H:02:00.000Z, H:50:00.000Z) for the first full UTC hour H that starts after that release's container
+StartedAt and during which that release serves unchanged, proven by reading container StartedAt, the sp.release.sha label
+and /health releaseSha once before H:02:00Z and once after H:50:00Z, both reads equal. If the release is replaced inside
+the window, the window is void and moves to the next full :02 to :50 hour of a release that meets section 1.
+A pack with fewer than 127 eligible decisions on any street in a window is not judged there and carries to the next valid
+window; a pack with at least 127 on every street is recorded whatever it shows and never re-measured on the same release.
+Bounds are exactly YYYY-MM-DDTHH:02:00.000Z and YYYY-MM-DDTHH:50:00.000Z. --release-unchanged=true only after the second read.
+
+3. Packs And Exact Commands
+Same two-stage procedure as docs/evidence/phase12/declaration-completion-pfr-repair-2026-10-14.txt section 3, scripts
+taken from S (or the release's own scripts if they differ, recorded). Stage 1 on the engine host, read-only, nice 19 / ionice
+idle, closed archive segments only, every decision-worker shard directory. Stage 2 in a clean detached worktree of the
+release (cd server).
+Phase 11 (stage 1 server/scripts/phase11-completion-extract.py; stage 2 server/src/scripts/phase11CompletionRecord.ts): plo5, plo6, plo8
+Phase 12 (stage 1 server/scripts/phase12-completion-extract.py; stage 2 server/src/scripts/phase12CompletionRecord.ts): flh, flo8, short_deck, pineapple
+
+4. Counting And Verdict
+Counting is the authority's own, done only by the stage 2 writers. Floor: Wilson lower bound of completed / eligible at
+z = 2.5758293035489 of at least 0.95 with at least 127 eligible per cell; a pack meets the floor only if every street clears it.
+Every cell is reported. An empty window, a refusal by name, a failed cell or a void window are all results.
+A completion record only counts toward selection together with a qualified strength verdict on S for the same pack.
+
+5. Expected Digests (computed at the bundle head e5770b555a1; S changed no hashed file)
+| 11 | PLO5 | policy   | 5a8705169d087f24fb73007ef0df0a832996dacd898846c366779f42348b0390 |
+| 11 | PLO6 | policy   | 160000216a405526b567ff6a8729e9a1780d5dd3e7b7196bef0308111ed56686 |
+| 11 | PLO8 | policy   | d4f5111ab937985524516a48221348743bbf275380dd4195756216bb58bce742 |
+| 11 | PLO5, PLO6, PLO8 | contract | 0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05 |
+| 12 | Short Deck | policy | c3265d5a910bc85dfb13b27f0950f270f92c16012a68b13d92e8926fd1d25961 |
+| 12 | Pineapple  | policy | 5324f9c8e60db4355fa58c4f14abbb907a04896678f732807c3202089774c2bd |
+| 12 | FLH  | policy   | d3d1b293842bcdecfd01f8491f5c3f4b42e41c95c862868fc84df910c499e36f |
+| 12 | FLO8 | policy   | 39e27a78acabb3b6ef07e3e4421be944c35cc2a7d19ad88988fdceee1d05a757 |
+| 12 | Short Deck, Pineapple, FLO8 | contract (v2) | 0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2 |
+| 12 | FLH  | contract (v1) | fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0 |
+Each stage 2 record's policyDigest must equal its row; any difference is recorded as a defect.
+
+6. Production Rules
+Read-only observation only: no synthetic hands, wagers, tables or bomb pots, nothing activated to manufacture evidence, no scheduler.

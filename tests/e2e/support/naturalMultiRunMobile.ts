@@ -1,5 +1,24 @@
 import type { Page } from '@playwright/test';
+import type { EngineSocketJournal } from './liveTableRealtime';
 import { remainingInitialTableReadinessMs } from './initialTableReadiness';
+
+/** Snapshot before page cleanup; retain protocol facts, never frame payloads. */
+export function naturalMultiRunTransportEvidence(
+  journal: Pick<EngineSocketJournal, 'summary' | 'frames'>,
+  tableId: string
+) {
+  return {
+    ...journal.summary(tableId),
+    physicalControlFrames: journal.frames
+      .filter(({ message }) => message.type === 'PING' || message.type === 'PONG')
+      .map(({ at, socketId, direction, message }) => ({
+        at,
+        socketId,
+        direction,
+        type: message.type,
+      })),
+  };
+}
 
 export interface NaturalMultiRunCandidate {
   id: string;

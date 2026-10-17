@@ -7,9 +7,33 @@ import {
   initializeNaturalMultiRunObservers,
   naturalMultiRunCandidateQuery,
   eligibleNaturalMultiRunTable,
+  naturalMultiRunTransportEvidence,
 } from '../e2e/support/naturalMultiRunMobile';
 
 const packet = { hand: 41, runs: 3, at: 100, recipients: ['winner'] };
+it('snapshots physical control facts without retaining auth or state payloads', () => {
+  const frames: any[] = [
+    { at: 1, socketId: 2, direction: 'received', message: { type: 'PING', token: 'secret-ping' } },
+    { at: 2, socketId: 2, direction: 'sent', message: { type: 'PONG', payload: 'secret-pong' } },
+    { at: 3, socketId: 2, direction: 'sent', message: { type: 'AUTH', token: 'secret-auth' } },
+    {
+      at: 4,
+      socketId: 2,
+      direction: 'received',
+      message: { type: 'SNAPSHOT', payload: 'private-state' },
+    },
+  ];
+  const summary = vi.fn(() => ({ tableId: 'table', sockets: [{ id: 2, closedAt: null }] }));
+  const evidence = naturalMultiRunTransportEvidence({ frames, summary }, 'table');
+  frames[0].at = 99;
+  frames.push({ at: 5, socketId: 2, direction: 'sent', message: { type: 'PONG' } });
+  expect(summary).toHaveBeenCalledWith('table');
+  expect(evidence.physicalControlFrames).toEqual([
+    { at: 1, socketId: 2, direction: 'received', type: 'PING' },
+    { at: 2, socketId: 2, direction: 'sent', type: 'PONG' },
+  ]);
+  expect(JSON.stringify(evidence)).not.toMatch(/secret|private-state/);
+});
 const lane = { pendingAt: 110, winnerAt: 220 };
 const witness = () => ({
   hands: [{ hand: 41, runs: 3, lanes: [lane, lane, lane] }],

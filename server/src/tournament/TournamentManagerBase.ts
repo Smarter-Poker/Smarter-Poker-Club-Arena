@@ -48,6 +48,7 @@ import {
 import nodeCrypto from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
+import { TableRestartBackoff } from '../engine/TableRestartBackoff.js';
 import { supabase, resumeRetainedHandSubmission } from '../services/supabase.js';
 import { INSTANCE_ID } from '../services/tableLease.js';
 import { ChipRaceEngine } from '../engine/ChipRaceEngine.js';
@@ -415,6 +416,19 @@ export abstract class TournamentManagerBase {
   /** The exact dead generation each booked retry names (null: a missing table to re-admit). */
   private readonly tableEngineRecoveryExpected = new Map<string, ServerTableEngine | null>();
   private readonly tableEngineRecoveryAttempts = new Map<string, number>();
+  /**
+   * Each table's failure streak. NOT the attempt map above: that map's keys
+   * mean "a replacement is in flight" to the hand-for-hand roster and the
+   * stage-end gate, so it must empty when a replacement is ready - and its
+   * emptying at ready is exactly what made a table that died after ready
+   * retry every 250 ms for 37 minutes on 2026-10-13. The wait lives here and
+   * ends only on proof (engine/TableRestartBackoff.ts). Created on first use
+   * so a minimal test harness needs no setup.
+   */
+  private tableRestartBackoffStore?: TableRestartBackoff;
+  private get tableRestartBackoff(): TableRestartBackoff {
+    return (this.tableRestartBackoffStore ??= new TableRestartBackoff());
+  }
   /**
    * A TABLE THE MANAGER CANNOT ADMIT IS A STALLED TABLE (2026-10-03).
    *
@@ -1577,6 +1591,7 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryAttempts.clear();
     this.tableAdmissionFailingSince.clear();
     this.tableAdmissionLastRefusal?.clear();
+    this.tableRestartBackoffStore?.clear();
   }
 
   /**
@@ -1831,7 +1846,8 @@ export abstract class TournamentManagerBase {
 
     const attempt = (this.tableEngineRecoveryAttempts.get(tableId) ?? 0) + 1;
     this.tableEngineRecoveryAttempts.set(tableId, attempt);
-    const delayMs = Math.min(250 * 2 ** Math.min(attempt - 1, 6), 15_000);
+    // The wait comes from the table's failure streak, which outlives ready.
+    const { delayMs } = this.tableRestartBackoff.recordFailure(tableId);
     let timer!: ReturnType<typeof setTimeout>;
     timer = this.setLifecycleTimeout(async () => {
       if (this.tableEngineRecoveryTimers.get(tableId) !== timer) return;
@@ -1917,6 +1933,7 @@ export abstract class TournamentManagerBase {
       ['running', 'waiting', 'active'].includes(String(table.status ?? '').toLowerCase());
     if (!wakeable) {
       this.clearManagedTableEngineRecovery(tableId);
+      this.tableRestartBackoff.forget(tableId);
       this.retireManagedTableFromHandForHand(tableId);
       return;
     }
@@ -2080,7 +2097,14 @@ export abstract class TournamentManagerBase {
     }
     if (!this.lifecycleIsCurrent(lifecycle) || this.tableEngines.get(tableId) !== engine) return;
 
-    if (deferReadmission && !engine.hasUnretiredStoppedTimeBankCustody()) {
+    /* A REPEAT DEATH WAITS ITS TURN (2026-10-17). A runtime death on a table
+       that has been healthy is replaced at once, below. A death on a table
+       whose last replacement never stayed up is the same failure again, and
+       rebuilding it on the spot is the loop TableRestartBackoff describes, so
+       it takes the failed-start route: retire, then a backed-off re-admission.
+       Stopped time-bank custody still needs its exact successor now. */
+    const repeating = !deferReadmission && this.tableRestartBackoff.isRepeating(tableId);
+    if ((deferReadmission || repeating) && !engine.hasUnretiredStoppedTimeBankCustody()) {
       if (!this.gameServer.unregisterTournamentTableEngine(tableId, engine)) {
         const ownershipError = new Error(
           `Tournament ${this.tournamentId} lost table ${tableId} while retiring a failed engine start`
@@ -2095,6 +2119,8 @@ export abstract class TournamentManagerBase {
       return;
     }
 
+    // Replaced at once, but the death still opens (or extends) the streak.
+    this.tableRestartBackoff.recordFailure(tableId);
     const fresh = this.createManagedTableEngine(tableId);
     fresh.setHub(tableStateHub);
     this.prepareManagedTableEngineForPlay(fresh);
@@ -2489,6 +2515,8 @@ export abstract class TournamentManagerBase {
       if (!ready) throw new Error(`Tournament table ${tableId ?? 'unknown'} was never ready`);
       if (tableId && this.tableEngines.get(tableId) === engine) {
         this.clearManagedTableEngineRecovery(tableId);
+        // Ready is the early edge, not proof: start the stability clock.
+        this.tableRestartBackoff.recordReady(tableId);
       }
     });
     let tableStart!: Promise<void>;

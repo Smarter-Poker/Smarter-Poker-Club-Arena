@@ -1198,9 +1198,15 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   const card = within(dialog).getByRole('region', { name: 'Selected Player' });
   expect(card).toHaveTextContent('First Agent');
   await waitFor(() => expect(card).toHaveTextContent('340'));
-  const balances = within(dialog).getByRole('region', { name: 'Selected Player Wallet Balances' });
-  expect(balances).toHaveTextContent('Agent Wallet: 340.00');
-  expect(balances).toHaveTextContent('Player Wallet: 120.00');
+  // Dan 2026-10-17: no extra balance strip between the player frame and the
+  // funding frame; each frame prints its balance once and the selector
+  // options carry the rest.
+  expect(
+    within(dialog).queryByRole('region', { name: 'Selected Player Wallet Balances' })
+  ).toBeNull();
+  expect(dialog.textContent?.match(/340\.00/g)?.length ?? 0).toBeLessThanOrEqual(2);
+  expect(within(card).getByRole('option', { name: 'Agent Wallet: 340.00' })).toBeInTheDocument();
+  expect(within(card).getByRole('option', { name: 'Player Wallet: 120.00' })).toBeInTheDocument();
   expect(
     within(card).getByRole('combobox', { name: 'Recipient Wallet For First Agent' })
   ).toHaveValue('agent_wallet');

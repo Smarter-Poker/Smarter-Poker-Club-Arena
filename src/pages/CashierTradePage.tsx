@@ -4965,25 +4965,6 @@ function CashierTradeWorkspace() {
                           }
                         />
                       )}
-                      {amountModal === 'send' && picked.length === 1 && (
-                        <section
-                          className={styles.recipientWalletSummary}
-                          aria-label="Selected Player Wallet Balances"
-                        >
-                          {(['agent_wallet', 'player_wallet'] as const)
-                            .filter((wallet) =>
-                              recipientSendWallets(picked[0].role).includes(wallet)
-                            )
-                            .map((wallet) => (
-                              <span key={wallet}>
-                                {SEND_DESTINATION_LABELS[wallet]}:{' '}
-                                {targetBalances[picked[0].userId]?.[wallet] === undefined
-                                  ? 'Unavailable'
-                                  : formatWalletChips(targetBalances[picked[0].userId][wallet]!)}
-                              </span>
-                            ))}
-                        </section>
-                      )}
                       {sourceLabel && (
                         <CashierWalletRow label={sourceLabel} balance={sourceBalance}>
                           {amountModal === 'send' && (

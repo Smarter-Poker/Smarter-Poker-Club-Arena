@@ -206,7 +206,7 @@ export function decideReselection(input: {
   if (input.reselectionsUsed >= MAX_NATURAL_COMPLETION_RESELECTIONS) {
     return {
       reselect: false,
-      reason: `${input.reselectionsUsed} boards already ended naturally during this case`,
+      reason: `${input.reselectionsUsed} candidate replacements already used during this case`,
     };
   }
   if (!Number.isFinite(input.remainingMs) || input.remainingMs < MIN_RESELECTION_BUDGET_MS) {

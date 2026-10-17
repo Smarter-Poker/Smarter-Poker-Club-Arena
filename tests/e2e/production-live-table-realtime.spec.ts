@@ -64,6 +64,7 @@ import {
   mergeHudCandidateTableIds,
   mttCaseTimeoutMs,
   observeHudLevels,
+  provenPreHudAttrition,
   OperationalPollFailure,
   scanHudCandidateBatches,
   selectableHudClock,
@@ -1015,6 +1016,14 @@ class NaturalCompletionDuringObservation extends Error {
   }
 }
 
+/** A valid admitted clock lost its population qualification before HUD observation. */
+class PreHudCandidateAttrition extends Error {
+  constructor(readonly evidence: Record<string, unknown>) {
+    super('The MTT population fell below the HUD candidate floor before observation');
+    this.name = 'PreHudCandidateAttrition';
+  }
+}
+
 async function certifyReadOnlyTournamentFormat(
   page: Page,
   request: APIRequestContext,
@@ -1034,6 +1043,7 @@ async function certifyReadOnlyTournamentFormat(
   const hudReader = gameFormat === 'mtt' ? boardReader : undefined;
   const watched: string[] = [];
   const endings: Array<Record<string, unknown>> = [];
+  const attritions: Array<Record<string, unknown>> = [];
   const pages: Page[] = [];
   try {
     for (let attempt = 0; ; attempt++) {
@@ -1050,10 +1060,15 @@ async function certifyReadOnlyTournamentFormat(
         });
         return;
       } catch (error) {
-        if (!(error instanceof NaturalCompletionDuringObservation)) throw error;
-        endings.push(error.evidence);
-        // The HUD already sized the actual case timeout from its admitted
-        // clock. Reselection shares that deadline; it never resets the case.
+        if (
+          !(error instanceof NaturalCompletionDuringObservation) &&
+          !(error instanceof PreHudCandidateAttrition)
+        )
+          throw error;
+        if (error instanceof PreHudCandidateAttrition) attritions.push(error.evidence);
+        else endings.push(error.evidence);
+        // Reselection shares the existing case deadline, including any clock
+        // already admitted by the HUD; it never resets the case.
         const decision = decideReselection({
           reselectionsUsed: attempt,
           remainingMs: caseStartedAt + testInfo.timeout - Date.now(),
@@ -1061,13 +1076,14 @@ async function certifyReadOnlyTournamentFormat(
         if (!decision.reselect) {
           throw Object.assign(
             new Error(
-              `${gameFormat.toUpperCase()} boards ended naturally while under observation and no ` +
-                `further board could be observed: ${decision.reason}. Endings: ${JSON.stringify(endings)}`
+              `${gameFormat.toUpperCase()} candidates became unavailable before qualification completed and no ` +
+                `further board could be observed: ${decision.reason}. Endings: ${JSON.stringify(endings)}. ` +
+                `Pre-HUD attrition: ${JSON.stringify(attritions)}`
             ),
             { cause: error }
           );
         }
-        // Leave the finished board's page before another board is selected.
+        // Leave the previous subject before a full proof on another board.
         await attemptPage.goto('about:blank').catch(() => {});
       }
     }
@@ -1076,6 +1092,11 @@ async function certifyReadOnlyTournamentFormat(
     if (endings.length)
       await testInfo.attach(`${gameFormat}-natural-completions`, {
         body: Buffer.from(JSON.stringify(endings, null, 2)),
+        contentType: 'application/json',
+      });
+    if (attritions.length)
+      await testInfo.attach(`${gameFormat}-pre-hud-candidate-replacements`, {
+        body: Buffer.from(JSON.stringify(attritions, null, 2)),
         contentType: 'application/json',
       });
     if (boardReader) await boardReader.close().catch(() => {});
@@ -1143,6 +1164,7 @@ async function observeTournamentBoard(
   let legacyPeerLevels: HudLevel[] = [];
   let hudBaseline = 0;
   let hudSince = 0;
+  let preHudAttrition: Record<string, unknown> | undefined;
   const hudObservation = new AbortController();
   const hudLevelBadge = (target: Page) =>
     target
@@ -1459,6 +1481,13 @@ async function observeTournamentBoard(
       const reader = await createHudClockReader();
       try {
         hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
+        const qualification = reader.qualifications.at(-1);
+        if (!hudClock && provenPreHudAttrition(selected.boardFacts, qualification, Date.now()))
+          preHudAttrition = {
+            tableId: candidate.id,
+            atSelection: selected.boardFacts,
+            qualification,
+          };
         /* A LEVEL ABOUT TO ROLL OVER IS NOT A MISSING CLOCK (2026-10-04).
            eligibleHudClock refuses a level with 20 s or less left, because
            that level-up may fire before both HUDs are watching. Run
@@ -1467,9 +1496,16 @@ async function observeTournamentBoard(
            clock" on a healthy RUNNING event. Ask again across the rollover:
            the next level is the baseline, and mttCaseTimeoutMs below sizes
            the deadline from it. Every other refusal is still a refusal. */
-        for (let retry = 0; !hudClock && retry < 9; retry++) {
+        for (let retry = 0; !hudClock && !preHudAttrition && retry < 9; retry++) {
           await new Promise((settle) => setTimeout(settle, 5_000));
           hudClock = (await reader.clocks([candidate.id])).get(candidate.id);
+          const qualification = reader.qualifications.at(-1);
+          if (!hudClock && provenPreHudAttrition(selected.boardFacts, qualification, Date.now()))
+            preHudAttrition = {
+              tableId: candidate.id,
+              atSelection: selected.boardFacts,
+              qualification,
+            };
         }
       } finally {
         await testInfo.attach('mtt-hud-clock-qualification', {
@@ -1478,75 +1514,77 @@ async function observeTournamentBoard(
         });
         await reader.close();
       }
-      if (!hudClock)
+      if (!hudClock && !preHudAttrition)
         throw new Error(
           'The recovered MTT has no eligible natural HUD clock (absent, paused, terminal, ' +
             'malformed, or its level is longer than the certifiable cap)'
         );
-      // Whatever this real clock needs is what the case gets: never a fixed
-      // guess a natural blind level can outrun by luck. This only ever grows
-      // the case's one deadline (never shrinks it) - see mttCaseTimeoutMs.
-      const mttTimeoutMs = mttCaseTimeoutMs(
-        hudClock.observedAt - caseStartedAt,
-        hudClock,
-        testInfo.timeout
-      );
-      testInfo.setTimeout(mttTimeoutMs);
-      const mttDeadline = caseStartedAt + mttTimeoutMs;
-      hudBaseline = hudClock.levelIndex;
-      hudSince = hudClock.observedAt;
-      const transition = await waitForSharedNaturalLevel(
-        () => {
-          // Keep the existing continuity guards active during the long HUD
-          // witness. A board that closes must reach the durable classifier
-          // now, rather than after the entire blind-level observation.
-          const ownership = classifyUnsubscribes(
-            journal.matchingFrames({
-              direction: 'sent',
-              tableId: candidate.id,
-              type: 'UNSUBSCRIBE',
-              since: navigationStartedAt,
-            }),
-            journal.matchingFrames({
-              direction: 'sent',
-              tableId: candidate.id,
-              type: 'SUBSCRIBE',
-              since: navigationStartedAt,
-            }),
-            preOutageTransports[0]!,
-            progressStartedAt
-          );
-          expect(
-            ownership.violations,
-            `${candidate.name} was unsubscribed while under observation`
-          ).toEqual([]);
-          expect(
-            journal.matchingFrames({
-              direction: 'received',
-              tableId: candidate.id,
-              type: 'ERROR',
-              since: navigationStartedAt,
-            }),
-            `${candidate.name} received an engine refusal`
-          ).toHaveLength(0);
-          return sharedNaturalEngineLevel(hudLevels, peerLevels, hudScope, hudBaseline, hudSince);
-        },
-        hudEventObservationMs(hudClock, mttDeadline),
-        hudObservation.signal
-      );
-      // Actual source contract: payload.new_level is the zero-based engine index;
-      // TournamentHUD renders levelState.levelIndex + 1.
-      await Promise.all(
-        [page, peerPage].map((target) =>
-          expect(hudLevelBadge(target)).toHaveText(String(transition.levelIndex + 1), {
-            timeout: 15_000,
-          })
-        )
-      );
-      console.log(
-        `[tournament-hud] two isolated spectators received natural level_up index ${transition.levelIndex} and rendered display ${transition.levelIndex + 1} for ${hudClock.tournamentId}`
-      );
-      await readEngineHealth(request, { tableIds: [candidate.id] });
+      if (hudClock) {
+        // Whatever this real clock needs is what the case gets: never a fixed
+        // guess a natural blind level can outrun by luck. This only ever grows
+        // the case's one deadline (never shrinks it) - see mttCaseTimeoutMs.
+        const mttTimeoutMs = mttCaseTimeoutMs(
+          hudClock.observedAt - caseStartedAt,
+          hudClock,
+          testInfo.timeout
+        );
+        testInfo.setTimeout(mttTimeoutMs);
+        const mttDeadline = caseStartedAt + mttTimeoutMs;
+        hudBaseline = hudClock.levelIndex;
+        hudSince = hudClock.observedAt;
+        const transition = await waitForSharedNaturalLevel(
+          () => {
+            // Keep the existing continuity guards active during the long HUD
+            // witness. A board that closes must reach the durable classifier
+            // now, rather than after the entire blind-level observation.
+            const ownership = classifyUnsubscribes(
+              journal.matchingFrames({
+                direction: 'sent',
+                tableId: candidate.id,
+                type: 'UNSUBSCRIBE',
+                since: navigationStartedAt,
+              }),
+              journal.matchingFrames({
+                direction: 'sent',
+                tableId: candidate.id,
+                type: 'SUBSCRIBE',
+                since: navigationStartedAt,
+              }),
+              preOutageTransports[0]!,
+              progressStartedAt
+            );
+            expect(
+              ownership.violations,
+              `${candidate.name} was unsubscribed while under observation`
+            ).toEqual([]);
+            expect(
+              journal.matchingFrames({
+                direction: 'received',
+                tableId: candidate.id,
+                type: 'ERROR',
+                since: navigationStartedAt,
+              }),
+              `${candidate.name} received an engine refusal`
+            ).toHaveLength(0);
+            return sharedNaturalEngineLevel(hudLevels, peerLevels, hudScope, hudBaseline, hudSince);
+          },
+          hudEventObservationMs(hudClock, mttDeadline),
+          hudObservation.signal
+        );
+        // Actual source contract: payload.new_level is the zero-based engine index;
+        // TournamentHUD renders levelState.levelIndex + 1.
+        await Promise.all(
+          [page, peerPage].map((target) =>
+            expect(hudLevelBadge(target)).toHaveText(String(transition.levelIndex + 1), {
+              timeout: 15_000,
+            })
+          )
+        );
+        console.log(
+          `[tournament-hud] two isolated spectators received natural level_up index ${transition.levelIndex} and rendered display ${transition.levelIndex + 1} for ${hudClock.tournamentId}`
+        );
+        await readEngineHealth(request, { tableIds: [candidate.id] });
+      }
     }
 
     /* The only UNSUBSCRIBE tolerated is the same-transport, same-tick handoff
@@ -1601,7 +1639,17 @@ async function observeTournamentBoard(
       participationMutations,
       `${candidate.name} spectator attempted to join, register, spend or leave`
     ).toEqual([]);
+    // Even a replaced candidate must satisfy all transport, ownership and
+    // spectator invariants above. Attrition never turns this attempt into a pass.
+    if (preHudAttrition) {
+      await testInfo.attach(`${tag}-pre-hud-candidate-attrition`, {
+        body: Buffer.from(JSON.stringify(preHudAttrition, null, 2)),
+        contentType: 'application/json',
+      });
+      throw new PreHudCandidateAttrition(preHudAttrition);
+    }
   } catch (error) {
+    if (error instanceof PreHudCandidateAttrition) throw error;
     /* Say WHY the case failed, from evidence, before the failure leaves this
        function. Nothing here turns a failure into a pass: a proven natural
        ending routes to another running board (bounded, inside the same case

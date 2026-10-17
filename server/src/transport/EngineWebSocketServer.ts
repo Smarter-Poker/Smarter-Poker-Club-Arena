@@ -1243,17 +1243,26 @@ export class EngineWebSocketServer {
     const existing = conn.subs.get(tableId);
     if (typeof existing === 'symbol') return; // in flight - first one wins
     if (existing) {
+      // Idempotent: already subscribed. Re-ack + resync so a client retry
+      // converges instead of erroring.
+      //
+      // THE PUBLIC ANSWER DOES NOT WAIT FOR THE SESSION READ (2026-10-17).
+      // This socket already receives every public frame for this table; the
+      // ack and the public snapshot add nothing a revoked session could not
+      // already see before its close. They used to wait for the durable
+      // session read, and when that read was slow or Unknown the client's
+      // 5-second state probe went unanswered, it tore the socket down and the
+      // player saw "Reconnecting To The Table" (production runs 39069889524
+      // and 39073463654). Private state still waits for a definite Alive.
+      if (!this.sendControl(conn, { type: 'SUBSCRIBED', tableId })) return;
+      this.hub.resync(tableId, existing);
       if (
         !(await this.sessionCanReceive(conn)) ||
         !this.connectionCanWrite(conn) ||
         conn.subs.get(tableId) !== existing
       )
         return;
-      // Idempotent: already subscribed. Re-ack + resync so a client retry
-      // converges instead of erroring.
-      if (!this.sendControl(conn, { type: 'SUBSCRIBED', tableId })) return;
-      this.hub.resync(tableId, existing);
-      if (this.connectionCanWrite(conn)) this.resyncPlayer(tableId, conn.userId);
+      this.resyncPlayer(tableId, conn.userId);
       return;
     }
     // Audit round 4: counting only SETTLED subscriptions let a client that
@@ -1471,12 +1480,19 @@ export class EngineWebSocketServer {
         if (!tableId || !conn.subs) return;
         const sub = conn.subs.get(tableId);
         if (sub && typeof sub !== 'symbol') {
+          // Public state answers now; private state waits for a definite
+          // Alive (see the idempotent SUBSCRIBE note in handleMuxSubscribe).
+          try {
+            this.hub.resync(tableId, sub);
+            this.notifyAlive(tableId, conn.userId);
+          } catch (error) {
+            reportError(error, 'EngineWS.authorized_resync', { tableId });
+            return;
+          }
           void this.sessionCanReceive(conn)
             .then((allowed) => {
               if (!allowed || !this.connectionCanWrite(conn) || conn.subs?.get(tableId) !== sub)
                 return;
-              this.hub.resync(tableId, sub);
-              this.notifyAlive(tableId, conn.userId);
               this.resyncPlayer(tableId, conn.userId);
             })
             .catch((error) => reportError(error, 'EngineWS.authorized_resync', { tableId }));
@@ -1554,11 +1570,18 @@ export class EngineWebSocketServer {
         const sub = (conn.ws as unknown as { __sub: HubSubscriber }).__sub;
         // FIX 2 (2026-07-24): re-deliver hole cards alongside the public
         // snapshot — the RESYNC snapshot only carries scrubbed public state.
+        // Public state answers now; private state waits for a definite Alive
+        // (see the idempotent SUBSCRIBE note in handleMuxSubscribe).
+        try {
+          this.hub.resync(conn.tableId, sub);
+          this.notifyAlive(conn.tableId, conn.userId);
+        } catch (error) {
+          reportError(error, 'EngineWS.authorized_resync', { tableId: conn.tableId });
+          return;
+        }
         void this.sessionCanReceive(conn)
           .then((allowed) => {
             if (!allowed || !this.connectionCanWrite(conn)) return;
-            this.hub.resync(conn.tableId, sub);
-            this.notifyAlive(conn.tableId, conn.userId);
             this.resyncPlayer(conn.tableId, conn.userId);
           })
           .catch((error) =>

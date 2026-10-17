@@ -244,8 +244,99 @@ describe.each([false, true])('explicit RESYNC private grant (mux=%s)', (isMux) =
       server.onMessage(conn, Buffer.from(JSON.stringify({ type: 'RESYNC', tableId: 'table' })));
       await new Promise((resolve) => setImmediate(resolve));
       expect(server.resyncPlayer).toHaveBeenCalledTimes(verdict === 'alive' ? 1 : 0);
-      expect(server.hub.resync).toHaveBeenCalledTimes(verdict === 'alive' ? 1 : 0);
+      // Public state is answered for every verdict: the admitted socket
+      // already receives every public frame for this table.
+      expect(server.hub.resync).toHaveBeenCalledTimes(1);
       expect(ws.close).toHaveBeenCalledTimes(verdict === 'revoked' ? 1 : 0);
+    }
+  );
+  it('answers public state before a slow session read, then private state only when Alive', async () => {
+    let finish!: (value: 'alive' | 'unknown') => void;
+    vi.mocked(playerSessionVerdict).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const server = Object.create(EngineWebSocketServer.prototype),
+      ws = { readyState: 1, close: vi.fn() };
+    const subscriber = {},
+      conn = {
+        ws,
+        userId: 'target',
+        token: 'old',
+        tableId: 'table',
+        isMux,
+        subs: new Map([['table', subscriber]]),
+        inboundWindowStart: Date.now(),
+        inboundCount: 0,
+      };
+    (ws as any).__sub = subscriber;
+    server.connections = new Map([[ws, conn]]);
+    server.hub = { resync: vi.fn() };
+    server.resyncPlayer = vi.fn();
+    server.notifyAlive = vi.fn();
+    server.onMessage(conn, Buffer.from(JSON.stringify({ type: 'RESYNC', tableId: 'table' })));
+    // Production runs 39069889524 and 39073463654: the client's 5-second
+    // state probe went unanswered while this read was pending.
+    expect(server.hub.resync).toHaveBeenCalledOnce();
+    expect(server.notifyAlive).toHaveBeenCalledOnce();
+    expect(server.resyncPlayer).not.toHaveBeenCalled();
+    finish('alive');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(server.resyncPlayer).toHaveBeenCalledOnce();
+    expect(ws.close).not.toHaveBeenCalled();
+  });
+});
+
+describe('an idempotent mux SUBSCRIBE answers before the session read', () => {
+  const setup = () => {
+    let finish!: (value: 'alive' | 'unknown' | 'revoked') => void;
+    vi.mocked(playerSessionVerdict).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const server = Object.create(EngineWebSocketServer.prototype);
+    const ws = { readyState: 1, close: vi.fn(), send: vi.fn(), bufferedAmount: 0 };
+    const existing = {};
+    const conn = {
+      ws,
+      userId: 'target',
+      token: 'old',
+      isMux: true,
+      subs: new Map([['table', existing]]),
+    };
+    server.connections = new Map([[ws, conn]]);
+    server.hub = { resync: vi.fn() };
+    server.resyncPlayer = vi.fn();
+    server.sendControl = vi.fn(() => true);
+    return {
+      server,
+      ws,
+      conn,
+      existing,
+      finish: (v: 'alive' | 'unknown' | 'revoked') => finish(v),
+    };
+  };
+  it.each(['alive', 'unknown', 'revoked'] as const)(
+    're-acks and resyncs public state at once for %s; private state waits for Alive',
+    async (verdict) => {
+      const { server, ws, conn, existing, finish } = setup();
+      const pending = server.handleMuxSubscribe(conn, 'table');
+      expect(server.sendControl).toHaveBeenCalledWith(conn, {
+        type: 'SUBSCRIBED',
+        tableId: 'table',
+      });
+      expect(server.hub.resync).toHaveBeenCalledWith('table', existing);
+      expect(server.resyncPlayer).not.toHaveBeenCalled();
+      finish(verdict);
+      await pending;
+      expect(server.resyncPlayer).toHaveBeenCalledTimes(verdict === 'alive' ? 1 : 0);
+      if (verdict === 'revoked')
+        expect(ws.close).toHaveBeenCalledWith(4401, 'auth:session_not_found');
+      else expect(ws.close).not.toHaveBeenCalled();
     }
   );
 });

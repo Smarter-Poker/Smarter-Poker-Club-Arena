@@ -39,34 +39,70 @@ const PAGE = readFileSync(
 );
 const APP = readFileSync(resolve(__dirname, '../src/App.tsx'), 'utf8');
 
+/* UPDATED 2026-10-17 (20261017161545) with the change it pins. The cash live
+   writer moved from the rake_records trigger to the rake_attributions insert,
+   because the attribution row is the money record that names the club the
+   rake was taken for; #7262's guess (the player's newest seat at ANY table)
+   credited one table's rake to another table's club. */
 describe('cash rake reaches Club Data in the transaction that writes it', () => {
-  it('the rake insert trigger writes the cash rollup for a cash hand', () => {
-    const b = latest('trg_ca_reporting_rake_insert');
-    expect(b).toContain('fn_ca_club_table_daily_add_rake(NEW.table_id');
-    // and still only SHARES the reporting lock
+  it('the attribution insert writes the cash rollup, sharing the reporting lock', () => {
+    const b = latest('trg_ca_club_data_cash_attribution_insert');
+    expect(b).toContain('INSERT INTO public.club_table_daily');
+    expect(b).toContain('INSERT INTO public.ca_club_table_player_daily');
     expect(b).toContain('pg_advisory_xact_lock_shared(918273645)');
     expect(b).not.toMatch(/pg_advisory_xact_lock\(918273645\)/);
+    expect(b).toContain("RAISE WARNING 'Club Data cash attribution rollup failed");
   });
 
   it('the live writer attributes exactly like the rebuild', () => {
-    const b = latest('fn_ca_club_table_daily_add_rake');
-    expect(b).toContain('INSERT INTO public.club_table_daily');
-    expect(b).toContain('fn_ca_cash_reporting_club(v_union, v_table_club');
-    expect(b).toContain('fn_ca_launch_accounting_accepts(r.club_id, p_at)');
-    // a raked hand with no usable contribution is the table club's, whole
-    expect(b).toContain('SELECT NULL::text, 1::numeric, 1::numeric');
-    const club = latest('fn_ca_cash_reporting_club');
-    expect(club).toContain('ORDER BY cm.joined_at ASC NULLS LAST, cm.club_id');
+    const live = latest('trg_ca_club_data_cash_attribution_insert');
+    const stage = latest('fn_ca_club_data_stage');
+    for (const b of [live, stage]) {
+      expect(b).toContain('THEN a.club_id');
+      expect(b).toContain('public.fn_ca_cash_hand_club(r.table_id, a.player_id, r.created_at)');
+    }
+    // the rake_records trigger no longer writes cash at all
+    const rake = latest('trg_ca_reporting_rake_insert');
+    expect(rake).not.toContain('fn_ca_club_table_daily_add_rake');
+    expect(rake).toContain('fn_ca_club_data_tournament_fee_split(NEW.id)');
+  });
+
+  it("a player's club is read at THE table where the hand was played", () => {
+    const b = latest('fn_ca_cash_hand_club');
+    expect(b).toContain('ts.table_id = p_table AND ts.user_id = p_user');
+    expect(b).toContain('cl.table_id = p_table');
+    // the union decides which clubs are possible at a union table
+    expect(b).toContain('uc.union_id = v_union');
+    // never the newest seat at any table
+    expect(b).not.toMatch(/WHERE ts\.user_id = p_user AND ts\.club_id IS NOT NULL/);
+    const old = latest('fn_ca_cash_reporting_club');
+    expect(old).not.toContain('table_seats');
   });
 });
 
 describe('cash buy-ins and cash-outs reach Club Data live', () => {
-  it('the wallet insert trigger writes the cash table row', () => {
+  it('the wallet insert trigger writes the cash table row for the club at that table', () => {
     const b = latest('trg_ca_reporting_wallet_insert');
     expect(b).toContain('INSERT INTO public.club_table_daily');
-    expect(b).toContain('v_table_row_club := COALESCE(v_club, v_table_club);');
+    expect(b).toContain('public.fn_ca_cash_hand_club(NEW.table_id, NEW.user_id, NEW.created_at)');
     // its own block, so a failure never costs the player rollup
     expect(b).toContain("RAISE WARNING 'Club Data cash table rollup failed");
+  });
+});
+
+describe('a tournament is credited to the club the entry was paid from', () => {
+  it('fees come from the accounting fee source, live and on rebuild', () => {
+    expect(latest('trg_ca_club_data_tournament_fee_insert')).toContain('SUM(f.rake_credit)');
+    expect(latest('fn_ca_club_data_stage')).toContain(
+      'JOIN public.accounting_tournament_fee_sources f ON f.rake_record_id = r.id'
+    );
+  });
+
+  it('results go to ONE club, the entry club, never every membership', () => {
+    const b = latest('trg_ca_reporting_wallet_insert');
+    expect(b).toContain('public.fn_ca_tournament_entry_club(NEW.related_entity_id, NEW.user_id)');
+    expect(b).not.toContain('ca_reporting_tournament_clubs_for_user');
+    expect(latest('fn_ca_tournament_entry_club')).toContain('tp.tournament_id = p_tournament AND tp.user_id = p_user');
   });
 });
 
@@ -76,14 +112,21 @@ describe('the hourly job never rewrites the live day', () => {
     expect(b).toContain("current_setting('ca.club_data_seed_live_day', true)");
     expect(b).toContain("'skipped', 'live_day_is_kept_by_triggers'");
     expect(b.indexOf('live_day_is_kept_by_triggers')).toBeLessThan(
-      b.indexOf('DELETE FROM club_table_daily')
+      b.indexOf('fn_ca_club_data_stage')
     );
   });
 
-  it('a rebuild merges with a trigger that lands while it runs', () => {
-    const b = latest('fn_club_table_daily_refresh_day');
+  it('a deliberate re-count of the live day holds the reporting lock only for its swap', () => {
+    const b = latest('fn_ca_club_data_rebuild_day');
+    const lock = b.indexOf('pg_advisory_xact_lock(918273645)');
+    expect(lock).toBeGreaterThan(b.indexOf("clock_timestamp() - interval '5 minutes'"));
+    expect(lock).toBeLessThan(b.lastIndexOf('fn_ca_club_data_publish(p_day, true, true)'));
+  });
+
+  it('publishing replaces only rows that changed', () => {
+    const b = latest('fn_ca_club_data_publish');
     expect(b).toContain('ON CONFLICT (club_id, table_id, stat_date) DO UPDATE');
-    expect(b).toContain('DELETE FROM ca_club_table_player_daily WHERE stat_date = p_day');
+    expect(b).toMatch(/IS DISTINCT FROM/);
   });
 });
 

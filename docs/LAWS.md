@@ -145,6 +145,22 @@ whichever test the next agent notices first.
   `the-next-hand-deals-two-seconds-after-completion.law.test.ts`; measured by
   `/health.nextHandGap`.
 
+- **Page heroes are gone; the ? explains the page (ruled 2026-10-17, Dan):**
+  "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL DESCRIPTIONS THAT EXIST
+  LIKE THIS ON ANY AND ALL PAGES. ADD A ? MARK ICON INSTEAD IN THE UPPER RIGHT
+  CORNER OF THE PAGES THAT CAN EXPLAIN ANYTHING AND ALSO LAUNCH A TUTORIAL AT
+  THE BOTTOM WHEN CLICKED." This retires the #SmarterCasinoRealism and
+  #ClubArenaConsole contracts that pinned page-hero eyebrows, giant titles,
+  description paragraphs and hero artwork (account, community, workspace,
+  integrity, union, cashier, legal, stats, daily challenges and members
+  heroes): those tests were rewritten to the new shape in the same change, and
+  the artwork files stay in the append-only asset pool. Painted consoles that
+  carry a page's own content keep their painted title; their eyebrows,
+  descriptive subtitles and intro copy went. The replacement is
+  `src/components/help/PageBar.tsx` + `PageHelp.tsx`, pinned by
+  `pages-carry-a-question-mark-not-a-hero.law.test.ts`. Do not restore a
+  hero to a page to satisfy an older contract.
+
 ## Registry
 
 **The registry is the directory `docs/laws.d/` - one file per law.** This

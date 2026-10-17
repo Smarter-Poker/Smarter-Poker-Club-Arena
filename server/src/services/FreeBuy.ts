@@ -128,18 +128,19 @@ export const FREE_BUY_SLOTS: FreeBuySlot[] = [
 export const FREE_BUY_SLOT_MINUTE = 30;
 
 /**
- * THE DATES ALREADY PUBLISHED KEEP THE TIMETABLE THEY WERE PUBLISHED UNDER
- * (2026-10-16, docs/changelog/2026-10-16-a-real-rooms-day.md). Free Buys are
- * spawned three days ahead, so every date before Tuesday 2026-10-20 was on
- * the board under the previous timetable - on the hour, 250 standard and 500
- * feature - before the half-hour board shipped, and keeps it: moving a
- * published event's start or prize under its registrants is not the change
- * Dan asked for. The audit reads those dates against the timetable that
- * published them and every later date against the current one, so the watch
- * names a wrong board, not a deliberate changeover.
+ * A REGISTERED EVENT KEEPS THE GUARANTEE IT WAS PUBLISHED WITH (2026-10-17).
+ * Free Buys are spawned three days ahead, so every date before Tuesday
+ * 2026-10-20 was published at the previous guarantees (250 standard, 500
+ * feature) before Dan doubled them on 2026-10-16. Those 28 occurrences were
+ * moved onto the half hour (20261017105003), but their guarantees cannot be:
+ * trg_freeze_registered_tournament_settlement_contract freezes a guarantee at
+ * the first entrant, for every caller including the engine, because a
+ * registered player's advertised contract is immutable. The audit reads a
+ * date before FREE_BUY_HALF_HOUR_BOARD_FROM against either guarantee, so the
+ * watch reports a wrong board, not the contract law; the half-hour start is
+ * required on every date.
  */
 export const FREE_BUY_HALF_HOUR_BOARD_FROM = '2026-10-20';
-export const FREE_BUY_PREVIOUS_SLOT_MINUTE = 0;
 export const FREE_BUY_PREVIOUS_GUARANTEES: Record<FreeBuyTier, number> = {
   standard: 250,
   feature: 500,
@@ -751,17 +752,17 @@ export function auditFreeBuyRow(
     );
     return problems;
   }
-  // A date published before the half-hour board, on the previous timetable's
-  // minute, is read against that timetable (FREE_BUY_HALF_HOUR_BOARD_FROM).
-  const previousTimetable =
-    chicagoDayKey(startMs) < FREE_BUY_HALF_HOUR_BOARD_FROM &&
-    at.minute === FREE_BUY_PREVIOUS_SLOT_MINUTE;
-  if (at.minute !== FREE_BUY_SLOT_MINUTE && !previousTimetable)
+  if (at.minute !== FREE_BUY_SLOT_MINUTE)
     problems.push(
       `starts at ${at.hour}:${String(at.minute).padStart(2, '0')}, not on the half hour`
     );
 
-  const cfg = previousTimetable
+  // A date published before the doubled guarantees keeps the one its
+  // registrants were offered (FREE_BUY_HALF_HOUR_BOARD_FROM).
+  const publishedAtPreviousGuarantee =
+    chicagoDayKey(startMs) < FREE_BUY_HALF_HOUR_BOARD_FROM &&
+    Number(row.guaranteed_prize) === FREE_BUY_PREVIOUS_GUARANTEES[slot.tier];
+  const cfg = publishedAtPreviousGuarantee
     ? { ...FREE_BUY_TIERS[slot.tier], guarantee: FREE_BUY_PREVIOUS_GUARANTEES[slot.tier] }
     : FREE_BUY_TIERS[slot.tier];
   const say = (ok: boolean, msg: string) => {

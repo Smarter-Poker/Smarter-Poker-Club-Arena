@@ -495,7 +495,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         ? Date.now() - startedAt
         : 0;
     return horseDecisionDeadlineMs({
-      actionTimeSeconds: this.tableInfo?.action_time_seconds,
+      actionTimeSeconds: this.actionClockSeconds(),
       elapsedMs,
     });
   }
@@ -757,7 +757,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     );
 
     if (this.watchdogTrips === 1 && !hasClock) {
-      this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
+      this.forceArmTurnTimer(seat, this.actionClockSeconds());
       this.recordRecoveryEvent(
         'watchdog_rearm_clock',
         'seat ' + seat + ' had no clock after ' + Math.round(idleMs / 1000) + 's; re-armed'
@@ -1016,7 +1016,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
                 new Error('Time bank auto-action rejected at seat ' + seat + ' - re-arming clock'),
                 'ServerTableEngine.' + this.tableId + '.timebank_auto_action_rejected'
               );
-              this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
+              this.forceArmTurnTimer(seat, this.actionClockSeconds());
               return; // The replacement clock is running; no action completed.
             }
 
@@ -1157,7 +1157,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           new Error('Timeout auto-action rejected at seat ' + seat + ' - re-arming clock'),
           'ServerTableEngine.' + this.tableId + '.auto_action_rejected'
         );
-        this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
+        this.forceArmTurnTimer(seat, this.actionClockSeconds());
         return; // Do not complete the new clock or announce an unaccepted action.
       }
 
@@ -1375,7 +1375,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             ),
             'ServerTableEngine.' + this.tableId + '.manual_timebank_auto_action_rejected'
           );
-          this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
+          this.forceArmTurnTimer(player.seat, this.actionClockSeconds());
           return;
         }
         this.turnFSM.transition('complete');
@@ -2540,7 +2540,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         ) {
           this.markProgress();
         } else {
-          this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
+          this.forceArmTurnTimer(player.seat, this.actionClockSeconds());
         }
         return;
       }
@@ -2577,7 +2577,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       this.seatedPlayers
     ).catch((err) => {
       reportError(err, 'ServerTableEngine.' + this.tableId + '.rearm_turn_change_threw');
-      this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
+      this.forceArmTurnTimer(player.seat, this.actionClockSeconds());
     });
 
     this.timeBankActivatedThisTurn = timeBankAlreadyUsedThisTurn;
@@ -2625,7 +2625,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // Same timer, same broadcast, same action path. NO EXCEPTIONS.
     // ═══════════════════════════════════════════════════════════════════════
 
-    const actionTime = this.tableInfo?.action_time_seconds || 15;
+    const actionTime = this.actionClockSeconds();
     this.timeBankActivatedThisTurn = false; // Reset anti-spam lock for this NEW turn
     // A new turn (and a reconnect re-arm, which routes through here) always
     // restores normal time-bank behaviour.
@@ -3678,7 +3678,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         // This supersedes the 2026-08-20 note above it. That instruction was
         // "slow the game down so it feels real"; this one is "make the timing
         // genuinely random", and a uniform slow cadence is just a slower script.
-        const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
+        const actionTimeMs = this.actionClockSeconds() * 1000;
         const requested = decision.thinkTime || 2500;
         const safeWorkerFallback = fastResult.requestId === -1;
         let thinkTimeMs: number;
@@ -3787,7 +3787,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           ? 0
           : Math.min(
               ServerTableEngineTurns.horseTurnBudgetMs(
-                this.tableInfo?.action_time_seconds,
+                this.actionClockSeconds(),
                 this.playerTurnStartTime,
                 Date.now()
               ),

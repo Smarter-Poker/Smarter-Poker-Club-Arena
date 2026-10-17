@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { supabaseServerHeaders } from '../ci/supabase-auth-headers.mjs';
 import { PILOT } from './prepare-lightning-private-pilot.mjs';
-import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
+import { resolveCurrentPilotTargets } from './lightning-pilot-targets.mjs';
 const PUBLIC_KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const PHASES = ['prepare', 'assign', 'withdraw', 'release', 'report'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -86,11 +86,7 @@ export async function assertAssignmentRoster(admin) {
     profiles.some((p) => p.is_horse !== true || p.status !== 'active')
   )
     throw new Error('Assignment Participant Identity Changed');
-  for (const clusterId of [
-    '56d5d6f0-23e9-41b0-b407-852aa1026c2a',
-    '0cdc133d-ad23-4ace-bb85-312d0f221edd',
-  ])
-    await resolvePilotTarget(admin, clusterId, { active: false });
+  await resolveCurrentPilotTargets(admin, { active: false });
 }
 export async function assignmentMain(env = process.env, dependencies = {}) {
   const reportPath = env.PILOT_ASSIGNMENT_REPORT_PATH || 'lightning-assignment-report.json';

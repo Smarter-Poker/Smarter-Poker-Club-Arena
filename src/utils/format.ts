@@ -521,3 +521,15 @@ export const formatWalletDiamonds = (amount: number | null | undefined): string 
   if (Math.abs(value) >= 1_000_000) return compactChips(value);
   return value.toLocaleString('en-US', { maximumFractionDigits: 0 });
 };
+
+/**
+ * A signed win / loss figure for Player Management (Dan 2026-10-16): "+1.2K"
+ * for a win, "-450" for a loss, "0" for even. compactChips floors the
+ * magnitude, so neither a win nor a loss is ever overstated.
+ */
+export const winLossChips = (n: number | null | undefined): string => {
+  const value = Number(n) || 0;
+  const text = compactChips(value);
+  if (text === '0' || text === '-0') return '0';
+  return value > 0 ? `+${text}` : text;
+};

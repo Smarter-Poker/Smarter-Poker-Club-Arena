@@ -1,0 +1,8 @@
+{
+  "_owner": "agent/claude/player-win-loss: applied to production 2026-10-17 11:12 UTC as schema_migrations version 20261017111202 (name player_win_loss_by_period) from supabase/migrations/20261017035934_player_win_loss_by_period.sql; read back with grants and figures verified.",
+  "functions": [
+    "ca_club_member_tournament_money",
+    "ca_club_member_win_loss",
+    "ca_club_members_win_loss"
+  ]
+}

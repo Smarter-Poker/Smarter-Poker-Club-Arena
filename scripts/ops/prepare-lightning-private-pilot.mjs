@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
@@ -23,16 +24,109 @@ export const PILOT_TARGETS = Object.freeze([
     windowRequestId: '57b786b4-1f87-4b57-b65f-ea9997ca9dc8',
     integrityRequestId: '4ffbcbb6-f273-4c13-9dcb-bcd27b1d1005',
   }),
+  // Six seats, Madness's own template default (owner, 2026-10-17). Measured
+  // on the nine-seat target it replaces: horses played 49.9% VPIP into the 50%
+  // floor (the widening layer's ceiling at nine seats), so 92% of sittings ended
+  // vpip_evicted with a two-hour bar and the game could never hold its 27.
+  // Six-seat Madness on the same fleet plays 59.3% and needs 18.
+  Object.freeze({
+    gameName: 'Lightning Pilot NLH Madness 6',
+    templateName: 'madness',
+    handedness: 6,
+    sb: 0.02,
+    bb: 0.04,
+    windowRequestId: '56373ee1-2e80-4826-b456-60e45a35b8f8',
+    integrityRequestId: 'd89cc46f-8d5c-4120-ac46-890f65adaf25',
+  }),
+]);
+
+/** Targets a later owner decision replaced. Each is closed only through the
+ * club owner's ordinary managed close, which refuses while anyone is seated:
+ * nobody is stood up, moved or cashed out to retire it. Its stakes share the
+ * one-per-key and one-per-band slots its replacement needs, so the replacement
+ * is created only after the close is read back. */
+export const RETIRED_PILOT_TARGETS = Object.freeze([
   Object.freeze({
     gameName: 'Lightning Pilot NLH Madness 9',
     templateName: 'madness',
     handedness: 9,
     sb: 0.02,
     bb: 0.04,
-    windowRequestId: '92836685-da27-433b-b25c-d524d6199f9b',
-    integrityRequestId: '9c2c4d5b-2911-413d-87f4-befc54820391',
+    replacedBy: 'Lightning Pilot NLH Madness 6',
   }),
 ]);
+const CLOSED_TABLE_STATUSES = new Set(['closed', 'completed', 'cancelled', 'finished']);
+
+/** Close one retired target, or prove it is already closed. Never forces a seat. */
+export async function retirePilotTarget({ admin, player, must, clubId, games, retired }) {
+  const matches = games.filter((g) => g.name === retired.gameName);
+  if (matches.length > 1) throw new Error('Retired Pilot Target Readback Is Ambiguous');
+  if (!matches.length) return null;
+  const game = matches[0];
+  if (game.club_id !== clubId) throw new Error('Retired Pilot Target Scope Is Invalid');
+  if (game.enabled !== true) {
+    if (!game.closed_at) throw new Error('Retired Pilot Target Is Disabled Without A Close');
+    return { gameName: retired.gameName, clusterId: game.id, outcome: 'already_closed' };
+  }
+  assertPilotGame(game, clubId, retired);
+  const tables = must(
+    await admin.from('tables').select('id,role,status,cluster_id').eq('cluster_id', game.id),
+    'Retired Pilot Target Tables'
+  );
+  const open = (Array.isArray(tables) ? tables : []).filter(
+    (t) =>
+      t?.cluster_id === game.id && !CLOSED_TABLE_STATUSES.has(String(t.status ?? '').toLowerCase())
+  );
+  const mains = open.filter((t) => t.role === 'main');
+  if (mains.length !== 1) throw new Error('Retired Pilot Target Main Table Is Ambiguous');
+  const versions = must(
+    await admin
+      .from('managed_game_contract_versions')
+      .select('version')
+      .eq('game_kind', 'table')
+      .eq('game_id', mains[0].id)
+      .order('version', { ascending: false })
+      .limit(1),
+    'Retired Pilot Target Contract Version'
+  );
+  const version = Array.isArray(versions) ? versions[0]?.version : undefined;
+  if (!Number.isSafeInteger(version) || version < 1)
+    throw new Error('Retired Pilot Target Contract Version Is Missing');
+  // A fresh command per attempt: a refused close is a durable receipt, and
+  // replaying its ID would return that refusal for ever.
+  const commandId = randomUUID();
+  const closed = must(
+    await player.rpc('fn_execute_managed_game_command', {
+      p_command_id: commandId,
+      p_kind: 'table',
+      p_game_id: mains[0].id,
+      p_action: 'close',
+      p_expected_version: version,
+      p_payload: {},
+    }),
+    'Retired Pilot Target Close'
+  );
+  if (closed?.ok !== true) {
+    if (closed?.reason === 'players_seated')
+      throw new Error(
+        'Retired Pilot Target Still Has Seated Players; Run This Same Setup Again After They Leave Normally'
+      );
+    throw new Error(`Retired Pilot Target Close Refused: ${closed?.reason || 'Unknown'}`);
+  }
+  const after = must(
+    await admin.from('cash_games').select('*').eq('id', game.id).maybeSingle(),
+    'Retired Pilot Target Readback'
+  );
+  if (after?.id !== game.id || after.enabled !== false || !after.closed_at)
+    throw new Error('Retired Pilot Target Close Readback Mismatch');
+  return {
+    gameName: retired.gameName,
+    clusterId: game.id,
+    mainTableId: mains[0].id,
+    commandId,
+    outcome: 'closed',
+  };
+}
 
 export function assertPilotClub(club) {
   if (
@@ -259,6 +353,25 @@ export async function preparePilot(env = process.env, clientFactory) {
     // Validate every existing named target before any setup mutation. Ordinary
     // seeded games remain untouched, including the default nine-seat game.
     for (const target of PILOT_TARGETS) selectPilotGame(games, club.id, target);
+    // A replaced target is closed, and read back closed, before its
+    // replacement may claim the same stake slot.
+    const retirements = [];
+    for (const retired of RETIRED_PILOT_TARGETS) {
+      const outcome = await retirePilotTarget({
+        admin,
+        player,
+        must,
+        clubId: club.id,
+        games,
+        retired,
+      });
+      if (outcome) retirements.push(outcome);
+    }
+    if (retirements.some((r) => r.outcome === 'closed'))
+      games = must(
+        await admin.from('cash_games').select('*').eq('club_id', club.id),
+        'Pilot Games After Retirement'
+      );
     const operations = [];
     for (const target of PILOT_TARGETS) {
       let game = selectPilotGame(games, club.id, target);
@@ -390,6 +503,7 @@ export async function preparePilot(env = process.env, clientFactory) {
       clubId: club.id,
       ...targets[0],
       targets,
+      retirements,
       ownerId: PILOT.ownerId,
       creationRequestId: PILOT.requestId,
       participants: finalRoster.horses === 0 ? 'owner_only' : 'owner_and_admitted_horses',

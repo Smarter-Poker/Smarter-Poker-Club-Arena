@@ -28,9 +28,9 @@ const game6 = {
 const game9 = {
   ...game6,
   id: '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb',
-  name: 'Lightning Pilot NLH Madness 9',
+  name: 'Lightning Pilot NLH Madness 6',
   template_name: 'madness',
-  handedness: 9,
+  handedness: 6,
   sb: 0.02,
   bb: 0.04,
 };
@@ -145,7 +145,11 @@ test('readiness gate accepts only the evidence each stage exists to produce', ()
 
 test('only the two named private pilot games are targets', () => {
   assert.equal(assertStageTarget(game6, CLUB).handedness, 6);
-  assert.equal(assertStageTarget(game9, CLUB).handedness, 9);
+  assert.equal(assertStageTarget(game9, CLUB).handedness, 6);
+  // The replaced nine-seat Madness is no longer a stage target.
+  assert.throws(() =>
+    assertStageTarget({ ...game9, name: 'Lightning Pilot NLH Madness 9', handedness: 9 }, CLUB)
+  );
   for (const patch of [
     { club_id: 'fade0000-0000-0000-0000-000000000001' },
     { name: 'NLH 1/2 Action' },
@@ -251,7 +255,7 @@ test('a public club, a missing game or a missing operation id acts on nothing', 
   });
   await assert.rejects(runPilotStage(env, pub.factory), /Public/);
   const missing = fakeClients({ games: [game6] });
-  await assert.rejects(runPilotStage(env, missing.factory), /9-Max Game Not Uniquely Found/);
+  await assert.rejects(runPilotStage(env, missing.factory), /Madness 6 Game Not Uniquely Found/);
   const noop = fakeClients();
   await assert.rejects(
     runPilotStage({ ...env, PILOT_OPERATION_ID: '' }, noop.factory),
@@ -411,4 +415,31 @@ test('consent opt-in reaches access only and workflow defaults false', async () 
   ]) {
     await assert.rejects(runPilotStage({ ...env, ...patch }, f.factory), /Explicit Access Stage/);
   }
+});
+
+test('targets are chosen by template, and the old 6 and 9 inputs still name Action and Madness', async () => {
+  for (const [targets, expected] of [
+    [undefined, ['action', 'madness']],
+    ['madness', ['madness']],
+    ['9', ['madness']],
+    ['6,9', ['action', 'madness']],
+    ['action,6', ['action']],
+  ]) {
+    const c = fakeClients();
+    const report = await runPilotStage(
+      { ...env, PILOT_STAGE: 'report', PILOT_TARGETS: targets },
+      c.factory
+    );
+    assert.deepEqual(
+      report.clusters.map((x) => [x.template, x.handedness]),
+      expected.map((t) => [t, 6])
+    );
+  }
+  await assert.rejects(
+    runPilotStage(
+      { ...env, PILOT_STAGE: 'report', PILOT_TARGETS: 'classic' },
+      fakeClients().factory
+    ),
+    /No Pilot Target Selected/
+  );
 });

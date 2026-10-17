@@ -53,6 +53,7 @@ import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import PlayerChangeHistory from '../components/club/PlayerChangeHistory';
 import ChipTransferModal from '../components/agent/ChipTransferModal';
 import MemberWatchAtTable from '../components/club/MemberWatchAtTable';
+import MemberWinLossCard from '../components/club/MemberWinLossCard';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
@@ -630,6 +631,16 @@ export default function MemberManagementPage() {
       </section>
 
       <div className="mm-ledger-grid" key={`ledger:${clubId}:${userId}:${user?.id}`}>
+        {/* ── Win / loss (Dan 2026-10-16) ──────────────────────────────────── */}
+
+        {detail!.capabilities.can_view_financials && resolvedClubId && identity!.user_id && (
+          <MemberWinLossCard
+            key={`winloss:${resolvedClubId}:${identity!.user_id}`}
+            clubId={resolvedClubId}
+            userId={identity!.user_id}
+          />
+        )}
+
         {/* ── Nickname and remark ──────────────────────────────────────────── */}
 
         {detail!.capabilities.can_view_notes && (

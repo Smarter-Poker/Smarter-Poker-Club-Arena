@@ -1,0 +1,4 @@
+{
+  "_owner": "perf/club-arena-entry-headroom - useCompleteProfile is the profile gate's boot decision that AppLayout already ran from the entry; it moved out of CompleteProfileModal.tsx so the modal, its console art and the AvatarGallery could leave first paint. Same code, new file: the entry drops from 320kB to 296kB gzip initial load.",
+  "modules": ["src/components/modals/useCompleteProfile.ts"]
+}

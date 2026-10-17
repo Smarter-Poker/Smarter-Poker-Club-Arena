@@ -23,3 +23,11 @@ The live desktop board cut the note to "Action | Small Blind Ante, 30% Minimum V
 ## Hosted Club Data specs accept the club-named heading
 
 The everyday Club Data heading is now "<CLUB NAME> - CLUB DATA" (Dan 2026-10-17). `mobile-tap-targets.spec.ts` and `club-operations-exhaustive.spec.ts` still required a heading named exactly "Club Data", which failed the full post-deploy browser verification on every release. Both now accept the club-named heading.
+
+## The late-greeting lobby specs wait for their fixture
+
+`mobile-lobby-chrome.spec.ts` mounted the closed-doors fixture, waited for its NLH tab to paint, and then called `window.showLobbyDoor`, which the fixture installs in a React effect that runs after that paint. On WebKit the call landed first (post-deploy run 39051205956: "window.showLobbyDoor is not a function"). `mountLobbyDoors` now waits for the function to exist before it returns.
+
+## Found, not fixed here
+
+The same run's cashier certification got a 500 from `fn_cashier_conservation_report` (statement timeout). It re-sums every chip_ledger player leg since the baseline, 1.07M for Club JAQK, 4.5s cold. Filed as #7309 for the cashier conservation owner.

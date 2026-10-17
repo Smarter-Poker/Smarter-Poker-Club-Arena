@@ -289,6 +289,12 @@ async function mountLobbyDoors(
   );
   if (startClosed) {
     await expect(page.getByRole('tab', { name: 'NLH', exact: true })).toBeVisible();
+    // The tab paints before the fixture's effect installs showLobbyDoor, and
+    // WebKit can run a caller's evaluate in between (post-deploy run
+    // 39051205956: "window.showLobbyDoor is not a function").
+    await page.waitForFunction(
+      () => typeof (window as unknown as { showLobbyDoor?: unknown }).showLobbyDoor === 'function'
+    );
     return;
   }
   // Both doors are up before any owner acts, so the stack is decided by

@@ -385,8 +385,8 @@ for (const superGame of [false, true])
         // fifths in expectation with the guarantee funded inside it:
         // prize(p) = floor + (4·bet - 5·floor)/5 · C(24,p-1)/C(18,p-1).
         // An ordinary 1.00 stake therefore opens at 0.80 - twenty cents SHORT -
-        // and a Super award with the add-on, a 3.00 stake it paid 2.00 for,
-        // opens at 2.40, sixty cents short. A readout that printed a plus there
+        // and a Super award, a 2.00 stake it paid 1.00 for, opens at 1.60,
+        // forty cents short. A readout that printed a plus there
         // would be lying to the player about a tile that loses ground, which is
         // exactly why signedChips carries a minus and the stylesheet inks
         // data-sign="loss". Both figures are transcribed from the rule above
@@ -402,7 +402,7 @@ for (const superGame of [false, true])
         await expect(readouts.locator('dd').first()).toHaveText('0.00 Chips');
         await expect(readouts.locator('dd').first()).toHaveAttribute('data-sign', 'gain');
         await expect(readouts.locator('dd').last()).toHaveText(
-          superGame ? '-0.60 Chips' : '-0.20 Chips'
+          superGame ? '-0.40 Chips' : '-0.20 Chips'
         );
         await sits(readouts, 'the Mines profit readouts');
         await expect(page.getByRole('button', { name: /^Tile / })).toHaveCount(25);

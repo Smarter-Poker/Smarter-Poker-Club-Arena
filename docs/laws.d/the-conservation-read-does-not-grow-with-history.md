@@ -1,0 +1,3 @@
+# tests/the-conservation-read-does-not-grow-with-history.law.test.ts
+
+The cashier conservation report (Reconcile Now) must not re-read the whole chip_ledger history on every call (issue #7309: 1.07M legs for Club JAQK, statement timeout). The law pins the sealed-day read from 20261017184739: the journal is read only through ranges bounded on both sides, a sealed day counts only while it carries its day manifest hash, sealed totals collapse to one row per member, the report stays read-only and caller-scoped, and fn_ca_chip_wallet_day_seal seals only finished, attested days no open transaction can reach, writes only its own derived tables, and is scheduled with its reason written down and qualified in CI.

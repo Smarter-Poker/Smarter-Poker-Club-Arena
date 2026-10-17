@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/cashier-conservation-reads-sealed-days (20261017184739, issue #7309)",
+  "tables": ["ca_chip_wallet_day_seals", "ca_chip_wallet_day_totals"],
+  "functions": ["fn_ca_chip_wallet_day_seal"]
+}

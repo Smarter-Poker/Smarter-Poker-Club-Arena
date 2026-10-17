@@ -1968,6 +1968,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-cashier-statements.sh
+      - name: Cashier conservation reads sealed days and stays exact (20261017184739)
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-cashier-conservation-sealed-days-postgres.py --output artifacts/cashier-conservation-sealed-days
       - name: The Cashier Statement counts each move once and names its wallet
         if: matrix.shard == 2
         env:

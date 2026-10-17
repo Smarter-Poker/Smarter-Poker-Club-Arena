@@ -402,3 +402,92 @@ it.each([
     /exact serving engine releaseSha/
   );
 });
+
+// Run 39056430595: six observer tabs in one browser, only one in front. A
+// frame-only sampler missed board 1's river, two-run board 1's winner and
+// every chip landing. These run with animation frames that never fire.
+const flushMutations = () => new Promise((resolve) => setTimeout(resolve, 0));
+const installMutationOnlyWitness = async () => {
+  vi.stubGlobal('requestAnimationFrame', () => 1);
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement
+  ) {
+    if (this.classList.contains('seat__info')) return new DOMRect(100, 100, 20, 20);
+    if (this.dataset.chipFlight) return new DOMRect(Number(this.dataset.x ?? 0), 100, 20, 20);
+    return new DOMRect(0, 0, 393, 852);
+  });
+  document.body.innerHTML = '';
+  await installNaturalMultiRunWitness({
+    addInitScript: async (callback: () => void) => callback(),
+  } as any);
+  return () => (window as any).__naturalMultiRunWitness;
+};
+const lanesHtml = (cards: number[], winners: boolean[]) =>
+  cards
+    .map(
+      (count, index) =>
+        `<div class="community-area__run">${winners[index] ? '<span class="community-area__run-winner">Winner</span>' : ''}${'<i class="community-cards__card"></i>'.repeat(count)}</div>`
+    )
+    .join('');
+const tableHtml = (hand: number, body: string) =>
+  `<div class="table-page"><span class="table-brand__hand">Hand #${hand}</span>${body}</div>`;
+
+afterEach(() => {
+  (window as any).__naturalMultiRunWitness?.stop?.();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+it('records every board waiting for its river and then naming its winner from DOM changes alone', async () => {
+  const witness = await installMutationOnlyWitness();
+  let now = 1_000;
+  vi.spyOn(Date, 'now').mockImplementation(() => (now += 10));
+  document.body.innerHTML = tableHtml(41, lanesHtml([3, 3], [false, false]));
+  await flushMutations();
+  document.querySelector('.table-page')!.innerHTML =
+    `<span class="table-brand__hand">Hand #41</span>${lanesHtml([5, 5], [true, true])}`;
+  await flushMutations();
+  const [hand] = witness().read().hands;
+  expect(hand.lanes).toHaveLength(2);
+  for (const lane of hand.lanes) {
+    expect(lane.pendingAt).not.toBeNull();
+    expect(lane.winnerAt).toBeGreaterThan(lane.pendingAt);
+  }
+  expect(witness().read().violations).toEqual([]);
+  expect(witness().read().visibility.visibleSamples).toBeGreaterThan(0);
+});
+
+it('fails a hand whose board never named its winner once the next hand is dealt', async () => {
+  const witness = await installMutationOnlyWitness();
+  document.body.innerHTML = tableHtml(41, lanesHtml([3, 3], [false, false]));
+  await flushMutations();
+  document.querySelector('.table-page')!.innerHTML =
+    `<span class="table-brand__hand">Hand #41</span>${lanesHtml([5, 5], [false, true])}`;
+  await flushMutations();
+  // A lane re-render inside the same hand does not end it.
+  document.querySelector('.table-page')!.innerHTML =
+    `<span class="table-brand__hand">Hand #41</span>`;
+  await flushMutations();
+  expect(witness().read().violations).toEqual([]);
+  document.querySelector('.table-page')!.innerHTML =
+    `<span class="table-brand__hand">Hand #42</span>`;
+  await flushMutations();
+  expect(witness().read().violations).toEqual(['41:2: Run 1 Never Named Its Winner']);
+});
+
+it('counts a chip removed at its recipient as a landing and one removed elsewhere as a miss', async () => {
+  const witness = await installMutationOnlyWitness();
+  const seat = '<div data-player-id="winner"><div class="seat__info"></div></div>';
+  const chip = (id: string, x: number) =>
+    `<div data-chip-recipient="winner" data-chip-flight="${id}" data-chip-phase="flying" data-x="${x}"></div>`;
+  document.body.innerHTML = tableHtml(41, seat + chip('at-seat', 100) + chip('far', 300));
+  await flushMutations();
+  for (const node of document.querySelectorAll('[data-chip-flight]')) node.remove();
+  await flushMutations();
+  const read = witness().read();
+  expect(read.flights).toEqual([
+    expect.objectContaining({ recipient: 'winner', distance: 0, landedAt: expect.any(Number) }),
+  ]);
+  expect(read.violations).toEqual(['41: Payout Disappeared Before Reaching Its Recipient']);
+});

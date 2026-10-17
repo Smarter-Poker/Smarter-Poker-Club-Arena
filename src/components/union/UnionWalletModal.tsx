@@ -44,6 +44,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabase';
+import { readUnionDirectory } from '../../services/unionDirectory';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { reportError } from '../../utils/errorReporter';
 import { fmt, formatWalletChips } from '../../utils/format';
@@ -366,7 +367,8 @@ export function UnionWalletModal({
 
     setLoading(true);
     void Promise.all([
-      supabase.rpc('fn_union_player_directory', { p_union_id: unionId }),
+      /* fn_union_player_directory, read past the API's 1,000-row cap. */
+      readUnionDirectory<RosterRow>(unionId),
       supabase.from('union_clubs').select('*, clubs:club_id(*)').eq('union_id', unionId),
     ])
       .then(([rosterRes, clubsRes]) => {

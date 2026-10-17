@@ -91,3 +91,38 @@ Law: `tests/a-satellite-seats-a-bounty-target-like-a-paid-entry.law.test.ts`.
   ticket entry into a running event after its first bust would be refused as
   "divergent tournament escrow". That predates this change and affects plain
   targets equally; it is reported, not changed.
+
+## Review fixes and the rebuild (2026-10-17)
+
+An independent review returned two fixes, both made:
+
+- The ticket door compared `tournaments.bounty_pool` with the escrow's bounty
+  bank. A running bounty event's bank is its pool less what knockouts have
+  paid (`bounty_pool_paid`), so a late ticket seat after the first knockout
+  was refused. It now compares against `bounty_pool - bounty_pool_paid`, as
+  both settlement authorities do.
+- The engine could choose a Diamond Arena bounty target that the database
+  refuses. `SatelliteTargetRow.diamond_host` is set by both callers from the
+  host club's own row, and a bounty target is deliverable only when it is a
+  known false.
+
+Before install, production was read again and two preimages had moved:
+`20261017033733_a_capped_diamond_satellite_winner_is_paid_not_held` (another
+session) changed both settlement authorities. Their new text was rebuilt from
+production by line hash and proved equal to production's md5 (`8fb5cdbc...`
+and `22063fc9...`), and the postimages were regenerated from it. The law test
+pins both of that migration's rules in the postimages so this one cannot
+restore the older text, and the capped-winner fixture now loads five seats
+(four games plus the satellite chair the settlement releases). Harness: 85/85.
+
+## The satellites themselves
+
+`*_satellites_into_the_bounty_events` adds fifteen Midway Union satellite
+schedules, on the :15 and :45, into the Union Mystery Bounty, the Union Grand
+Championship, the 33 weekly bounty nights and the seven Sunday Funday bounty
+events, and asserts that every active Midway event of 25 or more now has a
+satellite. The Diamond Arena's bounty events stay unfed (no bounty part in the
+Diamond seat transfer).
+
+The bounty migration is 296 KB, so it is installed from its own bytes by
+`apply-merged-migration.yml` after merge rather than retyped into a tool call.

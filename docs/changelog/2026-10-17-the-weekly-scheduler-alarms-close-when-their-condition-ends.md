@@ -18,7 +18,9 @@ alarms, and until now nothing closed either one:
 
 An alarm whose condition still holds is not touched. This adds no sweep and
 changes no money, run, receipt or certificate. It applies to the live body,
-the postimage of `20261017121500` (`6bd020f0` -> `7065a449`).
+the postimage of `20261017132500` (`56eb1c0d` -> `86c6a68e`). It was
+rebased once more before install: `20261017132500` changed the body after
+#7276 merged, so the merged pins (`6bd020f0` -> `7065a449`) could not apply.
 
 Verified on native PG16: the migration runs twice cleanly and the readback
 and ACL are exact. With five fixture alarms, only the finished scope's visit

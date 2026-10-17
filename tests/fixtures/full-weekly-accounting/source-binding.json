@@ -205,7 +205,7 @@
     "tests/fixtures/correction-document-authority/regression.sql": "f70b287534ee6024469629a18fd38cb4074f528e906808c5bf6ebdb1464091f1",
     "tests/cashier-weekly-statements.test.tsx": "fe5d6c2c9af08648abb0b19f17533179a3c62110ca2185eb4e9a3ab2bd7c24d2",
     "tests/helpers/clubWeeklyStatement.ts": "7061277bbc67933e1aba5bcd76ebd3cd4fec241ffe9545c39e0b0f10806b2d21",
-    "tests/unit/ClubWeeklyAccountingReader.test.ts": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e",
+    "tests/unit/ClubWeeklyAccountingReader.test.ts": "6be8e7def307a8363525ac7eb3600674f5d35f9524304cdd9770e77ab0c45856",
     "tests/unit/FinancialExportService.test.ts": "a3870a8c151e21c7917687b6953dcd3d51cf82cc03071c655674111ad9556c16",
     "tests/fixtures/browser-period-observer/README.md": "43b9b9f94e8ddd1cc01bcd1d635995d196ea4f1cfafa6d35233761bb84a91da0",
     "tests/fixtures/browser-period-observer/captured-dependencies.json": "c9874b776f79b4636dffeee5f1046910093e2f36ae1208a95cd2bcb98f530ae3",
@@ -4921,5 +4921,19 @@
     "file": "tests/components/cashier-cashout-generations.test.tsx",
     "previous_sha256": "ef6c974a4a13cfd32561cd7a864a3ee24e866f88a8c7b1441ddf99aefdccb020",
     "sha256": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39"
+  },
+  "settlementRecordReadsIssuedStatements20261017": {
+    "base_commit": "f70493b2fdf0207115145dbbe64f12e7a0305afb",
+    "source_branch": "agent/claude-sweep/client-fixes-1017",
+    "prior_binding_sha256": "13c4b4b4a0d2cc3477b1599b4d307070b45c5cd48c13f7f2476dc3e96fcc1852",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/unit/ClubWeeklyAccountingReader.test.ts",
+        "previous_sha256": "a014cdab643e4adb2612f49112a4d51947c33de71c23e16757cb432bd09d8c2e",
+        "sha256": "6be8e7def307a8363525ac7eb3600674f5d35f9524304cdd9770e77ab0c45856"
+      }
+    ],
+    "reason": "Dan's 2026-10-17 sweep found the Advanced Cashier Settlement Record refusing every club: production trigger trg_weekly_statement_issue_settled (migration 20261015180754) stamps every club_weekly_accounting row 'paid' at issue, and readClubWeeklyStatements accepted only 'generated'. The reader now accepts the two issued statuses ('generated', 'paid'); this test's refusal list replaces the single {status:'paid'} fault with cancelled, disputed, pending and null, and adds one case proving a paid-at-issue statement reads. Every other refusal (scope, amounts, ready_to_issue, message_sent, accounting_version) is unchanged.",
+    "verification": "The replacement is the exact SHA-256 of the reviewed file bytes in this branch; the diff was read in full before restamping. tests/unit/ClubWeeklyAccountingReader.test.ts passes, and scripts/ci/verify-source-bindings.py re-reads every pin after this restamp."
   }
 }

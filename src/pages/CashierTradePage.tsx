@@ -153,6 +153,7 @@ import {
   mergeCashierBatchReceiptRows,
   type CashierBatchReceiptRow,
 } from '../utils/cashierBatch';
+import { chipKindWord } from '../utils/chipKindWord';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -354,11 +355,17 @@ function CashierWalletRow({
         />
       </span>
       <span className={styles.walletRowPlate}>
-        {children || <span className={styles.walletRowLabel}>{label}</span>}
+        <span className={styles.walletRowLabel}>{label}</span>
+        {children && (
+          <svg className={styles.entityChevron} viewBox="0 0 12 8" aria-hidden="true">
+            <path d="M1 1.5 6 6.5 11 1.5" fill="none" stroke="currentColor" strokeWidth="2" />
+          </svg>
+        )}
         <strong className={styles.walletRowValue}>
           {balance === null ? '-' : formatWalletChips(balance)}
         </strong>
       </span>
+      {children}
     </section>
   );
 }
@@ -402,12 +409,11 @@ function newOpId(): string {
  * Raw Postgres enums were rendered straight at the user: "peer_transfer",
  * "awaiting_payment". Title Case them, the way ROLE_LABEL does for roles.
  */
+/* The kinds read the statement's words (2026-10-17): the Trade Record printed
+   "Cashout" and "Tournament Buyin" where the statement reads "Cash-Out" and
+   "Tournament Buy-In". */
 function txLabel(value: string | null | undefined): string {
-  return String(value || '')
-    .split('_')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+  return value ? chipKindWord(value) : '';
 }
 
 // Retire dialogs and read/write refs immediately when the account or route changes.

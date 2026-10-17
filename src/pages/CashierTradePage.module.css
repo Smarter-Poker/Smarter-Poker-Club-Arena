@@ -2207,14 +2207,14 @@
   font-size: calc(4.5cqw * var(--fit, 1));
 }
 .console .playerCardIdentity {
-  display: block;
+  display: flex;
+}
+.console .playerCardName {
+  min-width: 0;
+  flex: 1;
 }
 .console .playerCardId {
-  position: absolute;
-  left: calc(-210 / 870 * 100%);
-  top: calc(175 / 180 * 100%);
-  width: calc(200 / 870 * 100%);
-  text-align: center;
+  text-align: right;
   font-size: 2.2cqw;
 }
 
@@ -2233,7 +2233,8 @@
 
 /* The native selector owns the entire painted player frame. Its option labels
    keep each wallet balance; the selected face prints that balance only once. */
-.console .playerCard > select.walletSelect {
+.console .playerCard > select.walletSelect,
+.console .walletRow > select.walletSelect {
   position: absolute;
   inset: 0;
   z-index: 1;
@@ -2242,10 +2243,12 @@
   opacity: 0;
   cursor: pointer;
 }
-.console .playerCard > select.walletSelect:disabled {
+.console .playerCard > select.walletSelect:disabled,
+.console .walletRow > select.walletSelect:disabled {
   cursor: default;
 }
-.console .playerCard:focus-within {
+.console .playerCard:focus-within,
+.console .walletRow:focus-within {
   outline: 1px solid var(--ink-blue);
   outline-offset: -2px;
 }

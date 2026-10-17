@@ -5,7 +5,19 @@ on:
       mode:
         description: 'One finite evidence operation'
         type: choice
-        options: [player, replay, cycle, recovery, latency, admission]
+        options:
+          [
+            player,
+            replay,
+            cycle,
+            recovery,
+            latency,
+            admission,
+            financial_top_up,
+            financial_cash_out,
+            financial_auto_top_up,
+            financial_stop_playing,
+          ]
         required: true
       accept_player_terms:
         description: 'Explicit owner-authorized normal TOS and Privacy acceptance only for named players 0097309f-2864-4d09-b02b-56bca012a9c3 or Samantha a23ca5c9-b748-482f-9b59-9db35f7aa996'
@@ -53,7 +65,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verify The Finite Witness Before Acting
-        run: node --test scripts/ops/lightning-pilot-targets.test.mjs scripts/ops/lightning-pilot-admission.test.mjs scripts/ops/lightning-pilot-witness.test.mjs scripts/ops/lightning-pilot-player.test.mjs scripts/ops/lightning-pilot-replay-batch.test.mjs scripts/ops/lightning-pilot-cycle.test.mjs scripts/ops/lightning-pilot-recovery.test.mjs scripts/ops/lightning-pilot-latency-workload.test.mjs
+        run: node --test scripts/ops/lightning-pilot-financial.test.mjs scripts/ops/lightning-pilot-targets.test.mjs scripts/ops/lightning-pilot-admission.test.mjs scripts/ops/lightning-pilot-witness.test.mjs scripts/ops/lightning-pilot-player.test.mjs scripts/ops/lightning-pilot-replay-batch.test.mjs scripts/ops/lightning-pilot-cycle.test.mjs scripts/ops/lightning-pilot-recovery.test.mjs scripts/ops/lightning-pilot-latency-workload.test.mjs
       - run: npm ci --ignore-scripts
       - name: Install Chromium For The Explicit Player Witness
         if: inputs.mode != 'replay'

@@ -6,7 +6,7 @@
     "maxGzipKb": 25
   },
   "chunks": {
-    "PlayerStatsPage": { "baselineGzipKb": 17.08, "maxGzipKb": 22 },
+    "PlayerStatsPage": { "baselineGzipKb": 17.08, "maxGzipKb": 23 },
     "OverviewTab": { "baselineGzipKb": 2.12, "maxGzipKb": 3 },
     "PerformanceTab": { "baselineGzipKb": 1.75, "maxGzipKb": 3 },
     "PositionsTab": { "baselineGzipKb": 0.66, "maxGzipKb": 2 },

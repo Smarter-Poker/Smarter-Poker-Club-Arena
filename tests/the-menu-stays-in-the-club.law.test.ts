@@ -251,6 +251,11 @@ describe('LAW: the pages the menu stamps read what it stamped', () => {
       'findClubByParam(userClubs, readClubContextParam(location.search))',
     ],
     ['src/components/club/ClubBottomNav.tsx', 'readClubContextParam(location.search)'],
+    // 2026-10-17: Stats opened on All Clubs under /stats?club=shark-club.
+    [
+      'src/pages/PlayerStatsPage.tsx',
+      'findClubByParam(clubs, readClubContextParam(location.search))',
+    ],
     ['src/components/navigation/GlobalHeader.tsx', "withClubContext('/wallet', routeClubId)"],
   ] as const) {
     it(`${page} honours ?club=`, () => {

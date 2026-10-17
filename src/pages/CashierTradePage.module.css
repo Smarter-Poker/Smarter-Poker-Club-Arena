@@ -2019,3 +2019,111 @@
 .console select.walletSelect:focus-visible {
   outline: 1px solid var(--ink-blue);
 }
+
+/* ── Cashier header, Dan 2026-10-16 ─────────────────────────────────────
+   The club leads the glass: no toolbar row above it in Simple, the logo at
+   the size of the club's own mark with its name and a "Choose" dropdown
+   (a lit chevron that turns when the club list opens beneath it) stacked
+   beside it, and the Advanced switch on the same row. Request Cash Out sits
+   in the same painted frame as the action dock ("Tap A Player To Select",
+   Dan 2026-10-16): cashier-action-dock-v1.png at its own 1916 x 334 ratio. Nothing is drawn in CSS. */
+.page.simple .header {
+  justify-content: space-between;
+  gap: 12px;
+}
+.page.simple .header .modeToggle {
+  flex: 0 0 auto;
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 4px;
+}
+.page .header .entityBtn {
+  gap: 14px;
+  min-height: 72px;
+  text-align: left;
+}
+.page .header .entityLogo {
+  width: 72px;
+  height: 72px;
+}
+.entityText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.page .header .entityName {
+  font-size: 20px;
+}
+.entityCaret {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
+}
+.entityChevron {
+  width: 12px;
+  height: 8px;
+  transition: transform 160ms ease;
+}
+.entityCaretOpen .entityChevron {
+  transform: rotate(180deg);
+}
+.cashoutButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 300px;
+  max-width: 100%;
+  aspect-ratio: 1916 / 334;
+  margin: 10px auto 0;
+  padding: 0 8%;
+  border: 0;
+  background: url('/images/cashier-actions/cashier-action-dock-v1.png') center / 100% 100% no-repeat;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* The same ink as the roster's "522 Available" line (Dan 2026-10-16). */
+.cashoutLabel,
+.cashoutBalance {
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+.cashoutButton:active {
+  filter: brightness(1.2);
+}
+.cashoutButton:focus-visible {
+  outline: 2px solid var(--ink-blue);
+  outline-offset: 2px;
+}
+
+/* Dan 2026-10-16: "Tap A Player To Select" (and the selection count that
+   replaces it) is centred in the dock frame; Clear keeps the right edge. */
+.console .actionBar .selBar,
+.page.simple .actionBar .selBar {
+  position: relative;
+  justify-content: center;
+  text-align: center;
+}
+.console .actionBar .selBar > span,
+.page.simple .actionBar .selBar > span {
+  max-width: calc(100% - 120px);
+}
+.console .actionBar .selClear,
+.page.simple .actionBar .selClear {
+  position: absolute;
+  top: 50%;
+  right: calc(16 / 1916 * 100%);
+  transform: translateY(-50%);
+}

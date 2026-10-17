@@ -292,11 +292,16 @@ test.describe('Production Create A Club Certificate', () => {
     const admin = createClient(adminUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    // The image is copied from this exact published page, never an external download.
-    const imageUrl = await page.getByAltText('Club Lobby Banner Preview').getAttribute('src');
-    expect(imageUrl).toBeTruthy();
-    const imageResponse = await page.request.get(new URL(imageUrl!, page.url()).href);
-    expect(imageResponse.ok()).toBe(true);
+    // A tiny isolated PNG proves upload without depending on a retired house banner.
+    const fixtureImage = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAYAAAABCAYAAAD9yd/wAAAAD0lEQVR4nGOQKP/0HxsGALIJDwGvxefVAAAAAElFTkSuQmCC',
+      'base64'
+    );
+    await expect(page.getByText('No Club Banner Set.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('switch')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Save Ad Visibility', exact: true })).toHaveCount(
+      0
+    );
     let bannerUploadCount = 0;
     page.on('response', (response) => {
       if (
@@ -313,7 +318,7 @@ test.describe('Production Create A Club Certificate', () => {
       await bannerInput.setInputFiles({
         name: 'banner-certificate.png',
         mimeType: 'image/png',
-        buffer: await imageResponse.body(),
+        buffer: fixtureImage,
       });
       await expect(page.getByRole('button', { name: 'Save Banner', exact: true })).toBeEnabled();
       const uploadResponse = page.waitForResponse(
@@ -334,6 +339,7 @@ test.describe('Production Create A Club Certificate', () => {
       expect(upload.ok()).toBe(true);
       const update = await updateResponse;
       expect(update.ok()).toBe(true);
+      expect(Object.keys(update.request().postDataJSON())).toEqual(['banner_url']);
       const savedBanner = await update.json();
       originalSettings = savedBanner.settings;
       expect(typeof savedBanner.id).toBe('string');
@@ -355,7 +361,7 @@ test.describe('Production Create A Club Certificate', () => {
       await page.goto(`./clubs/${createdClubRef}/banner-displays`, {
         waitUntil: 'domcontentloaded',
       });
-      await page.getByRole('button', { name: 'Use Default Banner', exact: true }).click();
+      await page.getByRole('button', { name: 'Remove Club Banner', exact: true }).click();
       const resetResponse = page.waitForResponse(
         (response) =>
           response.request().method() === 'PATCH' &&
@@ -366,58 +372,18 @@ test.describe('Production Create A Club Certificate', () => {
       expect(reset.ok()).toBe(true);
       expect((await reset.json()).banner_url).toBeNull();
 
-      // Smarter.Poker owns the rotating ad content; owners only choose visibility.
-      const adVisibility = page.getByRole('switch', {
-        name: 'Show Smarter.Poker Rotating Ads',
-        exact: true,
-      });
-      await expect(adVisibility).toBeChecked();
-      await expect(page.getByLabel('Add Rotating Banner Image', { exact: true })).toHaveCount(0);
-      await expect(page.locator('input[type="file"]')).toHaveCount(1);
-      await adVisibility.uncheck();
-      const hideSave = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'PATCH' &&
-          new URL(response.url()).pathname.endsWith('/rest/v1/clubs')
-      );
-      await page.getByRole('button', { name: 'Save Ad Visibility', exact: true }).click();
-      const hiddenResponse = await hideSave;
-      expect(hiddenResponse.ok()).toBe(true);
-      const hiddenRecord = await hiddenResponse.json();
-      expect(hiddenRecord.settings.show_smarter_poker_ads).toBe(false);
-      const { show_smarter_poker_ads: _hidden, ...otherSettings } = hiddenRecord.settings;
-      expect(otherSettings).toEqual(savedBanner.settings);
-      await expect(
-        page.getByRole('button', { name: 'Save Ad Visibility', exact: true })
-      ).toBeDisabled();
+      expect(reset.request().postDataJSON()).toEqual({ banner_url: null });
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(adVisibility).not.toBeChecked({ timeout: 30000 });
-      await page.screenshot({ path: 'test-results/rotating-banners-mobile.png', fullPage: true });
-      await page.getByRole('button', { name: 'Back To Club', exact: true }).click();
-      await expect(page.locator('.club-lobby-command-top__campaign-button img')).toBeVisible({
+      await expect(page.getByText('No Club Banner Set.', { exact: true })).toBeVisible({
         timeout: 30000,
       });
-      await expect(page.locator('.ad-rotator--lobby-strip')).toHaveCount(0);
-      await page.goto(`./clubs/${createdClubRef}/banner-displays`, {
-        waitUntil: 'domcontentloaded',
-      });
-      await adVisibility.check();
-      const showSave = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'PATCH' &&
-          new URL(response.url()).pathname.endsWith('/rest/v1/clubs')
-      );
-      await page.getByRole('button', { name: 'Save Ad Visibility', exact: true }).click();
-      const shownResponse = await showSave;
-      expect(shownResponse.ok()).toBe(true);
-      expect((await shownResponse.json()).settings.show_smarter_poker_ads).toBe(true);
-      await expect(
-        page.getByRole('button', { name: 'Save Ad Visibility', exact: true })
-      ).toBeDisabled();
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(adVisibility).toBeChecked({ timeout: 30000 });
+      await expect(page.getByAltText('Club Lobby Banner Preview')).toHaveCount(0);
+      await expect(page.getByRole('switch')).toHaveCount(0);
+      await page.screenshot({ path: 'test-results/rotating-banners-mobile.png', fullPage: true });
       await page.getByRole('button', { name: 'Back To Club', exact: true }).click();
+      await expect(page.locator('.club-lobby-command-top__campaign-button img')).toHaveCount(0);
       await expect(page.locator('.ad-rotator--lobby-strip img')).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('img[src*="shark-club-championship-ad"]')).toHaveCount(0);
       expect(bannerUploadCount, 'Only The Top Club Banner May Upload An Image').toBe(1);
     } finally {
       // Delete only this exact disposable club's image, including a failed

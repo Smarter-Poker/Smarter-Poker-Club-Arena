@@ -3265,6 +3265,28 @@ function CashierTradeWorkspace() {
   // determined separately for the selected player or agent wallet.
   const selfCanFundPlayerWallet = currentClub?.entityType === 'club' && canSeeClubBank(myRole);
 
+  const modeToggle = (
+    <button
+      type="button"
+      className={styles.modeToggle}
+      aria-pressed={advanced}
+      onClick={() => {
+        if (advanced) {
+          setTab('trade');
+          setRoleFilter('all');
+          setMineOnly(false);
+          setGroupByRole(false);
+        }
+        setAdvanced((value) => !value);
+      }}
+    >
+      {advanced ? 'Simple' : 'Advanced'}
+      {!advanced && pendingCount + heldTicketCount > 0
+        ? ` (${(pendingCount + heldTicketCount).toLocaleString()})`
+        : ''}
+    </button>
+  );
+
   return (
     <div
       className={`${styles.page} ${!advanced ? styles.simple : ''}`}
@@ -3275,34 +3297,22 @@ function CashierTradeWorkspace() {
         compact={!advanced}
         eyebrow="Secure Cashier"
         title="Cashier"
-        pill={isOnline ? 'Live Ledger' : 'Locked'}
-        pillInk={isOnline ? 'green' : 'red'}
+        // Dan 2026-10-16: no "Live Ledger" pill. A locked cashier still says so.
+        pill={isOnline ? undefined : 'Locked'}
+        pillInk="red"
         foot="foot"
         className={styles.console}
       >
         <div className={styles.glass}>
-          <div className={styles.modeToolbar}>
-            <span>{advanced ? 'Advanced Cashier' : 'Simple Cashier'}</span>
-            <button
-              type="button"
-              className={styles.modeToggle}
-              aria-pressed={advanced}
-              onClick={() => {
-                if (advanced) {
-                  setTab('trade');
-                  setRoleFilter('all');
-                  setMineOnly(false);
-                  setGroupByRole(false);
-                }
-                setAdvanced((value) => !value);
-              }}
-            >
-              {advanced ? 'Simple' : 'Advanced'}
-              {!advanced && pendingCount + heldTicketCount > 0
-                ? ` (${(pendingCount + heldTicketCount).toLocaleString()})`
-                : ''}
-            </button>
-          </div>
+          {/* Dan 2026-10-16: the Simple view carries no "Simple Cashier" caption
+          and no toolbar row; its Advanced switch sits beside the club so the
+          club leads the glass. Advanced keeps its labelled toolbar. */}
+          {advanced && (
+            <div className={styles.modeToolbar}>
+              <span>Advanced Cashier</span>
+              {modeToggle}
+            </div>
+          )}
           <section
             className={styles.hero}
             aria-labelledby={advanced ? 'cashier-title' : undefined}
@@ -3321,24 +3331,53 @@ function CashierTradeWorkspace() {
                 {currentClub?.logoUrl ? (
                   <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
                 ) : null}
-                <span className={styles.entityName}>{currentClubLabel}</span>
-                <span className={`${styles.entityCaret} sc-label sc-ink--blue`} aria-hidden="true">
-                  Choose
+                <span className={styles.entityText}>
+                  <span className={styles.entityName}>{currentClubLabel}</span>
+                  <span
+                    className={`${styles.entityCaret} ${pickerOpen ? styles.entityCaretOpen : ''} sc-label`}
+                    aria-hidden="true"
+                  >
+                    Choose
+                    <svg className={styles.entityChevron} viewBox="0 0 12 8" focusable="false">
+                      <path
+                        d="M1 1.5 6 6.5 11 1.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                  </span>
                 </span>
               </button>
+              {!advanced && modeToggle}
             </div>
 
             {holdsPlayerWallet(myRole) && roleResolved && (
+              // Dan 2026-10-16: the button carries the viewer's own player
+              // balance in this club, the same figure the cashout sheet checks.
               <button
                 type="button"
-                className={styles.classicLink}
+                className={styles.cashoutButton}
+                aria-label="Request Cash Out"
+                aria-describedby="cashier-cashout-balance"
                 onClick={() => setShowCashoutRequest(true)}
               >
-                Request Cash Out
+                <span className={styles.cashoutLabel}>Request Cash Out</span>
+                <span id="cashier-cashout-balance" className={styles.cashoutBalance}>
+                  {loading || isHydrating ? 'Loading Balance' : `${fmt(myBalance)} Chips`}
+                </span>
               </button>
             )}
             {!advanced && (
-              <div className={styles.simpleStatus} role="status">
+              // Dan 2026-10-16: a healthy cashier prints no "Balances Synchronized"
+              // line. The status stays announced to assistive technology, and any
+              // other state (offline, reconciling, an error) is still shown.
+              <div
+                className={
+                  cashierSyncMessage === 'Balances Synchronized' ? 'sr-only' : styles.simpleStatus
+                }
+                role="status"
+              >
                 {cashierSyncMessage}
               </div>
             )}

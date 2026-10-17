@@ -22,6 +22,7 @@ import type {
 } from './protocol.js';
 import type { HorseDiscardExecutionObservation } from '../../services/horseDecisionJournal/discard.js';
 import { decisionWorkersCanYield } from './workerPriority.js';
+import { horseDecisionShard } from './shard.js';
 import {
   horseJournalCapacityUnreadableReason,
   horseJournalShardCapacity,
@@ -67,13 +68,22 @@ import type { HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
  *   - plan ownership (client.planOwners) is per client, and a commit is routed
  *     by the result's own fence, which is the request's fence.
  *
- * WHAT CHANGES, AND IS STATED HERE RATHER THAN DISCOVERED LATER: HorseMind's
+ * WHAT CHANGED, AND IS STATED HERE RATHER THAN DISCOVERED LATER: HorseMind's
  * live opponent statistics are in-process and per worker. A worker only sees
- * the action streams of the tables it serves, so with two workers each holds
+ * the action streams of the tables it serves, so until 2026-10-16 each held
  * the lifetime counters hydrated from horse_mind_stats at boot plus what its
- * own tables taught it; the GREATEST-merged flush keeps the database
- * monotonic and each worker learns from about half the floor instead of all
- * of it. That is the trade against 57% of decisions being no decision at all.
+ * own tables taught it, and two horses facing the same player on different
+ * shards held different reads of that player.
+ *
+ * ONE FLOOR, ONE READ (2026-10-16). Every completed hand now reaches every
+ * shard: the owner observes and journals it as before, and each other shard
+ * learns it from the same accepted action stream (client.mirrorCompletedHand,
+ * mindMirror.ts). A shard learns another table's hand in an isolated HorseMind
+ * sandbox and adds exactly that hand's counters to its live memory, so the
+ * dedupe and hand flags of its own hands in flight are never displaced by the
+ * rest of the floor's traffic. The mirror is bounded per client, and the
+ * GREATEST-merged flush stays correct: every shard's counters now count the
+ * same hands, so any shard's flush is the floor's.
  *
  * WHAT DOES NOT CHANGE: no replacement worker, no respawn. Any worker's loss
  * is process-fatal exactly as the sole worker's was (see client.ts), and the
@@ -142,6 +152,30 @@ import type { HorsePlanAcceptance } from '../HorsePlanEffectReceipt.js';
  * journal writers keep), never fewer than the two it has always run: three
  * on this host, still two on a two-core host and on six logical CPUs.
  *
+ * ONE YIELDING WORKER PER PHYSICAL CORE (2026-10-16). Every horse decides
+ * with the full brain now (workerRuntime.ts, "THE WORKER DECIDES WITH THE
+ * QUALIFIED BRAIN"), so the lane must carry the qualified sample at the
+ * floor's peak instead of shedding it. Measured read-only on the engine host
+ * on 2026-10-16 (release 4c3509e5, 18:40-18:55Z, 379 tables, 200 tournaments):
+ *
+ *     three decision workers (nice 10)        81-95% CPU each
+ *     main loop                                79% of a core, p50 delay 20 ms
+ *     HorseLeagueComputeProcess (nice 19)      96% of a core (the 16:00 window)
+ *     host                                     load 8.8 on 8 logical CPUs,
+ *                                              17-21% idle
+ *     decisions                                72 a second, 2.14 worker-seconds
+ *                                              of compute a second
+ *     request -> journal                       p50 371 ms, p90 2.4 s, p99 3.4 s
+ *
+ * The main loop needs most of one core and every other live thread is
+ * small, so the default is one decision worker per physical core where they
+ * yield (four on this host, eight on sixteen logical CPUs), still bounded by
+ * logical CPUs less two and by the journal's disk below. Where they cannot
+ * yield, the two-worker rule above stands. Nothing about this host's count
+ * changes until the journal's disk admits the fourth shard: on the 80 GB disk
+ * it reads three (see horseJournalShardCapacity), which is the measured
+ * reason the engine host needs its disk upgraded with its plan.
+ *
  * Shards 0/1 retain 8 GiB of segments; new shards 2+ default to 4 GiB
  * (runtimeHorseJournalArchiveOptions), each with a 6 GiB catalog ceiling. A default that added
  * shards the disk cannot hold would fill the host, so the default never
@@ -172,12 +206,12 @@ export function horseDecisionWorkerCount(input: {
   const logical = Number.isSafeInteger(input.cores) && input.cores > 0 ? input.cores : 1;
   // An explicit request may use every logical CPU but the main loop's and one
   // equity worker's. Where the workers yield, the default is one per physical
-  // core but one, never fewer than two; where they cannot, it leaves a whole
-  // physical core for the main loop and stays at two at most.
+  // core (2026-10-16), never fewer than two; where they cannot, it leaves a
+  // whole physical core for the main loop and stays at two at most.
   const explicitCapacity = Math.max(1, logical - 2);
   const physical = Math.max(1, Math.floor(logical / ASSUMED_THREADS_PER_CORE));
   const cpuDefault = input.canYield
-    ? Math.min(Math.max(DEFAULT_HORSE_DECISION_WORKERS, physical - 1), explicitCapacity)
+    ? Math.min(Math.max(DEFAULT_HORSE_DECISION_WORKERS, physical), explicitCapacity)
     : Math.min(DEFAULT_HORSE_DECISION_WORKERS, physical - 1);
   const journalShards =
     typeof input.journalShards === 'number' &&
@@ -198,18 +232,7 @@ export function horseDecisionWorkerCount(input: {
   return defaultCount;
 }
 
-/** FNV-1a over the fence's table id. Stable across processes and restarts. */
-export function horseDecisionShard(fence: string, workers: number): number {
-  if (!Number.isSafeInteger(workers) || workers <= 1) return 0;
-  const colon = fence.indexOf(':');
-  const key = colon > 0 ? fence.slice(0, colon) : fence;
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < key.length; i++) {
-    hash ^= key.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash % workers;
-}
+export { horseDecisionShard };
 
 export interface LiveHorseDecisionWorkerShardStatus {
   index: number;
@@ -219,6 +242,7 @@ export interface LiveHorseDecisionWorkerShardStatus {
   completedJobs: number;
   expiredJobs: number;
   oldestQueuedAgeMs: number | null;
+  oldestQueuedDecisionAgeMs: number | null;
   lastComputeMs: number | null;
   lastError: string | null;
 }
@@ -316,7 +340,8 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     this.clients = Object.freeze(
       Array.from(
         { length: count },
-        (_, index) => new LiveHorseDecisionWorkerClient({ ...clientOptions, shard: { index } })
+        (_, index) =>
+          new LiveHorseDecisionWorkerClient({ ...clientOptions, shard: { index, count } })
       )
     );
     this.readyPromise = this.awaitAllReady();
@@ -414,6 +439,7 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
       activeRequestId: first.activeRequestId,
       activeJobAgeMs: maxOf(all.map((s) => s.activeJobAgeMs)),
       oldestQueuedAgeMs: maxOf(all.map((s) => s.oldestQueuedAgeMs)),
+      oldestQueuedDecisionAgeMs: maxOf(all.map((s) => s.oldestQueuedDecisionAgeMs)),
       lastCompletedAt: latest.lastCompletedAt,
       lastComputeMs: latest.lastComputeMs,
       completedJobs: sumOf(all.map((s) => s.completedJobs)),
@@ -441,6 +467,7 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
         completedJobs: s.completedJobs,
         expiredJobs: s.expiredJobs,
         oldestQueuedAgeMs: s.oldestQueuedAgeMs,
+        oldestQueuedDecisionAgeMs: s.oldestQueuedDecisionAgeMs,
         lastComputeMs: s.lastComputeMs,
         lastError: s.lastError,
       })),
@@ -467,7 +494,14 @@ export class LiveHorseDecisionWorkerPool implements LiveHorseDecisionLane {
     observation: CompletedHandObservation,
     signal?: AbortSignal
   ): Promise<HorseDecisionWorkerAck> {
-    return this.shard(observation.fence).observeCompletedHand(observation, signal);
+    // The owner observes (and journals) the hand exactly as before; every
+    // other shard learns the same hand so all of them hold one floor's read
+    // (see "WHAT CHANGES" above and client.mirrorCompletedHand).
+    const owner = horseDecisionShard(observation.fence, this.clients.length);
+    const ack = this.clients[owner]!.observeCompletedHand(observation, signal);
+    for (let index = 0; index < this.clients.length; index++)
+      if (index !== owner) this.clients[index]!.mirrorCompletedHand(observation);
+    return ack;
   }
 
   commitDecisionEffects(
@@ -551,6 +585,7 @@ const stoppedLaneStatus = (): LiveHorseDecisionLaneStatus => ({
   activeRequestId: null,
   activeJobAgeMs: null,
   oldestQueuedAgeMs: null,
+  oldestQueuedDecisionAgeMs: null,
   lastCompletedAt: null,
   lastComputeMs: null,
   completedJobs: 0,

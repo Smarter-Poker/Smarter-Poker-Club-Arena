@@ -83,8 +83,12 @@ describe('live horse decisions stay outside the table event loop', () => {
     expect(schedule).toContain('const remainingThinkMs = Math.min(');
     expect(schedule).toContain('Math.max(0, thinkTimeMs - (Date.now() - decisionTimeMs))');
     expect(schedule).toContain('Math.max(0, protectedDeadlineMs - Date.now() - 100)');
-    expect(schedule).toContain('fastResult.governorScale');
+    // 2026-10-16: the second look is budgeted from the turn clock, not from
+    // the worker's governor, and the action may wait for it inside that clock.
+    expect(schedule).not.toContain('fastResult.governorScale');
+    expect(schedule).toContain('ServerTableEngineTurns.horseTurnBudgetMs(');
     expect(schedule).toContain('}, remainingThinkMs)');
+    expect(schedule).toContain('Math.max(remainingThinkMs, turnBudgetMs)');
   });
 
   it('cancels the request, deep delay and action timer as one turn-owned unit', () => {

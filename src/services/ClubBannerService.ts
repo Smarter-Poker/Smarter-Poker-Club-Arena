@@ -80,34 +80,3 @@ export async function saveClubBanner(
   masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
   return data as ClubBannerRecord;
 }
-
-/** Preserve every other setting and refuse stale or non-owner writes. */
-export async function saveClubAdVisibility(
-  clubId: string,
-  ownerId: string,
-  expectedSettings: Record<string, unknown> | null,
-  visible: boolean
-): Promise<ClubBannerRecord> {
-  if (typeof visible !== 'boolean') throw new Error('Choose Whether To Show Smarter.Poker Ads');
-  const settings = { ...expectedSettings, show_smarter_poker_ads: visible };
-  let query = supabase.from('clubs').update({ settings }).eq('id', clubId).eq('owner_id', ownerId);
-  query =
-    expectedSettings === null
-      ? query.is('settings', null)
-      : query.eq('settings', JSON.stringify(expectedSettings));
-  const { data, error } = await query
-    .select('id, name, owner_id, banner_url, settings')
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) {
-    // A response may be lost after commit. Read the exact durable choice
-    // before accepting it; a different choice or removed ownership is a conflict.
-    const current = await readClubBanner(clubId);
-    if (current.owner_id !== ownerId || current.settings?.show_smarter_poker_ads !== visible)
-      throw new Error('Banner Displays Changed Or Access Was Removed. Reload Before Saving.');
-    masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
-    return current;
-  }
-  masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
-  return data as ClubBannerRecord;
-}

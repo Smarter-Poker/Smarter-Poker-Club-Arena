@@ -6,7 +6,7 @@ import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { titleCase } from '../utils/titleCase';
-import { mediaUrl } from '../utils/mediaBase';
+import { isRetiredClubBanner } from '../utils/clubBannerDisplay';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import {
@@ -16,12 +16,7 @@ import {
   validateClubBanner,
   type ClubBannerRecord,
 } from '../services/ClubBannerService';
-import ClubAdVisibilityControl from '../components/club/ClubAdVisibilityControl';
 import './ClubBannerDisplaysPage.css';
-
-const DEFAULT_BANNER = mediaUrl(
-  'assets/club-buttons/lobby/shark-club-championship-ad-mobile-v4.png'
-);
 
 export default function ClubBannerDisplaysPage() {
   const { clubId } = useParams<{ clubId: string }>();
@@ -40,13 +35,13 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [imageReady, setImageReady] = useState(false);
-  const [useDefault, setUseDefault] = useState(false);
+  const [removeBanner, setRemoveBanner] = useState(false);
   const mounted = useRef(false);
   const busy = useRef(false);
   const uploaded = useRef<{ file: File; url: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const isOwner = Boolean(club && userId && club.owner_id === userId);
-  const dirty = Boolean(file || (useDefault && club?.banner_url));
+  const dirty = Boolean(file || (removeBanner && club?.banner_url));
 
   useEffect(() => {
     mounted.current = true;
@@ -60,7 +55,7 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
     setClub(null);
     setError('');
     setFile(null);
-    setUseDefault(false);
+    setRemoveBanner(false);
     uploaded.current = null;
     void (async () => {
       try {
@@ -108,7 +103,7 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
       if (!mounted.current) return;
       setClub((current) => (current ? { ...current, banner_url: saved.banner_url } : saved));
       setFile(null);
-      setUseDefault(false);
+      setRemoveBanner(false);
       uploaded.current = null;
       if (input.current) input.current.value = '';
       toast.success('Banner Display Saved');
@@ -146,22 +141,25 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
           {!loading && !isOwner && club && <p>Only The Club Owner Can Change Banner Displays.</p>}
           {!loading && isOwner && club && (
             <>
-              <p>
-                Manage Your Club Banner And Smarter.Poker Ad Visibility, Including In Union Clubs.
-              </p>
-              <h2>Lobby Banner Preview</h2>
-              <img
-                className="club-banner-preview"
-                src={preview || (useDefault ? DEFAULT_BANNER : club.banner_url || DEFAULT_BANNER)}
-                alt="Club Lobby Banner Preview"
-                onLoad={() => {
-                  if (file) setImageReady(true);
-                }}
-                onError={() => {
-                  setImageReady(false);
-                  setError('The Image Could Not Be Loaded. Choose Another Image.');
-                }}
-              />
+              <p>Manage Your Club Banner, Including In Union Clubs.</p>
+              <h2>Club Banner Preview</h2>
+              {preview ||
+              (!removeBanner && club.banner_url && !isRetiredClubBanner(club.banner_url)) ? (
+                <img
+                  className="club-banner-preview"
+                  src={preview || club.banner_url!}
+                  alt="Club Lobby Banner Preview"
+                  onLoad={() => {
+                    if (file) setImageReady(true);
+                  }}
+                  onError={() => {
+                    setImageReady(false);
+                    setError('The Image Could Not Be Loaded. Choose Another Image.');
+                  }}
+                />
+              ) : (
+                <p>No Club Banner Set.</p>
+              )}
               <label htmlFor="club-banner-file">Choose Banner Image</label>
               <input
                 ref={input}
@@ -177,7 +175,7 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
                     validateClubBanner(selected);
                     setImageReady(false);
                     setFile(selected);
-                    setUseDefault(false);
+                    setRemoveBanner(false);
                     uploaded.current = null;
                   } catch (failure) {
                     setError(safeErrorMessage(failure, 'Choose A Valid Image'));
@@ -194,22 +192,19 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
                 disabled={saving || (!file && !club.banner_url)}
                 onClick={() => {
                   setFile(null);
-                  setUseDefault(true);
+                  setRemoveBanner(true);
                   setError('');
                   uploaded.current = null;
                   if (input.current) input.current.value = '';
                 }}
               >
-                Use Default Banner
+                Remove Club Banner
               </button>
               <p>Banner Taps Open Your Club Announcements.</p>
-              <ClubAdVisibilityControl
-                club={club}
-                ownerId={userId!}
-                onSaved={(saved) =>
-                  setClub((current) => (current ? { ...current, settings: saved.settings } : saved))
-                }
-              />
+              <p>
+                Smarter.Poker Ads Are Managed By The Platform And Cannot Be Changed Or Turned Off By
+                Clubs Or Unions.
+              </p>
             </>
           )}
           {!loading && (

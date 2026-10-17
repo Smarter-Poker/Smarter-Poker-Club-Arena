@@ -1497,8 +1497,9 @@ export class LightningHandHost {
           // The action is now authoritative: the executor owns the receipts.
           abort.signal.removeEventListener('abort', abandon);
           const execute = () => this.executeHorseDecision(userId, decision, allInOrFold, lane);
-          // As at a physical table, the plan commit enters the lane behind its
-          // older work and ahead of any decision the next turn enqueues.
+          // As at a physical table, the plan commit enters the lane's effect
+          // lane, ahead of older unposted work and of any decision the next
+          // turn enqueues.
           if (decision.fast) lane().runWithDispatchBarrier(execute);
           else execute();
         }, delay);

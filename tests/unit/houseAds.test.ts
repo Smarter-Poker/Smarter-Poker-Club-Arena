@@ -1373,3 +1373,19 @@ describe('the panel can edit the destination the surface is actually serving', (
     expect(ADMIN).toMatch(/<th aria-label="Actions" \/>/);
   });
 });
+
+describe('platform ads cannot be controlled by clubs or unions', () => {
+  it('exposes no owner visibility setting, replacement creative or hide prop in the serving path', () => {
+    const page = read('src/pages/ClubHomePage.tsx');
+    const editor = read('src/pages/ClubBannerDisplaysPage.tsx');
+    const bannerService = read('src/services/ClubBannerService.ts');
+    expect([ROTATOR, page, editor, bannerService].join('\n')).not.toMatch(
+      /show_smarter_poker_ads|rotating_banners|saveClubAdVisibility|ClubAdVisibilityControl/
+    );
+    expect(ROTATOR).not.toMatch(/visible\??:\s*boolean|if\s*\(!visible\)/);
+    expect(page).toMatch(/<HouseAdRotator\s+slot="lobby_strip"/);
+    expect(editor.replace(/\s+/g, ' ')).toContain(
+      'Smarter.Poker Ads Are Managed By The Platform And Cannot Be Changed Or Turned Off By Clubs Or Unions.'
+    );
+  });
+});

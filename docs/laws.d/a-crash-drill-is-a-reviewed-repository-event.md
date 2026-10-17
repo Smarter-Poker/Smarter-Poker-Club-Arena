@@ -1,0 +1,3 @@
+# tests/a-crash-drill-is-a-reviewed-repository-event.law.test.ts
+
+A live engine crash drill (DA08) runs only through `.github/workflows/engine-drill.yml` on the `drill-club-arena-engine` repository event, never from a workstation. The workflow transports and observes only; `server/scripts/engine-crash-drill.sh` mutates exactly once, by SIGKILL to the serving process, after the release transaction's own table-safe break certificate holds and under the same engine mutation lock a release cutover holds. It stands aside for any release, proves recovery by production supervision from local and public health, the database leader, the break outcome, the thaw and post-thaw hands, and falls back only to the existing forced desired-runtime restore.

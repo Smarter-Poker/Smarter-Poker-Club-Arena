@@ -4,8 +4,8 @@ The former drill used direct root SSH and an ad hoc container kill. That path
 is retired: a workstation may not mutate, restart, or publish the Club Arena
 engine.
 
-A live crash drill may run only after it is implemented as a reviewed,
-default-branch Club Arena repository event with all of these controls:
+A live crash drill may run only as a reviewed, default-branch Club Arena
+repository event with all of these controls:
 
 - exact full merged SHA and pinned Hetzner host identity;
 - explicit incident/drill authorization and a single owning release lane;
@@ -14,9 +14,67 @@ default-branch Club Arena repository event with all of these controls:
 - automatic refusal when active-table or freeze preconditions are unclear;
 - cache-busted health and hand-progression verification after recovery.
 
-Until that controlled path exists, use the unit, integration, and rolled-back
-database tests for maintenance-break recovery. Do not reproduce the retired
-direct SSH/container commands from historical changelogs.
+## The controlled crash drill (DA08)
+
+That route is `.github/workflows/engine-drill.yml`, which runs
+`server/scripts/engine-crash-drill.sh` on the engine host as a durable systemd
+unit. It is requested with one repository event; there is no input form, timer
+or workstation path:
+
+```json
+{
+  "event_type": "drill-club-arena-engine",
+  "client_payload": {
+    "drill": "crash",
+    "expected_engine_sha": "<full sha of the release serving now>",
+    "authorization": "<who approved it and why, 12-200 characters>"
+  }
+}
+```
+
+What it does, in order. Any unclear fact before the kill refuses with nothing
+mutated:
+
+1. Refuses unless the requested SHA is the sealed desired release, the serving
+   container is that exact image under production supervision
+   (`restart=always`, `autoheal=true`, `sp-autoheal` running), local `/health`
+   is that release, and no release or intake unit and no seal pending cutover
+   exists.
+2. Waits, for up to 70 minutes, for a scheduled break that passes the release
+   transaction's own certificate (counting down, durable, `readyForRestart`,
+   `unparkedTables == 0`, `handsInFlightTotal == 0`, the scheduled reason) with
+   the transaction's ordinary 260,000 ms rung left. A release waiting for the
+   same break always takes it; the drill stands aside.
+3. Takes the engine mutation lock a release cutover takes and re-certifies at
+   the locked 245,000 ms rung. It then records the before receipt: the instance,
+   container, start time, restart count, process id, public instance, and the
+   database leader with a heartbeat under 15 s.
+4. Reads the certificate once more, then sends SIGKILL to the engine's process
+   from the host, the way the out-of-memory killer ends it. This is the only
+   mutation. `docker kill` is not used, because Docker records it as a manual
+   stop and that would rehearse an operator, not a crash.
+5. Proves recovery came from production supervision alone, with the forced
+   restore reserve kept back from the break end:
+   - the same container restarted on the sealed image within 60 s;
+   - a new instance reports exact local health within 180 s, and the same
+     instance is served publicly;
+   - that instance became the database leader with a fresh heartbeat;
+   - it adopted the durable break it was killed inside.
+6. After the countdown, proves the engine left the break, the break outcome row
+   says `thaw_ok`, the freeze row was thawed, and at least 20 hands on 5 tables
+   were dealt after the thaw.
+
+If supervision does not restore the engine in time, the drill runs the existing
+forced desired-runtime restore (`engine-supervisor.sh` with force-desired, exact
+health and the caller-held lock) and records the drill as failed.
+
+The receipt (`/var/lib/club-arena/engine-drills/<run>.json`), the append-only
+`audit.jsonl` beside it and the unit journal are retained as the workflow
+artifact. The run passes only when the receipt says `passed`. Pinned by
+`tests/a-crash-drill-is-a-reviewed-repository-event.law.test.ts`.
+
+Do not reproduce the retired direct SSH/container commands from historical
+changelogs.
 
 ## When the gate will not open
 

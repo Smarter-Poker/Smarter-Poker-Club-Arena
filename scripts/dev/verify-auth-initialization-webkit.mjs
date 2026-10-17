@@ -97,11 +97,82 @@ try {
   const final = await subject.evaluate(() => navigator.locks.query());
   assert.equal(final.held.filter((lock) => lock.name === 'lock:sdk-recovery-native').length, 0);
   assert.equal(final.pending.filter((lock) => lock.name === 'lock:sdk-recovery-native').length, 0);
+  // A ready SDK instance must have one native waiter while another tab owns
+  // the lock, even when many real API callers arrive before admission.
+  await subject.evaluate(async () => {
+    window.fixtureBurstReads = [];
+    window.fixtureBurstClient = new FixtureAuth.AuthClient({
+      url: 'https://auth-fixture.invalid/auth/v1',
+      storageKey: 'sdk-pending-native',
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      persistSession: true,
+      lockAcquireTimeout: 2000, // Controlled local fixture budget, never production config.
+      storage: {
+        async getItem(key) {
+          const state = await navigator.locks.query();
+          window.fixtureBurstReads.push(
+            state.held.filter((lock) => lock.name === 'lock:sdk-pending-native').length
+          );
+          return localStorage.getItem(key);
+        },
+        setItem: (key, value) => localStorage.setItem(key, value),
+        removeItem: (key) => localStorage.removeItem(key),
+      },
+    });
+    await window.fixtureBurstClient.initialize();
+    window.fixtureBurstReads.length = 0;
+  });
+  await owner.evaluate(() => {
+    window.fixtureHolding = false;
+    window.fixtureOwner = navigator.locks.request('lock:sdk-pending-native', () => {
+      window.fixtureHolding = true;
+      return new Promise((resolve) => {
+        window.fixtureRelease = resolve;
+      });
+    });
+  });
+  await owner.waitForFunction(() => window.fixtureHolding, { timeout: 5_000 });
+  const pending = await subject.evaluate(async () => {
+    window.fixtureBurstResult = Promise.allSettled(
+      Array.from({ length: 16 }, () => window.fixtureBurstClient.getSession())
+    );
+    await new Promise((done) => setTimeout(done, 0));
+    const state = await navigator.locks.query();
+    return state.pending.filter((lock) => lock.name === 'lock:sdk-pending-native').length;
+  });
+  // Always release the controlled owner, including when the before-fix assertion fails.
+  await owner.evaluate(async () => {
+    window.fixtureRelease();
+    await window.fixtureOwner;
+  });
+  const burst = await subject.evaluate(async () => {
+    const results = await window.fixtureBurstResult;
+    const state = await navigator.locks.query();
+    return {
+      results,
+      reads: window.fixtureBurstReads,
+      held: state.held.length,
+      pending: state.pending.length,
+    };
+  });
+  assert.equal(pending, 1, 'A same-budget SDK burst must create exactly one native waiter');
+  assert.equal(burst.results.length, 16);
+  assert.ok(
+    burst.results.every((result) => result.status === 'fulfilled' && result.value.error === null)
+  );
+  assert.equal(burst.reads.length, 16, 'Each API request still performs its own session read');
+  assert.ok(burst.reads.every((held) => held === 1));
+  assert.equal(burst.held, 0);
+  assert.equal(burst.pending, 0);
   console.log(
     JSON.stringify({
       first,
       recoveredRequests: 4,
       storageReadsUnderNativeLock: recovered.reads.length,
+      burstRequests: 16,
+      pendingNativeWaiters: pending,
+      burstReadsUnderNativeLock: burst.reads.length,
       finalHeld: 0,
       finalPending: 0,
     })

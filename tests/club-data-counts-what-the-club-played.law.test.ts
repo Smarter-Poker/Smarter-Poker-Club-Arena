@@ -171,3 +171,116 @@ describe('the page and the footer say the same thing', () => {
     expect(art.size).toBeGreaterThan(10_000);
   });
 });
+
+/**
+ * THE REPORT READS WHAT THE CLUB PLAYED (Dan 2026-10-17, "FINISH THESE UP NOW").
+ * 20261017204111: the advanced Report's daily tables are written with the
+ * club the money moved through and rebuilt from the Club Data facts; the
+ * whole-club Report is the owner's, co-owner's and admins'; the fourteen-day
+ * screen describes only the rows it shows.
+ */
+describe('the Report tables are written by the club the money moved through', () => {
+  const report = read(
+    'supabase/migrations/20261017204111_the_club_data_report_reads_what_the_club_played.sql'
+  );
+
+  it('a tournament row belongs to ONE club, never every club the player is in', () => {
+    for (const fn of ['trg_ca_reporting_wallet_insert', 'trg_ca_reporting_rake_insert']) {
+      const b = latest(fn);
+      expect(b).not.toContain('ca_reporting_tournament_clubs_for_user');
+      expect(b).toContain('fn_ca_tournament_reporting_club(');
+    }
+    const club = squash(latest('fn_ca_tournament_reporting_club'));
+    const entry = club.indexOf('SELECT tp.club_id FROM public.tournament_players tp');
+    const leg = club.indexOf('public.fn_ca_ledger_leg_club(');
+    const guess = club.indexOf('public.fn_ca_cash_reporting_club(');
+    expect(entry).toBeGreaterThan(-1);
+    expect(leg).toBeGreaterThan(entry);
+    expect(guess).toBeGreaterThan(leg);
+  });
+
+  it('a cash wallet row takes its own ledger leg, then the seat at that table', () => {
+    const b = squash(latest('trg_ca_reporting_wallet_insert'));
+    expect(b).toContain(
+      'v_club:=COALESCE( public.fn_ca_ledger_leg_club(NEW.user_id,NEW.amount,NEW.type,NEW.created_at,NEW.table_id), public.fn_ca_cash_table_reporting_club(v_union,v_table_club,NEW.user_id,NEW.table_id));'
+    );
+    expect(b).not.toMatch(/joined_at ASC/);
+  });
+
+  it('the club rake totals read the after-the-hand witness before any guess', () => {
+    const b = squash(latest('fn_ca_club_rake_daily_compute'));
+    const ra = b.indexOf('SELECT ra.club_id FROM rake_attributions ra');
+    const seat = b.indexOf('public.fn_ca_cash_seat_club(b.table_id, c.uid)');
+    const guess = b.indexOf('ORDER BY cm.joined_at ASC');
+    expect(ra).toBeGreaterThan(-1);
+    expect(seat).toBeGreaterThan(ra);
+    expect(guess).toBeGreaterThan(seat);
+  });
+
+  it('every rebuild of a covered day is a rebuild from the facts', () => {
+    expect(latest('fn_club_table_daily_refresh_day')).toContain(
+      'fn_ca_reporting_rollups_from_facts(p_day)'
+    );
+    for (const fn of ['ca_refresh_reporting_rollups_base', 'ca_refresh_reporting_cash_rollup']) {
+      const b = latest(fn);
+      expect(b).toContain('PERFORM public.fn_ca_reporting_rollups_from_facts(v_d);');
+      expect(b.indexOf('fn_ca_reporting_rollups_from_facts')).toBeLessThan(
+        b.indexOf('pg_advisory_xact_lock(918273645)')
+      );
+    }
+    const f = latest('fn_ca_reporting_rollups_from_facts');
+    for (const t of [
+      'club_table_daily',
+      'ca_club_table_player_daily',
+      'ca_club_player_daily',
+      'ca_club_tournament_daily',
+      'ca_club_tournament_player_daily',
+    ]) {
+      expect(f).toContain(`DELETE FROM public.${t} WHERE stat_date = p_day`);
+    }
+    expect(f).toContain('FROM public.ca_club_data_fact f');
+  });
+
+  it('the whole-club Report is the owner, co-owner and admins, never a super agent', () => {
+    expect(squash(latest('ca_can_view_whole_club_report'))).toContain(
+      "public.fn_ca_club_data_scope(p_club_id) = 'club'"
+    );
+    for (const fn of [
+      'ca_club_data_snapshot',
+      'ca_club_game_page_core_20261006',
+      'ca_club_game_export_start',
+      'ca_club_player_breakdown',
+      'ca_club_player_page_core_20261006',
+      'ca_club_player_export_start',
+      'ca_club_union_invoices',
+      'ca_club_data_export_page',
+      'ca_rake_snapshot',
+    ]) {
+      expect(report).toContain(`'public.${fn}(`);
+    }
+    expect(report).toContain(
+      "SELECT pg_temp.ca_rewrite(f::regprocedure, 'ca_can_view_club_finances\\(', 'ca_can_view_whole_club_report(', 1)"
+    );
+    expect(report).toContain(
+      "SELECT pg_temp.ca_rewrite(f::regprocedure, 'ca_can_read_club_production\\(', 'ca_can_read_whole_club_production(', 1)"
+    );
+  });
+
+  it("the Report's player lists are the club's members", () => {
+    expect(report).toContain(
+      "'SELECT DISTINCT cm.user_id FROM public.club_members cm WHERE cm.club_id=p_club_id', 1)"
+    );
+  });
+
+  it('the fourteen-day screen describes only the rows it shows', () => {
+    const b = squash(latest('ca_club_data_screen'));
+    // players are counted for the page's rows only, never for every game
+    expect(b).toContain('AND f.game_id IN (SELECT tp.game_id FROM top tp)');
+    expect(b).not.toMatch(/count\(DISTINCT f\.user_id\) FILTER/);
+    // tournaments are described for every game only when a filter reads them
+    expect(b).toContain("v_attrs := v_game IN ('MTT', 'SNG') OR v_q IS NOT NULL;");
+    expect(b).toMatch(
+      /FROM tour tu JOIN public\.tournaments tr ON tr\.id = tu\.game_id WHERE v_attrs/
+    );
+  });
+});

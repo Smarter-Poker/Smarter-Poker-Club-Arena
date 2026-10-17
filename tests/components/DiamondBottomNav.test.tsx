@@ -68,7 +68,7 @@ describe('the six doors', () => {
   it('lead where the player expects', () => {
     const to = Object.fromEntries(DIAMOND_FOOTER_DOORS.map((d) => [d.key, d.to]));
     expect(to.lobby).toBe('/clubs/diamond-arena');
-    expect(to['hand-history']).toBe('/hand-history?arena=diamond');
+    expect(to['hand-history']).toBe('/hand-history?arena=diamond&club=diamond-arena');
     expect(to.stats).toBe('/stats?club=diamond-arena');
     expect(to.players).toBe('/clubs/diamond-arena/members');
     expect(to.messages).toBe('/clubs/diamond-arena/messages');
@@ -85,7 +85,7 @@ describe('the rendered bar', () => {
     expect(links.map((l) => l.getAttribute('aria-label'))).toEqual(LABELS.slice(0, 5));
     expect(links.map((l) => l.getAttribute('href'))).toEqual([
       '/clubs/diamond-arena',
-      '/hand-history?arena=diamond',
+      '/hand-history?arena=diamond&club=diamond-arena',
       '/stats?club=diamond-arena',
       '/clubs/diamond-arena/members',
       '/clubs/diamond-arena/messages',

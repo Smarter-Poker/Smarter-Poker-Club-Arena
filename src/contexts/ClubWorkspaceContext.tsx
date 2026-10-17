@@ -18,6 +18,8 @@ import { reportError } from '../utils/errorReporter';
 import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { isPlatformStaffRole } from '../utils/platformRoles';
+import { DIAMOND_ARENA_SLUG } from '../lib/constants';
+import { isDiamondHandHistoryScope } from '../utils/clubScopedPath';
 import {
   readClubWorkspaceCache,
   removeClubWorkspaceCache,
@@ -95,7 +97,11 @@ async function withClubWorkspaceReadTimeout<T>(
 
 function getRouteClubId(pathname: string, search: string): string | null {
   const match = pathname.match(/^\/clubs\/([^/]+)/);
-  const raw = match?.[1] || new URLSearchParams(search).get('club');
+  const raw =
+    match?.[1] ||
+    (isDiamondHandHistoryScope(pathname, search)
+      ? DIAMOND_ARENA_SLUG
+      : new URLSearchParams(search).get('club'));
   if (!raw || raw === 'create') return null;
   try {
     return decodeURIComponent(raw);

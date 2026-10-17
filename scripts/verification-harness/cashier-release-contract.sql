@@ -58,6 +58,14 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE version = '20261017001657'
+       AND name = 'a_deleted_account_leaves_every_club_and_every_list'
+  ) THEN
+    RAISE EXCEPTION 'cashier deleted-account directory migration history drift';
+  END IF;
+
+  IF NOT EXISTS (
     SELECT 1 FROM pg_proc
      WHERE oid = to_regprocedure('public.fn_cashier_recovery_receipts(uuid,uuid[],text[])')
        AND pg_get_userbyid(proowner) = 'postgres' AND provolatile = 's'
@@ -338,7 +346,11 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_union_player_directory(uuid)',
-      'hash', 'd7cae706425a055f9039ba2b9535da48',
+      -- Installed history 20261017001657 applies the reserved 20261016224731
+      -- deleted-account filter. Removing that exact predicate from the full
+      -- live definition reproduces the former d7cae706425a055f9039ba2b9535da48
+      -- preimage. Only the qualified filtered directory is accepted now.
+      'hash', 'fc06a6bf8f02822da43f6f4b4fe76385',
       'search_path', 'search_path=public'
     ),
     jsonb_build_object(

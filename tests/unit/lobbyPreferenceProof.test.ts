@@ -44,7 +44,12 @@ function exchange({
   return { request, response };
 }
 
-function fixture({ status = 200, closeFailure = false, responseMode = 'normal' } = {}) {
+function fixture({
+  status = 200,
+  closeFailure = false,
+  responseMode = 'normal',
+  clickFailure = false,
+} = {}) {
   const emitter = new EventEmitter();
   const frame = {};
   const events: string[] = [];
@@ -75,6 +80,10 @@ function fixture({ status = 200, closeFailure = false, responseMode = 'normal' }
         getAttribute: async () => (selected === options.name ? 'true' : 'false'),
         click: async () => {
           events.push('click');
+          if (clickFailure) {
+            await new Promise((resolve) => setTimeout(resolve, 30_000));
+            throw new Error('Click timeout: header intercepts pointer events');
+          }
           selected = options.name!;
           const value = exchange({
             ownerId: postOwner,
@@ -89,6 +98,10 @@ function fixture({ status = 200, closeFailure = false, responseMode = 'normal' }
           emitter.emit('response', value.response);
         },
       }),
+    }),
+    evaluate: async () => ({
+      target: { x: 1, y: 2, width: 40, height: 20 },
+      hit: { tag: 'HEADER', role: 'banner' },
     }),
     close: async () => {
       events.push('close');
@@ -223,6 +236,51 @@ describe('cold-return preference proof', () => {
         mode === 'pending' ? /save response.*30s/ : /request timeout/
       );
       expect(f.events).toEqual(['click']);
+    } finally {
+      f.proof.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains both request and click failures plus geometry before closing restoration', async () => {
+    vi.useFakeTimers();
+    const f = fixture({ clickFailure: true });
+    f.read();
+    try {
+      const outcome = restoreLobbyPreference({
+        originalPage: f.page,
+        returningPage: f.page,
+        returningReady: true,
+        clubId: club,
+        original: 'MTT',
+        ownerId: owner,
+        proofFor: () => f.proof,
+        verify: vi.fn(),
+      }).catch((error) => error);
+      await vi.advanceTimersByTimeAsync(30_000);
+      const failure = await outcome;
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors.map((error: Error) => error.message)).toEqual([
+        'Preference request timeout',
+        'Click timeout: header intercepts pointer events',
+      ]);
+      expect(f.proof.snapshot().events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'selection-request-failed',
+            message: 'Preference request timeout',
+          }),
+          expect.objectContaining({
+            kind: 'selection-click-failed',
+            message: 'Click timeout: header intercepts pointer events',
+          }),
+          expect.objectContaining({
+            kind: 'selection-failure-geometry',
+            hit: { tag: 'HEADER', role: 'banner' },
+          }),
+        ])
+      );
+      expect(f.events.at(-1)).toBe('close');
     } finally {
       f.proof.stop();
       vi.useRealTimers();

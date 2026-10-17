@@ -6,6 +6,10 @@ Date: September 8, 2026. Phase count: 12.
 
 Dan explicitly authorized starting Phase 3 while Phase 2 push/publication is monitored and repaired in the background. This supersedes the earlier instruction to block Phase 3 solely on Phase 2 deployment. Phase 2 must still be verified and any regression corrected; queued publication does not count as completed publication. Public funded Diamond games remain subject to the later gameplay and accounting release gates.
 
+## Launch-readiness recheck, October 15, 2026
+
+The current evidence and prioritized remaining work are in [the October 15 audit](changelog/2026-10-15-diamond-arena-launch-audit.md). Both production game switches are open, cash hands and completed tournaments exist, and the standalone repository is archived. Earlier dated entries and the old tail summary below remain historical; they do not reinstate closed switches, missing owner decisions or an archive task. The final published lifecycle, rollback compatibility and remaining audit evidence are still open. Do not declare launch readiness from the checked phase boxes alone.
+
 ## Execution Update, September 9, 2026
 
 Dan authorized Phase 4 development while Phase 3 publication is verified in the background. Phase 3 runtime adoption and its recorded repair/regression checks are verified as of September 9 at 21:05 UTC. Pending publication is not a passed gate. This continuation preserves the prior-phase audit and does not authorize public funded Diamond games ahead of their gameplay and accounting gates.
@@ -514,7 +518,13 @@ No additional user input is required for Phase 1 or the architectural foundation
 
 The existing seven-clean-day release condition is documented in DIAMOND-ACCOUNTING-ROADMAP, not invented by this programme. Any inability to satisfy it must be reported honestly at release; do not claim an immediate public launch while it remains unmet.
 
-## Immediate Next Batch
+## Current Next Batch, October 15, 2026
+
+The integrated Diamond Wallet and games audit is authoritative for current remaining work: [the October 15 register and continuation](changelog/2026-10-15-diamond-arena-launch-audit.md). Both game switches are already enabled; the old standalone repository is archived; the earlier economic/privacy decisions are recorded and installed. These are verified current facts, not tasks requiring another owner decision. Current accounting has seven complete clean days and no open critical incident. Hand History access, Diamond guarantee copy and the misleading report-only/budget status are repaired and installed. Required hosted checks, protected merge, client publication and the remaining end-to-end certificates are still open. Do not mark Phase 12 complete until every current audit acceptance line is evidenced.
+
+## Historical Next Batch, superseded by the current register
+
+The following preserves the former September 29 checkpoint. Its closed switches, missing decisions, outstanding archive and reward-cap cause do not describe October 15 production.
 
 Phases 1 through 8 are delivered. Phase 9 is built except its three owner-decision lines (guarantees and promotional entries, fee and rake destinations, and the remaining chip legs), each refused by name until Dan answers; see the September 29 update in Phase 9. Phase 10 is built except line 2, which waits on Dan's decision about which profile fields are public; see the September 29 to 30 update in Phase 10. Phase 11 is verified in full; see the September 30 update in Phase 11. Phase 12, release, retirement and live proof, is open: its retirement half is done and live in both repositories and the database except archiving the old repository (see the October 5 update in Phase 12), and its release steps wait on the owner decisions listed above and on Dan opening the switches.
 

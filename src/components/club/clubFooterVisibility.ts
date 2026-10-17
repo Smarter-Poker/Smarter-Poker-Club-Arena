@@ -1,11 +1,10 @@
 import { isDiamondArenaClubKey, isDiamondArenaClubPath } from '../../lib/constants';
 import { PUBLIC_PATHS, normalisePath } from '../../lib/seo';
 import { isDiamondArenaPlayerPath } from '../arena/diamondArenaRoutes';
-import { readClubContextParam } from '../../utils/clubScopedPath';
+import { readClubContextParam, isDiamondHandHistoryScope } from '../../utils/clubScopedPath';
 
 /** The query the Diamond footer's Hand History door carries. */
-export const DIAMOND_HAND_HISTORY_PARAM = 'arena';
-export const DIAMOND_HAND_HISTORY_VALUE = 'diamond';
+export { DIAMOND_HAND_HISTORY_PARAM, DIAMOND_HAND_HISTORY_VALUE } from '../../lib/constants';
 
 /** Routes whose own immersive or public chrome must not be covered by the
  * authenticated Club Arena navigation footer. Every other application route
@@ -100,8 +99,7 @@ export function shouldShowDiamondFooterFor(
   if (isDiamondArenaPlayerPath(pathname)) return true;
   const path = pathname.replace(/\/+$/, '') || '/';
   if (path === '/hand-history') {
-    const params = new URLSearchParams(search || '');
-    return params.get(DIAMOND_HAND_HISTORY_PARAM) === DIAMOND_HAND_HISTORY_VALUE;
+    return isDiamondHandHistoryScope(path, search);
   }
   if (path === '/stats') return isDiamondArenaClubKey(readClubContextParam(search));
   return false;

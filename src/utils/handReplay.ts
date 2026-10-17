@@ -409,6 +409,8 @@ export interface ReplayShowdownRow {
 }
 
 export interface ReplayModel {
+  /** Read from the owning table arena; never inferred from a route or amount. */
+  arenaAsset?: 'chips' | 'diamonds';
   handNumber: number | string | null;
   playedAt: string | null;
   gameVariant: string | null;

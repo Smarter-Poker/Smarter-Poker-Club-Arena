@@ -855,13 +855,23 @@ GRANT EXECUTE ON FUNCTION public.ca_club_data_screen(uuid, date, date, text, tex
 -- ---------------------------------------------------------------------------
 -- 8. The triggers, last, so the lock CREATE TRIGGER takes on each money table
 --    is held for the moment it takes to commit, not for this whole migration.
+--
+--    CREATE OR REPLACE TRIGGER, never a drop-then-create: dropping a trigger
+--    takes ACCESS EXCLUSIVE even when there is nothing to drop, and every
+--    reader of wallet_transactions waits behind that. The first install
+--    attempt (2026-10-17 18:07 UTC) held rake_records for its new trigger,
+--    then asked for ACCESS EXCLUSIVE on wallet_transactions while a payment
+--    held wallet_transactions and waited on rake_records: deadlock, nothing
+--    committed. SHARE ROW EXCLUSIVE is what creating a trigger needs, readers
+--    never wait for it, and both tables are taken in one statement right
+--    before the two triggers and the COMMIT.
 -- ---------------------------------------------------------------------------
-DROP TRIGGER IF EXISTS ca_club_data_fact_rake ON public.rake_records;
-CREATE TRIGGER ca_club_data_fact_rake AFTER INSERT ON public.rake_records
+LOCK TABLE public.wallet_transactions, public.rake_records IN SHARE ROW EXCLUSIVE MODE;
+
+CREATE OR REPLACE TRIGGER ca_club_data_fact_rake AFTER INSERT ON public.rake_records
   FOR EACH ROW EXECUTE FUNCTION public.trg_ca_club_data_fact_rake();
 
-DROP TRIGGER IF EXISTS ca_club_data_fact_wallet ON public.wallet_transactions;
-CREATE TRIGGER ca_club_data_fact_wallet AFTER INSERT ON public.wallet_transactions
+CREATE OR REPLACE TRIGGER ca_club_data_fact_wallet AFTER INSERT ON public.wallet_transactions
   FOR EACH ROW EXECUTE FUNCTION public.trg_ca_club_data_fact_wallet();
 
 COMMIT;

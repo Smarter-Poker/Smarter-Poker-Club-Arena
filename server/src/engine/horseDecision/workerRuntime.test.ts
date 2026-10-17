@@ -95,6 +95,7 @@ import { memoryReader } from '../HorseQualifiedAuthority.test-support.js';
 import {
   admitHorsePhase10QualifiedAuthority,
   admitHorsePhase10ReleaseAuthority,
+  PHASE10_PROTECTED_RELEASE_SELECTION,
 } from '../HorsePhase10Authority.js';
 import {
   P10_TEST_CONTRACT_DIGEST,
@@ -3357,8 +3358,11 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
     ],
   ] as const;
 
-  // 2026-10-17: PLO4 generation 3 is selected on the declared-work source
-  // d9190c9e: the candidate at cash tables, shadow in tournaments.
+  // The committed selection decides: a selected pack is the candidate at
+  // cash tables and shadow in tournaments; an unselected one (since the VPIP
+  // floor call-down, 2026-10-17, until requalified) is shadow everywhere and
+  // executes the reference action. The candidate path is pinned below with
+  // the genuinely qualified test fixture either way.
   it.each(LIVE_STATES)(
     'live behaviour under the committed selection: %s',
     async (_name, format, cards, changed, mainAction) => {
@@ -3370,12 +3374,13 @@ describe('P10.3 worker-owned PLO4 authority (the Phase 8 path, reused)', () => {
       const receipt = live.decision.plo4Policy!;
       expect(receipt.changed).toBe(changed);
       expect(receipt.finalAction).toBe(live.decision.action);
+      const state = PHASE10_PROTECTED_RELEASE_SELECTION === null ? 'unselected' : 'usable';
       expect(live.result.phase10Authority).toMatchObject({
-        state: 'usable',
+        state,
         continuationVersion: 'plo4-policy-round3-v2',
       });
-      expect(receipt.authority).toMatchObject({ state: 'usable' });
-      if (format === 'tournament') {
+      expect(receipt.authority).toMatchObject({ state });
+      if (format === 'tournament' || state === 'unselected') {
         // A tournament decision never admits candidate mode: Phase 7 keeps it.
         expect(live.h.decisionOpts[0].phase10Plo4).toBe('shadow');
         expect(receipt).toMatchObject({ mode: 'shadow', applied: false });
@@ -3736,8 +3741,9 @@ describe('P11.3 worker-owned PLO5/PLO6/PLO8 authority (the Phase 8 path, reused 
       const reference = await decideThrough(request, undefined, true);
       expect(act(reference.decision)).toEqual(baseAction);
       expect(reference.decision.omahaVariantPolicy).toBeUndefined();
-      // 2026-10-17: PLO8 generation 3 is selected on d9190c9e (candidate at
-      // cash, shadow in tournaments); PLO5 and PLO6 are unselected (shadow).
+      // A selected pack is the candidate at cash and shadow in tournaments;
+      // an unselected one is shadow (every pack since the VPIP floor
+      // call-down, 2026-10-17, until requalified).
       const selected = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
       const candidate = selected && format === 'cash';
       const receipt = live.decision.omahaVariantPolicy!;
@@ -4201,9 +4207,9 @@ describe('P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 authority (the Phase 
       const r = request(format, variant, street, seats);
       const live = await decideThrough(r, (v) => admitHorsePhase12ReleaseAuthority(v), false, seed);
       const reference = await decideThrough(r, undefined, true, seed);
-      // 2026-10-17: FLH generation 4 is selected on the declared-work source
-      // d9190c9e; a selected pack is the candidate at cash tables and shadow
-      // in tournaments, every unselected pack is shadow.
+      // A selected pack is the candidate at cash tables and shadow in
+      // tournaments; every unselected pack is shadow (every pack since the
+      // VPIP floor call-down, 2026-10-17, until requalified).
       const selected = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
       const candidate = selected && format === 'cash';
       expect(live.h.decisionOpts[0].phase12Remaining).toBe(candidate ? 'candidate' : 'shadow');

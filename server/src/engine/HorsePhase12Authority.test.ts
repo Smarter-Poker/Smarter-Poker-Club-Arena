@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   PREVIOUS_PHASE12_SELECTIONS,
   RETIRED_2026_10_16_PHASE12_SELECTIONS,
+  RETIRED_2026_10_17_PHASE12_SELECTIONS,
 } from './HorsePreviousSelections.test-support.js';
 import {
   admitHorsePhase12QualifiedAuthority,
@@ -121,7 +122,7 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P12.3 the declared-work change (2026-10-16) requires fresh qualification of previously selected FLH', () => {
+describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualification of every pack', () => {
   const selected = HORSE_PHASE12_VARIANTS.filter(
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] !== null
   );
@@ -129,7 +130,7 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
   );
 
-  it('FLH generations 2 and 3 are retained, FLH generation 4 and Crazy Pineapple generation 1 are selected on d9190c9e; each pack keeps its own contract digest, FLH the frozen v1', () => {
+  it('nothing is selected; FLH generations 2, 3 and 4 and Crazy Pineapple generation 1 are retained; each pack keeps its own contract digest, FLH the frozen v1', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
     // FLH's generation-1 selection measured policy digest a55db7fe..., which
@@ -137,10 +138,20 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     // under contract v1 on 9d567463 and selected at generation 2. The PFR
     // repair moved it again; generation 3 requalified the repaired source.
     // The declared-work change (2026-10-16) moved it again; generation 4
-    // requalified the declared-work source d9190c9e (2026-10-17). Crazy
-    // Pineapple's first selection (generation 1) qualified the same source
-    // under contract v2 (2026-10-17).
-    expect(selected).toEqual(['pineapple', 'flh']);
+    // requalified the declared-work source d9190c9e (2026-10-17), as did
+    // Crazy Pineapple generation 1 under contract v2. The VPIP floor
+    // call-down (2026-10-17 evening) moved every digest again.
+    expect(selected).toEqual([]);
+    expect(RETIRED_2026_10_17_PHASE12_SELECTIONS.flh).toMatchObject({
+      sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
+      contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS.flh,
+      approvalGeneration: 4,
+    });
+    expect(RETIRED_2026_10_17_PHASE12_SELECTIONS.pineapple).toMatchObject({
+      sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
+      contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS.pineapple,
+      approvalGeneration: 1,
+    });
     expect(RETIRED_2026_10_16_PHASE12_SELECTIONS.flh).toMatchObject({
       sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
       contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS.flh,
@@ -216,12 +227,14 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     }
   });
 
-  it('retains exact FLH generation-2 and generation-3 qualification and completion hashes but refuses them for the declared-work policy', () => {
+  it('retains exact FLH generation-2, 3 and 4 and Crazy Pineapple generation-1 qualification and completion hashes but refuses them for the running policy', () => {
     for (const previous of [
       PREVIOUS_PHASE12_SELECTIONS.flh!,
       RETIRED_2026_10_16_PHASE12_SELECTIONS.flh!,
+      RETIRED_2026_10_17_PHASE12_SELECTIONS.flh!,
+      RETIRED_2026_10_17_PHASE12_SELECTIONS.pineapple!,
     ]) {
-      expect(admitHorsePhase12ReleaseAuthority('flh', Date.now(), previous)).toEqual({
+      expect(admitHorsePhase12ReleaseAuthority(previous.variant, Date.now(), previous)).toEqual({
         status: 'refused',
         reason: 'policy_digest_mismatch',
         transient: false,
@@ -253,24 +266,29 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     expect(holder.receipt().approvalGeneration).toBe(4);
   });
 
-  it('FLH generation 3 stays shipped with its evidence after generation 4 replaces it', () => {
-    const retired = RETIRED_2026_10_16_PHASE12_SELECTIONS.flh!;
-    expect(retired.approvalGeneration).toBeGreaterThan(
+  it('every retained FLH and Crazy Pineapple generation stays shipped with its evidence', () => {
+    const retained = [
+      RETIRED_2026_10_16_PHASE12_SELECTIONS.flh!,
+      RETIRED_2026_10_17_PHASE12_SELECTIONS.flh!,
+      RETIRED_2026_10_17_PHASE12_SELECTIONS.pineapple!,
+    ];
+    expect(RETIRED_2026_10_16_PHASE12_SELECTIONS.flh!.approvalGeneration).toBeGreaterThan(
       PREVIOUS_PHASE12_SELECTIONS.flh!.approvalGeneration
     );
-    for (const [path, digest] of [
-      [retired.qualificationPath, retired.qualificationSha256],
-      [retired.completionPath!, retired.completionSha256!],
-    ]) {
-      for (const root of ['../../../', '../../release-evidence/']) {
-        const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
-        expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
-      }
-    }
-    expect(PHASE12_PROTECTED_RELEASE_SELECTIONS.flh!.approvalGeneration).toBeGreaterThan(
-      retired.approvalGeneration
+    expect(RETIRED_2026_10_17_PHASE12_SELECTIONS.flh!.approvalGeneration).toBeGreaterThan(
+      RETIRED_2026_10_16_PHASE12_SELECTIONS.flh!.approvalGeneration
     );
-    for (const variant of ['short_deck', 'flo8'] as const)
+    for (const selection of retained)
+      for (const [path, digest] of [
+        [selection.qualificationPath, selection.qualificationSha256],
+        [selection.completionPath!, selection.completionSha256!],
+      ]) {
+        for (const root of ['../../../', '../../release-evidence/']) {
+          const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
+          expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
+        }
+      }
+    for (const variant of HORSE_PHASE12_VARIANTS)
       expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
   });
 
@@ -400,11 +418,8 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
       if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA)
         expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
-    // Every selected pack names a qualified:true file on its running policy.
-    expect(qualifiedSelected.sort()).toEqual([
-      'flh:d9190c9e/phase12-qualification-2026-10-17-flh.json',
-      'pineapple:d9190c9e/phase12-qualification-2026-10-17-pineapple.json',
-    ]);
+    // Nothing is selected, so no qualified:true file is on the running policy.
+    expect(qualifiedSelected).toEqual([]);
   });
 });
 

@@ -416,47 +416,22 @@ export interface HorsePhase11AuthoritySelection {
  * record in the same window completed every eligible decision on every street
  * (lowest Wilson bound 0.9853, river). PLO6 stays null until its matrix
  * finishes on the same source.
+ *
+ * October 17 (evening): the VPIP floor call-down (HorseLogic.vpipFloorCallDown,
+ * docs/changelog/2026-10-17-horses-reach-the-vpip-floor.md) changes HorseLogic.ts,
+ * a hashed policy file, so every qualified policy digest moves again. The owner
+ * chose to ship it now and requalify (2026-10-17). Every selection is explicitly
+ * null until its locked matrix requalifies the exact new source and fresh
+ * natural completion is read; a renewal is the next generation. Every earlier
+ * generation stays committed with its evidence (retained for refusal in
+ * HorsePreviousSelections.test-support.ts as RETIRED_2026_10_17_*).
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
 > = Object.freeze({
-  plo5: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo5',
-    sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
-    packVersion: 'plo5-high-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
-    domain: 'plo5-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/d9190c9e/phase11-qualification-2026-10-17-plo5.json',
-    qualificationSha256: '205a57fbcd3e24ea8ce5e9da8a3db799a543e063cebdae6a63aef577ae79de67',
-    completionPath: 'docs/evidence/phase11/d9190c9e/phase11-completion-2026-10-17-plo5.json',
-    completionSha256: '1d2d6ba92528485c85e3cca84538efb47b35db3f8923b693050fa4e6831e245e',
-    approvalGeneration: 3,
-    issuedAt: '2026-10-17T17:30:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  plo5: null,
   plo6: null,
-  plo8: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo8',
-    sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
-    packVersion: 'plo8-split-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
-    domain: 'plo8-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/d9190c9e/phase11-qualification-2026-10-17-plo8.json',
-    qualificationSha256: 'f35f0f776c6d1590038b0a9b1f00e8595281523ba20aa9f7bb423493d3621693',
-    completionPath: 'docs/evidence/phase11/d9190c9e/phase11-completion-2026-10-17-plo8.json',
-    completionSha256: '28922822cca6818ede19db54936fcf0fa3eebcc647d06e5b6d14634c861e0361',
-    approvalGeneration: 3,
-    issuedAt: '2026-10-17T12:15:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  plo8: null,
 });
 
 const HEX40 = /^[0-9a-f]{40}$/;

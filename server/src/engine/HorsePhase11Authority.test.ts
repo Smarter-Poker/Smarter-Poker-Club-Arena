@@ -7,6 +7,7 @@ import { slowClock, withoutMeasurements } from './HorseDeclaredWork.test-support
 import {
   PREVIOUS_PHASE11_SELECTIONS,
   RETIRED_2026_10_16_PHASE11_SELECTIONS,
+  RETIRED_2026_10_17_PHASE11_SELECTIONS,
 } from './HorsePreviousSelections.test-support.js';
 import {
   admitHorsePhase11QualifiedAuthority,
@@ -109,19 +110,26 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P11.3 the declared-work source d9190c9e requalifies each previously selected pack at generation 3', () => {
+describe('P11.3 the VPIP floor call-down (2026-10-17) requires a fresh qualification of every pack', () => {
   const selected = HORSE_PHASE11_VARIANTS.filter((v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null);
 
-  it('PLO8 and PLO5 are selected at generation 3 on d9190c9e, PLO6 stays unselected, and every retained generation 1 and 2 is refused under the running contract', () => {
+  it('nothing is selected; PLO8 and PLO5 generation 3 (d9190c9e) are refused by policy digest, and every retained generation 1 and 2 by contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
+    expect(Object.keys(RETIRED_2026_10_17_PHASE11_SELECTIONS).sort()).toEqual(['plo5', 'plo8']);
     for (const variant of HORSE_PHASE11_VARIANTS) {
-      const current = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant];
-      if (variant === 'plo8' || variant === 'plo5') {
-        expect(Object.isFrozen(current)).toBe(true);
-        expect(current, variant).toMatchObject({
+      expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
+      expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
+        status: 'refused',
+        reason: 'unselected',
+        transient: false,
+      });
+      const generation3 = RETIRED_2026_10_17_PHASE11_SELECTIONS[variant];
+      if (generation3) {
+        expect(Object.isFrozen(generation3)).toBe(true);
+        expect(generation3, variant).toMatchObject({
           schema: 'horse-qualified-authority-selection-v1',
           phase: 'phase11',
           variant,
@@ -132,28 +140,21 @@ describe('P11.3 the declared-work source d9190c9e requalifies each previously se
           expiresAt: null,
           withdrawn: null,
         });
-        const admitted = admitHorsePhase11ReleaseAuthority(variant);
-        expect(admitted.status, variant).toBe('admitted');
-        expect(selectedHorsePhase11Authority(variant, admitted), variant).toMatchObject({
-          sourceSha: current!.sourceSha,
-          evidenceSha256: current!.qualificationSha256,
-          approvalGeneration: 3,
+        const release = admitHorsePhase11ReleaseAuthority(variant, Date.now(), generation3);
+        expect(release, variant).toEqual({
+          status: 'refused',
+          reason: 'policy_digest_mismatch',
+          transient: false,
         });
+        expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
         for (const [path, digest] of [
-          [current!.qualificationPath, current!.qualificationSha256],
-          [current!.completionPath!, current!.completionSha256!],
+          [generation3.qualificationPath, generation3.qualificationSha256],
+          [generation3.completionPath!, generation3.completionSha256!],
         ])
           for (const root of ['../../../', '../../release-evidence/']) {
             const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
             expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
           }
-      } else {
-        expect(current, variant).toBeNull();
-        expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
-          status: 'refused',
-          reason: 'unselected',
-          transient: false,
-        });
       }
       const retired = RETIRED_2026_10_16_PHASE11_SELECTIONS[variant];
       for (const [selection, generation] of [
@@ -247,7 +248,7 @@ describe('P11.3 the declared-work source d9190c9e requalifies each previously se
   // selections (2026-10-09): a committed qualification that says
   // qualified:true is exactly the one its pack's selection names, and a
   // completion record exists for a selected pack or an unpromoted one.
-  it("a qualified file is either its pack's current selection on the running policy or a retained generation-one or generation-two file on an older one", () => {
+  it("a qualified file is either its pack's current selection on the running policy or a retained generation on an older one", () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase11/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -264,6 +265,7 @@ describe('P11.3 the declared-work source d9190c9e requalifies each previously se
             [
               PREVIOUS_PHASE11_SELECTIONS[variant]?.qualificationPath,
               RETIRED_2026_10_16_PHASE11_SELECTIONS[variant].qualificationPath,
+              RETIRED_2026_10_17_PHASE11_SELECTIONS[variant]?.qualificationPath,
             ],
             file
           ).toContain(path);

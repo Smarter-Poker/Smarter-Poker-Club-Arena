@@ -45,6 +45,29 @@ decision had no effect.
 
 Telemetry: `vpip_floor_call_down` counts each converted fold.
 
+## Every Qualified Pack Is Requalified
+
+`HorseLogic.ts` is a hashed policy source of every qualified horse pack, so this
+change moves every policy digest. The owner chose to ship now and requalify
+(2026-10-17). In the same commit every selection is explicitly null, so each
+pack plays shadow (the reference brain executes) until its locked matrix
+requalifies the exact new source and, where the pack has one, fresh natural
+completion is read:
+
+| Pack            | Phase | Retired generation (d9190c9e) | Next generation |
+| --------------- | ----- | ----------------------------- | --------------- |
+| PLO4            | 10    | 3                             | 4               |
+| PLO5            | 11    | 3                             | 4               |
+| PLO8            | 11    | 3                             | 4               |
+| FLH             | 12    | 4                             | 5               |
+| Crazy Pineapple | 12    | 1                             | 2               |
+
+PLO6, Short Deck and FLO8 were already unselected. Every retained generation
+stays committed with its evidence and is pinned as refused
+(`RETIRED_2026_10_17_*` in `HorsePreviousSelections.test-support.ts`); the
+authority tests now assert that nothing is selected and that no qualified file
+is on the running policy.
+
 ## Tests
 
 `server/src/engine/HorseVpipFloorCallDown.test.ts` pins the rule: when it

@@ -52,6 +52,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import PlayerChangeHistory from '../components/club/PlayerChangeHistory';
 import ChipTransferModal from '../components/agent/ChipTransferModal';
+import MemberWatchAtTable from '../components/club/MemberWatchAtTable';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
@@ -612,9 +613,19 @@ export default function MemberManagementPage() {
               {identity!.player_number ? `ID: ${identity!.player_number}` : 'ID: Not Assigned'}
             </span>
           </div>
-          <p className="mm-credential__note">
-            Club Identity, Live Presence, Wallet Access, Activity, And Role Authority In One Record.
-          </p>
+          {/* Watch At Table (Dan 2026-10-16): while the player is At A Table the
+              record offers the one tap to watch them, in place of its caption. */}
+          <MemberWatchAtTable
+            clubUuid={resolvedClubId ?? ''}
+            memberUserId={identity!.user_id ?? ''}
+            seated={detail!.presence.is_seated}
+            fallback={
+              <p className="mm-credential__note">
+                Club Identity, Live Presence, Wallet Access, Activity, And Role Authority In One
+                Record.
+              </p>
+            }
+          />
         </div>
       </section>
 
@@ -1548,8 +1559,8 @@ function RoleSection({
                 />
               </label>
               <p className="mm-roles__rates-note">
-                This Rate Covers The Agent Account And Every Sub Agent Under Them. The
-                Agent Sets The Rakeback Their Players Receive From Their Agent Dashboard.
+                This Rate Covers The Agent Account And Every Sub Agent Under Them. The Agent Sets
+                The Rakeback Their Players Receive From Their Agent Dashboard.
               </p>
               <p className="mm-roles__rates-note">
                 Every Agent Is Prepaid. They Send Only Chips They Already Hold.

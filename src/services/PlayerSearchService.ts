@@ -221,6 +221,66 @@ export async function getTableWatchAccess(
   };
 }
 
+/** The live table a club member is sitting at, as the Player Record's Watch At Table needs it. */
+export interface MemberLiveTable {
+  table_id: string;
+  name: string;
+  stakes: string;
+  is_tournament: boolean;
+}
+
+/**
+ * Where a member of `clubUuid` is seated right now, or null.
+ *
+ * Mirrors the seat ca_club_member_detail reports as "At A Table" (an open seat,
+ * `left_at` null, on a waiting or running table of this club), minus deleted
+ * tables, which nobody can watch. Row-level security on table_seats returns
+ * only seats at tables the viewer may read, so a seat the viewer cannot see
+ * comes back as null rather than a table they would be refused. Access itself
+ * is revalidated by fn_get_table_watch_access when the button is pressed.
+ */
+export async function getMemberLiveTable(
+  userId: string,
+  clubUuid: string
+): Promise<MemberLiveTable | null> {
+  const { data, error } = await supabase
+    .from('table_seats')
+    .select(
+      'table_id, club_id, joined_at, tables!inner(id, name, stakes, tournament_id, status, is_deleted, club_id)'
+    )
+    .eq('user_id', userId)
+    .is('left_at', null)
+    .in('tables.status', ['waiting', 'running'])
+    .order('joined_at', { ascending: false })
+    .limit(10);
+  if (error) throw new Error(error.message || 'Could not find the live table.');
+  type SeatRow = {
+    table_id: string;
+    club_id: string | null;
+    tables: {
+      id: string;
+      name: string | null;
+      stakes: string | null;
+      tournament_id: string | null;
+      is_deleted: boolean | null;
+      club_id: string | null;
+    } | null;
+  };
+  const seat = ((data || []) as unknown as SeatRow[]).find(
+    (row) =>
+      row.tables &&
+      row.tables.is_deleted !== true &&
+      (row.club_id === clubUuid || row.tables.club_id === clubUuid)
+  );
+  if (!seat || !seat.tables) return null;
+  return {
+    table_id: seat.table_id,
+    name: seat.tables.name || 'Live Table',
+    stakes: seat.tables.stakes || '',
+    is_tournament: seat.tables.tournament_id != null,
+  };
+}
+
 export async function getPlayerSearchPreferences(): Promise<PlayerSearchPreferences> {
   const { data, error } = await supabase.rpc('fn_get_player_search_preferences');
   if (error || !data || typeof data !== 'object') throw new Error('Could not load search privacy.');
@@ -250,6 +310,7 @@ export async function setPlayerSearchPreferences(
 export const PlayerSearchService = {
   search: searchPlayers,
   getTableWatchAccess,
+  getMemberLiveTable,
   getPreferences: getPlayerSearchPreferences,
   setPreferences: setPlayerSearchPreferences,
 };

@@ -15,7 +15,8 @@
    is exactly what the quiet exit at the bottom is called. Each of those is
    restated here at a specificity the shorthand cannot outrank.
 
-   NOTHING HERE DRAWS A CONTROL. The emblem in the header, the rounded search
+   NOTHING HERE DRAWS A CONTROL. The one control on a result, Watch At Table,
+   is the painted action shell (components/club/WatchAtTableButton). The emblem in the header, the rounded search
    well, the floating suggestion card, the avatar discs, the three selects, the
    nested player / wallet / table cards and every pill-shaped watch button are
    gone with the markup that carried them. Sizes inside the console are cqw
@@ -202,8 +203,6 @@
    inside a dialog with !important. */
 .suggestRow.suggestRow,
 .playerHeader.playerHeader,
-.tableRow.tableRow,
-.affiliationRow.affiliationRow,
 .account.account {
   appearance: none;
   display: flex;
@@ -223,9 +222,7 @@
 }
 
 .suggestRow.suggestRow,
-.playerHeader.playerHeader,
-.tableRow.tableRow,
-.affiliationRow.affiliationRow {
+.playerHeader.playerHeader {
   min-height: 44px;
   cursor: pointer;
   touch-action: manipulation;
@@ -234,31 +231,21 @@
 /* The engraved rule the master uses between its own rows: a black hairline
    with one pixel of highlight beneath it. Never a drawn divider. */
 .suggestList > .suggestRow + .suggestRow,
-.affiliationItem + .affiliationItem .affiliationRow,
-.tables > .tableRow + .tableRow,
 .resultList > .player + .player {
   border-top: 1px solid #000 !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
 }
 
 .suggestRow.suggestRow:active,
-.playerHeader.playerHeader:active,
-.tableRow.tableRow:active:not(:disabled),
-.affiliationRow.affiliationRow:active {
+.playerHeader.playerHeader:active {
   transform: none !important;
   filter: brightness(1.25);
 }
 
 .suggestRow.suggestRow:focus-visible,
-.playerHeader.playerHeader:focus-visible,
-.tableRow.tableRow:focus-visible,
-.affiliationRow.affiliationRow:focus-visible {
+.playerHeader.playerHeader:focus-visible {
   outline: 0.6cqw solid #8fd4ff;
   outline-offset: -0.6cqw;
-}
-
-.tableRow.tableRow:disabled {
-  cursor: wait;
 }
 
 .suggestList {
@@ -383,25 +370,14 @@
 
 .affiliations {
   display: grid;
-  gap: 1.6cqw;
-  padding: 1cqw 0;
-}
-
-.affiliationGroup {
-  display: grid;
-  gap: 0.8cqw;
-}
-
-.affiliationList {
-  display: grid;
   gap: 0;
-  margin: 0;
   padding: 0;
-  list-style: none;
 }
 
-.affiliationItem {
-  min-width: 0;
+/* One quiet line of the clubs and unions a player is in. */
+.affiliationLine {
+  font-size: 3.2cqw;
+  line-height: 1.4;
 }
 
 .accounts {
@@ -423,26 +399,12 @@
   min-width: 0;
 }
 
+/* Watch At Table: one painted shell per live game, centred under the name. */
 .tables {
   display: grid;
-  gap: 0;
-  padding: 1cqw 0 0;
-}
-
-.tablesHeading {
-  padding: 1cqw 0;
-}
-
-.tableDetails {
-  flex: 1 1 100%;
-  margin: 0;
-  font-size: 3.2cqw;
-  overflow-wrap: anywhere;
-}
-
-.tableAction {
-  flex: 0 0 auto;
-  margin-left: auto;
+  justify-items: center;
+  gap: 2cqw;
+  padding: 1cqw 0 1.6cqw;
 }
 
 /* ── A lit word: load more, and the account-data toggle ───────────────── */
@@ -510,8 +472,7 @@
     color: #fff !important;
   }
 
-  .copy,
-  .tableDetails {
+  .copy {
     color: #fff;
   }
 }

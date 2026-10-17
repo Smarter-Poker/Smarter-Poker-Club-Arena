@@ -1,6 +1,9 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
-import { waitForLeaderboardEntryMotion } from '../support/leaderboardMotion';
+import {
+  leaderboardMotionSnapshot,
+  waitForLeaderboardEntryMotion,
+} from '../support/leaderboardMotion';
 import { HeldRouteLifecycle } from '../support/heldRouteLifecycle';
 
 // Read-only production coverage. The post-deploy workflow already runs routes/.
@@ -63,8 +66,20 @@ function observe(page: Page): Observed {
 }
 
 async function expectNoSeriousAxeFindings(page: Page, state: string): Promise<void> {
-  await waitForLeaderboardEntryMotion(page, BOARD, state);
-  const results = await new AxeBuilder({ page }).include(BOARD).analyze();
+  // A reading taken while newly mounted rows were still entering measures their
+  // fade, not the palette (Post-Deploy E2E 39031279591, My Clubs Rankings at
+  // 430px: 15 color-contrast nodes, green at every other width). Re-measure only
+  // when the board itself proves the reading overlapped motion; a settled
+  // unreadable palette still fails (leaderboard-motion-contrast.spec.ts).
+  let results: Awaited<ReturnType<AxeBuilder['analyze']>>;
+  for (let reading = 1; ; reading += 1) {
+    await waitForLeaderboardEntryMotion(page, BOARD, state);
+    const before = await leaderboardMotionSnapshot(page, BOARD);
+    results = await new AxeBuilder({ page }).include(BOARD).analyze();
+    const after = await leaderboardMotionSnapshot(page, BOARD);
+    const overlappedMotion = after.moving > 0 || after.entries !== before.entries;
+    if (!overlappedMotion || reading >= 3) break;
+  }
   expect(
     results.violations
       .filter((violation) => ['serious', 'critical'].includes(violation.impact || ''))

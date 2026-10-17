@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
-import { waitForLeaderboardEntryMotion } from '../support/leaderboardMotion';
+import {
+  leaderboardMotionSnapshot,
+  waitForLeaderboardEntryMotion,
+} from '../support/leaderboardMotion';
 
 test('leaderboard contrast certification waits for actual entrance motion and retains contrast refusal', async ({
   page,
@@ -22,8 +25,11 @@ test('leaderboard contrast certification waits for actual entrance motion and re
       .filter((v) => v.id === 'color-contrast')
       .flatMap((v) => v.nodes);
   expect(await contrastNodes()).toHaveLength(9);
+  // A reading taken now overlaps motion, and the board says so.
+  expect(await leaderboardMotionSnapshot(page, 'main')).toEqual({ entries: 1, moving: 1 });
   await page.evaluate(() => document.querySelector('.podium-section')!.getAnimations()[0].play());
   await waitForLeaderboardEntryMotion(page, 'main', 'Original Entrance');
+  expect(await leaderboardMotionSnapshot(page, 'main')).toEqual({ entries: 1, moving: 0 });
   expect(await contrastNodes()).toHaveLength(0);
   // The motion wait must not turn a genuinely unreadable settled palette green.
   await page.addStyleTag({ content: '.leaderboard-page .entry-name{color:#333}' });

@@ -33,6 +33,12 @@
  * never leaves the union. They share no destination, no validation and no
  * confirmation copy.
  *
+ * ON THE CASHIER DESK (Dan's sweep, 2026-10-17). Every other union wallet
+ * opens on WalletDesk; the treasury details were the last generic modal (a
+ * rounded card of inline-styled tables). They now print as the desk's own
+ * hairline rows, the same Close, the same painted dock, portaled to the page
+ * body so no stacking context can put the bottom nav over it.
+ *
  * NUMBERS THIS PANEL DELIBERATELY DOES NOT RECONCILE
  * `drift` (wallet minus ledger net) is shown, never corrected. The audit of
  * 2026-08-23 recorded a real 757.18 divergence; a panel that quietly displayed
@@ -45,10 +51,18 @@
  * players yields player-hands. The column is named for what it is.
  */
 import { useState, useEffect, useCallback } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { reportError } from '../../utils/errorReporter';
 import { fmt, formatWalletChips } from '../../utils/format';
+import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import unionApi from '../../services/UnionApiService';
+import {
+  WalletDesk,
+  WalletDeskHeading,
+  WalletDeskRow,
+  type WalletDeskAction,
+} from '../wallet/WalletDesk';
+import '../wallet/WalletDesk.css';
 
 export type TreasuryDetailMode = 'rake' | 'bbj' | 'backup';
 
@@ -128,31 +142,6 @@ interface BbjDetail {
   transactions: TxRow[];
 }
 
-const CARD: CSSProperties = {
-  background: 'rgba(255,255,255,0.04)',
-  border: '1px solid rgba(255,255,255,0.08)',
-  borderRadius: 10,
-  padding: 12,
-};
-
-const TH: CSSProperties = {
-  textAlign: 'left',
-  padding: '6px 8px',
-  color: 'rgba(255,255,255,0.5)',
-  fontSize: 11,
-  textTransform: 'uppercase',
-  letterSpacing: '0.4px',
-  whiteSpace: 'nowrap',
-};
-
-const TD: CSSProperties = {
-  padding: '6px 8px',
-  color: 'rgba(255,255,255,0.85)',
-  fontSize: 12,
-  borderTop: '1px solid rgba(255,255,255,0.06)',
-  whiteSpace: 'nowrap',
-};
-
 /** Dates render in the viewer's locale; the API sends ISO 8601 UTC. */
 function when(iso: string | null | undefined): string {
   if (!iso) return '-';
@@ -160,69 +149,34 @@ function when(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString();
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div style={{ ...CARD, textAlign: 'center', flex: '1 1 120px' }}>
-      <div style={{ color, fontSize: 20, fontWeight: 800 }}>{value}</div>
-      <div
-        style={{
-          color: 'rgba(255,255,255,0.5)',
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '0.5px',
-          marginTop: 2,
-        }}
-      >
-        {label}
-      </div>
-    </div>
-  );
-}
-
-/** These tables are wider than 375px. The page must never scroll sideways. */
-function Scroller({ children }: { children: ReactNode }) {
-  return <div style={{ overflowX: 'auto', marginTop: 8 }}>{children}</div>;
-}
-
-function TxTable({ rows, heading }: { rows: TxRow[]; heading: string }) {
+function TxRows({ rows, heading }: { rows: TxRow[]; heading: string }) {
   return (
     <>
-      <h4 style={{ color: '#fff', fontSize: 13, margin: '16px 0 0' }}>{heading}</h4>
-      <Scroller>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={TH}>When</th>
-              <th style={TH}>Type</th>
-              <th style={TH}>Club</th>
-              <th style={{ ...TH, textAlign: 'right' }}>Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const inbound = r.direction === 'credit';
-              return (
-                <tr key={r.id}>
-                  <td style={TD}>{when(r.created_at)}</td>
-                  <td style={TD}>{r.tx_type}</td>
-                  <td style={TD}>{r.clubs?.name || '-'}</td>
-                  <td style={{ ...TD, textAlign: 'right', color: inbound ? '#39d17a' : '#ff6b6b' }}>
-                    {inbound ? '+' : '-'}
-                    {fmt(r.amount)}
-                  </td>
-                </tr>
-              );
-            })}
-            {rows.length === 0 && (
-              <tr>
-                <td style={TD} colSpan={4}>
-                  No Movements Recorded.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </Scroller>
+      <WalletDeskHeading title={heading} meta={`${fmt(rows.length)} Entries`} />
+      <div className="wdesk__list">
+        {rows.map((r) => {
+          const inbound = r.direction === 'credit';
+          return (
+            <WalletDeskRow
+              key={r.id}
+              name={r.notes ? titleCase(r.notes) : enumToTitleCase(r.tx_type)}
+              sub={
+                <>
+                  {when(r.created_at)}
+                  {r.clubs?.name ? <span className="wdesk__sep">{r.clubs.name}</span> : null}
+                </>
+              }
+              figure={
+                <span className={inbound ? 'wdesk__in' : 'wdesk__out'}>
+                  {inbound ? '+' : '-'}
+                  {fmt(r.amount)}
+                </span>
+              }
+            />
+          );
+        })}
+        {rows.length === 0 && <div className="wdesk__empty">No Movements Recorded.</div>}
+      </div>
     </>
   );
 }
@@ -273,15 +227,15 @@ export default function UnionTreasuryDetailModal({
   }, [isOpen, load]);
 
   // Escape closes. Bound only while open so it cannot swallow the key from
-  // whatever is underneath.
+  // whatever is underneath. A transfer in flight holds the desk open.
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !busy) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, busy]);
 
   const moveBackup = useCallback(async () => {
     const amt = Number(amount);
@@ -316,326 +270,244 @@ export default function UnionTreasuryDetailModal({
   const title =
     mode === 'rake' ? 'Rake Treasury' : mode === 'backup' ? 'Backup Jackpot' : 'Jackpot Banks';
 
-  return (
-    <div
-      className="admin-modal-overlay"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 4000,
-        background: 'rgba(0,0,0,0.7)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-      }}
+  const headline =
+    mode === 'rake'
+      ? rake
+        ? `${formatWalletChips(rake.balance)} Chips`
+        : 'Reading The Wallet'
+      : bbj
+        ? `${formatWalletChips(mode === 'backup' ? bbj.banks.backup : bbj.banks.total)} Chips`
+        : 'Reading The Banks';
+
+  const dockLine =
+    mode === 'rake'
+      ? rake && rake.drift !== null
+        ? rake.drift === 0
+          ? 'Wallet And Ledger Agree'
+          : `Drift ${fmt(rake.drift)}`
+        : null
+      : mode === 'backup'
+        ? dest === 'main'
+          ? 'Move To Main Jackpot'
+          : 'Move To Promo Fund'
+        : 'Read Only';
+
+  const actions: WalletDeskAction[] = [];
+  if (mode === 'backup') {
+    actions.push(
+      {
+        label: 'Max',
+        onClick: () => setAmount(String(bbj?.banks.backup ?? 0)),
+        disabled: busy || !bbj,
+        'aria-label': 'Move The Whole Backup',
+      },
+      {
+        label: busy ? 'Moving...' : 'Move Funds',
+        onClick: () => void moveBackup(),
+        disabled: busy || !amount,
+        lit: true,
+      }
+    );
+  }
+  if (onSendFrom) {
+    actions.push({ label: 'Send Out', onClick: onSendFrom, 'aria-label': 'Send From This Wallet' });
+  }
+
+  return createPortal(
+    <WalletDesk
+      ariaLabel={title}
+      name={title}
+      line={headline}
+      onClose={onClose}
+      closeDisabled={busy}
+      dockLine={dockLine}
+      actions={actions}
     >
-      <div
-        className="admin-card"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(720px, 100%)',
-          maxHeight: '88vh',
-          overflowY: 'auto',
-          padding: 20,
-          background: '#12121c',
-          border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: 14,
-        }}
-      >
+      {notice && (
         <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'baseline',
-            marginBottom: 12,
-            gap: 8,
-          }}
+          className={`wdesk__empty ${notice.ok ? '' : 'wdesk__empty--bad'}`}
+          role={notice.ok ? 'status' : 'alert'}
         >
-          <h3 style={{ margin: 0, color: '#fff', fontSize: 17 }}>{title}</h3>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {onSendFrom && (
-              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={onSendFrom}>
-                Send From This Wallet
-              </button>
-            )}
-            <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={onClose}>
-              Close
-            </button>
-          </div>
+          {notice.text}
         </div>
+      )}
 
-        {notice && (
-          <div
-            style={{
-              ...CARD,
-              marginBottom: 12,
-              borderColor: notice.ok ? 'rgba(57,209,122,0.4)' : 'rgba(255,107,107,0.4)',
-              color: notice.ok ? '#39d17a' : '#ff6b6b',
-              fontSize: 13,
-            }}
-          >
-            {notice.text}
+      {loading && <div className="wdesk__empty">Loading...</div>}
+
+      {/* ═══════════ RAKE ═══════════ */}
+      {!loading && mode === 'rake' && rake && (
+        <>
+          <div className="wdesk__list">
+            <WalletDeskRow name="Wallet Balance" figure={formatWalletChips(rake.balance)} />
+            <WalletDeskRow
+              name="Ledger Credits"
+              figure={<span className="wdesk__in">{fmt(rake.ledger?.credits ?? 0)}</span>}
+            />
+            <WalletDeskRow
+              name="Ledger Debits"
+              figure={<span className="wdesk__out">{fmt(rake.ledger?.debits ?? 0)}</span>}
+            />
+            <WalletDeskRow
+              name="Drift"
+              sub="The Wallet Balance Minus The Ledger Net, Read In One Moment"
+              figure={
+                <span className={rake.drift ? 'wdesk__out' : 'wdesk__in'}>
+                  {rake.drift === null ? '-' : fmt(rake.drift)}
+                </span>
+              }
+            />
           </div>
-        )}
+          <p className="wdesk__empty">
+            Drift Is Reported, Not Corrected. A Non Zero Value Means The Two Records Disagree And
+            Someone Should Look.
+            {rake.ledger?.asOf ? ` Ledger As Of ${when(rake.ledger.asOf)}.` : ''}
+          </p>
 
-        {loading && (
-          <div style={{ color: 'rgba(255,255,255,0.6)', padding: '24px 0', textAlign: 'center' }}>
-            Loading...
-          </div>
-        )}
-
-        {/* ═══════════ RAKE ═══════════ */}
-        {!loading && mode === 'rake' && rake && (
-          <>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Stat
-                label="Wallet Balance"
-                value={formatWalletChips(rake.balance)}
-                color="#31A24C"
+          <WalletDeskHeading
+            title={`By Club, Last ${rake.windowDays} Days`}
+            meta={`${fmt(rake.byClub.length)} Clubs`}
+          />
+          <div className="wdesk__list">
+            {rake.byClub.map((c) => (
+              <WalletDeskRow
+                key={c.club_id}
+                name={c.club_name}
+                sub={`${fmt(c.players)} Players · ${fmt(c.player_hands)} Player Hands`}
+                figure={fmt(c.rake)}
               />
-              <Stat label="Ledger Credits" value={fmt(rake.ledger?.credits ?? 0)} color="#4599FF" />
-              <Stat label="Ledger Debits" value={fmt(rake.ledger?.debits ?? 0)} color="#F7C52A" />
-              <Stat
-                label="Drift"
-                value={rake.drift === null ? '-' : fmt(rake.drift)}
-                color={rake.drift ? '#ff6b6b' : '#39d17a'}
-              />
-            </div>
-            <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 8 }}>
-              Drift Is The Wallet Balance Minus The Ledger Net. It Is Reported, Not Corrected. A Non
-              Zero Value Means The Two Records Disagree And Someone Should Look.
-              {rake.ledger?.asOf ? ` Ledger As Of ${when(rake.ledger.asOf)}.` : ''}
-            </p>
-
-            <h4 style={{ color: '#fff', fontSize: 13, margin: '16px 0 0' }}>
-              By Club, Last {rake.windowDays} Days
-            </h4>
-            <Scroller>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={TH}>Club</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Rake</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Players</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Player Hands</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rake.byClub.map((c) => (
-                    <tr key={c.club_id}>
-                      <td style={TD}>{c.club_name}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(c.rake)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(c.players)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(c.player_hands)}</td>
-                    </tr>
-                  ))}
-                  {rake.byClub.length === 0 && (
-                    <tr>
-                      <td style={TD} colSpan={4}>
-                        No Rake In This Window.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </Scroller>
-
-            <h4 style={{ color: '#fff', fontSize: 13, margin: '16px 0 0' }}>
-              By Day{rake.ledger?.throughDay ? ` Through ${rake.ledger.throughDay}` : ''}
-            </h4>
-            <Scroller>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={TH}>Day</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Rake</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Players</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Player Hands</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rake.byDay.map((d) => (
-                    <tr key={d.day}>
-                      <td style={TD}>{d.day}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(d.rake)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(d.players)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(d.player_hands)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Scroller>
-
-            <TxTable rows={rake.transactions} heading="Recent Rake Wallet Movements" />
-          </>
-        )}
-
-        {/* ═══════════ BBJ / BACKUP ═══════════ */}
-        {!loading && isBbj && bbj && (
-          <>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Stat
-                label="Main Jackpot"
-                value={formatWalletChips(bbj.banks.main)}
-                color="#F7C52A"
-              />
-              <Stat label="Backup" value={formatWalletChips(bbj.banks.backup)} color="#4599FF" />
-              {/* The POOL's promo bank (bbj_pools.promo_balance), which is NOT
-                  the union Promo Wallet on the dashboard. Backup -> Promo
-                  credits union_wallets.promo_wallet, so this figure does not
-                  move when that transfer runs; labelled to say so. */}
-              <Stat
-                label="Pool Promo Bank"
-                value={formatWalletChips(bbj.banks.promo)}
-                color="#C084FC"
-              />
-              <Stat label="Banked Total" value={fmt(bbj.banks.total)} color="#39d17a" />
-            </div>
-            <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, marginTop: 8 }}>
-              {bbj.splitPct
-                ? `Live Split ${bbj.splitPct.main}% Main, ${bbj.splitPct.backup}% Backup, ${bbj.splitPct.promo}% Promo. `
-                : ''}
-              The 50/25/25 Rule Governs Each Allocation, And Payouts Come Out Of Main Only, So A
-              Healthy Pool Drifts Away From It As It Pays. Allocated Lifetime{' '}
-              {fmt(bbj.allocatedLifetime)}.
-            </p>
-
-            {mode === 'backup' && (
-              <div style={{ ...CARD, marginTop: 16 }}>
-                <h4 style={{ color: '#fff', fontSize: 13, margin: '0 0 4px' }}>
-                  Move Money Out Of Backup
-                </h4>
-                <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, margin: '0 0 10px' }}>
-                  Backup Can Top Up The Main Jackpot Or Become Promotional Budget. It Cannot Be Sent
-                  To A Club: This Is Jackpot Money Owed To Players.
-                </p>
-                <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, margin: '0 0 10px' }}>
-                  To Main Jackpot Moves Backup Into The Main Bank Above. To Promo Fund Credits The
-                  Union Promo Wallet On The Dashboard, Which Is A Different Balance From The Pool
-                  Promo Bank Shown Above, So That Tile Will Not Move.
-                </p>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <select
-                    className="admin-input"
-                    style={{ maxWidth: 200 }}
-                    value={dest}
-                    onChange={(e) => setDest(e.target.value as 'main' | 'promo')}
-                    aria-label="Destination"
-                  >
-                    <option value="main">To Main Jackpot</option>
-                    <option value="promo">To Promo Fund</option>
-                  </select>
-                  <input
-                    className="admin-input"
-                    style={{ maxWidth: 160 }}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    placeholder="Amount"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    aria-label="Amount To Move"
-                  />
-                  <button
-                    className="admin-btn admin-btn-primary"
-                    disabled={busy || !amount}
-                    onClick={() => void moveBackup()}
-                  >
-                    {busy ? 'Moving...' : 'Move Funds'}
-                  </button>
-                  <button
-                    className="admin-btn admin-btn-ghost admin-btn-sm"
-                    disabled={busy}
-                    onClick={() => setAmount(String(bbj.banks.backup))}
-                  >
-                    Max
-                  </button>
-                </div>
-              </div>
+            ))}
+            {rake.byClub.length === 0 && (
+              <div className="wdesk__empty">No Rake In This Window.</div>
             )}
+          </div>
 
-            <h4 style={{ color: '#fff', fontSize: 13, margin: '16px 0 0' }}>
-              Credited To The Jackpot, Last 30 Days
-            </h4>
-            <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, margin: '2px 0 0' }}>
-              Who Funded Each Bank, And Which Agent They Sit Under.
-            </p>
-            <Scroller>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={TH}>Player</th>
-                    <th style={TH}>Club</th>
-                    <th style={TH}>Agent</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Total</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Main</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Backup</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Promo</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Hands</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bbj.creditedBy.map((r) => (
-                    <tr key={`${r.user_id}-${r.club_name}`}>
-                      <td style={TD}>{r.username}</td>
-                      <td style={TD}>{r.club_name}</td>
-                      <td style={TD}>{r.agent_name || '-'}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(r.bbj_amount)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(r.main_amount)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(r.backup_amount)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(r.promo_amount)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(r.hands)}</td>
-                    </tr>
-                  ))}
-                  {bbj.creditedBy.length === 0 && (
-                    <tr>
-                      <td style={TD} colSpan={8}>
-                        No Contributions In This Window.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </Scroller>
+          <WalletDeskHeading
+            title="By Day"
+            meta={rake.ledger?.throughDay ? `Through ${rake.ledger.throughDay}` : undefined}
+          />
+          <div className="wdesk__list">
+            {rake.byDay.map((d) => (
+              <WalletDeskRow
+                key={d.day}
+                name={d.day}
+                sub={`${fmt(d.players)} Players · ${fmt(d.player_hands)} Player Hands`}
+                figure={fmt(d.rake)}
+              />
+            ))}
+          </div>
 
-            <h4 style={{ color: '#fff', fontSize: 13, margin: '16px 0 0' }}>By Day</h4>
-            <Scroller>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={TH}>Day</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Total</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Main</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Backup</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Promo</th>
-                    <th style={{ ...TH, textAlign: 'right' }}>Players</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bbj.byDay.map((d) => (
-                    <tr key={d.day}>
-                      <td style={TD}>{d.day}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(d.bbj)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(d.main)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(d.backup)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(d.promo)}</td>
-                      <td style={{ ...TD, textAlign: 'right' }}>{fmt(d.players)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Scroller>
+          <TxRows rows={rake.transactions} heading="Recent Rake Wallet Movements" />
+        </>
+      )}
 
-            <TxTable rows={bbj.transactions} heading="Recent Jackpot And Promo Movements" />
-          </>
-        )}
-      </div>
-    </div>
+      {/* ═══════════ BBJ / BACKUP ═══════════ */}
+      {!loading && isBbj && bbj && (
+        <>
+          <div className="wdesk__list">
+            <WalletDeskRow name="Main Jackpot" figure={formatWalletChips(bbj.banks.main)} />
+            <WalletDeskRow name="Backup" figure={formatWalletChips(bbj.banks.backup)} />
+            {/* The POOL's promo bank (bbj_pools.promo_balance), which is NOT
+                the union Promo Wallet on the dashboard. Backup -> Promo
+                credits union_wallets.promo_wallet, so this figure does not
+                move when that transfer runs; labelled to say so. */}
+            <WalletDeskRow name="Pool Promo Bank" figure={formatWalletChips(bbj.banks.promo)} />
+            <WalletDeskRow name="Banked Total" figure={fmt(bbj.banks.total)} />
+          </div>
+          <p className="wdesk__empty">
+            {bbj.splitPct
+              ? `Live Split ${bbj.splitPct.main}% Main, ${bbj.splitPct.backup}% Backup, ${bbj.splitPct.promo}% Promo. `
+              : ''}
+            The 50/25/25 Rule Governs Each Allocation, And Payouts Come Out Of Main Only, So A
+            Healthy Pool Drifts Away From It As It Pays. Allocated Lifetime{' '}
+            {fmt(bbj.allocatedLifetime)}.
+          </p>
+
+          {mode === 'backup' && (
+            <>
+              <WalletDeskHeading title="Move Money Out Of Backup" />
+              <p className="wdesk__empty">
+                Backup Can Top Up The Main Jackpot Or Become Promotional Budget. It Cannot Be Sent
+                To A Club: This Is Jackpot Money Owed To Players. To Promo Fund Credits The Union
+                Promo Wallet On The Dashboard, A Different Balance From The Pool Promo Bank Above.
+              </p>
+              <div className="wdesk__words" role="group" aria-label="Destination">
+                <button
+                  type="button"
+                  className="wdesk__word"
+                  aria-pressed={dest === 'main'}
+                  onClick={() => setDest('main')}
+                  disabled={busy}
+                >
+                  To Main Jackpot
+                </button>
+                <button
+                  type="button"
+                  className="wdesk__word"
+                  aria-pressed={dest === 'promo'}
+                  onClick={() => setDest('promo')}
+                  disabled={busy}
+                >
+                  To Promo Fund
+                </button>
+              </div>
+              <label className="wdesk__search">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="Amount"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  aria-label="Amount To Move"
+                  disabled={busy}
+                />
+              </label>
+            </>
+          )}
+
+          <WalletDeskHeading
+            title="Credited To The Jackpot, Last 30 Days"
+            meta={`${fmt(bbj.creditedBy.length)} Players`}
+          />
+          <div className="wdesk__list">
+            {bbj.creditedBy.map((r) => (
+              <WalletDeskRow
+                key={`${r.user_id}-${r.club_name}`}
+                name={r.username}
+                sub={
+                  <>
+                    {r.club_name}
+                    {r.agent_name ? <span className="wdesk__sep">{r.agent_name}</span> : null}
+                    <span className="wdesk__sep">
+                      {`Main ${fmt(r.main_amount)}, Backup ${fmt(r.backup_amount)}, Promo ${fmt(r.promo_amount)}, ${fmt(r.hands)} Hands`}
+                    </span>
+                  </>
+                }
+                figure={fmt(r.bbj_amount)}
+              />
+            ))}
+            {bbj.creditedBy.length === 0 && (
+              <div className="wdesk__empty">No Contributions In This Window.</div>
+            )}
+          </div>
+
+          <WalletDeskHeading title="By Day" />
+          <div className="wdesk__list">
+            {bbj.byDay.map((d) => (
+              <WalletDeskRow
+                key={d.day}
+                name={d.day}
+                sub={`Main ${fmt(d.main)}, Backup ${fmt(d.backup)}, Promo ${fmt(d.promo)}, ${fmt(d.players)} Players`}
+                figure={fmt(d.bbj)}
+              />
+            ))}
+          </div>
+
+          <TxRows rows={bbj.transactions} heading="Recent Jackpot And Promo Movements" />
+        </>
+      )}
+    </WalletDesk>,
+    document.body
   );
 }

@@ -246,7 +246,7 @@ export async function getMemberLiveTable(
   const { data, error } = await supabase
     .from('table_seats')
     .select(
-      'table_id, club_id, joined_at, tables!inner(id, name, stakes, tournament_id, status, is_deleted, club_id)'
+      'table_id, club_id, joined_at, tables!table_seats_table_id_fkey!inner(id, name, stakes, tournament_id, status, is_deleted, club_id)'
     )
     .eq('user_id', userId)
     .is('left_at', null)

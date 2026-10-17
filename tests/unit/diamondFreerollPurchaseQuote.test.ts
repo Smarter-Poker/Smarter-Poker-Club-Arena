@@ -4,6 +4,17 @@ import { tournamentService } from '../../src/services/TournamentService';
 const diamond = { asset: 'diamonds', is_platform: true, union_id: null };
 
 describe('Diamond freeroll recovery purchase quotes', () => {
+  it.each([{}, { buy_in_amount: 0 }, { buy_in_amount: null, buy_in_fee: null }])(
+    'retains the existing fee fallback when the entry price was not read',
+    (entry) => {
+      expect(
+        tournamentService.quoteFromTournament(
+          { arena: diamond, rebuy_cost: 100, ...entry },
+          'rebuy'
+        )
+      ).toMatchObject({ baseCost: 90, fee: 10, totalCost: 100 });
+    }
+  );
   it.each([diamond, [diamond]])('puts the full 100-Diamond rebuy into the prize pool', (arena) => {
     expect(
       tournamentService.quoteFromTournament(

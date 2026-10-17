@@ -1437,8 +1437,9 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   };
-  const buyIn = finite(row.buy_in_amount) ?? 0;
-  const buyInFee = finite(row.buy_in_fee) ?? 0;
+  const configuredBuyIn = row.buy_in_amount == null ? null : finite(row.buy_in_amount);
+  const configuredBuyInFee = row.buy_in_fee == null ? null : finite(row.buy_in_fee);
+  const buyIn = configuredBuyIn ?? 0;
   const startingChips = finite(row.starting_chips);
   const configuredRecovery = finite(row.rebuy_cost);
   const recoveryUnits = Math.round(
@@ -1480,7 +1481,11 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
      */
     const unitCents =
       row.unit_cents == null ? UNIT_CENTS_ASSET_NOT_READ : normalizeUnitCents(row.unit_cents);
-    const feeRatio = tournamentPurchaseFeeRatio(buyIn, buyInFee, unitCents);
+    const feeRatio = tournamentPurchaseFeeRatio(
+      configuredBuyIn ?? Number.NaN,
+      configuredBuyInFee ?? Number.NaN,
+      unitCents
+    );
     const floorToUnit = (cents: number) => unitFloorCents(cents, unitCents);
     const feeCents = recoveryFeeCents(recoveryCostCents, feeRatio, unitCents);
     const netCents = Math.max(0, recoveryCostCents - feeCents);

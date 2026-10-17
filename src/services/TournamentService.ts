@@ -2250,8 +2250,8 @@ class TournamentService {
       return splitBuyIn(baseCost, rate).fee;
     }
     const rate = tournamentPurchaseFeeRatio(
-      Number(tournament.buy_in_amount || 0),
-      Number(tournament.buy_in_fee || 0),
+      Number(tournament.buy_in_amount ?? Number.NaN),
+      Number(tournament.buy_in_fee ?? Number.NaN),
       unitCents
     );
     return recoveryFeeCents(Math.round(baseCost * 100), rate, unitCents) / 100;

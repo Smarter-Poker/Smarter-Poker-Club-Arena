@@ -18,7 +18,7 @@ Repair the shared purchase ratio for zero-entry Diamond events, apply it to both
 
 The broader launch verdict remains incomplete: dedicated funded buy-in/hand/leave/transfer, remaining format subjects, failover and funded rollback/restore certificates remain separate gates. No launch-ready claim is made.
 
-Local qualification: 77 native PASS lines across the independent historical and current 134-authority / 22-CHECK scenes, including the actual purchase, refund reconstruction, duplicate request and migration replay refusal. The player quote regression failed three cases before repair; 178 focused client assertions and 49 engine assertions pass after repair. Both TypeScript compilers passed. No production installation or new release is claimed by these local results.
+Local qualification: 77 native PASS lines across the independent historical and current 134-authority / 22-CHECK scenes, including the actual purchase, refund reconstruction, duplicate request and migration replay refusal. The player quote regression failed three cases before repair; 188 focused client assertions and 51 engine assertions pass after repair. Both TypeScript compilers passed. No production installation or new release is claimed by these local results.
 
 ### Installation receipt, October17 04:31 UTC
 
@@ -52,3 +52,5 @@ Qualified source migration `20261017042014` was installed once through Supabase,
 | DA22 freeroll fee                   | Actual current purchase and client quote fail before and pass after the source repair. Zero affected fee-bearing production receipts observed. UNINSTALLED and UNPUBLISHED until the new delivery receipts exist.                                                                                                                                   |
 
 Launch remains unqualified while any open certificate or this follow-up delivery is incomplete. No queued check, artifact retention, isolated fixture, incident aging or spectator result substitutes for a missing gate.
+
+Final quote hardening preserves the pre-existing fee fallback for unread or null entry amounts: only an explicitly read zero prize and zero fee receives the Diamond freeroll rule. Three partial-row client regressions fail before this guard and pass after; horse-context tests cover both undefined and null entry amounts.

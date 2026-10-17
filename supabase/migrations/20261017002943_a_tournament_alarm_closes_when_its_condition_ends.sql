@@ -39,8 +39,9 @@
 -- GUARDS: refuses in the break window; the live body must be the exact
 -- preimage (md5 edd4397b2daeadade433cd01a26a1c70) or already the postimage;
 -- owner, SECURITY DEFINER, search_path and ACL must be unchanged before and
--- after; the readback must be the exact postimage. No alarm is closed by
--- this migration itself.
+-- after; the readback must be the exact postimage; the service-role-only
+-- grant is restated and read back. No alarm is closed by this migration
+-- itself.
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_resolve_settled_financial_alerts(boolean,integer)'::regprocedure))) = '8adc7dfe51bab6388a174abf2db52e67'
 
 BEGIN;
@@ -413,5 +414,20 @@ BEGIN
   END IF;
 END
 $component$;
+
+-- Already the live grant (read 2026-10-17: {postgres=X/postgres,service_role=X/postgres});
+-- restated so a clean rebuild never hands a browser role this writer.
+REVOKE ALL ON FUNCTION public.fn_resolve_settled_financial_alerts(boolean, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_resolve_settled_financial_alerts(boolean, integer) TO service_role;
+
+DO $acl$
+BEGIN
+  IF (SELECT p.proacl::text FROM pg_proc p
+       WHERE p.oid = to_regprocedure('public.fn_resolve_settled_financial_alerts(boolean,integer)'))
+     IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN
+    RAISE EXCEPTION 'tournament alarm closer: grant drift after restating it';
+  END IF;
+END
+$acl$;
 
 COMMIT;

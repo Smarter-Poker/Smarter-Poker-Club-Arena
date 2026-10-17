@@ -475,48 +475,22 @@ export interface HorsePhase12AuthoritySelection {
  * Wilson bound 0.9803, river, 330 eligible). Crazy Pineapple has no
  * tournament format, so the selection is cash only. Short Deck and FLO8 stay
  * null until their contract v2 matrices finish on the same source.
+ *
+ * October 17 (evening): the VPIP floor call-down (HorseLogic.vpipFloorCallDown,
+ * docs/changelog/2026-10-17-horses-reach-the-vpip-floor.md) changes HorseLogic.ts,
+ * a hashed policy file, so every qualified policy digest moves again. The owner
+ * chose to ship it now and requalify (2026-10-17). Every selection is explicitly
+ * null until its locked matrix requalifies the exact new source and fresh
+ * natural completion is read; a renewal is the next generation. Every earlier
+ * generation stays committed with its evidence (retained for refusal in
+ * HorsePreviousSelections.test-support.ts as RETIRED_2026_10_17_*).
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
 > = Object.freeze({
   short_deck: null,
-  pineapple: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase12',
-    variant: 'pineapple',
-    sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
-    packVersion: 'crazy-pineapple-round4-v1',
-    contractVersion: 'remaining-variant-strength-contract-v2',
-    contractDigest: '0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2',
-    domain: 'pineapple-cash-single-board-after-rake-horse-population',
-    qualificationPath:
-      'docs/evidence/phase12/d9190c9e/phase12-qualification-2026-10-17-pineapple.json',
-    qualificationSha256: '9eaa78356b405c334a3cf843fbf13bc4480a2a72de71af2b2d7be08de19ad32a',
-    completionPath: 'docs/evidence/phase12/d9190c9e/phase12-completion-2026-10-17-pineapple.json',
-    completionSha256: '94e579b0ef8b6e69a3f373d9444377c66e81235fde823df6b9a9f404d98f36fa',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-17T18:00:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  flh: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase12',
-    variant: 'flh',
-    sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
-    packVersion: 'fixed-limit-holdem-round3-v1',
-    contractVersion: 'remaining-variant-strength-contract-v1',
-    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
-    domain: 'flh-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase12/d9190c9e/phase12-qualification-2026-10-17-flh.json',
-    qualificationSha256: '13d6347f44e9ee5d80371d57f5917e71d9db25ab0618dd193156fed152b6a78e',
-    completionPath: 'docs/evidence/phase12/d9190c9e/phase12-completion-2026-10-17-flh.json',
-    completionSha256: '5d8be703c635218b1bc42bd47a103dcd1465e78440105c828a92795396a178a8',
-    approvalGeneration: 4,
-    issuedAt: '2026-10-17T05:45:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  pineapple: null,
+  flh: null,
   flo8: null,
 });
 

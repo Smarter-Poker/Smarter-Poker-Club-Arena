@@ -47,6 +47,10 @@ import { currentReplaySolverStores } from './references.js';
 import { qualifiedReplayAdmissions } from './qualifiedAuthority.js';
 import { plo4Cards, plo4ReferenceSpot } from '../../../benchmark/Plo4PolicyEvidence.js';
 import { buildHorseDecisionKey } from '../protocol.js';
+import { HorseQualifiedAuthorityHolder } from '../../HorseQualifiedAuthority.js';
+import { PHASE10_PROTECTED_RELEASE_SELECTION } from '../../HorsePhase10Authority.js';
+import { qualifiedPhase10TestAdmission } from '../../HorsePhase10Authority.test-support.js';
+import { PLO4_POLICY_PACK } from '../../plo4/Plo4PolicyPack.js';
 import {
   exactReplayHorseDecisionRecord,
   firstHorseReplayDifference,
@@ -194,15 +198,19 @@ afterEach(() => {
 });
 
 describe('P15-A exact historical replay', () => {
-  it('replays an actually qualified candidate admission through the real worker', async () => {
+  it('records a PLO4 decision as shadow while Phase 10 is unselected and replays it exactly', async () => {
+    // The VPIP floor call-down (2026-10-17) returned the round-3 PLO4 pack to
+    // shadow until its locked matrix requalifies the exact new source (as the
+    // declared-work change did on 2026-10-16).
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
     const { record, result } = await liveOriginal(IDS.cashPlo4Preflop);
-    expect(result.phase10Authority?.state).toBe('usable');
-    expect(JSON.parse(record.body).replayState.admission.phase10Plo4).toBe('candidate');
+    expect(result.phase10Authority?.state).toBe('unselected');
+    expect(JSON.parse(record.body).replayState.admission.phase10Plo4).not.toBe('candidate');
     const verdict = await exactReplayHorseDecisionRecord(record, { runningSource: SOURCE });
     expect(verdict.outcome, verdict.firstDifference ?? '').toBe('replayed_exact');
   });
 
-  it('restores the applied qualified owner epoch and generation in a fresh process', async () => {
+  it('a fresh process replays an unselected PLO4 original exactly and refuses a recorded authority the release cannot qualify', async () => {
     const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
     let original: Awaited<ReturnType<typeof liveOriginal>>;
     try {
@@ -236,34 +244,35 @@ describe('P15-A exact historical replay', () => {
     } finally {
       clock.mockRestore();
     }
-    expect(original.result.decision.plo4Policy).toMatchObject({
-      mode: 'candidate',
-      applied: true,
-      authority: { state: 'usable', generation: 1 },
-    });
+    expect(
+      (original.result.decision.plo4Policy as { applied?: boolean } | undefined)?.applied
+    ).not.toBe(true);
     const verdict = freshProcess(
       { record: original.record, execution: original.execution },
       SOURCE
     );
     expect(verdict.outcome, verdict.firstDifference ?? '').toBe('replayed_exact');
     expect(verdict.isolation.networkAttempts).toEqual({ fetch: 0, socket: 0 });
-    for (const fault of ['missing_receipt', 'identity_authorityKey', 'withdrawn']) {
-      const invalid = resignHorseJournalRecord(original.record, (body) => {
-        const policy = (body.decision as Record<string, any>).plo4Policy;
-        if (fault === 'missing_receipt') delete policy.authority;
-        else if (fault === 'withdrawn') policy.authority.state = 'withdrawn';
-        else policy.authority.authorityKey = '0'.repeat(64);
-      });
-      noteFire('replay_refusal_preserves_prior_telemetry');
-      const before = drainFires();
-      restoreFires(before);
-      const refused = await exactReplayHorseDecisionRecord(invalid, { runningSource: SOURCE });
-      expect(refused.outcome).toBe(`non_replayable:authority:phase10:${fault}`);
-      expect(refused.replayVerified).toBe(false);
-      const after = drainFires();
-      expect(after).toEqual(before);
-      restoreFires(after);
-    }
+    // A record claiming a usable owner receipt (well formed, from a genuine
+    // test qualification) cannot turn the pack on: the release selection is
+    // null, so ordinary qualification refuses it by name.
+    const holder = new HorseQualifiedAuthorityHolder(randomUUID(), PLO4_POLICY_PACK.version);
+    holder.apply(qualifiedPhase10TestAdmission());
+    const receipt = holder.receipt();
+    expect(receipt.state).toBe('usable');
+    const forged = resignHorseJournalRecord(original.record, (body) => {
+      const decision = body.decision as Record<string, any>;
+      decision.plo4Policy = { ...(decision.plo4Policy ?? {}), applied: true, authority: receipt };
+    });
+    noteFire('replay_refusal_preserves_prior_telemetry');
+    const before = drainFires();
+    restoreFires(before);
+    const refused = await exactReplayHorseDecisionRecord(forged, { runningSource: SOURCE });
+    expect(refused.outcome).toBe('non_replayable:authority:phase10:unselected');
+    expect(refused.replayVerified).toBe(false);
+    const after = drainFires();
+    expect(after).toEqual(before);
+    restoreFires(after);
   }, 180_000);
 
   it('journals the worker-owned state the decision read: admitted owners and the Phase 8 sentinel', async () => {

@@ -1402,6 +1402,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'vpip_floor'
   ),
   receipt(
+    'vpip_floor_call_down',
+    'HorseLogic (VPIP floor)',
+    'under its target, called a small preflop price instead of folding (2026-10-17)',
+    'VPIP',
+    'vpip_floor'
+  ),
+  receipt(
     'v15_nut_status',
     'HorseLogic (V15)',
     'Omaha cat 5/6 nut read',

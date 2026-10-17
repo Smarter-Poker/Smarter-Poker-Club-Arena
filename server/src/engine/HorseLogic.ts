@@ -2105,6 +2105,71 @@ export function vpipFloorMul(gs: {
 }
 
 /**
+ * THE VPIP FLOOR CALL-DOWN (2026-10-17).
+ *
+ * `vpipFloorMul` widens the range a horse OPENS and CONTINUES with. It cannot
+ * reach a 50 floor on its own, measured offline on the real preflop brain
+ * over all-horse six- and nine-seat tables (ten-hand sittings judged every
+ * hand from the tenth, as `fn_nit_check` does):
+ *
+ *   | floor | seats | VPIP  | sittings ending vpip_evicted |
+ *   |   0   |  6    | 21.6% |            -                 |
+ *   |  50   |  6    | ~38%  |          100%                |
+ *   |  50   |  9    | ~34%  |          100%                |
+ *
+ * and live on the private Lightning pilot's six-seat Madness, 17 of 18 horse
+ * sittings ended `vpip_evicted`, so the game could never hold the players it
+ * needs. The widening clamp fired on 893 of 488,325 floored decisions: the
+ * limit is not the clamp. It is the CHEAP FOLD - a horse under its floor
+ * still folds to a limp or a small raise, and every such fold is a hand it
+ * did not play, on the one count the rule reads.
+ *
+ * So, preflop on a floored table, a horse BELOW its target that is about to
+ * fold for a small price calls instead, with a probability proportional to
+ * how far under it is. Nothing else changes: a horse at or over its target,
+ * a price above the cap, a check, a bet or a raise are returned untouched,
+ * and the floor values and the two-hour bar are exactly as they were. A
+ * human at the same table meets the same rule by the same choice; this is
+ * the horse making it.
+ */
+export const VPIP_CALLDOWN_MAX_BB = 6;
+export const VPIP_CALLDOWN_MAX_STACK_SHARE = 0.15;
+export const VPIP_CALLDOWN_GAIN = 10;
+
+export function vpipFloorCallDown(
+  decision: HorseDecision,
+  player: { bet: number; stack: number },
+  gs: {
+    stage: string;
+    currentBet: number;
+    bigBlind: number;
+    vpipFloor?: number;
+    ownVpip?: { hands: number; vpip: number | null };
+    allInOrFold?: boolean;
+  },
+  rand: () => number
+): HorseDecision {
+  if (gs.stage !== 'preflop' || decision.action !== 'fold' || gs.allInOrFold === true)
+    return decision;
+  const floor = Number(gs.vpipFloor ?? 0);
+  if (!(floor > 0)) return decision;
+  const toCall = Math.max(0, Number(gs.currentBet) - Number(player.bet));
+  const bb = Number(gs.bigBlind);
+  const stack = Number(player.stack);
+  if (!(toCall > 0) || !(bb > 0) || !(stack > toCall)) return decision;
+  if (toCall > VPIP_CALLDOWN_MAX_BB * bb || toCall > VPIP_CALLDOWN_MAX_STACK_SHARE * stack)
+    return decision;
+  const own = gs.ownVpip;
+  const rate =
+    own && own.hands > 0 && own.vpip !== null && Number.isFinite(own.vpip) ? own.vpip / 100 : 0;
+  const gap = vpipTargetFor(floor) - rate;
+  if (!(gap > 0)) return decision;
+  const q = Math.min(1, VPIP_CALLDOWN_GAIN * gap);
+  if (!(rand() < q)) return decision;
+  return { ...decision, action: 'call', amount: Math.round(toCall * 100) / 100 };
+}
+
+/**
  * V9 TIMING — decision-difficulty hint. decidePostflop records how close the
  * MC equity landed to the nearest strategy threshold; computeThinkTime turns
  * closeness into a TANK (humans agonize over close spots and snap the easy
@@ -2739,6 +2804,12 @@ export class HorseLogic {
                 phase6Reference = observed;
               })
             : this.decidePreflop(player, gs, vi, params);
+        // The floor call-down, inside the reference so every later owner
+        // sees it as the reference's own choice (see vpipFloorCallDown).
+        const beforeCallDown = decision;
+        decision = vpipFloorCallDown(decision, player, gs, fastRandom);
+        if (tele && Number(gs.vpipFloor ?? 0) > 0 && decision !== beforeCallDown)
+          noteFire('vpip_floor_call_down');
       } else {
         decision = this.decidePostflop(
           player,

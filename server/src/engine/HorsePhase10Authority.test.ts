@@ -44,6 +44,7 @@ import { plo4StrengthContractDigest } from '../benchmark/Plo4StrengthContract.js
 import {
   PREVIOUS_PHASE10_SELECTION,
   RETIRED_2026_10_16_PHASE10_SELECTION,
+  RETIRED_2026_10_17_PHASE10_SELECTION,
 } from './HorsePreviousSelections.test-support.js';
 
 const admit = (
@@ -68,12 +69,20 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P10.3 the declared-work source d9190c9e requalified the round-3 PLO4 pack at generation 3', () => {
+describe('P10.3 the VPIP floor call-down (2026-10-17) requires a fresh PLO4 qualification', () => {
   const committed = PREVIOUS_PHASE10_SELECTION;
   const retired = RETIRED_2026_10_16_PHASE10_SELECTION;
+  const generation3 = RETIRED_2026_10_17_PHASE10_SELECTION;
+  const retainedGenerations = [committed!, retired, generation3] as const;
 
-  it('retains generations 1 (c8bfc617) and 2 (c92768c8) and selects generation 3 on d9190c9e under the unchanged contract', () => {
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toMatchObject({
+  it('nothing is selected; generations 1 (c8bfc617), 2 (c92768c8) and 3 (d9190c9e) are retained under the unchanged contract', () => {
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
+    expect(admitHorsePhase10ReleaseAuthority()).toEqual({
+      status: 'refused',
+      reason: 'unselected',
+      transient: false,
+    });
+    expect(generation3).toMatchObject({
       sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
       packVersion: PLO4_POLICY_PACK.version,
       contractDigest: PHASE10_RUNNING_CONTRACT_DIGEST,
@@ -83,8 +92,6 @@ describe('P10.3 the declared-work source d9190c9e requalified the round-3 PLO4 p
       expiresAt: null,
       withdrawn: null,
     });
-    expect(Object.isFrozen(PHASE10_PROTECTED_RELEASE_SELECTION)).toBe(true);
-    expect(committed).not.toBeNull();
     expect(retired).toMatchObject({
       sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
       packVersion: PLO4_POLICY_PACK.version,
@@ -95,8 +102,6 @@ describe('P10.3 the declared-work source d9190c9e requalified the round-3 PLO4 p
       expiresAt: null,
       withdrawn: null,
     });
-    expect(Object.isFrozen(retired)).toBe(true);
-    expect(Object.isFrozen(committed)).toBe(true);
     expect(committed).toMatchObject({
       schema: 'horse-qualified-authority-selection-v1',
       phase: 'phase10',
@@ -109,24 +114,13 @@ describe('P10.3 the declared-work source d9190c9e requalified the round-3 PLO4 p
       expiresAt: null,
       withdrawn: null,
     });
+    for (const selection of retainedGenerations) expect(Object.isFrozen(selection)).toBe(true);
     expect(PHASE10_RUNNING_CONTRACT_DIGEST).toBe(plo4StrengthContractDigest());
     expect(PHASE10_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('the committed generation 3 admits for this digest and source, and neither retained generation can', () => {
-    const selected = admitHorsePhase10ReleaseAuthority();
-    expect(selected.status).toBe('admitted');
-    expect(selectedHorsePhase10Authority(selected)).toMatchObject({
-      phase: 'phase10',
-      sourceSha: PHASE10_PROTECTED_RELEASE_SELECTION!.sourceSha,
-      continuationVersion: PLO4_POLICY_PACK.version,
-      policyDigest: horsePhase10PolicyDigest(),
-      domain: HORSE_PHASE10_DOMAIN,
-      evidencePath: PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath,
-      evidenceSha256: PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationSha256,
-      approvalGeneration: 3,
-    });
-    for (const previous of [committed!, retired]) {
+  it('no retained generation admits on the running policy', () => {
+    for (const previous of retainedGenerations) {
       const release = admitHorsePhase10ReleaseAuthority(Date.now(), previous);
       expect(release, previous.sourceSha).toEqual({
         status: 'refused',
@@ -138,11 +132,14 @@ describe('P10.3 the declared-work source d9190c9e requalified the round-3 PLO4 p
         fileURLToPath(new URL(`../../../${previous.qualificationPath}`, import.meta.url))
       );
       const file = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
-      expect(file).toMatchObject({
-        qualified: true,
-        mode: 'contract',
-        policyDigestDefinition: 'horse-phase10-policy-digest-v2',
-      });
+      expect(file).toMatchObject({ qualified: true, mode: 'contract' });
+      // Generation 3 was measured under the running digest definition (v3);
+      // only its bytes moved. Generations 1 and 2 predate that definition.
+      expect(file.policyDigestDefinition).toBe(
+        previous === generation3
+          ? HORSE_PHASE10_POLICY_DIGEST_DEFINITION
+          : 'horse-phase10-policy-digest-v2'
+      );
       expect(file.policyDigest).not.toBe(horsePhase10PolicyDigest());
       expect(createHash('sha256').update(bytes).digest('hex')).toBe(previous.qualificationSha256);
     }
@@ -172,9 +169,9 @@ describe('P10.3 the declared-work source d9190c9e requalified the round-3 PLO4 p
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate is usable under the committed generation 3', () => {
+  it('the live main-scheduler gate is unselected until a new generation is committed', () => {
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
+    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
   });
 
   it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {
@@ -198,7 +195,7 @@ describe('P10.3 the declared-work source d9190c9e requalified the round-3 PLO4 p
     expect(gate.mainState()).toBe('withdrawn');
   });
 
-  it('the only qualified file on the running policy is the selected one; generations 1 and 2 are retained on their old digests', () => {
+  it('no qualified file is on the running policy; every retained generation is on an old digest', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase10/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -207,12 +204,8 @@ describe('P10.3 the declared-work source d9190c9e requalified the round-3 PLO4 p
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === 'horse-phase10-qualification-v1' && parsed.qualified === true) {
         const path = `docs/evidence/phase10/${file}`;
-        if (path === PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath)
-          expect(parsed.policyDigest, path).toBe(horsePhase10PolicyDigest());
-        else {
-          expect([committed!.qualificationPath, retired.qualificationPath]).toContain(path);
-          expect(parsed.policyDigest, path).not.toBe(horsePhase10PolicyDigest());
-        }
+        expect(retainedGenerations.map((g) => g.qualificationPath)).toContain(path);
+        expect(parsed.policyDigest, path).not.toBe(horsePhase10PolicyDigest());
       }
     }
   });

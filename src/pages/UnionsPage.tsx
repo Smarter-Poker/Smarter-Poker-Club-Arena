@@ -10,6 +10,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import CreateUnionModal from '../components/union/CreateUnionModal';
+import PageBar from '../components/help/PageBar';
 import { unionService, type Union } from '../services/UnionService';
 import { getUnionLevel } from '../utils/clubLevels';
 import { masterBus } from '../core/MasterBus';
@@ -94,10 +95,7 @@ function UnionCard({
               union.name.charAt(0).toUpperCase()
             )}
           </span>
-          <div>
-            <span className="union-kicker">Union Network</span>
-            <h2>{union.name}</h2>
-          </div>
+          <h2>{union.name}</h2>
         </div>
         <p className="union-description">
           {union.description || 'A Connected Club Network With Shared Games And Events.'}
@@ -238,18 +236,16 @@ export default function UnionsPage() {
         } as CSSProperties
       }
     >
-      <header className="unions-header">
-        <div>
-          <span className="unions-eyebrow">Connected Club Networks</span>
-          <h1>Union Command</h1>
-          <p>Coordinate Clubs, Shared Games And Network-Level Events.</p>
-        </div>
+      <PageBar
+        title="Union Command"
+        summary="Coordinate Clubs, Shared Games And Network-Level Events."
+      >
         {canCreateUnion && (
           <button type="button" className="union-create-button" onClick={() => setIsCreating(true)}>
             Create Union
           </button>
         )}
-      </header>
+      </PageBar>
 
       <div className="unions-grid">
         {loading ? (

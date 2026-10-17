@@ -63,7 +63,8 @@ test.describe('Club Management', () => {
 test.describe('Union Management', () => {
   test('should show unions list page', async ({ page }) => {
     const allowed = await expectUnionAccessDecision(page, 'unions');
-    if (allowed) await expect(page.getByText('Union Command').first()).toBeVisible();
+    if (allowed)
+      await expect(page.getByRole('heading', { name: 'Union Command', exact: true })).toBeVisible();
   });
 
   test('should show create union page', async ({ page }) => {

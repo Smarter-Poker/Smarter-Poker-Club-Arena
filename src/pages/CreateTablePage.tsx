@@ -13,6 +13,7 @@
 
 import { useParams, useNavigate } from 'react-router-dom';
 import ArenaGameCard from '../components/lobby/game-cards/ArenaGameCard';
+import PageHelp from '../components/help/PageHelp';
 import type { ArenaGameFamily } from '../components/lobby/game-cards/arenaGameCardTypes';
 import './CreateTablePage.css';
 
@@ -185,13 +186,27 @@ export default function CreateTablePage({
             Back
           </button>
         )}
-        <div className="create-table-page__heading">
-          <p className="create-table-page__eyebrow">Add Table</p>
-          <h2 className="create-table-page__title">Choose Game Type</h2>
-          <p className="create-table-page__meta">
-            Select A Variant To Configure · {GAME_TYPES.length} Games
-          </p>
-        </div>
+        {/* The step's own label stays: it says where in the creator you are.
+            The eyebrow and the instruction line went behind the "?" (Dan
+            2026-10-17: "ALL THESE WORDS ARE DISTRACTING"). */}
+        <h2 className="create-table-page__title">Choose Game Type</h2>
+        <PageHelp
+          className="create-table-page__help"
+          title="Add Table"
+          summary={`Select A Variant To Configure. ${GAME_TYPES.length} Games Are Available.`}
+          steps={[
+            {
+              title: 'Pick A Game',
+              body: 'Each Card Is One Variant. Tap Configure To Set Its Stakes, Seats And Limits. A Locked Card Opens At A Higher Club Level.',
+              target: '.create-table-page__list',
+            },
+            {
+              title: 'Back',
+              body: 'Back Returns You To Where You Started Without Creating Anything.',
+              target: '.create-table-page__back',
+            },
+          ]}
+        />
       </div>
 
       {/* Game Type List */}

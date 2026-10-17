@@ -51,7 +51,7 @@ export function getPhaseConfig(phase, variant) {
 /**
  * Builds the exact CLI arguments for the assembler invocation.
  */
-export function buildAssemblerArgs({ phase, variant, runsDir, outDir, noFormat = true, defectiveFile }) {
+export function buildAssemblerArgs({ phase, variant, runsDir, outDir, repoRoot, noFormat = true, defectiveFile }) {
   const config = getPhaseConfig(phase, variant);
   if (!runsDir) throw new Error('runsDir is required');
   if (!outDir) throw new Error('outDir is required');
@@ -63,6 +63,10 @@ export function buildAssemblerArgs({ phase, variant, runsDir, outDir, noFormat =
     `--runs=${runsDir}`,
     `--out=${outDir}`,
   ];
+
+  if (repoRoot) {
+    args.push(`--repo-root=${repoRoot}`);
+  }
 
   if (config.needsVariantFlag) {
     args.push(`--variant=${config.variant}`);
@@ -210,16 +214,20 @@ export function runStrengthAssembler({
   defectiveFile,
   nodeBin = 'node',
 }) {
+  const resolvedRepoRoot = path.resolve(repoRoot);
+  const resolvedOutDir = path.isAbsolute(outDir) ? outDir : path.resolve(resolvedRepoRoot, outDir);
+  const resolvedRunsDir = path.isAbsolute(runsDir) ? runsDir : path.resolve(resolvedRepoRoot, runsDir);
   const { command, args } = buildAssemblerArgs({
     phase,
     variant,
-    runsDir,
-    outDir,
+    runsDir: resolvedRunsDir,
+    outDir: resolvedOutDir,
+    repoRoot: resolvedRepoRoot,
     noFormat,
     defectiveFile,
   });
 
-  const serverDir = path.resolve(repoRoot, 'server');
+  const serverDir = path.resolve(resolvedRepoRoot, 'server');
   const stdout = execFileSync(nodeBin, args, {
     cwd: serverDir,
     encoding: 'utf8',

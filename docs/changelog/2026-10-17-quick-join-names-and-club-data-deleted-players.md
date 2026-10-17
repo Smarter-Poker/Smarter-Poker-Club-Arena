@@ -11,3 +11,11 @@ With the type doubled, the reason tag ("SAME STAKES", "ONE LEVEL UP") shared the
 Dan, 2026-10-16: deleted players must never appear anywhere, for all clubs and unions. `20261016224731` covered directories, rosters, cashier and leaderboards, but the Club Data player ranking (`ca_club_player_breakdown` and `ca_club_player_page_core_20261006`) still built its list from `club_members` without the profile's status. Club JAQK's last 14 days had 17 players with a result, 12 of them deleted accounts shown as "Deleted-xxxxxxxxxxxx".
 
 Migration `20261017160101` adds one predicate to the shared `merged` set of both functions (rows, totals, `player_count` and `filtered_count` all read it, so the breakdown and the page still agree). It is an md5-guarded exact-text patch. `20261017005207`'s live proofs pinned the exact postimage hashes, so they now check the range read it installed instead; the hashes stay recorded in that file.
+
+## Desktop board: the Action / Madness note wraps instead of clipping
+
+The live desktop board cut the note to "Action | Small Blind Ante, 30% Minimum VPIP, Double", losing the bomb timing. `.lt-name__table` now wraps on desktop as it already did on phones; the cash row is `height: auto`, so it grows by a line.
+
+## Hosted Club Data specs accept the club-named heading
+
+The everyday Club Data heading is now "<CLUB NAME> - CLUB DATA" (Dan 2026-10-17). `mobile-tap-targets.spec.ts` and `club-operations-exhaustive.spec.ts` still required a heading named exactly "Club Data", which failed the full post-deploy browser verification on every release. Both now accept the club-named heading.

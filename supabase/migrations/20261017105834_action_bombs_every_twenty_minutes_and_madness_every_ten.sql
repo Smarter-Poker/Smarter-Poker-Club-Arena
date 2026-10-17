@@ -3,6 +3,8 @@
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
 --
+-- @live-proof: (public.fn_cash_template_defaults('action', 'nlh')->'bombs'->>'trigger') = 'timed_20m' AND (public.fn_cash_template_defaults('madness', 'nlh')->'bombs'->>'trigger') = 'timed_10m' AND position('timed_20m' in pg_get_functiondef('public.fn_cash_apply_ruleset(uuid)'::regprocedure)) > 0
+--
 -- WHAT THIS CHANGES, AND WHY (Dan 2026-10-16, with screenshots of the lobby):
 --   "change it from bomb pot every orbit to every 10 minutes for madness and
 --    every 20 minutes for action."

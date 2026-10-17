@@ -35,7 +35,7 @@
   letter-spacing: 0.055em;
   text-decoration: none;
   text-transform: uppercase;
-  background: #1877f2;
+  background: #0d5f9b;
   cursor: pointer;
 }
 
@@ -180,7 +180,7 @@
 }
 
 .category {
-  color: #527894;
+  color: #9aa5b3;
   font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
   font-size: 0.66rem;
   font-weight: 760;

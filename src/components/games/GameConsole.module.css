@@ -67,6 +67,17 @@
   color: #8dddff;
   font-size: 13px;
 }
+/* The painted "?" (Dan 2026-10-17) closes the header row, the status beside
+   it. Its 44px target overlaps the header's own padding rather than growing
+   the row, so the phone height budget the boards are sized from (the console
+   header's 50px in MinesGrid.module.css) is unchanged. */
+.header:has(:global(.ca-page-help)) .status {
+  margin-left: auto;
+}
+.header :global(.ca-page-help) {
+  margin-block: -10px;
+  margin-left: 0;
+}
 .playfield {
   grid-area: play;
   min-width: 0;

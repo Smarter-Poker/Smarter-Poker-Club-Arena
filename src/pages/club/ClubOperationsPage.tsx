@@ -14,6 +14,7 @@ import { formatInt } from '../../utils/clubDashboard';
 import { compactChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
 import { ClubPageSection as SpadeConsole } from '../../components/club/ClubPageSection';
+import PageBar from '../../components/help/PageBar';
 import { freshnessLabel } from '../../utils/clubOperationsFreshness';
 import styles from './ClubOperationsPage.module.css';
 
@@ -155,25 +156,30 @@ export default function ClubOperationsPage() {
 
   return (
     <div className={styles.page}>
-      <SpadeConsole
-        className={styles.hero}
-        eyebrow="Club Command Network"
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow, the
+          visible title and the lede are gone; the viewer's access and the two
+          page doors stay, and the explanation lives behind the painted "?". */}
+      <PageBar
         title="Club Operations"
-        titleAs="h1"
-        pill={accessLabel}
-        foot="plates"
-        plates={{
-          secondary: { label: 'Open Club Lobby', onClick: () => navigate(`/clubs/${clubId}`) },
-          primary: {
-            label: 'View Dashboard',
-            onClick: () => navigate(`/clubs/${clubId}/dashboard-full`),
-          },
-        }}
+        summary="One Controlled Entry Point For The People, Money, Safety, And House Systems You Are Authorized To Operate."
+        metrics={[{ label: 'Access', value: accessLabel }]}
       >
-        <p className={styles.lede}>
-          One Controlled Entry Point For The People, Money, Safety, And House Systems You Are
-          Authorized To Operate.
-        </p>
+        <button
+          type="button"
+          className="club-page-action sc-ink--blue"
+          onClick={() => navigate(`/clubs/${clubId}`)}
+        >
+          Open Club Lobby
+        </button>
+        <button
+          type="button"
+          className="club-page-action sc-ink--blue"
+          onClick={() => navigate(`/clubs/${clubId}/dashboard-full`)}
+        >
+          View Dashboard
+        </button>
+      </PageBar>
+      <section className={styles.hero} aria-label="Club Readings">
         <div className={styles.freshness}>
           <button
             type="button"
@@ -263,7 +269,7 @@ export default function ClubOperationsPage() {
             </ul>
           </section>
         )}
-      </SpadeConsole>
+      </section>
 
       <div className={styles.groups}>
         {groups.map((group) => {

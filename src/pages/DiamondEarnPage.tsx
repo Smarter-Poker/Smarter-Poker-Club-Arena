@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { supabase } from '../lib/supabase';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import { reportError } from '../utils/errorReporter';
 import styles from './diamondGames.module.css';
 
@@ -146,21 +147,24 @@ function DiamondEarnGuide() {
   };
   return (
     <div className={styles.page}>
-      <button className={styles.back} onClick={() => navigate(`/clubs/${clubId}/wheel`)}>
-        ‹ Diamond Spins
-      </button>
+      {/* Dan, 2026-10-17: the eyebrow and the intro line moved behind the
+          painted "?"; the live allowance stays on the glass. */}
+      <PageBar
+        title="Earn Diamonds"
+        titleAs={false}
+        summary="Earn Up To 150 Diamonds A Day From Eligible Social, Video And Training Activities. Qualified Friend Referrals Sit Outside That Daily Cap."
+      >
+        <button className={styles.back} onClick={() => navigate(`/clubs/${clubId}/wheel`)}>
+          ‹ Diamond Spins
+        </button>
+      </PageBar>
       <DiamondSpinsTabs clubId={clubId ?? ''} />
       <SpadeConsole
         crest="diamond"
         title="Earn Diamonds"
-        eyebrow="Your Daily Activities"
         pill={guide ? `${guide.daily_remaining} Left` : 'Loading'}
         plates={{ primary: { label: 'Refresh', onClick: () => setReload((n) => n + 1) } }}
       >
-        <p className="sc-copy">
-          Earn Up To 150 Diamonds A Day From Eligible Social, Video And Training Activities.
-          Qualified Friend Referrals Sit Outside That Daily Cap.
-        </p>
         {guide && (
           <p className="sc-copy">
             Your Daily Activity Limit: {guide.daily_cap} Diamonds. Earned Today: {guide.daily_used}.

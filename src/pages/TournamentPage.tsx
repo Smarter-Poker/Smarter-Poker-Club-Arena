@@ -79,6 +79,7 @@ import {
 import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
 import { compactChips, ordinal } from '../utils/format';
 import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { uuid } from '../utils/uuid';
@@ -1289,7 +1290,6 @@ export default function TournamentPage() {
         <SpadeConsole
           as="div"
           className="tournament-console"
-          eyebrow="Club Arena"
           title="Tournaments"
           foot="foot"
         >
@@ -1349,13 +1349,26 @@ export default function TournamentPage() {
 
   return (
     <div className="tournament-page">
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow and
+          the descriptive subtitle moved behind the painted "?"; the head keeps
+          its title and its live pill. */}
+      <PageBar
+        title="Tournaments"
+        titleAs={false}
+        summary="Upcoming And Live Tournaments For This Club. Tap A Tournament To View Details And Register."
+        steps={[
+          {
+            title: 'Stake Filters',
+            body: 'Show Every Tournament, Or Only Freerolls, Micro Stakes Or High Rollers.',
+            target: '.tourn-filters',
+          },
+        ]}
+      />
       {/* ── The lobby head: the filters, and the owner's one control ────── */}
       <SpadeConsole
         as="section"
         className="tournament-console tourn-head"
-        eyebrow="Club Arena"
         title="Tournaments"
-        subtitle="Upcoming And Live"
         pill={`${filteredTournaments.length}`}
         pillInk="blue"
         foot="foot"
@@ -1399,7 +1412,6 @@ export default function TournamentPage() {
         <SpadeConsole
           as="div"
           className="tournament-console"
-          eyebrow="Club Arena"
           title="No Tournaments"
           foot="foot"
         >
@@ -1828,7 +1840,6 @@ export default function TournamentPage() {
         <SpadeConsole
           as="div"
           className="tournament-console"
-          eyebrow="Club Arena"
           title="Select A Tournament"
           foot="foot"
         >

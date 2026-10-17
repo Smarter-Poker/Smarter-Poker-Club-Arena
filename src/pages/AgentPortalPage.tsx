@@ -23,6 +23,7 @@ import { reportError } from '../utils/errorReporter';
 import { useUserStore } from '../stores/useUserStore';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import { compactChips, formatWalletChips } from '../utils/format';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { platformFrozenMessage } from '../utils/platformFrozen';
@@ -457,7 +458,6 @@ export default function AgentPortalPage() {
         <SpadeConsole
           family="riveted"
           crest="spade"
-          eyebrow="Club Arena Data"
           title="Agent Command Center"
           pill="Reading"
           pillInk="gold"
@@ -477,12 +477,18 @@ export default function AgentPortalPage() {
   return (
     <main className={styles.page}>
       <h1 className={styles.srOnly}>Agent Command Center</h1>
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow and
+          the descriptive subtitle moved behind the painted "?"; the head keeps
+          its title and its live pill. */}
+      <PageBar
+        title="Agent Command Center"
+        titleAs={false}
+        summary="Wallets, Credit And Commission Control For The Selected Club."
+      />
       <SpadeConsole
         family="riveted"
         crest="spade"
-        eyebrow="Club Arena Data"
         title="Agent Command Center"
-        subtitle="Wallets, Credit And Commission Control"
         pill={walletError ? 'Unavailable' : walletReady ? 'Scoped' : 'Closed'}
         pillInk={walletError ? 'red' : walletReady ? 'blue' : 'gold'}
         className={styles.section}

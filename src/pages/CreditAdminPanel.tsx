@@ -17,6 +17,7 @@ import { exportToCSV } from '../lib/export';
 import { AgentService } from '../services/AgentService';
 import { CreditRequestManagerInbox } from '../components/agent/CreditRequestWidget';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
@@ -480,7 +481,6 @@ function CreditAdminPanelForScope() {
           className={styles.console}
           family="spade"
           crest="spade"
-          eyebrow="Club Arena"
           title="Credit Admin"
           titleAs="h1"
           pill="Verifying"
@@ -501,14 +501,20 @@ function CreditAdminPanelForScope() {
 
   return (
     <main className={styles.page}>
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow and
+          the descriptive subtitle moved behind the painted "?"; the head keeps
+          its title and its live pill. */}
+      <PageBar
+        title="Credit Admin"
+        titleAs={false}
+        summary="Agent Credit Control. Review Credit Requests, Credit Limits And Exposure For The Agents In Your Scope."
+      />
       <SpadeConsole
         className={styles.console}
         family="spade"
         crest="spade"
-        eyebrow="Club Arena"
         title="Credit Admin"
         titleAs="h1"
-        subtitle="Agent Credit Control"
         pill={scopePlatformWide ? 'Platform' : 'Club'}
         pillInk={loadError ? 'red' : 'gold'}
         foot={hasExport ? 'plates' : 'foot'}

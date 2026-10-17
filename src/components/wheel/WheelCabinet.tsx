@@ -18,13 +18,13 @@ export function WheelCabinet({
   setup,
   navigation,
   notice,
+  help,
   children,
 }: {
   title: string;
   titleId?: string;
   pill?: string;
   pillInk?: ConsoleInk;
-  eyebrow?: string;
   bays: DeckBay[];
   primary?: PlateButtonProps;
   secondary?: PlateButtonProps;
@@ -32,12 +32,15 @@ export function WheelCabinet({
   setup?: ReactNode;
   navigation?: ReactNode;
   notice?: ReactNode;
+  /** The painted "?" (Dan 2026-10-17), top right of the cabinet's heading. */
+  help?: ReactNode;
   children?: ReactNode;
 } & Record<string, unknown>) {
   return (
     <section className={styles.cabinet} aria-labelledby={titleId}>
       <header className={styles.heading}>
         <h1 id={titleId}>{title}</h1>
+        {help && <div className={styles.help}>{help}</div>}
       </header>
       <div className={styles.wheel}>{children}</div>
       <aside className={styles.controls} aria-label="Diamond Spins Controls">

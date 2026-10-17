@@ -16,6 +16,7 @@ import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import { titleCase } from '../utils/titleCase';
 import { isUUID } from '../utils/clubIdResolver';
 import { compactChips } from '../utils/format';
@@ -278,7 +279,6 @@ export default function RateAuditPage() {
         <SpadeConsole
           family="shark"
           crest="flat"
-          eyebrow="Club Arena Data"
           title="Rate Audit Trail"
           titleAs="h1"
           titleId="rate-audit-title"
@@ -304,14 +304,27 @@ export default function RateAuditPage() {
 
   return (
     <main className={styles.page}>
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow and
+          the descriptive subtitle moved behind the painted "?"; the head keeps
+          its title and its live pill. */}
+      <PageBar
+        title="Rate Audit Trail"
+        titleAs={false}
+        summary="Commission And Rake Rate Change History. Filter By Rate Type And Reading Window."
+        steps={[
+          {
+            title: 'Filters',
+            body: 'Choose Commission Or Rake Changes, And How Far Back To Read.',
+            target: '[aria-label="Audit Filters"]',
+          },
+        ]}
+      />
       <SpadeConsole
         family="shark"
         crest="flat"
-        eyebrow="Club Arena Data"
         title="Rate Audit Trail"
         titleAs="h1"
         titleId="rate-audit-title"
-        subtitle="Commission And Rake Rate Change History"
         pill={loading ? 'Reading' : loadError ? 'Error' : `${changes.length} Changes`}
         pillInk={loadError ? 'red' : loading ? 'gold' : 'blue'}
         plates={{ primary: { label: 'Back', onClick: () => navigate(-1) } }}

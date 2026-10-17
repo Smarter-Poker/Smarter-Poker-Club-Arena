@@ -109,6 +109,10 @@ export function expectCompactCashierFigure(value: string, name: string): void {
   );
 }
 
+export function cashierRosterWalletValue(label: Locator): Locator {
+  return label.locator('..').locator('strong');
+}
+
 export function expectCashierAmountPresets(values: string[]): void {
   const labels = values.map((value) => value.trim());
   const isMax = (label: string) => /^max$/i.test(label);

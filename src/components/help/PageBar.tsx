@@ -12,6 +12,7 @@
 import type { ReactNode } from 'react';
 import { formatPopupText } from '../../utils/popupStyle';
 import PageHelp, { type TutorialStep } from './PageHelp';
+import './PageHelp.css';
 
 export interface PageBarMetric {
   label: string;

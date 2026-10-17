@@ -56,11 +56,24 @@ function splitSentences(text: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Whether an element is on screen. Browsers that can answer directly
+ * (checkVisibility) are asked; otherwise a hidden ancestor or display:none
+ * rules it out, and a laid-out box of zero size does too. An environment with
+ * no layout engine at all reports every box at 0,0,0,0; there the element
+ * counts as shown unless something above hides it.
+ */
 function isVisible(el: Element): boolean {
-  const html = el as HTMLElement;
+  const html = el as HTMLElement & { checkVisibility?: () => boolean };
   if (!html.isConnected) return false;
+  if (typeof html.checkVisibility === 'function') return html.checkVisibility();
+  if (html.closest('[hidden], [aria-hidden="true"]')) return false;
+  if (typeof window !== 'undefined' && window.getComputedStyle(html).display === 'none') {
+    return false;
+  }
   const rect = html.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
+  const unlaid = rect.width === 0 && rect.height === 0 && rect.top === 0 && rect.left === 0;
+  return unlaid || (rect.width > 0 && rect.height > 0);
 }
 
 /**

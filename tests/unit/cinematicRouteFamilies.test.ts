@@ -57,7 +57,10 @@ describe('cinematic retained route families', () => {
     expect(source).toContain('data-arena-surface="leaderboard-console"');
     expect(source).toContain('ClubPageSection as SpadeConsole');
     expect(source).toContain('titleAs="h1"');
-    expect(source).toContain('eyebrow="Club Arena"');
+    // Dan 2026-10-17: the "Club Arena" eyebrow went; the "?" sits above the console.
+    expect(source).not.toContain('eyebrow="Club Arena"');
+    expect(source).toContain('<PageBar');
+    expect(source).toContain('titleAs={false}');
     expect(source).not.toContain('className="lb-hero"');
     expect(existsSync('public/assets/club-buttons/console/spade-console-v1/top.png')).toBe(true);
   });

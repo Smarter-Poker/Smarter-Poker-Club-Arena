@@ -10,6 +10,7 @@ import {
   expectCashierAxeClean,
   expectCompactCashierFigure,
   expectCashierAmountPresets,
+  cashierRosterWalletValue,
   expectCashierWalletBalance,
 } from './support/cashierProductionCertification';
 
@@ -258,7 +259,7 @@ test.describe('Production Cashier Certification', () => {
     );
     for (let index = 0; index < rosterWalletCount; index++) {
       await expectCashierWalletBalance(
-        rosterWalletLabels.nth(index).locator('..').locator('span').first(),
+        cashierRosterWalletValue(rosterWalletLabels.nth(index)),
         `Trade Player Wallet ${index + 1}`
       );
     }

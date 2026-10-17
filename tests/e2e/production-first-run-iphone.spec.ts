@@ -28,6 +28,13 @@ const publishableKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABAS
 test.use({ storageState: { cookies: [], origins: [] } });
 
 test('a new iPhone player picks an avatar and ENTER ARENA lets them in', async ({ page }) => {
+  // A cold production journey: sign in, terms, the avatar gallery, the gate,
+  // then a reload. Playwright's default 30 s covers the whole test, and the
+  // first live run (2026-10-17) passed the gate in 1881 ms and then ran out of
+  // test time on the reload, before the durability check could answer. The
+  // ENTER ARENA budget below is still FINISH_BUDGET_MS; only the journey
+  // around it gets room.
+  test.setTimeout(180_000);
   test.skip(
     !email || !password || !supabaseUrl || !publishableKey,
     'FIRST_RUN_EMAIL/FIRST_RUN_PASS and the Supabase publishable config are required.'

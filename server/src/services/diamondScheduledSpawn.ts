@@ -25,14 +25,16 @@
  * into the door's key shapes in whole Diamonds. Nothing here touches the
  * network.
  *
- * WHOLE DIAMONDS. A Diamond does not divide. The entry TOTAL is the same
- * snapped ladder price a chip event of this schedule charges
- * (`buyInFor(wholeChips(cfg.buyIn)).total`, server/src/config/buyIn.ts); the
- * DATABASE takes the 10% (5% heads-up) fee out of it and floors it to whole
- * Diamonds, so this file never states the fee. Guarantee, rebuy and add-on
- * prices are already whole on the chip row and are carried as integers. A
- * knockout bounty can be a fraction on the chip row (3.75) and is floored
- * here, never rounded up past what the entry funds.
+ * WHOLE DIAMONDS. A Diamond does not divide. The entry TOTAL is the snapped
+ * ladder price a chip event of this schedule charges
+ * (`buyInFor(wholeChips(cfg.buyIn)).total`, server/src/config/buyIn.ts) at
+ * ten Diamonds a chip (DIAMOND_ARENA_DIAMONDS_PER_CHIP, Dan 2026-10-17: the
+ * arena is the lite version, 10% of the Midway price); the DATABASE takes the
+ * 10% (5% heads-up) fee out of it and floors it to whole Diamonds, so this
+ * file never states the fee. Guarantee, rebuy and add-on prices are scaled the
+ * same way and floored to whole Diamonds; a freeroll keeps its guarantee as
+ * a Diamond count and pays 100 Diamonds a rebuy or add-on. A knockout bounty
+ * is floored, never rounded up past what the entry funds.
  */
 
 import { parseArenaIdentity } from '../domain/ArenaContext.js';
@@ -98,6 +100,23 @@ const wholePositive = (v: unknown): number | null => {
 /** An arena freeroll's rebuy and add-on: 100 Diamonds, one dollar (Dan 2026-10-16). */
 export const DIAMOND_FREEROLL_REBUY_DIAMONDS = 100;
 
+/**
+ * THE DIAMOND ARENA IS A LITE VERSION OF THE MIDWAY SCHEDULE (Dan 2026-10-17,
+ * BINDING). Dan, verbatim: "MAKE A 'LITE VERSION' OF THIS SCHEDULE FOR THE
+ * DIAMOND ARENA ALL TOURNAMENT BUY IN ARE 10% OF THE PRICE OF THE MIDWAY
+ * TOURNAMENTS (1 DIAMOND = 1 CENT) AND KEEP THE SAME FREE ROLLS GUARANTEE AND
+ * REBUY ADD ON AT 100 DIAMONDS."
+ *
+ * A Midway chip is a dollar and a Diamond is a cent, so 10% of a chip is ten
+ * Diamonds. Every paid price the Midway occurrence of this schedule carries -
+ * the entry total, the guarantee, the bounty, the rebuy and the add-on - is
+ * that many Diamonds per chip, so a 35-chip event is a 350-Diamond event with
+ * one tenth of the guarantee's value. A freeroll is not scaled: it keeps the
+ * Midway guarantee as a number of Diamonds, and its rebuy and add-on are
+ * DIAMOND_FREEROLL_REBUY_DIAMONDS.
+ */
+export const DIAMOND_ARENA_DIAMONDS_PER_CHIP = 10;
+
 export type DiamondSpawnConfig =
   | { ok: true; config: Record<string, unknown> }
   | { ok: false; reason: string };
@@ -135,11 +154,15 @@ export function diamondSpawnConfig(
   // The same ladder price a chip event of this schedule charges, as a TOTAL.
   // A fixed-board schedule (Dan 2026-10-15) names a template instead of a
   // buyIn, so its price is the total the template's own row carries.
-  const total = buyInFor(
-    wholeChips(
-      cfg.buyIn !== undefined ? cfg.buyIn : num(row.buy_in_amount) + num(row.buy_in_fee)
-    )
+  const chipTotal = buyInFor(
+    wholeChips(cfg.buyIn !== undefined ? cfg.buyIn : num(row.buy_in_amount) + num(row.buy_in_fee))
   ).total;
+  // The lite price: ten Diamonds per Midway chip (DIAMOND_ARENA_DIAMONDS_PER_CHIP).
+  const total = chipTotal * DIAMOND_ARENA_DIAMONDS_PER_CHIP;
+  const paid = total > 0;
+  /** A paid chip price in whole Diamonds; a freeroll's numbers are not scaled. */
+  const lite = (chips: unknown): number =>
+    paid ? Math.floor(num(chips) * DIAMOND_ARENA_DIAMONDS_PER_CHIP + 1e-9) : Math.floor(num(chips));
   const maxPlayers = row.max_players == null ? null : Math.floor(num(row.max_players));
   const freeBuy = row.free_buy === true;
 
@@ -148,7 +171,7 @@ export function diamondSpawnConfig(
     type,
     gameVariant: String(row.game_type ?? 'NLH'),
     buyIn: total,
-    guaranteedPrize: Math.floor(num(row.guaranteed_prize)),
+    guaranteedPrize: lite(row.guaranteed_prize),
     startingStack: Math.floor(num(row.starting_chips)),
     maxPlayers,
     minPlayers: Math.floor(num(row.min_players)),
@@ -169,7 +192,7 @@ export function diamondSpawnConfig(
   if (type === 'bounty' || type === 'progressive_bounty' || type === 'mystery_bounty') {
     const fee = Math.floor(total * diamondFeeRatio(maxPlayers) + 1e-9);
     const funded = total - fee;
-    const bounty = Math.min(Math.max(1, Math.floor(num(row.bounty_amount) + 1e-9)), funded);
+    const bounty = Math.min(Math.max(1, lite(row.bounty_amount)), funded);
     if (!(funded >= 1) || !(bounty >= 1)) {
       return { ok: false, reason: 'diamond_schedule_bounty_not_whole_within_the_buy_in' };
     }
@@ -197,7 +220,7 @@ export function diamondSpawnConfig(
   const reentry = row.is_reentry === true;
   const addOn = row.add_on_available === true;
   if (rebuy || reentry) {
-    const cost = wholePositive(row.rebuy_cost);
+    const cost = wholePositive(lite(row.rebuy_cost));
     if (cost === null) return { ok: false, reason: 'diamond_schedule_rebuy_cost_not_whole' };
     config.rebuy = rebuy;
     config.reentry = reentry;
@@ -208,7 +231,7 @@ export function diamondSpawnConfig(
     if (row.max_reentries != null) config.maxReentries = Math.floor(num(row.max_reentries));
   }
   if (addOn) {
-    const cost = wholePositive(row.addon_cost);
+    const cost = wholePositive(lite(row.addon_cost));
     if (cost === null) return { ok: false, reason: 'diamond_schedule_addon_cost_not_whole' };
     config.addOn = true;
     config.addonCost = cost;

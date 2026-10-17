@@ -205,22 +205,23 @@ describe('the arena is recognised by its identity, not by its id', () => {
 });
 
 describe('the p_config a Diamond schedule sends is whole Diamonds', () => {
-  it('a Midway bounty: snapped total, guarantee carried, bounty floored', async () => {
+  it('a Midway bounty: ten Diamonds per snapped chip, guarantee and bounty scaled and floored', async () => {
     vi.spyOn(supabase, 'from');
     const row = await built(midwayBounty(), START);
     const mapped = diamondSpawnConfig(row, midwayBounty(), START);
     expect(mapped.ok).toBe(true);
     if (!mapped.ok) return;
     const c = mapped.config;
-    // 16.5 -> whole 17 -> ladder 15: the same price a chip event of this schedule charges.
-    expect(c.buyIn).toBe(15);
+    // 16.5 -> whole 17 -> ladder 15: the price a chip event of this schedule
+    // charges, at ten Diamonds a chip (the lite arena, Dan 2026-10-17).
+    expect(c.buyIn).toBe(150);
     expect(row.buy_in_amount as number).toBeCloseTo(13.5);
     expect((row.buy_in_amount as number) + (row.buy_in_fee as number)).toBe(15);
-    expect(c.guaranteedPrize).toBe(500);
+    expect(c.guaranteedPrize).toBe(5000);
     expect(c.type).toBe('bounty');
     expect(c.gameVariant).toBe('PLO5');
-    // 3.75 on the chip row; a Diamond does not divide, and it is never rounded up.
-    expect(c.bountyAmount).toBe(3);
+    // 3.75 chips is 37.5 Diamonds; a Diamond does not divide, and it is never rounded up.
+    expect(c.bountyAmount).toBe(37);
     expect(c.startTime).toBe(START.toISOString());
     expect(c.startingStack).toBe(18000);
     expect(Array.isArray(c.blindStructure) && (c.blindStructure as unknown[]).length).toBeTruthy();
@@ -241,13 +242,13 @@ describe('the p_config a Diamond schedule sends is whole Diamonds', () => {
     expect(mapped.ok).toBe(true);
     if (!mapped.ok) return;
     const c = mapped.config;
-    expect(c.buyIn).toBe(10); // 8.8 -> 9 -> ladder 10
+    expect(c.buyIn).toBe(100); // 8.8 -> 9 -> ladder 10 chips -> 100 Diamonds
     expect(c.type).toBe('mtt');
     expect(c.rebuy).toBe(true);
     expect(c.addOn).toBe(true);
-    expect(c.rebuyCost).toBe(9);
-    expect(c.addonCost).toBe(9);
-    expect(c.guaranteedPrize).toBe(400);
+    expect(c.rebuyCost).toBe(90);
+    expect(c.addonCost).toBe(90);
+    expect(c.guaranteedPrize).toBe(4000);
     // The chip-door spellings the Diamond create door refuses are never sent.
     for (const k of ['isRebuy', 'isReentry', 'addOnAvailable', 'addOnCost', 'guarantee'])
       expect(c).not.toHaveProperty(k);
@@ -297,9 +298,9 @@ describe('a Diamond schedule spawns through the door', () => {
     const args = spawn[0].args as Record<string, any>;
     expect(args.p_schedule_id).toBe(SCHEDULE);
     expect(args.p_scheduled_start).toBe(START.toISOString());
-    expect(args.p_config.buyIn).toBe(15);
-    expect(args.p_config.guaranteedPrize).toBe(500);
-    expect(args.p_config.bountyAmount).toBe(3);
+    expect(args.p_config.buyIn).toBe(150);
+    expect(args.p_config.guaranteedPrize).toBe(5000);
+    expect(args.p_config.bountyAmount).toBe(37);
     expect(db.writes('tournament_schedule_spawns', 'update')).toEqual([{ tournament_id: TID }]);
     expect(reportError).not.toHaveBeenCalled();
   });

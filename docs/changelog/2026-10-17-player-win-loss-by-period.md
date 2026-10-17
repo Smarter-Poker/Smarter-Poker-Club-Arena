@@ -57,10 +57,14 @@ Tests: `tests/components/PlayerWinLoss.test.tsx`.
   page with its own, so any page re-render handed those cases the wrong
   handler. The mock now captures only the roster's `wallet_changed` channel.
 
-## Not yet live
+## Installation
 
-The migration must be applied before this branch can be pushed: the pre-push
-gate (`check-migrations-applied`) refuses code that calls functions production
-does not have, and direct application from the agent session was refused by
-the session's permission policy on 2026-10-17. Once applied, push
-`agent/claude/player-win-loss` and merge as usual.
+Applied to production on 2026-10-17 at 11:12 UTC (after Dan confirmed this
+session may apply production migrations), recorded in schema_migrations as
+version `20261017111202`, name `player_win_loss_by_period`. Read back: the two
+public functions are executable by `authenticated` and not by `anon`; the
+tournament helper is executable by neither. Figures checked against direct
+queries: a member's Today tournament net matched the ledger sum to the cent
+(-518.10), and a cash player's Overall matched `club_member_play_totals`
+(-3,180.55). `scripts/ci/schema-manifest.d/player-win-loss-by-period.json`
+declares the three functions until the nightly manifest absorbs them.

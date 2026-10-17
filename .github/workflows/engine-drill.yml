@@ -1,0 +1,248 @@
+name: Engine Drill (controlled crash inside a scheduled break)
+run-name: Engine Drill ${{ github.event.client_payload.drill }} ${{ github.event.client_payload.expected_engine_sha }}
+
+# docs/runbooks/maintenance-break-fire-drill.md: a live engine drill runs only
+# as a reviewed default-branch repository event, never from a workstation. This
+# lane stages the exact protected-main control bytes on the pinned host and
+# starts engine-crash-drill.sh as a durable systemd unit; the script alone
+# decides admission, performs the one mutation and proves recovery. The
+# workflow only transports, observes and publishes the receipt.
+on:
+  repository_dispatch:
+    types: [drill-club-arena-engine]
+
+permissions: {}
+
+# One drill at a time, never cancelled mid-flight: a cancelled observer cannot
+# stop the host unit anyway, and a second request must not race the first.
+concurrency:
+  group: club-arena-engine-drill
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    name: Crash the serving engine inside a certified break and prove recovery
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    permissions:
+      contents: read
+    env:
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+      SSH_USER: root
+      REPO_DIR: /opt/club-arena
+      ENGINE_URL: https://engine.smarter.poker
+      CONTROL_SHA: ${{ github.sha }}
+      RUN_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+      DRILL: ${{ github.event.client_payload.drill || '' }}
+      EXPECTED_SHA: ${{ github.event.client_payload.expected_engine_sha || '' }}
+      AUTHORIZATION: ${{ github.event.client_payload.authorization || '' }}
+    steps:
+      - name: Establish the drill deadline
+        run: |
+          set -euo pipefail
+          # The host script waits for a scheduled break until NOT_AFTER - 900s,
+          # then needs at most ~11 minutes for the break and the post-break
+          # witnesses. 85 minutes always contains one whole :55 break.
+          NOW="$(date +%s)"
+          echo "DRILL_NOT_AFTER_EPOCH=$((NOW + 85 * 60))" >> "$GITHUB_ENV"
+          echo "DRILL_OBSERVE_DEADLINE_EPOCH=$((NOW + 100 * 60))" >> "$GITHUB_ENV"
+
+      - name: Checkout the exact workflow control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+
+      - name: Validate the drill request against protected main and the serving release
+        run: |
+          set -euo pipefail
+          [ "$DRILL" = crash ] \
+            || { echo '::error::client_payload.drill must be "crash"'; exit 1; }
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::client_payload.expected_engine_sha must be one full lowercase SHA'; exit 1; }
+          python3 - <<'PY'
+          import os
+          value = os.environ["AUTHORIZATION"]
+          ok = 12 <= len(value) <= 200 and all(ord(c) >= 32 and ord(c) != 127 for c in value)
+          raise SystemExit(0 if ok else "client_payload.authorization must be 12-200 printable characters")
+          PY
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          [ "$(git rev-parse --verify 'HEAD^{commit}')" = "$CONTROL_SHA" ]
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          git merge-base --is-ancestor "$CONTROL_SHA" "$(git rev-parse --verify 'origin/main^{commit}')" \
+            || { echo '::error::the drill control commit is not in protected main'; exit 1; }
+          git cat-file -e "$EXPECTED_SHA^{commit}" \
+            || { echo '::error::the expected engine SHA is not a commit in this repository'; exit 1; }
+          curl -fsS --max-time 15 -H 'Cache-Control: no-cache, no-store' \
+            "$ENGINE_URL/health?drill=$RUN_KEY-$(date +%s%N)" -o "$RUNNER_TEMP/health.json"
+          EXPECTED_SHA="$EXPECTED_SHA" python3 - "$RUNNER_TEMP/health.json" <<'PY'
+          import json, os, sys
+          d = json.load(open(sys.argv[1]))
+          if d.get("releaseSha") != os.environ["EXPECTED_SHA"] or d.get("running") is not True:
+              raise SystemExit("the public engine is not serving the expected release")
+          PY
+
+      - name: Establish pinned ephemeral SSH transport
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]] \
+            || { echo '::error::HETZNER_HOST is absent or invalid'; exit 1; }
+          [ -n "$SSH_KEY" ] || { echo '::error::HETZNER_SSH_PRIVATE_KEY is absent'; exit 1; }
+          [ -n "$HOST_KEY" ] || { echo '::error::HETZNER_HOST_KEY is absent'; exit 1; }
+          SSH_DIR="$RUNNER_TEMP/club-arena-drill-ssh-$RUN_KEY"
+          install -d -m 0700 "$SSH_DIR"
+          printf '%s\n' "$SSH_KEY" > "$SSH_DIR/key"
+          chmod 0600 "$SSH_DIR/key"
+          ssh-keygen -y -f "$SSH_DIR/key" >/dev/null
+          printf '%s\n' "$HOST_KEY" > "$SSH_DIR/known_hosts"
+          chmod 0600 "$SSH_DIR/known_hosts"
+          ssh-keygen -l -f "$SSH_DIR/known_hosts" >/dev/null
+          HSSH="$RUNNER_TEMP/hssh-drill-$RUN_KEY"
+          printf '#!/usr/bin/env bash\nexec ssh -i %q -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%q -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes %q "$@"\n' \
+            "$SSH_DIR/key" "$SSH_DIR/known_hosts" "$SSH_USER@$HETZNER_HOST" > "$HSSH"
+          chmod 0700 "$HSSH"
+          echo "HSSH=$HSSH" >> "$GITHUB_ENV"
+          echo "SSH_DIR=$SSH_DIR" >> "$GITHUB_ENV"
+          # shellcheck disable=SC2016
+          timeout --signal=TERM --kill-after=5s 60s \
+            "$HSSH" 'test "$(id -u)" = 0 && printf "%s\n" club-arena-engine-host'
+
+      - name: Stage the exact drill control bytes and start the durable drill unit
+        run: |
+          set -euo pipefail
+          AUTH_B64="$(printf '%s' "$AUTHORIZATION" | base64 -w 0)"
+          [[ "$AUTH_B64" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
+          timeout --signal=TERM --kill-after=5s 300s \
+            "$HSSH" "CONTROL_SHA='$CONTROL_SHA' EXPECTED_SHA='$EXPECTED_SHA' RUN_KEY='$RUN_KEY' REPO_DIR='$REPO_DIR' NOT_AFTER='$DRILL_NOT_AFTER_EPOCH' AUTH_B64='$AUTH_B64' bash -se" <<'REMOTE'
+          set -euo pipefail
+          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          [[ "$NOT_AFTER" =~ ^[1-9][0-9]{9}$ ]]
+          [[ "$AUTH_B64" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
+          [ "$(id -u)" = 0 ]
+          export GIT_NO_REPLACE_OBJECTS=1
+          UNIT="club-arena-engine-drill-v1-$RUN_KEY"
+          ! systemctl is-active --quiet "$UNIT" || { echo "drill unit $UNIT is already running" >&2; exit 1; }
+          git -C "$REPO_DIR" remote get-url origin \
+            | grep -Fi 'smarter-poker/smarter-poker-club-arena' >/dev/null
+          exec 8>/var/lock/club-arena-source.lock
+          flock -w 90 8
+          timeout --signal=TERM --kill-after=5s 90s \
+            git -C "$REPO_DIR" fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          git -C "$REPO_DIR" cat-file -e "$CONTROL_SHA^{commit}"
+          git -C "$REPO_DIR" merge-base --is-ancestor "$CONTROL_SHA" "$(git -C "$REPO_DIR" rev-parse --verify 'origin/main^{commit}')"
+          STAGE="/var/lib/club-arena/drill-staging/$RUN_KEY"
+          [[ "$STAGE" =~ ^/var/lib/club-arena/drill-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]
+          rm -rf -- "$STAGE"
+          install -d -m 0700 /var/lib/club-arena /var/lib/club-arena/drill-staging "$STAGE"
+          for file in engine-crash-drill.sh engine-drill-database-proof.py; do
+            git -C "$REPO_DIR" show "$CONTROL_SHA:server/scripts/$file" > "$STAGE/$file"
+            chmod 0700 "$STAGE/$file"
+          done
+          flock -u 8
+          bash -n "$STAGE/engine-crash-drill.sh"
+          python3 -m py_compile "$STAGE/engine-drill-database-proof.py"
+          systemd-run --unit="$UNIT" --description="Club Arena engine crash drill $RUN_KEY" \
+            --property=RuntimeMaxSec=6300 --property=KillMode=mixed --no-block \
+            "$STAGE/engine-crash-drill.sh" --run-id "$RUN_KEY" --expected-sha "$EXPECTED_SHA" \
+            --not-after-epoch "$NOT_AFTER" --authorization-b64 "$AUTH_B64"
+          echo "started $UNIT"
+          REMOTE
+
+      - name: Observe the drill unit to its terminal receipt
+        id: observe
+        run: |
+          set -euo pipefail
+          RESULT=''
+          while [ "$(date +%s)" -lt "$DRILL_OBSERVE_DEADLINE_EPOCH" ]; do
+            set +e
+            STATUS="$(timeout --signal=TERM --kill-after=5s 60s "$HSSH" "RUN_KEY='$RUN_KEY' bash -se" <<'REMOTE'
+          set -euo pipefail
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          UNIT="club-arena-engine-drill-v1-$RUN_KEY"
+          ACTIVE="$(systemctl is-active "$UNIT" 2>/dev/null || true)"
+          RESULT="$(python3 - "/var/lib/club-arena/engine-drills/$RUN_KEY.json" <<'PY' 2>/dev/null || true
+          import json, sys
+          print(json.load(open(sys.argv[1])).get("result") or "")
+          PY
+          )"
+          echo "ACTIVE=$ACTIVE RESULT=$RESULT"
+          REMOTE
+          )"
+            RC=$?
+            set -e
+            if [ "$RC" -eq 0 ]; then
+              echo "$(date -u +%H:%M:%S) $STATUS"
+              ACTIVE="$(printf '%s' "$STATUS" | sed -n 's/^ACTIVE=\([a-z-]*\) .*/\1/p')"
+              RESULT="$(printf '%s' "$STATUS" | sed -n 's/.* RESULT=\([a-z]*\)$/\1/p')"
+              case "$ACTIVE" in active|activating|deactivating|reloading) ;; *)
+                [ -n "$RESULT" ] && break ;;
+              esac
+            fi
+            sleep 30
+          done
+          echo "result=${RESULT:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Retrieve the receipt and the unit journal
+        if: always() && env.HSSH != ''
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/drill-evidence"
+          timeout --signal=TERM --kill-after=5s 60s "$HSSH" "RUN_KEY='$RUN_KEY' bash -se" \
+            > "$RUNNER_TEMP/drill-evidence/receipt.json" <<'REMOTE' || true
+          set -euo pipefail
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          cat "/var/lib/club-arena/engine-drills/$RUN_KEY.json"
+          REMOTE
+          timeout --signal=TERM --kill-after=5s 60s "$HSSH" "RUN_KEY='$RUN_KEY' bash -se" \
+            > "$RUNNER_TEMP/drill-evidence/unit-journal.txt" <<'REMOTE' || true
+          set -euo pipefail
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          journalctl -u "club-arena-engine-drill-v1-$RUN_KEY" --no-pager -o short-iso | tail -400
+          REMOTE
+
+      - name: Retain the drill evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-crash-drill-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/drill-evidence
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: State the verdict
+        if: always()
+        env:
+          RESULT: ${{ steps.observe.outputs.result || 'unknown' }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## Engine crash drill'
+            echo "- Expected serving release: \`$EXPECTED_SHA\`"
+            echo "- Run identity: \`$RUN_KEY\`"
+            echo "- Result: **$RESULT**"
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$RESULT" = passed ] || { echo "::error title=DRILL NOT PASSED::crash drill result: $RESULT"; exit 1; }
+
+      - name: Remove staging and ephemeral SSH material
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -n "${HSSH:-}" ] && [ -x "$HSSH" ]; then
+            timeout --signal=TERM --kill-after=5s 60s "$HSSH" "RUN_KEY='$RUN_KEY' bash -se" <<'REMOTE' || true
+          set -euo pipefail
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          # Never remove the bytes a still-running drill executes from.
+          if ! systemctl is-active --quiet "club-arena-engine-drill-v1-$RUN_KEY"; then
+            rm -rf -- "/var/lib/club-arena/drill-staging/$RUN_KEY"
+          fi
+          REMOTE
+          fi
+          rm -rf -- "${SSH_DIR:-$RUNNER_TEMP/club-arena-drill-ssh-$RUN_KEY}" || true
+          rm -f -- "${HSSH:-$RUNNER_TEMP/hssh-drill-$RUN_KEY}" || true

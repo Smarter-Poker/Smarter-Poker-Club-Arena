@@ -8,7 +8,6 @@
 .hero {
   --sc-max: 660px;
 }
-.lede,
 .groupDescription {
   margin: 0 0 14px;
   color: #9aa5b3;
@@ -235,7 +234,6 @@
 .group {
   max-width: none;
 }
-.hero :global(.club-page-body),
 .group :global(.club-page-body) {
   gap: 0;
 }

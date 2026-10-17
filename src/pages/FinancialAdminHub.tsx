@@ -21,6 +21,7 @@ import UnionOpsPanel from '../components/union/UnionOpsPanel';
 import { UnionOpsService } from '../services/UnionOpsService';
 import { clubScoped, useFinancialAdminScope } from '../hooks/useFinancialAdminScope';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import { compactChips } from '../utils/format';
 import { titleCase } from '../utils/titleCase';
 import './AdminDashboardPage.css';
@@ -550,7 +551,6 @@ export default function FinancialAdminHub() {
         <SpadeConsole
           family="spade"
           crest="flat"
-          eyebrow="Club Arena Data"
           title="Financial Admin Hub"
           pill="Access"
           pillInk="gold"
@@ -574,12 +574,18 @@ export default function FinancialAdminHub() {
   return (
     <main className={styles.page}>
       <h1 className={styles.srOnly}>Financial Admin Hub</h1>
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow and
+          the descriptive subtitle moved behind the painted "?"; the head keeps
+          its title and its live pill. */}
+      <PageBar
+        title="Financial Admin Hub"
+        titleAs={false}
+        summary="Central Command For Financial Operations In Your Authorized Scope."
+      />
       <SpadeConsole
         family="spade"
         crest="flat"
-        eyebrow="Club Arena Data"
         title="Financial Admin Hub"
-        subtitle="Central Command For Financial Operations"
         pill={statsError ? 'Unverified' : loading ? 'Reading' : 'Live'}
         pillInk={statsError ? 'red' : loading ? 'gold' : 'blue'}
         plates={{

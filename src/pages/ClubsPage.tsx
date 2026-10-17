@@ -56,6 +56,7 @@ import haptic from '../services/HapticService';
 import ClubDiscovery from '../components/clubs/ClubDiscovery';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import { getClubLevel } from '../utils/clubLevels';
 import { compactChips } from '../utils/format';
 import styles from './ClubsPage.module.css';
@@ -351,11 +352,32 @@ export default function ClubsPage() {
 
       <StandardContentLayout className="clubs-page">
         <div className={styles.page}>
+          {/* Dan, 2026-10-17: the eyebrow and the intro line moved behind the
+              painted "?"; the head keeps its title, its count and its doors. */}
+          <PageBar
+            title="Clubs"
+            titleAs={false}
+            summary="Join Private Poker Communities Or Create Your Own."
+            steps={[
+              {
+                title: 'Discover Or My Clubs',
+                body: 'Browse Clubs You Can Join, Or Switch To The Clubs And Unions You Already Belong To.',
+                target: '[aria-label="Club Views"]',
+              },
+              {
+                title: 'Join With Code',
+                body: 'Have An Invite Code From A Club Owner Or Agent? Enter It Here To Join That Club.',
+              },
+              {
+                title: 'Create Club',
+                body: 'Start Your Own Private Club And Invite Your Players.',
+              },
+            ]}
+          />
           {/* ── The header console: the two doors on the painted plates ─── */}
           <SpadeConsole
             className={styles.console}
             aria-busy={isLoading || undefined}
-            eyebrow="Club Arena"
             title="Clubs"
             pill={clubsPill}
             pillInk={myClubs.length === 0 ? 'muted' : 'blue'}
@@ -378,10 +400,6 @@ export default function ClubsPage() {
               },
             }}
           >
-            <p className="sc-copy sc-copy--center">
-              Join Private Poker Communities Or Create Your Own.
-            </p>
-
             {/* The two views are lit words cut into the glass, not drawn tabs:
                 the art paints no tab, so nothing here draws one either. */}
             <div className={styles.viewRail} role="tablist" aria-label="Club Views">

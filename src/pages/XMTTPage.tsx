@@ -50,6 +50,7 @@ import {
   type ConsoleInk,
   type PlateButtonProps,
 } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '';
@@ -433,13 +434,26 @@ export default function XMTTPage() {
 
   return (
     <div className={styles.page} data-xmtt-total={lobby.total ?? undefined}>
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow and
+          the descriptive subtitle moved behind the painted "?"; the head keeps
+          its title and its live pill. */}
+      <PageBar
+        title="XMTT Lobby"
+        titleAs={false}
+        summary="Cross Club Multi-Table Tournaments. Filter By Status, Then Tap A Tournament To See Its Details And Register."
+        steps={[
+          {
+            title: 'Status Filters',
+            body: 'Show Every Tournament, Or Only Those Registering, Running Or Completed.',
+            target: '[aria-label="Tournament Filters"]',
+          },
+        ]}
+      />
       {/* ── The lobby head: title, filters, and the two ways out ─────────── */}
       <SpadeConsole
         as="section"
         className={styles.head}
-        eyebrow="Cross Club"
         title="XMTT Lobby"
-        subtitle="Multi-Table Tournaments"
         pill={lobby.total === null ? 'Unknown' : lobby.total.toLocaleString()}
         pillInk="blue"
         foot="foot"
@@ -507,7 +521,6 @@ export default function XMTTPage() {
         <SpadeConsole
           as="div"
           className={styles.card}
-          eyebrow="Cross Club"
           title={lobby.error ? 'Tournaments Unavailable' : 'No Tournaments'}
           foot="foot"
         >

@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
 import { titleCase } from '../utils/titleCase';
@@ -129,10 +130,16 @@ export default function ClubWelcomeMessagePage() {
   };
   return (
     <StandardContentLayout className="club-welcome-page">
+      {/* Dan, 2026-10-17: the subtitle moved behind the painted "?". The club's
+          name stays on the head. */}
+      <PageBar
+        title="Custom Welcome Message"
+        titleAs={false}
+        summary="Your Message To New Downline Players. It Is Sent Automatically When A Player Joins And Is Attached To Your Downline."
+      />
       <SpadeConsole
         title="Custom Welcome Message"
-        eyebrow={selected ? titleCase(selected.club_name) : 'Club Messenger'}
-        subtitle="Your Message To New Downline Players"
+        eyebrow={selected ? titleCase(selected.club_name) : undefined}
         foot={selected && !loading ? 'plates' : 'foot'}
         plates={
           selected && !loading

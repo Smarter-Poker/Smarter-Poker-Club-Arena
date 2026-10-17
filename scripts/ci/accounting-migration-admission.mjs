@@ -16,6 +16,8 @@ export const ACCOUNTING_ADMISSION_SOURCES = Object.freeze({
     '0fb295017f747b366df7f8a06bc3293e034a9fb735ad4101b3f265b793188603',
   '20261017034258_weekly_touched_proof_reuses_tournament_and_registration_iden.sql':
     '5b46d2e9331de7536dc3b21fe305de3be7bdec04111e21e9c22850f74043bc24',
+  '20261017053808_departed_members_retain_their_earned_accounting_wallet.sql':
+    'c4bfe7a004845a8326a73896c451cb17b0262e2f41ed172e05203bf45267e6b1',
 });
 
 export const ACCOUNTING_ADMISSION_SQL = `

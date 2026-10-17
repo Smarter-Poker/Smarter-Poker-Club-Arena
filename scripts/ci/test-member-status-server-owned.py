@@ -30,6 +30,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -391,3 +392,13 @@ finally:
     results['ownedClusterRemoved'] = not cluster.exists()
     (out / 'RESULTS.json').write_text(json.dumps(results, indent=2) + '\n')
     print(json.dumps({'passed': results['passed'], 'cases': len(results['cases'])}))
+
+# The existing required accounting job also proves historical wallet updates
+# against the actual departed-membership guard, after this fixture is removed.
+print(subprocess.check_output([
+    sys.executable, str(ROOT / 'scripts/ci/test-departed-member-accounting-postgres.py'),
+    '--candidate-migration', str(ROOT / 'supabase/migrations/20261017053808_departed_members_retain_their_earned_accounting_wallet.sql'),
+    '--pg-bin', str(pg),
+    '--scratch', str(Path(os.environ.get('RUNNER_TEMP', os.environ.get('TMPDIR', '/tmp'))) / ('departed-member-native-' + str(os.getpid()))),
+    '--output', str(out / 'departed-member-accounting.json'),
+], text=True))

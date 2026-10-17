@@ -184,6 +184,23 @@
   --z-tooltip: 600;
 }
 
+/* THE PHONE FOOTER IS ITS OWN COMPOSITION (Dan 2026-10-17: "ON MOBILE THE
+   HEADERS AND FOOTERS ARE TOO SMALL").
+   At phone width the 8.113:1 frame above is 48px tall on a 393px screen, and
+   every icon and label in it is drawn to that height. The phone footer is
+   club-arena-footer-mobile-v1.webp, cut from the same master by removing one
+   whole quilt period (77px) from each of the five gaps between the cells, so
+   the quilting, rails, icons and labels are the master's own pixels at native
+   scale. Its frame is 1481x230 (6.439:1), which makes the bar 100vw / 6.439 =
+   15.53vw: 61px at 393px, a third larger. ClubBottomNav.module.css switches
+   the artwork at the same breakpoint, so what a page reserves and what the
+   footer paints stay one number. */
+@media (max-width: 600px) {
+  :root {
+    --bottom-nav-height: clamp(44px, 15.53vw, 132px);
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    🌌 BASE RESET & GLOBAL STYLES
    ═══════════════════════════════════════════════════════════════════════════════ */

@@ -75,7 +75,8 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   hapticEnabled: true,
   showPotOdds: false,
   animationSpeed: 'normal',
-  fourColorDeck: false,
+  // Dan 2026-10-17: four-colour is the standard deck; off is Traditional.
+  fourColorDeck: true,
   showStackInBB: false,
   showBetSizePresets: true,
   confirmAllIn: true,
@@ -363,7 +364,7 @@ export function SettingsPanel({
 
             <SettingToggle
               label="Four-Color Deck"
-              description="Hearts (Red), Diamonds (Blue), Clubs (Green), Spades (Black)"
+              description="Standard Deck. Turn Off For The Traditional Two-Color Deck"
               checked={settings.fourColorDeck}
               onChange={() => handleToggle('fourColorDeck')}
             />

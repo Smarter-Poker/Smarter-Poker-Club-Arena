@@ -86,17 +86,21 @@ describe('an existing member is never shown the invitation', () => {
   });
 });
 
-describe('the page wears the black-glass and gold treatment', () => {
+describe('the page wears the black-glass and blue treatment', () => {
   /**
    * Dan sent three reference cards on 2026-08-28 with "CUSTOM SWAP, CUSTOM MAKE
    * AND DESIGN THEM, BUT THEY SHOULD LOOK AND FEEL LIKE THIS". They supersede
    * the Facebook palette he had asked for an hour earlier, which this beat used
    * to pin (`--fb-blue: #1877f2`, `--fb-bg: #f9fafb`). The look is the Club
    * Arena house one: black glass in a brushed-steel frame, blue neon down the
-   * long edges, gold Cinzel display type.
+   * long edges, Cinzel display type. Dan 2026-10-17 took the reference's gold
+   * out: "YELLOW IS NOT A APPROVED COLOR IN THE SMARTER.POKER COLOR SCHEMA, SO
+   * THIS NEEDS TO BE CHANGED ACROSS THE BOARD WHEN JOINING A CLUB." The accent
+   * is the schema's lit blue, and the no-yellow law guards it.
    */
-  it('declares the gold / neon / steel palette', () => {
-    for (const token of ['--iv-gold:', '--iv-neon:', '--iv-steel:', '--iv-ink:']) {
+  it('declares the accent / neon / steel palette, with no gold token', () => {
+    expect(CSS).not.toContain('--iv-gold');
+    for (const token of ['--iv-accent:', '--iv-neon:', '--iv-steel:', '--iv-ink:']) {
       expect(CSS, `${token} went missing`).toContain(token);
     }
     expect(CSS, 'Cinzel is the display face in the reference').toMatch(/Cinzel/);

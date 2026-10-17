@@ -433,11 +433,16 @@ on 2026-08-28 ("CUSTOM SWAP, CUSTOM MAKE AND DESIGN THEM, BUT THEY SHOULD LOOK
 AND FEEL LIKE THIS"), and it is the one surface a person who is **not a member**
 ever sees - the front door, not a room inside the arena. This standard governs
 the inside. Dan handed the call over on 2026-09-09 ("THAT RULING IS ON YOU TO
-DECIDE") and this is it: black glass and gilt stay.
+DECIDE") and this is it: black glass stays. The gilt does not (Dan 2026-10-17:
+"YELLOW IS NOT A APPROVED COLOR IN THE SMARTER.POKER COLOR SCHEMA, SO THIS NEEDS
+TO BE CHANGED ACROSS THE BOARD WHEN JOINING A CLUB"): its accent is the lit blue
+`#45adff` ramp, and `tests/rewards-are-diamonds-and-the-schema-has-no-yellow.law.test.ts`
+keeps every join surface free of gold.
 
 **A different dress is not an exemption from the house laws**, though. Its gold
 was `#d4af37` over `#8a6d1f`, a ramp that reads brown at the dark end, and
-"NO BROWNS OR PINKS" has no exceptions - it is the brand gold now. Title Case,
+"NO BROWNS OR PINKS" has no exceptions; it became the brand gold on 2026-09-09
+and left the page entirely on 2026-10-17. Title Case,
 no em dashes, no `:hover` and the figure rules bind it exactly as they bind
 everything else.
 

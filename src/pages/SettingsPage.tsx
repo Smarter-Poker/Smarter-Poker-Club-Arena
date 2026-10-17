@@ -1197,7 +1197,7 @@ export default function SettingsPage() {
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Four-Color Deck</span>
               <span className={styles.settingDesc}>
-                Hearts ♥, Diamonds ♦ (Blue), Clubs ♣ (Green), Spades ♠
+                Standard Deck. Turn Off For The Traditional Two-Color Deck
               </span>
             </div>
             <Toggle

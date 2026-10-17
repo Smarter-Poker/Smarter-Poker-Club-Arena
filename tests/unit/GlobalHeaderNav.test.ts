@@ -224,7 +224,20 @@ describe('the button artwork exists', () => {
   });
 });
 
-describe('mobile uses the identical desktop header', () => {
+/* Dan 2026-10-17: "ON MOBILE THE HEADERS AND FOOTERS ARE TOO SMALL." Phones
+   now get a narrower plane cut from the same approved art (still one row, no
+   substituted graphics), so this block pins that it is derived, not redrawn. */
+describe('mobile uses the approved header, one row, on a plane cut from the same art', () => {
+  it('serves the derived phone plane at the phone breakpoint only', () => {
+    expect(TSX).toContain('global-header-mobile-v1.png');
+    expect(TSX).toContain('media="(max-width: 600px)"');
+    expect(CSS).toMatch(/@media \(max-width: 600px\)[\s\S]*?aspect-ratio: 1435 \/ 168/);
+    expect(
+      exists('../../public/images/global-header/global-header-mobile-v1.png'),
+      'missing public/images/global-header/global-header-mobile-v1.png'
+    ).toBe(true);
+  });
+
   it('has no portrait-only alternate composition', () => {
     expect(CSS).not.toContain('@media (max-width: 767px) and (orientation: portrait)');
     expect(CSS).not.toContain('flex-direction: column');

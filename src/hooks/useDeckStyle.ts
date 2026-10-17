@@ -33,8 +33,11 @@ import { STORAGE_KEYS } from '../lib/storage';
 
 export type DeckStyle = '4color' | '2color';
 
-/** Matches DEFAULT_SETTINGS.fourColorDeck (false) in useTableSettings. */
-const DEFAULT_DECK_STYLE: DeckStyle = '2color';
+/**
+ * Matches DEFAULT_SETTINGS.fourColorDeck (true) in useTableSettings. Dan
+ * 2026-10-17: the four-colour deck is the standard; Traditional is the opt-out.
+ */
+const DEFAULT_DECK_STYLE: DeckStyle = '4color';
 
 /**
  * Cached so getSnapshot stays cheap and referentially stable - React calls it
@@ -51,8 +54,15 @@ function read(): DeckStyle {
       cached = DEFAULT_DECK_STYLE;
       return cached;
     }
-    const parsed = JSON.parse(raw) as { fourColorDeck?: unknown };
-    cached = parsed?.fourColorDeck === true ? '4color' : '2color';
+    const parsed = JSON.parse(raw) as { fourColorDeck?: unknown; fourColorDeckExplicit?: unknown };
+    // Traditional only when the player CHOSE it. A stored false with no marker
+    // was written before the four-colour standard, by a whole-object save -
+    // the same rule useTableSettings' loader applies, so a page that renders
+    // cards before that store loads cannot disagree with it.
+    cached =
+      parsed?.fourColorDeck === false && parsed?.fourColorDeckExplicit === true
+        ? '2color'
+        : '4color';
     return cached;
   } catch {
     // Corrupt or unavailable storage must never stop a card from rendering.

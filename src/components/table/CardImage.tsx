@@ -10,7 +10,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
-import { useDeckStyle } from '../../hooks/useDeckStyle';
+import { getDeckStyle, useDeckStyle } from '../../hooks/useDeckStyle';
 import './CardImage.css';
 import { reportError } from '../../utils/errorReporter';
 import { cardWords, FACE_DOWN_WORDS } from '../../utils/cardWords';
@@ -130,7 +130,11 @@ const RANK_MAP: Record<string, string> = {
  * and lower rank), so anything reaching this branch is genuinely unreadable
  * rather than just an unusual spelling.
  */
-export function getCardImagePath(card: Card, deckStyle: DeckStyle = '2color'): string | null {
+// No explicit style means the player's own preference (four-colour unless they
+// chose Traditional), the same answer CardImage resolves for itself - a
+// preload asking for the other deck warms images nobody will see.
+export function getCardImagePath(card: Card, requestedStyle?: DeckStyle): string | null {
+  const deckStyle: DeckStyle = requestedStyle ?? getDeckStyle();
   const suitName = SUIT_MAP[card.suit];
   const rankName = RANK_MAP[card.rank];
 

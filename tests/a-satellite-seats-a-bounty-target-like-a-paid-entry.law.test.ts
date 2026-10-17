@@ -229,3 +229,51 @@ describe('a satellite seats a bounty target like a paid entry', () => {
     }
   });
 });
+
+describe('the bounty events of 25 or more are fed by satellites', () => {
+  const file = readdirSync(DIR).find((f) => f.endsWith('_satellites_into_the_bounty_events.sql'));
+  const sql = readFileSync(join(DIR, file ?? ''), 'utf8');
+  const rows = [
+    ...sql.matchAll(/^\s+\('([^']+)', '([^']+)', ARRAY\[([^\]]*)\], ARRAY\[([^\]]+)\]/gm),
+  ];
+
+  it('opens a satellite into every bounty, PKO and mystery event of 25 or more', () => {
+    expect(file, 'the satellite schedule migration').toBeTruthy();
+    const targets = new Set(rows.map((m) => m[2]));
+    for (const t of [
+      'Union Mystery Bounty (PLO5)',
+      'Union Grand Championship (NLH)',
+      'Monday Knockout',
+      'Tuesday Bounty Hunt',
+      'Friday Five-Card Bounty',
+      'Friday Fight Night PKO',
+      'Saturday Mystery',
+      'Saturday Stackfest PKO',
+      'Sunday Funday Bounty Builder',
+      'Sunday Funday PLO PKO',
+      'Sunday Funday PLO5 Mystery',
+      'Sunday Funday Mystery',
+      'Sunday Funday Late PKO',
+      'Sunday Funday High Roller PKO',
+      'Sunday Funday Night Owl',
+    ])
+      expect(targets.has(t), t).toBe(true);
+    expect(rows.length).toBe(15);
+  });
+
+  it('starts every one on a :15 or :45, never named like its target', () => {
+    for (const m of rows) {
+      expect(m[1].startsWith(m[2]), m[1]).toBe(false);
+      for (const t of m[4].split(',').map((x) => x.trim().replace(/'/g, '')))
+        expect(['15', '45'], `${m[1]} at ${t}`).toContain(t.slice(3));
+    }
+    // The database proves it too, across every Midway satellite.
+    expect(sql).toContain("right(t, 2) NOT IN ('15', '45')");
+    expect(sql).toContain('doubled satellite starts');
+  });
+
+  it('feeds the Midway Union only, never a Diamond bounty event', () => {
+    expect(sql).toContain('SELECT c_midway, c_midway, sat.name');
+    expect(sql).not.toContain('c_arena');
+  });
+});

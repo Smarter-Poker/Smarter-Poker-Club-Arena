@@ -33,10 +33,7 @@ function latest(fnName: string): string {
     .join('\n');
 }
 
-const PAGE = readFileSync(
-  resolve(__dirname, '../src/pages/club/ClubDataSimplePage.tsx'),
-  'utf8'
-);
+const PAGE = readFileSync(resolve(__dirname, '../src/pages/club/ClubDataSimplePage.tsx'), 'utf8');
 const APP = readFileSync(resolve(__dirname, '../src/App.tsx'), 'utf8');
 
 describe('cash rake reaches Club Data in the transaction that writes it', () => {
@@ -48,10 +45,14 @@ describe('cash rake reaches Club Data in the transaction that writes it', () => 
     expect(b).not.toMatch(/pg_advisory_xact_lock\(918273645\)/);
   });
 
-  it('the live writer attributes exactly like the rebuild', () => {
+  it('the live writer attributes each share to the seat at that table', () => {
     const b = latest('fn_ca_club_table_daily_add_rake');
     expect(b).toContain('INSERT INTO public.club_table_daily');
-    expect(b).toContain('fn_ca_cash_reporting_club(v_union, v_table_club');
+    // 20261017160125: the seat this player bought in through AT THIS TABLE,
+    // then the union-scoped last resort (never another table's seat).
+    expect(b).toContain(
+      'fn_ca_cash_table_reporting_club(v_union, v_table_club, rr.uid::uuid, p_table)'
+    );
     expect(b).toContain('fn_ca_launch_accounting_accepts(r.club_id, p_at)');
     // a raked hand with no usable contribution is the table club's, whole
     expect(b).toContain('SELECT NULL::text, 1::numeric, 1::numeric');
@@ -104,18 +105,25 @@ describe('a seated stack is part of the result, not a loss', () => {
 });
 
 describe('the everyday screen lists what was played, live first', () => {
+  /* UPDATED 2026-10-17 (20261017160125): the screen reads ca_club_data_fact,
+     whose club is the one the money moved through, and is scoped by who asks.
+     The felt and the live-first order are kept; the rest is pinned in
+     tests/club-data-counts-what-the-club-played.law.test.ts. */
   it('ranks by activity inside the window, never by a table creation date', () => {
     const b = latest('ca_club_data_screen');
-    expect(b).toContain('ca_can_view_club_finances(p_club_id)');
+    expect(b).toContain('fn_ca_club_data_scope(p_club_id)');
     expect(b).toContain('ORDER BY live DESC, activity_at DESC NULLS LAST');
-    expect(b).toContain('fn_ca_club_cash_felt(p_club_id, v_start, v_end');
-    expect(b).toContain('fn_ca_club_game_summary(p_club_id, v_start, v_end');
+    expect(b).toContain('FROM public.ca_club_data_fact d');
+    // the felt is still part of the result
+    expect(b).toContain('COALESCE(g.winnings, 0) + COALESCE(fe.felt, 0)');
   });
 });
 
 describe('the everyday screen wears the Smarter.Poker look (Dan 2026-10-15)', () => {
-  const css = readFileSync(resolve(__dirname, '../src/pages/club/ClubDataSimplePage.module.css'), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const css = readFileSync(
+    resolve(__dirname, '../src/pages/club/ClubDataSimplePage.module.css'),
+    'utf8'
+  ).replace(/\/\*[\s\S]*?\*\//g, ' ');
   it('uses the strict house palette, never the PokerBros gold', () => {
     expect(css).not.toMatch(/#f4b52a|#ffd24d|#d9901a|#3b3f86/i);
     expect(css).toContain('--cd-accent: #6fdcff;');
@@ -140,6 +148,8 @@ describe('the everyday screen reads live and stays simple', () => {
     expect(PAGE).toContain('Showing The Last Good Figures.');
     expect(PAGE).toContain("summary ? formatTotal(summary.total_winnings) : '-'");
     // the exact figure is never lost: it is the tile's title and accessible name
-    expect(PAGE).toContain('aria-label={summary ? formatMoney(summary.total_winnings) : undefined}');
+    expect(PAGE).toContain(
+      'aria-label={summary ? formatMoney(summary.total_winnings) : undefined}'
+    );
   });
 });

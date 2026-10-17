@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
-const { rpcMock, authState } = vi.hoisted(() => ({
+const { rpcMock, authState, clubRow } = vi.hoisted(() => ({
   rpcMock: vi.fn(),
+  clubRow: { current: { name: 'Club JAQK' } as { name: string } | null },
   authState: { current: { user: { id: 'owner-1' }, isHydrating: false } as any },
 }));
 
@@ -14,13 +15,23 @@ vi.mock('react-router-dom', () => ({
   useParams: () => ({ clubId: CLUB_ID }),
   useSearchParams: () => [new URLSearchParams()],
 }));
-vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: rpcMock } }));
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    rpc: rpcMock,
+    from: () => ({
+      select: () => ({
+        eq: () => ({ maybeSingle: async () => ({ data: clubRow.current, error: null }) }),
+      }),
+    }),
+  },
+}));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
 import ClubDataSimplePage, {
   addDays,
   formatMoney,
   formatTotal,
+  headerTitle,
   isSnapshot,
   refreshIntervalMs,
 } from '../../src/pages/club/ClubDataSimplePage';
@@ -63,6 +74,7 @@ afterEach(() => {
 
 beforeEach(() => {
   rpcMock.mockReset();
+  clubRow.current = { name: 'Club JAQK' };
   authState.current = { user: { id: 'owner-1' }, isHydrating: false };
 });
 
@@ -131,11 +143,15 @@ describe('ClubDataSimplePage', () => {
       vi.advanceTimersByTime(15_000);
     });
     await waitFor(() =>
-      expect(screen.getByText('Club Data Could Not Be Read. Showing The Last Good Figures.')).toBeTruthy()
+      expect(
+        screen.getByText('Club Data Could Not Be Read. Showing The Last Good Figures.')
+      ).toBeTruthy()
     );
     expect(screen.getByText('987.25')).toBeTruthy();
   });
 
+  /* UPDATED 2026-10-17: agents of every rank now read their own downline
+     (fn_ca_club_data_scope); a regular player is the one refused. */
   it('tells a viewer without finance rights why, instead of showing zeros', async () => {
     rpcMock.mockResolvedValue({
       data: null,
@@ -143,8 +159,33 @@ describe('ClubDataSimplePage', () => {
     });
     render(<ClubDataSimplePage />);
     expect(
-      await screen.findByText('Only The Club Owner, Admins And Super Agents Can View Club Data.')
+      await screen.findByText('Club Data Is Open To The Club Owner, Admins And Agents.')
     ).toBeTruthy();
     expect(screen.queryByText('0.00')).toBeNull();
+  });
+
+  it('names the club next to Club Data: "CLUB JAQK - CLUB DATA"', async () => {
+    rpcMock.mockResolvedValue({
+      data: { ...live, club_name: 'Club JAQK', scope: 'club' },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    const title = await screen.findByRole('heading', { level: 1 });
+    await waitFor(() =>
+      expect(title.textContent?.replace(/\u00a0/g, ' ')).toBe('CLUB JAQK - CLUB DATA')
+    );
+    expect(title.getAttribute('title')).toBe('CLUB JAQK - CLUB DATA');
+    expect(headerTitle(null)).toBe('Club Data');
+    expect(screen.getByRole('button', { name: 'Report' })).toBeTruthy();
+  });
+
+  it('an agent reads his own downline, and has no whole-club report door', async () => {
+    rpcMock.mockResolvedValue({
+      data: { ...live, club_name: 'Club JAQK', scope: 'downline' },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    expect(await screen.findByText(/You And Your Downline/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Report' })).toBeNull();
   });
 });

@@ -121,7 +121,9 @@ describe('the app shell is served from cache with a bounded freshness race', () 
   });
 
   it('keeps the offline fallback for a device that has never been here', () => {
-    expect(sw.includes("cache.match('/hub/club-arena/offline.html')")).toBe(true);
+    expect(sw.includes("lookupCachedResponse(CACHE_NAME, '/hub/club-arena/offline.html')")).toBe(
+      true
+    );
   });
 });
 

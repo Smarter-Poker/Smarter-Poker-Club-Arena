@@ -27,7 +27,7 @@ const offer = {
 
 describe('Add-on popup verified behavior', () => {
   it('prints one chip in the singular and never restores Total Charged', () => {
-    render(<AddOnModal {...offer} onAccept={vi.fn()} onDecline={vi.fn()} />);
+    render(<AddOnModal arenaAsset="chips" {...offer} onAccept={vi.fn()} onDecline={vi.fn()} />);
     expect(screen.getByText('Add-On Cost').closest('.addon-console__row')?.textContent).toBe(
       'Add-On Cost1 Chip'
     );
@@ -38,6 +38,7 @@ describe('Add-on popup verified behavior', () => {
   it('uses singular chip labels for a one-chip wallet, award and confirmation', async () => {
     render(
       <AddOnModal
+        arenaAsset="chips"
         {...offer}
         walletBalance={1}
         addOnChips={1}
@@ -57,7 +58,7 @@ describe('Add-on popup verified behavior', () => {
 
   it('counts down and expires without a persisted deadline', () => {
     const onDecline = vi.fn();
-    render(<AddOnModal {...offer} onAccept={vi.fn()} onDecline={onDecline} />);
+    render(<AddOnModal arenaAsset="chips" {...offer} onAccept={vi.fn()} onDecline={onDecline} />);
     expect(screen.getByText('3s')).toBeTruthy();
     act(() => vi.advanceTimersByTime(1000));
     expect(screen.getByText('2s')).toBeTruthy();
@@ -72,11 +73,17 @@ describe('Add-on popup verified behavior', () => {
     const onDecline = vi.fn();
     const onAccept = vi.fn();
     const { rerender } = render(
-      <AddOnModal {...offer} onAccept={onAccept} onDecline={onDecline} />
+      <AddOnModal arenaAsset="chips" {...offer} onAccept={onAccept} onDecline={onDecline} />
     );
     act(() => vi.advanceTimersByTime(2000));
     rerender(
-      <AddOnModal {...offer} walletBalance={100} onAccept={onAccept} onDecline={onDecline} />
+      <AddOnModal
+        arenaAsset="chips"
+        {...offer}
+        walletBalance={100}
+        onAccept={onAccept}
+        onDecline={onDecline}
+      />
     );
     act(() => vi.advanceTimersByTime(1000));
     expect(onDecline).toHaveBeenCalledTimes(1);
@@ -85,7 +92,7 @@ describe('Add-on popup verified behavior', () => {
 
   it('rejects a click after elapsed wall time even before the next timer tick', () => {
     const onAccept = vi.fn();
-    render(<AddOnModal {...offer} onAccept={onAccept} onDecline={vi.fn()} />);
+    render(<AddOnModal arenaAsset="chips" {...offer} onAccept={onAccept} onDecline={vi.fn()} />);
     vi.setSystemTime(Date.now() + 10000);
     fireEvent.click(screen.getByRole('button', { name: 'Accept For 1' }));
     expect(onAccept).not.toHaveBeenCalled();
@@ -96,7 +103,12 @@ describe('Add-on popup verified behavior', () => {
     async (method) => {
       const onDecline = vi.fn();
       render(
-        <AddOnModal {...offer} onAccept={vi.fn().mockResolvedValue(true)} onDecline={onDecline} />
+        <AddOnModal
+          arenaAsset="chips"
+          {...offer}
+          onAccept={vi.fn().mockResolvedValue(true)}
+          onDecline={onDecline}
+        />
       );
       await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Accept For 1' })));
       if (method === 'button') fireEvent.click(screen.getByRole('button', { name: 'Close' }));
@@ -112,7 +124,7 @@ describe('Add-on popup verified behavior', () => {
   it('dismisses an unknown result at most once without repeating a purchase', async () => {
     const onDecline = vi.fn();
     const onAccept = vi.fn().mockResolvedValue(false);
-    render(<AddOnModal {...offer} onAccept={onAccept} onDecline={onDecline} />);
+    render(<AddOnModal arenaAsset="chips" {...offer} onAccept={onAccept} onDecline={onDecline} />);
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Accept For 1' })));
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     fireEvent.click(screen.getByRole('button', { name: 'Close Add-On' }));
@@ -126,11 +138,12 @@ describe('Add-on popup verified behavior', () => {
     const onDecline = vi.fn();
     const onAccept = vi.fn();
     const { rerender } = render(
-      <AddOnModal {...offer} onAccept={onAccept} onDecline={onDecline} />
+      <AddOnModal arenaAsset="chips" {...offer} onAccept={onAccept} onDecline={onDecline} />
     );
     fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
     rerender(
       <AddOnModal
+        arenaAsset="chips"
         {...offer}
         endsAtMs={Date.now() - 1000}
         onAccept={onAccept}
@@ -153,7 +166,13 @@ describe('Add-on popup verified behavior', () => {
   ])('does not enable a purchase or display fake values for %s', (_name, values) => {
     const onAccept = vi.fn();
     const { container } = render(
-      <AddOnModal {...offer} {...values} onAccept={onAccept} onDecline={vi.fn()} />
+      <AddOnModal
+        arenaAsset="chips"
+        {...offer}
+        {...values}
+        onAccept={onAccept}
+        onDecline={vi.fn()}
+      />
     );
     const accept = screen.getByRole('button', { name: /Accept/ });
     expect(accept).toBeDisabled();
@@ -167,12 +186,22 @@ describe('Add-on popup verified behavior', () => {
     const onDecline = vi.fn();
     const onAccept = vi.fn();
     const { rerender } = render(
-      <AddOnModal {...offer} onAccept={onAccept} onDecline={onDecline} />
+      <AddOnModal arenaAsset="chips" {...offer} onAccept={onAccept} onDecline={onDecline} />
     );
     fireEvent.click(screen.getByRole('button', { name: 'Decline' }));
-    rerender(<AddOnModal {...offer} isVisible={false} onAccept={onAccept} onDecline={onDecline} />);
+    rerender(
+      <AddOnModal
+        arenaAsset="chips"
+        {...offer}
+        isVisible={false}
+        onAccept={onAccept}
+        onDecline={onDecline}
+      />
+    );
     act(() => vi.advanceTimersByTime(10000));
-    rerender(<AddOnModal {...offer} onAccept={onAccept} onDecline={onDecline} />);
+    rerender(
+      <AddOnModal arenaAsset="chips" {...offer} onAccept={onAccept} onDecline={onDecline} />
+    );
     expect(screen.getByText('3s')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Accept For 1' })).toBeEnabled();
     act(() => vi.advanceTimersByTime(3000));

@@ -24,6 +24,10 @@ vi.mock('../src/services/SoundService', () => ({
   soundService: { playBuyInConfirm: vi.fn() },
 }));
 
+vi.mock('../src/hooks/useDiamondGamesEntry', () => ({
+  useDiamondGamesEntry: () => ({ entry: { available: true, diamonds: 500, entry_diamonds: 1 } }),
+}));
+
 afterEach(() => vi.useRealTimers());
 
 describe('TournamentService uses the canonical cent-accurate fee split', () => {
@@ -55,6 +59,7 @@ describe('RebuyModal charges what it advertises', () => {
     const onClose = vi.fn();
     const { container } = render(
       <RebuyModal
+        arenaAsset="chips"
         {...base}
         walletBalance={500}
         onConfirm={vi.fn()}
@@ -74,6 +79,7 @@ describe('RebuyModal charges what it advertises', () => {
     const onConfirm = vi.fn();
     const { container } = render(
       <RebuyModal
+        arenaAsset="chips"
         {...base}
         walletBalance={0}
         onConfirm={onConfirm}
@@ -92,6 +98,7 @@ describe('RebuyModal charges what it advertises', () => {
   it('shows the full rebuy charge once without a separate fee', () => {
     render(
       <RebuyModal
+        arenaAsset="chips"
         {...base}
         walletBalance={500}
         onConfirm={vi.fn()}
@@ -109,6 +116,7 @@ describe('RebuyModal charges what it advertises', () => {
   it('adds the exact cent split before rendering the whole advertised price', () => {
     render(
       <RebuyModal
+        arenaAsset="chips"
         {...base}
         rebuyCost={13.5}
         rebuyFee={1.5}
@@ -128,6 +136,7 @@ describe('RebuyModal charges what it advertises', () => {
   it('disables Confirm when the wallet covers the base but not the fee', () => {
     render(
       <RebuyModal
+        arenaAsset="chips"
         {...base}
         walletBalance={105}
         onConfirm={vi.fn()}
@@ -147,6 +156,7 @@ describe('RebuyModal charges what it advertises', () => {
   it('enables Confirm once the wallet covers the total', () => {
     render(
       <RebuyModal
+        arenaAsset="chips"
         {...base}
         walletBalance={110}
         onConfirm={vi.fn()}
@@ -163,6 +173,7 @@ describe('RebuyModal charges what it advertises', () => {
     const onConfirm = vi.fn();
     render(
       <RebuyModal
+        arenaAsset="chips"
         {...base}
         walletBalance={105}
         onConfirm={onConfirm}
@@ -185,7 +196,15 @@ describe('AddOnModal charges what it advertises', () => {
   };
 
   it('prints the fee-inclusive cost once in the cost row', () => {
-    render(<AddOnModal {...base} walletBalance={5000} onAccept={vi.fn()} onDecline={vi.fn()} />);
+    render(
+      <AddOnModal
+        arenaAsset="chips"
+        {...base}
+        walletBalance={5000}
+        onAccept={vi.fn()}
+        onDecline={vi.fn()}
+      />
+    );
     const row = screen.getByText('Add-On Cost').closest('.addon-console__row');
     expect(row?.textContent).toBe('Add-On Cost110 Chips');
     expect(screen.queryByText(/House Fee/)).toBeNull();
@@ -194,7 +213,15 @@ describe('AddOnModal charges what it advertises', () => {
   });
 
   it('gates on the fee-inclusive total', () => {
-    render(<AddOnModal {...base} walletBalance={105} onAccept={vi.fn()} onDecline={vi.fn()} />);
+    render(
+      <AddOnModal
+        arenaAsset="chips"
+        {...base}
+        walletBalance={105}
+        onAccept={vi.fn()}
+        onDecline={vi.fn()}
+      />
+    );
     const accept = screen.getByRole('button', { name: /Accept For 110/ }) as HTMLButtonElement;
     expect(accept.disabled).toBe(true);
     expect(screen.getByText(/you need 110 chips/i)).toBeTruthy();
@@ -203,6 +230,7 @@ describe('AddOnModal charges what it advertises', () => {
   it('refuses to sell at an unknown (zero) price', () => {
     render(
       <AddOnModal
+        arenaAsset="chips"
         {...base}
         addOnCost={0}
         addOnFee={0}
@@ -219,6 +247,7 @@ describe('AddOnModal charges what it advertises', () => {
   it('does not infer an unpaid wallet from an unconfirmed false result', async () => {
     render(
       <AddOnModal
+        arenaAsset="chips"
         {...base}
         walletBalance={5000}
         onAccept={vi.fn().mockResolvedValue(false)}
@@ -246,6 +275,7 @@ describe('AddOnModal charges what it advertises', () => {
     const onDecline = vi.fn();
     render(
       <AddOnModal
+        arenaAsset="chips"
         {...base}
         endsAtMs={Date.now() + 1000}
         walletBalance={5000}
@@ -274,6 +304,7 @@ describe('AddOnModal charges what it advertises', () => {
     const onDecline = vi.fn();
     const { rerender } = render(
       <AddOnModal
+        arenaAsset="chips"
         {...base}
         endsAtMs={endsAtMs}
         walletBalance={5000}
@@ -285,6 +316,7 @@ describe('AddOnModal charges what it advertises', () => {
     act(() => vi.advanceTimersByTime(2000));
     rerender(
       <AddOnModal
+        arenaAsset="chips"
         {...base}
         endsAtMs={endsAtMs}
         walletBalance={0}
@@ -304,6 +336,7 @@ describe('AddOnModal charges what it advertises', () => {
   it('still reports success when the add-on goes through', async () => {
     render(
       <AddOnModal
+        arenaAsset="chips"
         {...base}
         walletBalance={5000}
         onAccept={vi.fn().mockResolvedValue(true)}
@@ -318,6 +351,7 @@ describe('AddOnModal charges what it advertises', () => {
     const onDecline = vi.fn();
     render(
       <AddOnModal
+        arenaAsset="chips"
         {...base}
         walletBalance={5000}
         onAccept={vi.fn().mockResolvedValue(false)}
@@ -335,6 +369,7 @@ describe('AddOnModal charges what it advertises', () => {
     const onDecline = vi.fn();
     render(
       <AddOnModal
+        arenaAsset="chips"
         {...base}
         walletBalance={5000}
         onAccept={vi
@@ -358,7 +393,15 @@ describe('AddOnModal charges what it advertises', () => {
       resolve = r;
     });
     const onAccept = vi.fn().mockReturnValue(gate);
-    render(<AddOnModal {...base} walletBalance={5000} onAccept={onAccept} onDecline={vi.fn()} />);
+    render(
+      <AddOnModal
+        arenaAsset="chips"
+        {...base}
+        walletBalance={5000}
+        onAccept={onAccept}
+        onDecline={vi.fn()}
+      />
+    );
     const btn = screen.getByRole('button', { name: /Accept For 110/ });
     fireEvent.click(btn);
     fireEvent.click(btn);
@@ -374,6 +417,7 @@ describe('AddOnModal charges what it advertises', () => {
     const onDecline = vi.fn();
     render(
       <AddOnModal
+        arenaAsset="chips"
         {...base}
         timeRemaining={60}
         endsAtMs={Date.now() + 3_600_000}
@@ -391,5 +435,126 @@ describe('AddOnModal charges what it advertises', () => {
     expect(screen.getByText('0s')).toBeTruthy();
     expect(onDecline).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+});
+
+describe('Diamond tournament purchases keep funding and playing units distinct', () => {
+  it.each(['rebuy', 'addon'])(
+    '%s labels the Diamond debit and balance while preserving playing Chips',
+    (surface) => {
+      const common = {
+        arenaAsset: 'diamonds' as const,
+        walletBalance: 500,
+        onPlayDiamonds: vi.fn(),
+        diamondGamesClubId: 'diamond-arena',
+      };
+      render(
+        surface === 'rebuy' ? (
+          <RebuyModal
+            {...common}
+            isOpen
+            rebuyCost={100}
+            rebuyFee={0}
+            rebuyChips={10000}
+            onConfirm={vi.fn()}
+            onClose={vi.fn()}
+            isProcessing={false}
+          />
+        ) : (
+          <AddOnModal
+            {...common}
+            isVisible
+            addOnCost={100}
+            addOnFee={0}
+            addOnChips={10000}
+            timeRemaining={60}
+            onAccept={vi.fn()}
+            onDecline={vi.fn()}
+          />
+        )
+      );
+      expect(screen.getByText('100 Diamonds')).toBeTruthy();
+      expect(screen.getByText('500 Diamonds')).toBeTruthy();
+      expect(screen.getByText('+10,000 Chips')).toBeTruthy();
+      expect(screen.queryByText('100 Chips')).toBeNull();
+    }
+  );
+
+  it.each(['rebuy', 'addon'])(
+    '%s refuses to offer a Chip conversion for an insufficient Diamond wallet',
+    (surface) => {
+      const common = {
+        arenaAsset: 'diamonds' as const,
+        walletBalance: 0,
+        onPlayDiamonds: vi.fn(),
+        diamondGamesClubId: 'diamond-arena',
+      };
+      const { container } = render(
+        surface === 'rebuy' ? (
+          <RebuyModal
+            {...common}
+            isOpen
+            rebuyCost={100}
+            rebuyChips={10000}
+            onConfirm={vi.fn()}
+            onClose={vi.fn()}
+            isProcessing={false}
+          />
+        ) : (
+          <AddOnModal
+            {...common}
+            isVisible
+            addOnCost={100}
+            addOnChips={10000}
+            timeRemaining={60}
+            onAccept={vi.fn()}
+            onDecline={vi.fn()}
+          />
+        )
+      );
+      expect(container.querySelector('.diamonds-to-chips')).toBeNull();
+      expect(screen.queryByText(/Win Chips/i)).toBeNull();
+      expect(screen.queryByRole('button', { name: /Diamond Spins/i })).toBeNull();
+    }
+  );
+});
+
+describe('Chip conversion remains available only for known Chip funding', () => {
+  it.each(['chips', undefined] as const)('rebuy honors the actual asset %s', (arenaAsset) => {
+    render(
+      <RebuyModal
+        arenaAsset={arenaAsset}
+        isOpen
+        rebuyCost={100}
+        rebuyChips={10000}
+        walletBalance={0}
+        onConfirm={vi.fn()}
+        onClose={vi.fn()}
+        isProcessing={false}
+        diamondGamesClubId="club"
+        onPlayDiamonds={vi.fn()}
+      />
+    );
+    expect(Boolean(screen.queryByRole('button', { name: /Diamond Spins/i }))).toBe(
+      arenaAsset === 'chips'
+    );
+    if (!arenaAsset) expect(screen.getByText('Unavailable')).toBeTruthy();
+  });
+  it('add-on retains the Chip conversion and known-unit affordability guard', () => {
+    render(
+      <AddOnModal
+        arenaAsset="chips"
+        isVisible
+        addOnCost={100}
+        addOnChips={10000}
+        walletBalance={0}
+        timeRemaining={60}
+        onAccept={vi.fn()}
+        onDecline={vi.fn()}
+        diamondGamesClubId="club"
+        onPlayDiamonds={vi.fn()}
+      />
+    );
+    expect(screen.getByRole('button', { name: /Diamond Spins/i })).toBeTruthy();
   });
 });

@@ -62,7 +62,7 @@ import type { RabbitHuntRevealResult } from './RabbitHunt';
 import { cardKey } from '../../utils/handEvaluator';
 import type { ReplayModel, ReplayShowdownRow } from '../../utils/handReplay';
 import './HandDetailModal.css';
-import { blindLabel, gameTypeLabel, money, stamp } from '../../utils/handFormat';
+import { blindLabel, gameTypeLabel, money, moneyForHand, stamp } from '../../utils/handFormat';
 import { handDeepLink } from '../../lib/handHistoryLive';
 import { StatsFactsService, type HandRakeShare } from '../../services/StatsFactsService';
 import { SpadeConsole } from '../console/SpadeConsole';
@@ -297,13 +297,16 @@ function SummaryRow({
   isYou,
   muckCount,
   collected,
+  arenaAsset,
 }: {
+  arenaAsset?: ReplayModel['arenaAsset'];
   row: ReplayShowdownRow;
   isYou: boolean;
   muckCount: number;
   /** GROSS chips the pot paid this player for the whole hand, when known. */
   collected?: number;
 }) {
+  const money = moneyForHand({ arenaAsset });
   return (
     <div
       className={`hdm-sd${row.isWinner ? ' is-winner' : ''}${row.low ? ' is-low' : ''}${
@@ -664,6 +667,7 @@ export function HandDetailModal({
   }
 
   const model = hand.replay;
+  const money = moneyForHand(model);
   const isYou = (userId: string, name: string) => {
     if (heroId && userId) return userId === heroId;
     return !!currentUserName && name.toLowerCase() === currentUserName.toLowerCase();
@@ -821,6 +825,7 @@ export function HandDetailModal({
                     </header>
                     {showdownRows.map((row) => (
                       <SummaryRow
+                        arenaAsset={model.arenaAsset}
                         key={row.key}
                         row={row}
                         isYou={isYou(row.userId, row.name)}

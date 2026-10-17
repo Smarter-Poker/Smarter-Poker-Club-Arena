@@ -105,7 +105,9 @@ def wait_until(what, predicate, timeout=15.0):
 
 
 def deadlocks_logged():
-    return LOG.read_text(errors='replace').count('deadlock detected')
+    # Read PostgreSQL's authoritative deadlock counter. Server log routing and
+    # whether the claim catches the error do not change the recorded event.
+    return int(run("SELECT deadlocks FROM pg_stat_database WHERE datname = current_database()"))
 
 
 SCHEMA = """
@@ -300,7 +302,7 @@ try:
                         '--auth-host=reject', '--no-locale', '--encoding=UTF8'])
     command(as_owner + [pg / 'pg_ctl', '-D', cluster / 'data', '-l', LOG, '-o',
                         f"-k {sock} -p {PORT} -c listen_addresses='' -c shared_buffers=16MB"
-                        " -c max_connections=20 -c deadlock_timeout=100ms",
+                        " -c max_connections=20 -c deadlock_timeout=100ms -c logging_collector=off",
                         '-w', 'start'])
     run(SCHEMA)
 

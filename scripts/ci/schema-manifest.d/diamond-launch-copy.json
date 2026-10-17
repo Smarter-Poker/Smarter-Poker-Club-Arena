@@ -1,0 +1,6 @@
+{
+  "_owner": "Diamond launch closure, installed once as 20261015220449; Supabase catalog readback verified both functions on October 15, 2026",
+  "functions": ["fn_ca_diamond_guarantee_copy", "fn_ca_diamond_guarantee_copy_trigger"],
+  "tables": [],
+  "columns": {}
+}

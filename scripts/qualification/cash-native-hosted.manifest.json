@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 226627,
-      "sha256": "6285b934c8f40fef32acac5a784ec5db8f09f767f4260a49bb6e9cf886b2d863"
+      "bytes": 226873,
+      "sha256": "644205b767e2e51248e0e42281c26aa2e1624c75d8eccd2af850e435e6874acc"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 37091,
-      "sha256": "2a40f38369ca31102aff8322a1944ba41dc6cc134456ef8b91dd5468ceb154ab"
+      "bytes": 37129,
+      "sha256": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3363,5 +3363,33 @@
       "bytes": 37091,
       "sha256": "2a40f38369ca31102aff8322a1944ba41dc6cc134456ef8b91dd5468ceb154ab"
     }
+  },
+  "diamondOwnHistoryRegressionInput20261015": {
+    "reason": "Add the isolated own-hand history regression to existing accounting shard 3 and route its script-only edits there. Refresh current workflow/classifier input identity only. No cash SQL, financial assertion, historical pin or qualification verdict changed; this is not a cash certificate.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 225112,
+          "sha256": "bd79793d22be38b73aa77ace9091c975c772494623da76b903b5f26bdfecd853"
+        },
+        "current": {
+          "bytes": 225358,
+          "sha256": "72457a984cf3fdc8119a4fd3ebaa5f5583bfe78a475c3c7923d196658827cd5e"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 37091,
+          "sha256": "2a40f38369ca31102aff8322a1944ba41dc6cc134456ef8b91dd5468ceb154ab"
+        },
+        "current": {
+          "bytes": 37129,
+          "sha256": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417"
+        }
+      }
+    }
+  },
+  "diamondIntegratedMain20261017": {
+    "reason": "Reviewed combined workflow preserves all protected main and Diamond qualifications. Refresh only integrated workflow source identity, preserving historical evidence and financial qualification status."
   }
 }

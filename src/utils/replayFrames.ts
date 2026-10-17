@@ -20,7 +20,7 @@
 
 import type { DeckCard } from './deckCards';
 import type { ReplayModel, ReplayRow } from './handReplay';
-import { money } from './handFormat';
+import { moneyForHand } from './handFormat';
 
 export interface ReplayFrame {
   key: string;
@@ -65,6 +65,7 @@ export function frameSeats(model: ReplayModel): number[] {
 }
 
 export function buildReplayFrames(model: ReplayModel): ReplayFrame[] {
+  const money = moneyForHand(model);
   const frames: ReplayFrame[] = [];
   const seats = frameSeats(model);
   const committed: Record<number, number> = {};

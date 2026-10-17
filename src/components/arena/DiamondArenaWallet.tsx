@@ -6,8 +6,10 @@ const DiamondTopUpModal = lazy(() =>
 );
 
 /** Opens the shared wallet over the lobby without navigating the active table. */
-export default function DiamondArenaWallet() {
-  const [view, setView] = useState<'closed' | 'wallet' | 'top-up'>('closed');
+export default function DiamondArenaWallet({ initialOpen = false }: { initialOpen?: boolean }) {
+  const [view, setView] = useState<'closed' | 'wallet' | 'top-up'>(
+    initialOpen ? 'wallet' : 'closed'
+  );
   return (
     <>
       <button className="btn btn-primary" onClick={() => setView('wallet')}>

@@ -1,0 +1,23 @@
+[
+  {
+    "signature": "fn_union_pnl_touched_registrations(timestamp with time zone,timestamp with time zone,boolean)",
+    "full_md5": "e45d89f53048f070a3ddc9264d1ecdff",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_touched_registrations(p_start timestamp with time zone, p_end timestamp with time zone, p_projected boolean)\n RETURNS TABLE(registration_id uuid, touched_tournament_id text)\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n IF p_projected THEN\n  RETURN QUERY SELECT i.row_id,i.tournament_id FROM public.union_pnl_inventory_touches i\n   WHERE i.source_name='tournament_players' AND i.frame_observed_at>=p_start AND i.frame_observed_at<p_end\n    AND i.observed_at>=p_start AND i.observed_at<p_end;\n ELSE\n  RETURN QUERY SELECT i.row_id,COALESCE(i.after_row,i.before_row)->>'tournament_id' FROM public.union_pnl_inventory_events i\n   JOIN public.union_pnl_transaction_frames b ON b.transaction_id=i.transaction_id\n   WHERE i.source_name='tournament_players' AND b.observed_at>=p_start AND b.observed_at<p_end\n    AND i.observed_at>=p_start AND i.observed_at<p_end;\n END IF;\nEND $function$\n"
+  },
+  {
+    "signature": "fn_union_pnl_tournament_in_union(text,uuid,boolean)",
+    "full_md5": "e46d1253e8fc17f3fb8616d8a3e13793",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_tournament_in_union(p_tournament_id text, p_union_id uuid, p_projected boolean)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nBEGIN\n IF p_projected THEN\n  RETURN EXISTS(SELECT 1 FROM public.union_pnl_inventory_touches t WHERE t.source_name='tournaments'\n   AND t.row_id=CASE WHEN p_tournament_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN p_tournament_id::uuid END\n   AND t.row_id::text=p_tournament_id\n   AND t.union_id=p_union_id::text);\n END IF;\n RETURN EXISTS(SELECT 1 FROM public.union_pnl_inventory_events t WHERE t.source_name='tournaments'\n  AND t.row_id=CASE WHEN p_tournament_id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN p_tournament_id::uuid END\n  AND t.row_id::text=p_tournament_id\n  AND COALESCE(t.after_row,t.before_row)->>'union_id'=p_union_id::text);\nEND $function$\n"
+  },
+  {
+    "signature": "fn_union_pnl_tournament_entry_club_of(text,numeric,uuid,uuid,uuid,jsonb)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_union_pnl_tournament_entry_club_of(p_asset text, p_amount numeric, p_funding_club_id uuid, p_ledger_id uuid, p_entitlement_id uuid, p_registration_snapshot jsonb)\n RETURNS uuid\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n SELECT CASE WHEN p_asset='chips' AND p_amount>0 THEN p_funding_club_id\n  WHEN p_asset='chips' AND p_amount=0 AND p_ledger_id IS NULL AND p_entitlement_id IS NULL\n   AND p_registration_snapshot->>'source_satellite_id' IS NULL\n   AND p_registration_snapshot->'is_satellite_qualifier'='false'::jsonb\n   THEN (p_registration_snapshot->>'club_id')::uuid END;\n$function$\n",
+    "full_md5": "b875ae9c879c65cd1db5ae207af9f3c3",
+    "body_md5": "2450b4f6580bc025188de582d55b0997",
+    "owner": "postgres",
+    "definer": false,
+    "volatility": "i",
+    "acl": "{postgres=X/postgres}",
+    "config": ["search_path=public, pg_temp"]
+  }
+]

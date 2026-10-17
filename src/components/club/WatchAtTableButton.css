@@ -1,0 +1,163 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   WATCH AT TABLE (Dan 2026-10-16)
+   ═══════════════════════════════════════════════════════════════════════════
+
+   The control is the approved painted action shell at its native ratio
+   (1280 x 315). Nothing below draws a border, a radius or a gradient: the rim,
+   the glass face, the crystal end caps and the socket are all in the art. The
+   DOM prints three strings into zones measured on it, in master pixels:
+
+     socket  x 100-250, y 70-225   (the round well on the left)
+     face    x 300-1150, y 58-252  (the black glass, inside its chrome)
+
+   It lives inside dialogs (Find A Player) and on pages (Player Record), and
+   metallic-popups.css bevels every button in a dialog with !important, so the
+   chassis is switched off longhand by longhand on a doubled class (3.5 of the
+   #ClubArenaConsole standard). No :hover. */
+
+.watch-cta.watch-cta {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  width: min(100%, 380px);
+  aspect-ratio: 1280 / 315;
+  margin: 0;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  outline: 0;
+  background-color: transparent !important;
+  background-image: url('/assets/club-buttons/action-primary-shell.webp') !important;
+  background-position: center !important;
+  background-size: 100% 100% !important;
+  background-repeat: no-repeat !important;
+  box-shadow: none !important;
+  transform: none;
+  color: #e4e7ec;
+  font: inherit;
+  cursor: pointer;
+  container-type: inline-size;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 65%));
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 120ms ease,
+    filter 160ms ease;
+}
+
+/* The press is the feedback: the shell settles a hair and its glass lights. */
+.watch-cta.watch-cta:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985) !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 3px 6px rgb(0 0 0 / 70%)) drop-shadow(0 0 10px rgb(49 168 255 / 45%));
+}
+
+.watch-cta.watch-cta:focus-visible {
+  outline: none;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 65%)) drop-shadow(0 0 8px rgb(49 168 255 / 70%));
+}
+
+.watch-cta.watch-cta:disabled {
+  cursor: wait;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 65%)) saturate(0.6) brightness(0.8);
+}
+
+/* ── The socket: the kind of game, centred in the round well ── */
+.watch-cta__socket {
+  position: absolute;
+  left: 7.81%; /* 100 / 1280 */
+  top: 22.22%; /* 70 / 315 */
+  width: 11.72%; /* 150 / 1280 */
+  height: 49.21%; /* 155 / 315 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.watch-cta__socket-text {
+  display: inline-block;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: calc(3.6cqw * var(--fit, 1));
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 1.2cqw rgb(49 168 255 / 75%),
+    0 0.3cqw 0.4cqw rgb(0 0 0 / 85%);
+}
+
+/* ── The face: which table over the action, centred in the glass ── */
+.watch-cta__face {
+  position: absolute;
+  left: 23.44%; /* 300 / 1280 */
+  top: 18.41%; /* 58 / 315 */
+  width: 66.41%; /* 850 / 1280 */
+  height: 61.59%; /* 194 / 315 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8cqw;
+  text-align: center;
+}
+
+.watch-cta__line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  line-height: 1;
+}
+
+.watch-cta__eyebrow {
+  display: inline-block;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: calc(3.7cqw * var(--fit, 1));
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #45adff;
+  -webkit-text-fill-color: #45adff;
+  text-shadow:
+    0 0 0.9cqw rgb(49 168 255 / 70%),
+    0 0.2cqw 0.3cqw rgb(0 0 0 / 85%);
+}
+
+.watch-cta__title {
+  display: inline-block;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: calc(6.2cqw * var(--fit, 1));
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  text-transform: uppercase;
+  color: #f4f7fb;
+  -webkit-text-fill-color: #f4f7fb;
+  text-shadow:
+    0 -0.18cqw 0 rgb(255 255 255 / 55%),
+    0 0.25cqw 0 #6d747c,
+    0 0.45cqw 0 #050607,
+    0 0 1.6cqw rgb(49 168 255 / 35%);
+}
+
+/* A non-member has one thing to do first (join, apply): brand gold. */
+.watch-cta[data-tone='gated'] .watch-cta__title {
+  color: #ffd700;
+  -webkit-text-fill-color: #ffd700;
+  text-shadow:
+    0 0.25cqw 0 #050607,
+    0 0 1.4cqw rgb(255 215 0 / 30%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .watch-cta.watch-cta {
+    transition: none;
+  }
+}

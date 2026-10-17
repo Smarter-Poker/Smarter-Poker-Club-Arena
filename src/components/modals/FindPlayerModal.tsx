@@ -24,6 +24,17 @@
  * name "Close The Player Locator" (tests/components/FindPlayerLocator.test.tsx
  * asserts all three). Escape still unwinds one layer at a time.
  *
+ * LESS TEXT, AND ONE TAP TO WATCH (Dan 2026-10-16): "CLEAN UP THE 'FIND A
+ * PLAYER' TOO MUCH TEXT THAT ISN'T NEEDED. AND THERE SHOULD BE AN 'WATCH AT
+ * TABLE' BUTTON WHEN THEY ARE PLAYING TO EASILY WATCH THEM." The Network
+ * Locator eyebrow, the idle Live pill, the field label, the idle prompt, the
+ * relationship word, a handle that repeats the name, the Clubs / Unions
+ * headings and per-row status words, and the per-game heading, type label,
+ * details and gate sentence are gone. A result is now its name, Playing /
+ * Online / Offline, one quiet line of clubs and unions (plus a gold word for
+ * each club the viewer could join), and a painted Watch At Table shell for
+ * every live game.
+ *
  * Nothing about the search changed. The two abort controllers, the 180ms
  * suggestion debounce, the three-character fuzzy floor, the access
  * revalidation at click time, the pagination and every track() call below are
@@ -50,6 +61,8 @@ import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { WatchAtTableButton } from '../club/WatchAtTableButton';
+import { withStakes } from '../../utils/tableEyebrow';
 import { compactChips, formatWalletChips } from '../../utils/format';
 import styles from './FindPlayerModal.module.css';
 
@@ -381,11 +394,10 @@ export default function FindPlayerModal({
             onClose={handleClose}
             as="div"
             className={styles.console}
-            eyebrow="Network Locator"
             title="Find A Player"
             titleId="find-player-title"
-            pill={total ? `${total} Found` : 'Live'}
-            pillInk={total ? 'blue' : 'muted'}
+            pill={total ? `${total} Found` : undefined}
+            pillInk="blue"
             plates={{
               secondary: {
                 label: 'Access Rules',
@@ -415,14 +427,11 @@ export default function FindPlayerModal({
 
             {/* A groove cut into the glass, not a bordered well. */}
             <div className={styles.field}>
-              <label className="sc-label sc-ink--blue" htmlFor="find-player-query">
-                Name, Alias Or Number
-              </label>
               <input
                 id="find-player-query"
                 type="search"
                 className={styles.input}
-                placeholder="Name, Alias, Or Player Number"
+                placeholder="Name, Alias Or Player Number"
                 value={searchQuery}
                 onChange={(event) => handleInputChange(event.target.value)}
                 onKeyDown={(event) => {
@@ -539,7 +548,7 @@ export default function FindPlayerModal({
                         <span className={`${styles.rowName} sc-ink--silver`}>
                           {titleCase(player.display_name || player.username)}
                         </span>
-                        {player.display_name && (
+                        {showsHandle(player) && (
                           <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
                             @{titleCase(player.username)}
                           </span>
@@ -555,10 +564,32 @@ export default function FindPlayerModal({
                         >
                           {presenceCopy(player)}
                         </span>
-                        <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
-                          {enumToTitleCase(player.relationship)}
-                        </span>
                       </button>
+
+                      {/* Watch At Table (Dan 2026-10-16): one painted control per
+                          live game, straight under the name, so watching a
+                          player is a single tap. Access is still revalidated
+                          at click time by handleTableClick. */}
+                      {player.tables.length > 0 && (
+                        <div className={styles.tables}>
+                          {player.tables.map((table) => (
+                            <WatchAtTableButton
+                              key={table.id}
+                              onClick={() => void handleTableClick(table, player.id)}
+                              disabled={verifyingTableId !== null}
+                              socket={table.is_tournament ? 'MTT' : 'Cash'}
+                              eyebrow={tableEyebrow(table)}
+                              title={
+                                verifyingTableId === table.table_id
+                                  ? 'Verifying Access'
+                                  : watchLabel(table)
+                              }
+                              tone={table.can_watch ? 'watch' : 'gated'}
+                              ariaLabel={`${watchLabel(table)}, ${titleCase(table.name)}`}
+                            />
+                          ))}
+                        </div>
+                      )}
 
                       <PlayerAffiliations player={player} onJoinClub={handleClubJoin} />
 
@@ -576,7 +607,7 @@ export default function FindPlayerModal({
                               })
                             }
                           >
-                            Authorized Account Data ({player.sensitive_accounts.length})
+                            Account Data
                           </button>
                           {expandedAccounts.has(player.id) &&
                             player.sensitive_accounts.map((account) => (
@@ -620,52 +651,6 @@ export default function FindPlayerModal({
                             ))}
                         </section>
                       )}
-
-                      {player.tables.length > 0 && (
-                        <div className={styles.tables}>
-                          <span className={`sc-label sc-ink--blue ${styles.tablesHeading}`}>
-                            Playing Now - {player.tables.length} Live Game
-                            {player.tables.length === 1 ? '' : 's'}
-                          </span>
-                          {player.tables.map((table) => (
-                            <button
-                              key={table.id}
-                              className={styles.tableRow}
-                              onClick={() => void handleTableClick(table, player.id)}
-                              disabled={verifyingTableId !== null}
-                            >
-                              <span
-                                className={`sc-label ${styles.rowAside} ${
-                                  gameKind(table) === 'tournament' ? 'sc-ink--gold' : 'sc-ink--blue'
-                                }`}
-                              >
-                                {table.is_tournament ? 'Tournament' : 'Cash Game'}
-                              </span>
-                              <span className={`${styles.rowName} sc-ink--silver`}>
-                                {titleCase(table.name)}
-                              </span>
-                              <span className={`sc-copy ${styles.tableDetails}`}>
-                                {titleCase(table.game_variant)} / {titleCase(table.stakes)}
-                                {table.club_name && ` / ${titleCase(table.club_name)}`}
-                              </span>
-                              {!table.can_watch && (
-                                <span className={`sc-copy sc-ink--muted ${styles.tableDetails}`}>
-                                  {titleCase(gateCopy(table))}
-                                </span>
-                              )}
-                              <span
-                                className={`sc-label ${styles.tableAction} ${
-                                  table.can_watch ? 'sc-ink--green' : 'sc-ink--gold'
-                                }`}
-                              >
-                                {verifyingTableId === table.table_id
-                                  ? 'Verifying Access'
-                                  : watchLabel(table)}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
                     </article>
                   ))}
                   {hasMore && (
@@ -678,11 +663,6 @@ export default function FindPlayerModal({
                     </button>
                   )}
                 </div>
-              )}
-              {!error && !isSearching && !lastCompletedQueryRef.current && (
-                <p className={`sc-copy sc-copy--center sc-ink--muted ${styles.copy}`}>
-                  Enter A Name Or Player Number.
-                </p>
               )}
             </div>
           </SpadeConsole>
@@ -752,69 +732,46 @@ function WordFilter<T extends string>({
 }
 
 function presenceCopy(player: PlayerSearchResult): string {
-  const tournaments = player.tables.filter((table) => table.is_tournament).length;
-  const cash = player.tables.length - tournaments;
-  if (player.tables.length) {
-    const parts: string[] = [];
-    if (cash) parts.push(`${cash} Cash Game${cash === 1 ? '' : 's'}`);
-    if (tournaments) parts.push(`${tournaments} Tournament${tournaments === 1 ? '' : 's'}`);
-    return `Playing Now - ${parts.join(' And ')}`;
-  }
-  // Seated somewhere the viewer is not allowed to see (anonymous or hidden table).
-  if (player.presence_status === 'playing') return 'Playing Now';
+  // A seat the viewer may not see (anonymous or hidden table) still reads Playing.
+  if (player.tables.length || player.presence_status === 'playing') return 'Playing';
   if (player.presence_status === 'online') return 'Online';
   return 'Offline';
 }
 
-function gameKind(table: PlayerSearchTable): 'tournament' | 'cash' {
-  return table.is_tournament ? 'tournament' : 'cash';
+/**
+ * The @handle only earns its line when it says something the name does not:
+ * "Dinodollars @Dinodollars" printed the same word twice (Dan 2026-10-16,
+ * "TOO MUCH TEXT THAT ISN'T NEEDED").
+ */
+function showsHandle(player: PlayerSearchResult): boolean {
+  if (!player.display_name || !player.username) return false;
+  return player.display_name.trim().toLowerCase() !== player.username.trim().toLowerCase();
+}
+
+/** Which table, on one line: its name and stakes, or its club when it is locked. */
+function tableEyebrow(table: PlayerSearchTable): string {
+  const name = titleCase(table.name);
+  if (!table.can_watch && table.club_name) return `${name} · ${titleCase(table.club_name)}`;
+  return withStakes(name, titleCase(table.stakes));
 }
 
 function watchLabel(table: PlayerSearchTable): string {
-  if (table.can_watch) return table.access_action === 'play' ? 'Return To Seat' : 'Observe Table';
+  if (table.can_watch) return table.access_action === 'play' ? 'Return To Seat' : 'Watch At Table';
   if (table.access_action === 'request_join') return 'Apply To Join';
-  if (table.access_action === 'join') return 'Join Club';
+  if (table.access_action === 'join') return 'Join Club To Watch';
   if (table.access_action === 'pending') return 'Request Pending';
   if (table.access_action === 'observers_restricted') return 'Observers Off';
   return 'Unavailable';
 }
 
 /**
- * Why this game cannot be opened yet, in the viewer's own terms. The point is that
- * a locked card still tells you exactly what to do next rather than dead-ending.
+ * Clubs and unions the searched player belongs to, with the viewer's own way in.
+ *
+ * Dan 2026-10-16: "TOO MUCH TEXT THAT ISN'T NEEDED". This was two headed lists,
+ * a row per club with a status word beside it and a row per union with its
+ * code. It is now one quiet line of names, plus a lit gold word for each club
+ * the viewer could still join - the only entry here anyone acts on.
  */
-function gateCopy(table: PlayerSearchTable): string {
-  const club = titleCase(table.club_name || 'This Club');
-  switch (table.access_action) {
-    case 'join':
-      return `Members Only - Join ${club} To Observe This Table.`;
-    case 'request_join':
-      return `Members Only - ${club} Is Gated. Apply To Join And Wait For Approval Before You Can Observe.`;
-    case 'pending':
-      return `Your Request To Join ${club} Is Awaiting Approval.`;
-    case 'observers_restricted':
-      return 'This Table Has Turned Observers Off.';
-    default:
-      return `You Cannot Enter ${club} Right Now.`;
-  }
-}
-
-function clubActionLabel(action: PlayerClubAffiliation['viewer_action']): string {
-  switch (action) {
-    case 'member':
-      return 'Your Club';
-    case 'pending':
-      return 'Approval Pending';
-    case 'request_join':
-      return 'Apply To Join';
-    case 'join':
-      return 'Join';
-    default:
-      return 'Closed';
-  }
-}
-
-/** Clubs and unions the searched player belongs to, with the viewer's own way in. */
 function PlayerAffiliations({
   player,
   onJoinClub,
@@ -828,75 +785,43 @@ function PlayerAffiliations({
   const { clubs, unions, has_hidden: hasHidden } = player.affiliations || EMPTY_AFFILIATIONS;
   if (!clubs.length && !unions.length && !hasHidden) return null;
 
+  // A club whose live game already carries its join action on the Watch At
+  // Table shell is not offered a second time as a word.
+  const offeredByGame = new Set(
+    player.tables.filter((table) => !table.can_watch).map((table) => table.club_uuid)
+  );
+  const joinable = clubs.filter(
+    (club) =>
+      (club.viewer_action === 'join' || club.viewer_action === 'request_join') &&
+      !offeredByGame.has(club.club_uuid)
+  );
+  const named = [
+    ...clubs.filter((club) => !joinable.includes(club)).map((club) => titleCase(club.club_name)),
+    ...unions.map((union) => titleCase(union.union_name)),
+    ...(hasHidden ? ['Private Clubs'] : []),
+  ];
+
   return (
     <section
       className={styles.affiliations}
       aria-label={`Clubs And Unions For ${titleCase(player.display_name || player.username)}`}
     >
-      {clubs.length > 0 && (
-        <div className={styles.affiliationGroup}>
-          <span className="sc-label sc-ink--blue">Clubs</span>
-          <ul className={styles.affiliationList}>
-            {clubs.map((club) => {
-              const joinable =
-                club.viewer_action === 'join' || club.viewer_action === 'request_join';
-              return (
-                <li key={club.club_uuid} className={styles.affiliationItem}>
-                  {joinable ? (
-                    <button
-                      type="button"
-                      className={styles.affiliationRow}
-                      onClick={() => onJoinClub(club)}
-                    >
-                      <span className={`${styles.rowName} sc-ink--silver`}>
-                        {titleCase(club.club_name)}
-                      </span>
-                      <span className={`sc-label sc-ink--gold ${styles.rowAside}`}>
-                        {clubActionLabel(club.viewer_action)}
-                      </span>
-                    </button>
-                  ) : (
-                    <span className={styles.affiliationRow}>
-                      <span className={`${styles.rowName} sc-ink--silver`}>
-                        {titleCase(club.club_name)}
-                      </span>
-                      <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
-                        {clubActionLabel(club.viewer_action)}
-                      </span>
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+      {named.length > 0 && (
+        <p className={`sc-copy sc-ink--muted ${styles.copy} ${styles.affiliationLine}`}>
+          {named.join(' / ')}
+        </p>
       )}
-
-      {unions.length > 0 && (
-        <div className={styles.affiliationGroup}>
-          <span className="sc-label sc-ink--blue">Unions</span>
-          <ul className={styles.affiliationList}>
-            {unions.map((union) => (
-              <li key={union.union_id} className={styles.affiliationItem}>
-                <span className={styles.affiliationRow}>
-                  <span className={`${styles.rowName} sc-ink--silver`}>
-                    {titleCase(union.union_name)}
-                  </span>
-                  {union.union_code && (
-                    <span className={`sc-label sc-ink--muted ${styles.rowAside}`}>
-                      #{union.union_code}
-                    </span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {hasHidden && (
-        <p className={`sc-copy sc-ink--muted ${styles.copy}`}>Private Clubs Not Shown.</p>
-      )}
+      {joinable.map((club) => (
+        <button
+          key={club.club_uuid}
+          type="button"
+          className={`${styles.word} sc-ink--gold`}
+          onClick={() => onJoinClub(club)}
+        >
+          {club.viewer_action === 'request_join' ? 'Apply To Join' : 'Join'}{' '}
+          {titleCase(club.club_name)}
+        </button>
+      ))}
     </section>
   );
 }

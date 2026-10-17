@@ -113,7 +113,7 @@ function renderLocator() {
 async function search(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole('searchbox'), 'shark');
   await user.click(screen.getByRole('button', { name: 'Search' }));
-  await screen.findByText('Midnight Cash');
+  await screen.findByRole('button', { name: /Midnight Cash/ });
 }
 
 /**
@@ -164,11 +164,42 @@ describe('Find A Player locator', () => {
       renderLocator();
       await search(user);
 
-      expect(affiliations().getByText('Midnight Club')).toBeInTheDocument();
-      expect(affiliations().getByText('Ivory Room')).toBeInTheDocument();
-      expect(affiliations().getByText('Midway Union')).toBeInTheDocument();
+      // One quiet line for the clubs and unions. Ivory Room's join action already
+      // rides on its live game's Watch At Table shell, so it is not offered twice.
+      expect(
+        affiliations().getByText('Midnight Club / Ivory Room / Midway Union / Private Clubs')
+      ).toBeInTheDocument();
+      expect(affiliations().queryByRole('button')).not.toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'Apply To Join, Ivory Nightly' })
+      ).toBeInTheDocument();
       expect(screen.getByText('Shark Player')).toBeInTheDocument();
-      expect(screen.getByText('Public')).toBeInTheDocument();
+    });
+
+    it('drops the text nobody needs (Dan 2026-10-16)', async () => {
+      const user = userEvent.setup();
+      renderLocator();
+      expect(screen.queryByText('Network Locator')).not.toBeInTheDocument();
+      expect(screen.queryByText('Live')).not.toBeInTheDocument();
+      expect(screen.queryByText('Enter A Name Or Player Number.')).not.toBeInTheDocument();
+      await search(user);
+
+      expect(screen.queryByText('Public')).not.toBeInTheDocument();
+      expect(screen.queryByText('Clubs')).not.toBeInTheDocument();
+      expect(screen.queryByText('Unions')).not.toBeInTheDocument();
+      expect(screen.queryByText('Your Club')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Playing Now - /)).not.toBeInTheDocument();
+      expect(screen.getByText('Playing')).toBeInTheDocument();
+    });
+
+    it('prints the handle only when it differs from the name', async () => {
+      const user = userEvent.setup();
+      vi.mocked(PlayerSearchService.search).mockResolvedValue(
+        page([{ ...locatedPlayer, username: 'dinodollars', display_name: 'Dinodollars' }])
+      );
+      renderLocator();
+      await search(user);
+      expect(screen.queryByText('@Dinodollars')).not.toBeInTheDocument();
     });
 
     it('signals private clubs without naming or counting them', async () => {
@@ -176,15 +207,19 @@ describe('Find A Player locator', () => {
       renderLocator();
       await search(user);
 
-      expect(screen.getByText('Private Clubs Not Shown.')).toBeInTheDocument();
+      expect(affiliations().getByText(/Private Clubs$/)).toBeInTheDocument();
     });
 
     it('routes a gated club chip into the join flow with no table to return to', async () => {
       const user = userEvent.setup();
+      // No live game in Ivory Room, so its join action is a word of its own.
+      vi.mocked(PlayerSearchService.search).mockResolvedValue(
+        page([{ ...locatedPlayer, tables: [locatedPlayer.tables[0]] }])
+      );
       const { onMembershipRequired } = renderLocator();
       await search(user);
 
-      await user.click(affiliations().getByRole('button', { name: 'Ivory Room Apply To Join' }));
+      await user.click(affiliations().getByRole('button', { name: 'Apply To Join Ivory Room' }));
 
       expect(onMembershipRequired).toHaveBeenCalledWith({
         code: 'ivory-room',
@@ -200,42 +235,60 @@ describe('Find A Player locator', () => {
       expect(
         affiliations().queryByRole('button', { name: /Midnight Club/ })
       ).not.toBeInTheDocument();
-      expect(affiliations().getByText('Your Club')).toBeInTheDocument();
     });
   });
 
   describe('live games', () => {
-    it('distinguishes a cash game from a tournament', async () => {
+    it('distinguishes a cash game from a tournament in the socket', async () => {
       const user = userEvent.setup();
       renderLocator();
       await search(user);
 
-      expect(screen.getByText('Cash Game')).toBeInTheDocument();
-      expect(screen.getByText('Tournament')).toBeInTheDocument();
-      expect(screen.getByText('NLH / 1/2 / Midnight Club')).toBeInTheDocument();
-      expect(screen.getByText('MTT / 50 Buy-In / Ivory Room')).toBeInTheDocument();
-      expect(screen.getByText('Playing Now - 1 Cash Game And 1 Tournament')).toBeInTheDocument();
+      expect(screen.getByText('Cash')).toBeInTheDocument();
+      expect(screen.getByText('MTT')).toBeInTheDocument();
+      expect(screen.getByText('Midnight Cash · 1/2')).toBeInTheDocument();
     });
 
-    it('offers to observe a table in a club the viewer belongs to', async () => {
+    it('offers a Watch At Table button for a table in a club the viewer belongs to', async () => {
       const user = userEvent.setup();
       renderLocator();
       await search(user);
 
-      expect(screen.getByText('Observe Table')).toBeInTheDocument();
-    });
-
-    it('tells a non-member to apply and wait for approval, without hiding the game', async () => {
-      const user = userEvent.setup();
-      renderLocator();
-      await search(user);
-
-      expect(screen.getByText('Ivory Nightly')).toBeInTheDocument();
       expect(
-        screen.getByText(
-          'Members Only - Ivory Room Is Gated. Apply To Join And Wait For Approval Before You Can Observe.'
-        )
+        screen.getByRole('button', { name: 'Watch At Table, Midnight Cash' })
       ).toBeInTheDocument();
+    });
+
+    it('opens the observer view from Watch At Table after revalidating access', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(PlayerSearchService, 'getTableWatchAccess').mockResolvedValue({
+        found: true,
+        table_id: 'live-table-1',
+        club_uuid: 'club-uuid-1',
+        can_watch: true,
+        action: 'watch',
+      });
+      const { onClose } = renderLocator();
+      await search(user);
+
+      await user.click(screen.getByRole('button', { name: 'Watch At Table, Midnight Cash' }));
+
+      await waitFor(() => expect(onClose).toHaveBeenCalled());
+      expect(PlayerSearchService.getTableWatchAccess).toHaveBeenCalledWith(
+        'live-table-1',
+        'player-1'
+      );
+    });
+
+    it('tells a non-member to apply first, without hiding the game', async () => {
+      const user = userEvent.setup();
+      renderLocator();
+      await search(user);
+
+      expect(
+        screen.getByRole('button', { name: 'Apply To Join, Ivory Nightly' })
+      ).toBeInTheDocument();
+      expect(screen.getByText('Ivory Nightly · Ivory Room')).toBeInTheDocument();
     });
 
     it('does not reopen a join flow after the locator was dismissed during access verification', async () => {
@@ -302,7 +355,7 @@ describe('Find A Player locator', () => {
       renderLocator();
       await search(user);
 
-      await user.click(screen.getByRole('button', { name: 'Authorized Account Data (1)' }));
+      await user.click(screen.getByRole('button', { name: 'Account Data' }));
 
       expect(screen.getByText('Deep Stack Society')).toBeInTheDocument();
       expect(screen.getByText('Downline / Sub Agent')).toBeInTheDocument();
@@ -377,6 +430,6 @@ describe('Find A Player locator', () => {
     renderLocator();
     await search(user);
 
-    expect(screen.getByText('Midnight Cash')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Midnight Cash/ })).toBeInTheDocument();
   });
 });

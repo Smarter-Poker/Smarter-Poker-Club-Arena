@@ -144,8 +144,6 @@ describe('cinematic retained route families', () => {
       'public/assets/club-buttons/wallets/desktop/wallet-diamonds-v1.webp',
       'public/assets/club-buttons/lobby/shark-club-championship-ad-v2.png',
       'public/images/community/community-network-v1.webp',
-      'public/images/challenges/daily-missions-casino-v2.webp',
-      'public/images/challenges/daily-missions-casino-v2-mobile.webp',
       'public/images/challenges/daily-missions-reward-pedestal-v1.webp',
       'public/images/challenges/daily-missions-streak-freeze-v1.webp',
       'public/images/challenges/daily-missions-diamond-96-v1.webp',

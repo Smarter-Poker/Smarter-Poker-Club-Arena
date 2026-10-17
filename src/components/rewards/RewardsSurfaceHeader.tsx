@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react';
 import PageBar from '../help/PageBar';
+import type { TutorialStep } from '../help/PageHelp';
 import '../club/ClubPageSection.css';
 import { formatPopupText } from '../../utils/popupStyle';
 import {
@@ -40,6 +41,8 @@ interface RewardsSurfaceHeaderProps {
   crest?: ConsoleCrest;
   /** The approved painted chassis this page uses. */
   family?: ConsoleFamily;
+  /** The page's tutorial, when its own sections do not explain it. */
+  steps?: TutorialStep[];
   /** The page itself, printed on the console's glass so the surface stays one picture. */
   children?: ReactNode;
 }
@@ -144,6 +147,7 @@ export default function RewardsSurfaceHeader({
   pillInk,
   crest = 'spade',
   family = 'spade',
+  steps,
   children,
 }: RewardsSurfaceHeaderProps) {
   const titleId = useId();
@@ -158,6 +162,7 @@ export default function RewardsSurfaceHeader({
         status={pill ? formatPopupText(pill) : live?.text}
         statusTone={pill ? (pillInk ? (INK_TONE[pillInk] ?? 'default') : 'default') : live?.tone}
         metrics={metrics}
+        steps={steps}
       >
         {actions}
         {plates?.secondary && plateWord(plates.secondary, 'secondary')}
@@ -172,7 +177,12 @@ export default function RewardsSurfaceHeader({
 
   return (
     <div className={styles.header}>
-      <PageBar title={pageTitle} summary={formatPopupText(description)} titleAs={false} />
+      <PageBar
+        title={pageTitle}
+        summary={formatPopupText(description)}
+        steps={steps}
+        titleAs={false}
+      />
       <SpadeConsole
         as="section"
         title={pageTitle}

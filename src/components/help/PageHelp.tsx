@@ -295,20 +295,20 @@ export default function PageHelp({ title, summary, steps, className }: PageHelpP
             </div>
             <div className="ca-tutorial-popup__actions">
               {index > 0 ? (
-                <button type="button" onClick={() => setIndex((i) => Math.max(0, i - 1))}>
+                <button
+                  type="button"
+                  className="ca-tutorial-popup__secondary"
+                  onClick={() => setIndex((i) => Math.max(0, i - 1))}
+                >
                   Back
                 </button>
               ) : (
-                <button type="button" onClick={close}>
+                <button type="button" className="ca-tutorial-popup__secondary" onClick={close}>
                   Got It
                 </button>
               )}
               {last ? (
-                <button
-                  type="button"
-                  className="ca-tutorial-popup__primary"
-                  onClick={close}
-                >
+                <button type="button" className="ca-tutorial-popup__primary" onClick={close}>
                   Done
                 </button>
               ) : (

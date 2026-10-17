@@ -276,6 +276,21 @@ export default function RakebackPage() {
         title="Rakeback Engine"
         description="See The Value Returning From Completed Play And Inspect Every Earning Period. Rakeback Is Settled Automatically Every Monday At 4:00 AM Central Time."
         status="RAKEBACK ENGINE // LIVE"
+        steps={[
+          {
+            title: 'How Rakeback Works',
+            body: 'You Earn Back A Percentage Of The Rake You Generate At The Tables. The Applicable Rate Is Shown For Each Earning Period.',
+          },
+          {
+            title: 'When It Pays',
+            body: 'Earning Periods Close At Midnight Pacific Time After Their End Date. Rakeback Is Settled Automatically Every Monday At 4:00 AM Central Time, And Every Transfer Is Recorded In Your Invoices.',
+          },
+          {
+            title: 'Recent History',
+            body: 'Every Earning Period, Its Rate And What It Paid.',
+            target: '.rakeback-history',
+          },
+        ]}
         metrics={[
           { label: 'Recent Earnings', value: totalEarned.toLocaleString(), tone: 'live' },
           { label: 'Latest Period Rate', value: rateLabel(currentRate) },
@@ -310,16 +325,6 @@ export default function RakebackPage() {
           </ResponsiveContainer>
         </div>
       )}
-
-      <div className="rakeback-info">
-        <h3>How Rakeback Works</h3>
-        <p>
-          You Earn Back A Percentage Of The Rake You Generate At The Tables. The Applicable Rate Is
-          Shown For Each Earning Period. Earning Periods Close At Midnight Pacific Time After Their
-          End Date. Rakeback Is Settled Automatically Every Monday At 4:00 AM Central Time, And
-          Every Transfer Is Recorded In Your Invoices.
-        </p>
-      </div>
 
       <div className="rakeback-history">
         <h3>Recent History</h3>

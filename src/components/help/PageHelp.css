@@ -250,6 +250,14 @@
   color: #f4f7fb;
 }
 
+/* The steel plate the chassis gives Close, for the step's way back. Without
+   a class the browser's own white button showed through the chassis. */
+.ca-tutorial-popup .ca-tutorial-popup__secondary {
+  background: #1b2430;
+  color: #e4e7ec;
+  border: 1px solid #52647d;
+}
+
 /* The part of the page the current step is talking about. */
 [data-tutorial-focus] {
   outline: 2px solid #45adff !important;

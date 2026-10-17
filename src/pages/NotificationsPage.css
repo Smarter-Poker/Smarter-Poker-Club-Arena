@@ -23,6 +23,14 @@
   color: var(--notif-text);
 }
 
+/* The page bar (Dan 2026-10-17) lines up with the filter bar's contents
+   below it: the same centred 680px column, the same 0.5rem inset. */
+.ca-notif > .ca-page-bar {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0.5rem 0.5rem 0;
+}
+
 .ca-notif__bar {
   display: flex;
   max-width: 680px;

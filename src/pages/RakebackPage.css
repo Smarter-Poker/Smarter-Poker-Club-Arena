@@ -10,7 +10,6 @@
 }
 
 .rakeback-page.rakeback-page .rakeback-settlement-note,
-.rakeback-page.rakeback-page .rakeback-info,
 .rakeback-page.rakeback-page .rakeback-chart,
 .rakeback-page.rakeback-page .rakeback-history {
   width: min(100%, 1000px);
@@ -24,8 +23,7 @@
   box-shadow: none !important;
 }
 
-.rakeback-page.rakeback-page .rakeback-settlement-note p,
-.rakeback-page.rakeback-page .rakeback-info p {
+.rakeback-page.rakeback-page .rakeback-settlement-note p {
   margin: 0 0 8px;
   color: var(--realism-chrome, #8a9aaa);
   font-size: 14px;

@@ -30,6 +30,8 @@ import { useLayoutEffect, useRef } from 'react';
  * passes and needs no per-caller fudge.
  */
 export type FitTextOptions = {
+  /** Defer measurement until the owning surface is ready; other callers fit immediately. */
+  enabled?: boolean;
   /**
    * Let the label take a second line instead of shrinking below this ratio.
    *
@@ -62,8 +64,10 @@ export function useFitText<T extends HTMLElement = HTMLElement>(
   const ref = useRef<T | null>(null);
   const wrapBelow = options?.wrapBelow;
   const maxLines = options?.maxLines ?? 2;
+  const enabled = options?.enabled ?? true;
 
   useLayoutEffect(() => {
+    if (!enabled) return;
     const el = ref.current;
     if (!el) return;
     const zone = el.parentElement;
@@ -150,7 +154,9 @@ export function useFitText<T extends HTMLElement = HTMLElement>(
       return null;
     };
 
+    let disposed = false;
     const fit = () => {
+      if (disposed) return;
       delete el.dataset.fitWrap;
       const line = fitLine();
       if (wrapBelow === undefined || line >= wrapBelow) {
@@ -174,8 +180,11 @@ export function useFitText<T extends HTMLElement = HTMLElement>(
     if (typeof document !== 'undefined' && 'fonts' in document) {
       document.fonts.ready.then(fit).catch(() => undefined);
     }
-    return () => observer.disconnect();
-  }, [text, scaleX, minRatio, wrapBelow, maxLines]);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+    };
+  }, [text, scaleX, minRatio, wrapBelow, maxLines, enabled]);
 
   return ref;
 }

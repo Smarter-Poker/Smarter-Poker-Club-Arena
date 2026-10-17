@@ -71,7 +71,11 @@ it('renders only resolver-selected same-origin images and keeps paid impression/
   render(<HouseAdRotator slot="lobby_strip" clubId="club" onNavigate={navigate} />);
   await screen.findByAltText('Smarter Promotion');
   expect(screen.queryByRole('tab')).toBeNull();
-  expect(mocks.impression).toHaveBeenCalledWith({ adId: 'house' }, 'lobby_strip', 'club');
+  // Same passive-effect race as the test above (PR #7266 shard 4, and again
+  // PR #7285 shard 4): wait for the impression rather than assert it in-tick.
+  await waitFor(() =>
+    expect(mocks.impression).toHaveBeenCalledWith({ adId: 'house' }, 'lobby_strip', 'club')
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Smarter Promotion', exact: true }));
   await screen.findByRole('dialog', { name: 'Smarter Promotion' });
   expect(mocks.click).not.toHaveBeenCalled();

@@ -19,6 +19,9 @@ import styles from './TapHaptic.module.css';
  * lands on the switch, iOS plays the tick, and the click bubbles on to the
  * host's own onClick exactly as before.
  *
+ * The host's own NATIVE action (submit, reset) is finished by the switch too:
+ * see finishHostActivation below.
+ *
  * Rendered only where it is needed and wanted: an iPhone or iPad browser (the
  * app has the real Taptic Engine through @capacitor/haptics, Android has
  * navigator.vibrate), the player's Vibrations switch on, and the host enabled
@@ -39,6 +42,62 @@ import styles from './TapHaptic.module.css';
  * TapHaptic.test.tsx checks every host) and passes its corner radius so the hit
  * area matches its shape.
  */
+/**
+ * THE HOST STILL DOES WHAT A TAP ON IT DOES (2026-10-17).
+ *
+ * The click BUBBLES to the host, so its React onClick runs exactly as before.
+ * What does NOT happen is the host's own native action. A click has one
+ * activation target, the innermost element that has activation behaviour, and
+ * that is this checkbox: so a `type="submit"` host never submitted its form and
+ * a `type="reset"` host never reset it. On an iPhone browser, ENTER ARENA on
+ * Complete Your Profile (a submit plate tied to its form with `form=`) did
+ * nothing at all. TomTomTamale and Dinodollars both picked an avatar, tapped
+ * ENTER ARENA, watched nothing happen, and sat on that screen until they
+ * reloaded. CreateUnionModal, CreateTournamentModal and GameManagementPage have
+ * submit plates in pop-ups too, so they had the same dead button.
+ *
+ * So the switch finishes the job, ONCE: after the tap has finished
+ * dispatching, if the form did not submit (or reset) by itself and nobody
+ * called preventDefault, the host's form is asked to, exactly as the browser
+ * would have: requestSubmit(host), which runs constraint validation, sets the
+ * submitter and fires the form's own submit handler. An engine that did run
+ * the host's native submit is seen through the submit event and is not asked
+ * twice. Pinned by tests/components/TapHaptic.test.tsx and
+ * tests/the-iphone-tap-still-submits.law.test.ts.
+ */
+function finishHostActivation(input: HTMLInputElement, click: Event) {
+  const host = input.parentElement;
+  if (!(host instanceof HTMLButtonElement) || host.disabled) return;
+  const kind = host.type;
+  if (kind !== 'submit' && kind !== 'reset') return;
+  const form = host.form;
+  if (!form) return;
+  const eventName = kind === 'submit' ? 'submit' : 'reset';
+  let happened = false;
+  const saw = () => {
+    happened = true;
+  };
+  form.addEventListener(eventName, saw, { capture: true, once: true });
+  // A task, not a microtask: microtasks run between a click's listeners,
+  // before the browser's own activation behaviour has had its turn.
+  setTimeout(() => {
+    form.removeEventListener(eventName, saw, { capture: true });
+    if (happened || click.defaultPrevented) return;
+    if (!host.isConnected || host.disabled || host.form !== form) return;
+    if (kind === 'reset') {
+      form.reset();
+      return;
+    }
+    if (typeof form.requestSubmit === 'function') {
+      form.requestSubmit(host);
+      return;
+    }
+    // A WebKit too old for requestSubmit: fire the submit event the form's own
+    // handler listens for, and let the form go only if nobody stopped it.
+    if (form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))) form.submit();
+  }, 0);
+}
+
 export function TapHaptic({
   disabled = false,
   radius,
@@ -93,7 +152,11 @@ export function TapHaptic({
       style={radius ? ({ '--tap-haptic-radius': radius } as CSSProperties) : undefined}
       // iOS has played the tick; a scripted buzz asked for by the host's own
       // handler inside this same tap is not played again (vibrationGate).
-      onClick={() => markSwitchTap()}
+      // Then the host does what a tap on it does natively (see below).
+      onClick={(event) => {
+        markSwitchTap();
+        finishHostActivation(event.currentTarget, event.nativeEvent);
+      }}
     />
   );
 }

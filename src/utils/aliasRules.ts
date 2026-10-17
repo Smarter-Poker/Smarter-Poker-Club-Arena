@@ -20,3 +20,21 @@ export function aliasProblem(raw: string): string | null {
   if (!/^[a-zA-Z0-9_]+$/.test(alias)) return 'Only letters, numbers, and underscores allowed.';
   return null;
 }
+
+/**
+ * A stored username the first-run form may offer back as the alias: a legal
+ * alias that the player chose. A default (`Player...`) or a session stub
+ * (`email.split('@')[0]`, which can carry a dot) is not offered.
+ */
+export function isOfferableAlias(username: string): boolean {
+  return aliasProblem(username) === null && !username.startsWith('Player');
+}
+
+/**
+ * ILIKE reads `%` and `_` as wildcards and `\` as their escape. An alias may
+ * contain `_`, so an availability check matches it literally: "Tom_Tamale"
+ * must not be reported Taken because "TomXTamale" exists.
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}

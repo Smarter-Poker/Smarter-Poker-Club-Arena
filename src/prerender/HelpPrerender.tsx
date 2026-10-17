@@ -7,48 +7,33 @@
  * never runs the bundle, so the prerender renders the questions and answers
  * themselves, every answer open, with the same classes from
  * HelpPage.module.css so it looks like the page it stands in for. The copy
- * comes from src/pages/helpContent.ts: one source, two renderers.
+ * comes from src/pages/helpContent.ts: one source, two renderers. Both print
+ * the same page bar: the Help Center title is a hidden h1 and its summary sits
+ * behind the "?" (Dan 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS").
  */
 import { Link } from 'react-router-dom';
 import styles from '../pages/HelpPage.module.css';
 import { FAQ_ITEMS, QUICK_LINKS } from '../pages/helpContent';
-import { mediaUrl } from '../utils/mediaBase';
+import PageBar from '../components/help/PageBar';
+
+/* The words the hero used to print. They live behind the "?" now; the
+   prerender carries the same sentence. */
+const HELP_SUMMARY =
+  'Search Verified Poker Arena Guidance, Check The Live Data Circuit, Or Send A Request Directly To Support.';
 
 export default function HelpPrerender() {
   return (
     <article className={styles.page} aria-labelledby="help-title">
-      <header className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <span className={styles.eyebrow}>Player Support Circuit</span>
-          <h1 id="help-title">Help Center</h1>
-          <p>
-            Search Verified Poker Arena Guidance, Check The Live Data Circuit, Or Send A Request
-            Directly To Support.
-          </p>
-          <div className={styles.heroActions}>
-            <a href="mailto:support@smarter.poker">Email Support</a>
-          </div>
+      <PageBar
+        className={styles.bar}
+        title="Help Center"
+        titleId="help-title"
+        summary={HELP_SUMMARY}
+      >
+        <div className={styles.barActions}>
+          <a href="mailto:support@smarter.poker">Email Support</a>
         </div>
-        <div className={styles.heroArt} aria-hidden="true">
-          {/* Discoverability phase 5 (2026-09-17): the 462 KB palette PNG was a
-              third of the Help Center's bytes on a phone; the WebP is 49 KB of the
-              same pixels, and the PNG stays the fallback for a browser without it. */}
-          <picture>
-            <source
-              type="image/webp"
-              srcSet={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.webp')}
-            />
-            <img
-              src={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.png')}
-              alt=""
-              width="960"
-              height="1280"
-              decoding="async"
-            />
-          </picture>
-          <span>Support Terminal / Online</span>
-        </div>
-      </header>
+      </PageBar>
 
       <nav className={styles.quickLinks} aria-label="Common Help Destinations">
         {QUICK_LINKS.map((item) => (
@@ -61,10 +46,7 @@ export default function HelpPrerender() {
 
       <section className={styles.knowledge} aria-labelledby="faq-title">
         <div className={styles.knowledgeHeader}>
-          <div>
-            <span className={styles.eyebrow}>Knowledge Index</span>
-            <h2 id="faq-title">Frequently Asked Questions</h2>
-          </div>
+          <h2 id="faq-title">Frequently Asked Questions</h2>
         </div>
 
         <div className={styles.faqList}>

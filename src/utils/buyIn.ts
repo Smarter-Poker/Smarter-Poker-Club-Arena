@@ -146,8 +146,12 @@ export function rakeRateFor(subject: RakeSubject): number {
  * the GENERATORS only; an owner creating a game by hand may price it at any
  * positive whole number.
  */
+// 35 is a rung because Dan priced the Nightly 10K there (2026-10-16: "A DAILY
+// 7PM TOURNAMENT THAT IS A 35 REBUY ADD ON WITH A 10K GUARANTEE"); without it
+// the scheduler snapped that event to 30.
 export const BUY_IN_LADDER = [
-  1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 75, 100, 150, 200, 250, 300, 500, 750, 1000, 1500, 2000, 5000,
+  1, 2, 3, 5, 10, 15, 20, 25, 30, 35, 50, 75, 100, 150, 200, 250, 300, 500, 750, 1000, 1500, 2000,
+  5000,
 ] as const;
 
 export interface BuyInSplit {

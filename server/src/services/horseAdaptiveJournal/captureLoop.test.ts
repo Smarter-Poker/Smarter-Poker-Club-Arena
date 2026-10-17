@@ -9,7 +9,8 @@ describe('isolated acquisition scheduling', () => {
       const stop = new AbortController(),
         waits: number[] = [],
         work = vi.fn(async () => ({ status: 'completed' as const, batchKey: 'a'.repeat(64) }));
-      let turns = 0;
+      let turns = 0,
+        now = 0;
       await runJournalLoop(stop.signal, {
         processWork: work,
         processCapture: async () =>
@@ -17,17 +18,18 @@ describe('isolated acquisition scheduling', () => {
             ? { status }
             : { status, requestKey: 'b'.repeat(64), reason: 'queue_full' },
         prune: async () => empty(),
-        now: () => 0,
+        now: () => now,
         started: vi.fn(),
         completed: vi.fn(),
         wait: async (ms) => {
           waits.push(ms);
+          now += ms;
           if (++turns === 20) stop.abort();
         },
       });
       expect(work).toHaveBeenCalledTimes(18);
-      expect(waits[8]).toBe(status === 'idle' ? 1000 : 2000);
-      expect(waits[17]).toBe(status === 'idle' ? 1000 : 4000);
+      expect(waits[8]).toBe(1000);
+      expect(waits[17]).toBe(1000);
     }
   );
   it.each(['completed', 'deferred', 'quarantined'] as const)(
@@ -131,29 +133,75 @@ describe('isolated acquisition scheduling', () => {
     ]);
     expect(cycles[1]).toEqual({ work: 'skipped', retention: 'skipped', acquisition: 'admitted' });
     expect(cycles[4]).toEqual({ work: 'skipped', retention: 'skipped', acquisition: 'gap' });
-    expect(delays).toEqual([1000, 1000, 1000, 1000, 2000]);
+    // The gap keeps its capture retry deadline without sleeping the journal.
+    expect(delays).toEqual([1000, 1000, 1000, 1000, 1000]);
   });
-  it('keeps acquisition error backoff across successful empty journal reads', async () => {
-    const stop = new AbortController(),
-      delays: number[] = [];
-    let now = 0;
-    await runJournalLoop(stop.signal, {
-      processWork: async () => ({ status: 'idle' }),
-      processCapture: async () => {
-        throw Error('unavailable');
-      },
-      prune: async () => empty(),
-      now: () => now,
-      started: vi.fn(),
-      completed: vi.fn(),
-      wait: async (ms) => {
-        delays.push(ms);
-        now += ms;
-        if (delays.length === 6) stop.abort();
-      },
-    });
-    expect(delays).toEqual([1000, 2000, 1000, 4000, 1000, 8000]);
-  });
+  it.each(['deferred', 'unknown', 'throw'] as const)(
+    'capture %s keeps its exponential deadline while backlogged retention continues',
+    async (status) => {
+      const stop = new AbortController(),
+        captures: number[] = [],
+        retired: number[] = [],
+        waits: number[] = [];
+      let now = 0,
+        busy = false;
+      const operation = async () => {
+        expect(busy).toBe(false);
+        busy = true;
+        await Promise.resolve();
+        busy = false;
+      };
+      await runJournalLoop(stop.signal, {
+        processWork: async () => {
+          await operation();
+          return { status: 'idle' };
+        },
+        processCapture: async () => {
+          await operation();
+          captures.push(now);
+          if (status === 'throw') throw Error('unavailable');
+          return { status, requestKey: 'b'.repeat(64) };
+        },
+        prune: async () => {
+          await operation();
+          retired.push(now);
+          return {
+            ...empty(),
+            version: 3,
+            retiredHands: 1,
+            handsScanned: 1,
+            statisticsExpired: 0,
+            membershipsRegistered: 0,
+            membershipPending: false,
+            retirementPending: true,
+            budgetReached: true,
+          };
+        },
+        pruneCaptures: async () => {
+          await operation();
+          return { status: 'pruned', requests: 0 };
+        },
+        now: () => now,
+        started: vi.fn(),
+        completed: vi.fn(),
+        wait: async (ms) => {
+          waits.push(ms);
+          now += ms;
+          if (now >= 180000) stop.abort();
+        },
+      });
+      expect(captures.length).toBeGreaterThanOrEqual(7);
+      for (let i = 1; i < captures.length; i++)
+        expect(captures[i] - captures[i - 1]).toBeGreaterThanOrEqual(
+          Math.min(60000, 1000 * 2 ** i)
+        );
+      expect(Math.max(...waits)).toBeLessThanOrEqual(5000);
+      expect(Math.max(...retired.slice(1).map((at, i) => at - retired[i]))).toBeLessThanOrEqual(
+        5000
+      );
+      expect(retired.length).toBeGreaterThan(50);
+    }
+  );
   it('waits for acquisition to settle and starts no operation after shutdown', async () => {
     const stop = new AbortController();
     let release!: (v: ObservationCaptureResult) => void;

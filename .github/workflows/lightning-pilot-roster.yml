@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       phase:
-        description: 'Prepare immutable evidence, or execute the approved exact 23-for-23 swap once'
+        description: 'Prepare immutable evidence, or execute the separately authorized exact population swap once'
         type: choice
         options: [prepare, execute]
         required: true

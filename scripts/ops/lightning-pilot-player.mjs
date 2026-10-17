@@ -75,7 +75,8 @@ export async function openPlayerSession(admin, createClient, url, pin, checkDead
   const user = must(await admin.auth.admin.getUserById(pin.playerId)).user;
   if (
     user?.id !== pin.playerId ||
-    !user.email?.endsWith('@bot.smarter.poker') ||
+    typeof user.email !== 'string' ||
+    !user.email.trim() ||
     (user.banned_until &&
       (!Number.isFinite(Date.parse(user.banned_until)) ||
         Date.parse(user.banned_until) > Date.now()))

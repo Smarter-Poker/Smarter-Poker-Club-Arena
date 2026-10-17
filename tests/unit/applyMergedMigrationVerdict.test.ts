@@ -137,3 +137,24 @@ describe('the original retirement migration uses the actual transaction envelope
     }
   });
 });
+
+describe('the repository_dispatch door carries only a file name and dry_run', () => {
+  it('is reachable without the Actions scope, for exactly one event type', () => {
+    expect(workflow).toMatch(/^ {2}repository_dispatch:\n {4}types: \[apply-merged-migration\]$/m);
+    expect(workflow).not.toContain('schedule:');
+  });
+
+  it('never reads a recovery or emergency option from the payload', () => {
+    const payloadReads = workflow.match(/client_payload\.[a-z_]+/g) ?? [];
+    expect(new Set(payloadReads)).toEqual(
+      new Set(['client_payload.migration', 'client_payload.dry_run'])
+    );
+  });
+
+  it('never interpolates the payload into a script body', () => {
+    for (const run of workflow.split(/\n\s+run: \|\n/).slice(1)) {
+      const body = run.split(/\n {6}- /)[0];
+      expect(body).not.toContain('client_payload.migration');
+    }
+  });
+});

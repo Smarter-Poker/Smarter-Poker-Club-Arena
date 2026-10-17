@@ -20,7 +20,7 @@ const unionClubs = [
 ];
 const fromChain = (table?: string) => {
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'contains']) {
+  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'range', 'contains']) {
     chain[m] = () => chain;
   }
   chain.then = (resolve: (v: { data: unknown[]; error: null | { message: string } }) => void) =>
@@ -31,7 +31,20 @@ const fromChain = (table?: string) => {
   return chain;
 };
 vi.mock('../src/lib/supabase', () => ({
-  supabase: { rpc: (...a: unknown[]) => rpc(...a), from: (t: string) => fromChain(t) },
+  /* The directory RPC is paged (.order().order().range(), 2026-10-17), so a
+     result is a thenable that also answers the builder methods. */
+  supabase: {
+    rpc: (...a: unknown[]) => {
+      const result = rpc(...a) as PromiseLike<unknown>;
+      const chain: Record<string, unknown> = {
+        then: (ok: (v: unknown) => unknown, bad?: (e: unknown) => unknown) =>
+          Promise.resolve(result).then(ok, bad),
+      };
+      for (const m of ['order', 'range', 'limit']) chain[m] = () => chain;
+      return chain;
+    },
+    from: (t: string) => fromChain(t),
+  },
 }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/hooks/useAuthUser', () => ({

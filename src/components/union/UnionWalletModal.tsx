@@ -107,6 +107,37 @@ const ROLE_ORDER: Record<string, number> = {
 };
 
 const LEDGER_PAGE = 40;
+
+/**
+ * EVERY MEMBER, NOT THE FIRST 1,000 (2026-10-17). PostgREST caps every
+ * response at its max-rows (1,000), RPCs included, and says nothing about it:
+ * Midway Union's Union Bank and Promo Wallet read "3 Clubs, 1,000 Members"
+ * when the union has more, so a member past the cap could not be picked. The
+ * directory is read in pages on a total order until a short page comes back.
+ */
+const DIRECTORY_PAGE = 1000;
+/** A runaway guard, far above any real union; past it the read says so. */
+const DIRECTORY_MAX_ROWS = 200_000;
+
+async function readEveryPage<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+  isCurrent: () => boolean
+): Promise<{ data: T[]; error: unknown; stale: boolean }> {
+  const rows: T[] = [];
+  for (let from = 0; from < DIRECTORY_MAX_ROWS; from += DIRECTORY_PAGE) {
+    const { data, error } = await page(from, from + DIRECTORY_PAGE - 1);
+    if (!isCurrent()) return { data: rows, error: null, stale: true };
+    if (error) return { data: rows, error, stale: false };
+    const got = data || [];
+    rows.push(...got);
+    if (got.length < DIRECTORY_PAGE) return { data: rows, error: null, stale: false };
+  }
+  return {
+    data: rows,
+    error: new Error('Union Directory Exceeds The Read Limit'),
+    stale: false,
+  };
+}
 /**
  * HOW AN AMOUNT MAY BE SPELLED (launch audit D-07 / D-15). The RPC takes
  * hundredths from a member send, whole chips from a club send and whole
@@ -366,11 +397,28 @@ export function UnionWalletModal({
 
     setLoading(true);
     void Promise.all([
-      supabase.rpc('fn_union_player_directory', { p_union_id: unionId }),
-      supabase.from('union_clubs').select('*, clubs:club_id(*)').eq('union_id', unionId),
+      readEveryPage<RosterRow>(
+        (from, to) =>
+          supabase
+            .rpc('fn_union_player_directory', { p_union_id: unionId })
+            .order('club_id')
+            .order('user_id')
+            .range(from, to),
+        isCurrent
+      ),
+      readEveryPage<any>(
+        (from, to) =>
+          supabase
+            .from('union_clubs')
+            .select('*, clubs:club_id(*)')
+            .eq('union_id', unionId)
+            .order('club_id')
+            .range(from, to),
+        isCurrent
+      ),
     ])
       .then(([rosterRes, clubsRes]) => {
-        if (!isCurrent()) return;
+        if (!isCurrent() || rosterRes.stale || clubsRes.stale) return;
         const failures: string[] = [];
         if (rosterRes.error) {
           reportError(rosterRes.error, 'UnionWalletModal.roster_load_failed');

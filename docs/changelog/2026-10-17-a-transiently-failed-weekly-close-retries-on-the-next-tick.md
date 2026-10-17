@@ -53,3 +53,13 @@ function, rate, payee, amount, routing, receipt, refusal and proof lifetime.
   different postimage, and any change to the job beyond its command.
 
 Law: `tests/a-transiently-failed-weekly-close-retries-on-the-next-tick.law.test.ts`.
+
+## Superseded (never installed)
+
+`20261017174849` (#7303, another session) was installed at 19:35 UTC, before
+this file, and adds the same transient-failure retry. Its postimage is not this
+file's preimage, so the file is marked `SUPERSEDED BY 20261017174849` and the
+applier will never send it. The extra statement-timeout branch was not shipped:
+the 18:40, 19:40 and 20:05 attempts all timed out re-proving the report, which
+`20261017195000` (#7314) addresses by letting an attempt reuse the kept READY
+report. Its law test and registry entry are removed with this note.

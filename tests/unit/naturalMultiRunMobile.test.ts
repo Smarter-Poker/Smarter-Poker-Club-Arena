@@ -194,23 +194,47 @@ it('allocates natural observer startup from one cumulative setup budget, includi
   expect(budgets).toEqual([120_000, 107_000, 94_000, 81_000, 68_000, 55_000]);
 });
 
-it('finishes each cold observer admission before starting the next, retaining all six', async () => {
-  const events: string[] = [];
+it('starts at most two observers together and retains every selected observer exactly once', async () => {
+  const starts: number[] = [];
+  const ready: number[] = [];
+  const gates = Array.from({ length: 6 }, () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  });
   let active = 0;
-  await initializeNaturalMultiRunObservers(
+  let peak = 0;
+  const operation = initializeNaturalMultiRunObservers(
     [1, 2, 3, 4, 5, 6],
     async (table, budget) => {
-      expect(++active).toBe(1);
+      starts.push(table);
+      peak = Math.max(peak, ++active);
       expect(budget).toBe(120_000);
-      events.push(`start${table}`);
-      await Promise.resolve();
-      events.push(`ready${table}`);
-      active--;
+      try {
+        await gates[table - 1].promise;
+        ready.push(table);
+      } finally {
+        active--;
+      }
     },
     1_000,
     () => 1_000
   );
-  expect(events).toEqual([1, 2, 3, 4, 5, 6].flatMap((id) => [`start${id}`, `ready${id}`]));
+  try {
+    expect(starts).toEqual([1, 2]);
+    gates[0].resolve();
+    await new Promise((done) => setTimeout(done, 0));
+    expect(starts).toEqual([1, 2, 3]);
+    expect(active).toBe(2);
+  } finally {
+    gates.forEach((gate) => gate.resolve());
+    await operation;
+  }
+  expect(peak).toBe(2);
+  expect(starts).toEqual([1, 2, 3, 4, 5, 6]);
+  expect([...ready].sort()).toEqual([1, 2, 3, 4, 5, 6]);
 });
 
 it('refuses incomplete observer selection before starting any page', async () => {
@@ -227,7 +251,51 @@ it('propagates actual readiness failure without starting replacement observers',
   await expect(
     initializeNaturalMultiRunObservers([1, 2, 3, 4, 5, 6], initialize, 1_000, () => 1_000)
   ).rejects.toBe(failure);
-  expect(initialize).toHaveBeenCalledTimes(1);
+  expect(initialize).toHaveBeenCalledTimes(2);
+});
+
+it('stops new starts on failure and awaits active admission before propagating the original error', async () => {
+  const failure = new Error('observer one refused');
+  let rejectFirst!: (reason: unknown) => void;
+  let finishSecond!: () => void;
+  const first = new Promise<void>((_resolve, reject) => {
+    rejectFirst = reject;
+  });
+  const second = new Promise<void>((resolve) => {
+    finishSecond = resolve;
+  });
+  const starts: number[] = [];
+  let settled = false;
+  const result = initializeNaturalMultiRunObservers(
+    [1, 2, 3, 4, 5, 6],
+    async (table) => {
+      starts.push(table);
+      await (table === 1 ? first : second);
+    },
+    1_000,
+    () => 1_000
+  ).then(
+    () => {
+      settled = true;
+      return undefined;
+    },
+    (error) => {
+      settled = true;
+      return error;
+    }
+  );
+  try {
+    expect(starts).toEqual([1, 2]);
+    rejectFirst(failure);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(settled).toBe(false);
+    expect(starts).toEqual([1, 2]);
+  } finally {
+    rejectFirst(failure);
+    finishSecond();
+  }
+  expect(await result).toBe(failure);
+  expect(starts).toEqual([1, 2]);
 });
 
 it('shares the original 120-second setup ceiling rather than granting every observer a fresh setup', async () => {

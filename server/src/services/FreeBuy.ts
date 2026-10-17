@@ -141,6 +141,17 @@ export const FREE_BUY_SLOT_MINUTE = 30;
  * required on every date.
  */
 export const FREE_BUY_HALF_HOUR_BOARD_FROM = '2026-10-20';
+
+/**
+ * THE FIRST SLOT ON THE HALF-HOUR BOARD (2026-10-17). 20261017105003 moved
+ * every Free Buy that had not started onto the half hour. The first was the
+ * Morning slot of 2026-10-17 (08:00 Chicago, 13:00 UTC, moved to 08:30). An
+ * event that started before that ran at the top of the hour, on the board it
+ * was published on. That start is correct and stays correct. The audit reads
+ * 24 hours back, so without this it called the last four events of the old
+ * board wrong for a day, about play that had already finished on time.
+ */
+export const FREE_BUY_HALF_HOUR_SLOTS_FROM_MS = Date.parse('2026-10-17T13:00:00Z');
 export const FREE_BUY_PREVIOUS_GUARANTEES: Record<FreeBuyTier, number> = {
   standard: 250,
   feature: 500,
@@ -752,7 +763,10 @@ export function auditFreeBuyRow(
     );
     return problems;
   }
-  if (at.minute !== FREE_BUY_SLOT_MINUTE)
+  // An event that started before the board moved ran on the board it was
+  // published on, at the top of the hour (FREE_BUY_HALF_HOUR_SLOTS_FROM_MS).
+  const ranOnTheHourBoard = startMs < FREE_BUY_HALF_HOUR_SLOTS_FROM_MS && at.minute === 0;
+  if (at.minute !== FREE_BUY_SLOT_MINUTE && !ranOnTheHourBoard)
     problems.push(
       `starts at ${at.hour}:${String(at.minute).padStart(2, '0')}, not on the half hour`
     );

@@ -1,0 +1,31 @@
+{
+  "schema": "horse-phase12-qualification-v1",
+  "qualified": true,
+  "mode": "contract",
+  "variant": "flh",
+  "sourceSha": "d9190c9ef413abbb38c63128b3532df8f9b4756c",
+  "packVersion": "fixed-limit-holdem-round3-v1",
+  "contractVersion": "remaining-variant-strength-contract-v1",
+  "contractDigest": "fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0",
+  "domain": "flh-cash-single-board-after-rake-horse-population",
+  "policyDigest": "d3d1b293842bcdecfd01f8491f5c3f4b42e41c95c862868fc84df910c499e36f",
+  "policyDigestDefinition": "horse-phase12-policy-digest-v2",
+  "objectives": {
+    "cash": { "qualified": true, "status": "measured", "regressionMarginBbPer100": -4 },
+    "tournament": {
+      "status": "unavailable dependency",
+      "qualified": false,
+      "reasons": [
+        "tournament:flh_whole_tournament_outcome_model_unavailable",
+        "tournament:qualified_flh_tournament_reference_population_unavailable",
+        "tournament:flh_tournament_thresholds_not_specified"
+      ]
+    }
+  },
+  "admissionAlsoRequires": [
+    "natural completion-share evidence for the pack: on the release under admission, the share of eligible live candidate-path betting decisions that complete without the work_budget fallback, per street, measured from natural decisions with the release unchanged throughout the window (Pineapple discard receipts counted apart from betting receipts); P12.3 must state and meet its own floor for that share before admitting the pack, because this contract measures strength only for decisions that complete"
+  ],
+  "evidencePath": "docs/evidence/phase12/d9190c9e/strength-2026-10-17-flh/strength.json",
+  "evidenceSha256": "1b0375944d8c9087311a3fce910f799ab59a73fdb686fd4bd71077d93023c16f",
+  "reasons": []
+}

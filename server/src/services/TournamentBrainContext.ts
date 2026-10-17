@@ -40,7 +40,11 @@ import {
   type TournamentContextStatus,
 } from '../engine/HorseTournamentPreflop.js';
 import { selectInChunks } from './supabase/chunkedIn.js';
-import { recoveryFeeCents, tournamentFeeRatio, unitFloorCents } from '../tournament/recoveryFee.js';
+import {
+  recoveryFeeCents,
+  tournamentPurchaseFeeRatio,
+  unitFloorCents,
+} from '../tournament/recoveryFee.js';
 import { UNIT_CENTS_ASSET_NOT_READ, normalizeUnitCents } from '../tournament/tournamentUnit.js';
 import { horseRebuyAllowance } from './FreeBuy.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -1444,7 +1448,6 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
   let recoveryPrizeContributionCents: number | null = null;
   let recoveryBountyContributionCents: number | null = null;
   if (recoveryCostCents !== null) {
-    const feeRatio = tournamentFeeRatio(buyIn, buyInFee);
     /**
      * The recovery fee is the ratio, capped at ten percent, truncated DOWN to
      * the smallest amount this tournament can pay. It used to truncate to a
@@ -1477,6 +1480,7 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
      */
     const unitCents =
       row.unit_cents == null ? UNIT_CENTS_ASSET_NOT_READ : normalizeUnitCents(row.unit_cents);
+    const feeRatio = tournamentPurchaseFeeRatio(buyIn, buyInFee, unitCents);
     const floorToUnit = (cents: number) => unitFloorCents(cents, unitCents);
     const feeCents = recoveryFeeCents(recoveryCostCents, feeRatio, unitCents);
     const netCents = Math.max(0, recoveryCostCents - feeCents);

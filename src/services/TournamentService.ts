@@ -59,6 +59,10 @@ import { gameManagementService } from './GameManagementService';
 import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
 import { DEFAULT_RAKE_RATE, splitBuyIn } from '../utils/buyIn';
+import {
+  recoveryFeeCents,
+  tournamentPurchaseFeeRatio,
+} from '../../server/src/tournament/recoveryFee';
 import { withTournamentPurchaseIntent } from './TournamentPurchaseIntent';
 import {
   withTournamentUnregistrationIntent,
@@ -2233,11 +2237,24 @@ class TournamentService {
    * drift from tournament creation and the database purchase authority.
    */
   private calcTournamentFee(
-    tournament: { buy_in_amount?: number | null; buy_in_fee?: number | null },
+    tournament: {
+      buy_in_amount?: number | null;
+      buy_in_fee?: number | null;
+      arena?: TournamentWithArena['arena'];
+    },
     baseCost: number
   ): number {
-    const rate = Math.min(DEFAULT_RAKE_RATE, Math.max(0, this.getTournamentFeeRatio(tournament)));
-    return splitBuyIn(baseCost, rate).fee;
+    const unitCents = tournamentRowUnitCents(tournament);
+    if (unitCents !== 100) {
+      const rate = Math.min(DEFAULT_RAKE_RATE, Math.max(0, this.getTournamentFeeRatio(tournament)));
+      return splitBuyIn(baseCost, rate).fee;
+    }
+    const rate = tournamentPurchaseFeeRatio(
+      Number(tournament.buy_in_amount || 0),
+      Number(tournament.buy_in_fee || 0),
+      unitCents
+    );
+    return recoveryFeeCents(Math.round(baseCost * 100), rate, unitCents) / 100;
   }
 
   /**
@@ -2261,6 +2278,7 @@ class TournamentService {
   /** Same quote, when the caller already holds the tournament row. */
   quoteFromTournament(
     tournament: {
+      arena?: TournamentWithArena['arena'];
       buy_in_amount?: number | null;
       buy_in_fee?: number | null;
       starting_chips?: number | null;

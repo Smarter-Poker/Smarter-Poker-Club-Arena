@@ -195,3 +195,154 @@ describe.each(constructors)('%s authoritative SDK initialization recovery', (_ki
     expect(lock).toHaveBeenCalledTimes(1);
   });
 });
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
+function admissionFixture(AuthClient: any) {
+  const pending: Array<{
+    timeout: number;
+    body: () => Promise<unknown>;
+    gate: ReturnType<typeof deferred>;
+  }> = [];
+  let blocked = false;
+  let owned = false;
+  const lock = vi.fn(async (_name, timeout, body) => {
+    if (!blocked) return body();
+    const gate = deferred();
+    pending.push({ timeout, body, gate });
+    await gate.promise;
+    expect(owned).toBe(false);
+    owned = true;
+    try {
+      return await body();
+    } finally {
+      owned = false;
+    }
+  });
+  const client = new AuthClient(options(lock));
+  return {
+    client,
+    pending,
+    lock,
+    owned: () => owned,
+    block: () => {
+      blocked = true;
+    },
+  };
+}
+
+const turn = () => new Promise<void>((done) => setTimeout(done, 0));
+
+describe.each(constructors)('%s pending native admission', (_kind, AuthClient) => {
+  it('admits a burst of actual getSession calls through one native waiter', async () => {
+    const fixture = admissionFixture(AuthClient);
+    await fixture.client.initialize();
+    fixture.block();
+    const reads = Promise.all(Array.from({ length: 5 }, () => fixture.client.getSession()));
+    await turn();
+    expect(fixture.pending).toHaveLength(1);
+    fixture.pending[0].gate.resolve();
+    expect((await reads).map((result) => result.error)).toEqual([null, null, null, null, null]);
+    expect(fixture.owned()).toBe(false);
+  });
+
+  it('runs each admitted callback FIFO and drains after the leader rejects before release', async () => {
+    const fixture = admissionFixture(AuthClient);
+    await fixture.client.initialize();
+    fixture.block();
+    const failure = new Error('leader operation failed');
+    const finish = deferred();
+    const order: number[] = [];
+    const leader = fixture.client._acquireLock(10000, async () => {
+      expect(fixture.owned()).toBe(true);
+      order.push(1);
+      throw failure;
+    });
+    const second = fixture.client._acquireLock(10000, async () => {
+      expect(fixture.owned()).toBe(true);
+      order.push(2);
+      await finish.promise;
+      return 'second';
+    });
+    const third = fixture.client._acquireLock(10000, async () => {
+      expect(fixture.owned()).toBe(true);
+      order.push(3);
+      return 'third';
+    });
+    const outcomes = Promise.allSettled([leader, second, third]);
+    expect(order).toEqual([]);
+    expect(fixture.pending).toHaveLength(1);
+    fixture.pending[0].gate.resolve();
+    await turn();
+    expect(order).toEqual([1, 2]);
+    expect(fixture.owned()).toBe(true);
+    finish.resolve();
+    expect(await outcomes).toEqual([
+      { status: 'rejected', reason: failure },
+      { status: 'fulfilled', value: 'second' },
+      { status: 'fulfilled', value: 'third' },
+    ]);
+    expect(order).toEqual([1, 2, 3]);
+    expect(fixture.owned()).toBe(false);
+  });
+
+  it('rejects an unadmitted cohort with the original error without replay or retry', async () => {
+    const fixture = admissionFixture(AuthClient);
+    await fixture.client.initialize();
+    fixture.block();
+    const body = vi.fn(async () => 'entered');
+    const calls = [
+      fixture.client._acquireLock(10000, body),
+      fixture.client._acquireLock(10000, body),
+    ];
+    const outcomes = Promise.allSettled(calls);
+    const failure = new DOMException('native admission refused', 'AbortError');
+    expect(fixture.pending).toHaveLength(1);
+    fixture.pending[0].gate.reject(failure);
+    expect(await outcomes).toEqual([
+      { status: 'rejected', reason: failure },
+      { status: 'rejected', reason: failure },
+    ]);
+    expect(body).not.toHaveBeenCalled();
+    expect(fixture.pending).toHaveLength(1);
+    const next = fixture.client._acquireLock(10000, body);
+    expect(fixture.pending).toHaveLength(2);
+    fixture.pending[1].gate.resolve();
+    expect(await next).toBe('entered');
+    expect(body).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps zero and different acquisition budgets independent of the positive cohort', async () => {
+    const fixture = admissionFixture(AuthClient);
+    await fixture.client.initialize();
+    fixture.block();
+    const callback = vi.fn(async () => 'done');
+    const first = fixture.client._acquireLock(10000, callback);
+    const cohort = fixture.client._acquireLock(10000, callback);
+    const immediate = fixture.client._acquireLock(0, callback);
+    const other = fixture.client._acquireLock(20, callback);
+    const results = Promise.allSettled([first, cohort, immediate, other]);
+    expect(fixture.pending.map((request) => request.timeout)).toEqual([10000, 0, 20]);
+    const refusal = new Error('independent request refused');
+    fixture.pending[1].gate.reject(refusal);
+    fixture.pending[2].gate.resolve();
+    expect(await other).toBe('done'); // An independent admitted request cannot drain unadmitted work.
+    expect(callback).toHaveBeenCalledTimes(1);
+    fixture.pending[0].gate.resolve();
+    expect(await results).toEqual([
+      { status: 'fulfilled', value: 'done' },
+      { status: 'fulfilled', value: 'done' },
+      { status: 'rejected', reason: refusal },
+      { status: 'fulfilled', value: 'done' },
+    ]);
+    expect(callback).toHaveBeenCalledTimes(3);
+  });
+});

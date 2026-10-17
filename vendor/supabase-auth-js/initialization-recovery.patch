@@ -1,20 +1,13 @@
 --- a/package/dist/main/GoTrueClient.js
 +++ b/package/dist/main/GoTrueClient.js
-@@ -194,7 +194,9 @@
-                 await this._notifyAllSubscribers(event.data.event, event.data.session, false); // broadcast = false so we don't get an endless loop of messages
-             });
-         }
+@@ -97,0 +98 @@
++        this.pendingLockAcquisition = null;
+@@ -197 +198,3 @@
 -        this.initialize();
 +        this.initialize().catch((error) => {
 +            console.warn('[AuthClient] Initial session admission failed', error?.name ?? 'Error')
 +        });
-     }
-     /**
-      * Returns whether error throwing mode is enabled for this client.
-@@ -229,15 +231,28 @@
-      * manually when checking for an error from an auth redirect (oauth, magiclink, password recovery, etc).
-      */
-     async initialize() {
+@@ -232,9 +235,23 @@
 -        if (this.initializePromise) {
 -            return await this.initializePromise;
 -        }
@@ -28,6 +21,7 @@
 +        return await this.initializePromise
 +      }
 +      let entered = false
++
 +      const initialization = (async () => {
 +        try {
 +          return await this._acquireLock(this.lockAcquireTimeout, async () => {
@@ -46,132 +40,170 @@
 +      })()
 +      this.initializePromise = initialization
 +      return await initialization
-     }
-     /**
-      * IMPORTANT:
-@@ -499,7 +514,7 @@
-      * Log in an existing user by exchanging an Auth Code issued during the PKCE flow.
-      */
-     async exchangeCodeForSession(authCode) {
+@@ -502 +519 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return this._acquireLock(this.lockAcquireTimeout, async () => {
-             return this._exchangeCodeForSession(authCode);
-         });
-@@ -1003,7 +1018,7 @@
-      * Requires the user to be signed-in.
-      */
-     async reauthenticate() {
+@@ -1006 +1023 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._reauthenticate();
-         });
-@@ -1085,7 +1100,7 @@
-      * will be emitted if this is detected. Use {@link #getUser()} instead.
-      */
-     async getSession() {
+@@ -1088 +1105 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return this._useSession(async (result) => {
-                 return result;
-@@ -1246,7 +1261,7 @@
-         if (jwt) {
-             return await this._getUser(jwt);
-         }
+@@ -1100,51 +1117,64 @@
+-        this._debug('#_acquireLock', 'begin', acquireTimeout);
+-        try {
+-            if (this.lockAcquired) {
+-                const last = this.pendingInLock.length
+-                    ? this.pendingInLock[this.pendingInLock.length - 1]
+-                    : Promise.resolve();
+-                const result = (async () => {
+-                    await last;
+-                    return await fn();
+-                })();
+-                this.pendingInLock.push((async () => {
+-                    try {
+-                        await result;
+-                    }
+-                    catch (e) {
+-                        // we just care if it finished
+-                    }
+-                })());
+-                return result;
+-            }
+-            return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
+-                this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey);
+-                try {
+-                    this.lockAcquired = true;
+-                    const result = fn();
+-                    this.pendingInLock.push((async () => {
+-                        try {
+-                            await result;
+-                        }
+-                        catch (e) {
+-                            // we just care if it finished
+-                        }
+-                    })());
+-                    await result;
+-                    // keep draining the queue until there's nothing to wait on
+-                    while (this.pendingInLock.length) {
+-                        const waitOn = [...this.pendingInLock];
+-                        await Promise.all(waitOn);
+-                        this.pendingInLock.splice(0, waitOn.length);
+-                    }
+-                    return await result;
+-                }
+-                finally {
+-                    this._debug('#_acquireLock', 'lock released for storage key', this.storageKey);
+-                    this.lockAcquired = false;
+-                }
+-            });
+-        }
+-        finally {
+-            this._debug('#_acquireLock', 'end');
+-        }
++      this._debug('#_acquireLock', 'begin', acquireTimeout)
++      // Only admitted operations enter pendingInLock. Waiting for a native
++      // acquisition must never be mistaken for owning that native lock.
++      const enqueue = (operation) => {
++        const last = this.pendingInLock.length
++          ? this.pendingInLock[this.pendingInLock.length - 1] : Promise.resolve()
++        const result = (async () => { await last; return await operation() })()
++        this.pendingInLock.push(result.then(() => {}, () => {}))
++        return result
++      }
++      try {
++        if (this.lockAcquired) return await enqueue(fn)
++        const pending = this.pendingLockAcquisition
++        if (acquireTimeout > 0 && pending && pending.timeout === acquireTimeout) {
++          return await new Promise((resolve, reject) => {
++            pending.waiting.push({ fn, resolve, reject })
++          })
++        }
++        // Immediate probes and other budgets keep their independent native request.
++        const admission = acquireTimeout > 0 && !pending
++          ? { timeout: acquireTimeout, waiting: [] } : null
++        if (admission) this.pendingLockAcquisition = admission
++        let entered = false
++        try {
++          return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
++            entered = true
++            this.lockAcquired = true
++            if (this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++            this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey)
++            try {
++              // Enqueue the complete admitted cohort before the first callback runs.
++              const result = enqueue(fn)
++              for (const request of admission?.waiting ?? []) {
++                enqueue(request.fn).then(request.resolve, request.reject)
++              }
++              if (admission) admission.waiting.length = 0
++              try {
++                return await result
++              } finally {
++                // A failed first operation cannot release native ownership while
++                // subsequent admitted operations are still executing.
++                while (this.pendingInLock.length) {
++                  const waitOn = [...this.pendingInLock]
++                  await Promise.all(waitOn)
++                  this.pendingInLock.splice(0, waitOn.length)
++                }
++              }
++            } finally {
++              this.lockAcquired = false
++              this._debug('#_acquireLock', 'lock released for storage key', this.storageKey)
++            }
++          })
++        } catch (error) {
++          if (!entered && admission) {
++            for (const request of admission.waiting) request.reject(error)
++            admission.waiting.length = 0
++          }
++          throw error
++        } finally {
++          if (admission && this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++        }
++      } finally {
++        this._debug('#_acquireLock', 'end')
++      }
+@@ -1249 +1279 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._getUser();
-         });
-@@ -1298,7 +1313,7 @@
-      * Updates user data for a logged in user.
-      */
-     async updateUser(attributes, options = {}) {
+@@ -1301 +1331 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._updateUser(attributes, options);
-         });
-@@ -1350,7 +1365,7 @@
-      * @param currentSession The current session that minimally contains an access token and refresh token.
-      */
-     async setSession(currentSession) {
+@@ -1353 +1383 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._setSession(currentSession);
-         });
-@@ -1411,7 +1426,7 @@
-      * @param currentSession The current session. If passed in, it must contain a refresh token.
-      */
-     async refreshSession(currentSession) {
+@@ -1414 +1444 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._refreshSession(currentSession);
-         });
-@@ -1566,7 +1581,7 @@
-      * If using `others` scope, no `SIGNED_OUT` event is fired!
-      */
-     async signOut(options = { scope: 'global' }) {
+@@ -1569 +1599 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._signOut(options);
-         });
-@@ -1610,11 +1625,13 @@
-         this._debug('#onAuthStateChange()', 'registered callback with id', id);
-         this.stateChangeEmitters.set(id, subscription);
-         (async () => {
+@@ -1613 +1643 @@
 -            await this.initializePromise;
 +            await this.initialize();
-             await this._acquireLock(this.lockAcquireTimeout, async () => {
-                 this._emitInitialSession(id);
-             });
+@@ -1617 +1647,3 @@
 -        })();
 +        })().catch((error) => {
 +            console.warn('[AuthClient] Initial auth subscription admission failed', error?.name ?? 'Error');
 +        });
-         return { data: { subscription } };
-     }
-     async _emitInitialSession(id) {
-@@ -2124,7 +2141,7 @@
-         // #_initialize can be allowed to complete without recursively waiting on
-         // itself
-         const timeout = setTimeout(async () => {
+@@ -2127 +2159 @@
 -            await this.initializePromise;
 +            await this.initialize();
-             await this._autoRefreshTokenTick();
-         }, 0);
-         this.autoRefreshTickTimeout = timeout;
-@@ -2276,7 +2293,7 @@
-                 // transitioned from hidden -> visible so we need to see if the session
-                 // should be recovered immediately... but to do that we need to acquire
-                 // the lock first asynchronously
+@@ -2279 +2311 @@
 -                await this.initializePromise;
 +                await this.initialize();
-                 await this._acquireLock(this.lockAcquireTimeout, async () => {
-                     if (document.visibilityState !== 'visible') {
-                         this._debug(methodName, 'acquired the lock to recover the session, but the browser visibilityState is no longer visible, aborting');
 --- a/package/dist/module/GoTrueClient.js
 +++ b/package/dist/module/GoTrueClient.js
-@@ -191,7 +191,9 @@
-                 await this._notifyAllSubscribers(event.data.event, event.data.session, false); // broadcast = false so we don't get an endless loop of messages
-             });
-         }
+@@ -94,0 +95 @@
++        this.pendingLockAcquisition = null;
+@@ -194 +195,3 @@
 -        this.initialize();
 +        this.initialize().catch((error) => {
 +            console.warn('[AuthClient] Initial session admission failed', error?.name ?? 'Error')
 +        });
-     }
-     /**
-      * Returns whether error throwing mode is enabled for this client.
-@@ -226,15 +228,28 @@
-      * manually when checking for an error from an auth redirect (oauth, magiclink, password recovery, etc).
-      */
-     async initialize() {
+@@ -229,9 +232,23 @@
 -        if (this.initializePromise) {
 -            return await this.initializePromise;
 -        }
@@ -185,6 +217,7 @@
 +        return await this.initializePromise
 +      }
 +      let entered = false
++
 +      const initialization = (async () => {
 +        try {
 +          return await this._acquireLock(this.lockAcquireTimeout, async () => {
@@ -203,139 +236,189 @@
 +      })()
 +      this.initializePromise = initialization
 +      return await initialization
-     }
-     /**
-      * IMPORTANT:
-@@ -496,7 +511,7 @@
-      * Log in an existing user by exchanging an Auth Code issued during the PKCE flow.
-      */
-     async exchangeCodeForSession(authCode) {
+@@ -499 +516 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return this._acquireLock(this.lockAcquireTimeout, async () => {
-             return this._exchangeCodeForSession(authCode);
-         });
-@@ -1000,7 +1015,7 @@
-      * Requires the user to be signed-in.
-      */
-     async reauthenticate() {
+@@ -1003 +1020 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._reauthenticate();
-         });
-@@ -1082,7 +1097,7 @@
-      * will be emitted if this is detected. Use {@link #getUser()} instead.
-      */
-     async getSession() {
+@@ -1085 +1102 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return this._useSession(async (result) => {
-                 return result;
-@@ -1243,7 +1258,7 @@
-         if (jwt) {
-             return await this._getUser(jwt);
-         }
+@@ -1097,51 +1114,64 @@
+-        this._debug('#_acquireLock', 'begin', acquireTimeout);
+-        try {
+-            if (this.lockAcquired) {
+-                const last = this.pendingInLock.length
+-                    ? this.pendingInLock[this.pendingInLock.length - 1]
+-                    : Promise.resolve();
+-                const result = (async () => {
+-                    await last;
+-                    return await fn();
+-                })();
+-                this.pendingInLock.push((async () => {
+-                    try {
+-                        await result;
+-                    }
+-                    catch (e) {
+-                        // we just care if it finished
+-                    }
+-                })());
+-                return result;
+-            }
+-            return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
+-                this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey);
+-                try {
+-                    this.lockAcquired = true;
+-                    const result = fn();
+-                    this.pendingInLock.push((async () => {
+-                        try {
+-                            await result;
+-                        }
+-                        catch (e) {
+-                            // we just care if it finished
+-                        }
+-                    })());
+-                    await result;
+-                    // keep draining the queue until there's nothing to wait on
+-                    while (this.pendingInLock.length) {
+-                        const waitOn = [...this.pendingInLock];
+-                        await Promise.all(waitOn);
+-                        this.pendingInLock.splice(0, waitOn.length);
+-                    }
+-                    return await result;
+-                }
+-                finally {
+-                    this._debug('#_acquireLock', 'lock released for storage key', this.storageKey);
+-                    this.lockAcquired = false;
+-                }
+-            });
+-        }
+-        finally {
+-            this._debug('#_acquireLock', 'end');
+-        }
++      this._debug('#_acquireLock', 'begin', acquireTimeout)
++      // Only admitted operations enter pendingInLock. Waiting for a native
++      // acquisition must never be mistaken for owning that native lock.
++      const enqueue = (operation) => {
++        const last = this.pendingInLock.length
++          ? this.pendingInLock[this.pendingInLock.length - 1] : Promise.resolve()
++        const result = (async () => { await last; return await operation() })()
++        this.pendingInLock.push(result.then(() => {}, () => {}))
++        return result
++      }
++      try {
++        if (this.lockAcquired) return await enqueue(fn)
++        const pending = this.pendingLockAcquisition
++        if (acquireTimeout > 0 && pending && pending.timeout === acquireTimeout) {
++          return await new Promise((resolve, reject) => {
++            pending.waiting.push({ fn, resolve, reject })
++          })
++        }
++        // Immediate probes and other budgets keep their independent native request.
++        const admission = acquireTimeout > 0 && !pending
++          ? { timeout: acquireTimeout, waiting: [] } : null
++        if (admission) this.pendingLockAcquisition = admission
++        let entered = false
++        try {
++          return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
++            entered = true
++            this.lockAcquired = true
++            if (this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++            this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey)
++            try {
++              // Enqueue the complete admitted cohort before the first callback runs.
++              const result = enqueue(fn)
++              for (const request of admission?.waiting ?? []) {
++                enqueue(request.fn).then(request.resolve, request.reject)
++              }
++              if (admission) admission.waiting.length = 0
++              try {
++                return await result
++              } finally {
++                // A failed first operation cannot release native ownership while
++                // subsequent admitted operations are still executing.
++                while (this.pendingInLock.length) {
++                  const waitOn = [...this.pendingInLock]
++                  await Promise.all(waitOn)
++                  this.pendingInLock.splice(0, waitOn.length)
++                }
++              }
++            } finally {
++              this.lockAcquired = false
++              this._debug('#_acquireLock', 'lock released for storage key', this.storageKey)
++            }
++          })
++        } catch (error) {
++          if (!entered && admission) {
++            for (const request of admission.waiting) request.reject(error)
++            admission.waiting.length = 0
++          }
++          throw error
++        } finally {
++          if (admission && this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++        }
++      } finally {
++        this._debug('#_acquireLock', 'end')
++      }
+@@ -1246 +1276 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._getUser();
-         });
-@@ -1295,7 +1310,7 @@
-      * Updates user data for a logged in user.
-      */
-     async updateUser(attributes, options = {}) {
+@@ -1298 +1328 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._updateUser(attributes, options);
-         });
-@@ -1347,7 +1362,7 @@
-      * @param currentSession The current session that minimally contains an access token and refresh token.
-      */
-     async setSession(currentSession) {
+@@ -1350 +1380 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._setSession(currentSession);
-         });
-@@ -1408,7 +1423,7 @@
-      * @param currentSession The current session. If passed in, it must contain a refresh token.
-      */
-     async refreshSession(currentSession) {
+@@ -1411 +1441 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._refreshSession(currentSession);
-         });
-@@ -1563,7 +1578,7 @@
-      * If using `others` scope, no `SIGNED_OUT` event is fired!
-      */
-     async signOut(options = { scope: 'global' }) {
+@@ -1566 +1596 @@
 -        await this.initializePromise;
 +        await this.initialize();
-         return await this._acquireLock(this.lockAcquireTimeout, async () => {
-             return await this._signOut(options);
-         });
-@@ -1607,11 +1622,13 @@
-         this._debug('#onAuthStateChange()', 'registered callback with id', id);
-         this.stateChangeEmitters.set(id, subscription);
-         (async () => {
+@@ -1610 +1640 @@
 -            await this.initializePromise;
 +            await this.initialize();
-             await this._acquireLock(this.lockAcquireTimeout, async () => {
-                 this._emitInitialSession(id);
-             });
+@@ -1614 +1644,3 @@
 -        })();
 +        })().catch((error) => {
 +            console.warn('[AuthClient] Initial auth subscription admission failed', error?.name ?? 'Error');
 +        });
-         return { data: { subscription } };
-     }
-     async _emitInitialSession(id) {
-@@ -2121,7 +2138,7 @@
-         // #_initialize can be allowed to complete without recursively waiting on
-         // itself
-         const timeout = setTimeout(async () => {
+@@ -2124 +2156 @@
 -            await this.initializePromise;
 +            await this.initialize();
-             await this._autoRefreshTokenTick();
-         }, 0);
-         this.autoRefreshTickTimeout = timeout;
-@@ -2273,7 +2290,7 @@
-                 // transitioned from hidden -> visible so we need to see if the session
-                 // should be recovered immediately... but to do that we need to acquire
-                 // the lock first asynchronously
+@@ -2276 +2308 @@
 -                await this.initializePromise;
 +                await this.initialize();
-                 await this._acquireLock(this.lockAcquireTimeout, async () => {
-                     if (document.visibilityState !== 'visible') {
-                         this._debug(methodName, 'acquired the lock to recover the session, but the browser visibilityState is no longer visible, aborting');
+--- a/package/dist/main/GoTrueClient.d.ts
++++ b/package/dist/main/GoTrueClient.d.ts
+@@ -74,0 +75 @@
++    private pendingLockAcquisition;
+--- a/package/dist/module/GoTrueClient.d.ts
++++ b/package/dist/module/GoTrueClient.d.ts
+@@ -74,0 +75 @@
++    private pendingLockAcquisition;
 --- a/package/src/GoTrueClient.ts
 +++ b/package/src/GoTrueClient.ts
-@@ -402,7 +402,9 @@
-       })
-     }
- 
+@@ -272,0 +273,4 @@
++  private pendingLockAcquisition: {
++    timeout: number
++    waiting: { fn: () => Promise<any>; resolve: (value: any) => void; reject: (reason: any) => void }[]
++  } | null = null
+@@ -405 +409,3 @@
 -    this.initialize()
 +    this.initialize().catch((error: any) => {
 +      console.warn('[AuthClient] Initial session admission failed', error?.name ?? 'Error')
 +    })
-   }
- 
-   /**
-@@ -448,14 +450,25 @@
-     if (this.initializePromise) {
-       return await this.initializePromise
-     }
+@@ -451,5 +457,17 @@
 -
 -    this.initializePromise = (async () => {
 -      return await this._acquireLock(this.lockAcquireTimeout, async () => {
 -        return await this._initialize()
 -      })
 +    let entered = false
-+    const initialization: Promise<InitializeResult> = (async () => {
++    let initialization!: Promise<InitializeResult>;
++    initialization = (async () => {
 +      try {
 +        return await this._acquireLock(this.lockAcquireTimeout, async () => {
 +          entered = true
@@ -350,118 +433,165 @@
 +        }
 +        throw error
 +      }
-     })()
+@@ -457,2 +475,2 @@
 -
 -    return await this.initializePromise
 +    this.initializePromise = initialization
 +    return await initialization
-   }
- 
-   /**
-@@ -749,7 +762,7 @@
-    * Log in an existing user by exchanging an Auth Code issued during the PKCE flow.
-    */
-   async exchangeCodeForSession(authCode: string): Promise<AuthTokenResponse> {
+@@ -752 +770 @@
 -    await this.initializePromise
 +    await this.initialize()
- 
-     return this._acquireLock(this.lockAcquireTimeout, async () => {
-       return this._exchangeCodeForSession(authCode)
-@@ -1383,7 +1396,7 @@
-    * Requires the user to be signed-in.
-    */
-   async reauthenticate(): Promise<AuthResponse> {
+@@ -1386 +1404 @@
 -    await this.initializePromise
 +    await this.initialize()
- 
-     return await this._acquireLock(this.lockAcquireTimeout, async () => {
-       return await this._reauthenticate()
-@@ -1470,7 +1483,7 @@
-    * will be emitted if this is detected. Use {@link #getUser()} instead.
-    */
-   async getSession() {
+@@ -1473 +1491 @@
 -    await this.initializePromise
 +    await this.initialize()
- 
-     const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
-       return this._useSession(async (result) => {
-@@ -1716,7 +1729,7 @@
-       return await this._getUser(jwt)
-     }
- 
+@@ -1489,14 +1507,35 @@
+-
+-    try {
+-      if (this.lockAcquired) {
+-        const last = this.pendingInLock.length
+-          ? this.pendingInLock[this.pendingInLock.length - 1]
+-          : Promise.resolve()
+-
+-        const result = (async () => {
+-          await last
+-          return await fn()
+-        })()
+-
+-        this.pendingInLock.push(
+-          (async () => {
++    // Only admitted operations enter pendingInLock. Waiting for a native
++    // acquisition must never be mistaken for owning that native lock.
++    const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
++      const last = this.pendingInLock.length
++        ? this.pendingInLock[this.pendingInLock.length - 1] : Promise.resolve()
++      const result = (async () => { await last; return await operation() })()
++      this.pendingInLock.push(result.then(() => {}, () => {}))
++      return result
++    }
++    try {
++      if (this.lockAcquired) return await enqueue(fn)
++      const pending = this.pendingLockAcquisition
++      if (acquireTimeout > 0 && pending && pending.timeout === acquireTimeout) {
++        return await new Promise<R>((resolve, reject) => {
++          pending.waiting.push({ fn, resolve, reject })
++        })
++      }
++      // Immediate probes and other budgets keep their independent native request.
++      const admission: typeof this.pendingLockAcquisition = acquireTimeout > 0 && !pending
++        ? { timeout: acquireTimeout, waiting: [] } : null
++      if (admission) this.pendingLockAcquisition = admission
++      let entered = false
++      try {
++        return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
++          entered = true
++          this.lockAcquired = true
++          if (this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++          this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey)
++          try {
++            // Enqueue the complete admitted cohort before the first callback runs.
++            const result = enqueue(fn)
++            for (const request of admission?.waiting ?? []) {
++              enqueue(request.fn).then(request.resolve, request.reject)
++            }
++            if (admission) admission.waiting.length = 0
+@@ -1504,3 +1543,9 @@
+-              await result
+-            } catch (e: any) {
+-              // we just care if it finished
++              return await result
++            } finally {
++              // A failed first operation cannot release native ownership while
++              // subsequent admitted operations are still executing.
++              while (this.pendingInLock.length) {
++                const waitOn = [...this.pendingInLock]
++                await Promise.all(waitOn)
++                this.pendingInLock.splice(0, waitOn.length)
++              }
+@@ -1508,33 +1553,3 @@
+-          })()
+-        )
+-
+-        return result
+-      }
+-
+-      return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
+-        this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey)
+-
+-        try {
+-          this.lockAcquired = true
+-
+-          const result = fn()
+-
+-          this.pendingInLock.push(
+-            (async () => {
+-              try {
+-                await result
+-              } catch (e: any) {
+-                // we just care if it finished
+-              }
+-            })()
+-          )
+-
+-          await result
+-
+-          // keep draining the queue until there's nothing to wait on
+-          while (this.pendingInLock.length) {
+-            const waitOn = [...this.pendingInLock]
+-
+-            await Promise.all(waitOn)
+-
+-            this.pendingInLock.splice(0, waitOn.length)
++          } finally {
++            this.lockAcquired = false
++            this._debug('#_acquireLock', 'lock released for storage key', this.storageKey)
+@@ -1542,8 +1557,10 @@
+-
+-          return await result
+-        } finally {
+-          this._debug('#_acquireLock', 'lock released for storage key', this.storageKey)
+-
+-          this.lockAcquired = false
+-        }
+-      })
++        })
++      } catch (error: any) {
++        if (!entered && admission) {
++          for (const request of admission.waiting) request.reject(error)
++          admission.waiting.length = 0
++        }
++        throw error
++      } finally {
++        if (admission && this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++      }
+@@ -1719 +1736 @@
 -    await this.initializePromise
 +    await this.initialize()
- 
-     const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
-       return await this._getUser()
-@@ -1782,7 +1795,7 @@
-       emailRedirectTo?: string | undefined
-     } = {}
-   ): Promise<UserResponse> {
+@@ -1785 +1802 @@
 -    await this.initializePromise
 +    await this.initialize()
- 
-     return await this._acquireLock(this.lockAcquireTimeout, async () => {
-       return await this._updateUser(attributes, options)
-@@ -1852,7 +1865,7 @@
-     access_token: string
-     refresh_token: string
-   }): Promise<AuthResponse> {
+@@ -1855 +1872 @@
 -    await this.initializePromise
 +    await this.initialize()
- 
-     return await this._acquireLock(this.lockAcquireTimeout, async () => {
-       return await this._setSession(currentSession)
-@@ -1924,7 +1937,7 @@
-    * @param currentSession The current session. If passed in, it must contain a refresh token.
-    */
-   async refreshSession(currentSession?: { refresh_token: string }): Promise<AuthResponse> {
+@@ -1927 +1944 @@
 -    await this.initializePromise
 +    await this.initialize()
- 
-     return await this._acquireLock(this.lockAcquireTimeout, async () => {
-       return await this._refreshSession(currentSession)
-@@ -2138,7 +2151,7 @@
-    * If using `others` scope, no `SIGNED_OUT` event is fired!
-    */
-   async signOut(options: SignOut = { scope: 'global' }): Promise<{ error: AuthError | null }> {
+@@ -2141 +2158 @@
 -    await this.initializePromise
 +    await this.initialize()
- 
-     return await this._acquireLock(this.lockAcquireTimeout, async () => {
-       return await this._signOut(options)
-@@ -2223,12 +2236,14 @@
- 
-     this.stateChangeEmitters.set(id, subscription)
-     ;(async () => {
+@@ -2226 +2243 @@
 -      await this.initializePromise
 +      await this.initialize()
- 
-       await this._acquireLock(this.lockAcquireTimeout, async () => {
-         this._emitInitialSession(id)
-       })
+@@ -2231 +2248,3 @@
 -    })()
 +    })().catch((error: any) => {
 +      console.warn('[AuthClient] Initial auth subscription admission failed', error?.name ?? 'Error')
 +    })
- 
-     return { data: { subscription } }
-   }
-@@ -2877,7 +2892,7 @@
-     // #_initialize can be allowed to complete without recursively waiting on
-     // itself
-     const timeout = setTimeout(async () => {
+@@ -2880 +2899 @@
 -      await this.initializePromise
 +      await this.initialize()
-       await this._autoRefreshTokenTick()
-     }, 0)
-     this.autoRefreshTickTimeout = timeout
-@@ -3057,7 +3072,7 @@
-         // transitioned from hidden -> visible so we need to see if the session
-         // should be recovered immediately... but to do that we need to acquire
-         // the lock first asynchronously
+@@ -3060 +3079 @@
 -        await this.initializePromise
 +        await this.initialize()
- 
-         await this._acquireLock(this.lockAcquireTimeout, async () => {
-           if (document.visibilityState !== 'visible') {

@@ -976,7 +976,7 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     // a delayed callback cannot manufacture a `check` in pineapple_discard.
     this.clearTurnTimer();
     const seats = (event as any).seats as number[];
-    const timeoutMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
+    const timeoutMs = this.actionClockSeconds() * 1000;
     const deadline = Date.now() + timeoutMs;
 
     // AUDIT V2 (2026-07-23): horses used to rely on the expiry auto-discard,

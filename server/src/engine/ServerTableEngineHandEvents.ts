@@ -486,7 +486,7 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
 
         const tcSeatedPlayer = players.find((p) => p.seat_number === event.seat);
 
-        const baseActionTime = this.tableInfo?.action_time_seconds || 15;
+        const baseActionTime = this.actionClockSeconds();
         const inReconnectGrace = tcSeatedPlayer?.user_id
           ? this.disconnectEngine.isInReconnectGrace(this.tableId, tcSeatedPlayer.user_id)
           : false;

@@ -4,6 +4,7 @@ import {
   roadSurvivesV5,
 } from '../utils/choiceProgressiveGuarantee';
 import GameLifetimeAverages from '../components/games/GameLifetimeAverages';
+import PageHelp from '../components/help/PageHelp';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useBonusBudget } from '../hooks/useBonusBudget';
@@ -62,7 +63,7 @@ import {
 import { diamondBonusFloor } from '../utils/diamondBonusPayout';
 import { diamondGameTitle } from '../utils/diamondGameTitles';
 import { randomClientSeed } from '../utils/wheelFairness';
-import { compactChips, formatWalletDiamonds } from '../utils/format';
+import { compactChips } from '../utils/format';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { triggerHaptic } from '../services/HapticService';
@@ -1020,7 +1021,28 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           )
         }
         title={title}
-        eyebrow="Diamond Spins"
+        help={
+          <PageHelp
+            title={title}
+            summary={
+              game === 'mines'
+                ? 'Pick Hidden Gems On The Board. Every Safe Pick Raises Your Prize, And You Can Book The Win After Any Safe Pick.'
+                : 'Guide The Donkey Across The Road. Each Safe Crossing Raises Your Prize, And You Can Book The Win After Any Street.'
+            }
+            steps={[
+          {
+            title: 'Your Numbers',
+            body: 'Your Entry, The Guaranteed Minimum And The Prize So Far, Updated As You Play.',
+            target: '[data-game-console] dl',
+          },
+          {
+            title: 'Play',
+            body: 'The Plates At The Foot Of The Game Start A Round And Book Your Win.',
+            target: '[data-game-actions]',
+          },
+            ]}
+          />
+        }
         pill={status}
         pillInk={round?.status === 'cashed' ? 'green' : 'blue'}
         bays={[
@@ -1236,7 +1258,6 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
       <GamePanel
         title="Your Game"
         pill="Rules"
-        eyebrow={`${formatWalletDiamonds(state?.diamonds ?? 0)} Diamonds`}
         foot="foot"
       >
         <p className="sc-copy">
@@ -1266,7 +1287,7 @@ function DiamondChoiceGame({ game }: { game: ChoiceGame }) {
           The Win Is Booked.
         </p>
       </GamePanel>
-      <GamePanel title={proofTitle} pill="Sealed" eyebrow="Sealed Before Play" foot="foot">
+      <GamePanel title={proofTitle} pill="Sealed" foot="foot">
         <p className={`sc-copy ${styles.proofHash}`}>
           {finished ? 'Next Round Sealed: ' : 'Sealed Before Play: '}
           {open ? round.server_seed_hash : (ticket?.hash ?? 'Preparing Your Ticket')}

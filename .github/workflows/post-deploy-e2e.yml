@@ -1547,9 +1547,14 @@ jobs:
       # One explicit owner-requested observation. Ordinary publication keeps its
       # existing four required continuity cases; absence of a natural multirun
       # sample cannot silently satisfy this separate opted-in certificate.
+      # It runs even when a continuity case above failed (!cancelled()): the
+      # two certificates observe different things, and on 2026-10-17 run
+      # 39034908810 lost its whole natural observation because one MTT subject
+      # table closed before its level changed. The failed case still fails
+      # the job, so nothing is hidden; a cancelled run still stops here.
       - name: Observe natural two-run and three-run hands on mobile
         id: multirun
-        if: github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && steps.gameplay.outputs.resumed == 'true' && steps.account.outcome == 'success' && steps.spectator.outcome == 'success'
+        if: "!cancelled() && github.event_name == 'repository_dispatch' && toJSON(github.event.client_payload.mobile_multirun) == 'true' && steps.gameplay.outputs.resumed == 'true' && steps.account.outcome == 'success' && steps.spectator.outcome == 'success'"
         env:
           BASE_URL: https://smarter.poker/hub/club-arena/
           ARENA_BASE_URL: https://smarter.poker/hub/club-arena

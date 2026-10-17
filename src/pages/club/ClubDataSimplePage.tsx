@@ -33,6 +33,7 @@ import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import styles from './ClubDataSimplePage.module.css';
+import { usePageTitle } from '../../hooks/usePageTitle';
 
 type Preset = 1 | 7 | 14;
 type GameFilter = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MIXED' | 'MTT' | 'SNG';
@@ -127,7 +128,8 @@ export function formatTotal(n: number | null | undefined): string {
   const a = Math.abs(v);
   if (a < 10_000) return formatMoney(v);
   const sign = v < 0 ? '-' : '';
-  if (a < 1_000_000) return `${sign}${(Math.floor(a / 100) / 10).toLocaleString('en-US', { maximumFractionDigits: 1 })}K`;
+  if (a < 1_000_000)
+    return `${sign}${(Math.floor(a / 100) / 10).toLocaleString('en-US', { maximumFractionDigits: 1 })}K`;
   return `${sign}${(Math.floor(a / 10_000) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}M`;
 }
 
@@ -174,6 +176,7 @@ export function isSnapshot(value: unknown): value is Snapshot {
 }
 
 export default function ClubDataSimplePage() {
+  usePageTitle('Club Data');
   const navigate = useNavigate();
   const params = useParams<{ clubId?: string }>();
   const [searchParams] = useSearchParams();
@@ -334,7 +337,9 @@ export default function ClubDataSimplePage() {
         <Header onBack={() => navigate(-1)} />
         <div className={styles.empty}>
           <SpadeMark />
-          <p className={styles.emptyText}>Only The Club Owner, Admins And Super Agents Can View Club Data.</p>
+          <p className={styles.emptyText}>
+            Only The Club Owner, Admins And Super Agents Can View Club Data.
+          </p>
         </div>
       </div>
     );
@@ -394,7 +399,9 @@ export default function ClubDataSimplePage() {
       <dl className={styles.stats} aria-busy={loading} aria-label="Club Totals">
         <div className={styles.stat}>
           <dt className={styles.statLabel}>Games</dt>
-          <dd className={styles.statValue}>{summary ? Number(summary.games).toLocaleString('en-US') : '-'}</dd>
+          <dd className={styles.statValue}>
+            {summary ? Number(summary.games).toLocaleString('en-US') : '-'}
+          </dd>
         </div>
         <div className={styles.stat}>
           <dt className={styles.statLabel}>Total Winnings</dt>
@@ -519,14 +526,17 @@ export default function ClubDataSimplePage() {
                   )}
                   {Number(row.players) > 0 && (
                     <span>
-                      {Number(row.players).toLocaleString('en-US')} Player{Number(row.players) === 1 ? '' : 's'}
+                      {Number(row.players).toLocaleString('en-US')} Player
+                      {Number(row.players) === 1 ? '' : 's'}
                     </span>
                   )}
                   {row.creator_name && <span>By {row.creator_name}</span>}
                 </div>
               </div>
               <div className={styles.rowFigures}>
-                <span className={`${styles.rowWin} ${inkFor(row.winnings)}`}>{formatMoney(row.winnings)}</span>
+                <span className={`${styles.rowWin} ${inkFor(row.winnings)}`}>
+                  {formatMoney(row.winnings)}
+                </span>
                 <span className={styles.rowFee}>Fee {formatMoney(row.fee)}</span>
               </div>
             </li>

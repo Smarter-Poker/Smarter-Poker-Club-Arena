@@ -36,11 +36,13 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
 import './TransactionHistoryPage.css';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /** The full-page view shows more per page than the wallet's panel (50). */
 export const TRANSACTION_PAGE_SIZE = 100;
 
 export default function TransactionHistoryPage() {
+  usePageTitle('Transactions');
   // A fresh read is a remount of the statement: it re-asks the RPC from the
   // newest leg, exactly as the old page reset to its first page.
   const [generation, setGeneration] = useState(0);

@@ -98,6 +98,8 @@ vi.mock('@/lib/supabase', () => {
           order: () => chain,
           in: () => chain,
           limit: () => chain,
+          // The friend picker pages each direction (2026-10-17).
+          range: () => chain,
           maybeSingle: async () => ({ data: { player_number: 12 }, error: null }),
           then: (resolve: any) =>
             Promise.resolve({

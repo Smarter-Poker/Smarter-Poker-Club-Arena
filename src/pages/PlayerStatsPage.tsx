@@ -24,6 +24,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { tabTransition, instant } from '../components/stats/statsMotion';
 import { useLocation, useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { findClubByParam, readClubContextParam } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
 // The two caches sign-out has to be able to reach. They live in a leaf module
 // so clearUserCaches can purge them without importing this page - that import
@@ -112,7 +113,12 @@ import {
   type StatCategory,
   type StatsClubOption,
 } from './stats/playerStatsPageModel';
+import { usePageTitle } from '../hooks/usePageTitle';
+/** ?statsClub=all: the player chose All Clubs while ?club= names a club. */
+const ALL_CLUBS_PARAM = 'all';
+
 export default function PlayerStatsPage() {
+  usePageTitle('Player Stats');
   const { userId } = useParams();
   const { user } = useAuthUser();
   const navigate = useNavigate();
@@ -126,9 +132,10 @@ export default function PlayerStatsPage() {
   const [clubsLoading, setClubsLoading] = useState(true);
   const [clubsError, setClubsError] = useState(false);
   const [clubsReload, setClubsReload] = useState(0);
-  const [selectedClubId, setSelectedClubId] = useState<StatsClubId>(
-    () => searchParams.get('statsClub')?.trim() || null
-  );
+  const [selectedClubId, setSelectedClubId] = useState<StatsClubId>(() => {
+    const requested = searchParams.get('statsClub')?.trim() || null;
+    return requested === ALL_CLUBS_PARAM ? null : requested;
+  });
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [comparisonRows, setComparisonRows] = useState<ClubComparisonRow[] | null>(null);
   const [comparisonLoadedKey, setComparisonLoadedKey] = useState<string | null>(null);
@@ -244,7 +251,12 @@ export default function PlayerStatsPage() {
             seen.add(club.id);
             return true;
           })
-          .map((club) => ({ id: club.id, name: club.name || 'Club' }))
+          .map((club) => ({
+            id: club.id,
+            name: club.name || 'Club',
+            slug: club.slug ?? null,
+            club_id: club.club_id ?? null,
+          }))
           .sort((a, b) => a.name.localeCompare(b.name));
         setClubs(eligible);
         setSelectedClubId((current) =>
@@ -393,9 +405,21 @@ export default function PlayerStatsPage() {
     }
     const requestedClub = current.get('statsClub')?.trim() || null;
     if (clubsLoading) return;
+    /* THE MENU'S CLUB IS THE DEFAULT (2026-10-17). Every page the club menu
+       stamps reads ?club= (tests/the-menu-stays-in-the-club.law.test.ts);
+       Stats read only its own statsClub, so /stats?club=shark-club opened on
+       All Clubs. An explicit statsClub still wins. */
+    const contextClub =
+      requestedClub === ALL_CLUBS_PARAM
+        ? null
+        : (findClubByParam(clubs, readClubContextParam(location.search))?.id ?? null);
     const nextClub =
-      requestedClub && clubs.some((club) => club.id === requestedClub) ? requestedClub : null;
-    if (requestedClub && !nextClub) updateStatsUrl({ statsClub: null }, true);
+      requestedClub && clubs.some((club) => club.id === requestedClub)
+        ? requestedClub
+        : contextClub;
+    if (requestedClub && requestedClub !== ALL_CLUBS_PARAM && !nextClub) {
+      updateStatsUrl({ statsClub: null }, true);
+    }
     if (nextClub !== selectedClubId) {
       setFull(null);
       setAllTimeFetched(null);
@@ -702,9 +726,16 @@ export default function PlayerStatsPage() {
       setAllTimeError(false);
       setLoading(true);
       setSelectedClubId(nextClubId);
-      updateStatsUrl({ statsClub: nextClubId });
+      /* All Clubs is a choice the URL must remember while the menu's ?club=
+         names a club, or the menu's club would be re-selected on the next
+         render. */
+      if (nextClubId || !readClubContextParam(location.search)) {
+        updateStatsUrl({ statsClub: nextClubId });
+      } else {
+        updateStatsUrl({ statsClub: ALL_CLUBS_PARAM });
+      }
     },
-    [updateStatsUrl]
+    [updateStatsUrl, location.search]
   );
   /**
    * The CURRENT loader. Both the shared debouncer and the in-flight replay

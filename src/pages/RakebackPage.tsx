@@ -23,6 +23,7 @@ import {
   nextRakebackBoundary,
   rakebackAccountingDay,
 } from '../utils/rakebackReadiness';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 interface RakebackPeriod {
   id: string;
@@ -45,6 +46,7 @@ function rateLabel(rate: number | null | undefined) {
 }
 
 export default function RakebackPage() {
+  usePageTitle('Rakeback');
   const navigate = useNavigate();
   useVisibilityRefresh(() => loadRakebackData());
   const { user } = useAuthUser();

@@ -1,0 +1,15 @@
+{
+  "_owner": "fix/club-data-reads-the-money-records. Migration 20261017161545_club_data_reads_the_club_from_the_money_records: Club Data credits cash rake from rake_attributions, tournament fees from accounting_tournament_fee_sources, cash buy-ins/outs from the chip_ledger leg at that table and tournament results from the entry club; day re-count via fn_ca_club_data_rebuild_day; footer access via ca_club_data_access.",
+  "tables": [],
+  "functions": [
+    "fn_ca_cash_hand_club",
+    "fn_ca_tournament_entry_club",
+    "fn_ca_club_data_tournament_fee_split",
+    "fn_ca_club_data_stage",
+    "fn_ca_club_data_publish",
+    "fn_ca_club_data_rebuild_day",
+    "trg_ca_club_data_cash_attribution_insert",
+    "trg_ca_club_data_tournament_fee_insert",
+    "ca_club_data_access"
+  ]
+}

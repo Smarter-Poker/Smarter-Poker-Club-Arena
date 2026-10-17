@@ -12,20 +12,28 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: authState.userId }, loading: false }),
 }));
 
+const workspaceState = vi.hoisted(() => ({
+  status: 'ready' as string,
+  clubRole: 'owner' as string | null,
+  canViewFinance: true,
+}));
 vi.mock('../../src/contexts/ClubWorkspaceContext', () => ({
   useClubWorkspace: () => ({
     routeClubId: '11111111-2222-3333-4444-555555555555',
     clubUUID: '11111111-2222-3333-4444-555555555555',
-    clubRole: 'owner',
+    clubRole: workspaceState.clubRole,
     isPlatformStaff: false,
-    isClubStaff: true,
-    canViewFinance: true,
-    canControlClub: true,
-    loading: false,
+    isClubStaff: workspaceState.canViewFinance,
+    canViewFinance: workspaceState.canViewFinance,
+    canControlClub: workspaceState.canViewFinance,
+    status: workspaceState.status,
+    loading: workspaceState.status === 'loading',
     error: null,
     reload: vi.fn(),
   }),
 }));
+
+const rpcState = vi.hoisted(() => ({ answer: 'none' as string, calls: 0 }));
 
 /**
  * The cold-cache path calls fetchQuickLinkClubs, which hits Supabase. Left
@@ -35,6 +43,10 @@ vi.mock('../../src/contexts/ClubWorkspaceContext', () => ({
  */
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
+    rpc: async () => {
+      rpcState.calls += 1;
+      return { data: rpcState.answer, error: null };
+    },
     from: () => ({
       select: () => {
         const chain: any = {
@@ -102,6 +114,11 @@ describe('clubIdFromPath', () => {
 describe('ClubBottomNav approved footer contract', () => {
   beforeEach(() => {
     authState.userId = 'user-1';
+    workspaceState.status = 'ready';
+    workspaceState.clubRole = 'owner';
+    workspaceState.canViewFinance = true;
+    rpcState.answer = 'none';
+    rpcState.calls = 0;
     localStorage.clear();
   });
 
@@ -285,3 +302,71 @@ describe('ClubBottomNav approved footer contract', () => {
     });
   });
 });
+
+/* Dan 2026-10-17: "regular player accounts don't see the Data button or
+   pages". #7262 showed the button while the role was still loading, so a
+   player saw it flash; it is now shown only on a confirmed answer. */
+describe('the Data button appears only once access is confirmed', () => {
+  beforeEach(() => {
+    authState.userId = 'user-1';
+    rpcState.answer = 'none';
+    rpcState.calls = 0;
+    localStorage.clear();
+  });
+
+  it('is hidden from a regular player, with the five-control artwork', async () => {
+    workspaceState.status = 'ready';
+    workspaceState.clubRole = 'player';
+    workspaceState.canViewFinance = false;
+    await renderAt(`/clubs/${CLUB}/cashier`);
+
+    expect(labels()).not.toContain('Data');
+    expect(screen.getAllByRole('listitem')).toHaveLength(5);
+  });
+
+  it('is hidden while the role is still loading, even before the server answers', async () => {
+    workspaceState.status = 'loading';
+    workspaceState.clubRole = null;
+    workspaceState.canViewFinance = false;
+    rpcState.answer = 'club';
+    const view = render(
+      <MemoryRouter initialEntries={[`/clubs/${CLUB}/cashier`]}>
+        <ClubBottomNav />
+      </MemoryRouter>
+    );
+    // first paint: nothing confirmed yet
+    expect(labels()).not.toContain('Data');
+    view.unmount();
+  });
+
+  it('shows for an agent once the workspace has their role', async () => {
+    workspaceState.status = 'ready';
+    workspaceState.clubRole = 'agent';
+    workspaceState.canViewFinance = false;
+    await renderAt(`/clubs/${CLUB}/cashier`);
+
+    expect(labels()).toContain('Data');
+  });
+
+  it('asks the server for a club the workspace has not loaded, and trusts only its answer', async () => {
+    workspaceState.status = 'loading';
+    workspaceState.clubRole = null;
+    workspaceState.canViewFinance = false;
+    rpcState.answer = 'downline';
+    await renderAt('/stats', OTHER);
+
+    expect(rpcState.calls).toBeGreaterThan(0);
+    expect(labels()).toContain('Data');
+  });
+
+  it('keeps it hidden when the server refuses', async () => {
+    workspaceState.status = 'loading';
+    workspaceState.clubRole = null;
+    workspaceState.canViewFinance = false;
+    rpcState.answer = 'none';
+    await renderAt('/stats', OTHER);
+
+    expect(labels()).not.toContain('Data');
+  });
+});
+

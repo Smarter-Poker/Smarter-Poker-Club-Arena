@@ -20,7 +20,9 @@ import { readClubContextParam, withClubContext } from '../../utils/clubScopedPat
 import { clubIdFromPath } from './clubIdFromPath';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
 import { useHideFooterOnScroll } from './useHideFooterOnScroll';
-import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import { useClubWorkspace, type ClubWorkspaceValue } from '../../contexts/ClubWorkspaceContext';
+import { supabase } from '../../lib/supabase';
+import { isUUID } from '../../utils/clubIdResolver';
 import styles from './ClubBottomNav.module.css';
 
 interface ClubBottomNavProps {
@@ -81,6 +83,114 @@ function useResolvedClubId(explicit?: string, routeClubId?: string | null): stri
   // the effect above clears the old state.
   const sameAccountResolved = resolved.userId === currentUserId ? resolved.clubId : null;
   return explicit || routeClubId || sameAccountResolved;
+}
+
+/**
+ * WHO SEES THE DATA BUTTON (Dan 2026-10-17): club owners and staff, and agents
+ * (who see their downline). A regular player never does - not even for the
+ * moment it takes to learn who they are.
+ *
+ * #7262 decided this from the workspace role and showed the button while that
+ * role was still unknown (`!isPlayer && !effectiveRole`), so a player saw it
+ * flash on every club page, and on a page outside a club (where the workspace
+ * never loads a role) it simply stayed. The button is now shown only on a
+ * CONFIRMED answer: the workspace's role once it is ready for this club, or
+ * the server's own answer for the club the footer points at
+ * (`ca_club_data_access`, the same rule `ca_club_data_screen` enforces),
+ * remembered per account and club so a returning owner sees it immediately.
+ * Unknown means hidden.
+ */
+type DataAccess = 'club' | 'downline' | 'none';
+const DATA_ACCESS_STORAGE_KEY = 'ca.footer-data-access.v1';
+const DATA_ROLES = new Set(['owner', 'co_owner', 'admin', 'super_agent', 'agent', 'sub_agent']);
+const memoryAccess = new Map<string, DataAccess>();
+
+function readStoredAccess(key: string): DataAccess | null {
+  const known = memoryAccess.get(key);
+  if (known) return known;
+  try {
+    const all = JSON.parse(localStorage.getItem(DATA_ACCESS_STORAGE_KEY) || '{}');
+    const value = all?.[key];
+    return value === 'club' || value === 'downline' || value === 'none' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeAccess(key: string, value: DataAccess) {
+  memoryAccess.set(key, value);
+  try {
+    const all = JSON.parse(localStorage.getItem(DATA_ACCESS_STORAGE_KEY) || '{}') || {};
+    all[key] = value;
+    localStorage.setItem(DATA_ACCESS_STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    /* storage unavailable - the in-memory answer still holds for this session */
+  }
+}
+
+/** True/false from the workspace when it has settled for this club, else null. */
+export function workspaceDataAccess(
+  workspace: Pick<
+    ClubWorkspaceValue,
+    'status' | 'clubUUID' | 'routeClubId' | 'clubRole' | 'isPlatformStaff' | 'canViewFinance'
+  >,
+  clubId: string | null
+): boolean | null {
+  if (!clubId) return null;
+  const forThisClub = workspace.clubUUID === clubId || workspace.routeClubId === clubId;
+  if (!forThisClub) return null;
+  if (workspace.status === 'denied') return workspace.isPlatformStaff === true;
+  if (workspace.status !== 'ready') return null;
+  return (
+    workspace.isPlatformStaff === true ||
+    workspace.canViewFinance === true ||
+    DATA_ROLES.has(String(workspace.clubRole || ''))
+  );
+}
+
+function useFooterDataAccess(clubId: string | null, userId: string | null): boolean {
+  const workspace = useClubWorkspace();
+  const fromWorkspace = workspaceDataAccess(workspace, clubId);
+  // The server takes a club UUID; a slug in the URL waits for the workspace.
+  const serverClubId =
+    clubId && isUUID(clubId)
+      ? clubId
+      : clubId && workspace.routeClubId === clubId
+        ? workspace.clubUUID
+        : null;
+  const key = userId && serverClubId ? `${userId}:${serverClubId}` : null;
+  const [answer, setAnswer] = useState<{ key: string | null; value: DataAccess | null }>(() => ({
+    key,
+    value: key ? readStoredAccess(key) : null,
+  }));
+
+  useEffect(() => {
+    if (!key || !serverClubId) return;
+    let cancelled = false;
+    setAnswer((current) =>
+      current.key === key ? current : { key, value: readStoredAccess(key) }
+    );
+    void (async () => {
+      try {
+        const { data, error } = await supabase.rpc('ca_club_data_access', {
+          p_club_id: serverClubId,
+        });
+        if (cancelled || error) return;
+        const value: DataAccess = data === 'club' || data === 'downline' ? data : 'none';
+        storeAccess(key, value);
+        setAnswer({ key, value });
+      } catch {
+        /* unknown stays unknown: the button stays hidden, never guessed */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [key, serverClubId]);
+
+  if (fromWorkspace !== null) return fromWorkspace;
+  const stored = answer.key === key ? answer.value : key ? readStoredAccess(key) : null;
+  return stored === 'club' || stored === 'downline';
 }
 
 /**
@@ -145,26 +255,14 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
     [location.pathname, location.search]
   );
   const resolvedClubId = useResolvedClubId(clubId, routeClubId);
-  const workspace = useClubWorkspace();
-  const effectiveRole = workspace.clubRole;
+  const { user } = useAuthUser();
+  const confirmedDataAccess = useFooterDataAccess(resolvedClubId, user?.id ?? null);
   // Route check: probe route dev/footer always displays all 6 approved controls
   const isDevFooter = location.pathname.includes('/dev/footer');
-  // Regular player accounts do not see the Data tab; club staff, owners, and agents do.
-  const isPlayer =
-    effectiveRole === 'member' || effectiveRole === 'player' || effectiveRole === 'guest';
-  const canSeeData =
-    isDevFooter ||
-    workspace.isClubStaff ||
-    workspace.isPlatformStaff ||
-    workspace.canViewFinance ||
-    effectiveRole === 'owner' ||
-    effectiveRole === 'co_owner' ||
-    effectiveRole === 'admin' ||
-    effectiveRole === 'super_agent' ||
-    effectiveRole === 'agent' ||
-    effectiveRole === 'sub_agent' ||
-    (!resolvedClubId && !isPlayer) ||
-    (!isPlayer && !effectiveRole);
+  // Regular player accounts never see the Data tab; club staff, owners and
+  // agents do, once that is confirmed. With no club at all the cell is the
+  // top-level club picker and carries no club's data.
+  const canSeeData = isDevFooter || !resolvedClubId || confirmedDataAccess;
 
   const activeTab = useMemo(() => activeTabForPath(location.pathname), [location.pathname]);
   const { hidden, reveal } = useHideFooterOnScroll(location.pathname);

@@ -3,7 +3,7 @@
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
 --
--- @live-proof: position('dp.status = ''deleted''' in pg_get_functiondef('public.ca_club_player_breakdown(uuid,date,date,integer)'::regprocedure)) > 0 AND position('dp.status = ''deleted''' in pg_get_functiondef('public.ca_club_player_page_core_20261006(uuid,date,date,text,text,jsonb,integer)'::regprocedure)) > 0
+-- @live-proof: position('dp.status = ''deleted''' in pg_get_functiondef('public.ca_club_player_breakdown(uuid,date,date,integer)'::regprocedure)) > 0 AND position('dp.status = ''deleted''' in pg_get_functiondef('public.ca_club_player_page_core_20261006(uuid,date,date,text,text,jsonb,integer)'::regprocedure)) > 0 AND position('dp.status = ''deleted''' in pg_get_functiondef('public.ca_club_player_export_start(uuid,date,date,text,uuid)'::regprocedure)) > 0
 --
 -- OWNER RULE (Dan, 2026-10-16): deleted players must never appear "inside of
 -- any searches or cashier pages or anywhere for that matter. for all clubs and
@@ -44,7 +44,12 @@ DECLARE
       'md5', 'eeae15ae895151d2194c5962f2247b1d'),
     jsonb_build_object(
       'fn', 'public.ca_club_player_page_core_20261006(uuid,date,date,text,text,jsonb,integer)',
-      'md5', '4c5af1a0f2c251df57e02d18a048b9fc')
+      'md5', '4c5af1a0f2c251df57e02d18a048b9fc'),
+    -- The Players CSV builds the same `merged` list; without this the export
+    -- would still carry the deleted rows and disagree with the page's count.
+    jsonb_build_object(
+      'fn', 'public.ca_club_player_export_start(uuid,date,date,text,uuid)',
+      'md5', 'a16b4b91e70e7bdd9df55dd5c605022f')
   );
   v_edits jsonb := jsonb_build_array(
     jsonb_build_array(
@@ -57,9 +62,16 @@ DECLARE
                          WHERE dp.id = a.user_id AND dp.status = 'deleted')$n$)
   );
   p jsonb; e jsonb; v_def text; v_new text; v_old text; v_rep text;
+  v_oid oid; v_before text; v_after text;
 BEGIN
   FOR p IN SELECT * FROM jsonb_array_elements(v_patches) LOOP
-    v_def := pg_get_functiondef((p->>'fn')::regprocedure);
+    v_oid := (p->>'fn')::regprocedure;
+    -- Owner, SECURITY DEFINER, volatility, search_path and grants, read
+    -- before and after, so the replacement can change nothing but the body.
+    SELECT concat_ws('|', pr.proowner::regrole::text, pr.prosecdef, pr.provolatile,
+                     array_to_string(pr.proconfig, ','), array_to_string(pr.proacl, ','))
+      INTO v_before FROM pg_proc pr WHERE pr.oid = v_oid;
+    v_def := pg_get_functiondef(v_oid);
     IF md5(v_def) <> p->>'md5' THEN
       RAISE EXCEPTION 'CLUB_DATA_DELETED_PATCH_REFUSED: % changed since review (md5 %, expected %)',
         p->>'fn', md5(v_def), p->>'md5';
@@ -73,6 +85,16 @@ BEGIN
       v_new := replace(v_new, v_old, v_rep);
     END LOOP;
     EXECUTE v_new;
+    SELECT concat_ws('|', pr.proowner::regrole::text, pr.prosecdef, pr.provolatile,
+                     array_to_string(pr.proconfig, ','), array_to_string(pr.proacl, ','))
+      INTO v_after FROM pg_proc pr WHERE pr.oid = v_oid;
+    IF v_after IS DISTINCT FROM v_before THEN
+      RAISE EXCEPTION 'CLUB_DATA_DELETED_PATCH_REFUSED: % attributes changed (% -> %)',
+        p->>'fn', v_before, v_after;
+    END IF;
+    IF pg_get_functiondef(v_oid) IS DISTINCT FROM v_new THEN
+      RAISE EXCEPTION 'CLUB_DATA_DELETED_PATCH_REFUSED: % did not install the reviewed body', p->>'fn';
+    END IF;
   END LOOP;
 END
 $migration$;

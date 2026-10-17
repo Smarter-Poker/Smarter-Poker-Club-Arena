@@ -125,11 +125,16 @@ describe('a deleted account leaves every club and every list', () => {
     for (const fn of [
       'public.ca_club_player_breakdown(uuid,date,date,integer)',
       'public.ca_club_player_page_core_20261006(uuid,date,date,text,text,jsonb,integer)',
+      // The Players CSV export builds the same list.
+      'public.ca_club_player_export_start(uuid,date,date,text,uuid)',
     ]) {
       expect(clubData).toContain(`'fn', '${fn}'`);
+      expect(clubData).toContain(`pg_get_functiondef('${fn}'::regprocedure)) > 0`);
     }
     // One predicate shared by the rows, the totals and both counts.
     expect(clubData).toContain("WHERE dp.id = a.user_id AND dp.status = 'deleted'");
+    // The replacement may change the body and nothing else.
+    expect(clubData).toContain('attributes changed');
     expect(clubData).not.toMatch(/is_horse|DELETE FROM|cron\.schedule/i);
   });
 });

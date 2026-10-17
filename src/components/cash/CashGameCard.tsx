@@ -246,7 +246,7 @@ export default function CashGameCard({
 /**
  * The rules strip, from a resolved ruleset snapshot, in the words the
  * artwork used: "6-9 HANDED - TRADITIONAL RULES - NO BOMB POTS - BUY-IN
- * 40-200 BB" / "6-MAX - 30% VPIP - 1 SB ANTE - BOMBS EVERY 15 MIN - DOUBLE
+ * 40-200 BB" / "6-MAX - 30% VPIP - 1 SB ANTE - BOMBS EVERY 20 MIN - DOUBLE
  * BOARD". The separator is a middle dot, never an em dash (CLAUDE.md 10.7).
  */
 export function rulesLineFor(snapshot: {

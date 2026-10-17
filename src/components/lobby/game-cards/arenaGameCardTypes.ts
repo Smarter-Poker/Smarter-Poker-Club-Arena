@@ -25,8 +25,8 @@ export interface ArenaGameCardData {
   title: string;
   subtitle?: string;
   /**
-   * What an Action or Madness cash game changes ("Small Blind Ante, VPIP
-   * Floor, Double Board Bomb Every 15 Minutes"), printed next to the style
+   * What an Action or Madness cash game changes ("Small Blind Ante, 30%
+   * Minimum VPIP, Double Board Bomb Every 20 Minutes"), printed next to the style
    * line (Dan 2026-10-15). Absent for Classic and every non-cash card.
    */
   styleNote?: string;

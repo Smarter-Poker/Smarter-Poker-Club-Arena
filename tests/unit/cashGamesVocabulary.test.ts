@@ -114,7 +114,7 @@ const LIVE_REFUSALS: ReadonlyArray<[message: string, copy: RegExp]> = [
   ['HANDEDNESS_INVALID: 7 is not offered for classic nlh', /Table Size/],
   ['BUYIN_BAND_INVALID: 300 - 200 bb', /Buy In Range/],
   ['ANTE_INVALID: half', /Ante Setting/],
-  ['VPIP_INVALID: 120', /VPIP Floor Must Be/],
+  ['VPIP_INVALID: 120', /Minimum VPIP Must Be/],
   ['VPIP_WINDOW_INVALID: 5', /VPIP Window Must Be/],
   ['BOMB_TRIGGER_INVALID: hourly', /Bomb Pot Settings/],
   ['BOMB_ANTE_INVALID: 40', /Bomb Pot Settings/],
@@ -145,7 +145,7 @@ const LIVE_REFUSALS: ReadonlyArray<[message: string, copy: RegExp]> = [
   ],
   [
     'OVERRIDE_LOCKED: vpip_floor is set by the action template (sent 65, template 30)',
-    /^The VPIP Floor Is Set By The Action Template\. Reload And Try Again\.$/,
+    /^The Minimum VPIP Is Set By The Action Template\. Reload And Try Again\.$/,
   ],
   [
     'OVERRIDE_LOCKED: bombs is set by the madness template (sent {}, template {})',
@@ -282,7 +282,7 @@ describe('the four template-locked rules are printed, never sent', () => {
         bombs: { enabled: false, trigger: null, ante_bb: null, boards: null },
       })
     );
-    expect(classic.map((l) => l.value)).toEqual(['No Ante', 'No VPIP Floor', 'No Bomb Pots']);
+    expect(classic.map((l) => l.value)).toEqual(['No Ante', 'No Minimum VPIP', 'No Bomb Pots']);
 
     // The cadences the templates promise since 20261017105834.
     expect(

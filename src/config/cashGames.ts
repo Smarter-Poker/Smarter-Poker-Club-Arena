@@ -16,7 +16,7 @@ export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; bl
   {
     id: 'classic',
     label: 'Classic',
-    blurb: 'Standard Ring Game. No Antes, No Bombs, No VPIP Floor.',
+    blurb: 'Standard Ring Game. No Antes, No Bombs, No Minimum VPIP.',
   },
   {
     id: 'action',
@@ -143,8 +143,8 @@ export interface CashRulesetSnapshot {
  * THE FOUR FIELDS A HOST DOES NOT EDIT (2026-09-09,
  * docs/changelog/2026-09-09-a-classic-game-has-no-antes-and-no-bombs.md).
  *
- * The template blurb is a promise to the player: "No Antes, No Bombs, No VPIP
- * Floor" / "Small Blind Ante, 30% Minimum VPIP, Double Board Bomb Every 20
+ * The template blurb is a promise to the player: "No Antes, No Bombs, No Minimum
+ * VPIP" / "Small Blind Ante, 30% Minimum VPIP, Double Board Bomb Every 20
  * Minutes" / "Big Blind Ante, 50% Minimum VPIP, Double Board Bomb Every 10
  * Minutes". Since
  * that date fn_cash_game_create resolves every one of these from
@@ -220,7 +220,7 @@ export function templatePromiseLines(
         ? 'One Big Blind, Paid By The Player In The Big Blind'
         : 'No Ante';
   const vpip =
-    (s.vpip_floor ?? 0) > 0 ? `${s.vpip_floor}% Over ${s.vpip_window} Hands` : 'No VPIP Floor';
+    (s.vpip_floor ?? 0) > 0 ? `${s.vpip_floor}% Over ${s.vpip_window} Hands` : 'No Minimum VPIP';
   const vpipNote =
     (s.vpip_floor ?? 0) > 0
       ? `${by}. Players Under This Voluntarily Put In Pot Rate Are Cashed Out After The Hand.`
@@ -235,7 +235,7 @@ export function templatePromiseLines(
     : `${by}. Every Hand Is Dealt With Blinds.`;
   return [
     { key: 'ante', label: 'Ante', value: ante, note: by },
-    { key: 'vpip', label: 'VPIP Floor', value: vpip, note: vpipNote },
+    { key: 'vpip', label: 'Minimum VPIP', value: vpip, note: vpipNote },
     { key: 'bombs', label: 'Bomb Pots', value: bombs, note: bombsNote },
   ];
 }
@@ -374,7 +374,7 @@ export function cashGameCreateRefusalText(raw: unknown): string | null {
   if (/TEMPLATE_UNKNOWN/.test(m)) return 'Pick A Template First';
   if (/ANTE_INVALID/.test(m)) return 'The Ante Setting Is Not Valid';
   if (/VPIP_WINDOW_INVALID/.test(m)) return 'The VPIP Window Must Be Between 10 And 200 Hands';
-  if (/VPIP_INVALID/.test(m)) return 'The VPIP Floor Must Be Between 0 And 100 Percent';
+  if (/VPIP_INVALID/.test(m)) return 'The Minimum VPIP Must Be Between 0 And 100 Percent';
   if (/CLOCK_TOO_LONG/.test(m)) return 'The Stay Clock Or Rejoin Window Is Too Long';
   if (/CLUB_REQUIRED/.test(m)) return 'This Screen Needs A Club';
   // A locked field arrived different from the template (an old bundle, or a
@@ -382,12 +382,12 @@ export function cashGameCreateRefusalText(raw: unknown): string | null {
   if (/OVERRIDE_LOCKED/.test(m)) {
     const which = m.match(/OVERRIDE_LOCKED: ([a-z_]+) is set by the (\w+) template/);
     return which
-      ? `The ${titleWords(which[1])} Is Set By The ${templateLabel(which[2])} Template. Reload And Try Again.`
+      ? `The ${ruleFieldLabel(which[1])} Is Set By The ${templateLabel(which[2])} Template. Reload And Try Again.`
       : 'That Rule Is Set By The Template. Reload And Try Again.';
   }
   if (/OVERRIDE_INVALID/.test(m)) {
     const which = m.match(/OVERRIDE_INVALID: ([a-z_]+)/);
-    return which ? `The ${titleWords(which[1])} Setting Is Not Valid` : 'A Setting Is Not Valid';
+    return which ? `The ${ruleFieldLabel(which[1])} Setting Is Not Valid` : 'A Setting Is Not Valid';
   }
   return null;
 }
@@ -398,4 +398,10 @@ function titleWords(snake: string): string {
     .filter(Boolean)
     .map((w) => (w === 'vpip' ? 'VPIP' : w[0].toUpperCase() + w.slice(1)))
     .join(' ');
+}
+
+/** A rule field as players read it: the floor is printed as the minimum VPIP (Dan 2026-10-16). */
+function ruleFieldLabel(snake: string): string {
+  if (snake === 'vpip_floor') return 'Minimum VPIP';
+  return titleWords(snake);
 }

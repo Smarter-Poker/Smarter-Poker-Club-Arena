@@ -2472,6 +2472,16 @@ function CashierTradeWorkspace() {
 
           for (const target of chunk) {
             const result = cashierBatchAcknowledgement(envelope.results, target.userId);
+            if (result.outcome === 'Refused' && result.message === 'Transfer Failed') {
+              // The batch rolled this item back. The photographed refusal was
+              // inside the recorded maintenance freeze; name that authoritative
+              // state instead of treating a definite refusal as a lost outcome.
+              const { data: frozen, error: freezeError } = await supabase.rpc('fn_platform_frozen');
+              if (freezeError) reportError(freezeError, 'CashierTradePage.refusalMaintenanceState');
+              else if (frozen === true)
+                result.message =
+                  'Paused For Maintenance. No Chips Were Moved. Try Again When Play Resumes';
+            }
             const receiptRow = receiptById.get(target.userId)!;
             receiptRow.outcome = result.outcome;
             if (result.reference) receiptRow.reference = result.reference;

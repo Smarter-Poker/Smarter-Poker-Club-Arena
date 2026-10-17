@@ -35,6 +35,7 @@ type TableCall = {
 
 const state = vi.hoisted(() => ({
   resolveClub: null as null | ((id: string) => Promise<string>),
+  frozen: false,
   agentWallet: 500,
   myRole: 'owner',
   roster: [] as Array<Record<string, unknown>>,
@@ -201,6 +202,7 @@ async function openSendOut(amount: string, picks: number) {
 }
 
 beforeEach(() => {
+  state.frozen = false;
   vi.clearAllMocks();
   localStorage.clear();
   document.title = 'Poker Arena | Smarter Poker';
@@ -299,6 +301,7 @@ beforeEach(() => {
   vi.mocked(supabase.rpc).mockImplementation((name: string, args?: unknown) => {
     const params = (args ?? {}) as Record<string, unknown>;
     state.rpcCalls.push({ name, args: params });
+    if (name === 'fn_platform_frozen') return Promise.resolve({ data: state.frozen, error: null });
     if (name === 'fn_cashier_recipient_wallet_balances')
       return Promise.resolve({
         data: state.roster.map((row) => ({
@@ -1941,4 +1944,32 @@ it('keeps each batch recipient identity, selected wallet and current balance tog
   expect(within(cards[0]).getByRole('combobox')).toHaveValue('agent_wallet');
   expect(within(cards[1]).getByRole('combobox')).toHaveValue('promo_wallet');
   expect(within(dialog).getByRole('textbox', { name: 'Amount For Player 2' })).toHaveValue('5');
+});
+
+it('reports a rolled-back maintenance refusal without retaining an uncertain transfer', async () => {
+  state.frozen = true;
+  state.batch = async () => ({
+    data: {
+      success: true,
+      results: [
+        { user_id: PLAYER_IDS[0], success: false, error: 'Transfer Failed', error_code: 'P0001' },
+      ],
+    },
+    error: null,
+  });
+  mountCashier();
+  await synchronized();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include Player 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm', exact: true }));
+  await waitFor(() =>
+    expect(
+      screen.getByText('Paused For Maintenance. No Chips Were Moved. Try Again When Play Resumes')
+    ).toBeInTheDocument()
+  );
+  expect(toastMocks.error).toHaveBeenCalledWith(
+    '1 Transfers Were Refused. No Chips Were Moved For Those Recipients'
+  );
+  expect(readCashierTransferRecovery(USER_ID, CLUB_A)).toBeNull();
 });

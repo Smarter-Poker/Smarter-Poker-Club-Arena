@@ -39,7 +39,6 @@
   --cycle-glow: color-mix(in srgb, var(--cycle-color) 24%, transparent);
 }
 
-.hero,
 .loadingBoard,
 .loadingCard,
 .emptyState {
@@ -109,124 +108,27 @@
   pointer-events: none;
 }
 
-.hero {
-  min-height: clamp(330px, 44vw, 510px);
+/* The page's name, for screen readers and the document outline only. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
   overflow: hidden;
-  isolation: isolate;
-  background: #030807;
-  box-shadow:
-    inset 0 0 0 5px rgba(184, 196, 201, 0.035),
-    0 24px 60px rgba(0, 0, 0, 0.44);
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-.heroPicture,
-.heroPicture picture,
-.heroArtwork,
-.heroShade,
-.heroCycleAtmosphere {
-  position: absolute;
-  inset: 0;
-}
-
-.heroPicture {
-  z-index: 0;
-}
-
-.heroArtwork {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  filter: contrast(1.08) saturate(0.84) brightness(0.74);
-}
-
-.heroPicture[data-hero-cycle='weekly'] .heroArtwork {
-  filter: contrast(1.08) saturate(0.64) brightness(0.72) hue-rotate(154deg);
-}
-
-.heroPicture[data-hero-cycle='monthly'] .heroArtwork {
-  filter: contrast(1.08) saturate(1.02) brightness(0.7) sepia(0.13);
-}
-
-.heroCycleAtmosphere {
-  z-index: 1;
-  background:
-    radial-gradient(circle at 74% 40%, var(--cycle-glow), transparent 20rem),
-    linear-gradient(118deg, transparent 48%, color-mix(in srgb, var(--cycle-color) 9%, transparent));
-  mix-blend-mode: screen;
-}
-
-.heroShade {
-  z-index: 2;
-  background:
-    linear-gradient(90deg, rgba(2, 5, 5, 0.96) 0%, rgba(2, 5, 5, 0.78) 42%, transparent 78%),
-    linear-gradient(0deg, rgba(2, 5, 5, 0.82), transparent 45%);
-}
-
-.heroCycleInstrument {
-  position: absolute;
-  z-index: 3;
-  top: 28px;
-  right: 30px;
-  display: grid;
-  width: 58px;
-  height: 58px;
-  place-items: center;
-  color: var(--cycle-color);
-  filter: drop-shadow(0 0 9px var(--cycle-glow));
-}
-
-.heroCopy {
-  min-width: 0;
-  position: relative;
-  z-index: 4;
-  display: flex;
-  min-height: inherit;
-  width: min(670px, 72%);
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: clamp(34px, 5vw, 66px);
-}
-
-.eyebrow,
-.panelLabel {
-  color: var(--cycle-color);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.19em;
-  text-transform: uppercase;
-}
-
-/* The title prints at the page's own size, weight and tracking - the values
-   the page's cascade resolves to (daily-challenges/10-hero.realism above
-   680px, 99-media.command at or below) - so it does not change size at the
-   handover. It had been larger on phones and smaller on a tablet or desktop
-   (41.6px against the page's 37.6px at 320px, 86.4px against 96px at 1440px),
-   and at a 280px phone CHALLENGES ran past its column. Like the page's, it
-   grows with the reader's text size and wraps inside its column: it had no
-   break allowed, so at 200% text the hero clipped it. overflow-wrap breaks it
-   where the column ends (10-hero.base.module.css says why nothing gentler is
-   possible). */
-.heroCopy h1 {
-  margin: 10px 0 12px;
-  color: #f8fcfc;
-  font-size: clamp(3.6rem, 7vw, 6rem);
-  font-weight: 600;
-  letter-spacing: 0.025em;
-  line-height: 1.2;
-  text-transform: uppercase;
-  text-shadow:
-    0 2px 0 #000,
-    0 0 24px var(--cycle-glow);
-  overflow-wrap: anywhere;
-}
-
-.heroCopy p {
-  max-width: 590px;
+/* The one line a loading shell prints: what it is waiting on. */
+.stateLine {
   margin: 0;
   color: #b8c4c9;
-  font-size: clamp(0.92rem, 1.7vw, 1.06rem);
-  line-height: 1.55;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .loadingBoard {
@@ -419,41 +321,6 @@
   .page {
     gap: 12px;
     padding: 10px 10px max(102px, calc(74px + env(safe-area-inset-bottom)));
-  }
-
-  .hero {
-    min-height: 430px;
-  }
-
-  .heroArtwork {
-    object-position: center top;
-  }
-
-  .heroShade {
-    background: linear-gradient(
-      0deg,
-      rgba(2, 5, 5, 0.97) 0%,
-      rgba(2, 5, 5, 0.66) 52%,
-      transparent 78%
-    );
-  }
-
-  .heroCycleInstrument {
-    top: 20px;
-    right: 20px;
-  }
-
-  /* The top padding clears the cycle instrument (20px down, 58px tall), so
-     copy that grows with the text size makes the hero taller instead of
-     running under the badge; at normal text the copy sits at the foot of the
-     430px hero and nothing moves. */
-  .heroCopy {
-    width: 100%;
-    padding: 92px 22px 28px;
-  }
-
-  .heroCopy h1 {
-    font-size: clamp(2rem, calc(8vw + 0.75rem), 3.75rem);
   }
 
   .loadingBoard {

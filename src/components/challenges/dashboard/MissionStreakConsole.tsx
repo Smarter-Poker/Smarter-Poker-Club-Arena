@@ -34,11 +34,9 @@ export function MissionStreakConsole({
           />
         </span>
         <div className={styles.streakInfo}>
-          <span className={styles.panelLabel}>Daily Streak Circuit</span>
           <h2 id="streak-console-title" className={styles.streakCount} tabIndex={-1}>
             {(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Day Streak
           </h2>
-          <span className={styles.streakDesc}>Play Every Day To Keep The Circuit Alive.</span>
         </div>
       </div>
       <div className={styles.milestoneTracker}>

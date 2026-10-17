@@ -57,9 +57,9 @@
 
 .heroActions {
   display: flex;
+  grid-column: 1 / -1;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 24px;
 }
 
 .heroActions .backButton,

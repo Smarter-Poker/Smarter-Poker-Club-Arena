@@ -1,13 +1,9 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import type { Tier } from '../../services/DailyChallengeService';
-import { mediaUrl } from '../../utils/mediaBase';
 import StandardContentLayout from '../layouts/StandardContentLayout';
-import { CasinoControlIcon, type CasinoControlIconVariant } from './CasinoControlIcon';
+import { CasinoControlIcon } from './CasinoControlIcon';
 import styles from './DailyChallengesRouteFallback.module.css';
-
-const HERO_DESKTOP = 'images/challenges/daily-missions-casino-v2.webp';
-const HERO_MOBILE = 'images/challenges/daily-missions-casino-v2-mobile.webp';
 
 const TITLES: Record<Tier, string> = {
   daily: 'Daily Challenges',
@@ -15,54 +11,16 @@ const TITLES: Record<Tier, string> = {
   monthly: 'Monthly Challenges',
 };
 
-const EYEBROWS: Record<Tier, string> = {
-  daily: 'Club Arena / Daily Challenge Vault',
-  weekly: 'Club Arena / Weekly Challenge Circuit',
-  monthly: 'Club Arena / Monthly High-Roller Ledger',
-};
-
-const CYCLE_ICONS: Record<Tier, CasinoControlIconVariant> = {
-  daily: 'cycle-daily',
-  weekly: 'cycle-weekly',
-  monthly: 'cycle-monthly',
-};
-
 function useFallbackTier(): Tier {
   const { cycle } = useParams<{ cycle?: string }>();
   return cycle === 'weekly' || cycle === 'monthly' ? cycle : 'daily';
 }
 
-function FallbackHero({ tier, message }: { tier: Tier; message: string }) {
-  return (
-    <section className={styles.hero}>
-      <span className={styles.bevelFrame} aria-hidden="true" />
-      <div className={styles.heroPicture} data-hero-cycle={tier} aria-hidden="true">
-        <picture>
-          <source media="(max-width: 680px)" srcSet={mediaUrl(HERO_MOBILE)} />
-          <img
-            className={styles.heroArtwork}
-            src={mediaUrl(HERO_DESKTOP)}
-            alt=""
-            width="1717"
-            height="916"
-            loading="eager"
-            decoding="async"
-            fetchPriority="high"
-          />
-        </picture>
-        <span className={styles.heroCycleAtmosphere} />
-        <span className={styles.heroCycleInstrument} data-cycle-instrument={tier}>
-          <CasinoControlIcon variant={CYCLE_ICONS[tier]} state="active" size="lg" />
-        </span>
-      </div>
-      <div className={styles.heroShade} />
-      <div className={styles.heroCopy}>
-        <span className={styles.eyebrow}>{EYEBROWS[tier]}</span>
-        <h1>{TITLES[tier]}</h1>
-        <p>{message}</p>
-      </div>
-    </section>
-  );
+/* The route shell prints the page's name for screen readers and, when it has
+   one, its state - never the hero's eyebrow, giant title and art (Dan,
+   2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS"). */
+function FallbackHeading({ tier }: { tier: Tier }) {
+  return <h1 className={styles.srOnly}>{TITLES[tier]}</h1>;
 }
 
 function FallbackMissionCards({ tier }: { tier: Tier }) {
@@ -102,10 +60,10 @@ export function DailyChallengesAuthLoading() {
         aria-busy="true"
         aria-label={`Loading ${TITLES[tier]}`}
       >
-        <FallbackHero
-          tier={tier}
-          message="Opening Your Private Challenge Ledger And Verifying Your Secure Session."
-        />
+        <FallbackHeading tier={tier} />
+        <p className={styles.stateLine} role="status">
+          Opening Your Private Challenge Ledger And Verifying Your Secure Session.
+        </p>
         <FallbackMissionCards tier={tier} />
       </div>
     </StandardContentLayout>
@@ -141,15 +99,14 @@ export function DailyChallengesCrashFallback({
         data-mission-cycle={tier}
         data-daily-missions-crash-fallback=""
       >
-        <FallbackHero
-          tier={tier}
-          message="Your Challenge Progress Is Protected While This Display Recovers."
-        />
+        <FallbackHeading tier={tier} />
         <section className={styles.emptyState} role="alert">
           <span className={styles.bevelFrame} aria-hidden="true" />
-          <span className={styles.panelLabel}>Challenge Display Recovery</span>
           <h2>Challenge Display Could Not Render</h2>
-          <p>The Failure Was Recorded. Retry This Display Or Return To Your Previous Page.</p>
+          <p>
+            Your Challenge Progress Is Protected. The Failure Was Recorded. Retry This Display Or
+            Return To Your Previous Page.
+          </p>
           {error?.message ? (
             <details>
               <summary>Technical Details</summary>

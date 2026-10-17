@@ -121,13 +121,6 @@
   text-transform: uppercase;
 }
 
-.streakDesc {
-  color: #8a98a2;
-  font-family: Inter, system-ui, sans-serif;
-  font-size: 0.68rem;
-  line-height: 1.4;
-}
-
 .milestoneTracker {
   align-self: center;
   min-width: 0;

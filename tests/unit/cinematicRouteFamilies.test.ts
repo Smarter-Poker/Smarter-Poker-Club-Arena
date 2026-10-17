@@ -65,18 +65,19 @@ describe('cinematic retained route families', () => {
   it('preserves the mission-native Daily Challenges visual authority', () => {
     const source = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
     expect(source).toContain('data-arena-surface="missions"');
-    expect(readDailyChallengesUnit('MissionHero.tsx')).toContain('className={styles.hero}');
+    const hero = readDailyChallengesUnit('MissionHero.tsx');
+    expect(hero).toContain('className={styles.hero}');
+    // Dan 2026-10-17: the hero keeps its live meters on the bevel frame; the
+    // eyebrows, the scene art and the description moved behind the "?".
+    expect(hero).toContain('<PageBar');
+    expect(hero).not.toContain('MissionHeroArtwork');
     const presentation = readDailyChallengesUnit('missionPresentation.ts');
-    expect(presentation).toContain('Club Arena / Daily Challenge Vault');
-    expect(presentation).toContain('Club Arena / Weekly Challenge Circuit');
-    expect(presentation).toContain('Club Arena / Monthly High-Roller Ledger');
-    expect(presentation).toContain("'images/challenges/daily-missions-casino-v2.webp'");
-    expect(presentation).toContain("'images/challenges/daily-missions-casino-v2-mobile.webp'");
+    expect(presentation).not.toContain('Club Arena / Daily Challenge Vault');
+    expect(presentation).not.toContain('eyebrow:');
+    expect(presentation).not.toContain('daily-missions-casino-v2');
     expect(presentation).toContain("'images/challenges/daily-missions-reward-pedestal-v1.webp'");
     expect(presentation).toContain("'images/challenges/daily-missions-streak-freeze-v1.webp'");
     expect(presentation).toContain("'images/challenges/daily-missions-diamond-96-v1.webp'");
-    expect(existsSync('public/images/challenges/daily-missions-casino-v2.webp')).toBe(true);
-    expect(existsSync('public/images/challenges/daily-missions-casino-v2-mobile.webp')).toBe(true);
     expect(existsSync('public/images/challenges/daily-missions-reward-pedestal-v1.webp')).toBe(
       true
     );

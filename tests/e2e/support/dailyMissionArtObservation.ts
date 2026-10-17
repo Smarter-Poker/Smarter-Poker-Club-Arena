@@ -68,10 +68,9 @@ export function installMissionArtObservation(): void {
 
 /** A successful request alone cannot certify a decoded image on the mounted page. */
 export async function expectMissionArtworkDecoded(page: Page): Promise<void> {
-  for (const selector of [
-    '#daily-missions [data-hero-cycle] img',
-    '#daily-missions img[src$="daily-missions-diamond-96-v1.webp"]',
-  ]) {
+  // The hero scene ([data-hero-cycle]) was removed on 2026-10-17; the art the
+  // first paint certifies is the diamond mark on the live balance meter.
+  for (const selector of ['#daily-missions img[src$="daily-missions-diamond-96-v1.webp"]']) {
     const image = page.locator(selector).first();
     await expect(image).toBeVisible();
     await expect

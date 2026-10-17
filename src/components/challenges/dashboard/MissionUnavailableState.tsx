@@ -2,9 +2,10 @@ import StandardContentLayout from '../../layouts/StandardContentLayout';
 import styles from '../../../pages/DailyChallengesPage.module.css';
 import type { Tier } from '../../../services/DailyChallengeService';
 import { CasinoControlIcon } from '../CasinoControlIcon';
-import { MissionHeroArtwork } from './MissionArtwork';
 import { TIER_PRESENTATION } from './missionPresentation';
 
+/* A cold-ledger failure prints the failure and its retry, first on the page,
+   with no hero above it to push the retry below the fold. */
 export function MissionUnavailableState({
   tier,
   message,
@@ -20,19 +21,9 @@ export function MissionUnavailableState({
   return (
     <StandardContentLayout className={styles.container}>
       <div className={styles.page} data-mission-cycle={tier}>
-        <section className={`${styles.hero} ${styles.unavailableHero}`}>
+        <h1 className={styles.srOnly}>{presentation.title}</h1>
+        <section className={styles.emptyState} role="alert">
           <span className={styles.bevelFrame} aria-hidden="true" />
-          <MissionHeroArtwork tier={tier} />
-          <div className={styles.heroShade} />
-          <div className={styles.heroCopy}>
-            <span className={styles.eyebrow}>{presentation.eyebrow}</span>
-            <h1>{presentation.title}</h1>
-            <p>Your Challenge Progress Is Protected While The Private Ledger Reconnects.</p>
-          </div>
-        </section>
-        <section className={`${styles.emptyState} ${styles.unavailableState}`} role="alert">
-          <span className={styles.bevelFrame} aria-hidden="true" />
-          <span className={styles.panelLabel}>Secure Ledger Connection</span>
           <h2>Challenge Ledger Unavailable</h2>
           <p>{message}</p>
           <button type="button" className={styles.retryButton} onClick={onRetry}>

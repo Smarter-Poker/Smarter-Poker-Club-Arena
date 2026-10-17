@@ -12,7 +12,7 @@
  * It owns no money logic: every send, pull and ledger read stays in the
  * component that renders it.
  */
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { CashierWorkspace } from './CashierWorkspace';
 import './WalletDesk.css';
 
@@ -37,9 +37,13 @@ export function WalletDesk({
   dockLine,
   actions,
   sheet,
+  deskRef,
   children,
 }: {
   ariaLabel: string;
+  /** The desk element itself: the focus fallback when no control can take
+      focus (the trap wrapper around it is display: contents). */
+  deskRef?: Ref<HTMLDivElement>;
   /** The owner's logo (the club's, the union's) or the wallet's art; none prints no image. */
   art?: string | null;
   name: string;
@@ -53,17 +57,23 @@ export function WalletDesk({
   sheet?: ReactNode;
   children: ReactNode;
 }) {
+  /* While a sheet is up the desk behind it is covered: no Tab stop, no
+     screen-reader text, no tap reaches it until the sheet closes. */
+  const covered = Boolean(sheet);
+  const showDock = Boolean((actions && actions.length > 0) || dockLine != null);
   return (
     <div
+      ref={deskRef}
       className="wdesk"
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}
+      tabIndex={-1}
       /* The desk is the routed Cashier's layout, not a popup: the metallic
          popup chassis must not paint its buttons (metallic-popups.css). */
       data-popup-chassis="none"
     >
-      <div className="wdesk__scroll">
+      <div className="wdesk__scroll" inert={covered} aria-hidden={covered || undefined}>
         <CashierWorkspace
           compact
           eyebrow="Secure Cashier"
@@ -93,30 +103,34 @@ export function WalletDesk({
           </div>
         </CashierWorkspace>
       </div>
-      {actions && actions.length > 0 && (
-        <div className="wdesk__dock">
-          <div className="wdesk__dockFrame">
+      {showDock && (
+        <div className="wdesk__dock" inert={covered} aria-hidden={covered || undefined}>
+          <div
+            className={`wdesk__dockFrame ${actions && actions.length > 0 ? '' : 'wdesk__dockFrame--line'}`}
+          >
             <div className="wdesk__dockLine" aria-live="polite">
               {dockLine}
             </div>
-            <div
-              className="wdesk__dockActions"
-              style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}
-            >
-              {actions.map((a) => (
-                <button
-                  key={a.label}
-                  type="button"
-                  className={`wdesk__action ${a.lit ? 'wdesk__action--lit' : ''}`}
-                  onClick={a.onClick}
-                  disabled={a.disabled}
-                  aria-label={a['aria-label']}
-                  aria-pressed={a.pressed}
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
+            {actions && actions.length > 0 && (
+              <div
+                className="wdesk__dockActions"
+                style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}
+              >
+                {actions.map((a) => (
+                  <button
+                    key={a.label}
+                    type="button"
+                    className={`wdesk__action ${a.lit ? 'wdesk__action--lit' : ''}`}
+                    onClick={a.onClick}
+                    disabled={a.disabled}
+                    aria-label={a['aria-label']}
+                    aria-pressed={a.pressed}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

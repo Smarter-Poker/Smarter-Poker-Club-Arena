@@ -94,7 +94,7 @@ describe('the reserve offers no way to move money out', () => {
        `{!readOnly && (`, and the amount sheet - the only place `send` is
        reachable, on its painted primary plate - under
        `sheet={!readOnly && sheetOpen && (`. The reserve's dock carries a single
-       disabled READ ONLY action instead of Pull Back / Ledger / Send Out. */
+       Read Only line and no action instead of Pull Back / Ledger / Send Out. */
     const pickerGuard = modal.indexOf('{!readOnly && (');
     expect(pickerGuard).toBeGreaterThan(-1);
     expect(modal.indexOf('Search Clubs Or Members')).toBeGreaterThan(pickerGuard);
@@ -105,11 +105,15 @@ describe('the reserve offers no way to move money out', () => {
     expect(sends.length).toBe(1);
     expect(modal.indexOf('void send()')).toBeGreaterThan(sheetGuard);
     // The dock's three money actions exist only on the non-read-only branch.
-    const dockRead = modal.indexOf("label: 'Read Only'");
+    // Read only prints no control at all (2026-10-17: a permanently disabled
+    // "Read Only" button repeated the dock line and was a dead control); the
+    // dock line says Read Only.
+    const dockRead = modal.search(/readOnly\s*\?\s*\[\]\s*:\s*\[/);
     expect(dockRead).toBeGreaterThan(-1);
     expect(modal.indexOf("label: 'Send Out'")).toBeGreaterThan(dockRead);
     expect(modal).toMatch(/Pick A Member Or Club/);
-    expect(modal).toMatch(/label: 'Read Only'/);
+    expect(modal).toMatch(/const dockLine = readOnly\s*\?\s*'Read Only'/);
+    expect(modal).not.toMatch(/label: 'Read Only'/);
   });
 
   it('does not fetch the roster it would never show', () => {

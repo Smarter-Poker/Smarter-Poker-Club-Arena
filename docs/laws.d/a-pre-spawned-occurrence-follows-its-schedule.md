@@ -1,0 +1,3 @@
+# server/src/services/aPreSpawnedOccurrenceFollowsItsSchedule.law.test.ts
+
+When a schedule's times change, the board writer itself moves every claimed, pre-start, pool-unfinalized occurrence to its new slot — start_time first, spawn key second, so nothing can double — on its own 60-second poll (planOccurrenceConform + conformClaimedOccurrences, 2026-10-17). Fail-closed: ambiguous time lists, claimed twins, dates before the change or on a retired timetable, and slots inside the 20-minute lead all stay put. The guarantee is never part of a conform: it is the settlement contract frozen at the first entrant. Root fix for the class behind migration 20261017105003 (the 28 Free Buys that sat at :00 after #7173 moved their schedules to :30).

@@ -1,3 +1,10 @@
+-- SUPERSEDED BY 20261017174849
+-- Never installed. 20261017174849 (a_close_that_lost_a_lock_race_keeps_its_cadence)
+-- was installed first, at 19:35 UTC, and adds the same 40P01/40001/55P03 retry
+-- to job 272. Its postimage (c74214f0) is not this file's preimage (b8be947f),
+-- so this file refuses by its own guard. Its one extra branch (retry after a
+-- statement-timeout visit) is not needed: 20261017195000 lets an attempt reuse
+-- the kept READY report, and a committed round-3 chunk restores the cadence.
 -- 20261017180833_a_transiently_failed_weekly_close_retries_on_the_next_tick.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every

@@ -1,0 +1,42 @@
+{
+  "status": "ROOT-REVIEWED-CANDIDATE-ALIAS-CORRECTED-PENDING-NATIVE",
+  "driver_sha256": "ec6e843dc9ff3aeace905e08dbb508812a377cfc7568f77bfababb8e1f607a3a",
+  "candidate_sha256": "7d2e9f838fcb393494af563130ce59ddd81f02c40a7f2cf089c14d6500a495dc",
+  "fixtures": {
+    "fixtures/actual-R2-before.sql": "7cc77e2418e4a7234a7d29ba2d5509166d4a5d600e3eaffcc975ed7ada6dd41d",
+    "fixtures/actual-R3-before.sql": "f91591d2d08a8dbcd6c782934e74e4044d39ef07803d961b6a913a7fcf588970",
+    "fixtures/actual-bank-return-before.sql": "b7b5d653f3583b664b985c36e6f38801eed089cf477b4954d3e0032dab297e76",
+    "fixtures/actual-deleted-credit-before.sql": "8f2eb49fe9d6466073c76e273ac9bde7aac9019e51b98f252b1e7d562529fc90",
+    "fixtures/actual-source40-matcher-READONLY.sql": "5c14bcb3db95cc6562d2d603c4f3e8953b0a167003438f261b9756f63c8ee8fe",
+    "fixtures/assert-R2.sql": "6b9babf48de09d4c50bcafb0151f7be0ee05d0341d5062c2a88491ed5a9b09cd",
+    "fixtures/assert-R3.sql": "a849552b01eb6810866990b4b0e20c08c3b8c28030f73a9a49c23796a19c4036",
+    "fixtures/assert-installed.sql": "122293100fe732a800da0c5dcaba6a4a4dfb89ac210c4be624fea8899aa2e509",
+    "fixtures/assert-preimages.sql": "1f0a4c79ad9dcba1aa5c8d700dcc4f07c2835d89a95738c26dbf276bcfd80c0a",
+    "fixtures/authority-and-triggers.sql": "53955db194029d76c51cfd6c869d8c0965006ea4abdbb3e5c2674b55f7fd2ebd",
+    "fixtures/fn_block_browser_balance_writes.sql": "16c0ad6c5d98c2482891e5e4c8952bb530f4a26fe96f222632f074767d9d1de4",
+    "fixtures/fn_ca_autoledger.sql": "0d67d94cb0036fc1ae2f0054c7e3c8fab35fe46ae210f623be02743b7b372a10",
+    "fixtures/fn_ca_chip_ledger_enrich.sql": "ae71ae92003f5aae209f910fc35fd120d8f1fa0dab744f906c30c8d2ba298fde",
+    "fixtures/fn_ca_declare_ledger.sql": "d040e55bee57f85e94b520b5072a7b23ee952475b133ffbf0dbc261d27504dd3",
+    "fixtures/fn_calculate_cash_rakeback_periods.sql": "62586abb6821bd26f4ba0b547384362955218db76508494e77788d1167e7f74d",
+    "fixtures/fn_club_members_ledger_writer.sql": "0cf52b05a44c30ffd4e84fc391f6bbe036101ed2e9e6665f0441928922869cfb",
+    "fixtures/fn_guard_membership_lifecycle_write.sql": "a018d8bf359dff3ce6a66e64322cb2d79d11705ff8844678f133a4a9c3269d2f",
+    "fixtures/fn_rakeback_split_write.sql": "cc1312372b2326cf2c60a905ae93610553e94d4fe235d0cbccbe3d82adf8746b",
+    "fixtures/ledger-enrichment-wiring.sql": "f99727e23b3eded94616598ac0999c0c10b8f6b88b8a2d99f37d614e27e3e369",
+    "fixtures/platform-boundaries.sql": "bc6097d2f1a47dfecab39eb25509da63b913a1f3c55366a9a98518fee11551f6",
+    "fixtures/publisher-lock.sql": "10a2f58dedd8a22f11358f7eda79b19ff9a4c79f2d9a423bb4991a8b70d8329c",
+    "fixtures/receipt-boundary.sql": "04b7faa634c1894fade51a158f1db6586ff283fffb11c6510853074134387b6a",
+    "fixtures/reserve-cases.json": "2935be32db0ad147fd7201203ecf844636fba8366a08364cbe0939b25944f5f6",
+    "fixtures/seed.sql": "0315ed863f8015f25ce864c0826d335c9c5787e87b2e783713e1ef2913c2be80"
+  },
+  "base_imports": {
+    "prelude.sql": "d5f1952bb82f3d9970b70b73d5b78ee65861c70c093118968d4836fc269f9481",
+    "schema-tables.sql": "1357e005cc1c71045fc7dcbe17f777ac6ecb38c6b2f7dccaa286a68e702ed4fb",
+    "preimage/fn_caller_is_engine.sql": "bc6a0c4ed758f74803f6863612b5c758e9447cfefeb4344c7e21ac61b529102a",
+    "preimage/fn_union_week_start.sql": "185e48e40d03997a5dc7e13aee8161983156e0e47aaa4be3dcb5bee7305acb1c",
+    "preimage/fn_lock_rakeback_payer_clubs.sql": "19c9a623599506c670f8c15b8bd34a6706e1c89cb447c0cfb9ec7ff9ef0057e1",
+    "preimage/fn_resolve_accounting_routing_scope.sql": "da726f794c9a4f016c05543a6b7dd43db8ea8198269ecf0c1750d12e589a9da4",
+    "preimage/fn_agent_commission_rollup_recompute.sql": "87a4f26d8fce74caa50bb45a0c591013a0a00652ac98190abdf1cd6b71483f07"
+  },
+  "missing": null,
+  "test_execution": false
+}

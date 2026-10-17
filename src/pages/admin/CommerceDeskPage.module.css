@@ -39,39 +39,6 @@
   box-sizing: border-box;
 }
 
-/* ── Head ─────────────────────────────────────────────────────────────── */
-
-.head {
-  padding: 8px 0 14px;
-}
-
-.eyebrow {
-  margin: 0 0 4px;
-  color: var(--desk-blue);
-  font-family: 'Roboto Condensed', Inter, sans-serif;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.title {
-  margin: 0;
-  color: var(--desk-silver);
-  font-family: 'Roboto Condensed', Inter, sans-serif;
-  font-size: 30px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-shadow:
-    0 1px 0 #050607,
-    0 -1px 0 rgb(255 255 255 / 12%);
-}
-
-.lede {
-  margin: 8px 0 0;
-  color: var(--desk-muted);
-}
-
 /* ── Tabs ─────────────────────────────────────────────────────────────── */
 
 .tabs {
@@ -508,9 +475,5 @@
 @media (min-width: 720px) {
   .page {
     padding: 24px 24px 64px;
-  }
-
-  .title {
-    font-size: 36px;
   }
 }

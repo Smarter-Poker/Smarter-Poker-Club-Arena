@@ -24,21 +24,8 @@
   padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
-.analytics-header {
+.ca-page-bar.analytics-header {
   margin-bottom: 32px;
-}
-
-.analytics-header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  color: #f1f5f9;
-  margin: 0 0 6px;
-}
-
-.analytics-header p {
-  font-size: 13px;
-  color: #94a3b8;
-  margin: 0;
 }
 
 /* ── Summary Cards ─────────────────────────────────────────────────────────── */
@@ -114,11 +101,7 @@
     padding-bottom: max(70px, env(safe-area-inset-bottom));
   }
 
-  .analytics-header h1 {
-    font-size: 18px;
-  }
-
-  .analytics-header {
+  .ca-page-bar.analytics-header {
     margin-bottom: 20px;
   }
 
@@ -293,23 +276,6 @@
 }
 
 /* ── Refresh Indicator ─────────────────────────────────────────────────────── */
-.refresh-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: #64748b;
-  margin-left: auto;
-}
-
-.refresh-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #22c55e;
-  animation: pulse-dot 2s infinite;
-}
-
 @keyframes pulse-dot {
   0%,
   100% {

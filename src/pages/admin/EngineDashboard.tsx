@@ -13,6 +13,7 @@ import { reportError } from '../../utils/errorReporter';
 import { masterBus } from '../../core/MasterBus';
 import { useToast } from '../../components/common/Toast';
 import { SettlementCronStatus } from '../../components/SettlementCronStatus';
+import PageBar from '../../components/help/PageBar';
 import './EngineDashboard.css';
 
 export default function EngineDashboard() {
@@ -135,27 +136,26 @@ export default function EngineDashboard() {
 
   return (
     <div className="engine-dashboard">
-      <header className="engine-header">
-        <h1>⚙ Global Matrix Orchestrator</h1>
-        <p>Master Control Panel For The Club Arena Cash Game & Hydra Engines</p>
-        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-          <Link
-            to="/analytics"
-            style={{
-              padding: '6px 16px',
-              borderRadius: 8,
-              background: 'rgba(59, 130, 246, 0.15)',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
-              color: '#3b82f6',
-              fontSize: 13,
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
-            Analytics Dashboard
-          </Link>
-        </div>
-      </header>
+      <PageBar
+        title="Global Matrix Orchestrator"
+        summary="Master Control Panel For The Club Arena Cash Game And Hydra Engines."
+      >
+        <Link
+          to="/analytics"
+          style={{
+            padding: '6px 16px',
+            borderRadius: 8,
+            background: 'rgba(59, 130, 246, 0.15)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            color: '#3b82f6',
+            fontSize: 13,
+            fontWeight: 600,
+            textDecoration: 'none',
+          }}
+        >
+          Analytics Dashboard
+        </Link>
+      </PageBar>
 
       {/* ── Settlement Cron Status ─────────────────────────────────── */}
       <div style={{ marginBottom: 16 }}>

@@ -21,6 +21,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
+import PageBar from '../components/help/PageBar';
 import { reportError } from '../utils/errorReporter';
 import { resolvePageClubId } from '../utils/resolvePageClubId';
 
@@ -255,14 +256,22 @@ export default function FlashPoolPage() {
         overflowX: 'hidden',
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          marginBottom: '24px',
-        }}
+      {/* The gold title and its tagline went behind the "?" (Dan
+          2026-10-17). Back stays: it is the page's one action. */}
+      <PageBar
+        title="Flash Pool"
+        summary="Fast-Fold Poker. Fold Instantly, Get New Cards."
+        steps={[
+          {
+            title: 'How It Works',
+            body: 'Fold Instantly, Move To A New Table And Get New Cards. No Waiting For The Hand To Finish.',
+          },
+          {
+            title: 'Pick A Pool',
+            body: 'Each Pool Shows Its Stakes, Buy-In Range, Players And Tables. Enter A Buy-In And Tap Play.',
+            target: '[data-flash-pools]',
+          },
+        ]}
       >
         <button
           onClick={() => navigate(-1)}
@@ -278,55 +287,10 @@ export default function FlashPoolPage() {
         >
           ← Back
         </button>
-        <div>
-          <h1
-            style={{
-              fontSize: '24px',
-              fontWeight: 700,
-              margin: 0,
-              background: 'linear-gradient(135deg, #FFD700, #FFA500)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-            }}
-          >
-            Flash Pool
-          </h1>
-          <p style={{ color: '#8b8fa3', margin: '4px 0 0', fontSize: '13px' }}>
-            Fast-Fold Poker - Fold Instantly, Get New Cards
-          </p>
-        </div>
-      </div>
-
-      {/* How It Works */}
-      <div
-        style={{
-          background: 'rgba(255,215,0,0.06)',
-          border: '1px solid rgba(255,215,0,0.15)',
-          borderRadius: '16px',
-          padding: '16px',
-          marginBottom: '24px',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '12px',
-          textAlign: 'center',
-        }}
-      >
-        <div>
-          <div style={{ fontSize: '28px', marginBottom: '4px' }}>▲</div>
-          <div style={{ fontSize: '12px', color: '#8b8fa3' }}>Fold Instantly</div>
-        </div>
-        <div>
-          <div style={{ fontSize: '28px', marginBottom: '4px' }}>◆</div>
-          <div style={{ fontSize: '12px', color: '#8b8fa3' }}>New Table</div>
-        </div>
-        <div>
-          <div style={{ fontSize: '28px', marginBottom: '4px' }}>♠</div>
-          <div style={{ fontSize: '12px', color: '#8b8fa3' }}>New Cards</div>
-        </div>
-      </div>
+      </PageBar>
 
       {/* Pool List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div data-flash-pools style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {pools.map((pool) => (
           <div
             key={pool.poolId}

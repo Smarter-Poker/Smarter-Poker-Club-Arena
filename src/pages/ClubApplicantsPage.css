@@ -5,7 +5,6 @@
   color: #e4e7ec;
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
-.club-applicants-page header,
 .applicants-toolbar,
 .applicants-list li {
   display: flex;
@@ -14,15 +13,12 @@
   align-items: center;
   gap: 16px;
 }
-.club-applicants-page h1 {
-  margin: 8px 0;
-  font-size: clamp(30px, 5vw, 44px);
-}
 .club-applicants-page p {
   color: #9aa5b3;
   margin: 8px 0;
 }
-.club-applicants-page button,
+/* The page bar's painted "?" brings its own box; these text controls do not. */
+.club-applicants-page button:not(.ca-page-help),
 .club-applicants-page a {
   min-height: 44px;
   display: inline-flex;

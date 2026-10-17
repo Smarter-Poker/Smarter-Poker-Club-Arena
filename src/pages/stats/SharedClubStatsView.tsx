@@ -8,6 +8,7 @@ import { reportError } from '../../utils/errorReporter';
 import { titleCase } from '../../utils/titleCase';
 import { ratioOrUnmeasured } from './format';
 import { RANGES } from './types';
+import PageBar from '../../components/help/PageBar';
 
 interface Props {
   targetUserId: string;
@@ -165,19 +166,10 @@ export default function SharedClubStatsView(props: Props) {
   const t = readyPayload?.tournaments ?? null;
   return (
     <div className="stats-page">
-      <section className="stats-command-deck">
-        <img
-          className="stats-hero-art"
-          src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-dossier-v2.webp`}
-          alt=""
-          aria-hidden="true"
-        />
-        <div className="stats-command-copy">
-          <span className="stats-eyebrow">Authorized Shared-Club Readout</span>
-          <h1>Player Intelligence</h1>
-          <p>Public Performance Aggregates From A Club You Both Currently Share.</p>
-        </div>
-      </section>
+      <PageBar
+        title="Player Intelligence"
+        summary="An Authorized Shared-Club Readout: Public Performance Aggregates From A Club You Both Currently Share."
+      />
       {visibleClubs.length > 0 && (
         <section className="stats-club-command" aria-labelledby="shared-club-title">
           <img
@@ -186,7 +178,6 @@ export default function SharedClubStatsView(props: Props) {
             aria-hidden="true"
           />
           <div className="stats-club-command-copy">
-            <span className="stats-section-kicker">Exact Shared Scope</span>
             <h2 id="shared-club-title">
               {titleCase(visibleClubs.find((c) => c.id === displayClubId)?.name ?? 'Shared Club')}
             </h2>
@@ -250,7 +241,6 @@ export default function SharedClubStatsView(props: Props) {
         <section className="stats-club-comparison" aria-label="Shared Club Public Aggregates">
           <div className="stats-club-comparison-head">
             <div>
-              <span className="stats-section-kicker">Public Aggregate Ledger</span>
               <h2>Performance Readout</h2>
             </div>
           </div>

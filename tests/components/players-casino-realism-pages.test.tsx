@@ -334,8 +334,12 @@ describe('Players detail surfaces', () => {
   it('renders the felt instrument board with live summary readouts', async () => {
     render(<PlayerStatisticsPage />);
 
-    expect(await screen.findByRole('heading', { name: 'Player Performance' })).toBeVisible();
-    expect(screen.getByText('Measured From Verified Hands')).toBeVisible();
+    // Dan 2026-10-17: the title is a hidden heading in the page bar, and the
+    // eyebrow, paragraph, felt art and duplicate hero readouts are gone.
+    expect(await screen.findByRole('heading', { name: 'Player Performance' })).toBeInTheDocument();
+    expect(screen.queryByText('Measured From Verified Hands')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Page Help' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Go Back' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Instrument Controls' })).toBeVisible();
     // The hero and the controls paint at once; the cards paint only after the
     // statistics resolve. Under runner load that gap was long enough for a
@@ -344,10 +348,9 @@ describe('Players detail surfaces', () => {
     expect(await screen.findByRole('heading', { name: 'Playing Style' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Volume' })).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Club Result' })).toBeVisible();
-    expect(document.querySelector<HTMLImageElement>('.ps-hero__art')?.src).toContain(
-      'player-instrument-felt-v1.webp'
-    );
-    expect(screen.getAllByText('120')).toHaveLength(2);
+    expect(document.querySelector('.ps-hero__art')).toBeNull();
+    // Each figure prints once, on its card.
+    expect(screen.getAllByText('120')).toHaveLength(1);
     expect(screen.getByText('18')).toBeVisible();
     expect(screen.queryByText('120.00')).not.toBeInTheDocument();
     expect(screen.queryByText('18.00')).not.toBeInTheDocument();

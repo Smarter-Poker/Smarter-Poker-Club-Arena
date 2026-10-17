@@ -8,17 +8,23 @@ const PAGE = readFileSync(resolve('src/pages/DailyChallengesPage.tsx'), 'utf8');
 const ACTIONS = readDailyChallengesUnit('useDailyMissionActions.ts');
 
 describe('Daily Challenges repaired accessibility contracts', () => {
-  it('gives wrapped mission headings at least one full line of ink in both first and loaded paint', () => {
-    for (const path of [
-      'src/pages/daily-challenges/10-hero.base.module.css',
-      'src/components/challenges/DailyChallengesRouteFallback.module.css',
-    ]) {
-      const css = readFileSync(resolve(path), 'utf8');
-      const heading = sliceBetween(css, '.heroCopy h1 {', '}');
-      const lineHeight = Number(heading.match(/line-height:\s*([\d.]+);/)?.[1]);
-      expect(lineHeight, path).toBeGreaterThanOrEqual(1);
-      expect(heading, path).toContain('overflow-wrap: anywhere;');
-    }
+  it('names the page with a hidden heading in both first and loaded paint', () => {
+    // Dan 2026-10-17: no visible page title, so no wrapped title to hold a
+    // full line of ink. Both paints keep the h1 for screen readers.
+    const shell = readFileSync(
+      resolve('src/components/challenges/DailyChallengesRouteFallback.tsx'),
+      'utf8'
+    );
+    expect(shell).toContain('<h1 className={styles.srOnly}>{TITLES[tier]}</h1>');
+    const shellCss = readFileSync(
+      resolve('src/components/challenges/DailyChallengesRouteFallback.module.css'),
+      'utf8'
+    );
+    expect(sliceBetween(shellCss, '.srOnly {', '}')).toContain('clip: rect(0, 0, 0, 0);');
+    expect(readDailyChallengesUnit('MissionHero.tsx')).toContain('titleId="missions-title"');
+    expect(readDailyChallengesUnit('MissionLoadingState.tsx')).toContain(
+      '<h1 className={styles.srOnly}>{presentation.title}</h1>'
+    );
   });
 
   it('keeps Escape available after focus leaves the inline reroll confirmation', () => {

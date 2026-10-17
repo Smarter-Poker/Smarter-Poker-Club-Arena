@@ -37,6 +37,8 @@ import { PlayerAvatar } from '../components/avatars/PlayerAvatar';
 import { LeaderboardPrizeWizard } from '../components/leaderboard/LeaderboardPrizeWizard';
 import { LeaderboardSettlementCard } from '../components/leaderboard/LeaderboardSettlementCard';
 import { ClubPageSection as SpadeConsole } from '../components/club/ClubPageSection';
+import PageBar from '../components/help/PageBar';
+import type { TutorialStep } from '../components/help/PageHelp';
 import { compactChips } from '../utils/format';
 import { enumToTitleCase } from '../utils/titleCase';
 import { leaderboardDisplayName } from '../utils/leaderboardDisplayName';
@@ -159,6 +161,32 @@ const METRIC_OPTIONS: {
     label: 'ROI',
     description: 'Return On Invested Chips %',
     globalSupported: true,
+  },
+];
+
+/* The console head keeps its painted title and its live scope; the "Club
+   Arena" eyebrow above it is gone (Dan, 2026-10-17). The "?" explains the
+   board, and each step lights the control it names. */
+const LEADERBOARD_TOUR: TutorialStep[] = [
+  {
+    title: 'Rankings Or Tournaments',
+    body: 'Switch Between Cash Game Rankings And Tournament Results.',
+    target: '.leaderboard-tabs',
+  },
+  {
+    title: 'My Clubs Or Global',
+    body: 'Rank Players Inside Your Clubs, Or Across All Of Club Arena.',
+    target: '.scope-toggle',
+  },
+  {
+    title: 'Period',
+    body: 'Pick The Week, Month Or All-Time Window The Board Is Measured Over.',
+    target: '.lb-period-group',
+  },
+  {
+    title: 'Your Position',
+    body: 'The Field Size, Where You Stand And What The Board Is Measured By, Updated Live.',
+    target: '.lb-telemetry',
   },
 ];
 
@@ -1281,9 +1309,14 @@ export default function LeaderboardPage() {
 
   return (
     <div className="leaderboard-page" data-arena-surface="leaderboard-console">
+      <PageBar
+        title="Leaderboards"
+        titleAs={false}
+        summary="See Who Leads Your Clubs Or All Of Club Arena, By Period, In Cash Games And Tournaments."
+        steps={LEADERBOARD_TOUR}
+      />
       <SpadeConsole
         className="lb-console"
-        eyebrow="Club Arena"
         title="Leaderboards"
         titleAs="h1"
         titleId="leaderboard-title"

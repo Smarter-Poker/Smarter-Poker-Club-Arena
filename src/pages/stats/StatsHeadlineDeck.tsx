@@ -4,7 +4,6 @@ import { HandsWonGauge, type StatCategory } from './playerStatsPageModel';
 import { compactChips } from '../../utils/format';
 
 interface Props {
-  statsEyebrow: string;
   refreshing: boolean;
   statsContract: FullStats['contract'];
   rangeKey: string;
@@ -23,7 +22,6 @@ interface Props {
 
 export default function StatsHeadlineDeck(props: Props) {
   const {
-    statsEyebrow,
     refreshing,
     statsContract,
     rangeKey,
@@ -42,26 +40,12 @@ export default function StatsHeadlineDeck(props: Props) {
   return (
     <>
       {/* ── COMMAND DECK ─────────────────────────────────────────────────────
-      The artwork is deliberately data-free. All player figures remain live,
-      selectable HTML so a new RPC response never requires a new image. */}
+      The hero's eyebrow, giant title, paragraph and dossier art moved behind
+      the page's "?" (Dan, 2026-10-17). What stays is what a player reads or
+      presses: the analysis window and the headline figures. */}
       <section className="stats-command-deck" aria-labelledby="stats-page-title">
-        <img
-          className="stats-hero-art"
-          src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-dossier-v2.webp`}
-          alt=""
-          aria-hidden="true"
-          fetchPriority="high"
-          decoding="async"
-        />
-
         <div className="stats-command-copy">
-          <span className="stats-eyebrow">{statsEyebrow}</span>
-          <h1 id="stats-page-title">Player Intelligence</h1>
-          <p>
-            Your Recorded Analysis Sample, Distilled Into Patterns You Can Use At The Next Table.
-          </p>
-
-          {/* Analysis range. Everything below the hero is computed over this window. */}
+          {/* Analysis range. Everything below is computed over this window. */}
           <div className="stats-range-control">
             <span className="stats-range-label">
               Analysis Window

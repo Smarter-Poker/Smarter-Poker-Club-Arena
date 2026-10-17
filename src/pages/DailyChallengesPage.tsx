@@ -313,7 +313,6 @@ export default function DailyChallengesPage() {
           <span className={styles.bevelFrame} aria-hidden="true" />
           <header className={styles.boardHeader}>
             <div>
-              <span className={styles.eyebrow}>Challenge Ledger</span>
               <h2 id="mission-board-title" tabIndex={-1}>
                 {TIER_LABELS[activeTier]} Challenge Ledger
               </h2>

@@ -291,7 +291,10 @@ describe('PlayerStatsPage mounts', () => {
     render(<PlayerStatsPage />);
 
     expect(await screen.findByText('Shared Readout Unavailable')).toBeInTheDocument();
-    expect(screen.getByText('Authorized Shared-Club Readout')).toBeInTheDocument();
+    // Dan 2026-10-17: the "Authorized Shared-Club Readout" eyebrow moved
+    // behind the "?"; the page prints its state and the help control.
+    expect(screen.queryByText('Authorized Shared-Club Readout')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Page Help' })).toBeInTheDocument();
     expect(rpcMock).toHaveBeenCalledWith('ca_player_stats_shared_clubs', {
       p_target_user: 'user-2',
       p_asset: 'chips',
@@ -396,10 +399,11 @@ describe('PlayerStatsPage mounts', () => {
       expect(screen.getByText('Established')).toBeInTheDocument();
     });
 
-    expect(document.querySelector('.stats-hero-art')).toHaveAttribute(
-      'src',
-      expect.stringContaining('player-intelligence-dossier-v2.webp')
-    );
+    // Dan 2026-10-17: the hero's eyebrow, paragraph and dossier art are gone;
+    // the title is a hidden heading and the words live behind the "?".
+    expect(document.querySelector('.stats-hero-art')).toBeNull();
+    expect(screen.queryByText(/Player Analytics/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Page Help' })).toBeInTheDocument();
 
     expect(screen.getByRole('button', { name: 'Open Deep Analysis' })).toBeInTheDocument();
     expect(

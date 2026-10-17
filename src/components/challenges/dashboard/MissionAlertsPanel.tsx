@@ -159,7 +159,6 @@ export function MissionAlertsPanel({ userId }: { userId: string }) {
         />
       </div>
       <div className={styles.alertCopy}>
-        <span className={styles.panelLabel}>Daily Cycle Utility / Optional Challenge Alerts</span>
         <h2 id="mission-alerts-title">Daily Reset Alerts</h2>
         <p>
           Get One Alert When A Fresh Daily Challenge Set Opens. This Is Off By Default And Does Not

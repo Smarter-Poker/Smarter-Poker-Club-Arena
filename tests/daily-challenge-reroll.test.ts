@@ -315,9 +315,9 @@ describe('the page ships the casino-realism surface without the old stubs', () =
 
   it('ships an optimized eager hero and responsive accessibility states', () => {
     const presentation = readDailyChallengesUnit('missionPresentation.ts');
-    expect(presentation).toContain('daily-missions-casino-v2.webp');
-    expect(presentation).toContain('daily-missions-casino-v2-mobile.webp');
-    expect(readDailyChallengesUnit('MissionArtwork.tsx')).toContain('fetchPriority="high"');
+    // The hero scene is gone (Dan 2026-10-17); the eager art is the freeze vault.
+    expect(presentation).not.toContain('daily-missions-casino-v2.webp');
+    expect(readDailyChallengesUnit('MissionArtwork.tsx')).toContain('loading="eager"');
     expect(css).not.toContain('@import url(');
     // The module sheet is a manifest of relative partials that Vite inlines at
     // build time into one CSS-module scope; never a runtime import.

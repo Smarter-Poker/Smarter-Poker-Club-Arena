@@ -549,11 +549,13 @@ test.describe('production Daily Missions certification', () => {
         expect(vitals.lcp).toBeGreaterThan(0);
         expect(vitals.lcp).toBeLessThan(LCP_BUDGET_MS);
         expect(vitals.cls).toBeLessThanOrEqual(CLS_BUDGET);
+        // The hero's vault scene was removed (Dan 2026-10-17); the first
+        // paint loads only the diamond mark the live balance meter prints.
         expect(vitals.missionArt.map((asset) => asset.name)).toEqual(
-          expect.arrayContaining([
-            'daily-missions-casino-v2.webp',
-            'daily-missions-diamond-96-v1.webp',
-          ])
+          expect.arrayContaining(['daily-missions-diamond-96-v1.webp'])
+        );
+        expect(vitals.missionArt.map((asset) => asset.name)).not.toContain(
+          'daily-missions-casino-v2.webp'
         );
         expect(vitals.missionArtBytes).toBeGreaterThan(0);
         // The assets are named in the message so a red run's annotation says

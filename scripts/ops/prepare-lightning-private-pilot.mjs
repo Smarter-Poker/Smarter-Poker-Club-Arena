@@ -286,6 +286,22 @@ function assertPilotControlReceipt(row, clusterId, action, requestId, target) {
   }
 }
 
+/** The targets one setup run prepares, by template. A target already live
+ * in a Lightning stage is left out by name rather than refused as a whole run,
+ * so the other one can still be prepared; unknown names select nothing. */
+export function selectSetupTargets(value) {
+  const wanted = new Set(
+    String(value ?? 'action,madness')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const selected = PILOT_TARGETS.filter((t) => wanted.has(t.templateName));
+  if (!selected.length || selected.length !== wanted.size)
+    throw new Error('Pilot Setup Targets Must Name Action, Madness Or Both');
+  return selected;
+}
+
 export async function preparePilot(env = process.env, clientFactory) {
   const createClient = clientFactory ?? (await import('@supabase/supabase-js')).createClient;
   if (
@@ -296,6 +312,7 @@ export async function preparePilot(env = process.env, clientFactory) {
   ) {
     throw new Error('Configured Verified Service Credentials Are Required');
   }
+  const setupTargets = selectSetupTargets(env.PILOT_SETUP_TARGETS);
   const options = { auth: { persistSession: false, autoRefreshToken: false } };
   const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
     ...options,
@@ -352,11 +369,13 @@ export async function preparePilot(env = process.env, clientFactory) {
     );
     // Validate every existing named target before any setup mutation. Ordinary
     // seeded games remain untouched, including the default nine-seat game.
-    for (const target of PILOT_TARGETS) selectPilotGame(games, club.id, target);
+    for (const target of setupTargets) selectPilotGame(games, club.id, target);
     // A replaced target is closed, and read back closed, before its
     // replacement may claim the same stake slot.
     const retirements = [];
-    for (const retired of RETIRED_PILOT_TARGETS) {
+    for (const retired of RETIRED_PILOT_TARGETS.filter((r) =>
+      setupTargets.some((t) => t.templateName === r.templateName)
+    )) {
       const outcome = await retirePilotTarget({
         admin,
         player,
@@ -373,7 +392,7 @@ export async function preparePilot(env = process.env, clientFactory) {
         'Pilot Games After Retirement'
       );
     const operations = [];
-    for (const target of PILOT_TARGETS) {
+    for (const target of setupTargets) {
       let game = selectPilotGame(games, club.id, target);
       if (!game) {
         // One creation attempt. Unknown acknowledgement ends this run; the next

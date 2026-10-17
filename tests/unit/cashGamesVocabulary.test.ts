@@ -283,6 +283,21 @@ describe('the four template-locked rules are printed, never sent', () => {
       })
     );
     expect(classic.map((l) => l.value)).toEqual(['No Ante', 'No VPIP Floor', 'No Bomb Pots']);
+
+    // The cadences the templates promise since 20261017105834.
+    expect(
+      templatePromiseLines(
+        snapshot({ bombs: { enabled: true, trigger: 'timed_20m', ante_bb: 2, boards: 2 } })
+      )[2].value
+    ).toBe('Double Board, 2 BB Ante, Every 20 Minutes');
+    expect(
+      templatePromiseLines(
+        snapshot({
+          template: 'madness',
+          bombs: { enabled: true, trigger: 'timed_10m', ante_bb: 3, boards: 2 },
+        })
+      )[2].value
+    ).toBe('Double Board, 3 BB Ante, Every 10 Minutes');
     for (const l of classic) {
       expect(l.note).toContain('Set By The Classic Template');
       expect(l.value + l.note).not.toMatch(/\u2014/);

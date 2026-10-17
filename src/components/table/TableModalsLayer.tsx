@@ -1219,6 +1219,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
             : null
         }
         tableName={tableName}
+        gameType={gameType}
         minBuyIn={(() => {
           return cashoutMinBuyIn > minBuyIn ? cashoutMinBuyIn : minBuyIn;
         })()}

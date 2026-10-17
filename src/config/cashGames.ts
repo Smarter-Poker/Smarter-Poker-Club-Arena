@@ -21,14 +21,32 @@ export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; bl
   {
     id: 'action',
     label: 'Action',
-    blurb: 'Small Blind Ante, VPIP Floor, Double Board Bomb Every 15 Minutes.',
+    blurb: 'Small Blind Ante, 30% Minimum VPIP, Double Board Bomb Every 20 Minutes.',
   },
   {
     id: 'madness',
     label: 'Madness',
-    blurb: 'Big Blind Ante, High VPIP Floor, Double Board Bomb Every Orbit.',
+    blurb: 'Big Blind Ante, 50% Minimum VPIP, Double Board Bomb Every 10 Minutes.',
   },
 ];
+
+/**
+ * THE BOMB CADENCE A TEMPLATE TRIGGER PROMISES, in words. Action deals a bomb
+ * every 20 minutes and Madness every 10 (Dan 2026-10-16, migration
+ * 20261017105834); the older tokens stay readable because a retired club's
+ * snapshot is never rewritten.
+ */
+export type CashBombTrigger = 'timed_10m' | 'timed_15m' | 'timed_20m' | 'every_orbit';
+
+export function bombCadenceLabel(
+  trigger: CashBombTrigger | string | null | undefined,
+  short = false
+): string {
+  const m = /^timed_(\d+)m$/.exec(String(trigger ?? ''));
+  if (m) return `Every ${m[1]} ${short ? 'Min' : 'Minutes'}`;
+  if (trigger === 'every_orbit') return 'Every Orbit';
+  return 'On A Timer';
+}
 
 /**
  * WHAT CHANGES, PRINTED BESIDE THE STYLE ON EVERY CASH CARD (Dan 2026-10-15):
@@ -39,10 +57,12 @@ export const CASH_TEMPLATES: ReadonlyArray<{ id: CashTemplate; label: string; bl
  * Classic is the standard ring game, so it prints nothing: only the two
  * styles that change the game explain themselves. The words are the same
  * blurb the New Cash Game picker shows (one source, never two wordings), and
- * they match fn_cash_template_defaults as read 2026-10-15: Action = SB ante,
- * 30% VPIP floor, 2-board bomb every 15 min; Madness = BB ante, 50% VPIP
- * floor, 2-board bomb every orbit. No numbers are printed, so a host override
- * of a figure never makes the card say something untrue.
+ * they match fn_cash_template_defaults: Action = SB ante, 30% minimum VPIP,
+ * 2-board bomb every 20 min; Madness = BB ante, 50% minimum VPIP, 2-board
+ * bomb every 10 min. Dan 2026-10-16: "it should change from VPIP FLOOR to the
+ * actual vpip %" and "'high vpip' should state the minimum requirement". The
+ * figures are safe to print because all four are TEMPLATE_LOCKED_RULES: a
+ * host cannot override them, so the card cannot say something untrue.
  */
 export function cashTemplateNote(template: string | null | undefined): string | null {
   if (!template) return null;
@@ -108,7 +128,7 @@ export interface CashRulesetSnapshot {
   vpip_window: number;
   bombs: {
     enabled: boolean;
-    trigger: 'timed_15m' | 'every_orbit' | null;
+    trigger: CashBombTrigger | null;
     ante_bb: number | null;
     boards: number | null;
   };
@@ -124,8 +144,9 @@ export interface CashRulesetSnapshot {
  * docs/changelog/2026-09-09-a-classic-game-has-no-antes-and-no-bombs.md).
  *
  * The template blurb is a promise to the player: "No Antes, No Bombs, No VPIP
- * Floor" / "Small Blind Ante, VPIP Floor, Double Board Bomb Every 15 Minutes"
- * / "Big Blind Ante, High VPIP Floor, Double Board Bomb Every Orbit". Since
+ * Floor" / "Small Blind Ante, 30% Minimum VPIP, Double Board Bomb Every 20
+ * Minutes" / "Big Blind Ante, 50% Minimum VPIP, Double Board Bomb Every 10
+ * Minutes". Since
  * that date fn_cash_game_create resolves every one of these from
  * fn_cash_template_defaults and reads NOTHING the caller sends for them. So
  * the overrides payload does not carry them, the rules step prints them as
@@ -205,9 +226,9 @@ export function templatePromiseLines(
       ? `${by}. Players Under This Voluntarily Put In Pot Rate Are Cashed Out After The Hand.`
       : `${by}. Nobody Is Cashed Out For Playing Tight.`;
   const bombs = s.bombs?.enabled
-    ? `${(s.bombs.boards ?? 2) >= 3 ? 'Triple' : 'Double'} Board, ${s.bombs.ante_bb ?? 0} BB Ante, ${
-        s.bombs.trigger === 'every_orbit' ? 'Every Orbit' : 'Every 15 Minutes'
-      }`
+    ? `${(s.bombs.boards ?? 2) >= 3 ? 'Triple' : 'Double'} Board, ${s.bombs.ante_bb ?? 0} BB Ante, ${bombCadenceLabel(
+        s.bombs.trigger
+      )}`
     : 'No Bomb Pots';
   const bombsNote = s.bombs?.enabled
     ? `${by}. Every Dealt In Player Posts The Bomb Ante Instead Of The Blinds.`

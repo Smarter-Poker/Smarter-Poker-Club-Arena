@@ -66,6 +66,34 @@ export function stamp(iso: string | null | undefined): string {
 }
 
 /**
+ * The game's full name, as the lobby's long variant label prints it
+ * (lobbyEntries VARIANT_LABELS). Used where a player confirms which game they
+ * are about to sit in - the buy-in (Dan 2026-10-16: "BEFORE YOU JOIN A TABLE,
+ * IT SHOULD DISPLAY THE GAME TYPE ONE MORE TIME"). Anything without a long
+ * name falls back to gameTypeLabel; null for an empty variant.
+ */
+const VARIANT_LONG_NAMES: Record<string, string> = {
+  nlh: "No Limit Hold'em",
+  plo: 'Pot Limit Omaha',
+  plo4: 'Pot Limit Omaha',
+  plo5: 'Pot Limit Omaha 5',
+  plo6: 'Pot Limit Omaha 6',
+  plo8: 'Pot Limit Omaha Hi-Lo',
+  flh: "Fixed Limit Hold'em",
+  limit_holdem: "Fixed Limit Hold'em",
+  flo8: 'Fixed Limit Omaha Hi-Lo',
+  limit_omaha: 'Fixed Limit Omaha',
+};
+
+export function gameTypeLongName(variant: string | null | undefined): string | null {
+  const v = String(variant || '')
+    .toLowerCase()
+    .trim();
+  if (!v) return null;
+  return VARIANT_LONG_NAMES[v] ?? gameTypeLabel(v);
+}
+
+/**
  * Game types print the way the lobby names them.
  *
  * The stored value is a column key (`short_deck`, `plo5`), and a surface that

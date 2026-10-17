@@ -30,6 +30,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { mediaUrl } from '../../utils/mediaBase';
 import type { CashTemplate } from '../../config/cashGames';
+import { bombCadenceLabel } from '../../config/cashGames';
 import { killRuleLinePart, type KillTableRule } from '../../utils/killPot';
 import './CashGameCard.css';
 
@@ -275,9 +276,7 @@ export function rulesLineFor(snapshot: {
   if (snapshot.regular_ante === 'sb') parts.push('1 SB Ante');
   else if (snapshot.regular_ante === 'bb') parts.push('1 BB Ante');
   if (snapshot.bombs?.enabled) {
-    parts.push(
-      snapshot.bombs.trigger === 'every_orbit' ? 'Bombs Every Orbit' : 'Bombs Every 15 Min'
-    );
+    parts.push(`Bombs ${bombCadenceLabel(snapshot.bombs.trigger, true)}`);
     /* Three boards is worth a word; two is what a bomb pot already means here
        and is not repeated (Dan 2026-09-07, item 7D). */
     if ((snapshot.bombs.boards ?? 0) >= 3) parts.push('Triple Board');

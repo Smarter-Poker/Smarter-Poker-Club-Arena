@@ -145,8 +145,8 @@ describe('Create-Table Switch And Bomb-Schedule Markup', () => {
 
     // The template card a host picks from says the same thing, in the same words.
     const blurb = Object.fromEntries(CASH_TEMPLATES.map((t) => [t.id, t.blurb]));
-    expect(blurb.action).toContain('Every 15 Minutes');
-    expect(blurb.madness).toContain('Every Orbit');
+    expect(blurb.action).toContain('Every 20 Minutes');
+    expect(blurb.madness).toContain('Every 10 Minutes');
     expect(blurb.classic).toContain('No Bombs');
     for (const t of CASH_TEMPLATES) expect(t.blurb).not.toMatch(/\bN\b/);
   });

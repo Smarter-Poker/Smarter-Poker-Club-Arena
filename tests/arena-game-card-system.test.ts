@@ -21,7 +21,11 @@ import {
   validateArenaGameCardRegistry,
 } from '../src/components/lobby/game-cards/arenaGameCardRegistry';
 import type { LobbyRowContext } from '../src/components/lobby/lobbyCardContext';
-import { SpadePloCard } from '../src/components/lobby/game-cards/SpadePloCard';
+import {
+  SpadePloCard,
+  SPADE_PLO_CANVAS,
+  SPADE_PLO_ZONES,
+} from '../src/components/lobby/game-cards/SpadePloCard';
 
 const ROOT = resolve(__dirname, '..');
 const CARD_CSS = readFileSync(
@@ -146,11 +150,32 @@ describe('Arena game-card creation', () => {
     );
   });
 
-  it('renders the approved replacement through its new URL and the same registry entry', () => {
-    const file = 'plo/spade-plo-premium-v1/chassis-b0b05b302c99.png';
-    const bytes = readFileSync(resolve(ROOT, 'public/assets/club-buttons/game-cards', file));
+  it('keeps the previous approved chassis bytes under their permanent URL', () => {
+    const bytes = readFileSync(
+      resolve(
+        ROOT,
+        'public/assets/club-buttons/game-cards/plo/spade-plo-premium-v1/chassis-b0b05b302c99.png'
+      )
+    );
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(
       '460b8a9858ce5601e32d6ba20789bd0d48fedd9f0798f3f1aee561369424b4b2'
+    );
+  });
+
+  it('renders the raised-pill chassis through its new URL and the same registry entry', () => {
+    /* Dan 2026-10-16: raise the PLO Running / Empty pill away from the style
+       note. Same master, pill block moved up; the status zone moved with it. */
+    const file = 'plo/spade-plo-premium-v1/chassis-5df05c9d8f72.png';
+    const bytes = readFileSync(resolve(ROOT, 'public/assets/club-buttons/game-cards', file));
+    expect(createHash('sha256').update(bytes).digest('hex')).toBe(
+      '5df05c9d8f72d821261889d3fdb23c256cf90b368a2ec7cf67e48eac8004b617'
+    );
+    expect(SPADE_PLO_ZONES.status.y + SPADE_PLO_ZONES.status.height).toBeLessThanOrEqual(
+      SPADE_PLO_ZONES.styleNote.y - 60
+    );
+    // A two-line note at full size fits its zone (2 x 2.55cqw x 1.12 line height).
+    expect((SPADE_PLO_ZONES.styleNote.height / SPADE_PLO_CANVAS.width) * 100).toBeGreaterThanOrEqual(
+      2 * 2.55 * 1.12
     );
     const asset = resolveArenaGameCardTemplate({ family: 'plo', presentation: 'mobile' }).skin
       .mobile.asset;
@@ -212,7 +237,7 @@ describe('Arena game-card creation', () => {
       plo: {
         id: 'spade-plo-premium-v1',
         version: 1,
-        mobileAsset: /plo\/spade-plo-premium-v1\/chassis-b0b05b302c99\.png$/,
+        mobileAsset: /plo\/spade-plo-premium-v1\/chassis-5df05c9d8f72\.png$/,
       },
       spins: {
         id: 'shark-spins-premium-v1',

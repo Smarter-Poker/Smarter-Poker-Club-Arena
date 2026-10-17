@@ -121,6 +121,23 @@
   grid-column: 1 / -1;
 }
 
+/* The game being bought into, once more above the amount (Dan 2026-10-16:
+   "BEFORE YOU JOIN A TABLE, IT SHOULD DISPLAY THE GAME TYPE ONE MORE TIME
+   SOME WHERE ABOVE OR BELOW THE 'BUY IN SELECTION'"). Long names such as
+   Pot Limit Omaha Hi-Lo wrap to a second line rather than being cut. */
+.buy-in-modal__game-type {
+  display: block;
+  max-width: 100%;
+  font-size: 4.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.12;
+  text-transform: uppercase;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-shadow: 0 0.3cqw 0.5cqw #000;
+}
+
 .buy-in-modal__amount-value {
   display: block;
   max-width: 100%;

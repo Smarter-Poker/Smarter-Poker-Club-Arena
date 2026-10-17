@@ -232,6 +232,99 @@ export function runStrengthAssembler({
 }
 
 /**
+ * Queries GitHub Actions for any failed jobs within a run and re-runs only the failed shards.
+ */
+export function retryFailedShards({ runId, repo = DEFAULT_REPO, ghBin = 'gh' }) {
+  if (!runId) throw new Error('runId is required for retrying failed shards');
+
+  const viewArgs = ['run', 'view', String(runId), '--json', 'jobs,status,conclusion'];
+  if (repo) {
+    viewArgs.push('-R', repo.replace(/^repos\//, ''));
+  }
+
+  const raw = execFileSync(ghBin, viewArgs, { encoding: 'utf8', timeout: 30000 });
+  const parsed = JSON.parse(raw);
+  const failedJobs = (parsed.jobs || []).filter((j) => j.conclusion === 'failure');
+
+  if (failedJobs.length === 0) {
+    return {
+      retried: false,
+      failedCount: 0,
+      failedJobs: [],
+      message: 'No failed shards found in run.',
+    };
+  }
+
+  const rerunArgs = ['run', 'rerun', String(runId), '--failed'];
+  if (repo) {
+    rerunArgs.push('-R', repo.replace(/^repos\//, ''));
+  }
+
+  const output = execFileSync(ghBin, rerunArgs, { encoding: 'utf8', timeout: 30000 });
+
+  return {
+    retried: true,
+    failedCount: failedJobs.length,
+    failedJobs: failedJobs.map((j) => ({ id: j.id, name: j.name })),
+    output: output.trim(),
+  };
+}
+
+/**
+ * Polls a running GitHub Actions workflow run until completion.
+ */
+export async function pollRunCompletion({
+  runId,
+  repo = DEFAULT_REPO,
+  ghBin = 'gh',
+  intervalMs = 15000,
+  maxWaitMs = 18000000,
+  onProgress,
+}) {
+  if (!runId) throw new Error('runId is required for polling');
+
+  const startTime = Date.now();
+  const viewArgs = ['run', 'view', String(runId), '--json', 'status,conclusion,jobs'];
+  if (repo) {
+    viewArgs.push('-R', repo.replace(/^repos\//, ''));
+  }
+
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      const raw = execFileSync(ghBin, viewArgs, { encoding: 'utf8', timeout: 30000 });
+      const parsed = JSON.parse(raw);
+      const summary = summarizeRunJobs(parsed.jobs || []);
+
+      if (typeof onProgress === 'function') {
+        onProgress({
+          runId: String(runId),
+          status: parsed.status,
+          conclusion: parsed.conclusion,
+          ...summary,
+        });
+      }
+
+      if (parsed.status === 'completed') {
+        return {
+          completed: true,
+          success: parsed.conclusion === 'success',
+          conclusion: parsed.conclusion,
+          summary,
+        };
+      }
+    } catch (err) {
+      if (typeof onProgress === 'function') {
+        onProgress({ runId: String(runId), error: err.message });
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error(`Run ${runId} timed out after ${Math.round(maxWaitMs / 1000)}s`);
+}
+
+/**
  * End-to-end qualification pipeline orchestrator.
  */
 export async function executeQualificationPipeline({
@@ -245,11 +338,27 @@ export async function executeQualificationPipeline({
   expectedEngineDigest,
   noFormat = true,
   defectiveFile,
+  watch = false,
+  pollIntervalMs = 15000,
+  onProgress,
   repo = DEFAULT_REPO,
   ghBin = 'gh',
 }) {
   const config = getPhaseConfig(phase, variant);
   let effectiveRunsDir = runsDir;
+
+  if (runId && watch) {
+    const pollResult = await pollRunCompletion({
+      runId,
+      repo,
+      ghBin,
+      intervalMs: pollIntervalMs,
+      onProgress,
+    });
+    if (!pollResult.success) {
+      throw new Error(`Run ${runId} concluded with status ${pollResult.conclusion}, cannot assemble.`);
+    }
+  }
 
   if (runId && (!runsDir || !existsSync(runsDir) || readdirSync(runsDir).length === 0)) {
     const downloadDir = runsDir || path.resolve(repoRoot, '.artifacts', `${config.phase}-${config.variant}-${runId}`);
@@ -306,8 +415,24 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     })
   );
 
+  // Standalone failed shards retry mode
+  if (args['retry-failed']) {
+    if (!args.runId) {
+      console.error('Usage: node scripts/ops/horse-qualification-pipeline.mjs --retry-failed --runId=<id>');
+      process.exit(1);
+    }
+    try {
+      const retryResult = retryFailedShards({ runId: args.runId });
+      console.log(JSON.stringify(retryResult, null, 2));
+      process.exit(0);
+    } catch (err) {
+      console.error('Failed to retry shards:', err.message);
+      process.exit(1);
+    }
+  }
+
   if (!args.phase) {
-    console.error('Usage: node scripts/ops/horse-qualification-pipeline.mjs --phase=<10|11|12|13> [--variant=<name>] --runs=<dir> --out=<dir> [--runId=<id>]');
+    console.error('Usage: node scripts/ops/horse-qualification-pipeline.mjs --phase=<10|11|12|13> [--variant=<name>] --runs=<dir> --out=<dir> [--runId=<id>] [--watch]');
     process.exit(1);
   }
 
@@ -320,6 +445,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       outDir: args.out,
       archiveDir: args.archive,
       noFormat: args.noFormat !== 'false',
+      watch: Boolean(args.watch),
+      onProgress: (p) => {
+        if (p.error) {
+          console.error(`[Watch ${p.runId}] Error: ${p.error}`);
+        } else {
+          console.log(`[Watch ${p.runId}] ${p.status} - ${p.completed}/${p.total} shards completed (${p.in_progress} in progress, ${p.queued} queued)`);
+        }
+      },
     });
     console.log(JSON.stringify(result, null, 2));
     process.exit(0);

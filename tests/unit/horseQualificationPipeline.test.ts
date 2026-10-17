@@ -9,6 +9,8 @@ import {
   verifyPolicyDigestMatch,
   summarizeRunJobs,
   downloadRunArtifacts,
+  retryFailedShards,
+  pollRunCompletion,
   executeQualificationPipeline,
 } from '../../scripts/ops/horse-qualification-pipeline.mjs';
 
@@ -239,6 +241,25 @@ describe('Horse Qualification Pipeline Orchestrator', () => {
           outDir: 'fixtures/mock-out',
         })
       ).rejects.toThrow(/Runs directory not found/);
+    });
+
+    it('validates required parameters for retryFailedShards', () => {
+      expect(() => retryFailedShards({})).toThrow(/runId is required/);
+    });
+
+    it('validates required parameters for pollRunCompletion', async () => {
+      await expect(pollRunCompletion({})).rejects.toThrow(/runId is required/);
+    });
+
+    it('handles pollRunCompletion timeout gracefully', async () => {
+      await expect(
+        pollRunCompletion({
+          runId: '12345',
+          ghBin: 'non-existent-gh-bin-test',
+          intervalMs: 10,
+          maxWaitMs: 30,
+        })
+      ).rejects.toThrow(/timed out/);
     });
   });
 });

@@ -29,8 +29,9 @@ export interface PageBarProps {
   /** The page's own controls, kept in the bar beside its live figures. */
   children?: ReactNode;
   className?: string;
-  /** The heading level the hidden title uses. A page has one h1. */
-  titleAs?: 'h1' | 'h2';
+  /** The heading level the hidden title uses. A page has one h1. `false`
+   *  prints no heading: for a page whose painted console already carries it. */
+  titleAs?: 'h1' | 'h2' | false;
   titleId?: string;
 }
 
@@ -48,9 +49,11 @@ export default function PageBar({
   const hasLive = Boolean(status) || metrics.length > 0 || Boolean(children);
   return (
     <header className={className ? `ca-page-bar ${className}` : 'ca-page-bar'}>
-      <Heading className="sr-only" id={titleId}>
-        {title}
-      </Heading>
+      {Heading && (
+        <Heading className="sr-only" id={titleId}>
+          {title}
+        </Heading>
+      )}
       {hasLive && (
         <div className="ca-page-bar__live">
           {status && (

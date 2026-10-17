@@ -600,6 +600,41 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+      # A BRAND-NEW PLAYER ON AN iPHONE (2026-10-17). Every other account here
+      # is normalized past Complete Your Profile, so the gate a new sign-up
+      # meets first was never certified, and ENTER ARENA sat dead on iPhone
+      # Safari for two referred players. This lane makes its own disposable
+      # account exactly as a sign-up arrives (alias chosen, no arena avatar),
+      # walks terms -> profile -> welcome on real WebKit with an iPhone
+      # profile, never joins a club, and is hard-deleted below.
+      - name: Provision an isolated first-run account
+        id: first_run_account
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create-first-run
+
+      - name: Certify a new iPhone player gets through Complete Your Profile
+        id: first_run
+        if: always() && steps.live.outputs.ready == 'true' && steps.first_run_account.outcome == 'success'
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/first-run-iphone.json
+        run: >-
+          npx playwright test tests/e2e/production-first-run-iphone.spec.ts
+          --project=webkit-first-run --reporter=line,json --workers=1 --retries=0
+
+      - name: Hard-delete the isolated first-run account
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs cleanup-first-run
+
       # WHICH RELEASE DID THE LIGHTNING OPERATOR CERTIFICATE RUN AGAINST?
       #
       # Until 2026-10-12 the spec compared build-info.json against the SHA this

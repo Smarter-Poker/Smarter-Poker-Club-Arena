@@ -68,12 +68,22 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P10.3 the declared-work change (2026-10-16) requires fresh qualification of the round-3 PLO4 pack', () => {
+describe('P10.3 the declared-work source d9190c9e requalified the round-3 PLO4 pack at generation 3', () => {
   const committed = PREVIOUS_PHASE10_SELECTION;
   const retired = RETIRED_2026_10_16_PHASE10_SELECTION;
 
-  it('retains generations 1 (c8bfc617) and 2 (c92768c8) with selection null under the unchanged contract', () => {
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
+  it('retains generations 1 (c8bfc617) and 2 (c92768c8) and selects generation 3 on d9190c9e under the unchanged contract', () => {
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toMatchObject({
+      sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
+      packVersion: PLO4_POLICY_PACK.version,
+      contractDigest: PHASE10_RUNNING_CONTRACT_DIGEST,
+      domain: HORSE_PHASE10_DOMAIN,
+      qualificationPath: 'docs/evidence/phase10/d9190c9e/phase10-qualification-2026-10-17.json',
+      approvalGeneration: 3,
+      expiresAt: null,
+      withdrawn: null,
+    });
+    expect(Object.isFrozen(PHASE10_PROTECTED_RELEASE_SELECTION)).toBe(true);
     expect(committed).not.toBeNull();
     expect(retired).toMatchObject({
       sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
@@ -103,11 +113,18 @@ describe('P10.3 the declared-work change (2026-10-16) requires fresh qualificati
     expect(PHASE10_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('the default is shadow and neither retained generation can admit the modified policy', () => {
-    expect(admitHorsePhase10ReleaseAuthority()).toEqual({
-      status: 'refused',
-      reason: 'unselected',
-      transient: false,
+  it('the committed generation 3 admits for this digest and source, and neither retained generation can', () => {
+    const selected = admitHorsePhase10ReleaseAuthority();
+    expect(selected.status).toBe('admitted');
+    expect(selectedHorsePhase10Authority(selected)).toMatchObject({
+      phase: 'phase10',
+      sourceSha: PHASE10_PROTECTED_RELEASE_SELECTION!.sourceSha,
+      continuationVersion: PLO4_POLICY_PACK.version,
+      policyDigest: horsePhase10PolicyDigest(),
+      domain: HORSE_PHASE10_DOMAIN,
+      evidencePath: PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath,
+      evidenceSha256: PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationSha256,
+      approvalGeneration: 3,
     });
     for (const previous of [committed!, retired]) {
       const release = admitHorsePhase10ReleaseAuthority(Date.now(), previous);
@@ -155,9 +172,9 @@ describe('P10.3 the declared-work change (2026-10-16) requires fresh qualificati
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate stays unselected until requalification', () => {
+  it('the live main-scheduler gate is usable under the committed generation 3', () => {
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
+    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
   });
 
   it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {
@@ -181,7 +198,7 @@ describe('P10.3 the declared-work change (2026-10-16) requires fresh qualificati
     expect(gate.mainState()).toBe('withdrawn');
   });
 
-  it('no qualified file is on the running policy; generations 1 and 2 are retained on their old digests', () => {
+  it('the only qualified file on the running policy is the selected one; generations 1 and 2 are retained on their old digests', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase10/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -190,8 +207,12 @@ describe('P10.3 the declared-work change (2026-10-16) requires fresh qualificati
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === 'horse-phase10-qualification-v1' && parsed.qualified === true) {
         const path = `docs/evidence/phase10/${file}`;
-        expect([committed!.qualificationPath, retired.qualificationPath]).toContain(path);
-        expect(parsed.policyDigest, path).not.toBe(horsePhase10PolicyDigest());
+        if (path === PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath)
+          expect(parsed.policyDigest, path).toBe(horsePhase10PolicyDigest());
+        else {
+          expect([committed!.qualificationPath, retired.qualificationPath]).toContain(path);
+          expect(parsed.policyDigest, path).not.toBe(horsePhase10PolicyDigest());
+        }
       }
     }
   });

@@ -23,16 +23,20 @@
 -- alarm whose condition still holds is never touched: an unfinished visit
 -- raises a new one, and an incomplete week stays alarmed until it completes.
 --
--- Preimage: the live body, the postimage of 20261017132500 (56eb1c0d...,
--- byte-identical to scripts/ci/fixtures/weekly-in-progress-tick/scope-after-chunked.sql);
--- postimage 86c6a68e..., derived from that fixture and read-only on production.
+-- Preimage: one of two reviewed live bodies, each with its exact postimage:
+--   56eb1c0d... (postimage of 20261017132500, byte-identical to
+--               scripts/ci/fixtures/weekly-in-progress-tick/scope-after-chunked.sql)
+--               -> 86c6a68e..., derived from that fixture and read-only on production;
+--   31c80083... (that, with 20261017131056's ready-report receipt, installed
+--               2026-10-17 16:06 UTC) -> 63eea798..., the same body
+--               20261017131056 produces on top of this one: the two commute.
 -- (Rebased before install: 20261017132500 moved the body from 6bd020f0 after
 -- this file merged, so the merged pins could not have applied.) Each anchor
 -- must occur exactly once. Owner, SECURITY DEFINER,
 -- configuration and ACL are proven unchanged; the readback must be exact. No
 -- scheduler lock: a tick already running keeps the body it started with, and
 -- the new body calls nothing that does not already exist.
--- @live-proof: md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure)) = '86c6a68eec0928c90aea883b48101c9f'
+-- @live-proof: md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure)) IN ('86c6a68eec0928c90aea883b48101c9f', '63eea798a2390accfd91d68f06dd9958')
 
 BEGIN;
 SET LOCAL lock_timeout = '3s';
@@ -90,17 +94,20 @@ $o4$;
       IF v_result->>'success' IS DISTINCT FROM 'true' AND v_result->>'chunk_committed' IS DISTINCT FROM 'true' THEN
 $n4$;
   v_oid oid := to_regprocedure(c_sig);
-  v_def text; v_new text;
+  v_def text; v_new text; v_want text;
   v_owner oid; v_secdef boolean; v_config text[]; v_acl text;
 BEGIN
   IF current_user <> 'postgres' OR v_oid IS NULL THEN
     RAISE EXCEPTION 'scheduler alarms: owner/target mismatch';
   END IF;
   v_def := pg_get_functiondef(v_oid);
-  IF md5(v_def) = '86c6a68eec0928c90aea883b48101c9f' THEN
+  IF md5(v_def) IN ('86c6a68eec0928c90aea883b48101c9f', '63eea798a2390accfd91d68f06dd9958') THEN
     RETURN;
   END IF;
-  IF md5(v_def) <> '56eb1c0de1083bddd8a1e218a85df511' THEN
+  v_want := CASE md5(v_def)
+              WHEN '56eb1c0de1083bddd8a1e218a85df511' THEN '86c6a68eec0928c90aea883b48101c9f'
+              WHEN '31c800832cef83681bf0a492a41fe076' THEN '63eea798a2390accfd91d68f06dd9958' END;
+  IF v_want IS NULL THEN
     RAISE EXCEPTION 'scheduler alarms: unexpected live body %', md5(v_def);
   END IF;
   IF (length(v_def) - length(replace(v_def, c_old3, ''))) / length(c_old3) <> 1
@@ -108,7 +115,7 @@ BEGIN
     RAISE EXCEPTION 'scheduler alarms: an anchor is not exactly once';
   END IF;
   v_new := replace(replace(v_def, c_old3, c_new3), c_old4, c_new4);
-  IF md5(v_new) <> '86c6a68eec0928c90aea883b48101c9f' THEN
+  IF md5(v_new) <> v_want THEN
     RAISE EXCEPTION 'scheduler alarms: computed postimage is %', md5(v_new);
   END IF;
   SELECT p.proowner, p.prosecdef, p.proconfig, p.proacl::text

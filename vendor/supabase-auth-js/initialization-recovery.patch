@@ -1,0 +1,467 @@
+--- a/package/dist/main/GoTrueClient.js
++++ b/package/dist/main/GoTrueClient.js
+@@ -194,7 +194,9 @@
+                 await this._notifyAllSubscribers(event.data.event, event.data.session, false); // broadcast = false so we don't get an endless loop of messages
+             });
+         }
+-        this.initialize();
++        this.initialize().catch((error) => {
++            console.warn('[AuthClient] Initial session admission failed', error?.name ?? 'Error')
++        });
+     }
+     /**
+      * Returns whether error throwing mode is enabled for this client.
+@@ -229,15 +231,28 @@
+      * manually when checking for an error from an auth redirect (oauth, magiclink, password recovery, etc).
+      */
+     async initialize() {
+-        if (this.initializePromise) {
+-            return await this.initializePromise;
+-        }
+-        this.initializePromise = (async () => {
+-            return await this._acquireLock(this.lockAcquireTimeout, async () => {
+-                return await this._initialize();
+-            });
+-        })();
+-        return await this.initializePromise;
++      if (this.initializePromise) {
++        return await this.initializePromise
++      }
++      let entered = false
++      const initialization = (async () => {
++        try {
++          return await this._acquireLock(this.lockAcquireTimeout, async () => {
++            entered = true
++            return await this._initialize()
++          })
++        } catch (error) {
++          // An unacquired lock executed no initializer effects. Retire only this
++          // failed generation; a later explicit API request may initialize anew.
++          if (!entered && this.initializePromise === initialization &&
++              (error?.name === 'AbortError' || error instanceof locks_1.LockAcquireTimeoutError)) {
++            this.initializePromise = null
++          }
++          throw error
++        }
++      })()
++      this.initializePromise = initialization
++      return await initialization
+     }
+     /**
+      * IMPORTANT:
+@@ -499,7 +514,7 @@
+      * Log in an existing user by exchanging an Auth Code issued during the PKCE flow.
+      */
+     async exchangeCodeForSession(authCode) {
+-        await this.initializePromise;
++        await this.initialize();
+         return this._acquireLock(this.lockAcquireTimeout, async () => {
+             return this._exchangeCodeForSession(authCode);
+         });
+@@ -1003,7 +1018,7 @@
+      * Requires the user to be signed-in.
+      */
+     async reauthenticate() {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._reauthenticate();
+         });
+@@ -1085,7 +1100,7 @@
+      * will be emitted if this is detected. Use {@link #getUser()} instead.
+      */
+     async getSession() {
+-        await this.initializePromise;
++        await this.initialize();
+         const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return this._useSession(async (result) => {
+                 return result;
+@@ -1246,7 +1261,7 @@
+         if (jwt) {
+             return await this._getUser(jwt);
+         }
+-        await this.initializePromise;
++        await this.initialize();
+         const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._getUser();
+         });
+@@ -1298,7 +1313,7 @@
+      * Updates user data for a logged in user.
+      */
+     async updateUser(attributes, options = {}) {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._updateUser(attributes, options);
+         });
+@@ -1350,7 +1365,7 @@
+      * @param currentSession The current session that minimally contains an access token and refresh token.
+      */
+     async setSession(currentSession) {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._setSession(currentSession);
+         });
+@@ -1411,7 +1426,7 @@
+      * @param currentSession The current session. If passed in, it must contain a refresh token.
+      */
+     async refreshSession(currentSession) {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._refreshSession(currentSession);
+         });
+@@ -1566,7 +1581,7 @@
+      * If using `others` scope, no `SIGNED_OUT` event is fired!
+      */
+     async signOut(options = { scope: 'global' }) {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._signOut(options);
+         });
+@@ -1610,11 +1625,13 @@
+         this._debug('#onAuthStateChange()', 'registered callback with id', id);
+         this.stateChangeEmitters.set(id, subscription);
+         (async () => {
+-            await this.initializePromise;
++            await this.initialize();
+             await this._acquireLock(this.lockAcquireTimeout, async () => {
+                 this._emitInitialSession(id);
+             });
+-        })();
++        })().catch((error) => {
++            console.warn('[AuthClient] Initial auth subscription admission failed', error?.name ?? 'Error');
++        });
+         return { data: { subscription } };
+     }
+     async _emitInitialSession(id) {
+@@ -2124,7 +2141,7 @@
+         // #_initialize can be allowed to complete without recursively waiting on
+         // itself
+         const timeout = setTimeout(async () => {
+-            await this.initializePromise;
++            await this.initialize();
+             await this._autoRefreshTokenTick();
+         }, 0);
+         this.autoRefreshTickTimeout = timeout;
+@@ -2276,7 +2293,7 @@
+                 // transitioned from hidden -> visible so we need to see if the session
+                 // should be recovered immediately... but to do that we need to acquire
+                 // the lock first asynchronously
+-                await this.initializePromise;
++                await this.initialize();
+                 await this._acquireLock(this.lockAcquireTimeout, async () => {
+                     if (document.visibilityState !== 'visible') {
+                         this._debug(methodName, 'acquired the lock to recover the session, but the browser visibilityState is no longer visible, aborting');
+--- a/package/dist/module/GoTrueClient.js
++++ b/package/dist/module/GoTrueClient.js
+@@ -191,7 +191,9 @@
+                 await this._notifyAllSubscribers(event.data.event, event.data.session, false); // broadcast = false so we don't get an endless loop of messages
+             });
+         }
+-        this.initialize();
++        this.initialize().catch((error) => {
++            console.warn('[AuthClient] Initial session admission failed', error?.name ?? 'Error')
++        });
+     }
+     /**
+      * Returns whether error throwing mode is enabled for this client.
+@@ -226,15 +228,28 @@
+      * manually when checking for an error from an auth redirect (oauth, magiclink, password recovery, etc).
+      */
+     async initialize() {
+-        if (this.initializePromise) {
+-            return await this.initializePromise;
+-        }
+-        this.initializePromise = (async () => {
+-            return await this._acquireLock(this.lockAcquireTimeout, async () => {
+-                return await this._initialize();
+-            });
+-        })();
+-        return await this.initializePromise;
++      if (this.initializePromise) {
++        return await this.initializePromise
++      }
++      let entered = false
++      const initialization = (async () => {
++        try {
++          return await this._acquireLock(this.lockAcquireTimeout, async () => {
++            entered = true
++            return await this._initialize()
++          })
++        } catch (error) {
++          // An unacquired lock executed no initializer effects. Retire only this
++          // failed generation; a later explicit API request may initialize anew.
++          if (!entered && this.initializePromise === initialization &&
++              (error?.name === 'AbortError' || error instanceof LockAcquireTimeoutError)) {
++            this.initializePromise = null
++          }
++          throw error
++        }
++      })()
++      this.initializePromise = initialization
++      return await initialization
+     }
+     /**
+      * IMPORTANT:
+@@ -496,7 +511,7 @@
+      * Log in an existing user by exchanging an Auth Code issued during the PKCE flow.
+      */
+     async exchangeCodeForSession(authCode) {
+-        await this.initializePromise;
++        await this.initialize();
+         return this._acquireLock(this.lockAcquireTimeout, async () => {
+             return this._exchangeCodeForSession(authCode);
+         });
+@@ -1000,7 +1015,7 @@
+      * Requires the user to be signed-in.
+      */
+     async reauthenticate() {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._reauthenticate();
+         });
+@@ -1082,7 +1097,7 @@
+      * will be emitted if this is detected. Use {@link #getUser()} instead.
+      */
+     async getSession() {
+-        await this.initializePromise;
++        await this.initialize();
+         const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return this._useSession(async (result) => {
+                 return result;
+@@ -1243,7 +1258,7 @@
+         if (jwt) {
+             return await this._getUser(jwt);
+         }
+-        await this.initializePromise;
++        await this.initialize();
+         const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._getUser();
+         });
+@@ -1295,7 +1310,7 @@
+      * Updates user data for a logged in user.
+      */
+     async updateUser(attributes, options = {}) {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._updateUser(attributes, options);
+         });
+@@ -1347,7 +1362,7 @@
+      * @param currentSession The current session that minimally contains an access token and refresh token.
+      */
+     async setSession(currentSession) {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._setSession(currentSession);
+         });
+@@ -1408,7 +1423,7 @@
+      * @param currentSession The current session. If passed in, it must contain a refresh token.
+      */
+     async refreshSession(currentSession) {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._refreshSession(currentSession);
+         });
+@@ -1563,7 +1578,7 @@
+      * If using `others` scope, no `SIGNED_OUT` event is fired!
+      */
+     async signOut(options = { scope: 'global' }) {
+-        await this.initializePromise;
++        await this.initialize();
+         return await this._acquireLock(this.lockAcquireTimeout, async () => {
+             return await this._signOut(options);
+         });
+@@ -1607,11 +1622,13 @@
+         this._debug('#onAuthStateChange()', 'registered callback with id', id);
+         this.stateChangeEmitters.set(id, subscription);
+         (async () => {
+-            await this.initializePromise;
++            await this.initialize();
+             await this._acquireLock(this.lockAcquireTimeout, async () => {
+                 this._emitInitialSession(id);
+             });
+-        })();
++        })().catch((error) => {
++            console.warn('[AuthClient] Initial auth subscription admission failed', error?.name ?? 'Error');
++        });
+         return { data: { subscription } };
+     }
+     async _emitInitialSession(id) {
+@@ -2121,7 +2138,7 @@
+         // #_initialize can be allowed to complete without recursively waiting on
+         // itself
+         const timeout = setTimeout(async () => {
+-            await this.initializePromise;
++            await this.initialize();
+             await this._autoRefreshTokenTick();
+         }, 0);
+         this.autoRefreshTickTimeout = timeout;
+@@ -2273,7 +2290,7 @@
+                 // transitioned from hidden -> visible so we need to see if the session
+                 // should be recovered immediately... but to do that we need to acquire
+                 // the lock first asynchronously
+-                await this.initializePromise;
++                await this.initialize();
+                 await this._acquireLock(this.lockAcquireTimeout, async () => {
+                     if (document.visibilityState !== 'visible') {
+                         this._debug(methodName, 'acquired the lock to recover the session, but the browser visibilityState is no longer visible, aborting');
+--- a/package/src/GoTrueClient.ts
++++ b/package/src/GoTrueClient.ts
+@@ -402,7 +402,9 @@
+       })
+     }
+ 
+-    this.initialize()
++    this.initialize().catch((error: any) => {
++      console.warn('[AuthClient] Initial session admission failed', error?.name ?? 'Error')
++    })
+   }
+ 
+   /**
+@@ -448,14 +450,25 @@
+     if (this.initializePromise) {
+       return await this.initializePromise
+     }
+-
+-    this.initializePromise = (async () => {
+-      return await this._acquireLock(this.lockAcquireTimeout, async () => {
+-        return await this._initialize()
+-      })
++    let entered = false
++    const initialization: Promise<InitializeResult> = (async () => {
++      try {
++        return await this._acquireLock(this.lockAcquireTimeout, async () => {
++          entered = true
++          return await this._initialize()
++        })
++      } catch (error: any) {
++        // An unacquired lock executed no initializer effects. Retire only this
++        // failed generation; a later explicit API request may initialize anew.
++        if (!entered && this.initializePromise === initialization &&
++            (error?.name === 'AbortError' || error instanceof LockAcquireTimeoutError)) {
++          this.initializePromise = null
++        }
++        throw error
++      }
+     })()
+-
+-    return await this.initializePromise
++    this.initializePromise = initialization
++    return await initialization
+   }
+ 
+   /**
+@@ -749,7 +762,7 @@
+    * Log in an existing user by exchanging an Auth Code issued during the PKCE flow.
+    */
+   async exchangeCodeForSession(authCode: string): Promise<AuthTokenResponse> {
+-    await this.initializePromise
++    await this.initialize()
+ 
+     return this._acquireLock(this.lockAcquireTimeout, async () => {
+       return this._exchangeCodeForSession(authCode)
+@@ -1383,7 +1396,7 @@
+    * Requires the user to be signed-in.
+    */
+   async reauthenticate(): Promise<AuthResponse> {
+-    await this.initializePromise
++    await this.initialize()
+ 
+     return await this._acquireLock(this.lockAcquireTimeout, async () => {
+       return await this._reauthenticate()
+@@ -1470,7 +1483,7 @@
+    * will be emitted if this is detected. Use {@link #getUser()} instead.
+    */
+   async getSession() {
+-    await this.initializePromise
++    await this.initialize()
+ 
+     const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
+       return this._useSession(async (result) => {
+@@ -1716,7 +1729,7 @@
+       return await this._getUser(jwt)
+     }
+ 
+-    await this.initializePromise
++    await this.initialize()
+ 
+     const result = await this._acquireLock(this.lockAcquireTimeout, async () => {
+       return await this._getUser()
+@@ -1782,7 +1795,7 @@
+       emailRedirectTo?: string | undefined
+     } = {}
+   ): Promise<UserResponse> {
+-    await this.initializePromise
++    await this.initialize()
+ 
+     return await this._acquireLock(this.lockAcquireTimeout, async () => {
+       return await this._updateUser(attributes, options)
+@@ -1852,7 +1865,7 @@
+     access_token: string
+     refresh_token: string
+   }): Promise<AuthResponse> {
+-    await this.initializePromise
++    await this.initialize()
+ 
+     return await this._acquireLock(this.lockAcquireTimeout, async () => {
+       return await this._setSession(currentSession)
+@@ -1924,7 +1937,7 @@
+    * @param currentSession The current session. If passed in, it must contain a refresh token.
+    */
+   async refreshSession(currentSession?: { refresh_token: string }): Promise<AuthResponse> {
+-    await this.initializePromise
++    await this.initialize()
+ 
+     return await this._acquireLock(this.lockAcquireTimeout, async () => {
+       return await this._refreshSession(currentSession)
+@@ -2138,7 +2151,7 @@
+    * If using `others` scope, no `SIGNED_OUT` event is fired!
+    */
+   async signOut(options: SignOut = { scope: 'global' }): Promise<{ error: AuthError | null }> {
+-    await this.initializePromise
++    await this.initialize()
+ 
+     return await this._acquireLock(this.lockAcquireTimeout, async () => {
+       return await this._signOut(options)
+@@ -2223,12 +2236,14 @@
+ 
+     this.stateChangeEmitters.set(id, subscription)
+     ;(async () => {
+-      await this.initializePromise
++      await this.initialize()
+ 
+       await this._acquireLock(this.lockAcquireTimeout, async () => {
+         this._emitInitialSession(id)
+       })
+-    })()
++    })().catch((error: any) => {
++      console.warn('[AuthClient] Initial auth subscription admission failed', error?.name ?? 'Error')
++    })
+ 
+     return { data: { subscription } }
+   }
+@@ -2877,7 +2892,7 @@
+     // #_initialize can be allowed to complete without recursively waiting on
+     // itself
+     const timeout = setTimeout(async () => {
+-      await this.initializePromise
++      await this.initialize()
+       await this._autoRefreshTokenTick()
+     }, 0)
+     this.autoRefreshTickTimeout = timeout
+@@ -3057,7 +3072,7 @@
+         // transitioned from hidden -> visible so we need to see if the session
+         // should be recovered immediately... but to do that we need to acquire
+         // the lock first asynchronously
+-        await this.initializePromise
++        await this.initialize()
+ 
+         await this._acquireLock(this.lockAcquireTimeout, async () => {
+           if (document.visibilityState !== 'visible') {

@@ -28,6 +28,7 @@ import { blockService } from '../services/BlockService';
 import { playerStatusService } from '../services/PlayerStatusService';
 import type { PlayerStatus } from '../services/PlayerStatusService';
 import { useAuthUser } from '../hooks/useAuthUser';
+import PageBar from '../components/help/PageBar';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
@@ -38,13 +39,9 @@ import styles from './PublicProfilePage.module.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
-import { mediaUrl } from '../utils/mediaBase';
 import { vipStatusLabel } from '../utils/vipStatus';
 import { aggregateArenaRecord, type ArenaRecord } from '../utils/arenaRecord';
 import { formatCount, formatPct, formatMemberSince } from '../utils/format';
-
-/** Purpose-built hero for this route (public/images/account). */
-const HERO_ART = mediaUrl('images/account/public-dossier-hero-v1.webp');
 
 export default function PublicProfilePage() {
   const { userId } = useParams<{ userId: string }>();
@@ -386,15 +383,18 @@ export default function PublicProfilePage() {
 
   return (
     <article className={styles.publicProfilePage}>
+      {/* The eyebrow and the hero artwork are gone (Dan 2026-10-17). The
+          player's name and their own bio are identity and stay on the plate;
+          the name is the page's heading, so the bar prints none. */}
+      <PageBar
+        title="Player Profile"
+        titleAs={false}
+        summary="A Player's Public Credential: Their Arena Name, Record And Where They Are Playing, With Ways To Add Them As A Friend Or Share Their Profile."
+      />
+
       {/* Header with avatar & name */}
       <header className={styles.publicProfileHeader}>
-        <div
-          className={styles.publicProfileArtwork}
-          style={{ backgroundImage: `url("${HERO_ART}")` }}
-          aria-hidden="true"
-        />
         <div className={styles.profileHero}>
-          <span className={styles.publicProfileEyebrow}>Player Network // Public Credential</span>
           <PlayerAvatar
             src={profile.avatarUrl || generateDefaultAvatar()}
             name={arenaName}

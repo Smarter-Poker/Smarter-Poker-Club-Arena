@@ -17,6 +17,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ownProfile } from '../lib/ownProfile';
 import { LoadingState } from '../components/common/EmptyState';
+import PageBar from '../components/help/PageBar';
 import FriendListPanel from '../components/social/FriendListPanel';
 import UserProfileEdit, { UserProfileData } from '../components/social/UserProfileEdit';
 import { AvatarGallery } from '../components/customization/AvatarGallery';
@@ -40,7 +41,6 @@ import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { formatPopupText } from '../utils/popupStyle';
-import { mediaUrl } from '../utils/mediaBase';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { resolveHeaderPortrait } from '../stores/useHeaderDataStore';
 import { useUserStore } from '../stores/useUserStore';
@@ -74,9 +74,6 @@ type ProfileTab = (typeof PROFILE_TABS)[number];
 function isProfileTab(value: string | null): value is ProfileTab {
   return PROFILE_TABS.includes(value as ProfileTab);
 }
-
-/** Purpose-built hero for this route (public/images/account). */
-const HERO_ART = mediaUrl('images/account/identity-vault-hero-v1.webp');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -903,21 +900,19 @@ export default function ProfilePage() {
 
   return (
     <StandardContentLayout className={styles.page}>
-      {/* Profile Header — the credential plate */}
-      <section className={styles.profileHeader} aria-labelledby="profile-heading">
-        <div
-          className={styles.heroArtwork}
-          style={{ backgroundImage: `url("${HERO_ART}")` }}
-          aria-hidden="true"
-        />
-        <div className={styles.heroCopy}>
-          <span className={styles.heroEyebrow}>Player Identity // Live Credential</span>
-          <span className={styles.heroStatus} role="status">
-            <span aria-hidden="true" />{' '}
-            {lastHandLabel ? `Last Hand ${lastHandLabel}` : 'No Hands Recorded Yet'}
-          </span>
-        </div>
+      {/* The eyebrow and the hero artwork are gone (Dan 2026-10-17: "PAGES
+          DON'T NEED TITLES LIKE THIS"). The player's own name stays the page's
+          heading, on the credential below, so the bar prints no second one:
+          only the live last-hand line and the "?". */}
+      <PageBar
+        title="Your Profile"
+        titleAs={false}
+        summary="Your Player Credential: Your Portrait, Arena Name, Player Number And Live Telemetry, With The Doors Into Your Wallet, Stats And Settings."
+        status={lastHandLabel ? `Last Hand ${lastHandLabel}` : 'No Hands Recorded Yet'}
+      />
 
+      {/* Profile Header - the credential plate */}
+      <section className={styles.profileHeader} aria-labelledby="profile-heading">
         <div className={styles.avatarContainer}>
           {user.avatarUrl ? (
             <img

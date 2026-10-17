@@ -15,7 +15,7 @@
  *   - "Delete Account" signed the player out and deleted nothing.
  */
 import { describe, expect, it } from 'vitest';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { resolveVipStatus, vipStatusLabel } from '../src/utils/vipStatus';
 import { aliasProblem } from '../src/utils/aliasRules';
@@ -184,32 +184,48 @@ describe('notifications speak poker and load their own placeholder', () => {
   });
 });
 
-describe('every identity surface ships its own web-sized casino render', () => {
-  const heroes = [
-    ['identity-vault-hero-v1.webp', PROFILE],
-    ['public-dossier-hero-v1.webp', PUBLIC],
-    ['control-room-hero-v1.webp', SETTINGS],
-    ['signal-desk-hero-v1.webp', NOTIFICATIONS],
+describe('no identity surface prints a page hero', () => {
+  /* Dan 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL
+     DESCRIPTIONS THAT EXIST LIKE THIS ON ANY AND ALL PAGES. ADD A ? MARK ICON
+     INSTEAD". This used to require each surface to reference its own hero
+     render; the latest owner instruction removes the renders, the eyebrows
+     and the hero rows. Each surface prints the page bar and its "?" instead,
+     and the player's own name and bio (identity) stay where they were. */
+  const surfaces = [
+    ['ProfilePage', PROFILE, 'identity-vault-hero-v1.webp'],
+    ['PublicProfilePage', PUBLIC, 'public-dossier-hero-v1.webp'],
+    ['SettingsPage', SETTINGS, 'control-room-hero-v1.webp'],
+    ['NotificationsPage', NOTIFICATIONS, 'signal-desk-hero-v1.webp'],
   ] as const;
 
-  it.each(heroes)(
-    '%s exists, is under 150 KB, and is referenced through the media base',
-    (file, src) => {
-      const path = resolve(ROOT, 'public/images/account', file);
-      expect(existsSync(path)).toBe(true);
-      expect(statSync(path).size).toBeLessThan(150_000);
-      expect(src).toContain(`images/account/${file}`);
+  it.each(surfaces)('%s draws no hero art and no eyebrow', (_name, src, art) => {
+    expect(src).not.toContain(art);
+    expect(strip(src)).not.toMatch(
+      /heroEyebrow|publicProfileEyebrow|heroArtwork|publicProfileArtwork|eyebrow=|artwork=/
+    );
+  });
+
+  it('profile and public profile put the help beside the credential, and keep identity', () => {
+    for (const src of [PROFILE, PUBLIC]) {
+      expect(src).toContain("import PageBar from '../components/help/PageBar'");
+      expect(src).toContain('titleAs={false}');
     }
-  );
+    expect(PROFILE).toContain('<h1 id="profile-heading" className={styles.displayName}>');
+    expect(PUBLIC).toContain('<h1 className={styles.profileUsername}>{arenaName}</h1>');
+    expect(PUBLIC).toContain('{profile.bio && <p className={styles.profileBio}>{profile.bio}</p>}');
+    // Settings and Notifications pass no artwork: the shared header has none.
+    expect(SETTINGS).not.toContain('artwork=');
+    expect(NOTIFICATIONS).not.toContain('artwork=');
+  });
 
   it('keeps the account palette tokenised for the brushed-silver light mode', () => {
-    for (const css of [
-      'src/pages/ProfilePage.module.css',
-      'src/pages/SettingsPage.module.css',
-      'src/components/account/AccountSurfaceHeader.module.css',
-    ]) {
+    for (const css of ['src/pages/ProfilePage.module.css', 'src/pages/SettingsPage.module.css']) {
       expect(read(css)).toContain(":global([data-theme='light'])");
     }
+    // The shared account header lost its hero, and its stylesheet with it.
+    expect(
+      existsSync(resolve(ROOT, 'src/components/account/AccountSurfaceHeader.module.css'))
+    ).toBe(false);
     /* 2026-09-05: this page became a CSS Module (PR #3077). `.action-btn`,
        `.share-btn`, `.vip-badge`, `.level-badge` and six more of its class
        names were bare globals that seven other stylesheets also define, and

@@ -47,9 +47,8 @@
     'telemetry telemetry telemetry';
   align-items: end;
   gap: 1.35rem 1.5rem;
-  min-height: 340px;
   overflow: hidden;
-  padding: 5rem 1.6rem 1.35rem;
+  padding: 1.6rem 1.6rem 1.35rem;
   border: 1px solid var(--identity-gunmetal);
   border-radius: 4px;
   background: var(--identity-bg);
@@ -89,66 +88,6 @@
   z-index: -1;
   background: linear-gradient(90deg, transparent, var(--identity-blue), transparent);
   box-shadow: 0 -8px 24px rgba(58, 168, 255, 0.28);
-}
-
-.heroArtwork {
-  position: absolute;
-  inset: 0;
-  z-index: -3;
-  background-position: 68% 50%;
-  background-size: cover;
-  background-repeat: no-repeat;
-  filter: saturate(0.82) contrast(1.08) brightness(0.72);
-  transform: scale(1.015);
-}
-
-.heroCopy {
-  position: absolute;
-  top: 1.15rem;
-  right: 1.35rem;
-  left: 1.35rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.heroEyebrow {
-  color: var(--identity-blue-soft);
-  font:
-    800 0.65rem/1 ui-monospace,
-    'SFMono-Regular',
-    Consolas,
-    monospace;
-  letter-spacing: 0.17em;
-  text-transform: uppercase;
-}
-
-.heroStatus {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-height: 32px;
-  padding: 0.4rem 0.68rem;
-  border: 1px solid rgba(185, 202, 215, 0.32);
-  border-radius: 2px;
-  background: rgba(var(--identity-hero-veil), 0.72);
-  color: var(--identity-chrome);
-  font:
-    700 0.62rem/1 ui-monospace,
-    'SFMono-Regular',
-    Consolas,
-    monospace;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.heroStatus > span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--identity-blue);
-  box-shadow: 0 0 12px rgba(58, 168, 255, 0.9);
 }
 
 .avatarContainer {
@@ -1049,10 +988,6 @@
     0 18px 40px rgba(20, 35, 50, 0.18);
 }
 
-:global([data-theme='light']) .heroArtwork {
-  filter: saturate(0.7) contrast(1.02) brightness(1.05);
-}
-
 :global([data-theme='light']) .displayName {
   text-shadow: 0 2px 14px rgba(255, 255, 255, 0.9);
 }
@@ -1134,15 +1069,11 @@
       'avatar info'
       'actions actions'
       'telemetry telemetry';
-    padding: 4.6rem 1rem 1.2rem;
+    padding: 1.2rem 1rem 1.2rem;
     border-right: 0;
     border-left: 0;
     border-radius: 0;
     clip-path: none;
-  }
-
-  .heroArtwork {
-    background-position: 60% 40%;
   }
 
   .headerActions {
@@ -1172,21 +1103,7 @@
       'actions'
       'telemetry';
     align-items: center;
-    min-height: 420px;
     text-align: center;
-  }
-
-  .heroCopy {
-    align-items: flex-start;
-  }
-
-  .heroStatus {
-    font-size: 0;
-  }
-
-  .heroStatus::after {
-    content: 'Synced';
-    font-size: 0.62rem;
   }
 
   .avatarContainer {
@@ -1284,7 +1201,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .heroArtwork,
   .circularGaugeWrapper,
   .statCard,
   .editButton,

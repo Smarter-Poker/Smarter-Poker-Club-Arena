@@ -1,0 +1,373 @@
+/* THE WALLET DESK (Dan 2026-10-16). The routed Cashier, measured live on
+   2026-10-16 and printed again for a wallet opened from a lobby: the same
+   inks, the same hairline rows, the same painted dock. No frame is drawn
+   around the page; the dock is the painted Cashier action dock art. */
+.wdesk {
+  --ink-blue: #45adff;
+  --ink-silver: #e4e7ec;
+  --ink-white: #f4f7fb;
+  --ink-muted: #9aa5b3;
+  --ink-red: #ff5b6e;
+  --ink-green: #c8ffd2;
+  --ink-muted-shadow: 0 1px 1.5px rgb(0 0 0 / 80%);
+  --ink-white-glow: 0 0 5px rgb(140 210 255 / 90%), 0 1px 0 rgb(0 0 0 / 70%);
+
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  color: var(--ink-white);
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+}
+.wdesk__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 8px
+    calc(132px + env(safe-area-inset-bottom, 0px));
+}
+.wdesk__workspace {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.wdesk__glass {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Identity row: the art, the name and its line, the white word on the right. */
+.wdesk__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.wdesk__identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  min-height: 72px;
+}
+.wdesk__art {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 auto;
+  object-fit: cover;
+}
+.wdesk__identityText {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.wdesk__name {
+  overflow: hidden;
+  color: var(--ink-silver);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.wdesk__line {
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+.wdesk__close {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-white);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-shadow: var(--ink-white-glow);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.wdesk__close:disabled {
+  opacity: 0.45;
+}
+
+/* Lit words: a mode or a filter, the chosen one white. */
+.wdesk__words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+.wdesk__word {
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.wdesk__word[aria-pressed='true'] {
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
+}
+
+.wdesk__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+}
+.wdesk__headingTitle {
+  margin: 0;
+  color: #dfe9f2;
+  font-family: Rajdhani, 'Roboto Condensed', system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.wdesk__headingMeta {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+
+.wdesk__search {
+  display: flex;
+  border: 1px solid #27313c;
+  background: #05070a;
+}
+.wdesk__search input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  min-height: 50px;
+  padding: 14px 14px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-white);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  outline: none;
+}
+.wdesk__search input::placeholder {
+  color: var(--ink-muted);
+}
+
+.wdesk__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wdesk__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 68px;
+  padding: 8px;
+  border: 1px solid #27313c;
+  background: #080b0f;
+  color: var(--ink-white);
+  font: inherit;
+  text-align: left;
+}
+.wdesk__row--button {
+  cursor: pointer;
+}
+.wdesk__row--on {
+  border-color: var(--ink-blue);
+}
+.wdesk__row--blocked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.wdesk__check {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  margin: 0 12px;
+  border: 2px solid var(--ink-muted);
+}
+.wdesk__check--on {
+  border-color: var(--ink-blue);
+  background: var(--ink-blue);
+}
+.wdesk__rowInfo {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.wdesk__rowName {
+  color: var(--ink-white);
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.wdesk__rowSub {
+  color: var(--ink-muted);
+  font-size: 12px;
+  text-shadow: var(--ink-muted-shadow);
+}
+.wdesk__rowFigure {
+  flex: 0 0 auto;
+  color: var(--ink-silver);
+  font-size: 16px;
+  font-weight: 800;
+  text-align: right;
+}
+.wdesk__rowTag,
+.wdesk__rowSelect {
+  flex: 0 0 auto;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.wdesk__rowSelect {
+  min-width: 52px;
+  text-align: right;
+}
+.wdesk__row--on .wdesk__rowSelect {
+  color: var(--ink-blue);
+}
+.wdesk__in {
+  color: var(--ink-blue);
+}
+.wdesk__out {
+  color: var(--ink-red);
+}
+.wdesk__empty {
+  padding: 18px 8px;
+  color: var(--ink-muted);
+  font-size: 14px;
+  text-align: center;
+}
+.wdesk__empty--bad {
+  color: var(--ink-red);
+}
+.wdesk__more {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-blue);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.wdesk__more:disabled {
+  opacity: 0.45;
+}
+
+/* The painted Cashier action dock, pinned to the bottom. */
+.wdesk__dock {
+  position: absolute;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  left: 8px;
+  z-index: 1;
+}
+.wdesk__dockFrame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 28px 44px;
+  width: 100%;
+  max-width: 1000px;
+  min-height: 92px;
+  margin: 0 auto;
+  padding: 10px 3.4%;
+  background: url('/images/cashier-actions/cashier-action-dock-v1.png') center / 100% 100% no-repeat;
+}
+@media (max-width: 640px) {
+  .wdesk__dockFrame {
+    background-image: url('/images/cashier-actions/cashier-action-dock-tall-v1.png');
+  }
+}
+.wdesk__dockLine {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-blue);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.wdesk__dockActions {
+  display: grid;
+  align-items: stretch;
+}
+.wdesk__action {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-silver);
+  font: inherit;
+  font-size: 15.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.wdesk__action--lit {
+  color: var(--ink-blue);
+}
+.wdesk__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.wdesk__action:focus-visible,
+.wdesk__close:focus-visible,
+.wdesk__word:focus-visible,
+.wdesk__row--button:focus-visible {
+  outline: 2px solid var(--ink-blue);
+  outline-offset: 2px;
+}
+.wdesk__live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.wdesk__sep::before {
+  content: ' · ';
+}
+.wdesk__trap {
+  display: contents;
+}

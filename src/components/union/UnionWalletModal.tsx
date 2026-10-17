@@ -61,6 +61,8 @@ import {
   type UnionSendKind,
 } from './unionWalletRoutes';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { WalletDesk, WalletDeskHeading, WalletDeskRow } from '../wallet/WalletDesk';
+import '../wallet/WalletDesk.css';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import './UnionWalletModal.css';
@@ -198,6 +200,10 @@ export function UnionWalletModal({
 }: UnionWalletModalProps) {
   const { user } = useAuthUser();
   const [mode, setMode] = useState<Mode>('send');
+  /** The amount sheet over the desk: open for a send or a pull, else closed. */
+  const [sheetOpen, setSheetOpen] = useState(false);
+  /** The union's own logo leads the desk, as the club's leads the Cashier. */
+  const [unionLogo, setUnionLogo] = useState<string | null>(null);
   const [clubs, setClubs] = useState<Array<{ id: string; name: string }>>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -247,10 +253,25 @@ export function UnionWalletModal({
     onClose();
   }, [onClose]);
 
+  /** Escape and the sheet's Back plate close the amount sheet first, then the desk. */
+  const closeSheet = useCallback(() => {
+    if (busyRef.current) {
+      setNotice({ ok: false, text: 'Wait For The Current Money Move To Finish.' });
+      return;
+    }
+    setSheetOpen(false);
+    setNotice(null);
+    setAmount('');
+  }, []);
+  const sheetOpenRef = useRef(false);
+  sheetOpenRef.current = sheetOpen;
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') requestClose();
+      if (e.key !== 'Escape') return;
+      if (sheetOpenRef.current) closeSheet();
+      else requestClose();
     };
     window.addEventListener('keydown', onKey);
     /* The page behind stops scrolling while the sheet is up, as every other
@@ -261,7 +282,29 @@ export function UnionWalletModal({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [isOpen, requestClose]);
+  }, [isOpen, requestClose, closeSheet]);
+
+  useEffect(() => {
+    if (!isOpen || !unionId) return;
+    let live = true;
+    void supabase
+      .from('clubs')
+      .select('logo_url')
+      .eq('id', unionId)
+      .limit(1)
+      .then(({ data, error }) => {
+        if (!live) return;
+        if (error) {
+          reportError(error, 'UnionWalletModal.union_logo_load_failed');
+          return;
+        }
+        const row = (Array.isArray(data) ? data[0] : null) as { logo_url?: string | null } | null;
+        setUnionLogo(row?.logo_url || null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [isOpen, unionId]);
 
   /* Tab stays inside the sheet, focus lands on its first control and returns
      to the wallet row that opened it (launch audit D-11). */
@@ -278,6 +321,7 @@ export function UnionWalletModal({
     setTarget(null);
     setAmount('');
     setMode('send');
+    setSheetOpen(false);
     setLiveBalance(balance);
     setKind(walletKey === 'promo' ? 'promo' : 'chips');
     setLedger([]);
@@ -731,40 +775,21 @@ export function UnionWalletModal({
     (mode === 'pull' && target.type === 'club' && pullRoute.kind === 'refused');
 
   /* ═══════════════════════════════════════════════════════════════════════
-     ON THE RIVETED CONSOLE (#ClubArenaConsole, 2026-09-14)
+     ON THE WALLET DESK (Dan 2026-10-16)
      ═══════════════════════════════════════════════════════════════════════
-     Re-rendered, not rewritten. Every route, guard, op-id reservation, RPC,
-     refusal sentence and accessible name above and below this line is the one
-     that was here.
+     "When you click the union bank wallet, promo wallet or diamond wallet,
+     they should look feel and function like this cashier functionality.
+     Remove the bulky generic frames." Re-rendered, not rewritten: every
+     route, guard, op-id reservation, RPC, refusal sentence and accessible
+     name above this line is the one that was here.
 
-     WHY THE RIVETED FAMILY: it is the frame Dan's masters use for money (the
-     table Cashier is on it). Chips, diamonds and promo funds leave a union
-     bank here, so it wears the heavy frame rather than the plain spade.
-
-     WHAT WAS DROPPED. This modal used to borrow `WalletCashierModal.css` - the
-     Club Bank's `cbc-*` hardware - so it painted a rounded steel panel, pill
-     tabs, a segmented control, bordered member cards and a gradient confirm
-     button, none of which is in any master. That import is gone (the sheet
-     still serves its own two components), and nothing here draws a control:
-     the frame, the header well, the pill slot and both action plates are
-     painted, and the search box and the amount box are the only drawn things
-     because the art paints no field.
-
-     THE AVATAR DISC IS GONE, like FindPlayerModal's. A name, a club and a role
-     identify the person you are about to send money to better than a 28px
-     circle, and a disc is a shape the master does not contain.
-
-     THE BALANCE IS THE ENGRAVED TITLE and keeps its own polite live region, so
-     a screen reader still hears the wallet move after a send.
-
-     TWO ACTIONS OR NONE, AND THE RIVETED BASE ALWAYS PAINTS BOTH PLATES. This
-     master has no flat closing cap - `bottom.png` carries the two bolted
-     plates and the spade chip - so `foot="foot"` would leave two painted
-     plates with nothing on them, which is the exact thing that reads as
-     broken. Every page therefore fills both: Close on the steel plate, and on
-     the blue glass whichever confirm the page has. The read-only Spin Reserve
-     has none, so its plate says READ ONLY and is disabled - a control that
-     says it cannot be used, never an empty one. */
+     The wallet opens as the Cashier does: the identity row (the wallet's
+     own art, its name, its balance), the directory of clubs and members as
+     hairline rows you tap to select, and the painted action dock with
+     Pull Back | Ledger | Send Out under a centred selection line. The
+     amount is asked for on a riveted sheet, as the Cashier's Send Out asks
+     for it on its own console. The riveted base always paints both plates,
+     so the sheet carries Back on steel and the confirm on blue glass. */
   const verb = mode === 'pull' ? 'Pull' : 'Send';
   const targetName =
     target == null
@@ -781,113 +806,86 @@ export function UnionWalletModal({
     : mode === 'send'
       ? `Send To ${targetName}`
       : `Pull From ${target.type === 'club' ? targetName : 'Target'}`;
-  const showSend = !readOnly && mode !== 'ledger';
   const moreLedger = !readOnly && mode === 'ledger' && !ledgerError && ledger.length < ledgerTotal;
 
+  const art = unionLogo;
+
+  /** A club can be picked when this wallet has a send OR a pull route to clubs. */
+  const clubsBlocked = route.kind === 'refused' && pullRoute.kind === 'refused';
+  const pullAvailable =
+    !readOnly && target?.type === 'club' && pullRoute.kind !== 'refused' && !directoryError;
+  const sendOutReady = !readOnly && Boolean(target) && !directoryError && !loading && !busy;
+  const openSheet = (next: 'send' | 'pull') => {
+    setMode(next);
+    setNotice(null);
+    setAmount('');
+    setSheetOpen(true);
+  };
+  const dockLine = readOnly
+    ? 'Read Only'
+    : mode === 'ledger'
+      ? `${walletLabel} Ledger`
+      : target
+        ? `${targetName} Selected`
+        : 'Tap A Club Or Member To Select';
+
   return (
-    <div
-      className="uwm-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${walletLabel} Cashier`}
-      onClick={requestClose}
-    >
-      <div ref={panelRef} className="uwm-dialog" onClick={(e) => e.stopPropagation()}>
-        <SpadeConsole
-          onClose={requestClose}
-          className="uwm-console"
-          family="riveted"
-          eyebrow={walletLabel}
-          title={formatWalletChips(liveBalance)}
-          pill="Union"
-          pillInk="blue"
-          foot="plates"
-          plates={{
-            secondary: {
-              label: 'Close',
-              ink: 'silver',
-              onClick: requestClose,
-              disabled: busy,
-              'aria-label': 'Close',
-            },
-            primary: showSend
-              ? {
-                  label: confirmLabel,
-                  ink: sendDisabled ? 'muted' : 'white',
-                  onClick: () => void send(),
-                  disabled: sendDisabled,
-                  'aria-label': confirmName,
-                }
-              : readOnly
-                ? {
-                    label: 'Read Only',
-                    ink: 'muted',
-                    disabled: true,
-                    'aria-label': 'The Spin Reserve Is Not A Send Source',
-                  }
-                : {
-                    label: ledgerLoading ? 'Loading' : 'Load More',
-                    ink: moreLedger ? 'white' : 'muted',
-                    onClick: () => void loadLedger(ledger.length),
-                    disabled: !moreLedger || ledgerLoading,
-                    'aria-label': 'Load More Ledger Entries',
-                  },
-          }}
-        >
-          {/* The balance is engraved in the header well; this is the same
-              figure for a screen reader, which cannot be given a live region
-              through a painted zone. */}
-          <span className="uwm-live" aria-live="polite">
-            {walletLabel} Balance {formatWalletChips(liveBalance)}
-          </span>
-
-          <p className="uwm-sub">
-            {readOnly ? (
-              <>
-                The Capital Every Spin Bonus Pool Is Seeded From, And Every Spin Prize Is Paid Out
-                Of. It Is Not A Send Source: Add Funds With Fund Spin Reserve On The Wallet Tab.
-              </>
-            ) : isPromo ? (
-              <>
-                Promo Chips For The Union. To A Club They Land In The Club Promo Wallet. To A Player
-                They Are As Good As Cash. To An Agent They Top Up Their Promo Float.
-              </>
-            ) : (
-              <>
-                Send Chips, Diamonds Or Promo Funds To Any Member Of The Union.
-                {walletKey === 'bbj' &&
-                  ' BBJ Funds Are Reserved For Jackpots, So Chips Sent Here Draw On The Main Bank.'}
-              </>
-            )}
-          </p>
-
-          {!readOnly && (
-            <div className="uwm-tabs" role="tablist">
-              {(['send', 'pull', 'ledger'] as Mode[]).map((m) => (
-                <button
-                  key={m}
-                  role="tab"
-                  aria-selected={mode === m}
-                  className={mode === m ? 'uwm-tab is-active' : 'uwm-tab'}
-                  onClick={() => {
-                    setMode(m);
-                    setTarget(null);
-                    setNotice(null);
+    /* The shared focus trap holds Tab inside the desk and its sheet, moves
+       focus in and returns it to the wallet tile that opened it. */
+    <div ref={panelRef} className="wdesk__trap">
+      <WalletDesk
+        ariaLabel={`${walletLabel} Cashier`}
+        sheet={
+          !readOnly &&
+          sheetOpen && (
+            <div className="uwm-overlay" onClick={closeSheet}>
+              <div className="uwm-dialog" onClick={(e) => e.stopPropagation()}>
+                <SpadeConsole
+                  onClose={busy ? undefined : closeSheet}
+                  className="uwm-console"
+                  family="riveted"
+                  eyebrow={walletLabel}
+                  title={formatWalletChips(liveBalance)}
+                  pill={mode === 'pull' ? 'Pull Back' : 'Send Out'}
+                  pillInk="blue"
+                  foot="plates"
+                  plates={{
+                    secondary: {
+                      label: 'Back',
+                      ink: 'silver',
+                      onClick: closeSheet,
+                      disabled: busy,
+                      'aria-label': 'Back',
+                    },
+                    primary: {
+                      label: confirmLabel,
+                      ink: sendDisabled ? 'muted' : 'white',
+                      onClick: () => void send(),
+                      disabled: sendDisabled,
+                      'aria-label': confirmName,
+                    },
                   }}
                 >
-                  {m === 'send' ? 'Send' : m === 'pull' ? 'Pull (Clawback)' : 'Ledger'}
-                </button>
-              ))}
-            </div>
-          )}
+                  <div className="uwm-field">
+                    <span className="uwm-label sc-ink--blue">
+                      {mode === 'pull' ? 'Pull From' : 'To'}
+                    </span>
+                    <span className="uwm-target-name sc-ink--silver">
+                      {targetName}
+                      {target?.type === 'member' && target.data.club_name
+                        ? ` · ${titleCase(target.data.club_name)}`
+                        : target?.type === 'club'
+                          ? mode === 'pull'
+                            ? pullRoute.kind === 'promo'
+                              ? ' · Club Promo Wallet'
+                              : ' · Club Bank'
+                            : route.kind === 'promo'
+                              ? ' · Club Promo Wallet'
+                              : ' · Club Bank'
+                          : ''}
+                    </span>
+                  </div>
 
-          {/* Two guards on the outbound flow, both on readOnly: the spin
-              reserve is not a send source and must never grow a picker or a
-              send button (tests/config/spinReserveWalletView.test.ts). */}
-          {!readOnly && (
-            <>
-              {mode !== 'ledger' && (
-                <>
                   {mode === 'send' && (
                     <div className="uwm-field">
                       <span className="uwm-label sc-ink--blue">Send</span>
@@ -917,138 +915,11 @@ export function UnionWalletModal({
                                 ? 'Chips Drawn From The Rake Wallet, To A Member Only.'
                                 : 'Chips Drawn From The Union Bank. A Club Receives Them In Its Club Bank.'}
                       </div>
-                    </div>
-                  )}
-
-                  <div className="uwm-field">
-                    <label className="uwm-label sc-ink--blue" htmlFor="uwm-search">
-                      {mode === 'pull' ? 'Pull From Club' : 'Recipient'}
-                    </label>
-                    <input
-                      id="uwm-search"
-                      className="uwm-input"
-                      placeholder="Search Clubs Or Members"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      aria-label="Search Clubs Or Members"
-                    />
-                    <div className="uwm-list">
-                      {loading ? (
-                        <div className="uwm-empty">Loading Directory</div>
-                      ) : directoryError ? (
-                        <div className="uwm-empty is-bad" role="alert">
-                          {directoryError}
-                          <button
-                            type="button"
-                            className="uwm-word sc-ink--blue"
-                            onClick={() => setDirectoryReload((value) => value + 1)}
-                          >
-                            Retry Directory
-                          </button>
-                        </div>
-                      ) : filtered.clubs.length === 0 && filtered.roster.length === 0 ? (
-                        <div className="uwm-empty">No Targets Match.</div>
-                      ) : (
-                        <>
-                          {filtered.clubs.map((c) => {
-                            const on = target?.type === 'club' && target.data.id === c.id;
-                            const blocked =
-                              (mode === 'send' && route.kind === 'refused') ||
-                              (mode === 'pull' && pullRoute.kind === 'refused');
-                            return (
-                              <button
-                                key={`club-${c.id}`}
-                                type="button"
-                                onClick={() => !blocked && setTarget({ type: 'club', data: c })}
-                                aria-pressed={on}
-                                aria-disabled={blocked ? true : undefined}
-                                title={blocked ? (clubRefusal ?? undefined) : undefined}
-                                className={
-                                  blocked
-                                    ? 'uwm-target is-blocked'
-                                    : on
-                                      ? mode === 'pull'
-                                        ? 'uwm-target is-on is-pull'
-                                        : 'uwm-target is-on'
-                                      : 'uwm-target'
-                                }
-                              >
-                                <span className="uwm-target-main">
-                                  <span className="uwm-target-name sc-ink--silver">
-                                    {titleCase(c.name)}
-                                  </span>
-                                  <span className="uwm-target-meta sc-ink--muted">
-                                    {mode === 'pull'
-                                      ? pullRoute.kind === 'promo'
-                                        ? 'Pull From The Club Promo Wallet'
-                                        : pullRoute.kind === 'bank'
-                                          ? 'Pull From The Club Bank'
-                                          : 'Not Available From Here'
-                                      : route.kind === 'promo'
-                                        ? 'Into The Club Promo Wallet'
-                                        : route.kind === 'bank'
-                                          ? 'Into The Club Bank'
-                                          : 'Not Available From Here'}
-                                  </span>
-                                </span>
-                                <span className="uwm-tag sc-ink--blue">
-                                  {(mode === 'send' && route.kind === 'promo') ||
-                                  (mode === 'pull' && pullRoute.kind === 'promo')
-                                    ? 'CLUB PROMO WALLET'
-                                    : 'CLUB BANK'}
-                                </span>
-                              </button>
-                            );
-                          })}
-                          {filtered.roster.slice(0, 200).map((r) => {
-                            const isDisabled = mode === 'pull';
-                            const on =
-                              target?.type === 'member' && target.data.user_id === r.user_id;
-                            return (
-                              <button
-                                key={`${r.user_id}-${r.club_id}`}
-                                type="button"
-                                onClick={() =>
-                                  !isDisabled && setTarget({ type: 'member', data: r })
-                                }
-                                disabled={isDisabled}
-                                title={
-                                  isDisabled
-                                    ? 'Member Clawbacks Must Be Performed By The Club Owner.'
-                                    : undefined
-                                }
-                                aria-pressed={on}
-                                className={
-                                  isDisabled
-                                    ? 'uwm-target is-blocked'
-                                    : on
-                                      ? 'uwm-target is-on'
-                                      : 'uwm-target'
-                                }
-                              >
-                                <span className="uwm-target-main">
-                                  <span className="uwm-target-name sc-ink--silver">
-                                    {titleCase(
-                                      r.display_name || r.username || r.user_id.slice(0, 8)
-                                    )}
-                                  </span>
-                                  <span className="uwm-target-meta sc-ink--muted">
-                                    {titleCase(r.club_name || '')}
-                                  </span>
-                                </span>
-                                <span className={`uwm-role uwm-role--${r.member_role || 'member'}`}>
-                                  {(r.member_role || 'member').replace('_', ' ').toUpperCase()}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </>
+                      {clubRefusal && target?.type === 'club' && (
+                        <div className="uwm-blurb sc-ink--red">{clubRefusal}</div>
                       )}
                     </div>
-                    {clubRefusal && filtered.clubs.length > 0 && (
-                      <div className="uwm-blurb">{clubRefusal}</div>
-                    )}
-                  </div>
+                  )}
 
                   <div className="uwm-field">
                     <label className="uwm-label sc-ink--blue" htmlFor="uwm-amount">
@@ -1080,92 +951,88 @@ export function UnionWalletModal({
                       </div>
                     )}
                   </div>
-                </>
-              )}
 
-              {mode === 'ledger' && (
-                <>
-                  {ledgerError && <div className="uwm-empty is-bad">{ledgerError}</div>}
-                  {!ledgerError && ledgerTotals && (
-                    <div className="uwm-totals">
-                      <div className="uwm-total">
-                        <span className="uwm-label sc-ink--blue">Received</span>
-                        <strong className="sc-ink--green">{money(ledgerTotals.in)}</strong>
-                      </div>
-                      <div className="uwm-total">
-                        <span className="uwm-label sc-ink--blue">Sent Out</span>
-                        <strong className="sc-ink--red">{money(ledgerTotals.out)}</strong>
-                      </div>
-                      <div className="uwm-total">
-                        <span className="uwm-label sc-ink--blue">Net</span>
-                        <strong className="sc-ink--silver">{money(ledgerTotals.net)}</strong>
-                      </div>
+                  {notice && (
+                    <div
+                      role={notice.ok ? 'status' : 'alert'}
+                      className={notice.ok ? 'uwm-notice sc-ink--green' : 'uwm-notice sc-ink--red'}
+                    >
+                      {notice.text}
                     </div>
                   )}
-                  {!ledgerError && (
-                    <div className="uwm-ledger-head sc-ink--muted">
-                      {ledgerTotal.toLocaleString('en-US')} Entries {'·'} {walletLabel}
-                    </div>
-                  )}
-                  {!ledgerError &&
-                    ledger.map((r) => {
-                      const inbound = r.direction === 'in';
-                      const other = r.counterparty_name || null;
-                      return (
-                        <div key={r.id} className="uwm-tx">
-                          <div className="uwm-tx-top">
-                            {/* The category is a Postgres enum, so it reaches
-                                the screen through the house transform: the copy
-                                gates never see a value that came out of a row. */}
-                            <span className="uwm-tx-type sc-ink--silver">
-                              {enumToTitleCase(r.category)}
-                            </span>
-                            <span
-                              className={
-                                inbound
-                                  ? 'uwm-tx-amount sc-ink--green'
-                                  : 'uwm-tx-amount sc-ink--red'
-                              }
-                            >
-                              {`${inbound ? '+' : '-'}${money(r.amount)}`}
-                            </span>
-                          </div>
-                          <div className="uwm-tx-mid sc-ink--muted">
-                            <span>
-                              {other
-                                ? inbound
-                                  ? `From ${titleCase(other)}`
-                                  : `To ${titleCase(other)}`
-                                : walletLabel}
-                            </span>
-                            <span className="uwm-tx-when">{when(r.created_at)}</span>
-                          </div>
-                          <div className="uwm-tx-foot sc-ink--muted">
-                            {r.notes && <span>{titleCase(r.notes)}</span>}
-                            {r.actor_name && <span>By {titleCase(r.actor_name)}</span>}
-                            {r.balance_after != null && (
-                              <span>Wallet After {formatWalletChips(Number(r.balance_after))}</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  {!ledgerError && !ledgerLoading && ledger.length === 0 && (
-                    <div className="uwm-empty">
-                      Nothing Has Moved Through This Wallet Yet. Every Send, Sweep And Settlement
-                      Writes A Row Here.
-                    </div>
-                  )}
-                  {ledgerLoading && <div className="uwm-empty">Loading Ledger</div>}
-                </>
-              )}
-            </>
-          )}
-          {readOnly && (
-            <div className="uwm-field">
-              <span className="uwm-label sc-ink--blue">Reserve Ledger</span>
+                </SpadeConsole>
+              </div>
+            </div>
+          )
+        }
+        art={art}
+        name={walletLabel}
+        line={`${formatWalletChips(liveBalance)} Chips`}
+        onClose={requestClose}
+        closeDisabled={busy}
+        dockLine={dockLine}
+        actions={
+          readOnly
+            ? [
+                {
+                  label: 'Read Only',
+                  onClick: () => undefined,
+                  disabled: true,
+                  'aria-label': 'The Spin Reserve Is Not A Send Source',
+                },
+              ]
+            : [
+                {
+                  label: 'Pull Back',
+                  lit: true,
+                  onClick: () => openSheet('pull'),
+                  disabled: !pullAvailable || busy,
+                  'aria-label':
+                    target?.type === 'club'
+                      ? `Pull Back From ${targetName}`
+                      : 'Pull Back - Pick A Club',
+                },
+                {
+                  label: mode === 'ledger' ? 'Recipients' : 'Ledger',
+                  pressed: mode === 'ledger',
+                  onClick: () => {
+                    setSheetOpen(false);
+                    setNotice(null);
+                    setMode((m) => (m === 'ledger' ? 'send' : 'ledger'));
+                  },
+                  disabled: busy,
+                  'aria-label': mode === 'ledger' ? 'Show Recipients' : 'Ledger',
+                },
+                {
+                  label: 'Send Out',
+                  onClick: () => openSheet('send'),
+                  disabled: !sendOutReady,
+                  'aria-label': target
+                    ? `Send Out To ${targetName}`
+                    : 'Send Out - Pick A Member Or Club',
+                },
+              ]
+        }
+      >
+        {/* The balance is printed in the identity row; this is the same figure
+          in a polite live region, so a screen reader hears the wallet move. */}
+        <span className="wdesk__live" aria-live="polite">
+          {walletLabel} Balance {formatWalletChips(liveBalance)}
+        </span>
+
+        {/* Two guards on the outbound flow, both on readOnly: the spin reserve
+          is not a send source and must never grow a picker or a send
+          (tests/config/spinReserveWalletView.test.ts). */}
+        {readOnly && (
+          <>
+            <WalletDeskHeading title="Reserve Ledger" meta={`${reserveLedger.length} Entries`} />
+            <p className="wdesk__empty">
+              The Capital Every Spin Bonus Pool Is Seeded From, And Every Spin Prize Is Paid Out Of.
+              It Is Not A Send Source: Add Funds With Fund Spin Reserve On The Wallet Tab.
+            </p>
+            <div className="wdesk__list">
               {reserveLedger.length === 0 ? (
-                <div className="uwm-empty">
+                <div className="wdesk__empty">
                   Nothing Has Moved Through This Wallet Yet. Seeding A Pool Or Funding The Reserve
                   Writes A Row Here.
                 </div>
@@ -1173,42 +1040,215 @@ export function UnionWalletModal({
                 reserveLedger.map((r) => {
                   const inbound = r.direction === 'credit';
                   return (
-                    <div key={r.id} className="uwm-tx">
-                      <div className="uwm-tx-top">
-                        <span className="uwm-tx-type sc-ink--silver">
-                          {r.notes ? titleCase(r.notes) : enumToTitleCase(r.tx_type)}
-                        </span>
-                        <span
-                          className={
-                            inbound ? 'uwm-tx-amount sc-ink--green' : 'uwm-tx-amount sc-ink--red'
-                          }
-                        >
+                    <WalletDeskRow
+                      key={r.id}
+                      name={r.notes ? titleCase(r.notes) : enumToTitleCase(r.tx_type)}
+                      sub={`${when(r.created_at)}${r.balance_after != null ? ` · Balance ${formatWalletChips(r.balance_after)}` : ''}`}
+                      figure={
+                        <span className={inbound ? 'wdesk__in' : 'wdesk__out'}>
                           {`${inbound ? '+' : '-'}${money(r.amount)}`}
                         </span>
-                      </div>
-                      <div className="uwm-tx-mid sc-ink--muted">
-                        <span className="uwm-tx-when">{when(r.created_at)}</span>
-                        {r.balance_after != null && (
-                          <span>Balance {formatWalletChips(r.balance_after)}</span>
-                        )}
-                      </div>
-                    </div>
+                      }
+                    />
                   );
                 })
               )}
             </div>
-          )}
+          </>
+        )}
 
-          {notice && (
-            <div
-              role={notice.ok ? 'status' : 'alert'}
-              className={notice.ok ? 'uwm-notice sc-ink--green' : 'uwm-notice sc-ink--red'}
-            >
-              {notice.text}
-            </div>
-          )}
-        </SpadeConsole>
-      </div>
+        {!readOnly && (
+          <>
+            {mode !== 'ledger' && (
+              <>
+                <WalletDeskHeading
+                  title="Recipients"
+                  meta={
+                    loading
+                      ? 'Loading'
+                      : `${filtered.clubs.length.toLocaleString('en-US')} Clubs · ${filtered.roster.length.toLocaleString('en-US')} Members`
+                  }
+                />
+                <label className="wdesk__search">
+                  <input
+                    id="uwm-search"
+                    placeholder="Search Clubs Or Members"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    aria-label="Search Clubs Or Members"
+                  />
+                </label>
+                <div className="wdesk__list">
+                  {loading ? (
+                    <div className="wdesk__empty">Loading Directory</div>
+                  ) : directoryError ? (
+                    <div className="wdesk__empty wdesk__empty--bad" role="alert">
+                      {directoryError}{' '}
+                      <button
+                        type="button"
+                        className="wdesk__more"
+                        onClick={() => setDirectoryReload((value) => value + 1)}
+                      >
+                        Retry Directory
+                      </button>
+                    </div>
+                  ) : filtered.clubs.length === 0 && filtered.roster.length === 0 ? (
+                    <div className="wdesk__empty">No Targets Match.</div>
+                  ) : (
+                    <>
+                      {filtered.clubs.map((c) => {
+                        const on = target?.type === 'club' && target.data.id === c.id;
+                        return (
+                          <WalletDeskRow
+                            key={`club-${c.id}`}
+                            name={titleCase(c.name)}
+                            sub={
+                              route.kind === 'promo'
+                                ? 'Into The Club Promo Wallet'
+                                : route.kind === 'bank'
+                                  ? 'Into The Club Bank'
+                                  : pullRoute.kind !== 'refused'
+                                    ? 'Pull Back Only From Here'
+                                    : 'Not Available From Here'
+                            }
+                            tag={
+                              route.kind === 'promo' || pullRoute.kind === 'promo'
+                                ? 'Club Promo Wallet'
+                                : 'Club Bank'
+                            }
+                            selected={on}
+                            disabled={clubsBlocked}
+                            title={
+                              clubsBlocked
+                                ? route.kind === 'refused'
+                                  ? route.reason
+                                  : undefined
+                                : undefined
+                            }
+                            onSelect={() => {
+                              setTarget({ type: 'club', data: c });
+                              setNotice(null);
+                            }}
+                          />
+                        );
+                      })}
+                      {filtered.roster.slice(0, 200).map((r) => {
+                        const on = target?.type === 'member' && target.data.user_id === r.user_id;
+                        return (
+                          <WalletDeskRow
+                            key={`${r.user_id}-${r.club_id}`}
+                            name={titleCase(r.display_name || r.username || r.user_id.slice(0, 8))}
+                            sub={titleCase(r.club_name || '')}
+                            tag={enumToTitleCase(r.member_role || 'member')}
+                            selected={on}
+                            onSelect={() => {
+                              setTarget({ type: 'member', data: r });
+                              setNotice(null);
+                            }}
+                          />
+                        );
+                      })}
+                    </>
+                  )}
+                </div>
+                {clubsBlocked && filtered.clubs.length > 0 && route.kind === 'refused' && (
+                  <div className="wdesk__empty">{route.reason}</div>
+                )}
+              </>
+            )}
+
+            {mode === 'ledger' && (
+              <>
+                <WalletDeskHeading
+                  title="Ledger"
+                  meta={`${ledgerTotal.toLocaleString('en-US')} Entries · ${walletLabel}`}
+                />
+                {ledgerError && <div className="wdesk__empty wdesk__empty--bad">{ledgerError}</div>}
+                {!ledgerError && ledgerTotals && (
+                  <div className="wdesk__words" aria-label="Ledger Totals">
+                    <span className="wdesk__headingMeta">
+                      Received <span className="wdesk__in">{money(ledgerTotals.in)}</span>
+                    </span>
+                    <span className="wdesk__headingMeta">
+                      Sent Out <span className="wdesk__out">{money(ledgerTotals.out)}</span>
+                    </span>
+                    <span className="wdesk__headingMeta">
+                      Net <span>{money(ledgerTotals.net)}</span>
+                    </span>
+                  </div>
+                )}
+                <div className="wdesk__list">
+                  {!ledgerError &&
+                    ledger.map((r) => {
+                      const inbound = r.direction === 'in';
+                      const other = r.counterparty_name || null;
+                      return (
+                        <WalletDeskRow
+                          key={r.id}
+                          /* The category is a Postgres enum, so it reaches the screen
+                       through the house transform: the copy gates never see a
+                       value that came out of a row. */
+                          name={enumToTitleCase(r.category)}
+                          sub={
+                            <>
+                              <span>
+                                {other
+                                  ? inbound
+                                    ? `From ${titleCase(other)}`
+                                    : `To ${titleCase(other)}`
+                                  : walletLabel}
+                              </span>
+                              <span>{` · ${when(r.created_at)}`}</span>
+                              {r.notes && <span>{` · ${titleCase(r.notes)}`}</span>}
+                              {r.actor_name && <span>{` · By ${titleCase(r.actor_name)}`}</span>}
+                              {r.balance_after != null && (
+                                <span className="wdesk__sep">
+                                  Wallet After {formatWalletChips(Number(r.balance_after))}
+                                </span>
+                              )}
+                            </>
+                          }
+                          figure={
+                            <span className={inbound ? 'wdesk__in' : 'wdesk__out'}>
+                              {`${inbound ? '+' : '-'}${money(r.amount)}`}
+                            </span>
+                          }
+                        />
+                      );
+                    })}
+                  {!ledgerError && !ledgerLoading && ledger.length === 0 && (
+                    <div className="wdesk__empty">
+                      Nothing Has Moved Through This Wallet Yet. Every Send, Sweep And Settlement
+                      Writes A Row Here.
+                    </div>
+                  )}
+                  {ledgerLoading && <div className="wdesk__empty">Loading Ledger</div>}
+                  {moreLedger && (
+                    <button
+                      type="button"
+                      className="wdesk__more"
+                      onClick={() => void loadLedger(ledger.length)}
+                      disabled={ledgerLoading}
+                      aria-label="Load More Ledger Entries"
+                    >
+                      Load More
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {!sheetOpen && notice && (
+          <div
+            role={notice.ok ? 'status' : 'alert'}
+            className={notice.ok ? 'wdesk__empty' : 'wdesk__empty wdesk__empty--bad'}
+          >
+            {notice.text}
+          </div>
+        )}
+      </WalletDesk>
     </div>
   );
 }

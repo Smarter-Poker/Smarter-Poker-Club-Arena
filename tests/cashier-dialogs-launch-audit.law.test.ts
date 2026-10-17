@@ -260,10 +260,15 @@ describe('D-12 (kept flat, see below) / D-13 / R-04: the Diamond Wallet', () => 
   it('holds every close path shut while a transfer is travelling', () => {
     const src = read(DWM);
     expect(src).toContain('const [transferBusy, setTransferBusy] = useState(false);');
-    expect(src).toContain('onClose={transferBusy ? undefined : closeIfIdle}');
+    // On the wallet desk (Dan 2026-10-16) the transfer is a sheet over the
+    // wallet: its X, its Back plate and Escape close the sheet, the desk's
+    // Close word closes the wallet, and every one holds shut while it travels.
+    expect(src).toContain('onClose={transferBusy ? undefined : closeSendSheet}');
     expect(src).toContain('onClick={closeIfIdle} role="presentation"');
     expect(src).toContain('if (!transferBusyRef.current) onCloseRef.current();');
-    expect(src).toMatch(/secondary: \{\s*label: 'Close',[\s\S]*?disabled: transferBusy,/);
+    expect(src).toContain('if (!transferBusyRef.current) setSendSheet(false);');
+    expect(src).toMatch(/secondary: \{\s*label: 'Back',[\s\S]*?disabled: transferBusy,/);
+    expect(src).toContain('closeDisabled={transferBusy}');
     expect(src).toContain('onBusyChange={onTransferBusyChange}');
     expect(read(DWT)).toContain('onBusyChange?: (busy: boolean) => void;');
     expect(read(DWT)).toContain('setSending(true);');

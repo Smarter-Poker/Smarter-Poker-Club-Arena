@@ -117,7 +117,8 @@ describe('the union modal routes a club send by the wallet that is open', () => 
   it('a club row says where the chips will land before the send', () => {
     expect(unionModal).toContain("'Into The Club Promo Wallet'");
     expect(unionModal).toContain("'Into The Club Bank'");
-    expect(unionModal).toContain("'CLUB PROMO WALLET'");
+    // The row's tag on the wallet desk (Dan 2026-10-16), printed Title Case.
+    expect(unionModal).toContain("'Club Promo Wallet'");
   });
 });
 
@@ -259,7 +260,10 @@ describe('every promo wallet carries a ledger', () => {
     expect(unionModal).toContain('p_wallet: UNION_WALLET_COLUMN[walletKey]');
     expect(UNION_WALLET_COLUMN.promo).toBe('promo_wallet');
     expect(UNION_WALLET_COLUMN.chips).toBe('chip_balance');
-    expect(unionModal).toMatch(/\['send', 'pull', 'ledger'\] as Mode\[\]/);
+    // The wallet desk's dock carries the Ledger for every wallet it opens
+    // (Dan 2026-10-16); the mode is still 'send' | 'pull' | 'ledger'.
+    expect(unionModal).toMatch(/type Mode = 'send' \| 'pull' \| 'ledger';/);
+    expect(unionModal).toContain("label: mode === 'ledger' ? 'Recipients' : 'Ledger'");
   });
 
   it('fn_promo_wallet_ledger knows all three promo accounts', () => {

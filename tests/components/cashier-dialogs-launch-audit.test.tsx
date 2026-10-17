@@ -675,9 +675,12 @@ describe('D-13: the Diamond Wallet holds its door while a transfer travels', () 
 
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(view.container.querySelector('.diamond-wallet-backdrop')!);
-    fireEvent.click(screen.getByText('Close', { selector: '.sc-plate__text' }));
+    fireEvent.click(screen.getByText('Back', { selector: '.sc-plate__text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByTestId('sc-close')).toBeNull();
+    // The sheet itself is still open: Back did not dismiss a travelling transfer.
+    expect(screen.getByText('Back', { selector: '.sc-plate__text' })).toBeTruthy();
 
     await act(async () => {
       transfer.resolve({
@@ -693,6 +696,9 @@ describe('D-13: the Diamond Wallet holds its door while a transfer travels', () 
       await settle();
     });
     await waitFor(() => expect(screen.getByTestId('sc-close')).toBeTruthy());
+    // Escape closes the transfer sheet first, then the wallet desk.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });

@@ -1,7 +1,7 @@
 // Supporting R12 amendment only; root integrates into the existing finite witness.
 // No active wait, recovery action, authentication mutation or fabricated frame.
+import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
 const unknown = (cause) => ({ status: 'unknown', phase: 'unknown', cause });
 const sameOwn = (a, b) =>
   a?.pool_session_id === b?.pool_session_id &&
@@ -82,15 +82,14 @@ export function classifyRecoveryPhase({ pin, before, after, reservations, instan
 /** One bounded observation, two own-session reads surrounding scoped rows.
  * This is a bounded timing bracket, not an atomic multi-query snapshot. */
 export async function captureRecoveryPhase({ admin, player, pin, remaining, now = Date.now }) {
-  const startedAt = now();
   try {
-    if (
-      !CLUSTERS.includes(pin?.clusterId) ||
-      !UUID.test(pin.playerId) ||
-      !UUID.test(pin.poolSessionId)
-    )
+    if (!UUID.test(pin?.clusterId) || !UUID.test(pin.playerId) || !UUID.test(pin.poolSessionId))
       return unknown('PIN_INVALID');
     remaining();
+    await resolvePilotTarget(admin, pin.clusterId);
+    remaining();
+    // Target metadata is outside the strict two-second own-state bracket.
+    const startedAt = now();
     const first = await player.rpc('fn_lightning_reconnect_state', { p_cluster_id: pin.clusterId });
     if (first.error || !validOwn(first.data, pin)) return unknown('OWN_STATE_UNAVAILABLE');
     remaining();

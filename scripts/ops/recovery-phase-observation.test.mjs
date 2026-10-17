@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { PILOT, PILOT_TARGETS } from './prepare-lightning-private-pilot.mjs';
 import {
   classifyRecoveryPhase,
   phaseReconnectEvidence,
@@ -7,9 +8,48 @@ import {
 } from './recovery-phase-observation.mjs';
 const id = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const pin = {
-  clusterId: 'babb43f1-368e-406f-a97a-a0d5013648b2',
+  clusterId: '00000000-0000-0000-0000-000000000040',
   playerId: id(1),
   poolSessionId: id(2),
+};
+function targetGame(index = 0) {
+  const t = PILOT_TARGETS[index],
+    a = t.templateName === 'action';
+  return {
+    id: pin.clusterId,
+    club_id: PILOT.clubId ?? 'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
+    name: t.gameName,
+    template_name: t.templateName,
+    handedness: t.handedness,
+    sb: t.sb,
+    bb: t.bb,
+    variant: 'nlh',
+    enabled: true,
+    must_move: true,
+    cluster_mode: 'lightning',
+    lightning_enabled: true,
+    ruleset_snapshot: {
+      template: t.templateName,
+      variant: 'nlh',
+      regular_ante: a ? 'sb' : 'bb',
+      vpip_floor: a ? 30 : 50,
+      vpip_window: 10,
+      bombs: {
+        enabled: true,
+        trigger: a ? 'timed_15m' : 'every_orbit',
+        ante_bb: a ? 2 : 3,
+        boards: 2,
+      },
+      options: { is_private: true },
+    },
+  };
+}
+const club = {
+  id: 'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
+  owner_id: PILOT.ownerId,
+  name: PILOT.name,
+  is_public: false,
+  requires_approval: true,
 };
 const own = { pool_session_id: pin.poolSessionId, state: 'active', in_hand: true, hand_id: id(3) };
 function sample(state = 'dealing') {
@@ -136,6 +176,8 @@ test('capture adapter traverses real own RPC and scoped reservation slot instanc
     },
   };
   const tables = {
+    clubs: club,
+    cash_games: targetGame(),
     lightning_reservation: f.reservations,
     lightning_pool_slot: f.slots[0],
     lightning_instance: f.instances[0],
@@ -225,4 +267,64 @@ test('capture adapter traverses real own RPC and scoped reservation slot instanc
     )
   );
   assert.doesNotMatch(JSON.stringify(result), /SECRET|stack|private/);
+});
+test('actual maintained Action and Madness bindings permit phase capture; Classic or foreign targets refuse before own RPC', async () => {
+  for (const index of [0, 1]) {
+    const game = targetGame(index);
+    for (const variant of ['supported', 'classic', 'foreign']) {
+      let ownReads = 0,
+        clock = 100;
+      const candidate = {
+        ...game,
+        ...(variant === 'classic'
+          ? { template_name: 'classic' }
+          : variant === 'foreign'
+            ? { club_id: id(99) }
+            : {}),
+      };
+      const admin = {
+        from(table) {
+          const q = {
+            select: () => q,
+            eq: () => q,
+            in: () => q,
+            maybeSingle: async () => {
+              clock += 1000;
+              return { data: table === 'clubs' ? club : candidate };
+            },
+            limit: async () => ({ data: [], count: 0 }),
+          };
+          return q;
+        },
+      };
+      const player = {
+        rpc: async () => {
+          ownReads++;
+          clock += 10;
+          return {
+            data: {
+              pool_session_id: pin.poolSessionId,
+              state: 'active',
+              in_hand: false,
+              hand_id: null,
+            },
+          };
+        },
+      };
+      const result = await captureRecoveryPhase({
+        admin,
+        player,
+        pin,
+        remaining: () => 1000,
+        now: () => clock,
+      });
+      assert.equal(result.status, variant === 'supported' ? 'observed' : 'unknown');
+      assert.equal(ownReads, variant === 'supported' ? 2 : 0);
+      if (variant === 'supported') {
+        assert.equal(result.phase, 'idle');
+        assert.equal(result.startedAt, 3100);
+        assert.equal(result.endedAt - result.startedAt, 20);
+      }
+    }
+  }
 });

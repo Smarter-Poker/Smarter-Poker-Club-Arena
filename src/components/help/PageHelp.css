@@ -64,6 +64,26 @@
   min-height: 44px;
 }
 
+.ca-page-bar__status[data-tone='live'] > span {
+  background: #35d95a;
+}
+
+.ca-page-bar__status[data-tone='attention'] {
+  color: #d6ad52;
+}
+
+.ca-page-bar__status[data-tone='attention'] > span {
+  background: #d6ad52;
+}
+
+.ca-page-bar__status[data-tone='danger'] {
+  color: #ff5b6e;
+}
+
+.ca-page-bar__status[data-tone='danger'] > span {
+  background: #f02849;
+}
+
 .ca-page-bar__metrics {
   display: flex;
   flex-wrap: wrap;

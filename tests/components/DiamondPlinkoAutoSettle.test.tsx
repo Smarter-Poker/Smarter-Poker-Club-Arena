@@ -164,13 +164,12 @@ const advance = async (ms = 0) => {
     await vi.advanceTimersByTimeAsync(0);
   });
 };
-/** Answer screen one, the Double Your Diamonds offer (R9). Nothing starts over
- * it, and nothing starts after it: Drop Diamonds is the player's own (R1). */
-const answerOffer = async (name: 'Play Without' | 'Add The Diamonds' = 'Play Without') => {
-  const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-  fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-  fireEvent.click(screen.getByRole('button', { name }));
-  await advance();
+/** Double Diamonds is retired (Dan 2026-10-16): a won game opens on its setup,
+ * with no Double Your Diamonds offer and no Double Down control. Nothing starts
+ * by itself: Drop Diamonds is the player's own (R1). */
+const expectNoAddOn = () => {
+  expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+  expect(screen.queryByText(/Double Down|Double Your Diamonds|Extra Diamonds/)).toBeNull();
 };
 const fakeClock = () => {
   vi.useFakeTimers({
@@ -228,7 +227,6 @@ describe('a won Plinko game waits for the player, and drops what they chose', ()
     won();
     render(<DiamondPlinkoPage />);
     await advance();
-    await answerOffer();
     await chooseDrops(20, 10);
     expect(drop()).toBeEnabled();
     // A game that can start holds the player until it has.
@@ -253,7 +251,7 @@ describe('a won Plinko game waits for the player, and drops what they chose', ()
     expect(holding()).toBe(true);
   });
 
-  it('drops the doubled entry after the player changes their Double Down answer', async () => {
+  it('never offers Double Down, and drops the funded entry alone', async () => {
     fakeClock();
     const ordinary = { ...award, base_diamonds: 2500, entry_diamonds: 2500, boost_multiplier: 1 };
     backend.awardState.mockImplementation(async (_club, _game, doubled) => ({
@@ -273,13 +271,9 @@ describe('a won Plinko game waits for the player, and drops what they chose', ()
     }));
     render(<DiamondPlinkoPage />);
     await advance();
-    await answerOffer();
-    // Reopening the offer takes the plate back until the new answer is given.
-    fireEvent.click(screen.getByRole('button', { name: 'Playing Without Extra Diamonds: Change' }));
-    await advance();
-    await answerOffer('Add The Diamonds');
-    // The doubled stake is a new split, so the drop value is chosen again.
-    await chooseDrops(500, 10);
+    expectNoAddOn();
+    // The funded 2,500 is the stake: there is nothing to add to it.
+    await chooseDrops(250, 10);
     expect(drop()).toBeEnabled();
     await advance(60000);
     expect(backend.start).not.toHaveBeenCalled();
@@ -290,12 +284,14 @@ describe('a won Plinko game waits for the player, and drops what they chose', ()
         tableVersion: 4,
         budget: {
           base: 2500,
-          doubled: true,
-          denomination: 500,
+          doubled: false,
+          denomination: 250,
           award: { id: AWARD_ID, entryDiamonds: 2500, boostMultiplier: 1 },
         },
       }),
     ]);
+    // Every award read asked for the funded entry alone, never the add-on.
+    for (const call of backend.awardState.mock.calls) expect(call[2]).toBe(false);
   });
 
   it('drops the seed the player typed, and never one they replaced', async () => {
@@ -303,7 +299,6 @@ describe('a won Plinko game waits for the player, and drops what they chose', ()
     won();
     render(<DiamondPlinkoPage />);
     await advance();
-    await answerOffer();
     await chooseDrops(20, 10);
     const seed = screen.getByLabelText('Your Seed');
     fireEvent.change(seed, { target: { value: 'my-own-seed' } });
@@ -349,10 +344,10 @@ describe('a won Plinko game waits for the player, and drops what they chose', ()
     }));
     render(<DiamondPlinkoPage />);
     await advance();
-    // The offer is this award's own question, whatever the last one answered.
+    // Nothing the last award saved is carried to this one, and no offer appears.
     await advance(10000);
+    expectNoAddOn();
     expect(backend.start).not.toHaveBeenCalled();
-    await answerOffer();
     await chooseDrops(20, 10);
     fireEvent.click(drop());
     await advance();
@@ -371,7 +366,7 @@ describe('a won Plinko game waits for the player, and drops what they chose', ()
     await advance();
     expect(screen.getByRole('heading', { name: 'Super Plinko' })).toBeVisible();
     expect(holding()).toBe(false);
-    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+    expect(drop()).toBeDisabled();
     await advance(60000);
     expect(backend.start).not.toHaveBeenCalled();
     expect(holding()).toBe(false);
@@ -429,7 +424,6 @@ describe('a wager settles itself', () => {
       .mockResolvedValueOnce(receipt(3.25));
     render(<DiamondPlinkoPage />);
     await advance();
-    await answerOffer();
     await chooseDrops(20, 10);
     fireEvent.click(drop());
     await advance();
@@ -480,7 +474,6 @@ describe('a wager settles itself', () => {
     backend.start.mockRejectedValue(new BonusRefusal(TICKET_REFUSED, true));
     render(<DiamondPlinkoPage />);
     await advance();
-    await answerOffer();
     await chooseDrops(20, 10);
     fireEvent.click(drop());
     await advance();
@@ -503,7 +496,6 @@ describe('a read that fails asks again by itself', () => {
       .mockRejectedValueOnce(new Error('Offline'));
     render(<DiamondPlinkoPage />);
     await advance();
-    await answerOffer();
     await chooseDrops(20, 10);
     expect(statusLine()).toHaveTextContent('Preparing Your Ticket');
     expect(drop()).toBeDisabled();
@@ -544,7 +536,6 @@ describe('a read that fails asks again by itself', () => {
     await advance(2000);
     expect(backend.resolve).toHaveBeenCalledTimes(3);
     expect(statusLine()).not.toHaveTextContent('Reconnecting To Plinko');
-    await answerOffer();
     await chooseDrops(20, 10);
     expect(drop()).toBeEnabled();
     await advance(4000);
@@ -603,7 +594,7 @@ describe('a read that fails asks again by itself', () => {
 });
 
 describe('a refused ticket re-sends the saved wager, never a rebuilt one', () => {
-  it('re-sends a saved Double Down once even when it can no longer be afforded, then hands the choice back', async () => {
+  it('re-sends a Double Down an older page saved once, exactly as saved, then hands the choice back', async () => {
     // Review 2026-09-21: an owed restart the page could not afford used to wait
     // forever, with the setup (and so Keep My Bonus) disabled underneath it.
     fakeClock();
@@ -631,8 +622,12 @@ describe('a refused ticket re-sends the saved wager, never a rebuilt one', () =>
       commitId: TICKETS[0].commit_id,
       serverSeedHash: TICKETS[0].server_seed_hash,
     });
-    // The restart is spent: the setup is the player's again, offer included.
-    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+    // The restart is spent: the setup is the player's again, and it offers no
+    // add-on (the status line may still echo the server's own refusal).
+    expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Double|Extra Diamonds/ })).toBeNull();
+    expect(screen.getByRole('group', { name: 'Diamonds Per Drop' })).toBeInTheDocument();
     expect(holding()).toBe(false);
     await advance(60000);
     expect(backend.start).toHaveBeenCalledTimes(2);
@@ -664,7 +659,6 @@ describe('a blank seed never stalls a won Plinko game', () => {
     backend.start.mockImplementationOnce(checksTheSeed);
     render(<DiamondPlinkoPage />);
     await advance();
-    await answerOffer();
     await chooseDrops(20, 10);
     fireEvent.change(seedField(), { target: { value: '' } });
     await advance();

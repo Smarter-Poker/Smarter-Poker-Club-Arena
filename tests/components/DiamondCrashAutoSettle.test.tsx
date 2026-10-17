@@ -195,14 +195,12 @@ const readout = () =>
   screen.getAllByRole('status').find((node) => node.querySelector('.sc-label'))!;
 /** What the page last asked the exit guard: true holds the player on the page. */
 const guardHolds = () => vi.mocked(useLiveBonusGuard).mock.calls.at(-1)?.[0];
-/** Answer screen one, the Double Your Diamonds offer (R9). Nothing starts
- * until it is answered, and nothing starts after it either: the Start plate is
- * the player's (R1). */
-const answerOffer = async (name: 'Play Without' | 'Add The Diamonds' = 'Play Without') => {
-  const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-  fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
-  fireEvent.click(screen.getByRole('button', { name }));
+/** A won game opens straight on its Start plate: the Double Your Diamonds
+ * offer is retired (Dan 2026-10-16), so there is nothing to answer first, and
+ * nothing starts by itself either: the Start plate is the player's (R1). */
+const expectNoOffer = async () => {
   await act(async () => {});
+  expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
 };
 const elapse = async (ms: number) => {
   await act(async () => {
@@ -292,7 +290,7 @@ describe('a ticket the server calls gone is dealt again', () => {
     backend.start.mockReturnValueOnce(refusal.promise).mockResolvedValueOnce(open);
     render(<DiamondCrashPage />);
     await act(async () => {});
-    await answerOffer();
+    await expectNoOffer();
     // The player presses Start once...
     fireEvent.click(screen.getByRole('button', { name: 'Start 200' }));
     await act(async () => {});
@@ -357,8 +355,8 @@ describe('a won game waits for the player, and starts on the entry they answered
     backend.start.mockReturnValue(new Promise(() => {}));
     render(<DiamondCrashPage />);
     await act(async () => {});
-    await answerOffer();
-    // R1: the offer is answered, the plate is ready, and no clock presses it.
+    await expectNoOffer();
+    // R1: the plate is ready, and no clock presses it.
     expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
     await elapse(30000);
     expect(backend.start).not.toHaveBeenCalled();
@@ -378,23 +376,21 @@ describe('a won game waits for the player, and starts on the entry they answered
     expect(backend.start).toHaveBeenCalledTimes(1);
   });
 
-  it('starts the doubled entry after the player changes their Double Down answer', async () => {
+  it('never offers Double Diamonds, and quotes and starts the funded entry alone', async () => {
     quoteSuperAward();
     backend.start.mockReturnValue(new Promise(() => {}));
     render(<DiamondCrashPage />);
-    await act(async () => {});
-    await answerOffer();
-    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
-    // Reopening the offer takes the plate back until the new answer is given.
-    fireEvent.click(screen.getByRole('button', { name: 'Playing Without Extra Diamonds: Change' }));
-    await act(async () => {});
-    await answerOffer('Add The Diamonds');
-    fireEvent.click(screen.getByRole('button', { name: 'Start 300' }));
+    await expectNoOffer();
+    // Retired (Dan 2026-10-16): no add-on control and no doubled stake anywhere.
+    expect(screen.queryByText(/Double Down|Double Your Diamonds|Add The Diamonds/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start 300' })).toBeNull();
+    for (const call of backend.awardState.mock.calls) expect(call[2]).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Start 200' }));
     await act(async () => {});
     expect(backend.start).toHaveBeenCalledTimes(1);
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
-        budget: expect.objectContaining({ base: 200, doubled: true, award: awardBudget }),
+        budget: expect.objectContaining({ base: 200, doubled: false, award: awardBudget }),
       }),
       'player-a'
     );
@@ -430,7 +426,7 @@ describe('the exit guard never traps a player on a won game that cannot start', 
     quoteSuperAward();
     render(<DiamondCrashPage />);
     await act(async () => {});
-    await answerOffer();
+    await expectNoOffer();
     expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
     expect(guardHolds()).toBe(true);
   });
@@ -516,7 +512,7 @@ describe('every read before Start is tried again by itself', () => {
     render(<DiamondCrashPage />);
     await act(async () => {});
     expect(readout()).toHaveTextContent('The Platform Is In Its Maintenance Break');
-    await answerOffer();
+    await expectNoOffer();
     // The break ends: the standing refresh's award read says so, and its entry
     // quote is lost on the way.
     quoteSuperAward();
@@ -589,7 +585,7 @@ describe('a refusal that is not about the ticket never traps the player', () => 
     );
     render(<DiamondCrashPage />);
     await act(async () => {});
-    await answerOffer();
+    await expectNoOffer();
     const reads = backend.awardState.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Start 200' }));
     await act(async () => {});

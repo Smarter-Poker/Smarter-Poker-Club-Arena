@@ -1,8 +1,9 @@
 /**
  * THE SETUP'S EXITS LEAVE, ON EVERY GAME THAT RENDERS IT (review 2026-09-22).
  *
- * BonusSetup's own exits (Spin The Wheel, Buy More, Earn Diamonds, and the
- * Double Down offer's Buy More) navigated straight into the page's exit guard,
+ * BonusSetup's own exits (Spin The Wheel, Buy More, Earn Diamonds; the Double
+ * Down offer's Buy More went with the offer, retired 2026-10-16) navigated
+ * straight into the page's exit guard,
  * which holds a won game that could start so it can start itself. The guard
  * answered "Finish Your Bonus Game Before Leaving." and the player stayed put.
  * The setup now leaves through the page's own leave(to), which lets go of the
@@ -12,9 +13,8 @@
  * and a real router.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { useState } from 'react';
 import BonusSetup from '../../src/components/games/BonusSetup';
 import DiamondPlinkoPage from '../../src/pages/DiamondPlinkoPage';
 import DiamondCrashPage from '../../src/pages/DiamondCrashPage';
@@ -166,8 +166,9 @@ const mount = async (page: Page) => {
   );
   await settle();
 };
-const offer = () => screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-const revealOffer = () => fireEvent.animationEnd(offer().querySelector('[data-motion="keep"]')!);
+/** Double Diamonds is retired (Dan 2026-10-16): a won game never asks first. */
+const noOffer = () =>
+  expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
 const blocked = () =>
   screen.queryByText(BLOCKED) !== null ||
   backend.toast.error.mock.calls.some(([message]) => message === BLOCKED);
@@ -204,25 +205,22 @@ afterEach(() => {
 describe.each(['plinko', 'crash'] as const)(
   '%s: the setup exits while a won game could start',
   (page) => {
-    it("takes a player short of the diamonds to double from the offer's Buy More to the marketplace", async () => {
+    it("takes a player from the setup's Buy More to the marketplace, with no offer in the way", async () => {
       won(page);
       await mount(page);
-      revealOffer();
-      expect(
-        within(offer()).getByText(/You Need 100 More Diamonds To Add Them/)
-      ).toBeInTheDocument();
-      fireEvent.click(within(offer()).getByRole('button', { name: 'Buy More' }));
+      noOffer();
+      expect(screen.queryByText(/To Add Them/)).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Buy More' }));
       await settle();
       expect(screen.getByRole('heading', { name: 'Marketplace Page' })).toBeInTheDocument();
       expect(blocked()).toBe(false);
       expect(backend.start).not.toHaveBeenCalled();
     });
 
-    it('leaves by Earn Diamonds while the answered award waits on its plate', async () => {
+    it('leaves by Earn Diamonds while the award waits on its plate', async () => {
       won(page);
       await mount(page);
-      revealOffer();
-      fireEvent.click(within(offer()).getByRole('button', { name: 'Play Without' }));
+      noOffer();
       await advance(1000);
       await chooseDrops(page);
       expect(screen.getByRole('button', { name: PLATE[page] })).toBeEnabled();
@@ -236,8 +234,7 @@ describe.each(['plinko', 'crash'] as const)(
     it('keeps every exit shut, and holds the player, while the start is out', async () => {
       won(page);
       await mount(page);
-      revealOffer();
-      fireEvent.click(within(offer()).getByRole('button', { name: 'Play Without' }));
+      noOffer();
       await settle();
       await chooseDrops(page);
       fireEvent.click(screen.getByRole('button', { name: PLATE[page] }));
@@ -260,13 +257,11 @@ describe('BonusSetup leaves only through the page', () => {
     denomination: 20,
     award: { id: AWARD_ID, entryDiamonds: 100, boostMultiplier: 2 },
   };
-  /** The page owns the offer's answer, so this fixture holds it like a page does. */
   function Fixture(props: {
     disabled: boolean;
     entryReady?: boolean;
     leave: (to: string) => void;
   }) {
-    const [answered, setAnswered] = useState(false);
     return (
       <MemoryRouter>
         <BonusSetup
@@ -278,8 +273,6 @@ describe('BonusSetup leaves only through the page', () => {
           entryReady={props.entryReady}
           disabled={props.disabled}
           leave={props.leave}
-          offerAnswered={answered}
-          onOfferAnswered={() => setAnswered(true)}
         />
       </MemoryRouter>
     );
@@ -290,10 +283,6 @@ describe('BonusSetup leaves only through the page', () => {
   it('sends each exit to its own page', () => {
     const leave = vi.fn();
     const view = setup({ disabled: false, leave });
-    const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-    fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Buy More' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Play Without' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Buy More' }));
     fireEvent.click(screen.getByRole('button', { name: 'Earn Diamonds' }));
@@ -302,7 +291,6 @@ describe('BonusSetup leaves only through the page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Spin The Wheel' }));
     fireEvent.click(screen.getByRole('button', { name: 'Buy More' }));
     expect(leave.mock.calls).toEqual([
-      ['/marketplace?tab=diamonds'],
       ['/marketplace?tab=diamonds'],
       ['/clubs/shark-club/earn-diamonds'],
       ['/clubs/shark-club/wheel'],
@@ -317,7 +305,7 @@ describe('BonusSetup leaves only through the page', () => {
       expect(screen.getByRole('button', { name: exit })).toBeDisabled();
       fireEvent.click(screen.getByRole('button', { name: exit }));
     }
-    // A disabled setup asks nothing: the offer is not on screen.
+    // A disabled setup asks nothing: no dialog is on screen.
     expect(screen.queryByRole('dialog')).toBeNull();
     view.unmount();
     setup({ disabled: true, entryReady: false, leave });

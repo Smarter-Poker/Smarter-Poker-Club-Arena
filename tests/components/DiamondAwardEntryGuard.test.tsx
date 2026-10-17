@@ -70,9 +70,9 @@ vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }))
  * Owner ruling, 2026-09-21: "NO GAMES SHOULD EVER REQUIRE A USER TO CHECK
  * ANYTHING, THEY MUST ALWAYS AUTO START AND PLAY."
  *
- * Every Diamond Spins round is a wheel award the player has already won. Once
- * the one real question on the page (Double Down, which spends the player's
- * own diamonds) is answered, a short visible countdown presses Start for them.
+ * Every Diamond Spins round is a wheel award the player has already won. The
+ * Double Down question that once stood before it is retired (Dan 2026-10-16),
+ * and the countdown that pressed Start is gone too (R1, below).
  * The same ruling took "no way to go back" off the page: the bonus guard holds
  * a won game only while that game can start.
  */
@@ -106,12 +106,6 @@ const tick = async (ms: number) =>
   act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
   });
-const answer = async (name: 'Play Without' | 'Add The Diamonds') => {
-  const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-  fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
-  fireEvent.click(screen.getByRole('button', { name }));
-  await act(async () => {});
-};
 const held = () => vi.mocked(useLiveBonusGuard).mock.lastCall?.[0];
 beforeEach(() => {
   vi.clearAllMocks();
@@ -139,7 +133,7 @@ afterEach(() => {
  * 2026-09-21, R1 and R9, removed that countdown ("Games can NEVER auto start";
  * "the won game must stay on screen until the user selects Play Game"), so
  * those four are gone and the entry flow's own regressions live where the flow
- * does: the offer and the selector are pinned by DiamondPlinkoAwardEntry and
+ * does: the selector is pinned by DiamondPlinkoAwardEntry and
  * DiamondChoiceQuotes, and "two idle minutes start nothing" by
  * tests/diamond-spins-never-start-themselves.law.tsx.
  *
@@ -152,8 +146,9 @@ describe('a won game holds the page only while it can be played', () => {
   it('holds the page on a won game that can start, and lets go of one that cannot', async () => {
     render(<DiamondPlinkoPage />);
     await act(async () => {});
-    await answer('Play Without');
-    // Screen two: the game cannot start until the player has chosen a drop
+    // No Double Your Diamonds offer (retired 2026-10-16): the setup opens at once.
+    expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+    // The game cannot start until the player has chosen a drop
     // value (R6), so the hold begins with the choice, not with the award.
     expect(held()).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: '20 Diamonds Per Drop, 10 Drops' }));

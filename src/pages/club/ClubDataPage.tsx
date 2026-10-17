@@ -29,7 +29,15 @@
  * that disagrees with the reader's own calendar late in their evening.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+} from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { sizedStorageUrl, generateAvatarSvg } from '../../utils/avatarGenerator';
@@ -361,11 +369,17 @@ function withTimeout<T>(
 function coldRead<T>(
   request: () => AbortableRequest<T>,
   message: string,
-  maxRetries = 3
+  maxRetries: number,
+  isMountedRef: MutableRefObject<boolean>
 ): Promise<T> {
+  // isMountedRef is required, not optional: a ladder that outlives the page
+  // keeps sending full-window reporting scans after the operator has left,
+  // up to three more per read. Every caller already drops a result once the
+  // page is gone (stale() reads cancelledRef), so stopping here loses nothing.
   return retryFetch(() => withTimeout(request(), message, COLD_READ_ATTEMPT_TIMEOUT_MS), {
     maxRetries,
     baseDelayMs: COLD_READ_RETRY_DELAY_MS,
+    isMountedRef,
   });
 }
 
@@ -986,6 +1000,9 @@ export default function ClubDataPage() {
   const eventRefreshDeadlineRef = useRef<number | null>(null);
   const pendingEventRefreshRef = useRef({ ledger: false, invoices: false });
   const cancelledRef = useRef(false);
+  // The inverse of cancelledRef, in the shape retryFetch reads, so no read
+  // ladder retries after unmount.
+  const mountedRef = useRef(false);
   const manualRefreshingRef = useRef(false);
   const manualRefreshVersion = useRef(0);
   const observedUtcDayRef = useRef(toISODate(new Date()));
@@ -993,8 +1010,10 @@ export default function ClubDataPage() {
   const playersTabRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     cancelledRef.current = false;
+    mountedRef.current = true;
     return () => {
       cancelledRef.current = true;
+      mountedRef.current = false;
       manualRefreshVersion.current += 1;
       exportGenerationRef.current += 1;
       exportControllerRef.current?.abort();
@@ -1272,7 +1291,9 @@ export default function ClubDataPage() {
               // so a continuation can never make the initial ledger heavier.
               p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1,
             }),
-          'Club data request timed out'
+          'Club data request timed out',
+          3,
+          mountedRef
         );
         const pageRequest =
           gameSort === 'recent'
@@ -1294,7 +1315,9 @@ export default function ClubDataPage() {
                     // does not repeat that expensive sort in every open tab.
                     p_limit: GAME_PAGE_SIZE * 2,
                   }),
-                'Club games request timed out'
+                'Club games request timed out',
+                3,
+                mountedRef
               );
         const [snapshotResult, pageResult] = await Promise.all([snapshotRequest, pageRequest]);
         if (stale()) return false;
@@ -1439,7 +1462,8 @@ export default function ClubDataPage() {
                   p_limit: GAME_PAGE_SIZE,
                 }),
               'Recent games prefetch timed out',
-              1
+              1,
+              mountedRef
             )
               .then(({ data: prefetchedData, error: prefetchError }) => {
                 const prefetchPage = prefetchedData as GamePage | null;
@@ -1648,7 +1672,9 @@ export default function ClubDataPage() {
                 p_end: endDate,
                 p_limit: 1,
               }),
-            'Player totals request timed out'
+            'Player totals request timed out',
+            3,
+            mountedRef
           ),
           coldRead(
             () =>
@@ -1661,7 +1687,9 @@ export default function ClubDataPage() {
                 p_cursor: null,
                 p_limit: PLAYER_PAGE_SIZE,
               }),
-            'Player data request timed out'
+            'Player data request timed out',
+            3,
+            mountedRef
           ),
         ]);
         if (stale()) return false;
@@ -1920,7 +1948,8 @@ export default function ClubDataPage() {
             p_limit: GAME_PAGE_SIZE,
           }),
         'More games request timed out',
-        2
+        2,
+        mountedRef
       );
       if (stale()) return;
       const page = data as GamePage | null;

@@ -1,58 +1,31 @@
 import type { ReactNode } from 'react';
-import { mediaUrl } from '../../utils/mediaBase';
-import styles from './AccountSurfaceHeader.module.css';
+import PageBar from '../help/PageBar';
 
 interface AccountSurfaceHeaderProps {
-  eyebrow: string;
   title: string;
+  /** What the page is for. Shown behind the "?" in the top right, never on the page. */
   description: string;
   status?: string;
   children?: ReactNode;
-  /**
-   * Route-specific hero art, as a path under public/ (e.g.
-   * 'images/account/control-room-hero-v1.webp'). Falls back to the shared
-   * vault plate so a surface without its own art still has an anchor.
-   */
-  artwork?: string;
 }
 
 /**
- * Shared visual anchor for the retained player-account surfaces.
+ * The top of the player-account surfaces (Notifications, Settings).
  *
- * The image is existing Club Arena vault artwork; the live state below it is
- * supplied by each page. This component deliberately owns presentation only.
+ * Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL
+ * DESCRIPTIONS". The eyebrow, the giant title, the paragraph and the hero
+ * artwork are gone. What is left is the live status and the page's figures,
+ * with the explanation and the tutorial behind the painted "?".
  */
 export default function AccountSurfaceHeader({
-  eyebrow,
   title,
   description,
   status,
   children,
-  artwork,
 }: AccountSurfaceHeaderProps) {
-  const artUrl = artwork ? mediaUrl(artwork) : mediaUrl('images/bg-vault.jpg');
   return (
-    <header className={styles.hero}>
-      <div
-        className={styles.image}
-        style={{ backgroundImage: `url("${artUrl}")` }}
-        aria-hidden="true"
-      />
-      <div className={styles.scanline} aria-hidden="true" />
-      <div className={styles.content}>
-        <div className={styles.copy}>
-          <span className={styles.eyebrow}>{eyebrow}</span>
-          <h1>{title}</h1>
-          <p>{description}</p>
-        </div>
-        {status && (
-          <span className={styles.status} role="status">
-            <span aria-hidden="true" />
-            {status}
-          </span>
-        )}
-      </div>
-      {children && <div className={styles.metrics}>{children}</div>}
-    </header>
+    <PageBar title={title} summary={description} status={status}>
+      {children}
+    </PageBar>
   );
 }

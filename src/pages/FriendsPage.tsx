@@ -569,7 +569,6 @@ export default function FriendsPage() {
   return (
     <main className="friends-page">
       <CommunitySurfaceHeader
-        eyebrow="Community / Connections"
         title="Your Poker Circle"
         description="Manage Relationships, Respond To Players, Track Shared Activity, And Launch Friendly Competitions Without Losing The Game."
         metrics={[

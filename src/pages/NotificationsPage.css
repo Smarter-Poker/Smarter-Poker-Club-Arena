@@ -23,35 +23,6 @@
   color: var(--notif-text);
 }
 
-.ca-notif__heroMetric {
-  display: grid;
-  min-width: 92px;
-  min-height: 48px;
-  align-content: center;
-  padding: 0.45rem 0.7rem;
-  border: 1px solid rgba(185, 202, 215, 0.28);
-  border-radius: 2px;
-  background: rgba(3, 6, 9, 0.76);
-  color: #f4f8fb;
-  font:
-    800 0.9rem/1 'Rajdhani',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.ca-notif__heroMetric small {
-  margin-bottom: 0.25rem;
-  color: #77c9ff;
-  font:
-    700 0.56rem/1 ui-monospace,
-    'SFMono-Regular',
-    Consolas,
-    monospace;
-  letter-spacing: 0.12em;
-}
-
 .ca-notif__bar {
   display: flex;
   max-width: 680px;

@@ -374,7 +374,6 @@ export default function ClubHandReviewPage() {
         compact
         clubId={clubParam}
         active="hand-review"
-        eyebrow="Integrity / Hands"
         title="Hand Review"
         description="Hands Your Players Flagged, And The Audited Lookup That Opens Any Hand Dealt At This Club."
         metrics={[

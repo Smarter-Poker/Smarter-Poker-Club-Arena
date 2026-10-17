@@ -17,7 +17,7 @@ import { withClubContext } from '../../utils/clubScopedPath';
 import { formatInt } from '../../utils/clubDashboard';
 import { compactChips } from '../../utils/format';
 import { freshnessLabel } from '../../utils/clubOperationsFreshness';
-import { mediaUrl } from '../../utils/mediaBase';
+import PageBar from '../../components/help/PageBar';
 import { LEGAL_CENTER, LEGAL_CENTER_ENTRIES } from '../legalCenterContent';
 import styles from './ArenaWorkspacePages.module.css';
 
@@ -40,22 +40,18 @@ interface WorkspaceAlert extends ClubOperationsAlert {
 }
 
 function WorkspacePage({
-  eyebrow,
   title,
   description,
-  art,
   links,
   readings,
   alerts,
-  liveLine = 'Live Systems Remain Authoritative',
+  liveLine,
   readingState,
   children,
   compact = false,
 }: {
-  eyebrow: string;
   title: string;
   description: string;
-  art: string;
   links: WorkspaceLink[];
   readings?: WorkspaceReading[];
   alerts?: WorkspaceAlert[];
@@ -101,19 +97,16 @@ function WorkspacePage({
             : undefined
       }
     >
-      <header className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <span className={styles.eyebrow}>{eyebrow}</span>
-          <h1>{title}</h1>
-          <p>{description}</p>
-          <span className={styles.liveLine}>
-            <span aria-hidden="true" /> {status}
-          </span>
-        </div>
-        <div className={styles.artFrame} aria-hidden="true">
-          <img src={mediaUrl(art)} alt="" />
-        </div>
-      </header>
+      <PageBar
+        title={title}
+        summary={description}
+        status={status}
+        steps={links.map((item) => ({
+          title: item.label,
+          body: item.summary ? `${item.description}. ${item.summary}` : `${item.description}.`,
+          target: `[data-workspace-card="${item.path}"]`,
+        }))}
+      />
 
       {readingState && (
         <button
@@ -180,12 +173,11 @@ function WorkspacePage({
             to={withClubContext(item.path, routeClubId)}
             className={styles.card}
             key={item.path}
+            data-workspace-card={item.path}
           >
             <span className={styles.index}>{String(index + 1).padStart(2, '0')}</span>
             <span className={styles.cardCopy}>
               <strong>{item.label}</strong>
-              <span>{item.description}</span>
-              {item.summary && <span className={styles.summary}>{item.summary}</span>}
             </span>
             {item.signal && <span className={styles.signal}>{item.signal}</span>}
             <span className={styles.arrow} aria-hidden="true">
@@ -259,10 +251,8 @@ function useClubWorkspaceGroup(group: ClubOperationGroupId) {
 export function RewardsWorkspacePage() {
   return (
     <WorkspacePage
-      eyebrow="Player Value Circuit"
       title="Rewards Center"
       description="A Single Route Into Every Live Balance, Benefit, Offer, And Earned Milestone."
-      art="assets/club-buttons/wallets/square/wallet-diamonds-square-v1.webp"
       links={[
         { label: 'Wallet', description: 'Balances, Transfers, And Ledger', path: '/wallet' },
         {
@@ -355,11 +345,9 @@ export function CommunityWorkspacePage() {
 
   return (
     <WorkspacePage
-      eyebrow="Community Network"
       title="Community Center"
       description="Discover Players And Clubs, Manage Trusted Connections, Follow Shared Activity, And Move Into Conversation From One Network Map."
-      art="images/community/community-network-v1.webp"
-      liveLine={error ?? 'Live Systems Remain Authoritative'}
+      liveLine={error ?? undefined}
       readings={readings}
       alerts={alerts}
       links={[
@@ -414,11 +402,9 @@ export function CommunityWorkspacePage() {
 export function PlayWorkspacePage() {
   return (
     <WorkspacePage
-      eyebrow="Poker Command Circuit"
       title="Play & Review"
       compact
       description="Move From Live Competition Into Results, Hands, Sessions, And Rankings Without Crossing Disconnected History Surfaces."
-      art="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
       links={[
         {
           label: 'Tournaments',
@@ -461,10 +447,8 @@ export function LegalWorkspacePage() {
      Center (src/prerender/LegalPrerender.tsx) prints exactly this page. */
   return (
     <WorkspacePage
-      eyebrow={LEGAL_CENTER.eyebrow}
       title={LEGAL_CENTER.title}
       description={LEGAL_CENTER.description}
-      art={LEGAL_CENTER.art}
       links={[...LEGAL_CENTER_ENTRIES]}
     />
   );
@@ -495,10 +479,8 @@ export function ClubFinanceWorkspacePage() {
   }
   return (
     <WorkspacePage
-      eyebrow="Ledger Circuit"
       title="Finance & Risk"
       description="Live Club Economics, Cashier Operations, Settlement, And Exposure Without Duplicate Dashboards."
-      art="assets/club-buttons/wallets/desktop/wallet-club-bank-v1.webp"
       liveLine={
         readings.length > 0 ? 'Read Live From This Club' : 'Live Systems Remain Authoritative'
       }
@@ -529,11 +511,9 @@ export function ClubControlWorkspacePage() {
   }
   return (
     <WorkspacePage
-      eyebrow="House Circuit"
       title="Club Control"
       compact
       description="Policy, Communications, Campaigns, Identity, And Permissions In One Governed Workspace."
-      art="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
       liveLine={
         readings.length > 0 ? 'Read Live From This Club' : 'Live Systems Remain Authoritative'
       }

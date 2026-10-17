@@ -1067,25 +1067,10 @@ export default function SettingsPage() {
   return (
     <StandardContentLayout className={styles.page}>
       <AccountSurfaceHeader
-        artwork="images/account/control-room-hero-v1.webp"
-        eyebrow="Account Control // Player Vault"
         title="Control Room"
         description="Sound, Table Display, Alerts, Device Access, Identity Security And Account Data. Every Control Here Is Live On The Felt The Moment You Save."
         status={hasChanges ? 'Changes Pending' : 'Systems Synced'}
-      >
-        <span className={styles.heroMetric}>
-          <small>Identity</small>
-          {userEmail || 'Authenticated'}
-        </span>
-        <span className={styles.heroMetric}>
-          <small>2FA</small>
-          {twoFactorEnabled ? 'Protected' : 'Available'}
-        </span>
-        <span className={styles.heroMetric}>
-          <small>Push</small>
-          {pushEnabled ? 'Connected' : 'Off'}
-        </span>
-      </AccountSurfaceHeader>
+      />
 
       <nav className={styles.controlIndex} aria-label="Settings Sections">
         {[

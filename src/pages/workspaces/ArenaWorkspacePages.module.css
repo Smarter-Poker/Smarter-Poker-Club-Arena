@@ -7,103 +7,12 @@
     linear-gradient(180deg, #05080c 0%, #020407 100%);
 }
 
-.hero {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(240px, 0.85fr);
-  min-height: 310px;
-  overflow: hidden;
-  border: 1px solid rgba(184, 205, 224, 0.36);
-  border-radius: 4px;
-  background: linear-gradient(112deg, rgba(12, 19, 27, 0.98) 0 58%, rgba(5, 10, 16, 0.88));
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.08),
-    0 28px 70px rgba(0, 0, 0, 0.52);
-}
-
-.hero::after {
-  content: '';
-  position: absolute;
-  inset: auto 4% 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #35a7ff, transparent);
-  box-shadow: 0 0 16px rgba(53, 167, 255, 0.8);
-}
-
-.heroCopy {
-  z-index: 1;
-  align-self: center;
-  padding: clamp(28px, 5vw, 68px);
-}
-
-.eyebrow,
-.liveLine,
 .index,
 .signal {
   font-size: 0.68rem;
   font-weight: 800;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-}
-
-.eyebrow {
-  color: #55b2ff;
-}
-
-.hero h1 {
-  max-width: 720px;
-  margin: 10px 0 12px;
-  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
-  font-size: clamp(2.2rem, 6vw, 4.5rem);
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 0.92;
-  text-transform: uppercase;
-}
-
-.hero p {
-  max-width: 610px;
-  margin: 0;
-  color: #9aabba;
-  font-size: clamp(0.95rem, 2vw, 1.15rem);
-  line-height: 1.55;
-}
-
-.liveLine {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 22px;
-  color: #8094a6;
-}
-
-.liveLine > span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #45adff;
-  box-shadow: 0 0 12px #45adff;
-}
-
-.artFrame {
-  position: relative;
-  min-height: 260px;
-  overflow: hidden;
-}
-
-.artFrame::before {
-  content: '';
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  background: linear-gradient(90deg, #0c131b 0%, transparent 48%);
-}
-
-.artFrame img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: saturate(0.82) contrast(1.08);
 }
 
 .grid {
@@ -158,13 +67,6 @@
   margin-top: 3px;
   color: #7f91a1;
   font-size: 0.78rem;
-}
-
-.cardCopy .summary {
-  margin-top: 6px;
-  color: #a9b6c2;
-  font-size: 0.8rem;
-  line-height: 1.45;
 }
 
 .signal {
@@ -316,22 +218,6 @@
     padding: 12px;
   }
 
-  .hero {
-    grid-template-columns: 1fr;
-  }
-
-  .heroCopy {
-    padding: 28px 22px;
-  }
-
-  .artFrame {
-    min-height: 180px;
-  }
-
-  .artFrame::before {
-    background: linear-gradient(180deg, #0c131b, transparent 54%);
-  }
-
   .grid {
     grid-template-columns: 1fr;
   }
@@ -368,58 +254,13 @@
 .page[data-workspace='rewards'] {
   background: #000;
 }
-.page[data-workspace='rewards'] .hero {
-  display: block;
-  min-height: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  overflow: visible;
-}
-.page[data-workspace='rewards'] .hero::after {
-  display: none;
-}
-.page[data-workspace='rewards'] .heroCopy {
-  min-width: 0;
-  padding: 8px 0 20px;
-}
-.page[data-workspace='rewards'] .hero h1 {
-  font:
-    800 clamp(28px, 5vw, 40px)/1.2 'Roboto Condensed',
-    sans-serif;
-  text-transform: none;
-  overflow-wrap: anywhere;
-  text-wrap: balance;
-}
-.page[data-workspace='rewards'] .artFrame {
-  display: none;
-}
-.page[data-workspace='rewards'] .liveLine {
-  display: none;
-}
 
 .page:is([data-workspace='club-control'], [data-workspace='play-records']) {
   max-width: 1200px;
   margin-inline: auto;
   background: #000;
 }
-.page:is([data-workspace='club-control'], [data-workspace='play-records']) .hero {
-  display: block;
-  min-height: 0;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-}
-.page:is([data-workspace='club-control'], [data-workspace='play-records']) .heroCopy {
-  padding: 16px 0;
-}
-.page:is([data-workspace='club-control'], [data-workspace='play-records']) .hero h1 {
-  font-size: clamp(30px, 4vw, 44px);
-}
-.page:is([data-workspace='club-control'], [data-workspace='play-records']) .artFrame {
-  display: none;
-}
+
 .page:is([data-workspace='club-control'], [data-workspace='play-records']) .card {
   background: transparent;
   border: 0;

@@ -1,0 +1,238 @@
+/*
+ * PAGE HELP + PAGE BAR (Dan, 2026-10-17: "WE NEED TO SIMPLY PAGES")
+ *
+ * The page bar is what is left of a page hero once its eyebrow, giant title
+ * and paragraph are gone: the live status and the page's own actions on the
+ * left, the painted "?" on the right. It paints no frame of its own.
+ *
+ * The tutorial panel is a popup, so it wears the house chassis from
+ * metallic-popups.css (its class ends in -popup and it has role="dialog").
+ * Nothing here redraws that chassis; this file only places the panel at the
+ * bottom of the screen and sets the master's inks on its text.
+ *
+ * Inks are the #ClubArenaConsole set only: blue #45adff for labels, silver
+ * #e4e7ec for titles, muted #9aa5b3 for meta, glass #050607.
+ */
+
+.ca-page-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-height: 44px;
+  margin: 0 0 0.75rem;
+  padding: 0.25rem 0;
+}
+
+/* The page bar is the first thing on a page; the "?" holds the top right
+   even when the live row wraps to a second line on a phone. */
+.ca-page-bar > .ca-page-help {
+  order: 2;
+}
+
+.ca-page-bar__live {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.ca-page-bar__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #9aa5b3;
+  font:
+    700 0.65rem/1 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.ca-page-bar__status > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #45adff;
+}
+
+.ca-page-bar__live {
+  min-height: 44px;
+}
+
+.ca-page-bar__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  margin: 0;
+}
+
+.ca-page-bar__metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.ca-page-bar__metric dt {
+  color: #45adff;
+  font:
+    700 0.62rem/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ca-page-bar__metric dd {
+  margin: 0;
+  color: #e4e7ec;
+  font:
+    800 0.86rem/1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+}
+
+.ca-page-bar__metric[data-tone='live'] dd {
+  color: #c8ffd2;
+}
+
+/* Brass, not gold: "YELLOW IS NOT A APPROVED COLOR" (Dan, 2026-10-17). */
+.ca-page-bar__metric[data-tone='attention'] dd {
+  color: #d6ad52;
+}
+
+/* ── The painted "?" ─────────────────────────────────────────────────── */
+
+.ca-page-help {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ca-page-help__icon {
+  display: block;
+  width: 36px;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ca-page-help:active .ca-page-help__icon {
+  transform: scale(0.94);
+}
+
+.ca-page-help:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
+}
+
+/* ── The tutorial, docked at the bottom ─────────────────────────────── */
+
+.ca-tutorial-popup {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: max(12px, env(safe-area-inset-left));
+  z-index: 10050;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 1rem 1.1rem 1.05rem;
+  color: #e4e7ec;
+  outline: none;
+}
+
+.ca-tutorial-popup__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ca-tutorial-popup__count {
+  color: #45adff;
+  font:
+    800 0.66rem/1.2 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ca-tutorial-popup__close {
+  min-height: 32px;
+  padding: 0 0.7rem;
+  font-size: 0.75rem;
+}
+
+.ca-tutorial-popup__title {
+  margin: 0.55rem 0 0;
+  color: #e4e7ec;
+  font:
+    800 1.2rem/1.2 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  text-shadow: 0 1px 0 #050607;
+}
+
+.ca-tutorial-popup__body {
+  margin: 0.45rem 0 0;
+  color: #9aa5b3;
+  font:
+    500 0.9rem/1.5 Inter,
+    sans-serif;
+}
+
+.ca-tutorial-popup__dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 0.85rem;
+}
+
+.ca-tutorial-popup__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #9aa5b3;
+  opacity: 0.45;
+}
+
+.ca-tutorial-popup__dot--on {
+  background: #45adff;
+  opacity: 1;
+}
+
+.ca-tutorial-popup__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.ca-tutorial-popup__actions > button {
+  min-height: 44px;
+}
+
+.ca-tutorial-popup__primary {
+  color: #f4f7fb;
+}
+
+/* The part of the page the current step is talking about. */
+[data-tutorial-focus] {
+  outline: 2px solid #45adff !important;
+  outline-offset: 4px;
+  scroll-margin: 96px 0 240px;
+}

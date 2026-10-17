@@ -38,6 +38,7 @@ import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { generateAvatarSvg } from '../../utils/avatarGenerator';
 import { avatarService } from '../../services/AvatarService';
+import { escapeLikePattern, isOfferableAlias } from '../../utils/aliasRules';
 
 const ADJECTIVES = [
   'River',
@@ -128,6 +129,8 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
   const [realName, setRealName] = useState('');
   const [mounted, setMounted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  /** Synchronous twin of isSaving: a second submit in the same tick is refused. */
+  const savingRef = useRef(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,15 +142,33 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
   const [generatedFallbackUrl, setGeneratedFallbackUrl] = useState<string | null>(null);
 
   const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Fields the player has typed in. A store write never overwrites them. */
+  const aliasTouchedRef = useRef(false);
+  const realNameTouchedRef = useRef(false);
+
+  /* THE FORM IS FILLED FROM THE STORE, NEVER OVER THE PLAYER (2026-10-17).
+     This effect used to run on every change to the `user` OBJECT and rewrite
+     both fields each time. Picking an avatar writes the store (onAvatarChanged
+     below), so a player who typed an alias and then chose an avatar came back
+     to find their alias replaced. A field the player has typed in is theirs;
+     until then it follows the store, which is what lets the real profile row
+     replace a session stub (`email.split('@')[0]`, useAuthUser) when it lands.
+     A store username that is not a legal alias is not offered as one. */
+  useEffect(() => {
+    if (!isOpen || !user) return;
+    if (!aliasTouchedRef.current) {
+      const stored = String(user.username || '');
+      setAlias(isOfferableAlias(stored) ? stored : '');
+    }
+    if (!realNameTouchedRef.current) {
+      setRealName(user.display_name === 'New Player' ? '' : user.display_name || '');
+    }
+  }, [isOpen, user?.id, user?.username, user?.display_name]);
 
   useEffect(() => {
     if (isOpen) {
-      if (user) {
-        setAlias(user.username.startsWith('Player') ? '' : user.username);
-        setRealName(user.display_name === 'New Player' ? '' : user.display_name || '');
-        if (!user.avatar_url) {
-          setGeneratedFallbackUrl(generateAvatarSvg(user.username || 'P', user.username || 'P'));
-        }
+      if (user && !user.avatar_url) {
+        setGeneratedFallbackUrl(generateAvatarSvg(user.username || 'P', user.username || 'P'));
       }
       const _mountTimer = setTimeout(() => setMounted(true), 50);
       return () => clearTimeout(_mountTimer);
@@ -155,8 +176,10 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
       setMounted(false);
       setGeneratedFallbackUrl(null);
       setIsSuccess(false);
+      aliasTouchedRef.current = false;
+      realNameTouchedRef.current = false;
     }
-  }, [isOpen, user]);
+  }, [isOpen, user?.id]);
 
   // Real-time alias checking
   useEffect(() => {
@@ -168,8 +191,8 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
     }
 
     const safeAlias = sanitizeInput(alias);
-    if (!safeAlias || safeAlias === user?.username) {
-      setAliasAvailable(safeAlias === user?.username ? true : null);
+    if (!safeAlias) {
+      setAliasAvailable(null);
       setIsCheckingAlias(false);
       setAliasLocalError(null);
       return;
@@ -191,6 +214,13 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
 
     setAliasLocalError(null);
 
+    // Their own current alias is theirs: nothing to ask the database.
+    if (safeAlias === user?.username) {
+      setAliasAvailable(true);
+      setIsCheckingAlias(false);
+      return;
+    }
+
     if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current);
 
     setIsCheckingAlias(true);
@@ -201,7 +231,9 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
         const { data, error } = await supabase
           .from('profiles')
           .select('id')
-          .ilike('username', safeAlias)
+          // `_` is a one-character wildcard to ILIKE: "Tom_Tamale" also
+          // matched "TomXTamale" and read as Taken. Matched literally now.
+          .ilike('username', escapeLikePattern(safeAlias))
           .neq('id', user?.id)
           .maybeSingle();
 
@@ -229,16 +261,20 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
     const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
     const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
     const num = Math.floor(Math.random() * 99) + 1;
+    aliasTouchedRef.current = true;
     setAlias(`${adj}${noun}${num}`);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingRef.current) return;
+    savingRef.current = true;
     setIsSaving(true);
     setError(null);
 
     if (!hasAvatar) {
       setError('Please select an Avatar.');
+      savingRef.current = false;
       setIsSaving(false);
       return;
     }
@@ -248,12 +284,14 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
 
     if (!safeAlias) {
       setError('Poker Alias is required.');
+      savingRef.current = false;
       setIsSaving(false);
       return;
     }
 
     if (aliasAvailable === false || aliasLocalError) {
       setError(aliasLocalError || 'This Poker Alias is already taken.');
+      savingRef.current = false;
       setIsSaving(false);
       return;
     }
@@ -296,13 +334,15 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
         avatar_url: currentAvatar,
       });
 
+      // The rows are written: the player is through. No pause on a
+      // "Welcome" label first (Dan 2026-10-17: "THIS NEEDS TO UPDATE
+      // INSTANTLY IN REAL TIME").
       setIsSuccess(true);
-      setTimeout(() => {
-        onComplete();
-      }, 500);
+      onComplete();
     } catch (err: any) {
       reportError(err, 'CompleteProfileModal.SaveFailed');
       setError(safeErrorMessage(err, 'Failed to save profile. Try again.'));
+      savingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -416,7 +456,10 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
                       className={styles.input}
                       placeholder="E.G. SharkPro99"
                       value={alias}
-                      onChange={(e) => setAlias(e.target.value)}
+                      onChange={(e) => {
+                        aliasTouchedRef.current = true;
+                        setAlias(e.target.value);
+                      }}
                       minLength={3}
                       maxLength={16}
                       required
@@ -442,7 +485,10 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
                       className={styles.input}
                       placeholder="E.G. John Doe"
                       value={realName}
-                      onChange={(e) => setRealName(e.target.value)}
+                      onChange={(e) => {
+                        realNameTouchedRef.current = true;
+                        setRealName(e.target.value);
+                      }}
                       maxLength={24}
                     />
                   </div>

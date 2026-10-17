@@ -9,9 +9,10 @@
  * switch can cover.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type React from 'react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { TapHaptic } from '../../src/components/haptics/TapHaptic';
 import {
   __resetVibrationCoalescing,
@@ -144,6 +145,104 @@ describe('a tap on the switch', () => {
       } finally {
         HTMLElement.prototype.click = real;
       }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("the host's own native action still happens (2026-10-17)", () => {
+  // Complete Your Profile's ENTER ARENA is a submit button tied to its form by
+  // `form=`. On an iPhone browser the finger lands on this switch, and a click
+  // has ONE activation target: the checkbox. The form never submitted, and two
+  // referred players sat on that screen until they reloaded.
+  const SubmitHost = ({
+    onSubmit,
+    onClick,
+  }: {
+    onSubmit: (e: React.FormEvent) => void;
+    onClick?: (e: React.MouseEvent) => void;
+  }) => (
+    <>
+      <form id="profile-form" onSubmit={onSubmit}>
+        <input name="alias" defaultValue="RiverShark42" />
+      </form>
+      <button type="submit" form="profile-form" onClick={onClick}>
+        Enter Arena
+        <TapHaptic radius="6px" />
+      </button>
+    </>
+  );
+
+  it('a tap on the switch of a submit button submits its form, once', () => {
+    asDevice(IPHONE);
+    vi.useFakeTimers();
+    try {
+      const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault());
+      const onClick = vi.fn();
+      const { container } = render(<SubmitHost onSubmit={onSubmit} onClick={onClick} />);
+      fireEvent.click(switchIn(container)!);
+      expect(onClick).toHaveBeenCalledTimes(1);
+      vi.runAllTimers();
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+      // The browser's own submitter is the host, as a tap on it would set.
+      const submitEvent = onSubmit.mock.calls[0][0] as unknown as { nativeEvent: SubmitEvent };
+      expect((submitEvent.nativeEvent.submitter as HTMLElement | null)?.textContent).toContain(
+        'Enter Arena'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a tap straight on the host (a computer, or the 1px edge) still submits once, not twice', () => {
+    asDevice(IPHONE);
+    vi.useFakeTimers();
+    try {
+      const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault());
+      render(<SubmitHost onSubmit={onSubmit} />);
+      fireEvent.click(screen.getByRole('button', { name: /Enter Arena/ }));
+      vi.runAllTimers();
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a host that cancels its own click is not submitted behind its back', () => {
+    asDevice(IPHONE);
+    vi.useFakeTimers();
+    try {
+      const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault());
+      const { container } = render(
+        <SubmitHost onSubmit={onSubmit} onClick={(e) => e.preventDefault()} />
+      );
+      fireEvent.click(switchIn(container)!);
+      vi.runAllTimers();
+      expect(onSubmit).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an ordinary type="button" host is left exactly as it was', () => {
+    asDevice(IPHONE);
+    vi.useFakeTimers();
+    try {
+      const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault());
+      const onClick = vi.fn();
+      const { container } = render(
+        <form onSubmit={onSubmit}>
+          <button type="button" onClick={onClick}>
+            Insure
+            <TapHaptic />
+          </button>
+        </form>
+      );
+      fireEvent.click(switchIn(container)!);
+      vi.runAllTimers();
+      expect(onClick).toHaveBeenCalledTimes(1);
+      expect(onSubmit).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

@@ -1,0 +1,3 @@
+# tests/the-iphone-tap-still-submits.law.test.tsx
+
+Dan 2026-10-17: two referred players sat on Complete Your Profile after picking an avatar because ENTER ARENA did nothing on iPhone Safari. TapHaptic's invisible switch over every pop-up plate was the click's activation target, so a `type="submit"` plate never submitted its form. The law runs the real modal with an iPhone user agent, taps the switch where a finger lands, and pins that the profile saves exactly once and the player is let in at once; that TapHaptic finishes its host's native submit/reset; that an alias the player typed survives a store rewrite; that a session stub is never offered as an alias; and that the availability check matches `_` literally.

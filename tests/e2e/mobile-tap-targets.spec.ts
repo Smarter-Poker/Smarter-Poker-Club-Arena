@@ -43,6 +43,9 @@ const ROUTES = [
   `rate-audit?club=${CLUB}`,
   'settlement-history',
 ];
+// The everyday Club Data screen's h1 is "<CLUB NAME> - CLUB DATA" (Dan 2026-10-17),
+// or plain "Club Data" before the club name has loaded.
+const EVERYDAY_CLUB_DATA_HEADING = /^(?:.+ - )?Club Data$/i;
 const REQUIRED_DATA_ROUTES = new Set([
   `clubs/${CLUB}/data`,
   `clubs/${CLUB}/data/advanced`,
@@ -57,7 +60,8 @@ async function requireDataRouteReady(page: import('@playwright/test').Page, rout
   const routePath = route.split('?')[0];
   if (route === `clubs/${CLUB}/data`) {
     // #6895: the PokerBros-style everyday screen. Its controls are measured below.
-    await expect(page.getByRole('heading', { name: 'Club Data', exact: true })).toBeVisible({
+    // Dan 2026-10-17: its header names the club ("CLUB JAQK - CLUB DATA").
+    await expect(page.getByRole('heading', { name: EVERYDAY_CLUB_DATA_HEADING })).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByRole('button', { name: 'Report', exact: true })).toBeVisible();

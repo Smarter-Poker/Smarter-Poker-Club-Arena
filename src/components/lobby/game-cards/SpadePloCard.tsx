@@ -55,7 +55,7 @@ export const SPADE_PLO_ZONES = {
      5.71cqw) fits whole (72/1177 = 6.12cqw); the raised pill leaves the room. */
   styleNote: { x: 152, y: 314, width: 880, height: 72, align: 'left' },
   /* Raised 42 with the painted pill (chassis-5df05c9d8f72): its rim now ends
-     near y 276, clear of the style note at y 320. */
+     near y 276, clear of the style note at y 314. */
   status: { x: 792, y: 182, width: 232, height: 64, align: 'center' },
   gameType: { x: 150, y: 590, width: 152, height: 160, align: 'center' },
   stakes: { x: 394, y: 590, width: 152, height: 160, align: 'center' },

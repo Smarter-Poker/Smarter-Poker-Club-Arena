@@ -80,11 +80,15 @@ BEGIN
   v_contract := jsonb_build_array(
     jsonb_build_object(
       'signature', 'public.fn_cashier_conservation_report(uuid)',
-      -- Same report contract; qualified 20261016230420 reads cutoff statistics
-      -- from the analyzed baseline table, preserving the exact report. The
-      -- exact preimage and installed replacement are the only accepted definitions.
-      'hash', '9bc52994306a0c6519cbea5e031dce21',
-      'replacement_hash', 'f3728357280a30789ff8d7bb30140eae'
+      -- Same report contract; qualified 20261017184739 reads sealed UTC days
+      -- from ca_chip_wallet_day_totals and only the unsealed tail raw, so the
+      -- read no longer grows with history (issue #7309), preserving the exact
+      -- report. The installed predecessor (20261016230420) and this replacement
+      -- are the only accepted definitions;
+      -- scripts/ci/test-cashier-conservation-sealed-days-postgres.py certifies
+      -- the replacement hash against the definition the migration installs.
+      'hash', 'f3728357280a30789ff8d7bb30140eae',
+      'replacement_hash', '884cbcbfae7f556ef0d5972e7e9b24c9'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_recovery_receipts(uuid,uuid[],text[])',

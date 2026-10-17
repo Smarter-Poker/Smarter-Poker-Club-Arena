@@ -88,8 +88,11 @@ test.describe('Reserved Admin - every Club Operations registry route', () => {
       if (operation.id === 'data') {
         // #6895: data is the PokerBros-style everyday screen; its Report action
         // opens the full operator report, which keeps the Simple/Advanced tool
-        // and the Club Operations frame certified below.
-        await expect(page.getByRole('heading', { name: 'Club Data', exact: true })).toBeVisible({
+        // and the Club Operations frame certified below. Dan 2026-10-17: the
+        // everyday header names the club ("CLUB JAQK - CLUB DATA").
+        await expect(
+          page.getByRole('heading', { name: /^(?:.+ - )?Club Data$/i })
+        ).toBeVisible({
           timeout: 30_000,
         });
         await page.getByRole('button', { name: 'Report', exact: true }).click();

@@ -1097,9 +1097,19 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
     padding: 3.6cqw 1.6cqw;
   }
 
+  /* The full table name gets its own line (live check 2026-10-17: beside the
+     reason tag, "NLH .25/.50 Action" and "NLH .25/.50 Classic" both cut to
+     "NLH .25/.50..." and the row no longer said which game it was). The tag
+     wraps under the name rather than truncating it. */
   .multi-table-page__quickjoin-name {
     flex: 1 1 100%;
+    flex-wrap: wrap;
+    row-gap: 0.8cqw;
     font-size: 5.8cqw;
+  }
+
+  .multi-table-page__quickjoin-label {
+    flex: 1 1 100%;
   }
 
   .multi-table-page__quickjoin-tag {

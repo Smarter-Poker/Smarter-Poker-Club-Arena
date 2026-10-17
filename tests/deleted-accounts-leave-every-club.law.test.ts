@@ -116,4 +116,25 @@ describe('a deleted account leaves every club and every list', () => {
     expect(fix).toContain('DELETION_BANK_LOCK_PREIMAGE_CHANGED');
     expect(fix).not.toMatch(/DELETE FROM|cron\.schedule|is_horse/i);
   });
+  it('keeps deleted accounts out of the Club Data player rankings (2026-10-17)', () => {
+    const files = readdirSync(dir).filter((name) =>
+      name.endsWith('_a_deleted_account_leaves_the_club_data_player_rankings.sql')
+    );
+    expect(files).toHaveLength(1);
+    const clubData = readFileSync(`${dir}/${files[0]}`, 'utf8');
+    for (const fn of [
+      'public.ca_club_player_breakdown(uuid,date,date,integer)',
+      'public.ca_club_player_page_core_20261006(uuid,date,date,text,text,jsonb,integer)',
+      // The Players CSV export builds the same list.
+      'public.ca_club_player_export_start(uuid,date,date,text,uuid)',
+    ]) {
+      expect(clubData).toContain(`'fn', '${fn}'`);
+      expect(clubData).toContain(`pg_get_functiondef('${fn}'::regprocedure)) > 0`);
+    }
+    // One predicate shared by the rows, the totals and both counts.
+    expect(clubData).toContain("WHERE dp.id = a.user_id AND dp.status = 'deleted'");
+    // The replacement may change the body and nothing else.
+    expect(clubData).toContain('attributes changed');
+    expect(clubData).not.toMatch(/is_horse|DELETE FROM|cron\.schedule/i);
+  });
 });

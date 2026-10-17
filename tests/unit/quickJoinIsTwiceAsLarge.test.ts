@@ -34,4 +34,10 @@ describe('Quick Join is twice its old size', () => {
     expect(rule('.multi-table-page__quickjoin-meta', phone)).toContain('font-size: 4.8cqw');
     expect(rule('.multi-table-page__quickjoin-cta', phone)).toContain('font-size: 5.2cqw');
   });
+
+  it('on a phone the table name has its own line, so its style is never cut off', () => {
+    const phone = CSS.indexOf('@media (max-width: 703px)');
+    expect(rule('.multi-table-page__quickjoin-name', phone)).toContain('flex-wrap: wrap');
+    expect(rule('.multi-table-page__quickjoin-label', phone)).toContain('flex: 1 1 100%');
+  });
 });

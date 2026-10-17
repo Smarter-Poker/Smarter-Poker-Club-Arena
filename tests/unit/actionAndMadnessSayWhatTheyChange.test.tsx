@@ -238,3 +238,14 @@ describe('the desktop board prints the note after the style word', () => {
     expect(screen.queryByText(/No Antes, No Bombs/)).toBeNull();
   });
 });
+
+describe('the desktop board never cuts the note short (2026-10-17)', () => {
+  it('the table-name line wraps instead of clipping', async () => {
+    const { readFileSync } = await import('node:fs');
+    const css = readFileSync('src/components/lobby/LobbyTable.css', 'utf8');
+    const at = css.indexOf('.lt-name__table {');
+    const rule = css.slice(at, css.indexOf('}', at));
+    expect(rule).toContain('white-space: normal');
+    expect(rule).toContain('overflow-wrap: anywhere');
+  });
+});

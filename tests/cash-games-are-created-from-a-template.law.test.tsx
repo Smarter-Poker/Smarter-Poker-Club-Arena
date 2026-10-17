@@ -108,7 +108,7 @@ const defaults = (template: string, variant: string) => {
       ? { enabled: false, trigger: null, ante_bb: null, boards: null }
       : {
           enabled: true,
-          trigger: template === 'action' ? 'timed_15m' : 'every_orbit',
+          trigger: template === 'action' ? 'timed_20m' : 'timed_10m',
           ante_bb: template === 'action' ? 2 : 3,
           boards: 2,
         },
@@ -405,20 +405,20 @@ describe("I1 - the template's promise is printed, never offered (2026-09-09)", (
     expect(rows.map((r) => r.key)).toEqual(['ante', 'vpip', 'bombs']);
     expect(rows[0].value).toBe('One Small Blind From Each Dealt In Player');
     expect(rows[1].value).toBe('30% Over 10 Hands');
-    expect(rows[2].value).toBe('Double Board, 2 BB Ante, Every 15 Minutes');
+    expect(rows[2].value).toBe('Double Board, 2 BB Ante, Every 20 Minutes');
     for (const r of rows) expect(r.note).toContain('Set By The Action Template');
     // Nothing in the group is a control.
     expect(promise.querySelectorAll('input, button, select').length).toBe(0);
   });
 
-  it('a Classic game prints No Ante, No VPIP Floor, No Bomb Pots - the blurb, kept', async () => {
+  it('a Classic game prints No Ante, No Minimum VPIP, No Bomb Pots - the blurb, kept', async () => {
     await walkToRules(/^Classic/, 'NLH', /Manual Individual Table/);
     const values = [
       ...screen
         .getByTestId('cash-create-promise')
         .querySelectorAll('.cash-create__rule-readout__value'),
     ].map((v) => v.textContent);
-    expect(values).toEqual(['No Ante', 'No VPIP Floor', 'No Bomb Pots']);
+    expect(values).toEqual(['No Ante', 'No Minimum VPIP', 'No Bomb Pots']);
     // The group title and every note say which template set it.
     expect(screen.getAllByText(/Set By The Classic Template/).length).toBe(4);
   });

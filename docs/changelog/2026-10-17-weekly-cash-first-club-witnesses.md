@@ -10,4 +10,6 @@ The native PostgreSQL 17 regression executes both complete functions against ind
 
 Production installation, exact source readback and the original week's financial receipts remain separate acceptance steps recorded in the task checkpoint.
 
+The routing migration's first installer reached production at 01:36:45 UTC after a provider queue delay and correctly refused `routing_period_scheduler_owned`; durable readback confirmed absent history and unchanged source. The two exact migration hashes now use the installer's existing bounded transaction-level accounting admission. Its one lock wait, maintenance-runway checks and fresh freeze/boundary checks remain unchanged, and the original migration still performs all its own guards. The selected-source regression covers both filenames and refuses altered bytes.
+
 Local validation: TypeScript passed with zero errors; the focused regression, historical routing guard and law registry passed 973 checks. The complete required accounting parent passed, including the new child's 37 semantic cases and 23 installer refusals against the final 8,103-byte migration. Exact before/after source review and an independent review found no changed financial path.

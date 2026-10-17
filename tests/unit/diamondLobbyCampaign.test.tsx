@@ -7,7 +7,9 @@ describe('Diamond Arena campaign ownership', () => {
   it('does not offer a chip-club promotion or a route the arena refuses', () => {
     const source = readFileSync('src/pages/ClubHomePage.tsx', 'utf8');
     const campaign = source.slice(source.indexOf('          campaign={'));
-    expect(campaign).toMatch(/^\s*campaign=\{\s*!isAutomaticArena && \(/);
+    expect(campaign).toMatch(
+      /^\s*campaign=\{\s*!isAutomaticArena && club\.banner_url && !isRetiredClubBanner\(club\.banner_url\) \? \(/
+    );
     expect(campaign).toContain('navigate(`/clubs/${clubId}/announcements`)');
   });
 

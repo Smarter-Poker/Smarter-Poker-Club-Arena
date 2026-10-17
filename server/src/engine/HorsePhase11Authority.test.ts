@@ -112,14 +112,14 @@ function expectedKey(identity: Record<string, unknown>): string {
 describe('P11.3 the declared-work source d9190c9e requalifies each previously selected pack at generation 3', () => {
   const selected = HORSE_PHASE11_VARIANTS.filter((v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null);
 
-  it('PLO8 is selected at generation 3 on d9190c9e, PLO5 and PLO6 stay unselected, and every retained generation 1 and 2 is refused under the running contract', () => {
+  it('PLO8 and PLO5 are selected at generation 3 on d9190c9e, PLO6 stays unselected, and every retained generation 1 and 2 is refused under the running contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE11_VARIANTS) {
       const current = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant];
-      if (variant === 'plo8') {
+      if (variant === 'plo8' || variant === 'plo5') {
         expect(Object.isFrozen(current)).toBe(true);
         expect(current, variant).toMatchObject({
           schema: 'horse-qualified-authority-selection-v1',

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
+import { cancelTextFit, queueTextFit, type FitTextTarget } from './fitTextBatch';
 
 /**
  * Shrink a single-line label until it fits its zone (or, where the caller
@@ -73,116 +74,23 @@ export function useFitText<T extends HTMLElement = HTMLElement>(
     const zone = el.parentElement;
     if (!zone) return;
 
-    /* Compare text and zone in the same layout coordinates. A parent's
-       pop-open scale changes getBoundingClientRect but not scrollWidth,
-       otherwise fitting during that animation permanently halves the text.
-       Computed width retains fractional pixels without the transform. */
-    const pixels = (value: string) => Number.parseFloat(value) || 0;
-    const available = () => {
-      const css = getComputedStyle(zone);
-      const innerWidth =
-        pixels(css.width) +
-        (css.boxSizing === 'border-box'
-          ? -pixels(css.borderLeftWidth) - pixels(css.borderRightWidth)
-          : pixels(css.paddingLeft) + pixels(css.paddingRight));
-      return Math.min(zone.clientWidth, innerWidth || zone.clientWidth);
-    };
-    const fitValue = (ratio: number) =>
-      ratio >= 0.995 ? '1' : String(Math.floor(ratio * 10000) / 10000);
-    const setFit = (ratio: number) => el.style.setProperty('--fit', fitValue(ratio));
-    const fontPx = () => pixels(getComputedStyle(el).fontSize);
-
-    /* One line: shrink until it fits, converging on what really rendered. */
-    const fitLine = (): number => {
-      el.style.setProperty('--fit', '1');
-      const room = available();
-      const needed = el.scrollWidth * scaleX;
-      /* Nothing to measure (jsdom), or it already fits at its designed size:
-         never grow it. */
-      if (!room || !needed || needed <= room) return 1;
-
-      let ratio = Math.max(minRatio, room / needed);
-      for (let pass = 0; pass < 4; pass += 1) {
-        el.style.setProperty('--fit', String(Math.floor(ratio * 10000) / 10000));
-        const actual = el.scrollWidth * scaleX;
-        if (actual <= room || ratio <= minRatio) break;
-        const corrected = Math.max(minRatio, ratio * (room / actual));
-        if (ratio - corrected < 0.0005) break;
-        ratio = corrected;
-      }
-      return ratio;
-    };
-
-    /* Wrapped: the widest line must fit the zone and the block must stay
-       within maxLines. Lines are read off the text's own client rects (one
-       per line box), which are fractional: a block that fills its zone has an
-       integer scrollWidth a hair over the zone's fractional width, and
-       measuring that way never converges. The rects are in viewport space, so
-       a parent's scale is divided out, as the one-line path's computed width
-       already is. Returns null when no ratio above the floor satisfies both. */
-    const wrappedLines = () => {
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      const rects = Array.from(range.getClientRects());
-      const room = available();
-      const scale = room ? zone.getBoundingClientRect().width / room || 1 : 1;
-      let widest = 0;
-      for (const rect of rects) widest = Math.max(widest, rect.width / scale);
-      return { lines: rects.length, widest: widest * scaleX };
-    };
-    const fitWrapped = (): number | null => {
-      el.dataset.fitWrap = 'true';
-      let ratio = 1;
-      for (let pass = 0; pass < 8; pass += 1) {
-        el.style.setProperty('--fit', String(Math.floor(ratio * 10000) / 10000));
-        const room = available();
-        const { lines, widest } = wrappedLines();
-        if (!lines) return null;
-        const wide = widest > room + 0.5;
-        const tall = lines > maxLines;
-        if (!wide && !tall) return ratio;
-        if (ratio <= minRatio) return null;
-        let next = ratio;
-        if (wide) next = Math.min(next, ratio * (room / widest));
-        /* Re-flow is discrete: a line count only changes at a word boundary,
-           so step down and look again. */
-        if (tall) next = Math.min(next, ratio * 0.94);
-        next = Math.max(minRatio, next);
-        if (ratio - next < 0.0005) return null;
-        ratio = next;
-      }
-      return null;
-    };
-
-    let disposed = false;
+    // The same layout algorithm now runs one shared read/write cohort before
+    // paint, instead of forcing a layout for every label on the game board.
+    const target: FitTextTarget = { element: el, zone, scaleX, minRatio, wrapBelow, maxLines };
+    let active = true;
     const fit = () => {
-      if (disposed) return;
-      delete el.dataset.fitWrap;
-      const line = fitLine();
-      if (wrapBelow === undefined || line >= wrapBelow) {
-        setFit(line);
-        return;
-      }
-      const linePx = fontPx();
-      const wrapped = fitWrapped();
-      if (wrapped !== null && fontPx() > linePx * 1.05) {
-        setFit(wrapped);
-        return;
-      }
-      delete el.dataset.fitWrap;
-      setFit(line);
+      if (active) queueTextFit(target);
     };
-
     fit();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(fit);
-    observer.observe(zone);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(fit);
+    observer?.observe(zone);
     if (typeof document !== 'undefined' && 'fonts' in document) {
       document.fonts.ready.then(fit).catch(() => undefined);
     }
     return () => {
-      disposed = true;
-      observer.disconnect();
+      active = false;
+      observer?.disconnect();
+      cancelTextFit(target);
     };
   }, [text, scaleX, minRatio, wrapBelow, maxLines, enabled]);
 

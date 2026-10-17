@@ -1,7 +1,26 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MttPremiumCard } from '../../src/components/lobby/game-cards/MttPremiumCard';
 import type { ArenaGameCardData } from '../../src/components/lobby/game-cards/arenaGameCardTypes';
+// Flush the same shared pre-paint cohort the browser runs after commit.
+let frames = new Map<number, FrameRequestCallback>();
+let nextFrame = 0;
+beforeEach(() => {
+  frames = new Map();
+  nextFrame = 0;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frames.set(++nextFrame, callback);
+    return nextFrame;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+});
+function paint() {
+  act(() => {
+    const ready = [...frames.values()];
+    frames.clear();
+    for (const frame of ready) frame(0);
+  });
+}
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -57,6 +76,7 @@ describe('cash-style tournament card', () => {
       );
       const card = view.container.querySelector('.agc-mtt-premium')!;
       expect(observe).toHaveBeenCalledWith(card);
+      paint();
       expect(measured).not.toHaveBeenCalled();
       expect(screen.getByText('Sunday Deep Stack')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Register' }));
@@ -67,6 +87,7 @@ describe('cash-style tournament card', () => {
           {} as IntersectionObserver
         )
       );
+      paint();
       expect(measured).not.toHaveBeenCalled();
       act(() =>
         approach(
@@ -74,6 +95,7 @@ describe('cash-style tournament card', () => {
           {} as IntersectionObserver
         )
       );
+      paint();
       expect(measured).toHaveBeenCalled();
       expect(screen.getByText('Sunday Deep Stack').style.getPropertyValue('--fit')).toBe('1');
       expect(disconnect).toHaveBeenCalledOnce();
@@ -86,6 +108,7 @@ describe('cash-style tournament card', () => {
           {} as IntersectionObserver
         )
       );
+      paint();
       expect(measured).not.toHaveBeenCalled();
     }
   );
@@ -109,6 +132,7 @@ describe('cash-style tournament card', () => {
     const measured = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(80);
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(100);
     const view = render(<MttPremiumCard data={data} actions={{ primaryLabel: 'Register' }} />);
+    paint();
     expect(measured).toHaveBeenCalled();
     expect(constructor).not.toHaveBeenCalled();
     view.unmount();
@@ -119,6 +143,7 @@ describe('cash-style tournament card', () => {
     } as DOMRect);
     measured.mockClear();
     render(<MttPremiumCard data={data} actions={{ primaryLabel: 'Register' }} />);
+    paint();
     expect(measured).toHaveBeenCalled();
   });
   it('shows live tournament facts, status and variant together', () => {

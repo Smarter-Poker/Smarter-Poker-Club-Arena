@@ -303,7 +303,10 @@ test.describe('Production Cashier Certification', () => {
     );
     await singleAmount.fill('0.20');
     await expect(singleAmount).toHaveAttribute('aria-invalid', 'false');
-    const selectedPlayer = transferDialog.getByRole('region', { name: 'Selected Player' });
+    const selectedPlayer = transferDialog.getByRole('region', {
+      name: 'Selected Player',
+      exact: true,
+    });
     await expect(selectedPlayer).toBeVisible();
     await expect(selectedPlayer).toContainText('ID');
     await expect(selectedPlayer).toContainText('Player Wallet');

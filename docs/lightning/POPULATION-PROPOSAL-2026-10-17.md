@@ -2,7 +2,7 @@
 
 AUTHORIZED, NOT EXECUTED. The owner approved the exact23swap and then the two substitutions below. Protected checks and fresh full-cohort eligibility remain required. Never replay the completed historical swap.
 
-Operation: `lightning-action-madness-roster-amended-20261017`. Exact manifest SHA256: `318717cd138b36a2c4af4f395202aa2720b97b87f33ad08ad320311100ea47b5`.
+Operation: `lightning-action-madness-roster-amended-20261017`. Exact manifest SHA256: `d86d1becf8bca8c0f05d29309a18f10133b9f18eed72e57e7b1a2b3fffeda049`.
 
 Replace23currently day-blocked pilot horses with23existing active internal cash/both horses, preserving72horses. No Classic departures, retagging, forced moves, new identities, agreement changes or unrelated seat/booking changes. Samantha and009 remain retained.
 

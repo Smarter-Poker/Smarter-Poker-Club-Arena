@@ -12,7 +12,7 @@ import { assertPilotClub, PILOT } from './prepare-lightning-private-pilot.mjs';
 export const ROSTER_CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
 export const ROSTER_OPERATION = 'lightning-action-madness-roster-amended-20261017';
 export const ROSTER_MANIFEST_SHA256 =
-  '318717cd138b36a2c4af4f395202aa2720b97b87f33ad08ad320311100ea47b5';
+  'd86d1becf8bca8c0f05d29309a18f10133b9f18eed72e57e7b1a2b3fffeda049';
 export const ROSTER_PAIRS = Object.freeze(
   [
     {

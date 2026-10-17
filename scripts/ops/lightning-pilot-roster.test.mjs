@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +10,7 @@ import {
   assertIncomingEligibility,
   ROSTER_CLUSTERS,
   ROSTER_OPERATION,
+  ROSTER_MANIFEST_SHA256,
   createRosterAdapter,
   prepareRoster,
   executeRoster,
@@ -783,4 +785,23 @@ test('atomic funding proof survives subsequent natural wallet spend and retains 
     f.state.members.find((m) => m.user_id === ROSTER_PAIRS[0].incoming).chip_balance,
     '190.00'
   );
+});
+
+test('maintained approved manifest binds every pair and admission identity to the exact source and bytes', () => {
+  const raw = readFileSync(
+    new URL('../../docs/lightning/POPULATION-ROSTER-MANIFEST-2026-10-17.json', import.meta.url)
+  );
+  const manifest = JSON.parse(raw);
+  assert.deepEqual(manifest.pairs, ROSTER_PAIRS);
+  assert.equal(manifest.admissionPlan.length, 23);
+  const admitted = manifest.admissionPlan.map((p) => p.playerId);
+  assert.equal(new Set(admitted).size, 23);
+  assert.deepEqual([...admitted].sort(), ROSTER_PAIRS.map((p) => p.incoming).sort());
+  assert.equal(manifest.operation, ROSTER_OPERATION);
+  assert.equal(manifest.clubId, ROSTER_CLUB);
+  assert.deepEqual([manifest.actionClusterId, manifest.madnessClusterId], ROSTER_CLUSTERS);
+  assert.equal(manifest.fundingPerIncoming, 200);
+  assert.equal(manifest.grossFunding, 4600);
+  assert.equal(manifest.rules.preserve72HorseCount, true);
+  assert.equal(createHash('sha256').update(raw).digest('hex'), ROSTER_MANIFEST_SHA256);
 });

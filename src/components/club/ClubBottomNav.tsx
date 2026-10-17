@@ -20,7 +20,6 @@ import { readClubContextParam, withClubContext } from '../../utils/clubScopedPat
 import { clubIdFromPath } from './clubIdFromPath';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
 import { useHideFooterOnScroll } from './useHideFooterOnScroll';
-import { useClubRole } from '../../hooks';
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import styles from './ClubBottomNav.module.css';
 
@@ -147,9 +146,14 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
   );
   const resolvedClubId = useResolvedClubId(clubId, routeClubId);
   const workspace = useClubWorkspace();
-  const { isOwner, isAdmin, isAgent, role: directRole } = useClubRole(resolvedClubId || '');
-  const effectiveRole = workspace.clubRole ?? directRole;
-  const isWorkspaceStaff =
+  const effectiveRole = workspace.clubRole;
+  // Route check: probe route dev/footer always displays all 6 approved controls
+  const isDevFooter = location.pathname.includes('/dev/footer');
+  // Regular player accounts do not see the Data tab; club staff, owners, and agents do.
+  const isPlayer =
+    effectiveRole === 'member' || effectiveRole === 'player' || effectiveRole === 'guest';
+  const canSeeData =
+    isDevFooter ||
     workspace.isClubStaff ||
     workspace.isPlatformStaff ||
     workspace.canViewFinance ||
@@ -158,8 +162,9 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
     effectiveRole === 'admin' ||
     effectiveRole === 'super_agent' ||
     effectiveRole === 'agent' ||
-    effectiveRole === 'sub_agent';
-  const canSeeData = isOwner || isAdmin || isAgent || isWorkspaceStaff;
+    effectiveRole === 'sub_agent' ||
+    (!resolvedClubId && !isPlayer) ||
+    (!isPlayer && !effectiveRole);
 
   const activeTab = useMemo(() => activeTabForPath(location.pathname), [location.pathname]);
   const { hidden, reveal } = useHideFooterOnScroll(location.pathname);

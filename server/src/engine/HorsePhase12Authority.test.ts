@@ -129,7 +129,7 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
   );
 
-  it('FLH generations 2 and 3 are retained and FLH generation 4 is selected on d9190c9e; each pack keeps its own contract digest, FLH the frozen v1', () => {
+  it('FLH generations 2 and 3 are retained, FLH generation 4 and Crazy Pineapple generation 1 are selected on d9190c9e; each pack keeps its own contract digest, FLH the frozen v1', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
     // FLH's generation-1 selection measured policy digest a55db7fe..., which
@@ -137,8 +137,10 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     // under contract v1 on 9d567463 and selected at generation 2. The PFR
     // repair moved it again; generation 3 requalified the repaired source.
     // The declared-work change (2026-10-16) moved it again; generation 4
-    // requalified the declared-work source d9190c9e (2026-10-17).
-    expect(selected).toEqual(['flh']);
+    // requalified the declared-work source d9190c9e (2026-10-17). Crazy
+    // Pineapple's first selection (generation 1) qualified the same source
+    // under contract v2 (2026-10-17).
+    expect(selected).toEqual(['pineapple', 'flh']);
     expect(RETIRED_2026_10_16_PHASE12_SELECTIONS.flh).toMatchObject({
       sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
       contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS.flh,
@@ -186,11 +188,12 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
         packVersion: REMAINING_VARIANT_PACKS[variant].version,
         contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS[variant],
         sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
-        approvalGeneration: 4,
+        approvalGeneration: variant === 'flh' ? 4 : 1,
         expiresAt: null,
         withdrawn: null,
       });
-      // 2026-10-17: generation 4 measured the running policy digest, so the
+      // 2026-10-17: FLH generation 4 and Crazy Pineapple generation 1
+      // measured the running policy digest, so the
       // committed selection is admitted from its shipped evidence.
       expect(release.status, variant).toBe('admitted');
       expect(selectedHorsePhase12Authority(variant, release), variant).not.toBeNull();
@@ -267,7 +270,7 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     expect(PHASE12_PROTECTED_RELEASE_SELECTIONS.flh!.approvalGeneration).toBeGreaterThan(
       retired.approvalGeneration
     );
-    for (const variant of ['short_deck', 'pineapple', 'flo8'] as const)
+    for (const variant of ['short_deck', 'flo8'] as const)
       expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
   });
 
@@ -398,7 +401,10 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
         expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
     // Every selected pack names a qualified:true file on its running policy.
-    expect(qualifiedSelected).toEqual(['flh:d9190c9e/phase12-qualification-2026-10-17-flh.json']);
+    expect(qualifiedSelected.sort()).toEqual([
+      'flh:d9190c9e/phase12-qualification-2026-10-17-flh.json',
+      'pineapple:d9190c9e/phase12-qualification-2026-10-17-pineapple.json',
+    ]);
   });
 });
 

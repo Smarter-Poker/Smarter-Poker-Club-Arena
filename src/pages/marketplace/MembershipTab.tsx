@@ -537,12 +537,10 @@ export default function MembershipTab({
 
   return (
     <>
+      {/* Dan, 2026-10-17: the intro paragraph is gone; the section keeps its
+          title. */}
       <div className={styles.sectionIntro}>
         <h2 className={styles.sectionTitle}>VIP Membership</h2>
-        <p className={styles.sectionSub}>
-          VIP Unlocks Rabbit Hunt, Stack In Big Blinds, Offline Protection, Auto Time Bank,
-          Throwables, And Daily Diamond Bonuses Across Smarter.Poker And Club Arena.
-        </p>
       </div>
 
       {!catalogVerified && (

@@ -204,12 +204,10 @@ export default function DiamondsTab({
   return (
     <div className={styles.root}>
       {/* ── Title ──────────────────────────────────────────────────────── */}
+      {/* Dan, 2026-10-17: the kicker and the intro sentence are gone; the
+          section keeps its title. */}
       <div className={styles.titleRow}>
-        <span className={styles.eyebrow}>Secure Club Arena Currency</span>
         <h2 className={styles.title}>Diamond Vault</h2>
-        <p className={styles.titleSub}>
-          Choose A Bundle. Your Wallet Updates After Payment Clears.
-        </p>
       </div>
 
       {(!catalogVerified || !cardPaymentAvailable) && (

@@ -809,15 +809,10 @@ export default function StoreTab({
         </RewardsOverlayPortal>
       )}
 
+      {/* Dan, 2026-10-17: the kicker, the intro sentence and the decorative
+          "Live Delivery" line are gone; the section keeps its title. */}
       <div className={styles.storeIntro}>
-        <div>
-          <span className={styles.eyebrow}>Curated For This Club</span>
-          <h2 className={styles.sectionTitle}>Premium Table Upgrades</h2>
-          <p className={styles.sectionSub}>
-            Own A New Look Or Add A Gameplay Perk. Every Eligible Purchase Appears Without A Reload.
-          </p>
-        </div>
-        <span className={styles.deliveryStatus}>Live Delivery</span>
+        <h2 className={styles.sectionTitle}>Premium Table Upgrades</h2>
       </div>
 
       {/* Category filters */}

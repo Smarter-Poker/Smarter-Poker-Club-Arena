@@ -23,13 +23,16 @@
 -- alarm whose condition still holds is never touched: an unfinished visit
 -- raises a new one, and an incomplete week stays alarmed until it completes.
 --
--- Preimage: the live body, the postimage of 20261017121500 (6bd020f0...,
--- byte-identical to scripts/ci/fixtures/weekly-in-progress-tick/scope-after.sql);
--- postimage 7065a449..., derived from that fixture and read-only on production. Each anchor must occur exactly once. Owner, SECURITY DEFINER,
+-- Preimage: the live body, the postimage of 20261017132500 (56eb1c0d...,
+-- byte-identical to scripts/ci/fixtures/weekly-in-progress-tick/scope-after-chunked.sql);
+-- postimage 86c6a68e..., derived from that fixture and read-only on production.
+-- (Rebased before install: 20261017132500 moved the body from 6bd020f0 after
+-- this file merged, so the merged pins could not have applied.) Each anchor
+-- must occur exactly once. Owner, SECURITY DEFINER,
 -- configuration and ACL are proven unchanged; the readback must be exact. No
 -- scheduler lock: a tick already running keeps the body it started with, and
 -- the new body calls nothing that does not already exist.
--- @live-proof: md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure)) = '7065a449686dd0ac55904f4118ae7428'
+-- @live-proof: md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure)) = '86c6a68eec0928c90aea883b48101c9f'
 
 BEGIN;
 SET LOCAL lock_timeout = '3s';
@@ -94,10 +97,10 @@ BEGIN
     RAISE EXCEPTION 'scheduler alarms: owner/target mismatch';
   END IF;
   v_def := pg_get_functiondef(v_oid);
-  IF md5(v_def) = '7065a449686dd0ac55904f4118ae7428' THEN
+  IF md5(v_def) = '86c6a68eec0928c90aea883b48101c9f' THEN
     RETURN;
   END IF;
-  IF md5(v_def) <> '6bd020f058339c34e51a88717cf4fbd6' THEN
+  IF md5(v_def) <> '56eb1c0de1083bddd8a1e218a85df511' THEN
     RAISE EXCEPTION 'scheduler alarms: unexpected live body %', md5(v_def);
   END IF;
   IF (length(v_def) - length(replace(v_def, c_old3, ''))) / length(c_old3) <> 1
@@ -105,7 +108,7 @@ BEGIN
     RAISE EXCEPTION 'scheduler alarms: an anchor is not exactly once';
   END IF;
   v_new := replace(replace(v_def, c_old3, c_new3), c_old4, c_new4);
-  IF md5(v_new) <> '7065a449686dd0ac55904f4118ae7428' THEN
+  IF md5(v_new) <> '86c6a68eec0928c90aea883b48101c9f' THEN
     RAISE EXCEPTION 'scheduler alarms: computed postimage is %', md5(v_new);
   END IF;
   SELECT p.proowner, p.prosecdef, p.proconfig, p.proacl::text

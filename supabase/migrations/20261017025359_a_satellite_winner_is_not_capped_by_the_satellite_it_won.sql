@@ -1,3 +1,10 @@
+-- SUPERSEDED BY 20261017033733
+--
+-- Never applied: on 2026-10-17 04:16 UTC its preimage guard refused it because
+-- 20261017033733_a_capped_diamond_satellite_winner_is_paid_not_held (#7211)
+-- had already installed the same self-seat exclusion. See
+-- docs/changelog/2026-10-17-a-satellite-winner-is-not-capped-by-the-satellite-it-won.md.
+--
 -- 20261017025359_a_satellite_winner_is_not_capped_by_the_satellite_it_won
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-10-17 02:53:59 UTC.

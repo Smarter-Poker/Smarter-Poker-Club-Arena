@@ -21,7 +21,12 @@ horse-only events count here too.
 `fn_spin_metrics` counts every row of the view
 `v_tournament_rake_attribution_gaps`: rows of `tournament_rake_settlements`
 with `settled_at` set, `amount > 0`, and `attributed_users` NULL
-(`never_measured`), -1 (`attribution_threw`) or 0 (`credited_nobody`). Despite
+(`never_measured`), -1 (`attribution_threw`) or 0 (`credited_nobody`).
+Since 2026-10-17 it leaves out `destination = 'diamond_house'`: a Diamond
+Arena fee pays the Diamond house and owes no VIP points, chip rakeback or
+commission (Phase 9), so crediting nobody is its designed outcome. 144 such
+rows had held this alert on for a day while every chip settlement was
+attributed (`20261017105232_a_diamond_house_fee_is_not_an_attribution_gap`). Despite
 the rule living in `spin-rules.yml`, it covers every tournament format, not
 only Spins. Measured 2026-09-26 06:45 UTC: 0.
 

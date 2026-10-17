@@ -14,6 +14,7 @@ health/leader probes in the crash drill (a file-backed state machine); and
 unprivileged in CI. Nothing here starts, stops or signals a real process.
 """
 from pathlib import Path
+import atexit
 import base64
 import json
 import os
@@ -39,19 +40,51 @@ if not REAL_GIT:
 
 PORTABLE_ROOT = '''
 id() { if [ "${1:-}" = -u ]; then echo 0; else command id "$@"; fi; }
-stat() {
-  local out
-  out="$(command stat "$@")" || return $?
-  printf '%s\\n' "$out" | sed "s/^$(command id -u):/0:/"
-}
+stat() { python3 "$PORTABLE_STAT" "$@"; }
+# The production host runs Bash 5. macOS ships Bash 3.2 without mapfile, so a
+# fixture-local `mapfile -t NAME` stands in only where the builtin is missing.
+if ! help mapfile >/dev/null 2>&1; then
+  mapfile() {
+    [ "${1:-}" = -t ] && [ "$#" = 2 ] || return 2
+    case "$2" in ''|*[!A-Za-z0-9_]*) return 2 ;; esac
+    local __name="$2" __line __index=0
+    eval "$__name=()"
+    while IFS= read -r __line || [ -n "$__line" ]; do
+      eval "$__name[$__index]=\\"\\$__line\\""
+      __index=$((__index + 1))
+    done
+  }
+fi
 '''
 
+
+# GNU `stat -c '%u:%a'` (lstat, so a symlink is reported as itself) on any
+# platform, with the test user reported as root. macOS stat has no -c.
+PORTABLE_STAT_SOURCE = """import os, sys
+args = sys.argv[1:]
+if len(args) != 3 or args[:2] != ['-c', '%u:%a']:
+    sys.exit('portable stat supports only: stat -c %u:%a FILE')
+try:
+    st = os.lstat(args[2])
+except OSError as error:
+    sys.exit(f'stat: {error}')
+uid = 0 if st.st_uid == os.getuid() else st.st_uid
+print(f'{uid}:{st.st_mode & 0o7777:o}')
+"""
+_PORTABLE_STAT_DIR = tempfile.mkdtemp(prefix='engine-drill-stat-')
+atexit.register(shutil.rmtree, _PORTABLE_STAT_DIR, True)
+PORTABLE_STAT = os.path.join(_PORTABLE_STAT_DIR, 'stat.py')
+with open(PORTABLE_STAT, 'w') as _handle:
+    _handle.write(PORTABLE_STAT_SOURCE)
+os.environ['PORTABLE_STAT'] = PORTABLE_STAT
 
 class DrillFixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='engine-drill-')
         self.addCleanup(self.temp.cleanup)
-        self.directory = Path(self.temp.name)
+        # Resolved: macOS temp directories sit behind the /var -> /private/var
+        # symlink, and the installer compares its own canonical path.
+        self.directory = Path(self.temp.name).resolve()
         self.repo = self.directory / 'repo'
         self.repo.mkdir()
         self.env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
@@ -432,9 +465,13 @@ class InstallerTests(DrillFixture):
         bin_dir = self.directory / 'bin'
         bin_dir.mkdir(exist_ok=True)
         (bin_dir / 'id').write_text('#!/usr/bin/env bash\n[ "${1:-}" = -u ] && { echo 0; exit; }\nexec /usr/bin/id "$@"\n')
-        (bin_dir / 'stat').write_text('#!/usr/bin/env bash\nout="$(/usr/bin/stat "$@")" || exit $?\n'
-                                      'printf "%s\\n" "$out" | sed "s/^$(/usr/bin/id -u):/0:/"\n')
-        for name in ('id', 'stat'):
+        (bin_dir / 'stat').write_text('#!/usr/bin/env bash\nexec python3 "$PORTABLE_STAT" "$@"\n')
+        # GNU `readlink -e -- PATH` on any platform: macOS readlink has no -e.
+        (bin_dir / 'readlink').write_text(
+            '#!/usr/bin/env bash\n[ "$1" = -e ] && [ "$2" = -- ] && [ "$#" = 3 ] || exit 2\n'
+            'exec python3 -c \'import os,sys; p=sys.argv[1]; '
+            'sys.exit(1) if not os.path.exists(p) else print(os.path.realpath(p))\' "$3"\n')
+        for name in ('id', 'stat', 'readlink'):
             (bin_dir / name).chmod(0o755)
         env = dict(self.env)
         env.update(PATH=str(bin_dir) + os.pathsep + env['PATH'], REPO_DIR=str(self.repo),

@@ -354,11 +354,17 @@ function CashierWalletRow({
         />
       </span>
       <span className={styles.walletRowPlate}>
-        {children || <span className={styles.walletRowLabel}>{label}</span>}
+        <span className={styles.walletRowLabel}>{label}</span>
+        {children && (
+          <svg className={styles.entityChevron} viewBox="0 0 12 8" aria-hidden="true">
+            <path d="M1 1.5 6 6.5 11 1.5" fill="none" stroke="currentColor" strokeWidth="2" />
+          </svg>
+        )}
         <strong className={styles.walletRowValue}>
           {balance === null ? '-' : formatWalletChips(balance)}
         </strong>
       </span>
+      {children}
     </section>
   );
 }

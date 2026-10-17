@@ -3498,7 +3498,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             new Error('Disconnect auto-action rejected at seat ' + dcPlayer.seat),
             'ServerTableEngine.' + this.tableId + '.disconnect_autoaction_rejected'
           );
-          this.forceArmTurnTimer(dcPlayer.seat, this.tableInfo?.action_time_seconds || 15);
+          this.forceArmTurnTimer(dcPlayer.seat, this.actionClockSeconds());
         }
       });
 

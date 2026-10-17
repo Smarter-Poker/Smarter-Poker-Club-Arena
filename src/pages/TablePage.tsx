@@ -15874,11 +15874,17 @@ function LiveTablePage({
        * the server's own value, else derive it from the deadline and the
        * table's action clock so the ring always spans the true turn length.
        */
+      /* The engine's own duration before the table's: a bomb pot turn is 25s
+         (Dan 2026-10-17), and deriving its start from the table's 15s clock
+         would draw a ring that empties ten seconds before the real deadline. */
       actionTimerStartTime:
         payload.startTime ??
         payload.startedAt ??
         (typeof payload.deadline === 'number'
-          ? payload.deadline - actionTimeSeconds * 1000
+          ? payload.deadline -
+            (typeof payload.durationMs === 'number' && payload.durationMs > 0
+              ? payload.durationMs
+              : actionTimeSeconds * 1000)
           : Date.now()),
       actionTimerPlayerId: payload.playerId,
     }));

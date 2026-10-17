@@ -316,6 +316,15 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
     timeout: 30000,
   });
 
+  // Prize plans can select another opening metric. This proof owns the Profit
+  // cache, so select it explicitly on every new document before entering Global.
+  const selectCacheMetric = async () => {
+    const profit = board.getByRole('button', { name: 'Profit', exact: true });
+    await profit.click();
+    await expect(profit).toHaveAttribute('aria-pressed', 'true');
+  };
+  await selectCacheMetric();
+
   // Use only this browser context's global weekly record. The reserved E2E
   // browser context is disposable; no server-side data is written or changed.
   const cacheKey = await page.evaluate((key) => {
@@ -381,6 +390,7 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
   let warmCachedPaintMs = 0;
   try {
     await page.reload({ waitUntil: 'domcontentloaded' });
+    await selectCacheMetric();
     await board.getByRole('button', { name: 'Global', exact: true }).click();
     await warmRoutes.seen;
     await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'false');
@@ -426,6 +436,7 @@ test('Leaderboard Cache Paints Before Real Revalidation And Expires Safely', asy
   );
   try {
     await page.reload({ waitUntil: 'domcontentloaded' });
+    await selectCacheMetric();
     await board.getByRole('button', { name: 'Global', exact: true }).click();
     await expiredRoutes.seen;
     await expect(board.getByRole('tabpanel')).toHaveAttribute('aria-busy', 'true');

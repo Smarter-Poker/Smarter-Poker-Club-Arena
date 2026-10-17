@@ -281,4 +281,15 @@ BEGIN
 END;
 $function$;
 
+
+-- Grants restated exactly as installed (read 2026-10-17: service_role only).
+REVOKE ALL ON FUNCTION public.fn_admit_horse_observation_capture(uuid, bigint, bigint) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_admit_horse_observation_capture(uuid, bigint, bigint) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_discover_horse_observation_requests() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_discover_horse_observation_requests() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_horse_learning_work_health() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_horse_learning_work_health() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_prune_horse_observation_captures() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_prune_horse_observation_captures() TO service_role;
+
 COMMIT;

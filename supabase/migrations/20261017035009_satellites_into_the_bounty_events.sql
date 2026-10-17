@@ -36,6 +36,8 @@
 -- The Sunday Funday events before 3:30 PM are fed on Saturday evening,
 -- because every Sunday :15 and :45 before then already holds a satellite.
 
+--
+-- @live-proof: (SELECT count(*) = 15 FROM public.tournament_schedules s WHERE s.active AND s.club_id = 'fade0000-0000-0000-0000-000000000001' AND s.config->>'type' = 'satellite' AND s.config->>'satelliteTargetName' IN ('Union Mystery Bounty (PLO5)', 'Union Grand Championship (NLH)', 'Monday Knockout', 'Tuesday Bounty Hunt', 'Friday Five-Card Bounty', 'Friday Fight Night PKO', 'Saturday Mystery', 'Saturday Stackfest PKO', 'Sunday Funday Bounty Builder', 'Sunday Funday PLO PKO', 'Sunday Funday PLO5 Mystery', 'Sunday Funday Mystery', 'Sunday Funday Late PKO', 'Sunday Funday High Roller PKO', 'Sunday Funday Night Owl'))
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';

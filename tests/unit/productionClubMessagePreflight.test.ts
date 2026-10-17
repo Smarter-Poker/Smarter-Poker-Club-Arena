@@ -11,25 +11,47 @@ type Handler = () => Promise<void>;
 function fixture(response: Promise<unknown>, click = vi.fn().mockResolvedValue(undefined)) {
   // The invitation's Not Now; its evaluate is the handler's stack read.
   const notNow = { evaluate: vi.fn().mockResolvedValue(null), click: vi.fn() };
+  const dismiss = { waitFor: vi.fn().mockResolvedValue(undefined), click };
   const dialog = {
     waitFor: vi.fn().mockResolvedValue(undefined),
+    getByRole: vi.fn(() => dismiss),
+  };
+  const invitation = {
     isVisible: vi.fn().mockResolvedValue(false),
     getByRole: vi.fn(() => notNow),
   };
-  const dismiss = { waitFor: vi.fn().mockResolvedValue(undefined), click };
   const handlers: Handler[] = [];
   const page = {
-    getByRole: vi.fn((role: string) => (role === 'dialog' ? dialog : dismiss)),
+    getByRole: vi.fn((role: string, options: { name: unknown }) =>
+      role === 'dialog' ? (options.name === 'Diamond Spins' ? invitation : dialog) : dismiss
+    ),
     waitForResponse: vi.fn(() => response),
     addLocatorHandler: vi.fn(async (_locator: unknown, handler: Handler) => {
       handlers.push(handler);
     }),
     removeLocatorHandler: vi.fn().mockResolvedValue(undefined),
   };
-  return { page: page as unknown as Page, dialog, dismiss, notNow, handlers };
+  return { page: page as unknown as Page, dialog, invitation, dismiss, notNow, handlers };
 }
 
 describe('production club-message setup', () => {
+  it('takes the current persistence control only inside the Club Message dialog', async () => {
+    const { page, dialog, dismiss } = fixture(
+      Promise.resolve({
+        ok: () => true,
+        status: () => 200,
+        json: async () => ({ ok: true }),
+      })
+    );
+    await expect(dismissClubEntryMessage(page)).resolves.toBe(true);
+    expect(dialog.getByRole).toHaveBeenCalledWith('button', {
+      name: 'Do Not Show Again',
+      exact: true,
+    });
+    expect(vi.mocked(page.getByRole).mock.calls.every(([role]) => role === 'dialog')).toBe(true);
+    expect(dismiss.click).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves a failed click when browser cleanup rejects the pending response', async () => {
     let rejectResponse!: (error: Error) => void;
     // Playwright runs in Node. Use its native promise semantics here rather
@@ -133,7 +155,7 @@ describe('production club-message setup', () => {
   });
 
   it('yields to a greeting stacked above the invitation, then declines it once on top', async () => {
-    const { page, handlers, notNow, dialog } = fixture(
+    const { page, handlers, notNow, invitation } = fixture(
       Promise.resolve({
         ok: () => true,
         status: () => 200,
@@ -153,6 +175,6 @@ describe('production club-message setup', () => {
     expect(options.mock.calls[0][2]).toEqual({ noWaitAfter: true });
     expect(notNow.click).not.toHaveBeenCalled();
     expect(page.removeLocatorHandler).toHaveBeenCalledTimes(1);
-    expect(dialog.isVisible).toHaveBeenCalled();
+    expect(invitation.isVisible).toHaveBeenCalled();
   });
 });

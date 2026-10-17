@@ -125,7 +125,7 @@ test('production setup persists the club message through an eligible Diamond inv
   });
   await page.setContent(`
     <div role="dialog" aria-label="Club Message From Fixture">
-      <button onclick="fetch('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', {method:'POST'}).then(() => this.parentElement.remove())">Do Not Show Me This Message Again</button>
+      <button onclick="fetch('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', {method:'POST'}).then(() => this.parentElement.remove())">Do Not Show Again</button>
     </div>
     <output id="declines">0</output>
     <div role="dialog" aria-label="Diamond Spins" style="position:fixed;inset:0;background:white">

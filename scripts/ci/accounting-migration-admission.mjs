@@ -10,6 +10,10 @@ export const ACCOUNTING_ADMISSION_SOURCES = Object.freeze({
     'c80c867622372cf5ac40f0b70dfd855ebad0313ec304e2d71395d6b2c84a8dc0',
   '20261015234926_a_completed_week_reads_its_earning_clubs_once.sql':
     'f15e41fb79e200497daeac17e0a389590fc711b9a964fdb208e9c897253da869',
+  '20261016233224_weekly_routing_excludes_a_club_that_joined_after_its_week.sql':
+    '5f7fdbcab36914ac583823fa1f78332b039519f2af6f757a4a60589641021a82',
+  '20261017012658_weekly_coordinator_skips_redundant_earning_club_witnesses.sql':
+    '0fb295017f747b366df7f8a06bc3293e034a9fb735ad4101b3f265b793188603',
 });
 
 export const ACCOUNTING_ADMISSION_SQL = `

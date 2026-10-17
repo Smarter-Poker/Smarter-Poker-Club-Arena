@@ -2146,6 +2146,18 @@ jobs:
           path: artifacts/never-dealt-rebuy/
           if-no-files-found: error
           retention-days: 7
+      - name: Mid-hand add-on rebase and rebought chair movement proof
+        id: mid_hand_add_on
+        if: matrix.shard == 3
+        run: python3 scripts/ci/test-mid-hand-add-on.py --pg-bin /usr/lib/postgresql/17/bin --evidence artifacts/mid-hand-add-on --socket-root "$RUNNER_TEMP"
+      - name: Retain mid-hand add-on native proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.mid_hand_add_on.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mid-hand-add-on-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/mid-hand-add-on/
+          if-no-files-found: error
+          retention-days: 7
       - name: Two omitted tournament originals preserve exact native custody
         id: two_retired_tournament_originals
         if: matrix.shard == 3

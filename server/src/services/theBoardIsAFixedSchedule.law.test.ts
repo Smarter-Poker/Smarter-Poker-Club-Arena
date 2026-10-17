@@ -32,7 +32,7 @@ import {
   fixedFreeBuyRow,
   recurringMttRow,
 } from './TournamentRecurringService.js';
-import { FREE_BUY_SLOTS, freeBuyBoardName } from './FreeBuy.js';
+import { FREE_BUY_SLOTS, freeBuyBoardName, freeBuySlotTime } from './FreeBuy.js';
 import { DIAMOND_FREEROLL_REBUY_DIAMONDS, diamondSpawnConfig } from './diamondScheduledSpawn.js';
 import {
   FIXED_BOARD,
@@ -40,6 +40,11 @@ import {
   FIXED_BOARD_RESYNC_MS,
   FIXED_BOARD_TIMES_EFFECTIVE_FROM,
   WEEKLY_EVENT_SLOTS,
+  WEEKLY_EVENT_DAYS,
+  SATELLITE_MINUTES,
+  BOARD_DAY_OPENS,
+  BOARD_DAY_CLOSES,
+  NEW_BOARD_EVENTS_START,
   isFixedBoardConfig,
   fixedBoardRowFor,
   planFixedBoardSync,
@@ -80,7 +85,7 @@ describe('the migration schedules the whole board', () => {
     expect(starts).toBe(53);
   });
 
-  it('schedules all five Free Buys at their Chicago hours', () => {
+  it('schedules the Free Buys at their Chicago hours', () => {
     for (const slot of FREE_BUY_SLOTS) {
       const row = scheduledNames.find((m) => m[1] === freeBuyBoardName(slot));
       expect(row, freeBuyBoardName(slot)).toBeTruthy();
@@ -88,8 +93,8 @@ describe('the migration schedules the whole board', () => {
     }
   });
 
-  it('schedules every lobby and union template the timers used to launch', () => {
-    const names = new Set(scheduledNames.map((m) => m[1]));
+  it('every lobby and union template the timers used to launch is on the hard-coded board', () => {
+    const names = new Set(FIXED_BOARD.map((e) => e.name));
     for (const name of fixedBoardTemplateNames()) expect(names.has(name), name).toBe(true);
   });
 
@@ -104,8 +109,8 @@ describe('the migration schedules the whole board', () => {
 
 describe('every scheduled name builds the event the timer used to make', () => {
   it('resolves each name to a row at the scheduled time, for both clubs', () => {
-    for (const m of scheduledNames) {
-      const name = m[1];
+    for (const e of FIXED_BOARD) {
+      const name = e.name;
       for (const sched of [midwaySchedule(name), arenaSchedule(name)]) {
         const row = fixedBoardRow(sched, { type: 'fixed_board', fixedBoard: name }, START);
         expect(row, name).not.toBeNull();
@@ -130,7 +135,8 @@ describe('every scheduled name builds the event the timer used to make', () => {
     expect(row).toEqual({ ...board, schedule_id: sched.id });
     expect(row.free_buy).toBe(true);
     expect(row.buy_in_amount).toBe(0);
-    expect(row.guaranteed_prize).toBe(500);
+    // Dan 2026-10-16: "DOUBLE ALL THE OTHER CURRENT GUARANTEES".
+    expect(row.guaranteed_prize).toBe(1000);
     // Dan 2026-10-16: "ALL REBUY ADD ON'S FOR MIDWAY UNION ARE 1 CHIP".
     expect(row.rebuy_cost).toBe(1);
     expect(row.addon_cost).toBe(1);
@@ -213,7 +219,7 @@ describe('the Diamond Arena prices a fixed-board occurrence at its real total', 
   });
 
   it('a Free Buy stays free', () => {
-    const name = 'Midnight Free Buy (NLH)';
+    const name = 'Morning Free Buy (NLH)';
     const row = fixedBoardRow(arenaSchedule(name), { fixedBoard: name }, START)!;
     const mapped = diamondSpawnConfig(row, { fixedBoard: name }, START);
     expect(mapped.ok).toBe(true);
@@ -225,26 +231,22 @@ describe('the Diamond Arena prices a fixed-board occurrence at its real total', 
 });
 
 describe('the board is hard coded in the engine, so it can never run ahead of its code', () => {
-  it('carries 25 events and 53 starts a day, for both clubs', () => {
-    expect(FIXED_BOARD.length).toBe(25);
-    expect(FIXED_BOARD.reduce((n, e) => n + e.times.length, 0)).toBe(53);
+  it('carries 26 events, each once a day (11 on Sunday, the Sunday Funday day), for both clubs', () => {
+    expect(FIXED_BOARD.length).toBe(26);
+    expect(FIXED_BOARD.every((e) => e.times.length === 1)).toBe(true);
+    const onDay = (d: number) => FIXED_BOARD.filter((e) => !e.days || e.days.includes(d)).length;
+    expect(onDay(0)).toBe(11);
+    for (const d of [1, 2, 3, 4, 5, 6]) expect(onDay(d)).toBe(26);
     expect(FIXED_BOARD_CLUBS.map((c) => c.clubId)).toEqual([MIDWAY, ARENA]);
   });
 
-  it('keeps every event the migration first installed, with its old times as its previous times', () => {
-    const fromMigration = scheduledNames.map((m) => [
-      m[1],
-      m[2].split(',').map((t) => t.replace(/'/g, '')),
-      Number(m[3]),
-    ]);
-    expect(FIXED_BOARD.map((e) => [e.name, [...(e.previousTimes ?? e.times)], e.horses])).toEqual(
-      // The board was regrouped by time of day on 2026-10-16; same events.
-      [...fromMigration].sort(
-        (a, b) =>
-          FIXED_BOARD.findIndex((e) => e.name === a[0]) -
-          FIXED_BOARD.findIndex((e) => e.name === b[0])
-      )
+  it('an event that moved twice remembers the first migration times as its retired times', () => {
+    const firstTimes = new Map(
+      scheduledNames.map((m) => [m[1], m[2].split(',').map((t) => t.trim().replace(/'/g, ''))])
     );
+    for (const e of FIXED_BOARD.filter((x) => x.retiredTimes)) {
+      expect([...e.retiredTimes!], e.name).toEqual(firstTimes.get(e.name));
+    }
   });
 
   it('every hard-coded event builds a row in both clubs: no unknown template can ship', () => {
@@ -276,9 +278,9 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
     };
   };
 
-  it('an empty table gets all 50 rows', () => {
+  it('an empty table gets all 52 rows', () => {
     const plan = planFixedBoardSync([]);
-    expect(plan.inserts).toHaveLength(50);
+    expect(plan.inserts).toHaveLength(52);
     expect(plan.updates).toEqual([]);
     expect(plan.deactivate).toEqual([]);
   });
@@ -364,77 +366,109 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
 });
 
 /**
- * THE BOARD IS SPREAD OUT (Dan, 2026-10-16): "REDO THEM SO TOURNAMENT DO NOT
- * START AT THE SAME TIME, THAT THEY ARE SPREAD OUT ACCORDINGLY THROUGHOUT THE
- * DAY."
+ * A REAL ROOM'S DAY (Dan, 2026-10-16): "WHY THE FUCK DO WE HAVE A TOURNAMENT
+ * EVERY 20 MINUTES IN THE MIDDLE OF THE NIGHT, LOOK AT REAL ONLINE POKER
+ * SCHEDULES FROM THE TOP SITES", then "SATELLITES ARE NEVER 'PRIME
+ * TOURNAMENTS'. YOU SHOULD ALWAYS HAVE A REAL TOURNAMENT RUNNING IN THOSE
+ * SPOTS, ALL SATELLITES SHOULD START AT THE :15 OR :45."
  */
-describe('no two tournaments start at the same time, and the starts are spread through the day', () => {
+describe("a real room's day: a real tournament every half hour from 8 AM to 1 AM, nothing overnight", () => {
   const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
-  const starts = [
-    ...FIXED_BOARD.flatMap((e) => e.times.map((t) => ({ t, who: e.name }))),
-    ...WEEKLY_EVENT_SLOTS.map((t) => ({ t, who: `weekly ${t}` })),
+  const startsOn = (day: number) => [
+    ...FIXED_BOARD.filter((e) => !e.days || e.days.includes(day)).flatMap((e) =>
+      e.times.map((t) => ({ t, who: e.name }))
+    ),
+    ...WEEKLY_EVENT_SLOTS.filter((t) => WEEKLY_EVENT_DAYS[t].includes(day)).map((t) => ({
+      t,
+      who: `weekly ${t}`,
+    })),
   ];
+  // 08:00, 08:30 ... 23:30, 00:00, 00:30, 01:00.
+  const dayOfSlots = [...Array.from({ length: 32 }, (_, i) => 8 * 60 + i * 30), 0, 30, 60].map(
+    (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+  );
 
-  it('one event per start time, board and weekly events together', () => {
-    const seen = new Map<string, string>();
-    for (const s of starts) {
-      expect(seen.get(s.t), `${s.who} and ${seen.get(s.t)} both start at ${s.t}`).toBeUndefined();
-      seen.set(s.t, s.who);
+  it('every board and weekly start is on a :00 or a :30', () => {
+    for (let d = 0; d < 7; d++)
+      for (const s of startsOn(d)) expect(toMin(s.t) % 30, `${s.who} at ${s.t}`).toBe(0);
+  });
+
+  it('every half hour from 8 AM to 1 AM holds exactly one real tournament, every day', () => {
+    for (let d = 0; d < 7; d++) {
+      const starts = startsOn(d);
+      const seen = new Map<string, string>();
+      for (const s of starts) {
+        expect(seen.get(s.t), `day ${d}: ${s.who} and ${seen.get(s.t)} at ${s.t}`).toBeUndefined();
+        seen.set(s.t, s.who);
+      }
+      expect([...seen.keys()].sort(), `day ${d}`).toEqual([...dayOfSlots].sort());
     }
   });
 
-  it('every start is on the 20-minute grid, so any two are at least 20 minutes apart', () => {
-    for (const s of starts) expect(toMin(s.t) % 20, `${s.who} at ${s.t}`).toBe(0);
+  it('nothing starts between 1:30 AM and 8 AM', () => {
+    expect(BOARD_DAY_OPENS).toBe('08:00');
+    expect(BOARD_DAY_CLOSES).toBe('01:00');
+    for (let d = 0; d < 7; d++)
+      for (const s of startsOn(d)) {
+        const m = toMin(s.t);
+        expect(m > 60 && m < 8 * 60, `${s.who} at ${s.t}`).toBe(false);
+      }
   });
 
-  it('no hour of the day is empty or crowded: one to three starts in every hour', () => {
-    for (let h = 0; h < 24; h++) {
-      const n = starts.filter((s) => Math.floor(toMin(s.t) / 60) === h).length;
-      expect(n, `hour ${h}`).toBeGreaterThanOrEqual(1);
-      expect(n, `hour ${h}`).toBeLessThanOrEqual(3);
-    }
+  it('satellites start only on the :15 and the :45', () => {
+    expect([...SATELLITE_MINUTES]).toEqual(['15', '45']);
   });
 
-  it("the clubs' own events were moved onto exactly the reserved weekly slots", () => {
-    const file = readdirSync(migrationsDir).find((f) =>
-      f.includes('the_clubs_own_events_move_off_the_board_slots')
-    );
-    expect(file, 'migration 20261016210343').toBeTruthy();
-    const sql = readFileSync(join(migrationsDir, file!), 'utf8');
-    const m = /IF v_slots IS DISTINCT FROM ARRAY\[([^\]]+)\]::text\[\]/.exec(sql);
-    expect(m, 'the reserved-slot assertion').toBeTruthy();
-    const slots = m![1].split(',').map((x) => x.trim().replace(/'/g, ''));
-    expect(slots).toEqual([...WEEKLY_EVENT_SLOTS]);
-    expect(sql).toContain("'startTimesEffectiveFrom', '2026-10-17'");
-  });
-
-  it('the five Free Buys keep their five hours', () => {
+  it('the five Free Buys run every day at 8:30 AM, 12:30 PM, 4:30 PM, 8:30 PM and 12:30 AM', () => {
+    expect(FREE_BUY_SLOTS.map(freeBuySlotTime).sort()).toEqual([
+      '00:30',
+      '08:30',
+      '12:30',
+      '16:30',
+      '20:30',
+    ]);
     for (const slot of FREE_BUY_SLOTS) {
       const e = FIXED_BOARD.find((x) => x.name === freeBuyBoardName(slot))!;
-      expect(e.times).toEqual([`${String(slot.chicagoHour).padStart(2, '0')}:00`]);
-      expect(e.previousTimes).toBeUndefined();
+      expect(e.times).toEqual([freeBuySlotTime(slot)]);
+      expect(e.days).toBeUndefined();
+      expect(e.previousTimes).toEqual([`${String(slot.chicagoHour).padStart(2, '0')}:00`]);
     }
   });
 
-  it('a repeated event is never back to back: its starts are at least an hour apart', () => {
+  it('6 PM to 10 PM is the dearest part of the day: every paid board event there costs 22 or more', () => {
     for (const e of FIXED_BOARD) {
-      const m = e.times.map(toMin).sort((a, b) => a - b);
-      for (let i = 0; i < m.length; i++) {
-        const next = i + 1 < m.length ? m[i + 1] : m[0] + 1440;
-        expect(next - m[i], e.name).toBeGreaterThanOrEqual(60);
-      }
+      const m = toMin(e.times[0]);
+      if (m < 18 * 60 || m > 22 * 60) continue;
+      if (FREE_BUY_SLOTS.some((s) => freeBuyBoardName(s) === e.name)) continue;
+      const t = fixedBoardTemplate(e.name)!;
+      expect(t.config.buyIn + t.config.rake, e.name).toBeGreaterThanOrEqual(22);
     }
   });
 
-  it('every moved event carries its old times and the date the change may start', () => {
+  it('every board guarantee is a whole 500 (Dan: "NO 25 75 OR 50 AMOUNTS")', () => {
+    for (const e of FIXED_BOARD) {
+      const t = fixedBoardTemplate(e.name);
+      if (!t) continue; // a Free Buy
+      expect(t.config.guarantee % 500, e.name).toBe(0);
+      expect(t.config.guarantee, e.name).toBeGreaterThan(0);
+    }
+  });
+
+  it('every moved event carries its old and retired times and the date the change may start', () => {
     expect(FIXED_BOARD_TIMES_EFFECTIVE_FROM).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     for (const club of FIXED_BOARD_CLUBS) {
       for (const e of FIXED_BOARD.filter((x) => x.previousTimes)) {
-        const change = scheduleTimeChange(fixedBoardRowFor(club, e).config);
+        const change = scheduleTimeChange(fixedBoardRowFor(club, e).config, e.times);
         expect(change, e.name).toEqual({
           previous: [...e.previousTimes!],
           from: FIXED_BOARD_TIMES_EFFECTIVE_FROM,
+          ...(e.retiredTimes ? { retired: [...e.retiredTimes] } : {}),
         });
+        // A retired time that is also a live one could freeze the wrong date.
+        for (const t of e.retiredTimes ?? []) {
+          expect(e.times, e.name).not.toContain(t);
+          expect(e.previousTimes, e.name).not.toContain(t);
+        }
       }
     }
   });
@@ -488,6 +522,70 @@ describe('a schedule whose times move never doubles a date', () => {
       at('2026-10-19', '04:00'),
     ]);
     expect(keys).toEqual([`${id}:2026-10-19:01:00`, `${id}:2026-10-19:22:30`]);
+  });
+
+  it('a date that already ran on the retired timetable takes nothing more', () => {
+    const twice = { previous: ['22:30'], from: '2026-10-17', retired: ['19:30'] };
+    const claimed = new Set([`${id}:2026-10-16:19:30`]);
+    const due = resolveTimeChange(
+      [at('2026-10-16', '04:00')],
+      [at('2026-10-16', '22:30')],
+      twice,
+      claimed,
+      id
+    );
+    expect(due).toEqual([]);
+    expect(
+      previousDayKeys(id, twice, [at('2026-10-16', '04:00')]).includes(`${id}:2026-10-16:19:30`)
+    ).toBe(true);
+  });
+
+  it('a retired time that is also a current time is ignored', () => {
+    expect(
+      scheduleTimeChange(
+        {
+          previousStartTimes: ['22:30'],
+          retiredStartTimes: ['04:00', '19:30'],
+          startTimesEffectiveFrom: '2026-10-17',
+        },
+        ['04:00']
+      )
+    ).toEqual({ previous: ['22:30'], from: '2026-10-17', retired: ['19:30'] });
+  });
+
+  it('a brand-new event starts on its first date and never before', () => {
+    const fresh = scheduleTimeChange({
+      previousStartTimes: [],
+      startTimesEffectiveFrom: '2026-10-20',
+    });
+    expect(fresh).toEqual({ previous: [], from: '2026-10-20' });
+    const before = resolveTimeChange([at('2026-10-19', '04:00')], [], fresh!, new Set(), id);
+    expect(before).toEqual([]);
+    const after = resolveTimeChange([at('2026-10-20', '04:00')], [], fresh!, new Set(), id);
+    expect(after.map((d) => d.spawnKey)).toEqual([`${id}:2026-10-20:04:00`]);
+  });
+
+  it('the board events added on 2026-10-16 wait for the first date the new timetable owns', () => {
+    for (const e of FIXED_BOARD.filter((x) => x.startsFrom)) {
+      expect(e.startsFrom).toBe(NEW_BOARD_EVENTS_START);
+      expect(e.previousTimes, e.name).toBeUndefined();
+      expect(scheduleTimeChange(fixedBoardRowFor(FIXED_BOARD_CLUBS[0], e).config, e.times)).toEqual(
+        {
+          previous: [],
+          from: NEW_BOARD_EVENTS_START,
+        }
+      );
+    }
+    expect(
+      FIXED_BOARD.filter((x) => x.startsFrom)
+        .map((x) => x.name)
+        .sort()
+    ).toEqual([
+      'Afternoon Deep Stack (NLH)',
+      'Dinner Break PLO (PLO4)',
+      'Happy Hour Bounty (NLH)',
+      'Midday Turbo (NLH)',
+    ]);
   });
 
   it('a malformed change is no change', () => {

@@ -1,0 +1,20 @@
+[
+  {
+    "kind": "helper",
+    "before": "2d861ca48eea9aba964cda9b4d45f456",
+    "after": "e5ec460a159bfb46735d99be1a0738a3",
+    "before_body": "a3dfb7f9917b68ea42e9334eb3e5a9a7",
+    "after_body": "07f9a6d2e68d8b42d1184d302d3d25f5",
+    "old": "), accepted_earnings AS (\n SELECT c.club_id FROM cash_clubs c LEFT JOIN earning_cutoffs b ON b.club_id=c.club_id\n WHERE CASE WHEN b.cutoff IS NULL THEN true ELSE c.latest>=b.cutoff END\n UNION ALL\n SELECT t.club_id FROM tournament_clubs t LEFT JOIN earning_cutoffs b ON b.club_id=t.club_id\n WHERE EXISTS",
+    "new": "), accepted_cash AS MATERIALIZED (\n SELECT c.club_id FROM cash_clubs c LEFT JOIN earning_cutoffs b ON b.club_id=c.club_id\n WHERE CASE WHEN b.cutoff IS NULL THEN true ELSE c.latest>=b.cutoff END\n), tournament_candidates AS MATERIALIZED (\n SELECT t.club_id FROM tournament_clubs t WHERE NOT EXISTS(SELECT FROM accepted_cash ac WHERE ac.club_id=t.club_id)\n), accepted_earnings AS (\n SELECT c.club_id FROM accepted_cash c\n UNION ALL\n SELECT t.club_id FROM tournament_candidates t LEFT JOIN earning_cutoffs b ON b.club_id=t.club_id\n WHERE EXISTS"
+  },
+  {
+    "kind": "statement",
+    "before": "ade66e4785ed51541db707feabb8f4cc",
+    "after": "51d21522a5768dfd49eb6ae13a688260",
+    "before_body": "d8b1bc638aace9f3dfc9cad716b1e843",
+    "after_body": "e903450f61c13dd4651a8764ac0854ac",
+    "old": "  UNION SELECT s.club_id FROM public.accounting_payable_earning_sources s WHERE s.earned_at>=p_from AND s.earned_at<p_to\n   AND (s.coordinator_union_id=scope.union_id OR (scope.standalone_club_id=s.club_id AND s.coordinator_union_id IS NULL))",
+    "new": "  UNION SELECT s.club_id FROM public.accounting_payable_earning_sources s WHERE s.earned_at>=p_from AND s.earned_at<p_to\n   AND (s.coordinator_union_id=scope.union_id OR (scope.standalone_club_id=s.club_id AND s.coordinator_union_id IS NULL)) AND s.club_id IS NULL"
+  }
+]

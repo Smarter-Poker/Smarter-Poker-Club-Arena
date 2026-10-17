@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
+  FREE_BUY_SLOT_MINUTE,
+  freeBuySlotTime,
   FREE_BUY_TIERS,
   FREE_BUY_SLOTS,
   slotForChicagoHour,
@@ -22,9 +24,9 @@ const std = FREE_BUY_TIERS.standard;
 const feat = FREE_BUY_TIERS.feature;
 
 describe('the two tiers carry Dan 2026-09-04 exactly', () => {
-  it('$250 tier: free entry, 3000 stack, $1 rebuy, $1 add-on, 10000 add-on chips', () => {
+  it('standard tier: free entry, 500 guaranteed (Dan 2026-10-16: doubled), 1 rebuy, 1 add-on', () => {
     expect(std).toMatchObject({
-      guarantee: 250,
+      guarantee: 500,
       buyIn: 0,
       startingChips: 3000,
       rebuyCost: 1,
@@ -34,9 +36,9 @@ describe('the two tiers carry Dan 2026-09-04 exactly', () => {
       blindStructure: 'FREE_BUY',
     });
   });
-  it('$500 tier: same shape, $1 rebuy and $1 add-on (Dan 2026-10-16: "1 CHIP ... NOT 2")', () => {
+  it('feature tier: same shape, 1,000 guaranteed, 1 rebuy and 1 add-on (Dan 2026-10-16)', () => {
     expect(feat).toMatchObject({
-      guarantee: 500,
+      guarantee: 1000,
       buyIn: 0,
       startingChips: 3000,
       rebuyCost: 1,
@@ -56,34 +58,34 @@ describe('the two tiers carry Dan 2026-09-04 exactly', () => {
 });
 
 describe('the daily schedule', () => {
-  it('runs five events every four hours from 08:00 Chicago', () => {
+  it('runs five events every four hours from 08:30 Chicago, on the half hour (Dan 2026-10-16)', () => {
     expect(FREE_BUY_SLOTS.map((s) => s.chicagoHour)).toEqual([8, 12, 16, 20, 0]);
     expect(FREE_BUY_SLOTS).toHaveLength(5);
+    expect(FREE_BUY_SLOT_MINUTE).toBe(30);
+    expect(FREE_BUY_SLOTS.map(freeBuySlotTime)).toEqual([
+      '08:30',
+      '12:30',
+      '16:30',
+      '20:30',
+      '00:30',
+    ]);
   });
   it('makes 20:00 the feature and every other slot standard', () => {
     expect(slotForChicagoHour(20)?.tier).toBe('feature');
     [8, 12, 16, 0].forEach((h) => expect(slotForChicagoHour(h)?.tier).toBe('standard'));
     expect(slotForChicagoHour(9)).toBeNull();
   });
-  it('guarantees 1,500 per host per day', () => {
-    expect(dailyGuaranteePerHost()).toBe(1500);
+  it('guarantees 3,000 per host per day', () => {
+    expect(dailyGuaranteePerHost()).toBe(3000);
   });
-  it('and 3,000 across both hosts - the number worth saying out loud', () => {
-    expect(dailyGuaranteePerHost() * 2).toBe(3000);
+  it('and 6,000 across both hosts - the number worth saying out loud', () => {
+    expect(dailyGuaranteePerHost() * 2).toBe(6000);
   });
-  it('runs four-hourly from 08:00 to midnight, then leaves an 8 hour overnight gap', () => {
-    // Dan enumerated 8AM, 12PM, 4PM, 8PM, 12AM. Five events cannot cover 24
-    // hours at a 4-hour cadence - six can - so the gap lands overnight,
-    // between the midnight event and the 08:00 one. That is the schedule as
-    // specified, and the hole is recorded here rather than quietly rounded
-    // away: a horse that busts at 01:00 waits seven hours for the next event.
+  it('runs four-hourly from 08:30 to 00:30, then leaves the night dark', () => {
     const hours = FREE_BUY_SLOTS.map((s) => s.chicagoHour);
     const inOrder = [8, 12, 16, 20, 24];
-    const gaps = inOrder.slice(1).map((h, i) => h - inOrder[i]);
-    expect(gaps).toEqual([4, 4, 4, 4]);
+    expect(inOrder.slice(1).map((h, i) => h - inOrder[i])).toEqual([4, 4, 4, 4]);
     expect(hours).toEqual([8, 12, 16, 20, 0]);
-    // and the wrap from midnight back round to 08:00
-    expect(24 + 8 - 24).toBe(8);
   });
 });
 
@@ -96,12 +98,12 @@ describe('the guarantee is a ceiling, not a cost', () => {
   });
   it('a well-attended field can retire the guarantee entirely', () => {
     const collected = projectedCollected({
-      entrants: 100,
+      entrants: 150,
       expectedRebuysPerEntrant: 2.5,
       addOnRate: 1.0,
       cfg: std,
     });
-    expect(collected).toBe(350);
+    expect(collected).toBe(525);
     expect(overlayFor(std.guarantee, collected)).toBe(0);
   });
 });
@@ -283,10 +285,10 @@ describe('a Chicago hour is a Chicago hour in July and in January', () => {
   it('every slot hour round-trips: the instant it returns reads back as that hour', () => {
     for (const dayKey of ['2026-01-15', '2026-03-08', '2026-07-15', '2026-11-01', '2026-12-31']) {
       for (const slot of FREE_BUY_SLOTS) {
-        const ms = chicagoWallClockToUtcMs(dayKey, slot.chicagoHour);
+        const ms = chicagoWallClockToUtcMs(dayKey, slot.chicagoHour, FREE_BUY_SLOT_MINUTE);
         const p = chicagoParts(ms);
-        expect(p.hour, `${dayKey} ${slot.chicagoHour}:00`).toBe(slot.chicagoHour);
-        expect(p.minute).toBe(0);
+        expect(p.hour, `${dayKey} ${freeBuySlotTime(slot)}`).toBe(slot.chicagoHour);
+        expect(p.minute).toBe(FREE_BUY_SLOT_MINUTE);
         expect(chicagoDayKey(ms)).toBe(dayKey);
       }
     }
@@ -322,38 +324,37 @@ describe('the publication lead is shorter than the cadence', () => {
 
 describe('freeBuySlotsDue', () => {
   it('publishes a slot exactly at the lead and not a minute before', () => {
-    const start = chicagoWallClockToUtcMs('2026-07-15', 20);
+    const start = chicagoWallClockToUtcMs('2026-07-15', 20, 30);
     expect(freeBuySlotsDue(start - FREE_BUY_PUBLISH_LEAD_MS)).toHaveLength(1);
     expect(freeBuySlotsDue(start - FREE_BUY_PUBLISH_LEAD_MS - 60_000)).toHaveLength(0);
   });
 
   it('never publishes a slot that has already started', () => {
-    const start = chicagoWallClockToUtcMs('2026-07-15', 20);
+    const start = chicagoWallClockToUtcMs('2026-07-15', 20, 30);
     const due = freeBuySlotsDue(start + 1);
     expect(due.map((d) => d.startMs)).not.toContain(start);
   });
 
-  it('sees TOMORROW midnight from the evening before', () => {
-    // 22:00 Chicago on the 15th: the 00:00 slot belongs to the 16th and is two
-    // hours away. Reading only "today" would never find it.
-    const now = chicagoWallClockToUtcMs('2026-07-15', 22);
-    const due = freeBuySlotsDue(now);
+  it('sees TOMORROW 12:30 AM from the evening before', () => {
+    // 22:00 Chicago on the 15th: the 00:30 slot belongs to the 16th and is
+    // two and a half hours away. Reading only "today" would never find it.
+    const due = freeBuySlotsDue(chicagoWallClockToUtcMs('2026-07-15', 22));
     expect(due).toHaveLength(1);
     expect(due[0].dayKey).toBe('2026-07-16');
     expect(due[0].slot.chicagoHour).toBe(0);
   });
 
   it('carries the tier the slot was declared with', () => {
-    const start = chicagoWallClockToUtcMs('2026-07-15', 20);
+    const start = chicagoWallClockToUtcMs('2026-07-15', 20, 30);
     const due = freeBuySlotsDue(start - HOUR);
     expect(due[0].slot.tier).toBe('feature');
-    const std8 = freeBuySlotsDue(chicagoWallClockToUtcMs('2026-07-15', 8) - HOUR);
+    const std8 = freeBuySlotsDue(chicagoWallClockToUtcMs('2026-07-15', 8, 30) - HOUR);
     expect(std8[0].slot.tier).toBe('standard');
   });
 
   it('produces exactly five starts per host per Chicago day', () => {
-    // Start sampling at 21:00 the evening BEFORE: the 00:00 slot of the 15th
-    // comes due three hours ahead of itself, which is on the 14th.
+    // Start sampling at 21:00 the evening BEFORE, so a slot that comes due
+    // ahead of itself on the previous date is still seen.
     const dayStart = chicagoWallClockToUtcMs('2026-07-14', 21);
     const seen = new Set<number>();
     for (let m = 0; m < 27 * 60; m += 5) {
@@ -445,7 +446,7 @@ describe('the hosts', () => {
 describe('the row a Free Buy is created as', () => {
   const dueFor = (dayKey: string, hour: number): DueFreeBuy => {
     const slot = FREE_BUY_SLOTS.find((s) => s.chicagoHour === hour)!;
-    return { slot, dayKey, startMs: chicagoWallClockToUtcMs(dayKey, hour) };
+    return { slot, dayKey, startMs: chicagoWallClockToUtcMs(dayKey, hour, FREE_BUY_SLOT_MINUTE) };
   };
   const rowFor = (hostIdx: number, hour: number) =>
     freeBuyTournamentRow({
@@ -483,7 +484,7 @@ describe('the row a Free Buy is created as', () => {
 
   it('carries the standard tier price and the 10,000 chip add-on', () => {
     const row = rowFor(0, 8);
-    expect(row.guaranteed_prize).toBe(250);
+    expect(row.guaranteed_prize).toBe(500);
     expect(row.starting_chips).toBe(3000);
     expect(row.rebuy_cost).toBe(1);
     expect(row.addon_cost).toBe(1);
@@ -492,7 +493,7 @@ describe('the row a Free Buy is created as', () => {
 
   it('carries the feature tier guarantee at 20:00, at the same 1 chip rebuy and add-on (Dan 2026-10-16)', () => {
     const row = rowFor(0, 20);
-    expect(row.guaranteed_prize).toBe(500);
+    expect(row.guaranteed_prize).toBe(1000);
     expect(row.rebuy_cost).toBe(1);
     expect(row.addon_cost).toBe(1);
     expect(row.addon_chips).toBe(10000);
@@ -533,7 +534,7 @@ describe('the row a Free Buy is created as', () => {
   });
 
   it('starts at the slot instant, to the second', () => {
-    expect(rowFor(0, 20).start_time).toBe('2026-07-16T01:00:00.000Z');
+    expect(rowFor(0, 20).start_time).toBe('2026-07-16T01:30:00.000Z');
   });
 
   it('is a pre-start MTT so the occurrence index actually covers it', () => {
@@ -623,13 +624,13 @@ describe('the Free Buy ladder', () => {
    ══════════════════════════════════════════════════════════════════════════ */
 describe('auditFreeBuyRow', () => {
   const startOf = (hour: number) =>
-    new Date(chicagoWallClockToUtcMs('2026-09-05', hour)).toISOString();
+    new Date(chicagoWallClockToUtcMs('2026-09-05', hour, FREE_BUY_SLOT_MINUTE)).toISOString();
   const good = (over: Record<string, unknown> = {}) => ({
     name: 'Morning Free Buy (NLH)',
     club_id: FREE_BUY_HOSTS[0].clubId,
     union_id: FREE_BUY_HOSTS[0].unionId,
     start_time: startOf(8),
-    guaranteed_prize: 250,
+    guaranteed_prize: 500,
     buy_in_amount: 0,
     buy_in_fee: 0,
     starting_chips: 3000,
@@ -654,7 +655,7 @@ describe('auditFreeBuyRow', () => {
     const feature = good({
       name: 'Prime Time Free Buy (NLH)',
       start_time: startOf(20),
-      guaranteed_prize: 500,
+      guaranteed_prize: 1000,
       rebuy_cost: 1,
       addon_cost: 1,
     });
@@ -667,7 +668,7 @@ describe('auditFreeBuyRow', () => {
     const feature = good({
       name: 'Prime Time Free Buy (NLH)',
       start_time: startOf(20),
-      guaranteed_prize: 500,
+      guaranteed_prize: 1000,
       rebuy_cost: 2,
       addon_cost: 2,
     });
@@ -702,7 +703,7 @@ describe('auditFreeBuyRow', () => {
   it('catches an event that is not on a slot hour', () => {
     expect(
       auditFreeBuyRow(good({ start_time: startOf(9) })).some((x) =>
-        x.includes('not one of the five slots')
+        x.includes('not one of the board slots')
       )
     ).toBe(true);
   });
@@ -715,12 +716,14 @@ describe('auditFreeBuyRow', () => {
 });
 
 describe('auditFreeBuyBoard', () => {
-  const now = chicagoWallClockToUtcMs('2026-09-05', 10); // 10:00 Chicago
+  const now = chicagoWallClockToUtcMs('2026-09-05', 13); // 13:00 Chicago
   const row = (hour: number, host = FREE_BUY_HOSTS[0], over: Record<string, unknown> = {}) => ({
     name: 'x',
     club_id: host.clubId,
     union_id: host.unionId,
-    start_time: new Date(chicagoWallClockToUtcMs('2026-09-05', hour)).toISOString(),
+    start_time: new Date(
+      chicagoWallClockToUtcMs('2026-09-05', hour, FREE_BUY_SLOT_MINUTE)
+    ).toISOString(),
     guaranteed_prize: FREE_BUY_TIERS[slotForChicagoHour(hour)!.tier].guarantee,
     buy_in_amount: 0,
     buy_in_fee: 0,
@@ -739,19 +742,19 @@ describe('auditFreeBuyBoard', () => {
   });
 
   it('is happy with the slots that have actually come round', () => {
-    // At 10:00 only the 00:00 and 08:00 slots have passed.
-    const rows = FREE_BUY_HOSTS.flatMap((h) => [row(0, h), row(8, h)]);
+    // At 13:00 only the 08:00 and 12:00 slots have passed.
+    const rows = FREE_BUY_HOSTS.flatMap((h) => [row(12, h), row(8, h)]);
     expect(auditFreeBuyBoard(rows, now).problems).toEqual([]);
   });
 
   it('DOES NOT cry wolf about a slot whose hour has not arrived', () => {
-    // A board read at 10:00 has not had a chance to publish the 20:00 event.
-    const rows = FREE_BUY_HOSTS.flatMap((h) => [row(0, h), row(8, h)]);
+    // A board read at 13:00 has not had a chance to publish the 20:00 event.
+    const rows = FREE_BUY_HOSTS.flatMap((h) => [row(12, h), row(8, h)]);
     const p = auditFreeBuyBoard(rows, now).problems;
     expect(p.some((x) => x.includes('Prime Time'))).toBe(false);
   });
 
-  it('DOES NOT call a HELD host\'s published row a wrong board', () => {
+  it("DOES NOT call a HELD host's published row a wrong board", () => {
     /* THE REGRESSION THIS EXISTS FOR (2026-10-05). Taking Deep Stack Society
        out of FREE_BUY_HOSTS for the operator hold left its 32 already-published
        rows resolving against a list that no longer contained them, so every one
@@ -776,7 +779,7 @@ describe('auditFreeBuyBoard', () => {
   });
 
   it('notices a slot that came and went with nothing published', () => {
-    const rows = [row(0), row(8)]; // Deep Stack published nothing
+    const rows = [row(8), row(12)]; // Deep Stack published nothing
     // Passed explicitly: the audit only expects a board from a host it is
     // given, and the hold removed Deep Stack from the default list.
     const p = auditFreeBuyBoard(rows, now, ROW_HOSTS).problems;
@@ -784,7 +787,7 @@ describe('auditFreeBuyBoard', () => {
   });
 
   it('notices two events sharing one host, slot and day', () => {
-    const rows = FREE_BUY_HOSTS.flatMap((h) => [row(0, h), row(8, h), row(8, h)]);
+    const rows = FREE_BUY_HOSTS.flatMap((h) => [row(12, h), row(8, h), row(8, h)]);
     const p = auditFreeBuyBoard(rows, now).problems;
     expect(p.some((x) => x.includes('share one host, slot and Chicago day'))).toBe(true);
   });

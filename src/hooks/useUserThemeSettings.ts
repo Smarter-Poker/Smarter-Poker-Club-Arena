@@ -68,7 +68,7 @@ import { supabase } from '../lib/supabase';
 import { subscribeRealtime } from '../lib/subscribeRealtime';
 import { realtimeAdmission } from '../lib/realtimeAdmission';
 import { masterBus } from '../core/MasterBus';
-import { getLocalStorage, setLocalStorage } from '../lib/storage';
+import { getLocalStorage, setLocalStorage, removeLocalStorage } from '../lib/storage';
 import { recordCustomizationOperation } from '../services/CustomizationOperationsTelemetry';
 import {
   DEFAULT_FACE_DECK_ID,
@@ -580,6 +580,10 @@ function themeRowsCacheKey(userId: string): string {
   return `${THEME_ROWS_CACHE_PREFIX}${userId}`;
 }
 
+function confirmedEmptyThemeKey(userId: string): string {
+  return `ca_user_theme_confirmed_empty:${userId}`;
+}
+
 function readCachedThemeRows(userId: string | null | undefined): ThemeRow[] {
   if (!userId) return [];
   const rows = getLocalStorage<ThemeRow[]>(themeRowsCacheKey(userId), []);
@@ -589,6 +593,9 @@ function readCachedThemeRows(userId: string | null | undefined): ThemeRow[] {
 function writeCachedThemeRows(userId: string | null | undefined, rows: ThemeRow[]): void {
   if (!userId) return;
   setLocalStorage(themeRowsCacheKey(userId), rows);
+  // Optimistic/cache writes never establish absence. Only a successful full
+  // authoritative empty snapshot may reinstate this account's marker below.
+  removeLocalStorage(confirmedEmptyThemeKey(userId));
 }
 
 /**
@@ -601,7 +608,21 @@ export function resolveCachedTheme(
 ): UserThemeSelection | null {
   if (!userId || !gameType) return null;
   const row = pickThemeRow(readCachedThemeRows(userId), gameType);
-  return row ? toSelection(row) : null;
+  if (row) return toSelection(row);
+  // Preserve the rows-array format and distinguish an observed empty result
+  // from an old [], corrupt storage, missing rows or filtered invalid entries.
+  const raw = getLocalStorage<unknown>(themeRowsCacheKey(userId), null);
+  const marker = getLocalStorage<{ version?: number; userId?: string; empty?: boolean } | null>(
+    confirmedEmptyThemeKey(userId),
+    null
+  );
+  return Array.isArray(raw) &&
+    raw.length === 0 &&
+    marker?.version === 1 &&
+    marker.userId === userId &&
+    marker.empty === true
+    ? { ...DEFAULT_THEME }
+    : null;
 }
 
 /** Preserve Postgres microseconds when ordering authenticated row versions. */
@@ -637,6 +658,8 @@ function cacheAuthoritativeThemeRows(userId: string, rows: ThemeRow[]): void {
         : {}),
     }))
   );
+  if (rows.length === 0)
+    setLocalStorage(confirmedEmptyThemeKey(userId), { version: 1, userId, empty: true });
 }
 
 /**

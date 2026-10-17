@@ -1,5 +1,5 @@
 // tests/unit/horseQualificationPipeline.test.ts
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   SUPPORTED_PHASES,
   PHASE_VARIANTS,
@@ -9,7 +9,6 @@ import {
   verifyPolicyDigestMatch,
   summarizeRunJobs,
   downloadRunArtifacts,
-  runStrengthAssembler,
   executeQualificationPipeline,
 } from '../../scripts/ops/horse-qualification-pipeline.mjs';
 
@@ -69,8 +68,8 @@ describe('Horse Qualification Pipeline Orchestrator', () => {
       const { command, args } = buildAssemblerArgs({
         phase: 10,
         variant: 'plo4',
-        runsDir: '/tmp/runs10',
-        outDir: '/tmp/out10',
+        runsDir: 'fixtures/runs10',
+        outDir: 'fixtures/out10',
         noFormat: true,
       });
       expect(command).toBe('node');
@@ -78,8 +77,8 @@ describe('Horse Qualification Pipeline Orchestrator', () => {
         '--import',
         'tsx',
         'scripts/phase10-strength-assemble.mjs',
-        '--runs=/tmp/runs10',
-        '--out=/tmp/out10',
+        '--runs=fixtures/runs10',
+        '--out=fixtures/out10',
         '--no-format',
       ]);
     });
@@ -88,8 +87,8 @@ describe('Horse Qualification Pipeline Orchestrator', () => {
       const { command, args } = buildAssemblerArgs({
         phase: 11,
         variant: 'plo6',
-        runsDir: '/tmp/runs11',
-        outDir: '/tmp/out11',
+        runsDir: 'fixtures/runs11',
+        outDir: 'fixtures/out11',
         noFormat: true,
       });
       expect(command).toBe('node');
@@ -97,8 +96,8 @@ describe('Horse Qualification Pipeline Orchestrator', () => {
         '--import',
         'tsx',
         'scripts/phase11-strength-assemble.mjs',
-        '--runs=/tmp/runs11',
-        '--out=/tmp/out11',
+        '--runs=fixtures/runs11',
+        '--out=fixtures/out11',
         '--variant=plo6',
         '--no-format',
       ]);
@@ -108,21 +107,21 @@ describe('Horse Qualification Pipeline Orchestrator', () => {
       const { args } = buildAssemblerArgs({
         phase: 12,
         variant: 'flh',
-        runsDir: '/tmp/runs12',
-        outDir: '/tmp/out12',
+        runsDir: 'fixtures/runs12',
+        outDir: 'fixtures/out12',
         noFormat: true,
-        defectiveFile: '/tmp/defective.json',
+        defectiveFile: 'fixtures/defective.json',
       });
-      expect(args).toContain('--defective=/tmp/defective.json');
+      expect(args).toContain('--defective=fixtures/defective.json');
     });
 
     it('requires runsDir and outDir', () => {
       expect(() => buildAssemblerArgs({ phase: 11, variant: 'plo5' })).toThrow(
         /runsDir is required/
       );
-      expect(() => buildAssemblerArgs({ phase: 11, variant: 'plo5', runsDir: '/tmp' })).toThrow(
-        /outDir is required/
-      );
+      expect(() =>
+        buildAssemblerArgs({ phase: 11, variant: 'plo5', runsDir: 'fixtures/mock-runs' })
+      ).toThrow(/outDir is required/);
     });
   });
 
@@ -133,8 +132,8 @@ describe('Horse Qualification Pipeline Orchestrator', () => {
         qualified: true,
         reasons: [],
         variant: 'plo6',
-        strength: '/docs/evidence/phase11/strength-2026-10-17-plo6/strength.json',
-        qualification: '/docs/evidence/phase11/phase11-qualification-2026-10-17-plo6.json',
+        strength: 'docs/evidence/phase11/strength-2026-10-17-plo6/strength.json',
+        qualification: 'docs/evidence/phase11/phase11-qualification-2026-10-17-plo6.json',
         evidenceSha256: 'abc123def456',
       });
       const res = validateQualificationResult(valid);
@@ -236,8 +235,8 @@ describe('Horse Qualification Pipeline Orchestrator', () => {
         executeQualificationPipeline({
           phase: 11,
           variant: 'plo6',
-          runsDir: '/nonexistent/path/for/tests',
-          outDir: '/tmp/out',
+          runsDir: 'fixtures/nonexistent/path/for/tests',
+          outDir: 'fixtures/mock-out',
         })
       ).rejects.toThrow(/Runs directory not found/);
     });

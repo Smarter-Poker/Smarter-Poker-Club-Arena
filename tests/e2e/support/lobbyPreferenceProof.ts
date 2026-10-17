@@ -233,17 +233,32 @@ export async function selectLobbyPreference(
   const before = await tabs.getByRole('tab', { selected: true }).textContent();
   proof.record('selection-before', { selected: before?.trim(), intended: label });
   const started = Date.now();
-  const [request] = await Promise.all([
-    page.waitForRequest((r) => isLobbySelectionRequest(r, clubId, label, ownerId), {
-      timeout: SAVE_TIMEOUT_MS,
-    }),
-    tab.click({ timeout: SAVE_TIMEOUT_MS }).then(async () => {
-      proof.record('selection-clicked', {
-        intended: label,
-        ariaSelected: await tab.getAttribute('aria-selected'),
-      });
-    }),
-  ]);
+  // Arm observation before the click so a fast write cannot be missed. The
+  // action must settle before restoration/cleanup proceeds: a separate request
+  // timer raced and concealed the click's own actionability timeout.
+  let resolveRequest!: (request: Request) => void;
+  const observedRequest = new Promise<Request>((resolve) => {
+    resolveRequest = resolve;
+  });
+  const observeRequest = (request: Request) => {
+    if (isLobbySelectionRequest(request, clubId, label, ownerId)) resolveRequest(request);
+  };
+  page.on('request', observeRequest);
+  let request: Request;
+  try {
+    await tab.click({ timeout: SAVE_TIMEOUT_MS });
+    proof.record('selection-clicked', {
+      intended: label,
+      ariaSelected: await tab.getAttribute('aria-selected'),
+    });
+    request = await bounded(
+      observedRequest,
+      SAVE_TIMEOUT_MS - (Date.now() - started),
+      'save request'
+    );
+  } finally {
+    page.off('request', observeRequest);
+  }
   proof.record('intended-request', { ownerMatches: true, clubMatches: true, tab: TAB_KEYS[label] });
   const response = await bounded(
     request.response(),
@@ -268,6 +283,7 @@ export async function restoreLobbyPreference({
   ownerId,
   proofFor,
   verify,
+  onFailure,
 }: {
   originalPage: Page;
   returningPage: Page | undefined;
@@ -277,16 +293,22 @@ export async function restoreLobbyPreference({
   ownerId: string;
   proofFor: (page: Page) => LobbyPreferenceProof;
   verify: () => Promise<void>;
+  onFailure?: (page: Page) => Promise<void>;
 }) {
   const failures: unknown[] = [];
+  const restorePage = returningReady && returningPage ? returningPage : originalPage;
   try {
-    const restorePage = returningReady && returningPage ? returningPage : originalPage;
     const proof = proofFor(restorePage);
     proof.phase('restore');
     await selectLobbyPreference(restorePage, clubId, original, ownerId, proof);
     await verify();
   } catch (error) {
     failures.push(error);
+    try {
+      await onFailure?.(restorePage);
+    } catch (diagnosticError) {
+      failures.push(diagnosticError);
+    }
   } finally {
     try {
       await returningPage?.close();

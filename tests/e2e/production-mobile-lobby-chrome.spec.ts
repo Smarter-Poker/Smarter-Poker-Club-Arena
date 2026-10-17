@@ -178,6 +178,12 @@ test.describe('the mobile lobby chrome on production', () => {
           original,
           ownerId: certificateOwner,
           proofFor,
+          onFailure: async (document) => {
+            await testInfo.attach('cold-return-restoration-page', {
+              body: await document.screenshot({ timeout: 3_000 }),
+              contentType: 'image/png',
+            });
+          },
           verify: async () => {
             const restoredPage = await page.context().newPage();
             try {

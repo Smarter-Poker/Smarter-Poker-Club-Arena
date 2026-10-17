@@ -44,7 +44,12 @@ function exchange({
   return { request, response };
 }
 
-function fixture({ status = 200, closeFailure = false, responseMode = 'normal' } = {}) {
+function fixture({
+  status = 200,
+  closeFailure = false,
+  responseMode = 'normal',
+  clickFailure = false,
+} = {}) {
   const emitter = new EventEmitter();
   const frame = {};
   const events: string[] = [];
@@ -75,6 +80,10 @@ function fixture({ status = 200, closeFailure = false, responseMode = 'normal' }
         getAttribute: async () => (selected === options.name ? 'true' : 'false'),
         click: async () => {
           events.push('click');
+          if (clickFailure) {
+            await new Promise((resolve) => setTimeout(resolve, 30_000));
+            throw new Error('Click timed out: another dialog intercepts pointer events');
+          }
           selected = options.name!;
           const value = exchange({
             ownerId: postOwner,
@@ -220,9 +229,28 @@ describe('cold-return preference proof', () => {
       );
       await vi.advanceTimersByTimeAsync(30_000);
       expect((await outcome).message).toMatch(
-        mode === 'pending' ? /save response.*30s/ : /request timeout/
+        mode === 'pending' ? /save response.*30s/ : /save request.*30s/
       );
       expect(f.events).toEqual(['click']);
+    } finally {
+      f.proof.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('preserves the actual click timeout when the old request clock expires at the same time', async () => {
+    vi.useFakeTimers();
+    const f = fixture({ clickFailure: true });
+    f.read();
+    try {
+      const outcome = selectLobbyPreference(f.page, club, 'PLO', owner, f.proof).catch(
+        (error) => error
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect((await outcome).message).toContain('another dialog intercepts pointer events');
+      expect(f.proof.snapshot().events).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: 'selection-clicked' })])
+      );
     } finally {
       f.proof.stop();
       vi.useRealTimers();
@@ -289,6 +317,11 @@ describe('cold-return preference proof', () => {
       ownerId: owner,
       proofFor: () => f.proof,
       verify,
+      onFailure: async (page) => {
+        expect(page).toBe(f.page);
+        expect(f.events).not.toContain('close');
+        f.events.push('diagnose');
+      },
     }).catch((error) => error);
     expect(failure).toBeInstanceOf(AggregateError);
     expect(failure.errors.map((error: Error) => error.message)).toEqual([
@@ -296,7 +329,7 @@ describe('cold-return preference proof', () => {
       'close failed',
     ]);
     expect(verify).not.toHaveBeenCalled();
-    expect(f.events.at(-1)).toBe('close');
+    expect(f.events).toEqual(['click', 'diagnose', 'close']);
     f.proof.stop();
   });
 

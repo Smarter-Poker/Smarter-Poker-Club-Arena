@@ -2,22 +2,25 @@
 
 Three warnings stayed open after the condition they describe had ended.
 
-## The Free Buy audit and the published timetable
+## The Free Buy audit and the frozen guarantees
 
-On 2026-10-16 the board moved to "a real room's day": Free Buys at 8:30, 12:30,
-4:30, 8:30 and 12:30 Chicago, with guarantees 500 and 1,000. As
-`docs/changelog/2026-10-16-a-real-rooms-day.md` records, the dates already
-published, through Monday 2026-10-19, deliberately keep the timetable they were
-published under (on the hour, 250 and 500). Read live on 2026-10-17: 15 such
-events, and the first half-hour event is Tuesday 00:30.
+On 2026-10-16 the board moved to "a real room's day": Free Buys at 8:30,
+12:30, 4:30, 8:30 and 12:30 Chicago, guarantees doubled to 500 and 1,000. The
+28 occurrences already spawned for 2026-10-17..19 were moved onto the half
+hour by `20261017105003`. Their guarantees could not be raised:
+`trg_freeze_registered_tournament_settlement_contract` freezes a guarantee at
+the first entrant, for every caller including the engine, because a
+registered player's advertised contract is immutable.
 
-The hourly audit judged those dates against the new timetable. It raised "40
-problem(s) across 20 event(s)" at 03:01 UTC and would have kept reporting
-through Tuesday. `auditFreeBuyRow` now reads a date before
-`FREE_BUY_HALF_HOUR_BOARD_FROM` (2026-10-20) that sits on the previous
-timetable's minute against that timetable's guarantees. A short prize on those
-dates is still caught, and from 2026-10-20 the hour is wrong again. The watch
-closes its own alert on a clean read, as before.
+The hourly audit judged those events against the doubled tier and would have
+reported "guarantee 250, the standard tier is 500" until they played out.
+`auditFreeBuyRow` now accepts the guarantee a date before
+`FREE_BUY_HALF_HOUR_BOARD_FROM` (2026-10-20) was published with. The
+half-hour start is still required on every date, a guarantee that matches
+neither tier is still wrong, and from 2026-10-20 only the doubled tier passes.
+Read live after the move: every future Free Buy is on :30; dates before 10-20
+hold 250/500, and 10-20 holds 500. The watch closes its own alert on a clean
+read, as before.
 
 ## The Stable Hand counter write
 

@@ -25,9 +25,19 @@
  * the steps the page passed in, or a tour built from the page itself - the
  * sentences of its explanation, then each section heading on the page.
  */
-import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type Context,
+} from 'react';
 import { createPortal } from 'react-dom';
-import { UNSAFE_LocationContext } from 'react-router-dom';
+import * as RouterDom from 'react-router-dom';
 import { mediaUrl } from '../../utils/mediaBase';
 import { titleCase } from '../../utils/titleCase';
 import { tutorialForPath, type TutorialStep } from './pageTutorials';
@@ -124,8 +134,28 @@ function resolveTarget(target: TutorialStep['target']): Element | null {
  * prerendered static pages and in isolated component renders, where there is
  * no router and useLocation() would throw; there it reads the address bar.
  */
+type LocationContextValue = { location?: { pathname?: string } } | null;
+
+/*
+ * The router's location context, read once at load. It is read off the
+ * module namespace inside a try because a test that mocks react-router-dom
+ * with a factory listing only the hooks it needs has no such export, and the
+ * mock throws on a missing name; there the help behaves as it does outside a
+ * router. In the app this is the real export (react-router-dom re-exports it).
+ */
+const NO_ROUTER = createContext<LocationContextValue>(null);
+const LocationContext: Context<LocationContextValue> = (() => {
+  try {
+    const routed = (RouterDom as unknown as { UNSAFE_LocationContext?: unknown })
+      .UNSAFE_LocationContext;
+    return (routed as Context<LocationContextValue> | undefined) ?? NO_ROUTER;
+  } catch {
+    return NO_ROUTER;
+  }
+})();
+
 function usePathname(): string {
-  const routed = useContext(UNSAFE_LocationContext)?.location?.pathname;
+  const routed = useContext(LocationContext)?.location?.pathname;
   if (routed) return routed;
   return typeof window === 'undefined' ? '/' : window.location.pathname;
 }

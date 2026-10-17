@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import { useFitText } from '../../src/components/lobby/game-cards/useFitText';
 let restoreFonts: (() => void) | undefined;
@@ -26,6 +26,25 @@ function Label({
     </div>
   );
 }
+// Flush the same shared pre-paint cohort the browser runs after commit.
+let frames = new Map<number, FrameRequestCallback>();
+let nextFrame = 0;
+beforeEach(() => {
+  frames = new Map();
+  nextFrame = 0;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frames.set(++nextFrame, callback);
+    return nextFrame;
+  });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+});
+function paint() {
+  act(() => {
+    const ready = [...frames.values()];
+    frames.clear();
+    for (const frame of ready) frame(0);
+  });
+}
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -42,9 +61,11 @@ describe('fitted text during the wheel prize opening', () => {
       });
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(89);
     const view = render(<Label enabled={false} />);
+    paint();
     expect(measured).not.toHaveBeenCalled();
     expect(view.getByText('Prize').style.getPropertyValue('--fit')).toBe('');
     view.rerender(<Label enabled />);
+    paint();
     expect(measured).toHaveBeenCalled();
     expect(view.getByText('Prize').style.getPropertyValue('--fit')).toBe('0.5');
   });
@@ -76,14 +97,17 @@ describe('fitted text during the wheel prize opening', () => {
     const measured = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(70);
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(89);
     const view = render(<Label />);
+    paint();
     const initial = measured.mock.calls.length;
     expect(initial).toBeGreaterThan(0);
     act(() => resize([], {} as ResizeObserver));
+    paint();
     expect(measured.mock.calls.length).toBeGreaterThan(initial);
     await act(async () => {
       fontsReady();
       await ready;
     });
+    paint();
     const afterFonts = measured.mock.calls.length;
     expect(afterFonts).toBeGreaterThan(initial + 1);
     view.unmount();
@@ -95,6 +119,7 @@ describe('fitted text during the wheel prize opening', () => {
     await act(async () => {
       await Promise.resolve();
     });
+    paint();
     expect(measured).not.toHaveBeenCalled();
   });
   it.each(['content-box', 'border-box'])(
@@ -112,6 +137,7 @@ describe('fitted text during the wheel prize opening', () => {
         return 70 * Number(this.style.getPropertyValue('--fit') || 1);
       });
       const v = render(<Label boxSizing={boxSizing} />);
+      paint();
       expect(v.getByText('Prize').style.getPropertyValue('--fit')).toBe('1');
     }
   );
@@ -126,6 +152,7 @@ describe('fitted text during the wheel prize opening', () => {
       return 70 * Number(this.style.getPropertyValue('--fit') || 1);
     });
     const v = render(<Label boxSizing="border-box" scale={1.5} />);
+    paint();
     const ratio = Number(v.getByText('Prize').style.getPropertyValue('--fit'));
     expect(ratio).toBeGreaterThan(0.7);
     expect(70 * 1.5 * ratio).toBeLessThanOrEqual(78.8);

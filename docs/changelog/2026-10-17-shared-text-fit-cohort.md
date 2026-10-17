@@ -1,0 +1,9 @@
+# Fit The Lobby Text In One Layout Cohort
+
+A production cold-return check read its saved MTT preference successfully, then timed out while the board was updating. The retained DOM already had MTT selected. A fresh live CPU profile with the viewport admission repair installed still spent 2.3 seconds in repeated `useFitText` width reads under eightfold CPU throttling; the selector alone took milliseconds when replaying the captured DOM.
+
+The existing shared fitting module retains the algorithm and now shares write and measurement phases across labels scheduled before paint. It retains the four single-line passes, eight wrapping passes, fractional box/transform coordinates, ratio floors, two-line choice and all text. Mount, resize and font readiness share one frame; disposal cancels queued work. The recent MTT viewport admission and `enabled` default remain unchanged. No browser assertion, deadline, save, readback, artwork, wallet or engine contract changes.
+
+Validation: the new hook-level layout-invalidation regression failed all three cases before the repair. The corrected cohort, existing viewport/font/disposal tests and connected contracts pass 110 tests. Application compilation and all four copy gates pass. A real-font, correctly positioned 48-card browser fixture preserves all 528 text/fit/wrapping/font/width results exactly at 375, 393, 430 and 1280 pixels, including scrolling every card into view. Before/after screenshots are identical at the sampled phone widths. Publication and the maintained production checks are still required.
+
+The first hosted build correctly refused a newly extracted entry module. Keeping the cohort implementation in the existing fitting module removes that new startup dependency. The complete local production build, entry-module review, bundle-size check, Stats chunk budgets and public-route browser performance budgets pass after this correction. All four before/after screenshot pairs have identical RGB pixels.

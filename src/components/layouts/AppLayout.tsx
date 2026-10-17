@@ -20,7 +20,7 @@ import GlobalHeader from '../navigation/GlobalHeader';
 import ArenaSectionRail from '../navigation/ArenaSectionRail';
 import ClubOperationsRail from '../navigation/ClubOperationsRail';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProfileModal';
+import { useCompleteProfile } from '../modals/useCompleteProfile';
 import { ClubWorkspaceProvider } from '../../contexts/ClubWorkspaceContext';
 import NavigationTelemetry from '../navigation/NavigationTelemetry';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
@@ -30,6 +30,11 @@ import { useHoldPromptLane } from '../../lib/promptLane';
 // chunk stays as it was and the sheet, its service and the club-buttons kit
 // arrive in their own chunk the first time a signed-in player lands here.
 const DailyBonusEntry = lazyWithRetry(() => import('../daily-bonus/DailyBonusEntry'));
+// The profile gate decides at boot (useCompleteProfile above), but the modal it
+// opens - its console art and the AvatarGallery - is only for the player it
+// actually stops, so it loads on that player's demand, not in the entry chunk
+// every player downloads before first paint.
+const CompleteProfileModal = lazyWithRetry(() => import('../modals/CompleteProfileModal'));
 
 /*
  * THE ROUTE ART IS GONE (2026-08-30).
@@ -119,8 +124,10 @@ function AppLayoutContent() {
       {isReady && !!user && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
 
       {/* Force Poker Alias Selection for Google Auth users */}
-      {profileReady && (
-        <CompleteProfileModal isOpen={showProfileModal} onComplete={finishProfile} />
+      {profileReady && showProfileModal && (
+        <Suspense fallback={null}>
+          <CompleteProfileModal isOpen onComplete={finishProfile} />
+        </Suspense>
       )}
 
       {/* The Daily Club Arena Bonus sheet, once per day on entry. It waits

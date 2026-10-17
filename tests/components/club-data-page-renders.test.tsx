@@ -1804,6 +1804,47 @@ describe('ClubDataPage', () => {
     }
   });
 
+  it('stops retrying a timed-out read once the page has unmounted', async () => {
+    // A read ladder that outlived the page kept sending full-window snapshot
+    // scans after the operator left, and in this file it leaked into the next
+    // test's mock: the deadline test above saw an extra request on loaded CI
+    // runners (PRs #7281, #7282, #7283).
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const pending = new Promise<never>(() => undefined);
+    let snapshotCalls = 0;
+    const abortableSnapshot = {
+      then: pending.then.bind(pending),
+      abortSignal() {
+        return this;
+      },
+    };
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') {
+        snapshotCalls += 1;
+        return abortableSnapshot;
+      }
+      if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    try {
+      const { unmount } = render(<ClubDataPage />);
+      await act(async () => undefined);
+      expect(snapshotCalls).toBe(1);
+      unmount();
+      // Past every deadline and backoff a full ladder could use.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4 * 12_000 + 350 * 7 + 1_000);
+      });
+      expect(snapshotCalls).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('revalidates a cached player sort without accepting the previous sort response', async () => {
     const endDate = new Date().toISOString().slice(0, 10);
     const start = new Date(endDate + 'T00:00:00Z');

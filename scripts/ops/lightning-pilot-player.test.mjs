@@ -105,14 +105,23 @@ function fixture(change = {}) {
     cash_games: {
       id: pin.clusterId,
       club_id: pin.clubId,
-      name: 'Lightning Pilot NLH 6',
+      name: 'Lightning Pilot NLH Action 6',
+      template_name: 'action',
       handedness: 6,
       sb: 0.01,
       bb: 0.02,
       variant: 'nlh',
       enabled: true,
       must_move: true,
-      ruleset_snapshot: { options: { is_private: true } },
+      ruleset_snapshot: {
+        template: 'action',
+        variant: 'nlh',
+        regular_ante: 'sb',
+        vpip_floor: 30,
+        vpip_window: 10,
+        bombs: { enabled: true, trigger: 'timed_15m', ante_bb: 2, boards: 2 },
+        options: { is_private: true },
+      },
       cluster_mode: 'lightning',
       lightning_enabled: true,
     },
@@ -159,7 +168,7 @@ function fixture(change = {}) {
 }
 test('no unspecified or outside-pilot participant can be selected', () => {
   assert.doesNotThrow(() => assertPlayerPin(pin));
-  for (const p of [null, {}, { ...pin, clubId: pin.playerId }, { ...pin, clusterId: pin.playerId }])
+  for (const p of [null, {}, { ...pin, clubId: pin.playerId }, { ...pin, clusterId: 'not-a-uuid' }])
     assert.throws(() => assertPlayerPin(p));
 });
 test('existing funded active pilot scope is read before login', async () => {
@@ -392,4 +401,12 @@ test('Samantha consent requires exact authorized pin and matching browser identi
     );
     assert.deepEqual(denied.calls, []);
   }
+});
+
+test('Classic cannot be selected as an active Lightning pilot before authentication', async () => {
+  const valid = fixture();
+  const game = (await valid.admin.from('cash_games').maybeSingle()).data;
+  const f = fixture({ cash_games: { ...game, template_name: 'classic' } });
+  await assert.rejects(openPlayerSession(f.admin, () => f.client, 'https://example.invalid', pin));
+  assert.deepEqual(f.calls, []);
 });

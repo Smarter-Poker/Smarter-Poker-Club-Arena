@@ -3,9 +3,8 @@
  * Consent requires explicit opt-in for the separately owner-authorized exact identity.
  * Horse input continues; only the ordinary UI and authoritative accepted actions count.
  */
-import { assertPilotClub, PILOT_TARGETS } from './prepare-lightning-private-pilot.mjs';
+import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
-const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
 
 const PUBLIC_KEY = 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,7 +24,7 @@ export function assertPlayerPin(pin) {
     !UUID.test(pin.playerId) ||
     !UUID.test(pin.poolSessionId) ||
     pin.clubId !== CLUB ||
-    !CLUSTERS.includes(pin.clusterId)
+    !UUID.test(pin.clusterId)
   )
     throw new Error('Explicit Existing Pilot Player Pin Required');
 }
@@ -33,28 +32,7 @@ export function assertPlayerPin(pin) {
 /** Reads only. Repeat immediately before each UI action to reject changed scope. */
 export async function validatePlayer(admin, pin) {
   assertPlayerPin(pin);
-  const club = must(await admin.from('clubs').select('*').eq('id', pin.clubId).maybeSingle());
-  assertPilotClub(club);
-  const game = must(
-    await admin.from('cash_games').select('*').eq('id', pin.clusterId).maybeSingle()
-  );
-  const target = PILOT_TARGETS[CLUSTERS.indexOf(pin.clusterId)];
-  if (
-    game.id !== pin.clusterId ||
-    game.club_id !== pin.clubId ||
-    game.union_id ||
-    game.name !== target.gameName ||
-    game.handedness !== target.handedness ||
-    Number(game.sb) !== target.sb ||
-    Number(game.bb) !== target.bb ||
-    game.variant !== 'nlh' ||
-    game.enabled !== true ||
-    game.must_move !== true ||
-    game.ruleset_snapshot?.options?.is_private !== true ||
-    game.cluster_mode !== 'lightning' ||
-    game.lightning_enabled !== true
-  )
-    throw new Error('Active Private Pilot Game Unverified');
+  const { target } = await resolvePilotTarget(admin, pin.clusterId);
   const profile = must(
     await admin.from('profiles').select('id,is_horse,status').eq('id', pin.playerId).maybeSingle()
   );
@@ -87,6 +65,7 @@ export async function validatePlayer(admin, pin) {
     pool.exited_at !== null
   )
     throw new Error('Existing Funded Active Pilot Player Unavailable');
+  return target;
 }
 
 export async function openPlayerSession(admin, createClient, url, pin, checkDeadline = () => {}) {

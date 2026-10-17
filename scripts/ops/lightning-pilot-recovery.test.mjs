@@ -16,6 +16,9 @@ const SECRET = 'TEST_PRIVATE_FRAME_AND_TOKEN';
 const ROOM = '10000000-0000-4000-8000-000000000001';
 const OTHER = '10000000-0000-4000-8000-000000000002';
 const HAND = '10000000-0000-4000-8000-000000000003';
+const validatedTarget = (p) => ({
+  templateName: p.clusterId === pins[0].clusterId ? 'action' : 'madness',
+});
 const PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
 const pins = [
   {
@@ -131,7 +134,10 @@ test('two existing own sessions are mandatory and refusal closes only the create
         launched = true;
       },
     },
-    validate: async (_admin, pin) => validated.push(pin),
+    validate: async (_admin, pin) => {
+      validated.push(pin);
+      return validatedTarget(pin);
+    },
     openSession: async () => ({
       session: { access_token: SECRET },
       client: {
@@ -188,7 +194,7 @@ test('partial recovery authentication retains owned local-client cleanup', async
   const r = await witnessRecovery({
     admin,
     pins,
-    validate: async () => {},
+    validate: async (_admin, pin) => validatedTarget(pin),
     createClient: () => ({
       auth: {
         signOut: async (value) => {
@@ -352,7 +358,7 @@ test('Samantha uses her own prior-consent profile; no new consent is written', a
     const report = await witnessRecovery({
       admin,
       pins: pins.map((p) => ({ ...p, playerId: samantha })),
-      validate: async () => {},
+      validate: async (_admin, pin) => validatedTarget(pin),
       openSession: async () => {
         opened = true;
         throw new Error('fixture');
@@ -382,4 +388,24 @@ test('recovery refuses mixed approved player identities before profile or auth r
   });
   assert.equal(report.status, 'unknown');
   assert.equal(reads, 0);
+});
+
+test('two distinct UUIDs resolving to the same target category refuse before profile or session authentication', async () => {
+  let authReads = 0;
+  const report = await witnessRecovery({
+    pins,
+    validate: async () => ({ templateName: 'action' }),
+    admin: {
+      from: () => {
+        authReads++;
+        throw new Error();
+      },
+    },
+    openSession: async () => {
+      authReads++;
+      throw new Error();
+    },
+  });
+  assert.equal(report.status, 'unknown');
+  assert.equal(authReads, 0);
 });

@@ -24,7 +24,8 @@ const rpc = vi.fn();
 const gameRow: Record<string, unknown> = {
   id: CLUSTER,
   club_id: null,
-  name: 'NLH 1/2 Classic',
+  name: 'NLH 1/2 Action',
+  template_name: 'action',
   variant: 'nlh',
   sb: 1,
   bb: 2,
@@ -584,7 +585,8 @@ describe('the session summary', () => {
       openLightningSessionSummary({
         poolSessionId: POOL,
         clusterId: CLUSTER,
-        name: 'NLH 1/2 Classic',
+        name: 'NLH 1/2 Action',
+        template_name: 'action',
       })
     );
     await screen.findByTestId('lightning-stats-summary');
@@ -609,7 +611,7 @@ describe('the session summary', () => {
     render(
       <LightningEndedNotice
         onViewGame={vi.fn()}
-        session={{ poolSessionId: POOL, clusterId: CLUSTER, name: 'NLH 1/2 Classic' }}
+        session={{ poolSessionId: POOL, clusterId: CLUSTER, name: 'NLH 1/2 Action' }}
       />
     );
     await screen.findByTestId('lightning-stats-summary');

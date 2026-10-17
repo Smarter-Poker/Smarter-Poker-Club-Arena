@@ -34,6 +34,8 @@
       "id": "L04",
       "requirement": "Every Lightning-capable game starts as MUST-MOVE FEEDER",
       "qualificationFiles": [
+        "tests/lightning/lightning-action-madness-only.law.test.ts",
+        "scripts/dev/test-lightning-template-boundary.sh",
         "scripts/dev/test-lightning-phase3-feeder-first.sh",
         "scripts/dev/test-lightning-phase3-remediation.sh"
       ]

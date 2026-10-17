@@ -179,6 +179,17 @@ describe('a satellite seats a bounty target like a paid entry', () => {
     ].map((m) => m[1]);
     expect(creates.length).toBe(11);
     expect([...proofs].sort()).toEqual([...creates].sort());
+    // No function gains a caller: every grant is restated and proved exact.
+    expect(SQL).toContain('SATELLITE_BOUNTY_TARGET_ACL_CHANGED');
+    for (const name of creates) {
+      expect(SQL).toMatch(
+        new RegExp(
+          `^REVOKE ALL ON FUNCTION public\\.${name}\\([^)]*\\) FROM PUBLIC, anon, authenticated`,
+          'm'
+        )
+      );
+    }
+    expect(SQL).not.toMatch(/GRANT EXECUTE ON FUNCTION [^;]* TO (anon|authenticated|PUBLIC)/);
   });
 
   it('is executed on PostgreSQL 17 in CI, to the funded 5,810.00', () => {

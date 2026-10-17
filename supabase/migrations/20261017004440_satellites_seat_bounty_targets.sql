@@ -72,8 +72,9 @@
 -- Live path only: no sweep, no repair job, no compensating write (CLAUDE.md
 -- 10.11, 10.12). Every function below is the exact production preimage (md5
 -- of pg_get_functiondef read 2026-10-16) with the minimal change; the block
--- below refuses any other preimage, and the closing block proves every
--- postimage hash. Regression: scripts/ci/test-satellite-bounty-seat-split.py
+-- below refuses any other preimage, and the closing blocks prove every
+-- postimage hash and that every grant is exactly production's (restated
+-- below: no function gains or loses a caller). Regression: scripts/ci/test-satellite-bounty-seat-split.py
 -- (PostgreSQL 17) runs the real postimages of the settlement authority, its
 -- receipt, the escrow triggers and the refund plan end to end, and
 -- tests/a-satellite-seats-a-bounty-target-like-a-paid-entry.law.test.ts pins
@@ -5919,6 +5920,21 @@ BEGIN
 END;
 $function$;
 
+-- Who may call each function: exactly production's grants, restated.
+REVOKE ALL ON FUNCTION public.fn_satellite_target_is_deliverable(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_satellite_target_is_deliverable(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_satellite_feeds_only_a_deliverable_target() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_satellite_target_accepts_new_feeder(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_guard_new_satellite_target() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_capture_satellite_seat_entitlement() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_find_tournament_entry_ticket_for(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_satellite_settlement_receipt(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_satellite_cohort_receipt(uuid,uuid[]) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_settle_satellite_cohort(uuid,uuid[]) FROM PUBLIC, anon, authenticated, service_role;
+
 DO $postimage$
 DECLARE
   r record;
@@ -5956,5 +5972,31 @@ BEGIN
   END LOOP;
 END
 $postimage$;
+
+DO $acl$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+    ('public.fn_satellite_target_is_deliverable(uuid)','{postgres=X/postgres,service_role=X/postgres}'),
+    ('public.fn_satellite_feeds_only_a_deliverable_target()','{postgres=X/postgres}'),
+    ('public.fn_ca_satellite_target_accepts_new_feeder(uuid)','{postgres=X/postgres}'),
+    ('public.fn_ca_guard_new_satellite_target()','{postgres=X/postgres}'),
+    ('public.fn_ca_capture_satellite_seat_entitlement()','{postgres=X/postgres}'),
+    ('public.fn_ca_find_tournament_entry_ticket_for(uuid,uuid)','{postgres=X/postgres}'),
+    ('public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid)','{postgres=X/postgres}'),
+    ('public.fn_ca_satellite_settlement_receipt(uuid,uuid)','{postgres=X/postgres}'),
+    ('public.fn_ca_satellite_cohort_receipt(uuid,uuid[])','{postgres=X/postgres}'),
+    ('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)','{postgres=X/postgres,service_role=X/postgres}'),
+    ('public.fn_ca_settle_satellite_cohort(uuid,uuid[])','{postgres=X/postgres}')
+  ) AS v(sig, acl) LOOP
+    IF (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = r.sig::regprocedure)
+       IS DISTINCT FROM r.acl THEN
+      RAISE EXCEPTION 'SATELLITE_BOUNTY_TARGET_ACL_CHANGED: % is %, expected %', r.sig,
+        (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = r.sig::regprocedure), r.acl;
+    END IF;
+  END LOOP;
+END
+$acl$;
 
 COMMIT;

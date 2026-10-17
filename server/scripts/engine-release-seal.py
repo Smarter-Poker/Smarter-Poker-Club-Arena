@@ -1471,6 +1471,27 @@ def cmd_attest_commit(args: argparse.Namespace) -> None:
         print(f'{state["generation"]} {target_sha} {image_id} {run_id}')
 
 
+def cmd_attest_committed_sha(args: argparse.Namespace) -> None:
+    """Read-only: has this host ever sealed this exact commit?
+
+    The engine rollback drill admits an older target only if a run already
+    committed it here, so it has served on this host and database before.
+    Prints the newest committing run and its image; exits 1 when none did.
+    """
+    target_sha = valid_sha(args.sha)
+    with SealLock():
+        state = load_state()
+        owners = sorted(
+            run_id
+            for run_id, receipt in state.get("committedRuns", {}).items()
+            if isinstance(receipt, dict) and receipt.get("sha") == target_sha
+        )
+        if not owners:
+            die("this host has never sealed the requested commit")
+        newest = max(owners, key=lambda run_id: [int(part) for part in run_id.split("-")])
+        print(f'{target_sha} {state["committedRuns"][newest]["imageId"]} {newest}')
+
+
 def cmd_abort(args: argparse.Namespace) -> None:
     with SealLock():
         state = load_state()
@@ -1597,6 +1618,10 @@ def parser() -> argparse.ArgumentParser:
     attest.add_argument("--image-id", required=True)
     attest.add_argument("--run-id", required=True)
     attest.set_defaults(handler=cmd_attest_commit)
+
+    attest_committed_sha = commands.add_parser("attest-committed-sha")
+    attest_committed_sha.add_argument("--sha", required=True)
+    attest_committed_sha.set_defaults(handler=cmd_attest_committed_sha)
 
     abort = commands.add_parser("abort")
     abort.add_argument("--run-id", required=True)

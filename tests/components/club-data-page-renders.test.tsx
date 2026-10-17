@@ -1804,6 +1804,44 @@ describe('ClubDataPage', () => {
     }
   });
 
+  it('stops retrying a cold read once the page that wanted it has gone', async () => {
+    // An owner who left Club Data mid-load used to keep paying for the whole
+    // retry budget: up to three more 12 s cold scans of the full window, for
+    // an answer nobody would read. Under CI load the same leak woke inside the
+    // next test and called its rpc mock (2026-10-17).
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let snapshotCalls = 0;
+    const pending = new Promise<never>(() => undefined);
+    rpcMock.mockImplementation((fn: string) => {
+      if (fn === 'ca_club_data_snapshot') {
+        snapshotCalls += 1;
+        return {
+          then: pending.then.bind(pending),
+          abortSignal: () => ({ then: pending.then.bind(pending) }),
+        };
+      }
+      if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
+      if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    try {
+      const { unmount } = render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+      await act(async () => undefined);
+      expect(snapshotCalls).toBe(1);
+      unmount();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+      });
+      expect(snapshotCalls).toBe(1);
+    } finally {
+      errorSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it('revalidates a cached player sort without accepting the previous sort response', async () => {
     const endDate = new Date().toISOString().slice(0, 10);
     const start = new Date(endDate + 'T00:00:00Z');

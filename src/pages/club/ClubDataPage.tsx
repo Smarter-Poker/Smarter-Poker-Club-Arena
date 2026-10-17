@@ -361,11 +361,32 @@ function withTimeout<T>(
 function coldRead<T>(
   request: () => AbortableRequest<T>,
   message: string,
+  abandoned: () => boolean,
   maxRetries = 3
 ): Promise<T> {
+  /* A READ NOBODY WANTS IS NOT RETRIED (2026-10-17). Every caller already
+     knows when its answer has stopped mattering - the page unmounted, or a
+     newer query superseded it - and checked that only AFTER the whole retry
+     budget had run. So an owner who left Club Data mid-load still paid for up
+     to three more 12 s cold scans of the full window, each one a statement on
+     the database for an answer nobody would read. The check now sits between
+     attempts: retryFetch stops (an 'Unmounted' rejection, which every caller
+     already discards behind its own stale() check) instead of retrying. This
+     is also why tests/components/club-data-page-renders.test.tsx flaked under
+     CI load: one test's abandoned retry woke inside the next test and called
+     its rpc mock. */
+  const stillWanted = {
+    get current() {
+      return !abandoned();
+    },
+    set current(_value: boolean) {
+      /* read-only: whether the answer is wanted is the caller's to say */
+    },
+  };
   return retryFetch(() => withTimeout(request(), message, COLD_READ_ATTEMPT_TIMEOUT_MS), {
     maxRetries,
     baseDelayMs: COLD_READ_RETRY_DELAY_MS,
+    isMountedRef: stillWanted,
   });
 }
 
@@ -1272,7 +1293,8 @@ export default function ClubDataPage() {
               // so a continuation can never make the initial ledger heavier.
               p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1,
             }),
-          'Club data request timed out'
+          'Club data request timed out',
+          stale
         );
         const pageRequest =
           gameSort === 'recent'
@@ -1294,7 +1316,8 @@ export default function ClubDataPage() {
                     // does not repeat that expensive sort in every open tab.
                     p_limit: GAME_PAGE_SIZE * 2,
                   }),
-                'Club games request timed out'
+                'Club games request timed out',
+                stale
               );
         const [snapshotResult, pageResult] = await Promise.all([snapshotRequest, pageRequest]);
         if (stale()) return false;
@@ -1439,6 +1462,7 @@ export default function ClubDataPage() {
                   p_limit: GAME_PAGE_SIZE,
                 }),
               'Recent games prefetch timed out',
+              () => cancelledRef.current,
               1
             )
               .then(({ data: prefetchedData, error: prefetchError }) => {
@@ -1648,7 +1672,8 @@ export default function ClubDataPage() {
                 p_end: endDate,
                 p_limit: 1,
               }),
-            'Player totals request timed out'
+            'Player totals request timed out',
+            stale
           ),
           coldRead(
             () =>
@@ -1661,7 +1686,8 @@ export default function ClubDataPage() {
                 p_cursor: null,
                 p_limit: PLAYER_PAGE_SIZE,
               }),
-            'Player data request timed out'
+            'Player data request timed out',
+            stale
           ),
         ]);
         if (stale()) return false;
@@ -1920,6 +1946,7 @@ export default function ClubDataPage() {
             p_limit: GAME_PAGE_SIZE,
           }),
         'More games request timed out',
+        stale,
         2
       );
       if (stale()) return;

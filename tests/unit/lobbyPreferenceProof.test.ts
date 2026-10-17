@@ -44,7 +44,12 @@ function exchange({
   return { request, response };
 }
 
-function fixture({ status = 200, closeFailure = false, responseMode = 'normal' } = {}) {
+function fixture({
+  status = 200,
+  closeFailure = false,
+  responseMode = 'normal',
+  clickFailure = false,
+} = {}) {
   const emitter = new EventEmitter();
   const frame = {};
   const events: string[] = [];
@@ -75,6 +80,13 @@ function fixture({ status = 200, closeFailure = false, responseMode = 'normal' }
         getAttribute: async () => (selected === options.name ? 'true' : 'false'),
         click: async () => {
           events.push('click');
+          if (clickFailure)
+            return new Promise<void>((_, reject) =>
+              setTimeout(
+                () => reject(new Error('locator.click: element intercepts pointer events')),
+                30_000
+              )
+            );
           selected = options.name!;
           const value = exchange({
             ownerId: postOwner,
@@ -223,6 +235,41 @@ describe('cold-return preference proof', () => {
         mode === 'pending' ? /save response.*30s/ : /request timeout/
       );
       expect(f.events).toEqual(['click']);
+    } finally {
+      f.proof.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains the concurrent click failure when a missing request times out first', async () => {
+    vi.useFakeTimers();
+    const f = fixture({ clickFailure: true });
+    f.read();
+    try {
+      const outcome = selectLobbyPreference(f.page, club, 'MTT', owner, f.proof).catch(
+        (error) => error
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      const failure = await outcome;
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors.map((error: Error) => error.message)).toEqual([
+        'Preference request timeout',
+        'locator.click: element intercepts pointer events',
+      ]);
+      expect(f.proof.snapshot().events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'selection-request-error',
+            message: 'Preference request timeout',
+          }),
+          expect.objectContaining({
+            kind: 'selection-click-error',
+            message: 'locator.click: element intercepts pointer events',
+          }),
+        ])
+      );
+      expect(f.events).toEqual(['click']);
+      expect(vi.getTimerCount()).toBe(0);
     } finally {
       f.proof.stop();
       vi.useRealTimers();

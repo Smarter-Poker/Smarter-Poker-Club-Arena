@@ -233,17 +233,37 @@ export async function selectLobbyPreference(
   const before = await tabs.getByRole('tab', { selected: true }).textContent();
   proof.record('selection-before', { selected: before?.trim(), intended: label });
   const started = Date.now();
-  const [request] = await Promise.all([
+  const outcomes = await Promise.allSettled([
     page.waitForRequest((r) => isLobbySelectionRequest(r, clubId, label, ownerId), {
       timeout: SAVE_TIMEOUT_MS,
     }),
     tab.click({ timeout: SAVE_TIMEOUT_MS }).then(async () => {
       proof.record('selection-clicked', {
         intended: label,
-        ariaSelected: await tab.getAttribute('aria-selected'),
+        ariaSelected: await tab.getAttribute('aria-selected', {
+          timeout: Math.max(1, SAVE_TIMEOUT_MS - (Date.now() - started)),
+        }),
       });
     }),
   ]);
+  // Both operations already have the same bounded deadline. Preserve the click's
+  // actionability call log when the missing request happens to time out first.
+  const failures: unknown[] = [];
+  for (const [index, outcome] of outcomes.entries()) {
+    if (outcome.status === 'rejected') {
+      proof.record(index === 0 ? 'selection-request-error' : 'selection-click-error', {
+        message: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+      });
+      failures.push(outcome.reason);
+    }
+  }
+  if (failures.length > 1)
+    throw new AggregateError(failures, 'Lobby preference selection request and click failed');
+  if (failures.length === 1) throw failures[0];
+  const requestOutcome = outcomes[0];
+  if (requestOutcome.status !== 'fulfilled')
+    throw new Error('Lobby selection request is unavailable');
+  const request = requestOutcome.value;
   proof.record('intended-request', { ownerMatches: true, clubMatches: true, tab: TAB_KEYS[label] });
   const response = await bounded(
     request.response(),

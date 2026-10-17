@@ -1,5 +1,7 @@
 # Weekly touched proofs reuse stable identities
 
+Hosted qualification caught a banned dash in the migration comment. It now uses an ASCII hyphen; the guarded admission hash tracks those exact corrected file bytes. Both function postimages and the accounting behavior are unchanged.
+
 The original October 5–12 union close exhausted its unchanged 240-second statement limit in the touched-registration proof. PostgreSQL pushed the tournament ownership predicate below the apparent DISTINCT, and duplicate registration events also repeated the satellite-owner proof. The recovered timeout identified the touched query; earlier 169–220 second observations measured that whole query, not individual helper time.
 
 Migration 20261017034258 materializes distinct tournament identities before ownership validation and computes satellite ownership once per eligible registration. It joins those results back to every original touched event, preserving duplicate-event counts, receipt tests, opening resolutions, NULL behavior and the report's remaining bytes. It changes no payment, wallet, certificate, partial, period, timeout, memo permission or trigger.

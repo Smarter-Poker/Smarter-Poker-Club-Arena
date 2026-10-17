@@ -1,5 +1,5 @@
 -- Reuse exact weekly tournament/registration identities before their STABLE ownership witnesses.
--- Actual touched proof exhausted240s; prior169–220s observations are whole-CTE timings, not helper self-time.
+-- Actual touched proof exhausted240s; prior169-220s observations are whole-CTE timings, not helper self-time.
 -- Materialize distinct tournament IDs before ownership (planner previously filtered below DISTINCT).
 -- Reuse satellite-owner evidence per eligible registration and join back to EVERY touched event;
 -- preserve duplicate-event bad counts, NULL behavior, receipt/opening eligibility and all report output.

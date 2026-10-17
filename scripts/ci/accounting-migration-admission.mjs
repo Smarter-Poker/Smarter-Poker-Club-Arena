@@ -15,7 +15,7 @@ export const ACCOUNTING_ADMISSION_SOURCES = Object.freeze({
   '20261017012658_weekly_coordinator_skips_redundant_earning_club_witnesses.sql':
     '0fb295017f747b366df7f8a06bc3293e034a9fb735ad4101b3f265b793188603',
   '20261017034258_weekly_touched_proof_reuses_tournament_and_registration_iden.sql':
-    '12c51a90b2805a481e41f7544f35e85096f14d4bb5302056386b388229b873f1',
+    '5b46d2e9331de7536dc3b21fe305de3be7bdec04111e21e9c22850f74043bc24',
 });
 
 export const ACCOUNTING_ADMISSION_SQL = `

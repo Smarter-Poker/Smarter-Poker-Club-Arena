@@ -233,7 +233,7 @@ export async function selectLobbyPreference(
   const before = await tabs.getByRole('tab', { selected: true }).textContent();
   proof.record('selection-before', { selected: before?.trim(), intended: label });
   const started = Date.now();
-  const [request] = await Promise.all([
+  const [requestOutcome, clickOutcome] = await Promise.allSettled([
     page.waitForRequest((r) => isLobbySelectionRequest(r, clubId, label, ownerId), {
       timeout: SAVE_TIMEOUT_MS,
     }),
@@ -244,6 +244,64 @@ export async function selectLobbyPreference(
       });
     }),
   ]);
+  const failures: unknown[] = [];
+  for (const [operation, outcome] of [
+    ['request', requestOutcome],
+    ['click', clickOutcome],
+  ] as const) {
+    if (outcome.status === 'rejected') {
+      failures.push(outcome.reason);
+      proof.record(`selection-${operation}-failed`, {
+        name: outcome.reason instanceof Error ? outcome.reason.name : 'Error',
+        message: String(outcome.reason instanceof Error ? outcome.reason.message : outcome.reason),
+      });
+    }
+  }
+  if (failures.length) {
+    // Observe the isolated tab before restoration closes its document. Do not
+    // trigger locator handlers, retry the action or read player/account text.
+    try {
+      const geometry = await page.evaluate((label) => {
+        const target = [
+          ...document.querySelectorAll<HTMLElement>(
+            '[role="tablist"][aria-label="Game Type"] [role="tab"]'
+          ),
+        ].find((element) => element.textContent?.trim() === label);
+        if (!target) return { target: null };
+        const rect = target.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        const style = getComputedStyle(target);
+        return {
+          target: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+          viewport: { width: innerWidth, height: innerHeight },
+          connected: target.isConnected,
+          disabled:
+            target.hasAttribute('disabled') || target.getAttribute('aria-disabled') === 'true',
+          selected: target.getAttribute('aria-selected'),
+          visibility: style.visibility,
+          pointerEvents: style.pointerEvents,
+          hit: hit
+            ? {
+                tag: hit.tagName,
+                role: hit.getAttribute('role'),
+                targetOrChild: target.contains(hit),
+              }
+            : null,
+        };
+      }, label);
+      proof.record('selection-failure-geometry', geometry);
+    } catch (error) {
+      proof.record('selection-failure-geometry-unavailable', {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    if (failures.length > 1)
+      throw new AggregateError(failures, 'Lobby preference request and click failed');
+    throw failures[0];
+  }
+  if (requestOutcome.status !== 'fulfilled')
+    throw new Error('Lobby preference request is unavailable');
+  const request = requestOutcome.value;
   proof.record('intended-request', { ownerMatches: true, clubMatches: true, tab: TAB_KEYS[label] });
   const response = await bounded(
     request.response(),

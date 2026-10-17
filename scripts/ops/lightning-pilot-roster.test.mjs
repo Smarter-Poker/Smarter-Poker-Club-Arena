@@ -367,7 +367,7 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
                 target: id,
                 amount: 200,
                 effective_wallet: 'player_wallet',
-                reason: 'lightning-action-madness-roster-20261017',
+                reason: 'lightning-action-madness-roster-amended-20261017',
               },
               receipt: {
                 success: true,
@@ -530,7 +530,7 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
         p_to_user_id: id,
         p_amount: 200,
         p_destination: 'player_wallet',
-        p_reason: 'lightning-action-madness-roster-20261017',
+        p_reason: 'lightning-action-madness-roster-amended-20261017',
         p_op_id: op,
       },
     ]
@@ -732,8 +732,24 @@ test('target binding rejects Classic, wrong snapshot and active replacement targ
     await assert.rejects(prepare(f));
     assert.equal(f.calls.length, 0);
   }
-  assert.equal(ROSTER_OPERATION, 'lightning-action-madness-roster-20261017');
+  assert.equal(ROSTER_OPERATION, 'lightning-action-madness-roster-amended-20261017');
   assert.equal(new Set(ROSTER_PAIRS.flatMap((p) => [p.incoming, p.outgoing])).size, 46);
+  assert.deepEqual(ROSTER_PAIRS[19], {
+    outgoing: '0b1a64c2-8970-4f89-a396-9863e3aa2ccc',
+    incoming: '2af500e1-1665-4468-84d1-e346e64fcb68',
+  });
+  assert.deepEqual(ROSTER_PAIRS[22], {
+    outgoing: '0f14f372-0c43-47ff-9257-1324a7e94488',
+    incoming: '4381b30d-631e-4146-a2de-2f01dd1a36e9',
+  });
+  assert.equal(
+    ROSTER_PAIRS.some((p) =>
+      ['60e31431-564b-402e-a574-96db4b774e06', 'e573c327-dc89-4d87-81f0-efd0cb3c8020'].includes(
+        p.incoming
+      )
+    ),
+    false
+  );
 });
 
 test('atomic bank-send readback rejects corrupt recipient or bank debit without retry', async () => {

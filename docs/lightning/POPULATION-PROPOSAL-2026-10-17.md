@@ -1,8 +1,8 @@
 # Proposed new private-pilot population operation
 
-PROPOSAL ONLY. New exact owner instruction is required before roster or money changes. Never replay the completed original23swap.
+AUTHORIZED, NOT EXECUTED. The owner approved the exact23swap and then the two substitutions below. Protected checks and fresh full-cohort eligibility remain required. Never replay the completed historical swap.
 
-Operation: `lightning-action-madness-roster-20261017`. Exact manifest SHA256: `5c0aeda28ee1a5d51ed94b2c3f9b453978459cc851a8019d7345a459d1d8d64e`.
+Operation: `lightning-action-madness-roster-amended-20261017`. Exact manifest SHA256: `318717cd138b36a2c4af4f395202aa2720b97b87f33ad08ad320311100ea47b5`.
 
 Replace23currently day-blocked pilot horses with23existing active internal cash/both horses, preserving72horses. No Classic departures, retagging, forced moves, new identities, agreement changes or unrelated seat/booking changes. Samantha and009 remain retained.
 
@@ -35,9 +35,9 @@ BRM source: worst normal licensing40buy-ins×100bb×0.04=160;200covers it. Stric
 | 0a558bc1-50c5-4201-b6ca-c7a1e7de1c22 | 67d92504-ee81-4d7f-99ca-f79c752cb265 |
 | 0a714eff-ef23-4928-b2a7-addecc97b467 | c97784d9-45ce-488f-ad17-130d569e16be |
 | 0a9625c9-f679-4d98-9ebe-d8bb005c45b6 | f1e78390-98b7-48dd-82b9-a5aadbe95c51 |
-| 0b1a64c2-8970-4f89-a396-9863e3aa2ccc | 60e31431-564b-402e-a574-96db4b774e06 |
+| 0b1a64c2-8970-4f89-a396-9863e3aa2ccc | 2af500e1-1665-4468-84d1-e346e64fcb68 |
 | 0bea449d-73af-4654-bf19-61db087d7d45 | 6e53238e-0b78-4a67-b7a2-eed9e8e7d9b3 |
 | 0c7ad36f-7ad2-4faa-963f-69ee2f9f5062 | c73bc8f4-5cb7-462f-8405-7b4716b35d5d |
-| 0f14f372-0c43-47ff-9257-1324a7e94488 | e573c327-dc89-4d87-81f0-efd0cb3c8020 |
+| 0f14f372-0c43-47ff-9257-1324a7e94488 | 4381b30d-631e-4146-a2de-2f01dd1a36e9 |
 
-The manifest, evidence, queries and per-horse other-game observations accompany this document. Normal authenticated joins, approval, targeted funding, buy-ins and durable receipts remain mandatory. The existing original roster workflow hardpins another operation and cannot execute this proposal.
+The manifest, evidence, queries and per-horse other-game observations accompany this document. Normal authenticated joins, approval, targeted funding, buy-ins and durable receipts remain mandatory. The amended source binds this manifest and distinct request namespace. The two replacement horses were cash-only and load0 at03:44Z; their other club has funded union cash supply, so no future availability or isolation is promised. The other21incoming and every outgoing identity remain fixed.

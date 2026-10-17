@@ -845,19 +845,14 @@ test.describe('Production Shark Club Players', () => {
     await expect(page).toHaveURL(/\/members\/[0-9a-f-]{36}\/statistics(?:[/?#]|$)/i);
     await expect(
       page.getByRole('heading', { name: 'Player Performance', exact: true })
-    ).toBeVisible({
+    ).toBeAttached({
       timeout: 45_000,
     });
 
-    const statisticsArt = page.locator('.ps-hero__art');
-    await expect(statisticsArt).toBeVisible();
-    await expect
-      .poll(() =>
-        statisticsArt.evaluate(
-          (image: HTMLImageElement) => image.complete && image.naturalWidth > 0
-        )
-      )
-      .toBe(true);
+    // Dan 2026-10-17: the statistics hero and its felt art are gone; the page
+    // opens on its back door, its "?" and its instrument controls.
+    await expect(page.locator('.ps-hero__art')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Page Help' })).toBeVisible();
 
     // Player Statistics owns a calendar-oriented range selector. Keep this
     // production contract aligned with the controls the page actually ships,

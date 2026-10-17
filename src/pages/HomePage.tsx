@@ -128,7 +128,6 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
         <div className={styles.errorBoundary}>
           <SpadeConsole
             className={styles.consoleNarrow}
-            eyebrow="Poker Arena"
             title="Something Went Wrong"
             titleId="home-error-boundary-title"
             pill="Error"
@@ -1351,7 +1350,6 @@ function HomePageInner() {
             <SpadeConsole
               onClose={() => setShowShortcutHint(false)}
               crest="flat"
-              eyebrow="Poker Arena"
               title="Keyboard Shortcuts"
               titleId="home-shortcuts-title"
               pill="Keys"
@@ -1450,7 +1448,6 @@ function HomePageInner() {
             <SpadeConsole
               className={styles.consoleNarrow}
               crest="flat"
-              eyebrow="Poker Arena"
               title="Could Not Load Your Clubs"
               pill="Error"
               pillInk="red"
@@ -1480,7 +1477,6 @@ function HomePageInner() {
           <div className={styles.emptyStateCard}>
             <SpadeConsole
               className={styles.consoleNarrow}
-              eyebrow="Poker Arena"
               title="Welcome To Poker Arena"
               pill="New"
               plates={{

@@ -160,7 +160,6 @@ export function PermissionState({
   return (
     <EmptyState
       icon="LOCK"
-      eyebrow="Permission Gate"
       tone="permission"
       title={title}
       description={description}

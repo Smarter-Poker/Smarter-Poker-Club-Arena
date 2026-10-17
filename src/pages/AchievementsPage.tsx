@@ -685,7 +685,6 @@ export default function AchievementsPage() {
       {nextUp.length > 0 && category === 'all' && (
         <SpadeConsole
           className="ach-console"
-          eyebrow="Rewards Circuit"
           title="Next Up"
           pill={`${unlockedCount}/${achievements.length}`}
           foot="foot"
@@ -722,7 +721,6 @@ export default function AchievementsPage() {
       {/* ── The archive: filters, order, and whatever state the list is in ── */}
       <SpadeConsole
         className="ach-console"
-        eyebrow="Rewards Circuit"
         title="Your Badges"
         subtitle={CATEGORY_LABEL[category]}
         pill={`${unlockedCount}/${achievements.length}`}

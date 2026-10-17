@@ -400,7 +400,6 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
               <SpadeConsole
                 as="div"
                 className={styles.console}
-                eyebrow="Poker Arena"
                 title="Complete Your Profile"
                 titleId="complete-profile-title"
                 pill={canSubmit ? 'Ready' : 'Required'}

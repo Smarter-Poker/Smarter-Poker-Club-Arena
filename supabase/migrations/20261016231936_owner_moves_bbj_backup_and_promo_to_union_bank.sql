@@ -44,6 +44,8 @@
 --
 -- Replay-safe: refuses if any chip_ledger row already carries this
 -- operation's idempotency prefix.
+--
+-- @live-proof: EXISTS (SELECT 1 FROM public.chip_ledger WHERE idempotency_key = 'owner-bbj-promo-to-union-bank-20261016:bbj-main')
 
 BEGIN;
 SET LOCAL lock_timeout = '4s';

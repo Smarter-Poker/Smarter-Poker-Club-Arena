@@ -44,7 +44,13 @@ import './ClubIdentityCard.css';
 export { COUNT_UNKNOWN, COUNT_UNKNOWN_TEXT, type CountFigure };
 
 const assetRoot = `${import.meta.env.BASE_URL}assets/club-buttons/club/kingfish-v1`;
-export const CLUB_IDENTITY_SHELL = `${assetRoot}/chassis.png`;
+/* The plate under PLAYING NOW was widened ~40% and deepened ~35% on
+   2026-10-16 (Dan: "share and invite are way too small. make it larger").
+   It is cut from this same master by surgery - native end caps, the face's
+   own median cross-section across the middle, its own vertical gradient
+   re-spaced - into a new file, so chassis.png stays byte-sealed for any tab
+   still holding the old bundle. */
+export const CLUB_IDENTITY_SHELL = `${assetRoot}/chassis-share-plate-v2.png`;
 
 export const CLUB_IDENTITY_CANVAS = { width: 1566, height: 672 } as const;
 
@@ -69,7 +75,10 @@ export const CLUB_IDENTITY_ZONES = {
      frame above it does, because it is the visible label OF that one control
      (2026-10-12): its centre is 24px below the frame's on a 375px phone, so
      two separate buttons can never each own a 44px thumb band. */
-  invite: { x: 990, y: 466, width: 325, height: 66 },
+  /* Re-measured on chassis-share-plate-v2 (2026-10-16): the plate's face
+     now runs x 910-1383, y 459-556 on the master; the words keep the same
+     few-pixel inset from its rim the old plate had. */
+  invite: { x: 918, y: 463, width: 458, height: 88 },
   /* The arena rail sits over BOTH of the two zones above. A chip club's
      master paints "PLAYING NOW" beside the count and carries a level plate;
      an arena has neither, so its rail is opaque and covers that paint rather
@@ -77,7 +86,10 @@ export const CLUB_IDENTITY_ZONES = {
      button's bottom edge, so covering it fully means clipping that corner: the
      rail is painted BEFORE the button, which keeps the button on top and keeps
      the 44px target its ::after already guarantees. */
-  arenaStats: { x: 852, y: 374, width: 494, height: 184 },
+  /* Widened with the plate (2026-10-16) so an arena's opaque rail still
+     covers every painted pixel of it, rim included (plate ends x 1383,
+     y 556). */
+  arenaStats: { x: 852, y: 374, width: 540, height: 190 },
   share: { x: 1064, y: 188, width: 226, height: 194 },
 } satisfies Record<string, Zone>;
 

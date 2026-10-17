@@ -335,8 +335,13 @@ scale=1` (full sample), workerCount 3, expiredJobs 0, journalCapacityUnreadable 
   P12 flh 38988196506; P10 PLO4 38988202259; P11 plo8 38988208052, plo5 38988213699, plo6 38988218988; P13 plo8 38988224699,
   plo4 38988230226, nlh 38988235466, plo5 38988241229, plo6 38988247155, flo8 38988259560, flh 38988265241, pineapple
   38988271092, short_deck 38988276582; P12 flo8 38988282054, short_deck 38988287494, pineapple 38988292888.
-- The CI-recovery agent's P8 run 38936331731 did not stop on the first cancel; the lead force-cancelled it at ~00:59Z
-  (`POST /actions/runs/<id>/force-cancel`), after which FLH could start.
+- QUEUE CONFLICT (UNRESOLVED, Dan to decide): the CI-recovery agent RE-RAN its four cancelled e87ee1b7 runs (P10
+  38936335593 attempt 2, P11 plo8 38936339073 attempt 2, P13 flh 38936342768 attempt 2, all at 00:12Z; P8 38936331731
+  attempt 3 at 01:01Z after the lead's force-cancel at ~00:59Z). Re-runs keep their original 10-16 17:00Z creation time, so
+  they sit AHEAD of all 17 requalification runs in the FIFO queue: P10 e87 was running at 01:10Z; then P11 plo8 e87
+  (~2.75 h), P13 flh e87, P8 e87 (~10 h). The requalification will not start until they finish unless that agent stops
+  them. The lead did NOT cancel again (the safety classifier flagged the first cancel as "Interfere With Workloads", and
+  the other agent is clearly active). Ask Dan, or coordinate with that agent; do not fight it.
 - Completion declarations WRITTEN before any window (in `/Volumes/SmarterWork/agent-work/claude-hb-lead-20261016/`, committed
   with this handoff under `docs/evidence/phase12/` and `docs/evidence/phase13/`):
   - `declaration-completion-requal-bundle-2026-10-17.txt` (Phases 11 + 12: plo5, plo6, plo8, flh, flo8, short_deck,

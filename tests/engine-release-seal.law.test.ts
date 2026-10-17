@@ -1028,6 +1028,24 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
       `desired ${A_SHA} ${A_IMAGE}`
     );
 
+    // The engine rollback drill admits an older target only if this host has
+    // already sealed it (engine-release-transaction.sh drill_rollback_admission).
+    // The answer is read-only: no seal write, no audit event.
+    const auditPath = join(sandbox, 'state', 'audit.jsonl');
+    const sealedBefore = state();
+    const auditBefore = readFileSync(auditPath, 'utf8');
+    const sealedForward = runSeal(['attest-committed-sha', '--sha', B_SHA]);
+    expect(sealedForward.status).toBe(0);
+    expect(sealedForward.stdout.trim()).toBe(`${B_SHA} ${B_IMAGE} 202`);
+    const rolledBack = runSeal(['attest-committed-sha', '--sha', A_SHA]);
+    expect(rolledBack.status).toBe(0);
+    expect(rolledBack.stdout.trim()).toBe(`${A_SHA} ${A_IMAGE} 204`);
+    const never = runSeal(['attest-committed-sha', '--sha', C_SHA]);
+    expect(never.status).toBe(1);
+    expect(never.stderr).toContain('this host has never sealed the requested commit');
+    expect(state()).toEqual(sealedBefore);
+    expect(readFileSync(auditPath, 'utf8')).toBe(auditBefore);
+
     const events = readFileSync(join(sandbox, 'state', 'audit.jsonl'), 'utf8')
       .trim()
       .split('\n')

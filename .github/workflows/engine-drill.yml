@@ -1,0 +1,474 @@
+name: Engine Drill (crash, rollback, rollforward)
+run-name: Engine Drill ${{ github.event.client_payload.drill }} ${{ github.event.client_payload.ref_sha }}
+
+# The controlled engine drill route that docs/runbooks/maintenance-break-fire-drill.md
+# requires before any live crash or rollback drill: a reviewed, default-branch
+# repository event, never a workstation. It does not have a mechanism of its
+# own. It hands one exact SHA to the SAME durable Hetzner release transaction
+# the engine deploy uses (install-engine-drill.sh binds the drill to the run
+# key, then the unchanged intake takes it), so the drill shares the release
+# lane, the engine lock, the table-safe restart certificate, the persisted break
+# deadline, prove_rollback_readiness, the rollback reserve, the seal and its
+# recovery trap. A drill waits for a scheduled break, never asks for an
+# off-cycle window, and stands aside for any newer waiting release.
+#
+#   crash        ref_sha must be the sealed desired and high-water release. Inside
+#                the certified break the engine is SIGKILLed and the transaction
+#                proves the supervisor restarts the same sealed container as a
+#                new process that serves locally and publicly and is elected
+#                leader. Ruling 24 (docs/DIAMOND-RULINGS.md): one engine, no
+#                standby, so that restart IS the failover.
+#   rollback     ref_sha must be older than the sealed high-water release, at or
+#                above both compatibility floors and already sealed on this host.
+#                It goes through the seal's audited rollback mode, which keeps
+#                the high-water. Its engine doors are proved strictly below.
+#   rollforward  ref_sha must be the sealed high-water release while a rollback
+#                serves. It is an ordinary deploy of the high-water.
+#
+# Dispatch (owner or an agent he has authorised):
+#   gh api repos/Smarter-Poker/Smarter-Poker-Club-Arena/dispatches \
+#     -f event_type=drill-club-arena-engine \
+#     -F 'client_payload[drill]=crash' -F 'client_payload[ref_sha]=<40-hex>' \
+#     -F 'client_payload[reason]=<12-128 characters: who authorised it and why>'
+on:
+  repository_dispatch:
+    types: [drill-club-arena-engine]
+
+permissions: {}
+
+# One drill at a time. The host's own locks still serialise a drill against
+# every ordinary release; this only keeps drills from queueing behind each other.
+concurrency:
+  group: club-arena-engine-drill
+  cancel-in-progress: false
+
+jobs:
+  admit:
+    name: Admit The Exact Drill Request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      drill: ${{ steps.request.outputs.drill }}
+      target_sha: ${{ steps.request.outputs.sha }}
+    steps:
+      - name: Checkout the exact workflow control and authenticated main history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Prove the drill request is exact and contained in protected main
+        id: request
+        env:
+          DRILL: ${{ github.event.client_payload.drill || '' }}
+          REQUESTED_SHA: ${{ github.event.client_payload.ref_sha || '' }}
+          REASON: ${{ github.event.client_payload.reason || '' }}
+          CONTROL_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          case "$DRILL" in
+            crash|rollback|rollforward) ;;
+            *) echo '::error::client_payload.drill must be crash, rollback or rollforward'; exit 1 ;;
+          esac
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo '::error::client_payload.ref_sha must be one full lowercase commit SHA'; exit 1; }
+          python3 - "$REASON" <<'PY' || { echo '::error::client_payload.reason must be 12 to 128 printable characters'; exit 1; }
+          import sys
+          value = sys.argv[1]
+          raise SystemExit(0 if 12 <= len(value) <= 128 and all(ord(c) >= 32 and ord(c) != 127 for c in value) else 1)
+          PY
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
+          git cat-file -e "$REQUESTED_SHA^{commit}" \
+            || { echo '::error::the drill target is not a known commit'; exit 1; }
+          git merge-base --is-ancestor "$REQUESTED_SHA" "$MAIN_SHA" \
+            || { echo '::error::the drill target is not contained in protected main'; exit 1; }
+          git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA" \
+            || { echo '::error::the workflow control commit is not contained in protected main'; exit 1; }
+          echo "drill=$DRILL" >> "$GITHUB_OUTPUT"
+          echo "sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Engine Drill Request'
+            echo "- Drill: \`$DRILL\`"
+            echo "- Target: \`$REQUESTED_SHA\`"
+            echo "- Control: \`$CONTROL_SHA\`"
+            echo "- Reason: $REASON"
+            echo "- Requested by: \`$GITHUB_ACTOR\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  engine-doors:
+    name: Prove The Exact Drill Target Has Every Production Door
+    needs: admit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the drill target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.admit.outputs.target_sha }}
+
+      - name: Use the production Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Strict for every drill, a rollback included: ROLLBACK_REQUESTED stays
+      # 'false', so a target that calls a database function production no
+      # longer has is refused here, before the host is touched.
+      - name: Every database function the drill target calls exists in production
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ROLLBACK_REQUESTED: 'false'
+        run: |
+          set -euo pipefail
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/check-engine-doors-exist.mjs
+
+  drill:
+    name: Run The Drill Through The Hetzner Release Lane
+    needs: [admit, engine-doors]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    outputs:
+      release_result: ${{ steps.release.outputs.result || 'not completed' }}
+      drill_result: ${{ steps.receipt.outputs.result || 'not recorded' }}
+      verified: ${{ steps.verify.outputs.verified || 'false' }}
+    env:
+      HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+      SSH_USER: root
+      ENGINE_URL: https://engine.smarter.poker
+      REPO_DIR: /opt/club-arena
+      DRILL: ${{ needs.admit.outputs.drill }}
+      SHA: ${{ needs.admit.outputs.target_sha }}
+      REASON: ${{ github.event.client_payload.reason }}
+      CONTROL_SHA: ${{ github.sha }}
+      RUN_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+      RUN_ACTOR: ${{ github.actor }}
+    steps:
+      - name: Establish one absolute drill-job deadline
+        run: |
+          set -euo pipefail
+          # 110 minutes of our own clock inside the 120-minute job. The host
+          # transaction's certificate deadline is the not-after epoch minus
+          # 720 seconds, so the drill can wait out one whole hour for the next
+          # scheduled :55 break and still finish inside this budget.
+          DRILL_JOB_BUDGET_SECONDS=6600
+          POST_DRILL_RESERVE_SECONDS=600
+          PROOF_RESERVE_AFTER_SECONDS=330
+          CLEANUP_RESERVE_AFTER_SECONDS=30
+          NOW_EPOCH="$(date +%s)"
+          DRILL_JOB_DEADLINE_EPOCH=$((NOW_EPOCH + DRILL_JOB_BUDGET_SECONDS))
+          DRILL_DISPATCH_DEADLINE_EPOCH=$((DRILL_JOB_DEADLINE_EPOCH - POST_DRILL_RESERVE_SECONDS))
+          DRILL_PROOF_DEADLINE_EPOCH=$((DRILL_JOB_DEADLINE_EPOCH - PROOF_RESERVE_AFTER_SECONDS))
+          DRILL_CLEANUP_DEADLINE_EPOCH=$((DRILL_JOB_DEADLINE_EPOCH - CLEANUP_RESERVE_AFTER_SECONDS))
+          [ "$DRILL_DISPATCH_DEADLINE_EPOCH" -lt "$DRILL_PROOF_DEADLINE_EPOCH" ]
+          [ "$DRILL_PROOF_DEADLINE_EPOCH" -lt "$DRILL_CLEANUP_DEADLINE_EPOCH" ]
+          {
+            echo "DRILL_JOB_DEADLINE_EPOCH=$DRILL_JOB_DEADLINE_EPOCH"
+            echo "DRILL_DISPATCH_DEADLINE_EPOCH=$DRILL_DISPATCH_DEADLINE_EPOCH"
+            echo "DRILL_PROOF_DEADLINE_EPOCH=$DRILL_PROOF_DEADLINE_EPOCH"
+            echo "DRILL_CLEANUP_DEADLINE_EPOCH=$DRILL_CLEANUP_DEADLINE_EPOCH"
+          } >> "$GITHUB_ENV"
+
+      - name: Checkout the exact workflow control and authenticated main history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Recheck containment before touching the host
+        run: |
+          set -euo pipefail
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          case "$DRILL" in crash|rollback|rollforward) ;; *) exit 1 ;; esac
+          [ "$(git rev-parse --verify 'HEAD^{commit}')" = "$CONTROL_SHA" ]
+          timeout --signal=TERM --kill-after=5s 120s \
+            git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
+          git merge-base --is-ancestor "$SHA" "$MAIN_SHA" \
+            || { echo '::error::drill target left protected-main history'; exit 1; }
+          git merge-base --is-ancestor "$CONTROL_SHA" "$MAIN_SHA" \
+            || { echo '::error::workflow control commit left protected-main history'; exit 1; }
+
+      - name: Establish pinned ephemeral SSH transport
+        env:
+          SSH_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$HETZNER_HOST" =~ ^[A-Za-z0-9.-]+$ ]] \
+            || { echo '::error::HETZNER_HOST is absent or invalid'; exit 1; }
+          [ -n "$SSH_KEY" ] || { echo '::error::HETZNER_SSH_PRIVATE_KEY is absent'; exit 1; }
+          [ -n "$HOST_KEY" ] || { echo '::error::HETZNER_HOST_KEY is absent'; exit 1; }
+          SSH_DIR="$RUNNER_TEMP/club-arena-ssh-$RUN_KEY"
+          install -d -m 0700 "$SSH_DIR"
+          printf '%s\n' "$SSH_KEY" > "$SSH_DIR/key"
+          chmod 0600 "$SSH_DIR/key"
+          ssh-keygen -y -f "$SSH_DIR/key" >/dev/null
+          printf '%s\n' "$HOST_KEY" > "$SSH_DIR/known_hosts"
+          chmod 0600 "$SSH_DIR/known_hosts"
+          ssh-keygen -l -f "$SSH_DIR/known_hosts" >/dev/null
+          HSSH="$RUNNER_TEMP/hssh-$RUN_KEY"
+          printf '#!/usr/bin/env bash\nexec ssh -i %q -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=%q -o GlobalKnownHostsFile=/dev/null -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes %q "$@"\n' \
+            "$SSH_DIR/key" "$SSH_DIR/known_hosts" "$SSH_USER@$HETZNER_HOST" > "$HSSH"
+          chmod 0700 "$HSSH"
+          echo "HSSH=$HSSH" >> "$GITHUB_ENV"
+          echo "SSH_DIR=$SSH_DIR" >> "$GITHUB_ENV"
+          # This command is intentionally expanded by the remote shell.
+          # shellcheck disable=SC2016
+          timeout --signal=TERM --kill-after=5s 60s \
+            "$HSSH" 'test "$(id -u)" = 0 && printf "%s\n" club-arena-engine-host'
+
+      - name: Stage exact control bytes without mutating the host checkout
+        run: |
+          set -euo pipefail
+          timeout --signal=TERM --kill-after=5s 300s \
+            "$HSSH" "TARGET_SHA='$SHA' CONTROL_SHA='$CONTROL_SHA' RUN_KEY='$RUN_KEY' REPO_DIR='$REPO_DIR' bash -se" <<'REMOTE'
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          [ "$(id -u)" = 0 ]
+          export GIT_NO_REPLACE_OBJECTS=1
+          for binary in cmp docker flock git python3 curl systemctl systemd-analyze tar timeout; do
+            command -v "$binary" >/dev/null || { echo "missing host prerequisite: $binary" >&2; exit 1; }
+          done
+          git -C "$REPO_DIR" remote get-url origin \
+            | grep -Fi 'smarter-poker/smarter-poker-club-arena' >/dev/null
+          exec 8>/var/lock/club-arena-source.lock
+          flock -w 90 8
+          GIT_HTTP_LOW_SPEED_LIMIT=1024 GIT_HTTP_LOW_SPEED_TIME=30 \
+            timeout --signal=TERM --kill-after=5s 90s \
+            git -C "$REPO_DIR" fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          MAIN_SHA="$(git -C "$REPO_DIR" rev-parse --verify 'origin/main^{commit}')"
+          for commit in "$TARGET_SHA" "$CONTROL_SHA"; do
+            git -C "$REPO_DIR" cat-file -e "$commit^{commit}"
+            git -C "$REPO_DIR" merge-base --is-ancestor "$commit" "$MAIN_SHA"
+          done
+          STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
+          [[ "$STAGE" =~ ^/var/lib/club-arena/control-staging/[1-9][0-9]*-[1-9][0-9]*$ ]]
+          rm -rf -- "$STAGE"
+          install -d -m 0700 \
+            /var/lib/club-arena \
+            /var/lib/club-arena/control-staging \
+            "$STAGE"
+          GIT_NO_REPLACE_OBJECTS=1 git -C "$REPO_DIR" archive "$CONTROL_SHA" server/scripts \
+            | tar --no-same-owner -xf - -C "$STAGE"
+          chmod 0755 "$STAGE/server/scripts/"*.sh
+          for script in "$STAGE"/server/scripts/*.sh; do bash -n "$script"; done
+          python3 -m py_compile \
+            "$STAGE/server/scripts/engine-release-seal.py" \
+            "$STAGE/server/scripts/engine-release-database-proof.py"
+          python3 - "$STAGE" <<'PY'
+          import os, pathlib, sys
+          root = pathlib.Path(sys.argv[1])
+          for path in sorted(root.rglob('*')):
+              if path.is_file():
+                  fd = os.open(path, os.O_RDONLY)
+                  try: os.fsync(fd)
+                  finally: os.close(fd)
+          for path in [*sorted((p for p in root.rglob('*') if p.is_dir()), reverse=True), root, root.parent, root.parent.parent]:
+              fd = os.open(path, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+              try: os.fsync(fd)
+              finally: os.close(fd)
+          PY
+          REMOTE
+
+      - name: Bind the drill and hand its run key to the durable Hetzner intake
+        id: release
+        run: |
+          set -euo pipefail
+          ACTOR_B64="$(printf '%s' "$RUN_ACTOR" | base64 -w 0)"
+          REASON_B64="$(printf '%s' "$REASON" | base64 -w 0)"
+          [[ "$ACTOR_B64" =~ ^[A-Za-z0-9+/]*={0,2}$ ]]
+          [[ "$REASON_B64" =~ ^[A-Za-z0-9+/]+={0,2}$ ]]
+          uncertain_status() {
+            local status="$1"
+            [ "$status" -eq 255 ] || [ "$status" -eq 124 ] \
+              || [ "$status" -eq 76 ] || [ "$status" -eq 75 ] \
+              || [ "$status" -ge 128 ]
+          }
+          bind_and_hand_off() {
+            local remaining
+            remaining=$((DRILL_DISPATCH_DEADLINE_EPOCH - $(date +%s) - 15))
+            [ "$remaining" -gt 5 ] || { echo 'drill intake exhausted its budget' >&2; return 70; }
+            [ "$remaining" -le 360 ] || remaining=360
+            timeout --signal=TERM --kill-after=5s "${remaining}s" \
+              "$HSSH" "DRILL='$DRILL' TARGET_SHA='$SHA' CONTROL_SHA='$CONTROL_SHA' RUN_KEY='$RUN_KEY' ACTOR_B64='$ACTOR_B64' REASON_B64='$REASON_B64' NOT_AFTER_EPOCH='$DRILL_DISPATCH_DEADLINE_EPOCH' GIT_NO_REPLACE_OBJECTS=1 bash -se" <<'REMOTE'
+          set -euo pipefail
+          export GIT_NO_REPLACE_OBJECTS=1
+          STAGE="/var/lib/club-arena/control-staging/$RUN_KEY"
+          ACTOR="$(printf '%s' "$ACTOR_B64" | base64 -d)"
+          "$STAGE/server/scripts/install-engine-drill.sh" \
+            --mode "$DRILL" --target-sha "$TARGET_SHA" --control-sha "$CONTROL_SHA" \
+            --run-id "$RUN_KEY" --actor "$ACTOR" --reason-b64 "$REASON_B64" \
+            --not-after-epoch "$NOT_AFTER_EPOCH"
+          REMOTE
+          }
+          observe() {
+            local remaining observe_seconds
+            remaining=$((DRILL_DISPATCH_DEADLINE_EPOCH - $(date +%s) - 15))
+            [ "$remaining" -gt 10 ] || { echo 'drill observation exhausted its budget' >&2; return 70; }
+            [ "$remaining" -le 10205 ] || remaining=10205
+            observe_seconds=$((remaining - 5))
+            timeout --signal=TERM --kill-after=5s "${remaining}s" \
+              "$HSSH" "ENGINE_RELEASE_OBSERVE_SECONDS='$observe_seconds' ENGINE_RELEASE_INVOCATION_WAIT_SECONDS=900 exec '/var/lib/club-arena/control-staging/$RUN_KEY/server/scripts/observe-engine-release.sh' --sha '$SHA' --run-id '$RUN_KEY'"
+          }
+          LOG="$RUNNER_TEMP/engine-drill-$RUN_KEY.log"
+          for attempt in $(seq 1 40); do
+            set +e
+            bind_and_hand_off | tee -a "$LOG"
+            RC=${PIPESTATUS[0]}
+            if [ "$RC" -eq 0 ]; then
+              observe | tee -a "$LOG"
+              RC=${PIPESTATUS[0]}
+            fi
+            set -e
+            [ "$RC" -eq 0 ] && break
+            uncertain_status "$RC" \
+              || { echo "::error::the Hetzner drill transaction refused or failed ($RC); production still runs its sealed release"; exit "$RC"; }
+            echo '::warning::drill transport or acknowledgement was uncertain; reattaching to durable host state'
+            [ "$(date +%s)" -lt $((DRILL_DISPATCH_DEADLINE_EPOCH - 30)) ] \
+              || { echo '::error::could not reattach to the durable drill transaction before its deadline'; exit 70; }
+            sleep 15
+          done
+          [ "$RC" -eq 0 ] || { echo "::error::could not reattach to the durable drill transaction ($RC)"; exit "$RC"; }
+          RESULT="$(sed -n 's/^ENGINE_RELEASE_RESULT=//p' "$LOG" | tail -1)"
+          UNIT_RESULT="$(sed -n 's/^ENGINE_RELEASE_UNIT_RESULT=//p' "$LOG" | tail -1)"
+          RESULT_SHA="$(sed -n 's/^ENGINE_RELEASE_SHA=//p' "$LOG" | tail -1)"
+          [ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ] \
+            || { echo '::error::the durable drill transaction did not finish with an exact success receipt'; exit 1; }
+          case "$DRILL:$RESULT" in
+            crash:already-released|rollback:sealed|rollforward:sealed) ;;
+            *) echo "::error::invalid durable receipt '$RESULT' for a $DRILL drill"; exit 1 ;;
+          esac
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+          echo 'completed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Read the transaction's own drill receipt
+        id: receipt
+        run: |
+          set -euo pipefail
+          RECEIPT="$(timeout --signal=TERM --kill-after=5s 60s \
+            "$HSSH" "RUN_KEY='$RUN_KEY' bash -se" <<'REMOTE'
+          set -euo pipefail
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          cat "/var/lib/club-arena/engine-drill-results/$RUN_KEY.json"
+          REMOTE
+          )"
+          printf '%s\n' "$RECEIPT"
+          RESULT="$(printf '%s' "$RECEIPT" | DRILL="$DRILL" SHA="$SHA" RUN_KEY="$RUN_KEY" python3 -c '
+          import json, os, sys
+          r = json.load(sys.stdin)
+          mode = os.environ["DRILL"]
+          expected = "crash-recovered" if mode == "crash" else "sealed"
+          ok = (r.get("schema") == "engine-drill-result-v1" and r.get("runId") == os.environ["RUN_KEY"]
+                and r.get("mode") == mode and r.get("sha") == os.environ["SHA"] and r.get("result") == expected)
+          if mode == "crash":
+              c = r.get("crash") or {}
+              ok = ok and c.get("preInstance") and c.get("preInstance") != r.get("instanceId") \
+                  and int(c.get("postRestartCount", "-1")) > int(c.get("preRestartCount", "0"))
+          if not ok: raise SystemExit(1)
+          print(r["result"])
+          ')" || { echo '::error::the drill receipt does not prove the requested drill'; exit 1; }
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+
+      - name: Independently prove the sealed local, public, and leader identity
+        id: verify
+        run: |
+          set -euo pipefail
+          REMOTE_PROOF="$(timeout --signal=TERM --kill-after=5s 180s \
+            "$HSSH" "EXPECTED_SHA='$SHA' bash -se" <<'REMOTE'
+          set -euo pipefail
+          CONTROL=/usr/local/lib/club-arena/engine-control
+          DESIRED_SHA="$($CONTROL/engine-release-seal.py get desired-sha)"
+          DESIRED_IMAGE="$($CONTROL/engine-release-seal.py get desired-image-id)"
+          ACTUAL_SHA="$(docker container inspect -f '{{index .Config.Labels "sp.release.sha"}}' club-arena-engine)"
+          ACTUAL_IMAGE="$(docker container inspect -f '{{.Image}}' club-arena-engine)"
+          ACTUAL_STATE="$(docker container inspect -f '{{.State.Status}}' club-arena-engine)"
+          [ "$DESIRED_SHA" = "$EXPECTED_SHA" ] && [ "$ACTUAL_SHA" = "$EXPECTED_SHA" ]
+          [ "$DESIRED_IMAGE" = "$ACTUAL_IMAGE" ] && [ "$ACTUAL_STATE" = running ]
+          LOCAL_INSTANCE="$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache, no-store' \
+            http://127.0.0.1:8080/health | EXPECTED_SHA="$EXPECTED_SHA" python3 -c '
+          import json,os,re,sys
+          d=json.load(sys.stdin); i=d.get("instanceId")
+          l=d.get("leadership") or {}
+          ok=d.get("running") is True and d.get("releaseSha")==os.environ["EXPECTED_SHA"] and d.get("liveness")=="ok" and isinstance(i,str) and re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",i)
+          # The engine's own leadership witness, read from the process, not the
+          # engine configuration: the transaction already proved the database leader.
+          ok=ok and l.get("role")=="leader" and l.get("holder")==i and l.get("instanceId")==i
+          if not ok: raise SystemExit(1)
+          print(i)
+          ' )"
+          echo "__ENGINE_LOCAL_PROOF__ $DESIRED_SHA $DESIRED_IMAGE $ACTUAL_IMAGE $LOCAL_INSTANCE"
+          REMOTE
+          )"
+          printf '%s\n' "$REMOTE_PROOF"
+          PROOF_LINE="$(printf '%s\n' "$REMOTE_PROOF" | grep '^__ENGINE_LOCAL_PROOF__ ' | tail -1)"
+          read -r _ DESIRED_SHA DESIRED_IMAGE ACTUAL_IMAGE LOCAL_INSTANCE EXTRA <<< "$PROOF_LINE"
+          [ "$DESIRED_SHA" = "$SHA" ] && [ "$DESIRED_IMAGE" = "$ACTUAL_IMAGE" ] && [ -z "${EXTRA:-}" ]
+          [[ "$LOCAL_INSTANCE" =~ ^[1-9][0-9]*-[0-9a-f]{8}$ ]]
+          PUBLIC_INSTANCE="$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache, no-store' \
+            "$ENGINE_URL/health?nocache=$(date +%s%N)" | EXPECTED_SHA="$SHA" python3 -c '
+          import json,os,re,sys
+          d=json.load(sys.stdin); i=d.get("instanceId")
+          ok=d.get("running") is True and d.get("releaseSha")==os.environ["EXPECTED_SHA"] and d.get("liveness")=="ok" and isinstance(i,str) and re.fullmatch(r"[1-9][0-9]*-[0-9a-f]{8}",i)
+          if not ok: raise SystemExit(1)
+          print(i)
+          ')"
+          [ "$PUBLIC_INSTANCE" = "$LOCAL_INSTANCE" ]
+          echo 'verified=true' >> "$GITHUB_OUTPUT"
+
+      - name: Remove exact staging and ephemeral SSH material
+        if: always()
+        env:
+          RELEASE_COMPLETED: ${{ steps.release.outputs.completed || 'false' }}
+        run: |
+          set -euo pipefail
+          cleanup_local_credentials() {
+            rm -rf -- "${SSH_DIR:-$RUNNER_TEMP/club-arena-ssh-$RUN_KEY}" || true
+            rm -f -- "${HSSH:-$RUNNER_TEMP/hssh-$RUN_KEY}" \
+              "$RUNNER_TEMP/engine-drill-$RUN_KEY.log" || true
+          }
+          trap cleanup_local_credentials EXIT
+          if [ "$RELEASE_COMPLETED" = true ] && [ -n "${HSSH:-}" ] && [ -x "$HSSH" ] \
+            && [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]; then
+            timeout --signal=TERM --kill-after=5s 60s \
+              "$HSSH" "RUN_KEY='$RUN_KEY' bash -se" <<'REMOTE'
+          set -euo pipefail
+          [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
+          ! systemctl is-enabled "club-arena-engine-intake-v1@$RUN_KEY.service" >/dev/null 2>&1
+          ! systemctl is-enabled "club-arena-engine-release-v1@$RUN_KEY.service" >/dev/null 2>&1
+          rm -rf -- "/var/lib/club-arena/control-staging/$RUN_KEY"
+          REMOTE
+          fi
+
+      - name: Publish the drill summary
+        if: always()
+        env:
+          RELEASE_RESULT: ${{ steps.release.outputs.result || 'not completed' }}
+          DRILL_RESULT: ${{ steps.receipt.outputs.result || 'not recorded' }}
+          VERIFIED: ${{ steps.verify.outputs.verified || 'false' }}
+        run: |
+          set -euo pipefail
+          {
+            echo '## Engine Drill Result'
+            echo "- Drill: \`$DRILL\` of \`$SHA\` (run \`$RUN_KEY\`)"
+            echo "- Durable transaction: \`$RELEASE_RESULT\`"
+            echo "- Drill receipt: \`$DRILL_RESULT\`"
+            echo "- Independent exact-SHA proof: \`$VERIFIED\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$VERIFIED" != true ]; then
+            echo "::warning title=DRILL NOT PROVED::the $DRILL drill of $SHA did not complete with an independent proof. The engine runs whatever the seal says is desired; the transaction's recovery trap restores it on any refusal after mutation."
+          fi

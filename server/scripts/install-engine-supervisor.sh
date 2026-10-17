@@ -50,6 +50,7 @@ REQUIRED_FILES=(
   launch-engine-release.sh
   engine-release-intake.sh
   install-engine-intake.sh
+  install-engine-drill.sh
   retain-engine-images.sh
   install-engine-supervisor.sh
 )
@@ -315,7 +316,8 @@ else
     engine-release-transaction.sh engine-release-recover.sh engine-release-unit-wrapper.sh \
     legacy-engine-checkpoint.sh \
     observe-engine-release.sh launch-engine-release.sh engine-release-intake.sh \
-    install-engine-intake.sh retain-engine-images.sh install-engine-supervisor.sh; do
+    install-engine-intake.sh install-engine-drill.sh retain-engine-images.sh \
+    install-engine-supervisor.sh; do
     bash -n "$GENERATION_STAGE/$script"
   done
   for script in engine-release-seal.py engine-release-database-proof.py \

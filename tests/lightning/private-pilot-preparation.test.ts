@@ -18,7 +18,7 @@ const pilot = {
     regular_ante: 'sb',
     vpip_floor: 30,
     vpip_window: 10,
-    bombs: { enabled: true, trigger: 'timed_15m', ante_bb: 2, boards: 2 },
+    bombs: { enabled: true, trigger: 'timed_20m', ante_bb: 2, boards: 2 },
     options: { is_private: true },
   },
 };

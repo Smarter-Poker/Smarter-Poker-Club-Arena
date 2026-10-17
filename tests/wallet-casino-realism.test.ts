@@ -308,7 +308,10 @@ describe('the balance sits where the Cashier puts a balance', () => {
   it('right-aligns each wallet balance in its row, never wider than the row', () => {
     expect(rule('.wallet-row__figure')).toContain('align-items: flex-end;');
     expect(rule('.wallet-row__figure')).toContain('text-align: right;');
-    expect(rule('.wallet-row__value')).toContain('text-overflow: ellipsis;');
+    // A money figure is never cut with an ellipsis; it shrinks to fit.
+    expect(rule('.wallet-row__value')).not.toContain('text-overflow');
+    expect(rule('.wallet-row__value')).not.toContain('overflow: hidden');
+    expect(rule('.wallet-row__value')).toMatch(/font-size: clamp\([^)]*cqw/);
   });
 
   it('prints the figure INSIDE the row, beside its name', () => {

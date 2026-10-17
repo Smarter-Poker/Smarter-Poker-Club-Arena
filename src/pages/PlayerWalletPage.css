@@ -320,19 +320,18 @@
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
-  max-width: 48%;
+  max-width: 56%;
   text-align: right;
 }
 
+/* A balance is never cut: it shrinks with the workspace (CashierWorkspace is
+   the inline-size container) so 12,345,678.90 still prints whole at 375px. */
 .wallet-row__value {
-  max-width: 100%;
-  overflow: hidden;
   color: var(--ink-silver);
-  font-size: 22px;
+  font-size: clamp(15px, 4.8cqw, 22px);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

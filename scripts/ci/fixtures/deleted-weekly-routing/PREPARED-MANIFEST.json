@@ -1,7 +1,7 @@
 {
-  "status": "ROOT-REVIEWED-CANDIDATE-ALIAS-CORRECTED-PENDING-NATIVE",
-  "driver_sha256": "ec6e843dc9ff3aeace905e08dbb508812a377cfc7568f77bfababb8e1f607a3a",
-  "candidate_sha256": "7d2e9f838fcb393494af563130ce59ddd81f02c40a7f2cf089c14d6500a495dc",
+  "status": "ROOT-REVIEWED-EXPLICIT-PRIVATE-ACL-CANDIDATE",
+  "driver_sha256": "3725135cd8e47000138d38f3c9ea36d4382960b378f23519fa389b2b85b8eacc",
+  "candidate_sha256": "94701e2b83ffb5ce1eae34a683f93e882d238f8609616a43f543fa6e52b8e488",
   "fixtures": {
     "fixtures/actual-R2-before.sql": "7cc77e2418e4a7234a7d29ba2d5509166d4a5d600e3eaffcc975ed7ada6dd41d",
     "fixtures/actual-R3-before.sql": "f91591d2d08a8dbcd6c782934e74e4044d39ef07803d961b6a913a7fcf588970",

@@ -8,7 +8,7 @@ import argparse, hashlib, json, os, shutil, socket, subprocess, tempfile, sys, s
 from pathlib import Path
 
 P=argparse.ArgumentParser();P.add_argument('--repo',type=Path,default=Path(__file__).resolve().parents[2]);P.add_argument('--candidate',type=Path,required=True);P.add_argument('--pg-bin',type=Path,required=True);P.add_argument('--scratch-root',type=Path,required=True);P.add_argument('--output',type=Path,required=True);P.add_argument('--fixtures',type=Path,default=Path(__file__).parent/'fixtures'/'deleted-weekly-routing');A=P.parse_args()
-F=A.fixtures; BASE=A.repo/'tests/fixtures/weekly-close-scale'; EXPECTED='7d2e9f838fcb393494af563130ce59ddd81f02c40a7f2cf089c14d6500a495dc'
+F=A.fixtures; BASE=A.repo/'tests/fixtures/weekly-close-scale'; EXPECTED='94701e2b83ffb5ce1eae34a683f93e882d238f8609616a43f543fa6e52b8e488'
 assert hashlib.sha256(A.candidate.read_bytes()).hexdigest()==EXPECTED,'candidate bytes changed: requalify exact input'
 matcher=(F/'actual-source40-matcher-READONLY.sql').read_text()
 source40=re.findall(r"\('([^']+)','[0-9a-f]{32}'\)",matcher)

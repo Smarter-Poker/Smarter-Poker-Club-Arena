@@ -928,6 +928,8 @@ END;
 $function$
 ;
 $bank_definition$;
+ REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz), public.fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+ REVOKE ALL ON FUNCTION public.fn_ca_deleted_wallet_bank_return(uuid,uuid,text), public.fn_ca_deleted_wallet_credit() FROM PUBLIC,anon,authenticated;
  FOR r IN SELECT * FROM (VALUES
  ('public.fn_settle_accounting_commission_stage(text,uuid,timestamptz,timestamptz)','299975706a6b2ad943909e56a967d88c','16b74eb4a36d36b904175fda51ec1c17','{postgres=X/postgres}',ARRAY['search_path=public']),
  ('public.fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)','d880a99b18d966c092f5d5fb6f2ee98b','53fdf97d6727ae71c4513bf0bdbbcb22','{postgres=X/postgres}',ARRAY['search_path=public']),

@@ -36,18 +36,21 @@ const game9 = '90000000-0000-4000-8000-000000000009';
 const outsiderId = '70000000-0000-4000-8000-000000000007';
 const tableId = 'd78448e2-42da-4bd0-b702-98f8b37d6da7';
 const revision = 'a'.repeat(40);
-const game = (handedness = 6) => ({
-  id: handedness === 6 ? gameId : game9,
-  name: `Lightning Pilot NLH ${handedness === 6 ? 'Action' : 'Madness'} ${handedness}`,
+// game() is the Action target and game(9) the Madness target. Both are six
+// seats since 2026-10-17; the argument keeps its old meaning of "the second
+// target" so every fixture below still names the same game.
+const game = (which = 6) => ({
+  id: which === 6 ? gameId : game9,
+  name: `Lightning Pilot NLH ${which === 6 ? 'Action' : 'Madness'} 6`,
   club_id: clubId,
   union_id: null,
   variant: 'nlh',
-  template_name: handedness === 6 ? 'action' : 'madness',
-  sb: handedness === 6 ? 0.01 : 0.02,
-  bb: handedness === 6 ? 0.02 : 0.04,
-  handedness,
+  template_name: which === 6 ? 'action' : 'madness',
+  sb: which === 6 ? 0.01 : 0.02,
+  bb: which === 6 ? 0.02 : 0.04,
+  handedness: 6,
   must_move: true,
-  ruleset_snapshot: templateSnapshot(handedness === 6 ? 'action' : 'madness'),
+  ruleset_snapshot: templateSnapshot(which === 6 ? 'action' : 'madness'),
   lightning_enabled: false,
   cluster_mode: 'must_move',
 });
@@ -237,7 +240,7 @@ test('reads actual zero counts without confusing them with unavailable evidence 
   assert.equal(r.roster.data.activeMembers, 1);
   assert.equal(r.publicLaunch, 'NOT_CERTIFIED');
   assert.equal(r.releaseGates.certifiedByThisReport, 0);
-  assert.ok(r.blockers.includes('9_MAX_TARGET_NOT_ESTABLISHED'));
+  assert.ok(r.blockers.includes('MADNESS_TARGET_NOT_ESTABLISHED'));
   assert.ok(r.blockers.includes('NO_RECORDED_SETTLED_LIGHTNING_HANDS'));
   const handRead = f.calls.find((c) => c.table === 'lightning_hand');
   assert.equal(handRead.options.count, 'exact');
@@ -458,12 +461,15 @@ test('pilot identity includes authoritative stakes, Action/Madness template and 
     { ...game(), bb: 0.04 },
     { ...game(), template_name: 'classic' },
     { ...game(9), sb: 0.01, bb: 0.02 },
-    { ...game(9), handedness: 6 },
+    { ...game(9), handedness: 9 },
     { ...game(9), template_name: undefined },
   ]) {
     const selected = selectTargets([bad], clubId);
     assert.equal(selected.find((t) => t.name === bad.name).observation.status, 'unknown');
   }
+  // The replaced nine-seat Madness is not a target under any reading.
+  const retired = { ...game(9), name: 'Lightning Pilot NLH Madness 9', handedness: 9 };
+  assert.ok(selectTargets([retired], clubId).every((t) => t.observation.status === 'unknown'));
 });
 
 const populatedId = '5e000000-0000-4000-8000-000000000006';

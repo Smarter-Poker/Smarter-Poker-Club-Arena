@@ -1,0 +1,50 @@
+{
+  "schema": "horse-phase11-completion-v1",
+  "definition": "horse-phase11-completion-definition-v3",
+  "variant": "plo8",
+  "packVersion": "plo8-split-round3-v2",
+  "releaseSha": "9ccf3e423480a8738863e08a32b073aadea35186",
+  "policyDigestDefinition": "horse-phase11-policy-digest-v5",
+  "policyDigest": "d4f5111ab937985524516a48221348743bbf275380dd4195756216bb58bce742",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-17T04:02:00.000Z",
+    "to": "2026-10-17T04:50:00.000Z",
+    "releaseUnchanged": true,
+    "source": "declaration-completion-requal-bundle-2026-10-17.txt (sha256 b4d11ea1a050844e425b215fa67cacd036276918f45bdcc4c46d08c074cd4317), window 2026-10-17T04:02:00.000Z to 2026-10-17T04:50:00.000Z on release 9ccf3e423480a8738863e08a32b073aadea35186"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 1730,
+      "completed": 1730,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "flop": {
+      "eligible": 681,
+      "completed": 681,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "turn": {
+      "eligible": 486,
+      "completed": 486,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "river": {
+      "eligible": 324,
+      "completed": 324,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    }
+  }
+}

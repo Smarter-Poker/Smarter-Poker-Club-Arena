@@ -399,13 +399,64 @@ export interface HorsePhase11AuthoritySelection {
  * source under the running contract and fresh natural completion is read; a
  * renewal is generation 3. Generations 1 and 2 stay committed with their
  * evidence; neither can qualify the modified policy.
+ *
+ * October 17: PLO8 generation 3. The locked P11.2 PLO8 matrix on the exact
+ * declared-work source d9190c9e (run 38988208052, 114 of 114 shards, 1,116,288
+ * pairs) qualifies with no reasons: +7.82 [+6.82, +8.82] bb/100 cash after
+ * rake against the horse population, at policy digest d4f5111a.... Its natural
+ * completion record on release 9ccf3e42 (carrying d9190c9e's digests) for the
+ * window predeclared in
+ * docs/evidence/phase12/declaration-completion-requal-bundle-2026-10-17.txt
+ * (2026-10-17 04:02 to 04:50Z) completed every eligible decision on every
+ * street (lowest Wilson bound 0.9799, river).
+ *
+ * PLO5 generation 3: the locked P11.2 PLO5 matrix on d9190c9e (run
+ * 38988213699, 2,379,456 pairs) qualifies with no reasons: +5.34 [+4.21,
+ * +6.46] bb/100 cash after rake, at policy digest 5a870516.... Its completion
+ * record in the same window completed every eligible decision on every street
+ * (lowest Wilson bound 0.9853, river). PLO6 stays null until its matrix
+ * finishes on the same source.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
 > = Object.freeze({
-  plo5: null,
+  plo5: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo5',
+    sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
+    packVersion: 'plo5-high-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
+    domain: 'plo5-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/d9190c9e/phase11-qualification-2026-10-17-plo5.json',
+    qualificationSha256: '205a57fbcd3e24ea8ce5e9da8a3db799a543e063cebdae6a63aef577ae79de67',
+    completionPath: 'docs/evidence/phase11/d9190c9e/phase11-completion-2026-10-17-plo5.json',
+    completionSha256: '1d2d6ba92528485c85e3cca84538efb47b35db3f8923b693050fa4e6831e245e',
+    approvalGeneration: 3,
+    issuedAt: '2026-10-17T17:30:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   plo6: null,
-  plo8: null,
+  plo8: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo8',
+    sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
+    packVersion: 'plo8-split-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
+    domain: 'plo8-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/d9190c9e/phase11-qualification-2026-10-17-plo8.json',
+    qualificationSha256: 'f35f0f776c6d1590038b0a9b1f00e8595281523ba20aa9f7bb423493d3621693',
+    completionPath: 'docs/evidence/phase11/d9190c9e/phase11-completion-2026-10-17-plo8.json',
+    completionSha256: '28922822cca6818ede19db54936fcf0fa3eebcc647d06e5b6d14634c861e0361',
+    approvalGeneration: 3,
+    issuedAt: '2026-10-17T12:15:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
 });
 
 const HEX40 = /^[0-9a-f]{40}$/;

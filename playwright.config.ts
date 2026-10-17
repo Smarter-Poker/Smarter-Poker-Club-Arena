@@ -81,7 +81,7 @@ export default defineConfig({
          transport. Running the same file in Chromium would double the live
          outage and make a green Chromium retry capable of obscuring a WebKit
          regression. */
-      testIgnore: /production-live-table-realtime\.spec\.ts$/,
+      testIgnore: /production-(?:live-table-realtime|first-run-iphone)\.spec\.ts$/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
@@ -90,6 +90,19 @@ export default defineConfig({
          were photographed on an iPad, and WebKit is the engine that iPad runs. */
       testMatch: /(?:footer-(?:visual-regression|route)|mobile-lobby-chrome)\.spec\.ts$/,
       use: { ...devices['iPhone 13'] },
+    },
+    {
+      /* A brand-new player on an iPhone, through Complete Your Profile
+         (2026-10-17). Real WebKit with an iPhone profile, because the defect
+         lived in a WebKit tap landing on TapHaptic's switch. */
+      name: 'webkit-first-run',
+      testMatch: /production-first-run-iphone\.spec\.ts$/,
+      retries: 0,
+      use: {
+        ...devices['iPhone 13'],
+        trace: 'retain-on-failure',
+        screenshot: 'only-on-failure',
+      },
     },
     {
       name: 'webkit-live-table-realtime',

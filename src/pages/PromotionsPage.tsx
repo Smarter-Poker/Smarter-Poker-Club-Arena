@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback, type RefObject } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { readClubContextParam, withClubContext } from '../utils/clubScopedPath';
 import { supabase } from '../lib/supabase';
+import { referralIdFor } from '../lib/referralId';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import LeaderboardCard from '../components/leaderboard/LeaderboardCard';
@@ -119,7 +120,7 @@ function PromotionsAccount({
           reportError(error, 'PromotionsPage.referral_code_lookup');
           return;
         }
-        setPlayerNumber(data?.player_number ?? null);
+        setPlayerNumber(referralIdFor(data?.player_number));
       } catch (e) {
         reportError(e, 'PromotionsPage.referral_code_lookup');
       }

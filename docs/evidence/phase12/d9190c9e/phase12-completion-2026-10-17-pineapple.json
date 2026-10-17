@@ -1,0 +1,50 @@
+{
+  "schema": "horse-phase12-completion-v1",
+  "definition": "horse-phase12-completion-definition-v1",
+  "variant": "pineapple",
+  "packVersion": "crazy-pineapple-round4-v1",
+  "releaseSha": "9ccf3e423480a8738863e08a32b073aadea35186",
+  "policyDigestDefinition": "horse-phase12-policy-digest-v2",
+  "policyDigest": "5324f9c8e60db4355fa58c4f14abbb907a04896678f732807c3202089774c2bd",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-17T04:02:00.000Z",
+    "to": "2026-10-17T04:50:00.000Z",
+    "releaseUnchanged": true,
+    "source": "declaration-completion-requal-bundle-2026-10-17.txt (sha256 b4d11ea1a050844e425b215fa67cacd036276918f45bdcc4c46d08c074cd4317), window 2026-10-17T04:02:00.000Z to 2026-10-17T04:50:00.000Z on release 9ccf3e423480a8738863e08a32b073aadea35186"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 1488,
+      "completed": 1488,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "flop": {
+      "eligible": 797,
+      "completed": 797,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "turn": {
+      "eligible": 523,
+      "completed": 523,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "river": {
+      "eligible": 330,
+      "completed": 330,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    }
+  }
+}

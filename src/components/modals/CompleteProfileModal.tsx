@@ -142,6 +142,8 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
   const [generatedFallbackUrl, setGeneratedFallbackUrl] = useState<string | null>(null);
 
   const checkTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Each availability question is numbered; only the newest answer is shown. */
+  const aliasCheckSeqRef = useRef(0);
   /** Fields the player has typed in. A store write never overwrites them. */
   const aliasTouchedRef = useRef(false);
   const realNameTouchedRef = useRef(false);
@@ -226,6 +228,7 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
     setIsCheckingAlias(true);
     setAliasAvailable(null);
 
+    const seq = ++aliasCheckSeqRef.current;
     checkTimeoutRef.current = setTimeout(async () => {
       try {
         const { data, error } = await supabase
@@ -235,15 +238,21 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
           // matched "TomXTamale" and read as Taken. Matched literally now.
           .ilike('username', escapeLikePattern(safeAlias))
           .neq('id', user?.id)
-          .maybeSingle();
+          // Not maybeSingle: two accounts that differ only by case (Tom, tom)
+          // both match, and maybeSingle answered that with an error, so a
+          // taken alias read as neither Taken nor Available (2026-10-17).
+          .limit(1);
 
         if (error) throw error;
-        setAliasAvailable(!data);
+        // The player kept typing: this answer is about an alias they left.
+        if (seq !== aliasCheckSeqRef.current) return;
+        setAliasAvailable(!(Array.isArray(data) && data.length > 0));
       } catch (err) {
+        if (seq !== aliasCheckSeqRef.current) return;
         console.error('Error checking alias:', err);
         setAliasAvailable(null); // Unknown state
       } finally {
-        setIsCheckingAlias(false);
+        if (seq === aliasCheckSeqRef.current) setIsCheckingAlias(false);
       }
     }, 400);
 
@@ -297,14 +306,27 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
     }
 
     try {
-      // 1. Update Profiles Table
-      const { error: profileError } = await supabase
+      // The alias row and the avatar are independent writes: they go out
+      // together, so ENTER ARENA waits for one round trip, not two
+      // (2026-10-17, "THIS NEEDS TO UPDATE INSTANTLY IN REAL TIME").
+      const profileWrite = supabase
         .from('profiles')
         .update({
           username: safeAlias,
           display_name: safeRealName,
         })
         .eq('id', user.id);
+      /* The avatar result was discarded until 2026-08-30. `setUserAvatar`
+         REFUSES rather than throws (AvatarService's library-only guard returns
+         false for anything that is not library art), so a refused write left
+         this modal showing "Welcome!", closing, and then re-appearing on the
+         next load with no explanation. If the avatar did not land, say so and
+         stay open. */
+      const avatarWrite =
+        currentAvatar && currentAvatar !== user.avatar_url
+          ? avatarService.setUserAvatar(user.id, currentAvatar)
+          : Promise.resolve(true);
+      const [{ error: profileError }, avatarSaved] = await Promise.all([profileWrite, avatarWrite]);
 
       if (profileError) {
         if (profileError.code === '23505') {
@@ -312,18 +334,8 @@ export default function CompleteProfileModal({ isOpen, onComplete }: CompletePro
         }
         throw profileError;
       }
-
-      /* The result was discarded here until 2026-08-30. `setUserAvatar` REFUSES
-         rather than throws (AvatarService's library-only guard returns false for
-         anything that is not library art), so a refused write left this modal
-         showing "Welcome!", closing, and then re-appearing on the next load with
-         no explanation — the same gate, for the same reason, forever. If the
-         avatar did not land, say so and stay open. */
-      if (currentAvatar && currentAvatar !== user.avatar_url) {
-        const avatarSaved = await avatarService.setUserAvatar(user.id, currentAvatar);
-        if (!avatarSaved) {
-          throw new Error('Could not save that avatar. Please choose another.');
-        }
+      if (!avatarSaved) {
+        throw new Error('Could not save that avatar. Please choose another.');
       }
 
       // 3. Update Local Store (Removed users table update to prevent silent RLS failures)

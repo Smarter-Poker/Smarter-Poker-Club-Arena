@@ -47,6 +47,7 @@ vi.mock('../../src/lib/supabase', () => {
     ilike: () => builder,
     neq: () => builder,
     update: () => builder,
+    limit: () => Promise.resolve({ data: [], error: null }),
     maybeSingle: () => {
       mocks.profileReadCount += 1;
       if (mocks.profileFailuresRemaining > 0) {

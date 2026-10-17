@@ -457,3 +457,111 @@ test('an arbitrary valid cluster UUID or Classic target refuses before owner log
   assert.equal(f.calls.length, 1);
   assert.deepEqual(f.signedOut, []);
 });
+
+test('four explicit financial modes bind exactly one action without consent or all-R10 claims', async () => {
+  for (const action of ['top_up', 'cash_out', 'auto_top_up', 'stop_playing']) {
+    const f = fixture();
+    let captured;
+    f.witnessFinancial = async (args) => {
+      captured = args;
+      return { status: 'observed', action, cleanup: 'local_session_and_browser_closed' };
+    };
+    const r = await runPilotWitness(
+      {
+        ...env,
+        PILOT_WITNESS_MODE: `financial_${action}`,
+        PILOT_PLAYER_ID: PLAYER,
+        PILOT_POOL_SESSION_ID: POOL,
+      },
+      f
+    );
+    assert.equal(r.mode, 'financial');
+    assert.equal(r.inputMode, `financial_${action}`);
+    assert.equal(r.action, action);
+    assert.equal(r.status, 'observed');
+    assert.equal(r.cleanup, 'local_session_and_browser_closed');
+    assert.equal(r.qualification, 'single_action_sample_only');
+    assert.equal(captured.action, action);
+    assert.equal(captured.pin.playerId, PLAYER);
+    assert.equal(captured.pin.poolSessionId, POOL);
+    assert.equal(captured.timeoutMs, 240000);
+    assert.ok(!Object.hasOwn(captured, 'acceptTerms'));
+    assert.equal(f.signedOut.length, 0);
+  }
+});
+test('financial modes refuse missing action, foreign player, unaccepted terms and consent opt-in before actions', async () => {
+  for (const patch of [
+    { PILOT_WITNESS_MODE: 'financial' },
+    { PILOT_WITNESS_MODE: 'financial_unknown' },
+    { PILOT_PLAYER_ID: PILOT.ownerId },
+    { PILOT_ACCEPT_PLAYER_TERMS: 'true' },
+    { PILOT_POOL_SESSION_ID: 'not-a-pool' },
+  ]) {
+    const f = fixture();
+    f.witnessFinancial = async () => assert.fail('unauthorized financial action reached');
+    const r = await runPilotWitness(
+      {
+        ...env,
+        PILOT_WITNESS_MODE: 'financial_top_up',
+        PILOT_PLAYER_ID: PLAYER,
+        PILOT_POOL_SESSION_ID: POOL,
+        ...patch,
+      },
+      f
+    );
+    assert.equal(r.status, 'unknown');
+    assert.equal(f.calls.length, 0);
+  }
+  const f = fixture({ consent: false });
+  f.witnessFinancial = async () => assert.fail('unaccepted financial action reached');
+  const r = await runPilotWitness(
+    {
+      ...env,
+      PILOT_WITNESS_MODE: 'financial_stop_playing',
+      PILOT_PLAYER_ID: PLAYER,
+      PILOT_POOL_SESSION_ID: POOL,
+    },
+    f
+  );
+  assert.equal(r.status, 'unknown');
+  assert.equal(f.calls.length, 1);
+});
+test('financial unknown, refusal, armed-only, wrong action or cleanup cannot become observed', async () => {
+  for (const result of [
+    { status: 'unknown' },
+    { status: 'refused' },
+    { status: 'armed' },
+    { status: 'partial_observed' },
+    { status: 'observed', action: 'cash_out' },
+    { status: 'observed', action: 'top_up', cleanup: 'unknown' },
+    { status: 'observed', action: 'top_up', cleanup: 'local_session_closed' },
+  ]) {
+    const f = fixture();
+    f.witnessFinancial = async () => ({
+      action: 'top_up',
+      cleanup: 'local_session_and_browser_closed',
+      ...result,
+    });
+    const r = await runPilotWitness(
+      {
+        ...env,
+        PILOT_WITNESS_MODE: 'financial_top_up',
+        PILOT_PLAYER_ID: PLAYER,
+        PILOT_POOL_SESSION_ID: POOL,
+      },
+      f
+    );
+    assert.equal(r.status, 'unknown');
+  }
+});
+test('financial manual workflow retains ten inputs and replay batch while enforcing the new helper tests', () => {
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/lightning-pilot-witness.yml', import.meta.url),
+    'utf8'
+  );
+  for (const action of ['top_up', 'cash_out', 'auto_top_up', 'stop_playing'])
+    assert.ok(workflow.includes(`financial_${action}`));
+  assert.ok(workflow.includes('scripts/ops/lightning-pilot-financial.test.mjs'));
+  assert.ok(workflow.includes('PILOT_BATCH: ${{ inputs.batch }}'));
+  assert.ok(!/^      financial_action:/m.test(workflow));
+});

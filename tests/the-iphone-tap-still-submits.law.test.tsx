@@ -37,6 +37,8 @@ const mocks = vi.hoisted(() => ({
   ilike: vi.fn(),
   setUserAvatar: vi.fn(),
   takenAliases: new Set<string>(),
+  /** Optional per-test answer to the availability query, keyed by the literal alias. */
+  aliasAnswer: null as null | ((literal: string) => Promise<{ data: unknown[]; error: null }>),
 }));
 
 vi.mock('../src/lib/supabase', () => {
@@ -60,6 +62,14 @@ vi.mock('../src/lib/supabase', () => {
         const literal = String(b._pattern || '').replace(/\\(.)/g, '$1');
         return Promise.resolve({
           data: mocks.takenAliases.has(literal.toLowerCase()) ? { id: 'someone-else' } : null,
+          error: null,
+        });
+      },
+      limit: () => {
+        const literal = String(b._pattern || '').replace(/\\(.)/g, '$1');
+        if (mocks.aliasAnswer) return mocks.aliasAnswer(literal);
+        return Promise.resolve({
+          data: mocks.takenAliases.has(literal.toLowerCase()) ? [{ id: 'someone-else' }] : [],
           error: null,
         });
       },
@@ -116,6 +126,7 @@ beforeEach(() => {
   mocks.setUserAvatar.mockReset();
   mocks.setUserAvatar.mockResolvedValue(true);
   mocks.takenAliases = new Set();
+  mocks.aliasAnswer = null;
 });
 afterEach(() => {
   cleanup();
@@ -197,6 +208,36 @@ describe('the form never fights the player', () => {
 
     await waitFor(() => expect(mocks.ilike).toHaveBeenCalledWith('Tom\\_Tamale'));
     await waitFor(() => expect(screen.getByText('Available')).toBeTruthy());
+  });
+
+  it('two accounts that differ only by case read as Taken, not as an unknown', async () => {
+    // Before 2026-10-17 this was .maybeSingle(), which answers two matches with
+    // an error, so the alias showed neither Taken nor Available.
+    mocks.aliasAnswer = async () => ({ data: [{ id: 'tom-lower' }], error: null });
+    render(<CompleteProfileModal isOpen onComplete={vi.fn()} />);
+    fireEvent.change(aliasField(), { target: { value: 'TomCase' } });
+    await waitFor(() => expect(screen.getByText('Taken')).toBeTruthy());
+  });
+
+  it('an answer about an alias the player already left is never shown', async () => {
+    let releaseFirst: (v: { data: unknown[]; error: null }) => void = () => {};
+    mocks.aliasAnswer = (literal) =>
+      literal === 'FirstTry'
+        ? new Promise((r) => {
+            releaseFirst = r;
+          })
+        : Promise.resolve({ data: [], error: null });
+    render(<CompleteProfileModal isOpen onComplete={vi.fn()} />);
+    fireEvent.change(aliasField(), { target: { value: 'FirstTry' } });
+    await waitFor(() => expect(mocks.ilike).toHaveBeenCalledWith('FirstTry'));
+    fireEvent.change(aliasField(), { target: { value: 'SecondTry' } });
+    await waitFor(() => expect(screen.getByText('Available')).toBeTruthy());
+    // The slow answer for the old alias says Taken; it must not overwrite.
+    await act(async () => {
+      releaseFirst({ data: [{ id: 'someone' }], error: null });
+    });
+    expect(screen.queryByText('Taken')).toBeNull();
+    expect(screen.getByText('Available')).toBeTruthy();
   });
 
   it('the alias helpers say what they mean', () => {

@@ -69,3 +69,16 @@ decide what clubs owe and which wallet pays. Changing them changes money.
   served downline on Club Data, and P listed among JAQK's players. With the
   old tournament lookup put back it fails: `JAQK tournament winnings should be
 -11 + 30 = 19, got 0`.
+
+## The fourteen days, again (20261017221938)
+
+20261017204111's screen measured 1.05 s as a free-standing query and then
+3.79 s on production inside the function: it still grouped 450,000 fact rows
+into 248,000 games to choose 200, and its per-game player count was planned as
+one range scan per game. The plain screen now takes its totals in one
+aggregate, chooses its rows newest day first (a fact's `last_at` falls on its
+own `stat_date`, so the order is exact), and totals, counts and describes only
+those rows by exact (club, day, game) lookups. Production, Club JAQK, 14 days:
+3.94 s before, 0.50 s after. On the closed window 30 September to 13 October
+both forms return identical totals and the same 200 rows in the same order.
+A filtered screen keeps the full form, with its player count on exact lookups.

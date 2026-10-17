@@ -39,6 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MIG = ROOT / "supabase/migrations/20261017160125_club_data_counts_what_the_club_played.sql"
 MIG2 = ROOT / "supabase/migrations/20261017204111_the_club_data_report_reads_what_the_club_played.sql"
+MIG3 = ROOT / "supabase/migrations/20261017221938_the_fourteen_day_club_data_screen_reads_only_what_it_shows.sql"
 FIXTURE = ROOT / "tests/fixtures/club-data-fact-db/fixture.sql"
 SCENARIO = ROOT / "tests/fixtures/club-data-fact-db/scenario.sql"
 FIXTURE2 = ROOT / "tests/fixtures/club-data-report-db/fixture.sql"
@@ -111,6 +112,9 @@ try:
     run(psql("live"), report)
     require(q("live", "SELECT to_regprocedure('public.fn_ca_reporting_rollups_from_facts(date)') IS NOT NULL") == "t",
             "the migration installs over production's writers and readers")
+    run(psql("live"), MIG3.read_text())
+    require(q("live", "SELECT prosrc LIKE '%v_cands%' FROM pg_proc WHERE proname = 'ca_club_data_screen'") == "t",
+            "the plain screen chooses its rows newest day first (20261017221938)")
     require(q("live", "SELECT count(*) FROM pg_proc WHERE proname IN ('ca_club_data_snapshot','ca_club_player_breakdown','ca_rake_snapshot') "
                       "AND prosrc ~ 'ca_can_(view_club_finances|read_club_production)\\('") == "0",
             "every Report reader asks the whole-club Report question")

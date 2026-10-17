@@ -639,6 +639,18 @@ export class GameServer {
   /** Exact causal lease/start retries; never a tournament-board reconciliation scan. */
   private tournamentManagerAdmissionRetryTimers = new Map<string, NodeJS.Timeout>();
   private tournamentManagerAdmissionRetryAttempts = new Map<string, number>();
+  /**
+   * Each tournament manager's failure streak (engine/TableRestartBackoff.ts,
+   * keyed by tournament id). The attempt count above is cleared the moment a
+   * retry wins its lease - BEFORE the manager starts - so a manager whose
+   * start kept throwing was always on attempt 1 and retried every 250 ms for
+   * as long as it failed: the 2026-10-13 table loop, one level up. The wait
+   * lives here and ends only once an admitted manager has stayed up.
+   */
+  private tournamentManagerRestartBackoffStore?: TableRestartBackoff;
+  private get tournamentManagerRestartBackoff(): TableRestartBackoff {
+    return (this.tournamentManagerRestartBackoffStore ??= new TableRestartBackoff());
+  }
   /** One caller-selected database generation reused across this causal retry. */
   private tournamentManagerAdmissionLeaseGenerations = new Map<string, string>();
   /**
@@ -2890,7 +2902,9 @@ export class GameServer {
 
     const attempt = (this.tournamentManagerAdmissionRetryAttempts.get(tournamentId) ?? 0) + 1;
     this.tournamentManagerAdmissionRetryAttempts.set(tournamentId, attempt);
-    const delayMs = Math.min(250 * 2 ** Math.min(attempt - 1, 6), 15_000);
+    // The streak, not `attempt`: the attempt count is cleared when a retry
+    // wins its lease, before the start that may fail again.
+    const { delayMs } = this.tournamentManagerRestartBackoff.recordFailure(tournamentId);
     const timer = setTimeout(() => {
       if (this.tournamentManagerAdmissionRetryTimers.get(tournamentId) !== timer) return;
       this.tournamentManagerAdmissionRetryTimers.delete(tournamentId);
@@ -3328,6 +3342,9 @@ export class GameServer {
       );
       return;
     }
+    // Admitted and running: the streak's stability clock starts here, not at
+    // the lease grant that cleared the attempt count.
+    this.tournamentManagerRestartBackoff.recordReady(tournamentId);
     await this.drainTournamentManagerWakes(tournamentId);
   }
   /**
@@ -4493,6 +4510,7 @@ export class GameServer {
     for (const timer of this.tournamentManagerAdmissionRetryTimers.values()) clearTimeout(timer);
     this.tournamentManagerAdmissionRetryTimers.clear();
     this.tournamentManagerAdmissionRetryAttempts.clear();
+    this.tournamentManagerRestartBackoffStore?.clear();
     /* Admission UUIDs are potential committed authority, not disposable retry
        bookkeeping. Keep them through the fixed-point admission drain; each
        uncertain result publishes an exact pending release, and the final

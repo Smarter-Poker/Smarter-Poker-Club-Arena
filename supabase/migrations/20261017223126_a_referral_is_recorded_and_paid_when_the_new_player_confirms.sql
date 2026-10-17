@@ -22,8 +22,9 @@
 -- HOW:
 --   * fn_settle_signup_referral(referee) is the ONE place a referral is
 --     recorded and paid. It reads the referrer from the account's own sign-up
---     record (auth.users.raw_user_meta_data): referral_player_number, written
---     by the sign-up page, else the ref=<player number> carried in
+--     record (auth.users.raw_user_meta_data): referral_player_number or a
+--     legacy referral_code (SP-56737B, from a Referral Crew link), both
+--     written by the sign-up page, else the ref=<player number> carried in
 --     club_join_path, the Club Arena invite link the player arrived on.
 --     It records public.referrals and profiles.referred_by, then pays
 --     500 (referral_qualified) to the referrer and 100 (referral_referee) to
@@ -99,6 +100,15 @@ BEGIN
     IF v_meta IS NULL THEN RETURN; END IF;
 
     v_num := NULLIF(btrim(v_meta ->> 'referral_player_number'), '');
+    -- A typed or shared legacy referral code (SP-56737B) names its owner directly.
+    IF v_num IS NULL AND NULLIF(btrim(v_meta ->> 'referral_code'), '') IS NOT NULL THEN
+        RETURN QUERY
+            SELECT p.id, p.player_number
+              FROM public.profiles p
+             WHERE p.referral_code = upper(btrim(v_meta ->> 'referral_code'))
+               AND p.id <> p_referee;
+        RETURN;
+    END IF;
     IF v_num IS NULL THEN
         v_num := substring(COALESCE(v_meta ->> 'club_join_path', '') FROM '[?&]ref=([0-9]{1,9})(?:[&#]|\Z)');
     END IF;

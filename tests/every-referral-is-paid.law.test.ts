@@ -75,6 +75,8 @@ describe('every referral is recorded and paid when the new player confirms', () 
 
   it('reads the referrer from the account itself, never from a caller', () => {
     expect(sql).toMatch(/v_meta ->> 'referral_player_number'/);
+    // A shared Referral Crew link carries a legacy code; it must still credit its owner.
+    expect(sql).toMatch(/WHERE p\.referral_code = upper\(btrim\(v_meta ->> 'referral_code'\)\)/);
     expect(sql).toMatch(/v_meta ->> 'club_join_path'/);
     expect(sql).toMatch(/AND p\.id <> p_referee/);
     expect(sql).toMatch(

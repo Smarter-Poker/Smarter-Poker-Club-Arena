@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { withoutMeasurements } from '../HorseDeclaredWork.test-support.js';
 import { remainingVariantSpot } from '../../benchmark/RemainingVariantPolicyEvidence.js';
 import { restoreFastRandom, saveFastRandom } from '../HorseEval.js';
 import { fixedLimitStreetBounds } from '../BettingStructure.js';
@@ -8,12 +9,10 @@ import { horseDecisionReceiptIsValid } from '../horseDecision/responseValidation
 import { horsePolicyOwnership } from '../HorsePolicyRegistry.js';
 import {
   evaluateRemainingVariantPolicy,
-  remainingVariantUnfiredBudgetRefusalIsValid,
   remainingVariantReceiptBindingIsValid,
 } from './RemainingVariantLivePolicy.js';
 import { REMAINING_VARIANT_DOMAIN } from './RemainingVariantPolicyPack.js';
 import {
-  MIN_TERMINAL_SAMPLES,
   remainingVariantActionEconomics,
   remainingVariantActionEconomicsIsValid,
 } from './RemainingVariantActionEconomics.js';
@@ -26,27 +25,6 @@ import { variantEquityFromShowdowns } from '../omaha/OmahaVariantEquity.js';
  */
 
 const PINNED_RNG = 0x5f3759df;
-
-function expectUnpricedBudgetFallback(
-  result: ReturnType<typeof evaluateRemainingVariantPolicy>,
-  baseline: ReturnType<typeof remainingVariantSpot>['baseline']
-) {
-  expect(remainingVariantUnfiredBudgetRefusalIsValid(result.receipt.reason)).toBe(true);
-  if (result.receipt.reason === 'equity_budget_unavailable') {
-    expect(result.receipt.equity).toBeNull();
-    expect(result.receipt.inputs?.range.status).toBe('unavailable');
-    expect(result.receipt.latencyMs).toBeLessThanOrEqual(REMAINING_VARIANT_DOMAIN.liveBudgetMs);
-  } else {
-    expect(result.receipt.latencyMs).toBeGreaterThan(REMAINING_VARIANT_DOMAIN.liveBudgetMs);
-  }
-  expect(result.receipt.fired).toBe(false);
-  expect(result.receipt.applied).toBe(false);
-  expect(result.decision).toEqual(baseline);
-  expect(result.proposal).toEqual(baseline);
-  expect(result.receipt.actionEconomics).toBeUndefined();
-  expect(result.receipt.features).not.toContain('net_action_economics');
-  expect(remainingVariantReceiptBindingIsValid(result.receipt)).toBe(true);
-}
 
 function evaluate(
   variant: 'flh' | 'flo8' | 'short_deck' | 'pineapple',
@@ -202,42 +180,37 @@ describe('P12.1 reaches the live FLH/FLO8 river node', () => {
 });
 
 describe('P12.1 cannot reach the decision from where it runs', () => {
-  it('has a budget of its own, not a slice of the policy budget', () => {
-    expect(REMAINING_VARIANT_DOMAIN.netActionBudgetMs).toBeGreaterThan(0);
-    expect(REMAINING_VARIANT_DOMAIN.liveBudgetMs).toBe(4);
-    expect(REMAINING_VARIANT_DOMAIN.samplingDeadlineMs).toBe(2.5);
+  it('declares no clock budget: the pass, the sampler and the policy do their declared work', () => {
+    // 2026-10-16 (docs/changelog/2026-10-16-packs-do-declared-work.md).
+    for (const key of ['liveBudgetMs', 'samplingDeadlineMs', 'netActionBudgetMs'])
+      expect(Object.hasOwn(REMAINING_VARIANT_DOMAIN, key), key).toBe(false);
   });
 
-  it.each([
-    [3, 'equity_budget_unavailable'],
-    [5, 'work_budget'],
-  ] as const)('keeps the baseline when the clock advances to %s ms (%s)', (elapsed, reason) => {
-    // Exhaust the 2.5 ms sampler before its first sample. Finishing below the
-    // separate 4 ms policy limit retains the sampler refusal; crossing that
-    // limit names work_budget instead. No scheduler speed is involved.
-    let reads = 0;
-    const { spot, result } = evaluate('flo8', 'river', {
-      now: () => (reads++ === 0 ? 0 : elapsed),
-    });
-    expect(result.receipt.reason).toBe(reason);
-    expectUnpricedBudgetFallback(result, spot.baseline);
-  });
+  it.each([3, 5, 1_000])(
+    'a clock that jumps to %s ms changes nothing: the node fires, samples in full and is priced',
+    (elapsed) => {
+      let reads = 0;
+      const late = evaluate('flo8', 'river', { now: () => (reads++ === 0 ? 0 : elapsed) });
+      const fixed = evaluate('flo8', 'river');
+      expect(late.result.receipt.reason).not.toBe('work_budget');
+      expect(late.result.receipt.fired).toBe(true);
+      expect(late.result.receipt.actionEconomics?.unavailable).toBeNull();
+      expect(late.result.receipt.actionEconomics?.offeredSamples).toBe(
+        REMAINING_VARIANT_DOMAIN.defaultSamples
+      );
+      expect(withoutMeasurements(late.result)).toEqual(withoutMeasurements(fixed.result));
+    }
+  );
 
-  it('reports a result or one of a CLOSED set of named refusals', () => {
-    // A real clock on an unknown host. What is pinned is that every outcome is
-    // NAMED and comes from a closed set: a starved pass must not come back as
-    // an empty result, a zero or a silence (10.86 rule 1), and it must never
-    // become the policy's reason or take the proposal down - which now holds
-    // by construction, because the pass runs after `finish`.
-    //
-    // There are THREE legitimate outcomes at a firing river node, not two, and
-    // this test is why that is known: running it inside the full suite, on a
-    // loaded machine, starved the SAMPLER rather than the pass, so fewer than
-    // MIN_TERMINAL_SAMPLES showdowns were retained. Three showdowns is not a
-    // net economic result, so the pass says so by name instead of averaging
-    // them. The first version of this test asserted two outcomes and was
-    // wrong about the estate, not about the code.
-    const NAMED_REFUSALS = ['work_budget_unavailable', 'terminal_samples_unavailable'];
+  it('reports a priced result on the real clock, every time', () => {
+    // A real clock on an unknown host. Before 2026-10-16 a loaded machine
+    // could starve the sampler or the pass and every outcome had to be NAMED
+    // from a closed set (10.86 rule 1); a starved pass still may never come
+    // back as an empty result, a zero or a silence (the pass refuses by name
+    // when offered fewer than MIN_TERMINAL_SAMPLES showdowns).
+    // 2026-10-16: on the real clock of any host the node fires, the sampler
+    // draws its full declared sample and the pass prices every line: no clock
+    // can starve either any more.
     for (let i = 0; i < 24; i++) {
       const spot = remainingVariantSpot('flo8', 'river', 2);
       const saved = saveFastRandom();
@@ -253,28 +226,13 @@ describe('P12.1 cannot reach the decision from where it runs', () => {
           1,
           true
         );
-        // The sampler can exhaust 2.5 ms while the policy still finishes
-        // within 4 ms (equity_budget_unavailable), or the whole policy can
-        // exceed 4 ms (work_budget). Both preserve the baseline and have no
-        // priced node. Assert each reason's evidence, not host speed.
-        if (!result.receipt.fired) {
-          expectUnpricedBudgetFallback(result, spot.baseline);
-          continue;
-        }
         const economics = result.receipt.actionEconomics!;
         expect(economics).toBeTruthy();
-        if (economics.unavailable === null) {
-          expect(economics.values.length).toBeGreaterThan(0);
-          expect(result.receipt.features).toContain('net_action_economics');
-        } else {
-          expect(NAMED_REFUSALS, economics.unavailable!).toContain(economics.unavailable);
-          expect(economics.values).toEqual([]);
-          expect(economics.best).toBe(null);
-          if (economics.unavailable === 'work_budget_unavailable')
-            expect(economics.budgetExhausted).toBe(true);
-          else expect(economics.offeredSamples).toBeLessThan(MIN_TERMINAL_SAMPLES);
-          expect(result.receipt.features).not.toContain('net_action_economics');
-        }
+        expect(economics.unavailable).toBe(null);
+        expect(economics.budgetExhausted).toBe(false);
+        expect(economics.offeredSamples).toBe(REMAINING_VARIANT_DOMAIN.defaultSamples);
+        expect(economics.values.length).toBeGreaterThan(0);
+        expect(result.receipt.features).toContain('net_action_economics');
         expect(result.receipt.reason).not.toBe('work_budget');
         expect(result.receipt.fired).toBe(true);
         expect(result.receipt.applied).toBe(false);
@@ -301,11 +259,10 @@ describe('P12.1 cannot reach the decision from where it runs', () => {
     // Exactly one call site, and it is that one.
     expect(source.split('remainingVariantActionEconomics({').length - 1).toBe(1);
     expect(source.split('actionEconomics =').length - 1).toBe(1);
-    // Its budget is measured from its own start, not from the policy's.
-    expect(body).toContain('const economicsStart = now();');
-    expect(body).toContain(
-      'withinBudget: () => now() - economicsStart < REMAINING_VARIANT_DOMAIN.netActionBudgetMs'
-    );
+    // 2026-10-16: no deadline is handed to the pass; it completes its work.
+    const call = body.slice(economicsCall, body.indexOf('});', economicsCall));
+    expect(call).not.toContain('withinBudget');
+    expect(source).not.toContain('economicsStart');
     expect(body.slice(0, economicsCall)).not.toContain('now() - start');
     // A refused node is not priced at all.
     expect(body).toContain('if (!out.receipt.fired ||');
@@ -381,9 +338,8 @@ describe('P12.1 cannot reach the decision from where it runs', () => {
     // Measurement, not a strength claim, and deliberately NOT conditional on
     // the result being available: an unconditional budget lets every run
     // complete, so this always measures something. The number it prints is
-    // what netActionBudgetMs has to accommodate on THIS host, which is why a
-    // slow or loaded host reports work_budget_unavailable above rather than a
-    // truncated average. Measured 2026-10-05: Mac Studio median 0.14 ms,
+    // the cost of the pass's declared work on THIS host (since 2026-10-16 no
+    // deadline cuts it). Measured 2026-10-05: Mac Studio median 0.14 ms,
     // shared GitHub ubuntu runner median 1.01 ms with a 5.2 ms p95.
     const spot = remainingVariantSpot('flo8', 'river', 2);
     const opponentIds = spot.state.players
@@ -429,7 +385,7 @@ describe('P12.1 cannot reach the decision from where it runs', () => {
     runs.sort((a, b) => a - b);
     const median = runs[Math.floor(runs.length / 2)];
     console.log(
-      `P12.1 net-action pass at ${REMAINING_VARIANT_DOMAIN.defaultSamples} samples: n=${runs.length} median=${median.toFixed(4)}ms p95=${runs[Math.floor(runs.length * 0.95)].toFixed(4)}ms max=${runs[runs.length - 1].toFixed(4)}ms budget=${REMAINING_VARIANT_DOMAIN.netActionBudgetMs}ms`
+      `P12.1 net-action pass at ${REMAINING_VARIANT_DOMAIN.defaultSamples} samples: n=${runs.length} median=${median.toFixed(4)}ms p95=${runs[Math.floor(runs.length * 0.95)].toFixed(4)}ms max=${runs[runs.length - 1].toFixed(4)}ms`
     );
     expect(runs.length).toBe(24);
     expect(median).toBeGreaterThan(0);

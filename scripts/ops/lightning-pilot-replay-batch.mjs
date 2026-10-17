@@ -3,12 +3,8 @@
  * A page certifies only its selected settled, history-linked hands; complete
  * means no further selected rows after this cursor, never universal launch GO.
  */
+import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 import { PILOT } from './prepare-lightning-private-pilot.mjs';
-const CLUSTERS = new Set([
-  'babb43f1-368e-406f-a97a-a0d5013648b2',
-  '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb',
-]);
-const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
 const uuid = (x) =>
   typeof x === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(x);
 const time = (x) => (typeof x === 'string' ? Date.parse(x) : NaN);
@@ -33,7 +29,7 @@ export async function collectReplayBatch({
     nextCursor: null,
   });
   if (
-    !CLUSTERS.has(clusterId) ||
+    !uuid(clusterId) ||
     !Number.isFinite(time(from)) ||
     !Number.isFinite(time(to)) ||
     time(from) >= time(to) ||
@@ -45,31 +41,10 @@ export async function collectReplayBatch({
   )
     return unknown('INVALID_REPLAY_SCOPE');
   try {
+    await resolvePilotTarget(admin, clusterId, { active: false });
     const session = await player.auth.getSession();
     if (session.error || session.data?.session?.user?.id !== PILOT.ownerId)
       return unknown('REPLAY_OWNER_SESSION_UNAVAILABLE');
-    const game = await admin
-      .from('cash_games')
-      .select('id,club_id,ruleset_snapshot')
-      .eq('id', clusterId)
-      .maybeSingle();
-    const club = await admin
-      .from('clubs')
-      .select('id,owner_id,is_public,requires_approval')
-      .eq('id', CLUB)
-      .maybeSingle();
-    if (
-      game.error ||
-      club.error ||
-      game.data?.id !== clusterId ||
-      game.data?.club_id !== CLUB ||
-      game.data?.ruleset_snapshot?.options?.is_private !== true ||
-      club.data?.id !== CLUB ||
-      club.data?.owner_id !== PILOT.ownerId ||
-      club.data?.is_public !== false ||
-      club.data?.requires_approval !== true
-    )
-      return unknown('REPLAY_PRIVATE_SCOPE_UNAVAILABLE');
     let query = admin
       .from('lightning_hand')
       .select('hand_id,cluster_id,lightning_instance_id,hand_history_id,formed_at,settled_at', {

@@ -613,23 +613,23 @@ describe('P12.1 what the proposal records', () => {
     expect(() => JSON.parse(JSON.stringify(r.receipt))).not.toThrow();
   });
 
-  it.each(variants)('%s records an exhausted budget as unavailable', (variant) => {
+  it.each(variants)('%s records a decision without a sample as unavailable', (variant) => {
     const s = remainingVariantSpot(variant, 'river', 3);
-    // The sampler gets no time at all: no sample, so nothing is consumed.
+    // No sample drawn (sampleWhenMissing false; since 2026-10-16 no clock can
+    // starve the sampler): nothing is consumed.
     const r = evaluateRemainingVariantPolicy(
       s.hero,
       s.state,
       s.baseline,
       null,
       'shadow',
-      (() => {
-        let t = 0;
-        return () => (t += 3);
-      })()
+      () => 0,
+      1,
+      false
     );
     expect(r.receipt.eligible).toBe(true);
     expect(r.receipt.fired).toBe(false);
-    expect(['equity_budget_unavailable', 'work_budget']).toContain(r.receipt.reason);
+    expect(r.receipt.reason).toBe('equity_budget_unavailable');
     expect(r.receipt.inputs!.range.status).toBe('unavailable');
     expect(remainingVariantInputBindingIsValid(clone(r.receipt.inputs))).toBe(true);
   });

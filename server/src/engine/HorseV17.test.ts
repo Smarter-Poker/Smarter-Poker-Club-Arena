@@ -81,7 +81,7 @@ describe('V17 positional pressure', () => {
 });
 
 describe('V17 river delayed probe', () => {
-  function riverStabFreq(v17RiverProbe: boolean, trials = 500): number {
+  function riverStabFreq(v17RiverProbe: boolean | undefined, trials = 500): number {
     let bets = 0;
     for (let s = 1; s <= trials; s++) {
       seedFastRandom(s * 5081);
@@ -129,6 +129,12 @@ describe('V17 river delayed probe', () => {
     const on = riverStabFreq(true);
     const off = riverStabFreq(false);
     expect(on).toBeGreaterThan(off + 0.04);
+  });
+
+  it('is default OFF: no option plays exactly like the layer off (2026-10-16)', () => {
+    // v17_river_probe resolved negative in the league; the probe is opt-in.
+    expect(riverStabFreq(undefined)).toBe(riverStabFreq(false));
+    expect(riverStabFreq(true)).toBeGreaterThan(riverStabFreq(undefined) + 0.04);
   });
 });
 

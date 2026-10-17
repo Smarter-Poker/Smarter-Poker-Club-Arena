@@ -32,6 +32,7 @@ import {
   p12Reader,
   p12Selection,
 } from '../engine/HorsePhase12Authority.test-support.js';
+import { slowClock, stalledClock } from '../engine/HorseDeclaredWork.test-support.js';
 import { evaluateRemainingVariantPolicy } from '../engine/remainingVariants/RemainingVariantLivePolicy.js';
 import type { RemainingPolicyVariant } from '../engine/remainingVariants/RemainingVariantPolicyPack.js';
 import { phase12CompletionRecordFrom } from './phase12CompletionRecord.js';
@@ -57,7 +58,13 @@ function receipt(
 const line = (r: unknown, at = AT, eventId = 'e') =>
   JSON.stringify({ eventId, decisionTimeMs: at, gameMode: 'cash', receipt: r });
 
-/** Every street complete `n` times, plus one work-budget fallback on the river. */
+/**
+ * Every street complete `n` times, plus one river receipt of an EARLIER
+ * release that fell back on the retired 4 ms work budget (reason
+ * `work_budget`). Since 2026-10-16 (docs/changelog/2026-10-16-packs-do-declared-work.md)
+ * no live clock produces that receipt; the reader must still classify the
+ * ones earlier releases journaled.
+ */
 function window(variant: RemainingPolicyVariant, n: number) {
   const lines: string[] = [];
   const receipts: unknown[] = [];
@@ -68,11 +75,15 @@ function window(variant: RemainingPolicyVariant, n: number) {
       receipts.push(ok);
     }
   }
-  let t = 0;
-  const slow = receipt(variant, 'river', () => (t += 5));
-  lines.push(line(slow, AT, 'slow'));
-  receipts.push(slow);
+  const retired = retiredWorkBudgetReceipt(variant);
+  lines.push(line(retired, AT, 'retired-work-budget'));
+  receipts.push(retired);
   return { lines, receipts };
+}
+
+/** An earlier release's river receipt that fell back on the old work budget. */
+function retiredWorkBudgetReceipt(variant: RemainingPolicyVariant) {
+  return { ...receipt(variant, 'river', () => 0), reason: 'work_budget', fired: false };
 }
 
 describe('P12.3 completion reader, stage 2: the record admission reads', () => {
@@ -102,9 +113,19 @@ describe('P12.3 completion reader, stage 2: the record admission reads', () => {
         governorReduced: 0,
       });
       expect(out.record.policyDigest).toBe(horsePhase12PolicyDigest(variant));
+      // A live decision on a slow or stalled host does the declared work and
+      // counts complete: the clock no longer produces a work-budget fallback.
+      for (const clock of [slowClock(5), stalledClock()]) {
+        const late = receipt(variant, 'river', clock);
+        expect(late.reason).not.toBe('work_budget');
+        expect(horsePhase12CompletionOutcome(variant, late)).toBe('completed');
+      }
+      expect(horsePhase12CompletionOutcome(variant, retiredWorkBudgetReceipt(variant))).toBe(
+        'work_budget'
+      );
       // The record is exactly what admission reads: 130 complete of 131 on the
-      // river (lower bound 0.940) is below the floor; without the fallback the
-      // 130 all-complete decisions clear it.
+      // river (lower bound 0.940) is below the floor; without the retired
+      // fallback the 130 all-complete decisions clear it.
       const admitRecord = (record: unknown) => {
         const c = Buffer.from(JSON.stringify(record, null, 2) + '\n');
         const q = p12QualificationBytes(variant);

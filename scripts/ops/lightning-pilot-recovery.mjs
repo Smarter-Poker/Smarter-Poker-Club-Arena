@@ -9,7 +9,6 @@ import {
   captureRecoveryPhase,
   observeRecoveryPhaseBracket,
 } from './recovery-phase-observation.mjs';
-const CLUSTERS = ['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function recoveryFrame(payload, direction, rooms) {
   try {
@@ -236,19 +235,22 @@ export async function witnessRecovery({
       !CONSENT_PLAYERS.includes(pins[0].playerId) ||
       pins.some((p) => p.playerId !== pins[0].playerId) ||
       new Set(pins.map((p) => p.poolSessionId)).size !== 2 ||
-      !CLUSTERS.every((cluster) =>
-        pins.some(
-          (p) =>
-            p.clusterId === cluster && p.playerId === pins[0].playerId && UUID.test(p.poolSessionId)
-        )
-      )
+      new Set(pins.map((p) => p.clusterId)).size !== 2 ||
+      pins.some((p) => !UUID.test(p.clusterId) || !UUID.test(p.poolSessionId))
     )
       throw new Error('Scope');
     const work = async () => {
+      const targets = [];
       for (const pin of pins) {
         remaining();
-        await validate(admin, pin);
+        targets.push(await validate(admin, pin));
       }
+      if (
+        new Set(targets.map((t) => t?.templateName)).size !== 2 ||
+        !targets.some((t) => t?.templateName === 'action') ||
+        !targets.some((t) => t?.templateName === 'madness')
+      )
+        throw new Error('Distinct Actual Pilot Targets Required');
       const profile = await admin
         .from('profiles')
         .select('id,club_arena_tos_accepted_at')

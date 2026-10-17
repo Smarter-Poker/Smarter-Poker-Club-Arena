@@ -2127,3 +2127,106 @@
   right: calc(16 / 1916 * 100%);
   transform: translateY(-50%);
 }
+
+/* Full identities own the row width; wallet figures wrap below the name. */
+.page .glass .row,
+.page.simple .glass .row {
+  display: grid;
+  grid-template-columns: 28px 76px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.rosterPortrait {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  grid-column: 2;
+  grid-row: 1 / 3;
+  min-width: 0;
+}
+.page .glass .rosterPortrait .simpleId {
+  display: block;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.page .glass .recipientPicker {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+.page .glass .rowInfo {
+  grid-column: 3;
+  min-width: 0;
+}
+.page .glass .rowName,
+.page.simple .glass .rowName {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.page .glass .rosterWallet,
+.page.simple .glass .rosterWallet {
+  grid-column: 3;
+  align-items: flex-start;
+  min-width: 0;
+}
+.page .glass .rosterWallet .rowSub {
+  display: block;
+}
+.page .searchRow input,
+.page.simple .searchRow input {
+  width: 100%;
+  flex-basis: 100%;
+}
+.page .actionBar .selBar > span,
+.page.simple .actionBar .selBar > span {
+  max-width: 100%;
+}
+.page .actionBar .selBar:has(.selClear) > span {
+  max-width: calc(100% - 100px);
+}
+
+.rosterBalanceLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  width: 100%;
+}
+.page .glass .rosterBalanceLine .rowSub {
+  font-size: 11px;
+}
+
+.console .playerCardName {
+  display: block;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: calc(4.5cqw * var(--fit, 1));
+}
+.console .playerCardIdentity {
+  display: block;
+}
+.console .playerCardId {
+  position: absolute;
+  left: calc(-210 / 870 * 100%);
+  top: calc(175 / 180 * 100%);
+  width: calc(200 / 870 * 100%);
+  text-align: center;
+  font-size: 2.2cqw;
+}
+
+.recipientWalletSummary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  color: var(--ink-silver);
+  font-size: 3.2cqw;
+}
+
+.page.simple .glass .rosterBalanceLine .rowSub {
+  display: block;
+}

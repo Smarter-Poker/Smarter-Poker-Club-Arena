@@ -400,7 +400,7 @@ describe('authenticated production account preflight', () => {
     expect(setup).toContain('ensureClubMembership(');
     expect(setup).toContain('dismissClubEntryMessage(page)');
     expect(setup).toContain('/rest/v1/rpc/fn_dismiss_club_message');
-    expect(setup).toContain("name: 'Do Not Show Me This Message Again'");
+    expect(setup).toContain("name: 'Do Not Show Again'");
     const helper = source('tests/e2e/support/ensureClubMembership.ts');
     expect(helper).toContain("getByRole('button', { name: 'Join Club', exact: true })");
     expect(helper).toContain("locator('.club-home')");

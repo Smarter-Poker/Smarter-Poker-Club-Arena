@@ -1,0 +1,7 @@
+# Lobby preference restoration certificate
+
+The Chromium cold-return case in run 38980280726 passed its primary journey, then exhausted the shared 120-second deadline waiting for restoration. The retained failure observer recorded only failed requests and navigation, so it could not identify the save phase or distinguish a missing request from a pending response. The existing helper also accepted another account's acknowledgement for the same club and tab. No product preference or authentication defect was established.
+
+The certificate now waits for the current document's exact account and club preference read before capturing or changing a selection. It follows the intended POST Request to its own response within a 30-second save budget, reports non-success responses immediately, and records bounded phase, request, response and selected-state receipts without credentials or headers. Each cold document independently reads the saved view, including restoration. The original 120-second total, navigation and visual assertions remain; no request is retried and runtime preferences are unchanged. Restoration and document-close failures are both retained.
+
+Validation includes the original helper failing the wrong-account regression, deferred own-read and stale-document cases, unrelated projections/accounts/clubs, invalid and unsuccessful reads, missing/pending/failed save responses, exact restoration ordering and cleanup failures. Protected qualification and the actual maintained cold-return case remain required before completion.

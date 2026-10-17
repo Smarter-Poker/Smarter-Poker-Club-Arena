@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runPilotWitness } from './lightning-pilot-witness.mjs';
-import { PILOT } from './prepare-lightning-private-pilot.mjs';
+import { PILOT, PILOT_TARGETS } from './prepare-lightning-private-pilot.mjs';
 const SECRET = 'TEST_SECRET_MUST_NOT_ESCAPE';
 const PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
 const POOL = '0097309f-0000-4000-8000-000000000002';
@@ -21,20 +21,79 @@ function fixture({
   consent = true,
   cleanupFails = false,
   playerId = PLAYER,
+  targetPatch = {},
 } = {}) {
   const calls = [],
     signedOut = [];
   const admin = {
-    from: () => {
+    from: (table) => {
+      const filters = {};
       const q = {
         select: () => q,
-        eq: () => q,
-        maybeSingle: async () => ({
-          data: {
-            id: playerId,
-            club_arena_tos_accepted_at: consent ? '2026-01-01T00:00:00Z' : null,
-          },
-        }),
+        eq: (key, value) => {
+          filters[key] = value;
+          return q;
+        },
+        maybeSingle: async () => {
+          const second =
+            filters.id === '0097309f-0000-4000-8000-000000000003' ||
+            filters.id === '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb' ||
+            filters.name === PILOT_TARGETS[1].gameName;
+          const target = PILOT_TARGETS[second ? 1 : 0];
+          const cluster = second ? '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb' : env.PILOT_CLUSTER_ID;
+          const data =
+            table === 'clubs'
+              ? {
+                  id: 'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
+                  owner_id: PILOT.ownerId,
+                  name: PILOT.name,
+                  is_public: false,
+                  requires_approval: true,
+                }
+              : table === 'cash_games'
+                ? {
+                    id: cluster,
+                    club_id: 'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
+                    name: target.gameName,
+                    template_name: target.templateName,
+                    handedness: target.handedness,
+                    sb: target.sb,
+                    bb: target.bb,
+                    variant: 'nlh',
+                    enabled: true,
+                    must_move: true,
+                    cluster_mode: 'lightning',
+                    lightning_enabled: true,
+                    ruleset_snapshot: {
+                      template: target.templateName,
+                      variant: 'nlh',
+                      regular_ante: second ? 'bb' : 'sb',
+                      vpip_floor: second ? 50 : 30,
+                      vpip_window: 10,
+                      bombs: {
+                        enabled: true,
+                        trigger: second ? 'every_orbit' : 'timed_15m',
+                        ante_bb: second ? 3 : 2,
+                        boards: 2,
+                      },
+                      options: { is_private: true },
+                    },
+                    ...targetPatch,
+                  }
+                : table === 'lightning_pool_session'
+                  ? {
+                      id: filters.id,
+                      cluster_id: '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb',
+                      player_id: playerId,
+                      state: 'active',
+                      exited_at: null,
+                    }
+                  : {
+                      id: playerId,
+                      club_arena_tos_accepted_at: consent ? '2026-01-01T00:00:00Z' : null,
+                    };
+          return { data };
+        },
       };
       return q;
     },
@@ -80,7 +139,7 @@ test('replay uses verified service owner, supported admin fetch and local cleanu
 test('invalid mode, cluster, cursor and bounds stop before client creation', async () => {
   for (const patch of [
     { PILOT_WITNESS_MODE: 'activate' },
-    { PILOT_CLUSTER_ID: PLAYER },
+    { PILOT_CLUSTER_ID: 'not-a-uuid' },
     { PILOT_CURSOR: SECRET },
     { PILOT_BATCH: '1001' },
     { PILOT_TO: env.PILOT_FROM },
@@ -326,4 +385,75 @@ test('Samantha consent is exact and player-only, with matching durable profile i
     );
     assert.equal(blocked.calls.length, 0);
   }
+});
+
+test('Samantha admission keeps the primary session through a bounded real-player callback', async () => {
+  const args = {
+    ...env,
+    PILOT_WITNESS_MODE: 'admission',
+    PILOT_PLAYER_ID: SAMANTHA,
+    PILOT_ACCEPT_PLAYER_TERMS: 'true',
+  };
+  const f = fixture({ consent: false, playerId: SAMANTHA });
+  let admissionArgs;
+  f.witnessAdmission = async (a) => {
+    admissionArgs = a;
+    const playerWitness = await a.withAdmittedSession({
+      pin: { ...a.pin, poolSessionId: POOL },
+      remaining: () => 180000,
+    });
+    return { status: 'observed', cleanup: 'local_session_and_browser_closed', playerWitness };
+  };
+  const r = await runPilotWitness(args, f);
+  assert.equal(r.status, 'observed');
+  assert.equal(admissionArgs.acceptTerms, true);
+  assert.equal(admissionArgs.pin.poolSessionId, undefined);
+  assert.equal(f.calls.at(-1).pin.poolSessionId, POOL);
+  assert.equal(f.calls.at(-1).timeoutMs, 180000);
+  assert.equal(f.calls.at(-1).acceptTerms, false);
+  for (const patch of [{ PILOT_PLAYER_ID: PLAYER }, { PILOT_ACCEPT_PLAYER_TERMS: 'false' }]) {
+    const blocked = fixture({ consent: false, playerId: SAMANTHA });
+    blocked.witnessAdmission = async () => assert.fail('unapproved admission reached');
+    assert.equal((await runPilotWitness({ ...args, ...patch }, blocked)).status, 'unknown');
+  }
+});
+test('admission cannot qualify without the observed child player witness and local cleanup', async () => {
+  const args = { ...env, PILOT_WITNESS_MODE: 'admission', PILOT_PLAYER_ID: SAMANTHA };
+  for (const result of [
+    { status: 'observed', cleanup: 'local_session_and_browser_closed' },
+    {
+      status: 'observed',
+      cleanup: 'unknown',
+      playerWitness: { status: 'observed', cleanup: 'local_session_closed' },
+    },
+    {
+      status: 'observed',
+      cleanup: 'local_session_and_browser_closed',
+      playerWitness: { status: 'unknown', cleanup: 'local_session_closed' },
+    },
+  ]) {
+    const f = fixture({ playerId: SAMANTHA });
+    f.witnessAdmission = async () => result;
+    assert.equal((await runPilotWitness(args, f)).status, 'unknown');
+  }
+  const child = fixture({ playerId: SAMANTHA });
+  child.witnessPlayer = async () => ({ status: 'unknown', cleanup: 'local_session_closed' });
+  child.witnessAdmission = async (a) =>
+    a.withAdmittedSession({ pin: { ...a.pin, poolSessionId: POOL }, remaining: () => 180000 });
+  assert.equal((await runPilotWitness(args, child)).status, 'unknown');
+});
+
+test('an arbitrary valid cluster UUID or Classic target refuses before owner login or browser action', async () => {
+  for (const targetPatch of [{ template_name: 'classic' }, { name: 'Unrelated Private Action' }]) {
+    const f = fixture({ targetPatch });
+    const result = await runPilotWitness(env, f);
+    assert.equal(result.status, 'unknown');
+    assert.equal(f.calls.length, 1);
+    assert.deepEqual(f.signedOut, []);
+  }
+  const f = fixture();
+  const result = await runPilotWitness({ ...env, PILOT_CLUSTER_ID: PLAYER }, f);
+  assert.equal(result.status, 'unknown');
+  assert.equal(f.calls.length, 1);
+  assert.deepEqual(f.signedOut, []);
 });

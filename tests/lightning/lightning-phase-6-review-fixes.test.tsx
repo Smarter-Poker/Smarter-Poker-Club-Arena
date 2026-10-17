@@ -222,7 +222,8 @@ describe('2. a pool-session room is found before anything says it does not exist
   const cluster = (id: string, mode = 'lightning') => ({
     id,
     club_id: null,
-    name: 'NLH 1/2 Classic',
+    name: 'NLH 1/2 Action',
+    template_name: 'action',
     variant: 'nlh',
     sb: 1,
     bb: 2,
@@ -242,7 +243,7 @@ describe('2. a pool-session room is found before anything says it does not exist
     }));
     const room = await findMyLightningRoom(POOL);
     expect(room?.clusterId).toBe(CLUSTER);
-    expect(room?.meta?.name).toBe('NLH 1/2 Classic');
+    expect(room?.meta?.name).toBe('NLH 1/2 Action');
     expect(getLightningPoolSession(POOL)?.clusterId).toBe(CLUSTER);
     expect(fromCalls).toEqual(['cash_games']);
   });
@@ -540,6 +541,7 @@ describe('5. the lobby says each Cluster mode truthfully', () => {
       main_index: 1,
       lifecycle: 'live',
       cluster_must_move: true,
+      cluster_template: 'action',
       cluster_players: 5,
       cluster_tables: 1,
       cluster_mode: mode,
@@ -635,6 +637,7 @@ describe('5. the lobby says each Cluster mode truthfully', () => {
       clusterId: CLUSTER,
       clubId: null,
       name: 'x',
+      templateName: 'action',
       variant: 'nlh',
       smallBlind: 1,
       bigBlind: 2,

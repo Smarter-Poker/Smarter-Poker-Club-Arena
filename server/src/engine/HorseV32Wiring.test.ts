@@ -92,7 +92,12 @@ function decide(hole: string, opts: Record<string, unknown> = {}) {
   // fourth silently discards every flag — including `telemetry` — which is
   // exactly the sort of wiring slip this suite exists to catch in the code
   // under test, so it does not get to live in the test either.
-  return HorseLogic.decide(st.players[0] as never, st as never, 'balanced', {}, opts as never);
+  // 2026-10-16: V32 is default OFF (v32_facing_defense measured negative in
+  // the league), so this suite turns it on unless a test says otherwise.
+  return HorseLogic.decide(st.players[0] as never, st as never, 'balanced', {}, {
+    v32FacingDefense: true,
+    ...opts,
+  } as never);
 }
 
 beforeEach(() => {
@@ -132,6 +137,25 @@ describe('the consult is WIRED', () => {
     const fires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
     expect(fires['v32_defend_fold'] ?? 0).toBe(0);
     expect(fires['v32_defend_no_range'] ?? 0).toBe(0);
+  });
+
+  it('is default OFF: no option plays exactly like the layer off (2026-10-16)', () => {
+    stock();
+    enableBrainTelemetry();
+    drainFires();
+    const st = state('3c4d');
+    for (let i = 0; i < 10; i++)
+      HorseLogic.decide(st.players[0] as never, st as never, 'balanced', {}, {
+        telemetry: true,
+      } as never);
+    const fires = Object.fromEntries(drainFires().map((r) => [r.feature, r.fires]));
+    for (const counter of [
+      'v32_defend_fold',
+      'v32_defend_call',
+      'v32_defend_pass_strong',
+      'v32_defend_no_range',
+    ])
+      expect(fires[counter] ?? 0, counter).toBe(0);
   });
 
   it('pass_strong is attributable too', () => {

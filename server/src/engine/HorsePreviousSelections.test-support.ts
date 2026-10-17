@@ -104,3 +104,111 @@ export const PREVIOUS_PHASE12_SELECTIONS: Readonly<
   } as const),
   flo8: null,
 });
+
+/**
+ * The selections committed on main until 2026-10-16 (PLO4 and PLO5/PLO6/PLO8
+ * generation 2, FLH generation 3, all measured on c92768c8). The packs now do
+ * their declared work (docs/changelog/2026-10-16-packs-do-declared-work.md),
+ * every policy digest moved, and the committed selections are null until the
+ * combined requalification; these retained records must be refused.
+ */
+export const RETIRED_2026_10_16_PHASE10_SELECTION: HorsePhase10AuthoritySelection = Object.freeze({
+  schema: 'horse-qualified-authority-selection-v1',
+  phase: 'phase10',
+  sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+  packVersion: 'plo4-policy-round3-v2',
+  contractVersion: 'plo4-strength-contract-v1',
+  contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
+  domain: 'plo4-cash-single-board-after-rake-horse-population',
+  qualificationPath: 'docs/evidence/phase10/c92768c8/phase10-qualification-2026-10-15.json',
+  qualificationSha256: 'e4161a38a272241d1b1522461c2964f3bf0d0f463e0d8b45871be79f3b7bf4b9',
+  approvalGeneration: 2,
+  issuedAt: '2026-10-15T02:45:00.000Z',
+  expiresAt: null,
+  withdrawn: null,
+} as const);
+
+export const RETIRED_2026_10_16_PHASE11_SELECTIONS: Readonly<
+  Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection>
+> = Object.freeze({
+  plo5: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo5',
+    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+    packVersion: 'plo5-high-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
+    domain: 'plo5-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/c92768c8/phase11-qualification-2026-10-15-plo5.json',
+    qualificationSha256: '69c0db872ddcd9b86bd00d410ba2f2458f8797baab9fe1e2944a1f20556b45f1',
+    completionPath: 'docs/evidence/phase11/c92768c8/phase11-completion-2026-10-15-plo5.json',
+    completionSha256: 'b4928081d22bac9a144e37482be3a6ee29e8bb1e4bb130fb69dc4cd6749dd631',
+    approvalGeneration: 2,
+    issuedAt: '2026-10-15T07:35:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
+  plo6: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo6',
+    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+    packVersion: 'plo6-high-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
+    domain: 'plo6-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/c92768c8/phase11-qualification-2026-10-15-plo6.json',
+    qualificationSha256: '6b12daa4157047af0429798f67f1f2333b6d6f1053eebf11afc881cadd0d34f8',
+    completionPath: 'docs/evidence/phase11/c92768c8/phase11-completion-2026-10-15-plo6.json',
+    completionSha256: '0360a0cf58e331b7866e38e3b632f0bb55db6fa7b7705b7195ca0fd494651e3c',
+    approvalGeneration: 2,
+    issuedAt: '2026-10-15T07:35:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
+  plo8: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo8',
+    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+    packVersion: 'plo8-split-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
+    domain: 'plo8-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/c92768c8/phase11-qualification-2026-10-15-plo8.json',
+    qualificationSha256: '5cf937a8a7cada1fd72200546c72b71f844c66e2273dbb66ee7c1074e2309456',
+    completionPath: 'docs/evidence/phase11/c92768c8/phase11-completion-2026-10-15-plo8.json',
+    completionSha256: 'fbeec6201c664c1e8ba93ca4ca745fede9999a1603745c06228783d74925fa59',
+    approvalGeneration: 2,
+    issuedAt: '2026-10-15T04:20:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
+});
+
+export const RETIRED_2026_10_16_PHASE12_SELECTIONS: Readonly<
+  Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
+> = Object.freeze({
+  short_deck: null,
+  pineapple: null,
+  flh: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase12',
+    variant: 'flh',
+    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+    packVersion: 'fixed-limit-holdem-round3-v1',
+    contractVersion: 'remaining-variant-strength-contract-v1',
+    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
+    domain: 'flh-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase12/c92768c8/phase12-qualification-2026-10-15-flh.json',
+    qualificationSha256: '0b349ec894b1d5f0db47c052abf87a336b9fb4aa087265a96acb613083cb315d',
+    completionPath: 'docs/evidence/phase12/c92768c8/phase12-completion-2026-10-15-flh.json',
+    completionSha256: '55c641c6f3c6818311be024b005a01136a7a37507991f2d6c33be6170c1641c2',
+    approvalGeneration: 3,
+    issuedAt: '2026-10-15T01:05:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
+  flo8: null,
+});

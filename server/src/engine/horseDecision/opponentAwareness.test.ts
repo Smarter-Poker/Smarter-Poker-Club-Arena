@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { HandController } from '../HandController.js';
 import { HorseMind, readScopeOf } from '../HorseMind.js';
+import { openerRangeWidth, reRaiseWidth } from '../HorseOpponentExploit.js';
 import {
   defaultHorseDecisionWorkerDependencies as defaults,
   HorseDecisionWorkerRuntime,
@@ -111,12 +112,33 @@ it.each(['open', 'limp_reraise'] as const)(
       `${readScopeOf('flh', 2)}|${opponent}`
     );
     expect(scoped).toMatchObject({ hands: 30, vpip: 30, pfr: 30 });
-    HorseMind.setDecisionScope(readScopeOf('flh', 2));
+    HorseMind.setDecisionScope(readScopeOf('flh', 2), 'flh');
     const learned = HorseMind.bandFor(opponent, lastActions, 2, false);
+    // 2026-10-16 OPPONENT EXPLOIT: thirty straight raises are credibly outside
+    // the horse envelope, so the raiser's own measured width replaces the
+    // seat band (and the lifetime -0.1 PFR widening that read it).
+    const read = HorseMind.opponentRead(opponent);
+    expect(read).not.toBeNull();
+    const width = line === 'open' ? openerRangeWidth(read) : reRaiseWidth(read);
+    const legacy = (() => {
+      const real = HorseMind.opponentRead;
+      (HorseMind as unknown as { opponentRead: () => null }).opponentRead = () => null;
+      try {
+        return HorseMind.bandFor(opponent, lastActions, 2, false);
+      } finally {
+        (HorseMind as unknown as { opponentRead: typeof real }).opponentRead = real;
+      }
+    })();
     HorseMind.reset();
     const prior = HorseMind.bandFor(opponent, lastActions, 2, false);
     expect(learned).not.toBeNull();
-    expect(learned![0]).toBeCloseTo(prior![0] - 0.1, 10);
+    // Without the read the lifetime widening still applies, exactly as before.
+    expect(legacy![0]).toBeCloseTo(prior![0] - 0.1, 10);
+    if (width === null) expect(learned![0]).toBeCloseTo(prior![0] - 0.1, 10);
+    else {
+      expect(learned![0]).toBeCloseTo(Math.max(0, Math.min(0.9, 1 - width)), 10);
+      expect(learned![0]).toBeLessThan(legacy![0]);
+    }
   }
 );
 
@@ -279,19 +301,29 @@ it('a 100% preflop raiser and postflop pot bettor reaches the actual FAST range,
     call[0] === opponent ? [exploit.mock.results[i]!.value] : []
   );
   expect(exploits.length).toBeGreaterThan(0);
-  expect(exploits.some((read) => read.callDownMod === 1.2)).toBe(true);
+  // 2026-10-16 OPPONENT EXPLOIT: forty hands of raising and potting are a
+  // credible aggressor and station, so the bettor's own read replaces the
+  // lifetime 1.2 call-down (legacy cap) with a stronger one.
+  expect(exploits.some((read) => read.callDownMod > 1.2)).toBe(true);
+  expect(view.exploit.get(`${readScopeOf('nlh', 2)}|${opponent}`)).toBeDefined();
   vi.restoreAllMocks();
-  HorseMind.setDecisionScope(null);
+  // Every range read at decision time is WIDER than the same read with the
+  // layer off (the raiser's measured width, not its seat), and the layer-off
+  // read is still the legacy lifetime widening.
+  HorseMind.setDecisionScope(readScopeOf('nlh', 2), 'nlh');
+  const real = HorseMind.opponentRead;
   for (const { call, value } of ranges) {
-    const pooled = HorseMind.bandFor(...call);
-    expect(value[0]).toBeCloseTo(pooled![0] - 0.1, 10);
-  }
-  HorseMind.reset();
-  for (const { call, value } of ranges) {
-    const prior = HorseMind.bandFor(...call);
+    (HorseMind as unknown as { opponentRead: () => null }).opponentRead = () => null;
+    let off;
+    try {
+      off = HorseMind.bandFor(...call);
+    } finally {
+      (HorseMind as unknown as { opponentRead: typeof real }).opponentRead = real;
+    }
     expect(value).not.toBeNull();
-    expect(value[0]).toBeCloseTo(prior![0] - 0.1, 10);
+    expect(value[0]).toBeLessThan(off![0]);
   }
+  HorseMind.setDecisionScope(null);
 });
 
 it.each([

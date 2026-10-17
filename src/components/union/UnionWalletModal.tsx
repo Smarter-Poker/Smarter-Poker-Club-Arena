@@ -42,6 +42,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { reportError } from '../../utils/errorReporter';
@@ -309,6 +310,13 @@ export function UnionWalletModal({
   /* Tab stays inside the sheet, focus lands on its first control and returns
      to the wallet row that opened it (launch audit D-11). */
   const panelRef = useFocusTrap<HTMLDivElement>(isOpen);
+  /* The amount sheet holds Tab on its own while it is up: the desk behind it
+     is inert, and the sheet's trap sits on top of the desk's (the shared hook
+     answers only the newest trap), so Tab never walks back onto covered rows.
+     Closing it returns focus to the dock word that opened it. */
+  const sheetTrapRef = useFocusTrap<HTMLDivElement>(
+    isOpen && walletKey !== 'spin_reserve' && sheetOpen
+  );
 
   const readOnly = walletKey === 'spin_reserve';
 
@@ -829,7 +837,11 @@ export function UnionWalletModal({
         ? `${targetName} Selected`
         : 'Tap A Club Or Member To Select';
 
-  return (
+  /* PORTALED TO <body> (2026-10-17). Rendered in place, the desk lived inside
+     the lobby's stacking context and the fixed bottom nav and global header
+     painted over it: the dock's Pull Back, Ledger and Send Out could not be
+     tapped. On <body> it is one full-screen layer over the whole app. */
+  return createPortal(
     /* The shared focus trap holds Tab inside the desk and its sheet, moves
        focus in and returns it to the wallet tile that opened it. */
     <div ref={panelRef} className="wdesk__trap">
@@ -839,7 +851,7 @@ export function UnionWalletModal({
           !readOnly &&
           sheetOpen && (
             <div className="uwm-overlay" onClick={closeSheet}>
-              <div className="uwm-dialog" onClick={(e) => e.stopPropagation()}>
+              <div ref={sheetTrapRef} className="uwm-dialog" onClick={(e) => e.stopPropagation()}>
                 <SpadeConsole
                   onClose={busy ? undefined : closeSheet}
                   className="uwm-console"
@@ -972,15 +984,10 @@ export function UnionWalletModal({
         closeDisabled={busy}
         dockLine={dockLine}
         actions={
+          /* Read only: the dock says so on its line and prints no control.
+             A permanently disabled button repeating the line is a dead control. */
           readOnly
-            ? [
-                {
-                  label: 'Read Only',
-                  onClick: () => undefined,
-                  disabled: true,
-                  'aria-label': 'The Spin Reserve Is Not A Send Source',
-                },
-              ]
+            ? []
             : [
                 {
                   label: 'Pull Back',
@@ -1249,7 +1256,8 @@ export function UnionWalletModal({
           </div>
         )}
       </WalletDesk>
-    </div>
+    </div>,
+    document.body
   );
 }
 

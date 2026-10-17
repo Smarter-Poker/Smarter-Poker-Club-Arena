@@ -24,6 +24,7 @@ import { simulateEquity, variantInfo, seedFastRandom } from './HorseEval.js';
 import { calculatePots } from './PokerEngine.js';
 import type { HorseGameStateV2 } from './HorseLogic.js';
 import type { Card, SeatPlayer } from '../types.js';
+import { decideUnderClocks, withoutMeasurements } from './HorseDeclaredWork.test-support.js';
 
 const card = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
 const seat = (id: string, n: number, stack: number, investment = 0): SeatPlayer => ({
@@ -622,8 +623,28 @@ describe('Phase 8 counterfactual selection', () => {
     }
   );
   it.each([false, true])(
-    'starts no ICM work after a future hand consumes the deadline (shared workspace: %s)',
+    'finishes its declared work after a future hand whatever the clock then reads (shared workspace: %s)',
     (reuse) => {
+      // 2026-10-16: the 4 ms work budget that stopped the continuation part
+      // way (continuation_operation_budget) is gone. A clock that jumps far
+      // past it after the first future hand changes nothing but latency.
+      const fixed = (() => {
+        const { gs, hero, input } = scenario();
+        const previous = evaluateTournamentUtilityDetailed(input);
+        const baseline = {
+          ...previous.result!.decision,
+          tournamentUtility: previous.result!.ledger,
+        };
+        return evaluateTournamentPostflop(
+          hero,
+          gs,
+          baseline,
+          input,
+          'shadow',
+          () => 0,
+          reuse ? previous.continuePostflop : undefined
+        );
+      })();
       const { gs, hero, input } = scenario();
       let deadlinePassed = false;
       let lateEstimates = 0;
@@ -661,14 +682,16 @@ describe('Phase 8 counterfactual selection', () => {
           baseline,
           input,
           'shadow',
-          () => (deadlinePassed ? PHASE8_POLICY.workBudgetMs + 0.1 : 0),
+          () => (deadlinePassed ? 1_000 : 0),
           reuse ? previous.continuePostflop : undefined
         );
         expect(deadlinePassed).toBe(true);
-        expect(result.decision).toBe(baseline);
-        expect(result.ledger.reason).toBe('continuation_operation_budget');
-        expect(result.ledger.fired).toBe(false);
-        expect(lateEstimates).toBe(0);
+        expect(result.ledger.reason).not.toBe('continuation_operation_budget');
+        expect(result.ledger.reason).not.toBe('budget_exhausted');
+        expect(result.ledger.fired).toBe(true);
+        expect(result.ledger.work.budgetStop).toBe('none');
+        expect(lateEstimates).toBeGreaterThan(0);
+        expect(withoutMeasurements(result)).toEqual(withoutMeasurements(fixed));
       } finally {
         future.mockRestore();
         estimator.mockRestore();
@@ -718,12 +741,21 @@ describe('Phase 8 counterfactual selection', () => {
       }
     }
   );
-  it('refuses a budget breach and a private-card boundary violation', () => {
+  it('only measures a slow clock, and refuses a private-card boundary violation', () => {
     const { gs, hero, input } = scenario();
     const previous = evaluateTournamentUtility(input)!;
     const baseline = { ...previous.decision, tournamentUtility: previous.ledger };
+    // 2026-10-16: the 5 ms wall and 2 ms policy budgets that replaced a
+    // finished continuation by the baseline (budget_exhausted) are gone.
+    const [fixed, ...late] = decideUnderClocks((now) =>
+      evaluateTournamentPostflop(hero, gs, baseline, input, 'candidate', now)
+    );
+    const ledger = (fixed as { ledger: { reason: string; fired: boolean } }).ledger;
+    expect(ledger.reason).not.toBe('budget_exhausted');
+    expect(ledger.fired).toBe(true);
+    for (const other of late) expect(other).toEqual(fixed);
     let clock = 0;
-    const result = evaluateTournamentPostflop(
+    const slow = evaluateTournamentPostflop(
       hero,
       gs,
       baseline,
@@ -731,19 +763,28 @@ describe('Phase 8 counterfactual selection', () => {
       'candidate',
       () => (clock += PHASE8_POLICY.budgetMs + 1)
     );
-    expect(result.ledger.reason).toBe('budget_exhausted');
-    expect(result.decision).toBe(baseline);
+    expect(slow.ledger.latencyMs).toBeGreaterThan(PHASE8_POLICY.budgetMs);
+    expect(slow.ledger.reason).not.toBe('budget_exhausted');
     gs.players[1].cards = [card('K', 'clubs'), card('K', 'diamonds')];
     expect(
       evaluateTournamentPostflop(hero, gs, baseline, input, 'candidate', () => 0).ledger.reason
     ).toBe('private_state_rejected');
   });
   it.each(['wall', 'policy'] as const)(
-    'does not count computed continuation as completed after a final %s budget refusal',
+    'counts a computed continuation as completed whatever the final %s clock reading',
     (gate) => {
       const { gs, hero, input } = scenario();
       const previous = evaluateTournamentUtilityDetailed(input);
       const baseline = { ...previous.result!.decision, tournamentUtility: previous.result!.ledger };
+      const fixed = evaluateTournamentPostflop(
+        hero,
+        gs,
+        baseline,
+        input,
+        'candidate',
+        () => 0,
+        previous.continuePostflop
+      );
       let computed = false;
       let readsAfterCompute = 0;
       const result = evaluateTournamentPostflop(
@@ -754,8 +795,8 @@ describe('Phase 8 counterfactual selection', () => {
         'candidate',
         () => {
           if (!computed) return 0;
-          if (gate === 'wall') return PHASE8_POLICY.budgetMs + 1;
-          return readsAfterCompute++ === 0 ? 0 : PHASE8_POLICY.policyBudgetMs + 1;
+          if (gate === 'wall') return 1_000;
+          return readsAfterCompute++ === 0 ? 0 : 1_000;
         },
         (...args) => {
           const result = previous.continuePostflop!(...args);
@@ -764,10 +805,9 @@ describe('Phase 8 counterfactual selection', () => {
         }
       );
       expect(result.ledger.fired).toBe(true);
-      expect(result.ledger.completed).toBe(false);
-      expect(result.ledger.reason).toBe('budget_exhausted');
-      expect(result.ledger.applied).toBe(false);
-      expect(result.decision).toBe(baseline);
+      expect(result.ledger.reason).not.toBe('budget_exhausted');
+      expect(result.ledger.completed).toBe(fixed.ledger.completed);
+      expect(withoutMeasurements(result)).toEqual(withoutMeasurements(fixed));
     }
   );
   it.each(['multiple_boards', 'context_incomplete'] as const)(

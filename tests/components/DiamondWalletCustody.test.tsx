@@ -199,7 +199,7 @@ describe('Diamond history continues beyond the first page', () => {
     const page = receipts(50);
     mocks.history.mockResolvedValueOnce({ data: page, error: null });
     render(<DiamondWalletModal isOpen onClose={() => {}} />);
-    const more = await screen.findByRole('button', { name: 'Show Earlier Transactions' });
+    const more = await screen.findByRole('button', { name: 'Load Older Diamonds' });
     mocks.history.mockResolvedValueOnce({
       data: [
         {
@@ -219,21 +219,21 @@ describe('Diamond history continues beyond the first page', () => {
         page[49].id +
         ')'
     );
-    expect(screen.queryByRole('button', { name: 'Show Earlier Transactions' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Load Older Diamonds' })).toBeNull();
   });
   it('retains loaded receipts after an older-page error and retries the same cursor', async () => {
     mocks.history.mockResolvedValueOnce({ data: receipts(50), error: null });
     render(<DiamondWalletModal isOpen onClose={() => {}} />);
-    const more = await screen.findByRole('button', { name: 'Show Earlier Transactions' });
+    const more = await screen.findByRole('button', { name: 'Load Older Diamonds' });
     mocks.history.mockResolvedValueOnce({ data: null, error: { message: 'read unavailable' } });
     fireEvent.click(more);
-    await screen.findByText('Could Not Load Earlier Transactions');
+    await screen.findByText('Could Not Load Older Diamonds.');
     expect(screen.getByText('Receipt 0')).toBeTruthy();
     expect(screen.queryByText('No Transactions Yet')).toBeNull();
     mocks.history.mockResolvedValueOnce({ data: [], error: null });
-    fireEvent.click(screen.getByRole('button', { name: 'Show Earlier Transactions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() =>
-      expect(screen.queryByRole('button', { name: 'Show Earlier Transactions' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Load Older Diamonds' })).toBeNull()
     );
     expect(mocks.cursor.mock.calls[0]).toEqual(mocks.cursor.mock.calls[1]);
     expect(screen.getByText('Receipt 0')).toBeTruthy();
@@ -241,7 +241,7 @@ describe('Diamond history continues beyond the first page', () => {
   it('does not let repeated clicks acquire two page requests', async () => {
     mocks.history.mockResolvedValueOnce({ data: receipts(50), error: null });
     render(<DiamondWalletModal isOpen onClose={() => {}} />);
-    const more = await screen.findByRole('button', { name: 'Show Earlier Transactions' });
+    const more = await screen.findByRole('button', { name: 'Load Older Diamonds' });
     let finish!: (value: unknown) => void;
     mocks.history.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -258,7 +258,7 @@ describe('Diamond history continues beyond the first page', () => {
 it('rejects a late older page after a balance refresh starts a newer history read', async () => {
   mocks.history.mockResolvedValueOnce({ data: receipts(50), error: null });
   render(<DiamondWalletModal isOpen onClose={() => {}} />);
-  const more = await screen.findByRole('button', { name: 'Show Earlier Transactions' });
+  const more = await screen.findByRole('button', { name: 'Load Older Diamonds' });
   let finish!: (value: unknown) => void;
   mocks.history.mockReturnValueOnce(
     new Promise((resolve) => {
@@ -281,7 +281,7 @@ it('rejects a late older page after a balance refresh starts a newer history rea
 it('never appends the previous identity history after the account changes', async () => {
   mocks.history.mockResolvedValueOnce({ data: receipts(50), error: null });
   const view = render(<DiamondWalletModal isOpen onClose={() => {}} />);
-  const more = await screen.findByRole('button', { name: 'Show Earlier Transactions' });
+  const more = await screen.findByRole('button', { name: 'Load Older Diamonds' });
   let finish!: (value: unknown) => void;
   mocks.history.mockReturnValueOnce(
     new Promise((resolve) => {

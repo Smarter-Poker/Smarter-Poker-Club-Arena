@@ -26,6 +26,11 @@
  * module graph gains no database client from this file.
  */
 
+/** Owner rule: Classic stays ordinary poker. Missing or unknown templates are ineligible. */
+export function isLightningTemplate(template: unknown): boolean {
+  return template === 'action' || template === 'madness';
+}
+
 export type LightningPoolStatus = 'BUILDING' | 'ACTIVE' | 'HOT' | 'THIN';
 
 export interface LightningLobbyState {

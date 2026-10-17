@@ -9,6 +9,7 @@ import {
   attachCashierScreenshot,
   expectCashierAxeClean,
   expectCompactCashierFigure,
+  expectCashierAmountPresets,
   expectCashierWalletBalance,
 } from './support/cashierProductionCertification';
 
@@ -283,10 +284,10 @@ test.describe('Production Cashier Certification', () => {
     await expect(rosterSearch).toBeFocused();
     // Dan 2026-10-15: one tap anywhere on a row checks it; Send Out opens the
     // dialog on the selection.
-    const nativeSelect = surface.getByRole('button', { name: /^Select / }).first();
+    const nativeSelect = surface.getByRole('checkbox', { name: /^Include / }).first();
     await expect(nativeSelect).toBeVisible();
     await nativeSelect.click();
-    await expect(nativeSelect).toHaveAttribute('aria-pressed', 'true');
+    await expect(nativeSelect).toBeChecked();
     const sendOutAction = surface.getByRole('button', { name: 'Send Out', exact: true });
     await sendOutAction.click();
     const transferDialog = page.getByRole('dialog', { name: 'Send Out', exact: true });
@@ -558,10 +559,7 @@ test.describe('Production Cashier Certification', () => {
       'diamonds'
     );
     const presets = console.locator('[class*="presetBtn"]');
-    expect(await presets.count()).toBeGreaterThan(0);
-    for (const value of await presets.allInnerTexts()) {
-      if (value.trim() !== 'Max') expectCompactCashierFigure(value, 'Amount Preset');
-    }
+    expectCashierAmountPresets(await presets.allInnerTexts());
     await expectCashierAxeClean(page, testInfo, 'main', 'advanced-cashier');
     await expect(page.locator('main .dw__row-picture').first()).not.toBeVisible();
     await expect(page.locator('main .dw__row-label').first()).toBeVisible();

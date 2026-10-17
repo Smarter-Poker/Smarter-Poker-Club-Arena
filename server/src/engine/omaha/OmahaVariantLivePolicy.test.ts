@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { decideUnderClocks } from '../HorseDeclaredWork.test-support.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { saveFastRandom, seedFastRandom } from '../HorseEval.js';
 import {
@@ -219,7 +220,7 @@ describe('Phase 11 real variant policy', () => {
       expect(r.decision).toBe(s.baseline);
     }
   });
-  it('declares private-state, multiboard and fixed-limit boundaries and stops at the work deadline', () => {
+  it('declares private-state, multiboard and fixed-limit boundaries and never stops on the clock', () => {
     const s = omahaVariantSpot('plo8');
     const run = () =>
       evaluateOmahaVariantPolicy(s.hero, s.state, s.baseline, null, 'candidate', () => 0);
@@ -232,19 +233,36 @@ describe('Phase 11 real variant policy', () => {
     s.state.bettingStructure = 'fixed_limit';
     expect(run().receipt.eligible).toBe(false);
     s.state.bettingStructure = 'pot_limit';
-    let clock = 0;
-    const exhausted = evaluateOmahaVariantPolicy(
-      s.hero,
-      s.state,
-      s.baseline,
-      null,
-      'candidate',
-      () => (clock += 5)
+    // 2026-10-16: the declared work, never a clock. A slow and a stalled host
+    // make the decision, proposal, sample and receipt the fixed clock makes.
+    const [fixed, ...late] = decideUnderClocks((now) =>
+      evaluateOmahaVariantPolicy(s.hero, s.state, s.baseline, null, 'candidate', now)
     );
-    expect(exhausted.receipt.reason).toBe('work_budget');
-    expect(exhausted.receipt.fired).toBe(false);
-    expect(exhausted.decision).toBe(s.baseline);
+    const receipt = (fixed as { receipt: Record<string, any> }).receipt;
+    expect(receipt.reason).not.toBe('work_budget');
+    expect(receipt.fired).toBe(true);
+    for (const other of late) expect(other).toEqual(fixed);
   });
+
+  it.each(['plo5', 'plo6', 'plo8'] as const)(
+    '%s draws the full declared sample at every postflop street whatever the clock reads',
+    (variant) => {
+      for (const street of ['flop', 'turn', 'river'] as const) {
+        const s = omahaVariantSpot(variant, street, 3);
+        const [fixed, slow, stalled] = decideUnderClocks((now) =>
+          evaluateOmahaVariantPolicy(s.hero, s.state, s.baseline, null, 'candidate', now)
+        ) as { receipt: Record<string, any> }[];
+        const work = fixed.receipt.inputs?.range.provenance.work;
+        expect(work, `${variant} ${street}`).toEqual({
+          requestedSamples: 32,
+          completedSamples: 32,
+          budgetExhausted: false,
+        });
+        expect(slow, `${variant} ${street}`).toEqual(fixed);
+        expect(stalled, `${variant} ${street}`).toEqual(fixed);
+      }
+    }
+  );
 });
 
 describe('Round 3: the reference-anchored packs deviate only heads-up', () => {

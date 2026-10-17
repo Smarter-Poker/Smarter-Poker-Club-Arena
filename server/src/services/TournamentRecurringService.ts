@@ -2450,8 +2450,9 @@ const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
  * registration, starts at least SATELLITE_HU_TARGET_LEAD_MS from now and no
  * more than SATELLITE_HU_TARGET_HORIZON_MS away, costs at least
  * SATELLITE_HU_MIN_TICKET to enter, and whose entry the satellite finish can
- * deliver (satelliteTargetIsDeliverable: never a bounty, PKO, mystery-bounty
- * or Spin event, whose seat the settlement authority refuses). "Bigger buy-in" is that floor: nobody
+ * deliver (satelliteTargetIsDeliverable: never a Spin or an event whose bounty
+ * flags are unknown; a bounty, PKO or mystery-bounty event is seated exactly
+ * like a paid entry since 2026-10-16). "Bigger buy-in" is that floor: nobody
  * needs a satellite into a 5-chip turbo. The board keeps one satellite per
  * target for the SATELLITE_HU_TARGETS_PER_OWNER dearest targets, so the
  * biggest events of the week always have a feeder running.
@@ -2525,8 +2526,37 @@ export interface SatelliteTargetRow {
  * database refuses the insert as well (the migration that ships with this),
  * so no other creation path can open a satellite the finish will refuse.
  * Unknown is not supported: a row without the flags is not a target.
+ *
+ * EVERY BOUNTY EVENT GETS ITS FEEDER (Dan, 2026-10-16: "EVERY TOURNAMENT WITH
+ * A 25 BUY IN OR HIGHER SHOULD HAVE SATELLITES INTO IT"). Since migration
+ * 20261017004440 both settlement authorities seat a bounty, PKO or
+ * mystery-bounty target exactly like a paid entry: the seat is split by
+ * fn_tournament_entry_split, the bounty slice lands on the bounty rail with a
+ * funded head, and the escrow equals the counters. So a known bounty flag is
+ * deliverable. What the finish still refuses is refused here too: a Spin or
+ * premium Spin, and any row whose flags are not all read as booleans. (A
+ * Diamond bounty event is refused by the database alone; this row does not
+ * carry the asset, and the insert is refused by name.)
  */
 export function satelliteTargetIsDeliverable(row: SatelliteTargetRow): boolean {
+  const flags = [row.is_bounty, row.is_pko, row.is_mystery_bounty, row.is_premium_spin];
+  if (flags.some((flag) => typeof flag !== 'boolean')) return false;
+  if (row.is_premium_spin) return false;
+  if (String(row.variant ?? '').toLowerCase() === 'spin') return false;
+  if (String(row.tournament_type ?? '').toUpperCase() === 'SPIN') return false;
+  return true;
+}
+
+/**
+ * A SATELLITE IS NEVER ITSELF A BOUNTY OR SPIN EVENT. The settlement pays a
+ * satellite's pool as tickets and one remainder; it has no bounty rail and no
+ * Spin wheel, so fn_settle_satellite_tournament refuses a source that "mixes
+ * another payout authority" and fn_ca_guard_new_satellite_target refuses to
+ * create one (SATELLITE_NEW_SOURCE_UNSUPPORTED). This is that SOURCE rule,
+ * kept apart from the TARGET rule above, which since 2026-10-16 delivers
+ * bounty targets.
+ */
+export function satelliteSourceIsSupported(row: SatelliteTargetRow): boolean {
   const flags = [row.is_bounty, row.is_pko, row.is_mystery_bounty, row.is_premium_spin];
   if (flags.some((flag) => flag !== false)) return false;
   const variant = String(row.variant ?? '').toLowerCase();

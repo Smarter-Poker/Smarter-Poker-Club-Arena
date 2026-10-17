@@ -61,6 +61,7 @@ import {
   fixedFreeBuyRow,
   recurringMttRow,
   MTT_PUBLISH_LEAD_MS,
+  satelliteSourceIsSupported,
   satelliteTargetIsDeliverable,
   type SatelliteTargetRow,
 } from './TournamentRecurringService.js';
@@ -2387,7 +2388,9 @@ export class ScheduledTournamentService {
     }
     const targetId = row.satellite_target_id ?? row.satellite_target;
     if (targetId) {
-      if (!satelliteTargetIsDeliverable(old as unknown as SatelliteTargetRow)) return;
+      // The restarted row is the SATELLITE: a satellite is never itself a
+      // bounty or Spin event, whatever its target is (2026-10-16).
+      if (!satelliteSourceIsSupported(old as unknown as SatelliteTargetRow)) return;
       const target = await this.resolveSatelliteTarget(
         {
           id: String(old.id),

@@ -1347,10 +1347,12 @@ BEGIN
       'FAIL malformed source escrow history was not refused before any write';
   END IF;
 
-  -- A bounty target requires separate prize and bounty escrow rails. Prove the
+  -- A Spin target has no seat the satellite authority can deliver. Prove the
   -- generic satellite authority refuses it before creating any target seat or
-  -- any financial/evidence row.
-  UPDATE pg_temp.tournaments SET is_bounty = true
+  -- any financial/evidence row. (A bounty target is no longer refused: since
+  -- 20261017004440 its seat is booked exactly like a paid entry, proved by
+  -- scripts/ci/test-satellite-bounty-seat-split.py.)
+  UPDATE pg_temp.tournaments SET is_premium_spin = true
    WHERE id = '91000000-0000-4000-8000-000000000002';
   BEGIN
     PERFORM pg_temp.fn_settle_satellite_tournament(
@@ -1359,7 +1361,7 @@ BEGIN
   EXCEPTION WHEN SQLSTATE '22023' THEN
     v_target_split_caught := true;
   END;
-  UPDATE pg_temp.tournaments SET is_bounty = false
+  UPDATE pg_temp.tournaments SET is_premium_spin = false
    WHERE id = '91000000-0000-4000-8000-000000000002';
   IF NOT v_target_split_caught
      OR EXISTS (SELECT 1 FROM pg_temp.tournament_satellite_settlements)
@@ -1376,7 +1378,7 @@ BEGIN
                  WHERE tournament_id = '91000000-0000-4000-8000-000000000002'
                    AND source_satellite_id IS NOT NULL) THEN
     RAISE EXCEPTION
-      'FAIL bounty target split was not refused before any write';
+      'FAIL Spin target split was not refused before any write';
   END IF;
 
   UPDATE pg_temp.tournament_escrow SET prize_balance = -1

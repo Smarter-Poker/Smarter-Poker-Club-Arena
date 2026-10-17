@@ -14,24 +14,6 @@
   padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
-.engine-header {
-  text-align: center;
-  margin-bottom: 40px;
-}
-
-.engine-header h1 {
-  font-size: 32px;
-  font-weight: 800;
-  color: #fff;
-  margin-bottom: 12px;
-  letter-spacing: -0.5px;
-}
-
-.engine-header p {
-  color: #94a3b8;
-  font-size: 16px;
-}
-
 .engine-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
@@ -168,18 +150,6 @@
   .engine-grid {
     grid-template-columns: 1fr;
     gap: 12px;
-  }
-
-  .engine-header {
-    margin-bottom: 20px;
-  }
-
-  .engine-header h1 {
-    font-size: 20px;
-  }
-
-  .engine-header p {
-    font-size: 13px;
   }
 
   .engine-card {

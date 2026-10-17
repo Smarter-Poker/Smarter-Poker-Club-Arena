@@ -47,6 +47,19 @@ describe('cashier Phase 1 critical integrity contracts', () => {
 });
 
 describe('cashier Phase 5 production certification contracts', () => {
+  it('pins the installed Union directory after the deleted-account filter', () => {
+    const canary = source('scripts/verification-harness/cashier-release-contract.sql');
+    const entry = canary.match(
+      /'signature', 'public\.fn_union_player_directory\(uuid\)'([\s\S]*?)\n {4}\)/
+    );
+    expect(entry).not.toBeNull();
+    expect(
+      [...entry![1].matchAll(/'(?:replacement_)?hash', '([a-f0-9]{32})'/g)].map((match) => match[1])
+    ).toEqual(['fc06a6bf8f02822da43f6f4b4fe76385']);
+    expect(canary).toContain("version = '20261017001657'");
+    expect(canary).toContain("name = 'a_deleted_account_leaves_every_club_and_every_list'");
+  });
+
   it('pins only the qualified conservation preimage and cutoff-statistics replacement', () => {
     const canary = source('scripts/verification-harness/cashier-release-contract.sql');
     const entry = canary.match(

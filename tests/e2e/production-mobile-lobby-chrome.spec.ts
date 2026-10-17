@@ -2,7 +2,14 @@ import { test, expect, devices, type Page } from '@playwright/test';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { observeCashierFailure } from './support/cashierFailureDiagnostics';
 import { diamondEntryRead, settleDiamondSpinsOffer } from './support/diamondInvitationOffer';
-import { restoreLobbyPreference, selectLobbyPreference } from './support/lobbyPreferenceProof';
+import {
+  restoreLobbyPreference,
+  selectLobbyPreference,
+  observeLobbyPreferenceProof,
+  readLobbyPreferenceOwner,
+  lobbyTabLabel,
+  type LobbyPreferenceProof,
+} from './support/lobbyPreferenceProof';
 
 /**
  * THE THREE THINGS DAN PHOTOGRAPHED, ON THE LIVE LOBBY (2026-09-10).
@@ -28,11 +35,21 @@ const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4
  *  percentage of the plate; the count line is centred on it. */
 const TITLE_CENTRE_PCT = 54.65;
 
+const preferenceDiagnostics = new WeakMap<Page, Map<Page, LobbyPreferenceProof>>();
 const diagnostics = new WeakMap<Page, ReturnType<typeof observeCashierFailure>>();
 test.beforeEach(async ({ page }) => {
   diagnostics.set(page, observeCashierFailure(page));
 });
 test.afterEach(async ({ page }, testInfo) => {
+  let index = 0;
+  for (const proof of preferenceDiagnostics.get(page)?.values() ?? []) {
+    proof.stop();
+    await testInfo.attach(`lobby-preference-phases-${index++}.json`, {
+      body: Buffer.from(JSON.stringify(proof.snapshot())),
+      contentType: 'application/json',
+    });
+  }
+  preferenceDiagnostics.delete(page);
   const observer = diagnostics.get(page);
   if (!observer) return;
   observer.stop();
@@ -91,7 +108,33 @@ test.describe('the mobile lobby chrome on production', () => {
   test.describe.configure({ mode: 'default', timeout: 120_000 });
 
   test('the selected game list survives a cold return to the lobby', async ({ page }, testInfo) => {
-    await openLobby(page);
+    const proofs = new Map<Page, LobbyPreferenceProof>();
+    preferenceDiagnostics.set(page, proofs);
+    let ownerId: string | undefined;
+    const proofFor = (document: Page) => {
+      const proof = proofs.get(document);
+      if (!proof) throw new Error('Lobby preference observer was not installed before navigation');
+      return proof;
+    };
+    const openPreferenceLobby = async (document: Page, phase: string) => {
+      const proof = observeLobbyPreferenceProof(document, CLUB_ID);
+      proofs.set(document, proof);
+      proof.phase(phase);
+      await openLobby(document);
+      const documentOwner = await readLobbyPreferenceOwner(document);
+      if (ownerId && documentOwner !== ownerId) throw new Error('Lobby preference account changed');
+      ownerId = documentOwner;
+      const saved = await proof.ready(ownerId);
+      if (saved) {
+        await expect(
+          document
+            .getByRole('tablist', { name: 'Game Type', exact: true })
+            .getByRole('tab', { name: lobbyTabLabel(saved), exact: true })
+        ).toHaveAttribute('aria-selected', 'true');
+      }
+      return ownerId;
+    };
+    const certificateOwner = await openPreferenceLobby(page, 'original-open');
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
     const target = original === 'PLO' ? 'NLH' : 'PLO';
@@ -100,13 +143,14 @@ test.describe('the mobile lobby chrome on production', () => {
     const failures: unknown[] = [];
     let returningDiagnostics: ReturnType<typeof observeCashierFailure> | undefined;
     try {
-      await selectLobbyPreference(page, CLUB_ID, target);
+      proofFor(page).phase('target-save');
+      await selectLobbyPreference(page, CLUB_ID, target, certificateOwner, proofFor(page));
       // A new document has no mounted filter state or tab session cache.
       // Reusing the old document raced its legitimate chunk recovery with
       // goto(), which aborted that recovery and the requested navigation.
       returningPage = await page.context().newPage();
       returningDiagnostics = observeCashierFailure(returningPage);
-      await openLobby(returningPage);
+      await openPreferenceLobby(returningPage, 'cold-return');
       returningReady = true;
       await expect(
         returningPage
@@ -132,10 +176,12 @@ test.describe('the mobile lobby chrome on production', () => {
           returningReady,
           clubId: CLUB_ID,
           original,
+          ownerId: certificateOwner,
+          proofFor,
           verify: async () => {
             const restoredPage = await page.context().newPage();
             try {
-              await openLobby(restoredPage);
+              await openPreferenceLobby(restoredPage, 'restored-readback');
               await expect(
                 restoredPage
                   .getByRole('tablist', { name: 'Game Type', exact: true })

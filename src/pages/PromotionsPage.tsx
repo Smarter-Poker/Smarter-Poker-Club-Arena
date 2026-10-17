@@ -28,6 +28,7 @@ import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { publicOrigin } from '../lib/appBase';
 import { getMyInviteLink } from '../services/ClubInviteService';
 import { useReferralCount } from '../hooks/useReferralCount';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 interface Promotion {
   id: string;
@@ -43,6 +44,7 @@ interface Promotion {
 }
 
 export default function PromotionsPage() {
+  usePageTitle('Promotions');
   const { user } = useAuthUser();
   const accountScope = useRef({ userId: user?.id, epoch: 0 });
   if (accountScope.current.userId !== user?.id) {

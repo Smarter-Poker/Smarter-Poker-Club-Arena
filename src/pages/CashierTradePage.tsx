@@ -153,6 +153,7 @@ import {
   mergeCashierBatchReceiptRows,
   type CashierBatchReceiptRow,
 } from '../utils/cashierBatch';
+import { chipKindWord } from '../utils/chipKindWord';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -402,12 +403,11 @@ function newOpId(): string {
  * Raw Postgres enums were rendered straight at the user: "peer_transfer",
  * "awaiting_payment". Title Case them, the way ROLE_LABEL does for roles.
  */
+/* The kinds read the statement's words (2026-10-17): the Trade Record printed
+   "Cashout" and "Tournament Buyin" where the statement reads "Cash-Out" and
+   "Tournament Buy-In". */
 function txLabel(value: string | null | undefined): string {
-  return String(value || '')
-    .split('_')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+  return value ? chipKindWord(value) : '';
 }
 
 // Retire dialogs and read/write refs immediately when the account or route changes.

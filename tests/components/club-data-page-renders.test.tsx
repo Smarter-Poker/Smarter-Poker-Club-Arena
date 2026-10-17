@@ -2172,7 +2172,9 @@ describe('ClubDataPage', () => {
       error: null,
     });
 
-    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+    // Two hundred ledger rows render after the page lands; under a loaded CI
+    // runner that took longer than the default 1s (publish run 38981365558).
+    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' }, { timeout: 5000 });
     expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_game_page')).toHaveLength(
       pageCallsBeforeClick
     );
@@ -2215,7 +2217,13 @@ describe('ClubDataPage', () => {
         name: 'Load More Games - 100 Of 250',
       });
       fireEvent.click(loadMore);
-      await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+      // Two hundred ledger rows render after the page lands; under a loaded CI
+      // runner that took longer than the default 1s (publish run 38981365558).
+      await screen.findByRole(
+        'button',
+        { name: 'Load More Games - 200 Of 250' },
+        { timeout: 5000 }
+      );
 
       // IdentityDNA replaces the same signed-in user's object when delayed
       // profile hydration or a token refresh lands. That is not a new ledger
@@ -2224,13 +2232,25 @@ describe('ClubDataPage', () => {
       authState.current = { user: { id: 'owner-1' }, isHydrating: false };
       rerender(<ClubDataPage />);
       fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
-      await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+      // Two hundred ledger rows render after the page lands; under a loaded CI
+      // runner that took longer than the default 1s (publish run 38981365558).
+      await screen.findByRole(
+        'button',
+        { name: 'Load More Games - 200 Of 250' },
+        { timeout: 5000 }
+      );
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(60_000);
       });
 
-      await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+      // Two hundred ledger rows render after the page lands; under a loaded CI
+      // runner that took longer than the default 1s (publish run 38981365558).
+      await screen.findByRole(
+        'button',
+        { name: 'Load More Games - 200 Of 250' },
+        { timeout: 5000 }
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -2504,7 +2524,9 @@ describe('ClubDataPage', () => {
     });
     await waitFor(() => expect(rankedLoadMore).toBeEnabled());
     fireEvent.click(rankedLoadMore);
-    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+    // Two hundred ledger rows render after the page lands; under a loaded CI
+    // runner that took longer than the default 1s (publish run 38981365558).
+    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' }, { timeout: 5000 });
   });
 
   it('retires stale player pagination when a sort establishes a new cursor', async () => {
@@ -2637,7 +2659,9 @@ describe('ClubDataPage', () => {
     ).length;
     fireEvent.click(loadMore);
 
-    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+    // Two hundred ledger rows render after the page lands; under a loaded CI
+    // runner that took longer than the default 1s (publish run 38981365558).
+    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' }, { timeout: 5000 });
     expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_game_page')).toHaveLength(
       rankedCallsBeforeClick
     );

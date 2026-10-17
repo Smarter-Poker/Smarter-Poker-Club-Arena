@@ -20,7 +20,9 @@
 import { useAutomaticArenaMembership } from '../components/arena/arenaAccess';
 import ClubMembersPage from './ClubMembersPage';
 import DiamondPlayersPage from './DiamondPlayersPage';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function ClubPlayersDoor() {
+  usePageTitle('Players');
   return useAutomaticArenaMembership() ? <DiamondPlayersPage /> : <ClubMembersPage />;
 }

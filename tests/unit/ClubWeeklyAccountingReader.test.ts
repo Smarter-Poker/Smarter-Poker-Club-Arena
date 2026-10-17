@@ -145,7 +145,10 @@ describe('one canonical club weekly read boundary', () => {
     { summary_club_id: ID.otherClub },
     { summary_period_id: ID.invoice },
     { ready_to_issue: 'false' },
-    { status: 'paid' },
+    { status: 'cancelled' },
+    { status: 'disputed' },
+    { status: 'pending' },
+    { status: null },
     { message_sent: false },
     { from_entity_id: ID.actor },
     { accounting_version: null },
@@ -161,6 +164,14 @@ describe('one canonical club weekly read boundary', () => {
     state.ignoreFilters = true;
     state.rows = [weeklyStatementRow(fault)];
     await expect(readClubWeeklyStatements({ clubId: ID.club })).rejects.toThrow(/Weekly Statement/);
+  });
+  it('reads a weekly statement stamped paid at issue, as production writes it', async () => {
+    // trg_weekly_statement_issue_settled (production 20261015180754) stamps
+    // every club_weekly_accounting row 'paid' on insert; the Settlement
+    // Record must read it rather than refuse every club's history.
+    state.rows = [weeklyStatementRow({ status: 'paid' })];
+    const result = await readClubWeeklyStatements({ clubId: ID.club });
+    expect(result.rows).toHaveLength(1);
   });
   it('keeps a negative retained amount exact without labelling a payment', async () => {
     state.rows = [

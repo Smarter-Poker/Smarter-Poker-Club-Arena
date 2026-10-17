@@ -47,7 +47,8 @@ import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { isUUID, resolveClubUUID } from '../utils/clubIdResolver';
 import { copyCashierText, readCashierOnlineState } from '../services/CashierResilience';
 import { compactChips } from '../utils/format';
-import { enumToTitleCase, titleCase } from '../utils/titleCase';
+import { titleCase } from '../utils/titleCase';
+import { chipKindWord } from '../utils/chipKindWord';
 import styles from './CashierStatementsPage.module.css';
 
 // ─── Copy ────────────────────────────────────────────────────────────────────
@@ -72,31 +73,9 @@ const WALLET_WORD: Record<WalletFamily, string> = {
   other: 'Other',
 };
 
-/**
- * The ledger's movement categories as a player reads them. `enumToTitleCase`
- * turns `buyin` into "Buyin" and `addon` into "Addon"; the words the rest of
- * the wallet prints are hyphenated (launch audit 2026-10-09, R-11). Anything
- * not named here still falls through to the enum reading.
- */
-const KIND_WORD: Record<string, string> = {
-  buyin: 'Buy-In',
-  cashout: 'Cash-Out',
-  addon: 'Add-On',
-  addon_refund: 'Add-On Refund',
-  rebuy: 'Rebuy',
-  tournament_buyin: 'Tournament Buy-In',
-  tournament_cashout: 'Tournament Cash-Out',
-  bbj: 'Bad Beat Jackpot',
-  bbj_promo_sweep: 'Bad Beat Jackpot Promo Sweep',
-  /* Read as the Club Bank send it is: a label of its own named the rows
-     only one kind of member ever receives (cashier launch B-5). */
-  horse_refill: 'Club Bank Send',
-  club_bank_send: 'Club Bank Send',
-};
-
-function kindWord(kind: string): string {
-  return KIND_WORD[kind] ?? enumToTitleCase(kind);
-}
+/* The kind words moved to src/utils/chipKindWord.ts (2026-10-17) so the
+   Trade Record prints the same hyphenated words as the statement. */
+const kindWord = chipKindWord;
 
 const DIRECTION_WORD: Record<EntryDirection, string> = {
   in: 'Incoming',

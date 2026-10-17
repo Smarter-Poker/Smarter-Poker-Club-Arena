@@ -184,6 +184,12 @@ export default function LeaderboardPage() {
   const [period, setPeriod] = useState<LeaderboardPeriod>('weekly');
   const [periodOffset, setPeriodOffset] = useState<number>(0);
   const [metric, setMetric] = useState<LeaderboardMetric>('profit');
+  /* THE BOARD OPENS ON WHAT THE PRIZES ARE PAID ON (2026-10-17). A club with a
+     published plan "Ranked By Hands Played" opened its board "Measured By
+     Profit", so a player read the wrong ranking as the prize race. Until the
+     player picks a metric themselves, a published plan's metric is the
+     default; the player's own pick always wins. */
+  const metricChosenRef = useRef(false);
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [totalRanked, setTotalRanked] = useState<number | null>(null);
   const [baselineDate, setBaselineDate] = useState<string | null>(null);
@@ -399,6 +405,9 @@ export default function LeaderboardPage() {
       .then((data) => {
         if (requestId !== settingsRequestRef.current) return;
         setSettings(data);
+        if (!metricChosenRef.current && data?.rewards_enabled && data.payout_metric) {
+          setMetric(data.payout_metric);
+        }
       })
       .catch((error) => {
         if (requestId === settingsRequestRef.current) {
@@ -1527,7 +1536,10 @@ export default function LeaderboardPage() {
                       key={opt.value}
                       className={`lb-filter-chip ${metric === opt.value ? 'active' : ''}`}
                       title={opt.description}
-                      onClick={() => setMetric(opt.value)}
+                      onClick={() => {
+                        metricChosenRef.current = true;
+                        setMetric(opt.value);
+                      }}
                       aria-pressed={metric === opt.value}
                     >
                       {opt.label}

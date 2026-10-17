@@ -185,6 +185,7 @@ import { preloadRoute } from '../utils/ChunkPreloader';
 import { warmTable } from '../services/tableWarmup';
 import { gameManagementService } from '../services/GameManagementService';
 import { isRetiredClubBanner } from '../utils/clubBannerDisplay';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
@@ -908,6 +909,7 @@ function ClubHomePageContent({
    */
   const bootCache = useState(() => (clubId ? getClubHomeCache(clubId) : null))[0];
   const [club, setClub] = useState<ClubData | null>(bootCache?.club ?? null);
+  usePageTitle(club?.name ?? null);
   const [tables, setTables] = useState<TableData[]>(bootCache?.tables ?? []);
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
   const [jackpotAmount, setJackpotAmount] = useState(0);

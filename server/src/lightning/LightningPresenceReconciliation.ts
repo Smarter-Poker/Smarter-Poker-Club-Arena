@@ -23,6 +23,19 @@
  * nothing, and a player who reconnects a moment later is un-stamped by that
  * socket's own transition.
  *
+ * ONLY A DEFINITE ABSENCE IS STAMPED (2026-10-17). The stamp starts the
+ * reaper's clock, and the reaper EXITS the pool session, so it is a verdict,
+ * not a precaution. A player whose anchor table no engine here reports on yet
+ * is UNKNOWN, and unknown is never stamped. Measured on the private Lightning
+ * pilot: the pass ran 30 s after the 13:55 boot, inside the maintenance
+ * freeze, before any anchor engine was back; every one of the 54 seated
+ * players (all horses, whose input device is the anchor engine's heartbeat,
+ * never a room socket) read as absent and was stamped at 13:56, nothing could
+ * ever un-stamp them (only a room socket reports a reconnect), and the reaper
+ * exited all 54 at 15:00:55. The matcher's per-pass feed still withholds an
+ * unknown player from the deal, so skipping the stamp deals nobody to an empty
+ * chair; it only stops a missing report from expelling them.
+ *
  * ONE PASS, LOG-LIGHT, TOLERANT. A read that fails (the table or the
  * function not deployed yet included) reconciles nothing, says so once at
  * warn, and the engine carries on: this is a convergence aid, never a boot
@@ -91,6 +104,7 @@ export async function reconcileLightningPresence(
   }
   let reported = 0;
   const connectedByCluster = new Map<string, Set<string>>();
+  const absentByCluster = new Map<string, Set<string>>();
   if (deps.presenceSource) {
     try {
       // Observe once, so the whole boot pass judges one consistent set of
@@ -99,8 +113,11 @@ export async function reconcileLightningPresence(
       const reports = [...deps.presenceSource()];
       const presence = new LightningPresence(() => reports);
       for (const { clusterId } of sessions) {
-        if (!connectedByCluster.has(clusterId))
-          connectedByCluster.set(clusterId, new Set(presence.snapshot(clusterId).connected));
+        if (connectedByCluster.has(clusterId)) continue;
+        const snap = presence.snapshot(clusterId);
+        connectedByCluster.set(clusterId, new Set(snap.connected));
+        // Seen by this Cluster's own anchor or room AND not connected anywhere.
+        absentByCluster.set(clusterId, new Set(snap.disconnected));
       }
     } catch (err) {
       deps.logger?.warn(
@@ -125,6 +142,8 @@ export async function reconcileLightningPresence(
       /* a presence probe must never take the pass down; absent is reported */
     }
     if (connected) continue;
+    // Unknown is not absent: nobody here reported on this player's anchor.
+    if (deps.presenceSource && absentByCluster.get(clusterId)?.has(playerId) !== true) continue;
     try {
       deps.report.disconnected(clusterId, playerId);
       reported++;

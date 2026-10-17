@@ -1,0 +1,3 @@
+# tests/club-data-counts-what-the-club-played.law.test.ts
+
+Club Data counts what the club played (Dan 2026-10-17): every fact is filed under the club the money moved through (the wallet row's own chip_ledger leg, the seat's club AT THAT TABLE, the tournament entry's club), never the player's earliest-joined union club and never their latest seat at another table; the owner, co-owner and admins read the whole club, agents of every rank read themselves and their downline, and anyone else is refused; the header reads "<CLUB> - CLUB DATA"; players get the five-door footer with no Data door, which stays closed until the server has answered. Qualified on real Postgres by scripts/ci/test-club-data-fact-db-postgres.py.

@@ -38,8 +38,9 @@ describe('the weekly scheduler alarms close when their condition ends', () => {
     expect(sql).not.toMatch(
       /(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+(?:public\.)?(?:chip_ledger|club_members|union_accounting_runs|settlement_invoices|accounting_close_certificates)\b/i
     );
-    expect(sql).toContain("'56eb1c0de1083bddd8a1e218a85df511'");
-    expect(sql).toContain("'86c6a68eec0928c90aea883b48101c9f'");
+    for (const md5 of ['56eb1c0de1083bddd8a1e218a85df511', '86c6a68eec0928c90aea883b48101c9f', '31c800832cef83681bf0a492a41fe076', '63eea798a2390accfd91d68f06dd9958']) {
+      expect(sql).toContain(`'${md5}'`);
+    }
     expect(sql).toContain('fn_ca_break_window_refuses_migrations(now())');
   });
 });

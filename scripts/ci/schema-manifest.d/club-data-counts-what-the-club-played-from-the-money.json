@@ -1,0 +1,17 @@
+{
+  "_owner": "agent/claude/claude/club-data-counts-what-the-club-played. Migration 20261017160125_club_data_counts_what_the_club_played declares the Club Data facts read from the money, the seat-at-that-table club lookup and the scoped screen; installed through apply-merged-migration after merge.",
+  "tables": ["ca_club_data_fact", "ca_club_data_fact_state", "ca_club_data_fact_seed_log"],
+  "functions": [
+    "fn_ca_club_data_fact_live_from",
+    "fn_ca_ledger_leg_club",
+    "fn_ca_cash_seat_club",
+    "fn_ca_cash_table_reporting_club",
+    "fn_ca_club_data_fact_put",
+    "trg_ca_club_data_fact_rake",
+    "trg_ca_club_data_fact_wallet",
+    "fn_ca_club_data_fact_seed",
+    "fn_ca_club_data_scope",
+    "fn_ca_club_data_downline"
+  ],
+  "columns": {}
+}

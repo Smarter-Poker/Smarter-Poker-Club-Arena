@@ -28,6 +28,7 @@ import { PurchaseConsole, PurchaseText } from './PurchaseConsole';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { reportError } from '../../utils/errorReporter';
 import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
+import { gameTypeLongName } from '../../utils/handFormat';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -44,6 +45,11 @@ export interface BuyInModalProps {
   onClose: () => void;
   onConfirm: (amount: number, autoRebuy: boolean) => BuyInConfirmation | Promise<BuyInConfirmation>;
   tableName?: string;
+  /**
+   * The table's variant key (nlh, plo5 ...). Printed once more above the
+   * amount so the player sees which game they are buying into (Dan 2026-10-16).
+   */
+  gameType?: string | null;
   minBuyIn: number;
   maxBuyIn: number;
   defaultBuyIn?: number;
@@ -101,6 +107,7 @@ export function BuyInModal({
   onClose,
   onConfirm,
   tableName,
+  gameType,
   minBuyIn,
   maxBuyIn,
   defaultBuyIn,
@@ -117,6 +124,7 @@ export function BuyInModal({
   const rebuyDialogRef = useFocusTrap(isOpen && purchaseKind === 'rebuy', '#buy-in-modal-title');
   // State
   const wholeDiamonds = currency === 'diamonds';
+  const gameTypeName = gameTypeLongName(gameType);
   const balanceKnown = accountBalance !== null;
   // Default to MAX buy-in (capped by account balance) — Dan's directive.
   // Unknown balance: default to the table max; the confirm stays closed below.
@@ -574,6 +582,11 @@ export function BuyInModal({
               </div>
             )}
             <div className="buy-in-modal__current-amount">
+              {gameTypeName && (
+                <span className="buy-in-modal__game-type sc-ink--gold" data-testid="buy-in-game-type">
+                  {gameTypeName}
+                </span>
+              )}
               <span className="sc-label sc-ink--blue">
                 {recovery ? 'Original Buy-In' : wholeDiamonds ? 'Diamonds' : 'Chips'}
               </span>

@@ -145,6 +145,25 @@ describe('rulesLineFor speaks the artwork wording from a snapshot', () => {
     ).toBe('6-Max · 70% VPIP · 1 BB Ante · Bombs Every Orbit');
   });
 
+  it('prints the 20 and 10 minute cadences Action and Madness deal now (Dan 2026-10-16)', () => {
+    expect(
+      rulesLineFor({
+        seats: 6,
+        regular_ante: 'sb',
+        vpip_floor: 30,
+        bombs: { enabled: true, trigger: 'timed_20m', boards: 2 },
+      })
+    ).toContain('Bombs Every 20 Min');
+    expect(
+      rulesLineFor({
+        seats: 6,
+        regular_ante: 'bb',
+        vpip_floor: 50,
+        bombs: { enabled: true, trigger: 'timed_10m', boards: 2 },
+      })
+    ).toContain('Bombs Every 10 Min');
+  });
+
   it('never uses an em dash as a separator (CLAUDE.md 10.7)', () => {
     expect(rulesLineFor({ seats: 6 })).not.toMatch(/—/);
   });

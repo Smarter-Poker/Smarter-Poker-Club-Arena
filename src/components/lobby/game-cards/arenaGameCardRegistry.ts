@@ -287,7 +287,7 @@ const spadePloV1 = skin(
   presentation(
     'plo',
     'mobile',
-    'plo/spade-plo-premium-v1/chassis-b0b05b302c99.png',
+    'plo/spade-plo-premium-v1/chassis-5df05c9d8f72.png',
     '1177 / 1337',
     280,
     'spade-premium-v1'

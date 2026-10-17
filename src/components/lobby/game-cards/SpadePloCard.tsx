@@ -36,7 +36,11 @@ const assetRoot = `${import.meta.env.BASE_URL}assets/club-buttons/game-cards/plo
 export const SPADE_PLO_CANVAS: LayeredCanvas = { width: 1177, height: 1337 };
 
 export const SPADE_PLO_ASSETS = {
-  chassis: `${assetRoot}/chassis-b0b05b302c99.png`,
+  /* chassis-5df05c9d8f72: the b0b05b302c99 master with its status pill moved
+     up 36 source px (42 canvas units), Dan 2026-10-16: "RAISE THE 'RUNNING'
+     AND EMPTY UP HIGHER SO ITS NOT SO CLOSE TO THE DESCRIPTION FONTS". Only
+     the pill block moved; the strip it left is the well's own texture. */
+  chassis: `${assetRoot}/chassis-5df05c9d8f72.png`,
   reference: `${assetRoot}/source/approved-reference.png`,
 } as const;
 
@@ -47,8 +51,12 @@ export const SPADE_PLO_ZONES = {
      2026-10-15): same left edge, out to the header well's right wall, below
      the status pill's rim (master y ~306) and above the divider (y ~388),
      tall enough for two short lines. */
-  styleNote: { x: 152, y: 320, width: 880, height: 64, align: 'left' },
-  status: { x: 792, y: 224, width: 232, height: 64, align: 'center' },
+  /* 2026-10-17: 72 tall from y 314 so a two-line note (2 x 2.55cqw x 1.12 =
+     5.71cqw) fits whole (72/1177 = 6.12cqw); the raised pill leaves the room. */
+  styleNote: { x: 152, y: 314, width: 880, height: 72, align: 'left' },
+  /* Raised 42 with the painted pill (chassis-5df05c9d8f72): its rim now ends
+     near y 276, clear of the style note at y 320. */
+  status: { x: 792, y: 182, width: 232, height: 64, align: 'center' },
   gameType: { x: 150, y: 590, width: 152, height: 160, align: 'center' },
   stakes: { x: 394, y: 590, width: 152, height: 160, align: 'center' },
   players: { x: 634, y: 590, width: 152, height: 160, align: 'center' },

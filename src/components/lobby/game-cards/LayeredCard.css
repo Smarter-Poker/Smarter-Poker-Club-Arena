@@ -140,6 +140,13 @@
   border-left: 0.18cqw solid rgb(91 184 255 / 45%);
 }
 
+/* No style word ahead of it (an NLH game whose name already says Action or
+   Madness): the note starts the row, so there is nothing to divide it from. */
+.agc-layered__style-note-box:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
 .agc-layered__style-note {
   --size: 2.55cqw;
   font-family: Inter, 'Roboto Condensed', system-ui, sans-serif;

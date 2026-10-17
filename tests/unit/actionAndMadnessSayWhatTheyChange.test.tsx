@@ -39,8 +39,10 @@ vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
   useSpinTierAvailability: () => ({ can_draw_100x: false }),
 }));
 
-const ACTION_NOTE = 'Small Blind Ante, VPIP Floor, Double Board Bomb Every 15 Minutes';
-const MADNESS_NOTE = 'Big Blind Ante, High VPIP Floor, Double Board Bomb Every Orbit';
+// Dan 2026-10-16: the real minimum VPIP, not "VPIP Floor" / "High VPIP Floor",
+// and bombs every 20 minutes for Action and every 10 for Madness.
+const ACTION_NOTE = 'Small Blind Ante, 30% Minimum VPIP, Double Board Bomb Every 20 Minutes';
+const MADNESS_NOTE = 'Big Blind Ante, 50% Minimum VPIP, Double Board Bomb Every 10 Minutes';
 
 const table = (over: Partial<LobbyTableRow>): LobbyTableRow =>
   ({
@@ -116,6 +118,33 @@ describe('the lobby card data carries the note for the game it describes', () =>
   it('an Action game and a Madness game each get their own note', () => {
     expect(arenaGameCardDataFromEntry(entry('action')).styleNote).toBe(ACTION_NOTE);
     expect(arenaGameCardDataFromEntry(entry('madness')).styleNote).toBe(MADNESS_NOTE);
+  });
+
+  it('an NLH game named for its style never prints No Limit Hold\'em again (Dan 2026-10-16)', () => {
+    for (const template of ['action', 'madness', 'classic']) {
+      const data = arenaGameCardDataFromEntry(
+        cashEntry(
+          table({
+            cluster_id: 'g',
+            cluster_template: template,
+            name: `NLH 0.25/0.50 ${template[0].toUpperCase()}${template.slice(1)}`,
+            game_variant: 'nlh',
+          } as Partial<LobbyTableRow>)
+        )
+      );
+      expect(data.subtitle ?? '').not.toMatch(/hold.?em/i);
+    }
+    const action = arenaGameCardDataFromEntry(
+      cashEntry(
+        table({
+          cluster_id: 'g',
+          cluster_template: 'action',
+          name: 'NLH 0.25/0.50 Action',
+          game_variant: 'nlh',
+        } as Partial<LobbyTableRow>)
+      )
+    );
+    expect(action.styleNote).toBe(ACTION_NOTE);
   });
 
   it('a Classic game and an untemplated table get none', () => {

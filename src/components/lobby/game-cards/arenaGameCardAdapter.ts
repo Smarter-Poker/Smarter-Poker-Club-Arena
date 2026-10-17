@@ -99,6 +99,17 @@ export function cashCardTitle(entry: LobbyEntry): { title: string; subtitle?: st
     const subtitle = [style, entry.clubLabel].filter(Boolean).join(', ');
     return { title, subtitle };
   }
+  /* NO SECOND "NO LIMIT HOLD'EM" (Dan 2026-10-16): "CURRENT NLH YOU CAN'T
+     EVEN SEE THE DESCRIPTION, REMOVE THE DUPLICATED 'NO LIMIT HOLDEM' AND MAKE
+     SURE THE DESCRIPTION IS LOCATED THERE, WITHOUT BEING CUT OFF." A templated
+     game whose name already says its style ("NLH 0.25/0.50 Action") printed
+     the long variant name as the style word, which the title and the painted
+     NLH badge already say, and it squeezed the note into a third of the row.
+     The line now carries the club (when the board shows one) or nothing, so
+     the Action / Madness note has the whole row. */
+  if (style) {
+    return { title, subtitle: entry.clubLabel || undefined };
+  }
   const subtitle =
     entry.clubLabel || (repeatsTitle(title, entry.variantLabel) ? undefined : entry.variantLabel);
   return { title, subtitle: subtitle || undefined };

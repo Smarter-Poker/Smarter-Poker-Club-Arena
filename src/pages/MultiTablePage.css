@@ -912,7 +912,11 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   top: calc(56px + env(safe-area-inset-top, 0));
   left: 50%;
   transform: translateX(-50%);
-  width: min(340px, calc(100vw - 24px));
+  /* DOUBLE THE SIZE (Dan 2026-10-16): "ON THE 'QUICK JOIN' MAKE THIS DOUBLE
+     THE CURRENT SIZE, YOU CAN'T SEE ANYTHING... ITS TOO SMALL." Was 340px.
+     Every size inside is cqw of the console, so the art and the type double
+     with the width; a phone that cannot fit 680px gets doubled type below. */
+  width: min(680px, calc(100vw - 24px));
   /* metallic-popups.css names this class too - see the session ledger above
      for why every longhand is restated at !important. */
   padding: 0 !important;
@@ -1079,6 +1083,41 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+/* A PHONE CANNOT DOUBLE THE WIDTH, SO IT DOUBLES THE TYPE (Dan 2026-10-16).
+   Below 704px the sheet is already the screen's width less its gutter, so
+   twice the width is not available; each row prints its words at twice their
+   size instead, on two lines: the table name (and why it is listed) across
+   the full row, then its stakes and seats with Join at the right. */
+@media (max-width: 703px) {
+  .multi-table-page__quickjoin-row {
+    flex-wrap: wrap;
+    row-gap: 1.6cqw;
+    padding: 3.6cqw 1.6cqw;
+  }
+
+  .multi-table-page__quickjoin-name {
+    flex: 1 1 100%;
+    font-size: 5.8cqw;
+  }
+
+  .multi-table-page__quickjoin-tag {
+    font-size: 4.2cqw;
+  }
+
+  .multi-table-page__quickjoin-meta {
+    font-size: 4.8cqw;
+  }
+
+  .multi-table-page__quickjoin-cta {
+    margin-left: auto;
+    font-size: 5.2cqw;
+  }
+
+  .multi-table-page__quickjoin-empty {
+    font-size: 5cqw;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

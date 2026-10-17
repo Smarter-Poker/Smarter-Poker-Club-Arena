@@ -62,6 +62,7 @@ import { AsyncResource } from 'node:async_hooks';
 
 import { markRetainedHandHold, clearRetainedHandHold } from './engine/retainedHandHolds.js';
 import { ServerTableEngine } from './engine/ServerTableEngine.js';
+import { TableRestartBackoff } from './engine/TableRestartBackoff.js';
 import { equityGovernor } from './engine/EquityLoadGovernor.js';
 import { stopBrainTelemetryFlush } from './services/BrainTelemetryFlush.js';
 import { HorseDecisionAbortedError } from './engine/horseDecision/client.js';
@@ -582,6 +583,17 @@ export class GameServer {
   /** One causal retry timer per table after a classified transient failure. */
   private directTableRecoveryTimers: Map<string, NodeJS.Timeout> = new Map();
   private directTableRecoveryAttempts: Map<string, number> = new Map();
+  /**
+   * Each cash table's failure streak, which - unlike the attempt count above -
+   * survives the replacement reaching ready and ends only once a replacement
+   * has stayed up. See engine/TableRestartBackoff.ts for the 2026-10-13 loop
+   * that resetting on ready produced. Created on first use so a bare test
+   * server needs no setup (the same reason retainedHandHolds is optional).
+   */
+  private directTableRestartBackoffStore?: TableRestartBackoff;
+  private get directTableRestartBackoff(): TableRestartBackoff {
+    return (this.directTableRestartBackoffStore ??= new TableRestartBackoff());
+  }
   /**
    * Cash tables held because the retained-hand door refused their start from
    * durable state: the refusal code and when the table may be asked again.
@@ -1794,7 +1806,10 @@ export class GameServer {
 
     const attempt = (this.directTableRecoveryAttempts.get(tableId) ?? 0) + 1;
     this.directTableRecoveryAttempts.set(tableId, attempt);
-    const delayMs = Math.min(250 * 2 ** Math.min(attempt - 1, 6), 15_000);
+    // The wait comes from the table's failure streak, not from `attempt`: the
+    // attempt count is cleared when a replacement reaches ready, which made a
+    // table that died after ready wait 250 ms every time, for ever.
+    const { delayMs } = this.directTableRestartBackoff.recordFailure(tableId);
     const timer = setTimeout(() => {
       if (this.directTableRecoveryTimers.get(tableId) !== timer) return;
       this.directTableRecoveryTimers.delete(tableId);
@@ -1844,6 +1859,9 @@ export class GameServer {
     const outcome = engine.ready.then<DirectTableAdmission>(async (ready) => {
       if (ready) {
         this.releaseRetainedHandHold(tableId);
+        // Starts the stability clock; the streak ends only if this
+        // generation is still up TableRestartBackoff.STABLE_MS from now.
+        this.directTableRestartBackoff.recordReady(tableId);
         return 'ready';
       }
       if (engine.getStartupRetainedHandRefusal()) {
@@ -1990,16 +2008,22 @@ export class GameServer {
       // refusal. Cleanup and exact lease release above still apply; an
       // unavailable cleanup result must never reach this branch.
       this.clearDirectTableRecovery(tableId);
+      this.directTableRestartBackoff.forget(tableId);
       return;
     }
 
-    // A start that exhausted its own transient retries gets a causal backoff;
-    // a detached runtime death is replaced immediately. Both remain exact to
-    // this table and neither waits for the five-second discovery scanner.
-    if (deferReadmission) {
+    // A start that exhausted its own transient retries gets a causal backoff.
+    // A detached runtime death on a table that has been HEALTHY is replaced
+    // immediately - the players are waiting. A death on a table whose last
+    // replacement never proved itself is a repeat (2026-10-17): rebuilding it
+    // on the spot is the loop that turned one sick table into hundreds of
+    // kills, so it waits its streak's turn like a failed start does. Both
+    // remain exact to this table; neither waits for the discovery scanner.
+    if (deferReadmission || this.directTableRestartBackoff.isRepeating(tableId)) {
       this.scheduleDirectTableRecovery(tableId, reason);
       return;
     }
+    this.directTableRestartBackoff.recordFailure(tableId);
     const outcome = await this.ensureCashTableEngineAdmission(tableId);
     this.finishDirectTableAdmission(tableId, reason, outcome);
   }
@@ -4454,6 +4478,7 @@ export class GameServer {
     for (const timer of this.directTableRecoveryTimers.values()) clearTimeout(timer);
     this.directTableRecoveryTimers.clear();
     this.directTableRecoveryAttempts.clear();
+    this.directTableRestartBackoff.clear();
     for (const timer of this.tournamentManagerAdmissionRetryTimers.values()) clearTimeout(timer);
     this.tournamentManagerAdmissionRetryTimers.clear();
     this.tournamentManagerAdmissionRetryAttempts.clear();

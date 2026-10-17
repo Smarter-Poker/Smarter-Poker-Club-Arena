@@ -2772,6 +2772,12 @@ export abstract class ServerTableEngineBase {
    */
   protected static readonly START_LOAD_ATTEMPTS = 5;
   /**
+   * How long one boot read may ride out a database that cannot answer yet
+   * (the API has no pool, no schema cache, or is cancelling statements on
+   * its timeout) before start() gives the table back to its owner.
+   */
+  protected static readonly START_READ_OUTAGE_BUDGET_MS = 60_000;
+  /**
    * A by-design pause older than this is reported (never killed): 15 min
    * exceeds any plausible hand-for-hand or break coordination window.
    */
@@ -3657,39 +3663,14 @@ export abstract class ServerTableEngineBase {
        * times for this very reason; this is the same treatment at the one
        * place every table passes through on every start.
        */
-      let tableData: unknown;
       let haltReadSeq = 0;
-      const startReadDeadline = Date.now() + 60_000;
-      for (let attempt = 1; ; attempt++) {
-        if (!this.lifecycleCanMutate()) return;
-        try {
-          // Sequenced BEFORE the request goes out (see beginDealingHaltRead).
-          haltReadSeq = this.beginDealingHaltRead();
-          tableData = this.operatorClosureOnlyId
-            ? await loadTable(this.tableId, this.operatorClosureOnlyId)
-            : await loadTable(this.tableId);
-          break;
-        } catch (err) {
-          if (
-            !ServerTableEngineBase.isTransientDbError(err) ||
-            Date.now() >= startReadDeadline ||
-            (attempt >= ServerTableEngineBase.START_LOAD_ATTEMPTS &&
-              !isPreExecutionDbUnavailable(err))
-          ) {
-            throw err;
-          }
-          if (!this.lifecycleCanMutate()) return;
-          const backoff = Math.min(
-            500 * 2 ** Math.min(attempt - 1, 4),
-            8_000,
-            Math.max(0, startReadDeadline - Date.now())
-          );
-          console.warn(
-            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}, ${Math.max(0, startReadDeadline - Date.now())}ms budget left) - retrying in ${backoff}ms`
-          );
-          await this.sleep(backoff);
-        }
-      }
+      const tableData = await this.retryStartRead('start_load_table', () => {
+        // Sequenced BEFORE the request goes out (see beginDealingHaltRead).
+        haltReadSeq = this.beginDealingHaltRead();
+        return this.operatorClosureOnlyId
+          ? loadTable(this.tableId, this.operatorClosureOnlyId)
+          : loadTable(this.tableId);
+      });
       if (!this.lifecycleCanMutate()) return;
       this.tableInfo = tableData as TableInfo;
       /* Lightning 2.0 Phase 5: a halted table must come back HALTED. The
@@ -6085,8 +6066,96 @@ export abstract class ServerTableEngineBase {
          leave_pending_failed criticals on the board between 09-28 and
          09-30 were this, every one a read that had written nothing. */
       /^55P03$/.test(String((err as { code?: unknown })?.code ?? '')) ||
-      msg.includes('canceling statement due to lock timeout')
+      msg.includes('canceling statement due to lock timeout') ||
+      /* A STATEMENT TIMEOUT IS A ROLLBACK TOO (2026-10-17).
+         57014 is Postgres cancelling the statement: the PostgREST request is
+         one transaction and it rolls back whole, so nothing was written - the
+         same footing as 55P03 above. It was the one cancellation the list
+         left out, and on 2026-10-17 12:57:31-58Z it cost 74 engine kills on
+         42 tables in 27 seconds: the crash-recovery read of
+         hand_state_snapshots (0.1 ms on its unique index) was held past the
+         8 s service_role timeout 57 times, start() took the cancellation for
+         a code defect, and every table that hit it was killed and rebuilt
+         instead of reading again. transientStackReadError
+         (committedSeatStackRead.ts) has carried 57014 since it was written;
+         this is the engine-wide definition catching up with it. */
+      /^57014$/.test(String((err as { code?: unknown })?.code ?? '')) ||
+      msg.includes('canceling statement due to statement timeout')
     );
+  }
+
+  /**
+   * Is the database UNABLE to answer yet, rather than one request blinking?
+   *
+   * A transport blip clears in a second, so five quick attempts are plenty.
+   * These do not: the API has no connection or schema cache, or Postgres is
+   * cancelling statements on its timeout because the database is saturated
+   * or a lock is held. Every table on the platform sees the same condition at
+   * the same moment, so giving up after eight seconds hands every one of them
+   * to its owner for a rebuild in the same second - which is how a slow
+   * minute becomes a kill storm. They ride it out in place instead.
+   */
+  protected static isStartReadOutage(err: unknown): boolean {
+    if (isPreExecutionDbUnavailable(err)) return true;
+    const value = err as { code?: unknown; message?: unknown } | null;
+    if (String(value?.code ?? '') === '57014') return true;
+    return /canceling statement due to statement timeout/.test(
+      String(err instanceof Error ? err.message : (value?.message ?? ''))
+    );
+  }
+
+  /**
+   * ONE BOOT READ, RETRIED WHERE IT STANDS (2026-10-17).
+   *
+   * start() makes six reads before a table can wait for players: the table
+   * row, the last hand number, the button, the pending kill, the crash
+   * snapshot and the parked time banks. Only the first was retried. Three of
+   * the rest THROW on a failed read (the hand number, the crash snapshot and
+   * the time banks - each refuses to guess, correctly), and all of them ran
+   * under the phase name `start_load_table`. So a database blink on any of
+   * them killed the engine, the owner rebuilt it, and the rebuilt engine
+   * re-ran every read from the top into the same slow database.
+   *
+   * Measured on production, 2026-10-17 12:57:31-58Z: 74 kills on 42 tables
+   * in 27 seconds, every one `start_failed:start_load_table`, while the row
+   * read had succeeded - the read that failed was the crash snapshot, 57
+   * times, on the statement timeout.
+   *
+   * Every caller here is a READ: nothing has been written, no timer armed, so
+   * running it again is a clean re-attempt. Ordinary transient errors get
+   * START_LOAD_ATTEMPTS quick tries; an outage (isStartReadOutage) keeps
+   * trying until START_READ_OUTAGE_BUDGET_MS. Each read stamps its own loop
+   * phase, so a kill that still happens names the read that caused it.
+   *
+   * Returns undefined only when this generation stopped owning the table
+   * mid-retry; the caller's `lifecycleCanMutate()` check right after the call
+   * is what turns that into a quiet return rather than a recorded kill.
+   */
+  protected async retryStartRead<T>(phase: string, read: () => Promise<T>): Promise<T> {
+    this.setLoopPhase(phase);
+    const deadline = Date.now() + ServerTableEngineBase.START_READ_OUTAGE_BUDGET_MS;
+    for (let attempt = 1; ; attempt++) {
+      if (!this.lifecycleCanMutate()) return undefined as T;
+      try {
+        return await read();
+      } catch (err) {
+        if (
+          !ServerTableEngineBase.isTransientDbError(err) ||
+          Date.now() >= deadline ||
+          (attempt >= ServerTableEngineBase.START_LOAD_ATTEMPTS &&
+            !ServerTableEngineBase.isStartReadOutage(err))
+        ) {
+          throw err;
+        }
+        if (!this.lifecycleCanMutate()) return undefined as T;
+        const left = Math.max(0, deadline - Date.now());
+        const backoff = Math.min(500 * 2 ** Math.min(attempt - 1, 4), 8_000, left);
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] ${phase} blipped on start (attempt ${attempt}, ${left}ms budget left) - retrying in ${backoff}ms`
+        );
+        await this.sleep(backoff);
+      }
+    }
   }
 
   /**
@@ -7271,7 +7340,9 @@ export abstract class ServerTableEngineBase {
       return;
     }
     try {
-      const banks = await loadTimeBanksFromPark(this.tableId, this.handCount);
+      const banks = await this.retryStartRead('start_time_bank_restore', () =>
+        loadTimeBanksFromPark(this.tableId, this.handCount)
+      );
       if (this.lifecycleCanMutate()) this.parkedTimeBanks = banks;
     } catch (error) {
       reportError(error, 'ServerTableEngine.' + this.tableId + '.time_bank_restore');
@@ -10041,17 +10112,18 @@ export abstract class ServerTableEngineBase {
       // cancelled by the statement timeout).
       // .maybeSingle() not .single(): a table that has never dealt a hand
       // returns zero rows, and .single() raises PGRST116 on zero rows.
-      const { data, error } = await supabase
-        .from('hand_history')
-        .select('hand_number')
-        .eq('table_id', this.tableId)
-        .order('hand_number', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) {
-        throw error;
-      }
+      const data = await this.retryStartRead('start_seed_hand_count', async () => {
+        const { data, error } = await supabase
+          .from('hand_history')
+          .select('hand_number')
+          .eq('table_id', this.tableId)
+          .order('hand_number', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        return data;
+      });
+      if (!this.lifecycleCanMutate()) return;
 
       const last = data ? Number((data as { hand_number?: number }).hand_number ?? NaN) : 0;
       if (!Number.isSafeInteger(last) || last < 0) {
@@ -10929,7 +11001,11 @@ export abstract class ServerTableEngineBase {
     // and disconnect states come back with the hand state. Full HandController
     // reconstruction still waits for a later PR; for now we log visibility
     // into what would rehydrate + mark the orphaned hand complete.
-    const snapshot = await getActiveHandSnapshotFull(this.tableId);
+    // The read that failed 57 times on 2026-10-17 (see retryStartRead).
+    const snapshot = await this.retryStartRead('start_crash_recovery', () =>
+      getActiveHandSnapshotFull(this.tableId)
+    );
+    if (!this.lifecycleCanMutate()) return false;
     if (!snapshot) return false;
 
     /**

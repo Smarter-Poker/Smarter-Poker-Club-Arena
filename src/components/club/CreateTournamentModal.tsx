@@ -529,13 +529,15 @@ export default function CreateTournamentModal({
            it could not load rather than "No Upcoming Tournaments". */
         if (error) throw error;
         // A satellite can only award a seat the settlement authority can
-        // deliver: never into a bounty, PKO, mystery-bounty or Spin event
-        // (the database refuses that insert too, 20260911110907).
+        // deliver: never into a Spin event or one whose bounty flags are
+        // unknown (the database refuses that insert too, 20260911110907).
+        // A bounty, PKO or mystery-bounty event IS deliverable: its seat is
+        // booked exactly like a paid entry (20261017004440).
         const deliverable = (data || []).filter(
           (t: any) =>
-            t.is_bounty === false &&
-            t.is_pko === false &&
-            t.is_mystery_bounty === false &&
+            typeof t.is_bounty === 'boolean' &&
+            typeof t.is_pko === 'boolean' &&
+            typeof t.is_mystery_bounty === 'boolean' &&
             t.is_premium_spin === false &&
             String(t.variant ?? '').toLowerCase() !== 'spin' &&
             String(t.tournament_type ?? '').toUpperCase() !== 'SPIN'

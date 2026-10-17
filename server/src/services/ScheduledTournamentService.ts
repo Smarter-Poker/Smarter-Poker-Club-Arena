@@ -61,6 +61,7 @@ import {
   fixedFreeBuyRow,
   recurringMttRow,
   MTT_PUBLISH_LEAD_MS,
+  satelliteSourceIsSupported,
   satelliteTargetIsDeliverable,
   type SatelliteTargetRow,
 } from './TournamentRecurringService.js';
@@ -2157,13 +2158,18 @@ export class ScheduledTournamentService {
       ? query.eq('union_id', schedule.union_id)
       : query.eq('club_id', schedule.club_id);
     const { data, error } = await query.maybeSingle();
+    if (error || !data) return null;
+    // A union event is never a Diamond event; a club schedule's target is in
+    // the schedule's own club. Read only for a bounty target, which is the one
+    // the Diamond Arena refuses (null on an unread club refuses it too).
+    const bountyTarget = Boolean(data.is_bounty || data.is_pko || data.is_mystery_bounty);
+    const diamondHost =
+      bountyTarget && !schedule.union_id ? await this.scheduleIsDiamondArena(schedule) : false;
     if (
-      error ||
-      !data ||
       !isPersistedUnlimitedMtt(data) ||
       data.satellite_target_id ||
       data.satellite_target ||
-      !satelliteTargetIsDeliverable(data as SatelliteTargetRow)
+      !satelliteTargetIsDeliverable({ ...(data as SatelliteTargetRow), diamond_host: diamondHost })
     )
       return null;
     return data.id as string;
@@ -2387,7 +2393,9 @@ export class ScheduledTournamentService {
     }
     const targetId = row.satellite_target_id ?? row.satellite_target;
     if (targetId) {
-      if (!satelliteTargetIsDeliverable(old as unknown as SatelliteTargetRow)) return;
+      // The restarted row is the SATELLITE: a satellite is never itself a
+      // bounty or Spin event, whatever its target is (2026-10-16).
+      if (!satelliteSourceIsSupported(old as unknown as SatelliteTargetRow)) return;
       const target = await this.resolveSatelliteTarget(
         {
           id: String(old.id),

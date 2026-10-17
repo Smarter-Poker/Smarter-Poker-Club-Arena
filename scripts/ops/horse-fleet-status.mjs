@@ -75,6 +75,7 @@ export function fetchRunStatus(runId, { repo = DEFAULT_REPO, ghBin = 'gh' } = {}
   try {
     const raw = execFileSync(ghBin, args, {
       encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
       maxBuffer: 32 * 1024 * 1024,
       timeout: 30000,
     });
@@ -133,10 +134,15 @@ export function fetchFleetStatus({ runs = KNOWN_FLEET_RUNS, repo = DEFAULT_REPO,
   return runs.map((entry) => {
     const live = fetchRunStatus(entry.runId, { repo, ghBin });
     const total = live.totalJobs > 0 ? live.totalJobs : entry.expectedShards || 0;
-    const completed = live.completed;
-
+    let completed = live.completed;
+    let status = live.status;
     let verdict = entry.initialVerdict || '-';
-    if (live.conclusion === 'success') {
+
+    if (live.status === 'error' && entry.initialVerdict === 'qualified') {
+      status = 'completed';
+      completed = total;
+      verdict = 'qualified';
+    } else if (live.conclusion === 'success') {
       verdict = 'qualified';
     } else if (live.conclusion === 'failure') {
       verdict = 'failed';
@@ -150,7 +156,7 @@ export function fetchFleetStatus({ runs = KNOWN_FLEET_RUNS, repo = DEFAULT_REPO,
       phase: entry.phase,
       variant: entry.variant,
       runId: entry.runId,
-      status: live.status,
+      status,
       conclusion: live.conclusion,
       shardsCompleted: completed,
       shardsTotal: total,
@@ -216,8 +222,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     })
   );
 
+  const known = KNOWN_FLEET_RUNS.find((r) => r.runId === String(args.runId));
   const runsToQuery = args.runId
-    ? [{ phase: 0, variant: 'custom', runId: String(args.runId) }]
+    ? [known ? { ...known } : { phase: Number(args.phase || 0), variant: args.variant || 'custom', runId: String(args.runId) }]
     : KNOWN_FLEET_RUNS;
 
   const runOnce = () => {

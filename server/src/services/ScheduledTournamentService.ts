@@ -419,6 +419,83 @@ export function resolveTimeChange(
   ].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 }
 
+/**
+ * A PRE-SPAWNED OCCURRENCE FOLLOWS ITS SCHEDULE (2026-10-17).
+ *
+ * resolveTimeChange above stops a time change from doubling the board, but it
+ * does so by leaving every date that already holds an old-time occurrence ON
+ * the old times. That is exactly what paged Dan on 2026-10-17: #7173 moved
+ * the five Free Buy schedules to :30 Chicago, and the 28 occurrences already
+ * spawned for 10-17..19 sat at :00 for up to three days with nothing in the
+ * engine to move them. Migration 20261017105003 moved those 28 by hand; a
+ * data migration needed twice for one cause was never a fix (CLAUDE.md
+ * 10.11), so the board writer now conforms its own pre-spawned occurrences.
+ *
+ * PURE. Pairs each date's claimed OLD-time keys with the schedule's NEW
+ * times, positionally on the two sorted lists, and plans a move for each:
+ * the occurrence's start_time to the new slot's instant and its spawn key to
+ * the new spelling. Fail-closed throughout:
+ *
+ *   - old and new time lists of different lengths are ambiguous: no plan;
+ *   - a date before the change, or already run on a retired timetable, keeps
+ *     its old times exactly as resolveTimeChange reads them;
+ *   - a slot whose new spelling is already claimed is never overwritten;
+ *   - a new slot closer than CONFORM_MIN_LEAD_MS is too late to move onto.
+ *
+ * What qualifies the TOURNAMENT itself (pre-start by the same lead, pool not
+ * finalized, ANNOUNCED/REGISTERING) is checked against rows by
+ * conformClaimedOccurrences, not here. The guarantee is NEVER part of a
+ * conform: trg_freeze_registered_tournament_settlement_contract froze it at
+ * the first entrant, correctly, and the engine honors that contract exactly
+ * as migration 20261017105003 did.
+ */
+export const CONFORM_MIN_LEAD_MS = 20 * 60_000;
+/** At most this many occurrence moves per schedule per poll. */
+export const OCCURRENCE_CONFORM_MAX_PER_POLL = 40;
+
+export interface OccurrenceConformPlan {
+  oldKey: string;
+  newKey: string;
+  newStart: Date;
+}
+
+/** The UTC instant of `tm` on `localDate` for a schedule's calendar. */
+function slotStartUtc(localDate: string, tm: string, zone: string | null | undefined): Date {
+  return zone ? zonedStartUtc(localDate, tm, zone) : new Date(`${localDate}T${tm}:00.000Z`);
+}
+
+export function planOccurrenceConform(
+  schedule: Pick<TournamentScheduleRow, 'id' | 'start_times_utc' | 'time_zone'>,
+  change: ScheduleTimeChange,
+  claimed: ReadonlySet<string>,
+  dates: readonly string[],
+  now: Date
+): OccurrenceConformPlan[] {
+  const out: OccurrenceConformPlan[] = [];
+  const newTimes = [...(schedule.start_times_utc ?? [])]
+    .map(String)
+    .filter((t) => HH_MM.test(t))
+    .sort();
+  const oldTimes = [...change.previous].sort();
+  if (newTimes.length === 0 || newTimes.length !== oldTimes.length) return out;
+  const retired = change.retired ?? [];
+  for (const date of [...new Set(dates)].sort()) {
+    if (date < change.from) continue; // planned under the old timetable, stays
+    if (retired.some((tm) => claimed.has(`${schedule.id}:${date}:${tm}`))) continue;
+    for (let i = 0; i < oldTimes.length; i++) {
+      if (oldTimes[i] === newTimes[i]) continue; // this slot did not move
+      const oldKey = `${schedule.id}:${date}:${oldTimes[i]}`;
+      if (!claimed.has(oldKey)) continue;
+      const newKey = `${schedule.id}:${date}:${newTimes[i]}`;
+      if (claimed.has(newKey)) continue; // a twin exists; never overwrite a claim
+      const newStart = slotStartUtc(date, newTimes[i], schedule.time_zone);
+      if (newStart.getTime() - now.getTime() < CONFORM_MIN_LEAD_MS) continue;
+      out.push({ oldKey, newKey, newStart });
+    }
+  }
+  return out;
+}
+
 /** timedSpawnsDue for a schedule whose days and times are in `zone`. */
 function zonedSpawnsDue(
   scheduleId: string,
@@ -1044,6 +1121,24 @@ export class ScheduledTournamentService {
     // A time change cannot be resolved without knowing what exists: an
     // unreadable answer waits for the next poll rather than guess and double.
     if (change && !claimedSet) return;
+
+    /* A PRE-SPAWNED OCCURRENCE FOLLOWS ITS SCHEDULE (2026-10-17). Before the
+       dates are resolved onto old or new times, the occurrences already on
+       the board are moved to where their schedule now says they belong:
+       start_time first, spawn key second, so a failure between the two
+       leaves the date reading "old times claimed" and nothing can double. A
+       date whose conform completed no longer holds an old-time claim, so
+       resolveTimeChange puts it on the new times in this same poll. */
+    if (change && claimedSet) {
+      const plans = planOccurrenceConform(
+        schedule,
+        change,
+        claimedSet,
+        candidates.map((d) => d.localDate),
+        now
+      );
+      await this.conformClaimedOccurrences(schedule, plans, claimedSet);
+    }
     const due = change
       ? resolveTimeChange(dueNew, duePrev, change, claimedSet!, schedule.id)
       : dueNew;
@@ -1052,6 +1147,98 @@ export class ScheduledTournamentService {
       if (this.retiredScheduleIds.has(schedule.id)) return; // deleted mid-pass
       if (claimedSet?.has(spawn.spawnKey)) continue; // already spawned
       await this.spawnInstance(schedule, cfg, spawn.spawnKey, spawn.startTime);
+    }
+  }
+
+  /**
+   * A PRE-SPAWNED OCCURRENCE FOLLOWS ITS SCHEDULE (2026-10-17): the row work
+   * behind planOccurrenceConform. For each planned move, the occurrence is
+   * read and must still qualify — ANNOUNCED/REGISTERING, pool not finalized,
+   * pre-start by CONFORM_MIN_LEAD_MS — then its start_time moves to the new
+   * slot (guarded by the start_time it was read at, so a board that moved
+   * underneath waits for the next poll) and ONLY THEN its spawn key is
+   * renamed. The order is the safety: a crash between the two leaves the
+   * date reading "old time claimed", which resolveTimeChange keeps on the old
+   * times, so nothing ever doubles; the rename is retried next poll because
+   * the old key still names a conformed-but-unrenamed occurrence
+   * (alreadyMoved below). The guarantee is never touched: it is the frozen
+   * settlement contract. Every failure skips THAT occurrence and never the
+   * loop; a skipped conform is retried on the next poll.
+   */
+  private async conformClaimedOccurrences(
+    schedule: TournamentScheduleRow,
+    plans: OccurrenceConformPlan[],
+    claimedSet: Set<string>
+  ): Promise<void> {
+    if (plans.length === 0 || isMaintenanceFrozen()) return;
+    const nowMs = Date.now();
+    for (const plan of plans.slice(0, OCCURRENCE_CONFORM_MAX_PER_POLL)) {
+      try {
+        const { data: spawnRow, error: spawnErr } = await supabase
+          .from('tournament_schedule_spawns')
+          .select('spawn_key, tournament_id')
+          .eq('spawn_key', plan.oldKey)
+          .maybeSingle();
+        if (spawnErr || !spawnRow?.tournament_id) continue; // fail closed
+        const { data: t, error: tErr } = await supabase
+          .from('tournaments')
+          .select('id, status, start_time, prize_pool_finalized')
+          .eq('id', spawnRow.tournament_id)
+          .maybeSingle();
+        if (tErr || !t) continue;
+        const startMs = Date.parse(String(t.start_time));
+        const alreadyMoved = startMs === plan.newStart.getTime();
+        if (!alreadyMoved) {
+          const movable =
+            ['ANNOUNCED', 'REGISTERING'].includes(String(t.status)) &&
+            t.prize_pool_finalized !== true &&
+            startMs - nowMs > CONFORM_MIN_LEAD_MS;
+          if (!movable) continue;
+          const { error: moveErr } = await supabase
+            .from('tournaments')
+            .update({
+              start_time: plan.newStart.toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', t.id)
+            .eq('start_time', t.start_time)
+            .in('status', ['ANNOUNCED', 'REGISTERING']);
+          if (moveErr) {
+            reportError(
+              new Error(
+                `[ScheduledTournaments] occurrence conform could not move ${plan.oldKey}: ${moveErr.message}`
+              ),
+              'ScheduledTournaments.occurrence_conform_move_failed'
+            );
+            continue;
+          }
+        }
+        // The key follows the event it spent — strictly after the move.
+        const { error: renameErr } = await supabase
+          .from('tournament_schedule_spawns')
+          .update({ spawn_key: plan.newKey })
+          .eq('spawn_key', plan.oldKey);
+        if (renameErr) {
+          reportError(
+            new Error(
+              `[ScheduledTournaments] occurrence conform could not rename ${plan.oldKey}: ${renameErr.message}`
+            ),
+            'ScheduledTournaments.occurrence_conform_rename_failed'
+          );
+          continue;
+        }
+        claimedSet.delete(plan.oldKey);
+        claimedSet.add(plan.newKey);
+        console.log(
+          `[ScheduledTournaments] "${schedule.name}" occurrence followed its schedule: ` +
+            `${plan.oldKey} -> ${plan.newKey} (start ${plan.newStart.toISOString()})`
+        );
+      } catch (e) {
+        reportError(
+          e instanceof Error ? e : new Error(String(e)),
+          'ScheduledTournaments.occurrence_conform_failed'
+        );
+      }
     }
   }
 

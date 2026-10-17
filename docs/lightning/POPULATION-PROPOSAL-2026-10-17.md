@@ -10,7 +10,7 @@ Fund each incoming player's pilot wallet with200 through the normal targeted clu
 
 Plan: normal admission of all23incoming to Madness; six also to Action. Against the02:42:58 snapshot12Action/4Madness, the conditional totals are18/27. Actual eligible population must be measured afterward; no population pass is claimed now.
 
-Final selected incoming were awake with at least256activity minutes and299remaining current-day minutes at eligibility observation02:43:46Z; allhadload<=2 andzeroactivecash exposure in the later exposure read retained in the evidence. No120-minute rule is imposed. Counted tournament bookings and seats remain untouched. Future load/day/clock changes must fail closed at prepare/execute.
+The initial cohort was screened at02:43:46Z. The retained21 were rechecked at03:41Z; the two explicitly authorized replacements were screened separately at03:44Z, with load0 and no active seats or open cash. These are dated observations, not a future availability claim. No120-minute rule is imposed. Counted tournament bookings and seats remain untouched. Fresh full-cohort load/day/clock checks must pass at prepare and execute.
 
 BRM source: worst normal licensing40buy-ins×100bb×0.04=160;200covers it. Strict nit aggregate ceiling200×0.03×4=24. Both targets' maximum nominal buy-ins8+4=12 are below24; allselected havezero current cash exposure. Tournament stacks and Diamond exposure are not mixed into this cash figure. Pilot membership tags were actually absent; no tag or policy is forged.
 

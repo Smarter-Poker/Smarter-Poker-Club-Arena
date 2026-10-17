@@ -2508,6 +2508,14 @@ export interface SatelliteTargetRow {
   is_pko?: boolean | null;
   is_mystery_bounty?: boolean | null;
   is_premium_spin?: boolean | null;
+  /**
+   * Whether the target's host is the Diamond Arena, set by the caller from the
+   * host club's own row (isDiamondArenaClubRow). Not a tournaments column. A
+   * bounty target is deliverable only when this is a KNOWN false: the Diamond
+   * seat transfer has no bounty part, so fn_satellite_target_is_deliverable
+   * refuses a Diamond bounty event, and an unread host is refused the same way.
+   */
+  diamond_host?: boolean | null;
 }
 
 /**
@@ -2534,9 +2542,10 @@ export interface SatelliteTargetRow {
  * fn_tournament_entry_split, the bounty slice lands on the bounty rail with a
  * funded head, and the escrow equals the counters. So a known bounty flag is
  * deliverable. What the finish still refuses is refused here too: a Spin or
- * premium Spin, and any row whose flags are not all read as booleans. (A
- * Diamond bounty event is refused by the database alone; this row does not
- * carry the asset, and the insert is refused by name.)
+ * premium Spin, any row whose flags are not all read as booleans, and a
+ * bounty target whose host is the Diamond Arena or could not be read
+ * (diamond_host must be a known false), because the Diamond seat transfer has
+ * no bounty part and fn_satellite_target_is_deliverable refuses it.
  */
 export function satelliteTargetIsDeliverable(row: SatelliteTargetRow): boolean {
   const flags = [row.is_bounty, row.is_pko, row.is_mystery_bounty, row.is_premium_spin];
@@ -2544,6 +2553,8 @@ export function satelliteTargetIsDeliverable(row: SatelliteTargetRow): boolean {
   if (row.is_premium_spin) return false;
   if (String(row.variant ?? '').toLowerCase() === 'spin') return false;
   if (String(row.tournament_type ?? '').toUpperCase() === 'SPIN') return false;
+  if ((row.is_bounty || row.is_pko || row.is_mystery_bounty) && row.diamond_host !== false)
+    return false;
   return true;
 }
 
@@ -3941,7 +3952,13 @@ export class TournamentRecurringService {
       // board slots. Near-term legacy targets cannot crowd out the three-hour
       // targets required by the scheduled branch after activation. This read
       // is eligibility only: the paired creator locks and chooses its own ABI.
-      const admitted = await projectTournamentAdmission((data ?? []) as SatelliteTargetRow[]);
+      // A union event is never a Diamond event; a club's host is read off its
+      // own row. Unread (null) leaves diamond_host null, which refuses only the
+      // bounty targets, never a plain one.
+      const diamondHost = owner.unionId ? false : await this.diamondArenaHost(owner.clubId);
+      const admitted = (await projectTournamentAdmission((data ?? []) as SatelliteTargetRow[])).map(
+        (target) => ({ ...target, diamond_host: diamondHost })
+      );
       const now = Date.now();
       const targets = pickSatelliteTargets(
         admitted.filter(

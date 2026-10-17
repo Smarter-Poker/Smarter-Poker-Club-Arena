@@ -2158,13 +2158,18 @@ export class ScheduledTournamentService {
       ? query.eq('union_id', schedule.union_id)
       : query.eq('club_id', schedule.club_id);
     const { data, error } = await query.maybeSingle();
+    if (error || !data) return null;
+    // A union event is never a Diamond event; a club schedule's target is in
+    // the schedule's own club. Read only for a bounty target, which is the one
+    // the Diamond Arena refuses (null on an unread club refuses it too).
+    const bountyTarget = Boolean(data.is_bounty || data.is_pko || data.is_mystery_bounty);
+    const diamondHost =
+      bountyTarget && !schedule.union_id ? await this.scheduleIsDiamondArena(schedule) : false;
     if (
-      error ||
-      !data ||
       !isPersistedUnlimitedMtt(data) ||
       data.satellite_target_id ||
       data.satellite_target ||
-      !satelliteTargetIsDeliverable(data as SatelliteTargetRow)
+      !satelliteTargetIsDeliverable({ ...(data as SatelliteTargetRow), diamond_host: diamondHost })
     )
       return null;
     return data.id as string;

@@ -294,6 +294,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
       is_pko: false,
       is_mystery_bounty: false,
       is_premium_spin: false,
+      diamond_host: false,
     };
     const pko: SatelliteTargetRow = {
       format_contract: 'mtt-v1',
@@ -309,6 +310,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
       is_pko: true,
       is_mystery_bounty: false,
       is_premium_spin: false,
+      diamond_host: false,
     };
     const main: SatelliteTargetRow = {
       ...plain,
@@ -333,10 +335,17 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
       { ...main, id: 'spin-variant', name: 'Spin Variant', variant: 'spin' },
       { ...main, id: 'unknown', name: 'Unknown Flags', is_pko: null },
       { ...main, id: 'unread', name: 'Unread Flags', is_bounty: undefined },
+      // The Diamond seat transfer has no bounty part: a Diamond bounty target,
+      // or one whose host was not read, opens no feeder.
+      { ...pko, id: 'diamond-pko', name: 'Diamond PKO', diamond_host: true },
+      { ...pko, id: 'unread-host-pko', name: 'Unread Host PKO', diamond_host: null },
+      { ...pko, id: 'unset-host-pko', name: 'Unset Host PKO', diamond_host: undefined },
     ];
     for (const row of delivered) expect(satelliteTargetIsDeliverable(row)).toBe(true);
     for (const row of refused) expect(satelliteTargetIsDeliverable(row)).toBe(false);
     expect(satelliteTargetIsDeliverable(main)).toBe(true);
+    // A plain target in the Diamond Arena is still fed.
+    expect(satelliteTargetIsDeliverable({ ...main, diamond_host: true })).toBe(true);
     // The PKO is the dearest row, so it is the first event fed.
     expect(pickSatelliteTargets([...refused, ...delivered, main], now).map((r) => r.id)).toEqual([
       pko.id,

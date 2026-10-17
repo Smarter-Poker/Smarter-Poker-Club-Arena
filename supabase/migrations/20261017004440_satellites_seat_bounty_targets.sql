@@ -86,11 +86,11 @@
 -- @live-proof: md5(pg_get_functiondef('public.fn_ca_guard_new_satellite_target()'::regprocedure)) = '5634948d5e2f073ec4205176607e7c21'
 -- @live-proof: md5(pg_get_functiondef('public.fn_ca_capture_satellite_seat_entitlement()'::regprocedure)) = 'f8404f55d30cc6ae4a317d49df14c4ee'
 -- @live-proof: md5(pg_get_functiondef('public.fn_ca_find_tournament_entry_ticket_for(uuid,uuid)'::regprocedure)) = 'b4ed52d3fbf81f55d935666357eb9781'
--- @live-proof: md5(pg_get_functiondef('public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid)'::regprocedure)) = 'a13ebce50bc96c31653e4f1515554975'
+-- @live-proof: md5(pg_get_functiondef('public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid)'::regprocedure)) = '377446dc1ccce91cbf8a7af0c713ec7f'
 -- @live-proof: md5(pg_get_functiondef('public.fn_ca_satellite_settlement_receipt(uuid,uuid)'::regprocedure)) = 'c4b817ae5a6d328dc3118bdfc5d98c21'
 -- @live-proof: md5(pg_get_functiondef('public.fn_ca_satellite_cohort_receipt(uuid,uuid[])'::regprocedure)) = 'df717a9f260a1318ffb28f114625008b'
--- @live-proof: md5(pg_get_functiondef('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)'::regprocedure)) = 'c42d7a0409532787a3326afac10e5a99'
--- @live-proof: md5(pg_get_functiondef('public.fn_ca_settle_satellite_cohort(uuid,uuid[])'::regprocedure)) = '9b1210f40dc975f1f0b85c30699f7557'
+-- @live-proof: md5(pg_get_functiondef('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)'::regprocedure)) = '14eddc55fc178f81232f619fa764ee7e'
+-- @live-proof: md5(pg_get_functiondef('public.fn_ca_settle_satellite_cohort(uuid,uuid[])'::regprocedure)) = 'e248788b7f4e0a4779444ba43ba2ae4b'
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
@@ -117,15 +117,15 @@ BEGIN
     ('public.fn_ca_find_tournament_entry_ticket_for(uuid,uuid)',
      '1faed89ef1c23d05f2b7f90715048efd','b4ed52d3fbf81f55d935666357eb9781'),
     ('public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid)',
-     'bf8a5f20ef63427093a662c62edc5d65','a13ebce50bc96c31653e4f1515554975'),
+     'bf8a5f20ef63427093a662c62edc5d65','377446dc1ccce91cbf8a7af0c713ec7f'),
     ('public.fn_ca_satellite_settlement_receipt(uuid,uuid)',
      '752a8d976b306c37db92a8b42863424b','c4b817ae5a6d328dc3118bdfc5d98c21'),
     ('public.fn_ca_satellite_cohort_receipt(uuid,uuid[])',
      '6cdc896a54b4f3726b3c3aa444be7647','df717a9f260a1318ffb28f114625008b'),
     ('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)',
-     '384887d62082eec9a0d61a9d49d955a2','c42d7a0409532787a3326afac10e5a99'),
+     '8fb5cdbc0fd4caae36d1e6191a1e9b6d','14eddc55fc178f81232f619fa764ee7e'),
     ('public.fn_ca_settle_satellite_cohort(uuid,uuid[])',
-     'e8986b5b177c88acbde1ac80fe7e029f','9b1210f40dc975f1f0b85c30699f7557')
+     '22063fc9eca98d335f633772aae2d19d','e248788b7f4e0a4779444ba43ba2ae4b')
   ) AS v(sig, pre, post) LOOP
     v_md5 := md5(pg_get_functiondef(r.sig::regprocedure));
     IF v_md5 IS DISTINCT FROM r.pre AND v_md5 IS DISTINCT FROM r.post THEN
@@ -950,7 +950,11 @@ BEGIN
      OR v_escrow_before.enforced IS DISTINCT FROM true
      OR v_t.current_players IS DISTINCT FROM v_players_before
      OR v_t.prize_pool IS DISTINCT FROM v_escrow_before.prize_balance
-     OR v_t.bounty_pool IS DISTINCT FROM v_escrow_before.bounty_balance
+     -- A running bounty event's bank is its pool less what knockouts have
+     -- already paid from it, so a late ticket seat compares against that
+     -- (2026-10-16), as both settlement authorities do.
+     OR v_escrow_before.bounty_balance IS DISTINCT FROM
+          round(COALESCE(v_t.bounty_pool,0)-COALESCE(v_t.bounty_pool_paid,0),2)
      OR v_t.total_rake IS DISTINCT FROM v_escrow_before.fee_balance THEN
     RAISE EXCEPTION 'ticket admission found divergent tournament escrow'
       USING ERRCODE='P0404';
@@ -3471,20 +3475,44 @@ BEGIN
         END IF;
       ELSIF v_target_open AND v_seat_count < v_target_slots THEN
         v_cap_load:=public.fn_concurrent_game_load(
-          v_finisher.user_id,NULL,NULL,v_target_id);
+          v_finisher.user_id,NULL,NULL,v_target_id)
+          -- THE DYING SATELLITE IS NOT A GAME (2026-10-17). This settlement
+          -- releases the winner's seats at this satellite in this same
+          -- transaction, so those seats cannot be the games that cap the
+          -- winner. Counting them held Sunday Deep Stack Satellite 10 RUNNING
+          -- and unpaid for two hours on 2026-10-16 while its sole survivor
+          -- "sat" at the table this settlement was about to close. The
+          -- subtraction mirrors clause (1) of fn_concurrent_game_load exactly,
+          -- so it removes only seats that clause counted.
+          - (SELECT count(*)::int
+               FROM public.table_seats zts
+               JOIN public.tables zt ON zt.id = zts.table_id
+              WHERE zts.user_id = v_finisher.user_id
+                AND zts.left_at IS NULL
+                AND zt.status <> 'closed'
+                AND zt.tournament_id = p_tournament_id
+                AND NOT EXISTS (
+                  SELECT 1 FROM public.tournaments ztr
+                   WHERE ztr.id = zt.tournament_id
+                     AND ztr.status IN ('COMPLETING','COMPLETED','CANCELLED')));
         IF v_cap_load>=4 THEN
-          -- DIAMOND PHASE 9: the chip estate holds a capped winner's funded
-          -- entry in a noncash chip entry ticket. No Diamond entry ticket
-          -- exists, so a Diamond settlement is refused by name - nothing has
-          -- moved - and is retried once the winner is below the cap.
           IF v_diamond THEN
-            RAISE EXCEPTION
-              'diamond_satellite_winner_at_the_table_cap: satellite % award % user %',
-              p_tournament_id, v_place, v_finisher.user_id USING ERRCODE = '55000';
-          END IF;
+            -- A CAPPED DIAMOND WINNER IS PAID, NOT HELD (2026-10-17). The
+            -- refusal this replaces promised "the engine retries", but a
+            -- winner seated at four long events keeps the satellite RUNNING,
+            -- undealt and unpaid for hours - a deadlock, not a rule. The
+            -- duplicate-qualification rule already pays a Diamond ticket's
+            -- value as money through the same pay door (fn_credit_and_log ->
+            -- fn_poker_diamond_tournament_pay); the capped winner takes
+            -- exactly that path, whole Diamonds, obligation opened and
+            -- closed in this transaction, so the event always finishes and
+            -- the winner is always paid at once.
+            v_delivery_kind := 'cash';
+          ELSE
           -- The cap remains absolute. The winner receives the funded entry as
           -- a noncash tournament ticket instead of a fifth game or wallet chips.
           v_delivery_kind := 'ticket';
+          END IF;
         ELSE
           v_delivery_kind := 'seat';
         END IF;
@@ -4987,20 +5015,44 @@ BEGIN
         END IF;
       ELSIF v_target_open AND v_seat_count < v_target_slots THEN
         v_cap_load:=public.fn_concurrent_game_load(
-          v_finisher.user_id,NULL,NULL,v_target_id);
+          v_finisher.user_id,NULL,NULL,v_target_id)
+          -- THE DYING SATELLITE IS NOT A GAME (2026-10-17). This settlement
+          -- releases the winner's seats at this satellite in this same
+          -- transaction, so those seats cannot be the games that cap the
+          -- winner. Counting them held Sunday Deep Stack Satellite 10 RUNNING
+          -- and unpaid for two hours on 2026-10-16 while its sole survivor
+          -- "sat" at the table this settlement was about to close. The
+          -- subtraction mirrors clause (1) of fn_concurrent_game_load exactly,
+          -- so it removes only seats that clause counted.
+          - (SELECT count(*)::int
+               FROM public.table_seats zts
+               JOIN public.tables zt ON zt.id = zts.table_id
+              WHERE zts.user_id = v_finisher.user_id
+                AND zts.left_at IS NULL
+                AND zt.status <> 'closed'
+                AND zt.tournament_id = p_tournament_id
+                AND NOT EXISTS (
+                  SELECT 1 FROM public.tournaments ztr
+                   WHERE ztr.id = zt.tournament_id
+                     AND ztr.status IN ('COMPLETING','COMPLETED','CANCELLED')));
         IF v_cap_load>=4 THEN
-          -- DIAMOND PHASE 9: the chip estate holds a capped winner's funded
-          -- entry in a noncash chip entry ticket. No Diamond entry ticket
-          -- exists, so a Diamond settlement is refused by name - nothing has
-          -- moved - and is retried once the winner is below the cap.
           IF v_diamond THEN
-            RAISE EXCEPTION
-              'diamond_satellite_winner_at_the_table_cap: satellite % award % user %',
-              p_tournament_id, v_place, v_finisher.user_id USING ERRCODE = '55000';
-          END IF;
+            -- A CAPPED DIAMOND WINNER IS PAID, NOT HELD (2026-10-17). The
+            -- refusal this replaces promised "the engine retries", but a
+            -- winner seated at four long events keeps the satellite RUNNING,
+            -- undealt and unpaid for hours - a deadlock, not a rule. The
+            -- duplicate-qualification rule already pays a Diamond ticket's
+            -- value as money through the same pay door (fn_credit_and_log ->
+            -- fn_poker_diamond_tournament_pay); the capped winner takes
+            -- exactly that path, whole Diamonds, obligation opened and
+            -- closed in this transaction, so the event always finishes and
+            -- the winner is always paid at once.
+            v_delivery_kind := 'cash';
+          ELSE
           -- The cap remains absolute. The winner receives the funded entry as
           -- a noncash tournament ticket instead of a fifth game or wallet chips.
           v_delivery_kind := 'ticket';
+          END IF;
         ELSE
           v_delivery_kind := 'seat';
         END IF;
@@ -5954,15 +6006,15 @@ BEGIN
     ('public.fn_ca_find_tournament_entry_ticket_for(uuid,uuid)',
      '1faed89ef1c23d05f2b7f90715048efd','b4ed52d3fbf81f55d935666357eb9781'),
     ('public.fn_ca_register_for_tournament_with_ticket_for(uuid,uuid,uuid)',
-     'bf8a5f20ef63427093a662c62edc5d65','a13ebce50bc96c31653e4f1515554975'),
+     'bf8a5f20ef63427093a662c62edc5d65','377446dc1ccce91cbf8a7af0c713ec7f'),
     ('public.fn_ca_satellite_settlement_receipt(uuid,uuid)',
      '752a8d976b306c37db92a8b42863424b','c4b817ae5a6d328dc3118bdfc5d98c21'),
     ('public.fn_ca_satellite_cohort_receipt(uuid,uuid[])',
      '6cdc896a54b4f3726b3c3aa444be7647','df717a9f260a1318ffb28f114625008b'),
     ('public.fn_settle_satellite_tournament_pre_money_path_gate(uuid,uuid)',
-     '384887d62082eec9a0d61a9d49d955a2','c42d7a0409532787a3326afac10e5a99'),
+     '8fb5cdbc0fd4caae36d1e6191a1e9b6d','14eddc55fc178f81232f619fa764ee7e'),
     ('public.fn_ca_settle_satellite_cohort(uuid,uuid[])',
-     'e8986b5b177c88acbde1ac80fe7e029f','9b1210f40dc975f1f0b85c30699f7557')
+     '22063fc9eca98d335f633772aae2d19d','e248788b7f4e0a4779444ba43ba2ae4b')
   ) AS v(sig, pre, post) LOOP
     v_md5 := md5(pg_get_functiondef(r.sig::regprocedure));
     IF v_md5 IS DISTINCT FROM r.post THEN

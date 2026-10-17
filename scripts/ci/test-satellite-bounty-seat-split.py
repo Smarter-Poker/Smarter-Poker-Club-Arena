@@ -85,7 +85,7 @@ PINNED_DEF = {
 }
 PREIMAGE_GATE = ('preimage-fn_settle_satellite_tournament_pre_money_path_gate',
                  'fn_settle_satellite_tournament_pre_money_path_gate',
-                 '384887d62082eec9a0d61a9d49d955a2')
+                 '8fb5cdbc0fd4caae36d1e6191a1e9b6d')
 OLD_REFUSAL = 'uses an unsupported bounty or Spin entry split'
 NEW_REFUSAL = 'uses an unsupported Spin or unknown entry split'
 GUARD_REFUSAL = 'the satellite settlement authority refuses a Spin entry split, unknown entry flags or a Diamond bounty'
@@ -572,9 +572,12 @@ SELECT json_build_object(
     check('GREEN-the-late-seat-funds-its-head-beside-the-paid-knockout',
           got == {'kind': 'seat', 'pools': '97.50/105.00/35.00/22.50/3', 'escrow': '97.50/70.00/22.50'}, got)
 
-    # A four-table-cap winner: a noncash ticket carrying the same split.
+    # A four-table-cap winner: a noncash ticket carrying the same split. The
+    # stubbed load counts every open seat, so it is 5: four other games plus
+    # the chair at this satellite, which the settlement subtracts because it
+    # releases that seat in the same transaction (20261017033733).
     S, T = '10000000-0000-4000-8000-0000000000ca', '20000000-0000-4000-8000-0000000000ca'
-    ok, err, outp = attempt(settle(S, T, 2, 95.00, 1, target_sql=target_row(T), winner_load=4) + f"""
+    ok, err, outp = attempt(settle(S, T, 2, 95.00, 1, target_sql=target_row(T), winner_load=5) + f"""
 INSERT INTO public.club_members(club_id, user_id) VALUES ({CLUB}, '00000000-0000-4000-8000-000000000001');
 SELECT json_build_object('kind', (SELECT delivery_kind FROM public.tournament_satellite_awards WHERE tournament_id = '{S}'),
   'ticket', (SELECT json_build_object('value', value, 'prize', entry_prize, 'bounty', entry_bounty, 'fee', entry_fee)

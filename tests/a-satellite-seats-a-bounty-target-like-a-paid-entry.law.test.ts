@@ -162,7 +162,26 @@ describe('a satellite seats a bounty target like a paid entry', () => {
     const predicate = ts.slice(0, ts.indexOf('\n}\n'));
     expect(predicate).toContain("typeof flag !== 'boolean'");
     expect(predicate).not.toContain("variant === 'progressive_bounty'");
+    // The engine refuses a Diamond (or unread-host) bounty target, as the
+    // database does, so it never opens a feeder the insert would refuse.
+    expect(predicate).toContain('row.diamond_host !== false');
+    // A late ticket seat into a running bounty event compares the bank with
+    // its pool less what knockouts have paid, as both settlement authorities do.
+    expect(body('fn_ca_register_for_tournament_with_ticket_for')).toContain(
+      'round(COALESCE(v_t.bounty_pool,0)-COALESCE(v_t.bounty_pool_paid,0),2)'
+    );
     expect(RECURRING).toContain('export function satelliteSourceIsSupported(');
+  });
+
+  it('keeps the 2026-10-17 capped-winner repair in both authorities', () => {
+    // 20261017033733 changed both authorities after this migration was first
+    // built; its postimages are derived from that production text, so they
+    // must still carry both of its rules rather than restoring the older one.
+    for (const name of AUTHORITIES) {
+      const src = body(name);
+      expect(src).toContain('THE DYING SATELLITE IS NOT A GAME (2026-10-17)');
+      expect(src).toContain('A CAPPED DIAMOND WINNER IS PAID, NOT HELD (2026-10-17)');
+    }
   });
 
   it('ships as one guarded transaction that declares every postimage', () => {

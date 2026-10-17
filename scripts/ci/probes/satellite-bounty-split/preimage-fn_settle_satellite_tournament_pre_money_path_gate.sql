@@ -661,20 +661,44 @@ BEGIN
         END IF;
       ELSIF v_target_open AND v_seat_count < v_target_slots THEN
         v_cap_load:=public.fn_concurrent_game_load(
-          v_finisher.user_id,NULL,NULL,v_target_id);
+          v_finisher.user_id,NULL,NULL,v_target_id)
+          -- THE DYING SATELLITE IS NOT A GAME (2026-10-17). This settlement
+          -- releases the winner's seats at this satellite in this same
+          -- transaction, so those seats cannot be the games that cap the
+          -- winner. Counting them held Sunday Deep Stack Satellite 10 RUNNING
+          -- and unpaid for two hours on 2026-10-16 while its sole survivor
+          -- "sat" at the table this settlement was about to close. The
+          -- subtraction mirrors clause (1) of fn_concurrent_game_load exactly,
+          -- so it removes only seats that clause counted.
+          - (SELECT count(*)::int
+               FROM public.table_seats zts
+               JOIN public.tables zt ON zt.id = zts.table_id
+              WHERE zts.user_id = v_finisher.user_id
+                AND zts.left_at IS NULL
+                AND zt.status <> 'closed'
+                AND zt.tournament_id = p_tournament_id
+                AND NOT EXISTS (
+                  SELECT 1 FROM public.tournaments ztr
+                   WHERE ztr.id = zt.tournament_id
+                     AND ztr.status IN ('COMPLETING','COMPLETED','CANCELLED')));
         IF v_cap_load>=4 THEN
-          -- DIAMOND PHASE 9: the chip estate holds a capped winner's funded
-          -- entry in a noncash chip entry ticket. No Diamond entry ticket
-          -- exists, so a Diamond settlement is refused by name - nothing has
-          -- moved - and is retried once the winner is below the cap.
           IF v_diamond THEN
-            RAISE EXCEPTION
-              'diamond_satellite_winner_at_the_table_cap: satellite % award % user %',
-              p_tournament_id, v_place, v_finisher.user_id USING ERRCODE = '55000';
-          END IF;
+            -- A CAPPED DIAMOND WINNER IS PAID, NOT HELD (2026-10-17). The
+            -- refusal this replaces promised "the engine retries", but a
+            -- winner seated at four long events keeps the satellite RUNNING,
+            -- undealt and unpaid for hours - a deadlock, not a rule. The
+            -- duplicate-qualification rule already pays a Diamond ticket's
+            -- value as money through the same pay door (fn_credit_and_log ->
+            -- fn_poker_diamond_tournament_pay); the capped winner takes
+            -- exactly that path, whole Diamonds, obligation opened and
+            -- closed in this transaction, so the event always finishes and
+            -- the winner is always paid at once.
+            v_delivery_kind := 'cash';
+          ELSE
           -- The cap remains absolute. The winner receives the funded entry as
           -- a noncash tournament ticket instead of a fifth game or wallet chips.
           v_delivery_kind := 'ticket';
+          END IF;
         ELSE
           v_delivery_kind := 'seat';
         END IF;

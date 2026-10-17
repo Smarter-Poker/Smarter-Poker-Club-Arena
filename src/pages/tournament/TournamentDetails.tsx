@@ -87,6 +87,7 @@ import type {
 import { TABS, normaliseTabId } from '../../components/tournament/details/types';
 import { blindLevelMinutes } from '../../components/lobby/tournamentFigures';
 import { reportError } from '../../utils/errorReporter';
+import { platformFrozenMessage } from '../../utils/platformFrozen';
 import { formatBuyIn } from '../../utils/buyIn';
 import { useTournamentRegistration, isLateStatus } from '../../hooks/useTournamentRegistration';
 import { useMysteryBounty } from '../../hooks/useMysteryBounty';
@@ -1598,7 +1599,11 @@ export default function TournamentDetails({
       void loadTournament(undefined, { quiet: true });
     } catch (error) {
       reportError(error, 'TournamentDetails.reentry_failed');
-      toast.error(`Re-Entry failed: ${(error as Error).message || 'Unknown error'}`);
+      toast.error(
+        // Maintenance break refusal is definitive (2026-10-16).
+        platformFrozenMessage(error) ??
+          `Re-Entry failed: ${(error as Error).message || 'Unknown error'}`
+      );
     } finally {
       setIsReEntering(false);
     }

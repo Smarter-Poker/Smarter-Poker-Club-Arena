@@ -10,6 +10,7 @@
 
 import { supabase } from '../lib/supabase';
 import { cashBuyInRefusalText } from '../lib/cashBuyIn';
+import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 
 export interface LobbySeat {
   seat_number: number;
@@ -294,7 +295,8 @@ export const SEAT_CHANGE_REFUSALS: Record<string, string> = {
   SEAT_CHANGE_MANUAL_GAME: 'A Manual Table Has No Seat Change.',
   MOVE_PENDING: 'You Are Already Being Moved.',
   NOT_IN_GAME: 'You Are Not Seated In This Game.',
-  PLATFORM_FROZEN: 'The Platform Is On Its Maintenance Break.',
+  // Maintenance break refusal is definitive (2026-10-16).
+  PLATFORM_FROZEN: PLATFORM_FROZEN_MESSAGE,
 };
 
 /** Turn a door's exception into the sentence the player reads. */
@@ -411,6 +413,8 @@ export const JOIN_GAME_REFUSALS: Record<string, string> = {
   GAME_CLOSED: 'This Game Is Not Taking Players.',
   GAME_NOT_FOUND: 'This Game Is No Longer Here.',
   NOT_AUTHENTICATED: 'Sign In To Join A Game.',
+  // Maintenance break refusal is definitive (2026-10-16).
+  PLATFORM_FROZEN: PLATFORM_FROZEN_MESSAGE,
 };
 
 /**

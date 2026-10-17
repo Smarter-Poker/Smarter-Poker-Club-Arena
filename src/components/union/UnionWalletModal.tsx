@@ -50,6 +50,7 @@ import { reportError } from '../../utils/errorReporter';
 import { fmt, formatWalletChips } from '../../utils/format';
 import { unionApi } from '../../services/UnionApiService';
 import { classifyCashierRpcFailure } from '../../services/CashierResilience';
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../../utils/platformFrozen';
 import {
   clearUnionWalletOperation,
   reserveUnionWalletOperation,
@@ -175,9 +176,13 @@ const rpcFailure = (
   status: number | null | undefined,
   refusal: string
 ): Error =>
-  classifyCashierRpcFailure(error, status) === 'refused'
-    ? definitiveRefusal(error?.message || refusal)
-    : new Error(UNION_OUTCOME_UNKNOWN);
+  // Maintenance break refusal (2026-10-16): name the break, but keep the
+  // operation id (not `definitive`), so a repeat can only ever replay.
+  isPlatformFrozenError(error)
+    ? new Error(PLATFORM_FROZEN_MESSAGE)
+    : classifyCashierRpcFailure(error, status) === 'refused'
+      ? definitiveRefusal(error?.message || refusal)
+      : new Error(UNION_OUTCOME_UNKNOWN);
 
 /** Ledger money: whole chips print whole (5,000), cents print only when held (32,482.58). */
 const money = (n: number | null | undefined) =>
@@ -750,7 +755,13 @@ export function UnionWalletModal({
     } catch (err: any) {
       if (err?.definitive === true) clearUnionWalletOperation(intentScope, opId);
       reportError(err, 'UnionWalletModal.action_failed');
-      setNotice({ ok: false, text: err.message || 'The Action Was Refused.' });
+      setNotice({
+        ok: false,
+        // Maintenance break refusal is definitive (2026-10-16).
+        text: isPlatformFrozenError(err)
+          ? PLATFORM_FROZEN_MESSAGE
+          : err.message || 'The Action Was Refused.',
+      });
     } finally {
       busyRef.current = false;
       setBusy(false);

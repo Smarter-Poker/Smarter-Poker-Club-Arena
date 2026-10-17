@@ -16,6 +16,7 @@ import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import {
   playerDisplayName,
   PLAYER_NAME_COLUMNS,
@@ -1175,6 +1176,9 @@ class AgentServiceClass {
           p_reason: 'Agent Transfer To Player',
           p_op_id: operation.operationId,
         });
+        // Maintenance break refusal (2026-10-16): name the break and keep
+        // the retry key; a repeat after the break runs fresh.
+        if (error && isPlatformFrozenError(error)) throw new Error(PLATFORM_FROZEN_MESSAGE);
         if (error) throw error;
         if (!confirmedAgentWalletReceipt(data, amount, 'agent_send', destination)) {
           throw new Error(data?.error || 'The Cashier Did Not Confirm That Transfer');
@@ -1385,6 +1389,8 @@ class AgentServiceClass {
     });
     if (error) {
       if ((error as { code?: string }).code === '42501') throw error;
+      // Maintenance break refusal is definitive (2026-10-16).
+      if (isPlatformFrozenError(error)) return { success: false, error: PLATFORM_FROZEN_MESSAGE };
       return {
         success: false,
         error:

@@ -19,6 +19,7 @@ import { triggerHaptic } from '../../services/HapticService';
 import { resolveAvatarDisplay } from '../../utils/avatarUtils';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { reportError } from '../../utils/errorReporter';
+import { platformFrozenMessage } from '../../utils/platformFrozen';
 import { fetchAllRows } from '../../utils/fetchAllRows';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
@@ -406,7 +407,9 @@ export default function AgentPromoPanel({
       }
     } catch (e: unknown) {
       if (!current()) return;
-      const msg = e instanceof Error ? e.message : 'Distribution failed';
+      // Maintenance break refusal is definitive (2026-10-16).
+      const msg =
+        platformFrozenMessage(e) ?? (e instanceof Error ? e.message : 'Distribution failed');
       showToast(msg, 'error');
     } finally {
       if (current()) setDistributing(false);

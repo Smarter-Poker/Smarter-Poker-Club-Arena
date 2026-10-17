@@ -154,6 +154,8 @@ import {
   type CashierBatchReceiptRow,
 } from '../utils/cashierBatch';
 import { chipKindWord } from '../utils/chipKindWord';
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
+import { useMaintenanceBreak } from '../hooks/useMaintenanceBreak';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -495,6 +497,14 @@ function CashierTradeWorkspace() {
   const [recordsReload, setRecordsReload] = useState(0);
   const [receipt, setReceipt] = useState<TradeRecordRow | null>(null);
   const [isOnline, setIsOnline] = useState(readCashierOnlineState);
+  /* THE BREAK IS NOT A FAILURE (2026-10-16). Dan pressed Confirm three times
+     inside the :55 break, Postgres refused each send, and the page called it
+     "Transfer Failed". While the platform is frozen the money controls wait
+     and say why; the database stays the authority either way. */
+  const { maintenanceBreak } = useMaintenanceBreak();
+  const breakFrozen =
+    maintenanceBreak.active &&
+    ['counting_down', 'finalizing', 'resuming'].includes(maintenanceBreak.phase);
   const [lastVerifiedAt, setLastVerifiedAt] = useState<number | null>(null);
   const [reconciling, setReconciling] = useState(false);
   const reconcilingRef = useRef(false);
@@ -2512,6 +2522,21 @@ function CashierTradeWorkspace() {
           }
         } catch (e) {
           batchFailureReason ||= cashierReasonCode(e);
+          if (isPlatformFrozenError(e)) {
+            /* The maintenance break, not a lost connection (2026-10-16). The
+               retry keys are kept all the same: a repeat after the break can
+               only replay or run fresh. */
+            for (const target of chunk) {
+              const failure = {
+                userId: target.userId,
+                name: target.name,
+                message: PLATFORM_FROZEN_MESSAGE,
+              };
+              failed.push(failure);
+              uncertain.push(failure);
+            }
+            continue;
+          }
           for (const target of chunk) {
             const failure = {
               userId: target.userId,
@@ -2640,11 +2665,14 @@ function CashierTradeWorkspace() {
     if (failed.length > 0) {
       // The one branch that did not exist. A batch where every target failed
       // produced no summary at all.
-      toast?.error?.(
-        uncertain.length > 0
-          ? `Transfer Outcomes Need Verification For ${uncertain.length} Recipients`
-          : `${failed.length} Transfers Were Refused. No Chips Were Moved For Those Recipients`
-      );
+      if (failed.some((failure) => failure.message === PLATFORM_FROZEN_MESSAGE))
+        toast?.error?.(PLATFORM_FROZEN_MESSAGE);
+      else
+        toast?.error?.(
+          uncertain.length > 0
+            ? `Transfer Outcomes Need Verification For ${uncertain.length} Recipients`
+            : `${failed.length} Transfers Were Refused. No Chips Were Moved For Those Recipients`
+        );
     }
   };
 
@@ -4887,6 +4915,7 @@ function CashierTradeWorkspace() {
                         ink: 'blue',
                         disabled:
                           !isOnline ||
+                          breakFrozen ||
                           picked.length === 0 ||
                           cashierAuthorityBlocked ||
                           (amountModal === 'send' && selectedSourceBalance === null) ||
@@ -5167,21 +5196,23 @@ function CashierTradeWorkspace() {
                     )}
                     <div className={styles.modalTotal}>Total: {exactChipFigure(previewTotal)}</div>
                     <div id="cashier-amount-validation" className={styles.modalHint} role="status">
-                      {!batchPlan.ok
-                        ? amountModal === 'ticket'
-                          ? batchPlan.error
-                          : `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
-                        : cashierAuthorityBlocked || !canHoldAgentWallet(myRole)
-                          ? ''
-                          : amountModal === 'send' && selectedSourceBalance === null
-                            ? 'Selected Wallet Could Not Be Verified'
-                            : batchPlan.total >
-                                (amountModal === 'send'
-                                  ? (selectedSourceBalance ?? Number.POSITIVE_INFINITY) +
-                                    (sendSource === 'agent_wallet' ? agentCredit : 0)
-                                  : myBalance)
-                              ? 'Insufficient Chips In The Funding Wallet'
-                              : ''}
+                      {breakFrozen
+                        ? PLATFORM_FROZEN_MESSAGE
+                        : !batchPlan.ok
+                          ? amountModal === 'ticket'
+                            ? batchPlan.error
+                            : `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
+                          : cashierAuthorityBlocked || !canHoldAgentWallet(myRole)
+                            ? ''
+                            : amountModal === 'send' && selectedSourceBalance === null
+                              ? 'Selected Wallet Could Not Be Verified'
+                              : batchPlan.total >
+                                  (amountModal === 'send'
+                                    ? (selectedSourceBalance ?? Number.POSITIVE_INFINITY) +
+                                      (sendSource === 'agent_wallet' ? agentCredit : 0)
+                                    : myBalance)
+                                ? 'Insufficient Chips In The Funding Wallet'
+                                : ''}
                     </div>
                     {transferFailures.length > 0 && (
                       <div className={styles.modalFailures} role="alert">
@@ -5256,6 +5287,7 @@ function CashierTradeWorkspace() {
                         ink: 'red',
                         disabled:
                           !isOnline ||
+                          breakFrozen ||
                           mgmtClaiming ||
                           cashierAuthorityBlocked ||
                           !parseTradeAmount(mgmtClaimAmount).ok,

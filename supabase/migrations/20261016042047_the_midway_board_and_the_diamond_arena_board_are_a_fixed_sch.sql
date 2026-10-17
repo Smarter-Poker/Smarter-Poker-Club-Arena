@@ -33,11 +33,7 @@
 -- Idempotent: a (club, name) already carried by an active schedule row is
 -- left alone. No DDL; data only.
 --
--- @live-proof: (SELECT count(*) FROM public.tournament_schedules WHERE active AND config ? 'fixedBoard' AND club_id IN ('fade0000-0000-0000-0000-000000000001', '002c2d27-9584-4e52-835a-bb2be148fc81')) >= 50
--- (>= since 2026-10-17: the board is engine-owned and grew deliberately -
---  #7173 added Sunday Funday, 26 rows per club. This migration installed the
---  first 25 per club; the proof asserts its installation survives, not that
---  the board never grows. It was '= 50' and went stale the day the board grew.)
+-- @live-proof: (SELECT count(*) FROM public.tournament_schedules WHERE active AND config ? 'fixedBoard' AND club_id IN ('fade0000-0000-0000-0000-000000000001', '002c2d27-9584-4e52-835a-bb2be148fc81')) = 50
 --
 -- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten

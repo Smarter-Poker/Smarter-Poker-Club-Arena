@@ -55,6 +55,7 @@ import { createPortal } from 'react-dom';
 import { reportError } from '../../utils/errorReporter';
 import { fmt, formatWalletChips } from '../../utils/format';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
+import { exactChipFigure } from '../../utils/cashierAmount';
 import unionApi from '../../services/UnionApiService';
 import {
   WalletDesk,
@@ -152,7 +153,10 @@ function when(iso: string | null | undefined): string {
 function TxRows({ rows, heading }: { rows: TxRow[]; heading: string }) {
   return (
     <>
-      <WalletDeskHeading title={heading} meta={`${fmt(rows.length)} Entries`} />
+      <WalletDeskHeading
+        title={heading}
+        meta={`${fmt(rows.length)} ${rows.length === 1 ? 'Entry' : 'Entries'}`}
+      />
       <div className="wdesk__list">
         {rows.map((r) => {
           const inbound = r.direction === 'credit';
@@ -169,7 +173,7 @@ function TxRows({ rows, heading }: { rows: TxRow[]; heading: string }) {
               figure={
                 <span className={inbound ? 'wdesk__in' : 'wdesk__out'}>
                   {inbound ? '+' : '-'}
-                  {fmt(r.amount)}
+                  {exactChipFigure(r.amount)}
                 </span>
               }
             />
@@ -284,7 +288,7 @@ export default function UnionTreasuryDetailModal({
       ? rake && rake.drift !== null
         ? rake.drift === 0
           ? 'Wallet And Ledger Agree'
-          : `Drift ${fmt(rake.drift)}`
+          : `Drift ${exactChipFigure(rake.drift)}`
         : null
       : mode === 'backup'
         ? dest === 'main'
@@ -341,18 +345,22 @@ export default function UnionTreasuryDetailModal({
             <WalletDeskRow name="Wallet Balance" figure={formatWalletChips(rake.balance)} />
             <WalletDeskRow
               name="Ledger Credits"
-              figure={<span className="wdesk__in">{fmt(rake.ledger?.credits ?? 0)}</span>}
+              figure={
+                <span className="wdesk__in">{exactChipFigure(rake.ledger?.credits ?? 0)}</span>
+              }
             />
             <WalletDeskRow
               name="Ledger Debits"
-              figure={<span className="wdesk__out">{fmt(rake.ledger?.debits ?? 0)}</span>}
+              figure={
+                <span className="wdesk__out">{exactChipFigure(rake.ledger?.debits ?? 0)}</span>
+              }
             />
             <WalletDeskRow
               name="Drift"
               sub="The Wallet Balance Minus The Ledger Net, Read In One Moment"
               figure={
                 <span className={rake.drift ? 'wdesk__out' : 'wdesk__in'}>
-                  {rake.drift === null ? '-' : fmt(rake.drift)}
+                  {rake.drift === null ? '-' : exactChipFigure(rake.drift)}
                 </span>
               }
             />
@@ -365,7 +373,7 @@ export default function UnionTreasuryDetailModal({
 
           <WalletDeskHeading
             title={`By Club, Last ${rake.windowDays} Days`}
-            meta={`${fmt(rake.byClub.length)} Clubs`}
+            meta={`${fmt(rake.byClub.length)} ${rake.byClub.length === 1 ? 'Club' : 'Clubs'}`}
           />
           <div className="wdesk__list">
             {rake.byClub.map((c) => (
@@ -373,7 +381,7 @@ export default function UnionTreasuryDetailModal({
                 key={c.club_id}
                 name={c.club_name}
                 sub={`${fmt(c.players)} Players · ${fmt(c.player_hands)} Player Hands`}
-                figure={fmt(c.rake)}
+                figure={exactChipFigure(c.rake)}
               />
             ))}
             {rake.byClub.length === 0 && (
@@ -391,7 +399,7 @@ export default function UnionTreasuryDetailModal({
                 key={d.day}
                 name={d.day}
                 sub={`${fmt(d.players)} Players · ${fmt(d.player_hands)} Player Hands`}
-                figure={fmt(d.rake)}
+                figure={exactChipFigure(d.rake)}
               />
             ))}
           </div>
@@ -411,7 +419,7 @@ export default function UnionTreasuryDetailModal({
                 credits union_wallets.promo_wallet, so this figure does not
                 move when that transfer runs; labelled to say so. */}
             <WalletDeskRow name="Pool Promo Bank" figure={formatWalletChips(bbj.banks.promo)} />
-            <WalletDeskRow name="Banked Total" figure={fmt(bbj.banks.total)} />
+            <WalletDeskRow name="Banked Total" figure={exactChipFigure(bbj.banks.total)} />
           </div>
           <p className="wdesk__empty">
             {bbj.splitPct
@@ -419,7 +427,7 @@ export default function UnionTreasuryDetailModal({
               : ''}
             The 50/25/25 Rule Governs Each Allocation, And Payouts Come Out Of Main Only, So A
             Healthy Pool Drifts Away From It As It Pays. Allocated Lifetime{' '}
-            {fmt(bbj.allocatedLifetime)}.
+            {exactChipFigure(bbj.allocatedLifetime)}.
           </p>
 
           {mode === 'backup' && (
@@ -480,11 +488,11 @@ export default function UnionTreasuryDetailModal({
                     {r.club_name}
                     {r.agent_name ? <span className="wdesk__sep">{r.agent_name}</span> : null}
                     <span className="wdesk__sep">
-                      {`Main ${fmt(r.main_amount)}, Backup ${fmt(r.backup_amount)}, Promo ${fmt(r.promo_amount)}, ${fmt(r.hands)} Hands`}
+                      {`Main ${exactChipFigure(r.main_amount)}, Backup ${exactChipFigure(r.backup_amount)}, Promo ${exactChipFigure(r.promo_amount)}, ${fmt(r.hands)} Hands`}
                     </span>
                   </>
                 }
-                figure={fmt(r.bbj_amount)}
+                figure={exactChipFigure(r.bbj_amount)}
               />
             ))}
             {bbj.creditedBy.length === 0 && (
@@ -498,8 +506,8 @@ export default function UnionTreasuryDetailModal({
               <WalletDeskRow
                 key={d.day}
                 name={d.day}
-                sub={`Main ${fmt(d.main)}, Backup ${fmt(d.backup)}, Promo ${fmt(d.promo)}, ${fmt(d.players)} Players`}
-                figure={fmt(d.bbj)}
+                sub={`Main ${exactChipFigure(d.main)}, Backup ${exactChipFigure(d.backup)}, Promo ${exactChipFigure(d.promo)}, ${fmt(d.players)} Players`}
+                figure={exactChipFigure(d.bbj)}
               />
             ))}
           </div>

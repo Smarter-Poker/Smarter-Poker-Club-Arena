@@ -240,7 +240,9 @@ export async function selectLobbyPreference(
     tab.click({ timeout: SAVE_TIMEOUT_MS }).then(async () => {
       proof.record('selection-clicked', {
         intended: label,
-        ariaSelected: await tab.getAttribute('aria-selected'),
+        ariaSelected: await tab.getAttribute('aria-selected', {
+          timeout: Math.max(1, SAVE_TIMEOUT_MS - (Date.now() - started)),
+        }),
       });
     }),
   ]);
@@ -261,34 +263,49 @@ export async function selectLobbyPreference(
     // Observe the isolated tab before restoration closes its document. Do not
     // trigger locator handlers, retry the action or read player/account text.
     try {
-      const geometry = await page.evaluate((label) => {
-        const target = [
-          ...document.querySelectorAll<HTMLElement>(
-            '[role="tablist"][aria-label="Game Type"] [role="tab"]'
-          ),
-        ].find((element) => element.textContent?.trim() === label);
-        if (!target) return { target: null };
-        const rect = target.getBoundingClientRect();
-        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-        const style = getComputedStyle(target);
-        return {
-          target: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-          viewport: { width: innerWidth, height: innerHeight },
-          connected: target.isConnected,
-          disabled:
-            target.hasAttribute('disabled') || target.getAttribute('aria-disabled') === 'true',
-          selected: target.getAttribute('aria-selected'),
-          visibility: style.visibility,
-          pointerEvents: style.pointerEvents,
-          hit: hit
-            ? {
-                tag: hit.tagName,
-                role: hit.getAttribute('role'),
-                targetOrChild: target.contains(hit),
-              }
-            : null,
-        };
-      }, label);
+      const geometry = await page.evaluate(
+        ({ label, ownerId, clubId, tabKeys }) => {
+          const target = [
+            ...document.querySelectorAll<HTMLElement>(
+              '[role="tablist"][aria-label="Game Type"] [role="tab"]'
+            ),
+          ].find((element) => element.textContent?.trim() === label);
+          let cachedTab: string | null = null;
+          let unsynced: boolean | null = null;
+          try {
+            const key = `ca_lobby_view_${ownerId}:${clubId}`;
+            const raw = JSON.parse(localStorage.getItem(key) || 'null');
+            cachedTab = typeof raw?.tab === 'string' && tabKeys.includes(raw.tab) ? raw.tab : null;
+            unsynced = localStorage.getItem(`${key}:unsynced`) === '1';
+          } catch {
+            // Null means unreadable, never an invented synchronized state.
+          }
+          if (!target) return { target: null, cachedTab, unsynced };
+          const rect = target.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+          const style = getComputedStyle(target);
+          return {
+            cachedTab,
+            unsynced,
+            target: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            viewport: { width: innerWidth, height: innerHeight },
+            connected: target.isConnected,
+            disabled:
+              target.hasAttribute('disabled') || target.getAttribute('aria-disabled') === 'true',
+            selected: target.getAttribute('aria-selected'),
+            visibility: style.visibility,
+            pointerEvents: style.pointerEvents,
+            hit: hit
+              ? {
+                  tag: hit.tagName,
+                  role: hit.getAttribute('role'),
+                  targetOrChild: target.contains(hit),
+                }
+              : null,
+          };
+        },
+        { label, ownerId, clubId, tabKeys: Object.values(TAB_KEYS) }
+      );
       proof.record('selection-failure-geometry', geometry);
     } catch (error) {
       proof.record('selection-failure-geometry-unavailable', {

@@ -62,7 +62,7 @@ test.afterEach(async ({ page }, testInfo) => {
   diagnostics.delete(page);
 });
 
-test.use({ ...devices['iPhone 13'] });
+test.use({ ...devices['iPhone 13'], trace: 'retain-on-failure' });
 
 async function openLobby(page: Page) {
   // The Diamond Spins offer opens on the answer to this read. Listen before

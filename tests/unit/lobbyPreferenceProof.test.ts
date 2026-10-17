@@ -383,6 +383,15 @@ describe('cold-return preference proof', () => {
     expect(source).toContain('failures.push(cleanupError)');
     expect(source).toContain('new AggregateError(failures,');
     expect(source).toContain('if (failures.length === 1) throw failures[0]');
+    expect(source).toContain("trace: 'retain-on-failure'");
+    const helper = readFileSync(
+      resolve(__dirname, '../e2e/support/lobbyPreferenceProof.ts'),
+      'utf8'
+    );
+    expect(helper).toContain('`ca_lobby_view_${ownerId}:${clubId}`');
+    expect(helper).toContain('tabKeys.includes(raw.tab)');
+    expect(helper).toContain("localStorage.getItem(`${key}:unsynced`) === '1'");
+    expect(helper).toContain('Math.max(1, SAVE_TIMEOUT_MS - (Date.now() - started))');
     expect(source).toContain('timeout: 120_000');
     expect(source).not.toContain('test.setTimeout');
     expect(source).toContain('preferenceDiagnostics.delete(page)');

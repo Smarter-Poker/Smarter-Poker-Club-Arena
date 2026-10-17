@@ -1,0 +1,6 @@
+{
+  "_owner": "claude/club-data-screen-fast-path. Migration 20261017221938_the_fourteen_day_club_data_screen_reads_only_what_it_shows replaces ca_club_data_screen only; installed through apply-merged-migration after merge.",
+  "tables": [],
+  "functions": ["ca_club_data_screen"],
+  "columns": {}
+}

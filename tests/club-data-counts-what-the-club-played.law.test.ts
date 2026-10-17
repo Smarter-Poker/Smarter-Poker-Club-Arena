@@ -274,9 +274,16 @@ describe('the Report tables are written by the club the money moved through', ()
 
   it('the fourteen-day screen describes only the rows it shows', () => {
     const b = squash(latest('ca_club_data_screen'));
-    // players are counted for the page's rows only, never for every game
+    // 20261017221938: the plain screen takes its totals in one aggregate,
+    // chooses its rows newest day first, and counts players only for them.
+    expect(b).toContain("IF v_game = 'ALL' AND v_stakes = 'ALL' AND v_q IS NULL THEN");
+    expect(b).toContain('FOR v_day IN SELECT u.d FROM unnest(v_days) u(d) ORDER BY u.d DESC LOOP');
+    expect(b).toContain('AND f.game_id = ANY (v_cands)');
+    // the filtered form counts players for the page's rows by exact day lookups
     expect(b).toContain('AND f.game_id IN (SELECT tp.game_id FROM top tp)');
-    expect(b).not.toMatch(/count\(DISTINCT f\.user_id\) FILTER/);
+    expect(b).toContain(
+      'WHERE f.club_id = p_club_id AND f.stat_date = ANY (v_days) AND f.user_id <>'
+    );
     // tournaments are described for every game only when a filter reads them
     expect(b).toContain("v_attrs := v_game IN ('MTT', 'SNG') OR v_q IS NOT NULL;");
     expect(b).toMatch(

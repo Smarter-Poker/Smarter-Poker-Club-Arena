@@ -388,14 +388,10 @@ async function runTwoTargetFlow(estate, options = {}) {
                     : (options.initialRoster ?? ownerRoster)
                   : table === 'clubs'
                     ? (options.finalClub ?? club)
-                    : table === 'tables'
-                      ? (options.retiredTables ?? [])
-                      : table === 'managed_game_contract_versions'
-                        ? (options.contractVersions ?? [{ version: 1 }])
-                        : filters.id
-                          ? (options.finalGames?.[filters.id] ??
-                            estate.find((g) => g.id === filters.id))
-                          : estate;
+                    : filters.id
+                      ? (options.finalGames?.[filters.id] ??
+                        estate.find((g) => g.id === filters.id))
+                      : estate;
             return {
               select() {
                 return this;
@@ -445,11 +441,20 @@ async function runTwoTargetFlow(estate, options = {}) {
           async rpc(name, args) {
             calls.push({ name, args });
             if (name === 'fn_create_club_atomic') return { data: club };
-            if (name === 'fn_execute_managed_game_command') {
-              const answer = options.closeAnswer?.(args) ?? { ok: true };
-              if (answer.ok === true) {
+            if (name === 'fn_cash_game_switch_off') {
+              const answer = options.switchOffAnswer?.(args) ?? {
+                ok: true,
+                game_id: args.p_game_id,
+                enabled: false,
+                replayed: false,
+              };
+              if (
+                answer.ok === true &&
+                answer.game_id === retired9.id &&
+                !options.keepRetiredEnabled
+              ) {
                 const row = estate.find((g) => g.id === retired9.id);
-                if (row) Object.assign(row, { enabled: false, closed_at: '2026-10-17T12:00:00Z' });
+                if (row) Object.assign(row, { enabled: false });
               }
               return { data: answer };
             }
@@ -823,41 +828,24 @@ test('normal creation preserves both original Classic pilots and creates distinc
   assert.equal(new Set(created.map((c) => c.args.p_template)).size, 2);
 });
 
-const retiredMain = [
-  { id: 'retired-main', role: 'main', status: 'running', cluster_id: retired9.id },
-];
-
-test('the replaced nine-seat Madness is never closed over a seated player and nothing is created', async () => {
+test('the replaced nine-seat Madness is switched off through the owner door before six-seat creation', async () => {
   const estate = [game, { ...retired9 }];
-  let failedCalls;
-  await assert.rejects(
-    runTwoTargetFlow(estate, {
-      retiredTables: retiredMain,
-      closeAnswer: () => ({ ok: false, reason: 'players_seated' }),
-      inspectCalls: (calls) => {
-        failedCalls = calls;
-      },
+  const { receipt, calls } = await runTwoTargetFlow(estate, {
+    switchOffAnswer: (args) => ({
+      ok: true,
+      game_id: args.p_game_id,
+      enabled: false,
+      replayed: false,
+      event_id: 77,
+      seated_at_switch_off: 9,
     }),
-    /Still Has Seated Players; Run This Same Setup Again After They Leave Normally/
-  );
-  assert.equal(failedCalls.filter((c) => c.name === 'fn_cash_game_create').length, 0);
-  assert.equal(failedCalls.filter((c) => c.name === 'fn_lightning_operator_control').length, 0);
-  assert.equal(estate.find((g) => g.id === retired9.id).enabled, true);
-});
-
-test('an empty replaced nine-seat Madness closes through the owner door before six-seat creation', async () => {
-  const estate = [game, { ...retired9 }];
-  const { receipt, calls } = await runTwoTargetFlow(estate, { retiredTables: retiredMain });
-  const close = calls.find((c) => c.name === 'fn_execute_managed_game_command');
-  assert.deepEqual(
-    [close.args.p_kind, close.args.p_game_id, close.args.p_action, close.args.p_expected_version],
-    ['table', 'retired-main', 'close', 1]
-  );
-  assert.match(close.args.p_command_id, /^[0-9a-f-]{36}$/);
+  });
+  const off = calls.find((c) => c.name === 'fn_cash_game_switch_off');
+  assert.equal(off.args.p_game_id, retired9.id);
+  assert.equal(off.args.p_request_id, 'a6f1c0de-5b7e-4d2a-9c3f-6e8b1d4a7f20');
+  assert.match(off.args.p_reason, /Lightning Pilot NLH Madness 6/);
   const order = calls.map((c) => c.name);
-  assert.ok(
-    order.indexOf('fn_execute_managed_game_command') < order.indexOf('fn_cash_game_create')
-  );
+  assert.ok(order.indexOf('fn_cash_game_switch_off') < order.indexOf('fn_cash_game_create'));
   assert.deepEqual(
     calls
       .filter((c) => c.name === 'fn_cash_game_create')
@@ -865,48 +853,38 @@ test('an empty replaced nine-seat Madness closes through the owner door before s
     [['Lightning Pilot NLH Madness 6', 6]]
   );
   assert.deepEqual(
-    receipt.retirements.map((r) => [r.gameName, r.outcome]),
-    [['Lightning Pilot NLH Madness 9', 'closed']]
+    receipt.retirements.map((r) => [r.gameName, r.outcome, r.seatedAtSwitchOff]),
+    [['Lightning Pilot NLH Madness 9', 'switched_off', 9]]
   );
-  assert.deepEqual(
-    receipt.targets.map((t) => [t.gameName, t.handedness]),
-    [
-      [PILOT.gameName, 6],
-      ['Lightning Pilot NLH Madness 6', 6],
-    ]
-  );
+  assert.equal(estate.find((g) => g.id === retired9.id).enabled, false);
+  // Nobody is moved: no managed close, seat or cash-out door is touched.
+  assert.ok(calls.every((c) => !/managed_game|leave|cashout|cash_out|seat/i.test(c.name)));
 });
 
-test('a replaced target already closed is read, not closed again', async () => {
-  const estate = [game, { ...retired9, enabled: false, closed_at: '2026-10-17T12:00:00Z' }];
+test('a replaced target already switched off is read, not switched again', async () => {
+  const estate = [game, { ...retired9, enabled: false }];
   const { receipt, calls } = await runTwoTargetFlow(estate);
-  assert.equal(calls.filter((c) => c.name === 'fn_execute_managed_game_command').length, 0);
+  assert.equal(calls.filter((c) => c.name === 'fn_cash_game_switch_off').length, 0);
   assert.deepEqual(
     receipt.retirements.map((r) => r.outcome),
-    ['already_closed']
+    ['already_switched_off']
   );
 });
 
-for (const [label, options, pattern] of [
+for (const [label, answer, pattern] of [
   [
-    'an unexplained close refusal',
-    { closeAnswer: () => ({ ok: false, reason: 'stale_contract_version' }) },
-    /Close Refused: stale_contract_version/,
+    'a refusal',
+    { ok: false, reason: 'lightning_state_requires_operator_drain' },
+    /Switch Off Refused: lightning_state_requires_operator_drain/,
   ],
-  [
-    'two open main tables',
-    { retiredTables: [...retiredMain, { ...retiredMain[0], id: 'second' }] },
-    /Main Table Is Ambiguous/,
-  ],
-  ['a missing contract version', { contractVersions: [] }, /Contract Version Is Missing/],
+  ['an answer for another game', { ok: true, game_id: 'other' }, /Switch Off Refused/],
 ])
-  test(`retirement refuses ${label} before any creation`, async () => {
+  test(`retirement stops on ${label} before any creation`, async () => {
     const estate = [game, { ...retired9 }];
     let failedCalls;
     await assert.rejects(
       runTwoTargetFlow(estate, {
-        retiredTables: retiredMain,
-        ...options,
+        switchOffAnswer: () => answer,
         inspectCalls: (calls) => {
           failedCalls = calls;
         },
@@ -914,27 +892,39 @@ for (const [label, options, pattern] of [
       pattern
     );
     assert.equal(failedCalls.filter((c) => c.name === 'fn_cash_game_create').length, 0);
+    assert.equal(estate.find((g) => g.id === retired9.id).enabled, true);
   });
 
-test('retirement refuses an active or drifted nine-seat game instead of closing it', async () => {
+test('a switch-off that does not read back off is never trusted', async () => {
+  const estate = [game, { ...retired9 }];
+  await assert.rejects(
+    runTwoTargetFlow(estate, {
+      switchOffAnswer: (args) => ({ ok: true, game_id: args.p_game_id }),
+      keepRetiredEnabled: true,
+    }),
+    /Switch Off Readback Mismatch/
+  );
+});
+
+test('retirement refuses an active or drifted nine-seat game instead of switching it off', async () => {
   for (const patch of [{ lightning_enabled: true }, { handedness: 6 }, { club_id: 'other' }]) {
+    let failedCalls = [];
     await assert.rejects(
-      runTwoTargetFlow([game, { ...retired9, ...patch }], { retiredTables: retiredMain })
+      runTwoTargetFlow([game, { ...retired9, ...patch }], {
+        inspectCalls: (calls) => {
+          failedCalls = calls;
+        },
+      })
     );
+    assert.equal(failedCalls.filter((c) => c.name === 'fn_cash_game_switch_off').length, 0);
   }
 });
 
 test('setup can prepare Madness alone while Action is live in a stage, leaving Action untouched', async () => {
   const liveAction = { ...game, cluster_mode: 'lightning', lightning_enabled: true };
-  await assert.rejects(
-    runTwoTargetFlow([liveAction, { ...retired9 }], { retiredTables: retiredMain }),
-    /Pilot Is Already Active/
-  );
+  await assert.rejects(runTwoTargetFlow([liveAction, { ...retired9 }]), /Pilot Is Already Active/);
   const estate = [liveAction, { ...retired9 }];
-  const { receipt, calls } = await runTwoTargetFlow(estate, {
-    setupTargets: 'madness',
-    retiredTables: retiredMain,
-  });
+  const { receipt, calls } = await runTwoTargetFlow(estate, { setupTargets: 'madness' });
   assert.ok(calls.every((c) => c.args?.p_cluster_id !== game.id && c.args?.p_game_id !== game.id));
   assert.deepEqual(
     calls.filter((c) => c.name === 'fn_cash_game_create').map((c) => c.args.p_name),

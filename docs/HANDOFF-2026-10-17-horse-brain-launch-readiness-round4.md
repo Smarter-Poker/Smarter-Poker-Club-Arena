@@ -105,3 +105,56 @@ Per pack, once its strength verdict is qualified:
 - Main disk: `$HOME/agent-work/src-9ccf` (clean release tree 9ccf3e42, keep clean for stage 2), `src-S` (clean S tree for
   assembly), `asm-S/`, `hb-compl-9ccf/` (extracts, records), `hb-select` (#7230 branch), `hb-tscore`, `hb-capgap`,
   `hb-league`, `hb-handoff4`.
+
+## 7. Update 2026-10-17 20:05Z (same lead session)
+
+### Capacity: resolved
+
+- Hetzner 132435945 rescaled to ccx43 16:55-16:58Z (dedicated vCPU limit raised 8 -> 24, project 13956822): nproc 16,
+  61 GiB, 338 GB disk. The `HORSE_DECISION_WORKERS=4` override is removed; every release since 17:31Z runs
+  `workerCount 8`. `poker_horse_decision_fallbacks_total` 0 and expired jobs 0 on release 24c44521 (19:55Z).
+- Still watch the 23:00Z peak once (fallbacks counter, /health `liveHorseDecision.oldestQueuedDecisionAgeMs`).
+
+### Selections [LIVE-CHECK]
+
+| Pack                          | Strength bb/100 (99% CI, pairs)        | Completion (lowest Wilson)                                       | PR    | State                                                        |
+| ----------------------------- | -------------------------------------- | ---------------------------------------------------------------- | ----- | ------------------------------------------------------------ |
+| FLH gen 4 (P12)               | +1.11 [+0.70, +1.52], 544,320          | 0.9724                                                           | #7230 | live since 06:55Z                                            |
+| PLO4 gen 3 (P10)              | +6.93 [+6.25, +7.62], 2,557,440        | none (P10)                                                       | #7283 | live on 24c44521 (19:55Z); `phase10_authority_worker_usable` |
+| PLO8 gen 3 (P11)              | +7.82 [+6.82, +8.82], 1,116,288        | 0.9799                                                           | #7283 | live on 24c44521; `phase11_authority_worker_plo8_usable`     |
+| Crazy Pineapple gen 1 (P12)   | +1.51 [+0.95, +2.08], 3,032,640        | 0.9803                                                           | #7310 | merged 19:48Z; live at the next :55 release                  |
+| PLO5 gen 3 (P11)              | +5.34 [+4.21, +6.46], 2,379,456        | 0.9853                                                           | #7313 | auto-merge armed                                             |
+| PLO6 gen 3 (P11)              | run 38988218988 running                | PASS, `hb-compl-9ccf/phase11-completion-plo6.json` (48f5dca4...) | -     | assemble, then a new branch from main                        |
+| Short Deck / FLO8 gen 1 (P12) | runs 38988287494 / 38988282054 pending | PASS (055bc9f8... / 3a948491...)                                 | -     | -                                                            |
+| P13, 9 variants               | 9 runs pending                         | nlh only; 8 measured 2026-10-18 (below)                          | -     | -                                                            |
+
+Verify each cutover: `/health` releaseSha equals the merge commit, then `horse_brain_telemetry` for the day:
+`phase1N_authority_worker_<v>_usable` rises by 8 (one per worker) and `phase1N_applied` grows.
+
+### New rule: a selection PR stays under 3,000 files
+
+The required check "Money trigger declaration authority" lists PR files through the GitHub pulls API, which stops at
+3,000 (`diff truncated`, the check fails). Each pack's evidence is ~900-1,950 files (runs/ ships twice), so ship one
+large pack per PR, or two small ones. #7283 at 3,768 files failed; split to 1,818 it passed. The repo autopilot opens a
+PR for a pushed branch by itself: edit its title and body, then `gh pr merge --auto --squash`.
+
+### Phase 13 completion (unattended)
+
+`claude-hb-lead2-20261017/p13-window-chain.sh 2026-10-18T06 2026-10-18T14` runs on the Mac (log
+`$HOME/agent-work/hb-compl-p13/chain.log`, records `phase13-completion-<v>.json` in the same folder). Per hour H it reads
+identity at H:00:30, recomputes the serving release's digests from that release's own tree (phase 13 must equal S),
+re-reads identity after (H+1):50, and only then extracts the 8 variants one at a time through `guarded-extract.sh`
+(declaration + addendum-1, window H:02 to (H+1):50). A changed release voids the window and it moves on. Selection PRs
+cut releases at :55 breaks, so avoid merging server/ changes during 06:00-14:00Z if possible.
+
+### Phase 15 daily report
+
+`horse_reference_agreement_daily` for 2026-10-16 was written 07:06Z (complete). Its agreement totals are 0 because the
+`phase15_reference_agreement_*` counters first fired on 2026-10-17 (3.4M fires by 18:00Z); the 2026-10-18 07:00Z run is
+the first with agreement data. Policy outcomes are populated.
+
+### Janitor
+
+The shared clone (`~/Documents/club-arena`, mirror, never commit there) is still at 2026-10-16 07:42, so the LaunchAgent
+(04:30 and 16:30 local) still runs the pre-#7284 janitor. Every lead worktree is `git worktree lock`ed so it is skipped;
+lock any new worktree before leaving it.

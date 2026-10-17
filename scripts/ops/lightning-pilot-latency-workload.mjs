@@ -1,5 +1,6 @@
 /** One bounded actual-action workload for the already authorized existing player.
  * Reports sample observations, never a latency pass or manufactured percentile. */
+import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 import {
   CONSENT_PLAYERS,
   assertPlayerPin,
@@ -46,8 +47,8 @@ export async function attemptLatencyFold({
     record.cause = 'hand_already_attempted';
     return record;
   }
-  // The normal fold transport sends pool/action, not a hand ID. This is only
-  // the rendered intent before the click, never the authoritative action hand.
+  // This record is the rendered intent before the click. The maintained
+  // transport binds its own action context; this sample is no stale-action certificate.
   seen.add(handId);
   const selector = kind === 'fast_fold' ? 'lightning-fold' : 'lightning-fold-watch';
   try {
@@ -88,12 +89,9 @@ export async function attemptLatencyFold({
 }
 export async function readWorkloadLatency(admin, clusterId, from, to) {
   try {
-    if (
-      !['babb43f1-368e-406f-a97a-a0d5013648b2', '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb'].includes(
-        clusterId
-      )
-    )
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clusterId))
       return { status: 'unknown', windows: [] };
+    await resolvePilotTarget(admin, clusterId, { active: false });
     // The table grants no SELECT to service_role. Use the maintained service-authorized reader.
     const read = await admin.rpc('fn_lightning_operator_cluster', {
       p_cluster_id: clusterId,
@@ -162,7 +160,7 @@ export async function witnessLatencyWorkload({
     counts: { accepted: 0, refused: 0, unknown: 0 },
     cleanup: 'pending',
     qualification: 'not_asserted',
-    actionHandBinding: 'not_provided_by_normal_fold_transport',
+    actionHandBinding: 'not_captured_by_this_sample',
     staleActionCertificate: 'not_asserted',
     startedAt: new Date().toISOString(),
   };

@@ -10,9 +10,9 @@ import { isDeepStrictEqual } from 'node:util';
 import { assertCurrentPilotTarget } from './lightning-pilot-targets.mjs';
 import { assertPilotClub, PILOT } from './prepare-lightning-private-pilot.mjs';
 export const ROSTER_CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
-export const ROSTER_OPERATION = 'lightning-action-madness-roster-20261017';
+export const ROSTER_OPERATION = 'lightning-action-madness-roster-amended-20261017';
 export const ROSTER_MANIFEST_SHA256 =
-  '5c0aeda28ee1a5d51ed94b2c3f9b453978459cc851a8019d7345a459d1d8d64e';
+  'd86d1becf8bca8c0f05d29309a18f10133b9f18eed72e57e7b1a2b3fffeda049';
 export const ROSTER_PAIRS = Object.freeze(
   [
     {
@@ -93,7 +93,7 @@ export const ROSTER_PAIRS = Object.freeze(
     },
     {
       outgoing: '0b1a64c2-8970-4f89-a396-9863e3aa2ccc',
-      incoming: '60e31431-564b-402e-a574-96db4b774e06',
+      incoming: '2af500e1-1665-4468-84d1-e346e64fcb68',
     },
     {
       outgoing: '0bea449d-73af-4654-bf19-61db087d7d45',
@@ -105,7 +105,7 @@ export const ROSTER_PAIRS = Object.freeze(
     },
     {
       outgoing: '0f14f372-0c43-47ff-9257-1324a7e94488',
-      incoming: 'e573c327-dc89-4d87-81f0-efd0cb3c8020',
+      incoming: '4381b30d-631e-4146-a2de-2f01dd1a36e9',
     },
   ].map(Object.freeze)
 );

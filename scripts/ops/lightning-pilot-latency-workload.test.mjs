@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { PILOT, PILOT_TARGETS } from './prepare-lightning-private-pilot.mjs';
 import {
   latencyAttemptPlan,
   attemptLatencyFold,
@@ -15,8 +16,61 @@ const pin = {
   playerId: PLAYER,
   poolSessionId: ROOM,
   clubId: 'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
-  clusterId: 'babb43f1-368e-406f-a97a-a0d5013648b2',
+  clusterId: '44444444-4444-4444-8444-444444444444',
 };
+function targetReader(index = 0, patch = {}) {
+  const t = PILOT_TARGETS[index],
+    a = t.templateName === 'action';
+  const game = {
+    id: pin.clusterId,
+    club_id: pin.clubId,
+    name: t.gameName,
+    template_name: t.templateName,
+    handedness: t.handedness,
+    sb: t.sb,
+    bb: t.bb,
+    variant: 'nlh',
+    enabled: false,
+    closed_at: '2026-01-01',
+    must_move: true,
+    cluster_mode: 'must_move',
+    lightning_enabled: false,
+    ruleset_snapshot: {
+      template: t.templateName,
+      variant: 'nlh',
+      regular_ante: a ? 'sb' : 'bb',
+      vpip_floor: a ? 30 : 50,
+      vpip_window: 10,
+      bombs: {
+        enabled: true,
+        trigger: a ? 'timed_15m' : 'every_orbit',
+        ante_bb: a ? 2 : 3,
+        boards: 2,
+      },
+      options: { is_private: true },
+    },
+    ...patch,
+  };
+  return (table) => {
+    const q = {
+      select: () => q,
+      eq: () => q,
+      maybeSingle: async () => ({
+        data:
+          table === 'clubs'
+            ? {
+                id: pin.clubId,
+                owner_id: PILOT.ownerId,
+                name: PILOT.name,
+                is_public: false,
+                requires_approval: true,
+              }
+            : game,
+      }),
+    };
+    return q;
+  };
+}
 test('finite alternating plan cannot exceed the three-window sample workload bound', () => {
   const plan = latencyAttemptPlan();
   assert.equal(plan.length, 120);
@@ -113,6 +167,7 @@ test('stale hand and missing action never send a normal click', async () => {
 });
 test('latency readback keeps only actual ordered aggregates and unknown stays unknown', async () => {
   const admin = {
+    from: targetReader(),
     rpc: async (name, args) => {
       assert.equal(name, 'fn_lightning_operator_cluster');
       assert.equal(args.p_cluster_id, pin.clusterId);
@@ -139,6 +194,43 @@ test('latency readback keeps only actual ordered aggregates and unknown stays un
   assert.doesNotMatch(JSON.stringify(result), new RegExp(SECRET));
   admin.rpc = async () => ({ error: SECRET });
   assert.equal((await readWorkloadLatency(admin, pin.clusterId, '', '')).status, 'unknown');
+});
+test('forensic aggregates accept maintained Action and Madness after closure; Classic and malformed pins never call operator RPC', async () => {
+  for (const index of [0, 1]) {
+    let calls = 0;
+    const admin = {
+      from: targetReader(index),
+      rpc: async () => {
+        calls++;
+        return { data: { ok: true, cluster_id: pin.clusterId, latency_windows: [] } };
+      },
+    };
+    assert.equal(
+      (await readWorkloadLatency(admin, pin.clusterId, '2026-01-01', '2026-01-02')).status,
+      'known'
+    );
+    assert.equal(calls, 1);
+    admin.from = targetReader(index, { template_name: 'classic' });
+    calls = 0;
+    assert.equal(
+      (await readWorkloadLatency(admin, pin.clusterId, '2026-01-01', '2026-01-02')).status,
+      'unknown'
+    );
+    assert.equal(calls, 0);
+  }
+  let malformedReads = 0;
+  const noReads = {
+    from() {
+      malformedReads++;
+      throw Error('must not read malformed pin');
+    },
+    rpc() {
+      malformedReads++;
+      throw Error('must not call malformed pin');
+    },
+  };
+  assert.equal((await readWorkloadLatency(noReads, 'malformed', '', '')).status, 'unknown');
+  assert.equal(malformedReads, 0);
 });
 test('prior consent is mandatory and partial auth owns only its created local session', async () => {
   const signouts = [];
@@ -175,6 +267,8 @@ test('prior consent is mandatory and partial auth owns only its created local se
   assert.equal(report.status, 'unknown');
   assert.deepEqual(signouts, [{ scope: 'local' }]);
   assert.equal(report.cleanup, 'local_session_and_browser_closed');
+  assert.equal(report.actionHandBinding, 'not_captured_by_this_sample');
+  assert.equal(report.staleActionCertificate, 'not_asserted');
   assert.equal(report.attempts.length, 0);
   assert.doesNotMatch(JSON.stringify(report), new RegExp(SECRET));
 });

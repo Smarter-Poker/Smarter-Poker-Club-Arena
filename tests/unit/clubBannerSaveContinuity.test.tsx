@@ -60,7 +60,7 @@ function Draft() {
   const [value, setValue] = useState('');
   return (
     <input
-      aria-label="Unsaved Visibility Note"
+      aria-label="Unsaved Club Banner Note"
       value={value}
       onChange={(e) => setValue(e.target.value)}
     />
@@ -97,17 +97,17 @@ it('keeps a draft mounted after a real banner save while membership changes stil
       </ClubWorkspaceProvider>
     </MemoryRouter>
   );
-  const input = await screen.findByLabelText('Unsaved Visibility Note');
+  const input = await screen.findByLabelText('Unsaved Club Banner Note');
   vi.useFakeTimers();
   await act(async () => {
     await saveClubBanner(clubId, 'owner', '/previous.png', null);
   });
-  fireEvent.change(input, { target: { value: 'Keep My Visibility Choice' } });
+  fireEvent.change(input, { target: { value: 'Keep My Club Banner Choice' } });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(400);
   });
-  expect(screen.getByLabelText('Unsaved Visibility Note')).toBe(input);
-  expect(input).toHaveValue('Keep My Visibility Choice');
+  expect(screen.getByLabelText('Unsaved Club Banner Note')).toBe(input);
+  expect(input).toHaveValue('Keep My Club Banner Choice');
   expect(mocks.membership).toHaveBeenCalledTimes(1);
 
   let resolveMembership!: (value: unknown) => void;
@@ -121,7 +121,7 @@ it('keeps a draft mounted after a real banner save while membership changes stil
     masterBus.emit('CLUB_UPDATED', { clubId });
     await vi.advanceTimersByTimeAsync(400);
   });
-  expect(screen.queryByLabelText('Unsaved Visibility Note')).toBeNull();
+  expect(screen.queryByLabelText('Unsaved Club Banner Note')).toBeNull();
   await act(async () => {
     resolveMembership({ data: null, error: null });
     await Promise.resolve();

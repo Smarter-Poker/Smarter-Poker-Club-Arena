@@ -184,6 +184,7 @@ import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
 import { warmTable } from '../services/tableWarmup';
 import { gameManagementService } from '../services/GameManagementService';
+import { isRetiredClubBanner } from '../utils/clubBannerDisplay';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
@@ -191,27 +192,6 @@ import { gameManagementService } from '../services/GameManagementService';
    art was thrown away by object-fit. shark-club-logo.jpg is the square
    emblem and fills the box as intended. */
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
-
-// Club Arena is deployed beneath /hub/club-arena/. Root-relative /assets URLs
-// bypass Vite's configured base path in production and silently 404, leaving
-// the live lobby DOM visible without its premium chassis or campaign artwork.
-const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
-/* ONE CROP, EVERY WIDTH (Dan 2026-09-01: "the 'dynamic ad image' is cut off,
-   and it needs to scale to size. because when you 'shrink the page' it fits
-   perfectly").
-
-   There were two files of the same artwork: `-v2` at 2172 x 724 (3:1, the ad
-   centred in a tall black field) served above 900px, and `-mobile-v4` at
-   2172 x 302 (7.2:1, the identical ad cropped tight) served below it. The
-   campaign bay is a short wide strip at EVERY width - roughly 11:1 on a 1440px
-   desktop - so the 3:1 file could only ever be shown by cropping it, which is
-   the top of the trophy and the whole buy-in line that Dan lost. The tight
-   crop is not a phone variant, it is the shape this bay actually is, so it is
-   what both regimes serve now and the bay's aspect-ratio matches it.
-
-   The filename still says "mobile" because renaming a published asset breaks
-   every cached service-worker entry pointing at it. */
-const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-mobile-v4.png`;
 
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
@@ -5730,31 +5710,26 @@ function ClubHomePageContent({
             </section>
           }
           campaign={
-            <button
-              type="button"
-              className="club-lobby-command-top__campaign-button"
-              aria-label={`Open ${club.name} Promotions`}
-              onClick={() => {
-                haptic.selection();
-                navigate(`/clubs/${clubId}/announcements`);
-              }}
-            >
-              {/* The <picture> wrapper stays although both regimes now resolve
+            club.banner_url && !isRetiredClubBanner(club.banner_url) ? (
+              <button
+                type="button"
+                className="club-lobby-command-top__campaign-button"
+                aria-label={`Open ${club.name} Promotions`}
+                onClick={() => {
+                  haptic.selection();
+                  navigate(`/clubs/${clubId}/announcements`);
+                }}
+              >
+                {/* The <picture> wrapper stays although both regimes now resolve
                   to the same file: it is the box the campaign bay's CSS sizes
                   (`.club-lobby-command-top__campaign-picture`), and it is where
                   a per-breakpoint <source> goes if a club ever ships two crops
                   of its own banner. */}
-              <picture className="club-lobby-command-top__campaign-picture">
-                <img
-                  src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
-                  alt={
-                    club.banner_url
-                      ? `${club.name} Promotion`
-                      : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
-                  }
-                />
-              </picture>
-            </button>
+                <picture className="club-lobby-command-top__campaign-picture">
+                  <img src={club.banner_url} alt={`${club.name} Promotion`} />
+                </picture>
+              </button>
+            ) : null
           }
         />
 
@@ -5796,7 +5771,6 @@ function ClubHomePageContent({
       ═══════════════════════════════════════════════════════════════════ */}
         <HouseAdRotator
           slot="lobby_strip"
-          visible={club.settings?.show_smarter_poker_ads !== false}
           clubId={resolvedClubId || club.id}
           onNavigate={(path) => {
             haptic.selection();

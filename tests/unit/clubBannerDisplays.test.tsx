@@ -8,7 +8,6 @@ import { getClubArenaNavigation } from '../../src/config/clubArenaNavigation';
 const mocks = vi.hoisted(() => ({
   read: vi.fn(),
   save: vi.fn(),
-  saveVisibility: vi.fn(),
   upload: vi.fn(),
   success: vi.fn(),
 }));
@@ -24,7 +23,6 @@ vi.mock('../../src/services/ClubBannerService', async (original) => ({
   ...(await original<typeof import('../../src/services/ClubBannerService')>()),
   readClubBanner: mocks.read,
   saveClubBanner: mocks.save,
-  saveClubAdVisibility: mocks.saveVisibility,
   uploadClubBannerImage: mocks.upload,
 }));
 const record = {
@@ -77,7 +75,7 @@ describe('club banner displays', () => {
   });
   it('loads a union club and resets only its own persisted banner', async () => {
     open();
-    fireEvent.click(await screen.findByRole('button', { name: 'Use Default Banner' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Club Banner' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save Banner' }));
     await waitFor(() =>
       expect(mocks.save).toHaveBeenCalledWith('club-uuid', 'owner', '/old.png', null)
@@ -132,72 +130,50 @@ describe('club banner displays', () => {
   });
 });
 
-it('offers union owners show/hide only, independently of the top banner uploader', async () => {
+it('leaves platform ads read-only for union owners and ignores retired owner ad settings', async () => {
+  mocks.read.mockResolvedValue({
+    ...record,
+    settings: { show_smarter_poker_ads: false, rotating_banners: [{ title: 'Legacy Ad' }] },
+  });
   open();
+  await screen.findByText(
+    'Smarter.Poker Ads Are Managed By The Platform And Cannot Be Changed Or Turned Off By Clubs Or Unions.'
+  );
+  expect(screen.queryByRole('switch')).toBeNull();
   expect(
-    await screen.findByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' })
-  ).toBeChecked();
-  expect(screen.getAllByLabelText('Choose Banner Image')).toHaveLength(1);
-  expect(screen.queryByLabelText('Add Rotating Banner Image')).toBeNull();
-  expect(screen.queryByLabelText(/Banner Title/)).toBeNull();
-  expect(
-    screen.queryByRole('button', { name: /Save Rotating Banners|Move Banner|Remove Banner/ })
+    screen.queryByRole('button', { name: /Save Ad Visibility|Save Rotating Banners/ })
   ).toBeNull();
+  expect(screen.queryByLabelText('Add Rotating Banner Image')).toBeNull();
+  expect(screen.getAllByLabelText('Choose Banner Image')).toHaveLength(1);
+});
+it.each([
+  null,
+  '/assets/club-buttons/lobby/shark-club-championship-ad-mobile-v4.png',
+  'https://ca-static.smarter.poker/assets/shark-club-championship-ad-v2.webp?old=1#banner',
+])('shows no default advertisement for an absent or retired club banner %s', async (banner_url) => {
+  mocks.read.mockResolvedValue({ ...record, banner_url });
+  open();
+  await screen.findByText('No Club Banner Set.');
+  expect(screen.queryByAltText('Club Lobby Banner Preview')).toBeNull();
+  expect(mocks.upload).not.toHaveBeenCalled();
 });
 
-it('preserves saved ad visibility when the top banner response arrives later', async () => {
-  const initial = { ...record, settings: { show_smarter_poker_ads: true, other: 1 } };
-  mocks.read.mockResolvedValue(initial);
-  let finishTop!: (value: unknown) => void;
-  mocks.save.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finishTop = resolve;
-      })
-  );
-  mocks.saveVisibility.mockResolvedValue({
-    ...initial,
-    settings: { ...initial.settings, show_smarter_poker_ads: false },
-  });
-  open();
-  fireEvent.click(await screen.findByRole('button', { name: 'Use Default Banner' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save Banner' }));
-  fireEvent.click(screen.getByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save Ad Visibility' }));
-  await waitFor(() => expect(mocks.saveVisibility).toHaveBeenCalledOnce());
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Save Ad Visibility' })).toBeDisabled()
-  );
-  finishTop({ ...initial, banner_url: null });
-  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Banner Display Saved'));
-  expect(screen.getByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' })).not.toBeChecked();
-});
-
-it('preserves the saved top banner when the visibility response arrives later', async () => {
-  const initial = { ...record, settings: { show_smarter_poker_ads: true, other: 1 } };
-  mocks.read.mockResolvedValue(initial);
-  let finishVisibility!: (value: unknown) => void;
-  mocks.saveVisibility.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finishVisibility = resolve;
-      })
-  );
-  open();
-  fireEvent.click(await screen.findByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save Ad Visibility' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Use Default Banner' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Save Banner' }));
-  await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('Banner Display Saved'));
-  finishVisibility({
-    ...initial,
-    settings: { ...initial.settings, show_smarter_poker_ads: false },
-  });
-  await waitFor(() =>
-    expect(screen.getByRole('button', { name: 'Save Ad Visibility' })).toBeDisabled()
-  );
-  expect(screen.getByAltText('Club Lobby Banner Preview').getAttribute('src')).toContain(
-    'shark-club-championship'
-  );
-  expect(screen.getByRole('switch', { name: 'Show Smarter.Poker Rotating Ads' })).not.toBeChecked();
+it('recognizes only the retired shared Shark assets, including URL suffixes', async () => {
+  const { isRetiredClubBanner } = await import('../../src/utils/clubBannerDisplay');
+  for (const variant of ['mobile-v4.png', 'v2.png', 'mobile-v4.webp', 'v2.webp']) {
+    expect(isRetiredClubBanner(`/assets/shark-club-championship-ad-${variant}`)).toBe(true);
+    expect(
+      isRetiredClubBanner(
+        `https://ca-static.smarter.poker/assets/shark-club-championship-ad-${variant}?v=old#banner`
+      )
+    ).toBe(true);
+  }
+  for (const value of [
+    null,
+    undefined,
+    '',
+    '/club-cards/own-banner.png',
+    '/assets/shark-club-championship-ad-mobile-v4.png-copy',
+  ])
+    expect(isRetiredClubBanner(value)).toBe(false);
 });

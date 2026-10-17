@@ -38,8 +38,8 @@ describe('the weekly scheduler alarms close when their condition ends', () => {
     expect(sql).not.toMatch(
       /(?:UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+(?:public\.)?(?:chip_ledger|club_members|union_accounting_runs|settlement_invoices|accounting_close_certificates)\b/i
     );
-    expect(sql).toContain("'9d5ede8aa77afecfb993e305a755175a'");
-    expect(sql).toContain("'06063824fc433b0df397bfde072e390b'");
+    expect(sql).toContain("'6bd020f058339c34e51a88717cf4fbd6'");
+    expect(sql).toContain("'7065a449686dd0ac55904f4118ae7428'");
     expect(sql).toContain('fn_ca_break_window_refuses_migrations(now())');
   });
 });

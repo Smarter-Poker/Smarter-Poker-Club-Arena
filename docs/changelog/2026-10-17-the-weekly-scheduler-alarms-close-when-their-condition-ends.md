@@ -17,8 +17,8 @@ alarms, and until now nothing closed either one:
   alarms close.
 
 An alarm whose condition still holds is not touched. This adds no sweep and
-changes no money, run, receipt or certificate. It stacks on `20261017131056`
-(`9d5ede8a` -> `06063824`).
+changes no money, run, receipt or certificate. It applies to the live body,
+the postimage of `20261017121500` (`6bd020f0` -> `7065a449`).
 
 Verified on native PG16: the migration runs twice cleanly and the readback
 and ACL are exact. With five fixture alarms, only the finished scope's visit

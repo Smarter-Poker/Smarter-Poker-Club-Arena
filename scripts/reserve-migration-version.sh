@@ -83,7 +83,21 @@ if [ "${RESERVE_MIGRATION_SKIP_FETCH:-0}" != "1" ]; then
   fetch_needed=1
   if [ -f "$ref_file" ]; then
     now_s=$(date +%s)
-    ref_s=$(stat -f %m "$ref_file" 2>/dev/null || stat -c %Y "$ref_file" 2>/dev/null || echo 0)
+    # BSD stat (macOS) takes -f %m; GNU stat (Linux) takes -c %Y. GNU accepts
+    # -f too - it means "filesystem status" and prints a multi-line report
+    # that exits 0 - so "the first one that succeeded" is not a test. Keep
+    # only an answer that is a bare number of seconds (2026-10-16: the old
+    # chain fed that report to $(( )) and every Linux run died "File: unbound
+    # variable" before reserving anything).
+    ref_s=0
+    for stat_form in "-c %Y" "-f %m"; do
+      # shellcheck disable=SC2086
+      candidate=$(stat $stat_form "$ref_file" 2>/dev/null || true)
+      case "$candidate" in
+        '' | *[!0-9]*) ;;
+        *) ref_s=$candidate; break ;;
+      esac
+    done
     [ $(( now_s - ref_s )) -lt 600 ] && fetch_needed=0
   fi
   [ "$fetch_needed" = "1" ] && git fetch --quiet origin main 2>/dev/null || true

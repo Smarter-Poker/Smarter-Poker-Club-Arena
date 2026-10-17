@@ -203,8 +203,29 @@ export interface HorsePhase10AuthoritySelection {
  * explicitly null until the locked P10.2 matrix requalifies the exact new
  * source and a new generation (3) is selected. Generations 1 and 2 stay
  * committed with their evidence; neither can qualify the modified policy.
+ *
+ * October 17: generation 3. The locked P10.2 matrix on the exact declared-work
+ * source d9190c9e (#7166, run 38988202259, 100 of 100 shards, 2,557,440 pairs)
+ * qualifies with no reasons: +6.93 [+6.25, +7.62] bb/100 cash after rake
+ * against the horse population, at policy digest 99028825.... Phase 10 has no
+ * completion stage of its own (generation 2 precedent, #6901).
  */
-export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null = null;
+export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null =
+  Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase10',
+    sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
+    packVersion: 'plo4-policy-round3-v2',
+    contractVersion: 'plo4-strength-contract-v1',
+    contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
+    domain: 'plo4-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase10/d9190c9e/phase10-qualification-2026-10-17.json',
+    qualificationSha256: '142db2fb671a27a9b684fa49da61d5dd638ddda6b90380a77a2331052648251e',
+    approvalGeneration: 3,
+    issuedAt: '2026-10-17T12:15:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const);
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

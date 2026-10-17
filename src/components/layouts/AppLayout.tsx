@@ -72,7 +72,10 @@ function AppLayoutContent() {
   // The first-run welcome and the profile gate hold the prompt lane while
   // they are up, so the analytics and notifications sheets wait behind them
   // (src/lib/promptLane.ts). The daily bonus already waits via `suspended`.
-  useHoldPromptLane('welcome', isReady && !!user && showWelcome);
+  useHoldPromptLane(
+    'welcome',
+    isReady && !!user && profileReady && !showProfileModal && showWelcome
+  );
   useHoldPromptLane('profile', profileReady && showProfileModal);
 
   // Hide global header on table and tournament play pages
@@ -121,7 +124,14 @@ function AppLayoutContent() {
           acknowledgement before the page they came for. The acknowledgement
           is about ENTERING the arena; a signed-out reader cannot. They meet
           it the first time they are signed in, exactly as before. */}
-      {isReady && !!user && <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />}
+      {/* ONE FIRST-RUN PROMPT AT A TIME (2026-10-17). The welcome used to
+          mount at the same time as the profile gate, hidden underneath it
+          (9999 vs 10000), so a new player finished one pop-up only to find a
+          second already waiting, and on an iPhone tapped through layers they
+          could not see. It now waits until the gate has decided and is down. */}
+      {isReady && !!user && profileReady && !showProfileModal && (
+        <ClubArenaWelcomeModal isOpen={showWelcome} onAccept={acceptWelcome} />
+      )}
 
       {/* Force Poker Alias Selection for Google Auth users */}
       {profileReady && showProfileModal && (

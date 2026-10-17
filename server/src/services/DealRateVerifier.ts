@@ -142,6 +142,8 @@ const KILL_WINDOW_MS = 15 * 60_000;
  * trigger-happy about a single bad table recovering itself.
  */
 const KILL_STORM_THRESHOLD = 30;
+/** Rows read back to name a storm's causes; a storm larger than this is named from a sample. */
+const KILL_BREAKDOWN_ROWS = 2_000;
 
 const COMPONENT = 'club-arena-engine';
 
@@ -328,6 +330,9 @@ export class DealRateVerifier {
       const kills = count ?? 0;
       this.killsInWindow = kills;
       if (kills >= KILL_STORM_THRESHOLD) {
+        // Best effort: a breakdown that cannot be read never holds the alert.
+        const why = await this.killBreakdown(since);
+        if (this.lifecycleEnded(generation)) return;
         this.launchAlert(
           raiseEngineAlert({
             alertname: 'ClubArenaEngineKillStorm',
@@ -337,11 +342,20 @@ export class DealRateVerifier {
               kills +
               ' engine kills in ' +
               Math.round(KILL_WINDOW_MS / 60_000) +
-              'min - tables are being destroyed and rebuilt in a loop',
+              'min' +
+              (why ? ' on ' + why.tables + ' tables, most at ' + why.causes[0][0] : '') +
+              ' - tables are being destroyed and rebuilt in a loop',
             description:
-              'Healthy is under one an hour. Read engine_recovery_events.detail: it names ' +
-              'the phase or stage each kill happened in.',
-            labels: { kills: String(kills) },
+              'Healthy is under one an hour. ' +
+              (why
+                ? 'Kills by phase or stage: ' +
+                  why.causes.map(([cause, n]) => cause + ' x' + n).join(', ') +
+                  '. '
+                : '') +
+              'engine_recovery_events.detail names the phase or stage of every kill.',
+            labels: why
+              ? { kills: String(kills), tables: String(why.tables), top_cause: why.causes[0][0] }
+              : { kills: String(kills) },
           }),
           'DealRateVerifier.kill_storm_alert_failed'
         );
@@ -359,6 +373,49 @@ export class DealRateVerifier {
       // Same rule as everywhere else here: could-not-ask is not evidence.
       if (this.lifecycleEnded(generation)) return;
       this.killsInWindow = null;
+    }
+  }
+
+  /**
+   * WHAT THE KILLS WERE, so the page says it (2026-10-17).
+   *
+   * The 12:57Z storm paged "74 engine kills in 15min" and nothing else; the
+   * reason - 74 x `start_failed:start_load_table` on 42 tables - had to be read
+   * out of the database by hand. Every kill row already names its phase or
+   * stage, so this reads them back (bounded) and returns how many tables were
+   * hit and the top causes, most frequent first. Read-only, and null when it
+   * cannot be read: the alert is raised either way.
+   */
+  private async killBreakdown(
+    since: string
+  ): Promise<{ tables: number; causes: Array<[string, number]> } | null> {
+    try {
+      const { data, error } = await supabase
+        .from('engine_recovery_events')
+        .select('detail, table_id')
+        .eq('event', 'watchdog_kill_rebuild')
+        .eq('event_class', 'automatic_recovery')
+        .gt('created_at', since)
+        .limit(KILL_BREAKDOWN_ROWS);
+      if (error || !Array.isArray(data) || data.length === 0) return null;
+      const tables = new Set<string>();
+      const causes = new Map<string, number>();
+      for (const row of data as Array<{ detail?: unknown; table_id?: unknown }>) {
+        if (row.table_id) tables.add(String(row.table_id));
+        // `dealing_loop_died+96s` and `start_failed:start_crash_recovery` keep
+        // their cause; the elapsed suffix would split one cause into many.
+        const cause =
+          String(row.detail ?? 'unnamed')
+            .split('+')[0]
+            .trim() || 'unnamed';
+        causes.set(cause, (causes.get(cause) ?? 0) + 1);
+      }
+      return {
+        tables: tables.size,
+        causes: [...causes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3),
+      };
+    } catch {
+      return null;
     }
   }
 

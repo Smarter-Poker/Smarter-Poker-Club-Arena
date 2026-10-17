@@ -72,7 +72,12 @@ describe('financial read-only request classification', () => {
   });
 
   it('admits the installed STABLE access and overview reads on linked consoles', () => {
-    for (const name of ['fn_poker_arena_context', 'ca_club_operations_overview']) {
+    for (const name of [
+      'fn_poker_arena_context',
+      'ca_club_operations_overview',
+      // mounted by ClubBottomNav on every club route since #7292
+      'fn_ca_club_data_scope',
+    ]) {
       expect(
         classifyFinancialReadOnlyRequest(
           'POST',

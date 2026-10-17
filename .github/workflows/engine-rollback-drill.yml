@@ -1,9 +1,11 @@
-name: Engine Drill (crash, rollback, rollforward)
-run-name: Engine Drill ${{ github.event.client_payload.drill }} ${{ github.event.client_payload.ref_sha }}
+name: Engine Rollback Drill (rollback, rollforward)
+run-name: Engine Rollback Drill ${{ github.event.client_payload.drill }} ${{ github.event.client_payload.ref_sha }}
 
-# The controlled engine drill route that docs/runbooks/maintenance-break-fire-drill.md
-# requires before any live crash or rollback drill: a reviewed, default-branch
-# repository event, never a workstation. It does not have a mechanism of its
+# The controlled rollback/restore drill route (DA10) that
+# docs/runbooks/maintenance-break-fire-drill.md requires before any live
+# rollback: a reviewed, default-branch repository event, never a workstation.
+# The crash drill (DA08) is a different event with its own route
+# (engine-drill.yml, engine-crash-drill.sh). This one has no mechanism of its
 # own. It hands one exact SHA to the SAME durable Hetzner release transaction
 # the engine deploy uses (install-engine-drill.sh binds the drill to the run
 # key, then the unchanged intake takes it), so the drill shares the release
@@ -12,12 +14,6 @@ run-name: Engine Drill ${{ github.event.client_payload.drill }} ${{ github.event
 # recovery trap. A drill waits for a scheduled break, never asks for an
 # off-cycle window, and stands aside for any newer waiting release.
 #
-#   crash        ref_sha must be the sealed desired and high-water release. Inside
-#                the certified break the engine is SIGKILLed and the transaction
-#                proves the supervisor restarts the same sealed container as a
-#                new process that serves locally and publicly and is elected
-#                leader. Ruling 24 (docs/DIAMOND-RULINGS.md): one engine, no
-#                standby, so that restart IS the failover.
 #   rollback     ref_sha must be older than the sealed high-water release, at or
 #                above both compatibility floors and already sealed on this host.
 #                It goes through the seal's audited rollback mode, which keeps
@@ -27,19 +23,20 @@ run-name: Engine Drill ${{ github.event.client_payload.drill }} ${{ github.event
 #
 # Dispatch (owner or an agent he has authorised):
 #   gh api repos/Smarter-Poker/Smarter-Poker-Club-Arena/dispatches \
-#     -f event_type=drill-club-arena-engine \
-#     -F 'client_payload[drill]=crash' -F 'client_payload[ref_sha]=<40-hex>' \
+#     -f event_type=rollback-drill-club-arena-engine \
+#     -F 'client_payload[drill]=rollback' -F 'client_payload[ref_sha]=<40-hex>' \
 #     -F 'client_payload[reason]=<12-128 characters: who authorised it and why>'
 on:
   repository_dispatch:
-    types: [drill-club-arena-engine]
+    types: [rollback-drill-club-arena-engine]
 
 permissions: {}
 
-# One drill at a time. The host's own locks still serialise a drill against
-# every ordinary release; this only keeps drills from queueing behind each other.
+# One rollback drill at a time. The host's own locks still serialise a drill
+# against every ordinary release and the crash drill; this only keeps rollback
+# drills from queueing behind each other.
 concurrency:
-  group: club-arena-engine-drill
+  group: club-arena-engine-rollback-drill
   cancel-in-progress: false
 
 jobs:
@@ -70,8 +67,8 @@ jobs:
         run: |
           set -euo pipefail
           case "$DRILL" in
-            crash|rollback|rollforward) ;;
-            *) echo '::error::client_payload.drill must be crash, rollback or rollforward'; exit 1 ;;
+            rollback|rollforward) ;;
+            *) echo '::error::client_payload.drill must be rollback or rollforward'; exit 1 ;;
           esac
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] \
             || { echo '::error::client_payload.ref_sha must be one full lowercase commit SHA'; exit 1; }
@@ -191,7 +188,7 @@ jobs:
           [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
-          case "$DRILL" in crash|rollback|rollforward) ;; *) exit 1 ;; esac
+          case "$DRILL" in rollback|rollforward) ;; *) exit 1 ;; esac
           [ "$(git rev-parse --verify 'HEAD^{commit}')" = "$CONTROL_SHA" ]
           timeout --signal=TERM --kill-after=5s 120s \
             git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
@@ -325,7 +322,7 @@ jobs:
             timeout --signal=TERM --kill-after=5s "${remaining}s" \
               "$HSSH" "ENGINE_RELEASE_OBSERVE_SECONDS='$observe_seconds' ENGINE_RELEASE_INVOCATION_WAIT_SECONDS=900 exec '/var/lib/club-arena/control-staging/$RUN_KEY/server/scripts/observe-engine-release.sh' --sha '$SHA' --run-id '$RUN_KEY'"
           }
-          LOG="$RUNNER_TEMP/engine-drill-$RUN_KEY.log"
+          LOG="$RUNNER_TEMP/engine-rollback-drill-$RUN_KEY.log"
           for attempt in $(seq 1 40); do
             set +e
             bind_and_hand_off | tee -a "$LOG"
@@ -350,7 +347,7 @@ jobs:
           [ "$UNIT_RESULT" = success ] && [ "$RESULT_SHA" = "$SHA" ] \
             || { echo '::error::the durable drill transaction did not finish with an exact success receipt'; exit 1; }
           case "$DRILL:$RESULT" in
-            crash:already-released|rollback:sealed|rollforward:sealed) ;;
+            rollback:sealed|rollforward:sealed) ;;
             *) echo "::error::invalid durable receipt '$RESULT' for a $DRILL drill"; exit 1 ;;
           esac
           echo "result=$RESULT" >> "$GITHUB_OUTPUT"
@@ -364,7 +361,7 @@ jobs:
             "$HSSH" "RUN_KEY='$RUN_KEY' bash -se" <<'REMOTE'
           set -euo pipefail
           [[ "$RUN_KEY" =~ ^[1-9][0-9]*-[1-9][0-9]*$ ]]
-          cat "/var/lib/club-arena/engine-drill-results/$RUN_KEY.json"
+          cat "/var/lib/club-arena/engine-rollback-drill-results/$RUN_KEY.json"
           REMOTE
           )"
           printf '%s\n' "$RECEIPT"
@@ -372,13 +369,10 @@ jobs:
           import json, os, sys
           r = json.load(sys.stdin)
           mode = os.environ["DRILL"]
-          expected = "crash-recovered" if mode == "crash" else "sealed"
+          previous = r.get("previousDesiredSha") or ""
           ok = (r.get("schema") == "engine-drill-result-v1" and r.get("runId") == os.environ["RUN_KEY"]
-                and r.get("mode") == mode and r.get("sha") == os.environ["SHA"] and r.get("result") == expected)
-          if mode == "crash":
-              c = r.get("crash") or {}
-              ok = ok and c.get("preInstance") and c.get("preInstance") != r.get("instanceId") \
-                  and int(c.get("postRestartCount", "-1")) > int(c.get("preRestartCount", "0"))
+                and r.get("mode") == mode and r.get("sha") == os.environ["SHA"] and r.get("result") == "sealed"
+                and len(previous) == 40 and previous != os.environ["SHA"])
           if not ok: raise SystemExit(1)
           print(r["result"])
           ')" || { echo '::error::the drill receipt does not prove the requested drill'; exit 1; }
@@ -439,7 +433,7 @@ jobs:
           cleanup_local_credentials() {
             rm -rf -- "${SSH_DIR:-$RUNNER_TEMP/club-arena-ssh-$RUN_KEY}" || true
             rm -f -- "${HSSH:-$RUNNER_TEMP/hssh-$RUN_KEY}" \
-              "$RUNNER_TEMP/engine-drill-$RUN_KEY.log" || true
+              "$RUNNER_TEMP/engine-rollback-drill-$RUN_KEY.log" || true
           }
           trap cleanup_local_credentials EXIT
           if [ "$RELEASE_COMPLETED" = true ] && [ -n "${HSSH:-}" ] && [ -x "$HSSH" ] \

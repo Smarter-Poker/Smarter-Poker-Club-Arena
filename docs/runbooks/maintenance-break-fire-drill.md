@@ -2,59 +2,21 @@
 
 The former drill used direct root SSH and an ad hoc container kill. That path
 is retired: a workstation may not mutate, restart, or publish the Club Arena
-engine. Do not reproduce the retired direct SSH/container commands from
-historical changelogs.
+engine.
 
-A live drill runs only through `.github/workflows/engine-drill.yml`, the
-reviewed default-branch repository event this runbook required (2026-10-17,
-`docs/changelog/2026-10-17-engine-drills-ride-the-release-lane.md`). It has no
-mechanism of its own: it hands one exact SHA to the same durable Hetzner
-release transaction an engine deploy uses, so it carries every control below.
+A live crash drill may run only after it is implemented as a reviewed,
+default-branch Club Arena repository event with all of these controls:
 
-- exact full merged SHA and pinned Hetzner host identity (the deploy's pinned
-  host key and per-run staged control bytes, verified against the control commit);
-- explicit drill authorization and a single owning release lane (a required
-  reason, `install-engine-drill.sh` binding the drill to one run key, the same
-  host engine lock and run-key namespace as every release);
-- table-safe maintenance-break admission before any process mutation (the
-  locked restart certificate, the persisted break deadline and
-  `prove_rollback_readiness`, unchanged);
-- immutable before/after engine provenance and runtime-write receipts (the
-  seal result plus `/var/lib/club-arena/engine-drill-results/<run>.json`);
-- automatic refusal when active-table or freeze preconditions are unclear, and
-  the transaction's recovery trap restoring the sealed desired release inside
-  the 135-second reserve on any refusal after mutation;
-- cache-busted health and leader verification after recovery: the transaction
-  proves the database leadership heartbeat, and the workflow independently
-  re-reads the sealed desired release, the container label and image, and local
-  and public health leadership.
+- exact full merged SHA and pinned Hetzner host identity;
+- explicit incident/drill authorization and a single owning release lane;
+- table-safe maintenance-break admission before any process mutation;
+- immutable before/after engine provenance and runtime-write receipts;
+- automatic refusal when active-table or freeze preconditions are unclear;
+- cache-busted health and hand-progression verification after recovery.
 
-A drill waits for a scheduled :55 break, never requests an off-cycle window,
-and stands aside for any newer waiting release.
-
-### Running a drill
-
-```bash
-gh api repos/Smarter-Poker/Smarter-Poker-Club-Arena/dispatches \
-  -f event_type=drill-club-arena-engine \
-  -F 'client_payload[drill]=crash' \
-  -F 'client_payload[ref_sha]=<full 40-hex SHA>' \
-  -F 'client_payload[reason]=<12-128 characters: who authorised it and why>'
-```
-
-| Drill         | `ref_sha`                                                                                               | What it proves                                                                                                                                                                                                                           |
-| ------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `crash`       | the sealed desired and high-water release                                                               | Ruling 24 has no standby, so failover is the supervisor restart: inside the certified break the engine is SIGKILLed and the same sealed container must come back as a new process that serves locally and publicly and is elected leader |
-| `rollback`    | an older release this host has sealed, at or above both floors in `docs/dr/diamond-release-manifest.md` | the seal's audited rollback mode restores a previous release with funded custody outstanding, keeping the high-water                                                                                                                     |
-| `rollforward` | the sealed high-water release, while a rollback serves                                                  | an ordinary deploy of the high-water undoes the rollback                                                                                                                                                                                 |
-
-Run `rollback` and `rollforward` in consecutive breaks. Choose the release that
-served immediately before the current one, and read its diff for engine
-behaviour a database change since then depends on before dispatching. Never
-roll back below the current compatibility floors.
-
-Until a drill has run, use the unit, integration, and rolled-back database
-tests for maintenance-break recovery.
+Until that controlled path exists, use the unit, integration, and rolled-back
+database tests for maintenance-break recovery. Do not reproduce the retired
+direct SSH/container commands from historical changelogs.
 
 ## When the gate will not open
 

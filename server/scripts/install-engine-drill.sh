@@ -2,13 +2,13 @@
 # Bind one engine drill to one release run key, then hand that run key to the
 # unchanged durable intake.
 #
-# .github/workflows/engine-drill.yml runs this from the exact per-run control
+# .github/workflows/engine-rollback-drill.yml runs this from the exact per-run control
 # stage, after proving the stage bytes equal the control commit. It writes ONE
 # root-only record, $REQUEST_ROOT/$RUN_ID.drill, beside the release request the
 # intake will create. engine-release-transaction.sh reads that record: a run
 # key without one is an ordinary release. Every existing record format, frozen
 # systemd template and validator is untouched, so a drill cannot change what an
-# ordinary release does. See docs/runbooks/maintenance-break-fire-drill.md.
+# ordinary release does. See docs/runbooks/engine-rollback-drill.md.
 set -euo pipefail
 
 REQUEST_ROOT="${ENGINE_RELEASE_REQUEST_ROOT:-/var/lib/club-arena/engine-release-requests}"
@@ -44,8 +44,8 @@ ACTOR="${10}"
 REASON_B64="${12}"
 NOT_AFTER_EPOCH="${14}"
 case "$MODE" in
-  crash|rollback|rollforward) ;;
-  *) die 'drill mode must be crash, rollback or rollforward' ;;
+  rollback|rollforward) ;;
+  *) die 'drill mode must be rollback or rollforward' ;;
 esac
 [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || die 'target SHA is invalid'
 [[ "$CONTROL_SHA" =~ ^[0-9a-f]{40}$ ]] || die 'control SHA is invalid'

@@ -253,19 +253,18 @@ CONTROL_SHA="$(tr -d '\r\n' < "$CONTROL_DIR/control-sha")" \
   || die 'control generation SHA manifest is missing'
 [ "$CONTROL_SHA" = "$REQUEST_CONTROL_SHA" ] || die 'control generation SHA does not match the request'
 
-# ENGINE DRILLS RIDE THE RELEASE LANE, NEVER BESIDE IT (2026-10-17)
+# ROLLBACK DRILLS RIDE THE RELEASE LANE, NEVER BESIDE IT (2026-10-17)
 # ─────────────────────────────────────────────────────────────────
-# docs/runbooks/maintenance-break-fire-drill.md retired the workstation crash
-# drill and allows a live drill only as a reviewed default-branch repository
-# event with this transaction's own controls: exact SHA, pinned host, one
-# release lane, the table-safe break certificate, provenance receipts and
-# automatic refusal. .github/workflows/engine-drill.yml is that event, and
-# install-engine-drill.sh writes this one root-only record beside the request
-# before handing the run key to the unchanged durable intake. A run key with
-# no drill record is an ordinary release; nothing below changes for it.
-#   crash        SIGKILL the serving high-water engine inside the certified
-#                break and prove the supervisor restores it (Ruling 24: one
-#                engine, no standby, so failover IS the supervisor restart)
+# docs/runbooks/maintenance-break-fire-drill.md allows a live drill only as a
+# reviewed default-branch repository event with this transaction's own
+# controls: exact SHA, pinned host, one release lane, the table-safe break
+# certificate, provenance receipts and automatic refusal. A rollback is a
+# release, so its drill IS this transaction: .github/workflows/
+# engine-rollback-drill.yml is that event, and install-engine-drill.sh writes
+# this one root-only record beside the request before handing the run key to
+# the unchanged durable intake. A run key with no drill record is an ordinary
+# release; nothing below changes for it. (The crash drill is not a release and
+# has its own route, engine-crash-drill.sh, under the same engine lock.)
 #   rollback     an older release this host has already sealed, through the
 #                seal's audited rollback mode, which keeps the high-water
 #   rollforward  the sealed high-water release again, after a rollback
@@ -283,7 +282,7 @@ if [ -e "$DRILL_FILE" ] || [ -L "$DRILL_FILE" ]; then
   [ "${DRILL_LINES[0]}" = engine-drill-v1 ] || die 'engine drill record schema is unknown'
   DRILL_MODE="${DRILL_LINES[1]}"
   case "$DRILL_MODE" in
-    crash|rollback|rollforward) ;;
+    rollback|rollforward) ;;
     *) die 'engine drill mode is unknown' ;;
   esac
   [ "${DRILL_LINES[2]}" = "$SHA" ] || die 'engine drill record names a different target'
@@ -294,7 +293,7 @@ if [ -e "$DRILL_FILE" ] || [ -L "$DRILL_FILE" ]; then
   echo "[engine-release-transaction] ENGINE DRILL $DRILL_MODE of $SHA under run $RUN_ID: $DRILL_REASON"
 fi
 # Only a rollback drill prepares the seal's audited rollback mode; a roll
-# forward is an ordinary deploy of the high-water, and a crash never prepares.
+# forward is an ordinary deploy of the high-water.
 SEAL_MODE=deploy
 SEAL_PREPARE_REASON='normal protected-main engine release'
 if [ "$DRILL_MODE" = rollback ]; then
@@ -304,7 +303,6 @@ elif [ -n "$DRILL_MODE" ]; then
   SEAL_PREPARE_REASON="engine drill $DRILL_MODE: $DRILL_REASON"
 fi
 DRILL_PREVIOUS_DESIRED=''
-DRILL_CRASH_FACTS=''
 # The workflow chooses this once, before any network or host handoff. Every
 # systemd retry reads the same immutable request byte and can never extend the
 # CI-owned mutation window. A shorter per-invocation cap is permitted; a later
@@ -1402,12 +1400,6 @@ print(values[0])
 
 emit_already_released() {
   local instance="$1" remaining proof_timeout
-  # A crash drill's target IS the serving release; that is its precondition
-  # (drill_preconditions), not a duplicate dispatch, so it goes on to its break.
-  # It never commits, so the committed-run replay never routes one here either.
-  if [ "${DRILL_MODE:-}" = crash ]; then
-    return 0
-  fi
   remaining="$(remaining_seconds)" || die 'deadline expired before duplicate database proof'
   proof_timeout="$remaining"
   [ "$proof_timeout" -le 45 ] || proof_timeout=45
@@ -1464,12 +1456,6 @@ drill_preconditions() {
   high_water="$(timeout --signal=TERM --kill-after=1s 10s "$RELEASE_SEAL" get high-water-sha)" \
     || die 'engine drill could not read the sealed high-water release'
   case "$DRILL_MODE" in
-    crash)
-      [ "$SHA" = "$desired" ] && [ "$SHA" = "$high_water" ] \
-        || die "crash drill target $SHA must be the sealed desired and high-water release (desired $desired, high-water $high_water)"
-      exact_runtime_instance >/dev/null \
-        || die "crash drill target $SHA is not the exact live local and public runtime"
-      ;;
     rollback)
       [ "$SHA" != "$desired" ] \
         || die 'rollback drill target already is the sealed desired release'
@@ -1491,21 +1477,17 @@ drill_preconditions() {
 record_drill_receipt() {
   local result="$1" instance="$2"
   [ -n "${DRILL_MODE:-}" ] || return 0
-  if ! DRILL_RESULT_DIR="${ENGINE_DRILL_RESULT_DIR:-/var/lib/club-arena/engine-drill-results}" \
+  if ! DRILL_RESULT_DIR="${ENGINE_DRILL_RESULT_DIR:-/var/lib/club-arena/engine-rollback-drill-results}" \
     DRILL_MODE="$DRILL_MODE" DRILL_REASON="$DRILL_REASON" \
     DRILL_RESULT="$result" DRILL_INSTANCE="$instance" DRILL_RUN_ID="$RUN_ID" DRILL_SHA="$SHA" \
     DRILL_CONTROL_SHA="$CONTROL_SHA" DRILL_ACTOR="$ACTOR" DRILL_RUN_URL="$RUN_URL" \
     DRILL_INVOCATION_ID="$INVOCATION_ID" DRILL_BREAK_END_EPOCH="${BREAK_END_EPOCH:-0}" \
-    DRILL_PREVIOUS_DESIRED="${DRILL_PREVIOUS_DESIRED:-}" DRILL_CRASH_FACTS="${DRILL_CRASH_FACTS:-}" \
+    DRILL_PREVIOUS_DESIRED="${DRILL_PREVIOUS_DESIRED:-}" \
     timeout --signal=TERM --kill-after=1s 10s python3 - <<'PY'
 import json, os, time
 env = os.environ
 directory = env["DRILL_RESULT_DIR"]
 os.makedirs(directory, mode=0o700, exist_ok=True)
-facts = {}
-for pair in filter(None, env.get("DRILL_CRASH_FACTS", "").split(";")):
-    key, _, value = pair.partition("=")
-    facts[key] = value
 record = {
     "schema": "engine-drill-result-v1",
     "runId": env["DRILL_RUN_ID"],
@@ -1521,7 +1503,6 @@ record = {
     "instanceId": env["DRILL_INSTANCE"],
     "breakEndEpoch": int(env["DRILL_BREAK_END_EPOCH"]),
     "completedAt": int(time.time()),
-    "crash": facts,
 }
 path = os.path.join(directory, env["DRILL_RUN_ID"] + ".json")
 temporary = path + ".tmp." + str(os.getpid())
@@ -1543,104 +1524,6 @@ PY
   echo "ENGINE_DRILL_MODE=$DRILL_MODE"
   echo "ENGINE_DRILL_RESULT=$result"
   echo "ENGINE_DRILL_INSTANCE=$instance"
-}
-
-# THE CRASH DRILL (Ruling 24: the supervisor restart is the failover). It runs
-# only past the locked restart certificate, the persisted break deadline and
-# prove_rollback_readiness, so every table is parked, no hand is in the air and
-# the exact sealed release is live with a fresh database leader. It kills the
-# serving process uncleanly - no SIGTERM drain, leases left to go stale - and
-# proves the SAME container and image come back on their own as a new process
-# that serves locally and publicly and is elected leader, all inside the
-# candidate-proof budget. Any refusal dies with MUTATION_STARTED=1 under the
-# engine lock, so recover_on_exit restores the sealed desired release inside
-# the untouched rollback reserve. Nothing is prepared or committed.
-run_crash_drill() {
-  local pre_instance pre_cid pre_started pre_restarts pre_pid pre_image pre_release
-  local state cid started restarts image release attempt new_instance public_instance
-  local killed_ms restarted_ms healthy_ms leader_ms db_timeout proof_remaining final_instance
-  pre_instance="$(exact_runtime_instance)" \
-    || die 'crash drill found no exact serving runtime at the certified break'
-  pre_cid="$(bounded_break_command 8 docker container inspect -f '{{.Id}}' "$CONTAINER")"
-  pre_started="$(bounded_break_command 8 docker container inspect -f '{{.State.StartedAt}}' "$CONTAINER")"
-  pre_restarts="$(bounded_break_command 8 docker container inspect -f '{{.RestartCount}}' "$CONTAINER")"
-  pre_pid="$(bounded_break_command 8 docker container inspect -f '{{.State.Pid}}' "$CONTAINER")"
-  pre_image="$(bounded_break_command 8 docker container inspect -f '{{.Image}}' "$CONTAINER")"
-  pre_release="$(bounded_break_command 8 docker container inspect -f '{{index .Config.Labels "sp.release.sha"}}' "$CONTAINER")"
-  [[ "$pre_cid" =~ ^[0-9a-f]{64}$ ]] && [ -n "$pre_started" ] \
-    && [[ "$pre_restarts" =~ ^[0-9]+$ ]] && [[ "$pre_pid" =~ ^[1-9][0-9]*$ ]] \
-    && [[ "$pre_image" =~ ^sha256:[0-9a-f]{64}$ ]] && [ "$pre_release" = "$SHA" ] \
-    || die 'crash drill could not record the exact serving process before the crash'
-  [ "$pre_image" = "$(bounded_break_command 8 "$RELEASE_SEAL" get desired-image-id)" ] \
-    || die 'crash drill found the serving image different from the sealed desired image'
-  echo "[engine-release-transaction] crash drill: SIGKILL to engine pid $pre_pid (instance $pre_instance, container ${pre_cid:0:12}, restarts $pre_restarts) with every table parked"
-  MUTATION_STARTED=1
-  killed_ms="$(date +%s%3N)"
-  bounded_break_command 5 kill -KILL "$pre_pid" \
-    || die 'crash drill could not deliver SIGKILL to the serving engine'
-  for attempt in $(seq 1 60); do
-    assert_time_remaining
-    assert_break_proof_time
-    state="$(bounded_break_command 5 docker container inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
-    restarts="$(bounded_break_command 5 docker container inspect -f '{{.RestartCount}}' "$CONTAINER" 2>/dev/null || true)"
-    started="$(bounded_break_command 5 docker container inspect -f '{{.State.StartedAt}}' "$CONTAINER" 2>/dev/null || true)"
-    if [ "$state" = running ] && [[ "$restarts" =~ ^[0-9]+$ ]] \
-      && [ "$restarts" -gt "$pre_restarts" ] && [ -n "$started" ] && [ "$started" != "$pre_started" ]; then
-      break
-    fi
-    [ "$attempt" = 60 ] && die 'the supervisor never restarted the killed engine inside the proof budget'
-    bounded_sleep 2
-  done
-  restarted_ms="$(date +%s%3N)"
-  cid="$(bounded_break_command 8 docker container inspect -f '{{.Id}}' "$CONTAINER")"
-  image="$(bounded_break_command 8 docker container inspect -f '{{.Image}}' "$CONTAINER")"
-  release="$(bounded_break_command 8 docker container inspect -f '{{index .Config.Labels "sp.release.sha"}}' "$CONTAINER")"
-  [ "$cid" = "$pre_cid" ] && [ "$image" = "$pre_image" ] && [ "$release" = "$SHA" ] \
-    || die 'the restarted engine is not the same sealed container and image'
-  for attempt in $(seq 1 36); do
-    assert_time_remaining
-    assert_break_proof_time
-    new_instance="$(health_instance 'http://127.0.0.1:8080/health')" || new_instance=''
-    [ -n "$new_instance" ] && [ "$new_instance" != "$pre_instance" ] && break
-    [ "$attempt" = 36 ] && die 'the restarted engine never served exact local release health as a new process'
-    bounded_sleep 5
-  done
-  for attempt in $(seq 1 18); do
-    assert_time_remaining
-    assert_break_proof_time
-    public_instance="$(health_instance "$PUBLIC_URL/health?nocache=$(date +%s%N)")" || public_instance=''
-    [ "$public_instance" = "$new_instance" ] && break
-    [ "$attempt" = 18 ] && die 'public proxy never served the restarted engine'
-    bounded_sleep 5
-  done
-  healthy_ms="$(date +%s%3N)"
-  # The unclean exit left its leadership heartbeat to go stale; the restarted
-  # process must be the freshly elected leader, as after every cutover.
-  db_timeout="$(remaining_seconds)" || die 'deadline expired before the crash drill leader proof'
-  proof_remaining="$(break_proof_seconds)" \
-    || die 'maintenance break proof budget expired before the crash drill leader proof'
-  [ "$db_timeout" -le "$proof_remaining" ] || db_timeout="$proof_remaining"
-  [ "$db_timeout" -le 60 ] || db_timeout=60
-  [ "$db_timeout" -ge 17 ] || die 'insufficient maintenance-break budget for the crash drill leader proof'
-  db_timeout=$((db_timeout - 2))
-  timeout --signal=TERM --kill-after=1s "${db_timeout}s" \
-    "$DATABASE_PROOF" --env-file "$ENV_FILE" --sha "$SHA" --instance-id "$new_instance" \
-    --timeout-seconds "$db_timeout" --poll-seconds 5 --max-heartbeat-age-seconds 15 \
-    || die 'the restarted engine was not elected the fresh database leader'
-  leader_ms="$(date +%s%3N)"
-  assert_break_proof_time
-  final_instance="$(exact_runtime_instance)" \
-    || die 'the restarted engine lost exact local and public identity'
-  [ "$final_instance" = "$new_instance" ] \
-    || die 'the restarted engine identity changed during the crash drill proof'
-  [ "$(date +%s)" -lt "$BREAK_END_EPOCH" ] \
-    || die 'the crash drill proof escaped the announced maintenance break'
-  MUTATION_STARTED=0
-  DRILL_CRASH_FACTS="preInstance=$pre_instance;prePid=$pre_pid;preRestartCount=$pre_restarts;preStartedAt=$pre_started;containerId=$pre_cid;imageId=$pre_image;postRestartCount=$restarts;postStartedAt=$started;killedAtMs=$killed_ms;restartedAtMs=$restarted_ms;healthyAtMs=$healthy_ms;leaderAtMs=$leader_ms"
-  echo "[engine-release-transaction] crash drill: restarted $((restarted_ms - killed_ms))ms, healthy $((healthy_ms - killed_ms))ms, elected leader $((leader_ms - killed_ms))ms after SIGKILL as $new_instance"
-  persist_result already-released "$final_instance"
-  record_drill_receipt crash-recovered "$final_instance"
-  exit 0
 }
 
 create_image_lease() {
@@ -2112,9 +1995,6 @@ while :; do
   STRANGERS="$(bounded_break_command 10 docker ps --filter label=sp.role=engine --format '{{.Names}}' \
     | grep -v "^$CONTAINER$" || true)"
   [ -z "$STRANGERS" ] || die 'an unmanaged engine container is running on this host'
-  if [ "${DRILL_MODE:-}" = crash ]; then
-    run_crash_drill
-  fi
 
   set +e
   PREPARE_OUTPUT="$(bounded_break_command 10 "$RELEASE_SEAL" prepare \

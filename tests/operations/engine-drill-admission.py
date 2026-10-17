@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Execute the engine drill's actual shell against isolated, real Git histories.
+"""Execute the rollback drill's actual shell against isolated, real Git histories.
 
 The drill record reader, the rollback admission (inside the real
-source_target_is_current), the per-mode preconditions, the crash drill and its
-receipt run as written in server/scripts/engine-release-transaction.sh, and
+source_target_is_current), the per-mode preconditions and the drill receipt
+run as written in server/scripts/engine-release-transaction.sh, and
 server/scripts/install-engine-drill.sh runs as a real script. Git, ancestry and
 every admission decision execute for real.
 
 Portable substitutes only: the clock, timeout, flock and sleep; the seal reader
-(a file-backed fake answering the same three questions); Docker, kill and the
-health/leader probes in the crash drill (a file-backed state machine); and
-`id`/`stat`, which map the test user to root so the root-ownership checks run
-unprivileged in CI. Nothing here starts, stops or signals a real process.
+(a file-backed fake answering the same three questions); and `id`/`stat`/
+`readlink`/`mapfile`, which map the test user to root and stand in for GNU and
+Bash 5 behaviour on macOS, so the root-ownership checks run unprivileged in CI
+and on the workstation. Nothing here starts, stops or signals a process.
 """
 from pathlib import Path
 import atexit
@@ -202,8 +202,8 @@ class RollbackAdmissionTests(DrillFixture):
     def test_the_same_older_target_is_still_refused_as_an_ordinary_release(self):
         self.refused(self.host(self.b, ''), 'does not contain the sealed high-water release')
 
-    def test_a_crash_or_rollforward_drill_keeps_the_ordinary_forward_rule(self):
-        for mode in ('crash', 'rollforward'):
+    def test_a_rollforward_drill_keeps_the_ordinary_forward_rule(self):
+        for mode in ('rollforward',):
             with self.subTest(mode=mode):
                 self.refused(self.host(self.b, mode), 'does not contain the sealed high-water release')
                 self.accepted(self.host(self.c, mode))
@@ -232,10 +232,8 @@ class RollbackAdmissionTests(DrillFixture):
 
 
 class PreconditionTests(DrillFixture):
-    def check(self, target, mode, runtime_ok=True):
-        runtime = 'exact_runtime_instance() { printf "1-aaaaaaaa\\n"; }' if runtime_ok \
-            else 'exact_runtime_instance() { return 1; }'
-        return self.run_shell(runtime + '\n' + DRILL_FUNCTIONS + '\ndrill_preconditions',
+    def check(self, target, mode):
+        return self.run_shell(DRILL_FUNCTIONS + '\ndrill_preconditions',
                               target=target, mode=mode,
                               tail='printf "ADMITTED:%s previous=%s\\n" "$SHA" "${DRILL_PREVIOUS_DESIRED:-}"')
 
@@ -243,13 +241,6 @@ class PreconditionTests(DrillFixture):
         result = self.check(self.b, '')
         self.accepted(result)
         self.assertFalse(self.seal_calls.exists())
-
-    def test_a_crash_drill_needs_the_live_desired_high_water_release(self):
-        self.accepted(self.check(self.c, 'crash'))
-        self.refused(self.check(self.b, 'crash'), 'must be the sealed desired and high-water release')
-        self.refused(self.check(self.c, 'crash', runtime_ok=False), 'is not the exact live local and public runtime')
-        self.write_seal(desired=self.b, high_water=self.c, committed=[self.b, self.c])
-        self.refused(self.check(self.c, 'crash'), 'must be the sealed desired and high-water release')
 
     def test_a_rollback_drill_needs_a_target_that_is_not_already_desired(self):
         result = self.check(self.b, 'rollback')
@@ -274,8 +265,8 @@ class RecordTests(DrillFixture):
             record.unlink()
         if not absent:
             body = '\n'.join(lines if lines is not None else
-                             ['engine-drill-v1', 'crash', self.c, 'f' * 40,
-                              'owner-authorised DA08 crash drill']) + '\n'
+                             ['engine-drill-v1', 'rollforward', self.c, 'f' * 40,
+                              'owner-authorised DA10 rollforward drill']) + '\n'
             if symlink:
                 real = self.directory / 'elsewhere'
                 real.write_text(body)
@@ -306,7 +297,7 @@ CONTROL_SHA="$CONTROL"
         self.assertIn("mode=[] seal=deploy reason=[normal protected-main engine release]", result.stdout)
 
     def test_each_mode_maps_to_its_seal_mode(self):
-        for drill, seal in (('crash', 'deploy'), ('rollback', 'rollback'), ('rollforward', 'deploy')):
+        for drill, seal in (('rollback', 'rollback'), ('rollforward', 'deploy')):
             with self.subTest(drill=drill):
                 result = self.read_record(['engine-drill-v1', drill, self.c, 'f' * 40,
                                            'owner-authorised DA10 drill'])
@@ -315,10 +306,12 @@ CONTROL_SHA="$CONTROL"
                               result.stdout)
 
     def test_a_record_that_does_not_bind_exactly_is_refused(self):
-        good = ['engine-drill-v1', 'crash', self.c, 'f' * 40, 'owner-authorised DA08 crash drill']
+        good = ['engine-drill-v1', 'rollforward', self.c, 'f' * 40, 'owner-authorised DA10 rollforward drill']
         for index, value, message in (
             (0, 'engine-drill-v2', 'schema is unknown'),
             (1, 'reboot', 'mode is unknown'),
+            # The crash drill is its own route (engine-crash-drill.sh), never this record.
+            (1, 'crash', 'mode is unknown'),
             (2, self.b, 'names a different target'),
             (3, 'e' * 40, 'names a different control commit'),
             (4, 'too short', 'reason must be 12 to 128'),
@@ -332,107 +325,56 @@ CONTROL_SHA="$CONTROL"
         self.refused(self.read_record(symlink=True), 'is not a regular file')
 
 
-class CrashDrillTests(DrillFixture):
-    """run_crash_drill against a file-backed Docker/health/leader state machine."""
+class ReceiptTests(DrillFixture):
+    """record_drill_receipt is evidence beside the seal result, never a gate."""
 
-    def crash(self, *, restarts=True, same_instance=False, leader=True, image_changes=False):
-        world = self.directory / 'world'
-        world.mkdir()
-        results = self.directory / 'drill-results'
-        code = f'''
-WORLD={shlex.quote(str(world))}
-CONTAINER=club-arena-engine
-PUBLIC_URL=https://engine.example.invalid
-ENV_FILE=/dev/null
+    def receipt(self, directory, mode='rollback'):
+        code = DRILL_FUNCTIONS + f"""
 RUN_ID=123-1
 CONTROL_SHA={'f' * 40}
 ACTOR=owner
-RUN_URL=https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/actions/runs/123
-INVOCATION_ID={'0' * 32}
-DRILL_REASON='owner-authorised DA08 crash drill'
-BREAK_END_EPOCH=$((600 + 300))
-MUTATION_STARTED=0
-DATABASE_PROOF="$WORLD/database-proof"
-printf '#!/usr/bin/env bash\\n[ "{'1' if leader else '0'}" = 1 ]\\n' > "$DATABASE_PROOF"; chmod +x "$DATABASE_PROOF"
-date() {{
-  case "${{1:-}}" in
-    +%s%3N) printf '%s000\\n' "$NOW" ;;
-    +%s%N) printf '%s000000000\\n' "$NOW" ;;
-    *) printf '%s\\n' "$NOW" ;;
-  esac
-}}
-killed() {{ [ -e "$WORLD/killed" ]; }}
-docker() {{
-  [ "$1 $2" = 'container inspect' ] || return 97
-  local format="$4"
-  case "$format" in
-    '{{{{.Id}}}}') printf '%s\\n' {'c' * 64} ;;
-    '{{{{.State.StartedAt}}}}') if killed && {'true' if restarts else 'false'}; then echo 2026-10-17T12:56:30Z; else echo 2026-10-17T06:55:45Z; fi ;;
-    '{{{{.RestartCount}}}}') if killed && {'true' if restarts else 'false'}; then echo 1; else echo 0; fi ;;
-    '{{{{.State.Pid}}}}') echo 4242 ;;
-    '{{{{.State.Status}}}}') echo running ;;
-    '{{{{.Image}}}}') if killed && {'true' if image_changes else 'false'}; then echo sha256:{'9' * 64}; else echo sha256:{'e' * 64}; fi ;;
-    *) printf '%s\\n' "$SHA" ;;
-  esac
-}}
-kill() {{ printf '%s %s mutation=%s\\n' "$1" "$2" "$MUTATION_STARTED" > "$WORLD/killed"; }}
-health_instance() {{
-  if killed && {'false' if same_instance else 'true'}; then echo 2-bbbbbbbb; else echo 1-aaaaaaaa; fi
-}}
-exact_runtime_instance() {{ health_instance x; }}
-bounded_break_command() {{ shift; "$@"; }}
-assert_time_remaining() {{ :; }}
-assert_break_proof_time() {{ :; }}
-bounded_sleep() {{ :; }}
-persist_result() {{ echo "PERSIST:$1:$2"; }}
-'''
-        die_override = 'die() { printf "REFUSED:%s mutation=%s\\n" "$*" "$MUTATION_STARTED" >&2; exit 1; }'
-        return self.run_shell(code + DRILL_FUNCTIONS + '\n' + die_override + '\nrun_crash_drill',
-                              target=self.c, mode='crash',
-                              extra_env={'ENGINE_DRILL_RESULT_DIR': str(results)},
-                              tail='echo UNREACHABLE'), world, results
+RUN_URL=https://example.invalid/run/123
+INVOCATION_ID=abc123
+BREAK_END_EPOCH=1792240300
+DRILL_REASON='owner-authorised DA10 {mode} drill'
+DRILL_PREVIOUS_DESIRED={self.c}
+record_drill_receipt sealed 1-bbbbbbbb
+"""
+        return self.run_shell(code, target=self.b, mode=mode,
+                              extra_env={'ENGINE_DRILL_RESULT_DIR': str(directory)})
 
-    def test_a_supervised_restart_is_proved_and_recorded(self):
-        result, world, results = self.crash()
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn('UNREACHABLE', result.stdout)
-        self.assertEqual((world / 'killed').read_text().strip(), '-KILL 4242 mutation=1')
-        self.assertIn('PERSIST:already-released:2-bbbbbbbb', result.stdout)
-        self.assertIn('ENGINE_DRILL_RESULT=crash-recovered', result.stdout)
-        receipt = json.loads((results / '123-1.json').read_text())
-        self.assertEqual(receipt['mode'], 'crash')
-        self.assertEqual(receipt['result'], 'crash-recovered')
-        self.assertEqual(receipt['sha'], self.c)
-        self.assertEqual(receipt['instanceId'], '2-bbbbbbbb')
-        self.assertEqual(receipt['crash']['preInstance'], '1-aaaaaaaa')
-        self.assertEqual(receipt['crash']['prePid'], '4242')
-        self.assertEqual(receipt['crash']['preRestartCount'], '0')
-        self.assertEqual(receipt['crash']['postRestartCount'], '1')
-        self.assertEqual(oct((results / '123-1.json').stat().st_mode & 0o777), '0o600')
+    def test_a_sealed_rollback_writes_one_private_exact_receipt(self):
+        results = self.directory / 'results'
+        result = self.receipt(results)
+        self.accepted(result)
+        self.assertIn('ENGINE_DRILL_MODE=rollback', result.stdout)
+        self.assertIn('ENGINE_DRILL_RESULT=sealed', result.stdout)
+        path = results / '123-1.json'
+        self.assertEqual(oct(path.stat().st_mode & 0o777), '0o600')
+        receipt = json.loads(path.read_text())
+        self.assertEqual(receipt['schema'], 'engine-drill-result-v1')
+        self.assertEqual((receipt['runId'], receipt['mode'], receipt['result']), ('123-1', 'rollback', 'sealed'))
+        self.assertEqual((receipt['sha'], receipt['previousDesiredSha']), (self.b, self.c))
+        self.assertEqual((receipt['instanceId'], receipt['breakEndEpoch']), ('1-bbbbbbbb', 1792240300))
+        self.assertNotIn('crash', receipt)
+        self.assertEqual([p.name for p in results.iterdir()], ['123-1.json'])
 
-    def test_a_supervisor_that_never_restarts_refuses_with_recovery_armed(self):
-        result, _, results = self.crash(restarts=False)
-        self.refused(result, 'the supervisor never restarted the killed engine')
-        self.assertIn('mutation=1', result.stderr)
-        self.assertFalse((results / '123-1.json').exists())
+    def test_an_unwritable_receipt_is_said_loudly_and_never_fails_the_release(self):
+        blocker = self.directory / 'not-a-directory'
+        blocker.write_text('x')
+        result = self.receipt(blocker / 'results')
+        self.accepted(result)
+        self.assertIn('could not be written; the seal result above still stands', result.stderr)
+        self.assertNotIn('ENGINE_DRILL_RESULT=', result.stdout)
 
-    def test_the_old_process_answering_is_not_a_restart(self):
-        result, _, _ = self.crash(same_instance=True)
-        self.refused(result, 'never served exact local release health as a new process')
-        self.assertIn('mutation=1', result.stderr)
-
-    def test_a_restart_that_is_not_elected_leader_refuses(self):
-        result, _, _ = self.crash(leader=False)
-        self.refused(result, 'was not elected the fresh database leader')
-        self.assertIn('mutation=1', result.stderr)
-
-    def test_a_different_image_after_the_restart_refuses(self):
-        result, _, _ = self.crash(image_changes=True)
-        self.refused(result, 'is not the same sealed container and image')
+    def test_an_ordinary_release_writes_no_receipt(self):
+        results = self.directory / 'results'
+        self.accepted(self.receipt(results, mode=''))
+        self.assertFalse(results.exists())
 
 
 class InstallerTests(DrillFixture):
-    def install(self, mode='crash', reason='owner-authorised DA08 crash drill', *, prepare=None):
+    def install(self, mode='rollforward', reason='owner-authorised DA10 rollforward drill', *, prepare=None):
         if not hasattr(self, 'control'):
             self.stage_control()
         return self.run_installer(mode, reason, prepare)
@@ -489,7 +431,7 @@ class InstallerTests(DrillFixture):
         result, record, control = self.install()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(record.read_text().splitlines(),
-                         ['engine-drill-v1', 'crash', self.c, control, 'owner-authorised DA08 crash drill'])
+                         ['engine-drill-v1', 'rollforward', self.c, control, 'owner-authorised DA10 rollforward drill'])
         self.assertEqual(oct(record.stat().st_mode & 0o777), '0o600')
         self.assertIn(f'INTAKE:--target-sha {self.c} --control-sha {control} --run-id 123-1 '
                       '--actor owner --not-after-epoch 1792240000', result.stdout)
@@ -501,8 +443,8 @@ class InstallerTests(DrillFixture):
         again, _, _ = self.install()
         self.assertEqual(again.returncode, 0, again.stderr)
         self.assertEqual(record.read_bytes(), bound)
-        for mode, reason in (('rollback', 'owner-authorised DA08 crash drill'),
-                             ('crash', 'a different owner-authorised reason')):
+        for mode, reason in (('rollback', 'owner-authorised DA10 rollforward drill'),
+                             ('rollforward', 'a different owner-authorised reason')):
             with self.subTest(mode=mode, reason=reason):
                 other, _, _ = self.install(mode=mode, reason=reason)
                 self.assertNotEqual(other.returncode, 0)
@@ -520,7 +462,8 @@ class InstallerTests(DrillFixture):
 
     def test_refuses_bad_modes_and_reasons_before_writing(self):
         for mode, reason, message in (('reboot', 'owner-authorised drill run', 'drill mode must be'),
-                                      ('crash', 'short', 'drill reason must be 12 to 128')):
+                                      ('crash', 'owner-authorised drill run', 'drill mode must be'),
+                                      ('rollforward', 'short', 'drill reason must be 12 to 128')):
             with self.subTest(mode=mode, reason=reason):
                 result, record, _ = self.install(mode=mode, reason=reason)
                 self.assertNotEqual(result.returncode, 0)

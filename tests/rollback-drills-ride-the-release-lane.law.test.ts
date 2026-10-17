@@ -1,21 +1,20 @@
 /**
- * ENGINE DRILLS RIDE THE RELEASE LANE (2026-10-17)
+ * ROLLBACK DRILLS RIDE THE RELEASE LANE (2026-10-17)
  *
- * docs/runbooks/maintenance-break-fire-drill.md retired the workstation crash
- * drill (root SSH, an ad hoc container kill) and allowed a live drill only as a
- * reviewed default-branch repository event with the release transaction's own
- * controls. The Diamond launch audit could not close DA08 (failover) or DA10
- * (rollback/restore) without one: the seal had an audited rollback mode that
- * nothing called, and Ruling 24 (one engine, no standby) makes the supervisor
- * restart the only failover there is.
+ * docs/runbooks/maintenance-break-fire-drill.md allows a live engine drill only
+ * as a reviewed default-branch repository event with the release transaction's
+ * own controls. The Diamond launch audit could not close DA10 (rollback/restore)
+ * without one: the seal had an audited rollback mode that nothing called, and no
+ * production release had ever moved backwards. (DA08's crash drill is not a
+ * release and has its own route: engine-drill.yml and engine-crash-drill.sh.)
  *
- * .github/workflows/engine-drill.yml is that event. It has no mechanism of its
- * own: install-engine-drill.sh binds a drill to one run key with a root-only
- * record, the unchanged durable intake takes the run key, and
- * engine-release-transaction.sh runs the drill through the same certificate,
- * lock, break deadline, rollback readiness, seal and recovery trap as any
- * release. These pins keep it that way. The shell itself executes in
- * tests/operations/engine-drill-admission.py against real Git histories.
+ * .github/workflows/engine-rollback-drill.yml is that event. It has no mechanism
+ * of its own: install-engine-drill.sh binds a drill to one run key with a
+ * root-only record, the unchanged durable intake takes the run key, and
+ * engine-release-transaction.sh runs the rollback or roll-forward through the
+ * same certificate, lock, break deadline, rollback readiness, seal and recovery
+ * trap as any release. These pins keep it that way. The shell itself executes
+ * in tests/operations/engine-drill-admission.py against real Git histories.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -29,7 +28,7 @@ const code = (source: string) =>
     .filter((line) => !/^\s*#/.test(line))
     .join('\n');
 
-const workflow = read('.github/workflows/engine-drill.yml');
+const workflow = read('.github/workflows/engine-rollback-drill.yml');
 const workflowCode = code(workflow);
 const transaction = read('server/scripts/engine-release-transaction.sh');
 const transactionCode = code(transaction);
@@ -37,7 +36,7 @@ const installer = read('server/scripts/install-engine-drill.sh');
 const recovery = read('server/scripts/engine-release-recover.sh');
 const packager = read('server/scripts/install-engine-supervisor.sh');
 const seal = read('server/scripts/engine-release-seal.py');
-const runbook = read('docs/runbooks/maintenance-break-fire-drill.md');
+const runbook = read('docs/runbooks/engine-rollback-drill.md');
 
 // Each step must occur after the one before it (a step may also appear earlier,
 // e.g. prove_rollback_readiness in the legacy-checkpoint branch).
@@ -62,18 +61,19 @@ describe('the drill is a reviewed default-branch event, never a workstation', ()
   it('runs only from its exact repository event, one drill at a time', () => {
     const triggers = between(workflow, '\non:', '\npermissions:');
     expect(triggers).toContain('repository_dispatch:');
-    expect(triggers).toContain('types: [drill-club-arena-engine]');
+    expect(triggers).toContain('types: [rollback-drill-club-arena-engine]');
     expect(workflow).not.toMatch(/^\s*workflow_dispatch:/m);
     expect(workflow).not.toMatch(/^\s*schedule:/m);
     expect(workflow).not.toMatch(/^\s*(push|pull_request|workflow_run):/m);
     expect(workflow).toMatch(/^permissions: \{\}$/m);
-    expect(workflow).toContain('group: club-arena-engine-drill');
+    expect(workflow).toContain('group: club-arena-engine-rollback-drill');
     expect(workflow).toContain('cancel-in-progress: false');
   });
 
   it('admits only a named drill of an exact protected-main SHA with a stated reason', () => {
     const admit = between(workflowCode, 'name: Prove the drill request is exact', 'engine-doors:');
-    expect(admit).toContain('crash|rollback|rollforward) ;;');
+    expect(admit).toContain('rollback|rollforward) ;;');
+    expect(admit).not.toContain('crash');
     expect(admit).toContain('[[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]');
     expect(admit).toContain('12 <= len(value) <= 128');
     expect(admit).toContain('git merge-base --is-ancestor "$REQUESTED_SHA" "$MAIN_SHA"');
@@ -98,9 +98,14 @@ describe('the drill is a reviewed default-branch event, never a workstation', ()
   });
 
   it('accepts only the receipt each drill can honestly produce, then proves identity itself', () => {
-    expect(workflowCode).toContain('crash:already-released|rollback:sealed|rollforward:sealed) ;;');
-    expect(workflowCode).toContain('/var/lib/club-arena/engine-drill-results/$RUN_KEY.json');
-    expect(workflowCode).toContain('expected = "crash-recovered" if mode == "crash" else "sealed"');
+    expect(workflowCode).toContain('rollback:sealed|rollforward:sealed) ;;');
+    expect(workflowCode).toContain(
+      '/var/lib/club-arena/engine-rollback-drill-results/$RUN_KEY.json'
+    );
+    expect(workflowCode).toContain('r.get("result") == "sealed"');
+    expect(workflowCode).toContain('len(previous) == 40 and previous != os.environ["SHA"]');
+    // The workflow never touches a process or a container itself.
+    expect(workflowCode).not.toMatch(/(^|[\s;|&(])kill\s|docker\s+(kill|stop|restart|rm|run)\b/m);
     const verify = between(workflowCode, 'name: Independently prove', 'name: Remove exact staging');
     // Independent of the transaction, and without reading engine configuration
     // (engine-release-seal.law: only the deploy may name the engine .env).
@@ -139,7 +144,20 @@ describe('the transaction runs a drill under every release control', () => {
     expect(transactionCode).not.toMatch(/--mode rollback/);
   });
 
-  it('crashes the engine only past the locked certificate and rollback readiness, before any prepare', () => {
+  it('accepts only rollback and rollforward records; the crash drill is not a release', () => {
+    const record = between(
+      transactionCode,
+      'DRILL_FILE="$REQUEST_ROOT/$RUN_ID.drill"',
+      'SEAL_MODE=deploy'
+    );
+    expect(record).toContain('    rollback|rollforward) ;;');
+    expect(record).not.toContain('crash');
+    expect(installer).toContain('  rollback|rollforward) ;;');
+    expect(transactionCode).not.toContain('run_crash_drill');
+    expect(transactionCode).not.toMatch(/kill -KILL/);
+  });
+
+  it('prepares a drill only past the locked certificate and rollback readiness, and receipts only after the seal', () => {
     const loop = transactionCode.slice(
       transactionCode.indexOf("acquire_engine_lock 'maintenance cutover'")
     );
@@ -149,35 +167,12 @@ describe('the transaction runs a drill under every release control', () => {
       'persist_break_deadline',
       'prove_rollback_readiness',
       'validate_candidate_image',
-      'run_crash_drill',
       '"$RELEASE_SEAL" prepare',
+      'persist_result sealed',
+      'record_drill_receipt sealed "$FINAL_LOCAL_INSTANCE"',
     ]);
-    // The only prepare comes after the only crash branch.
     expect(transactionCode.match(/"\$RELEASE_SEAL" prepare/g)).toHaveLength(1);
-    expect(loop.indexOf('"$RELEASE_SEAL" prepare')).toBeGreaterThan(
-      loop.indexOf('run_crash_drill')
-    );
-    expect(transactionCode.match(/^\s+run_crash_drill$/gm)).toHaveLength(1);
-  });
-
-  it('arms recovery before the kill and proves a new leader before any receipt', () => {
-    const crash = between(transactionCode, 'run_crash_drill() {', '\ncreate_image_lease() {');
-    inOrder(crash, [
-      'pre_instance="$(exact_runtime_instance)"',
-      'MUTATION_STARTED=1',
-      'kill -KILL "$pre_pid"',
-      '[ "$restarts" -gt "$pre_restarts" ]',
-      '[ "$new_instance" != "$pre_instance" ]',
-      '"$DATABASE_PROOF" --env-file "$ENV_FILE" --sha "$SHA" --instance-id "$new_instance"',
-      '[ "$(date +%s)" -lt "$BREAK_END_EPOCH" ]',
-      'MUTATION_STARTED=0',
-      'persist_result already-released "$final_instance"',
-      'record_drill_receipt crash-recovered "$final_instance"',
-    ]);
-    expect(crash).not.toContain('docker stop');
-    expect(crash).not.toContain('docker restart');
-    expect(crash).not.toContain('RELEASE_SEAL" prepare');
-    expect(crash).not.toContain('RELEASE_SEAL" commit');
+    expect(transactionCode.match(/^\s*record_drill_receipt /gm)).toHaveLength(1);
   });
 
   it('never spends the off-cycle window and never asks a release to stand aside', () => {
@@ -245,10 +240,10 @@ describe('the host plumbing stays inside the existing release lane', () => {
     expect(seal).toContain('commands.add_parser("attest-committed-sha")');
   });
 
-  it('names the route in the runbook that required it', () => {
-    expect(runbook).toContain('.github/workflows/engine-drill.yml');
-    expect(runbook).toContain('drill-club-arena-engine');
-    expect(runbook).not.toContain('Until that controlled path exists');
+  it('documents the route, and leaves the crash drill its own', () => {
+    expect(runbook).toContain('.github/workflows/engine-rollback-drill.yml');
+    expect(runbook).toContain('event_type=rollback-drill-club-arena-engine');
+    expect(runbook).toContain('maintenance-break-fire-drill.md');
   });
 
   it('executes the real drill shell against real Git histories', () => {

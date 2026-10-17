@@ -177,7 +177,7 @@ fsync_directory "$REQUEST_ROOT"
 # An engine drill's record (install-engine-drill.sh) is retired after the
 # request, never before it: a replay must never find a drill's request without
 # the record that names it a drill. Its evidence lives on in
-# engine-drill-results/, written by the transaction itself.
+# engine-rollback-drill-results/, written by the transaction itself.
 DRILL_FILE="$REQUEST_ROOT/$RUN_ID.drill"
 [[ "$DRILL_FILE" =~ ^"$REQUEST_ROOT"/[1-9][0-9]*(-[1-9][0-9]*)?\.drill$ ]] \
   || { echo '[engine-release-recover] FATAL: refusing unsafe drill-record cleanup' >&2; exit 1; }

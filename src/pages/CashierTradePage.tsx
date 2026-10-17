@@ -127,6 +127,7 @@ import { UnionService } from '../services/UnionService';
 import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
+import { useFitText } from '../components/lobby/game-cards/useFitText';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips, formatWalletChips } from '../utils/format';
 import {
@@ -293,6 +294,7 @@ function CashierPlayerCard({
   walletControl?: React.ReactNode;
   walletBalance?: number | null;
 }) {
+  const nameRef = useFitText<HTMLElement>(row.name, 1, 0.1);
   return (
     <section className={styles.playerCard} aria-label="Selected Player">
       <img
@@ -307,7 +309,9 @@ function CashierPlayerCard({
       />
       <span className={styles.playerCardPlate}>
         <span className={styles.playerCardIdentity}>
-          <strong className={styles.playerCardName}>{row.name}</strong>
+          <strong ref={nameRef} className={styles.playerCardName}>
+            {row.name}
+          </strong>
           <span className={styles.playerCardId}>
             {row.playerNumber ? `ID: ${row.playerNumber}` : 'ID Unavailable'}
           </span>
@@ -1795,6 +1799,43 @@ function CashierTradeWorkspace() {
     return rows;
   }, [downline, search, sortKey, groupByRole, mineOnly, roleFilter, recentIds]);
 
+  const [rosterWalletBalances, setRosterWalletBalances] = useState<
+    Record<string, Partial<Record<SendDestination, number>>>
+  >({});
+  const visibleWalletIds = JSON.stringify(list.slice(0, visibleCount).map((row) => row.userId));
+  useEffect(() => {
+    if (!clubUuid || !roleResolved || myRole === 'player') return;
+    let live = true;
+    setRosterWalletBalances({});
+    void (async () => {
+      const ids = JSON.parse(visibleWalletIds) as string[];
+      const balances: Record<string, Partial<Record<SendDestination, number>>> = {};
+      try {
+        for (let offset = 0; offset < ids.length; offset += 25) {
+          const { data, error } = await supabase.rpc('fn_cashier_recipient_wallet_balances', {
+            p_club_id: clubUuid,
+            p_user_ids: ids.slice(offset, offset + 25),
+          });
+          if (error) throw error;
+          if (!Array.isArray(data)) throw new Error('Recipient Balance Response Missing');
+          for (const row of data) {
+            balances[row.user_id] = {};
+            for (const wallet of ['player_wallet', 'agent_wallet'] as const) {
+              if (row[wallet] != null && Number.isFinite(Number(row[wallet])))
+                balances[row.user_id][wallet] = Number(row[wallet]);
+            }
+          }
+        }
+        if (live) setRosterWalletBalances(balances);
+      } catch (error) {
+        reportError(error, 'CashierTradePage.rosterWalletBalances');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [clubUuid, roleResolved, myRole, visibleWalletIds]);
+
   const agencyBalance = useMemo(() => sumChips(recipients.map((r) => r.chipBalance)), [recipients]);
 
   /** Fast client-side ledger controls over the bounded, newest-first page. */
@@ -2578,9 +2619,9 @@ function CashierTradeWorkspace() {
       // The one branch that did not exist. A batch where every target failed
       // produced no summary at all.
       toast?.error?.(
-        ok > 0
-          ? `${failed.length} Of ${targets.length} Need Outcome Verification`
-          : `Transfer Outcomes Need Verification For ${failed.length} Recipients`
+        uncertain.length > 0
+          ? `Transfer Outcomes Need Verification For ${uncertain.length} Recipients`
+          : `${failed.length} Transfers Were Refused. No Chips Were Moved For Those Recipients`
       );
     }
   };
@@ -3716,9 +3757,7 @@ function CashierTradeWorkspace() {
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder={
-                    advanced ? 'Search Name, Number, Handle, Or Role' : 'Search Name Or ID'
-                  }
+                  placeholder="Search Name Or ID Number"
                   aria-label={`Search ${downline.length} Member${downline.length === 1 ? '' : 's'}`}
                 />
                 {search && (
@@ -3733,10 +3772,10 @@ function CashierTradeWorkspace() {
                     Clear Search
                   </button>
                 )}
-                <span className={styles.memberCount} role="status" aria-live="polite">
-                  {list.length.toLocaleString()} Results
-                </span>
               </div>
+              <span className={styles.memberCount} role="status" aria-live="polite">
+                {list.length.toLocaleString()} Results
+              </span>
               <div className={styles.filterRow}>
                 <label className={styles.roleFilter}>
                   Role
@@ -3940,11 +3979,21 @@ function CashierTradeWorkspace() {
                             }}
                           />
                         </label>
-                        <img
-                          src={r.avatarUrl || generateAvatarSvg(r.userId, r.name || '?')}
-                          alt=""
-                          className={styles.avatar}
-                        />
+                        <span className={styles.rosterPortrait}>
+                          <img
+                            src={r.avatarUrl || generateAvatarSvg(r.userId, r.name || '?')}
+                            alt=""
+                            className={styles.avatar}
+                            onError={(event) => {
+                              const image = event.currentTarget;
+                              image.onerror = null;
+                              image.src = generateAvatarSvg(r.userId, r.name || '?');
+                            }}
+                          />
+                          <span className={`${styles.rowSub} ${styles.simpleId}`}>
+                            {r.playerNumber ? `ID: ${r.playerNumber}` : 'ID Unavailable'}
+                          </span>
+                        </span>
                         {/* The record stays a real link for the keyboard and
                             for assistive technology (Enter opens it). A tap is
                             the row's: one selects, two open. */}
@@ -3965,46 +4014,33 @@ function CashierTradeWorkspace() {
                             {r.name}
                             {r.isSelf ? <span className={styles.rowYou}>You</span> : null}
                           </span>
-                          <span className={`${styles.rowSub} ${styles.simpleId}`}>
-                            {!advanced ? (
-                              r.playerNumber ? (
-                                `ID: ${r.playerNumber}`
-                              ) : (
-                                'ID Unavailable'
-                              )
-                            ) : (
-                              <>
-                                {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
-                                {titleCase(roleLabel(r.role as ClubRole))}
-                                {r.username ? ` · @${r.username}` : ''}
-                              </>
-                            )}
-                          </span>
+                          {advanced && (
+                            <span className={styles.rowSub}>
+                              {titleCase(roleLabel(r.role as ClubRole))}
+                              {r.username ? ` · @${r.username}` : ''}
+                            </span>
+                          )}
                         </Link>
                         <span className={styles.rosterWallet}>
-                          <span className={styles.rowBalance}>
-                            {formatWalletChips(r.chipBalance)}
-                          </span>
-                          <span className={styles.rowSub}>Player Wallet</span>
+                          {canHoldAgentWallet(r.role) && (
+                            <span className={styles.rosterBalanceLine}>
+                              <span className={styles.rowSub}>Agent Wallet</span>
+                              <strong className={styles.rowBalance}>
+                                {rosterWalletBalances[r.userId]?.agent_wallet === undefined
+                                  ? 'Unavailable'
+                                  : formatWalletChips(rosterWalletBalances[r.userId].agent_wallet!)}
+                              </strong>
+                            </span>
+                          )}
+                          {holdsPlayerWallet(r.role) && (
+                            <span className={styles.rosterBalanceLine}>
+                              <span className={styles.rowSub}>Player Wallet</span>
+                              <strong className={styles.rowBalance}>
+                                {formatWalletChips(r.chipBalance)}
+                              </strong>
+                            </span>
+                          )}
                         </span>
-                        {selectable ? (
-                          <button
-                            type="button"
-                            className={`${styles.checkbox} ${isSelected ? styles.checkboxOn : ''}`}
-                            disabled={busy}
-                            aria-label={`Select ${r.name}`}
-                            aria-pressed={isSelected}
-                            onClick={(event) => {
-                              // The button only toggles. A double tap opens the
-                              // record from the row itself, never from here.
-                              event.stopPropagation();
-                              lastRowTapRef.current = null;
-                              if (selectable && !busy) toggle();
-                            }}
-                          >
-                            {isSelected ? 'Selected' : 'Select'}
-                          </button>
-                        ) : null}
                       </div>
                     );
                   })}
@@ -4903,6 +4939,25 @@ function CashierTradeWorkspace() {
                           }
                         />
                       )}
+                      {amountModal === 'send' && picked.length === 1 && (
+                        <section
+                          className={styles.recipientWalletSummary}
+                          aria-label="Selected Player Wallet Balances"
+                        >
+                          {(['agent_wallet', 'player_wallet'] as const)
+                            .filter((wallet) =>
+                              recipientSendWallets(picked[0].role).includes(wallet)
+                            )
+                            .map((wallet) => (
+                              <span key={wallet}>
+                                {SEND_DESTINATION_LABELS[wallet]}:{' '}
+                                {targetBalances[picked[0].userId]?.[wallet] === undefined
+                                  ? 'Unavailable'
+                                  : formatWalletChips(targetBalances[picked[0].userId][wallet]!)}
+                              </span>
+                            ))}
+                        </section>
+                      )}
                       {sourceLabel && (
                         <CashierWalletRow label={sourceLabel} balance={sourceBalance}>
                           {amountModal === 'send' && (
@@ -5105,7 +5160,9 @@ function CashierTradeWorkspace() {
                     {transferFailures.length > 0 && (
                       <div className={styles.modalFailures} role="alert">
                         <div className={styles.modalFailuresTitle}>
-                          {transferFailures.length} Need Outcome Verification
+                          {transferRecovery
+                            ? `${transferRecovery.failures.length} Need Outcome Verification`
+                            : `${transferFailures.length} Transfers Refused`}
                         </div>
                         {transferFailures.map((f) => (
                           <div className={styles.modalFailureRow} key={f.userId}>

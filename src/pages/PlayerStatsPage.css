@@ -1289,7 +1289,6 @@
   /* Chrome that means nothing on paper. */
   .stats-pill-tabs,
   .stats-range-row,
-  .stats-hero-art,
   /* A Suspense fallback must never reach paper. printDossier awaits the
      lazy chart chunks before printing, so this should be unreachable - but the
      failure mode it guards against is a dossier containing the literal words
@@ -1303,7 +1302,6 @@
      removed. */
   .hand-loading,
   .stats-section-loading,
-  .stats-loading-readout,
   .stats-action-row,
   .stats-brief-actions,
   .export-btn,
@@ -1514,8 +1512,14 @@
   color: rgba(200, 224, 245, 0.55);
 }
 
-.stats-page-loading .stats-command-deck-loading {
-  min-height: 200px;
+/* A loading shell prints its state, not the page hero (Dan, 2026-10-17). */
+.stats-state-line {
+  margin: 0.75rem 0.75rem 0.5rem;
+  color: #9aa5b3;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .stats-page-loading .stats-loading-details {
@@ -1807,13 +1811,15 @@
     margin-top: 12px;
   }
 
+  /* The deck lost its eyebrow, giant title, paragraph and dossier art
+     (Dan, 2026-10-17). The chamfered frame stays because the live controls
+     sit on it: the analysis window on top, the headline figures below. */
   .stats-command-deck {
     isolation: isolate;
     position: relative;
     display: grid;
-    grid-template-columns: minmax(420px, 1.08fr) minmax(330px, 0.92fr);
-    grid-template-rows: minmax(250px, 1fr) auto;
-    min-height: 430px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
     overflow: hidden;
     border: 1px solid rgba(199, 210, 220, 0.28);
     border-radius: 5px;
@@ -1841,44 +1847,12 @@
     pointer-events: none;
   }
 
-  .stats-command-deck::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background:
-      linear-gradient(
-        90deg,
-        rgba(2, 4, 8, 0.05) 0%,
-        rgba(2, 4, 8, 0.22) 36%,
-        rgba(2, 4, 8, 0.9) 58%,
-        rgba(2, 4, 8, 0.99) 100%
-      ),
-      linear-gradient(0deg, rgba(2, 4, 8, 0.88) 0%, transparent 46%);
-    pointer-events: none;
-  }
-
-  .stats-hero-art {
-    position: absolute;
-    inset: 0;
-    z-index: -2;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    object-position: 32% center;
-    filter: saturate(0.82) contrast(1.06) brightness(0.86);
-    pointer-events: none;
-  }
-
   .stats-command-copy {
     z-index: 2;
-    grid-column: 2;
-    align-self: start;
-    max-width: 540px;
-    padding: clamp(34px, 5vw, 58px) clamp(28px, 5vw, 58px) 28px 20px;
+    grid-column: 1 / -1;
+    padding: 20px 20px 14px;
   }
 
-  .stats-eyebrow,
   .stats-section-kicker,
   .stats-range-label,
   .variant-title {
@@ -1892,38 +1866,11 @@
     text-transform: uppercase;
   }
 
-  .stats-eyebrow {
-    color: var(--stats-ivory);
-  }
-
-  .stats-command-copy h1 {
-    margin: 11px 0 10px;
-    max-width: 520px;
-    color: #f2eee6;
-    font-family: 'Rajdhani', 'Roboto Condensed', sans-serif;
-    font-size: clamp(2.55rem, 5vw, 4.2rem);
-    font-weight: 400;
-    letter-spacing: 0.055em;
-    line-height: 0.94;
-    text-transform: uppercase;
-    text-shadow: 0 2px 24px rgba(0, 0, 0, 0.82);
-  }
-
-  .stats-command-copy > p {
-    max-width: 455px;
-    margin: 0;
-    color: #9eabb7;
-    font-size: clamp(0.78rem, 1.3vw, 0.92rem);
-    line-height: 1.6;
-    letter-spacing: 0.012em;
-  }
-
   .stats-range-control {
     display: flex;
     align-items: center;
     gap: 16px;
     width: fit-content;
-    margin-top: 25px;
     padding: 5px;
     border: 1px solid rgba(199, 210, 220, 0.2);
     border-radius: 3px;
@@ -2183,17 +2130,6 @@
     font-weight: 500;
     letter-spacing: 0.055em;
     line-height: 1;
-    text-transform: uppercase;
-  }
-
-  .stats-brief-head p {
-    max-width: 390px;
-    margin: 0;
-    color: #81909a;
-    font-size: 0.72rem;
-    letter-spacing: 0.035em;
-    line-height: 1.45;
-    text-align: right;
     text-transform: uppercase;
   }
 
@@ -2604,49 +2540,11 @@
     border-radius: 3px;
   }
 
-  .stats-loading-readout {
-    z-index: 2;
-    grid-column: 1 / -1;
-    align-self: end;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-    margin: 0 20px 20px;
-    padding: 12px;
-    border: 1px solid rgba(199, 210, 220, 0.18);
-    background: rgba(2, 6, 11, 0.9);
-  }
-
-  .stats-loading-readout span {
-    min-height: 62px;
-    border: 1px solid rgba(199, 210, 220, 0.1);
-    background: linear-gradient(100deg, #0d141c 20%, #172532 42%, #0d141c 64%);
-    background-size: 240% 100%;
-    animation: statsReadoutSweep 1.6s ease-in-out infinite;
-  }
-
-  .stats-loading-readout span:nth-child(2) {
-    animation-delay: 0.12s;
-  }
-
-  .stats-loading-readout span:nth-child(3) {
-    animation-delay: 0.24s;
-  }
-
   .stats-loading-details {
     overflow: hidden;
     margin-top: 14px;
     border: 1px solid rgba(199, 210, 220, 0.1);
     background: rgba(4, 8, 13, 0.74);
-  }
-
-  @keyframes statsReadoutSweep {
-    0% {
-      background-position: 100% 0;
-    }
-    100% {
-      background-position: -100% 0;
-    }
   }
 
   @keyframes statsStatusPulse {
@@ -2657,41 +2555,12 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .stats-loading-readout span,
     .stats-range-status.is-refreshing::before {
       animation: none;
     }
   }
 
   @media (max-width: 900px) {
-    .stats-command-deck {
-      grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: minmax(270px, 1fr) auto;
-      min-height: 520px;
-    }
-
-    .stats-command-deck::after {
-      background:
-        linear-gradient(
-          90deg,
-          rgba(2, 4, 8, 0.96) 0%,
-          rgba(2, 4, 8, 0.75) 54%,
-          rgba(2, 4, 8, 0.12) 100%
-        ),
-        linear-gradient(0deg, rgba(2, 4, 8, 0.94) 0%, transparent 58%);
-    }
-
-    .stats-hero-art {
-      object-position: 62% center;
-    }
-
-    .stats-command-copy {
-      grid-column: 1;
-      justify-self: end;
-      width: min(62%, 540px);
-      padding-top: 40px;
-    }
-
     .stats-brief-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -2717,11 +2586,6 @@
         100% 44px,
         auto,
         auto;
-    }
-
-    .stats-command-deck {
-      grid-template-rows: minmax(310px, 1fr) auto;
-      min-height: 590px;
     }
 
     .stats-club-command {
@@ -2760,37 +2624,8 @@
       width: 100%;
     }
 
-    .stats-command-deck::after {
-      background:
-        linear-gradient(
-          90deg,
-          rgba(2, 4, 8, 0.42) 0%,
-          rgba(2, 4, 8, 0.76) 52%,
-          rgba(2, 4, 8, 0.97) 100%
-        ),
-        linear-gradient(0deg, rgba(2, 4, 8, 0.98) 0%, rgba(2, 4, 8, 0.56) 46%, transparent 76%);
-    }
-
-    .stats-hero-art {
-      object-position: 35% center;
-      opacity: 0.78;
-    }
-
     .stats-command-copy {
-      justify-self: stretch;
-      width: 100%;
-      max-width: 100%;
-      padding: 30px 20px 18px;
-    }
-
-    .stats-command-copy h1 {
-      max-width: 340px;
-      font-size: clamp(2.25rem, 13vw, 3.35rem);
-    }
-
-    .stats-command-copy > p {
-      max-width: 340px;
-      font-size: 0.76rem;
+      padding: 12px 10px 10px;
     }
 
     .stats-range-control {
@@ -2798,7 +2633,6 @@
       flex-direction: column;
       gap: 7px;
       width: 100%;
-      margin-top: 19px;
     }
 
     .stats-range-label {
@@ -2874,11 +2708,6 @@
       gap: 7px;
     }
 
-    .stats-brief-head p {
-      max-width: 100%;
-      text-align: left;
-    }
-
     .stats-brief-item {
       min-height: 122px;
     }
@@ -2937,30 +2766,9 @@
     .variant-row {
       min-width: 520px;
     }
-
-    .stats-loading-readout {
-      margin: 0 10px 10px;
-    }
-
-    .stats-loading-readout span {
-      min-height: 52px;
-    }
   }
 
   @media (max-width: 390px) {
-    .stats-command-deck {
-      grid-template-rows: minmax(245px, 1fr) auto;
-      min-height: 470px;
-    }
-
-    .stats-command-copy {
-      padding-inline: 17px;
-    }
-
-    .stats-command-copy h1 {
-      font-size: 2.2rem;
-    }
-
     .stats-content .stats-grid,
     .stats-overview-grid {
       grid-template-columns: minmax(0, 1fr);

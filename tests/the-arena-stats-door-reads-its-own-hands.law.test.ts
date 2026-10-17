@@ -40,8 +40,10 @@ describe("LAW: the arena's Stats door reads its own hands", () => {
     expect(statsScopeForSearch('?club=002c2d27-9584-4e52-835a-bb2be148fc81')).toBe('diamonds');
     expect(statsScopeForSearch('?club=deep-stack-society')).toBe('chips');
     expect(statsScopeForSearch('')).toBe('chips');
+    expect(PAGE).toContain('const { scope: statsScope } = useArenaStatsScope();');
+    // The arena prints which unit it measures in as live status, not an eyebrow.
     expect(PAGE).toContain(
-      'const { scope: statsScope, eyebrow: statsEyebrow } = useArenaStatsScope();'
+      "status={statsScope === DIAMOND_STATS ? 'Figures In Diamonds' : undefined}"
     );
   });
 

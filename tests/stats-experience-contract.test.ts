@@ -55,7 +55,12 @@ describe('Stats operational transparency', () => {
 describe('Stats mobile fold budget', () => {
   it('keeps the phone hero compact and turns the evidence cards into a snap rail', () => {
     const phone = CSS.slice(CSS.lastIndexOf('@media (max-width: 390px)'));
-    expect(phone).toMatch(/\.stats-command-deck\s*\{[\s\S]{0,180}min-height:\s*(?:[1-4]\d{2})px/);
+    // Dan 2026-10-17: the deck is only its live controls now, so it sizes to
+    // them. No fixed floor anywhere, and no hero art or eyebrow left.
+    expect(CSS).not.toMatch(/\.stats-command-deck\s*\{[^}]*min-height:/);
+    expect(CSS).not.toContain('.stats-hero-art');
+    expect(CSS).not.toContain('.stats-eyebrow');
+    expect(HEADLINE_DECK).not.toContain('<h1');
     expect(phone).toMatch(/\.stats-brief-grid\s*\{[\s\S]{0,220}grid-auto-flow:\s*column/);
     expect(phone).toMatch(/scroll-snap-type:\s*x mandatory/);
     expect(phone).not.toMatch(

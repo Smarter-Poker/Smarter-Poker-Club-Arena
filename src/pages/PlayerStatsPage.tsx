@@ -78,7 +78,15 @@ import {
   type PlayerRakeStats,
 } from '../services/StatsFactsService';
 import type { CashEvidenceMetric } from '../components/stats/CashIntelligencePanel';
-import { CHIP_STATS, statsRpcName, statsScopeArgs, type StatsClubId } from '../services/statsScope';
+import {
+  CHIP_STATS,
+  DIAMOND_STATS,
+  statsRpcName,
+  statsScopeArgs,
+  type StatsClubId,
+} from '../services/statsScope';
+import PageBar from '../components/help/PageBar';
+import type { TutorialStep } from '../components/help/PageHelp';
 import { getUserMemberships } from '../services/ClubsService';
 import { useArenaStatsScope } from './stats/arenaStatsScope';
 import {
@@ -117,6 +125,38 @@ import { usePageTitle } from '../hooks/usePageTitle';
 /** ?statsClub=all: the player chose All Clubs while ?club= names a club. */
 const ALL_CLUBS_PARAM = 'all';
 
+/* The hero's paragraph and the section descriptions live behind the "?" now
+   (Dan, 2026-10-17). Each step lights the control it names; a step whose
+   target is not on screen (the club console in the Diamond Arena) shows its
+   words without lighting anything. */
+const STATS_TOUR: TutorialStep[] = [
+  {
+    title: 'Club Scope',
+    body: 'Pick All Clubs Or One Club. Every Readout Below Is Restricted To The Club You Choose.',
+    target: '.stats-club-command',
+  },
+  {
+    title: 'Analysis Window',
+    body: 'Choose The Range Every Figure On This Page Is Measured Over, And See When It Last Updated.',
+    target: '.stats-range-control',
+  },
+  {
+    title: 'Headline Performance',
+    body: 'Hands Won, Total Hands, Cash Result And BB/100 For The Window You Picked.',
+    target: '.stats-hero',
+  },
+  {
+    title: 'Evidence At A Glance',
+    body: 'Sample-Aware Facts From This Window. Coaching Requires A Persisted Assistant Report.',
+    target: '#stats-brief-title',
+  },
+  {
+    title: 'Deep Analysis',
+    body: 'Switch Between Overview, Performance, Positions, Hands And The Rest Of Your Dossier.',
+    target: '.stats-pill-tabs',
+  },
+];
+
 export default function PlayerStatsPage() {
   usePageTitle('Player Stats');
   const { userId } = useParams();
@@ -124,7 +164,7 @@ export default function PlayerStatsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { scope: statsScope, eyebrow: statsEyebrow } = useArenaStatsScope(); // Diamonds in the arena
+  const { scope: statsScope } = useArenaStatsScope(); // Diamonds in the arena
   const statsTimezone = resolvedTimeZone();
   const targetUserId = userId || user?.id;
   const isOwnProfile = !userId || userId === user?.id;
@@ -1452,26 +1492,10 @@ export default function PlayerStatsPage() {
   if (loading) {
     return (
       <div className="stats-page stats-page-loading" aria-busy="true">
-        <section className="stats-command-deck stats-command-deck-loading">
-          <img
-            className="stats-hero-art"
-            src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-dossier-v2.webp`}
-            alt=""
-            aria-hidden="true"
-            fetchPriority="high"
-            decoding="async"
-          />
-          <div className="stats-command-copy">
-            <span className="stats-eyebrow">{statsEyebrow}</span>
-            <h1>Player Intelligence</h1>
-            <p>Opening Your Performance Dossier...</p>
-          </div>
-          <div className="stats-loading-readout">
-            <span />
-            <span />
-            <span />
-          </div>
-        </section>
+        <h1 className="sr-only">Player Intelligence</h1>
+        <p className="stats-state-line" role="status">
+          Opening Your Performance Dossier...
+        </p>
         <div className="stats-loading-details">
           <PageSkeleton variant="stats" />
         </div>
@@ -1508,31 +1532,22 @@ export default function PlayerStatsPage() {
     const failed = preferencesState === 'error';
     return (
       <div className="stats-page" aria-busy={failed ? undefined : true}>
-        <section className="stats-command-deck" role={failed ? 'alert' : undefined}>
-          <img
-            className="stats-hero-art"
-            src={`${import.meta.env.BASE_URL}images/stats/player-intelligence-dossier-v2.webp`}
-            alt=""
-            aria-hidden="true"
-          />
-          <div className="stats-command-copy">
-            <span className="stats-eyebrow">Private Stats Controls</span>
-            <h1>Player Intelligence</h1>
-            <p>
-              {failed
-                ? 'Your Privacy Preference Could Not Be Verified. Private Detail Remains Hidden.'
-                : 'Verifying Your Privacy Preference Before Opening The Dossier...'}
-            </p>
-            {failed && (
-              <button
-                className="empty-cta"
-                onClick={() => setPreferencesReload((value) => value + 1)}
-              >
-                Retry Privacy Check
-              </button>
-            )}
-          </div>
-        </section>
+        <h1 className="sr-only">Player Intelligence</h1>
+        <div className="stats-empty-state" role={failed ? 'alert' : 'status'}>
+          <span className="empty-description">
+            {failed
+              ? 'Your Privacy Preference Could Not Be Verified. Private Detail Remains Hidden.'
+              : 'Verifying Your Privacy Preference Before Opening The Dossier...'}
+          </span>
+          {failed && (
+            <button
+              className="empty-cta"
+              onClick={() => setPreferencesReload((value) => value + 1)}
+            >
+              Retry Privacy Check
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -1551,6 +1566,13 @@ export default function PlayerStatsPage() {
   );
   return (
     <div className={`stats-page${privacyPresentationMode ? ' stats-page--presentation' : ''}`}>
+      <PageBar
+        title="Player Intelligence"
+        titleId="stats-page-title"
+        summary="Your Recorded Analysis Sample, Distilled Into Patterns You Can Use At The Next Table."
+        status={statsScope === DIAMOND_STATS ? 'Figures In Diamonds' : undefined}
+        steps={STATS_TOUR}
+      />
       <ClubScopeConsole
         statsScope={statsScope}
         clubLabel={clubLabel}
@@ -1571,7 +1593,6 @@ export default function PlayerStatsPage() {
         sortedComparisonRows={sortedComparisonRows}
       />
       <StatsHeadlineDeck
-        statsEyebrow={statsEyebrow}
         refreshing={refreshing}
         statsContract={statsContract}
         rangeKey={rangeKey}
@@ -1591,12 +1612,8 @@ export default function PlayerStatsPage() {
         <section className="stats-intelligence-brief" aria-labelledby="stats-brief-title">
           <div className="stats-brief-head">
             <div>
-              <span className="stats-section-kicker">Range Dossier // Scoped Readout</span>
               <h2 id="stats-brief-title">Evidence At A Glance</h2>
             </div>
-            <p>
-              Sample-Aware Facts From This Window. Coaching Requires A Persisted Assistant Report.
-            </p>
           </div>
           <div className="stats-brief-grid">
             {intelligenceBrief.map((item, index) => (

@@ -21,9 +21,9 @@ export function stackedLobbyDoorsFixture() {
           import {Modal} from './src/components/common/Modal';
           const counts = { declines: 0, dismissals: 0 };
           window.lobbyDoorCounts = counts;
-          function Fixture({ first, invitationCloses, notNowDelayMs }) {
-            const [greeting, setGreeting] = React.useState(first === 'greeting');
-            const [invitation, setInvitation] = React.useState(first === 'invitation');
+          function Fixture({ first, invitationCloses, notNowDelayMs, startClosed }) {
+            const [greeting, setGreeting] = React.useState(!startClosed && first === 'greeting');
+            const [invitation, setInvitation] = React.useState(!startClosed && first === 'invitation');
             const [notNowReady, setNotNowReady] = React.useState(notNowDelayMs === 0);
             React.useEffect(() => {
               if (notNowDelayMs === 0) return undefined;
@@ -31,6 +31,8 @@ export function stackedLobbyDoorsFixture() {
               return () => clearTimeout(ready);
             }, []);
             React.useEffect(() => {
+              window.showLobbyDoor = (door) => door === 'greeting' ? setGreeting(true) : setInvitation(true);
+              if (startClosed) return undefined;
               const later = setTimeout(() => {
                 if (first === 'greeting') setInvitation(true);
                 else setGreeting(true);
@@ -44,14 +46,13 @@ export function stackedLobbyDoorsFixture() {
                 <Modal isOpen={greeting} onClose={() => setGreeting(false)} size="fullscreen"
                        showCloseButton={false} closeOnOverlay={false}
                        ariaLabel="Club Message From Fixture Club">
-                  <button type="button" aria-label="Close Club Message"
-                          onClick={() => setGreeting(false)}>X</button>
+                  <button type="button" onClick={() => setGreeting(false)}>Enter Lobby</button>
                   <p>Welcome To The Fixture Club</p>
                   <button type="button" onClick={() => {
                     fetch('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', { method: 'POST' })
                       .then((r) => r.json())
                       .then((body) => { if (body.ok) { counts.dismissals += 1; setGreeting(false); } });
-                  }}>Do Not Show Me This Message Again</button>
+                  }}>Do Not Show Again</button>
                 </Modal>
                 <Modal isOpen={invitation} onClose={() => setInvitation(false)} size="small"
                        showCloseButton={false} ariaLabel="Diamond Spins">
@@ -64,10 +65,10 @@ export function stackedLobbyDoorsFixture() {
               </>
             );
           }
-          window.mountLobbyDoors = (first, invitationCloses = true, notNowDelayMs = 0) =>
+          window.mountLobbyDoors = (first, invitationCloses = true, notNowDelayMs = 0, startClosed = false) =>
             createRoot(document.getElementById('root')).render(
               <Fixture first={first} invitationCloses={invitationCloses}
-                       notNowDelayMs={notNowDelayMs} />
+                       notNowDelayMs={notNowDelayMs} startClosed={startClosed} />
             );
         `,
       },

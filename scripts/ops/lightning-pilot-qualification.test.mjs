@@ -13,6 +13,23 @@ import {
   parsePopulatedClusterIds,
 } from './lightning-pilot-qualification.mjs';
 import { PILOT } from './prepare-lightning-private-pilot.mjs';
+function templateSnapshot(template) {
+  const action = template === 'action';
+  return {
+    template,
+    variant: 'nlh',
+    regular_ante: action ? 'sb' : 'bb',
+    vpip_floor: action ? 30 : 50,
+    vpip_window: 10,
+    bombs: {
+      enabled: true,
+      trigger: action ? 'timed_15m' : 'every_orbit',
+      ante_bb: action ? 2 : 3,
+      boards: 2,
+    },
+    options: { is_private: true },
+  };
+}
 const clubId = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
 const gameId = 'babb43f1-368e-406f-a97a-a0d5013648b2';
 const game9 = '90000000-0000-4000-8000-000000000009';
@@ -21,16 +38,16 @@ const tableId = 'd78448e2-42da-4bd0-b702-98f8b37d6da7';
 const revision = 'a'.repeat(40);
 const game = (handedness = 6) => ({
   id: handedness === 6 ? gameId : game9,
-  name: `Lightning Pilot NLH ${handedness}`,
+  name: `Lightning Pilot NLH ${handedness === 6 ? 'Action' : 'Madness'} ${handedness}`,
   club_id: clubId,
   union_id: null,
   variant: 'nlh',
-  template_name: 'classic',
+  template_name: handedness === 6 ? 'action' : 'madness',
   sb: handedness === 6 ? 0.01 : 0.02,
   bb: handedness === 6 ? 0.02 : 0.04,
   handedness,
   must_move: true,
-  ruleset_snapshot: { options: { is_private: true } },
+  ruleset_snapshot: templateSnapshot(handedness === 6 ? 'action' : 'madness'),
   lightning_enabled: false,
   cluster_mode: 'must_move',
 });
@@ -433,13 +450,13 @@ test('serving bracket requires a healthy engine at both observations', async () 
   assert.equal(servingStable(unhealthy, unhealthy), 'failed');
 });
 
-test('pilot identity includes authoritative stakes, classic template and exact table size', () => {
+test('pilot identity includes authoritative stakes, Action/Madness template and exact table size', () => {
   const valid = selectTargets([game(), game(9)], clubId);
   assert.ok(valid.every((t) => t.observation.status === 'known'));
   for (const bad of [
     { ...game(), sb: 0.02 },
     { ...game(), bb: 0.04 },
-    { ...game(), template_name: 'action' },
+    { ...game(), template_name: 'classic' },
     { ...game(9), sb: 0.01, bb: 0.02 },
     { ...game(9), handedness: 6 },
     { ...game(9), template_name: undefined },
@@ -575,16 +592,41 @@ test('the populated observation is part of the report and adds no write or contr
 
 test('engine serving identity uses the full releaseSha and refuses inconsistent identities', async () => {
   const full = 'a2ccc04d39bc15852d0047a32893371f3a0a6836';
-  const read = (body) => servingIdentities(async (url) => ({
-    ok: true,
-    json: async () => url.includes('/health') ? body : { ca_sha: revision },
-  }));
+  const read = (body) =>
+    servingIdentities(async (url) => ({
+      ok: true,
+      json: async () => (url.includes('/health') ? body : { ca_sha: revision }),
+    }));
   const actual = await read({ status: 'ok', version: full.slice(0, 8), releaseSha: full });
   assert.equal(actual.engine.data.reportedVersion, full);
   assert.equal(actual.engine.data.fullRevisionEstablished, true);
-  const later = await read({ status: 'ok', version: full.slice(0, 8), releaseSha: full.slice(0, 39) + '7' });
+  const later = await read({
+    status: 'ok',
+    version: full.slice(0, 8),
+    releaseSha: full.slice(0, 39) + '7',
+  });
   assert.equal(servingStable(actual, later), 'failed');
   for (const releaseSha of ['short', 'b'.repeat(40), null]) {
-    assert.equal((await read({ status: 'ok', version: full.slice(0, 8), releaseSha })).engine.status, 'unknown');
+    assert.equal(
+      (await read({ status: 'ok', version: full.slice(0, 8), releaseSha })).engine.status,
+      'unknown'
+    );
+  }
+});
+
+test('qualification rejects Classic and tampered Action/Madness semantics without treating legacy names as targets', () => {
+  const legacy = { ...game(), name: 'Lightning Pilot NLH 6', template_name: 'classic' };
+  assert.ok(selectTargets([legacy], clubId).every((t) => t.observation.status === 'unknown'));
+  for (const candidate of [game(), game(9)]) {
+    for (const patch of [
+      { template_name: 'classic' },
+      { ruleset_snapshot: { ...candidate.ruleset_snapshot, vpip_floor: 0 } },
+      { ruleset_snapshot: { ...candidate.ruleset_snapshot, bombs: { enabled: false } } },
+    ]) {
+      const result = selectTargets([{ ...candidate, ...patch }], clubId).find(
+        (t) => t.name === candidate.name
+      );
+      assert.equal(result.observation.status, 'unknown');
+    }
   }
 });

@@ -20,7 +20,8 @@ const metadataRead = vi.fn();
 const gameRow = {
   id: CLUSTER,
   club_id: null,
-  name: 'NLH 1/2 Classic',
+  name: 'NLH 1/2 Action',
+  template_name: 'action',
   variant: 'nlh',
   sb: 1,
   bb: 2,

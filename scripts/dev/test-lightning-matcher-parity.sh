@@ -521,6 +521,11 @@ proof=$(sed -n 's/^-- @live-proof: //p' "$M/20261015214203_lightning_calibration
 n=$(Q "SELECT count(*) FROM pp.out")
 Q "SELECT jsonb_build_object('fixtures', jsonb_agg(doc || jsonb_build_object('discriminates', discriminates) ORDER BY n)) FROM pp.out" > "$fixture/fixtures.json"
 groups=$(Q "SELECT sum(jsonb_array_length(doc -> 'plan' -> 'groups')) FROM pp.out")
+bash "$root/scripts/dev/test-lightning-private-discovery.sh"
+bash "$root/scripts/dev/test-lightning-private-join.sh"
+bash "$root/scripts/dev/test-lightning-private-pool-status.sh"
+bash "$root/scripts/dev/test-lightning-pilot-assignment.sh"
+bash "$root/scripts/dev/test-lightning-template-boundary.sh"
 players=$(Q "SELECT sum(jsonb_array_length(doc -> 'players')) FROM pp.out")
 horses=$(Q "SELECT sum(pp.horses(game)) FROM pp.cl")
 

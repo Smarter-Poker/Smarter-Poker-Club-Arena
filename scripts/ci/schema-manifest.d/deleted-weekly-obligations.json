@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/weekly-delivery-conservation-20261017: promised private reserve reader; protected merge, exact guarded installation and durable readback remain required before production use.",
+  "functions": ["smarter_private.deleted_wallet_published_rakeback_reserve"]
+}

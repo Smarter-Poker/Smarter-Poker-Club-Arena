@@ -302,7 +302,7 @@ for (const viewport of [
     ).toHaveCount(0);
     await expect(page.locator('#global-header')).toBeVisible();
     await expect(controls.getByText('Club Chips', { exact: true })).toBeVisible();
-    await expect(controls.getByText('12.3K', { exact: true })).toBeVisible();
+    await expect(controls.getByText('12,345.00', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Spin 100', exact: true })).toBeEnabled();
     const assertFits = async () => {
       const measured = await controls.evaluate((el) => {

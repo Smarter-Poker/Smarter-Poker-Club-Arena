@@ -340,6 +340,34 @@ const LADDER: Array<{ players: number; clusters: number; hands: number; capMs: n
     : []),
 ];
 
+describe('the load input device preserves rendered special-fold intent', () => {
+  for (const kind of ['fast_fold', 'fold_watch']) {
+    it(`${kind} captures one actual host hand for the first delivery and duplicate`, () => {
+      let hand = '00000000-0000-4000-8000-000000006001';
+      let reads = 0;
+      const intent = `lightning-hand:${hand}`;
+      const act = vi.fn(() => {
+        hand = '00000000-0000-4000-8000-000000006002';
+        return { success: true };
+      });
+      const host = {
+        get currentHandId() {
+          reads++;
+          return hand;
+        },
+        handlePlayerAction: act,
+      };
+      const driver = new TableDriver(null as never, { rnd: () => 0, duplicateFoldEvery: 1 });
+      (driver as any).fold(host, 'player', kind);
+      expect(reads).toBe(1);
+      expect(act.mock.calls).toEqual([
+        ['player', kind, undefined, intent],
+        ['player', kind, undefined, intent],
+      ]);
+    });
+  }
+});
+
 describe('load: 10, 50, 100, 500, 1,000 players (5,000 and 10,000 with LIGHTNING_LOAD_FULL=1)', () => {
   for (const row of LADDER) {
     it(

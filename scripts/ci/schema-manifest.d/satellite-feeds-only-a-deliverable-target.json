@@ -1,0 +1,10 @@
+{
+  "_owner": "feat/bounty-target-satellites",
+  "_comment": "A satellite may only be created into a target whose seat the satellite settlement authority can deliver (20260911110907). Since 20261017004440 that includes bounty, PKO and mystery-bounty targets, booked exactly like a paid entry; Spin, unknown flags and Diamond bounty targets are still refused.",
+  "tables": [],
+  "functions": [
+    "fn_satellite_target_is_deliverable",
+    "fn_satellite_feeds_only_a_deliverable_target"
+  ],
+  "columns": {}
+}

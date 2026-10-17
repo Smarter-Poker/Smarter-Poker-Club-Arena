@@ -22,6 +22,7 @@ import sharp from 'sharp';
  * Same harness shape as footer-visual-regression.spec.ts: no server, no auth,
  * page.setContent with the real stylesheet and the real asset.
  */
+// Owner update 2026-10-16: the invisible black edge is exactly 1 CSS pixel.
 const ROOT = process.cwd();
 const css = readFileSync(join(ROOT, 'src/components/navigation/GlobalHeader.module.css'), 'utf8');
 const art = readFileSync(
@@ -81,6 +82,8 @@ test.describe('Club Arena header portrait frame', () => {
         return {
           art: rect('.desktopArtwork'),
           slot: rect('.profileAvatarSlot'),
+          slotBorderWidth: getComputedStyle(document.querySelector('.profileAvatarSlot')!)
+            .borderTopWidth,
           slotBorder: getComputedStyle(document.querySelector('.profileAvatarSlot')!)
             .borderTopStyle,
           buttonBackground: getComputedStyle(document.querySelector('.profileBtn')!)
@@ -90,6 +93,7 @@ test.describe('Club Arena header portrait frame', () => {
       expect(geo.buttonBackground, `${width}px: the profile button paints the black mask`).toBe(
         'rgb(0, 0, 0)'
       );
+      expect(geo.slotBorderWidth, `${width}px: the edge is exactly one pixel`).toBe('1px');
       expect(geo.slotBorder, `${width}px: the slot has its hairline`).toBe('solid');
 
       // Paint the header and decode the composited pixels in Node. Sending the

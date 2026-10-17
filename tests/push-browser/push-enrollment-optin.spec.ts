@@ -4,7 +4,8 @@
  * Chromium with notification permission granted, the REAL prompt host, push
  * client and nudge policy, a real service-worker registration at the shared
  * /push/ scope, and a local stand-in for the hub API that records what the
- * page sent. The one boundary that may be substituted is the push service
+ * page sent. Persisted phone verification is served by the local profile
+ * adapter. The push-service boundary may be substituted
  * itself: when this Chromium build cannot reach one, pushManager.subscribe()
  * is answered by a recorded stand-in and the spec says so in its annotations.
  *
@@ -157,4 +158,19 @@ test('the owner is never nudged for receipts, but is asked when joining a club',
 
   await page.getByRole('button', { name: 'Harness Join Club' }).click();
   await expect(card(page)).toHaveAttribute('data-push-nudge', 'club_joined', { timeout: 6_000 });
+});
+
+test('an unverified phone cannot be prompted before persisted verification', async ({ page }) => {
+  const uid = `phone-${Date.now()}`;
+  await page.goto(`./?uid=${uid}&phone=unverified`);
+  await expect(page.getByRole('button', { name: 'Harness Join Club' })).toBeVisible();
+  const before = (await requests(page)).length;
+  await page.getByRole('button', { name: 'Harness Join Club' }).click();
+  await page.waitForTimeout(4_000);
+  await expect(card(page)).toHaveCount(0);
+  expect((await requests(page)).length).toBe(before);
+  await page.getByRole('button', { name: 'Harness Verify Phone' }).click();
+  await expect(page.getByTestId('phone')).toHaveText('Verified');
+  await expect(card(page)).toBeVisible({ timeout: 6_000 });
+  expect((await requests(page)).length).toBe(before);
 });

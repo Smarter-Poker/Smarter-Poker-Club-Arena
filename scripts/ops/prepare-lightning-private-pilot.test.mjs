@@ -9,6 +9,23 @@ import {
   selectPilotGame,
   preparePilot,
 } from './prepare-lightning-private-pilot.mjs';
+function templateSnapshot(template) {
+  const action = template === 'action';
+  return {
+    template,
+    variant: 'nlh',
+    regular_ante: action ? 'sb' : 'bb',
+    vpip_floor: action ? 30 : 50,
+    vpip_window: 10,
+    bombs: {
+      enabled: true,
+      trigger: action ? 'timed_15m' : 'every_orbit',
+      ante_bb: action ? 2 : 3,
+      boards: 2,
+    },
+    options: { is_private: true },
+  };
+}
 const club = {
   id: 'private-club',
   owner_id: PILOT.ownerId,
@@ -25,11 +42,11 @@ const game = {
   handedness: 6,
   sb: 0.01,
   bb: 0.02,
-  template_name: 'classic',
+  template_name: 'action',
   enabled: true,
   variant: 'nlh',
   must_move: true,
-  ruleset_snapshot: { options: { is_private: true } },
+  ruleset_snapshot: templateSnapshot('action'),
   lightning_enabled: false,
   cluster_mode: 'must_move',
 };
@@ -46,18 +63,20 @@ test('requires the existing service owner, private standalone club and admission
   }
 });
 
-const windowRequest = 'aaf6c3a2-b098-4d65-8e47-647a6834900b';
-const integrityRequest = 'b5e5c106-183e-4f9c-a37b-d72189567369';
+const windowRequest = '57b786b4-1f87-4b57-b65f-ea9997ca9dc8';
+const integrityRequest = '4ffbcbb6-f273-4c13-9dcb-bcd27b1d1005';
 const game9 = {
   ...game,
   id: 'private-game-9',
-  name: 'Lightning Pilot NLH 9',
+  name: 'Lightning Pilot NLH Madness 9',
+  template_name: 'madness',
+  ruleset_snapshot: templateSnapshot('madness'),
   handedness: 9,
   sb: 0.02,
   bb: 0.04,
 };
-const windowRequest9 = 'fbb0c5d2-5e32-4852-88a1-2077e620a4c3';
-const integrityRequest9 = '5ded3c91-dcb0-437a-b192-b072ec7b8ac9';
+const windowRequest9 = '92836685-da27-433b-b25c-d524d6199f9b';
+const integrityRequest9 = '9c2c4d5b-2911-413d-87f4-befc54820391';
 const oldState = { cluster_mode: 'must_move', lightning_enabled: false };
 function controlReceipt(action, clusterId = game.id) {
   const telemetry = action === 'set_integrity_telemetry';
@@ -415,6 +434,8 @@ async function runTwoTargetFlow(estate, options = {}) {
                 ...game,
                 id: target.handedness === 6 ? game.id : game9.id,
                 name: target.gameName,
+                template_name: target.templateName,
+                ruleset_snapshot: templateSnapshot(target.templateName),
                 handedness: target.handedness,
                 sb: args.p_sb,
                 bb: args.p_bb,
@@ -475,7 +496,7 @@ test('half-completed preparation creates only named nine-seat target and preserv
   assert.equal(creations.length, 1);
   assert.deepEqual(creations[0].args, {
     p_club_id: club.id,
-    p_template: 'classic',
+    p_template: 'madness',
     p_variant: 'nlh',
     p_sb: 0.02,
     p_bb: 0.04,
@@ -529,7 +550,7 @@ for (const patch of [
   { sb: 0.03 },
   { bb: 0.05 },
   { enabled: false },
-  { template_name: 'action' },
+  { template_name: 'classic' },
   { handedness: 6 },
   { lightning_enabled: true },
   { ruleset_snapshot: { options: { is_private: false } } },
@@ -607,7 +628,7 @@ test('fresh preparation creates both private sizes through the ordinary authenti
     creations.map((c) => [c.args.p_name, c.args.p_handedness, c.args.p_sb, c.args.p_bb]),
     [
       [PILOT.gameName, 6, 0.01, 0.02],
-      ['Lightning Pilot NLH 9', 9, 0.02, 0.04],
+      ['Lightning Pilot NLH Madness 9', 9, 0.02, 0.04],
     ]
   );
   assert.equal(receipt.targets.length, 2);
@@ -684,9 +705,21 @@ test('the roster accepts the owner plus admitted horses and counts them on the r
 });
 
 for (const [label, member, profile] of [
-  ['a human player', { user_id: 'human-x', status: 'active', role: 'player' }, { id: 'human-x', is_horse: false }],
-  ['a horse with a staff role', { user_id: 'horse-x', status: 'active', role: 'admin' }, { id: 'horse-x', is_horse: true }],
-  ['a pending horse', { user_id: 'horse-y', status: 'pending', role: 'player' }, { id: 'horse-y', is_horse: true }],
+  [
+    'a human player',
+    { user_id: 'human-x', status: 'active', role: 'player' },
+    { id: 'human-x', is_horse: false },
+  ],
+  [
+    'a horse with a staff role',
+    { user_id: 'horse-x', status: 'active', role: 'admin' },
+    { id: 'horse-x', is_horse: true },
+  ],
+  [
+    'a pending horse',
+    { user_id: 'horse-y', status: 'pending', role: 'player' },
+    { id: 'horse-y', is_horse: true },
+  ],
   ['an unreadable profile', { user_id: 'ghost', status: 'active', role: 'player' }, null],
 ])
   test(`the roster refuses ${label}`, async () => {
@@ -699,3 +732,50 @@ for (const [label, member, profile] of [
       })
     );
   });
+
+test('Action and Madness keep their own immutable rules and never accept Classic or relabeled snapshots', () => {
+  assert.doesNotThrow(() => assertPilotGame(game, club.id, PILOT_TARGETS[0]));
+  assert.doesNotThrow(() => assertPilotGame(game9, club.id, PILOT_TARGETS[1]));
+  for (const [candidate, target] of [
+    [game, PILOT_TARGETS[0]],
+    [game9, PILOT_TARGETS[1]],
+  ]) {
+    for (const patch of [
+      { template_name: 'classic' },
+      { ruleset_snapshot: { ...candidate.ruleset_snapshot, template: 'classic' } },
+      { ruleset_snapshot: { ...candidate.ruleset_snapshot, regular_ante: 'none' } },
+      { ruleset_snapshot: { ...candidate.ruleset_snapshot, vpip_floor: 0 } },
+      { ruleset_snapshot: { ...candidate.ruleset_snapshot, bombs: { enabled: false } } },
+    ])
+      assert.throws(() => assertPilotGame({ ...candidate, ...patch }, club.id, target));
+  }
+  const oldKeys = new Set([
+    'aaf6c3a2-b098-4d65-8e47-647a6834900b',
+    'b5e5c106-183e-4f9c-a37b-d72189567369',
+    'fbb0c5d2-5e32-4852-88a1-2077e620a4c3',
+    '5ded3c91-dcb0-437a-b192-b072ec7b8ac9',
+  ]);
+  const keys = PILOT_TARGETS.flatMap((t) => [t.windowRequestId, t.integrityRequestId]);
+  assert.equal(new Set(keys).size, 4);
+  assert.ok(keys.every((k) => !oldKeys.has(k)));
+});
+
+test('normal creation preserves both original Classic pilots and creates distinct Action/Madness categories', async () => {
+  const legacy = [
+    { ...game, id: 'legacy-six', name: 'Lightning Pilot NLH 6', template_name: 'classic' },
+    { ...game9, id: 'legacy-nine', name: 'Lightning Pilot NLH 9', template_name: 'classic' },
+  ];
+  const original = JSON.stringify(legacy);
+  const estate = [...legacy];
+  const { calls } = await runTwoTargetFlow(estate);
+  assert.equal(JSON.stringify(estate.slice(0, 2)), original);
+  const created = calls.filter((c) => c.name === 'fn_cash_game_create');
+  assert.deepEqual(
+    created.map((c) => [c.args.p_template, c.args.p_handedness, c.args.p_sb, c.args.p_bb]),
+    [
+      ['action', 6, 0.01, 0.02],
+      ['madness', 9, 0.02, 0.04],
+    ]
+  );
+  assert.equal(new Set(created.map((c) => c.args.p_template)).size, 2);
+});

@@ -150,6 +150,11 @@ const UNIT_BEARING_RULES: Array<{ fn: string; declaredIn: string; arity: number 
   },
   { fn: 'recoveryFeeCents', declaredIn: 'server/src/tournament/recoveryFee.ts', arity: 3 },
   { fn: 'unitFloorCents', declaredIn: 'server/src/tournament/recoveryFee.ts', arity: 2 },
+  {
+    fn: 'tournamentPurchaseFeeRatio',
+    declaredIn: 'server/src/tournament/recoveryFee.ts',
+    arity: 3,
+  },
   /**
    * ─── AND THE WRAPPER, BECAUSE A CENSUS WITH A HOLE IN IT IS THE DEFECT ────
    *
@@ -170,7 +175,17 @@ const UNIT_BEARING_RULES: Array<{ fn: string; declaredIn: string; arity: number 
   { fn: 'placePrize', declaredIn: 'src/components/tournament/details/types.ts', arity: 4 },
 ];
 
+const UNIT_DEFAULT = /unitCents\s*(?::\s*number\s*)?=(?!=|>)/;
+
 describe('LAW: a tournament prize knows its unit', () => {
+  it('distinguishes a default assignment from an equality comparison', () => {
+    for (const code of ['unitCents=1', 'unitCents = 100', 'unitCents: number = 1']) {
+      expect(code).toMatch(UNIT_DEFAULT);
+    }
+    for (const code of ['unitCents === 100', 'unitCents == 100', 'unitCents => unitCents']) {
+      expect(code).not.toMatch(UNIT_DEFAULT);
+    }
+  });
   it('no unit-bearing money rule gives its unit a default', () => {
     // A default is the defect this law is about, in the one place it can be
     // reintroduced. The client copy of payoutMath is checked too: it is
@@ -187,9 +202,7 @@ describe('LAW: a tournament prize knows its unit', () => {
       'src/components/tournament/details/types.ts',
     ]) {
       const code = blankNonCode(read(file));
-      expect(code, `${file} gave a unit parameter a default again`).not.toMatch(
-        /unitCents\s*(?::\s*number\s*)?=/
-      );
+      expect(code, `${file} gave a unit parameter a default again`).not.toMatch(UNIT_DEFAULT);
       expect(code, `${file} no longer declares a unit parameter at all`).toMatch(/unitCents/);
     }
   });

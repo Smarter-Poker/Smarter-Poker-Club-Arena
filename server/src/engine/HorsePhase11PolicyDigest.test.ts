@@ -23,6 +23,7 @@ import {
   horsePhase11PolicyDigestOf,
   runningPhase11PolicySourceReader,
 } from './HorsePhase11PolicyDigest.js';
+import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
 import type { OmahaPolicyVariant } from './omaha/OmahaVariantPolicyPack.js';
 
 const serverRoot = fileURLToPath(new URL('../../', import.meta.url));
@@ -90,12 +91,17 @@ describe('P11.2 Phase 11 policy digest (audit 2026-10-07)', () => {
       expect(hashed.has(file) !== excluded.has(file), `${file} hashed xor excluded`).toBe(true);
     // Every excluded file is really in the closure, and nothing is both.
     for (const file of excluded) expect(closure).toContain(file);
-    // Beyond the closure: the owner that invokes and legalizes the policy, and
-    // the registry that routes the variant to it.
-    expect([...hashed].filter((f) => !closure.includes(f)).sort()).toEqual([
-      'src/engine/HorseLogic.ts',
-      'src/engine/HorsePolicyRegistry.ts',
-    ]);
+    // Beyond the closure: the owner that invokes and legalizes the policy, the
+    // registry that routes the variant to it, and (v5, 2026-10-16) the
+    // reference decision's own sources the packs return wherever they do not
+    // deviate (HorseReferenceDecisionSources.test.ts pins that list).
+    expect([...hashed].filter((f) => !closure.includes(f)).sort()).toEqual(
+      [
+        'src/engine/HorseLogic.ts',
+        'src/engine/HorsePolicyRegistry.ts',
+        ...HORSE_REFERENCE_DECISION_SOURCE_FILES.filter((f) => !closure.includes(f)),
+      ].sort()
+    );
     for (const file of HORSE_PHASE11_POLICY_SOURCE_FILES)
       expect(existsSync(path.join(serverRoot, file)), file).toBe(true);
     for (const reason of Object.values(HORSE_PHASE11_POLICY_EXCLUDED_CLOSURE_FILES))

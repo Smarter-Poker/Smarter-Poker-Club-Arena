@@ -233,6 +233,9 @@ export const SHARK_CLUB_ID = 25450;
 
 export const DIAMOND_ARENA_CLUB_ID = '002c2d27-9584-4e52-835a-bb2be148fc81';
 export const DIAMOND_ARENA_SLUG = 'diamond-arena';
+/** Legacy explicit scope accepted alongside the canonical club query. */
+export const DIAMOND_HAND_HISTORY_PARAM = 'arena';
+export const DIAMOND_HAND_HISTORY_VALUE = 'diamond';
 export const DIAMOND_ARENA_ENTRY = Object.freeze({
   id: DIAMOND_ARENA_CLUB_ID,
   slug: DIAMOND_ARENA_SLUG,

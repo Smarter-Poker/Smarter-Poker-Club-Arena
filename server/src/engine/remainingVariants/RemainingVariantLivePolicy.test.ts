@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { decideUnderClocks } from '../HorseDeclaredWork.test-support.js';
 import {
   remainingVariantSpot,
   remainingCards,
@@ -347,7 +348,7 @@ describe('remaining variant first-round core', () => {
     s.hero.knownDeadCards = remainingCards('9s');
     expect(sampleRemainingVariantEquity('pineapple', s.hero, s.state, () => true)).toBeNull();
   });
-  it('preserves named launch, multiboard, malformed evidence and deadline boundaries', () => {
+  it('preserves named launch, multiboard and malformed evidence boundaries, and no clock decides', () => {
     const p = remainingVariantSpot('pineapple', 'preflop', 2, 'tournament');
     expect(
       evaluateRemainingVariantPolicy(p.hero, p.state, p.baseline, null, 'candidate', () => 0)
@@ -362,18 +363,12 @@ describe('remaining variant first-round core', () => {
     s.hero.cards = remainingCards('2s As');
     expect(run().receipt.reason).toBe('invalid_cards');
     s.hero.cards = remainingCards('As Ad');
-    let clock = 0;
-    const stopped = evaluateRemainingVariantPolicy(
-      s.hero,
-      s.state,
-      s.baseline,
-      null,
-      'candidate',
-      () => (clock += 5)
+    // 2026-10-16: a slow and a stalled clock give the fixed clock's decision.
+    const [fixed, ...late] = decideUnderClocks((now) =>
+      evaluateRemainingVariantPolicy(s.hero, s.state, s.baseline, null, 'candidate', now)
     );
-    expect(stopped.receipt.reason).toBe('work_budget');
-    expect(stopped.decision).toBe(s.baseline);
-    expect(stopped.receipt.fired).toBe(false);
+    expect((fixed as { receipt: { reason: string } }).receipt.reason).not.toBe('work_budget');
+    for (const other of late) expect(other).toEqual(fixed);
     const evidence = sampleRemainingVariantEquity('short_deck', s.hero, s.state, () => true)!;
     evidence.analysisMs = 0;
     evidence.distribution = [null as any];
@@ -382,4 +377,23 @@ describe('remaining variant first-round core', () => {
         .receipt.reason
     ).toBe('invalid_equity_evidence');
   });
+
+  it.each(['short_deck', 'pineapple', 'flh', 'flo8'] as const)(
+    '%s draws the full declared sample at every postflop street whatever the clock reads',
+    (variant) => {
+      for (const street of ['flop', 'turn', 'river'] as const) {
+        const s = remainingVariantSpot(variant, street, 3);
+        const [fixed, slow, stalled] = decideUnderClocks((now) =>
+          evaluateRemainingVariantPolicy(s.hero, s.state, s.baseline, null, 'candidate', now)
+        ) as { receipt: Record<string, any> }[];
+        expect(fixed.receipt.inputs?.range.provenance.work, `${variant} ${street}`).toEqual({
+          requestedSamples: 32,
+          completedSamples: 32,
+          budgetExhausted: false,
+        });
+        expect(slow, `${variant} ${street}`).toEqual(fixed);
+        expect(stalled, `${variant} ${street}`).toEqual(fixed);
+      }
+    }
+  );
 });

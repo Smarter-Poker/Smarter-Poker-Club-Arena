@@ -63,10 +63,24 @@ function page(states: string[]) {
     getByRole: vi.fn(() => notNow),
     isVisible: vi.fn(async () => last === 'open'),
   };
+  const greeting = { isVisible: vi.fn(async () => false) };
+  const addLocatorHandler = vi.fn(
+    async (_locator: unknown, _handler: () => Promise<void>) => undefined
+  );
   const evaluate = vi.fn(async () => (last = states.shift() ?? last));
   const removeLocatorHandler = vi.fn(async () => undefined);
   return {
-    page: { evaluate, removeLocatorHandler, getByRole: vi.fn(() => prompt) } as unknown as Page,
+    page: {
+      evaluate,
+      addLocatorHandler,
+      removeLocatorHandler,
+      getByRole: vi.fn((_role: string, options: { name: unknown }) =>
+        options.name instanceof RegExp ? greeting : prompt
+      ),
+    } as unknown as Page,
+    prompt,
+    greeting,
+    addLocatorHandler,
     evaluate,
     removeLocatorHandler,
     click,
@@ -122,7 +136,14 @@ describe('the Diamond Spins offer is settled before the lobby is measured', () =
       settleDiamondSpinsOffer(arrival.page, Promise.resolve(response(200, OFFER)))
     ).resolves.toBe('not offered');
     expect(arrival.evaluate).not.toHaveBeenCalled();
-    expect(arrival.removeLocatorHandler).toHaveBeenCalledTimes(1);
+    expect(arrival.removeLocatorHandler.mock.calls).toEqual([[arrival.prompt], [arrival.greeting]]);
+    // The original greeting callback is drained during explicit settlement,
+    // then a greeting owner remains for independently late messages.
+    expect(arrival.addLocatorHandler).toHaveBeenCalledTimes(2);
+    expect(arrival.addLocatorHandler.mock.calls.map(([locator]) => locator)).toEqual([
+      arrival.greeting,
+      arrival.greeting,
+    ]);
     expect(arrival.click).not.toHaveBeenCalled();
     expect(hidden).toHaveBeenCalledTimes(1);
   });

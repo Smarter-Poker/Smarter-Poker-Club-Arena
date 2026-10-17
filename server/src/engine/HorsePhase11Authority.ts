@@ -115,6 +115,11 @@ export const HORSE_PHASE11_COMPLETION_SCHEMA = 'horse-phase11-completion-v1';
  *    the equity load governor scaled the request down. The P11.2 matrix ran
  *    with the governor off (every request the full count), so such a proposal
  *    priced a smaller sample than the matrix did, although none was cut short.
+ *
+ * Since 2026-10-16 the live source reads no clock to decide its work
+ * (docs/changelog/2026-10-16-packs-do-declared-work.md), so its receipts carry
+ * neither `workBudget` nor `samplerBudgetExhausted`; the definition is
+ * unchanged and still classifies receipts of earlier releases.
  */
 export const HORSE_PHASE11_COMPLETION_DEFINITION = 'horse-phase11-completion-definition-v3';
 
@@ -385,64 +390,22 @@ export interface HorsePhase11AuthoritySelection {
  * bb/100; both qualified with no reasons, completion in the same window with
  * Wilson lower bounds PLO5 0.999, 0.994, 0.992, 0.993 and PLO6 0.998, 0.993,
  * 0.989, 0.991.
+ *
+ * October 16: the packs do their declared work (no wall-clock fallback,
+ * docs/changelog/2026-10-16-packs-do-declared-work.md): the qualified PLO5,
+ * PLO6 and PLO8 policy digests and the P11.2 contract digest (its
+ * policy_clock entry now states the live work) move. Generation 2 of each pack
+ * is explicitly null until the locked P11.2 matrix requalifies the exact new
+ * source under the running contract and fresh natural completion is read; a
+ * renewal is generation 3. Generations 1 and 2 stay committed with their
+ * evidence; neither can qualify the modified policy.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
 > = Object.freeze({
-  plo5: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo5',
-    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
-    packVersion: 'plo5-high-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
-    domain: 'plo5-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/c92768c8/phase11-qualification-2026-10-15-plo5.json',
-    qualificationSha256: '69c0db872ddcd9b86bd00d410ba2f2458f8797baab9fe1e2944a1f20556b45f1',
-    completionPath: 'docs/evidence/phase11/c92768c8/phase11-completion-2026-10-15-plo5.json',
-    completionSha256: 'b4928081d22bac9a144e37482be3a6ee29e8bb1e4bb130fb69dc4cd6749dd631',
-    approvalGeneration: 2,
-    issuedAt: '2026-10-15T07:35:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  plo6: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo6',
-    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
-    packVersion: 'plo6-high-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
-    domain: 'plo6-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/c92768c8/phase11-qualification-2026-10-15-plo6.json',
-    qualificationSha256: '6b12daa4157047af0429798f67f1f2333b6d6f1053eebf11afc881cadd0d34f8',
-    completionPath: 'docs/evidence/phase11/c92768c8/phase11-completion-2026-10-15-plo6.json',
-    completionSha256: '0360a0cf58e331b7866e38e3b632f0bb55db6fa7b7705b7195ca0fd494651e3c',
-    approvalGeneration: 2,
-    issuedAt: '2026-10-15T07:35:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  plo8: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo8',
-    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
-    packVersion: 'plo8-split-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc',
-    domain: 'plo8-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/c92768c8/phase11-qualification-2026-10-15-plo8.json',
-    qualificationSha256: '5cf937a8a7cada1fd72200546c72b71f844c66e2273dbb66ee7c1074e2309456',
-    completionPath: 'docs/evidence/phase11/c92768c8/phase11-completion-2026-10-15-plo8.json',
-    completionSha256: 'fbeec6201c664c1e8ba93ca4ca745fede9999a1603745c06228783d74925fa59',
-    approvalGeneration: 2,
-    issuedAt: '2026-10-15T04:20:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  plo5: null,
+  plo6: null,
+  plo8: null,
 });
 
 const HEX40 = /^[0-9a-f]{40}$/;

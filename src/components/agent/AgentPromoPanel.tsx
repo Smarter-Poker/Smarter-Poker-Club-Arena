@@ -1,3 +1,4 @@
+import { formatWalletChips } from '../../utils/format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  AgentPromoPanel — Agent Promotional Chip Distribution Panel
@@ -453,7 +454,7 @@ export default function AgentPromoPanel({
               ? 'Unavailable'
               : promoBalance === null
                 ? 'Loading...'
-                : promoBalance.toLocaleString()}
+                : formatWalletChips(promoBalance)}
           </div>
         </div>
       </div>
@@ -598,7 +599,7 @@ export default function AgentPromoPanel({
                     {p.profiles ? playerDisplayName(p.profiles) : p.user_id.slice(0, 8)}
                     {' - '}Chips:{' '}
                     {p.chip_balance !== undefined && p.chip_balance !== null
-                      ? p.chip_balance.toLocaleString()
+                      ? formatWalletChips(p.chip_balance)
                       : '...'}
                   </option>
                 ))}
@@ -742,7 +743,7 @@ export default function AgentPromoPanel({
                     <div style={{ textAlign: 'right', flexShrink: 0 }}>
                       <div style={{ fontSize: 11, color: FB.text, fontWeight: 700 }}>
                         {p.chip_balance !== undefined && p.chip_balance !== null
-                          ? p.chip_balance.toLocaleString()
+                          ? formatWalletChips(p.chip_balance)
                           : '...'}
                       </div>
                     </div>

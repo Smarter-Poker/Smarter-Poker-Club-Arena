@@ -1,0 +1,160 @@
+{
+  "status": "pushed_pending_required_checks_and_installation",
+  "base_revision": "d7c67a5e6dccd6d957bffc676e795fb1cf367c66",
+  "migration_preimage_md5": "dcce64d000c3d5e45cc8faf1f6e83e92",
+  "source_sha256": {
+    "supabase/migrations/20261016131548_legacy_learning_retirement_validates_each_locked_batch_once_.sql": "61f73381be20672bd1055872f5b8bd2dec24fa5d0cb91cbfa4d658614a371213",
+    "scripts/verification-harness/horse-legacy-test-learning-purge.py": "c2f9b279ffad0c53f4ba94cf3a97b4f4b4d7cf0e2e4b4ad4980aaf9e62b946e1",
+    "scripts/verification-harness/horse-legacy-batch-cache.py": "9d284a945f3d1415c32779cd33f5495b0e15c8ea78d37eca94c279b3143f7de1"
+  },
+  "native": {
+    "result_sha256": "73263b7fd3d06dc6bb8e68e5eec95a78ba9198522c6d0e6391c78858dd1c6ff6",
+    "postgres_version": "postgres (PostgreSQL) 17.11 (Homebrew)",
+    "checks": [
+      "fixture-has-genuine-original-normal-certificate",
+      "fail-before-legacy-uncertified-raw-is-retained",
+      "legacy-migration-replay-refused",
+      "legacy-cache-migration-replay-refused",
+      "only-explicit-old-erased-legacy-hand-is-purged",
+      "exception-ledger-is-distinct-fixed-owner-authority",
+      "legacy-raw-absent-after-committed-purge",
+      "shared-batch-keeps-protected-tuple-bytes-and-original-digest",
+      "newer-same-hand-veto-across-batches",
+      "outside-fixed-cutoff-retained",
+      "existing-history-retained",
+      "unfinished-work-retained",
+      "human-history-learning-retained",
+      "atomic-without-history-retained",
+      "ordinary-qualified-certificate-retained",
+      "original-cash-human-evidence-retained",
+      "original-reported-submission-retained",
+      "original-reported-cash-receipt-retained",
+      "original-string-true-human-submission-retained",
+      "original-string-true-human-cash-retained",
+      "original-string-true-human-disposal-retained",
+      "every-financial-human-history-normal-certificate-statistic-and-fence-row-unchanged",
+      "exception-repeat-is-idempotent",
+      "rollback-restores-raw-batch-and-exception-ledger",
+      "identical-old-batch-replay-stays-idempotent-without-raw",
+      "new-batch-replay-cannot-resurrect-legacy-raw",
+      "queue-refuses-retired-legacy-cohort",
+      "raw-before-insert-fence-refuses-cached-writer-resurrection",
+      "failed-replays-have-no-partial-batch-or-work-write",
+      "original-retained-batch-sanitizer-removes-only-exception-hand",
+      "membership-on-append-sanitizes-cached-old-batch-and-preserves-digest",
+      "exception-ledger-update-refused",
+      "exception-ledger-delete-refused",
+      "exception-ledger-truncate-refused",
+      "private-purge-denies-anon",
+      "private-purge-denies-authenticated",
+      "private-purge-denies-service_role",
+      "direct-forged-exception-ledger-insert-refused",
+      "more-than250-requested-hands-refused",
+      "maintenance-refusal-preserves-exception-and-raw",
+      "real-two-session-capacity-contention-is-nonwaiting-and-preserves-raw",
+      "protected-records-still-byte-identical-after-all-refusals",
+      "cache-old-new-receipts-identical-shared250-with-newer-and-late-protected",
+      "cache-old-new-entire-raw-batch-ledger-postimages-byte-identical-except-transition-time",
+      "cache-financial-human-normal-evidence-unchanged",
+      "cache-classification-loop-only-inside-unseen-locked-key-branch",
+      "cache-native-count-five-shared-batches-qualified-once-for250hands",
+      "cache-malformed-source-aborts-without-partial-ledger"
+    ],
+    "cleanup": {
+      "stopped": true,
+      "removed": true
+    },
+    "qualified_postimages": {
+      "fn_queue_horse_adaptive_batch(text)": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "md5": "3d518628f96858fe33e4ba5fe2b0123a",
+        "owner": "postgres",
+        "config": ["search_path=pg_catalog, public, pg_temp", "lock_timeout=2s"],
+        "security_definer": true
+      },
+      "fn_append_horse_adaptive_observations(text)": {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "md5": "f37975fa232ca26269c3aacab7896669",
+        "owner": "postgres",
+        "config": ["search_path=pg_catalog, public, pg_temp", "lock_timeout=2s"],
+        "security_definer": true
+      },
+      "smarter_private.adaptive_retained_batch(text)": {
+        "acl": "{postgres=X/postgres}",
+        "md5": "41320953f6f340f8f9834b450660fb4b",
+        "owner": "postgres",
+        "config": ["search_path=pg_catalog, public, smarter_private"],
+        "security_definer": true
+      },
+      "smarter_private.legacy_learning_purge_immutable()": {
+        "acl": "{postgres=X/postgres}",
+        "md5": "d4fd520f5019364cc5cd7862d7d3fb49",
+        "owner": "postgres",
+        "config": ["search_path=pg_catalog, public, smarter_private"],
+        "security_definer": true
+      },
+      "smarter_private.purge_legacy_horse_learning(uuid[])": {
+        "acl": "{postgres=X/postgres}",
+        "md5": "71e06db3bd454096fbd7bd605b9c0631",
+        "owner": "postgres",
+        "config": ["search_path=pg_catalog, public, smarter_private", "lock_timeout=2s"],
+        "security_definer": true
+      },
+      "smarter_private.horse_adaptive_raw_retirement_fence()": {
+        "acl": "{postgres=X/postgres}",
+        "md5": "ad19b08c3073091fa8017bf23e6e86e7",
+        "owner": "postgres",
+        "config": ["search_path=pg_catalog, public, smarter_private"],
+        "security_definer": true
+      },
+      "smarter_private.register_horse_adaptive_batch_membership(text)": {
+        "acl": "{postgres=X/postgres}",
+        "md5": "fd0d43ed066f74b66f6912f77d5c6471",
+        "owner": "postgres",
+        "config": ["search_path=pg_catalog, public, smarter_private"],
+        "security_definer": true
+      }
+    },
+    "comparison": {
+      "original_seconds": 0.6070962499943562,
+      "cached_seconds": 0.09366999997291714,
+      "checks": [
+        "cache-old-new-receipts-identical-shared250-with-newer-and-late-protected",
+        "cache-old-new-entire-raw-batch-ledger-postimages-byte-identical-except-transition-time",
+        "cache-financial-human-normal-evidence-unchanged",
+        "cache-classification-loop-only-inside-unseen-locked-key-branch",
+        "cache-native-count-five-shared-batches-qualified-once-for250hands",
+        "cache-malformed-source-aborts-without-partial-ledger"
+      ],
+      "shape": {
+        "hands": 250,
+        "shared_batches": 3,
+        "facts_per_hand_per_batch": 2
+      }
+    },
+    "qualified_migration_source_sha256": "9ed389a7ffd542f408086d45ef2acab4c3617dcb58f3a5d5681d643fb28f2a6f",
+    "comment_only_followup": "Added exact qualified function postimage live-proof annotation after native48. Executable SQL and function bytes unchanged; no new native run claimed."
+  },
+  "provider_checks": "pending",
+  "production_installation": "pending",
+  "production_throughput": "not_measured",
+  "local_checks": {
+    "typescript": "passed",
+    "policy_canonical_comparison": "passed",
+    "diff_whitespace": "passed",
+    "migration_live_proof_law": "21 passed"
+  },
+  "source_md5": "8124b25270585f86433b8f010c6a1c4a",
+  "parent_import_native": {
+    "result_sha256": "d40274f54af3ee54940c5f6554a7c6eabbd4e7d77004c9bb403d4faae89ff9fc",
+    "status": "passed",
+    "checks": 48,
+    "qualified_migration_source_sha256": "61f73381be20672bd1055872f5b8bd2dec24fa5d0cb91cbfa4d658614a371213",
+    "entry": "satellite_qualifier_fixture.module(path, legacy_test_learning_purge_qualified), absent from sys.modules, then main/run_icu",
+    "cleanup": {
+      "stopped": true,
+      "removed": true
+    },
+    "cause": "Hosted b3a62 Accounting3 completed41legacy checks then failed KeyError on sys.modules[__name__]; explicit seven-field fixture API replaces registration assumption."
+  }
+}

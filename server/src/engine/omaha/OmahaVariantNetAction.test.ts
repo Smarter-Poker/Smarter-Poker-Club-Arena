@@ -168,7 +168,7 @@ describe('P11-A reaches the live PLO5/PLO6/PLO8 river node', () => {
     }
   });
 
-  it('is priced strictly after finish, once, on its own budget (source pin)', () => {
+  it('is priced strictly after finish, once, over its declared work with no clock (source pin)', () => {
     const source = readFileSync(
       fileURLToPath(new URL('./OmahaVariantLivePolicy.ts', import.meta.url)),
       'utf8'
@@ -182,9 +182,10 @@ describe('P11-A reaches the live PLO5/PLO6/PLO8 river node', () => {
     expect(finishAt).toBeGreaterThan(0);
     expect(firedGate).toBeGreaterThan(finishAt);
     expect(callAt).toBeGreaterThan(firedGate);
-    expect(body).toContain(
-      'withinBudget: () => now() - economicsStart < OMAHA_VARIANT_NET_ACTION_BUDGET_MS'
-    );
+    // 2026-10-16: no deadline is handed to the pass; it completes its work.
+    const call = body.slice(callAt, body.indexOf('});', callAt));
+    expect(call).not.toContain('withinBudget');
+    expect(source).not.toContain('economicsStart');
     // A refused sample is not priced.
     expect(source).toContain("return finish('invalid_equity_evidence');");
     expect(source).not.toContain("finishPriced('invalid_equity_evidence')");

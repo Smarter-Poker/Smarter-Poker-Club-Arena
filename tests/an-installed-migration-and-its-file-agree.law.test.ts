@@ -18,6 +18,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { loadAliases, ALIASES_PATH } from '../scripts/ci/migration-aliases.mjs';
@@ -174,6 +175,27 @@ describe('a merged migration is installed, or says what replaced it', () => {
     ]) {
       expect(loaded.superseded.get(f)?.by, f).toBe('20260918023630');
     }
+  });
+
+  it('retires only the historical 50-row board bootstrap without rewriting its proof', () => {
+    const file = '20261016042047_the_midway_board_and_the_diamond_arena_board_are_a_fixed_sch.sql';
+    const loaded = loadAliases(REPO);
+    expect(loaded.error).toBeNull();
+    expect(loaded.rejected).toEqual([]);
+    expect(loaded.superseded.get(file)?.by).toBe('20261016182049');
+    const historical = fs.readFileSync(path.join(MIGRATIONS, file), 'utf8');
+    expect(createHash('sha256').update(historical).digest('hex')).toBe(
+      'eb04461506dfa6b47ad6294755a600a3c7e23e8c4e80f611622f3c5ae901c99b'
+    );
+    const replacement = fs.readFileSync(
+      path.join(
+        MIGRATIONS,
+        '20261016182049_the_hard_coded_board_and_the_weekly_events_keep_chicago_time.sql'
+      ),
+      'utf8'
+    );
+    expect(replacement).toContain('fn_tournament_schedule_board_is_hard_coded');
+    expect(replacement).toContain('CREATE TRIGGER a01_tournament_schedule_board_is_hard_coded');
   });
 
   it('a registry mark is refused when the superseding version has no file', () => {

@@ -170,6 +170,11 @@ export const HORSE_PHASE12_FULL_SAMPLES: number = REMAINING_VARIANT_DOMAIN.defau
  *    scaled it down under load: it completed what it asked for, but it priced
  *    a smaller sample than the matrix did. (The Phase 11 audit found its
  *    definition counted such samples as completed; this one does not.)
+ *
+ * Since 2026-10-16 the live source reads no clock to decide its work
+ * (docs/changelog/2026-10-16-packs-do-declared-work.md), so its receipts carry
+ * neither `workBudget` nor `samplerBudgetExhausted`; the definition is
+ * unchanged and still classifies receipts of earlier releases.
  */
 export const HORSE_PHASE12_COMPLETION_DEFINITION = 'horse-phase12-completion-definition-v1';
 
@@ -439,6 +444,27 @@ export interface HorsePhase12AuthoritySelection {
  * natural completion window on release c92768c8 (2026-10-15 00:02 to 00:50Z,
  * docs/evidence/phase12/declaration-completion-pfr-repair-2026-10-14.txt) meets
  * the 0.95 floor on every street (lowest Wilson bound 0.9807, river).
+ *
+ * October 16: the packs do their declared work (no wall-clock fallback) and
+ * FLO8 gets its own rule set without the big blind defence
+ * (`fixed-limit-omaha8-round4-v1`), docs/changelog/2026-10-16-packs-do-declared-work.md.
+ * Every Phase 12 policy digest moves (FLH 67f964ba... to the running value;
+ * FLH's rule set and decisions are unchanged and its contract stays the frozen
+ * v1), and contract v2 moves (FLO8's pack version and the policy_clock entry).
+ * FLH generation 3 is explicitly null until the locked FLH v1 matrix
+ * requalifies the exact new source and fresh natural completion is read; a
+ * renewal is generation 4. Every earlier generation's evidence stays committed.
+ *
+ * October 17: FLH generation 4. The locked FLH v1 matrix requalified the exact
+ * declared-work source d9190c9e (#7166, run 38988196506, 42 of 42 shards): cash
+ * after rake against the horse population +1.11 [+0.70, +1.52] bb/100 over
+ * 544,320 pairs, qualified with no reasons, at policy digest d3d1b293.... The
+ * predeclared natural completion window on release 9ccf3e42 (carrying S's
+ * digests; 2026-10-17 04:02 to 04:50Z,
+ * docs/evidence/phase12/declaration-completion-requal-bundle-2026-10-17.txt)
+ * completed every eligible decision on every street (lowest Wilson bound
+ * 0.9724, river, 234 eligible). Short Deck, Crazy Pineapple and FLO8 stay null
+ * until their contract v2 matrices finish on the same source.
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
@@ -449,17 +475,17 @@ export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
     schema: 'horse-qualified-authority-selection-v1',
     phase: 'phase12',
     variant: 'flh',
-    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
+    sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
     packVersion: 'fixed-limit-holdem-round3-v1',
     contractVersion: 'remaining-variant-strength-contract-v1',
     contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
     domain: 'flh-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase12/c92768c8/phase12-qualification-2026-10-15-flh.json',
-    qualificationSha256: '0b349ec894b1d5f0db47c052abf87a336b9fb4aa087265a96acb613083cb315d',
-    completionPath: 'docs/evidence/phase12/c92768c8/phase12-completion-2026-10-15-flh.json',
-    completionSha256: '55c641c6f3c6818311be024b005a01136a7a37507991f2d6c33be6170c1641c2',
-    approvalGeneration: 3,
-    issuedAt: '2026-10-15T01:05:00.000Z',
+    qualificationPath: 'docs/evidence/phase12/d9190c9e/phase12-qualification-2026-10-17-flh.json',
+    qualificationSha256: '13d6347f44e9ee5d80371d57f5917e71d9db25ab0618dd193156fed152b6a78e',
+    completionPath: 'docs/evidence/phase12/d9190c9e/phase12-completion-2026-10-17-flh.json',
+    completionSha256: '5d8be703c635218b1bc42bd47a103dcd1465e78440105c828a92795396a178a8',
+    approvalGeneration: 4,
+    issuedAt: '2026-10-17T05:45:00.000Z',
     expiresAt: null,
     withdrawn: null,
   } as const),

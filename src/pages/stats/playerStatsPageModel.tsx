@@ -26,6 +26,9 @@ interface CachedFull {
 export interface StatsClubOption {
   id: string;
   name: string;
+  /** The menu's ?club= may name the club by slug or display id, not uuid. */
+  slug?: string | null;
+  club_id?: string | number | null;
 }
 
 export type ClubComparisonSort =

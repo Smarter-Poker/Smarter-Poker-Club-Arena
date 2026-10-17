@@ -341,6 +341,9 @@ test.describe('the Diamond Arena selection survives the browser', () => {
     expect(await scheme(page)).toBeNull();
 
     await page.goBack({ waitUntil: 'domcontentloaded' });
+    // WebKit can return at the document event while history traversal is still
+    // settling. A painted bootstrap body does not prove the destination URL.
+    await expect(page).toHaveURL((url) => url.pathname.includes(ARENA_PATH));
     await waitForPaint(page);
     expect(new URL(page.url()).pathname).toContain(ARENA_PATH);
     expect(await scheme(page)).toBeNull();

@@ -698,7 +698,7 @@ test('mobile seat plates, straight private cards and waiting-list text fit their
   }
 });
 
-test('the doubled profit tracker shares the action-pill centre beside the rightmost Lobby', async ({
+test('the compact profit tracker shares the hand-pill centre beside the rightmost Lobby', async ({
   page,
 }) => {
   const styles = ['src/pages/MultiTablePage.css', 'src/components/table/TableTabBar.css']
@@ -732,8 +732,8 @@ test('the doubled profit tracker shares the action-pill centre beside the rightm
           fullText: profit.scrollWidth <= profit.clientWidth,
         };
       });
-      expect(measured.width).toBe(width <= 480 ? 104 : 128); // Twice the previous 52px mobile cap.
-      expect(measured.height).toBe(width <= 480 ? 44 : 52);
+      expect(measured.width).toBe(width <= 480 ? 52 : 100);
+      expect(measured.height).toBe(width <= 480 ? 34 : 36);
       expect(Math.abs(measured.pnlCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(Math.abs(measured.lobbyCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
       expect(measured.pnlRight).toBeLessThanOrEqual(measured.lobbyLeft);

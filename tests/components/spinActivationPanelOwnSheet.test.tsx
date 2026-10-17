@@ -127,7 +127,7 @@ describe('what the panel prints', () => {
     );
   });
 
-  it('prints a running pool compact, with no decimals, and Spins Are On as text', async () => {
+  it('prints the exact running wallet balance and compact activity counters', async () => {
     getState.mockResolvedValue({
       state: {
         ...inactive,
@@ -150,11 +150,11 @@ describe('what the panel prints', () => {
 
     expect((await screen.findByText('Spins Are On')).tagName).toBe('DD');
     const row = (label: string) => screen.getByText(label).parentElement as HTMLElement;
-    expect(within(row('Wallet Balance')).getByText('12.3K')).toBeInTheDocument();
+    expect(within(row('Wallet Balance')).getByText('12,345.67')).toBeInTheDocument();
     expect(within(row('Collected From Play')).getByText('25K')).toBeInTheDocument();
     expect(within(row('Paid Out As Multipliers')).getByText('12.6K')).toBeInTheDocument();
     expect(screen.getByText(/Next Instalment 740, Due On The Next Spin\./)).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/\d\.\d{2}/);
+    expect(within(row('Wallet Balance')).getByText('12,345.67')).toBeInTheDocument();
     const buttons = screen.getAllByRole('button');
     expect(buttons).toHaveLength(1);
     expect(buttons[0]).toHaveTextContent('Turn Spins Off');

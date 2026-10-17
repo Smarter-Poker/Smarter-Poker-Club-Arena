@@ -644,7 +644,10 @@ export default function AchievementsPage() {
           { label: 'Total', value: animatedTotal },
           {
             label: 'Login Streak',
-            value: dailyStreak === null ? 'Unavailable' : `${dailyStreak} days`,
+            value:
+              dailyStreak === null
+                ? 'Unavailable'
+                : `${dailyStreak} ${dailyStreak === 1 ? 'Day' : 'Days'}`,
             tone: 'attention',
           },
         ]}

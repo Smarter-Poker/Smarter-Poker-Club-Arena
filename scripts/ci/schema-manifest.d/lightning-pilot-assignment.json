@@ -1,0 +1,12 @@
+{
+  "_owner": "Exact72 owner-authorized private Lightning assignment, 2026-10-17. Native qualification is source evidence; activation/install remains explicit.",
+  "tables": ["lightning_pilot_assignment", "lightning_pilot_assignment_receipts"],
+  "functions": [
+    "fn_lightning_pilot_assignment_players",
+    "fn_lightning_pilot_assignment_status",
+    "fn_lightning_pilot_assignment_set",
+    "fn_lightning_pilot_assignment_blocks",
+    "fn_lightning_pilot_withdrawal_receipt",
+    "fn_lightning_pilot_withdraw_zero"
+  ]
+}

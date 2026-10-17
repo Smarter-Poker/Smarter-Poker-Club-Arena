@@ -249,3 +249,15 @@ finally:
     if started:
         command([pg / 'pg_ctl', '-D', cluster / 'd', '-m', 'immediate', '-w', 'stop'])
     shutil.rmtree(cluster)
+
+# Required child qualification of the same deleted-account custody owner.
+# Always run after the original suite and its cluster cleanup have succeeded.
+weekly_scratch = Path(os.environ.get('RUNNER_TEMP') or os.environ.get('TMPDIR') or str(out)) / ('deleted-weekly-routing-' + str(os.getpid()))
+weekly_scratch.mkdir()
+subprocess.run([
+    sys.executable, str(root / 'scripts/ci/test-deleted-weekly-routing-postgres.py'),
+    '--candidate', str(root / 'supabase/migrations/20261017065530_deleted_wallets_settle_recorded_weekly_obligations_before_fr.sql'),
+    '--pg-bin', str(pg),
+    '--scratch-root', str(weekly_scratch),
+    '--output', str(out / 'weekly-routing.json'),
+], check=True, env=env)

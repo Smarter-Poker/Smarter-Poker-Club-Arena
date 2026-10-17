@@ -105,8 +105,8 @@ function assertWelcomeKeyStillCurrent() {
  */
 export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
   const dialog = page.getByRole('dialog', { name: /^Club Message From /i });
-  const dismiss = page.getByRole('button', {
-    name: 'Do Not Show Me This Message Again',
+  const dismiss = dialog.getByRole('button', {
+    name: 'Do Not Show Again',
     exact: true,
   });
   const appeared = await dismiss

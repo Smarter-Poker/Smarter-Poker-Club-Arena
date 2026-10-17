@@ -454,10 +454,14 @@ export async function assemble(options) {
         'summarizeTournamentPromotion and tournamentRunCanPromote, server/src/benchmark/HorseTournamentLeague.ts',
       runner:
         'server/src/scripts/horseTournamentEvaluate.ts --output=<dir> --objective=<o> --seed=<s> --promotion',
+      // Since 2026-10-16 the continuation does its declared work and no clock
+      // cuts it; budgetMs is the measured p99 the league's gates allow.
       limits: {
-        workBudgetMs: PHASE8_POLICY.workBudgetMs,
-        budgetMs: PHASE8_POLICY.budgetMs,
-        policyBudgetMs: PHASE8_POLICY.policyBudgetMs,
+        latencyP99GateMs: PHASE8_POLICY.budgetMs,
+        maxCandidates: PHASE8_POLICY.maxCandidates,
+        maxFutureOutcomeSamples: PHASE8_POLICY.maxFutureOutcomeSamples,
+        maxFutureIcmTrials: PHASE8_POLICY.maxFutureIcmTrials,
+        maxFutureHandSeats: PHASE8_POLICY.maxFutureHandSeats,
       },
     },
     source: {

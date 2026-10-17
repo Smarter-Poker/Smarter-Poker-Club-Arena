@@ -11,11 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
-import BonusSetup, {
-  PlinkoDropSelector,
-  bonusEntryStep,
-  guaranteeCopy,
-} from '../components/games/BonusSetup';
+import BonusSetup, { PlinkoDropSelector, guaranteeCopy } from '../components/games/BonusSetup';
 import TodayLine from '../components/games/TodayLine';
 import { useGameCooldown } from '../hooks/useGameCooldown';
 import PlinkoBoard from '../components/plinko/PlinkoBoard';
@@ -71,13 +67,11 @@ function DiamondPlinkoGame() {
   const [uuid, setUuid] = useState<string | null>(null);
   const [legacyState, setState] = useState<GameState | null>(null);
   const [quotedAmount, setQuotedAmount] = useState<number | null>(null);
-  const [selectedBudget, setBudget, offer] = useBonusBudget(clubId, 'plinko');
+  const [selectedBudget, setBudget] = useBonusBudget(clubId, 'plinko');
   const earned = useEarnedBonus(uuid, 'plinko', selectedBudget);
   const budget = earned.budget;
-  // Screen one of a won game is the Double Your Diamonds decision; screen two is
-  // the drop selector; only the player's tap on Drop Diamonds starts play (R9).
-  const offerAnswered = budget.award ? offer.answered(budget.award.id) : true;
-  const step = bonusEntryStep(budget, offerAnswered);
+  // A won game opens straight on the drop selector; only the player's tap on
+  // Drop Diamonds starts play (R9). Double Diamonds is retired (Dan 2026-10-16).
   const state = (earned.gameState as GameState | null) ?? legacyState;
   const [ticket, setTicket] = useState<{ id: string; hash: string } | null>(null);
   const [seed, setSeed] = useState(randomClientSeed);
@@ -174,7 +168,6 @@ function DiamondPlinkoGame() {
   // the server changing its mind.
   const stateBlocked =
     !earned.ready ||
-    step !== 'setup' ||
     !validPlinkoBudget(budget) ||
     !state?.available ||
     state.frozen ||
@@ -632,8 +625,6 @@ function DiamondPlinkoGame() {
                 releaseGuard();
                 navigate(to);
               }}
-              offerAnswered={offerAnswered}
-              onOfferAnswered={offer.answer}
               dropsDocked
             />
           )
@@ -643,8 +634,7 @@ function DiamondPlinkoGame() {
         // choice and the press are both on the opening screen (2026-10-12).
         dock={
           !animating &&
-          earned.ready &&
-          step === 'setup' && (
+          earned.ready && (
             <PlinkoDropSelector
               budget={budget}
               onChange={setBudget}
@@ -664,9 +654,7 @@ function DiamondPlinkoGame() {
                 ? 'Dropping'
                 : completionId
                   ? 'Completed'
-                  : step === 'offer'
-                    ? 'Your Choice'
-                    : 'Ready'
+                  : 'Ready'
         }
         bays={[
           {
@@ -718,12 +706,7 @@ function DiamondPlinkoGame() {
                 disabled: allReleased,
               }
             : {
-                label:
-                  waitSeconds > 0
-                    ? `Ready In ${waitSeconds}s`
-                    : step === 'offer'
-                      ? 'Answer The Offer First'
-                      : 'Drop Diamonds',
+                label: waitSeconds > 0 ? `Ready In ${waitSeconds}s` : 'Drop Diamonds',
                 onClick: () => {
                   triggerHaptic('medium');
                   void play();
@@ -768,10 +751,8 @@ function DiamondPlinkoGame() {
                 : `${(result!.drops.length - released).toLocaleString()} ${result!.drops.length - released === 1 ? 'Drop' : 'Drops'} In Hand. Tap Drop For The Next Diamond, Or Drop All.`
               : result
                 ? `${gameChips(result.payout_chips)} Chips Booked From ${result.drops.length} Drops.${toppedUp ? ` Your Guarantee Of ${gameChips(result.minimum_payout_chips ?? 0)} Chips Topped Up The Drops.` : ''}`
-                : step === 'offer'
-                  ? 'Decide Whether To Double Your Diamonds, Then Choose Your Drops.'
-                  : ((earned.quote && guaranteeCopy('plinko', earned.quote)) ??
-                    'Choose Your Diamonds Per Drop. Start Your Bonus When You Are Ready.'))}
+                : ((earned.quote && guaranteeCopy('plinko', earned.quote)) ??
+                  'Choose Your Diamonds Per Drop. Start Your Bonus When You Are Ready.'))}
         </p>
         {!animating && blocked && state && (
           <p className="sc-copy">
@@ -788,19 +769,15 @@ function DiamondPlinkoGame() {
                     ? 'Join The Club To Play.'
                     : state.player.spendable < bonusWalletDebit(budget)
                       ? budget.award
-                        ? 'Buy More Diamonds Or Turn Off Double Down.'
+                        ? 'Buy More Diamonds To Play.'
                         : 'Buy More Diamonds Or Change Your Entry.'
-                      : step === 'offer'
-                        ? 'Answer The Double Your Diamonds Offer To Continue.'
-                        : !validPlinkoBudget(budget)
-                          ? `Choose Your Diamonds Per Drop. Every Value Divides Your ${bonusTotal(budget).toLocaleString()} Diamonds Into 1 To ${PLINKO_MAX_DROPS} Drops.`
-                          : !table
-                            ? budget.doubled
-                              ? 'This Bonus Does Not Cover A Doubled Entry. Choose Play Without To Play.'
-                              : 'The Plinko Table Is Not Open For This Entry. Return To The Wheel.'
-                            : waitSeconds > 0
-                              ? `Your Next Drop Is Ready In ${waitSeconds} Seconds.`
-                              : 'Checking This Entry And The Available Prize Cover'}
+                      : !validPlinkoBudget(budget)
+                        ? `Choose Your Diamonds Per Drop. Every Value Divides Your ${bonusTotal(budget).toLocaleString()} Diamonds Into 1 To ${PLINKO_MAX_DROPS} Drops.`
+                        : !table
+                          ? 'The Plinko Table Is Not Open For This Entry. Return To The Wheel.'
+                          : waitSeconds > 0
+                            ? `Your Next Drop Is Ready In ${waitSeconds} Seconds.`
+                            : 'Checking This Entry And The Available Prize Cover'}
           </p>
         )}
       </GameConsole>

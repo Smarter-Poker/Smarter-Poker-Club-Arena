@@ -1,8 +1,16 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  PLAYER WALLET PAGE / #SMARTERCASINOREALISM
+ *  PLAYER WALLET PAGE / THE CASHIER DESK
  *
- *  One rendered vault room; every figure on it is live DOM text off the ledger.
+ *  Dan 2026-10-16: "when you click the wallet (in the global header) inside
+ *  the club arena, it needs a complete upgrade and enhancement to be like what
+ *  you created with the pages within this chat ... balances aren't centered or
+ *  font sized correctly inside their frames and there are too many flat basic
+ *  and boring button's frames and fonts."
+ *
+ *  So the wallet opens on the routed Cashier's desk: the same workspace head,
+ *  the same hairline rows, the same inks, and the painted Cashier action dock
+ *  for its actions. Every figure on it is live DOM text off the ledger.
  *
  *  Dan 2026-09-04: "this entire wallet page needs a full audit, enhancement,
  *  improvement, bug hunt and optimization ... make sure that wallets can send
@@ -28,6 +36,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import { formatWalletChips } from '../utils/format';
 import { useState, useEffect, useRef, useCallback, useMemo, type RefObject } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { readClubContextParam, withClubContext } from '../utils/clubScopedPath';
@@ -48,7 +57,7 @@ import { TransactionHistory } from '../components/wallet/TransactionHistory';
 import DepositWithdrawModal from '../components/wallet/DepositWithdrawModal';
 import DisputeSubmitModal from '../components/wallet/DisputeSubmitModal';
 import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
-import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import ChipStatement from '../components/wallet/ChipStatement';
 import DiamondArenaStatement from '../components/wallet/DiamondArenaStatement';
 import DiamondFlowPanel from '../components/wallet/DiamondFlowPanel';
@@ -87,12 +96,16 @@ const TAB_LABEL: Record<WalletTab, string> = {
 };
 
 const HERO_ART = mediaUrl('images/wallet/value-vault-hero-v1.webp');
-const PLATE_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/wallets/square`;
-const PLATE = {
-  DIAMONDS: `${PLATE_ROOT}/wallet-diamonds-square-v1.webp`,
-  PLAYER: `${PLATE_ROOT}/wallet-player-wallet-square-v1.webp`,
-  PROMO: `${PLATE_ROOT}/wallet-promo-wallet-square-v1.webp`,
-  BUSINESS: `${PLATE_ROOT}/wallet-agent-wallet-square-v1.webp`,
+/* Each wallet row wears its own emblem, CUT FROM ITS APPROVED PLATE rather
+   than drawn: the round emblem of wallet-diamonds-square-v1, -player-wallet-,
+   -promo-wallet- and -agent-wallet-square-v1 at full resolution, faded at its
+   rim onto the desk's black so no partial frame shows (2026-10-16). */
+const EMBLEM_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/wallets/emblems`;
+const EMBLEM = {
+  DIAMONDS: `${EMBLEM_ROOT}/wallet-emblem-diamonds-v1.webp`,
+  PLAYER: `${EMBLEM_ROOT}/wallet-emblem-player-v1.webp`,
+  PROMO: `${EMBLEM_ROOT}/wallet-emblem-promo-v1.webp`,
+  BUSINESS: `${EMBLEM_ROOT}/wallet-emblem-agent-v1.webp`,
 } as const;
 
 /**
@@ -226,35 +239,45 @@ function useAnimatedNumber(target: number, duration = 800) {
 
 const WALLET_CONFIG: Record<
   WalletType,
-  { icon: string; label: string; description: string; cssClass: string; plate: string }
+  { label: string; name: string; description: string; cssClass: string; emblem: string }
 > = {
   PLAYER: {
-    icon: '♠',
     label: 'Player',
+    name: 'Player Wallet',
     description: 'Table Buy-Ins And Gameplay',
     cssClass: 'player',
-    plate: PLATE.PLAYER,
+    emblem: EMBLEM.PLAYER,
   },
   PROMO: {
-    icon: '★',
     label: 'Promo',
+    name: 'Promo Wallet',
     description: 'Bonuses And Rewards',
     cssClass: 'promo',
-    plate: PLATE.PROMO,
+    emblem: EMBLEM.PROMO,
   },
   BUSINESS: {
-    icon: '◈',
     label: 'Business',
+    name: 'Agent Wallet',
     description: 'Commissions And Settlements',
     cssClass: 'business',
-    plate: PLATE.BUSINESS,
+    emblem: EMBLEM.BUSINESS,
   },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WALLET PLATE - rendered plate art, live figures in the bay
+// WALLET ROW - one hairline desk row per wallet, the balance on the right
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/*
+ * THE BALANCE SITS WHERE THE CASHIER PUTS A BALANCE (Dan 2026-10-16). The
+ * plates printed their figure into a painted bay, and at a phone width the bay
+ * and the figure never agreed: the number sat high and left in a slot drawn
+ * for something larger. A desk row has no bay to miss. The emblem is on the
+ * left, the wallet's name and what it is for in the middle, and the balance is
+ * one right-aligned figure at the row's own type size, exactly as the Cashier
+ * prints a player's chips. Available and Locked keep their own line under the
+ * name, and the article's aria-label still announces all three.
+ */
 export function WalletPlate({
   type,
   available,
@@ -276,64 +299,45 @@ export function WalletPlate({
 
   return (
     <article
-      className={`wallet-plate ${config.cssClass}`}
+      className={`wallet-row ${config.cssClass}`}
       aria-label={`${config.label} Wallet: ${fmtNum(available)} Available, ${fmtNum(locked)} Locked, ${fmtNum(total)} Total`}
     >
-      {/* THE READOUT SITS IN THE PLATE, NOT UNDER IT.
-          Every plate is drawn with an empty machined bay across its lower half,
-          and the figures used to render BELOW the whole image - so the bay the
-          artwork exists to fill was blank on all four plates.
-          The frame is what makes the fix correct rather than approximate: the
-          readout is absolutely positioned, so its insets must resolve against
-          the ARTWORK's box. Measured against the article they would also span
-          the footer, and drift by the footer's height, which differs per plate. */}
-      <div className="wallet-plate__frame">
+      <div className="wallet-row__main">
         <img
-          className="wallet-plate__art"
-          src={config.plate}
+          className="wallet-row__art"
+          src={config.emblem}
           alt=""
           aria-hidden="true"
           loading="lazy"
           decoding="async"
         />
-        {/* ONE headline figure, because three will not fit LEGIBLY.
-            Measured at four widths with all three in the bay: the figures fit
-            without clipping, but the labels computed to 6.4-7.5px. A readout
-            nobody can read is not a readout, and shrinking type until it fits
-            is how the bay ended up ignored in the first place.
-            So the bay carries the number the plate is FOR - the total - at
-            ~20px with an 8px label, and Available/Locked keep their room in the
-            footer. The article's aria-label still announces all three, so
-            nothing is lost to a screen reader. */}
-        <div className="wallet-plate__readout">
-          <div className="wallet-plate__stat wide">
-            <span className="wallet-plate__value total">{fmtNum(animatedTotal)}</span>
-            {/* "Balance", never "Total Balance". tests/wallet-display-ledger,
-                under "wallet separation and honest labels", pins that this page
-                does not call a sum a Total Balance - the wallets are separate
-                and not all of a total is playable. This figure is one wallet's
-                own available + locked, and the plate already carries the
-                wallet's NAME in its artwork, so "Balance" is both accurate and
-                the plainer read. */}
-            <span className="wallet-plate__label">Balance</span>
-          </div>
-          <div className="wallet-plate__meter" aria-hidden="true">
-            <div className="wallet-plate__meter-fill" style={{ width: `${sharePct}%` }} />
-          </div>
+        <div className="wallet-row__info">
+          <span className="wallet-row__name">{config.name}</span>
+          <span className="wallet-row__sub">{config.description}</span>
+        </div>
+        <div className="wallet-row__figure">
+          <span className="wallet-row__value">{fmtNum(animatedTotal)}</span>
+          {/* "Balance", never "Total Balance". tests/wallet-display-ledger,
+              under "wallet separation and honest labels", pins that this page
+              does not call a sum a Total Balance - the wallets are separate
+              and not all of a total is playable. This figure is one wallet's
+              own available + locked. */}
+          <span className="wallet-row__label">Balance</span>
         </div>
       </div>
-      <div className="wallet-plate__footer">
-        <div className="wallet-plate__row">
-          <div className="wallet-plate__stat">
-            <span className="wallet-plate__value available">{fmtNum(animatedAvail)}</span>
-            <span className="wallet-plate__label">Available</span>
-          </div>
-          <div className="wallet-plate__stat">
-            <span className="wallet-plate__value locked">{fmtNum(animatedLocked)}</span>
-            <span className="wallet-plate__label">Locked</span>
-          </div>
+      <dl className="wallet-row__split">
+        <div>
+          <dt>Available</dt>
+          <dd className="is-live">{fmtNum(animatedAvail)}</dd>
         </div>
-        <div className="wallet-plate__desc">{config.description}</div>
+        <div>
+          <dt>Locked</dt>
+          <dd>{fmtNum(animatedLocked)}</dd>
+        </div>
+      </dl>
+      {/* What part of every chip this player holds sits in this wallet. */}
+      <div className="wallet-row__meter" aria-hidden="true">
+        <div className="wallet-row__meter-fill" style={{ width: `${sharePct}%` }} />
       </div>
     </article>
   );
@@ -413,80 +417,76 @@ export function DiamondPlate({
   const freerollIn = freeroll.startsAt == null ? null : freeroll.text;
   return (
     <article
-      className="wallet-plate diamonds"
+      className="wallet-row diamonds"
       aria-label={`Diamonds: ${fmtNum(diamonds)} On Hand, ${figure(summary?.sendable ?? diamonds)} Sendable, ${figure(summary?.inArena ?? 0)} In The Arena`}
     >
-      <div className="wallet-plate__frame">
+      <div className="wallet-row__main">
         <img
-          className="wallet-plate__art"
-          src={PLATE.DIAMONDS}
+          className="wallet-row__art"
+          src={EMBLEM.DIAMONDS}
           alt=""
           aria-hidden="true"
           decoding="async"
         />
-        {/* The count belongs in the bay the artwork was drawn around. The CTA
-            does not: a control inside the plate reads as part of the picture,
-            and at 375px the bay is about 66px tall - a tappable 44px target
-            plus the readout does not fit it honestly. */}
-        <div className="wallet-plate__readout">
-          <div className="wallet-plate__row">
-            <div className="wallet-plate__stat wide">
-              <span className="wallet-plate__value diamond">{fmtNum(animated)}</span>
-              <span className="wallet-plate__label">Diamonds On Hand</span>
-            </div>
-          </div>
+        <div className="wallet-row__info">
+          <span className="wallet-row__name">Diamonds</span>
+          <span className="wallet-row__sub">Seats, VIP, Perks And Gifts</span>
+        </div>
+        <div className="wallet-row__figure">
+          <span className="wallet-row__value is-diamond">{fmtNum(animated)}</span>
+          <span className="wallet-row__label">Diamonds On Hand</span>
         </div>
       </div>
-      <div className="wallet-plate__footer">
-        <div className="wallet-plate__row">
-          <div className="wallet-plate__stat">
-            <span className="wallet-plate__value available">{figure(animatedSendable)}</span>
-            <span className="wallet-plate__label">Sendable</span>
-          </div>
-          <div className="wallet-plate__stat">
-            <span className="wallet-plate__value locked">{figure(animatedInArena)}</span>
-            <span className="wallet-plate__label">In The Arena</span>
-          </div>
+      <dl className="wallet-row__split">
+        <div>
+          <dt>Sendable</dt>
+          <dd className="is-live">{figure(animatedSendable)}</dd>
         </div>
-        <div className="wallet-plate__doors">
-          <button type="button" className="wallet-plate__cta" onClick={onBuy}>
-            Buy Diamonds
-          </button>
-          {arena &&
-            (arenaOpen || seated ? (
-              <button
-                type="button"
-                className="wallet-plate__cta"
-                onClick={short > 0 ? onBuyToSitDown : onArena}
-              >
-                {arenaLabel}
-              </button>
-            ) : (
-              /* Closed: a sentence, not a dead button. A control that never
-                 works teaches a player the page is broken. */
-              <span className="wallet-plate__door-note" role="status">
-                {arenaLabel}
-              </span>
-            ))}
+        <div>
+          <dt>In The Arena</dt>
+          <dd>{figure(animatedInArena)}</dd>
         </div>
-        {arena && !arenaOpen && !seated && freerollIn !== null && (
-          <div className="wallet-plate__desc" role="status">
-            Next Diamond Freeroll In {freerollIn}. A Freeroll Costs Nothing To Enter.
-          </div>
-        )}
-        {arena && arenaOpen && minSeat !== null && short === 0 && !seated && (
-          <div className="wallet-plate__desc">
-            The Cheapest Seat Is {fmtNum(minSeat)} Diamonds
-            {arena.cheapestTable ? ` (${arena.cheapestTable.name})` : ''}. You Can Sit Down Now.
-          </div>
-        )}
-        <div className="wallet-plate__desc">
-          {summary?.collateral
-            ? `${fmtNum(summary.collateral)} Bought Recently Are Held Until The Refund Window Closes And Cannot Be Sent. `
-            : ''}
-          Diamonds Buy Your Seat In The Diamond Arena And Spend On VIP, Table Perks, Throwables And
-          Club Shop Items. Send To Friends From The Send Tab.
+      </dl>
+      {/* The two doors are the painted Cashier plate, the same art as the
+          Cashier's Request Cash Out, never a drawn button. */}
+      <div className="wallet-row__doors">
+        <button type="button" className="wallet-plate__cta" onClick={onBuy}>
+          Buy Diamonds
+        </button>
+        {arena &&
+          (arenaOpen || seated ? (
+            <button
+              type="button"
+              className="wallet-plate__cta is-lit"
+              onClick={short > 0 ? onBuyToSitDown : onArena}
+            >
+              {arenaLabel}
+            </button>
+          ) : (
+            /* Closed: a sentence, not a dead button. A control that never
+               works teaches a player the page is broken. */
+            <span className="wallet-row__note" role="status">
+              {arenaLabel}
+            </span>
+          ))}
+      </div>
+      {arena && !arenaOpen && !seated && freerollIn !== null && (
+        <div className="wallet-row__desc" role="status">
+          Next Diamond Freeroll In {freerollIn}. A Freeroll Costs Nothing To Enter.
         </div>
+      )}
+      {arena && arenaOpen && minSeat !== null && short === 0 && !seated && (
+        <div className="wallet-row__desc">
+          The Cheapest Seat Is {fmtNum(minSeat)} Diamonds
+          {arena.cheapestTable ? ` (${arena.cheapestTable.name})` : ''}. You Can Sit Down Now.
+        </div>
+      )}
+      <div className="wallet-row__desc">
+        {summary?.collateral
+          ? `${fmtNum(summary.collateral)} Bought Recently Are Held Until The Refund Window Closes And Cannot Be Sent. `
+          : ''}
+        Diamonds Buy Your Seat In The Diamond Arena And Spend On VIP, Table Perks, Throwables And
+        Club Shop Items. Send To Friends From The Send Tab.
       </div>
     </article>
   );
@@ -844,27 +844,43 @@ function PlayerWalletAccount({
   const loadFriends = useCallback(async () => {
     if (!user?.id) return;
     try {
-      const [{ data: out, error: e1 }, { data: inn, error: e2 }] = await Promise.all([
-        supabase
-          .from('friendships')
-          .select('friend_id')
-          .eq('user_id', user.id)
-          .eq('status', 'accepted')
-          .limit(500),
-        supabase
-          .from('friendships')
-          .select('user_id')
-          .eq('friend_id', user.id)
-          .eq('status', 'accepted')
-          .limit(500),
-      ]);
-      if (e1 || e2) throw e1 || e2;
-      const ids = Array.from(
-        new Set([
-          ...(out || []).map((r) => r.friend_id as string),
-          ...(inn || []).map((r) => r.user_id as string),
-        ])
-      ).filter((id) => id && id !== user.id);
+      /* EVERY FRIEND, NOT THE FIRST 500 (2026-10-17). Each direction was read
+         with .limit(500), and the profile names with one .in() over every id,
+         which PostgREST also caps at 1,000 rows: a player with 1,118 accepted
+         friends saw 502 of them in this picker. Each direction now pages to
+         its end on the unique id, and the names are read in chunks. */
+      const FRIEND_PAGE = 500;
+      const readSide = async (side: 'out' | 'in'): Promise<string[]> => {
+        const found: string[] = [];
+        for (let from = 0; from < 50_000; from += FRIEND_PAGE) {
+          const page =
+            side === 'out'
+              ? await supabase
+                  .from('friendships')
+                  .select('id, friend_id')
+                  .eq('user_id', user.id)
+                  .eq('status', 'accepted')
+                  .order('id', { ascending: true })
+                  .range(from, from + FRIEND_PAGE - 1)
+              : await supabase
+                  .from('friendships')
+                  .select('id, user_id')
+                  .eq('friend_id', user.id)
+                  .eq('status', 'accepted')
+                  .order('id', { ascending: true })
+                  .range(from, from + FRIEND_PAGE - 1);
+          if (page.error) throw page.error;
+          const rows = (page.data || []) as Array<{ friend_id?: string; user_id?: string }>;
+          for (const row of rows) {
+            const id = side === 'out' ? row.friend_id : row.user_id;
+            if (id) found.push(id);
+          }
+          if (rows.length < FRIEND_PAGE) break;
+        }
+        return found;
+      };
+      const [out, inn] = await Promise.all([readSide('out'), readSide('in')]);
+      const ids = Array.from(new Set([...out, ...inn])).filter((id) => id && id !== user.id);
       if (ids.length === 0) {
         if (ownsAccount()) {
           setFriends([]);
@@ -872,12 +888,17 @@ function PlayerWalletAccount({
         }
         return;
       }
-      const { data: profiles, error: e3 } = await supabase
-        .from('profiles')
-        .select(`id, ${PLAYER_NAME_COLUMNS}, player_number`)
-        .in('id', ids);
-      if (e3) throw e3;
-      const options: FriendOption[] = (profiles || [])
+      const NAME_CHUNK = 200;
+      const profiles: unknown[] = [];
+      for (let i = 0; i < ids.length; i += NAME_CHUNK) {
+        const { data, error: e3 } = await supabase
+          .from('profiles')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, player_number`)
+          .in('id', ids.slice(i, i + NAME_CHUNK));
+        if (e3) throw e3;
+        profiles.push(...(data || []));
+      }
+      const options: FriendOption[] = profiles
         .map((p) => {
           const row = p as unknown as Record<string, unknown> & {
             id: string;
@@ -1177,116 +1198,87 @@ function PlayerWalletAccount({
 
   return (
     <div className="wallet-page" data-arena-surface="wallet">
-      <RewardsSurfaceHeader
-        eyebrow="Rewards Circuit / Wallet"
-        title="Your Value Vault"
-        description={`One Secure Command Surface For Playable Chips, Protected Balances, Club Earnings, Promotional Value, And Diamonds. ${
-          ledgerState === 'synced'
-            ? 'Every Figure Below Remains Connected To The Live Wallet Ledger.'
-            : ledgerState === 'reading'
-              ? 'Reading The Live Wallet Ledger.'
-              : 'The Live Wallet Ledger Could Not Be Read Just Now, So The Figures Below Are The Last Known Snapshot.'
-        }`}
-        artPath="images/wallet/value-vault-hero-v1.webp"
-        status={LEDGER_STATUS[ledgerState].status}
-        pill={LEDGER_STATUS[ledgerState].status.split('//')[1].trim()}
-        pillInk={LEDGER_STATUS[ledgerState].ink}
-        crest="diamond"
-        metrics={[
-          {
-            label: 'Playable Now',
-            value: balances.PLAYER.available.toLocaleString(),
-            tone: 'live',
-          },
-          { label: 'All Wallets', value: animatedTotal.toLocaleString() },
-          { label: 'Diamonds', value: animatedDiamonds.toLocaleString(), tone: 'attention' },
-        ]}
-      />
-
-      {/* ═══════════ VAULT HERO - rendered room, live console ═══════════ */}
-      <section className="vault-hero" aria-labelledby="vault-hero-title">
-        <img
-          className="vault-hero__art"
-          src={HERO_ART}
-          alt=""
-          aria-hidden="true"
-          fetchPriority="high"
-          decoding="async"
-        />
-        <div className="vault-hero__hardware" aria-hidden="true" />
-        <div className="vault-hero__console">
-          <p className="vault-hero__eyebrow">Value Vault // Live Ledger</p>
+      <CashierWorkspace compact eyebrow="Secure Wallet" title="Wallet">
+        {/* ═══════════ THE BALANCE - one centred figure, the Cashier's ink ═══════════ */}
+        <section className="wallet-balance" aria-labelledby="vault-hero-title">
+          <img
+            className="wallet-balance__art"
+            src={HERO_ART}
+            alt=""
+            aria-hidden="true"
+            fetchPriority="high"
+            decoding="async"
+          />
           {/* "Total Balance" was a lie of omission. This figure is BUSINESS +
               PLAYER + PROMO, and only the PLAYER wallet buys into a game: an
               agent with 40,000 in commissions and 200 in chips read "Total
               Balance 40,200" and then could not sit down for 400. Different
               accounts do not become one balance by being summed, so the label
               says what the sum IS and the playable figure is stated beside it. */}
-          <h2 id="vault-hero-title" className="vault-hero__label">
+          <h2 id="vault-hero-title" className="wallet-balance__label">
             All Wallets Combined
           </h2>
-          <div className="vault-hero__figure" aria-live="polite">
-            {animatedTotal.toLocaleString()}
+          <div className="wallet-balance__figure" aria-live="polite">
+            {formatWalletChips(animatedTotal)}
           </div>
-          <dl className="vault-hero__meta">
-            <div className="vault-hero__meta-item live">
+          <dl className="wallet-balance__meta">
+            <div className="wallet-balance__item is-live">
               <dt>Playable Now</dt>
-              <dd>{balances.PLAYER.available.toLocaleString()}</dd>
+              <dd>{formatWalletChips(balances.PLAYER.available)}</dd>
             </div>
-            <div className="vault-hero__meta-item diamond">
+            <div className="wallet-balance__item is-diamond">
               <dt>Diamonds</dt>
-              {/* A READOUT, not a control. This carried role="button" and
-                  tabIndex={0} with no handler; the Buy Diamonds plate below is
-                  the control. */}
+              {/* A READOUT, not a control. The Buy Diamonds plate below is the
+                  control. */}
               <dd className="hero-diamonds">
-                <span className="diamond-glyph" aria-hidden="true">
-                  ◆
-                </span>
                 <span aria-label={`${animatedDiamonds.toLocaleString()} Diamonds`}>
                   {animatedDiamonds.toLocaleString()}
                 </span>
               </dd>
             </div>
             {escrow > 0 && (
-              <div className="vault-hero__meta-item escrow">
+              <div className="wallet-balance__item is-held">
                 <dt>In Escrow</dt>
-                <dd>{escrow.toLocaleString()} Chips Secured At The Table</dd>
+                <dd>{formatWalletChips(escrow)} Chips Secured At The Table</dd>
               </div>
             )}
             {walletSummary && walletSummary.inArena > 0 && (
-              <div className="vault-hero__meta-item escrow">
+              <div className="wallet-balance__item is-held">
                 <dt>In The Arena</dt>
                 <dd>{fmtNum(walletSummary.inArena)} Diamonds At Your Diamond Arena Seat</dd>
               </div>
             )}
           </dl>
+        </section>
 
-          <div className="vault-hero__actions" role="group" aria-label="Wallet Actions">
-            <button type="button" className="vault-btn primary" onClick={goAddChips}>
-              + Add Chips
+        {/* ═══════════ THE ACTION DOCK - the painted Cashier dock art ═══════════
+            The Cashier's own dock, printed with this wallet's four doors. Its
+            line says what the ledger read actually returned (launch audit
+            2026-10-09, P-15): Synced, Reading, Unavailable or Offline. Send,
+            Receive and Earn are the tabs directly below, so they are not
+            printed twice. */}
+        <div className="wallet-dock">
+          <div className={`wallet-dock__line is-${LEDGER_STATUS[ledgerState].ink}`} role="status">
+            {LEDGER_STATUS[ledgerState].status.replace(' // ', ' ')}
+          </div>
+          <div className="wallet-dock__actions" role="group" aria-label="Wallet Actions">
+            <button type="button" className="wallet-dock__action is-lit" onClick={goAddChips}>
+              Add Chips
             </button>
-            <button type="button" className="vault-btn" onClick={goCashOut}>
+            <button type="button" className="wallet-dock__action" onClick={goCashOut}>
               Cash Out
             </button>
-            <button type="button" className="vault-btn" onClick={() => setActiveTab('send')}>
-              Send
-            </button>
-            <button type="button" className="vault-btn" onClick={() => setActiveTab('receive')}>
-              Receive
-            </button>
-            <button type="button" className="vault-btn" onClick={() => setActiveTab('earn')}>
-              Earn
-            </button>
             <button
               type="button"
-              className="vault-btn ghost"
+              className="wallet-dock__action"
               onClick={() => navigate('/transactions')}
+              aria-label="Full History"
             >
-              Full History
+              History
             </button>
             <button
               type="button"
-              className="vault-btn ghost"
+              className="wallet-dock__action"
               onClick={() => setShowDisputeModal(true)}
               disabled={!currentClubId}
               title={
@@ -1297,639 +1289,653 @@ function PlayerWalletAccount({
             </button>
           </div>
         </div>
-      </section>
 
-      {/* THE OTHER WAY TO GET CHIPS (Dan 2026-09-10). The cashier is where a
+        {/* THE OTHER WAY TO GET CHIPS (Dan 2026-09-10). The cashier is where a
           player comes when they have none, so the door belongs here too: it
           shows only when this club's host has a game open and the player holds
           enough diamonds to get in. */}
-      {currentClubId ? (
-        <DiamondsToChipsButton
-          clubId={currentClubId}
-          size="large"
-          className="wallet-diamond-games"
-          onGo={(to) => navigate(to)}
-        />
-      ) : null}
+        {currentClubId ? (
+          <DiamondsToChipsButton
+            clubId={currentClubId}
+            size="large"
+            className="wallet-diamond-games"
+            onGo={(to) => navigate(to)}
+          />
+        ) : null}
 
-      {/* ═══════════ TABS ═══════════ */}
-      <div
-        className="wallet-tabs"
-        role="tablist"
-        aria-label="Wallet Sections"
-        onKeyDown={handleTabKeyDown}
-      >
-        {WALLET_TABS.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            /* `id` added 2026-08-25. The panel below points back here with
+        {/* ═══════════ TABS ═══════════ */}
+        <div
+          className="wallet-tabs"
+          role="tablist"
+          aria-label="Wallet Sections"
+          onKeyDown={handleTabKeyDown}
+        >
+          {WALLET_TABS.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              /* `id` added 2026-08-25. The panel below points back here with
                aria-labelledby, and without an id that reference dangled. */
-            id={`wallet-tab-${tab}`}
-            role="tab"
-            tabIndex={activeTab === tab ? 0 : -1}
-            aria-selected={activeTab === tab}
-            aria-controls={`wallet-panel-${tab}`}
-            className={activeTab === tab ? 'active' : ''}
-            onClick={() => setActiveTab(tab)}
-          >
-            {TAB_LABEL[tab]}
-          </button>
-        ))}
-      </div>
+              id={`wallet-tab-${tab}`}
+              role="tab"
+              tabIndex={activeTab === tab ? 0 : -1}
+              aria-selected={activeTab === tab}
+              aria-controls={`wallet-panel-${tab}`}
+              className={activeTab === tab ? 'active' : ''}
+              onClick={() => setActiveTab(tab)}
+            >
+              {TAB_LABEL[tab]}
+            </button>
+          ))}
+        </div>
 
-      {/* ═══════════ TAB CONTENT ═══════════ */}
-      {/* One panel element, re-identified as the active tab changes, is the
+        {/* ═══════════ TAB CONTENT ═══════════ */}
+        {/* One panel element, re-identified as the active tab changes, is the
           correct shape for a tablist that renders only the selected pane. */}
-      <div
-        className="wallet-content"
-        id={`wallet-panel-${activeTab}`}
-        role="tabpanel"
-        aria-labelledby={`wallet-tab-${activeTab}`}
-      >
-        {/* WALLETS */}
-        {activeTab === 'overview' && (
-          <div className="wallet-plates">
-            <DiamondPlate
-              diamonds={diamonds}
-              summary={walletSummary}
-              onBuy={goBuyDiamonds}
-              onBuyToSitDown={goBuyDiamondsToSitDown}
-              onArena={goDiamondArena}
-            />
-            {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
-              <WalletPlate
-                key={type}
-                type={type}
-                available={balances[type].available}
-                locked={balances[type].locked}
-                total={balances[type].total}
-                totalOfAll={totalBalance}
+        <div
+          className="wallet-content"
+          id={`wallet-panel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`wallet-tab-${activeTab}`}
+        >
+          {/* WALLETS */}
+          {activeTab === 'overview' && (
+            <div className="wallet-rows">
+              <DiamondPlate
+                diamonds={diamonds}
+                summary={walletSummary}
+                onBuy={goBuyDiamonds}
+                onBuyToSitDown={goBuyDiamondsToSitDown}
+                onArena={goDiamondArena}
               />
-            ))}
-          </div>
-        )}
+              {(Object.keys(WALLET_CONFIG) as WalletType[]).map((type) => (
+                <WalletPlate
+                  key={type}
+                  type={type}
+                  available={balances[type].available}
+                  locked={balances[type].locked}
+                  total={balances[type].total}
+                  totalOfAll={totalBalance}
+                />
+              ))}
+            </div>
+          )}
 
-        {/* SEND */}
-        {activeTab === 'send' && (
-          <div className="wallet-grid">
-            <section className="vault-panel" aria-labelledby="send-diamonds-title">
-              <h3 id="send-diamonds-title" className="vault-panel__title">
-                Send Diamonds To A Friend
-              </h3>
-              <p className="vault-panel__sub">
-                Diamonds Move Instantly To Any Accepted Friend. Gifts Cannot Be Reversed.
-              </p>
-              <div className="vault-form">
-                <label className="vault-field">
-                  <span className="vault-field__label">Recipient</span>
-                  <select
-                    className="vault-select"
-                    value={recipientId}
-                    onChange={(e) => setRecipientId(e.target.value)}
-                    disabled={friends === null || friends.length === 0}
-                  >
-                    <option value="">
-                      {friends === null
-                        ? 'Loading Friends...'
-                        : friends.length === 0
-                          ? friendsError
-                            ? 'Could Not Load Friends'
-                            : 'No Accepted Friends Yet'
-                          : 'Choose A Friend'}
-                    </option>
-                    {(friends || []).map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
+          {/* SEND */}
+          {activeTab === 'send' && (
+            <div className="wallet-grid">
+              <section className="vault-panel" aria-labelledby="send-diamonds-title">
+                <h3 id="send-diamonds-title" className="vault-panel__title">
+                  Send Diamonds To A Friend
+                </h3>
+                <p className="vault-panel__sub">
+                  Diamonds Move Instantly To Any Accepted Friend. Gifts Cannot Be Reversed.
+                </p>
+                <div className="vault-form">
+                  <label className="vault-field">
+                    <span className="vault-field__label">Recipient</span>
+                    <select
+                      className="vault-select"
+                      value={recipientId}
+                      onChange={(e) => setRecipientId(e.target.value)}
+                      disabled={friends === null || friends.length === 0}
+                    >
+                      <option value="">
+                        {friends === null
+                          ? 'Loading Friends...'
+                          : friends.length === 0
+                            ? friendsError
+                              ? 'Could Not Load Friends'
+                              : 'No Accepted Friends Yet'
+                            : 'Choose A Friend'}
                       </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="vault-field">
-                  <span className="vault-field__label">Amount (Diamonds)</span>
-                  <input
-                    className="vault-input"
-                    type="number"
-                    inputMode="numeric"
-                    min={MIN_DIAMOND_SEND}
-                    max={Math.max(MIN_DIAMOND_SEND, sendable)}
-                    step={1}
-                    placeholder={`${MIN_DIAMOND_SEND}`}
-                    value={sendAmount}
-                    onChange={(e) => setSendAmount(e.target.value)}
-                  />
-                </label>
-                <div className="vault-form__row">
-                  <span className="vault-form__hint">
-                    {walletSummary === null
-                      ? `On Hand: ${fmtNum(diamonds)} Diamonds (Sendable Amount Could Not Be Read)`
-                      : `Sendable: ${fmtNum(sendable)} Diamonds`}
-                    {heldCollateral > 0
-                      ? `. ${fmtNum(heldCollateral)} Bought Recently Are Held Until The Refund Window Closes`
-                      : ''}
-                  </span>
-                  <button
-                    type="button"
-                    className="vault-btn primary"
-                    onClick={handleSendDiamonds}
-                    disabled={isSending || !recipientId || !sendAmount}
-                  >
-                    {isSending ? 'Sending...' : 'Send Diamonds'}
-                  </button>
-                </div>
-                {friends !== null && friends.length === 0 && !friendsError && (
-                  <p className="vault-form__hint">
-                    Add Friends From The{' '}
+                      {(friends || []).map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="vault-field">
+                    <span className="vault-field__label">Amount (Diamonds)</span>
+                    <input
+                      className="vault-input"
+                      type="number"
+                      inputMode="numeric"
+                      min={MIN_DIAMOND_SEND}
+                      max={Math.max(MIN_DIAMOND_SEND, sendable)}
+                      step={1}
+                      placeholder={`${MIN_DIAMOND_SEND}`}
+                      value={sendAmount}
+                      onChange={(e) => setSendAmount(e.target.value)}
+                    />
+                  </label>
+                  <div className="vault-form__row">
+                    <span className="vault-form__hint">
+                      {walletSummary === null
+                        ? `On Hand: ${fmtNum(diamonds)} Diamonds (Sendable Amount Could Not Be Read)`
+                        : `Sendable: ${fmtNum(sendable)} Diamonds`}
+                      {heldCollateral > 0
+                        ? `. ${fmtNum(heldCollateral)} Bought Recently Are Held Until The Refund Window Closes`
+                        : ''}
+                    </span>
                     <button
                       type="button"
-                      className="vault-link"
-                      onClick={() => navigate('/friends')}
+                      className="vault-btn primary"
+                      onClick={handleSendDiamonds}
+                      disabled={isSending || !recipientId || !sendAmount}
                     >
-                      Friends Page
-                    </button>{' '}
-                    To Send Them Diamonds.
-                  </p>
-                )}
-                {friendsError && (
-                  <p className="vault-form__hint" role="alert">
-                    Your Friend List Could Not Be Loaded.{' '}
-                    <button type="button" className="vault-link" onClick={() => void loadFriends()}>
-                      Retry
+                      {isSending ? 'Sending...' : 'Send Diamonds'}
                     </button>
-                  </p>
-                )}
-              </div>
-            </section>
+                  </div>
+                  {friends !== null && friends.length === 0 && !friendsError && (
+                    <p className="vault-form__hint">
+                      Add Friends From The{' '}
+                      <button
+                        type="button"
+                        className="vault-link"
+                        onClick={() => navigate('/friends')}
+                      >
+                        Friends Page
+                      </button>{' '}
+                      To Send Them Diamonds.
+                    </p>
+                  )}
+                  {friendsError && (
+                    <p className="vault-form__hint" role="alert">
+                      Your Friend List Could Not Be Loaded.{' '}
+                      <button
+                        type="button"
+                        className="vault-link"
+                        onClick={() => void loadFriends()}
+                      >
+                        Retry
+                      </button>
+                    </p>
+                  )}
+                </div>
+              </section>
 
-            <section className="vault-panel" aria-labelledby="club-chip-transfer-title">
-              <h3 id="club-chip-transfer-title" className="vault-panel__title">
-                Manage Club Chips
-              </h3>
-              <p className="vault-panel__sub">
-                Chips Belong To Their Club. Open The Club Cashier To View Your Balance And Available
-                Transfers.
-              </p>
-              <button
-                type="button"
-                className="vault-btn primary"
-                onClick={() =>
-                  navigate(currentClubId ? `/clubs/${currentClubId}/cashier` : '/cashier')
-                }
-              >
-                Open Club Cashier
-              </button>
-            </section>
+              <section className="vault-panel" aria-labelledby="club-chip-transfer-title">
+                <h3 id="club-chip-transfer-title" className="vault-panel__title">
+                  Manage Club Chips
+                </h3>
+                <p className="vault-panel__sub">
+                  Chips Belong To Their Club. Open The Club Cashier To View Your Balance And
+                  Available Transfers.
+                </p>
+                <button
+                  type="button"
+                  className="vault-btn primary"
+                  onClick={() =>
+                    navigate(currentClubId ? `/clubs/${currentClubId}/cashier` : '/cashier')
+                  }
+                >
+                  Open Club Cashier
+                </button>
+              </section>
 
-            {/* THE SEND CONFIRMS ITSELF.
+              {/* THE SEND CONFIRMS ITSELF.
                 A completed transfer used to leave no trace the player could
                 go back to: the toast expires, the Receive pane filters to
                 credits, and the Ledger tab reads the CHIP tables, so a sent
                 diamond appeared on no surface in this wallet. */}
-            <section className="vault-panel" aria-labelledby="sent-title">
-              <h3 id="sent-title" className="vault-panel__title">
-                Diamonds You Have Sent
-              </h3>
-              <p className="vault-panel__sub">
-                Every Gift You Have Sent, Newest First. A Refund Appears Here Too, Because A
-                Returned Gift Is Part Of The Same Story.
-              </p>
-              {sent === null && <div className="vault-empty">Loading Your Sends...</div>}
-              {sent !== null && sentError && sent.length === 0 && (
-                <div className="vault-empty" role="alert">
-                  Could Not Load Your Sends.{' '}
-                  <button
-                    type="button"
-                    className="vault-link"
-                    onClick={() => void loadSent('reset')}
-                  >
-                    Retry
-                  </button>
-                </div>
-              )}
-              {sent !== null && !sentError && sent.length === 0 && (
-                <div className="vault-empty">
-                  You Have Not Sent Any Diamonds Yet. Pick A Friend Above.
-                </div>
-              )}
-              {sent !== null && sent.length > 0 && (
-                <ul className="incoming-list">
-                  {sent.map((row) => (
-                    <li key={row.id} className="incoming-row">
-                      <div className="incoming-row__body">
-                        <span className="incoming-row__label">{formatPopupText(row.label)}</span>
-                        <span className="incoming-row__desc">{describeRow(row, 'Sent To')}</span>
-                      </div>
-                      <div className="incoming-row__side">
-                        {/* The sign comes from the ROW, not from the pane. A
+              <section className="vault-panel" aria-labelledby="sent-title">
+                <h3 id="sent-title" className="vault-panel__title">
+                  Diamonds You Have Sent
+                </h3>
+                <p className="vault-panel__sub">
+                  Every Gift You Have Sent, Newest First. A Refund Appears Here Too, Because A
+                  Returned Gift Is Part Of The Same Story.
+                </p>
+                {sent === null && <div className="vault-empty">Loading Your Sends...</div>}
+                {sent !== null && sentError && sent.length === 0 && (
+                  <div className="vault-empty" role="alert">
+                    Could Not Load Your Sends.{' '}
+                    <button
+                      type="button"
+                      className="vault-link"
+                      onClick={() => void loadSent('reset')}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {sent !== null && !sentError && sent.length === 0 && (
+                  <div className="vault-empty">
+                    You Have Not Sent Any Diamonds Yet. Pick A Friend Above.
+                  </div>
+                )}
+                {sent !== null && sent.length > 0 && (
+                  <ul className="incoming-list">
+                    {sent.map((row) => (
+                      <li key={row.id} className="incoming-row">
+                        <div className="incoming-row__body">
+                          <span className="incoming-row__label">{formatPopupText(row.label)}</span>
+                          <span className="incoming-row__desc">{describeRow(row, 'Sent To')}</span>
+                        </div>
+                        <div className="incoming-row__side">
+                          {/* The sign comes from the ROW, not from the pane. A
                             refund sits in this list and is a credit; printing
                             a bare minus on everything here would tell a player
                             their returned diamonds had left again. */}
-                        <span
-                          className={`incoming-row__amount${row.amount < 0 ? ' is-outgoing' : ''}`}
-                        >
-                          {row.amount < 0 ? '-' : '+'}
-                          {fmtNum(Math.abs(row.amount))}
-                        </span>
-                        <time className="incoming-row__time" dateTime={row.createdAt}>
-                          {new Date(row.createdAt).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </time>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {/* The tail: the prefetch sentinel, the retry after a failed
+                          <span
+                            className={`incoming-row__amount${row.amount < 0 ? ' is-outgoing' : ''}`}
+                          >
+                            {row.amount < 0 ? '-' : '+'}
+                            {fmtNum(Math.abs(row.amount))}
+                          </span>
+                          <time className="incoming-row__time" dateTime={row.createdAt}>
+                            {new Date(row.createdAt).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </time>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {/* The tail: the prefetch sentinel, the retry after a failed
                   later page, the manual control, and the end line. One
                   component, because Receive below carries the same four. */}
-              <DiamondLedgerMore
-                rowCount={sent === null ? 0 : sent.length}
-                hasMore={sentHasMore}
-                loadingMore={sentLoadingMore}
-                error={sentError}
-                onLoadMore={() => void loadSent('more')}
-                moreLabel="Load Older Sends"
-                errorLabel="Could Not Load Older Sends."
-                endLine={`That Is Every Diamond You Have Sent. ${fmtNum(sent?.length ?? 0)} Entries.`}
-              />
-            </section>
-          </div>
-        )}
+                <DiamondLedgerMore
+                  rowCount={sent === null ? 0 : sent.length}
+                  hasMore={sentHasMore}
+                  loadingMore={sentLoadingMore}
+                  error={sentError}
+                  onLoadMore={() => void loadSent('more')}
+                  moreLabel="Load Older Sends"
+                  errorLabel="Could Not Load Older Sends."
+                  endLine={`That Is Every Diamond You Have Sent. ${fmtNum(sent?.length ?? 0)} Entries.`}
+                />
+              </section>
+            </div>
+          )}
 
-        {/* RECEIVE */}
-        {activeTab === 'receive' && user?.id && (
-          <div className="wallet-grid">
-            <section className="vault-panel" aria-labelledby="receive-title">
-              <h3 id="receive-title" className="vault-panel__title">
-                Receive Diamonds And Chips
-              </h3>
-              <p className="vault-panel__sub">
-                Friends Send Diamonds From Their Wallet. Chips Arrive From Your Club Cashier Or
-                Agent.
-              </p>
-              <dl className="receive-ids">
-                <div className="receive-ids__row">
-                  <dt>Player Number</dt>
-                  <dd>
-                    <span className="receive-ids__value">
-                      {playerNumber ? `#${playerNumber}` : 'Assigned After First Login'}
-                    </span>
-                  </dd>
-                </div>
-                <div className="receive-ids__row">
-                  <dt>Player ID</dt>
-                  <dd>
-                    <code className="receive-ids__value mono">{user.id}</code>
-                    <button
-                      type="button"
-                      className="vault-btn small"
-                      onClick={() => void copyText(user.id, 'id')}
-                      aria-label="Copy Player ID"
-                    >
-                      {copied === 'id' ? 'Copied' : 'Copy'}
-                    </button>
-                  </dd>
-                </div>
-                <div className="receive-ids__row">
-                  <dt>Profile Link</dt>
-                  <dd>
-                    <code className="receive-ids__value mono">{profileLink}</code>
-                    <button
-                      type="button"
-                      className="vault-btn small"
-                      onClick={() => void copyText(profileLink, 'link')}
-                      aria-label="Copy Profile Link"
-                    >
-                      {copied === 'link' ? 'Copied' : 'Copy'}
-                    </button>
-                  </dd>
-                </div>
-              </dl>
-              <div className="vault-form__row">
-                <span className="vault-form__hint">
-                  Share Your Profile So Friends Can Add You, Then Send.
-                </span>
-                <button type="button" className="vault-btn" onClick={() => navigate('/friends')}>
-                  Manage Friends
-                </button>
-              </div>
-            </section>
-
-            <section className="vault-panel" aria-labelledby="incoming-title">
-              <h3 id="incoming-title" className="vault-panel__title">
-                Diamonds Received
-              </h3>
-              <p className="vault-panel__sub">
-                Every Credit That Landed In Your Diamond Ledger, Newest First.
-              </p>
-              {incoming === null && <div className="vault-empty">Loading Your Ledger...</div>}
-              {/* The FIRST read failed, so there is nothing to show. */}
-              {incoming !== null && incomingError && incoming.length === 0 && (
-                <div className="vault-empty" role="alert">
-                  Could Not Load Incoming Diamonds.{' '}
-                  <button
-                    type="button"
-                    className="vault-link"
-                    onClick={() => void loadIncoming('reset')}
-                  >
-                    Retry
+          {/* RECEIVE */}
+          {activeTab === 'receive' && user?.id && (
+            <div className="wallet-grid">
+              <section className="vault-panel" aria-labelledby="receive-title">
+                <h3 id="receive-title" className="vault-panel__title">
+                  Receive Diamonds And Chips
+                </h3>
+                <p className="vault-panel__sub">
+                  Friends Send Diamonds From Their Wallet. Chips Arrive From Your Club Cashier Or
+                  Agent.
+                </p>
+                <dl className="receive-ids">
+                  <div className="receive-ids__row">
+                    <dt>Player Number</dt>
+                    <dd>
+                      <span className="receive-ids__value">
+                        {playerNumber ? `#${playerNumber}` : 'Assigned After First Login'}
+                      </span>
+                    </dd>
+                  </div>
+                  <div className="receive-ids__row">
+                    <dt>Player ID</dt>
+                    <dd>
+                      <code className="receive-ids__value mono">{user.id}</code>
+                      <button
+                        type="button"
+                        className="vault-btn small"
+                        onClick={() => void copyText(user.id, 'id')}
+                        aria-label="Copy Player ID"
+                      >
+                        {copied === 'id' ? 'Copied' : 'Copy'}
+                      </button>
+                    </dd>
+                  </div>
+                  <div className="receive-ids__row">
+                    <dt>Profile Link</dt>
+                    <dd>
+                      <code className="receive-ids__value mono">{profileLink}</code>
+                      <button
+                        type="button"
+                        className="vault-btn small"
+                        onClick={() => void copyText(profileLink, 'link')}
+                        aria-label="Copy Profile Link"
+                      >
+                        {copied === 'link' ? 'Copied' : 'Copy'}
+                      </button>
+                    </dd>
+                  </div>
+                </dl>
+                <div className="vault-form__row">
+                  <span className="vault-form__hint">
+                    Share Your Profile So Friends Can Add You, Then Send.
+                  </span>
+                  <button type="button" className="vault-btn" onClick={() => navigate('/friends')}>
+                    Manage Friends
                   </button>
                 </div>
-              )}
-              {incoming !== null && !incomingError && incoming.length === 0 && (
-                <div className="vault-empty">
-                  No Diamonds Received Yet. Claim Your Daily Login From The Earn Tab.
-                </div>
-              )}
-              {incoming !== null && incoming.length > 0 && (
-                <ul className="incoming-list">
-                  {incoming.map((row) => (
-                    <li key={row.id} className="incoming-row">
-                      <div className="incoming-row__body">
-                        <span className="incoming-row__label">{formatPopupText(row.label)}</span>
-                        <span className="incoming-row__desc">
-                          {describeRow(row, 'Received From')}
-                        </span>
-                      </div>
-                      <div className="incoming-row__side">
-                        <span className="incoming-row__amount">+{fmtNum(row.amount)}</span>
-                        <time className="incoming-row__time" dateTime={row.createdAt}>
-                          {new Date(row.createdAt).toLocaleDateString(undefined, {
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </time>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {/* The tail, the same component the Send pane uses: a sentinel
+              </section>
+
+              <section className="vault-panel" aria-labelledby="incoming-title">
+                <h3 id="incoming-title" className="vault-panel__title">
+                  Diamonds Received
+                </h3>
+                <p className="vault-panel__sub">
+                  Every Credit That Landed In Your Diamond Ledger, Newest First.
+                </p>
+                {incoming === null && <div className="vault-empty">Loading Your Ledger...</div>}
+                {/* The FIRST read failed, so there is nothing to show. */}
+                {incoming !== null && incomingError && incoming.length === 0 && (
+                  <div className="vault-empty" role="alert">
+                    Could Not Load Incoming Diamonds.{' '}
+                    <button
+                      type="button"
+                      className="vault-link"
+                      onClick={() => void loadIncoming('reset')}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {incoming !== null && !incomingError && incoming.length === 0 && (
+                  <div className="vault-empty">
+                    No Diamonds Received Yet. Claim Your Daily Login From The Earn Tab.
+                  </div>
+                )}
+                {incoming !== null && incoming.length > 0 && (
+                  <ul className="incoming-list">
+                    {incoming.map((row) => (
+                      <li key={row.id} className="incoming-row">
+                        <div className="incoming-row__body">
+                          <span className="incoming-row__label">{formatPopupText(row.label)}</span>
+                          <span className="incoming-row__desc">
+                            {describeRow(row, 'Received From')}
+                          </span>
+                        </div>
+                        <div className="incoming-row__side">
+                          <span className="incoming-row__amount">+{fmtNum(row.amount)}</span>
+                          <time className="incoming-row__time" dateTime={row.createdAt}>
+                            {new Date(row.createdAt).toLocaleDateString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </time>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {/* The tail, the same component the Send pane uses: a sentinel
                   that starts the next page a screenful early, the retry for a
                   later page that failed (the pages already read stay), the
                   manual control that is never taken away, and the line that
                   says the ledger has ended. Before any of it the pane simply
                   stopped at 25 rows and a player could not tell a full ledger
                   from a truncated one. */}
-              <DiamondLedgerMore
-                rowCount={incoming === null ? 0 : incoming.length}
-                hasMore={incomingHasMore}
-                loadingMore={incomingLoadingMore}
-                error={incomingError}
-                onLoadMore={() => void loadIncoming('more')}
-                moreLabel="Load Older Diamonds"
-                errorLabel="Could Not Load Older Diamonds."
-                endLine={`That Is Every Diamond You Have Received. ${fmtNum(incoming?.length ?? 0)} Credits.`}
-              />
-            </section>
-          </div>
-        )}
+                <DiamondLedgerMore
+                  rowCount={incoming === null ? 0 : incoming.length}
+                  hasMore={incomingHasMore}
+                  loadingMore={incomingLoadingMore}
+                  error={incomingError}
+                  onLoadMore={() => void loadIncoming('more')}
+                  moreLabel="Load Older Diamonds"
+                  errorLabel="Could Not Load Older Diamonds."
+                  endLine={`That Is Every Diamond You Have Received. ${fmtNum(incoming?.length ?? 0)} Credits.`}
+                />
+              </section>
+            </div>
+          )}
 
-        {/* EARN */}
-        {activeTab === 'earn' && (
-          <div className="wallet-grid">
-            <section className="vault-panel accent" aria-labelledby="daily-title">
-              <h3 id="daily-title" className="vault-panel__title">
-                Daily Login Reward
-              </h3>
-              <p className="vault-panel__sub">
-                Claim Once A Day. The Payout Climbs With Your Streak, Up To 25 Diamonds.
-                {progress && progress.nextLoginReward > 0 && !claimedToday
-                  ? ` Your Next Claim Pays ${fmtNum(progress.nextLoginReward)}.`
-                  : ''}
-                {progress && claimedToday && progress.nextLoginReward > 0
-                  ? ` Tomorrow Pays ${fmtNum(progress.nextLoginReward)}.`
-                  : ''}
-              </p>
-              {progress?.partial && (
-                <p className="vault-panel__sub" role="status">
-                  Some Of These Figures Could Not Be Read Just Now And May Be Low. The Claim Itself
-                  Is Unaffected.
+          {/* EARN */}
+          {activeTab === 'earn' && (
+            <div className="wallet-grid">
+              <section className="vault-panel accent" aria-labelledby="daily-title">
+                <h3 id="daily-title" className="vault-panel__title">
+                  Daily Login Reward
+                </h3>
+                <p className="vault-panel__sub">
+                  Claim Once A Day. The Payout Climbs With Your Streak, Up To 25 Diamonds.
+                  {progress && progress.nextLoginReward > 0 && !claimedToday
+                    ? ` Your Next Claim Pays ${fmtNum(progress.nextLoginReward)}.`
+                    : ''}
+                  {progress && claimedToday && progress.nextLoginReward > 0
+                    ? ` Tomorrow Pays ${fmtNum(progress.nextLoginReward)}.`
+                    : ''}
                 </p>
-              )}
-              <dl className="earn-stats">
-                <div className="earn-stat">
-                  <dt>Streak</dt>
-                  <dd>
-                    {progress
-                      ? `${fmtNum(progress.loginStreak)} Days`
-                      : progressError
-                        ? 'Unavailable'
-                        : 'Checking'}
-                  </dd>
-                </div>
-                <div className="earn-stat">
-                  <dt>Earned Today</dt>
-                  <dd>
-                    {progress
-                      ? `${fmtNum(progress.earnedToday)} / ${fmtNum(progress.dailyCap)}`
-                      : progressError
-                        ? 'Unavailable'
-                        : 'Checking'}
-                  </dd>
-                </div>
-                <div className="earn-stat">
-                  <dt>Multiplier</dt>
-                  <dd>
-                    {progress
-                      ? `${progress.multiplier}x${progress.isVip ? ' VIP' : ''}`
-                      : progressError
-                        ? 'Unavailable'
-                        : 'Checking'}
-                  </dd>
-                </div>
-              </dl>
-              {progress && progress.dailyCap > 0 && (
-                <div
-                  className="earn-meter"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={progress.dailyCap}
-                  aria-valuenow={Math.min(progress.earnedToday, progress.dailyCap)}
-                  aria-label="Diamonds Earned Today"
-                >
+                {progress?.partial && (
+                  <p className="vault-panel__sub" role="status">
+                    Some Of These Figures Could Not Be Read Just Now And May Be Low. The Claim
+                    Itself Is Unaffected.
+                  </p>
+                )}
+                <dl className="earn-stats">
+                  <div className="earn-stat">
+                    <dt>Streak</dt>
+                    <dd>
+                      {progress
+                        ? `${fmtNum(progress.loginStreak)} Days`
+                        : progressError
+                          ? 'Unavailable'
+                          : 'Checking'}
+                    </dd>
+                  </div>
+                  <div className="earn-stat">
+                    <dt>Earned Today</dt>
+                    <dd>
+                      {progress
+                        ? `${fmtNum(progress.earnedToday)} / ${fmtNum(progress.dailyCap)}`
+                        : progressError
+                          ? 'Unavailable'
+                          : 'Checking'}
+                    </dd>
+                  </div>
+                  <div className="earn-stat">
+                    <dt>Multiplier</dt>
+                    <dd>
+                      {progress
+                        ? `${progress.multiplier}x${progress.isVip ? ' VIP' : ''}`
+                        : progressError
+                          ? 'Unavailable'
+                          : 'Checking'}
+                    </dd>
+                  </div>
+                </dl>
+                {progress && progress.dailyCap > 0 && (
                   <div
-                    className="earn-meter__fill"
-                    style={{
-                      width: `${Math.min(100, (progress.earnedToday / progress.dailyCap) * 100)}%`,
-                    }}
-                  />
-                </div>
-              )}
-              <div className="vault-form__row">
-                <span className="vault-form__hint">
-                  {progressError ? (
-                    <>
-                      Reward Status Is Unavailable.{' '}
-                      <button
-                        type="button"
-                        className="vault-link"
-                        onClick={() => {
-                          setProgressError(false);
-                          void loadProgress();
-                        }}
-                      >
-                        Retry
-                      </button>
-                    </>
-                  ) : (
-                    'Diamonds Land In Your Wallet Instantly.'
-                  )}
-                </span>
-                <button
-                  type="button"
-                  className="vault-btn primary"
-                  onClick={handleClaimDaily}
-                  disabled={claiming || claimedToday}
-                >
-                  {claiming
-                    ? 'Claiming...'
-                    : claimedToday
-                      ? 'Claimed Today'
-                      : 'Claim Daily Diamonds'}
-                </button>
-              </div>
-            </section>
-
-            <section className="vault-panel" aria-labelledby="lifetime-title">
-              <h3 id="lifetime-title" className="vault-panel__title">
-                Lifetime Diamonds
-              </h3>
-              <p className="vault-panel__sub">
-                From Your Diamond Ledger. Earned Is Every Credit; Spent Is Every Debit.
-              </p>
-              <dl className="earn-stats">
-                <div className="earn-stat">
-                  <dt>Earned</dt>
-                  <dd className="positive">
-                    {lifetime
-                      ? fmtNum(lifetime.lifetimeEarned)
-                      : lifetime === null
-                        ? 'Unavailable'
-                        : 'Checking'}
-                  </dd>
-                </div>
-                <div className="earn-stat">
-                  <dt>Spent</dt>
-                  <dd>
-                    {lifetime
-                      ? fmtNum(lifetime.lifetimeSpent)
-                      : lifetime === null
-                        ? 'Unavailable'
-                        : 'Checking'}
-                  </dd>
-                </div>
-                <div className="earn-stat">
-                  <dt>On Hand</dt>
-                  <dd className="diamond">{fmtNum(diamonds)}</dd>
-                </div>
-              </dl>
-              {lifetime === null && (
-                <p className="vault-form__hint" role="alert">
-                  Your Lifetime Totals Could Not Be Read.{' '}
-                  <button type="button" className="vault-link" onClick={() => void loadLifetime()}>
-                    Retry
+                    className="earn-meter"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={progress.dailyCap}
+                    aria-valuenow={Math.min(progress.earnedToday, progress.dailyCap)}
+                    aria-label="Diamonds Earned Today"
+                  >
+                    <div
+                      className="earn-meter__fill"
+                      style={{
+                        width: `${Math.min(100, (progress.earnedToday / progress.dailyCap) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                )}
+                <div className="vault-form__row">
+                  <span className="vault-form__hint">
+                    {progressError ? (
+                      <>
+                        Reward Status Is Unavailable.{' '}
+                        <button
+                          type="button"
+                          className="vault-link"
+                          onClick={() => {
+                            setProgressError(false);
+                            void loadProgress();
+                          }}
+                        >
+                          Retry
+                        </button>
+                      </>
+                    ) : (
+                      'Diamonds Land In Your Wallet Instantly.'
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    className="vault-btn primary"
+                    onClick={handleClaimDaily}
+                    disabled={claiming || claimedToday}
+                  >
+                    {claiming
+                      ? 'Claiming...'
+                      : claimedToday
+                        ? 'Claimed Today'
+                        : 'Claim Daily Diamonds'}
                   </button>
-                </p>
-              )}
-            </section>
+                </div>
+              </section>
 
-            {/* Phase 5: the split behind Earned and Spent - every diamond by
+              <section className="vault-panel" aria-labelledby="lifetime-title">
+                <h3 id="lifetime-title" className="vault-panel__title">
+                  Lifetime Diamonds
+                </h3>
+                <p className="vault-panel__sub">
+                  From Your Diamond Ledger. Earned Is Every Credit; Spent Is Every Debit.
+                </p>
+                <dl className="earn-stats">
+                  <div className="earn-stat">
+                    <dt>Earned</dt>
+                    <dd className="positive">
+                      {lifetime
+                        ? fmtNum(lifetime.lifetimeEarned)
+                        : lifetime === null
+                          ? 'Unavailable'
+                          : 'Checking'}
+                    </dd>
+                  </div>
+                  <div className="earn-stat">
+                    <dt>Spent</dt>
+                    <dd>
+                      {lifetime
+                        ? fmtNum(lifetime.lifetimeSpent)
+                        : lifetime === null
+                          ? 'Unavailable'
+                          : 'Checking'}
+                    </dd>
+                  </div>
+                  <div className="earn-stat">
+                    <dt>On Hand</dt>
+                    <dd className="diamond">{fmtNum(diamonds)}</dd>
+                  </div>
+                </dl>
+                {lifetime === null && (
+                  <p className="vault-form__hint" role="alert">
+                    Your Lifetime Totals Could Not Be Read.{' '}
+                    <button
+                      type="button"
+                      className="vault-link"
+                      onClick={() => void loadLifetime()}
+                    >
+                      Retry
+                    </button>
+                  </p>
+                )}
+              </section>
+
+              {/* Phase 5: the split behind Earned and Spent - every diamond by
                 what it bought and by where it came from, summed in SQL over
                 the whole ledger. DIAMONDS ONLY. */}
-            <section className="vault-panel span2" aria-labelledby="flow-title">
-              <h3 id="flow-title" className="vault-panel__title">
-                Where Your Diamonds Go
-              </h3>
-              <p className="vault-panel__sub">
-                Every Diamond You Spent, By What It Bought. Every Diamond You Earned, By Where It
-                Came From. Summed From Your Whole Ledger.
-              </p>
-              <DiamondFlowPanel userId={user?.id} />
-            </section>
+              <section className="vault-panel span2" aria-labelledby="flow-title">
+                <h3 id="flow-title" className="vault-panel__title">
+                  Where Your Diamonds Go
+                </h3>
+                <p className="vault-panel__sub">
+                  Every Diamond You Spent, By What It Bought. Every Diamond You Earned, By Where It
+                  Came From. Summed From Your Whole Ledger.
+                </p>
+                <DiamondFlowPanel userId={user?.id} />
+              </section>
 
-            <section className="vault-panel span2" aria-labelledby="earn-more-title">
-              <h3 id="earn-more-title" className="vault-panel__title">
-                More Ways To Earn
-              </h3>
-              <div className="earn-doors">
-                <button type="button" className="earn-door" onClick={() => navigate('/rakeback')}>
-                  <span className="earn-door__title">Rakeback</span>
-                  <span className="earn-door__sub">Chips Back On Every Raked Hand You Play.</span>
-                </button>
-                <button
-                  type="button"
-                  className="earn-door"
-                  onClick={() => navigate(withClubContext('/challenges', linkClubId))}
-                >
-                  <span className="earn-door__title">Daily Challenges</span>
-                  <span className="earn-door__sub">Complete Missions For Diamond Payouts.</span>
-                </button>
-                <button type="button" className="earn-door" onClick={() => navigate('/bonuses')}>
-                  <span className="earn-door__title">Bonuses</span>
-                  <span className="earn-door__sub">
-                    Your Daily Club Arena Bonus And Club Promotions.
-                  </span>
-                </button>
-                <button type="button" className="earn-door" onClick={() => navigate('/promotions')}>
-                  <span className="earn-door__title">Promotions</span>
-                  <span className="earn-door__sub">Club Promos, Leaderboards And Prize Pools.</span>
-                </button>
-                <button
-                  type="button"
-                  className="earn-door"
-                  onClick={() => navigate('/achievements')}
-                >
-                  <span className="earn-door__title">Achievements</span>
-                  <span className="earn-door__sub">Milestones, Badges, And Unlock Progress.</span>
-                </button>
-                <button type="button" className="earn-door" onClick={() => navigate('/vip')}>
-                  <span className="earn-door__title">VIP Status</span>
-                  <span className="earn-door__sub">Membership And Included Benefits.</span>
-                </button>
-              </div>
-            </section>
-          </div>
-        )}
+              <section className="vault-panel span2" aria-labelledby="earn-more-title">
+                <h3 id="earn-more-title" className="vault-panel__title">
+                  More Ways To Earn
+                </h3>
+                <div className="earn-doors">
+                  <button type="button" className="earn-door" onClick={() => navigate('/rakeback')}>
+                    <span className="earn-door__title">Rakeback</span>
+                    <span className="earn-door__sub">Chips Back On Every Raked Hand You Play.</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="earn-door"
+                    onClick={() => navigate(withClubContext('/challenges', linkClubId))}
+                  >
+                    <span className="earn-door__title">Daily Challenges</span>
+                    <span className="earn-door__sub">Complete Missions For Diamond Payouts.</span>
+                  </button>
+                  <button type="button" className="earn-door" onClick={() => navigate('/bonuses')}>
+                    <span className="earn-door__title">Bonuses</span>
+                    <span className="earn-door__sub">
+                      Your Daily Club Arena Bonus And Club Promotions.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="earn-door"
+                    onClick={() => navigate('/promotions')}
+                  >
+                    <span className="earn-door__title">Promotions</span>
+                    <span className="earn-door__sub">
+                      Club Promos, Leaderboards And Prize Pools.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="earn-door"
+                    onClick={() => navigate('/achievements')}
+                  >
+                    <span className="earn-door__title">Achievements</span>
+                    <span className="earn-door__sub">Milestones, Badges, And Unlock Progress.</span>
+                  </button>
+                  <button type="button" className="earn-door" onClick={() => navigate('/vip')}>
+                    <span className="earn-door__title">VIP Status</span>
+                    <span className="earn-door__sub">Membership And Included Benefits.</span>
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
 
-        {/* LEDGER */}
-        {activeTab === 'history' && user?.id && (
-          <div className="wallet-grid single">
-            <section className="vault-panel" aria-labelledby="ledger-title">
-              <h3 id="ledger-title" className="vault-panel__title">
-                Wallet Ledger
-              </h3>
-              <TransactionHistory walletId={user.id} limit={50} />
-            </section>
-            {/* Phase 7 (roadmap 9.5): a statement the player can AUDIT, not a
+          {/* LEDGER */}
+          {activeTab === 'history' && user?.id && (
+            <div className="wallet-grid single">
+              <section className="vault-panel" aria-labelledby="ledger-title">
+                <h3 id="ledger-title" className="vault-panel__title">
+                  Wallet Ledger
+                </h3>
+                <TransactionHistory walletId={user.id} limit={50} />
+              </section>
+              {/* Phase 7 (roadmap 9.5): a statement the player can AUDIT, not a
                 feed. The feed this replaces asked chip_ledger for legs where the
                 player was performed_by or to_entity_id, so every chip that LEFT
                 the player was invisible. The statement shows both directions and
                 the nightly reading the balance is checked against. */}
-            <section className="vault-panel vault-panel--statement" aria-labelledby="audit-title">
-              <h3 id="audit-title" className="vault-panel__title">
-                Chip Statement
-              </h3>
-              <ChipStatement scope="player" />
-            </section>
-            {/* Phase 4: the Diamond Arena's own statement - every session,
+              <section className="vault-panel vault-panel--statement" aria-labelledby="audit-title">
+                <h3 id="audit-title" className="vault-panel__title">
+                  Chip Statement
+                </h3>
+                <ChipStatement scope="player" />
+              </section>
+              {/* Phase 4: the Diamond Arena's own statement - every session,
                 every buy-in and cash-out, and that each one reconciles. Read
                 only; the live paths are atomic. DIAMONDS ONLY. */}
-            <section className="vault-panel" aria-labelledby="arena-statement-title">
-              <h3 id="arena-statement-title" className="vault-panel__title">
-                Diamond Arena Statement
-              </h3>
-              <p className="vault-panel__sub">
-                Every Buy-In And Cash-Out At Your Diamond Arena Seats, And Whether Each One
-                Reconciles With Your Wallet.
-              </p>
-              <DiamondArenaStatement userId={user.id} />
-            </section>
-          </div>
-        )}
-      </div>
+              <section className="vault-panel" aria-labelledby="arena-statement-title">
+                <h3 id="arena-statement-title" className="vault-panel__title">
+                  Diamond Arena Statement
+                </h3>
+                <p className="vault-panel__sub">
+                  Every Buy-In And Cash-Out At Your Diamond Arena Seats, And Whether Each One
+                  Reconciles With Your Wallet.
+                </p>
+                <DiamondArenaStatement userId={user.id} />
+              </section>
+            </div>
+          )}
+        </div>
+      </CashierWorkspace>
 
       {/* ═══════════ MODALS ═══════════ */}
       <RewardsOverlayPortal>

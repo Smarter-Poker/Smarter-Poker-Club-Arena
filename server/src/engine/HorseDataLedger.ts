@@ -125,6 +125,126 @@ const receipt = (
   ...(minRatio != null ? { minRatio } : {}),
 });
 
+/**
+ * A RETIRED RECEIPT (2026-10-16). A telemetry key the brain no longer fires
+ * because its code was renamed or removed. Registered so the daily audit
+ * (fn_audit_layer_drift) reads its silence as the retirement it is, instead
+ * of a layer that "was executing and is not any more": on 2026-10-15 about 110
+ * of those warns were renamed or retired reason codes. Cadence legacy_unused,
+ * no ratio, so fn_audit_data_receipts never judges it either. `retiredBy`
+ * names the change that retired it; `source` means the key is gone from
+ * server/src now (HorseDataLedger.test.ts proves it), anything else names a
+ * change that has not landed on main yet and is proven when it does.
+ */
+export type RetiredBy = 'source' | 'policy_bundle_2026_10_16';
+const retiredReceipt = (
+  key: string,
+  retiredBy: RetiredBy,
+  note: string,
+  since: string
+): LedgerEntry => ({
+  key,
+  kind: 'receipt',
+  source: 'horse_brain_telemetry (retired: no longer fired)',
+  cadence: 'legacy_unused',
+  consumer: `retired:${retiredBy}`,
+  note,
+  since,
+});
+
+/** Phase 12 pack reasons renamed when the round-3 pack replaced them (round3_*). */
+export const RETIRED_PHASE12_REASONS = [
+  'variant_protected_check',
+  'variant_price_call',
+  'variant_price_fold',
+  'variant_value_bet',
+  'variant_value_raise',
+  'variant_draw_pressure',
+  'preflop_defense',
+  'preflop_entry_declined',
+  'preflop_entry',
+  'preflop_complete',
+  'preflop_reraise',
+  'preflop_call_off',
+  'preflop_reshove',
+  'split_price_call',
+  'split_price_fold',
+  'low_only_protected_check',
+] as const;
+const PHASE12_TELEMETRY_PREFIXES = [
+  'phase12_',
+  'phase12_short_deck_',
+  'phase12_pineapple_',
+  'phase12_flh_',
+  'phase12_flo8_',
+] as const;
+const PHASE13_TELEMETRY_PREFIXES = [
+  'phase13_',
+  'phase13_nlh_',
+  'phase13_plo4_',
+  'phase13_plo5_',
+  'phase13_plo6_',
+  'phase13_plo8_',
+  'phase13_short_deck_',
+  'phase13_pineapple_',
+  'phase13_flh_',
+  'phase13_flo8_',
+] as const;
+
+export const RETIRED_RECEIPTS: LedgerEntry[] = [
+  ...PHASE12_TELEMETRY_PREFIXES.flatMap((prefix) =>
+    RETIRED_PHASE12_REASONS.map((reason) =>
+      retiredReceipt(
+        `${prefix}reason_${reason}`,
+        'source',
+        `the pre-round-3 Phase 12 reason ${reason}; the round-3 pack names its outcomes round3_* (RemainingVariantLivePolicy) and never emits this one`,
+        'Phase12'
+      )
+    )
+  ),
+  ...['phase10_', 'phase11_', 'phase11_plo5_', 'phase11_plo6_', 'phase11_plo8_'].map((prefix) =>
+    retiredReceipt(
+      `${prefix}reason_heads_up_big_blind_three_bet`,
+      'source',
+      'the heads-up big-blind three-bet reason of the earlier PLO packs; the round-3 packs name heads-up play heads_up_button_open / heads_up_position_stab',
+      'Phase10'
+    )
+  ),
+  retiredReceipt(
+    'v44_declined_governor',
+    'source',
+    'the V44 second look no longer declines on the equity governor: the worker always decides at scale 1 and the second look is budgeted from the turn clock (2026-10-16)',
+    'V44'
+  ),
+  // Retired by the 2026-10-16 policy bundle (a separate branch, hashed policy
+  // files): the packs lose their wall-clock work budget and Phase 13 its
+  // joint work budget. Registered here so the day they go silent is not ~20
+  // warns; the ledger test proves them absent once the bundle is on main.
+  ...PHASE13_TELEMETRY_PREFIXES.map((prefix) =>
+    retiredReceipt(
+      `${prefix}reason_work_budget`,
+      'policy_bundle_2026_10_16',
+      'the Phase 13 joint policy wall-clock work budget (JOINT_SAMPLE_WORK_BUDGET_MS), retired by the 2026-10-16 policy bundle',
+      'Phase13'
+    )
+  ),
+  ...[
+    'phase10_',
+    'phase11_',
+    'phase11_plo5_',
+    'phase11_plo6_',
+    'phase11_plo8_',
+    ...PHASE12_TELEMETRY_PREFIXES,
+  ].map((prefix) =>
+    retiredReceipt(
+      `${prefix}reason_work_budget`,
+      'policy_bundle_2026_10_16',
+      'the policy pack wall-clock work budget (liveBudgetMs), retired by the 2026-10-16 policy bundle: an unavailable pack decision is now a sampler failure or missing evidence',
+      'Phase10'
+    )
+  ),
+];
+
 const mind = (key: string, note: string, consumer: string): LedgerEntry => ({
   key,
   kind: 'mind',
@@ -467,7 +587,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'V16'
   ),
   flag('v17Pos', 'players-behind bluff pressure', 'V17'),
-  flag('v17RiverProbe', 'river probe into a capped field', 'V17'),
+  flag(
+    'v17RiverProbe',
+    'river probe into a capped field; DEFAULT OFF since 2026-10-16 (v17_river_probe -0.11 +/- 0.04 pooled over 8 nights)',
+    'V17'
+  ),
   flag('v17CatchBlock', 'call-side blocker on missed-flush rivers', 'V17'),
   flag('v17ShortDeck', 'short deck multiway tightening', 'V17'),
   flag('v18Straddle', 'straddle read as unopened', 'V18', 'HorsePreflop.decidePreflopV7'),
@@ -487,7 +611,12 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   flag('v23Endgame', 'tournament endgame adjust (bounties, prizes)', 'V23'),
   flag('v23Plan', 'raise-response plans decided at bet time', 'V23'),
   flag('v23Reads', 'river reads', 'V23'),
-  flag('v23Variants', 'plo8 low-only draws, short deck draw credit', 'V23'),
+  flag('v23Variants', 'plo8 low-only draw discipline (plo8_v23_lowdraw)', 'V23'),
+  flag(
+    'v23ShortDeck',
+    'the short-deck half of the V23 variant polish; DEFAULT OFF since 2026-10-16 (shortdeck_v23 -0.36 +/- 0.14 over 44 runs)',
+    'V23'
+  ),
   flag('v23Spin', 'spin format overlay', 'V23'),
   flag('v24Bounty', 'PKO bounty pull', 'V24'),
   flag(
@@ -510,7 +639,11 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'onGtoV31Decision',
     'captures decision-level source receipts for paired replay and league reconciliation'
   ),
-  flag('v32FacingDefense', 'solver facing-bet defense', 'V32'),
+  flag(
+    'v32FacingDefense',
+    'solver facing-bet defense; DEFAULT OFF since 2026-10-16 (v32_facing_defense -0.31 +/- 0.15 over 41 runs)',
+    'V32'
+  ),
   flag('v33DepthCeiling', 'solver depth ceiling (300bb)', 'V33'),
   flag('v37Satellite', 'satellite survival play', 'V37'),
   flag('v38Ev', 'the EV engine arbiter for solverless games and the MDF river', 'V38'),
@@ -1354,15 +1487,36 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     0.002
   ),
   receipt('v17_pos_behind', 'HorseLogic (V17)', 'players-behind pressure', 'V17', 'decide', 0.1),
+  // No floor: v17RiverProbe is default OFF since 2026-10-16, so silence is
+  // expected until a league matchup resolves positive and the default changes.
   receipt(
     'v17_river_probe',
     'HorseLogic (V17)',
-    'river probe into a capped field',
-    'V17',
-    'decide',
-    0.0002
+    'river probe into a capped field; opt-in (v17RiverProbe)',
+    'V17'
   ),
   receipt('v17_catch_block', 'HorseLogic (V17)', 'call-side blocker', 'V17', 'decide', 0.0005),
+  // 2026-10-16 opponent exploit (HorseOpponentExploit). No floor: these fire
+  // only against an opponent whose decayed read is credibly outside the
+  // horse-population envelope, which horse-versus-horse play almost never is.
+  receipt(
+    'opponent_exploit_preflop',
+    'HorseLogic (opponent exploit)',
+    "a raiser or limper read outside the horse envelope moved a preflop bar (Dan: 'raising and potting at a 100% VPIP')",
+    'OPPX'
+  ),
+  receipt(
+    'opponent_exploit_postflop',
+    'HorseLogic (opponent exploit)',
+    'traps against a read aggressor or bigger value sizes into a read station',
+    'OPPX'
+  ),
+  receipt(
+    'opponent_exploit_calldown',
+    'HorseLogic (opponent exploit)',
+    "the current bettor's own read priced the call instead of the table average",
+    'OPPX'
+  ),
   receipt(
     'v17_short_deck',
     'HorseLogic (V17)',
@@ -1518,13 +1672,13 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'decide_nlh',
     0.002
   ),
+  // No floor: v32FacingDefense is default OFF since 2026-10-16, so silence is
+  // expected until a league matchup resolves positive and the default changes.
   receipt(
     'v32_*',
     'GtoFacingDefenseV32 (V32)',
-    'facing-bet defense verdicts and misses',
-    'V32',
-    'decide_nlh',
-    0.002
+    'facing-bet defense verdicts and misses; opt-in (v32FacingDefense)',
+    'V32'
   ),
   receipt(
     'v34_defend_draw_passthrough',
@@ -2328,6 +2482,20 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'a nominally complete betting decision could not produce a Phase 7 ledger; any live fire requires investigation',
     'Phase7'
   ),
+  /*
+   * WHY A TOURNAMENT DECISION HAD NO COMPLETE CONTEXT (2026-10-16). About
+   * 10.5% of tournament decisions read phase6_tournament_context_incomplete
+   * (163-167k a day) and nothing said which issue closed it. The engine names
+   * every issue of an incomplete context once per decision
+   * (ServerTableEngineTurns.noteTournamentContextIssues), from the list
+   * TournamentBrainContext and the table projection build.
+   */
+  receipt(
+    'phase6_context_issue_*',
+    'ServerTableEngineTurns.noteTournamentContextIssues',
+    'one per issue of a live tournament decision whose Phase 6 context was not complete: the TournamentBrainContext issue (tournament_context_warming, payout_or_ticket_structure_missing, level_timing_*, ...) or the table projection issue (blind_level_cache_lag, dealer_seat_missing, ...), and the context status (status_warming, status_stale, status_incomplete)',
+    'Phase6'
+  ),
   receipt(
     'phase7_unavailable_*',
     'HorseLogic -> HorseTournamentUtility',
@@ -2534,6 +2702,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'Phase15'
   ),
   receipt(
+    'phase15_reference_agreement_*',
+    'fn_run_horse_reference_agreement (HorseReferenceAgreementReport, daily)',
+    'one per validated live FAST decision: <variant>_<cash|tournament>_<exact|action|differ|unrecorded>, the final policy action against the action the graph reference node produced (HorsePolicyLedgerObserver); agreement with the reference is not strength and not GTO',
+    'Phase15'
+  ),
+  receipt(
+    'phase15_reference_divergence_*',
+    'fn_run_horse_reference_agreement (HorseReferenceAgreementReport, daily)',
+    'for a live FAST decision that left the reference action or amount, <variant>_<node>: the first policy graph node whose transition changed it',
+    'Phase15'
+  ),
+  receipt(
     'phase15_deep_brain_exception_retired',
     'ServerTableEngineTurns.scheduleHorseAction',
     'a failed deep evaluation was retired while the original fast decision and its execution authority were retained',
@@ -2549,7 +2729,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     receipt(
       `phase15_${lane}_execution_*`,
       'HorseExecutionWitness.countFinal',
-      `terminal execution-witness outcomes from the ${lane} lane; failed or discarded computation is distinct from accepted policy intent`,
+      `terminal execution-witness outcomes from the ${lane} lane, and for not_executed the retirement reason (retired_<reason>); failed or discarded computation is distinct from accepted policy intent`,
       'Phase15'
     )
   ),
@@ -2598,14 +2778,41 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   receipt(
     'v44_declined_no_think_time',
     'ServerTableEngineTurns.secondLookPlan',
-    'no second look: under 1500ms of think time to spend. A high count here is the tempo model, not the layer',
+    'no second look: under 1500ms of the turn clock left (less the engine margin) when the fast answer arrived. Budgeted from the turn clock since 2026-10-16; a high count here is the worker queue eating the clock, which is capacity. (The governor gate, v44_declined_governor, was retired the same day: the worker always decides at scale 1)',
+    'V44'
+  ),
+  /*
+   * THE ACTION WAITS FOR THE DEEPER READ (2026-10-16). 96% of the deep looks
+   * started on 2026-10-16 never acted because the think timer fired before
+   * the answer came back. The action now waits for it inside the turn clock.
+   * `awaited` counts actions that outlived their chosen think time to wait;
+   * `hold_expired` counts the ones whose deep answer still did not arrive by
+   * the clock budget, so the fast answer acted.
+   */
+  receipt(
+    'v44_second_look_awaited',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the chosen think time ended with the second look still out, so the action waited for it inside the turn clock',
     'V44'
   ),
   receipt(
-    'v44_declined_governor',
-    'ServerTableEngineTurns.secondLookPlan',
-    'no second look: EquityLoadGovernor was already shedding load (event-loop p50 over 40ms). A high count here is capacity, and it is the ONLY visibility the governor has outside the GameServer status payload',
+    'v44_second_look_hold_expired',
+    'ServerTableEngineTurns.scheduleHorseAction',
+    'the second look did not land inside the turn-clock budget; the fast answer acted. A count here is worker capacity',
     'V44'
+  ),
+  /*
+   * ONE FLOOR, ONE READ (2026-10-16). Every completed hand reaches every
+   * decision-worker shard; the shards that do not own its table learn it
+   * (horseDecision/mindMirror.ts). learned / duplicate / nothing_to_learn /
+   * refused from the worker; shed (the client's bound) and unavailable (the
+   * job failed or expired) from the client.
+   */
+  receipt(
+    'horse_mind_mirror_*',
+    'LiveHorseDecisionWorkerPool.observeCompletedHand',
+    'a completed hand of another shard learned by this worker so every shard holds the same opponent read; shed and unavailable are the bounded mirror refusing or losing a hand',
+    'V50'
   ),
   receipt(
     'v48_gto_deviation',
@@ -2653,6 +2860,7 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   ),
 
   // TAGS. Every leak tag the review system emits, with its reader.
+  ...RETIRED_RECEIPTS,
   ...TAG_CONSUMERS,
 ];
 

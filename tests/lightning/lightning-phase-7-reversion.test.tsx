@@ -343,6 +343,7 @@ describe('4. the lobby card through LIGHTNING -> PENDING_OFF -> MUST_MOVE', () =
       main_index: 1,
       lifecycle: 'live',
       cluster_must_move: true,
+      cluster_template: 'action',
       cluster_players: 5,
       cluster_tables: 1,
       cluster_mode: mode,

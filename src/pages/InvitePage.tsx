@@ -183,7 +183,10 @@ export default function InvitePage() {
                 pendingInvite?.code === codeToClaim ? pendingInvite.firstSeen : undefined
               );
               if (claimed.success && claimed.joinPath && claimed.joinPath.includes(clubData.id)) {
-                const fromClaim = new URL(claimed.joinPath, window.location.origin).searchParams.get('ref');
+                const fromClaim = new URL(
+                  claimed.joinPath,
+                  window.location.origin
+                ).searchParams.get('ref');
                 if (fromClaim) {
                   joinRef = joinRef || fromClaim;
                   if (!getIsMounted || getIsMounted()) setClaimedRef(fromClaim);
@@ -436,7 +439,7 @@ export default function InvitePage() {
             {logo ? (
               <img src={sizedStorageUrl(logo, 208)} alt="" loading="lazy" />
             ) : club.name?.toUpperCase().includes('SHARK') ? (
-              <img src={`${MEDIA_BASE}images/shark-club-logo.jpg`} alt="" loading="lazy" />
+              <img src={`${MEDIA_BASE}images/shark-club-logo-v2.png`} alt="" loading="lazy" />
             ) : (
               <span aria-hidden="true">{club.name[0]?.toUpperCase()}</span>
             )}

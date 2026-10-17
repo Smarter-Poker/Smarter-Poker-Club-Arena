@@ -89,35 +89,31 @@ describe('the reserve offers no way to move money out', () => {
     // Two guards: one over the kind selector, one over the whole outbound flow
     // (picker + amount). If either escapes, an operator can spend the pool that
     // pays Spin prizes.
-    const guards = modal.match(/\{!readOnly && \(/g) || [];
-    expect(guards.length).toBeGreaterThanOrEqual(2);
-
-    // The picker must sit AFTER the first guard - i.e. inside a guarded region
-    // - and never before one.
-    const firstGuard = modal.indexOf('{!readOnly && (');
-    expect(firstGuard).toBeGreaterThan(-1);
-    expect(modal.indexOf('Search Clubs Or Members')).toBeGreaterThan(firstGuard);
-
-    /* THE SEND BUTTON IS THE FOOT'S PAINTED PRIMARY PLATE since this modal moved
-       onto the console (#ClubArenaConsole, 2026-09-14). A plate is a prop on
-       <SpadeConsole>, so its label is computed above the JSX and it cannot sit
-       inside a `{!readOnly && (` wrapper the way a nested element could - the
-       guard is a ternary instead. This case used to prove "the string 'Pick A
-       Member' appears after the first guard", which is the same protection
-       written against the old markup; it is pinned here against the new one.
-
-       The riveted master's base always paints both plates, so the reserve does
-       not get a plate-less foot - it gets a DISABLED one that says READ ONLY,
-       and `send` is reachable only through the `showSend` branch. */
-    expect(modal).toMatch(/const showSend = !readOnly && mode !== 'ledger';/);
-    const primaryAt = modal.indexOf('primary: showSend');
-    expect(primaryAt).toBeGreaterThan(-1);
-    // The ONLY call to send() is the one inside that branch.
+    /* ON THE WALLET DESK (Dan 2026-10-16) the outbound flow is two guarded
+       regions: the recipients picker (with the ledger) under
+       `{!readOnly && (`, and the amount sheet - the only place `send` is
+       reachable, on its painted primary plate - under
+       `sheet={!readOnly && sheetOpen && (`. The reserve's dock carries a single
+       Read Only line and no action instead of Pull Back / Ledger / Send Out. */
+    const pickerGuard = modal.indexOf('{!readOnly && (');
+    expect(pickerGuard).toBeGreaterThan(-1);
+    expect(modal.indexOf('Search Clubs Or Members')).toBeGreaterThan(pickerGuard);
+    const sheetGuard = modal.search(/sheet=\{\s*!readOnly &&\s*sheetOpen && \(/);
+    expect(sheetGuard).toBeGreaterThan(-1);
+    // The ONLY call to send() is the one inside the guarded sheet.
     const sends = modal.match(/void send\(\)/g) || [];
     expect(sends.length).toBe(1);
-    expect(modal.indexOf('void send()')).toBeGreaterThan(primaryAt);
+    expect(modal.indexOf('void send()')).toBeGreaterThan(sheetGuard);
+    // The dock's three money actions exist only on the non-read-only branch.
+    // Read only prints no control at all (2026-10-17: a permanently disabled
+    // "Read Only" button repeated the dock line and was a dead control); the
+    // dock line says Read Only.
+    const dockRead = modal.search(/readOnly\s*\?\s*\[\]\s*:\s*\[/);
+    expect(dockRead).toBeGreaterThan(-1);
+    expect(modal.indexOf("label: 'Send Out'")).toBeGreaterThan(dockRead);
     expect(modal).toMatch(/Pick A Member Or Club/);
-    expect(modal).toMatch(/label: 'Read Only'/);
+    expect(modal).toMatch(/const dockLine = readOnly\s*\?\s*'Read Only'/);
+    expect(modal).not.toMatch(/label: 'Read Only'/);
   });
 
   it('does not fetch the roster it would never show', () => {

@@ -52,11 +52,12 @@ describe('the phase-3 migration keeps its guarantees', () => {
   });
 });
 
-describe('Cashier page observation follows explicit user actions', () => {
-  it('has no background chip transaction subscription and scopes its embedded readers to manual mode', () => {
+describe('Cashier page observes completed account balance events', () => {
+  it('refreshes from the existing account balance event without a hot transaction subscription', () => {
     expect(PAGE).not.toContain('cashier-chip-txns-');
-    expect(PAGE).toMatch(/<DynamicWallet\s+manualOnly/);
-    expect(PAGE).toMatch(/<AgentPromoPanel\s+manualOnly/);
+    expect(PAGE).toMatch(/useMasterBusSubscriptions\(\s*\['BALANCE_UPDATED'\]/);
+    expect(PAGE).toContain('event.userId !== user.id');
+    expect(PAGE).toContain('clearClubChipBalanceCache()');
     expect(PAGE).toContain('refreshKey={walletRevision}');
     expect(PAGE).not.toContain('Reconnecting To Live Updates');
   });

@@ -1,0 +1,22 @@
+[
+  {
+    "outcome": "replayed_exact",
+    "firstDifference": null,
+    "context": {
+      "gameMode": "cash",
+      "format": "cash",
+      "variant": "plo8",
+      "stage": "river"
+    }
+  },
+  {
+    "outcome": "replayed_exact",
+    "firstDifference": null,
+    "context": {
+      "gameMode": "cash",
+      "format": "cash",
+      "variant": "plo6",
+      "stage": "river"
+    }
+  }
+]

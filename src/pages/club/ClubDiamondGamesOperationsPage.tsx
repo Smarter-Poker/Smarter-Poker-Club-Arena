@@ -41,7 +41,7 @@ import DiamondGamesService, {
   type GameMetrics,
 } from '../../services/DiamondGamesService';
 import { multiplierLabel } from '../../utils/diamondGamesFairness';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatWalletChips, formatWalletDiamonds } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import DiamondGamesMoney from '../../components/club/DiamondGamesMoney';
@@ -397,11 +397,11 @@ export default function ClubDiamondGamesOperationsPage() {
             label="Cover"
             value={chips(metrics?.cover_chips)}
             ink={(metrics?.cover_chips ?? 0) <= 0 ? 'red' : 'silver'}
-            meta={`${chips(metrics?.promo_chips)} Promo Plus ${chips(metrics?.bank_chips)} Bank`}
+            meta={`${formatWalletChips(metrics?.promo_chips)} Promo Plus ${formatWalletChips(metrics?.bank_chips)} Bank`}
           />
           <Row
             label={`${hostWord} Promo Wallet`}
-            value={chips(metrics?.promo_chips)}
+            value={formatWalletChips(metrics?.promo_chips)}
             ink={promoDry ? 'gold' : 'silver'}
             meta={
               promoDry
@@ -411,13 +411,13 @@ export default function ClubDiamondGamesOperationsPage() {
           />
           <Row
             label={`${hostWord} Bank`}
-            value={chips(metrics?.bank_chips)}
+            value={formatWalletChips(metrics?.bank_chips)}
             ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'blue'}
             meta="Behind The Promo Wallet, And Only When It Runs Dry"
           />
           <Row
             label="Owner Diamonds"
-            value={compactChips(metrics?.owner_diamonds ?? 0)}
+            value={formatWalletDiamonds(metrics?.owner_diamonds ?? 0)}
             ink="blue"
             meta="Daily Net Diamonds Arrive In One Settlement After A 20% Platform Burn"
           />
@@ -585,7 +585,7 @@ export default function ClubDiamondGamesOperationsPage() {
             mode="text"
             value={draft.bet_options}
             onChange={set('bet_options')}
-            hint="25 To 2,500 Diamonds. A Doubled Entry May Reach 5,000."
+            hint="25 To 2,500 Diamonds."
           />
           <Field
             label="Exposure Allowance (Chips)"
@@ -594,8 +594,7 @@ export default function ClubDiamondGamesOperationsPage() {
             hint={`The Most ${word} May Pay Beyond What It Has Taken In.`}
           />
           <p className="sc-copy">
-            Entries Are 25 To 2,500 Diamonds. One Equal Double Down Can Bring The Bonus Total To
-            5,000. Earned And Purchased Diamonds Are Accepted.
+            Entries Are 25 To 2,500 Diamonds. Earned And Purchased Diamonds Are Accepted.
           </p>
           <Field
             label="Cap Fraction"

@@ -852,3 +852,22 @@
   font: inherit;
   min-height: 44px;
 }
+
+/* Club Bank uses the same native-ratio transfer rows and width as Send Out.
+   Its ledger and mint remain in this wallet-owned dialog. */
+.cbc-panel.wcm.ac-popup.cbc-bank-transfer {
+  width: min(100%, 560px);
+  max-height: 94dvh;
+}
+.wcm [hidden] {
+  display: none !important;
+}
+.cbc-bank-transfer .cbc-tabs {
+  gap: 1cqw 3cqw;
+  flex-wrap: nowrap;
+}
+.cbc-bank-transfer .cbc-tab {
+  font-size: 3cqw;
+  letter-spacing: 0.06em;
+  color: #45adff !important;
+}

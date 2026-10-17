@@ -35,6 +35,7 @@ type TableCall = {
 
 const state = vi.hoisted(() => ({
   resolveClub: null as null | ((id: string) => Promise<string>),
+  frozen: false,
   agentWallet: 500,
   myRole: 'owner',
   roster: [] as Array<Record<string, unknown>>,
@@ -201,6 +202,7 @@ async function openSendOut(amount: string, picks: number) {
 }
 
 beforeEach(() => {
+  state.frozen = false;
   vi.clearAllMocks();
   localStorage.clear();
   document.title = 'Poker Arena | Smarter Poker';
@@ -299,6 +301,7 @@ beforeEach(() => {
   vi.mocked(supabase.rpc).mockImplementation((name: string, args?: unknown) => {
     const params = (args ?? {}) as Record<string, unknown>;
     state.rpcCalls.push({ name, args: params });
+    if (name === 'fn_platform_frozen') return Promise.resolve({ data: state.frozen, error: null });
     if (name === 'fn_cashier_recipient_wallet_balances')
       return Promise.resolve({
         data: state.roster.map((row) => ({
@@ -452,7 +455,7 @@ describe('large cashier roster stays complete and progressively rendered', () =>
       `/clubs/${CLUB_A}/members/44444444-4444-4444-8444-000000001999`
     );
     expect(screen.getAllByRole('checkbox', { name: /^Include / })).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Select Roster Player 1999' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include Roster Player 1999' }));
     fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
     const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Amount' }), {
@@ -669,14 +672,17 @@ describe('P-20: a comma-grouped amount is understood, any other comma is named',
     expect((batch.args.p_items as Array<{ amount: number }>)[0].amount).toBe(1000);
   });
 
-  it("refuses a stray comma with the classic cashier's own words", async () => {
+  it('normalizes edited grouping while the submitted parser still refuses malformed spelling', async () => {
     mountCashier();
     await synchronized();
     await openSendOut('1,0', 1);
+    expect(screen.getByRole('textbox', { name: 'Amount', exact: true })).toHaveValue('10');
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     await waitFor(() =>
-      expect(toastMocks.error).toHaveBeenCalledWith('Enter The Amount Without Commas')
+      expect(state.rpcCalls.some((call) => call.name === 'fn_cashier_batch_transfer')).toBe(true)
     );
+    const batch = state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')!;
+    expect((batch.args.p_items as Array<{ amount: number }>)[0].amount).toBe(10);
     expect(parseTradeAmount('1,234,567.89')).toEqual({ ok: true, value: 1234567.89 });
     expect(parseTradeAmount('12,34')).toEqual({
       ok: false,
@@ -957,7 +963,8 @@ describe('P-11, P-15, P-24: the player wallet', () => {
       "unavailable: { status: 'Wallet Ledger // Unavailable', ink: 'gold' }"
     );
     expect(WALLET).toContain("offline: { status: 'Wallet Ledger // Offline', ink: 'red' }");
-    expect(WALLET).toContain('status={LEDGER_STATUS[ledgerState].status}');
+    // The Cashier dock's own line prints it (Dan 2026-10-16, the wallet desk).
+    expect(WALLET).toContain("{LEDGER_STATUS[ledgerState].status.replace(' // ', ' ')}");
     expect(WALLET).toContain(
       "const ledgerState: LedgerReadState | 'offline' = isOnline ? ledgerRead : 'offline';"
     );
@@ -1009,8 +1016,8 @@ it('keeps a late uncertain transfer in its original club instead of poisoning th
   await synchronized();
   await act(async () => batch.resolve({ data: null, error: { message: 'Connection Lost' } }));
   expect(screen.queryByText(/Nothing Was Sent/)).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Select Player 1' })).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Select Player 1' }));
+  expect(screen.getByRole('checkbox', { name: 'Include Player 1' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include Player 1' }));
   fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
   expect(await screen.findByRole('dialog', { name: /Send Out/ })).toBeInTheDocument();
 });
@@ -1183,7 +1190,7 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   state.roster = [{ ...player(0, 120, 'First Agent'), role: 'agent', role_rank: 3 }];
   mountCashier();
   await synchronized();
-  fireEvent.click(screen.getByRole('button', { name: 'Select First Agent' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include First Agent' }));
   fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
   const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
   // Dan 2026-10-15: a large name, the player number, a large balance and the
@@ -1191,16 +1198,43 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   const card = within(dialog).getByRole('region', { name: 'Selected Player' });
   expect(card).toHaveTextContent('First Agent');
   await waitFor(() => expect(card).toHaveTextContent('340'));
+  const balances = within(dialog).getByRole('region', { name: 'Selected Player Wallet Balances' });
+  expect(balances).toHaveTextContent('Agent Wallet: 340.00');
+  expect(balances).toHaveTextContent('Player Wallet: 120.00');
   expect(
     within(card).getByRole('combobox', { name: 'Recipient Wallet For First Agent' })
   ).toHaveValue('agent_wallet');
+  // The one native control is a direct child of the frame, allowing its
+  // transparent hit area to cover the avatar, identity and balance together.
+  const selector = within(card).getByRole('combobox');
+  expect(selector.parentElement).toBe(card);
+  selector.focus();
+  expect(selector).toHaveFocus();
+  const face = card.cloneNode(true) as HTMLElement;
+  face.querySelector('select')!.remove();
+  expect(face.textContent).toContain('Agent Wallet');
+  expect(face.textContent?.match(/340\.00/g)).toHaveLength(1);
   expect(card).not.toHaveTextContent('Sending To');
-  expect(within(card).getByRole('option', { name: 'Promo Wallet: 80' })).toBeInTheDocument();
+  expect(within(card).getByRole('option', { name: 'Promo Wallet: 80.00' })).toBeInTheDocument();
   fireEvent.change(within(card).getByRole('combobox'), { target: { value: 'player_wallet' } });
-  expect(within(card).getByRole('option', { name: 'Player Wallet: 120' })).toBeInTheDocument();
+  expect(within(card).getByRole('option', { name: 'Player Wallet: 120.00' })).toBeInTheDocument();
+  const changedFace = card.cloneNode(true) as HTMLElement;
+  changedFace.querySelector('select')!.remove();
+  expect(changedFace.textContent).toContain('Player Wallet');
+  expect(changedFace.textContent?.match(/120\.00/g)).toHaveLength(1);
   expect(within(dialog).getByRole('region', { name: 'From Your Agent Wallet' })).toHaveTextContent(
     '500'
   );
+  const funding = within(dialog).getByRole('region', { name: 'From Your Agent Wallet' });
+  const source = within(funding).getByRole('combobox', { name: 'Send From' });
+  expect(source.parentElement).toBe(funding);
+  const fundingFace = funding.cloneNode(true) as HTMLElement;
+  fundingFace.querySelector('select')!.remove();
+  expect(fundingFace.textContent).toContain('From Your Agent Wallet');
+  expect(fundingFace.textContent?.match(/500\.00/g)).toHaveLength(1);
+  expect(
+    within(source).getByRole('option', { name: 'From Your Agent Wallet: 500.00' })
+  ).toBeInTheDocument();
   expect(dialog).not.toHaveTextContent('Amount Per Player');
   fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket' }));
   expect(within(dialog).getByRole('region', { name: 'From Your Player Wallet' })).toHaveTextContent(
@@ -1550,7 +1584,7 @@ it('Phase 7: the native player composer traps both Tab directions and returns fo
   state.roster = [player(0, 75)];
   mountCashier();
   await synchronized();
-  fireEvent.click(screen.getByRole('button', { name: 'Select Player 1', exact: true }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include Player 1', exact: true }));
   const trigger = screen.getByRole('button', { name: 'Send Out', exact: true });
   trigger.focus();
   fireEvent.click(trigger);
@@ -1583,12 +1617,15 @@ describe('Simple Cashier Default', () => {
     for (const name of ['Claim Back', 'Send Ticket', 'Send Out']) {
       expect(screen.getByRole('button', { name, exact: true })).toBeInTheDocument();
     }
-    expect(screen.getByPlaceholderText('Search Name Or ID')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Manage Player 1' })).toHaveTextContent('ID: P-1');
+    expect(screen.getByPlaceholderText('Search Name Or ID Number')).toBeInTheDocument();
+    expect(screen.getByText('ID: P-1').parentElement?.querySelector('img')).not.toBeNull();
     expect(
-      within(screen.getByRole('link', { name: 'Manage Player 1' }).parentElement!).getByText('75', {
-        exact: true,
-      })
+      within(screen.getByRole('link', { name: 'Manage Player 1' }).parentElement!).getByText(
+        '75.00',
+        {
+          exact: true,
+        }
+      )
     ).toBeInTheDocument();
     const css = readFileSync('src/pages/CashierTradePage.module.css', 'utf8');
     expect(css).toContain('.page.simple .glass .rowSub:not(.simpleId)');
@@ -1827,9 +1864,9 @@ it('preloads the most recent own ticket, send and claim counterparties before hi
   await waitFor(() =>
     expect(
       screen
-        .getAllByRole('button', { name: /^Select Player/ })
+        .getAllByRole('checkbox', { name: /^Include Player/ })
         .map((button) => button.getAttribute('aria-label'))
-    ).toEqual(['Select Player 3', 'Select Player 2', 'Select Player 1'])
+    ).toEqual(['Include Player 3', 'Include Player 2', 'Include Player 1'])
   );
 });
 
@@ -1863,7 +1900,7 @@ it.each(['player', 'agent'])(
     fireEvent.click(entry);
     const sheet = await screen.findByRole('dialog', { name: 'Request Cashout' });
     expect(within(sheet).getByText('Available Balance')).toBeInTheDocument();
-    expect(within(sheet).getByText('250 Chips')).toBeInTheDocument();
+    expect(within(sheet).getByText('250.00 Chips')).toBeInTheDocument();
     expect(within(sheet).getByRole('textbox', { name: /Amount/i })).toBeInTheDocument();
     expect(
       within(sheet).getByText(/Chips Will Be Locked Until Your Agent Approves/i)
@@ -1883,7 +1920,7 @@ it.each(['club_bank', 'promo_wallet', 'club_promo_wallet', 'player_wallet'] as c
     expect(sourceSelect).toHaveValue('agent_wallet');
     await waitFor(() =>
       expect(
-        within(sourceSelect).getByRole('option', { name: /From The Main Bank: 1K/ })
+        within(sourceSelect).getByRole('option', { name: /From The Main Bank: 1,000\.00/ })
       ).toBeInTheDocument()
     );
     fireEvent.change(sourceSelect, { target: { value: source } });
@@ -1923,7 +1960,7 @@ it('keeps each batch recipient identity, selected wallet and current balance tog
     expect(cards[index]).toHaveTextContent(`ID: P-${index + 1}`);
     await waitFor(() =>
       expect(
-        within(cards[index]).getByRole('option', { name: 'Agent Wallet: 340' })
+        within(cards[index]).getByRole('option', { name: 'Agent Wallet: 340.00' })
       ).toBeInTheDocument()
     );
     expect(within(cards[index]).getByRole('combobox')).toHaveValue('agent_wallet');
@@ -1932,4 +1969,32 @@ it('keeps each batch recipient identity, selected wallet and current balance tog
   expect(within(cards[0]).getByRole('combobox')).toHaveValue('agent_wallet');
   expect(within(cards[1]).getByRole('combobox')).toHaveValue('promo_wallet');
   expect(within(dialog).getByRole('textbox', { name: 'Amount For Player 2' })).toHaveValue('5');
+});
+
+it('reports a rolled-back maintenance refusal without retaining an uncertain transfer', async () => {
+  state.frozen = true;
+  state.batch = async () => ({
+    data: {
+      success: true,
+      results: [
+        { user_id: PLAYER_IDS[0], success: false, error: 'Transfer Failed', error_code: 'P0001' },
+      ],
+    },
+    error: null,
+  });
+  mountCashier();
+  await synchronized();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include Player 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), { target: { value: '1' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm', exact: true }));
+  await waitFor(() =>
+    expect(
+      screen.getByText('Paused For Maintenance. No Chips Were Moved. Try Again When Play Resumes')
+    ).toBeInTheDocument()
+  );
+  expect(toastMocks.error).toHaveBeenCalledWith(
+    '1 Transfers Were Refused. No Chips Were Moved For Those Recipients'
+  );
+  expect(readCashierTransferRecovery(USER_ID, CLUB_A)).toBeNull();
 });

@@ -58,6 +58,14 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE version = '20261017001657'
+       AND name = 'a_deleted_account_leaves_every_club_and_every_list'
+  ) THEN
+    RAISE EXCEPTION 'cashier deleted-account directory migration history drift';
+  END IF;
+
+  IF NOT EXISTS (
     SELECT 1 FROM pg_proc
      WHERE oid = to_regprocedure('public.fn_cashier_recovery_receipts(uuid,uuid[],text[])')
        AND pg_get_userbyid(proowner) = 'postgres' AND provolatile = 's'
@@ -72,11 +80,11 @@ BEGIN
   v_contract := jsonb_build_array(
     jsonb_build_object(
       'signature', 'public.fn_cashier_conservation_report(uuid)',
-      -- Same report contract; 20261015022628 also checks members who joined
-      -- after the club baseline from zero at the existing cutoff (they were
-      -- permanently "unverified" before).
-      'hash', '7e64f42dd89bd5b50d4e92c8971ca5e5',
-      'replacement_hash', '9bc52994306a0c6519cbea5e031dce21'
+      -- Same report contract; qualified 20261016230420 reads cutoff statistics
+      -- from the analyzed baseline table, preserving the exact report. The
+      -- exact preimage and installed replacement are the only accepted definitions.
+      'hash', '9bc52994306a0c6519cbea5e031dce21',
+      'replacement_hash', 'f3728357280a30789ff8d7bb30140eae'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_recovery_receipts(uuid,uuid[],text[])',
@@ -282,7 +290,9 @@ BEGIN
       -- 20261006005823, not the last CREATE (20260823170000).
       -- 20261012040542 (installed and read back live 2026-10-12) lists,
       -- filters and counts a treasury-funded seat as a Club Bank send.
-      'hash', 'f17eb94522c177856683617945d9f371'
+      -- 20261016155801 (#7115, installed 2026-10-16) reads the same rows and
+      -- totals in one pass; its transaction asserts this post-image.
+      'hash', 'cb7edf507b92e7c22535d6fed10a416b'
     ),
     jsonb_build_object(
       'signature', 'public.fn_promo_wallet_ledger(text,uuid,integer,integer,text)',
@@ -312,7 +322,13 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_promo_disburse(text,uuid,text,uuid,numeric,text,uuid,uuid)',
-      'hash', '54539cb4d66ffdcdacd85521e5fbb929',
+      -- Installed 20261016132743 (#7104, Midway weekly horse promo): the
+      -- engine/cron caller reads fn_caller_is_engine(), a union's own club
+      -- members are eligible, and the union promo leg journals its own
+      -- labelled ledger row. Owner checks for signed-in callers are unchanged.
+      -- Full definition derived from the merged migration and read back live
+      -- by post-deploy run 38929938237.
+      'hash', 'e54e4f3949335c61d4c1492d81b5ca21',
       'search_path', 'search_path=public'
     ),
     jsonb_build_object(
@@ -330,7 +346,11 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_union_player_directory(uuid)',
-      'hash', 'd7cae706425a055f9039ba2b9535da48',
+      -- Installed history 20261017001657 applies the reserved 20261016224731
+      -- deleted-account filter. Removing that exact predicate from the full
+      -- live definition reproduces the former d7cae706425a055f9039ba2b9535da48
+      -- preimage. Only the qualified filtered directory is accepted now.
+      'hash', 'fc06a6bf8f02822da43f6f4b4fe76385',
       'search_path', 'search_path=public'
     ),
     jsonb_build_object(

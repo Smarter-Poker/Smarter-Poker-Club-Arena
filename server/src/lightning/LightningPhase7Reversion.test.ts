@@ -99,14 +99,17 @@ afterEach(() => {
 describe('discovery includes the Clusters draining out of Lightning', () => {
   it('asks for lightning AND pending_off, whatever lightning_enabled says, and says which drain', async () => {
     db.rows = [
-      { id: A, cluster_mode: 'lightning', lightning_enabled: true },
-      { id: B, cluster_mode: 'pending_off', lightning_enabled: false },
+      { id: A, template_name: 'action', cluster_mode: 'lightning', lightning_enabled: true },
+      { id: B, template_name: 'action', cluster_mode: 'pending_off', lightning_enabled: false },
     ];
     expect(await discoverLightningClusters()).toEqual([
       { clusterId: A, draining: false },
       { clusterId: B, draining: true },
     ]);
-    expect(db.calls).toContainEqual(['select', 'id, cluster_mode, lightning_enabled']);
+    expect(db.calls).toContainEqual([
+      'select',
+      'id, cluster_mode, lightning_enabled, template_name',
+    ]);
     // Widened by Lightning Phase 13: the operator's draining and paused modes
     // hold a worker too (LightningPhase13RolloutDrain.test.ts).
     const modes = db.calls.find((c) => c[0] === 'in' && c[1] === 'cluster_mode')?.[2];
@@ -122,26 +125,28 @@ describe('discovery includes the Clusters draining out of Lightning', () => {
   it('a lightning Cluster forms only with lightning_enabled exactly true; otherwise it drains', () => {
     expect(
       parseDiscoveredClusters([
-        { id: A, cluster_mode: 'lightning', lightning_enabled: false },
-        { id: B, cluster_mode: 'lightning' },
+        { id: A, template_name: 'action', cluster_mode: 'lightning', lightning_enabled: false },
+        { id: B, template_name: 'action', cluster_mode: 'lightning' },
       ])
     ).toEqual([
       { clusterId: A, draining: true },
       { clusterId: B, draining: true },
     ]);
     expect(
-      parseDiscoveredClusters([{ id: B, cluster_mode: 'pending_off', lightning_enabled: true }])
+      parseDiscoveredClusters([
+        { id: B, template_name: 'action', cluster_mode: 'pending_off', lightning_enabled: true },
+      ])
     ).toEqual([{ clusterId: B, draining: true }]);
   });
 
   it('a row in any other mode, or with a malformed id, is no Cluster at all', () => {
     expect(
       parseDiscoveredClusters([
-        { id: A, cluster_mode: 'must_move' },
-        { id: A, cluster_mode: 'pending_on' },
-        { id: 'nope', cluster_mode: 'lightning' },
+        { id: A, template_name: 'action', cluster_mode: 'must_move' },
+        { id: A, template_name: 'action', cluster_mode: 'pending_on' },
+        { id: 'nope', template_name: 'action', cluster_mode: 'lightning' },
         null,
-        { id: B, cluster_mode: 'pending_off' },
+        { id: B, template_name: 'action', cluster_mode: 'pending_off' },
       ])
     ).toEqual([{ clusterId: B, draining: true }]);
     expect(parseDiscoveredClusters(null)).toEqual([]);
@@ -293,7 +298,12 @@ describe('the supervisor through LIGHTNING -> PENDING_OFF -> MUST_MOVE', () => {
 describe('Lightning switched off while a hand is being dealt', () => {
   it('the hand settles under its host: the worker drains, nothing is abandoned', async () => {
     // The real discovery read, against cash_games rows the test changes.
-    const row = { id: A, cluster_mode: 'lightning', lightning_enabled: true };
+    const row = {
+      id: A,
+      template_name: 'action',
+      cluster_mode: 'lightning',
+      lightning_enabled: true,
+    };
     let rows: unknown[] = [row];
     const HAND = '0e0e0e0e-0000-4000-8000-00000000000e';
     const INSTANCE = '0f0f0f0f-0000-4000-8000-00000000000f';
@@ -441,4 +451,72 @@ describe('the close reason says which ending', () => {
     expect(modeOf).toHaveBeenCalledWith(B);
     expect(closed).toEqual([[ROOM, LIGHTNING_HAS_ENDED_REASON]]);
   });
+});
+
+describe('Lightning belongs only to Action and Madness templates', () => {
+  it.each(['classic', 'unknown', undefined, null])(
+    'never starts a new worker for %s',
+    async (template) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      db.rows = [
+        { id: A, cluster_mode: 'lightning', lightning_enabled: true, template_name: template },
+      ];
+      const rpc = formRpc(),
+        hosting = hostingStub();
+      const sup = new LightningSupervisor({
+        presenceSource: () => [],
+        rpc,
+        hosting: hosting as never,
+        frontTable: async () => 'front',
+        frozen: () => false,
+        logger: quiet(),
+        metrics: new LightningMetrics(new MetricsRegistry()),
+      });
+      sup.start();
+      await sup.reconcile();
+      expect(sup.activeClusters()).toEqual([]);
+      expect(rpc.mock.calls.filter((c) => c[0] === 'fn_lightning_match_and_form')).toHaveLength(0);
+      expect(hosting.abortCluster).not.toHaveBeenCalled();
+      await sup.stop();
+    }
+  );
+
+  it.each(['action', 'madness'])(
+    'keeps %s formation eligible, then drains its existing host if the template becomes Classic',
+    async (template) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      db.rows = [
+        { id: A, cluster_mode: 'lightning', lightning_enabled: true, template_name: template },
+      ];
+      const rpc = formRpc(),
+        hosting = hostingStub();
+      const sup = new LightningSupervisor({
+        presenceSource: () => [],
+        rpc,
+        hosting: hosting as never,
+        frontTable: async () => 'front',
+        frozen: () => false,
+        logger: quiet(),
+        metrics: new LightningMetrics(new MetricsRegistry()),
+      });
+      sup.start();
+      await sup.reconcile();
+      const worker = sup.workerFor(A)!;
+      expect(worker).toBeDefined();
+      expect(worker.currentHold).toBeNull();
+      db.rows = [
+        { id: A, cluster_mode: 'lightning', lightning_enabled: true, template_name: 'classic' },
+      ];
+      await sup.reconcile();
+      expect(sup.workerFor(A)).toBe(worker);
+      expect(worker.isRunning).toBe(true);
+      expect(worker.currentHold).toBe('pending_off');
+      rpc.mockClear();
+      expect(await worker.pass()).toEqual({ outcome: 'skipped', reason: 'pending_off' });
+      expect(rpc.mock.calls.filter((c) => c[0] === 'fn_lightning_match_and_form')).toHaveLength(0);
+      expect(hosting.abortCluster).not.toHaveBeenCalled();
+      expect(hosting.abortAll).not.toHaveBeenCalled();
+      await sup.stop();
+    }
+  );
 });

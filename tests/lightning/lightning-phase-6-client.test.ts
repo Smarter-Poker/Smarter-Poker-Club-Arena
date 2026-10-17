@@ -71,7 +71,8 @@ const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const META: LightningClusterMeta = {
   clusterId: CLUSTER,
   clubId: '44444444-4444-4444-8444-444444444444',
-  name: 'nlh 1/2 classic',
+  name: 'nlh 1/2 action',
+  templateName: 'action',
   variant: 'nlh',
   smallBlind: 1,
   bigBlind: 2,
@@ -182,8 +183,10 @@ describe('LIGHTNING FOLD availability and payload', () => {
       amount: 0,
     });
     const send = vi.fn(async () => ({ success: true }));
-    await sendLightningFold(POOL, 'user-1', 'fast_fold', send);
-    expect(send).toHaveBeenCalledWith(POOL, 'user-1', 'fast_fold', 0);
+    await sendLightningFold(POOL, 'user-1', 'fast_fold', CLUSTER, send);
+    expect(send).toHaveBeenCalledWith(POOL, 'user-1', 'fast_fold', 0, `lightning-hand:${CLUSTER}`);
+    await sendLightningFold(POOL, 'user-1', 'fold_watch', CLUSTER, send);
+    expect(send).toHaveBeenCalledWith(POOL, 'user-1', 'fold_watch', 0, `lightning-hand:${CLUSTER}`);
   });
 });
 
@@ -307,6 +310,7 @@ describe('lobby card states', () => {
       main_index: 1,
       lifecycle: 'live',
       cluster_must_move: true,
+      cluster_template: 'action',
       cluster_players: 5,
       cluster_tables: 1,
       ...over,
@@ -383,17 +387,15 @@ describe('route decision and the pool-session registry', () => {
     const absent = parseLightningMySession({ pool_session_id: null, cluster_mode: 'lightning' });
     expect(lightningEntryDecision(absent, null)).toEqual({
       kind: 'entry',
-      joinLabel: 'Join Lightning',
-      lightning: true,
+      joinLabel: 'Join Game',
+      lightning: false,
     });
     expect(lightningEntryDecision(absent, { ...META, clusterMode: 'must_move' })).toEqual({
       kind: 'entry',
       joinLabel: 'Join Game',
       lightning: false,
     });
-    expect(lightningRoomPath(POOL, META)).toBe(
-      `/table/${POOL}?name=nlh+1%2F2+classic&stakes=1%2F2`
-    );
+    expect(lightningRoomPath(POOL, META)).toBe(`/table/${POOL}?name=nlh+1%2F2+action&stakes=1%2F2`);
   });
   it('remembers pool-session rooms across a reload, and only real ids', () => {
     expect(getLightningPoolSession(POOL)).toBeNull();

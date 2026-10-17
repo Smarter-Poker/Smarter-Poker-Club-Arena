@@ -141,9 +141,30 @@ const MIN_AGE_HOURS = Number(flag('min-age-hours', '0'));
 export function matchedByName(file, recorded, recordedPrefixes) {
   const stem = String(file).replace(/\.sql$/, '');
   const slug = stem.slice(stem.indexOf('_') + 1);
-  return [slug, stem].some(
-    (n) => recorded.has(n) || recordedPrefixes.has(n.slice(0, NAME_PREFIX))
-  );
+  return [slug, stem].some((n) => recorded.has(n) || recordedPrefixes.has(n.slice(0, NAME_PREFIX)));
+}
+
+/**
+ * RECORDED UNDER ITS OWN VERSION, BYTE FOR BYTE (2026-10-16). An apply can
+ * leave the name NULL while keeping this file's version and its exact SQL:
+ * production carries `20261015173123` with a null name and statements whose
+ * joined text has the same MD5 as
+ * 20261015173123_a_calculating_week_advances_on_its_own_tick.sql. With no
+ * name, the file fell through to step 3, and its `@live-proof` pins a
+ * function body that two later installed migrations legitimately replaced,
+ * so an installed migration read as MERGED BUT NOT LIVE.
+ *
+ * The same version holding the same bytes is the lock the recording manifest
+ * already trusts (scripts/ci/recording-only.mjs): a file that never ran cannot
+ * hash to statements production recorded for its own version. Anything less
+ * (same version, different bytes) still goes on to objects and proofs.
+ */
+export function matchedByOwnBytes(file, sql, appliedMd5ByVersion) {
+  const m = /^(\d{14})_/.exec(String(file));
+  if (!m) return false;
+  const applied = appliedMd5ByVersion.get(m[1]);
+  if (!applied) return false;
+  return createHash('md5').update(String(sql)).digest('hex') === applied;
 }
 
 export function stampedAt(file) {
@@ -162,7 +183,9 @@ export function stampedAt(file) {
  * and the file is judged like any other.
  */
 export function supersededBy(sql, dirFiles) {
-  const m = String(sql).slice(0, 400).match(/^--\s*SUPERSEDED BY\s+(\d{14})\b/m);
+  const m = String(sql)
+    .slice(0, 400)
+    .match(/^--\s*SUPERSEDED BY\s+(\d{14})\b/m);
   if (!m) return null;
   return dirFiles.some((f) => f.startsWith(`${m[1]}_`)) ? m[1] : null;
 }
@@ -270,9 +293,7 @@ export function declaredObjects(sql) {
     /\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+([A-Za-z_"][\w."]*)\s*\(/gi
   ))
     push('function', m[1]);
-  for (const m of src.matchAll(
-    /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_"][\w."]*)/gi
-  ))
+  for (const m of src.matchAll(/\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_"][\w."]*)/gi))
     push('table', m[1]);
   for (const m of src.matchAll(
     /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:MATERIALIZED\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_"][\w."]*)/gi
@@ -316,9 +337,15 @@ export function declaredObjects(sql) {
  * per Lightning file against the raw line count.
  */
 export function declaredProofs(sql) {
-  return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)].map((m) => m[1].trim()).concat(
-    externalDeclaredProofs(sql, JSON.parse(readFileSync(join(ROOT,'scripts/ci/migration-live-proofs.json'),'utf8')), DIR)
-  );
+  return [...sql.matchAll(/^-- @live-proof: (.*)$/gm)]
+    .map((m) => m[1].trim())
+    .concat(
+      externalDeclaredProofs(
+        sql,
+        JSON.parse(readFileSync(join(ROOT, 'scripts/ci/migration-live-proofs.json'), 'utf8')),
+        DIR
+      )
+    );
 }
 
 /** Immutable installed files cannot be edited to add markers. External proof
@@ -332,20 +359,45 @@ function externalProofFile(path) {
   if (cached?.identity === identity) return cached;
   const bytes = readFileSync(path);
   const after = statSync(path, { bigint: true });
-  if ([after.dev, after.ino, after.size, after.mtimeNs, after.ctimeNs].join(':') !== identity) throw Error(`external live proof migration changed while reading: ${path}`);
-  const value = { identity, text: bytes.toString('utf8'), sha256: createHash('sha256').update(bytes).digest('hex') };
+  if ([after.dev, after.ino, after.size, after.mtimeNs, after.ctimeNs].join(':') !== identity)
+    throw Error(`external live proof migration changed while reading: ${path}`);
+  const value = {
+    identity,
+    text: bytes.toString('utf8'),
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
   if (externalProofFiles.size >= 4096) externalProofFiles.clear();
   externalProofFiles.set(path, value);
   return value;
 }
 export function externalDeclaredProofs(sql, registry, dir) {
-  if (!registry || registry.schema !== 1 || Object.keys(registry).sort().join(',') !== 'entries,schema' || !Array.isArray(registry.entries)) throw Error('invalid external live proof registry');
-  const seen = new Set(), result = [];
+  if (
+    !registry ||
+    registry.schema !== 1 ||
+    Object.keys(registry).sort().join(',') !== 'entries,schema' ||
+    !Array.isArray(registry.entries)
+  )
+    throw Error('invalid external live proof registry');
+  const seen = new Set(),
+    result = [];
   for (const entry of registry.entries) {
-    if (!entry || Object.keys(entry).sort().join(',') !== 'file,proofs,sha256' || typeof entry.file !== 'string' || !/^\d{14}_[a-z0-9_]+\.sql$/.test(entry.file) || seen.has(entry.file) || typeof entry.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(entry.sha256) || !Array.isArray(entry.proofs) || !entry.proofs.length || entry.proofs.some(p => typeof p !== 'string' || !p.trim() || !proofIsRunnable(p))) throw Error('invalid external live proof declaration');
+    if (
+      !entry ||
+      Object.keys(entry).sort().join(',') !== 'file,proofs,sha256' ||
+      typeof entry.file !== 'string' ||
+      !/^\d{14}_[a-z0-9_]+\.sql$/.test(entry.file) ||
+      seen.has(entry.file) ||
+      typeof entry.sha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(entry.sha256) ||
+      !Array.isArray(entry.proofs) ||
+      !entry.proofs.length ||
+      entry.proofs.some((p) => typeof p !== 'string' || !p.trim() || !proofIsRunnable(p))
+    )
+      throw Error('invalid external live proof declaration');
     seen.add(entry.file);
-    const file = externalProofFile(join(dir,entry.file));
-    if (file.sha256 !== entry.sha256) throw Error(`external live proof migration bytes changed: ${entry.file}`);
+    const file = externalProofFile(join(dir, entry.file));
+    if (file.sha256 !== entry.sha256)
+      throw Error(`external live proof migration bytes changed: ${entry.file}`);
     if (file.text === sql) result.push(...entry.proofs);
   }
   return result;
@@ -481,7 +533,7 @@ const sqlLiteral = (s) => `'${String(s).replace(/'/g, "''")}'`;
  *  are exported so tests/a-merged-migration-must-be-live.law.test.ts parses a
  *  migration exactly the way the check does, instead of a lookalike regex. */
 function main() {
-// ── read the window ────────────────────────────────────────────────────────
+  // ── read the window ────────────────────────────────────────────────────────
   if (!existsSync(DIR)) die(`${DIR} does not exist`);
   const floor = windowFloor();
   const files = readdirSync(DIR)
@@ -500,6 +552,20 @@ function main() {
   );
   if (recorded.size === 0) die('schema_migrations returned no names at all');
   const recordedPrefixes = new Set([...recorded].map((n) => n.slice(0, NAME_PREFIX)));
+  if (!/^\d{8,14}$/.test(floor))
+    die(`the window floor ${JSON.stringify(floor)} is not a version stamp`);
+  const appliedMd5ByVersion = new Map(
+    rows(
+      psql(
+        `select version || '|' || md5(array_to_string(statements, chr(10))) ` +
+          `from supabase_migrations.schema_migrations ` +
+          `where version >= '${floor}' and statements is not null`
+      )
+    ).map((line) => {
+      const i = line.indexOf('|');
+      return [line.slice(0, i), line.slice(i + 1)];
+    })
+  );
 
   // Apply-time aliases (scripts/ci/migration-aliases.mjs): the same migration
   // recorded under the version and name the Supabase MCP gave it.
@@ -521,6 +587,7 @@ function main() {
     if (matchedByName(file, recorded, recordedPrefixes)) continue;
     if (aliasedLive(file)) continue;
     const sql = readFileSync(join(DIR, file), 'utf8');
+    if (matchedByOwnBytes(file, sql, appliedMd5ByVersion)) continue;
     const by = supersededBy(sql, dirFiles) || aliases.superseded.get(file)?.by || null;
     if (by) {
       superseded.push({ file, by });
@@ -529,7 +596,9 @@ function main() {
     unmatched.push({ file, slug, sql });
   }
   for (const s of superseded) {
-    console.log(`[migrations-are-live] explicitly marked: ${s.file} is SUPERSEDED BY ${s.by} and must never run.`);
+    console.log(
+      `[migrations-are-live] explicitly marked: ${s.file} is SUPERSEDED BY ${s.by} and must never run.`
+    );
   }
 
   console.log(

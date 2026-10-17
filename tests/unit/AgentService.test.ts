@@ -492,6 +492,30 @@ describe('AgentService', () => {
       await expect(AgentService.reversibleDistributions(CLUB_ID)).rejects.toThrow(/remaining/);
     });
 
+    it('lists a send into a Promo Wallet instead of failing the whole list (2026-10-16)', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: [
+          {
+            transaction_id: TRANSACTION_ID,
+            to_user_id: USER_ID,
+            to_name: 'Agent One',
+            amount: '10.00',
+            claimed_back: '2.00',
+            remaining: '8.00',
+            destination: 'promo_wallet',
+            created_at: '2026-10-05T00:00:00.000Z',
+            reversible_until: '2026-10-05T00:10:00.000Z',
+            seconds_left: 300,
+          },
+        ],
+        error: null,
+      } as never);
+
+      const rows = await AgentService.reversibleDistributions(CLUB_ID);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].destination).toBe('promo_wallet');
+    });
+
     it('preserves a 42501 claim-back refusal for immediate page revocation', async () => {
       const refusal = { code: '42501', message: 'Access Revoked' };
       vi.mocked(supabase.rpc).mockResolvedValueOnce({ data: null, error: refusal } as never);

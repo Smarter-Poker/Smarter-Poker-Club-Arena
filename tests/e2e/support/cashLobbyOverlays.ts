@@ -189,10 +189,59 @@ interface OwnedDiamondInvitationDismissal extends DiamondInvitationDismissal {
 
 const invitationOwners = new WeakMap<Page, OwnedDiamondInvitationDismissal>();
 
+const greetingOwners = new WeakMap<Page, OwnedDiamondInvitationDismissal>();
+
+/** Take the real greeting door, respecting whichever known popup is on top. */
+async function enterClubLobbyIfShown(page: Page): Promise<void> {
+  const greeting = page.getByRole('dialog', { name: CLUB_ENTRY_MESSAGE_NAME });
+  if (!(await greeting.isVisible())) return;
+  // ClubEntryMessage's shared console X is named Close; the primary plate is
+  // Enter Lobby. The obsolete global Close Club Message selector never exists.
+  const enter = greeting.getByRole('button', { name: 'Enter Lobby', exact: true });
+  const cover = await layerCovering(enter);
+  if (cover?.dialog === DIAMOND_INVITATION.name) {
+    // Locator handlers do not nest. Take the offer's real Not Now action first.
+    await declineDiamondInvitationIfShown(page);
+  } else if (cover) {
+    throw new Error(
+      `The Club Message Enter Lobby control is covered by ${
+        cover.dialog ? `the "${cover.dialog}" dialog` : 'an unowned layer'
+      } (${cover.element})`
+    );
+  }
+  await enter.click({ timeout: DIAMOND_DECLINE_CLICK_TIMEOUT_MS });
+  await expect(greeting, 'the club message stayed open after Enter Lobby').toBeHidden({
+    timeout: 8_000,
+  });
+}
+
+/** The entry message can arrive after preparation and Diamond eligibility. */
+async function registerClubGreetingDismissal(page: Page): Promise<void> {
+  if (greetingOwners.has(page)) return;
+  const greeting = page.getByRole('dialog', { name: CLUB_ENTRY_MESSAGE_NAME });
+  let inFlight: Promise<void> = Promise.resolve();
+  let failure: { error: unknown } | undefined;
+  await page.addLocatorHandler(greeting, () => {
+    const run = enterClubLobbyIfShown(page).catch((error: unknown) => {
+      failure ??= { error };
+      throw error;
+    });
+    inFlight = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  });
+  greetingOwners.set(page, { idle: () => inFlight, failure: () => failure });
+}
+
 export async function prepareCashLobbyActions(
   page: Page,
   { retainInvitationHandler = true }: { retainInvitationHandler?: boolean } = {}
 ): Promise<void> {
+  // Register this owner first: the Diamond handler yields when the greeting
+  // covers it. Keep it after Diamond retirement for independently late reads.
+  await registerClubGreetingDismissal(page);
   const diamondPrompt = diamondInvitation(page);
   if (!retainInvitationHandler) {
     // Readiness can await engine API evidence while an invitation appears.
@@ -209,28 +258,25 @@ export async function prepareCashLobbyActions(
       const failure = owner.failure();
       if (failure) throw failure.error;
     }
+    // No intervening browser action is owed between selection and eligibility.
+    // Drain the original greeting owner before explicit stack settlement; never
+    // race its real click or turn an earlier handler failure into success.
+    const greeting = page.getByRole('dialog', { name: CLUB_ENTRY_MESSAGE_NAME });
+    const greetingOwner = greetingOwners.get(page);
+    await page.removeLocatorHandler(greeting);
+    if (greetingOwner) {
+      await greetingOwner.idle();
+      greetingOwners.delete(page);
+      const failure = greetingOwner.failure();
+      if (failure) throw failure.error;
+    }
+    await enterClubLobbyIfShown(page);
     await declineDiamondInvitationIfShown(page);
-    // The initial selection phase already handled the club greeting.
+    await registerClubGreetingDismissal(page);
+    // The persistent greeting owner remains through later navigation.
     return;
   }
-  const close = page.getByRole('button', { name: 'Close Club Message' });
-  // Finish this optional probe before registering an action handler. Its short,
-  // caught timeout must not abandon a still-running Diamond dismissal.
-  const clubMessageVisible = await close
-    .waitFor({ state: 'visible', timeout: 2_000 })
-    .then(() => true)
-    .catch(() => false);
-
   await registerDiamondInvitationDismissal(page);
-
-  if (clubMessageVisible) {
-    // If the invitation sits beneath the greeting, its handler yields here and
-    // this X goes first; the invitation is declined at the next action.
-    await close.click();
-    await expect(close, 'the club message blocked the live-table selector').toBeHidden({
-      timeout: 8_000,
-    });
-  }
 }
 
 export interface DiamondInvitationOptions {

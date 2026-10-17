@@ -1,0 +1,8 @@
+[
+  {
+    "signature": "fn_union_settlement_cascade_due()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_union_settlement_cascade_due()\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_advance jsonb;\nBEGIN\n IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'service_role_required' USING ERRCODE='42501'; END IF;\n -- THE ROUND-2 WINDOWS ADVANCE ON THEIR OWN TICK (20261015181721): a book\n -- whose round-2 windows are all that is missing has them proved with the\n -- whole statement, and this tick visits no scope; otherwise as before.\n v_advance:=public.fn_accounting_close_windows_advance_due();\n IF v_advance IS NOT NULL THEN RETURN v_advance; END IF;\n RETURN public.fn_process_weekly_accounting(NULL);\nEND $function$\n",
+    "definition_md5": "4e48f73890bd1b928653327f3a0a388b",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}"
+  }
+]

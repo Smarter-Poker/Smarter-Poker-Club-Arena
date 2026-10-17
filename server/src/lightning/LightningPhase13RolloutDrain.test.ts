@@ -349,17 +349,17 @@ describe('discovery reads the operator modes', () => {
     ]);
     expect(
       parseDiscoveredClusters([
-        { id: A, cluster_mode: 'draining', lightning_enabled: true },
-        { id: B, cluster_mode: 'paused', lightning_enabled: true },
+        { id: A, template_name: 'action', cluster_mode: 'draining', lightning_enabled: true },
+        { id: B, template_name: 'action', cluster_mode: 'paused', lightning_enabled: true },
       ])
     ).toEqual([
       { clusterId: A, draining: true, hold: 'draining' },
       { clusterId: B, draining: true, hold: 'paused' },
     ]);
     // Earlier shapes are exactly as before (no hold key).
-    expect(parseDiscoveredClusters([{ id: A, cluster_mode: 'pending_off' }])).toEqual([
-      { clusterId: A, draining: true },
-    ]);
+    expect(
+      parseDiscoveredClusters([{ id: A, template_name: 'action', cluster_mode: 'pending_off' }])
+    ).toEqual([{ clusterId: A, draining: true }]);
     expect(lightningClusterStatusOf('draining')).toBe('ending');
     expect(lightningClusterStatusOf('pending_off')).toBe('ending');
     expect(lightningClusterStatusOf('switched_off')).toBe('ending');
@@ -780,10 +780,20 @@ describe('the fold flags at the action door', () => {
           return false;
         }, 5_000)
       ).toBe(true);
-      const fast = host!.handlePlayerAction(facing!, 'fast_fold');
+      const fast = host!.handlePlayerAction(
+        facing!,
+        'fast_fold',
+        undefined,
+        `lightning-hand:${host!.currentHandId}`
+      );
       expect(fast).toMatchObject({ success: false, code: LIGHTNING_FOLD_DISABLED_CODE });
       expect(fast.error).toBe('Lightning Fold Is Not Available Right Now');
-      const watch = host!.handlePlayerAction(facing!, 'fold_watch');
+      const watch = host!.handlePlayerAction(
+        facing!,
+        'fold_watch',
+        undefined,
+        `lightning-hand:${host!.currentHandId}`
+      );
       expect(watch).toMatchObject({ success: false, code: LIGHTNING_FOLD_WATCH_DISABLED_CODE });
       expect(watch.error).not.toMatch(/—/);
       // The room's Lightning block says which controls the Cluster offers, for every seat.

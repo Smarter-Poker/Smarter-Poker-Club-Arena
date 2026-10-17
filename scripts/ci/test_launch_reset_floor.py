@@ -1,5 +1,5 @@
 from pathlib import Path
-import os,json,tempfile,subprocess,hashlib,argparse,re
+import os,json,tempfile,subprocess,hashlib,argparse,re,sys
 base=Path(__file__).parent/'fixtures'/'launch-reset'/'floor'
 parser=argparse.ArgumentParser()
 parser.add_argument('--pgbin',default=os.environ.get('PGBIN','/opt/homebrew/bin'))
@@ -112,3 +112,39 @@ CREATE FUNCTION fn_lock_daily_mission_user(uuid) RETURNS void LANGUAGE sql AS $$
   result={'qualification':'passed','scope_isolation':True,'actual_original_floor_command_entry_and_acquisition_owners':True,'unrelated_active_tables_untouched':True,'existing_paid_tournament_seating_and_hands_continue':True,'new_entrant_admission_refused':True,'original_actor_authority_stubbed_for_isolated_fixture':True,'runtime_dealer_drain_not_yet_proven':True,'exact_owned_close_resume_replay_and_pending_refusal':True,'source_sha256':loaded_floor_sha,'candidate_migration_sha256':candidate_sha,'loaded_floor_extract_sha256':loaded_floor_sha,'production_installation':False}
   args.output.write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result))
  finally:run([pg/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
+
+# Phase 7 closure qualification runs in this existing required accounting step.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-phase7-preserve-resolved-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Unchanged weekly receipt freshness predicates use the actual concurrent indexes.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+# Original-week bank receipt verification keeps ALL correlation legs indexed.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-bank-correlation-index-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('weekly-bank-correlation-index-qualification.json'))], text=True))
+
+# Installed proof lifetime remains connected to the finite inventory authority.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-inventory-proof-lifetime-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
+# Historical earning-club discovery uses exact indexed event witnesses.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-club-event-witness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Exact weekly cash maxima and accrued-rake bounds use their existing indexes.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-indexed-reads-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-cohort-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Actual skewed cash equality/range path and exact unaccrued receipt reader.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-keyorder-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-commission-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-access-install-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Fingerprints preserve source ordering while detoasting each window only once.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-window-r2-digests-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-window-earned-digests-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-window-digest-install-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Historical routing membership and indexed exact-view earning witnesses.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-routing-period-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Completed-week and statement club discovery share already accepted cash witnesses.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-cash-first-clubs-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Each touched identity is proved once while every original event still counts.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-touched-identities-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

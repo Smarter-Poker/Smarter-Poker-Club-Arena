@@ -1,0 +1,4 @@
+{
+  "_owner": "Lightning owner rule, 2026-10-16. Native PostgreSQL qualification passed; protected merge and guarded installation of 20261016232120 are pending. These are declarations, not production observations.",
+  "functions": ["fn_lightning_template_allowed", "fn_lightning_hand_template_guard"]
+}

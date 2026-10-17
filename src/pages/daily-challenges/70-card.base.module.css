@@ -5,7 +5,9 @@
   min-height: 310px;
   height: 100%;
   flex-direction: column;
-  overflow: hidden;
+  /* The polygon clips paint at the outer border; padding-box clipping would
+     hide the continuous rail. The mission board contains scroll overflow. */
+  overflow: visible;
   padding: 18px;
   border: 1px solid #36414a;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 28%), #090d10;
@@ -25,7 +27,15 @@
   pointer-events: none;
 }
 
-.challengeCard::after {
+.cardOrnament {
+  /* Contain decorative scroll bounds without clipping the outer frame rail. */
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cardOrnament::after {
   position: absolute;
   right: -35px;
   bottom: -35px;
@@ -50,7 +60,7 @@
 }
 
 .cardClaimed::before,
-.cardClaimed::after,
+.cardClaimed .cardOrnament::after,
 .cardClaimed .iconAssembly,
 .cardClaimed .rewardGem {
   opacity: 0.67;

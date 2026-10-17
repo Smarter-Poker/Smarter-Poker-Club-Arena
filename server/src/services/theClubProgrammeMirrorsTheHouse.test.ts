@@ -30,6 +30,7 @@ import {
   satelliteHeadsUpBuyIn,
   satelliteHeadsUpName,
   pickSatelliteTargets,
+  satelliteSourceIsSupported,
   satelliteTargetIsDeliverable,
   SATELLITE_HU_MIN_TICKET,
   SATELLITE_HU_TARGET_LEAD_MS,
@@ -53,6 +54,10 @@ import { HEADS_UP_SEATS } from '../config/headsUpSpec.js';
 
 const RECURRING = readFileSync(
   join(process.cwd(), 'src/services/TournamentRecurringService.ts'),
+  'utf8'
+);
+const SCHEDULED = readFileSync(
+  join(process.cwd(), 'src/services/ScheduledTournamentService.ts'),
   'utf8'
 );
 const FLEET = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
@@ -274,10 +279,13 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
     expect(SATELLITE_HU_TARGET_LEAD_MS).toBe(30 * 60_000);
     expect(SATELLITE_HU_TARGET_HORIZON_MS).toBe(7 * 24 * 3_600_000);
   });
-  it('never feeds an event the satellite finish refuses: bounty, PKO, mystery, Spin or unknown', () => {
+  it('feeds every bounty, PKO and mystery event; never a Spin or an unknown row', () => {
     // 2026-09-11: the dearest weekly event was a PKO, so it got a feeder every
     // half hour and every finished feeder was refused at settlement
-    // ("uses an unsupported bounty or Spin entry split").
+    // ("uses an unsupported bounty or Spin entry split"). 2026-10-16 (Dan:
+    // "EVERY TOURNAMENT WITH A 25 BUY IN OR HIGHER SHOULD HAVE SATELLITES INTO
+    // IT"): migration 20261017004440 seats a bounty target exactly like a paid
+    // entry, so the PKO is now fed - and Spin and unknown flags still are not.
     const now = Date.parse('2026-09-11T03:00:00Z');
     const at = (h: number) => new Date(now + h * 3_600_000).toISOString();
     const plain = {
@@ -286,6 +294,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
       is_pko: false,
       is_mystery_bounty: false,
       is_premium_spin: false,
+      diamond_host: false,
     };
     const pko: SatelliteTargetRow = {
       format_contract: 'mtt-v1',
@@ -301,6 +310,7 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
       is_pko: true,
       is_mystery_bounty: false,
       is_premium_spin: false,
+      diamond_host: false,
     };
     const main: SatelliteTargetRow = {
       ...plain,
@@ -313,37 +323,81 @@ describe('6. satellite heads-ups pay a seat into a bigger event', () => {
       max_players: 500,
       tournament_type: 'MTT',
     };
-    const refused: SatelliteTargetRow[] = [
+    const delivered: SatelliteTargetRow[] = [
       pko,
-      { ...main, id: 'flat', name: 'Flat Bounty', is_bounty: true },
-      { ...main, id: 'mystery', name: 'Mystery', is_mystery_bounty: true },
+      { ...main, id: 'flat', name: 'Flat Bounty', is_bounty: true, variant: 'bounty' },
+      { ...main, id: 'mystery', name: 'Mystery', is_bounty: true, is_mystery_bounty: true },
+      { ...main, id: 'bounty-variant', name: 'Bounty Variant', variant: 'bounty' },
+    ];
+    const refused: SatelliteTargetRow[] = [
       { ...main, id: 'premium', name: 'Premium Spin', is_premium_spin: true },
       { ...main, id: 'spin-type', name: 'Spin Type', tournament_type: 'SPIN' },
-      { ...main, id: 'bounty-variant', name: 'Bounty Variant', variant: 'bounty' },
+      { ...main, id: 'spin-variant', name: 'Spin Variant', variant: 'spin' },
       { ...main, id: 'unknown', name: 'Unknown Flags', is_pko: null },
       { ...main, id: 'unread', name: 'Unread Flags', is_bounty: undefined },
+      // The Diamond seat transfer has no bounty part: a Diamond bounty target,
+      // or one whose host was not read, opens no feeder.
+      { ...pko, id: 'diamond-pko', name: 'Diamond PKO', diamond_host: true },
+      { ...pko, id: 'unread-host-pko', name: 'Unread Host PKO', diamond_host: null },
+      { ...pko, id: 'unset-host-pko', name: 'Unset Host PKO', diamond_host: undefined },
     ];
+    for (const row of delivered) expect(satelliteTargetIsDeliverable(row)).toBe(true);
     for (const row of refused) expect(satelliteTargetIsDeliverable(row)).toBe(false);
     expect(satelliteTargetIsDeliverable(main)).toBe(true);
-    // The PKO is the dearest row, and it is still never picked.
-    expect(pickSatelliteTargets([...refused, main], now).map((r) => r.id)).toEqual(['main']);
+    // A plain target in the Diamond Arena is still fed.
+    expect(satelliteTargetIsDeliverable({ ...main, diamond_host: true })).toBe(true);
+    // The PKO is the dearest row, so it is the first event fed.
+    expect(pickSatelliteTargets([...refused, ...delivered, main], now).map((r) => r.id)).toEqual([
+      pko.id,
+      'flat',
+      'mystery',
+    ]);
+    expect(pickSatelliteTargets(refused, now)).toEqual([]);
   });
-  it("the database refuses the same targets at creation, with the authority's own predicate", () => {
+  it('a satellite is never itself a bounty or Spin event (the source rule)', () => {
+    const satellite: SatelliteTargetRow = {
+      format_contract: 'mtt-v1',
+      id: 'sat',
+      name: 'Sunday Funday High Roller PKO Satellite',
+      start_time: null,
+      buy_in_amount: 9,
+      buy_in_fee: 1,
+      variant: 'satellite',
+      max_players: 100,
+      tournament_type: 'SATELLITE',
+      is_bounty: false,
+      is_pko: false,
+      is_mystery_bounty: false,
+      is_premium_spin: false,
+    };
+    expect(satelliteSourceIsSupported(satellite)).toBe(true);
+    expect(satelliteSourceIsSupported({ ...satellite, is_bounty: true })).toBe(false);
+    expect(satelliteSourceIsSupported({ ...satellite, variant: 'progressive_bounty' })).toBe(false);
+    expect(satelliteSourceIsSupported({ ...satellite, is_pko: null })).toBe(false);
+    expect(SCHEDULED).toMatch(
+      /if \(!satelliteSourceIsSupported\(old as unknown as SatelliteTargetRow\)\) return;/
+    );
+  });
+  it("the database opens the same targets, with the authority's own predicate", () => {
     const guard = readFileSync(
       join(
         process.cwd(),
-        '../supabase/migrations/20260911110907_a_satellite_never_feeds_a_target_its_finish_refuses.sql'
+        '../supabase/migrations/20261017004440_satellites_seat_bounty_targets.sql'
       ),
       'utf8'
     );
-    for (const flag of ['is_bounty', 'is_pko', 'is_mystery_bounty', 'is_premium_spin']) {
-      expect(guard).toContain(`t.${flag} IS FALSE`);
-    }
-    expect(guard).toContain("lower(COALESCE(t.variant, '')) <> 'spin'");
-    expect(guard).toContain("upper(COALESCE(t.tournament_type, '')) <> 'SPIN'");
-    expect(guard).toMatch(
-      /CREATE TRIGGER satellite_feeds_only_a_deliverable_target\s+BEFORE INSERT OR UPDATE OF satellite_target_id, satellite_target,/
+    const body = guard.slice(
+      guard.indexOf('CREATE OR REPLACE FUNCTION public.fn_satellite_target_is_deliverable(')
     );
+    const deliverable = body.slice(0, body.indexOf('$function$;'));
+    for (const flag of ['is_bounty', 'is_pko', 'is_mystery_bounty']) {
+      expect(deliverable).toContain(`t.${flag} IS NOT NULL`);
+    }
+    expect(deliverable).toContain('t.is_premium_spin IS FALSE');
+    expect(deliverable).toContain("lower(COALESCE(t.variant, '')) <> 'spin'");
+    expect(deliverable).toContain("upper(COALESCE(t.tournament_type, '')) <> 'SPIN'");
+    expect(deliverable).toContain('OR NOT public.fn_poker_diamond_tournament(t.id)');
+    expect(deliverable).not.toContain('t.is_bounty IS FALSE');
   });
   it('reads the flags the predicate needs from the database', () => {
     const src = RECURRING.slice(RECURRING.indexOf('private async ensureSatelliteHeadsUps('));

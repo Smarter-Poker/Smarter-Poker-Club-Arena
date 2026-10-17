@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import {
   STAGE_ACTIONS,
@@ -14,7 +15,9 @@ const OP = '3f0a8f8e-5d2b-4c1e-9a7b-2f6d1c0e4b11';
 const game6 = {
   id: 'babb43f1-368e-406f-a97a-a0d5013648b2',
   club_id: CLUB,
-  name: 'Lightning Pilot NLH 6',
+  name: 'Lightning Pilot NLH Action 6',
+  template_name: 'action',
+  variant: 'nlh',
   handedness: 6,
   sb: 0.01,
   bb: 0.02,
@@ -25,7 +28,8 @@ const game6 = {
 const game9 = {
   ...game6,
   id: '3330ff9f-76ec-4487-b0c9-fc8ad8c2fdbb',
-  name: 'Lightning Pilot NLH 9',
+  name: 'Lightning Pilot NLH Madness 9',
+  template_name: 'madness',
   handedness: 9,
   sb: 0.02,
   bb: 0.04,
@@ -147,6 +151,8 @@ test('only the two named private pilot games are targets', () => {
     { name: 'NLH 1/2 Action' },
     { handedness: 9 },
     { bb: 0.05 },
+    { template_name: 'classic' },
+    { variant: 'plo4' },
     { must_move: false },
     { ruleset_snapshot: { options: { is_private: false } } },
     { closed_at: '2026-10-15T00:00:00Z' },
@@ -372,10 +378,37 @@ test('access dispatch reaches the observer with the validated private targets an
     captured = args;
     return { verdict: 'passed', scope: 'test_only' };
   });
+  assert.equal(captured.acceptOutsiderTerms, false);
   assert.deepEqual(captured.games, [game6, game9]);
   assert.equal(captured.operationId, OP);
   assert.equal(captured.requestId, stageRequestId(OP, CLUB, 'pending_access_proof'));
   assert.equal(r.access.verdict, 'passed');
   assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_control').length, 0);
   assert.deepEqual(f.signedOut, [{ scope: 'local' }]);
+});
+
+test('consent opt-in reaches access only and workflow defaults false', async () => {
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/lightning-pilot-stage.yml', import.meta.url),
+    'utf8'
+  );
+  assert.match(workflow, /accept_outsider_terms:[\s\S]*?type: boolean\s+default: false/);
+  assert.match(workflow, /PILOT_ACCEPT_OUTSIDER_TERMS: \$\{\{ inputs\.accept_outsider_terms \}\}/);
+  const f = fakeClients();
+  let captured;
+  await runPilotStage(
+    { ...env, PILOT_STAGE: 'access', PILOT_ACCEPT_OUTSIDER_TERMS: 'true' },
+    f.factory,
+    async (args) => {
+      captured = args;
+      return { verdict: 'passed' };
+    }
+  );
+  assert.equal(captured.acceptOutsiderTerms, true);
+  for (const patch of [
+    { PILOT_STAGE: 'form', PILOT_ACCEPT_OUTSIDER_TERMS: 'true' },
+    { PILOT_STAGE: 'access', PILOT_ACCEPT_OUTSIDER_TERMS: 'yes' },
+  ]) {
+    await assert.rejects(runPilotStage({ ...env, ...patch }, f.factory), /Explicit Access Stage/);
+  }
 });

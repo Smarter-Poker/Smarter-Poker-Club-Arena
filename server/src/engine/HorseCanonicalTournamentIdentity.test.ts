@@ -143,6 +143,9 @@ it('keeps a folded disconnected seat in the certified postflop lookup coordinate
   gs.players[2].is_folded = true;
   gs.players[2].is_sitting_out = true;
   gs.players[3].is_folded = true;
+  // An empty store is skipped before the lookup (2026-10-16); this test is
+  // about the coordinate the lookup is asked for, so the store reads stocked.
+  vi.spyOn(certified, 'gtoV31StoreIsEmpty').mockReturnValue(false);
   const lookup = vi.spyOn(certified, 'gtoStreetAdviceV31');
   expect(decide(gs).policyFallback).toBeUndefined();
   expect(lookup).toHaveBeenCalledWith(

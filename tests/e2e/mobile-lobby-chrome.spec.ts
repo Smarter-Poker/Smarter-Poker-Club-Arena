@@ -125,7 +125,7 @@ test('production setup persists the club message through an eligible Diamond inv
   });
   await page.setContent(`
     <div role="dialog" aria-label="Club Message From Fixture">
-      <button onclick="fetch('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', {method:'POST'}).then(() => this.parentElement.remove())">Do Not Show Me This Message Again</button>
+      <button onclick="fetch('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', {method:'POST'}).then(() => this.parentElement.remove())">Do Not Show Again</button>
     </div>
     <output id="declines">0</output>
     <div role="dialog" aria-label="Diamond Spins" style="position:fixed;inset:0;background:white">
@@ -145,7 +145,7 @@ for (const clubMessage of [false, true]) {
     await page.setContent(`
       <button role="tab" aria-selected="false"
         onclick="this.setAttribute('aria-selected', 'true')">NLH</button>
-      ${clubMessage ? '<button onclick="this.remove()">Close Club Message</button>' : ''}
+      ${clubMessage ? '<div role="dialog" aria-label="Club Message From Fixture"><button onclick="this.parentElement.remove()">Enter Lobby</button></div>' : ''}
       <output id="declines">0</output>
       <div role="dialog" aria-label="Diamond Spins" style="position:fixed;inset:0;background:white">
         <button id="decline" disabled onclick="document.getElementById('declines').textContent='1';this.parentElement.remove()">Not Now</button>
@@ -160,7 +160,7 @@ for (const clubMessage of [false, true]) {
     await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
     await expect(page.locator('#declines')).toHaveText('1');
     await expect(tab).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('button', { name: 'Close Club Message' })).toBeHidden();
+    await expect(page.getByRole('dialog', { name: /^Club Message From / })).toBeHidden();
   });
 }
 
@@ -262,7 +262,8 @@ async function mountLobbyDoors(
   {
     invitationCloses = true,
     notNowDelayMs = 0,
-  }: { invitationCloses?: boolean; notNowDelayMs?: number } = {}
+    startClosed = false,
+  }: { invitationCloses?: boolean; notNowDelayMs?: number; startClosed?: boolean } = {}
 ) {
   const { javascript, css } = await stackedLobbyDoorsFixture();
   await page.route('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', (route) =>
@@ -278,12 +279,18 @@ async function mountLobbyDoors(
   );
   await page.addScriptTag({ content: javascript });
   await page.evaluate(
-    ([order, closes, delay]) =>
+    ([order, closes, delay, closed]) =>
       (
-        window as unknown as { mountLobbyDoors: (f: string, c: boolean, d: number) => void }
-      ).mountLobbyDoors(order as string, closes as boolean, delay as number),
-    [first, invitationCloses, notNowDelayMs] as const
+        window as unknown as {
+          mountLobbyDoors: (f: string, c: boolean, d: number, s: boolean) => void;
+        }
+      ).mountLobbyDoors(order as string, closes as boolean, delay as number, closed as boolean),
+    [first, invitationCloses, notNowDelayMs, startClosed] as const
   );
+  if (startClosed) {
+    await expect(page.getByRole('tab', { name: 'NLH', exact: true })).toBeVisible();
+    return;
+  }
   // Both doors are up before any owner acts, so the stack is decided by
   // which one opened second, never by how fast this test clicks.
   await expect(page.getByRole('dialog')).toHaveCount(2);
@@ -322,10 +329,94 @@ for (const first of ['invitation', 'greeting'] as const) {
     await tab.click({ timeout: 10_000 });
     await expect(tab).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    // The X closes the greeting for now; only the setup's control persists it.
+    // Enter Lobby closes the greeting for now; only the setup's control persists it.
     expect(await lobbyDoorCounts(page)).toEqual({ declines: 1, dismissals: 0 });
   });
 }
+
+for (const first of ['invitation', 'greeting'] as const) {
+  test(`cash lobby retires Diamond with both doors open and ${first} first`, async ({ page }) => {
+    await mountLobbyDoors(page, first);
+    await prepareCashLobbyActions(page);
+    // No intervening browser action runs either retained locator handler.
+    await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await lobbyDoorCounts(page)).toEqual({ declines: 1, dismissals: 0 });
+  });
+
+  test(`cash lobby handles late greeting after Diamond retirement with ${first} first`, async ({
+    page,
+  }) => {
+    await mountLobbyDoors(page, first, { startClosed: true });
+    await prepareCashLobbyActions(page);
+    // Eligibility can finish without an offer; its handler is retired before
+    // an independently loaded Club Message arrives. Keep the greeting owner.
+    await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+    for (const door of [first, first === 'greeting' ? 'invitation' : 'greeting']) {
+      await page.evaluate(
+        (name) =>
+          (window as unknown as { showLobbyDoor: (door: string) => void }).showLobbyDoor(name),
+        door
+      );
+      // A locator assertion would run the owner before the intended tab action.
+      await expect
+        .poll(() => page.evaluate(() => document.querySelectorAll('[role="dialog"]').length))
+        .toBe(door === first ? 1 : 2);
+    }
+    // Re-register the optional offer only when it exists, as a later lobby
+    // action can. The greeting must also own the standalone late case below.
+    await prepareCashLobbyActions(page);
+    const tab = page.getByRole('tab', { name: 'NLH', exact: true });
+    await tab.click({ timeout: 10_000 });
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await lobbyDoorCounts(page)).toEqual({ declines: 1, dismissals: 0 });
+  });
+}
+
+test('cash lobby handles a standalone late greeting after Diamond retirement', async ({ page }) => {
+  await mountLobbyDoors(page, 'greeting', { startClosed: true });
+  await prepareCashLobbyActions(page);
+  await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+  await page.evaluate(() =>
+    (window as unknown as { showLobbyDoor: (door: string) => void }).showLobbyDoor('greeting')
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Boolean(document.querySelector('[role="dialog"][aria-label^="Club Message From "]'))
+      )
+    )
+    .toBe(true);
+  const tab = page.getByRole('tab', { name: 'NLH', exact: true });
+  await tab.click({ timeout: 10_000 });
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await lobbyDoorCounts(page)).toEqual({ declines: 0, dismissals: 0 });
+});
+
+test('cash lobby refuses an unowned layer over a late greeting', async ({ page }) => {
+  await mountLobbyDoors(page, 'greeting', { startClosed: true });
+  await prepareCashLobbyActions(page);
+  await page.evaluate(() => {
+    (window as unknown as { showLobbyDoor: (door: string) => void }).showLobbyDoor('greeting');
+    const cover = document.createElement('div');
+    cover.style.cssText = 'position:fixed;inset:0;z-index:2147483647';
+    document.body.append(cover);
+  });
+  await expect
+    .poll(() => page.evaluate(() => document.querySelectorAll('[role="dialog"]').length))
+    .toBe(1);
+  await expect(prepareCashLobbyActions(page, { retainInvitationHandler: false })).rejects.toThrow(
+    /Club Message Enter Lobby control is covered by an unowned layer/
+  );
+  await expect(page.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'false'
+  );
+  await expect(page.getByRole('dialog', { name: /^Club Message From / })).toBeVisible();
+  expect(await lobbyDoorCounts(page)).toEqual({ declines: 0, dismissals: 0 });
+});
 
 for (const notNowDelayMs of [0, 3_000]) {
   test(`an invitation that stays open after Not Now fails setup with its own error (Not Now ready after ${notNowDelayMs}ms)`, async ({

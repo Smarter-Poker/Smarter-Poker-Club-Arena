@@ -1,4 +1,5 @@
 import { formatCashierAmountInput, cashierAmountInputValue } from '../../utils/cashierAmount';
+import { formatWalletChips } from '../../utils/format';
 import {
   CASHOUT_AMOUNT_LIMIT,
   cashoutPercentage,
@@ -590,13 +591,7 @@ function CashoutRequestContent({
           <div className="cro-row">
             <span className="sc-label sc-ink--blue">Available Balance</span>
             <strong className={`cro-value ${balanceAvailable ? 'sc-ink--silver' : 'sc-ink--red'}`}>
-              {balanceAvailable
-                ? `${
-                    Number.isInteger(currentBalance)
-                      ? currentBalance!.toLocaleString()
-                      : currentBalance!.toLocaleString(undefined, TWO_PLACES)
-                  } Chips`
-                : 'Unavailable'}
+              {balanceAvailable ? `${formatWalletChips(currentBalance)} Chips` : 'Unavailable'}
             </strong>
           </div>
 

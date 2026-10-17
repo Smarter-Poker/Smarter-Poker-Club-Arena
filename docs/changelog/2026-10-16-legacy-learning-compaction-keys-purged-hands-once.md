@@ -1,0 +1,9 @@
+# Legacy learning compaction keys purged hands once
+
+The final canonical-batch filter in the private legacy-learning purge still converted and linearly searched the accepted UUID array for every raw tuple. Requested-hand qualification already uses a per-call key set. This followup applies the same bounded membership representation to final compaction: declare one local JSONB set, build it after the accepted hand list is finalized, and replace only the membership expression inside the existing `NOT COALESCE(...,false)` filter.
+
+The existing filter retains tuples whose hand is NULL; an empty accepted set also retains every tuple. Both behaviors stay unchanged. The final batch order, tuple order, original receipt and digest, immutable exception ledger, 250-hand cap, two-second soft deadline, 16 MiB byte admission and every human, financial, maintenance and capacity guard remain unchanged. Exact function preimage, owner, ACL, security definer and search path are required. The live proof binds the new exact postimage and authority.
+
+The actual parent-loader native harness passed 61 checks, retaining previous coverage and adding live-proof failure before/success after, absence of per-tuple UUID-array casts, direct previous-owner/new-owner NULL and entire-postimage equivalence, and migration replay refusal. Existing empty, single, duplicate, malformed, cross-batch newer, protected human/financial, rollback and real capacity-contention checks passed. The isolated PostgreSQL cluster stopped and was removed. No production speedup is claimed from source review or isolated qualification.
+
+Verified: source reread and native postimage `fd6116d9a8765321a31883cdbf531bed`. TypeScript passed; both affected migration live-proof and uniqueness laws passed all 22 checks. Canonical policy comparison and whitespace checks passed. Commit, protected checks, merge, installation and live cleanup verification remain pending.

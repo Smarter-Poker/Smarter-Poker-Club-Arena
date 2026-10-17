@@ -948,7 +948,11 @@ export default function ClubDataPage() {
      club-data-deep.spec.ts:185, the failure left standing after the games
      ledger was fixed). Same rule, same shape. */
   const playersSpinnerVersion = useRef(0);
-  const backgroundPlayersInFlight = useRef(false);
+  // Realtime may not supersede any read of the same player question,
+  // including first paint before verified rows exist. Track the owning version
+  // so an older foreground response cannot release a newer sort's request.
+  const playersReadInFlight = useRef<number | null>(null);
+  const coldPlayersRead = useRef<{ version: number; result: Promise<boolean> } | null>(null);
   /* AND A REFRESH IS NOT A NEW QUESTION.
      Both Load More paths captured the read version and threw their page away
      if anything bumped it while the request was out - including the 60s poll
@@ -1097,7 +1101,8 @@ export default function ClubDataPage() {
     playersQueryEpoch.current += 1;
     playersVersion.current += 1;
     playersSpinnerVersion.current = playersVersion.current;
-    backgroundPlayersInFlight.current = false;
+    playersReadInFlight.current = null;
+    coldPlayersRead.current = null;
     invoicesVersion.current += 1;
     resolveVersion.current += 1;
     clubNameVersion.current += 1;
@@ -1598,9 +1603,14 @@ export default function ClubDataPage() {
       if (preserveOnError && playersMoreRef.current) return true;
       // A second background read cannot make the ledger fresher than the one
       // already out; it can only take the ordering away from it.
-      if (preserveOnError && backgroundPlayersInFlight.current) return true;
+      // Manual recovery joins the first read's result, so other completed
+      // reports cannot announce success while Players is still unresolved.
+      if (preserveOnError && coldPlayersRead.current?.version === playersVersion.current)
+        return coldPlayersRead.current.result;
+      if (preserveOnError && playersReadInFlight.current !== null) return true;
       if (!preserveOnError) playersQueryEpoch.current += 1;
       const myVersion = ++playersVersion.current;
+      playersReadInFlight.current = myVersion;
       const stale = () =>
         cancelledRef.current ||
         playersVersion.current !== myVersion ||
@@ -1616,12 +1626,15 @@ export default function ClubDataPage() {
       // unavailable. When verified rows already exist, keep them interactive
       // while the newest background request owns the reconciliation.
       const showSpinner = !preserveOnError || !playersRef.current;
+      let settleColdRead: ((success: boolean) => void) | undefined;
+      let readSucceeded = false;
       if (showSpinner) {
         playersSpinnerVersion.current = myVersion;
         setPlayersLoading(true);
-        backgroundPlayersInFlight.current = false;
-      } else {
-        backgroundPlayersInFlight.current = true;
+        const result = new Promise<boolean>((resolve) => {
+          settleColdRead = resolve;
+        });
+        coldPlayersRead.current = { version: myVersion, result };
       }
       setPlayersError(null);
       setPlayersPageError(null);
@@ -1732,6 +1745,7 @@ export default function ClubDataPage() {
             cursor: nextCursor,
             hasMore: nextHasMore,
           });
+          readSucceeded = true;
           return true;
         }
       } catch (err) {
@@ -1746,8 +1760,9 @@ export default function ClubDataPage() {
         if (outcome.clearData) setPlayers(null);
         return false;
       } finally {
-        if (!showSpinner && playersVersion.current === myVersion)
-          backgroundPlayersInFlight.current = false;
+        settleColdRead?.(readSucceeded);
+        if (coldPlayersRead.current?.version === myVersion) coldPlayersRead.current = null;
+        if (playersReadInFlight.current === myVersion) playersReadInFlight.current = null;
         // The skeleton comes down when the request that RAISED it settles, or
         // when a newer foreground load has taken it over. Never on the
         // ordering of background polls. See `spinnerVersion`.
@@ -1781,7 +1796,8 @@ export default function ClubDataPage() {
       playersQueryEpoch.current += 1;
       playersVersion.current += 1;
       playersSpinnerVersion.current = playersVersion.current;
-      backgroundPlayersInFlight.current = false;
+      playersReadInFlight.current = null;
+      coldPlayersRead.current = null;
       playersMoreRef.current = false;
       setPlayersLoadingMore(false);
       setPlayersPageError(null);

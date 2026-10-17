@@ -76,7 +76,10 @@ export const DIAMOND_FOOTER_DOORS: readonly DiamondDoor[] = Object.freeze([
   {
     key: 'hand-history',
     label: 'Hand History',
-    to: `/hand-history?${DIAMOND_HAND_HISTORY_PARAM}=${DIAMOND_HAND_HISTORY_VALUE}`,
+    to: withClubContext(
+      `/hand-history?${DIAMOND_HAND_HISTORY_PARAM}=${DIAMOND_HAND_HISTORY_VALUE}`,
+      DIAMOND_ARENA_SLUG
+    ),
   },
   { key: 'stats', label: 'Stats', to: withClubContext('/stats', DIAMOND_ARENA_SLUG) },
   { key: 'players', label: 'Players', to: `${ARENA_ROOT}/members` },

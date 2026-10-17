@@ -19,7 +19,7 @@
 import { useSyncExternalStore } from 'react';
 import { supabase } from '../lib/supabase';
 import { isUUID } from '../utils/clubIdResolver';
-import { clusterModeDisplay } from './lightningLobby';
+import { clusterModeDisplay, isLightningTemplate } from './lightningLobby';
 import { markLightningRoom } from './lightningDeviceReport';
 
 /** fn_lightning_my_session, as the client reads it. */
@@ -177,6 +177,7 @@ export interface LightningClusterMeta {
   smallBlind: number;
   bigBlind: number;
   maxPlayers: number;
+  templateName?: string | null;
   clusterMode: string | null;
   enabled: boolean;
 }
@@ -195,13 +196,14 @@ export function parseLightningClusterMeta(raw: unknown): LightningClusterMeta | 
     smallBlind: num(row.sb) ?? 0,
     bigBlind: num(row.bb) ?? 0,
     maxPlayers: handedness && handedness >= 2 && handedness <= 10 ? handedness : 6,
+    templateName: text(row.template_name),
     clusterMode: text(row.cluster_mode),
     enabled: row.enabled !== false,
   };
 }
 
 const LIGHTNING_CLUSTER_META_COLUMNS =
-  'id, club_id, name, variant, sb, bb, handedness, cluster_mode, enabled';
+  'id, club_id, name, variant, sb, bb, handedness, template_name, cluster_mode, enabled';
 
 export async function fetchLightningClusterMeta(
   clusterId: string
@@ -498,7 +500,8 @@ export function lightningEntryDecision(
   const mode = meta?.clusterMode ?? session?.clusterMode ?? null;
   /* JOIN LIGHTNING only while the Cluster IS Lightning. On its way in
      (pending_on) or out (pending_off, draining) the door is JOIN GAME. */
-  const lightning = clusterModeDisplay(mode).joinLightning;
+  const lightning =
+    isLightningTemplate(meta?.templateName) && clusterModeDisplay(mode).joinLightning;
   return { kind: 'entry', joinLabel: lightning ? 'Join Lightning' : 'Join Game', lightning };
 }
 

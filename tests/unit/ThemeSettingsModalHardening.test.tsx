@@ -253,6 +253,20 @@ describe('ThemeSettingsModal hardening', () => {
     await act(async () => {});
   });
 
+  it('a Studio kept mounted while closed opens on the scope another Studio saved', async () => {
+    // Settings, the hamburger menu and the table panel each keep one mounted.
+    localStorage.setItem('ca_table_studio_scope:user-1', JSON.stringify('ALL'));
+    const resident = render(
+      <ThemeSettingsModal isOpen={false} onClose={vi.fn()} userId="user-1" isVip={false} />
+    );
+    const other = renderStudio();
+    fireEvent.change(screen.getByLabelText('Apply To'), { target: { value: 'PLO' } });
+    other.unmount();
+    resident.rerender(<ThemeSettingsModal isOpen onClose={vi.fn()} userId="user-1" isVip={false} />);
+    expect(screen.getByLabelText('Apply To')).toHaveValue('PLO');
+    await act(async () => {});
+  });
+
   beforeEach(() => {
     mocks.themeResult = Promise.resolve({ data: [savedTheme], error: null });
     mocks.purchaseResult = Promise.resolve({ data: [], error: null });

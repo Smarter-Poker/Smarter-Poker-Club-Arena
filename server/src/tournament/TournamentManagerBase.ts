@@ -1020,6 +1020,14 @@ export abstract class TournamentManagerBase {
    * A_LEVEL_IS_NOT_SPENT_ON_A_HAND_THAT_WAS_NEVER_DEALT in advanceBlindLevel.
    */
   static readonly STALLED_LEVEL_RECHECK_MS = 15 * 1000;
+  /**
+   * How long one table may fail admission before the level clock is held for
+   * the whole field. Longer than one admission retry, so a refusal that heals
+   * on its next attempt never holds an ordinary level; far shorter than any
+   * level, so a stuck table cannot cost its players more than this much play.
+   * See A_LEVEL_IS_NOT_SPENT_WHILE_PART_OF_THE_FIELD_HAS_NO_DEALER.
+   */
+  static readonly FIELD_WITHOUT_DEALER_HOLD_MS = 30 * 1000;
   protected savedBlindTimerRemaining: number = 0;
   protected blindTimerStartedAt: number = 0;
   /**
@@ -1043,6 +1051,8 @@ export abstract class TournamentManagerBase {
   protected lastObservedHandCompletedAtMs = 0;
   /** One line per held level, not one per recheck. */
   private readonly stalledLevelHoldAnnouncedFor = new Set<number>();
+  /** One line per level held for a table with no dealer, not one per recheck. */
+  private readonly fieldWithoutDealerHoldAnnouncedFor = new Set<number>();
   /**
    * Levels whose escalation past the end of the authored structure was held
    * for an unproven chip supply. Announced once per level, for the same
@@ -9765,6 +9775,53 @@ export abstract class TournamentManagerBase {
           );
         }
         this.askForConsolidationIfSpread();
+        deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
+        return;
+      }
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  A LEVEL IS NOT SPENT WHILE PART OF THE FIELD HAS NO DEALER (2026-10-16)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The guard above asks whether ANY table dealt since the level began.
+       * One live table is enough to answer yes, so it does not see a field
+       * that is mostly stopped. Measured on production 2026-10-16, Coffee
+       * Break Freeroll (PLO4) 85313174: at 17:03 three tables (15 players)
+       * parked and every re-admission was refused for a database defect
+       * (fixed by 20261016183932). One heads-up table, 077044ee, dealt on
+       * until 18:01, and every one of those hands spent a hyper-turbo level
+       * for the whole field. The parked players came back at level 42
+       * (71,850/143,700 with a 17,244 ante) and the last 16 were all-in out
+       * inside two minutes.
+       *
+       * A table on this manager's admission-failure clock has seated players
+       * and no dealer (scheduleManagedTableEngineRecovery stamps it; any
+       * admission, replacement or removal clears it). Once one has been
+       * failing for FIELD_WITHOUT_DEALER_HOLD_MS the level is owed, exactly
+       * as it is across a break, and it goes up when every table deals again.
+       * The grace keeps a refusal that recovers on its next retry from
+       * holding an ordinary level. Announced once per level, like the hold
+       * above, so a hold that never ends is a line somebody can read.
+       */
+      // Read inline from the table's own recovery record: no wake, no query.
+      const fieldCheckedAt = Date.now();
+      let stoppedTable: { tableId: string; failingMs: number } | null = null;
+      for (const [tableId, since] of this.tableAdmissionFailingSince ?? []) {
+        const failingMs = fieldCheckedAt - since;
+        if (
+          failingMs >= TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MS &&
+          (!stoppedTable || failingMs > stoppedTable.failingMs)
+        )
+          stoppedTable = { tableId, failingMs };
+      }
+      if (stoppedTable) {
+        if (!this.fieldWithoutDealerHoldAnnouncedFor.has(this.currentLevel)) {
+          this.fieldWithoutDealerHoldAnnouncedFor.add(this.currentLevel);
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Level ${this.currentLevel} came due while table ${stoppedTable.tableId.slice(0, 8)} has had no dealer for ${Math.round(stoppedTable.failingMs / 1000)}s - holding it until every table deals again`
+          );
+        }
         deferredWakeMs = TournamentManagerBase.STALLED_LEVEL_RECHECK_MS;
         return;
       }

@@ -205,7 +205,8 @@ const award = {
 };
 /**
  * The server quotes the award with the guarantee it will pay: half the funded
- * stake (2 chips, or 3 with Double Down), which is the original spin value.
+ * stake (2 chips), which is the original spin value. Double Down is retired
+ * (Dan 2026-10-16), so the page only ever asks for the funded entry.
  */
 function quoteSuperAward() {
   backend.getState.mockResolvedValue({
@@ -342,17 +343,18 @@ describe('Crash settles one displayed round once', () => {
     expect(backend.navigate).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Start 100' })).toBeEnabled();
   });
-  it('holds a funded award on its offer for two idle minutes without starting or leaving', async () => {
+  it('holds a funded award on its Start plate for two idle minutes without starting or leaving', async () => {
     quoteSuperAward();
     render(<DiamondCrashPage />);
     await act(async () => {});
-    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+    // No Double Your Diamonds offer (retired 2026-10-16): the plate is ready at once.
+    expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(120_000);
     });
-    // Still asking, and nothing was answered, started or navigated for the player.
-    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+    // Still waiting, and nothing was started or navigated for the player (R1).
+    expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
     expect(backend.start).not.toHaveBeenCalled();
     expect(backend.navigate).not.toHaveBeenCalled();
   });
@@ -596,32 +598,30 @@ describe('Crash uses its earned entry without blocking existing cashouts', () =>
       'player-a'
     );
   });
-  it('prepares a funded award when direct entry is closed and binds Double Down to the original stake', async () => {
+  it('prepares a funded award when direct entry is closed and starts it without any add-on', async () => {
     quoteSuperAward();
     backend.start.mockReturnValue(new Promise(() => {}));
     render(<DiamondCrashPage />);
     await act(async () => {});
-    // Screen one (R9): the offer holds Start until it is answered by a tap.
-    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
-    const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-    fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Add The Diamonds' }));
-    await act(async () => {});
+    // Double Diamonds is retired (Dan 2026-10-16): no offer, no Double Down control.
+    expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+    expect(screen.queryByText(/Double Down|Add The Diamonds/)).toBeNull();
+    for (const call of backend.awardState.mock.calls) expect(call[2]).toBe(false);
     expect(screen.getByRole('heading', { name: 'Super Crash' })).toBeInTheDocument();
-    // The doubled stake is quoted again by the server: half of 3 chips.
-    expect(guaranteedBay()).toHaveTextContent('1.50 Chips');
+    // The funded stake is quoted by the server: half of 2 chips.
+    expect(guaranteedBay()).toHaveTextContent('1.00 Chips');
     expect(guaranteedBay()).toHaveAttribute('data-ink', 'gold');
     expect(readout()).toHaveTextContent(
-      'Super Crash Pays At Least 1.50 Chips, Even If It Crashes Before You Cash Out.'
+      'Super Crash Pays At Least 1.00 Chips, Even If It Crashes Before You Cash Out.'
     );
-    // Screen two (R1): the player presses Start themselves; nothing counts down.
-    fireEvent.click(screen.getByRole('button', { name: 'Start 300' }));
+    // R1: the player presses Start themselves; nothing counts down.
+    fireEvent.click(screen.getByRole('button', { name: 'Start 200' }));
     expect(backend.start).toHaveBeenCalledWith(
       expect.objectContaining({
         // Crash plays one round on the whole entry; it carries no drop value.
         budget: {
           base: 200,
-          doubled: true,
+          doubled: false,
           denomination: null,
           award: { id: award.id, entryDiamonds: 100, boostMultiplier: 2 },
         },
@@ -700,19 +700,15 @@ describe('Crash shows its guarantee before the round starts', () => {
     await act(async () => {});
     expect(screen.getByRole('heading', { name: 'Super Crash' })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/Upgraded/);
-    // Before Double Down is answered: the 200-diamond stake is 2 chips, half of it 1.00.
+    // The 200-diamond stake is 2 chips, half of it 1.00.
     expect(guaranteedBay()).toHaveTextContent('1.00 Chips');
     expect(guaranteedBay()).toHaveAttribute('data-ink', 'gold');
-    const dialog = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-    fireEvent.animationEnd(dialog.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Play Without' }));
-    await act(async () => {});
     const sentence =
       'Super Crash Pays At Least 1.00 Chips, Even If It Crashes Before You Cash Out.';
     expect(readout()).toHaveTextContent(sentence);
     // The award panel says it too, in the same words, before the plate is pressed.
     expect(screen.getAllByText(sentence).length).toBeGreaterThan(0);
-    // The offer is answered, so Start is the player's to press (R1): no clock.
+    // Start is the player's to press (R1): no clock.
     expect(screen.getByRole('button', { name: 'Start 200' })).toBeEnabled();
     expect(backend.start).not.toHaveBeenCalled();
   });

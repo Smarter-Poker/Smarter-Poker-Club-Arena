@@ -22,6 +22,13 @@ export function assertChipAmount(amount: number): void {
   }
 }
 
+/**
+ * The wallet an agent or club bank send credits. Promo Wallet joined Player and
+ * Agent on 2026-10-16 (Dan, 2026-10-15: "SELECTABLE TO SEND TO ANY WALLET I
+ * WANT THAT THE USER HAS (PLAYER WALLET, AGENT WALLET, PROMO WALLET ETC)").
+ */
+export type AgentWalletDestination = 'player_wallet' | 'agent_wallet' | 'promo_wallet';
+
 export interface AgentWalletIntent {
   userId: string;
   clubId: string;
@@ -35,7 +42,7 @@ export interface AgentWalletIntent {
     | 'cashout_decline'
     | 'cashout_cancel';
   amount: number;
-  destination?: 'player_wallet' | 'agent_wallet';
+  destination?: AgentWalletDestination;
   note?: string;
 }
 
@@ -70,7 +77,11 @@ export async function reserveAgentWalletOperation(
         // Preserve existing player-wallet reservations across this upgrade.
         // Cashout kinds never reach here (refused above), so the digest has no
         // note element; prepareAgentCashoutOperation owns the cashout digest.
-        ...(intent.destination === 'agent_wallet' ? ['agent_wallet'] : []),
+        // A non-player destination names itself, so an Agent Wallet key is
+        // unchanged and a Promo Wallet send can never share a Player key.
+        ...(intent.destination && intent.destination !== 'player_wallet'
+          ? [intent.destination]
+          : []),
       ])
     )
   );
@@ -145,7 +156,8 @@ export function runAgentWalletOperation(
     intent.targetId.toLowerCase(),
     intent.kind,
     intent.amount.toFixed(2),
-    ...(intent.destination === 'agent_wallet' ? ['agent_wallet'] : []),
+    // The same destination element as the stored key, for the same reason.
+    ...(intent.destination && intent.destination !== 'player_wallet' ? [intent.destination] : []),
   ]);
   const pending = submissions.get(scope);
   if (pending) return pending;
@@ -165,7 +177,7 @@ export function confirmedAgentWalletReceipt(
   value: unknown,
   amount: number,
   kind: AgentWalletIntent['kind'],
-  destination: 'player_wallet' | 'agent_wallet' = 'player_wallet'
+  destination: AgentWalletDestination = 'player_wallet'
 ): boolean {
   // Cashout receipts have a separate strict event/document contract in CashoutService.
   if (kind.startsWith('cashout_')) return false;

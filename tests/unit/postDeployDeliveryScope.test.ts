@@ -42,11 +42,64 @@ const client = workflow.jobs['production-e2e'];
 const engine = workflow.jobs['live-table-e2e'];
 const engineSteps = engine?.steps ?? client.steps;
 const resolver = engineSteps.find((step: any) => step.id === 'engine');
+const originGate = workflow.jobs['publication-gate'].steps.find(
+  (step: any) => step.id === 'origin'
+);
 const admission = engineSteps.find(
   (step: any) => step.name === 'Require the exact engine before opening production browser fixtures'
 );
 
 describe('post-publication verification belongs to its delivered component', () => {
+  it('uses typed JSON inputs in both dispatch admission and job-start resolution', () => {
+    for (const entry of [originGate, resolver]) {
+      expect(entry.env.MOBILE_MULTIRUN_JSON).toBe(
+        '${{ toJSON(github.event.client_payload.mobile_multirun) }}'
+      );
+      expect(entry.env.ENGINE_TRIGGER_JSON).toBe(
+        '${{ toJSON(github.event.client_payload.engine_sha) }}'
+      );
+    }
+  });
+  it.each([
+    { flag: true, pin: null, allowed: true },
+    { flag: 'true', pin: null, allowed: false },
+    { flag: false, pin: null, allowed: false },
+    { flag: null, pin: null, allowed: false },
+    { flag: 1, pin: null, allowed: false },
+    { flag: true, pin: '', allowed: false },
+    { flag: true, pin: false, allowed: false },
+    { flag: true, pin: 0, allowed: false },
+    { flag: true, pin: 1e39, allowed: false },
+    { flag: true, pin: 'short', allowed: false },
+    { flag: true, pin: 'a'.repeat(40), allowed: true },
+    { flag: false, pin: 'a'.repeat(40), allowed: true },
+    { flag: true, pin: '1'.repeat(40), allowed: true },
+  ])('runs the actual dispatch gate with typed flag/pin $flag/$pin', ({ flag, pin, allowed }) => {
+    const cwd = mkdtempSync(join(tmpdir(), 'ca-post-deploy-dispatch-gate-'));
+    const output = join(cwd, 'output');
+    try {
+      const result = spawnSync('bash', ['-c', originGate.run], {
+        cwd,
+        env: {
+          ...process.env,
+          EVENT_NAME: 'repository_dispatch',
+          MOBILE_MULTIRUN_JSON: JSON.stringify(flag),
+          ENGINE_TRIGGER_JSON: JSON.stringify(pin),
+          ENGINE_TRIGGER_SHA: typeof pin === 'string' ? pin : '',
+          GITHUB_OUTPUT: output,
+        },
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+      expect(result.status, result.stderr).toBe(allowed ? 0 : 1);
+      if (allowed)
+        expect(readFileSync(output, 'utf8')).toContain(
+          `engine_trigger_sha=${pin ?? ''}\nshould_run=true`
+        );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
   it('retains the inbox verdict before unrelated suites and refuses missing execution', () => {
     const steps = client.steps;
     const inboxAt = steps.findIndex((entry: any) => entry.id === 'notification_inbox');
@@ -119,7 +172,7 @@ describe('post-publication verification belongs to its delivered component', () 
     }
   });
 
-  it.each(['workflow_run', 'repository_dispatch'])(
+  it.each(['workflow_run', 'repository_dispatch', 'mobile-current'])(
     'executes the maintained resolver and admission for %s with an older healthy live engine',
     (event) => {
       const cwd = mkdtempSync(join(tmpdir(), 'ca-post-deploy-scope-'));
@@ -165,8 +218,10 @@ describe('post-publication verification belongs to its delivered component', () 
         const common = {
           ...env,
           PATH: `${join(cwd, 'bin')}:${process.env.PATH}`,
-          EVENT_NAME: event,
+          EVENT_NAME: event === 'mobile-current' ? 'repository_dispatch' : event,
           ENGINE_TRIGGER_SHA: event === 'repository_dispatch' ? pending : '',
+          MOBILE_MULTIRUN_JSON: event === 'mobile-current' ? 'true' : 'false',
+          ENGINE_TRIGGER_JSON: event === 'repository_dispatch' ? JSON.stringify(pending) : 'null',
           FIXTURE_HEALTH: JSON.stringify({ releaseSha: serving, running: true, liveness: 'ok' }),
           GITHUB_OUTPUT: output,
           GITHUB_STEP_SUMMARY: join(cwd, 'summary'),
@@ -203,8 +258,8 @@ describe('post-publication verification belongs to its delivered component', () 
   );
 
   it('requires steps.engine_gate.outputs.current == "true" on both browser steps', () => {
-    const chromium = engineSteps.find((s: any) => s.name === "Install Chromium and WebKit");
-    const live = engineSteps.find((s: any) => s.id === "live");
+    const chromium = engineSteps.find((s: any) => s.name === 'Install Chromium and WebKit');
+    const live = engineSteps.find((s: any) => s.id === 'live');
     expect(chromium).toBeDefined();
     expect(chromium.if).toBe("steps.engine_gate.outputs.current == 'true'");
     expect(live).toBeDefined();
@@ -212,147 +267,151 @@ describe('post-publication verification belongs to its delivered component', () 
   });
 
   it('gives current=false with exit 0 when a later protected-main release supersedes EXPECTED', () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ca-post-deploy-superseded-"));
+    const cwd = mkdtempSync(join(tmpdir(), 'ca-post-deploy-superseded-'));
     const env = {
       ...gitEnvironmentForCwd(),
-      GIT_AUTHOR_NAME: "Scope fixture",
-      GIT_AUTHOR_EMAIL: "fixture@example.invalid",
-      GIT_COMMITTER_NAME: "Scope fixture",
-      GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+      GIT_AUTHOR_NAME: 'Scope fixture',
+      GIT_AUTHOR_EMAIL: 'fixture@example.invalid',
+      GIT_COMMITTER_NAME: 'Scope fixture',
+      GIT_COMMITTER_EMAIL: 'fixture@example.invalid',
     };
     const git = (...args: string[]) =>
-      execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
+      execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
     try {
-      git("init", "-q");
-      mkdirSync(join(cwd, "server"), { recursive: true });
-      writeFileSync(join(cwd, "server/runtime.ts"), "base engine");
-      git("add", ".");
-      git("commit", "-qm", "base engine");
-      const baseSha = git("rev-parse", "HEAD");
+      git('init', '-q');
+      mkdirSync(join(cwd, 'server'), { recursive: true });
+      writeFileSync(join(cwd, 'server/runtime.ts'), 'base engine');
+      git('add', '.');
+      git('commit', '-qm', 'base engine');
+      const baseSha = git('rev-parse', 'HEAD');
 
-      writeFileSync(join(cwd, "server/runtime.ts"), "newer main engine");
-      git("add", ".");
-      git("commit", "-qm", "newer main engine");
-      const newerSha = git("rev-parse", "HEAD");
+      writeFileSync(join(cwd, 'server/runtime.ts'), 'newer main engine');
+      git('add', '.');
+      git('commit', '-qm', 'newer main engine');
+      const newerSha = git('rev-parse', 'HEAD');
 
-      git("update-ref", "refs/remotes/origin/main", newerSha);
-      git("remote", "add", "origin", cwd);
-      git("branch", "-M", "main");
+      git('update-ref', 'refs/remotes/origin/main', newerSha);
+      git('remote', 'add', 'origin', cwd);
+      git('branch', '-M', 'main');
 
-      mkdirSync(join(cwd, "scripts/ci"), { recursive: true });
+      mkdirSync(join(cwd, 'scripts/ci'), { recursive: true });
       copyFileSync(
-        join(root, "scripts/ci/read-engine-release.mjs"),
-        join(cwd, "scripts/ci/read-engine-release.mjs")
+        join(root, 'scripts/ci/read-engine-release.mjs'),
+        join(cwd, 'scripts/ci/read-engine-release.mjs')
       );
       copyFileSync(
-        join(root, "scripts/ci/await-engine-gameplay.mjs"),
-        join(cwd, "scripts/ci/await-engine-gameplay.mjs")
+        join(root, 'scripts/ci/await-engine-gameplay.mjs'),
+        join(cwd, 'scripts/ci/await-engine-gameplay.mjs')
       );
       copyFileSync(
-        join(root, "scripts/ci/production-e2e-provenance.mjs"),
-        join(cwd, "scripts/ci/production-e2e-provenance.mjs")
+        join(root, 'scripts/ci/production-e2e-provenance.mjs'),
+        join(cwd, 'scripts/ci/production-e2e-provenance.mjs')
       );
-      mkdirSync(join(cwd, "bin"));
-      writeFileSync(join(cwd, "bin/curl"), '#!/bin/sh\nprintf "%s" "$FIXTURE_HEALTH"\n');
-      chmodSync(join(cwd, "bin/curl"), 0o755);
+      mkdirSync(join(cwd, 'bin'));
+      writeFileSync(join(cwd, 'bin/curl'), '#!/bin/sh\nprintf "%s" "$FIXTURE_HEALTH"\n');
+      chmodSync(join(cwd, 'bin/curl'), 0o755);
 
-      const output = join(cwd, "output");
-      const summary = join(cwd, "summary");
+      const output = join(cwd, 'output');
+      const summary = join(cwd, 'summary');
       const common = {
         ...env,
-        PATH: `${join(cwd, "bin")}:${process.env.PATH}`,
+        PATH: `${join(cwd, 'bin')}:${process.env.PATH}`,
         EXPECTED_ENGINE_SHA: baseSha,
-        FIXTURE_HEALTH: JSON.stringify({ releaseSha: newerSha, running: true, liveness: "ok" }),
+        FIXTURE_HEALTH: JSON.stringify({ releaseSha: newerSha, running: true, liveness: 'ok' }),
         GITHUB_OUTPUT: output,
         GITHUB_STEP_SUMMARY: summary,
-        GITHUB_RUN_ID: "123",
+        GITHUB_RUN_ID: '123',
       };
 
       const ready = spawnSync(
-        "bash",
-        ["-c", onFixtureEngine(admission.run, common.FIXTURE_HEALTH)],
+        'bash',
+        ['-c', onFixtureEngine(admission.run, common.FIXTURE_HEALTH)],
         {
           cwd,
           env: common,
-          encoding: "utf8",
+          encoding: 'utf8',
           timeout: 10000,
         }
       );
       expect(ready.status, ready.stderr).toBe(0);
-      const outputContent = readFileSync(output, "utf8");
-      expect(outputContent).toContain("current=false");
-      const summaryContent = readFileSync(summary, "utf8");
-      expect(summaryContent).toContain("NON-VERDICT");
+      const outputContent = readFileSync(output, 'utf8');
+      expect(outputContent).toContain('current=false');
+      const summaryContent = readFileSync(summary, 'utf8');
+      expect(summaryContent).toContain('NON-VERDICT');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
   it('gives exit 1 when READY_SHA is a descendant not on origin/main', () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ca-post-deploy-notonmain-"));
+    const cwd = mkdtempSync(join(tmpdir(), 'ca-post-deploy-notonmain-'));
     const env = {
       ...gitEnvironmentForCwd(),
-      GIT_AUTHOR_NAME: "Scope fixture",
-      GIT_AUTHOR_EMAIL: "fixture@example.invalid",
-      GIT_COMMITTER_NAME: "Scope fixture",
-      GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+      GIT_AUTHOR_NAME: 'Scope fixture',
+      GIT_AUTHOR_EMAIL: 'fixture@example.invalid',
+      GIT_COMMITTER_NAME: 'Scope fixture',
+      GIT_COMMITTER_EMAIL: 'fixture@example.invalid',
     };
     const git = (...args: string[]) =>
-      execFileSync("git", args, { cwd, env, encoding: "utf8" }).trim();
+      execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
     try {
-      git("init", "-q");
-      mkdirSync(join(cwd, "server"), { recursive: true });
-      writeFileSync(join(cwd, "server/runtime.ts"), "base engine");
-      git("add", ".");
-      git("commit", "-qm", "base engine");
-      const baseSha = git("rev-parse", "HEAD");
+      git('init', '-q');
+      mkdirSync(join(cwd, 'server'), { recursive: true });
+      writeFileSync(join(cwd, 'server/runtime.ts'), 'base engine');
+      git('add', '.');
+      git('commit', '-qm', 'base engine');
+      const baseSha = git('rev-parse', 'HEAD');
 
-      git("update-ref", "refs/remotes/origin/main", baseSha);
-      git("remote", "add", "origin", cwd);
-      git("branch", "-M", "main");
+      git('update-ref', 'refs/remotes/origin/main', baseSha);
+      git('remote', 'add', 'origin', cwd);
+      git('branch', '-M', 'main');
 
       // Now create a descendant commit on a side branch / unmerged commit (not on origin/main)
-      writeFileSync(join(cwd, "server/runtime.ts"), "unmerged engine descendant");
-      git("add", ".");
-      git("commit", "-qm", "unmerged engine descendant");
-      const descendantSha = git("rev-parse", "HEAD");
+      writeFileSync(join(cwd, 'server/runtime.ts'), 'unmerged engine descendant');
+      git('add', '.');
+      git('commit', '-qm', 'unmerged engine descendant');
+      const descendantSha = git('rev-parse', 'HEAD');
 
-      mkdirSync(join(cwd, "scripts/ci"), { recursive: true });
+      mkdirSync(join(cwd, 'scripts/ci'), { recursive: true });
       copyFileSync(
-        join(root, "scripts/ci/read-engine-release.mjs"),
-        join(cwd, "scripts/ci/read-engine-release.mjs")
+        join(root, 'scripts/ci/read-engine-release.mjs'),
+        join(cwd, 'scripts/ci/read-engine-release.mjs')
       );
       copyFileSync(
-        join(root, "scripts/ci/await-engine-gameplay.mjs"),
-        join(cwd, "scripts/ci/await-engine-gameplay.mjs")
+        join(root, 'scripts/ci/await-engine-gameplay.mjs'),
+        join(cwd, 'scripts/ci/await-engine-gameplay.mjs')
       );
       copyFileSync(
-        join(root, "scripts/ci/production-e2e-provenance.mjs"),
-        join(cwd, "scripts/ci/production-e2e-provenance.mjs")
+        join(root, 'scripts/ci/production-e2e-provenance.mjs'),
+        join(cwd, 'scripts/ci/production-e2e-provenance.mjs')
       );
-      mkdirSync(join(cwd, "bin"));
-      writeFileSync(join(cwd, "bin/curl"), '#!/bin/sh\nprintf "%s" "$FIXTURE_HEALTH"\n');
-      chmodSync(join(cwd, "bin/curl"), 0o755);
+      mkdirSync(join(cwd, 'bin'));
+      writeFileSync(join(cwd, 'bin/curl'), '#!/bin/sh\nprintf "%s" "$FIXTURE_HEALTH"\n');
+      chmodSync(join(cwd, 'bin/curl'), 0o755);
 
-      const output = join(cwd, "output");
-      const summary = join(cwd, "summary");
+      const output = join(cwd, 'output');
+      const summary = join(cwd, 'summary');
       const common = {
         ...env,
-        PATH: `${join(cwd, "bin")}:${process.env.PATH}`,
+        PATH: `${join(cwd, 'bin')}:${process.env.PATH}`,
         EXPECTED_ENGINE_SHA: baseSha,
-        FIXTURE_HEALTH: JSON.stringify({ releaseSha: descendantSha, running: true, liveness: "ok" }),
+        FIXTURE_HEALTH: JSON.stringify({
+          releaseSha: descendantSha,
+          running: true,
+          liveness: 'ok',
+        }),
         GITHUB_OUTPUT: output,
         GITHUB_STEP_SUMMARY: summary,
-        GITHUB_RUN_ID: "123",
+        GITHUB_RUN_ID: '123',
       };
 
       const ready = spawnSync(
-        "bash",
-        ["-c", onFixtureEngine(admission.run, common.FIXTURE_HEALTH)],
+        'bash',
+        ['-c', onFixtureEngine(admission.run, common.FIXTURE_HEALTH)],
         {
           cwd,
           env: common,
-          encoding: "utf8",
+          encoding: 'utf8',
           timeout: 10000,
         }
       );

@@ -28,6 +28,13 @@ import { CASH_TEMPLATES, cashTemplateNote } from '../../src/config/cashGames';
  * Classic is the standard game and prints none.
  */
 
+// This fixture verifies printed game descriptions. Warming real table sockets
+// escapes the fixture and leaves asynchronous network logs after teardown.
+vi.mock('../../src/services/tableWarmup', () => ({
+  observeLobbyTableWarmups: vi.fn(() => () => {}),
+  warmTable: vi.fn(),
+}));
+
 vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
   useSpinTierAvailability: () => ({ can_draw_100x: false }),
 }));

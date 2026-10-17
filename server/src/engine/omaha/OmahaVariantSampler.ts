@@ -325,8 +325,11 @@ export function sampleOmahaVariantEquity(
   // completion floor admits a pack only when its live decisions price that
   // same sample. Scaling the request by the equity governor made about 4% of
   // natural postflop decisions governor-reduced on release c1deef24, so no
-  // qualified pack could meet the floor. Load is still bounded: the sampler
-  // stops starting work at its own deadline (counted as budget exhausted).
+  // qualified pack could meet the floor. Since 2026-10-16 the live policy
+  // passes no deadline either: the work is the declared 32 samples with at
+  // most three prior draws per dealt opponent each, never cut by a clock.
+  // `withinBudget` remains for offline callers that stop a sample early
+  // (counted as budget exhausted).
   const requested = 32;
   const board3 = state.communityCards;
   const codes = new Map<Card, number>();

@@ -13,6 +13,17 @@
 #
 # It is DISPATCH ONLY. It has no schedule, no push trigger, and it never
 # discovers work for itself: one run applies exactly the one file it is given.
+#
+# Two doors, one job (2026-10-16). workflow_dispatch needs the Actions write
+# scope, which the cloud agents' GitHub App integration does not hold - its
+# dispatch answers 403 "Resource not accessible by integration" - so every
+# merged migration from a cloud agent had to be retyped into the Supabase MCP,
+# the exact hazard this job exists to remove. repository_dispatch
+# (event type apply-merged-migration) is reachable with contents:write and
+# carries ONLY {migration, dry_run} in client_payload. The recovery and
+# emergency options stay on workflow_dispatch alone. Every guard the applier
+# runs (filename shape, merged bytes, schema_migrations, break window, single
+# transaction, certificate) is the same for both doors.
 # It is not a repair job (CLAUDE.md 10.12) - it writes no money and retries
 # nothing. THE READER is the person who dispatches it: the run's own conclusion
 # is the answer, and the job summary states it.
@@ -70,6 +81,8 @@ on:
         required: false
         default: false
         type: boolean
+  repository_dispatch:
+    types: [apply-merged-migration]
 
 # One applier at a time. Two concurrent DDL transactions would each take their
 # own PostgREST schema reload (~28s on this database).
@@ -82,7 +95,7 @@ permissions:
 
 jobs:
   apply:
-    name: Apply ${{ inputs.migration }}
+    name: Apply ${{ inputs.migration || github.event.client_payload.migration }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -103,7 +116,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           FINAL_TABLE_PAGES: ${{ inputs.final_table_pages }}
           FINAL_TABLE_OPERATION: ${{ inputs.final_table_operation }}
-          MIGRATION_FILE: ${{ inputs.migration }}
+          MIGRATION_FILE: ${{ inputs.migration || github.event.client_payload.migration }}
           RECOVER_INDEX: ${{ inputs.recover_index }}
           RECOVER_OID: ${{ inputs.recover_oid }}
           RECOVER_BEFORE: ${{ inputs.recover_before }}
@@ -141,7 +154,7 @@ jobs:
             --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt \
             --migration "$MIGRATION_FILE" \
             "${recovery_args[@]}" \
-            ${{ inputs.dry_run && '--dry-run' || '' }} 2>&1 | tee /tmp/apply.log
+            ${{ (inputs.dry_run || toJSON(github.event.client_payload.dry_run) == 'true') && '--dry-run' || '' }} 2>&1 | tee /tmp/apply.log
           code=${PIPESTATUS[0]}
           set -e
           echo "code=$code" >> "$GITHUB_OUTPUT"
@@ -149,14 +162,21 @@ jobs:
 
       - name: Say what happened
         if: always()
+        env:
+          # Read through env, never interpolated into the script: a
+          # repository_dispatch payload is caller-supplied text.
+          SUMMARY_FILE: ${{ inputs.migration || github.event.client_payload.migration }}
+          SUMMARY_DRY_RUN: ${{ inputs.dry_run || toJSON(github.event.client_payload.dry_run) == 'true' }}
+          SUMMARY_DOOR: ${{ github.event_name }}
         run: |
           set -eu
           code="${{ steps.apply.outputs.code }}"
           {
             echo "### Apply Merged Migration"
             echo ""
-            echo "- file: \`${{ inputs.migration }}\`"
-            echo "- dry run: \`${{ inputs.dry_run }}\`"
+            echo "- file: \`$SUMMARY_FILE\`"
+            echo "- dry run: \`$SUMMARY_DRY_RUN\`"
+            echo "- door: \`$SUMMARY_DOOR\`"
             case "$code" in
               0) echo "- result: **APPLIED, ALREADY-APPLIED or BOUNDED PAGES** (see exact committed/partial log)";;
               1) echo "- result: **REFUSED** - nothing committed, or the reason is in the log";;

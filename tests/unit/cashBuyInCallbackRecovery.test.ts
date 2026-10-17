@@ -479,3 +479,26 @@ it('a proven seat collision releases the failed selection without abandoning the
   expect(f.d.buyInProcessingRef.current).toBe(false);
   expect(f.state().heroSeat).toBe(0);
 });
+
+it('keeps the submission latch until definitive receipt cleanup finishes', async () => {
+  const f = fixture();
+  let finishCleanup!: () => void;
+  const complete = f.d.cashBuyInJournal.complete;
+  f.d.cashBuyInJournal.complete = vi.fn(async (attempt: any) => {
+    await new Promise<void>((resolve) => {
+      finishCleanup = resolve;
+    });
+    await complete(attempt);
+  });
+  f.d.supabase.rpc.mockResolvedValue({
+    data: null,
+    error: { code: 'P0001', message: 'Insufficient club chips for buy-in (club abc)' },
+  });
+  const first = f.handler(100, false);
+  await vi.waitFor(() => expect(f.d.cashBuyInJournal.complete).toHaveBeenCalledOnce());
+  expect(f.d.buyInProcessingRef.current).toBe(true);
+  finishCleanup();
+  await first;
+  expect(f.d.buyInProcessingRef.current).toBe(false);
+  expect(f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId)).toBeNull();
+});

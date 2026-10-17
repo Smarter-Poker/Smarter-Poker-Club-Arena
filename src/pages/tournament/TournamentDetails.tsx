@@ -76,6 +76,7 @@ import TablesTab from '../../components/tournament/details/TablesTab';
 import RewardsTab from '../../components/tournament/details/RewardsTab';
 import SatellitesTab from '../../components/tournament/details/SatellitesTab';
 import { chipsCompact, tournamentRowUnitCents } from '../../components/tournament/details/types';
+import { DIAMOND_UNIT_CENTS } from '../../../server/src/tournament/tournamentUnit';
 import type {
   NormalisedBlindLevel,
   TabId,
@@ -1874,7 +1875,11 @@ export default function TournamentDetails({
             {/* Whole chips only (Dan 2026-08-20) - formatBuyIn leads with the
                 total the player actually pays and never prints a decimal. */}
             <p className="tournament-buyin">
-              {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)} Chips Buy-In
+              {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)}{' '}
+              {tournamentRowUnitCents(tabProps.tournament) === DIAMOND_UNIT_CENTS
+                ? 'Diamonds'
+                : 'Chips'}{' '}
+              Buy-In
             </p>
             {/* Owner-written short description (2026-08-22). No tab renders it:
                 it is the event's own identity copy, not a figure, so it belongs

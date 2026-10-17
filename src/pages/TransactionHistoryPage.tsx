@@ -31,19 +31,28 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+import { readClubContextParam } from '../utils/clubScopedPath';
+import { isDiamondArenaClubKey } from '../lib/constants';
+import DiamondArenaWallet from '../components/arena/DiamondArenaWallet';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import ChipStatement from '../components/wallet/ChipStatement';
 import './TransactionHistoryPage.css';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /** The full-page view shows more per page than the wallet's panel (50). */
 export const TRANSACTION_PAGE_SIZE = 100;
 
 export default function TransactionHistoryPage() {
+  usePageTitle('Transactions');
   // A fresh read is a remount of the statement: it re-asks the RPC from the
   // newest leg, exactly as the old page reset to its first page.
   const [generation, setGeneration] = useState(0);
+  const location = useLocation();
+  // This selects a self-only reader, never an identity or a wallet entitlement.
+  const diamondHistory = isDiamondArenaClubKey(readClubContextParam(location.search));
   useVisibilityRefresh(() => setGeneration((g) => g + 1));
 
   // A cash-out, rakeback claim or chip send elsewhere in the app changes the
@@ -65,18 +74,28 @@ export default function TransactionHistoryPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Ledger"
         title="Transaction Ledger"
-        description="Every Chip That Came Into Or Went Out Of Your Wallet, Newest First, Read From The Chip Journal, With The Nightly Check That Your Balance Adds Up."
+        description={
+          diamondHistory
+            ? 'Your Diamond Movements, Available Balance And Diamonds In The Arena, Read From Your Own Diamond History.'
+            : 'Every Chip That Came Into Or Went Out Of Your Wallet, Newest First, Read From The Chip Journal, With The Nightly Check That Your Balance Adds Up.'
+        }
         art="vault"
-        status="CHIP JOURNAL // LIVE"
+        status={diamondHistory ? 'DIAMOND JOURNAL // LIVE' : 'CHIP JOURNAL // LIVE'}
         crest="diamond"
       />
       <div className="transaction-history-page__statement">
-        <ChipStatement
-          key={generation}
-          scope="player"
-          pageSize={TRANSACTION_PAGE_SIZE}
-          title="Your Chip Statement"
-        />
+        {diamondHistory ? (
+          // The modal owns balance refresh and transfer-in-flight safety. Do not
+          // remount it on every bus event while a transfer owns its receipt.
+          <DiamondArenaWallet key="diamond-history" initialOpen />
+        ) : (
+          <ChipStatement
+            key={generation}
+            scope="player"
+            pageSize={TRANSACTION_PAGE_SIZE}
+            title="Your Chip Statement"
+          />
+        )}
       </div>
     </div>
   );

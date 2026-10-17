@@ -161,6 +161,7 @@ describe('a late entry seated after the proven hand is movement evidence', () =>
     // this post-image.
     expect(later).toEqual([
       '20261003163015_a_busted_chair_taken_by_a_late_entry_is_movement_evidence.sql',
+      '20261016183932_a_mid_hand_add_on_rebase_is_movement_evidence.sql',
     ]);
     expect(readFileSync(join(MIGRATIONS, later[0]), 'utf8')).toContain(
       `md5(p.prosrc) = '${POST_MD5}'`

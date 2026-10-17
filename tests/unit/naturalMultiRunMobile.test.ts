@@ -1,0 +1,404 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import {
+  completedNaturalRuns,
+  naturalMultiRunEngineIdentity,
+  installNaturalMultiRunWitness,
+  readNaturalMultiRunHistory,
+  initializeNaturalMultiRunObservers,
+  naturalMultiRunCandidateQuery,
+  eligibleNaturalMultiRunTable,
+  naturalMultiRunTransportEvidence,
+} from '../e2e/support/naturalMultiRunMobile';
+
+const packet = { hand: 41, runs: 3, at: 100, recipients: ['winner'] };
+it('snapshots physical control facts without retaining auth or state payloads', () => {
+  const frames: any[] = [
+    { at: 1, socketId: 2, direction: 'received', message: { type: 'PING', token: 'secret-ping' } },
+    { at: 2, socketId: 2, direction: 'sent', message: { type: 'PONG', payload: 'secret-pong' } },
+    { at: 3, socketId: 2, direction: 'sent', message: { type: 'AUTH', token: 'secret-auth' } },
+    {
+      at: 4,
+      socketId: 2,
+      direction: 'received',
+      message: { type: 'SNAPSHOT', payload: 'private-state' },
+    },
+  ];
+  const summary = vi.fn(() => ({ tableId: 'table', sockets: [{ id: 2, closedAt: null }] }));
+  const evidence = naturalMultiRunTransportEvidence({ frames, summary }, 'table');
+  frames[0].at = 99;
+  frames.push({ at: 5, socketId: 2, direction: 'sent', message: { type: 'PONG' } });
+  expect(summary).toHaveBeenCalledWith('table');
+  expect(evidence.physicalControlFrames).toEqual([
+    { at: 1, socketId: 2, direction: 'received', type: 'PING' },
+    { at: 2, socketId: 2, direction: 'sent', type: 'PONG' },
+  ]);
+  expect(JSON.stringify(evidence)).not.toMatch(/secret|private-state/);
+});
+const lane = { pendingAt: 110, winnerAt: 220 };
+const witness = () => ({
+  hands: [{ hand: 41, runs: 3, lanes: [lane, lane, lane] }],
+  flights: [{ hand: 41, recipient: 'winner', landedAt: 300, distance: 0.2 }],
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  document.body.innerHTML = '';
+  delete (window as any).__naturalMultiRunWitness;
+});
+
+it('requires all three actual pending-to-river transitions and a matching winner landing', () => {
+  expect(completedNaturalRuns([packet], witness())).toEqual([packet]);
+});
+it('refuses a joined final board without an observed pending river', () => {
+  const w = witness();
+  w.hands[0].lanes = [lane, lane, { pendingAt: null, winnerAt: 220 } as any];
+  expect(completedNaturalRuns([packet], w)).toEqual([]);
+});
+it('does not substitute a two-run hand for three-run coverage', () => {
+  const w = witness();
+  w.hands[0].runs = 2;
+  expect(completedNaturalRuns([packet], w)).toEqual([]);
+});
+it('requires both winners of a split hand to receive their chips', () => {
+  const split = { ...packet, recipients: ['winner', 'second'] };
+  const w = witness();
+  expect(completedNaturalRuns([split], w)).toEqual([]);
+  w.flights.push({ hand: 41, recipient: 'second', landedAt: 310, distance: 0.4 });
+  expect(completedNaturalRuns([split], w)).toEqual([split]);
+});
+it.each(['unexpected recipient', 'off-target extra chip'])(
+  'rejects %s even when the winner also receives a chip',
+  (kind) => {
+    const w = witness();
+    w.flights.push({
+      hand: 41,
+      recipient: kind === 'unexpected recipient' ? 'other' : 'winner',
+      landedAt: 310,
+      distance: kind === 'unexpected recipient' ? 0 : 4,
+    });
+    expect(completedNaturalRuns([packet], w)).toEqual([]);
+  }
+);
+it('refuses an empty engine recipient set', () => {
+  expect(completedNaturalRuns([{ ...packet, recipients: [] }], witness())).toEqual([]);
+});
+it.each(['wrong recipient', 'off target', 'prior hand', 'before packet'])(
+  'refuses %s payout evidence',
+  (kind) => {
+    const w = witness();
+    if (kind === 'wrong recipient') w.flights[0].recipient = 'other';
+    if (kind === 'off target') w.flights[0].distance = 3;
+    if (kind === 'prior hand') w.flights[0].hand = 40;
+    if (kind === 'before packet') w.flights[0].landedAt = 99;
+    expect(completedNaturalRuns([packet], w)).toEqual([]);
+  }
+);
+it.each([2, 3])('the actual DOM observer rejects a %i-run award before its river', async (runs) => {
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 393, 852));
+  let tick!: FrameRequestCallback;
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    tick = callback;
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  await installNaturalMultiRunWitness({
+    addInitScript: async (callback: () => void) => callback(),
+  } as any);
+  document.body.innerHTML = `<div class="table-page"><span class="table-brand__hand">Hand #41</span>${Array.from({ length: runs }, () => `<div class="community-area__run"><span class="community-area__run-winner">Winner</span>${'<i class="community-cards__card"></i>'.repeat(4)}</div>`).join('')}</div>`;
+  tick(1);
+  expect((window as any).__naturalMultiRunWitness.read().violations).toHaveLength(runs);
+});
+
+it('observes the visible table rather than a retained hidden table', async () => {
+  let tick!: FrameRequestCallback;
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+    this: HTMLElement
+  ) {
+    return this.style.display === 'none' ? new DOMRect() : new DOMRect(0, 0, 393, 852);
+  });
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    tick = callback;
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  await installNaturalMultiRunWitness({
+    addInitScript: async (callback: () => void) => callback(),
+  } as any);
+  const lane =
+    '<div class="community-area__run"><span class="community-area__run-winner">Winner</span></div>';
+  document.body.innerHTML = `<div class="table-page" style="display:none"><span class="table-brand__hand">Hand #40</span>${lane.repeat(3)}</div><div class="table-page"><span class="table-brand__hand">Hand #41</span></div>`;
+  tick(1);
+  expect((window as any).__naturalMultiRunWitness.read()).toMatchObject({
+    hands: [],
+    violations: [],
+  });
+});
+
+const engineSha = '5780828e02d0f9c076f08bb503a4507599465928';
+const naturalCashCandidate = {
+  id: '00000000-0000-0000-0000-000000000001',
+  current_players: 6,
+  status: 'running',
+  game_type: 'cash',
+  tournament_id: null,
+  max_players: 6,
+  is_deleted: false,
+  is_template: false,
+  run_it_twice: true,
+  allow_run_it_twice: true,
+  run_it_twice_enabled: false,
+  run_it_mode: 'none',
+};
+it('discovers occupied running cash games instead of waiting tournaments', () => {
+  const query = naturalMultiRunCandidateQuery('club');
+  expect(Object.fromEntries(query)).toMatchObject({
+    club_id: 'eq.club',
+    status: 'eq.running',
+    game_type: 'eq.cash',
+    tournament_id: 'is.null',
+    max_players: 'gt.2',
+    current_players: 'gte.2',
+    is_deleted: 'eq.false',
+    is_template: 'eq.false',
+    order: 'current_players.desc,id.asc',
+    limit: '32',
+  });
+  expect(query.has('run_it_twice')).toBe(false);
+  for (const field of ['run_it_twice', 'allow_run_it_twice', 'run_it_twice_enabled'])
+    expect(query.get('select')!.split(',')).toContain(field);
+});
+it.each([
+  { status: 'waiting' },
+  { game_type: 'tournament' },
+  { tournament_id: 'tournament' },
+  { max_players: 2 },
+  { current_players: 1 },
+  { is_deleted: true },
+  { is_template: true },
+  { run_it_twice: false },
+  { allow_run_it_twice: false },
+])('refuses an ineligible natural multirun subject: %j', (change) => {
+  expect(eligibleNaturalMultiRunTable({ ...naturalCashCandidate, ...change })).toBe(false);
+});
+it('uses effective legacy RIT flags and does not mistake mode none for disabled', () => {
+  expect(eligibleNaturalMultiRunTable(naturalCashCandidate)).toBe(true);
+  expect(
+    eligibleNaturalMultiRunTable({
+      ...naturalCashCandidate,
+      run_it_twice: null,
+      allow_run_it_twice: null,
+    })
+  ).toBe(true);
+  expect(
+    eligibleNaturalMultiRunTable({
+      ...naturalCashCandidate,
+      run_it_twice: false,
+      allow_run_it_twice: false,
+      run_it_twice_enabled: true,
+    })
+  ).toBe(true);
+});
+
+it('allocates natural observer startup from one cumulative setup budget, including delayed document commits', async () => {
+  let now = 1_000;
+  const budgets: number[] = [];
+  await initializeNaturalMultiRunObservers(
+    [1, 2, 3, 4, 5, 6],
+    async (_table, navigationBudget, remainingSetup) => {
+      budgets.push(navigationBudget);
+      expect(navigationBudget).toBe(remainingSetup());
+      const beforeMedia = remainingSetup();
+      now += 13_000; // A slow HTML commit consumes setup, without a new per-page allowance.
+      expect(remainingSetup()).toBe(beforeMedia - 13_000);
+    },
+    1_000,
+    () => now
+  );
+  expect(now).toBe(79_000);
+  expect(budgets).toEqual([120_000, 107_000, 94_000, 81_000, 68_000, 55_000]);
+});
+
+it('starts at most two observers together and retains every selected observer exactly once', async () => {
+  const starts: number[] = [];
+  const ready: number[] = [];
+  const gates = Array.from({ length: 6 }, () => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  });
+  let active = 0;
+  let peak = 0;
+  const operation = initializeNaturalMultiRunObservers(
+    [1, 2, 3, 4, 5, 6],
+    async (table, budget) => {
+      starts.push(table);
+      peak = Math.max(peak, ++active);
+      expect(budget).toBe(120_000);
+      try {
+        await gates[table - 1].promise;
+        ready.push(table);
+      } finally {
+        active--;
+      }
+    },
+    1_000,
+    () => 1_000
+  );
+  try {
+    expect(starts).toEqual([1, 2]);
+    gates[0].resolve();
+    await new Promise((done) => setTimeout(done, 0));
+    expect(starts).toEqual([1, 2, 3]);
+    expect(active).toBe(2);
+  } finally {
+    gates.forEach((gate) => gate.resolve());
+    await operation;
+  }
+  expect(peak).toBe(2);
+  expect(starts).toEqual([1, 2, 3, 4, 5, 6]);
+  expect([...ready].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+});
+
+it('refuses incomplete observer selection before starting any page', async () => {
+  const initialize = vi.fn();
+  await expect(
+    initializeNaturalMultiRunObservers([1, 2, 3, 4, 5], initialize, 1_000, () => 1_000)
+  ).rejects.toThrow(/all six observers/);
+  expect(initialize).not.toHaveBeenCalled();
+});
+
+it('propagates actual readiness failure without starting replacement observers', async () => {
+  const failure = new Error('authoritative snapshot unavailable');
+  const initialize = vi.fn().mockRejectedValue(failure);
+  await expect(
+    initializeNaturalMultiRunObservers([1, 2, 3, 4, 5, 6], initialize, 1_000, () => 1_000)
+  ).rejects.toBe(failure);
+  expect(initialize).toHaveBeenCalledTimes(2);
+});
+
+it('stops new starts on failure and awaits active admission before propagating the original error', async () => {
+  const failure = new Error('observer one refused');
+  let rejectFirst!: (reason: unknown) => void;
+  let finishSecond!: () => void;
+  const first = new Promise<void>((_resolve, reject) => {
+    rejectFirst = reject;
+  });
+  const second = new Promise<void>((resolve) => {
+    finishSecond = resolve;
+  });
+  const starts: number[] = [];
+  let settled = false;
+  const result = initializeNaturalMultiRunObservers(
+    [1, 2, 3, 4, 5, 6],
+    async (table) => {
+      starts.push(table);
+      await (table === 1 ? first : second);
+    },
+    1_000,
+    () => 1_000
+  ).then(
+    () => {
+      settled = true;
+      return undefined;
+    },
+    (error) => {
+      settled = true;
+      return error;
+    }
+  );
+  try {
+    expect(starts).toEqual([1, 2]);
+    rejectFirst(failure);
+    await new Promise((done) => setTimeout(done, 0));
+    expect(settled).toBe(false);
+    expect(starts).toEqual([1, 2]);
+  } finally {
+    rejectFirst(failure);
+    finishSecond();
+  }
+  expect(await result).toBe(failure);
+  expect(starts).toEqual([1, 2]);
+});
+
+it('shares the original 120-second setup ceiling rather than granting every observer a fresh setup', async () => {
+  let now = 120_000;
+  const initialize = vi.fn(async (_table, budget) => {
+    expect(budget).toBe(1_000);
+    now += 1_000;
+  });
+  await expect(
+    initializeNaturalMultiRunObservers([1, 2, 3, 4, 5, 6], initialize, 1_000, () => now)
+  ).rejects.toThrow(/navigation deadline/);
+  expect(initialize).toHaveBeenCalledTimes(1);
+});
+
+it('reads recent multirun history only through bounded candidate-table lookups', async () => {
+  const ids = Array.from(
+    { length: 6 },
+    (_, index) => `00000000-0000-0000-0000-00000000000${index + 1}`
+  );
+  const queries: URLSearchParams[] = [];
+  const now = Date.parse('2026-10-16T18:30:00Z');
+  const rows = await readNaturalMultiRunHistory(
+    ids,
+    async (query) => {
+      // Reproduce the production failure boundary: a global recent-history read
+      // is refused; equality on the existing table/created index is required.
+      expect(ids.map((id) => `eq.${id}`)).toContain(query.get('table_id'));
+      expect(query.get('created_at')).toBe('gte.2026-10-16T18:00:00.000Z');
+      expect(query.get('order')).toBe('created_at.desc');
+      expect(query.get('limit')).toBe('500');
+      expect(query.get('rit_boards')).toBe('not.is.null');
+      queries.push(query);
+      return [
+        {
+          table_id: query.get('table_id')!.slice(3),
+          rit_boards: queries.length % 2 ? [[]] : [[], []],
+        },
+      ];
+    },
+    now
+  );
+  expect(queries).toHaveLength(ids.length);
+  expect(new Set(rows.map((row) => row.table_id))).toEqual(new Set(ids));
+  expect(new Set(rows.map((row) => row.rit_boards.length))).toEqual(new Set([1, 2]));
+});
+
+it.each(
+  [[], ['not-a-table-id'], Array(33).fill('00000000-0000-0000-0000-000000000001')].map((ids) => ({
+    ids,
+  }))
+)('refuses missing, malformed or excessive candidates before any history read', async ({ ids }) => {
+  const readRows = vi.fn();
+  await expect(readNaturalMultiRunHistory(ids, readRows)).rejects.toThrow(/candidate table IDs/);
+  expect(readRows).not.toHaveBeenCalled();
+});
+
+it('propagates an indexed history read failure without retry or an empty-success fallback', async () => {
+  const failure = new Error('database read failed');
+  const readRows = vi.fn().mockRejectedValue(failure);
+  await expect(
+    readNaturalMultiRunHistory(['00000000-0000-0000-0000-000000000001'], readRows)
+  ).rejects.toBe(failure);
+  expect(readRows).toHaveBeenCalledTimes(1);
+});
+
+it('binds actual health with a short display version to its full immutable release', () => {
+  expect(
+    naturalMultiRunEngineIdentity(
+      { version: engineSha.slice(0, 8), releaseSha: engineSha },
+      engineSha
+    )
+  ).toBe(engineSha);
+});
+it.each([
+  { version: engineSha },
+  { version: engineSha, releaseSha: engineSha.slice(0, 8) },
+  { version: engineSha, releaseSha: '0'.repeat(40) },
+])('refuses missing, abbreviated or different immutable engine identity: %j', (health) => {
+  expect(() => naturalMultiRunEngineIdentity(health, engineSha)).toThrow(
+    /exact serving engine releaseSha/
+  );
+});

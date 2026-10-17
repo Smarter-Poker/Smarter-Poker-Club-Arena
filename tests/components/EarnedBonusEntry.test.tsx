@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useEarnedBonus } from '../../src/hooks/useEarnedBonus';
@@ -60,8 +60,8 @@ const quote = (doubled = false) => ({
 });
 /**
  * The page's saved preference carries the award it was answered for (R9/R6):
- * a Double Your Diamonds answer or a drop value given for one award is never
- * carried into the quote for another.
+ * a drop value given for one award is never carried into the quote for
+ * another.
  */
 const preference: BonusBudget = {
   base: 200,
@@ -83,7 +83,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('server-owned earned game entry', () => {
-  it('discovers a pending award after navigation is interrupted and preserves the original-stake addition', async () => {
+  it('discovers a pending award after navigation is interrupted and never quotes the retired add-on', async () => {
     backend.rpc.mockImplementation((_name, args) =>
       Promise.resolve({ error: null, data: quote(args.p_double) })
     );
@@ -96,15 +96,19 @@ describe('server-owned earned game entry', () => {
     expect(view.result.current.ready).toBe(true);
     expect(view.result.current.budget.base).toBe(200);
     expect(view.result.current.budget.award?.id).toBe(id);
+    // Double Diamonds is retired (Dan 2026-10-16): even a preference that still
+    // says doubled is quoted and budgeted at the funded entry alone.
     view.rerender({ budget: { ...preference, doubled: true } });
-    expect(view.result.current.ready).toBe(false);
     await act(async () => {});
-    expect(bonusTotal(view.result.current.budget)).toBe(300);
+    expect(view.result.current.ready).toBe(true);
+    expect(view.result.current.budget.doubled).toBe(false);
+    expect(bonusTotal(view.result.current.budget)).toBe(200);
     expect(view.result.current.budget.denomination).toBe(20);
+    for (const [, args] of backend.rpc.mock.calls) expect(args.p_double).toBe(false);
     expect(backend.rpc).toHaveBeenLastCalledWith('fn_wheel_bonus_state', {
       p_club_id: club,
       p_game: 'plinko',
-      p_double: true,
+      p_double: false,
       p_mode: null,
       p_award_id: null,
     });
@@ -238,7 +242,7 @@ describe('server-owned earned game entry', () => {
       )
     ).rejects.toThrow('Does Not Match');
   });
-  it('shows the funded upgrade, the original Double Down cost, and Buy More without an editable entry', () => {
+  it('shows the funded upgrade and Buy More without an editable entry or any Double Down', () => {
     const onChange = vi.fn();
     const budget = {
       base: 200,
@@ -255,18 +259,19 @@ describe('server-owned earned game entry', () => {
           disabled={false}
           game="plinko"
           clubId={club}
-          offerAnswered={false}
+          leave={vi.fn()}
         />
       </MemoryRouter>
     );
     expect(screen.getByText('200 Diamonds Funded')).toBeInTheDocument();
     expect(screen.queryByRole('spinbutton')).toBeNull();
     expect(screen.queryByText(/You Need/)).toBeNull();
-    const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-    expect(offer).toHaveTextContent('Add 100 Diamonds To Your 200 Diamond Bonus.');
-    fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Add The Diamonds' }));
-    expect(bonusTotal(onChange.mock.calls[0][0])).toBe(300);
+    // Double Diamonds is retired (Dan 2026-10-16): no offer, no add-on control.
+    expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByText(/Double Down|Double Your Diamonds|Add The Diamonds/)).toBeNull();
+    expect(screen.getByLabelText('Your Bonus Setup')).toHaveAttribute('data-bonus-step', 'setup');
+    expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Buy More' })).toBeEnabled();
   });
 });

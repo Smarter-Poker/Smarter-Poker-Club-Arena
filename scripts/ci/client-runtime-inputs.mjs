@@ -12,6 +12,33 @@ const safePath = (path) =>
   !path.startsWith('/') &&
   !path.includes('\\') &&
   !path.split('/').some((part) => !part || part === '.' || part === '..');
+// Native database qualification and backend-only operations have separate callers.
+// Keep tool/metadata paths exact: neighbouring tools remain conservative. Build
+// module/watch observations still override these reviewed component boundaries.
+const separateBackendTools = new Set([
+  'scripts/ci/accounting-migration-admission.mjs',
+  'scripts/ci/apply-recorded-migration.mjs',
+  'scripts/ci/contract-index-recovery.test.mjs',
+  'scripts/ci/migration-live-proofs.json',
+  'scripts/ci/recorded-migrations.manifest.json',
+  'scripts/ops/lightning-pilot-access.mjs',
+  'scripts/ops/lightning-pilot-access.test.mjs',
+  'scripts/ops/lightning-pilot-player.mjs',
+  'scripts/ops/lightning-pilot-player.test.mjs',
+  'scripts/ops/lightning-pilot-replay-batch.mjs',
+  'scripts/ops/lightning-pilot-replay-batch.test.mjs',
+  'scripts/ops/lightning-pilot-stage.mjs',
+  'scripts/ops/lightning-pilot-stage.test.mjs',
+  'scripts/ops/lightning-pilot-witness.mjs',
+  'scripts/ops/lightning-pilot-witness.test.mjs',
+  'scripts/dev/test-lightning-matcher-parity.sh',
+  'scripts/dev/test-lightning-private-pool-status.sh',
+  'scripts/dev/fixtures/lightning-private-pool-status.sql',
+  'scripts/dev/test-lightning-private-discovery.sh',
+  'scripts/dev/test-lightning-private-join.sh',
+  'scripts/dev/fixtures/lightning-private-discovery.sql',
+  'scripts/dev/fixtures/lightning-private-join.sql',
+]);
 // Build inputs are conservative whole scopes. These exclusions are separately
 // delivered verification/database/engine components, never client inputs by
 // assumption: actual Rollup module/watch reads override EVERY exclusion.
@@ -38,8 +65,9 @@ export function conservativeClientInput(path) {
     ].includes(path)
   )
     return true;
+  if (separateBackendTools.has(path)) return false;
   if (path.startsWith('scripts/')) {
-    return !/^(?:scripts\/verification-harness\/|scripts\/qualification\/|scripts\/ci\/schema-manifest\.d\/|scripts\/ci\/test[^/]*\.py$)/.test(
+    return !/^(?:scripts\/verification-harness\/|scripts\/qualification\/|scripts\/ci\/fixtures\/|scripts\/ci\/schema-manifest\.d\/|scripts\/ci\/test[^/]*\.py$)/.test(
       path
     );
   }

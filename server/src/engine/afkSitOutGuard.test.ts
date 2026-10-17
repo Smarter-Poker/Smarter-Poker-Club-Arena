@@ -90,8 +90,7 @@ describe('AFK strikes and forced sit-out', () => {
     eng.registerPlayer('t', 'p1');
   });
 
-  it('three connected timeouts force a sit-out', () => {
-    eng.recordConnectedTimeout('t', 'p1');
+  it('two connected timeouts force a sit-out', () => {
     eng.recordConnectedTimeout('t', 'p1');
     expect(eng.isSittingOut('t', 'p1')).toBe(false);
     eng.recordConnectedTimeout('t', 'p1');
@@ -101,9 +100,7 @@ describe('AFK strikes and forced sit-out', () => {
 
   it('a voluntary action resets the streak', () => {
     eng.recordConnectedTimeout('t', 'p1');
-    eng.recordConnectedTimeout('t', 'p1');
     eng.recordPlayerActed('t', 'p1');
-    eng.recordConnectedTimeout('t', 'p1');
     eng.recordConnectedTimeout('t', 'p1');
     expect(eng.isSittingOut('t', 'p1')).toBe(false);
   });
@@ -190,7 +187,6 @@ describe('AFK strikes and forced sit-out', () => {
     expect(eng.isSittingOut('t', 'p1')).toBe(true);
     eng.sitBack('t', 'p1');
     expect(eng.isSittingOut('t', 'p1')).toBe(false);
-    eng.recordConnectedTimeout('t', 'p1');
     eng.recordConnectedTimeout('t', 'p1');
     expect(eng.isSittingOut('t', 'p1')).toBe(false); // streak restarted from 0
   });

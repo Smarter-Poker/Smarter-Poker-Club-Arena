@@ -751,6 +751,56 @@ export const horseTurnsAbandonedTotal: Counter = alwaysOnRegistry.counter(
   'poker_horse_turns_abandoned_total',
   'Horse turns abandoned because the authority they began under was no longer current (labels: reason, stage)'
 );
+/**
+ * PHASE 15 POLICY LEDGER (2026-10-16): the out-of-domain and silence alarms
+ * and the live reference agreement. Counted once per validated FAST decision
+ * by HorsePolicyLedgerObserver on the main thread. Closed label sets: the nine
+ * registered variants plus `other`, the registry's five outcomes plus
+ * `unregistered` and `shadow_receipt_dropped`, cash or tournament, and four agreement classes. Seeded at
+ * zero below so a rule reading them has a series before the first decision.
+ */
+export const HORSE_POLICY_LEDGER_VARIANTS = [
+  'nlh',
+  'plo4',
+  'plo5',
+  'plo6',
+  'plo8',
+  'short_deck',
+  'pineapple',
+  'flh',
+  'flo8',
+  'other',
+] as const;
+export const HORSE_POLICY_LEDGER_OUTCOMES = [
+  'reference',
+  'disabled',
+  'computed',
+  'outside_domain',
+  'unavailable',
+  'unregistered',
+  // The worker sent a shadow-only receipt whose strict input binding failed,
+  // and the client dropped it with its ownership record (client.ts). The
+  // decision kept its actual action; its owner was known and was a shadow.
+  // Counted on its own so it is never read as a decision with no owner.
+  'shadow_receipt_dropped',
+] as const;
+export const HORSE_POLICY_LEDGER_FORMATS = ['cash', 'tournament'] as const;
+export const HORSE_REFERENCE_AGREEMENTS = ['exact', 'action', 'differ', 'unrecorded'] as const;
+export const horsePolicyDecisionsTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_policy_decisions_total',
+  'Live FAST horse decisions by registered policy outcome (labels: variant, outcome=reference|disabled|computed|outside_domain|unavailable|unregistered|shadow_receipt_dropped)'
+);
+export const horseReferenceAgreementTotal: Counter = alwaysOnRegistry.counter(
+  'poker_horse_reference_agreement_total',
+  'Live FAST horse decisions whose final policy action equals the reference node action (labels: variant, format=cash|tournament, agreement=exact|action|differ|unrecorded)'
+);
+for (const variant of HORSE_POLICY_LEDGER_VARIANTS) {
+  for (const outcome of HORSE_POLICY_LEDGER_OUTCOMES)
+    horsePolicyDecisionsTotal.inc(0, { variant, outcome });
+  for (const format of HORSE_POLICY_LEDGER_FORMATS)
+    for (const agreement of HORSE_REFERENCE_AGREEMENTS)
+      horseReferenceAgreementTotal.inc(0, { variant, format, agreement });
+}
 horseTurnTimeoutsTotal.inc(0, { kind: 'timer' });
 horseTurnTimeoutsTotal.inc(0, { kind: 'timebank' });
 horseDecisionFallbacksTotal.inc(0);

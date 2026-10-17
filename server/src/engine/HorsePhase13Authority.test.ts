@@ -1,3 +1,4 @@
+import { HORSE_PHASE13_POLICY_DIGEST_DEFINITION } from './HorsePhase13PolicyDigest.js';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -278,9 +279,15 @@ describe('P13.3 null proof: no Phase 13 authority is selected today', () => {
           parsed.contractDigest as string,
           parsed.policyDigest as string
         );
+        // 2026-10-16: the Phase 13 digest definition moved to v2 (the reference
+        // decision sources joined it), so a v1 qualification is refused for its
+        // policy digest before its missing completion is even reached.
         expect(hypothetical, file).toEqual({
           status: 'refused',
-          reason: 'completion_evidence_missing',
+          reason:
+            parsed.policyDigestDefinition === HORSE_PHASE13_POLICY_DIGEST_DEFINITION
+              ? 'completion_evidence_missing'
+              : 'policy_digest_mismatch',
           transient: false,
         });
         expect(selectedHorsePhase13Authority(variant, hypothetical), file).toBeNull();

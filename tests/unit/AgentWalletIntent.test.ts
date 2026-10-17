@@ -227,6 +227,27 @@ describe('cashier destination identity', () => {
     });
     expect(new Set([prior.operationId, agent.operationId, bank.operationId]).size).toBe(3);
   });
+  it('gives a Promo Wallet send its own key, never a Player or Agent one (2026-10-16)', async () => {
+    const player = await reserveAgentWalletOperation(intent);
+    const agent = await reserveAgentWalletOperation({ ...intent, destination: 'agent_wallet' });
+    const promo = await reserveAgentWalletOperation({ ...intent, destination: 'promo_wallet' });
+    expect(new Set([player.key, agent.key, promo.key]).size).toBe(3);
+    expect(await reserveAgentWalletOperation({ ...intent, destination: 'promo_wallet' })).toEqual(
+      promo
+    );
+  });
+  it('confirms a Promo Wallet receipt only when the server says promo_wallet', () => {
+    const receipt = {
+      success: true,
+      transaction_id: targetId,
+      amount: 12.34,
+      agent_wallet_after: 10,
+      recipient_balance_after: 12.34,
+      destination: 'promo_wallet',
+    };
+    expect(confirmedAgentWalletReceipt(receipt, 12.34, 'agent_send', 'promo_wallet')).toBe(true);
+    expect(confirmedAgentWalletReceipt(receipt, 12.34, 'agent_send', 'player_wallet')).toBe(false);
+  });
 
   it.each(['agent_send', 'club_bank_send'] as const)(
     'requires the actual source and destination for %s',

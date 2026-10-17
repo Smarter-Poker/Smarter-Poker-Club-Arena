@@ -570,7 +570,7 @@ export async function submitAction(
 
     /* ONLY A DECISION-BOUND ACTION IS RE-SENT (2026-10-05). The engine
        refuses a re-send whose turn has moved on only when the action carries
-       its decision context. A context-less action (the Lightning fast fold:
+       its decision context. A context-less action (a legacy Lightning fast fold:
        the pool session id outlives the hand) would otherwise be delivered to
        whichever hand that seat is in NOW, and fold a hand the player has not
        seen. Those are sent once; an undelivered one is reported, not repeated. */
@@ -834,6 +834,7 @@ export async function sendHeartbeat(
     /** The bust-rebuy dialog is on screen: the engine's busted-seat sweep
      *  waits for a player who is at the cashier (2026-09-04). */
     rebuyPromptOpen?: boolean;
+    autoTimeBank?: boolean;
   }
 ): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
@@ -851,6 +852,7 @@ export async function sendHeartbeat(
         tableId,
         ...(opts?.turnRendered ? { turnRendered: true } : {}),
         ...(opts?.rebuyPromptOpen ? { rebuyPromptOpen: true } : {}),
+        ...(typeof opts?.autoTimeBank === 'boolean' ? { autoTimeBank: opts.autoTimeBank } : {}),
       }),
     });
     if (response.status === 404) {

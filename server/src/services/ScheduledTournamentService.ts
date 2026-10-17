@@ -61,6 +61,7 @@ import {
   fixedFreeBuyRow,
   recurringMttRow,
   MTT_PUBLISH_LEAD_MS,
+  satelliteSourceIsSupported,
   satelliteTargetIsDeliverable,
   type SatelliteTargetRow,
 } from './TournamentRecurringService.js';
@@ -72,6 +73,11 @@ import {
 } from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
 import { localDateIn, zonedStartUtc } from './scheduleWallClock.js';
+import {
+  FIXED_BOARD_RESYNC_MS,
+  planFixedBoardSync,
+  type ExistingFixedBoardRow,
+} from '../config/fixedBoard.js';
 import {
   HEADS_UP_BLIND_STRUCTURE,
   HEADS_UP_PAYOUTS,
@@ -327,6 +333,90 @@ export function timedSpawnsDue(
     }
   }
   return due;
+}
+
+/**
+ * A schedule's pending time change (2026-10-16): the times it ran at before
+ * (`previousStartTimes`, 'HH:MM' on the schedule's own calendar) and the
+ * first calendar date the new start_times_utc may take (`startTimesEffectiveFrom`,
+ * 'YYYY-MM-DD'). Null when the config carries none or carries it malformed.
+ */
+export interface ScheduleTimeChange {
+  previous: string[];
+  from: string;
+  /**
+   * The timetable before `previous` (`retiredStartTimes`, 2026-10-16): a date
+   * that already has an occurrence at one of these was planned under that
+   * older timetable and takes nothing more. Absent when the schedule has
+   * moved only once.
+   */
+  retired?: string[];
+}
+
+const HH_MM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+
+export function scheduleTimeChange(
+  cfg: Record<string, unknown>,
+  currentTimes: readonly string[] = []
+): ScheduleTimeChange | null {
+  const prev = cfg.previousStartTimes;
+  const from = cfg.startTimesEffectiveFrom;
+  // An EMPTY previous list is a schedule that did not exist before `from`
+  // (2026-10-16): a new event that must not start on dates already planned
+  // under the old timetable. Absent, by contrast, means no change at all.
+  if (!Array.isArray(prev) || typeof from !== 'string') return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return null;
+  const previous = prev.map(String).filter((t) => HH_MM.test(t));
+  if (previous.length !== prev.length) return null;
+  const rawRetired = cfg.retiredStartTimes;
+  if (rawRetired === undefined) return { previous, from };
+  if (!Array.isArray(rawRetired)) return null;
+  const retiredAll = rawRetired.map(String);
+  if (!retiredAll.every((t) => HH_MM.test(t))) return null;
+  // A retired time that is also a current one says nothing about which
+  // timetable a date was planned under, so it never freezes a date.
+  const current = new Set([...previous, ...currentTimes.map(String)]);
+  const retired = retiredAll.filter((t) => !current.has(t));
+  return retired.length > 0 ? { previous, from, retired } : { previous, from };
+}
+
+/**
+ * Every old-time spawn key on each calendar date the look-ahead touches, the
+ * whole date and not just its due part, so a date whose earlier old-time
+ * occurrence already ran still reads as "on the old times".
+ */
+export function previousDayKeys(
+  scheduleId: string,
+  change: ScheduleTimeChange,
+  due: readonly SpawnDue[]
+): string[] {
+  const dates = [...new Set(due.map((d) => d.localDate))];
+  const times = [...change.previous, ...(change.retired ?? [])];
+  return dates.flatMap((date) => times.map((tm) => `${scheduleId}:${date}:${tm}`));
+}
+
+/**
+ * PURE. Which occurrences to spawn across a time change: a date before
+ * `from`, or a date with any old-time occurrence already claimed, keeps the
+ * old times; every other date takes the new ones. One date is never on both,
+ * and a date that already ran on the retired timetable takes neither.
+ */
+export function resolveTimeChange(
+  dueNew: readonly SpawnDue[],
+  duePrev: readonly SpawnDue[],
+  change: ScheduleTimeChange,
+  claimed: ReadonlySet<string>,
+  scheduleId: string
+): SpawnDue[] {
+  const onOld = (date: string) =>
+    date < change.from || change.previous.some((tm) => claimed.has(`${scheduleId}:${date}:${tm}`));
+  // A date that already ran on the retired timetable is finished planning.
+  const onRetired = (date: string) =>
+    (change.retired ?? []).some((tm) => claimed.has(`${scheduleId}:${date}:${tm}`));
+  return [
+    ...duePrev.filter((d) => !onRetired(d.localDate) && onOld(d.localDate)),
+    ...dueNew.filter((d) => !onRetired(d.localDate) && !onOld(d.localDate)),
+  ].sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
 }
 
 /** timedSpawnsDue for a schedule whose days and times are in `zone`. */
@@ -590,6 +680,13 @@ export function fixedBoardRow(
 
 export class ScheduledTournamentService {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * When this process last confirmed tournament_schedules holds the
+   * hard-coded board (syncFixedBoard). 0 = never: the first poll writes it,
+   * and every FIXED_BOARD_RESYNC_MS after that it is written again, so a row
+   * edited or switched off after boot cannot stay wrong until the next release.
+   */
+  private fixedBoardSyncedAt = 0;
   private isRunning = false;
   /** Re-entrancy guard: a slow poll must never overlap the next tick. */
   private polling = false;
@@ -756,6 +853,24 @@ export class ScheduledTournamentService {
     this.fundingBankReads = new Map();
     this.retiredScheduleIds = new Set();
     try {
+      // THE FIXED BOARD IS HARD CODED (config/fixedBoard.ts). Written by this
+      // binary before it reads a schedule, so the board it runs is the board
+      // it was built with. Until the write lands, it is retried every poll;
+      // after that it is re-asserted every FIXED_BOARD_RESYNC_MS.
+      if (Date.now() - this.fixedBoardSyncedAt >= FIXED_BOARD_RESYNC_MS) {
+        try {
+          if (await this.syncFixedBoard()) this.fixedBoardSyncedAt = Date.now();
+        } catch (err: unknown) {
+          // A failed write never costs the rest of the poll its schedules.
+          reportError(
+            new Error(
+              `[ScheduledTournaments] fixed board sync failed: ${(err as Error)?.message ?? err}`
+            ),
+            'ScheduledTournaments.fixed_board_sync_failed'
+          );
+        }
+        if (!this.lifecycleIsCurrent(generation)) return;
+      }
       const { data: schedules, error } = await supabase
         .from('tournament_schedules')
         .select('*')
@@ -806,6 +921,57 @@ export class ScheduledTournamentService {
     }
   }
 
+  /**
+   * Make tournament_schedules hold exactly the hard-coded board in
+   * config/fixedBoard.ts (planFixedBoardSync). True when the table matches,
+   * false when a read or write failed (retried on the next poll).
+   */
+  private async syncFixedBoard(): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('tournament_schedules')
+      .select('id, club_id, active, days_of_week, start_times_utc, time_zone, config')
+      .not('config->>fixedBoard', 'is', null);
+    if (error) {
+      reportError(
+        new Error(`[ScheduledTournaments] fixed board read failed: ${error.message}`),
+        'ScheduledTournaments.fixed_board_read_failed'
+      );
+      return false;
+    }
+    const plan = planFixedBoardSync((data ?? []) as ExistingFixedBoardRow[]);
+    let ok = true;
+    for (const id of plan.deactivate) {
+      const { error: e } = await supabase
+        .from('tournament_schedules')
+        .update({ active: false })
+        .eq('id', id);
+      if (e) ok = false;
+    }
+    for (const { id, row } of plan.updates) {
+      const { error: e } = await supabase.from('tournament_schedules').update(row).eq('id', id);
+      if (e) ok = false;
+    }
+    if (plan.inserts.length > 0) {
+      const { error: e } = await supabase.from('tournament_schedules').insert(plan.inserts);
+      if (e) ok = false;
+    }
+    if (!ok) {
+      reportError(
+        new Error('[ScheduledTournaments] fixed board write failed - retried next poll'),
+        'ScheduledTournaments.fixed_board_write_failed'
+      );
+      return false;
+    }
+    const changed = plan.inserts.length + plan.updates.length + plan.deactivate.length;
+    if (changed > 0) {
+      console.log(
+        `[ScheduledTournaments] Fixed board written: ${plan.inserts.length} added, ` +
+          `${plan.updates.length} updated, ${plan.deactivate.length} retired`
+      );
+    }
+    return true;
+  }
+
   private async processSchedule(schedule: TournamentScheduleRow): Promise<void> {
     const cfg = this.parseConfig(schedule);
     if (!cfg) return; // unparseable config — reported inside, fail closed
@@ -834,10 +1000,28 @@ export class ScheduledTournamentService {
     const monthlyDay = Math.min(31, Math.max(1, Number(cfg.recurrenceDayOfMonth) || 1));
     // The day of month is read on the schedule's own calendar (UTC for a
     // NULL zone, so unchanged there).
-    const due = timedSpawnsDue(schedule, new Date(), spawnAheadMsFor(cfg)).filter((spawn) =>
-      cadence === 'monthly' ? Number(spawn.localDate.slice(8, 10)) === monthlyDay : true
-    );
-    if (due.length === 0) return;
+    const now = new Date();
+    const aheadMs = spawnAheadMsFor(cfg);
+    const onCadence = (spawn: SpawnDue) =>
+      cadence === 'monthly' ? Number(spawn.localDate.slice(8, 10)) === monthlyDay : true;
+    const dueNew = timedSpawnsDue(schedule, now, aheadMs).filter(onCadence);
+
+    /* A SCHEDULE'S TIMES CAN MOVE WITHOUT A DAY OF DOUBLES (2026-10-16).
+       Occurrences are spawned up to days ahead, keyed on their start time. A
+       row whose times change would otherwise spawn the NEW times beside the
+       old occurrences already on the board for every date in the
+       look-ahead. A row carrying a time change keeps each date on the old
+       times when it is before the change or already has an old-time
+       occurrence, and moves a date only when nothing of it exists yet. */
+    const change = scheduleTimeChange(cfg, schedule.start_times_utc ?? []);
+    const duePrev = change
+      ? timedSpawnsDue({ ...schedule, start_times_utc: change.previous }, now, aheadMs).filter(
+          onCadence
+        )
+      : [];
+    const prevDayKeys = change ? previousDayKeys(schedule.id, change, [...dueNew, ...duePrev]) : [];
+    const candidates = [...dueNew, ...duePrev];
+    if (candidates.length === 0) return;
 
     // 2026-08-31: pre-filter instances whose spawn key is already claimed.
     // The INSERT + UNIQUE(spawn_key) in claimSpawn remains the atomic claim —
@@ -853,13 +1037,16 @@ export class ScheduledTournamentService {
     const { data: claimedRows, error: claimedErr } = await supabase
       .from('tournament_schedule_spawns')
       .select('spawn_key')
-      .in(
-        'spawn_key',
-        due.map((d) => d.spawnKey)
-      );
+      .in('spawn_key', [...new Set([...candidates.map((d) => d.spawnKey), ...prevDayKeys])]);
     if (!claimedErr && Array.isArray(claimedRows)) {
       claimedSet = new Set(claimedRows.map((r: { spawn_key: string }) => r.spawn_key));
     }
+    // A time change cannot be resolved without knowing what exists: an
+    // unreadable answer waits for the next poll rather than guess and double.
+    if (change && !claimedSet) return;
+    const due = change
+      ? resolveTimeChange(dueNew, duePrev, change, claimedSet!, schedule.id)
+      : dueNew;
 
     for (const spawn of due) {
       if (this.retiredScheduleIds.has(schedule.id)) return; // deleted mid-pass
@@ -950,7 +1137,8 @@ export class ScheduledTournamentService {
       await this.pageMissedOccurrence(
         schedule,
         startTime,
-        'its configuration was refused before creation (the ScheduledTournaments error log names the rule)'
+        this.takeRefusalReason(schedule.id, startTime) ??
+          'its configuration was refused before creation (the ScheduledTournaments error log names the rule)'
       );
       return;
     }
@@ -1225,6 +1413,23 @@ export class ScheduledTournamentService {
    * yet. Keyed per occurrence, so concurrent spawns cannot read each other's.
    */
   private readonly waitingForSatelliteTarget = new Set<string>();
+
+  /**
+   * The specific reason buildInsertRow refused an occurrence, when it knows
+   * one better than the generic "configuration refused" (keyed per
+   * occurrence). Read once by spawnInstance's page, then forgotten.
+   */
+  private readonly refusalReasons = new Map<string, string>();
+
+  /** (schedule, cancelled target) pairs already written to the error log. */
+  private readonly reportedCancelledTargets = new Set<string>();
+
+  private takeRefusalReason(scheduleId: string, startTime: Date): string | undefined {
+    const key = occurrenceKey(scheduleId, startTime);
+    const reason = this.refusalReasons.get(key);
+    this.refusalReasons.delete(key);
+    return reason;
+  }
 
   /** Housekeeping only: it never throws, so it can never cost a spawn. */
   private async clearMissedOccurrencePage(scheduleId: string): Promise<void> {
@@ -1715,6 +1920,34 @@ export class ScheduledTournamentService {
           ? await this.resolveSatelliteTarget(schedule, targetName, targetId, startTime)
           : null;
       if (!target) {
+        /* A CANCELLED TARGET IS NOT A TARGET THAT HAS NOT ARRIVED YET
+           (2026-10-16 audit). Staff cancelled the Midway Union's Sunday 200
+           Deep Stack for 2026-10-18 on 2026-10-13; its schedule had already
+           spawned that date, so nothing replaced it, and all three of its
+           daily satellites waited - silently, by the rule below - for three
+           days. Waiting is right when the target simply has not been
+           published yet. When the very event a feeder would award seats in
+           was cancelled, the feeder will not run until somebody acts, and
+           that is a scheduled event that will not exist: it pages, naming
+           the cancelled target, inside the usual one-hour window. */
+        const cancelled = targetName
+          ? await this.cancelledSatelliteTarget(schedule, targetName, startTime)
+          : null;
+        if (cancelled) {
+          const reason =
+            `its target "${cancelled.name}" at ${cancelled.start_time} was cancelled and no ` +
+            `replacement is on the board, so this satellite has no seat to award`;
+          const logKey = `${schedule.id}:${cancelled.id}`;
+          if (!this.reportedCancelledTargets.has(logKey)) {
+            this.reportedCancelledTargets.add(logKey);
+            reportError(
+              new Error(`[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: ${reason}`),
+              'ScheduledTournaments.satellite_target_cancelled'
+            );
+          }
+          this.refusalReasons.set(occurrenceKey(schedule.id, startTime), reason);
+          return null;
+        }
         console.log(
           `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: no pre-start satellite target matching "${targetName}" - skipping this spawn`
         );
@@ -1925,16 +2158,50 @@ export class ScheduledTournamentService {
       ? query.eq('union_id', schedule.union_id)
       : query.eq('club_id', schedule.club_id);
     const { data, error } = await query.maybeSingle();
+    if (error || !data) return null;
+    // A union event is never a Diamond event; a club schedule's target is in
+    // the schedule's own club. Read only for a bounty target, which is the one
+    // the Diamond Arena refuses (null on an unread club refuses it too).
+    const bountyTarget = Boolean(data.is_bounty || data.is_pko || data.is_mystery_bounty);
+    const diamondHost =
+      bountyTarget && !schedule.union_id ? await this.scheduleIsDiamondArena(schedule) : false;
     if (
-      error ||
-      !data ||
       !isPersistedUnlimitedMtt(data) ||
       data.satellite_target_id ||
       data.satellite_target ||
-      !satelliteTargetIsDeliverable(data as SatelliteTargetRow)
+      !satelliteTargetIsDeliverable({ ...(data as SatelliteTargetRow), diamond_host: diamondHost })
     )
       return null;
     return data.id as string;
+  }
+
+  /**
+   * The nearest CANCELLED event after the feeder's start that the feeder
+   * would otherwise have targeted (same name prefix, same club or union).
+   * Only asked once resolveSatelliteTarget found no live target, so a hit
+   * means the very next target was cancelled and nothing replaced it. Null
+   * when there is none, or when the read failed (a failed read keeps the
+   * old, quiet wait rather than paging on a guess).
+   */
+  private async cancelledSatelliteTarget(
+    schedule: TournamentScheduleRow,
+    namePrefix: string,
+    feederStartTime: Date
+  ): Promise<{ id: string; name: string; start_time: string } | null> {
+    let query = supabase
+      .from('tournaments')
+      .select('id, name, start_time')
+      .in('status', ['CANCELLED', 'CANCELED'])
+      .gt('start_time', new Date(Math.max(Date.now(), feederStartTime.getTime())).toISOString())
+      .ilike('name', `${namePrefix.replace(/[%_]/g, '')}%`)
+      .order('start_time', { ascending: true })
+      .limit(1);
+    query = schedule.union_id
+      ? query.eq('union_id', schedule.union_id)
+      : query.eq('club_id', schedule.club_id);
+    const { data, error } = await query.maybeSingle();
+    if (error || !data) return null;
+    return data as { id: string; name: string; start_time: string };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2126,7 +2393,9 @@ export class ScheduledTournamentService {
     }
     const targetId = row.satellite_target_id ?? row.satellite_target;
     if (targetId) {
-      if (!satelliteTargetIsDeliverable(old as unknown as SatelliteTargetRow)) return;
+      // The restarted row is the SATELLITE: a satellite is never itself a
+      // bounty or Spin event, whatever its target is (2026-10-16).
+      if (!satelliteSourceIsSupported(old as unknown as SatelliteTargetRow)) return;
       const target = await this.resolveSatelliteTarget(
         {
           id: String(old.id),

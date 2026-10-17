@@ -25,7 +25,7 @@ import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { preloadRoute } from '../../utils/ChunkPreloader';
-import { compactChips } from '../../utils/format';
+import { formatWalletChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
 import type { LobbyTile } from '../../config/lobbyTiles.config';
 import {
@@ -516,7 +516,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
                           )}
                           {!isUnionEntity(club) && visibleBalances?.has(club.id) && (
                             <span className={styles.cashierSwitchItemBalance}>
-                              {compactChips(visibleBalances.get(club.id))} Chips
+                              {formatWalletChips(visibleBalances.get(club.id))} Chips
                             </span>
                           )}
                           {!isUnionEntity(club) && !balancesLoading && balancesError && (

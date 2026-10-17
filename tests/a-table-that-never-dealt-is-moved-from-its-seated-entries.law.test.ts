@@ -253,6 +253,7 @@ describe('a table that never dealt is moved from its seated entries', () => {
       LATE_ENTRY,
       BUSTED_ENTRY,
       '20261007031952_a_never_dealt_rebuy_keeps_its_original_paid_chair.sql',
+      '20261016183932_a_mid_hand_add_on_rebase_is_movement_evidence.sql',
     ]);
     expect(readFileSync(join(MIGRATIONS, ADD_ON), 'utf8')).toContain(
       `md5(p.prosrc) = '${ASSERT_POST}'`

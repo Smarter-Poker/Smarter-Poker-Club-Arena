@@ -62,7 +62,7 @@ import {
   multiplierLabel,
   oneInRangeLabel,
 } from '../utils/diamondGamesFairness';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips, formatWalletDiamonds } from '../utils/format';
 import FloorFeed, { BiggestWins } from '../components/games/FloorFeed';
 import { useGameFloor } from '../hooks/useGameFloor';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -83,18 +83,15 @@ const multiplierCopy = (cents: number) => `${(cents / 100).toFixed(2)}x`;
  * street certain at 0.80x, where it used to be 1.10x. */
 const ROAD = roadLadder(CHOICE_MODE.crossing, CHOICE_PAYOUT_VERSION) as readonly number[];
 /**
- * THE TWO LIVE BOARDS, NAMED BY THE RULE THAT CHOOSES THEM. Nobody picks a
- * board: the stake's FLOOR does, through fn_plinko_table_for_floor, which takes
- * the open board whose lowest slot still carries that floor. A half-the-stake
- * floor is carried by Super (4); the two thirds a Super award with the Double
- * Diamonds add-on paid needs Super Double (6). Derived from the same two
- * functions the server runs, so this lobby cannot describe a board a player
- * will never be dealt - which is what it did while it named the boost's old
- * table and sent every ordinary player to the Diamond board, closed since
- * 2026-09-21.
+ * THE LIVE BOARD, NAMED BY THE RULE THAT CHOOSES IT. Nobody picks a board: the
+ * stake's FLOOR does, through fn_plinko_table_for_floor, which takes the open
+ * board whose lowest slot still carries that floor. A half-the-stake floor is
+ * carried by Super (4). Super Double (6) was dealt only to a Super award that
+ * took the Double Diamonds add-on, which is retired (Dan 2026-10-16), so the
+ * lobby no longer describes it. Derived from the same two functions the server
+ * runs, so this lobby cannot describe a board a player will never be dealt.
  */
 const ORDINARY_TABLE = PLINKO_TABLES[plinkoTableForFloor(1, diamondBonusFloor(1, 1, 100, 100))!];
-const SUPER_TABLE = PLINKO_TABLES[plinkoTableForFloor(0.75, diamondBonusFloor(0.75, 2, 50, 100))!];
 const TABLE_SLOTS = ORDINARY_TABLE.multipliersCents;
 /** Seventeen slots need sixteen rows of pegs above them, so the board says both. */
 const TABLE_ROWS = TABLE_SLOTS.length - 1;
@@ -321,18 +318,18 @@ export default function DiamondGamesPage() {
         aria-labelledby="diamond-games-title"
       >
         <div className={styles.rows}>
-          <Row label="Your Diamonds" value={compactChips(diamonds)} ink="blue" />
+          <Row label="Your Diamonds" value={formatWalletDiamonds(diamonds)} ink="blue" />
           {purchasedOnly ? (
             <Row
               label="Ready To Play"
-              value={compactChips(spendable)}
+              value={formatWalletDiamonds(spendable)}
               ink="white"
               meta="Purchased Diamonds Only"
             />
           ) : null}
           <Row
             label="Club Chips"
-            value={memberChips === null ? 'Join To Play' : compactChips(memberChips)}
+            value={memberChips === null ? 'Join To Play' : formatWalletChips(memberChips)}
             ink="silver"
           />
         </div>
@@ -429,9 +426,7 @@ export default function DiamondGamesPage() {
             Board, {TABLE_ROWS} Rows Of Pegs Above {TABLE_SLOTS.length} Slots, And The Ball Goes
             Left Or Right At Every Peg With Equal Odds. Every Slot Pays Something, From{' '}
             {multiplierCopy(Math.min(...TABLE_SLOTS))} In The Middle Up To{' '}
-            {multiplierCopy(Math.max(...TABLE_SLOTS))} Per Drop On The Outer Slots. A Super Award
-            With Double Diamonds Plays The {SUPER_TABLE.name} Board, Where The Middle Slot Pays{' '}
-            {multiplierCopy(Math.min(...SUPER_TABLE.multipliersCents))}. {GUARANTEE_COPY}
+            {multiplierCopy(Math.max(...TABLE_SLOTS))} Per Drop On The Outer Slots. {GUARANTEE_COPY}
           </p>
         ) : null}
       </SpadeConsole>

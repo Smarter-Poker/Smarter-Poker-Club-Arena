@@ -14,7 +14,7 @@ import ClubRosterService, {
   type RosterMember,
 } from '../../src/services/ClubRosterService';
 import MemberWinLossCard from '../../src/components/club/MemberWinLossCard';
-import { useRosterWinLoss } from '../../src/hooks/useRosterWinLoss';
+import { useRosterWinLoss, WIN_LOSS_TTL_MS } from '../../src/hooks/useRosterWinLoss';
 import { winLossChips } from '../../src/utils/format';
 
 const ROOT = resolve(__dirname, '../..');
@@ -130,6 +130,46 @@ describe('Players list: win / loss per row', () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
+  it('asks the whole window again once it is older than the TTL', async () => {
+    let calls = 0;
+    const spy = vi
+      .spyOn(ClubRosterService, 'getMembersWinLoss')
+      .mockImplementation(async (_club, ids) => {
+        calls += 1;
+        return new Map(ids.map((id) => [id, figure(calls * 10, 0)]));
+      });
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const first = [member('a')];
+    const { result, rerender } = renderHook(
+      ({ members }) => useRosterWinLoss('club-1', members, 'overall', true),
+      { initialProps: { members: first } }
+    );
+    await waitFor(() => expect(result.current.get('a')?.net).toBe(10));
+
+    // Within the TTL a roster refresh asks only for new rows.
+    rerender({ members: [member('a'), member('b')] });
+    await waitFor(() => expect(result.current.get('b')?.net).toBe(20));
+    expect(spy.mock.calls[1][1]).toEqual(['b']);
+
+    // Past it, the next change re-asks everyone; old figures stay meanwhile.
+    now.mockReturnValue(1_000_000 + WIN_LOSS_TTL_MS + 1);
+    rerender({ members: [member('a'), member('b')] });
+    expect(result.current.get('a')?.net).toBe(10);
+    await waitFor(() => expect(result.current.get('a')?.net).toBe(30));
+    expect(spy.mock.calls[2][1]).toEqual(['a', 'b']);
+  });
+
+  it('offers the window to an agent who sees only their downline', () => {
+    const page = read('src/pages/ClubMembersPage.tsx');
+    expect(page).toContain(
+      'const showWinLoss = canUseFinancialViews || members.some((m) => m.can_view_financials);'
+    );
+    expect(page).toContain('useRosterWinLoss(resolvedClubId, members, winLossPeriod, showWinLoss)');
+    expect(page).toMatch(
+      /\{showWinLoss && \(\s*<label className="members-sort members-winloss-period">/
+    );
+  });
+
   it('asks for nothing when the viewer has no financial view of the roster', () => {
     const spy = vi.spyOn(ClubRosterService, 'getMembersWinLoss');
     renderHook(() => useRosterWinLoss('club-1', [member('a')], 'overall', false));
@@ -139,9 +179,7 @@ describe('Players list: win / loss per row', () => {
   it('puts the window selector and the figure on the Players page', () => {
     const page = read('src/pages/ClubMembersPage.tsx');
     expect(page).toContain('aria-label="Win And Loss Period"');
-    expect(page).toContain(
-      'useRosterWinLoss(resolvedClubId, members, winLossPeriod, canUseFinancialViews)'
-    );
+
     expect(page).toContain('winLoss={winLoss.get(member.user_id)}');
   });
 });

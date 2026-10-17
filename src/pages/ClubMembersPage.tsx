@@ -1073,7 +1073,11 @@ export default function ClubMembersPage() {
 
   const canUseFinancialViews = summary.capabilities.can_view_financials;
   // Win / loss for the loaded rows, in the chosen window (Dan 2026-10-16).
-  const winLoss = useRosterWinLoss(resolvedClubId, members, winLossPeriod, canUseFinancialViews);
+  // An agent may see only their own downline's figures, so the window is
+  // offered whenever any loaded row is financially visible, not only to
+  // viewers with the club-wide financial view.
+  const showWinLoss = canUseFinancialViews || members.some((m) => m.can_view_financials);
+  const winLoss = useRosterWinLoss(resolvedClubId, members, winLossPeriod, showWinLoss);
   const isAgent = AGENT_ROLES.includes(summary.viewer_role);
   const filters = useMemo(
     () =>
@@ -1470,7 +1474,7 @@ export default function ClubMembersPage() {
               Group By Role
             </button>
           )}
-          {canUseFinancialViews && (
+          {showWinLoss && (
             <label className="members-sort members-winloss-period">
               <span className="members-sort__label">Win / Loss</span>
               <select

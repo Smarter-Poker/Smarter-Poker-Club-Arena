@@ -6,6 +6,7 @@ import {
   type CashoutStart,
 } from '../../services/CashoutOperation';
 import { CashoutRefusedError } from '../../services/CashoutService';
+import { exactChipFigure } from '../../utils/cashierAmount';
 
 /**
  * A DEFINITIVE REFUSAL HAS NO RECEIPT TO CHECK (cashier screens, 2026-10-11).
@@ -106,7 +107,7 @@ export function CashoutReceiptChecks({
       {checks.cards.map((card) => (
         <div key={card.key} role="status">
           <strong>
-            {card.action}: {card.amount.toLocaleString()} Chips
+            {card.action}: {exactChipFigure(card.amount)} Chips
           </strong>
           <p>{card.message}</p>
           <button type="button" disabled={card.busy} onClick={() => void checks.check(card.key)}>

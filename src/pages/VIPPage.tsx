@@ -32,6 +32,7 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { formatPopupText } from '../utils/popupStyle';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const FEATURE_ACRONYMS: Record<string, string> = {
   ai: 'AI',
@@ -49,6 +50,7 @@ const formatFeatureName = (feature: string) =>
     .join(' ');
 
 export default function VIPPage() {
+  usePageTitle('VIP');
   const { user } = useAuthUser();
   const toast = useToast();
 

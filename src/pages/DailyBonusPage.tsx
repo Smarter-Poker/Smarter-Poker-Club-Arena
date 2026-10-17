@@ -12,8 +12,10 @@ import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import DailyBonusSheet from '../components/daily-bonus/DailyBonusSheet';
 import './DailyBonusPage.css';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export default function DailyBonusPage() {
+  usePageTitle('Bonuses');
   const accountId = useUserStore((state) => state.user?.id ?? null);
   return (
     <StandardContentLayout className="daily-bonus-page">

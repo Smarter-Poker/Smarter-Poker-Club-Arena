@@ -1080,7 +1080,7 @@ export default function ClubDashboard() {
             },
             {
               title: 'Time Range',
-              body: 'Choose Today, This Week, This Month Or All Time For Top Players, Players, Revenue And Tournaments.',
+              body: 'Choose Today, This Week, This Month Or All Time For Top Players, Players, Revenue And Tournaments. The Metric Cards Always Read Today And This Week.',
               target: `.${styles.filterBar}`,
             },
           ]}
@@ -1168,13 +1168,10 @@ export default function ClubDashboard() {
             </button>
           ))}
         </div>
-        {/* The filter sat above six metric cards it does not drive. Say
-            what it reaches, so "Today" over "Hands This Week" is not read
-            as a bug. */}
-        <span className={styles.filterScope}>
-          Applies To Top Players, Players, Revenue And Tournaments. The Metric Cards Always Read
-          Today And This Week.
-        </span>
+        {/* The filter does not drive the six metric cards above it; the "?"
+            (Time Range step) says what it reaches, so "Today" over "Hands
+            This Week" is not read as a bug (Dan 2026-10-17: no descriptions
+            on the page). */}
       </div>
 
       {/* Tab Navigation — real tablist semantics so screen readers announce

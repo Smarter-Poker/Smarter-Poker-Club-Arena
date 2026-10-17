@@ -94,13 +94,7 @@
   color: #9aa5b3;
   font-size: 14px;
 }
-.filterScope {
-  flex-basis: 100%;
-  color: #9aa5b3;
-  font-size: 13px;
-  line-height: 1.5;
-  max-width: 720px;
-}
+
 .filterButtons {
   display: flex;
   flex-wrap: wrap;

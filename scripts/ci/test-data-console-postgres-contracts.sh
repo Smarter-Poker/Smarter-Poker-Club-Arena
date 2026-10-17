@@ -33,3 +33,11 @@ PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   CLUB_OPERATIONS_PG_SCRATCH_PARENT="${CLUB_OPERATIONS_PG_SCRATCH_PARENT:-$DATA_CONSOLE_PG_SCRATCH_PARENT}" \
   python3 -B "$repo/scripts/ci/test-club-operations-overview-postgres.py"
 echo 'DATA_CONSOLE_POSTGRES PASS Club Operations'
+
+# Club Data counts what the club played (20261017160125): facts filed under the
+# club the money moved through, scoped owner / agent downline / refused.
+echo 'DATA_CONSOLE_POSTGRES RUN Club Data facts'
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
+  TMPDIR="${DATA_CONSOLE_PG_SCRATCH_PARENT:-${TMPDIR:-/tmp}}" \
+  python3 -B "$repo/scripts/ci/test-club-data-fact-db-postgres.py"
+echo 'DATA_CONSOLE_POSTGRES PASS Club Data facts'

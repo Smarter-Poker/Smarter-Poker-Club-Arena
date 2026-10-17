@@ -6,8 +6,11 @@ import { clubIdFromPath } from '../../src/components/club/clubIdFromPath';
 import { activeTabForPath } from '../../src/components/club/clubBottomNavTabs';
 import { STORAGE_KEYS } from '../../src/lib/storage';
 import { writeCachedQuickLinkClubs } from '../../src/utils/clubQuickLink';
+import { clearClubDataScopeCache } from '../../src/hooks/useClubDataScope';
 
 const authState = vi.hoisted(() => ({ userId: 'user-1' }));
+/** fn_ca_club_data_scope's answer: 'club' (owner/admin), 'downline' (agent), null (player). */
+const scopeState = vi.hoisted(() => ({ scope: 'club' as string | null, calls: 0 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: authState.userId }, loading: false }),
 }));
@@ -35,6 +38,12 @@ vi.mock('../../src/contexts/ClubWorkspaceContext', () => ({
  */
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
+    rpc: async (fn: string) => {
+      if (fn !== 'fn_ca_club_data_scope')
+        return { data: null, error: { message: 'unexpected rpc' } };
+      scopeState.calls += 1;
+      return { data: scopeState.scope, error: null };
+    },
     from: () => ({
       select: () => {
         const chain: any = {
@@ -65,7 +74,10 @@ async function renderAt(path: string, clubId?: string) {
       <ClubBottomNav clubId={clubId} />
     </MemoryRouter>
   );
-  await act(async () => Promise.resolve());
+  // The scope read is a promise chain; let it settle inside act.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
   return view;
 }
 
@@ -102,7 +114,11 @@ describe('clubIdFromPath', () => {
 describe('ClubBottomNav approved footer contract', () => {
   beforeEach(() => {
     authState.userId = 'user-1';
+    scopeState.scope = 'club';
+    scopeState.calls = 0;
     localStorage.clear();
+    sessionStorage.clear();
+    clearClubDataScopeCache();
   });
 
   it('always exposes exactly the six approved controls in approved order', async () => {
@@ -182,10 +198,12 @@ describe('ClubBottomNav approved footer contract', () => {
     expect(hrefs().some((href) => href?.includes(CLUB))).toBe(false);
   });
 
+  /* UPDATED 2026-10-17: with no club there is no club whose data to open,
+     and nobody to ask whether this account may (useClubDataScope). */
   it('uses real top-level fallbacks when no club can be resolved', async () => {
     await renderAt('/stats');
 
-    expect(hrefs()).toEqual(['/clubs', '/players', '/cashier', '/marketplace', '/data', '/stats']);
+    expect(hrefs()).toEqual(['/clubs', '/players', '/cashier', '/marketplace', '/stats']);
     expect(hrefs().some((href) => href?.includes('/clubs//'))).toBe(false);
   });
 
@@ -198,6 +216,46 @@ describe('ClubBottomNav approved footer contract', () => {
     expect(artwork).toHaveAttribute('src', '/images/club-footer/club-arena-footer-v3.webp');
     expect(artwork).toHaveAttribute('width', '1916');
     expect(artwork).toHaveAttribute('height', '256');
+  });
+
+  /**
+   * REGULAR PLAYERS DO NOT SEE THE DATA BUTTON (Dan 2026-10-17): "CLUB OWNERS
+   * SEE EVERYTHING, AGENTS SEE THERE GENERATED STATS + DOWNLINES, REGULAR
+   * PLAYER ACCOUNTS DONT SEE THE DATA BUTTON OR PAGES."
+   */
+  describe('the Data door is for the owner, admins and agents', () => {
+    it('a player gets five doors on the member art, and no Data', async () => {
+      scopeState.scope = null;
+      await renderAt(`/clubs/${CLUB}/members`, CLUB);
+
+      expect(labels()).toEqual(['Diamond Spins', 'Players', 'Cashier', 'Market', 'Stats']);
+      expect(hrefs().some((href) => href?.endsWith('/data'))).toBe(false);
+      const art = screen
+        .getAllByRole('presentation')
+        .find((img) => img.getAttribute('src')?.includes('club-arena-footer'));
+      expect(art).toHaveAttribute('src', '/images/club-footer/club-arena-footer-player-v1.webp');
+      expect(document.querySelector('[data-footer-doors]')).toHaveAttribute(
+        'data-footer-doors',
+        'member'
+      );
+    });
+
+    it('an agent keeps the Data door (their own and their downline)', async () => {
+      scopeState.scope = 'downline';
+      await renderAt(`/clubs/${CLUB}/members`, CLUB);
+
+      expect(labels()).toEqual(LABELS);
+      expect(hrefs()).toContain(`/clubs/${CLUB}/data`);
+    });
+
+    it('asks once per account and club, then remembers', async () => {
+      const first = await renderAt(`/clubs/${CLUB}/members`, CLUB);
+      first.unmount();
+      await renderAt(`/clubs/${CLUB}/cashier`, CLUB);
+
+      expect(scopeState.calls).toBe(1);
+      expect(labels()).toEqual(LABELS);
+    });
   });
 
   /**

@@ -385,9 +385,14 @@ describe('the certificate spec wires these classifiers without a retry-to-green'
     expect(tournament).toContain('boardReader.accountClosedBoard(selected.boardFacts, atFailure)');
   });
 
-  it('re-selects only on proven completion or pre-HUD qualification attrition, inside one deadline', () => {
+  it('re-selects only on proven completion, pre-HUD qualification attrition or a proven add-on break hold, inside one deadline', () => {
     expect(tournament).toMatch(
-      /if \(\s*!\(error instanceof NaturalCompletionDuringObservation\) &&\s*!\(error instanceof PreHudCandidateAttrition\)\s*\)\s*throw error;/
+      /if \(\s*!\(error instanceof NaturalCompletionDuringObservation\) &&\s*!\(error instanceof PreHudCandidateAttrition\) &&\s*!\(error instanceof AuthoritativeHoldDuringObservation\)\s*\)\s*throw error;/
+    );
+    // A hold is thrown only from the persisted-window classifier's proof.
+    expect(tournament.match(/new AuthoritativeHoldDuringObservation\(/g)).toHaveLength(1);
+    expect(tournament).toMatch(
+      /if \(addOnBreakHold\?\.held\) \{\s*throw new AuthoritativeHoldDuringObservation\(/
     );
     expect(tournament).toContain(
       'provenPreHudAttrition(selected.boardFacts, qualification, Date.now())'

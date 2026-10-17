@@ -56,7 +56,11 @@ it('always resolves platform ads even if legacy club flags and creative props ar
   await screen.findByAltText('Smarter Promotion');
   expect(mocks.resolve).toHaveBeenCalledWith('lobby_strip', 'club', 6);
   expect(screen.queryByAltText('Owner Replacement')).toBeNull();
-  expect(mocks.impression).toHaveBeenCalledWith({ adId: 'house' }, 'lobby_strip', 'club');
+  // The impression is a passive effect after the image commits; under a loaded
+  // CI shard it can flush after findByAltText resolves (PR #7266 shard 4).
+  await waitFor(() =>
+    expect(mocks.impression).toHaveBeenCalledWith({ adId: 'house' }, 'lobby_strip', 'club')
+  );
 });
 it('renders only resolver-selected same-origin images and keeps paid impression/click/dismiss semantics', async () => {
   mocks.resolve.mockResolvedValue([

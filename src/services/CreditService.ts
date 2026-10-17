@@ -31,6 +31,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
 
 // AUDIT M17: fn_pay_credit_invoice_from_wallet returns a `reason` for ordinary
@@ -608,6 +609,8 @@ export const CreditService = {
         }),
       3
     );
+    // Maintenance break refusal is definitive (2026-10-16).
+    if (isPlatformFrozenError(error)) throw new Error(PLATFORM_FROZEN_MESSAGE);
     if (error) {
       reportError(error, 'CreditService.processPayment', { invoiceId, operationId });
       throw new Error(

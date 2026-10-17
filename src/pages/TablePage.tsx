@@ -10219,7 +10219,12 @@ function LiveTablePage({
         const { data, error } = await supabase.rpc('atomic_table_rebuy', payload);
         if (error || typeof data !== 'number' || !Number.isFinite(data) || data < 0) {
           const failure = error ?? new Error('Rebuy Purchase Receipt Was Not Confirmed');
-          if (failure.message?.includes('FetchError') || !navigator.onLine) {
+          const frozenRebuy = platformFrozenMessage(error);
+          if (frozenRebuy) {
+            // Maintenance break refusal (2026-10-16): name the break. The
+            // retry key is kept; a repeat after the break runs fresh.
+            toast?.error(frozenRebuy);
+          } else if (failure.message?.includes('FetchError') || !navigator.onLine) {
             // A rebuy is a debit against a live wallet. It is not queued for
             // later: nothing on the client can prove, at replay time, that the
             // player still wants it or that the seat still exists. Fail here,
@@ -15874,11 +15879,17 @@ function LiveTablePage({
        * the server's own value, else derive it from the deadline and the
        * table's action clock so the ring always spans the true turn length.
        */
+      /* The engine's own duration before the table's: a bomb pot turn is 25s
+         (Dan 2026-10-17), and deriving its start from the table's 15s clock
+         would draw a ring that empties ten seconds before the real deadline. */
       actionTimerStartTime:
         payload.startTime ??
         payload.startedAt ??
         (typeof payload.deadline === 'number'
-          ? payload.deadline - actionTimeSeconds * 1000
+          ? payload.deadline -
+            (typeof payload.durationMs === 'number' && payload.durationMs > 0
+              ? payload.durationMs
+              : actionTimeSeconds * 1000)
           : Date.now()),
       actionTimerPlayerId: payload.playerId,
     }));
@@ -28795,6 +28806,12 @@ function LiveTablePage({
               addOnPurchasePendingRef.current = false;
               throw error;
             }
+            // Maintenance break refusal is definitive (2026-10-16).
+            const frozenAddOn = platformFrozenMessage(error);
+            if (frozenAddOn) {
+              addOnPurchasePendingRef.current = false;
+              throw new TournamentPurchaseNotSubmittedError(new Error(frozenAddOn));
+            }
             toast?.error('Add-On Not Confirmed. Retry To Check The Same Purchase.');
             return false;
           } finally {
@@ -28860,6 +28877,14 @@ function LiveTablePage({
               rebuyPurchasePendingRef.current = false;
               setRebuyUnconfirmed(false);
               toast?.error('The Purchase Was Not Submitted. Please Try Again.');
+              return;
+            }
+            // Maintenance break refusal is definitive (2026-10-16).
+            const frozenRebuy = platformFrozenMessage(error);
+            if (frozenRebuy) {
+              rebuyPurchasePendingRef.current = false;
+              setRebuyUnconfirmed(false);
+              toast?.error(frozenRebuy);
               return;
             }
             setRebuyUnconfirmed(true);

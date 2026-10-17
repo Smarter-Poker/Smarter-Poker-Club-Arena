@@ -19,6 +19,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
 import { reportError } from '../utils/errorReporter';
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
 
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -397,6 +398,9 @@ export const WalletService = {
           p_reason: 'Agent Wallet To Own Player Wallet',
           p_op_id: operation.operationId,
         });
+        // Maintenance break refusal (2026-10-16): name the break and keep
+        // the retry key; a repeat after the break runs fresh.
+        if (error && isPlatformFrozenError(error)) throw new Error(PLATFORM_FROZEN_MESSAGE);
         if (error) throw error;
         if (!confirmedAgentWalletReceipt(data, amount, 'self_stake')) {
           throw new Error(data?.error || 'Transfer Was Not Confirmed By The Server');

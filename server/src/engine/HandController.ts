@@ -3351,6 +3351,17 @@ export class HandController {
     return this.multiBoardActive;
   }
 
+  /**
+   * Whether THIS hand was dealt as a bomb pot. Read from the hand's own
+   * config, the one fact that exists for the whole life of the hand - from the
+   * first decision on the flop through a reconnect or an engine rebuild that
+   * re-arms the clock - so the 25 second bomb pot clock cannot depend on a
+   * bookkeeping field having been set first.
+   */
+  public isBombPotHand(): boolean {
+    return this.config.bombPot != null;
+  }
+
   /** TRIPLE-BOARD 2026-08-27: how many boards this hand actually deals (1-3). */
   public getActiveBoardCount(): number {
     return this.activeBoardCount;

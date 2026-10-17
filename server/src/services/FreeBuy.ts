@@ -127,6 +127,25 @@ export const FREE_BUY_SLOTS: FreeBuySlot[] = [
  */
 export const FREE_BUY_SLOT_MINUTE = 30;
 
+/**
+ * A REGISTERED EVENT KEEPS THE GUARANTEE IT WAS PUBLISHED WITH (2026-10-17).
+ * Free Buys are spawned three days ahead, so every date before Tuesday
+ * 2026-10-20 was published at the previous guarantees (250 standard, 500
+ * feature) before Dan doubled them on 2026-10-16. Those 28 occurrences were
+ * moved onto the half hour (20261017105003), but their guarantees cannot be:
+ * trg_freeze_registered_tournament_settlement_contract freezes a guarantee at
+ * the first entrant, for every caller including the engine, because a
+ * registered player's advertised contract is immutable. The audit reads a
+ * date before FREE_BUY_HALF_HOUR_BOARD_FROM against either guarantee, so the
+ * watch reports a wrong board, not the contract law; the half-hour start is
+ * required on every date.
+ */
+export const FREE_BUY_HALF_HOUR_BOARD_FROM = '2026-10-20';
+export const FREE_BUY_PREVIOUS_GUARANTEES: Record<FreeBuyTier, number> = {
+  standard: 250,
+  feature: 500,
+};
+
 /** 'HH:MM' Chicago start of a slot. */
 export function freeBuySlotTime(slot: FreeBuySlot): string {
   return `${String(slot.chicagoHour).padStart(2, '0')}:${String(FREE_BUY_SLOT_MINUTE).padStart(2, '0')}`;
@@ -738,7 +757,14 @@ export function auditFreeBuyRow(
       `starts at ${at.hour}:${String(at.minute).padStart(2, '0')}, not on the half hour`
     );
 
-  const cfg = FREE_BUY_TIERS[slot.tier];
+  // A date published before the doubled guarantees keeps the one its
+  // registrants were offered (FREE_BUY_HALF_HOUR_BOARD_FROM).
+  const publishedAtPreviousGuarantee =
+    chicagoDayKey(startMs) < FREE_BUY_HALF_HOUR_BOARD_FROM &&
+    Number(row.guaranteed_prize) === FREE_BUY_PREVIOUS_GUARANTEES[slot.tier];
+  const cfg = publishedAtPreviousGuarantee
+    ? { ...FREE_BUY_TIERS[slot.tier], guarantee: FREE_BUY_PREVIOUS_GUARANTEES[slot.tier] }
+    : FREE_BUY_TIERS[slot.tier];
   const say = (ok: boolean, msg: string) => {
     if (!ok) problems.push(msg);
   };

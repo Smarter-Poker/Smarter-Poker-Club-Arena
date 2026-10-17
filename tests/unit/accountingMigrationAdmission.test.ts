@@ -10,7 +10,7 @@ const source = readFileSync('supabase/migrations/' + file, 'utf8');
 describe('Accounting migration admission stays inside the original owning transaction', () => {
   it('leaves every unselected file byte exact', () => {
     expect(accountingAdmissionSQL('other.sql', 'anything', source)).toBe(source);
-    expect(Object.keys(ACCOUNTING_ADMISSION_SOURCES)).toHaveLength(8);
+    expect(Object.keys(ACCOUNTING_ADMISSION_SOURCES)).toHaveLength(9);
   });
   it('binds every selected migration to its reviewed bytes, including compatible Phase 7', () => {
     for (const selected of Object.keys(ACCOUNTING_ADMISSION_SOURCES)) {

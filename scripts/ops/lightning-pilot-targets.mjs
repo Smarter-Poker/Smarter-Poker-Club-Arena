@@ -56,3 +56,22 @@ export async function resolvePilotTarget(admin, clusterId, { active = true } = {
   if (unique.id !== clusterId) throw new Error('Pilot Target Name Ambiguous');
   return { game, target };
 }
+
+/** Every current maintained target, found by its unique creation name and then
+ * bound exactly as above. A replaced target keeps its row but leaves this list,
+ * so a caller never has to carry a UUID that a later owner decision retired. */
+export async function resolveCurrentPilotTargets(admin, { active = true } = {}) {
+  const out = [];
+  for (const target of PILOT_TARGETS) {
+    const row = data(
+      await admin
+        .from('cash_games')
+        .select('id')
+        .eq('club_id', PILOT_CLUB_ID)
+        .eq('name', target.gameName)
+        .maybeSingle()
+    );
+    out.push(await resolvePilotTarget(admin, row.id, { active }));
+  }
+  return out;
+}

@@ -47,6 +47,8 @@
  * debugging still shows the real error in the popup.
  */
 
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from './platformFrozen';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // THE FRIENDLY VOCABULARY
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -114,6 +116,9 @@ export const SILENT_ERROR_CATEGORIES: ReadonlySet<SafeErrorCategory> = new Set([
 export function shouldSurfaceError(raw: unknown): boolean {
   const text = extractRawErrorText(raw);
   if (!text) return false; // An empty popup tells a player nothing.
+  // The maintenance break is not self-healing noise: the player's action was
+  // refused and must be repeated after the break (2026-10-16).
+  if (isPlatformFrozenError(raw) || /\bPLATFORM_FROZEN\b/.test(text)) return true;
   if (isSelfHealingMessage(text)) return false;
   const category = categorizeError(text);
   if (category && SILENT_ERROR_CATEGORIES.has(category)) return false;
@@ -433,6 +438,12 @@ function headBeforeColon(raw: string): string | null {
  * @returns Text that is always safe to put in front of a player.
  */
 export function safeErrorMessage(err: unknown, fallback?: string): string {
+  // The maintenance freeze is a refusal with its own honest line, not
+  // "Something Went Wrong" (2026-10-16: a cashier send refused at :58 was
+  // shown as a generic failure). Recognised before every other rule, and in
+  // development too, because the raw text names a table.
+  if (isPlatformFrozenError(err) || /\bPLATFORM_FROZEN\b/.test(extractRawErrorText(err)))
+    return PLATFORM_FROZEN_MESSAGE;
   // DEV ESCAPE HATCH — local debugging keeps the real text in the popup.
   if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
     const devRaw = extractRawErrorText(err).trim();

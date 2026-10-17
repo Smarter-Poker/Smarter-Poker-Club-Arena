@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { playerPageUnion } from '../e2e/club-data-deep.spec';
+import { loadMorePlayerCount, playerPageUnion } from '../e2e/club-data-deep.spec';
 
 // Import the actual production oracle without registering browser cases in
 // Vitest. The browser workflow still executes the original production spec.
@@ -32,5 +32,13 @@ describe('production player-page identity evidence', () => {
   it('retains every distinct first-page identity while adding only new continuation identities', () => {
     expect(playerPageUnion(page(['a', 'b']), page(['b', 'c']))).toEqual(['a', 'b', 'c']);
     expect(playerPageUnion(page(['a', 'b']), page(['b', 'a']))).toEqual(['a', 'b']);
+  });
+
+  it('reads the rendered window from the Load More label, including a retained window', () => {
+    expect(loadMorePlayerCount('Load More Players - 100 Of 571')).toBe(100);
+    expect(loadMorePlayerCount('Load More Players - 200 Of 571')).toBe(200);
+    expect(loadMorePlayerCount('Load More Players - 1,200 Of 5,710')).toBe(1200);
+    expect(loadMorePlayerCount('Load More Players')).toBeNull();
+    expect(loadMorePlayerCount(null)).toBeNull();
   });
 });

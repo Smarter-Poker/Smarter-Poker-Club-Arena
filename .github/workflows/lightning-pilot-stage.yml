@@ -36,9 +36,9 @@ on:
         required: false
         type: string
       targets:
-        description: 'Pilot sizes, comma separated: 6, 9 or 6,9'
+        description: 'Pilot targets, comma separated: action, madness or action,madness'
         required: false
-        default: '6,9'
+        default: 'action,madness'
         type: string
 permissions:
   contents: read

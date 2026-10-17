@@ -56,7 +56,7 @@ import {
   type TournamentUnitClubRow,
 } from '../../server/src/tournament/tournamentUnit';
 import { gameManagementService } from './GameManagementService';
-import { PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { uuid } from '../utils/uuid';
 import { DEFAULT_RAKE_RATE, splitBuyIn } from '../utils/buyIn';
 import {
@@ -150,6 +150,7 @@ const UNREGISTER_REASON_TEXT: Record<string, string> = {
   too_close_to_start: 'The tournament could not be unregistered. No chips were changed.',
   not_registered_or_seated:
     'You are not registered, or you have already been seated at a table. Tournaments that have started cannot be refunded.',
+  platform_frozen: PLATFORM_FROZEN_MESSAGE,
 };
 
 const REGISTER_REASON_TEXT: Record<string, string> = {
@@ -406,6 +407,8 @@ async function executeTournamentUnregisterRpc(
   rejectObsoleteTournamentUnregistration(rpcCall.error);
   const { data, error } = rpcCall;
 
+  // Maintenance break refusal is definitive (2026-10-16).
+  if (isPlatformFrozenError(error)) throw new TournamentUnregisterRefusalError('platform_frozen');
   if (error) {
     reportError(error, errorContext, { ...metadata, requestId });
     throw new Error(
@@ -1563,6 +1566,8 @@ class TournamentService {
         diamonds_after?: number | null;
       } | null;
       const registrationId = res?.registration_id;
+      // Maintenance break refusal is definitive (2026-10-16).
+      if (isPlatformFrozenError(rpcError)) throw new Error(registerReasonText('platform_frozen'));
       if (rpcError) {
         reportError(rpcError, 'TournamentService.registration_result_unconfirmed', {
           tournamentId,

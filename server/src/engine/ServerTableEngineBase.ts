@@ -1744,6 +1744,35 @@ export abstract class ServerTableEngineBase {
     variant?: string;
   } | null = null;
   /**
+   * THE DECISION CLOCK (Dan 2026-10-17): "DURING BOMB POTS ONLY, EXTEND THE
+   * USERS DECISION CLOCK TO 25 SECONDS INSTEAD OF 15 SECONDS ... DURING ANY AND
+   * ALL BOMB POTS."
+   *
+   * Every place that arms a seat's turn reads its length from here, never from
+   * `tableInfo.action_time_seconds` directly: the TURN_CHANGE handler, the
+   * reconnect and recovery re-arms, the watchdog, the Pineapple discard round
+   * and the horse budget (horses are players, section 10.5 - they get the same
+   * clock). The deadline that clock produces is the one the snapshot publishes
+   * as turn_deadline_ms, and the countdown ring around a player's name is drawn
+   * as deadline minus start, so the ring takes 25 seconds to empty on a bomb pot
+   * with no separate client constant to keep in step.
+   *
+   * A bomb pot never SHORTENS a table's clock: a table configured above 25s
+   * keeps its own number.
+   */
+  static readonly BOMB_POT_ACTION_SECONDS = 25;
+
+  protected actionClockSeconds(): number {
+    const configured = this.tableInfo?.action_time_seconds || 15;
+    // `?.()` because test doubles of the controller predate the method.
+    const bombHand =
+      this.currentHandBombPot != null || this.handController?.isBombPotHand?.() === true;
+    return bombHand
+      ? Math.max(configured, ServerTableEngineBase.BOMB_POT_ACTION_SECONDS)
+      : configured;
+  }
+
+  /**
    * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant the CURRENT hand
    * was dealt as, captured at hand start. Settlement writes hand_history from
    * this rather than from tableInfo.game_variant, which lies on every

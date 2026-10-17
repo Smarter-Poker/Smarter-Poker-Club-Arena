@@ -677,6 +677,43 @@ describe('auditFreeBuyRow', () => {
     expect(p.some((x) => x.includes('add-on 2'))).toBe(true);
   });
 
+  it('accepts the guarantee a date before the doubling was published with, but never its old hour', () => {
+    // 2026-10-17..19 were published at 250 / 500 and moved onto the half hour;
+    // their guarantees are frozen by the settlement contract.
+    const at = (hour: number, day: string, minute: number) =>
+      new Date(chicagoWallClockToUtcMs(day, hour, minute)).toISOString();
+    expect(
+      auditFreeBuyRow(good({ start_time: at(8, '2026-10-17', 30), guaranteed_prize: 250 }))
+    ).toEqual([]);
+    expect(
+      auditFreeBuyRow(
+        good({
+          name: 'Prime Time Free Buy (NLH)',
+          start_time: at(20, '2026-10-19', 30),
+          guaranteed_prize: 500,
+        })
+      )
+    ).toEqual([]);
+    // The previous guarantee never excuses the old hour.
+    expect(
+      auditFreeBuyRow(good({ start_time: at(8, '2026-10-17', 0), guaranteed_prize: 250 })).some(
+        (x) => x.includes('not on the half hour')
+      )
+    ).toBe(true);
+    // A guarantee that is neither tier is still wrong.
+    expect(
+      auditFreeBuyRow(good({ start_time: at(8, '2026-10-17', 30), guaranteed_prize: 100 })).some(
+        (x) => x.includes('guarantee 100')
+      )
+    ).toBe(true);
+    // From the first date published at the doubled tier, 250 is wrong again.
+    expect(
+      auditFreeBuyRow(good({ start_time: at(8, '2026-10-20', 30), guaranteed_prize: 250 })).some(
+        (x) => x.includes('guarantee 250')
+      )
+    ).toBe(true);
+  });
+
   it('catches a paid first entry', () => {
     expect(auditFreeBuyRow(good({ buy_in_amount: 5 }))).toContain('the first entry is not free');
   });

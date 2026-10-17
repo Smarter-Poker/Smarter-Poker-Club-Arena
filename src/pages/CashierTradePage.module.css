@@ -2218,15 +2218,6 @@
   font-size: 2.2cqw;
 }
 
-.recipientWalletSummary {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 4px 12px;
-  color: var(--ink-silver);
-  font-size: 3.2cqw;
-}
-
 .page.simple .glass .rosterBalanceLine .rowSub {
   display: block;
 }

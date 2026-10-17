@@ -153,10 +153,19 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
     if (result.error) throw new Error(`${label}: ${result.error.code || 'Request Failed'}`);
     return result.data;
   };
-  const wanted = (env.PILOT_TARGETS ?? '6,9')
-    .split(',')
-    .map((s) => Number(s.trim()))
-    .filter((n) => n === 6 || n === 9);
+  // Targets are named by template. Both are six-seat since 2026-10-17, so a
+  // seat count no longer names one; the old 6 and 9 inputs still mean Action
+  // and Madness so an earlier dispatch reads the same targets.
+  const LEGACY_SIZES = { 6: 'action', 9: 'madness' };
+  const wanted = [
+    ...new Set(
+      (env.PILOT_TARGETS ?? 'action,madness')
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .map((s) => LEGACY_SIZES[s] ?? s)
+        .filter((s) => s === 'action' || s === 'madness')
+    ),
+  ];
   if (wanted.length === 0) throw new Error('No Pilot Target Selected');
   const signalId = Number(env.PILOT_SIGNAL_ID);
   if (
@@ -195,13 +204,18 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
     // Resolve EVERY selected target before the first action, so a missing
     // game never leaves one size half-staged.
     const staged = [];
-    for (const handedness of wanted) {
-      const target = PILOT_TARGETS.find((t) => t.handedness === handedness);
+    for (const template of wanted) {
+      const target = PILOT_TARGETS.find((t) => t.templateName === template);
       const matches = (Array.isArray(games) ? games : []).filter((g) => g.name === target.gameName);
-      if (matches.length !== 1) throw new Error(`Pilot ${handedness}-Max Game Not Uniquely Found`);
+      if (matches.length !== 1) throw new Error(`Pilot ${target.gameName} Game Not Uniquely Found`);
       const game = matches[0];
       assertStageTarget(game, club.id);
-      const entry = { handedness, clusterId: game.id, actions: [] };
+      const entry = {
+        template,
+        handedness: target.handedness,
+        clusterId: game.id,
+        actions: [],
+      };
       report.clusters.push(entry);
       staged.push({ game, entry });
     }
@@ -347,6 +361,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
         JSON.stringify({
           stage: r.stage,
           clusters: r.clusters.map((c) => ({
+            template: c.template,
             handedness: c.handedness,
             clusterId: c.clusterId,
             actions: c.actions.map((a) => [a.action, a.answer?.ok]),

@@ -20,7 +20,7 @@ import { readClubContextParam, withClubContext } from '../../utils/clubScopedPat
 import { clubIdFromPath } from './clubIdFromPath';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
 import { useHideFooterOnScroll } from './useHideFooterOnScroll';
-import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import { useClubDataScope } from '../../hooks/useClubDataScope';
 import styles from './ClubBottomNav.module.css';
 
 interface ClubBottomNavProps {
@@ -145,27 +145,13 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
     [location.pathname, location.search]
   );
   const resolvedClubId = useResolvedClubId(clubId, routeClubId);
-  const workspace = useClubWorkspace();
-  const effectiveRole = workspace.clubRole;
-  // Route check: probe route dev/footer always displays all 6 approved controls
+  // Club Data is for the club's owner, admins and agents (Dan 2026-10-17:
+  // "REGULAR PLAYER ACCOUNTS DONT SEE THE DATA BUTTON OR PAGES"). The server
+  // answers who may see it (fn_ca_club_data_scope); until it has answered the
+  // door stays closed, so a player never sees it flash on while roles load.
   const isDevFooter = location.pathname.includes('/dev/footer');
-  // Regular player accounts do not see the Data tab; club staff, owners, and agents do.
-  const isPlayer =
-    effectiveRole === 'member' || effectiveRole === 'player' || effectiveRole === 'guest';
-  const canSeeData =
-    isDevFooter ||
-    workspace.isClubStaff ||
-    workspace.isPlatformStaff ||
-    workspace.canViewFinance ||
-    effectiveRole === 'owner' ||
-    effectiveRole === 'co_owner' ||
-    effectiveRole === 'admin' ||
-    effectiveRole === 'super_agent' ||
-    effectiveRole === 'agent' ||
-    effectiveRole === 'sub_agent' ||
-    (!resolvedClubId && !isPlayer) ||
-    (!isPlayer && !effectiveRole);
-
+  const { scope: dataScope } = useClubDataScope(resolvedClubId);
+  const canSeeData = isDevFooter || dataScope === 'club' || dataScope === 'downline';
   const activeTab = useMemo(() => activeTabForPath(location.pathname), [location.pathname]);
   const { hidden, reveal } = useHideFooterOnScroll(location.pathname);
   const navRef = useRef<HTMLElement | null>(null);
@@ -233,7 +219,10 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
             />
           </div>
           <span className={styles.diamondGlint} aria-hidden="true" />
-          <ul className={canSeeData ? styles.navItems : styles.navItemsFive}>
+          <ul
+            className={canSeeData ? styles.navItems : styles.navItemsFive}
+            data-footer-doors={canSeeData ? 'operator' : 'member'}
+          >
             {destinations.map((destination) => (
               <li key={destination.key} className={styles.navCell}>
                 <Link

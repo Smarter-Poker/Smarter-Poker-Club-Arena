@@ -74,8 +74,12 @@ interface Snapshot {
   range: { start: string; end: string; days: number };
   summary: ClubDataSummary;
   rows: ClubDataRow[];
-  scope?: 'club' | 'downline';
   generated_at?: string;
+  /** 'club' for the owner, co-owner and admins; 'downline' for an agent. */
+  scope?: 'club' | 'downline';
+  club_name?: string | null;
+  /** First UTC day the per-club facts cover. */
+  facts_from?: string | null;
 }
 
 const PRESETS: Preset[] = [1, 7, 14];
@@ -186,7 +190,6 @@ export default function ClubDataSimplePage() {
   const clubParam = params.clubId || searchParams.get('club') || '';
 
   const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
-  const [clubName, setClubName] = useState<string>('');
   const [preset, setPreset] = useState<Preset>(1);
   const [endDate, setEndDate] = useState<string>(() => utcToday());
   const [game, setGame] = useState<GameFilter>('ALL');
@@ -199,6 +202,8 @@ export default function ClubDataSimplePage() {
   const [denied, setDenied] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const requestRef = useRef(0);
+  // "CLUB JAQK - CLUB DATA": the name stays in the header while a window loads.
+  const [clubName, setClubName] = useState<string | null>(null);
 
   const today = utcToday();
   const isToday = endDate >= today;
@@ -234,21 +239,22 @@ export default function ClubDataSimplePage() {
     };
   }, [clubParam]);
 
-  // Fetch club name for the header
+  // The header names the club before the figures arrive, and on the refusal too.
   useEffect(() => {
     if (!clubUuid) return;
-    if (typeof supabase?.from !== 'function') return;
     let dead = false;
-    void supabase
-      .from('clubs')
-      .select('name')
-      .eq('id', clubUuid)
-      .maybeSingle()
+    let read: PromiseLike<{ data: unknown }>;
+    try {
+      read = supabase.from('clubs').select('name').eq('id', clubUuid).maybeSingle();
+    } catch {
+      return undefined; // the screen read carries the name too
+    }
+    void Promise.resolve(read)
       .then(({ data }) => {
-        if (!dead && data?.name) {
-          setClubName(data.name);
-        }
-      });
+        const name = (data as { name?: string | null } | null)?.name;
+        if (!dead && name) setClubName((prev) => prev ?? name);
+      })
+      .catch(() => undefined);
     return () => {
       dead = true;
     };
@@ -295,6 +301,7 @@ export default function ClubDataSimplePage() {
         return;
       }
       setSnapshot(data);
+      if (data.club_name) setClubName(data.club_name);
       setDenied(false);
       setError(null);
       setUpdatedAt(Date.now());
@@ -346,6 +353,8 @@ export default function ClubDataSimplePage() {
   };
 
   const summary = snapshot?.summary ?? null;
+  const isDownline = snapshot?.scope === 'downline';
+  const factsFrom = snapshot?.facts_from ?? null;
   const rows = useMemo(() => snapshot?.rows ?? [], [snapshot]);
   const liveCount = rows.filter((r) => r.live).length;
   // A route segment, never a `??` inside the template: the reachability law
@@ -356,28 +365,27 @@ export default function ClubDataSimplePage() {
   if (denied) {
     return (
       <div className={styles.page}>
-        <Header clubName={clubName} onBack={() => navigate(-1)} />
+        <Header onBack={() => navigate(-1)} clubName={clubName} />
         <div className={styles.empty}>
           <SpadeMark />
           <p className={styles.emptyText}>
-            Only The Club Owner, Admins And Super Agents Can View Club Data.
+            Club Data Is Open To The Club Owner, Admins And Agents.
           </p>
         </div>
       </div>
     );
   }
 
-  const isDownlineScope = snapshot?.scope === 'downline';
-
   return (
     <div className={styles.page}>
       <Header
-        clubName={clubName}
         onBack={() => navigate(-1)}
-        onAdvanced={isDownlineScope ? undefined : () => navigate(`/clubs/${clubKey}/data/advanced`)}
+        clubName={clubName}
+        /* The full report is the whole club's; an agent's view is his own. */
+        onAdvanced={isDownline ? undefined : () => navigate(`/clubs/${clubKey}/data/advanced`)}
       />
 
-      {isDownlineScope && <div className={styles.agentScopeBanner}>You And Your Downline</div>}
+      {isDownline && <div className={styles.agentScopeBanner}>You And Your Downline</div>}
 
       <div className={styles.rangeBar}>
         <button
@@ -477,6 +485,9 @@ export default function ClubDataSimplePage() {
           </>
         )}
       </div>
+      {factsFrom && startDate < factsFrom && (
+        <p className={styles.liveLine}>Figures Begin {factsFrom} UTC</p>
+      )}
 
       <label className={styles.search}>
         <input
@@ -580,16 +591,21 @@ export default function ClubDataSimplePage() {
   );
 }
 
+/** "CLUB JAQK - CLUB DATA" (Dan 2026-10-17); the club's name is the part that gives way on a narrow phone. */
+export function headerTitle(clubName: string | null | undefined): string {
+  const name = (clubName || '').trim();
+  return name ? `${name.toUpperCase()} - CLUB DATA` : 'Club Data';
+}
+
 function Header({
-  clubName,
   onBack,
   onAdvanced,
+  clubName,
 }: {
-  clubName?: string;
   onBack: () => void;
   onAdvanced?: () => void;
+  clubName?: string | null;
 }) {
-  const titleText = clubName ? `${clubName.toUpperCase()} - CLUB DATA` : 'Club Data';
   return (
     <header className={styles.header}>
       <button type="button" className={styles.back} onClick={onBack} aria-label="Back">
@@ -597,7 +613,16 @@ function Header({
           <path d="M12 5 L5 12 L12 19 M19 5 L12 12 L19 19" />
         </svg>
       </button>
-      <h1 className={styles.title}>{titleText}</h1>
+      <h1 className={styles.title} title={headerTitle(clubName)}>
+        {clubName ? (
+          <>
+            <span className={styles.titleClub}>{clubName.trim().toUpperCase()}</span>
+            <span className={styles.titleRest}>&nbsp;- CLUB DATA</span>
+          </>
+        ) : (
+          'Club Data'
+        )}
+      </h1>
       {onAdvanced ? (
         <button type="button" className={styles.headerAction} onClick={onAdvanced}>
           Report

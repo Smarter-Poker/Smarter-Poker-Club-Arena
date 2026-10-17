@@ -26,3 +26,12 @@ Verified on native PG16: the migration runs twice cleanly and the readback
 and ACL are exact. With five fixture alarms, only the finished scope's visit
 alarm and the completed week's alarm close; the other scope, a later week and
 an unrelated seal alarm stay open.
+
+## Rebased again before install (16:10 UTC)
+
+`20261017131056` (the ready-report receipt) was installed at 16:06 UTC, which
+moved the live body to `31c80083`. The two migrations change disjoint
+passages and commute, so this file now carries two exact pairs: `56eb1c0d` ->
+`86c6a68e` and `31c80083` -> `63eea798`. `63eea798` is also what the receipt
+produces on top of `86c6a68e`. Both pairs installed twice on native PG16 with
+exact readback and unchanged ACL.

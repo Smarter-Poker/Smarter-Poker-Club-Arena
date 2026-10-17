@@ -1,8 +1,4 @@
 @media (max-width: 980px) {
-  .heroCopy {
-    width: 67%;
-  }
-
   .commandDeck {
     grid-template-columns: 1fr;
   }
@@ -28,51 +24,6 @@
     gap: 14px;
   }
 
-  .hero {
-    min-height: 548px;
-  }
-
-  .heroPicture {
-    height: 244px;
-  }
-
-  .heroArtwork {
-    height: 244px;
-    object-position: center 42%;
-  }
-
-  .heroShade {
-    background:
-      linear-gradient(
-        0deg,
-        #020403 0%,
-        #020403 49%,
-        rgba(2, 4, 3, 0.65) 66%,
-        rgba(2, 4, 3, 0.08) 100%
-      ),
-      linear-gradient(90deg, rgba(2, 4, 3, 0.34), transparent 82%);
-  }
-
-  .heroCopy {
-    width: 100%;
-    min-height: 548px;
-    padding: 236px 18px 20px;
-  }
-
-  .heroCopy h1 {
-    margin-block: 9px 7px;
-    font-size: min(12vw, 3.75rem);
-  }
-
-  .heroCopy > p {
-    font-size: 0.78rem;
-    line-height: 1.45;
-  }
-
-  .heroMeters {
-    margin-top: 12px;
-  }
-
   .heroMeters > div {
     padding-block: 9px;
   }
@@ -86,7 +37,6 @@
     grid-template-columns: 1fr 1fr;
     width: 100%;
     gap: 8px;
-    margin-top: 12px;
   }
 
   .heroActions .backButton,
@@ -96,14 +46,6 @@
     margin: 0;
     padding-inline: 10px;
     font-size: 0.66rem;
-  }
-
-  .heroSeal {
-    top: 16px;
-    right: 12px;
-    bottom: auto;
-    min-width: 104px;
-    padding: 9px 12px;
   }
 
   .commandDeck,
@@ -162,10 +104,8 @@
   }
 
   .cardDesc,
-  .streakDesc,
   .alertCopy p,
   .alertCopy small,
-  .footer p,
   .actionHint {
     font-size: 0.78rem;
   }
@@ -293,12 +233,9 @@
 }
 
 @media (max-width: 420px) {
-  .hero {
-    min-height: 560px;
-  }
-
-  .heroCopy {
-    min-height: 560px;
+  /* Stacked meters share one left edge on the felt rail. */
+  .heroMeters > div + div {
+    padding-left: 15px;
   }
 
   .heroActions {
@@ -386,7 +323,6 @@
   }
 
   .footer,
-  .footer > div,
   .commandDeck,
   .streakConsole,
   .summaryGrid,
@@ -396,10 +332,7 @@
     max-width: 100%;
   }
 
-  .footer h2,
-  .footer p,
-  .streakCount,
-  .streakDesc {
+  .streakCount {
     overflow-wrap: anywhere;
   }
 
@@ -478,8 +411,7 @@
   .retryButton,
   .alertButton,
   .alertSecondaryButton,
-  .celebrateButton,
-  .heroArtwork {
+  .celebrateButton {
     transition: none;
     transform: none;
   }

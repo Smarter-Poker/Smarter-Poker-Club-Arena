@@ -534,7 +534,10 @@ describe('Union Statements painted-console contract', () => {
 
   it('keeps every page state and action on approved, intentional console families', () => {
     expect(source).toContain('RewardsSurfaceHeader');
-    expect(source).toMatch(/<CasinoSurfaceHeader[\s\S]*?crest="flat"[\s\S]*?family="riveted"/);
+    // 2026-10-17: the page header is a page bar with the "?" (Dan: "PAGES
+    // DON'T NEED TITLES LIKE THIS"); it paints no console of its own.
+    const header = source.match(/<CasinoSurfaceHeader\b[\s\S]*?\/>/)?.[0] ?? '';
+    expect(header).not.toMatch(/\b(?:crest|family|eyebrow)=/);
     expect(source).toContain("label: 'Back'");
     expect(source).toContain("label: 'Export CSV'");
 

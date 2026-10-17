@@ -48,6 +48,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { LoadingState } from '../../components/common/EmptyState';
+import PageBar from '../../components/help/PageBar';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { reportError } from '../../utils/errorReporter';
@@ -391,17 +392,18 @@ export default function CommerceDeskPage() {
 
   return (
     <main className={s.page} aria-labelledby="commerce-desk-title">
-      <header className={s.head}>
-        <p className={s.eyebrow}>Platform Staff</p>
-        <h1 id="commerce-desk-title" className={s.title}>
-          Commerce Desk
-        </h1>
-        <p className={s.lede}>
-          Club And Union Diamond Refunds, Written Quotes, Free Month Reviews, Catalog Prices,
-          Comparison Evidence, Admission And Metrics. Every Change Here Is Checked Again By The
-          Server And Recorded With Your Name.
-        </p>
-      </header>
+      <PageBar
+        title="Commerce Desk"
+        titleId="commerce-desk-title"
+        summary="Club And Union Diamond Refunds, Written Quotes, Free Month Reviews, Catalog Prices, Comparison Evidence, Admission And Metrics. Every Change Here Is Checked Again By The Server And Recorded With Your Name."
+        steps={[
+          {
+            title: 'Desk Sections',
+            body: 'Each Tab Is One Queue Or Report. The Open Tab Is Kept In The Address, So A Link Opens The Same Section.',
+            target: `.${s.tabs}`,
+          },
+        ]}
+      />
 
       <nav ref={tabsRef} className={s.tabs} aria-label="Commerce Desk Sections">
         {TABS.map((t) => (

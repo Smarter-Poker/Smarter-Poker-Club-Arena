@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUIDStrict } from '../utils/clubIdResolver';
@@ -118,10 +119,16 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
 
   return (
     <StandardContentLayout className="club-banner-page">
-      <SpadeConsole
-        eyebrow={club ? titleCase(club.name) : 'Club Operations'}
+      {/* Dan, 2026-10-17: the subtitle and the intro line moved behind the
+          painted "?". The club's name stays on the head. */}
+      <PageBar
         title="Banner Displays"
-        subtitle="Your Club Lobby Promotion"
+        titleAs={false}
+        summary="Your Club Lobby Promotion. Manage Your Club Banner, Including In Union Clubs."
+      />
+      <SpadeConsole
+        eyebrow={club ? titleCase(club.name) : undefined}
+        title="Banner Displays"
         plates={{
           secondary: {
             label: 'Back To Club',
@@ -141,7 +148,6 @@ function BannerEditor({ clubId, userId }: { clubId?: string; userId?: string }) 
           {!loading && !isOwner && club && <p>Only The Club Owner Can Change Banner Displays.</p>}
           {!loading && isOwner && club && (
             <>
-              <p>Manage Your Club Banner, Including In Union Clubs.</p>
               <h2>Club Banner Preview</h2>
               {preview ||
               (!removeBanner && club.banner_url && !isRetiredClubBanner(club.banner_url)) ? (

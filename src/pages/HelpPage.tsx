@@ -3,8 +3,13 @@ import { Link } from 'react-router-dom';
 import FeedbackForm from '../components/support/FeedbackForm';
 import SystemStatus from '../components/support/SystemStatus';
 import styles from './HelpPage.module.css';
-import { mediaUrl } from '../utils/mediaBase';
+import PageBar from '../components/help/PageBar';
 import { FAQ_ITEMS, QUICK_LINKS } from './helpContent';
+
+/* The words the hero used to print. They live behind the "?" now; the
+   prerender carries the same sentence. */
+const HELP_SUMMARY =
+  'Search Verified Poker Arena Guidance, Check The Live Data Circuit, Or Send A Request Directly To Support.';
 
 export default function HelpPage() {
   const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null);
@@ -31,41 +36,19 @@ export default function HelpPage() {
 
   return (
     <article className={styles.page} aria-labelledby="help-title">
-      <header className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <span className={styles.eyebrow}>Player Support Circuit</span>
-          <h1 id="help-title">Help Center</h1>
-          <p>
-            Search Verified Poker Arena Guidance, Check The Live Data Circuit, Or Send A Request
-            Directly To Support.
-          </p>
-          <div className={styles.heroActions}>
-            <button type="button" onClick={() => setShowFeedbackForm(true)}>
-              Send Support Request
-            </button>
-            <a href="mailto:support@smarter.poker">Email Support</a>
-          </div>
+      <PageBar
+        className={styles.bar}
+        title="Help Center"
+        titleId="help-title"
+        summary={HELP_SUMMARY}
+      >
+        <div className={styles.barActions}>
+          <button type="button" onClick={() => setShowFeedbackForm(true)}>
+            Send Support Request
+          </button>
+          <a href="mailto:support@smarter.poker">Email Support</a>
         </div>
-        <div className={styles.heroArt} aria-hidden="true">
-          {/* Discoverability phase 5 (2026-09-17): the 462 KB palette PNG was a
-              third of the Help Center's bytes on a phone; the WebP is 49 KB of the
-              same pixels, and the PNG stays the fallback for a browser without it. */}
-          <picture>
-            <source
-              type="image/webp"
-              srcSet={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.webp')}
-            />
-            <img
-              src={mediaUrl('assets/club-buttons/lobby/lobby-command-chassis-v2.png')}
-              alt=""
-              width="960"
-              height="1280"
-              decoding="async"
-            />
-          </picture>
-          <span>Support Terminal / Online</span>
-        </div>
-      </header>
+      </PageBar>
 
       <section className={styles.statusDeck} aria-label="Live Platform Status">
         <SystemStatus />
@@ -82,10 +65,7 @@ export default function HelpPage() {
 
       <section className={styles.knowledge} aria-labelledby="faq-title">
         <div className={styles.knowledgeHeader}>
-          <div>
-            <span className={styles.eyebrow}>Knowledge Index</span>
-            <h2 id="faq-title">Frequently Asked Questions</h2>
-          </div>
+          <h2 id="faq-title">Frequently Asked Questions</h2>
           <label className={styles.searchField}>
             <span>Search Help</span>
             <input

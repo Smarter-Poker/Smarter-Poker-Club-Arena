@@ -421,7 +421,10 @@ describe('achievement reads and page-owned notification invalidation', () => {
     expect(screen.getByTestId('Unlocked').textContent).toBe('0');
     expect(screen.queryByText('Achievement Unlocked!')).toBeNull();
     expect(screen.queryByTestId('Getting Started')).toBeNull();
-    expect(screen.getByTestId('Login Streak').textContent).toBe('Unavailable');
+    // The streak prints once, on its own console (the header figure that
+    // repeated it left with the hero on 2026-10-17).
+    expect(screen.getByText('Daily Login Streak')).toBeTruthy();
+    expect(screen.queryByTestId('Login Streak')).toBeNull();
   });
 
   it.each([null, undefined, '', ' ', false, 'invalid', -1, Infinity])(

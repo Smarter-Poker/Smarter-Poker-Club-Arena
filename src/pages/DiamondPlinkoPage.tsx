@@ -1,4 +1,5 @@
 import GameLifetimeAverages from '../components/games/GameLifetimeAverages';
+import PageHelp from '../components/help/PageHelp';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
@@ -644,7 +645,24 @@ function DiamondPlinkoGame() {
           )
         }
         title={diamondGameTitle('plinko', boost)}
-        eyebrow="Diamond Spins"
+        help={
+          <PageHelp
+            title={diamondGameTitle('plinko', boost)}
+            summary="You Choose How Many Diamonds Each Drop Plays. Every Diamond Lands In A Prize Slot, And Your Chips Are Booked When The Last Drop Lands."
+            steps={[
+          {
+            title: 'Your Numbers',
+            body: 'Your Entry, The Guaranteed Minimum And The Prize So Far, Updated As You Play.',
+            target: '[data-game-console] dl',
+          },
+          {
+            title: 'Play',
+            body: 'The Plates At The Foot Of The Game Start A Round And Book Your Win.',
+            target: '[data-game-actions]',
+          },
+            ]}
+          />
+        }
         pill={
           saved
             ? 'Saved'
@@ -806,7 +824,6 @@ function DiamondPlinkoGame() {
       <GamePanel
         title="Bonus Proof"
         pill={verified === true ? 'Verified' : 'Sealed'}
-        eyebrow="Sealed Before Play"
         foot="foot"
       >
         <p className={`sc-copy ${styles.proofHash}`}>

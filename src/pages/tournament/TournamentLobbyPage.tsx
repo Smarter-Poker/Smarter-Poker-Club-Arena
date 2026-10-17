@@ -755,17 +755,12 @@ export default function TournamentLobbyPage() {
   return (
     <div className={styles.page} data-arena-surface="play">
       <CasinoSurfaceHeader
-        unframed
-        crest="vip"
-        eyebrow="Play & Review / Tournament Lobby"
         title="Tournament Command"
         description="Discover Scheduled Fields, Inspect Live Events, And Enter Registration Through The Existing Tournament Service And Server-Authoritative Buy-In Flow."
-        artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
         status="TOURNAMENT NETWORK // LIVE"
         metrics={[
           { label: 'Upcoming', value: upcomingCount, tone: 'attention' },
           { label: 'Live Now', value: runningCount, tone: 'live' },
-          { label: 'Loaded', value: tournaments.length },
         ]}
       />
       {/* ── THE BOARD (#ClubArenaConsole, 2026-09-20). The casino header above

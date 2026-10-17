@@ -55,6 +55,7 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { formatDate } from '../utils/format';
 import { titleCase, enumToTitleCase } from '../utils/titleCase';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import type { ConsoleInk } from '../components/console/SpadeConsole';
 import { AdCampaignService, POSTER_SHAPE } from '../services/AdCampaignService';
 import type {
@@ -501,7 +502,6 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
           className="club-advertise__console"
           crest="flat"
           foot="foot"
-          eyebrow="Advertise"
           title="Could Not Load"
           titleId="club-advertise-error-title"
           pill="Offline"
@@ -530,7 +530,6 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
           className="club-advertise__console"
           crest="flat"
           foot="foot"
-          eyebrow="Advertise"
           title="Staff Only"
           titleId="club-advertise-refused-title"
           pill="Refused"
@@ -573,24 +572,30 @@ export default function ClubAdvertisePage({ mode = 'club' }: ClubAdvertisePagePr
 
   return (
     <div className="club-advertise">
-      {/* ── The head: who is buying, what this page does, what they hold ── */}
+      {/* Dan, 2026-10-17: what this page does moved behind the painted "?".
+          The head keeps who is buying (the club, when there is one) and what
+          they hold. */}
+      <PageBar
+        title="Advertise"
+        titleAs={false}
+        summary={
+          sponsorMode
+            ? 'Put A Picture In Front Of Every Player On Smarter.Poker, Sending Them To Your Own Site. Smarter.Poker Reviews Every Advert And Invoices You Directly.'
+            : 'Put A Picture In Front Of Every Player On Smarter.Poker. Pay In Diamonds. The House Reviews Every Advert Before It Runs.'
+        }
+      />
+      {/* ── The head: who is buying and what they hold ── */}
       <SpadeConsole
         className="club-advertise__console"
         crest="spade"
         foot="foot"
-        eyebrow={sponsorMode ? 'Smarter.Poker' : titleCase(clubName) || 'Your Club'}
+        eyebrow={sponsorMode ? undefined : titleCase(clubName) || undefined}
         title="Advertise"
         titleId="club-advertise-title"
-        subtitle={sponsorMode ? 'Book A Flight' : 'Pay In Diamonds'}
         pill={sponsorMode ? (advertiser ? 'Sponsor' : 'New') : 'Staff'}
         pillInk={sponsorMode && !advertiser ? 'muted' : 'blue'}
         aria-labelledby="club-advertise-title"
       >
-        <p className="sc-copy">
-          {sponsorMode
-            ? 'Put A Picture In Front Of Every Player On Smarter.Poker, Sending Them To Your Own Site. Smarter.Poker Reviews Every Advert And Invoices You Directly.'
-            : 'Put A Picture In Front Of Every Player On Smarter.Poker. Pay In Diamonds. The House Reviews Every Advert Before It Runs.'}
-        </p>
         {sponsorMode ? null : (
           <div className="club-advertise__row">
             <span className="club-advertise__row-label sc-ink--blue">Your Diamonds</span>

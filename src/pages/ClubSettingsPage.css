@@ -922,17 +922,21 @@
   color: #e4e7ec;
   font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
 }
-.club-settings-heading {
+/* Doubled with the bar's own class so it outranks PageHelp.css in any load order. */
+.ca-page-bar.club-settings-heading {
   width: min(100%, 1120px);
   margin: 0 auto;
   padding: 24px 20px 0;
 }
-.club-settings-heading h1 {
-  margin: 8px 0;
-  font-size: clamp(30px, 4vw, 44px);
-}
-.club-settings-heading p {
-  color: #9aa5b3;
+/* The club's own name, its identity, leads the page bar. */
+.club-settings-name {
+  flex: 1 0 100%;
+  margin: 0;
+  color: #e4e7ec;
+  font:
+    700 clamp(20px, 3vw, 26px)/1.2 'Roboto Condensed',
+    sans-serif;
+  overflow-wrap: anywhere;
 }
 .club-settings-heading nav {
   display: flex;
@@ -996,7 +1000,7 @@
     padding: 16px;
     gap: 20px;
   }
-  .club-settings-heading {
+  .ca-page-bar.club-settings-heading {
     padding-inline: 16px;
   }
 }

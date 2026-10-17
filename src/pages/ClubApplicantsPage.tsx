@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import PageBar from '../components/help/PageBar';
 import { Link, useParams } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useClubNavigationAccess } from '../hooks/useClubNavigationAccess';
@@ -125,14 +126,9 @@ export default function ClubApplicantsPage() {
   const current = queue.scope === scope;
   return (
     <section className="club-applicants-page">
-      <header>
-        <div>
-          <p>Player Command</p>
-          <h1>Applicants</h1>
-          <p>Review Requests To Join This Club.</p>
-        </div>
+      <PageBar title="Applicants" summary="Review Requests To Join This Club.">
         <Link to={`/clubs/${clubId}/members`}>Back To Players</Link>
-      </header>
+      </PageBar>
       {access.loading ? (
         <p role="status">Confirming Club Access...</p>
       ) : access.error ? (

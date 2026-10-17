@@ -342,12 +342,12 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
           : list.status === 'error'
             ? 'Unverified'
             : 'Checking';
-  const pillInk =
+  const pillTone =
     refused || !isOnline || list.status === 'error'
-      ? 'red'
+      ? 'danger'
       : list.status === 'ready'
-        ? 'green'
-        : 'muted';
+        ? 'live'
+        : 'default';
 
   const backToCashier = () => navigate(`/clubs/${clubParam}/cashier`);
   const ready = list.status === 'ready';
@@ -356,11 +356,10 @@ function StatementsContent({ clubParam, userId }: { clubParam: string; userId?: 
   return (
     <div className={styles.page} data-cashier-surface="statements">
       <CashierWorkspace
-        eyebrow="Full Statement"
         title="Cashier"
+        summary="Every Chip Movement In This Club Wallet For The Dates You Choose, Ready To Copy Or Download."
         pill={pillText}
-        pillInk={pillInk}
-        foot="foot"
+        pillTone={pillTone}
         className={styles.console}
       >
         <div className={styles.glass}>

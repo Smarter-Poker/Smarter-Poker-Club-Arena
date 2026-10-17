@@ -36,6 +36,7 @@ import ClubStatsCards, { DashboardStats } from '../../components/club/ClubStatsC
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
 import ClubDashboardAvatar from '../../components/club/ClubDashboardAvatar';
 import PageSkeleton from '../../components/common/PageSkeleton';
+import PageHelp from '../../components/help/PageHelp';
 import { useToast } from '../../components/common/Toast';
 import ClubMemberManagement from '../../components/admin/ClubMemberManagement';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
@@ -1061,19 +1062,34 @@ export default function ClubDashboard() {
   return (
     <div className={styles.dashboard} data-arena-surface="club-dashboard">
       {/* Dashboard Header */}
+      {/* The header is the club's identity (its avatar, name, level and live
+          counts) and its actions. The "Club Dashboard" eyebrow and the hero
+          artwork are gone (Dan 2026-10-17); the explanation sits behind the
+          "?" in the header's top right, so the club name stays the page's one
+          visible heading instead of gaining a second bar above it. */}
       <header className={styles.header}>
-        <img
-          className={styles.heroArt}
-          src={`${import.meta.env.BASE_URL}images/club-management/table-command-hero-v1.webp`}
-          alt=""
-          aria-hidden="true"
+        <PageHelp
+          className={styles.help}
+          title="Club Dashboard"
+          summary="The Club's Live Floor And Accounts On One Page. Start A Table, Read The Books, Answer Disputes And Talk To Members From Here."
+          steps={[
+            {
+              title: 'Quick Actions',
+              body: 'New Table, Financials, Disputes, Announcements And Settings Are One Tap Away.',
+              target: `.${styles.quickActions}`,
+            },
+            {
+              title: 'Time Range',
+              body: 'Choose Today, This Week, This Month Or All Time For Top Players, Players, Revenue And Tournaments. The Metric Cards Always Read Today And This Week.',
+              target: `.${styles.filterBar}`,
+            },
+          ]}
         />
         <div className={styles.clubInfo}>
           <div className={styles.clubAvatar}>
             <ClubDashboardAvatar src={club.avatarUrl} name={club.name} />
           </div>
           <div className={styles.clubMeta}>
-            <p className={styles.eyebrow}>Club Dashboard</p>
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {club.name}
               {club.levelInfo && (
@@ -1152,13 +1168,10 @@ export default function ClubDashboard() {
             </button>
           ))}
         </div>
-        {/* The filter sat above six metric cards it does not drive. Say
-            what it reaches, so "Today" over "Hands This Week" is not read
-            as a bug. */}
-        <span className={styles.filterScope}>
-          Applies To Top Players, Players, Revenue And Tournaments. The Metric Cards Always Read
-          Today And This Week.
-        </span>
+        {/* The filter does not drive the six metric cards above it; the "?"
+            (Time Range step) says what it reaches, so "Today" over "Hands
+            This Week" is not read as a bug (Dan 2026-10-17: no descriptions
+            on the page). */}
       </div>
 
       {/* Tab Navigation — real tablist semantics so screen readers announce

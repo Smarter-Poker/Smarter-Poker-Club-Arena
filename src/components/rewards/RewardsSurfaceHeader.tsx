@@ -1,5 +1,7 @@
 import { useId, type ReactNode } from 'react';
-import { ClubPageSection } from '../club/ClubPageSection';
+import PageBar from '../help/PageBar';
+import type { TutorialStep } from '../help/PageHelp';
+import '../club/ClubPageSection.css';
 import { formatPopupText } from '../../utils/popupStyle';
 import {
   SpadeConsole,
@@ -19,22 +21,18 @@ export interface RewardMetric {
   tone?: 'default' | 'live' | 'attention';
 }
 
-/** The art the pre-console header showed beside its copy. Accepted so no caller
- *  changes; the console carries its own emblem (the crest) and paints nothing else. */
-type RewardArt = 'diamonds' | 'vault' | 'vip' | 'missions' | 'market';
-
 interface RewardsSurfaceHeaderProps {
-  unframed?: boolean;
-  eyebrow: string;
   title: string;
+  /** What the page is for. Shown behind the "?" in the top right, never on the page. */
   description: string;
   metrics?: RewardMetric[];
-  /** Free-form controls printed on the glass under the metrics. Prefer `plates`. */
+  /** Free-form controls kept beside the live figures. */
   actions?: ReactNode;
-  /** The two painted plates in the console's foot. */
+  /** The page's two doors. On the console they are its painted plates;
+   *  without a console they are lit words in the page bar. */
   plates?: { secondary?: PlateButtonProps; primary?: PlateButtonProps };
-  art?: RewardArt;
-  artPath?: string;
+  /** Live state, e.g. "OFFER INDEX // LIVE" or a sync word. Only the last
+   *  segment prints, and only as a short word. */
   status?: string;
   /** Overrides the word the console prints in its painted pill slot. */
   pill?: string;
@@ -43,7 +41,9 @@ interface RewardsSurfaceHeaderProps {
   crest?: ConsoleCrest;
   /** The approved painted chassis this page uses. */
   family?: ConsoleFamily;
-  /** More of the page, printed on the same glass so the surface stays one picture. */
+  /** The page's tutorial, when its own sections do not explain it. */
+  steps?: TutorialStep[];
+  /** The page itself, printed on the console's glass so the surface stays one picture. */
   children?: ReactNode;
 }
 
@@ -82,109 +82,110 @@ function pillFromStatus(status: string): { text: string; ink: ConsoleInk } {
   return { text: formatPopupText(short), ink };
 }
 
+const INK_TONE: Partial<Record<ConsoleInk, 'live' | 'attention' | 'danger'>> = {
+  green: 'live',
+  gold: 'attention',
+  red: 'danger',
+};
+
+/** "LIVE" is the default state of every page; only a state worth reading prints. */
+function barStatus(
+  status: string | undefined
+): { text: string; tone: 'default' | 'live' | 'attention' | 'danger' } | undefined {
+  if (!status) return undefined;
+  const { text, ink } = pillFromStatus(status);
+  if (/^(live|synced|ready|open)$/i.test(text)) return undefined;
+  return { text, tone: INK_TONE[ink] ?? 'default' };
+}
+
+function plateWord(props: PlateButtonProps, key: string) {
+  const { label, ink = 'blue', haptic: _haptic, buttonRef, href, ...buttonProps } = props;
+  return href ? (
+    <a key={key} href={href} className={`club-page-action sc-ink--${ink}`}>
+      {label}
+    </a>
+  ) : (
+    <button
+      key={key}
+      {...buttonProps}
+      ref={buttonRef}
+      type={buttonProps.type || 'button'}
+      className={`club-page-action sc-ink--${ink}`}
+    >
+      {label}
+    </button>
+  );
+}
+
 /**
- * THE REWARDS CIRCUIT HEADER, ON THE SPADE CONSOLE (#ClubArenaConsole).
- *
- * One sheet for nineteen pages: wallet, VIP, rakeback, promotions, bonuses,
+ * THE REWARDS CIRCUIT HEADER (wallet, VIP, rakeback, promotions, bonuses,
  * achievements, marketplace, transactions, session history, the union pages
- * and the tournament pages. Dan, 2026-09-09: "upgrade these using
- * #ClubArenaConsole, these pages are still generic ... NONE OF THOSE FOLLOW
- * the Painted-Chassis Standard."
+ * and the tournament pages).
  *
- * So the header is Dan's approved master and nothing is drawn: the eyebrow,
- * the title and the status word print into the head's measured zones, the
- * description and the metrics print on the black glass between the rails,
- * a page's own content can print on the same glass (children), and a page
- * with two actions gets them on the painted plates in the foot. The crest
- * is the emblem; there is no art panel, no gradient, no conduit.
+ * Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL
+ * DESCRIPTIONS THAT EXIST LIKE THIS ON ANY AND ALL PAGES. ADD A ? MARK ICON
+ * INSTEAD IN THE UPPER RIGHT CORNER". The eyebrow and the paragraph are gone
+ * from every page; the paragraph is what the painted "?" now explains.
+ *
+ * Two shapes, decided by whether the page lives on the console:
+ *  - A page that prints itself on the console's glass (children) keeps the
+ *    Spade Console (#ClubArenaConsole): the painted head carries the title
+ *    and the status word, the page sits on the glass, the two doors are the
+ *    painted plates. The "?" sits above it, top right.
+ *  - Every other page gets the page bar: its live figures and its doors as
+ *    lit words, the "?" top right. No console is painted just to frame an
+ *    introduction.
  */
 export default function RewardsSurfaceHeader({
-  unframed = false,
-  eyebrow,
   title,
   description,
   metrics = [],
   actions,
   plates,
-  status = 'VALUE NETWORK // LIVE',
+  status,
   pill,
   pillInk,
   crest = 'spade',
   family = 'spade',
+  steps,
   children,
 }: RewardsSurfaceHeaderProps) {
   const titleId = useId();
-  /* The master's eyebrow zone ends where the crest begins, so the eyebrow
-     prints the family ("Rewards Circuit"); the section is the title. */
-  const eyebrowFamily = eyebrow.split('/')[0].trim();
-  const fromStatus = pillFromStatus(status);
+  const pageTitle = formatPopupText(title);
+
+  if (!children) {
+    const live = pill ? undefined : barStatus(status);
+    return (
+      <PageBar
+        title={pageTitle}
+        summary={formatPopupText(description)}
+        status={pill ? formatPopupText(pill) : live?.text}
+        statusTone={pill ? (pillInk ? (INK_TONE[pillInk] ?? 'default') : 'default') : live?.tone}
+        metrics={metrics}
+        steps={steps}
+      >
+        {actions}
+        {plates?.secondary && plateWord(plates.secondary, 'secondary')}
+        {plates?.primary && plateWord(plates.primary, 'primary')}
+      </PageBar>
+    );
+  }
+
+  const fromStatus = pillFromStatus(status || 'LIVE');
   const pillText = pill ? formatPopupText(pill) : fromStatus.text;
   const ink = pillInk ?? (pill ? 'blue' : fromStatus.ink);
 
-  if (unframed) {
-    return (
-      <ClubPageSection
-        title={formatPopupText(title)}
-        titleAs="h1"
-        titleId={titleId}
-        eyebrow={formatPopupText(eyebrowFamily)}
-        pill={pillText}
-        pillInk={ink}
-        plates={plates}
-      >
-        <p className={styles.summaryDescription}>{formatPopupText(description)}</p>
-        {metrics.length > 0 && (
-          <dl className={styles.summaryMetrics} aria-label={`${title} Live Summary`}>
-            {metrics.map((metric) => (
-              <div key={metric.label}>
-                <dt>{formatPopupText(metric.label)}</dt>
-                <dd>{metric.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        {actions && <div className={styles.summaryActions}>{actions}</div>}
-        {children}
-      </ClubPageSection>
-    );
-  }
-
-  // A summary introduces a page; it does not need a second decorative console.
-  // Content-bearing consoles retain their native painted chassis below.
-  if (eyebrowFamily === 'Rewards Circuit' && !children && !plates) {
-    return (
-      <section className={styles.summary} aria-labelledby={titleId}>
-        <div className={styles.summaryHeading}>
-          <div>
-            <p className={styles.summaryEyebrow}>{formatPopupText(eyebrowFamily)}</p>
-            <h2 id={titleId}>{formatPopupText(title)}</h2>
-          </div>
-          <span className={styles.summaryStatus} data-ink={ink}>
-            {pillText}
-          </span>
-        </div>
-        <p className={styles.summaryDescription}>{formatPopupText(description)}</p>
-        {metrics.length > 0 && (
-          <dl className={styles.summaryMetrics} aria-label={`${title} Live Summary`}>
-            {metrics.map((metric) => (
-              <div key={metric.label}>
-                <dt>{formatPopupText(metric.label)}</dt>
-                <dd>{metric.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        {actions && <div className={styles.summaryActions}>{actions}</div>}
-      </section>
-    );
-  }
-
   return (
     <div className={styles.header}>
+      <PageBar
+        title={pageTitle}
+        summary={formatPopupText(description)}
+        steps={steps}
+        titleAs={false}
+      />
       <SpadeConsole
         as="section"
-        eyebrow={formatPopupText(eyebrowFamily)}
-        title={formatPopupText(title)}
+        title={pageTitle}
         titleId={titleId}
         pill={pillText}
         pillInk={ink}
@@ -195,8 +196,6 @@ export default function RewardsSurfaceHeader({
         className={styles.console}
         aria-labelledby={titleId}
       >
-        <p className={`sc-copy ${styles.description}`}>{formatPopupText(description)}</p>
-
         {metrics.length > 0 && (
           <dl className={styles.metrics} aria-label={`${title} Live Summary`}>
             {metrics.map((metric) => (

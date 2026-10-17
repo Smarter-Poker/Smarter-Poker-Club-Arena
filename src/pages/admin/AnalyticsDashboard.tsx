@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useToast } from '../../components/common/Toast';
+import PageBar from '../../components/help/PageBar';
 import './AnalyticsDashboard.css';
 
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -361,16 +362,13 @@ export default function AnalyticsDashboard() {
 
   return (
     <div className="analytics-dashboard">
-      <header className="analytics-header">
-        <h1>Club Analytics Dashboard</h1>
-        <p>
-          Real-Time Player Position Stats And Diamond Economy Overview
-          <span className="refresh-indicator">
-            <span className="refresh-dot" />
-            Live - Updated {lastRefresh.toLocaleTimeString()}
-          </span>
-        </p>
-
+      <PageBar
+        className="analytics-header"
+        title="Club Analytics Dashboard"
+        summary="Real-Time Player Position Stats And Diamond Economy Overview."
+        status={`Live - Updated ${lastRefresh.toLocaleTimeString()}`}
+        statusTone="live"
+      >
         {/* Enhancement #1: Time Range Selector */}
         <div className="analytics-controls">
           <div className="time-range-selector">
@@ -394,7 +392,7 @@ export default function AnalyticsDashboard() {
             Export CSV
           </button>
         </div>
-      </header>
+      </PageBar>
 
       {/* ── Summary Cards ───────────────────────────────────────────────── */}
       <div className="analytics-summary">

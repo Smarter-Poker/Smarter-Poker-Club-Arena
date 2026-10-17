@@ -130,7 +130,6 @@ export default function TermsOfServicePage() {
   return (
     <LegalDocumentLayout
       documentCode="CA-TOS-01"
-      eyebrow="Platform Agreement"
       title="Terms Of Service"
       summary="The Account, Conduct, Social-Play, And Platform Terms That Govern Club Arena Access."
       lastUpdated={TERMS_LAST_UPDATED}

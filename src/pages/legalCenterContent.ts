@@ -19,12 +19,12 @@ export interface LegalCenterEntry {
   path: string;
 }
 
+/* `description` and each entry's words are the page's explanation and its
+   tutorial (Dan, 2026-10-17): they print behind the "?", not on the page. */
 export const LEGAL_CENTER = {
-  eyebrow: 'Trust & Rules',
   title: 'Legal Center',
   description:
     'The Current Platform Rules, Privacy Commitments, Integrity Standards, And Promotion Terms.',
-  art: 'images/bg-vault.jpg',
 } as const;
 
 export const LEGAL_CENTER_ENTRIES: readonly LegalCenterEntry[] = [

@@ -1,38 +1,6 @@
-import { CasinoControlIcon } from '../CasinoControlIcon';
 import styles from '../../../pages/DailyChallengesPage.module.css';
 import { mediaUrl } from '../../../utils/mediaBase';
-import type { Tier } from '../../../services/DailyChallengeService';
-import {
-  MISSION_DIAMOND_ARTWORK,
-  MISSION_FREEZE_ARTWORK,
-  MISSION_HERO_DESKTOP,
-  MISSION_HERO_MOBILE,
-  TIER_CONTROL_ICONS,
-} from './missionPresentation';
-
-export function MissionHeroArtwork({ tier }: { tier: Tier }) {
-  return (
-    <div className={styles.heroPicture} data-hero-cycle={tier} aria-hidden="true">
-      <picture>
-        <source media="(max-width: 680px)" srcSet={mediaUrl(MISSION_HERO_MOBILE)} />
-        <img
-          className={styles.heroArtwork}
-          src={mediaUrl(MISSION_HERO_DESKTOP)}
-          alt=""
-          width="1717"
-          height="916"
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-        />
-      </picture>
-      <span className={styles.heroCycleAtmosphere} />
-      <span className={styles.heroCycleInstrument} data-cycle-instrument={tier}>
-        <CasinoControlIcon variant={TIER_CONTROL_ICONS[tier]} state="active" size="lg" />
-      </span>
-    </div>
-  );
-}
+import { MISSION_DIAMOND_ARTWORK, MISSION_FREEZE_ARTWORK } from './missionPresentation';
 
 export function DiamondMark({ className = '' }: { className?: string }) {
   return (

@@ -86,7 +86,10 @@ afterEach(() => {
 });
 
 describe('the Diamond Arena Players page', () => {
-  it('keeps the Diamond scene visible when the shared club roster sheet hides its own hero', async () => {
+  /* Dan 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS... ADD A ? MARK ICON
+     INSTEAD". The Diamond hero (eyebrow, title, sentence, roster artwork) is
+     gone; its four figures print in the page bar beside the "?". */
+  it('prints no hero: a hidden title, the four figures and the help in the page bar', async () => {
     state.getCounts.mockResolvedValue({ members: 2, online: 0, seated: 0, tables: 17 });
     state.getRosterPage.mockResolvedValue({
       items: PLAYERS,
@@ -96,18 +99,15 @@ describe('the Diamond Arena Players page', () => {
     });
     const { container } = render(<DiamondPlayersPage />);
     await screen.findByText('River Rat');
-    const art = container.querySelector('.members-hero__art');
-    expect(art).not.toBeNull();
-    const css = readFileSync('src/pages/ClubMembersPage.css', 'utf8').replace(
-      /\/\*[\s\S]*?\*\//g,
-      ''
-    );
-    const hidingSelectors = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-      .filter((rule) => /display:\s*none\b/.test(rule[2]))
-      .flatMap((rule) => rule[1].split(','))
-      .map((selector) => selector.trim())
-      .filter((selector) => selector.includes('members-hero'));
-    expect(hidingSelectors.filter((selector) => art!.matches(selector))).toEqual([]);
+    expect(
+      container.querySelector('.members-hero, .members-hero__art, .members-eyebrow')
+    ).toBeNull();
+    expect(screen.queryByText('Diamond Arena')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Players' })).toHaveClass('sr-only');
+    expect(screen.getByRole('button', { name: 'Page Help' })).toBeInTheDocument();
+    const bar = container.querySelector('.ca-page-bar');
+    expect(bar?.querySelector('[aria-label="Players Live Summary"]')).not.toBeNull();
+    expect(readFileSync('src/pages/ClubMembersPage.css', 'utf8')).not.toContain('.members-hero');
   });
 
   it('shows loading, then real figures, a real zero, and Unavailable for what it could not tell', async () => {

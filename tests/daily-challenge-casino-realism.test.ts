@@ -26,10 +26,8 @@ const routeFallbackCss = readFileSync(
 const preloader = readFileSync(resolve(__dirname, '../src/utils/ChunkPreloader.ts'), 'utf8');
 
 describe('Daily Challenges Smarter Casino Realism surface', () => {
-  it('ships responsive cinematic artwork and a physical reward object', () => {
+  it('ships the physical reward objects and no scene art behind the meters', () => {
     for (const asset of [
-      'daily-missions-casino-v2.webp',
-      'daily-missions-casino-v2-mobile.webp',
       'daily-missions-reward-pedestal-v1.webp',
       'daily-missions-streak-freeze-v1.webp',
     ]) {
@@ -38,8 +36,11 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
       expect(statSync(path).size).toBeLessThan(200_000);
       expect(presentation).toContain(asset);
     }
-    expect(artwork).toContain('className={styles.heroPicture} data-hero-cycle={tier}');
-    expect(artwork).toContain('<picture>');
+    // Dan 2026-10-17: the hero's vault scene was decoration beside the copy.
+    // The meters keep their bevel frame; the picture is gone.
+    expect(artwork).not.toContain('MissionHeroArtwork');
+    expect(artwork).not.toContain('<picture>');
+    expect(surface).not.toContain('daily-missions-casino-v2');
   });
 
   it('uses the shared realism vocabulary instead of the retired matrix skin', () => {
@@ -70,7 +71,8 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
     const mobileStart = css.indexOf('@media (max-width: 680px)', realismStart);
     const mobileEnd = css.indexOf('@media (max-width: 420px)', mobileStart);
     const mobile = css.slice(mobileStart, mobileEnd);
-    expect(mobile).toContain('min-height: 548px');
+    // The hero is only its meters now, so it sizes to them: no fixed floor.
+    expect(css).not.toMatch(/\.hero\s*\{[^}]*min-height:/);
     expect(mobile).not.toMatch(/min-height:\s*(?:6\d\d|[7-9]\d\d)px/);
     expect(mobile).not.toContain('clip-path: none');
     expect(mobile).not.toContain('border-inline: 0');
@@ -114,8 +116,12 @@ describe('Daily Challenges Smarter Casino Realism surface', () => {
   });
 
   it('keeps cold-error recovery above the fold and animates only enabled intent surfaces', () => {
-    const finalUnavailableRule = css.slice(css.lastIndexOf('.unavailableHero'));
-    expect(finalUnavailableRule).toContain('min-height: 420px');
+    // The cold-error state prints its alert and retry first, with no hero
+    // above it to push the retry down (Dan 2026-10-17).
+    const unavailable = readDailyChallengesUnit('MissionUnavailableState.tsx');
+    expect(unavailable).not.toContain('styles.hero');
+    expect(unavailable.indexOf('role="alert"')).toBeGreaterThan(-1);
+    expect(css).not.toContain('.unavailableHero');
     expect(css).not.toContain(':hover');
     expect(css).toContain('.challengeCard:focus-within .iconBox');
     expect(css).toContain('.buyFreezeBtn:not(:disabled):active');

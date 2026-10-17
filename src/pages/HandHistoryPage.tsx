@@ -795,14 +795,10 @@ export default function HandHistoryPage() {
   return (
     <div className="hand-history-page" data-arena-surface="play">
       <CasinoSurfaceHeader
-        unframed
-        eyebrow="Play & Review / Hands"
         title="Hand Archive"
         description="Every Hand You Played, Across Every Table, Newest First. Expand A Hand For The Full Rundown, Replay It, Share It, Or Send It To Jarvis."
-        artPath="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
         status="HAND RECORD // LIVE"
         metrics={[
-          { label: 'Loaded', value: hands.length },
           { label: 'Won', value: stats.wins, tone: 'live' },
           { label: 'Biggest Pot', value: biggestPotsByAsset, tone: 'attention' },
         ]}

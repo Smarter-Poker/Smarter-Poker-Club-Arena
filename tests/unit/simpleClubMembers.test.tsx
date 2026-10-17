@@ -186,13 +186,21 @@ it('defaults to a compact directory and restores the full workspace in Advanced'
     await vi.advanceTimersByTimeAsync(110);
   });
   expect(screen.getByRole('button', { name: 'Simple' })).toHaveAttribute('aria-pressed', 'true');
+  // No page hero in either mode (Dan 2026-10-17); Advanced adds the live totals to the page bar.
+  expect(screen.getByRole('heading', { level: 1, name: 'Player Management' })).toHaveClass(
+    'sr-only'
+  );
   expect(screen.queryByText('Player Command')).not.toBeInTheDocument();
+  expect(screen.queryByText('Total Members')).not.toBeInTheDocument();
   expect(screen.queryByRole('combobox', { name: 'Filter Players' })).not.toBeInTheDocument();
   expect(screen.queryByText('Metric Definitions')).not.toBeInTheDocument();
   expect(screen.getByRole('searchbox', { name: 'Search Club Members' })).toBeInTheDocument();
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'King' } });
   fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
-  expect(screen.getByText('Player Command')).toBeInTheDocument();
+  expect(screen.queryByText('Player Command')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Player Management Live Summary')).toHaveTextContent(
+    'Total Members'
+  );
   expect(screen.getByRole('combobox', { name: 'Filter Players' })).toBeInTheDocument();
   expect(screen.getByText('Metric Definitions')).toBeInTheDocument();
   expect(screen.getByRole('searchbox')).toHaveValue('King');

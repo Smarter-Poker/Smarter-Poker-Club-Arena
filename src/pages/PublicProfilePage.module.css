@@ -68,7 +68,6 @@
 .publicProfileHeader {
   position: relative;
   isolation: isolate;
-  min-height: 390px;
   overflow: hidden;
   padding: 2rem 1rem;
   border: 1px solid var(--public-line);
@@ -119,39 +118,13 @@
   box-shadow: 0 -8px 22px rgba(58, 168, 255, 0.28);
 }
 
-.publicProfileArtwork {
-  position: absolute;
-  inset: 0;
-  z-index: -3;
-  background-position: center 40%;
-  background-size: cover;
-  background-repeat: no-repeat;
-  filter: saturate(0.8) contrast(1.08) brightness(0.72);
-  transform: scale(1.015);
-}
-
 .profileHero {
   display: flex;
-  min-height: 325px;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
   gap: 0.45rem;
   text-align: center;
-}
-
-.publicProfileEyebrow {
-  position: absolute;
-  top: 1.1rem;
-  left: 1.2rem;
-  color: var(--public-blue-soft);
-  font:
-    800 0.62rem/1 ui-monospace,
-    'SFMono-Regular',
-    Consolas,
-    monospace;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
 }
 
 /* SPECIFICITY, deliberate (2026-09-05). These five carry text the app shell
@@ -455,10 +428,6 @@
     radial-gradient(circle at 50% 0, rgba(24, 120, 200, 0.12), transparent 34rem), var(--public-bg);
 }
 
-:global([data-theme='light']) .publicProfileArtwork {
-  filter: saturate(0.7) contrast(1.02) brightness(1.05);
-}
-
 :global([data-theme='light']) .profileUsername {
   text-shadow: 0 2px 14px rgba(255, 255, 255, 0.9);
 }
@@ -499,10 +468,6 @@
 }
 
 @media (max-width: 480px) {
-  .publicProfileHeader {
-    min-height: 410px;
-  }
-
   .profileActions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -515,7 +480,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .publicProfileArtwork,
   .actionBtn,
   .mutualFriendChip {
     transform: none;

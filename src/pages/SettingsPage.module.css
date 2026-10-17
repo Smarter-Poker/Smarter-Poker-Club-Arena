@@ -19,35 +19,6 @@
   color: #f4f8fb;
 }
 
-.heroMetric {
-  display: grid;
-  min-width: 112px;
-  min-height: 48px;
-  align-content: center;
-  padding: 0.45rem 0.7rem;
-  border: 1px solid rgba(185, 202, 215, 0.28);
-  border-radius: 2px;
-  background: rgba(3, 6, 9, 0.76);
-  color: #f4f8fb;
-  font:
-    800 0.78rem/1.1 'Rajdhani',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.heroMetric small {
-  margin-bottom: 0.25rem;
-  color: #77c9ff;
-  font:
-    700 0.56rem/1 ui-monospace,
-    'SFMono-Regular',
-    Consolas,
-    monospace;
-  letter-spacing: 0.12em;
-}
-
 .controlIndex {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -528,12 +499,6 @@
   color: #0d161d;
 }
 
-:global([data-theme='light']) .heroMetric {
-  color: #0d161d;
-  background: rgba(255, 255, 255, 0.78);
-  border-color: #aab8c3;
-}
-
 :global([data-theme='light']) .controlIndex,
 :global([data-theme='light']) .headerActions {
   background: linear-gradient(145deg, #ffffff, #e9eef2);
@@ -560,8 +525,7 @@
 
 :global([data-theme='light']) .section h2,
 :global([data-theme='light']) .settingEyebrow,
-:global([data-theme='light']) .sliderValue,
-:global([data-theme='light']) .heroMetric small {
+:global([data-theme='light']) .sliderValue {
   color: #146bb3;
 }
 

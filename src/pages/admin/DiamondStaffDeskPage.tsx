@@ -27,6 +27,7 @@
  */
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { confirmDialog } from '../../components/common/confirmDialog';
+import PageBar from '../../components/help/PageBar';
 import DiamondIncidentReviewService, {
   incidentRefusalCopy,
   isRefusal,
@@ -1128,15 +1129,17 @@ export default function DiamondStaffDeskPage() {
   return (
     <div className="admin-page">
       <div className="admin-container">
-        <div className="admin-page-header">
-          <div>
-            <h1 className="admin-page-title">Diamond Staff Desk</h1>
-            <p className="admin-text-secondary">
-              Diamond Games, Incidents, Books And Adjustments. Every Act Is Recorded Under Your
-              Name.
-            </p>
-          </div>
-        </div>
+        <PageBar
+          title="Diamond Staff Desk"
+          summary="Diamond Games, Incidents, Books And Adjustments. Every Act Is Recorded Under Your Name."
+          steps={[
+            {
+              title: 'Desk Sections',
+              body: 'Games, Incidents, Health And Books, And Adjustments Each Have Their Own Tab.',
+              target: '.admin-tabs',
+            },
+          ]}
+        />
         <div className="admin-tabs" role="tablist">
           {TABS.map(([key, label]) => (
             <button

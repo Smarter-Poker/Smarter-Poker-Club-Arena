@@ -7,6 +7,7 @@ import FinancialAdminScopeState from '../components/common/FinancialAdminScopeSt
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import WeeklyAccountingWorkspace from '../components/accounting/WeeklyAccountingWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import styles from './SettlementPage.module.css';
 
 export default function SettlementDashboardPage() {
@@ -25,7 +26,6 @@ export default function SettlementDashboardPage() {
         <SpadeConsole
           className={styles.console}
           family="spade"
-          eyebrow="Club Arena"
           title="Weekly Accounting"
           titleAs="h1"
           pill="Unavailable"
@@ -42,13 +42,19 @@ export default function SettlementDashboardPage() {
   const ledgerTitle = scopeClubId ? 'Club Transaction Records' : 'Your Account Transactions';
   return (
     <main className={styles.page}>
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow and
+          the descriptive subtitle moved behind the painted "?"; the head keeps
+          its title and its live pill. */}
+      <PageBar
+        title="Weekly Accounting"
+        titleAs={false}
+        summary="Verified Settlement Records. Weekly Accounting Is Posted Automatically, And Every Transaction Behind It Is Listed Below."
+      />
       <SpadeConsole
         className={styles.console}
         family="spade"
-        eyebrow="Club Arena"
         title="Weekly Accounting"
         titleAs="h1"
-        subtitle="Verified Settlement Records"
         pill={scopeClubId ? 'Club' : 'Account'}
         pillInk="blue"
         foot="foot"

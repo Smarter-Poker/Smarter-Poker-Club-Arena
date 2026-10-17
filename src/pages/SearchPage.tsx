@@ -691,8 +691,6 @@ export default function SearchPage() {
   // ── Derived ────────────────────────────────────────────────────────────
 
   const wantedIndexes = indexesForScope(category);
-  const liveIndexes = wantedIndexes.filter((key) => indexStatus[key] === 'live').length;
-  const failedIndexes = wantedIndexes.filter((key) => indexStatus[key] === 'failed').length;
   const hasSearched = Boolean(query.trim());
   const shownCount =
     snapshot.clubs.length +
@@ -722,27 +720,14 @@ export default function SearchPage() {
       .filter((section) => section.shown > 0 || section.status === 'failed');
   }, [indexStatus, snapshot, wantedIndexes]);
 
-  const liveIndexesMetric = hasSearched
-    ? `${liveIndexes}/${wantedIndexes.length}`
-    : indexHealth
-      ? '4/4'
-      : '…';
-
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
     <main className={styles.page}>
       <CommunitySurfaceHeader
-        eyebrow="Community / Discovery"
         title="Find Your Next Game"
         description="Scan Live Players, Clubs, Open Tables, And Active Tournaments From One Precise Community Index."
         metrics={[
-          {
-            label: 'Live Indexes',
-            value: liveIndexesMetric,
-            tone: failedIndexes > 0 ? 'attention' : 'live',
-          },
-          { label: 'Current Scope', value: SCOPE_LABEL[category] },
           {
             label: 'Results',
             value: loading ? 'Scanning' : hasSearched ? formatCount(totalMatches) : '0',

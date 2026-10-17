@@ -86,6 +86,7 @@ import {
 } from '../utils/multiDaySchedule';
 import CashGameCreateFlow from '../components/cash/CashGameCreateFlow';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import { MttCreationStructurePreview } from '../components/tournament/MttCreationStructurePreview';
 import { MttPayoutDepthOptions } from '../components/tournament/MttPayoutDepthOptions';
 import { MttCreationProfileSelect } from '../components/tournament/MttCreationProfileSelect';
@@ -2168,10 +2169,8 @@ export default function TableConfigPage({
      so the frame closes on the flat cap. */
   const frame = (
     <SpadeConsole
-      eyebrow={embedded ? 'Add Table' : 'Table Management'}
       title={`${gameInfo.name} Setup`}
       titleId="table-config-title"
-      subtitle="Configure, Validate, Then Publish"
       pill="Creator"
       crest="flat"
       foot="foot"
@@ -2183,5 +2182,17 @@ export default function TableConfigPage({
 
   if (embedded) return frame;
 
-  return <main className="table-config-page__standalone">{frame}</main>;
+  /* Dan, 2026-10-17: the eyebrow and the subtitle moved behind the painted
+     "?". Embedded in Table Management the form is a panel of that page, whose
+     own bar carries the "?", so only the standalone route prints one. */
+  return (
+    <main className="table-config-page__standalone">
+      <PageBar
+        title={`${gameInfo.name} Setup`}
+        titleAs={false}
+        summary="Configure, Validate, Then Publish. Set The Game, The Stakes And The Seats, Then Save The Table Or Start It."
+      />
+      {frame}
+    </main>
+  );
 }

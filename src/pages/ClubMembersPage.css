@@ -1,6 +1,7 @@
 /**
  * CLUB MEMBERS - #smarterCasinoRealism roster command surface.
- * The rendered roster vault is the signature; the UI is quiet, machined hardware.
+ * The UI is quiet, machined hardware. The page hero is gone (Dan 2026-10-17:
+ * "PAGES DON'T NEED TITLES LIKE THIS"); its figures print in the page bar.
  */
 
 .club-members-page {
@@ -34,226 +35,6 @@
     linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px), var(--members-void);
   background-size: 48px 48px;
-}
-
-.members-eyebrow {
-  display: block;
-  color: var(--members-cyan);
-  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
-  font-size: 0.69rem;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  line-height: 1.2;
-  text-transform: none;
-}
-
-/* Roster vault hero */
-.members-hero {
-  position: relative;
-  width: var(--members-content);
-  min-height: 292px;
-  margin: 0 auto 14px;
-  overflow: hidden;
-  isolation: isolate;
-  border: 1px solid var(--members-gunmetal);
-  background: var(--members-black);
-  clip-path: polygon(
-    12px 0,
-    calc(100% - 12px) 0,
-    100% 12px,
-    100% calc(100% - 12px),
-    calc(100% - 12px) 100%,
-    12px 100%,
-    0 calc(100% - 12px),
-    0 12px
-  );
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.95);
-}
-
-.members-hero::before {
-  position: absolute;
-  z-index: 1;
-  inset: 5px;
-  pointer-events: none;
-  content: '';
-  border: 1px solid rgba(184, 195, 205, 0.18);
-  clip-path: polygon(
-    8px 0,
-    calc(100% - 8px) 0,
-    100% 8px,
-    100% calc(100% - 8px),
-    calc(100% - 8px) 100%,
-    8px 100%,
-    0 calc(100% - 8px),
-    0 8px
-  );
-}
-
-.members-hero::after {
-  position: absolute;
-  z-index: 3;
-  top: 0;
-  bottom: 0;
-  left: -2px;
-  width: 2px;
-  pointer-events: none;
-  content: '';
-  background: var(--members-cyan);
-  box-shadow: 0 0 14px rgba(0, 212, 255, 0.85);
-  animation: members-vault-scan 850ms cubic-bezier(0.22, 1, 0.36, 1) 180ms both;
-}
-
-.members-hero__art {
-  position: absolute;
-  z-index: -1;
-  inset: 0 0 0 auto;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: 78% 51%;
-  opacity: 0.92;
-  pointer-events: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent 4%, rgba(0, 0, 0, 0.2) 30%, #000 58%);
-  mask-image: linear-gradient(90deg, transparent 4%, rgba(0, 0, 0, 0.2) 30%, #000 58%);
-  animation: members-vault-reveal 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.members-hero__content {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  min-height: 292px;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 34px 32px 24px;
-  background: linear-gradient(
-    90deg,
-    rgba(5, 7, 10, 0.99),
-    rgba(5, 7, 10, 0.9) 34%,
-    rgba(5, 7, 10, 0.16) 66%,
-    transparent
-  );
-}
-
-.members-hero__copy {
-  max-width: 550px;
-}
-.members-hero__copy h1 {
-  margin: 6px 0 5px;
-  color: var(--members-text);
-  font-family: Rajdhani, 'Arial Narrow', sans-serif;
-  font-size: clamp(2rem, 4vw, 3.85rem);
-  font-weight: 400;
-  letter-spacing: 0.065em;
-  line-height: 0.95;
-  text-transform: none;
-  text-shadow: 0 1px 0 #000;
-}
-
-.members-hero__copy p {
-  max-width: 510px;
-  margin: 10px 0 0;
-  color: var(--members-text-dim);
-  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
-  font-size: 0.95rem;
-  letter-spacing: 0.015em;
-  line-height: 1.45;
-}
-
-.members-summary-shell {
-  width: min(720px, 68%);
-  margin: 26px 0 0;
-}
-
-.members-summary {
-  display: grid;
-  width: 100%;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  margin: 0;
-  padding: 1px;
-  background: linear-gradient(
-    90deg,
-    var(--members-steel),
-    var(--members-gunmetal) 35%,
-    var(--members-steel)
-  );
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
-}
-
-.summary-stat {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  padding: 10px 14px 8px;
-  text-align: left;
-  background: rgba(7, 11, 15, 0.94);
-}
-
-.summary-stat .stat-value,
-.summary-stat .stat-label {
-  display: block;
-  margin: 0;
-}
-.summary-stat .stat-value {
-  order: 1;
-  color: var(--members-text);
-  font-family: Rajdhani, 'Roboto Mono', monospace;
-  font-size: clamp(1.35rem, 2.4vw, 1.9rem);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  line-height: 1;
-}
-
-.summary-stat .stat-label {
-  order: 2;
-  margin-top: 4px;
-  overflow: hidden;
-  color: var(--members-text-faint);
-  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.13em;
-  text-overflow: ellipsis;
-  text-transform: none;
-  white-space: nowrap;
-}
-
-.members-summary__status {
-  display: block;
-  min-height: 16px;
-  padding: 5px 3px 0;
-  color: var(--members-text-faint);
-  font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
-  font-size: 0.59rem;
-  font-weight: 600;
-  letter-spacing: 0.075em;
-  line-height: 1.25;
-  text-transform: none;
-}
-
-.summary-stat--online {
-  box-shadow: inset 0 -2px 0 var(--members-cyan);
-}
-.summary-stat--online .stat-value {
-  color: #76e9ff;
-}
-.summary-stat--seated {
-  box-shadow: inset 0 -2px 0 var(--members-gold);
-}
-.summary-stat--seated .stat-value {
-  color: #e0c27f;
-}
-.summary-stat--agents {
-  box-shadow: inset 0 -2px 0 var(--members-blue);
-}
-.summary-stat--agents .stat-value {
-  color: #a8baff;
 }
 
 /* Search and control console */
@@ -1044,42 +825,6 @@
 }
 
 @media (min-width: 721px) and (max-height: 820px) {
-  .members-hero,
-  .members-hero__content {
-    min-height: 222px;
-  }
-
-  .members-hero__content {
-    padding: 24px 26px 16px;
-  }
-
-  .members-hero__copy h1 {
-    font-size: clamp(2rem, 3.5vw, 2.9rem);
-  }
-
-  .members-hero__copy p {
-    margin-top: 6px;
-    font-size: 0.86rem;
-  }
-
-  .members-summary-shell {
-    margin-top: 14px;
-  }
-
-  .summary-stat {
-    padding: 7px 12px 6px;
-  }
-
-  .summary-stat .stat-value {
-    font-size: 1.3rem;
-  }
-
-  .members-summary__status {
-    min-height: 13px;
-    padding-top: 3px;
-    font-size: 0.54rem;
-  }
-
   .members-console {
     padding: 14px 16px;
   }
@@ -1095,52 +840,7 @@
     padding-top: 9px;
     background-size: 36px 36px;
   }
-  .members-hero {
-    min-height: 268px;
-    margin-bottom: 9px;
-  }
-  .members-hero__art {
-    width: 128%;
-    max-width: none;
-    object-position: 68% 48%;
-    opacity: 0.62;
-    -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.65), #000 48%);
-    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.65), #000 48%);
-  }
-  .members-hero__content {
-    min-height: 268px;
-    padding: 24px 17px 16px;
-    background: linear-gradient(
-      90deg,
-      rgba(5, 7, 10, 0.95),
-      rgba(5, 7, 10, 0.48) 76%,
-      rgba(5, 7, 10, 0.2)
-    );
-  }
-  .members-hero__copy {
-    max-width: 86%;
-  }
-  .members-hero__copy h1 {
-    font-size: clamp(2rem, 10vw, 2.8rem);
-  }
-  .members-hero__copy p {
-    max-width: 40ch;
-    font-size: 0.82rem;
-  }
-  .members-summary-shell {
-    width: 100%;
-    margin-top: 20px;
-  }
-  .summary-stat {
-    padding: 9px 8px 7px;
-  }
-  .summary-stat .stat-value {
-    font-size: 1.3rem;
-  }
-  .summary-stat .stat-label {
-    font-size: 0.53rem;
-    letter-spacing: 0.08em;
-  }
+
   /* On a phone the console is most of the screen tall (search, saved views,
      sort, five controls, the export scope and Metric Definitions), so pinning
      it hid the roster beneath it and, with Metric Definitions open, pushed its
@@ -1232,12 +932,6 @@
 }
 
 @media (max-width: 430px) {
-  .members-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .summary-stat {
-    min-height: 52px;
-  }
   .members-result-count {
     max-width: 72px;
     text-align: right;
@@ -1292,13 +986,6 @@
 }
 
 @media (max-width: 365px) {
-  .members-hero__copy p {
-    display: none;
-  }
-  .members-hero,
-  .members-hero__content {
-    min-height: 235px;
-  }
   .member-row {
     height: 116px;
   }
@@ -1319,76 +1006,24 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .members-hero::after,
-  .members-hero__art,
   .members-refresh[aria-busy='true']::before {
     animation: none;
   }
 }
 
-@keyframes members-vault-reveal {
-  from {
-    opacity: 0;
-    transform: scale(1.025);
-  }
-  to {
-    opacity: 0.92;
-    transform: scale(1);
-  }
-}
-@keyframes members-vault-scan {
-  from {
-    left: -2px;
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  to {
-    left: calc(100% + 2px);
-    opacity: 0;
-  }
-}
 @keyframes members-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-/* Player Command is a directory first; the desk illustration no longer sets
-   its height or forces the operator to scroll before reaching the search. */
-.club-members-page:not(.diamond-players) .members-hero {
-  min-height: 0;
-  background: #000;
-  border: 0;
-  box-shadow: none;
-  padding: 20px 0;
-}
-.club-members-page:not(.diamond-players) .members-hero__art {
-  display: none;
-}
-.club-members-page:not(.diamond-players) .members-hero__content {
-  position: relative;
-  padding: 0;
-  gap: 20px;
-}
-.club-members-page:not(.diamond-players) .members-hero__copy {
-  padding: 0;
-}
-.club-members-page:not(.diamond-players) .members-hero__copy h1 {
-  font-size: clamp(30px, 4vw, 44px);
-}
 .club-members-page:not(.diamond-players) .members-console {
   background: transparent;
   border: 0;
   box-shadow: none;
   padding-inline: 0;
 }
-.club-members-page:not(.diamond-players) .members-summary-shell {
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-}
+
 .members-applicants {
   display: inline-flex;
   min-height: 44px;
@@ -1402,10 +1037,6 @@
   outline-offset: 3px;
 }
 @media (max-width: 620px) {
-  .club-members-page:not(.diamond-players) .members-hero__content {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-  }
   .club-members-page:not(.diamond-players) .members-filters {
     flex-wrap: wrap;
   }
@@ -1434,22 +1065,17 @@
   outline-offset: 3px;
 }
 
-/* Simple directory keeps management one tap away; Advanced owns the full desk. */
-.members-mode-heading {
-  display: flex;
+/* Simple directory keeps management one tap away; Advanced owns the full desk.
+   The mode toggle and, in Advanced, the live totals sit in the page bar. */
+.ca-page-bar.members-page-bar {
   width: var(--members-content);
   margin: 0 auto 12px;
+}
+.members-mode-toggle {
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }
-.members-mode-heading h1 {
-  margin: 0;
-  font:
-    600 clamp(22px, 4vw, 30px)/1.2 'Roboto Condensed',
-    sans-serif;
-}
-.members-mode-heading button,
+.members-mode-toggle button,
 .members-simple-tabs button,
 .members-simple-tabs a {
   min-height: 44px;
@@ -1463,12 +1089,12 @@
   cursor: pointer;
   text-decoration: none;
 }
-.members-mode-heading button[aria-pressed='true'],
+.members-mode-toggle button[aria-pressed='true'],
 .members-simple-tabs button[aria-pressed='true'] {
   color: #45adff;
   box-shadow: inset 0 -2px #45adff;
 }
-.members-mode-heading button:focus-visible,
+.members-mode-toggle button:focus-visible,
 .members-simple-tabs button:focus-visible,
 .members-simple-tabs a:focus-visible {
   outline: 2px solid #45adff;
@@ -1566,14 +1192,7 @@
   white-space: nowrap;
 }
 @media (max-width: 430px) {
-  .members-mode-heading {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  .members-mode-heading h1 {
-    font-size: 22px;
-  }
-  .members-mode-heading button {
+  .members-mode-toggle button {
     padding-inline: 10px;
   }
 }
@@ -1597,11 +1216,6 @@
 }
 body:has([data-players-mode='simple']) nav[aria-label='Club Operations Sections'] {
   display: none;
-}
-.members-mode-heading > span {
-  font:
-    600 22px/1.2 'Roboto Condensed',
-    sans-serif;
 }
 .members-active-view {
   min-height: 44px;

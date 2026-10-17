@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -265,13 +265,17 @@ describe('RakebackPage presents automatic weekly settlement, never a claim', () 
     expect(
       screen.getByText('Settled Automatically Every Monday At 4:00 AM Central Time.')
     ).toBeInTheDocument();
-    const info = screen.getByText('How Rakeback Works').closest('.rakeback-info') as HTMLElement;
-    expect(
-      within(info).getByText(/Earning Periods Close At Midnight Pacific Time/)
-    ).toBeInTheDocument();
-    expect(
-      within(info).getByText(/Rakeback Is Settled Automatically Every Monday At 4:00 AM Central/)
-    ).toBeInTheDocument();
+    // 2026-10-17: the explainer moved behind the page's "?" (Dan: "REMOVE ALL
+    // DESCRIPTIONS... ADD A ? MARK ICON INSTEAD"); its tour still says it.
+    expect(screen.queryByText('How Rakeback Works')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Page Help' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start Tutorial' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    const tour = screen.getByRole('dialog');
+    expect(tour.textContent).toMatch(/Earning Periods Close At Midnight Pacific Time/);
+    expect(tour.textContent).toMatch(
+      /Rakeback Is Settled Automatically Every Monday At 4:00 AM Central/
+    );
     expect(screen.queryByText(/00:00 UTC/)).toBeNull();
     expect(screen.queryByText(/Claims Are Processed One Club At A Time/)).toBeNull();
     expect(screen.queryByText(/A Club Claim May Include More Periods/)).toBeNull();

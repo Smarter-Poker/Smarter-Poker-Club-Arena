@@ -13,6 +13,7 @@ import { ClubsService } from '../services/ClubsService';
 import { MembershipService } from '../services/MembershipService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import PageBar from '../components/help/PageBar';
 import BBJThresholdPanel from '../components/bbj/BBJThresholdPanel';
 import BBJMiniPanel from '../components/bbj/BBJMiniPanel';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
@@ -1321,10 +1322,14 @@ export default function ClubSettingsPage() {
 
   return (
     <div className="club-settings-page">
-      <header className="club-settings-heading">
-        <p>{savedClubName}</p>
-        <h1>Club Settings</h1>
-        <p>Manage Your Club Identity, Joining Policy And Operating Settings.</p>
+      {/* The visible title and its sentence went behind the "?" (Dan
+          2026-10-17). The club's own name is its identity and stays. */}
+      <PageBar
+        className="club-settings-heading"
+        title="Club Settings"
+        summary="Manage Your Club Identity, Joining Policy And Operating Settings."
+      >
+        <p className="club-settings-name">{savedClubName}</p>
         <nav aria-label="Settings Sections">
           <a href="#settings-identity">Identity</a>
           <a href="#settings-privacy">Joining Policy</a>
@@ -1332,7 +1337,7 @@ export default function ClubSettingsPage() {
           {canSeeAuditLog && <a href="#settings-history">Activity</a>}
           {isOwner && <a href="#settings-ownership">Ownership</a>}
         </nav>
-      </header>
+      </PageBar>
       <div className="settings-content">
         {/* Non-owners used to get a page of silently disabled inputs with no
             explanation — every control looked broken. Say why, once. */}

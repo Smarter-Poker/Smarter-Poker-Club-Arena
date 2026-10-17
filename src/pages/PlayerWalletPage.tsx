@@ -1198,7 +1198,11 @@ function PlayerWalletAccount({
 
   return (
     <div className="wallet-page" data-arena-surface="wallet">
-      <CashierWorkspace compact eyebrow="Secure Wallet" title="Wallet">
+      <CashierWorkspace
+        compact
+        title="Wallet"
+        summary="Your Chip Balance, Where It Sits, And Every Transfer In Or Out."
+      >
         {/* ═══════════ THE BALANCE - one centred figure, the Cashier's ink ═══════════ */}
         <section className="wallet-balance" aria-labelledby="vault-hero-title">
           <img

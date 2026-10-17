@@ -61,7 +61,8 @@ describe('Daily Challenge cycle deep links', () => {
     expect(authGuard).toContain('if (loadingFallback) return <>{loadingFallback}</>;');
     expect(routeFallback).toContain('data-daily-missions-auth-loading=""');
     expect(routeFallback).toContain('data-daily-missions-crash-fallback=""');
-    expect(routeFallback).toContain('daily-missions-casino-v2.webp');
+    // The shell prints its state, not the hero's scene art (Dan 2026-10-17).
+    expect(routeFallback).not.toContain('daily-missions-casino-v2.webp');
     expect(routeFallback).toContain('<CasinoControlIcon');
     expect(routeFallback).not.toMatch(/\p{Extended_Pictographic}/u);
   });

@@ -1,0 +1,3 @@
+# tests/pages-carry-a-question-mark-not-a-hero.law.test.ts
+
+Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL DESCRIPTIONS THAT EXIST LIKE THIS ON ANY AND ALL PAGES. ADD A ? MARK ICON INSTEAD IN THE UPPER RIGHT CORNER OF THE PAGES THAT CAN EXPLAIN ANYTHING AND ALSO LAUNCH A TUTORIAL AT THE BOTTOM WHEN CLICKED." The law pins that every page-header component prints the page bar (`src/components/help/PageBar.tsx`): the title visually hidden, no eyebrow, the description handed to the help instead of printed, and the approved painted "?" (`images/header-help-v4.png`) whose panel docks at the bottom of the screen, explains the page first and then launches its tutorial.

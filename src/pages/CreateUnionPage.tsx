@@ -190,16 +190,12 @@ export default function CreateUnionPage() {
     <div className={styles.page}>
       <div className={styles.container}>
         <CasinoSurfaceHeader
-          crest="club"
-          eyebrow="Union Network / Creation"
           title="Forge A Union"
           description="Configure A Governed Club Network, Revenue Rules, And Shared Features Through The Existing Server-Authorized Creation Workflow."
-          artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
           status="UNION FORGE // SECURE"
           metrics={[
             { label: 'Step', value: `${step} / ${totalSteps}`, tone: 'attention' },
             { label: 'Club Authority', value: ownsClub ? 'Verified' : 'Checking', tone: 'live' },
-            { label: 'Visibility', value: form.isPublic ? 'Public' : 'Private' },
           ]}
         />
 

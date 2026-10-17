@@ -101,10 +101,11 @@ async function requireDataRouteReady(page: import('@playwright/test').Page, rout
   if (route === 'stats') {
     await expect(
       page.getByRole('heading', { name: 'Player Intelligence', exact: true })
-    ).toBeVisible({
+    ).toBeAttached({
       timeout: 30_000,
     });
-    // The dossier heading is also present during loading and privacy checks.
+    // The dossier heading is visually hidden (Dan 2026-10-17) and is also
+    // present during loading and privacy checks.
     // Measure only once the real, accessible controls have actually arrived.
     await expect(page.locator('.stats-page')).not.toHaveAttribute('aria-busy', 'true', {
       timeout: 30_000,

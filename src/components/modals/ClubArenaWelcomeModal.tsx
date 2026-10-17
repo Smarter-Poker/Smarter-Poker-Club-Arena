@@ -88,7 +88,6 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
           <SpadeConsole
             as="div"
             className={styles.console}
-            eyebrow="Poker Arena"
             title="Welcome To Poker Arena"
             titleId="club-arena-welcome-title"
             pill="Important"

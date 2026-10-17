@@ -72,16 +72,13 @@ export default function TransactionHistoryPage() {
   return (
     <div className="transaction-history-page">
       <RewardsSurfaceHeader
-        eyebrow="Rewards Circuit / Ledger"
         title="Transaction Ledger"
         description={
           diamondHistory
             ? 'Your Diamond Movements, Available Balance And Diamonds In The Arena, Read From Your Own Diamond History.'
             : 'Every Chip That Came Into Or Went Out Of Your Wallet, Newest First, Read From The Chip Journal, With The Nightly Check That Your Balance Adds Up.'
         }
-        art="vault"
         status={diamondHistory ? 'DIAMOND JOURNAL // LIVE' : 'CHIP JOURNAL // LIVE'}
-        crest="diamond"
       />
       <div className="transaction-history-page__statement">
         {diamondHistory ? (

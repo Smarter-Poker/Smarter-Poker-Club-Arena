@@ -47,6 +47,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { ErrorState } from '../components/common/EmptyState';
 import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import DiamondWheelService, {
   type WheelWelcomeState,
   type WheelState,
@@ -300,17 +301,24 @@ export default function DiamondGamesPage() {
 
   return (
     <div className={styles.page}>
-      <button
-        type="button"
-        className={styles.back}
-        onClick={() => navigate(`/clubs/${routeClubId}/promotions`)}
+      {/* Dan, 2026-10-17: the eyebrow and the intro line moved behind the
+          painted "?". The exchange rate stays on the head: it is live. */}
+      <PageBar
+        title="Diamond Spins"
+        titleAs={false}
+        summary={`Turn Diamonds Into Club Chips. Choose Your Game, Set Your Bet, And Check Every Result. ${NO_DIFFICULTY_COPY}`}
       >
-        ‹ Promotions
-      </button>
+        <button
+          type="button"
+          className={styles.back}
+          onClick={() => navigate(`/clubs/${routeClubId}/promotions`)}
+        >
+          ‹ Promotions
+        </button>
+      </PageBar>
 
       <DiamondSpinsTabs clubId={routeClubId ?? ''} />
       <SpadeConsole
-        eyebrow="Rewards Circuit"
         title="Diamond Spins"
         titleId="diamond-games-title"
         subtitle={`${compactChips(rate)} Diamonds Make One Chip`}
@@ -333,10 +341,6 @@ export default function DiamondGamesPage() {
             ink="silver"
           />
         </div>
-        <p className="sc-copy">
-          Turn Diamonds Into Club Chips. Choose Your Game, Set Your Bet, And Check Every Result.{' '}
-          {NO_DIFFICULTY_COPY}
-        </p>
       </SpadeConsole>
 
       <BiggestWins wins={floor?.top_week ?? []} />

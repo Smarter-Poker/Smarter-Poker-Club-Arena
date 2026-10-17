@@ -77,6 +77,7 @@ import type { ConsoleInk } from '../../components/console/SpadeConsole';
 import { ClubPageSection as SpadeConsole } from '../../components/club/ClubPageSection';
 import { titleCase } from '../../utils/titleCase';
 import { compactChips } from '../../utils/format';
+import PageHelp from '../../components/help/PageHelp';
 import styles from './ClubDataPage.module.css';
 import {
   CLUB_GAMES_UNAVAILABLE_COPY,
@@ -2974,6 +2975,13 @@ export default function ClubDataPage() {
             Advanced
           </button>
         </div>
+        {/* Dan, 2026-10-17: the tagline that explained this screen moved behind
+            the painted "?", top right of the header. The header itself stays
+            exactly as it reads. */}
+        <PageHelp
+          title="Club Data"
+          summary="Track Every Game, Fee, Player Result, And Union Square-Up From One Operator-Grade View."
+        />
       </header>
       {!advanced && (
         <div className={styles.simpleStatus}>
@@ -3053,9 +3061,6 @@ export default function ClubDataPage() {
               <span>{statusLine}</span>
             </span>
           </div>
-          <p className={`sc-copy ${styles.tagline}`}>
-            Track Every Game, Fee, Player Result, And Union Square-Up From One Operator-Grade View.
-          </p>
           <div className={styles.rows}>
             <div className={styles.dataRow}>
               <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Cash Updated</span>

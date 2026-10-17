@@ -1,12 +1,8 @@
-.loadingHero .heroCopy {
-  justify-content: flex-end;
-}
-
 .loadingSignal {
   display: grid;
-  width: min(100%, 440px);
+  width: min(100% - 20px, 440px);
   gap: 9px;
-  margin-top: 28px;
+  margin: 12px 10px 0;
   color: #aeb9c3;
   font-size: 0.72rem;
   letter-spacing: 0.13em;

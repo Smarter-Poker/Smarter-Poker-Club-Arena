@@ -11,7 +11,8 @@
  * So this sheet no longer draws a chassis at all. The header IS the spade
  * console (components/console/SpadeConsole.css paints it from Dan's approved
  * master); this file only places the console on the page and lays the
- * description and the metrics on its glass. Nothing here is a frame, a fill,
+ * metrics on its glass. (2026-10-17: the description no longer prints; it is
+ * what the page's "?" explains.) Nothing here is a frame, a fill,
  * a gradient or a pill: paint what never changes, print what does.
  *
  * Colour still resolves through the --realism-* vocabulary in club-engine.css
@@ -43,12 +44,6 @@
 
 .console {
   filter: drop-shadow(0 12px 22px rgba(0, 0, 0, 0.75));
-}
-
-.description {
-  color: var(--rsh-copy);
-  text-align: center;
-  text-wrap: balance;
 }
 
 /* The metrics sit under an engraved rule: the cut is the black line, the lit
@@ -109,87 +104,4 @@
     width: 100%;
     padding: 0;
   }
-}
-
-/* Page introductions carry live copy only, leaving the page's real surfaces
-   as the sole artwork. The summary never draws another frame or emblem. */
-.summary {
-  width: 100%;
-  min-width: 0;
-  margin: 0 auto 24px;
-  padding: 8px 0 20px;
-  color: var(--realism-chrome-hot, #f4f8fb);
-  font-family: Inter, sans-serif;
-  border-bottom: 1px solid var(--realism-gunmetal, #26333d);
-}
-.summaryHeading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.summaryHeading > div {
-  min-width: 0;
-}
-.summaryHeading h2 {
-  margin: 4px 0 0;
-  font:
-    800 clamp(24px, 4vw, 36px)/1.2 'Roboto Condensed',
-    sans-serif;
-  overflow-wrap: anywhere;
-}
-.summaryEyebrow {
-  margin: 0;
-  color: var(--realism-cyan, #45adff);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-}
-.summaryStatus {
-  flex: 0 0 auto;
-  color: var(--realism-cyan, #45adff);
-  font-size: 12px;
-  font-weight: 700;
-}
-.summaryStatus[data-ink='red'] {
-  color: #ff5b6e;
-}
-.summaryStatus[data-ink='gold'] {
-  color: var(--realism-gold, #ffd700);
-}
-.summaryDescription {
-  max-width: 76ch;
-  margin: 12px 0 0;
-  color: var(--realism-muted, #9aa5b3);
-  font-size: 14px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-.summaryMetrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
-  gap: 16px;
-  margin: 20px 0 0;
-}
-.summaryMetrics > div {
-  min-width: 0;
-}
-.summaryMetrics dt {
-  color: var(--realism-muted, #9aa5b3);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.summaryMetrics dd {
-  margin: 4px 0 0;
-  font:
-    800 clamp(20px, 3vw, 28px)/1.2 'Roboto Condensed',
-    sans-serif;
-  overflow-wrap: anywhere;
-  font-variant-numeric: tabular-nums;
-}
-.summaryActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 16px;
 }

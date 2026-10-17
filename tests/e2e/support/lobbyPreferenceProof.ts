@@ -244,14 +244,17 @@ export async function selectLobbyPreference(
   };
   page.on('request', observeRequest);
   let phase = 'click';
+  const actionStarted = Date.now();
   try {
     await tab.click({ timeout: SAVE_TIMEOUT_MS });
+    proof.record('selection-action-complete', { durationMs: Date.now() - actionStarted });
+    phase = 'attribute';
+    const ariaSelected = await tab.getAttribute('aria-selected', {
+      timeout: Math.max(1, SAVE_TIMEOUT_MS - (Date.now() - actionStarted)),
+    });
+    proof.record('selection-clicked', { intended: label, ariaSelected });
     const saveStarted = Date.now();
     phase = 'request';
-    proof.record('selection-clicked', {
-      intended: label,
-      ariaSelected: await tab.getAttribute('aria-selected'),
-    });
     const request = await bounded(
       requested,
       SAVE_TIMEOUT_MS - (Date.now() - saveStarted),

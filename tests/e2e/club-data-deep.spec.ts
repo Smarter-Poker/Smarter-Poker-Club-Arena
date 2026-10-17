@@ -58,6 +58,63 @@ async function observePlayerPage(
   return result;
 }
 
+/** The count a "Load More Players - N Of M" label prints, or null. */
+export function loadMorePlayerCount(label: string | null): number | null {
+  const match = /-\s*([\d,]+)\s+Of\b/i.exec(label || '');
+  return match ? Number(match[1].replace(/,/g, '')) : null;
+}
+
+/** Returning to a sort the operator already expanded paints that sort's cached
+ * window (ClubDataPage keeps an expanded ledger across revalidation and caches
+ * it per sort), so the label is either the fresh first page or a window that
+ * contains it. Either is correct; anything smaller is not. */
+async function returnedSortWindow(
+  loadMore: ReturnType<Page['getByRole']>,
+  firstPage: ObservedPlayerPage
+): Promise<number> {
+  let shown: number | null = null;
+  await expect
+    .poll(
+      async () => {
+        shown = loadMorePlayerCount(await loadMore.textContent());
+        return shown !== null && shown >= firstPage.rows.length;
+      },
+      { timeout: 60_000 }
+    )
+    .toBe(true);
+  return shown!;
+}
+
+/** Load More from a restored window continues from that window's own cursor,
+ * which this test did not observe, so bind to the sort and a non-null cursor. */
+async function observeContinuation(
+  page: Page,
+  sort: 'winners' | 'losers' | 'hands',
+  action: () => Promise<unknown>
+): Promise<ObservedPlayerPage> {
+  const [request] = await Promise.all([
+    page.waitForRequest(
+      (candidate) => {
+        if (
+          candidate.method() !== 'POST' ||
+          !candidate.url().includes('/rest/v1/rpc/ca_club_player_page')
+        )
+          return false;
+        const body = candidate.postDataJSON();
+        return body?.p_sort === sort && body.p_cursor !== null && body.p_cursor !== undefined;
+      },
+      { timeout: 60_000 }
+    ),
+    action(),
+  ]);
+  const response = await request.response();
+  expect(response, 'the requested player page did not return').not.toBeNull();
+  expect(response!.ok(), 'the requested player page was refused').toBe(true);
+  const result = (await response!.json()) as ObservedPlayerPage;
+  playerPageUnion(result);
+  return result;
+}
+
 async function openClubData(page: Page, testInfo: TestInfo): Promise<ClubDataAccess> {
   const configuredBase = String(testInfo.project.use.baseURL || 'http://localhost:5173/');
   const base = new URL(configuredBase);
@@ -353,25 +410,33 @@ test.describe('Club Data production experience', () => {
       const biggestWinners = page.getByRole('button', { name: 'Biggest winners' });
       const winners = await observePlayerPage(page, 'winners', null, () => biggestWinners.click());
       await expect(biggestWinners).toHaveAttribute('aria-pressed', 'true');
-      await expect(loadMorePlayers).toContainText(`- ${winners.rows.length.toLocaleString()} Of`, {
-        timeout: 60_000,
-      });
+      await returnedSortWindow(loadMorePlayers, winners);
       firstLosers = await observePlayerPage(page, 'losers', null, () => biggestLosers.click());
       await expect(biggestLosers).toHaveAttribute('aria-pressed', 'true');
-      await expect(loadMorePlayers).toContainText(
-        `- ${firstLosers.rows.length.toLocaleString()} Of`,
-        {
-          timeout: 60_000,
-        }
-      );
-      const continuation = await observePlayerPage(page, 'losers', firstLosers.next_cursor, () =>
-        loadMorePlayers.click()
-      );
-      expandedPlayerCount = playerPageUnion(firstLosers, continuation).length;
-      expect(expandedPlayerCount).toBeGreaterThan(firstLosers.rows.length);
-      await expect(loadMorePlayers).toContainText(`- ${expandedPlayerCount.toLocaleString()} Of`, {
-        timeout: 60_000,
-      });
+      await expect(playersList).toHaveAttribute('aria-busy', 'false', { timeout: 60_000 });
+      const returnedLosers = await returnedSortWindow(loadMorePlayers, firstLosers);
+      if (returnedLosers === firstLosers.rows.length) {
+        const continuation = await observePlayerPage(page, 'losers', firstLosers.next_cursor, () =>
+          loadMorePlayers.click()
+        );
+        expandedPlayerCount = playerPageUnion(firstLosers, continuation).length;
+        expect(expandedPlayerCount).toBeGreaterThan(firstLosers.rows.length);
+        await expect(loadMorePlayers).toContainText(
+          `- ${expandedPlayerCount.toLocaleString()} Of`,
+          { timeout: 60_000 }
+        );
+      } else if (await loadMorePlayers.isVisible()) {
+        // The restored window continues from its own cursor and must grow.
+        const continuation = await observeContinuation(page, 'losers', () =>
+          loadMorePlayers.click()
+        );
+        expect(continuation.rows.length, 'the continuation returned no player').toBeGreaterThan(0);
+        await expect
+          .poll(async () => loadMorePlayerCount(await loadMorePlayers.textContent()) ?? 0, {
+            timeout: 60_000,
+          })
+          .toBeGreaterThan(returnedLosers);
+      }
     }
 
     const refresh = page.getByRole('button', { name: /Refresh Club Ledger/i });

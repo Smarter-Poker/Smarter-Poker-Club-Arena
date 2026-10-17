@@ -62,6 +62,11 @@
       "file": "supabase/migrations/20260926151328_prune_e2e_certification_hand_history_fixtures.sql",
       "by": "20261005111120",
       "reason": "Never installed. Its full-body replacement of sp_prune_hand_history would revert 20261002082452, and it admitted an unattached fixture only to classify its empty player list as human and keep it for ever. 20261005111120 patches the live function and fixes both lines."
+    },
+    {
+      "file": "supabase/migrations/20261016042047_the_midway_board_and_the_diamond_arena_board_are_a_fixed_sch.sql",
+      "by": "20261016182049",
+      "reason": "The one-shot 25-template-per-club bootstrap is superseded by the engine-owned board and the installed ownership/time-zone migration20261016182049 (history name the_hard_coded_board_and_the_weekly_events_keep_chicago_time, body MD5 1382705956097acbfe1a41d82bb15200). Read-only 2026-10-17: serving engine9ccf3e423480a8738863e08a32b073aadea35186 has byte-identical fixedBoard.ts and syncFixedBoard implementation; production has26 distinct active templates in each club,52 rows, the ownership trigger exists (guard MD5 a3c21621b4ccda762d938a13b58d7db1), and zero active timed schedules lack their time zone. No source-version/name history or early fixedBoard installation SQL was found. The old source still asserts50; its immutable SHA256 is eb04461506dfa6b47ad6294755a600a3c7e23e8c4e80f611622f3c5ae901c99b. It must not be replayed against the evolved board. No schedules, prices, financial records or migration history are modified."
     }
   ],
   "_superseded": "A merged migration that must never run, because a later file replaced it, is marked by a first line `-- SUPERSEDED BY <version>` or, when the file is byte-pinned and cannot be edited, by a row here. Either way the named version must have a file in this tree, or the mark is ignored."

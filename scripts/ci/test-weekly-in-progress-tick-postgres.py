@@ -15,14 +15,16 @@ def run(cmd,s=None,error=None):
  return r.stdout.strip()
 def q(s,error=None):return run(PS,s,error)
 SIG='public.fn_process_weekly_accounting_scope(uuid,uuid)'
-before=(F/'scope-before.sql').read_text();after=(F/'scope-after.sql').read_text();pin=json.loads((F/'replacements.json').read_text())[0]
+before=(F/'scope-before.sql').read_text();after=(F/'scope-after.sql').read_text();after2=(F/'scope-after-chunked.sql').read_text();pin,pin2=json.loads((F/'replacements.json').read_text())
 md5=lambda x:hashlib.md5(x.encode()).hexdigest()
 assert md5(before)==pin['before'] and md5(after)==pin['after'] and before.count(pin['old'])==1 and before.replace(pin['old'],pin['new'])==after
+assert md5(after2)==pin2['after'] and pin2['before']==pin['after'] and after.count(pin2['old'])==1 and after.replace(pin2['old'],pin2['new'])==after2
 NOW="'2026-10-17 11:05:00Z'::timestamptz"
-def scan(defn):
+def scan(defn,chunked='true'):
  s=defn.index('        WITH cash_clubs AS MATERIALIZED');e=defn.index('      LOOP',s)
- return defn[s:e].replace('v_to',f'public.fn_union_week_start({NOW})').replace('v_now',NOW)
-QB,QA=scan(before),scan(after)
+ return defn[s:e].replace('v_to',f'public.fn_union_week_start({NOW})').replace('v_now',NOW).replace('v_chunked',chunked)
+QB,QA=scan(before),scan(after);QC,QU=scan(after2,'true'),scan(after2,'false')
+assert 'v_chunked' not in QA and QC!=QU
 def rows(x):return json.loads(q("SELECT coalesce(json_agg(z),'[]') FROM (\n"+x+"\n) z;"))
 report={}
 try:
@@ -76,6 +78,13 @@ try:
  q(mig)
  assert q(f"SELECT md5(pg_get_functiondef('{SIG}'::regprocedure));")==pin['after'] and q(meta)==m0
  q(mig,'in_progress_tick_preimage_authority_refused')
+ mp2=R/'supabase/migrations/20261017132500_only_a_chunked_tick_owns_the_in_progress_fast_path.sql';mig2=mp2.read_text()
+ for inject,err in [("INSERT INTO supabase_migrations.schema_migrations VALUES('20261017132500');",'history_replay'),(f'ALTER FUNCTION {SIG} SECURITY INVOKER;','preimage_authority_refused'),('UPDATE fixture_control SET frozen=true;','freeze_or_override_refused'),('UPDATE fixture_control SET sourceok=false;','inventory_seal_required')]:
+  q(mig2.replace('BEGIN;','BEGIN;'+inject,1),'chunked_tick_owner_'+err)
+  assert q(f"SELECT md5(pg_get_functiondef('{SIG}'::regprocedure));")==pin['after']
+ q(mig2);assert q(f"SELECT md5(pg_get_functiondef('{SIG}'::regprocedure));")==pin2['after'] and q(meta)==m0
+ q(mig2,'chunked_tick_owner_preimage_authority_refused')
+ report.update(chunked_owner_migration_sha256=hashlib.sha256(mig2.encode()).hexdigest())
  report.update(actual_migration_sha256=hashlib.sha256(mig.encode()).hexdigest(),guard_refusals=len(refusals)+3,atomic_rollback=True,metadata_unchanged=True,source40_generation_preserved=True)
  # Ordering parity: the new scan is the full scan, or exactly its in-progress prefix.
  rnd=random.Random(20261017);U=lambda n:str(__import__('uuid').UUID(md5(n)));weeks=['2026-09-21 07:00Z','2026-09-28 07:00Z','2026-10-05 07:00Z','2026-10-12 07:00Z']
@@ -103,7 +112,7 @@ try:
    for w in rnd.sample(weeks,rnd.randint(0,2)):
     sql.append(f"INSERT INTO union_accounting_runs(standalone_club_id,period_start,period_end,status,result,started_at)VALUES('{c}','{w}',{end(w)},'{rnd.choice(['running','complete','failed'])}',jsonb_build_object('chunk_committed',{rnd.choice(['true','false'])}),'{w}');")
    if rnd.random()<.6:sql.append(f"INSERT INTO weekly_accounting_scheduler_visits VALUES('club','{c}','2026-10-17 10:%02d:00Z','{rnd.choice(['visited','error','statement_timeout'])}',NULL,0);"%rnd.randint(0,59))
-  q(''.join(sql));B=rows(QB);A=rows(QA)
+  q(''.join(sql));B=rows(QB);A=rows(QA);assert rows(QC)==A and rows(QU)==B,(A,B)
   club_busy=q(f"SELECT EXISTS(SELECT 1 FROM union_accounting_runs WHERE scope_kind='club' AND status='running' AND result->>'chunk_committed'='true' AND period_end<={NOW});")=='t'
   expect_owned=(not club_busy) and any(r['in_progress'] for r in B)
   if expect_owned:
@@ -119,17 +128,19 @@ try:
    f"INSERT INTO union_accounting_runs(union_id,period_start,period_end,status,result,started_at)VALUES('{U('u')}','2026-10-05 07:00Z',{end('2026-10-05 07:00Z')},'running','{{\"chunk_committed\":true,\"stage\":\"certifying\"}}','2026-10-17 10:05Z');"
    f"INSERT INTO clubs VALUES('{U('s')}',false);INSERT INTO accounting_cash_rake_sources SELECT '{U('s')}',NULL,'2026-09-25 07:00Z'::timestamptz+n*interval '1 second' FROM generate_series(1,20000)n;"
    f"INSERT INTO accounting_payable_earning_sources SELECT 'tournament_fee_accrual','{U('s')}',NULL,'2026-09-25 07:00Z'::timestamptz+n*interval '1 second' FROM generate_series(1,20000)n;ANALYZE;")
- pb=json.loads(q('EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)'+QB))[0];pa=json.loads(q('EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)'+QA))[0]
+ pb=json.loads(q('EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)'+QB))[0];pa=json.loads(q('EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)'+QC))[0];pu=json.loads(q('EXPLAIN(ANALYZE,BUFFERS,FORMAT JSON)'+QU))[0]
  def nodes(n):
   yield n
   for c in n.get('Plans',[]):yield from nodes(c)
  big=lambda p:[n for n in nodes(p['Plan'])if n.get('Relation Name')in('accounting_cash_rake_sources','accounting_payable_earning_sources')]
  assert sum(n.get('Actual Rows',0)*n.get('Actual Loops',0) for n in big(pb))>=40000
  assert all(n.get('Actual Loops',0)==0 for n in big(pa)),big(pa)
+ assert sum(n.get('Actual Rows',0)*n.get('Actual Loops',0) for n in big(pu))>=40000
+ assert rows(QU)==rows(QB)
  blocks=lambda p:p['Plan'].get('Shared Hit Blocks',0)+p['Plan'].get('Shared Read Blocks',0)
  assert blocks(pa)*10<blocks(pb),(blocks(pa),blocks(pb))
  assert rows(QA)==[r for r in rows(QB) if r['in_progress']] and len(rows(QA))==1
- report.update(qualification='passed',ordering_cases=cases,owned_ticks=owned,full_scan_ticks=cases-owned,owned_tick_scan_never_executed=True,
+ report.update(qualification='passed',ordering_cases=cases,owned_ticks=owned,full_scan_ticks=cases-owned,owned_tick_scan_never_executed=True,unchunked_probe_reads_full_scan=True,
   owned_tick_blocks=blocks(pa),full_scan_blocks=blocks(pb),production_financial_operation_qualified=False)
  (scratch/'weekly-in-progress-tick-native-report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 finally:

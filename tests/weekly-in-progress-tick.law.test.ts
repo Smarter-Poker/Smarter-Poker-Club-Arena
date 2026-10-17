@@ -4,9 +4,12 @@ import { createHash } from 'node:crypto';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 const fixture = 'scripts/ci/fixtures/weekly-in-progress-tick';
-const [pin] = JSON.parse(read(`${fixture}/replacements.json`));
+const [pin, chunkedPin] = JSON.parse(read(`${fixture}/replacements.json`));
 const migration = read(
   'supabase/migrations/20261017121500_an_in_progress_close_is_visited_without_the_whole_scan.sql'
+);
+const chunkedMigration = read(
+  'supabase/migrations/20261017132500_only_a_chunked_tick_owns_the_in_progress_fast_path.sql'
 );
 const md5 = (text: string) => createHash('md5').update(text).digest('hex');
 
@@ -21,6 +24,32 @@ describe('an in-progress close is visited without the whole scope scan', () => {
     expect(after.replace(pin.new, pin.old)).toBe(before);
     expect(migration).toContain(pin.old);
     expect(migration).toContain(pin.new);
+  });
+
+  it('lets only a chunked job 272 tick own the fast path', () => {
+    const after = read(`${fixture}/scope-after.sql`);
+    const chunked = read(`${fixture}/scope-after-chunked.sql`);
+    expect(chunkedPin.before).toBe(pin.after);
+    expect(md5(chunked)).toBe(chunkedPin.after);
+    expect(after.split(chunkedPin.old)).toHaveLength(2);
+    expect(chunked).toBe(after.replace(chunkedPin.old, chunkedPin.new));
+    expect(chunkedPin.new).toContain('AND v_chunked AS owned');
+    expect(chunkedMigration).toContain(chunkedPin.old);
+    expect(chunkedMigration).toContain(chunkedPin.new);
+    expect(chunkedMigration.match(/^BEGIN;$/gm)).toHaveLength(1);
+    expect(chunkedMigration.match(/^COMMIT;$/gm)).toHaveLength(1);
+    expect(chunkedMigration.match(/^-- @live-proof: /gm)).toHaveLength(1);
+    for (const guard of [
+      'scheduler_owned',
+      'history_replay',
+      'preimage_authority_refused',
+      'postimage_refused',
+      'installed_authority_refused',
+      'inventory_seal_changed',
+    ]) {
+      expect(chunkedMigration).toContain(`chunked_tick_owner_${guard}`);
+    }
+    expect(chunkedMigration).not.toMatch(/CREATE\s+INDEX|ALTER\s+FUNCTION|\bGRANT\b|\bREVOKE\b/i);
   });
 
   it('keeps the full scan for every tick it does not own', () => {
@@ -72,6 +101,7 @@ describe('an in-progress close is visited without the whole scope scan', () => {
     ).toHaveLength(1);
     const driver = read('scripts/ci/test-weekly-in-progress-tick-postgres.py');
     expect(driver).toContain('owned_tick_scan_never_executed=True');
+    expect(driver).toContain('unchunked_probe_reads_full_scan=True');
     expect(driver).toContain('production_financial_operation_qualified=False');
   });
 });

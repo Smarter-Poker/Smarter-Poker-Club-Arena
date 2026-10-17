@@ -22,6 +22,8 @@ export const ACCOUNTING_ADMISSION_SOURCES = Object.freeze({
     '94701e2b83ffb5ce1eae34a683f93e882d238f8609616a43f543fa6e52b8e488',
   '20261017121500_an_in_progress_close_is_visited_without_the_whole_scan.sql':
     '0a3a41049501cc30211b570531db7fa3ef622e34da59522cd7873e6fd4f87a06',
+  '20261017132500_only_a_chunked_tick_owns_the_in_progress_fast_path.sql':
+    'd2b42a912270293fccf77fc2ddc152074318964b4ad1cfdb9cd5c893056f9e49',
 });
 
 export const ACCOUNTING_ADMISSION_SQL = `

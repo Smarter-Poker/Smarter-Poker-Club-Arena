@@ -56,6 +56,7 @@ import {
   MINUTES_ACCRUAL_MS,
   type StateMutation,
 } from './StableHandState.js';
+import { closeStableHandStateAlert } from './stableHandStateAlert.js';
 import { beatVerdict, lastBeatAt } from './StableHandBeats.js';
 import { seatBoosts, takeOpenOrders } from './StableHandPlanBus.js';
 import { stakeForBand } from './StableHandController.js';
@@ -561,6 +562,7 @@ export class HorseFleetManager {
   private lastTagBookComplaintAt = 0;
   /** When the failing-counter-write alert was last raised. Throttled to hourly. */
   private lastStateWriteComplaintAt = 0;
+  private lastStateWriteAlertCloseAt = 0;
   private seeding = false; // Prevents concurrent seeding
   /** Per table, how many horses the last cycle found able to sit there.
    *  Read by the ClusterController (OPORD 1.4 18.3): a horse is a buyer. */
@@ -4141,6 +4143,24 @@ export class HorseFleetManager {
              hundreds of events an hour that day. So the zero is raised HERE,
              where it is a fact about the platform rather than a log line, and
              throttled to once an hour so it stays readable. */
+          /* The alert below describes a condition, and a write in which every
+             folded row was accepted ends it (stableHandStateAlert.ts). Asked
+             at most every ten minutes: the close is one indexed update. */
+          if (
+            folded.rows.length > 0 &&
+            written === folded.rows.length &&
+            nowMs - this.lastStateWriteAlertCloseAt >= 10 * 60_000
+          ) {
+            this.lastStateWriteAlertCloseAt = nowMs;
+            try {
+              const closed = await closeStableHandStateAlert(supabase, written, nowMs);
+              if (closed > 0) {
+                console.log(`[HorseFleet] Stable Hand state: closed ${closed} open write alert(s)`);
+              }
+            } catch (err) {
+              reportError(err, 'HorseFleet.stateWriteAlertClose');
+            }
+          }
           if (folded.rows.length > 0 && written === 0) {
             if (nowMs - this.lastStateWriteComplaintAt >= 60 * 60_000) {
               this.lastStateWriteComplaintAt = nowMs;

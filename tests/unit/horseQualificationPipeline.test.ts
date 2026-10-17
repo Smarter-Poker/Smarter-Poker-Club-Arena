@@ -1,5 +1,5 @@
 // tests/unit/horseQualificationPipeline.test.ts
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   SUPPORTED_PHASES,
   PHASE_VARIANTS,
@@ -8,6 +8,9 @@ import {
   validateQualificationResult,
   verifyPolicyDigestMatch,
   summarizeRunJobs,
+  downloadRunArtifacts,
+  runStrengthAssembler,
+  executeQualificationPipeline,
 } from '../../scripts/ops/horse-qualification-pipeline.mjs';
 
 describe('Horse Qualification Pipeline Orchestrator', () => {
@@ -219,6 +222,24 @@ describe('Horse Qualification Pipeline Orchestrator', () => {
       const summary = summarizeRunJobs(jobs);
       expect(summary.isAllDone).toBe(true);
       expect(summary.isGreen).toBe(true);
+    });
+  });
+
+  describe('Execution Primitives Validation', () => {
+    it('validates required parameters for downloadRunArtifacts', () => {
+      expect(() => downloadRunArtifacts({})).toThrow(/runId is required/);
+      expect(() => downloadRunArtifacts({ runId: 12345 })).toThrow(/targetDir is required/);
+    });
+
+    it('rejects pipeline execution when runs directory is nonexistent', async () => {
+      await expect(
+        executeQualificationPipeline({
+          phase: 11,
+          variant: 'plo6',
+          runsDir: '/nonexistent/path/for/tests',
+          outDir: '/tmp/out',
+        })
+      ).rejects.toThrow(/Runs directory not found/);
     });
   });
 });

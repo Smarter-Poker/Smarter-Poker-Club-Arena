@@ -2,9 +2,10 @@
 // Automated qualification assembly, validation, and contract integrity pipeline
 // for Horse Brain Phase 10, 11, 12, and 13 leagues.
 
-import { execFileSync } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, cpSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 export const SUPPORTED_PHASES = [10, 11, 12, 13];
 
@@ -21,6 +22,8 @@ export const ASSEMBLER_SCRIPTS = {
   12: 'scripts/phase12-strength-assemble.mjs',
   13: 'scripts/phase13-strength-assemble.mjs',
 };
+
+export const DEFAULT_REPO = 'repos/Smarter-Poker/smarter-poker-club-arena';
 
 /**
  * Validates phase and variant combination.
@@ -169,4 +172,159 @@ export function summarizeRunJobs(jobs = []) {
   summary.isGreen = summary.isAllDone && summary.failed === 0;
 
   return summary;
+}
+
+/**
+ * Executes gh run download to pull all artifacts into the destination folder.
+ */
+export function downloadRunArtifacts({ runId, targetDir, repo = DEFAULT_REPO, ghBin = 'gh' }) {
+  if (!runId) throw new Error('runId is required for download');
+  if (!targetDir) throw new Error('targetDir is required for download');
+
+  mkdirSync(targetDir, { recursive: true });
+
+  const args = ['run', 'download', String(runId), '--dir', targetDir];
+  if (repo) {
+    args.push('-R', repo.replace(/^repos\//, ''));
+  }
+
+  const output = execFileSync(ghBin, args, {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 300000,
+  });
+
+  return { targetDir, output };
+}
+
+/**
+ * Invokes the assembler script in server directory and validates the result.
+ */
+export function runStrengthAssembler({
+  phase,
+  variant,
+  runsDir,
+  outDir,
+  repoRoot = process.cwd(),
+  noFormat = true,
+  defectiveFile,
+  nodeBin = 'node',
+}) {
+  const { command, args } = buildAssemblerArgs({
+    phase,
+    variant,
+    runsDir,
+    outDir,
+    noFormat,
+    defectiveFile,
+  });
+
+  const serverDir = path.resolve(repoRoot, 'server');
+  const stdout = execFileSync(nodeBin, args, {
+    cwd: serverDir,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 600000,
+  });
+
+  const verdict = validateQualificationResult(stdout);
+  return { verdict, stdout };
+}
+
+/**
+ * End-to-end qualification pipeline orchestrator.
+ */
+export async function executeQualificationPipeline({
+  phase,
+  variant,
+  runId,
+  runsDir,
+  outDir,
+  repoRoot = process.cwd(),
+  archiveDir,
+  expectedEngineDigest,
+  noFormat = true,
+  defectiveFile,
+  repo = DEFAULT_REPO,
+  ghBin = 'gh',
+}) {
+  const config = getPhaseConfig(phase, variant);
+  let effectiveRunsDir = runsDir;
+
+  if (runId && (!runsDir || !existsSync(runsDir) || readdirSync(runsDir).length === 0)) {
+    const downloadDir = runsDir || path.resolve(repoRoot, '.artifacts', `${config.phase}-${config.variant}-${runId}`);
+    downloadRunArtifacts({ runId, targetDir: downloadDir, repo, ghBin });
+    effectiveRunsDir = downloadDir;
+  }
+
+  if (!effectiveRunsDir || !existsSync(effectiveRunsDir)) {
+    throw new Error(`Runs directory not found: ${effectiveRunsDir}`);
+  }
+
+  const { verdict } = runStrengthAssembler({
+    phase: config.phase,
+    variant: config.variant,
+    runsDir: effectiveRunsDir,
+    outDir,
+    repoRoot,
+    noFormat,
+    defectiveFile,
+  });
+
+  if (expectedEngineDigest) {
+    const qualContent = JSON.parse(readFileSync(verdict.qualification, 'utf8'));
+    const qualDigest = qualContent.policyDigest || qualContent.policy_digest;
+    verifyPolicyDigestMatch({
+      qualificationDigest: qualDigest,
+      expectedEngineDigest,
+      variant: config.variant,
+      phase: config.phase,
+    });
+  }
+
+  if (archiveDir) {
+    mkdirSync(archiveDir, { recursive: true });
+    cpSync(verdict.qualification, path.resolve(archiveDir, path.basename(verdict.qualification)));
+    cpSync(path.dirname(verdict.strength), path.resolve(archiveDir, path.basename(path.dirname(verdict.strength))), {
+      recursive: true,
+    });
+  }
+
+  return {
+    success: true,
+    config,
+    verdict,
+  };
+}
+
+// CLI runner
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const args = Object.fromEntries(
+    process.argv.slice(2).map((arg) => {
+      const [k, v] = arg.replace(/^--/, '').split('=');
+      return [k, v === undefined ? true : v];
+    })
+  );
+
+  if (!args.phase) {
+    console.error('Usage: node scripts/ops/horse-qualification-pipeline.mjs --phase=<10|11|12|13> [--variant=<name>] --runs=<dir> --out=<dir> [--runId=<id>]');
+    process.exit(1);
+  }
+
+  try {
+    const result = await executeQualificationPipeline({
+      phase: args.phase,
+      variant: args.variant,
+      runId: args.runId,
+      runsDir: args.runs,
+      outDir: args.out,
+      archiveDir: args.archive,
+      noFormat: args.noFormat !== 'false',
+    });
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(0);
+  } catch (err) {
+    console.error('Pipeline execution error:', err.message);
+    process.exit(1);
+  }
 }

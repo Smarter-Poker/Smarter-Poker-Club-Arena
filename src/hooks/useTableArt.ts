@@ -127,21 +127,35 @@ export function useTableArt(
     ready: both(),
   }));
   const [coverExpired, setCoverExpired] = useState(false);
+  /* A shared load gives up after TABLE_ART_MAX_ATTEMPTS. Before 2026-10-16
+     that ended this table's art for the rest of the mount (nothing in the
+     effect's dependencies changes), contradicting "retried for as long as the
+     table is open". A spent load now starts a fresh shared one after the
+     longest backoff, and stops the moment the table closes or the art changes. */
+  const [retryRound, setRetryRound] = useState(0);
   const key = `${skinUrl}|${backgroundUrl}`;
 
   useEffect(() => {
     if (!selectionReady) return;
     let cancelled = false;
+    let retryTimer: number | undefined;
     void Promise.all([loadTableImage(skinUrl), loadTableImage(backgroundUrl)])
       .then(([skinSrc, backgroundSrc]) => {
         if (!cancelled)
           setState({ key, scope: selectionScope, skinSrc, backgroundSrc, ready: true });
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (cancelled) return;
+        retryTimer = window.setTimeout(
+          () => setRetryRound((round) => round + 1),
+          TABLE_ART_RETRY_MS[TABLE_ART_RETRY_MS.length - 1]
+        );
+      });
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [key, skinUrl, backgroundUrl, selectionReady, selectionScope]);
+  }, [key, skinUrl, backgroundUrl, selectionReady, selectionScope, retryRound]);
 
   useEffect(() => {
     const id = window.setTimeout(() => setCoverExpired(true), TABLE_ART_MAX_COVER_MS);

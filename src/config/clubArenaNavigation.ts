@@ -257,6 +257,16 @@ export function getClubArenaNavigation({
       },
     ];
 
+    // Club-owned presentation remains editable when a union owns the games.
+    // The database grants direct banner updates to the actual club owner.
+    if (clubRole === 'owner') {
+      operationItems.push({
+        label: 'Banner Displays',
+        path: clubPath('/banner-displays'),
+        description: 'Manage Your Club Banner',
+      });
+    }
+
     if (canManageGames) {
       operationItems.push({
         label: 'Table Management',

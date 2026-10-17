@@ -1,0 +1,37 @@
+{
+  "observed_at": "2026-10-17T01:26:10.819616+00:00",
+  "view_md5": "8eafef6d8f5e0d615b83baf14d1c0da4",
+  "source_club_columns": [
+    {
+      "not_null": true,
+      "relation": "accounting_cash_rake_sources"
+    },
+    {
+      "not_null": true,
+      "relation": "accounting_tournament_fee_sources"
+    }
+  ],
+  "before_functions": [
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "definer": true,
+      "body_md5": "a3dfb7f9917b68ea42e9334eb3e5a9a7",
+      "full_md5": "2d861ca48eea9aba964cda9b4d45f456",
+      "signature": "fn_accounting_week_clubs(uuid,uuid,timestamp with time zone,timestamp with time zone)",
+      "volatility": "s"
+    },
+    {
+      "acl": "{postgres=X/postgres}",
+      "owner": "postgres",
+      "config": ["search_path=public"],
+      "definer": true,
+      "body_md5": "d8b1bc638aace9f3dfc9cad716b1e843",
+      "full_md5": "ade66e4785ed51541db707feabb8f4cc",
+      "signature": "fn_issue_scope_weekly_accounting(text,uuid,timestamp with time zone,timestamp with time zone)",
+      "volatility": "v"
+    }
+  ],
+  "both_outside_sealed_source40": true
+}

@@ -418,3 +418,85 @@ describe('V23 league registration', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2026-10-16: the short-deck half is DEFAULT OFF (shortdeck_v23 measured
+// -0.36 +/- 0.14 bb/100 over 44 runs); the plo8 low-draw half stays on.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('V23 short deck is default OFF, the plo8 half stays on', () => {
+  const RANKS = ['6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
+  const SUITS = ['h', 'd', 'c', 's'];
+
+  /** A deterministic short-deck postflop spot: half facing a bet, half checked to. */
+  function shortDeckSpot(n: number): { hero: SeatPlayer; gs: GS } {
+    const deck = RANKS.flatMap((r) => SUITS.map((s) => `${r}${s}`));
+    let x = (n * 2654435761) >>> 0;
+    for (let i = deck.length - 1; i > 0; i--) {
+      x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+      const j = x % (i + 1);
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    const boardCount = n % 2 === 0 ? 3 : 4;
+    const stage: HandStage = boardCount === 3 ? 'flop' : 'turn';
+    const facing = n % 4 < 2;
+    const hero = mkPlayer(1, { cards: cc(deck[0], deck[1]), totalInvested: 10 });
+    const opp = mkPlayer(2, { totalInvested: facing ? 25 : 10, bet: facing ? 15 : 0 });
+    const history = [
+      rec(2, 'raise', 10, 'preflop'),
+      rec(1, 'call', 10, 'preflop'),
+      ...(facing ? [rec(2, 'bet', 15, stage)] : []),
+    ];
+    const gs = {
+      players: [hero, opp],
+      communityCards: cc(...deck.slice(2, 2 + boardCount)),
+      pot: facing ? 35 : 20,
+      currentBet: facing ? 15 : 0,
+      minRaise: 2,
+      stage,
+      gameVariant: 'short_deck',
+      bigBlind: 2,
+      dealerSeat: 2,
+      actionHistory: history,
+      gameMode: 'cash',
+      format: 'cash',
+    } as unknown as GS;
+    return { hero, gs };
+  }
+
+  function play(v23ShortDeck: boolean | undefined, spots = 400): string[] {
+    const out: string[] = [];
+    for (let n = 1; n <= spots; n++) {
+      const { hero, gs } = shortDeckSpot(n);
+      seedFastRandom(n * 7919);
+      HorseMind.reset();
+      const d = HorseLogic.decide(
+        hero,
+        gs,
+        'balanced',
+        {},
+        {
+          mind: false,
+          ...(v23ShortDeck === undefined ? {} : { v23ShortDeck }),
+        }
+      );
+      out.push(`${d.action}:${d.amount ?? 0}`);
+    }
+    return out;
+  }
+
+  it('no option plays exactly like the short-deck half off; turning it on changes play', () => {
+    const byDefault = play(undefined);
+    expect(byDefault).toEqual(play(false));
+    const on = play(true);
+    const changed = on.filter((d, i) => d !== byDefault[i]).length;
+    expect(changed).toBeGreaterThan(0);
+  });
+
+  it('the league measures the short-deck half ON against the default, and the plo8 half OFF', () => {
+    const sd = LEAGUE_MATCHUPS.find((m) => m.name === 'shortdeck_v23')!;
+    expect(sd).toMatchObject({ variant: 'short_deck', a: { v23ShortDeck: true }, b: {} });
+    const plo8 = LEAGUE_MATCHUPS.find((m) => m.name === 'plo8_v23_lowdraw')!;
+    expect(plo8).toMatchObject({ variant: 'plo8', a: {}, b: { v23Variants: false } });
+  });
+});

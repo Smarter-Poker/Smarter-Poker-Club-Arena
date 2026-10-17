@@ -3,7 +3,6 @@ import { GameConsole } from '../components/games/GameConsole';
 import ChoiceScene from '../components/games/ChoiceScene';
 import PlinkoBoard from '../components/plinko/PlinkoBoard';
 import CrashCurve from '../components/crash/CrashCurve';
-import DoubleDownOffer from '../components/games/DoubleDownOffer';
 import { WheelWinReveal } from '../components/wheel/WheelWinReveal';
 import { BonusReceiptArt } from '../components/games/BonusReceiptArt';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
@@ -67,12 +66,9 @@ export default function DiamondTestPage() {
       ? BigInt(Math.floor(rollParam * Number(RANDOM_SPACE)))
       : null;
   const boost = upgraded ? 2 : 1;
-  const [entry, setEntry] = useState(100),
-    // Double Diamonds can be opened already taken, so the board a Super award
-    // WITH the add-on is dealt - Super Double, the one its two-thirds floor
-    // needs - can be reached offline as well as through the offer step.
-    [doubled, setDoubled] = useState(params.get('double') === '1'),
-    [offer, setOffer] = useState(false);
+  // Double Diamonds is retired (Dan 2026-10-16): a simulated award plays
+  // exactly the diamonds the wheel funded.
+  const [entry, setEntry] = useState(100);
   const [phase, setPhase] = useState<'idle' | 'open' | 'cashed' | 'lost'>('idle');
   const [sceneBusy, setSceneBusy] = useState(false);
   const [picked, setPicked] = useState<number[]>([]),
@@ -95,10 +91,10 @@ export default function DiamondTestPage() {
     payout = useRef(0),
     // The best bucket the batch lands in, for the receipt's own art.
     bestCents = useRef(0);
-  const total = entry * boost + (doubled ? entry : 0),
+  const total = entry * boost,
     chips = total / 100,
-    // What the player paid: the spin entry, plus the add-on when it was taken.
-    paid = entry + (total - entry * boost),
+    // What the player paid: the spin entry.
+    paid = entry,
     // The guaranteed minimum, by the server's rule (contract 4): half the
     // stake, or for a Super award the greater of that and what was paid.
     minimum = diamondBonusFloor(chips, boost, paid, 100);
@@ -300,9 +296,6 @@ export default function DiamondTestPage() {
                 ))}
               </select>
             </label>
-            <button className={setup.offer} disabled={active} onClick={() => setOffer(true)}>
-              {doubled ? 'Double Down Selected' : 'Double Down'}
-            </button>
             <p>
               {total.toLocaleString()} Simulated Diamonds
               {upgraded ? ' Including The Super Bonus' : ''}
@@ -434,26 +427,6 @@ export default function DiamondTestPage() {
           )}
         </div>
       </GameConsole>
-      {offer && (
-        <DoubleDownOffer
-          budget={{
-            base: entry * boost,
-            doubled,
-            denomination: drop,
-            award: {
-              id: '00000000-0000-4000-8000-000000000001',
-              entryDiamonds: entry,
-              boostMultiplier: boost,
-            },
-          }}
-          diamonds={2500}
-          onChoose={(value) => {
-            setDoubled(value);
-            setOffer(false);
-          }}
-          onBuyMore={() => setOffer(false)}
-        />
-      )}
       {reveal && (
         <WheelWinReveal
           prize={{ kind: 'chips' }}

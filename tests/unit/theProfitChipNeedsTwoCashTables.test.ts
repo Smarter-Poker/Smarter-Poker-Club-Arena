@@ -36,7 +36,7 @@ describe('the profit chip gate', () => {
     // data-ca-live-tables attribute keeps its own all-tables count elsewhere.
     const effect = code.slice(
       code.indexOf('const liveCashCount'),
-      code.indexOf('const iv = setInterval(compute')
+      code.indexOf('const tileActionLockRef')
     );
     expect(effect).not.toContain('liveTableCount');
     expect(effect).not.toMatch(/filter\(\(t\) => isTableTab\(t\)\)\.length/);

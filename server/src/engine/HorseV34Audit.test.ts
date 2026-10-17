@@ -423,7 +423,17 @@ describe('V34 a solver call with a draw still lets the semi-bluff raise roll', (
     for (let i = 0; i < 300; i++) {
       // Td8d on Ks9d7c: an open-ended straight draw, no pair.
       const s = state('Td8d');
-      const d = HorseLogic.decide(s.hero, s.gs as never, 'lag', {}, { telemetry: true });
+      // V32 is default OFF since 2026-10-16; this is its draw passthrough.
+      const d = HorseLogic.decide(
+        s.hero,
+        s.gs as never,
+        'lag',
+        {},
+        {
+          telemetry: true,
+          v32FacingDefense: true,
+        }
+      );
       if (d.action === 'raise' || d.action === 'all_in') raises++;
       else if (d.action === 'fold') folds++;
       else calls++;

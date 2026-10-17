@@ -20,10 +20,89 @@ const { mulberry32 } = await import('../engine/HandFuzzer.js');
 const { HorseLogic } = await import('../engine/HorseLogic.js');
 const kit = await import('../testing/lightningHostTestKit.js');
 const { lightningRequestId } = await import('./LightningHandHost.js');
+const { LightningSeatProxy } = await import('./LightningSeatProxy.js');
 const { buildHost, formedHand, flush, playOut, uid } = kit;
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('special fold intent belongs to its rendered hand', () => {
+  for (const action of ['fast_fold', 'fold_watch']) {
+    it(`${action} first delivery through the persistent room proxy cannot cross into the next hand`, async () => {
+      const previous = formedHand(4, 6200);
+      const old = buildHost(previous, [200, 200, 200, 200]);
+      await old.host.start();
+      await flush();
+      const renderedIntent = `lightning-hand:${old.host.currentHandId}`;
+      await playOut(old.host, mulberry32(6200));
+      await flush();
+      const next = buildHost(
+        { ...previous, handId: uid(6299), instanceId: uid(6298) },
+        [200, 200, 200, 200]
+      );
+      await next.host.start();
+      await flush();
+      const st = next.host.peekState()!;
+      const actor = st.players.find((p) => p.seat === st.currentPlayerSeat)!;
+      const room = next.host.roomOf(actor.user_id)!;
+      const proxy = new LightningSeatProxy(room, { hostForRoom: () => next.host } as any);
+      expect(
+        proxy.handlePlayerAction(actor.user_id, action, undefined, renderedIntent)
+      ).toMatchObject({ success: false, code: 'STALE_ACTION' });
+      expect(next.calls.fastFold).toEqual([]);
+      expect(next.released).toEqual([]);
+      expect(next.host.isWatching(actor.user_id)).toBe(true);
+      expect(
+        proxy.handlePlayerAction(
+          actor.user_id,
+          action,
+          undefined,
+          `lightning-hand:${next.host.currentHandId}`
+        ).success
+      ).toBe(true);
+      await flush();
+      expect(next.calls.fastFold).toHaveLength(1);
+    });
+    it(`${action} rejects first delivery from an older hand before any fold side effect`, async () => {
+      const formed = formedHand(4, 6100);
+      const t = buildHost(formed, [200, 200, 200, 200]);
+      await t.host.start();
+      await flush();
+      const st = t.host.peekState()!;
+      const actor = st.players.find((p) => p.seat === st.currentPlayerSeat)!;
+      const frames = t.hub.frames.length;
+      for (const context of [undefined, null, `lightning-hand:${uid(610099)}`]) {
+        expect(t.host.handlePlayerAction(actor.user_id, action, undefined, context)).toMatchObject({
+          success: false,
+          code: context == null ? 'ACTION_CONTEXT_REQUIRED' : 'STALE_ACTION',
+        });
+      }
+      expect(t.calls.fastFold).toEqual([]);
+      expect(t.released).toEqual([]);
+      expect(t.hub.frames).toHaveLength(frames);
+      expect(t.host.peekState()!.players.find((p) => p.user_id === actor.user_id)!.is_folded).toBe(
+        false
+      );
+      expect(
+        t.host.handlePlayerAction(
+          actor.user_id,
+          action,
+          undefined,
+          `lightning-hand:${formed.handId}`
+        ).success
+      ).toBe(true);
+      const duplicate = t.host.handlePlayerAction(
+        actor.user_id,
+        action,
+        undefined,
+        `lightning-hand:${formed.handId}`
+      );
+      expect(duplicate.success).toBe(false);
+      await flush();
+      expect(t.calls.fastFold).toHaveLength(1);
+    });
+  }
 });
 
 function conserve(settle: any, stacks: number[]) {
@@ -154,7 +233,12 @@ describe('fast fold and fold & watch', () => {
       (p) => p.user_id !== current.user_id && st.currentBet - p.bet > 0 && !p.is_folded
     )!;
     const room = t.host.roomOf(waiting.user_id)!;
-    const r = t.host.handlePlayerAction(waiting.user_id, 'fast_fold');
+    const r = t.host.handlePlayerAction(
+      waiting.user_id,
+      'fast_fold',
+      undefined,
+      `lightning-hand:${t.host.currentHandId}`
+    );
     expect(r.success).toBe(true);
     await flush();
     expect(t.calls.fastFold).toEqual([
@@ -192,7 +276,14 @@ describe('fast fold and fold & watch', () => {
     const bbSeat = t.participants.find((p) => p.playerId === formed.bb)!.seat;
     const bb = st.players.find((p) => p.seat === bbSeat)!;
     expect(st.currentPlayerSeat).not.toBe(bbSeat);
-    expect(t.host.handlePlayerAction(bb.user_id, 'fast_fold').success).toBe(false);
+    expect(
+      t.host.handlePlayerAction(
+        bb.user_id,
+        'fast_fold',
+        undefined,
+        `lightning-hand:${t.host.currentHandId}`
+      ).success
+    ).toBe(false);
     expect(t.calls.fastFold).toEqual([]);
   });
 
@@ -204,7 +295,14 @@ describe('fast fold and fold & watch', () => {
     const st = t.host.peekState()!;
     const current = st.players.find((p) => p.seat === st.currentPlayerSeat)!;
     const room = t.host.roomOf(current.user_id)!;
-    expect(t.host.handlePlayerAction(current.user_id, 'fold_watch').success).toBe(true);
+    expect(
+      t.host.handlePlayerAction(
+        current.user_id,
+        'fold_watch',
+        undefined,
+        `lightning-hand:${t.host.currentHandId}`
+      ).success
+    ).toBe(true);
     await flush();
     expect(t.calls.fastFold[0]).toMatchObject({
       playerId: current.user_id,

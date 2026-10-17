@@ -244,11 +244,20 @@ export function cashierRefusesSelfSend(
  *
  * Owner update 2026-10-15: the same wallet choice applies to agent sends.
  */
-export type ClubBankRecipientWallet = 'agent_wallet' | 'player_wallet';
+export type ClubBankRecipientWallet = 'agent_wallet' | 'promo_wallet' | 'player_wallet';
 
+/*
+ * Owner update 2026-10-15, applied to every send form on 2026-10-16: "IF THEY
+ * HAVE AN AGENT WALLET AND A PLAYER WALLET, AGAIN, IT SHOULD BE CLICKED AND
+ * SELECTABLE TO SEND TO ANY WALLET I WANT THAT THE USER HAS (PLAYER WALLET,
+ * AGENT WALLET, PROMO WALLET ETC)". Anyone who can hold an agent wallet also
+ * holds a promo wallet, and both send RPCs credit it, so it is listed here and
+ * every screen that reads this list offers it. Same order as the Send Out
+ * screen's recipientSendWallets: Agent, Promo, Player.
+ */
 export function clubBankRecipientWallets(recipientRole: unknown): ClubBankRecipientWallet[] {
   const wallets: ClubBankRecipientWallet[] = [];
-  if (canHoldAgentWallet(recipientRole)) wallets.push('agent_wallet');
+  if (canHoldAgentWallet(recipientRole)) wallets.push('agent_wallet', 'promo_wallet');
   if (holdsPlayerWallet(recipientRole)) wallets.push('player_wallet');
   return wallets;
 }

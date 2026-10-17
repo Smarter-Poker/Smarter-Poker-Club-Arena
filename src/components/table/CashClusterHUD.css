@@ -155,6 +155,18 @@
   content: none;
 }
 
+/* Chat artwork occupies x25..230 and y23..223 of its 256px canvas.
+   Match that painted footprint while retaining the same 66px hit area. */
+.cch-seat-change__face {
+  position: absolute;
+  left: 9.765625%;
+  top: 8.984375%;
+  width: 80.078125%;
+  height: 78.125%;
+  container-type: inline-size;
+  pointer-events: none;
+}
+
 .cch-seat-change__art {
   display: block;
   width: 100%;
@@ -165,8 +177,8 @@
 
 .cch-seat-change__label {
   position: absolute;
-  left: 13%;
-  right: 13%;
+  left: 0;
+  right: 0;
   bottom: 15%;
   color: #e4e7ec;
   font-size: 14cqw;
@@ -258,16 +270,4 @@
   align-items: center;
   gap: 2px;
   max-width: 100%;
-}
-.cch-seat-change-close {
-  flex: 0 0 32px;
-  min-height: 44px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #e6edf3;
-  font:
-    700 14px/1 'Roboto Condensed',
-    sans-serif;
-  cursor: pointer;
 }

@@ -741,12 +741,17 @@ describe('CashierTradePage club load ordering', () => {
       </MemoryRouter>
     );
 
-    const player = await screen.findByRole('button', { name: 'Select Storage Guard Player' });
+    const player = await screen.findByRole('checkbox', { name: 'Include Storage Guard Player' });
     await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
     expect(screen.getByRole('link', { name: 'Manage Storage Guard Player' })).toHaveAttribute(
       'href',
       `/clubs/${CLUB_ID}/members/${PLAYER_ID}`
     );
+    expect(screen.getByPlaceholderText('Search Name Or ID Number')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Select Storage Guard Player' })).toBeNull();
+    expect(screen.getByText('Storage Guard Player')).toBeInTheDocument();
+    const portrait = screen.getByText('ID: P-2').parentElement!;
+    expect(portrait.querySelector('img')).not.toBeNull();
     fireEvent.click(player);
     fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();

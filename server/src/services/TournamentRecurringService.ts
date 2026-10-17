@@ -60,6 +60,7 @@ import {
   mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
+import { isFixedBoardClub } from '../config/fixedBoard.js';
 import {
   FREE_BUY_BOARD_NAMES,
   FREE_BUY_HOSTS,
@@ -496,7 +497,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'nlh',
         buyIn: 5,
         rake: 0.5,
-        guarantee: 100,
+        guarantee: 500,
         startingStack: 3000,
         maxPlayers: 50,
         minPlayers: 8,
@@ -504,54 +505,6 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         blindStructure: BLIND_STRUCTURES.TURBO,
         payoutStructure: PAYOUT_STRUCTURES.FIVE,
         bountyPercent: 30,
-      },
-      {
-        name: 'Late Night Grind (PLO4)',
-        type: 'mtt',
-        gameVariant: 'plo4',
-        buyIn: 3,
-        rake: 0.3,
-        guarantee: 50,
-        startingStack: 2000,
-        maxPlayers: 30,
-        minPlayers: 6,
-        horsesToRegister: 10,
-        blindStructure: BLIND_STRUCTURES.TURBO,
-        payoutStructure: PAYOUT_STRUCTURES.FIVE,
-      },
-    ],
-  },
-  {
-    hours: [3, 4, 5],
-    tournaments: [
-      {
-        name: 'Early Bird Freeroll (NLH)',
-        type: 'mtt',
-        gameVariant: 'nlh',
-        buyIn: 0,
-        rake: 0,
-        guarantee: 75,
-        startingStack: 2500,
-        maxPlayers: 100,
-        minPlayers: 10,
-        horsesToRegister: 20,
-        blindStructure: BLIND_STRUCTURES.HYPER_TURBO,
-        payoutStructure: PAYOUT_STRUCTURES.FIVE,
-      },
-      {
-        name: 'Pre-Dawn Mystery Bounty (PLO5)',
-        type: 'mystery_bounty',
-        gameVariant: 'plo5',
-        buyIn: 7,
-        rake: 0.7,
-        guarantee: 80,
-        startingStack: 3500,
-        maxPlayers: 50,
-        minPlayers: 10,
-        horsesToRegister: 15,
-        blindStructure: BLIND_STRUCTURES.TURBO,
-        payoutStructure: PAYOUT_STRUCTURES.FIVE,
-        bountyPercent: 40,
       },
     ],
   },
@@ -564,7 +517,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'plo4',
         buyIn: 4,
         rake: 0.4,
-        guarantee: 120,
+        guarantee: 500,
         startingStack: 3000,
         maxPlayers: 50,
         minPlayers: 8,
@@ -580,7 +533,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'nlh',
         buyIn: 6,
         rake: 0.6,
-        guarantee: 90,
+        guarantee: 500,
         startingStack: 3500,
         maxPlayers: 60,
         minPlayers: 10,
@@ -600,7 +553,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'nlh',
         buyIn: 8,
         rake: 0.8,
-        guarantee: 150,
+        guarantee: 500,
         startingStack: 4000,
         maxPlayers: 36,
         minPlayers: 6,
@@ -616,7 +569,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'plo8',
         buyIn: 10,
         rake: 1.0,
-        guarantee: 180,
+        guarantee: 500,
         startingStack: 4500,
         maxPlayers: 50,
         minPlayers: 10,
@@ -636,7 +589,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'nlh',
         buyIn: 12,
         rake: 1.2,
-        guarantee: 300,
+        guarantee: 1000,
         startingStack: 6000,
         maxPlayers: 100,
         minPlayers: 12,
@@ -645,6 +598,68 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         payoutStructure: PAYOUT_STRUCTURES.NINE,
         rebuy: true,
         addOn: true,
+      },
+      /* Added 2026-10-16 (Dan): the board follows the real US rooms, one real
+         tournament on every :00 and :30 from 8 AM to 1 AM, and satellites only
+         on the :15 and :45. These four fill the half hours the old board left
+         empty; "TOURNAMENTS FROM 6PM -10PM SHOULD BE LARGER BUY IN" prices the
+         6:30 PM one at 20 + 2. */
+      {
+        name: 'Midday Turbo (NLH)',
+        type: 'mtt',
+        gameVariant: 'nlh',
+        buyIn: 10,
+        rake: 1.0,
+        guarantee: 500,
+        startingStack: 4000,
+        maxPlayers: 100,
+        minPlayers: 8,
+        horsesToRegister: 16,
+        blindStructure: BLIND_STRUCTURES.TURBO,
+        payoutStructure: PAYOUT_STRUCTURES.FIVE,
+      },
+      {
+        name: 'Afternoon Deep Stack (NLH)',
+        type: 'mtt',
+        gameVariant: 'nlh',
+        buyIn: 15,
+        rake: 1.5,
+        guarantee: 1000,
+        startingStack: 7500,
+        maxPlayers: 150,
+        minPlayers: 10,
+        horsesToRegister: 20,
+        blindStructure: BLIND_STRUCTURES.STANDARD,
+        payoutStructure: PAYOUT_STRUCTURES.NINE,
+      },
+      {
+        name: 'Happy Hour Bounty (NLH)',
+        type: 'bounty',
+        gameVariant: 'nlh',
+        buyIn: 10,
+        rake: 1.0,
+        guarantee: 1000,
+        startingStack: 5000,
+        maxPlayers: 200,
+        minPlayers: 10,
+        horsesToRegister: 20,
+        blindStructure: BLIND_STRUCTURES.TURBO,
+        payoutStructure: PAYOUT_STRUCTURES.NINE,
+        bountyPercent: 30,
+      },
+      {
+        name: 'Dinner Break PLO (PLO4)',
+        type: 'mtt',
+        gameVariant: 'plo4',
+        buyIn: 20,
+        rake: 2.0,
+        guarantee: 2000,
+        startingStack: 5000,
+        maxPlayers: 150,
+        minPlayers: 10,
+        horsesToRegister: 20,
+        blindStructure: BLIND_STRUCTURES.STANDARD,
+        payoutStructure: PAYOUT_STRUCTURES.NINE,
       },
     ],
   },
@@ -657,7 +672,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'nlh',
         buyIn: 10,
         rake: 1.0,
-        guarantee: 200,
+        guarantee: 500,
         startingStack: 4500,
         maxPlayers: 75,
         minPlayers: 10,
@@ -672,7 +687,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'plo4',
         buyIn: 0,
         rake: 0,
-        guarantee: 80,
+        guarantee: 500,
         startingStack: 3000,
         maxPlayers: 50,
         minPlayers: 8,
@@ -689,9 +704,9 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         name: 'Prime Time Main Event (NLH)',
         type: 'mtt',
         gameVariant: 'nlh',
-        buyIn: 25,
-        rake: 2.5,
-        guarantee: 1000,
+        buyIn: 30,
+        rake: 3.0,
+        guarantee: 2500,
         startingStack: 10000,
         maxPlayers: 150,
         minPlayers: 20,
@@ -707,7 +722,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'plo5',
         buyIn: 15,
         rake: 1.5,
-        guarantee: 400,
+        guarantee: 1000,
         startingStack: 5000,
         maxPlayers: 60,
         minPlayers: 12,
@@ -727,7 +742,7 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         gameVariant: 'nlh',
         buyIn: 20,
         rake: 2.0,
-        guarantee: 600,
+        guarantee: 1500,
         startingStack: 8000,
         maxPlayers: 100,
         minPlayers: 15,
@@ -740,9 +755,9 @@ const HOURLY_SCHEDULE: HourlyTournamentBlock[] = [
         name: 'Late Night PKO (PLO4)',
         type: 'progressive_bounty',
         gameVariant: 'plo4',
-        buyIn: 18,
-        rake: 1.8,
-        guarantee: 450,
+        buyIn: 20,
+        rake: 2.0,
+        guarantee: 1500,
         startingStack: 7500,
         maxPlayers: 70,
         minPlayers: 12,
@@ -2435,8 +2450,9 @@ const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
  * registration, starts at least SATELLITE_HU_TARGET_LEAD_MS from now and no
  * more than SATELLITE_HU_TARGET_HORIZON_MS away, costs at least
  * SATELLITE_HU_MIN_TICKET to enter, and whose entry the satellite finish can
- * deliver (satelliteTargetIsDeliverable: never a bounty, PKO, mystery-bounty
- * or Spin event, whose seat the settlement authority refuses). "Bigger buy-in" is that floor: nobody
+ * deliver (satelliteTargetIsDeliverable: never a Spin or an event whose bounty
+ * flags are unknown; a bounty, PKO or mystery-bounty event is seated exactly
+ * like a paid entry since 2026-10-16). "Bigger buy-in" is that floor: nobody
  * needs a satellite into a 5-chip turbo. The board keeps one satellite per
  * target for the SATELLITE_HU_TARGETS_PER_OWNER dearest targets, so the
  * biggest events of the week always have a feeder running.
@@ -2492,6 +2508,14 @@ export interface SatelliteTargetRow {
   is_pko?: boolean | null;
   is_mystery_bounty?: boolean | null;
   is_premium_spin?: boolean | null;
+  /**
+   * Whether the target's host is the Diamond Arena, set by the caller from the
+   * host club's own row (isDiamondArenaClubRow). Not a tournaments column. A
+   * bounty target is deliverable only when this is a KNOWN false: the Diamond
+   * seat transfer has no bounty part, so fn_satellite_target_is_deliverable
+   * refuses a Diamond bounty event, and an unread host is refused the same way.
+   */
+  diamond_host?: boolean | null;
 }
 
 /**
@@ -2510,8 +2534,40 @@ export interface SatelliteTargetRow {
  * database refuses the insert as well (the migration that ships with this),
  * so no other creation path can open a satellite the finish will refuse.
  * Unknown is not supported: a row without the flags is not a target.
+ *
+ * EVERY BOUNTY EVENT GETS ITS FEEDER (Dan, 2026-10-16: "EVERY TOURNAMENT WITH
+ * A 25 BUY IN OR HIGHER SHOULD HAVE SATELLITES INTO IT"). Since migration
+ * 20261017004440 both settlement authorities seat a bounty, PKO or
+ * mystery-bounty target exactly like a paid entry: the seat is split by
+ * fn_tournament_entry_split, the bounty slice lands on the bounty rail with a
+ * funded head, and the escrow equals the counters. So a known bounty flag is
+ * deliverable. What the finish still refuses is refused here too: a Spin or
+ * premium Spin, any row whose flags are not all read as booleans, and a
+ * bounty target whose host is the Diamond Arena or could not be read
+ * (diamond_host must be a known false), because the Diamond seat transfer has
+ * no bounty part and fn_satellite_target_is_deliverable refuses it.
  */
 export function satelliteTargetIsDeliverable(row: SatelliteTargetRow): boolean {
+  const flags = [row.is_bounty, row.is_pko, row.is_mystery_bounty, row.is_premium_spin];
+  if (flags.some((flag) => typeof flag !== 'boolean')) return false;
+  if (row.is_premium_spin) return false;
+  if (String(row.variant ?? '').toLowerCase() === 'spin') return false;
+  if (String(row.tournament_type ?? '').toUpperCase() === 'SPIN') return false;
+  if ((row.is_bounty || row.is_pko || row.is_mystery_bounty) && row.diamond_host !== false)
+    return false;
+  return true;
+}
+
+/**
+ * A SATELLITE IS NEVER ITSELF A BOUNTY OR SPIN EVENT. The settlement pays a
+ * satellite's pool as tickets and one remainder; it has no bounty rail and no
+ * Spin wheel, so fn_settle_satellite_tournament refuses a source that "mixes
+ * another payout authority" and fn_ca_guard_new_satellite_target refuses to
+ * create one (SATELLITE_NEW_SOURCE_UNSUPPORTED). This is that SOURCE rule,
+ * kept apart from the TARGET rule above, which since 2026-10-16 delivers
+ * bounty targets.
+ */
+export function satelliteSourceIsSupported(row: SatelliteTargetRow): boolean {
   const flags = [row.is_bounty, row.is_pko, row.is_mystery_bounty, row.is_premium_spin];
   if (flags.some((flag) => flag !== false)) return false;
   const variant = String(row.variant ?? '').toLowerCase();
@@ -2670,7 +2726,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         gameVariant: 'nlh',
         buyIn: 15,
         rake: 1.5,
-        guarantee: 500,
+        guarantee: 1000,
         startingStack: 5000,
         maxPlayers: 100,
         minPlayers: 10,
@@ -2689,7 +2745,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         gameVariant: 'plo4',
         buyIn: 20,
         rake: 2.0,
-        guarantee: 600,
+        guarantee: 1500,
         startingStack: 6000,
         maxPlayers: 80,
         minPlayers: 12,
@@ -2709,7 +2765,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         gameVariant: 'nlh',
         buyIn: 50,
         rake: 5.0,
-        guarantee: 2500,
+        guarantee: 5000,
         startingStack: 15000,
         maxPlayers: 200,
         minPlayers: 20,
@@ -2724,7 +2780,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         gameVariant: 'plo5',
         buyIn: 25,
         rake: 2.5,
-        guarantee: 800,
+        guarantee: 2000,
         startingStack: 8000,
         maxPlayers: 100,
         minPlayers: 15,
@@ -2744,7 +2800,7 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
         gameVariant: 'nlh',
         buyIn: 10,
         rake: 1.0,
-        guarantee: 300,
+        guarantee: 1000,
         startingStack: 4000,
         maxPlayers: 75,
         minPlayers: 8,
@@ -2873,7 +2929,6 @@ interface BoardOwner {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT RECURRING SERVICE CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
-
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // THE FIXED BOARD (Dan 2026-10-15, BINDING)
@@ -3860,6 +3915,14 @@ export class TournamentRecurringService {
    */
   private async ensureSatelliteHeadsUps(owner: BoardOwner, budgetLeft: number): Promise<void> {
     if (budgetLeft <= 0) return;
+    /* THE FIXED-BOARD CLUBS' SATELLITES ARE SCHEDULED (Dan 2026-10-16): "ALL
+       SATELLITES SHOULD START AT THE :15 OR :45" and "EVERY TOURNAMENT WITH A
+       25 BUY IN OR HIGHER SHOULD HAVE SATELLITES INTO IT". This feeder opened
+       a new satellite the moment the last one filled, at whatever minute that
+       was, all night. The Midway Union's and the Diamond Arena's satellites
+       are tournament_schedules rows on the :15 and :45 now, so the feeder
+       stands down for them; it still serves every other club. */
+    if (isFixedBoardClub(owner.clubId)) return;
     try {
       let q = supabase
         .from('tournaments')
@@ -3889,7 +3952,18 @@ export class TournamentRecurringService {
       // board slots. Near-term legacy targets cannot crowd out the three-hour
       // targets required by the scheduled branch after activation. This read
       // is eligibility only: the paired creator locks and chooses its own ABI.
-      const admitted = await projectTournamentAdmission((data ?? []) as SatelliteTargetRow[]);
+      // A union event is never a Diamond event; a club's host is read off its
+      // own row, and only when a bounty target is in the read (the one kind
+      // the Diamond Arena refuses). Unread (null) leaves diamond_host null,
+      // which refuses only the bounty targets, never a plain one.
+      const rows = (data ?? []) as SatelliteTargetRow[];
+      const anyBounty = rows.some((r) => r.is_bounty || r.is_pko || r.is_mystery_bounty);
+      const diamondHost =
+        owner.unionId || !anyBounty ? false : await this.diamondArenaHost(owner.clubId);
+      const admitted = (await projectTournamentAdmission(rows)).map((target) => ({
+        ...target,
+        diamond_host: diamondHost,
+      }));
       const now = Date.now();
       const targets = pickSatelliteTargets(
         admitted.filter(

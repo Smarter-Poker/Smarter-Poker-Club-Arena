@@ -1,0 +1,6 @@
+{
+  "_owner": "Diamond current tournament audit. Helper observed in production catalog at 2026-10-17T04:31:44.949023Z after one guarded installation, history20261017043129. Full MD5 df828634be00eac4e90cdee78dd826c9; postgres owner/execute only, immutable invoker, fixed public/pg_temp search path. Fragment is not a substitute for that readback.",
+  "functions": ["fn_ca_tournament_purchase_fee_ratio"],
+  "tables": [],
+  "columns": {}
+}

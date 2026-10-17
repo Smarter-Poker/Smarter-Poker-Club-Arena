@@ -1,0 +1,30 @@
+Horse Brain Phase 13 Natural Completion, Source d9190c9e: Addendum 1 to declaration-completion-p13-requal-bundle-2026-10-17.txt
+(sha256 6f66a78b217ad6466ba9c8e02544c8ea431bedadde8b52f39e36a27158cd8c0c)
+Written (date -u on Dan's Mac): 2026-10-17T06:05:35Z, before any journal of any later window was read.
+Writer: Horse Brain lead agent, session https://claude.ai/code/session_01C3jJSD1BTe1cruMm91nDJT
+
+1. What happened in the H = 04 window [2026-10-17T04:02:00.000Z, 2026-10-17T05:50:00.000Z)
+- The release was unchanged: identity reads 04:00:30Z, 04:50:29Z and 05:50:30Z all read container StartedAt
+  2026-10-17T02:55:43.143651163Z, label and /health 9ccf3e423480a8738863e08a32b073aadea35186 (which carries S's Phase 13
+  digests, recomputed from its own tree at ~03:35Z). The f39e9d5c release run was queued but did not cut over.
+- Stage 1 for nlh completed (05:50 to 05:57Z; 403,422 segments read, 3 segments retired by the journal ring during the
+  scan, 229,924 records).
+- Stage 1 for the other eight variants was started in parallel at 05:58Z to outrun ring retirement. Despite nice 19 /
+  ionice idle the extracts took about four CPU cores; together with a load rise (dealable tables ~430 -> 556) the live
+  decision lane's oldest queued decision reached 13.4 s and 410 horse decisions took the worker fallback. The lead
+  killed every extract at ~06:02Z. Production health takes precedence over evidence.
+- Those eight partial extracts are discarded unread (kept on Dan's Mac as ABORTED-*, never passed to stage 2).
+
+2. Consequence under the declaration
+- nlh is judged by the H = 04 window from its complete stage 1 (stage 2 as declared), with the retired-segment count
+  reported.
+- plo4, plo5, plo6, plo8, flo8, flh, pineapple and short_deck have NO record from H = 04. They are treated exactly as
+  a variant with fewer than 127 eligible decisions: not judged by H = 04, and measured in the next valid window under
+  the declaration (a later H whose serving release carries S's Phase 13 digests, identity read before H:02 and after
+  (H+1):50, same commands), counted in full there.
+
+3. Extraction rule from now on (all phases)
+- Stage 1 extracts run one at a time, never in parallel, nice 19 / ionice idle, and only while the engine's
+  /health liveHorseDecision.oldestQueuedDecisionAgeMs <= 3000. A watchdog polls /health every 5 s; if it reads > 3000
+  ms it kills the extract on the engine host, that variant's stage 1 is discarded unread and retried later inside the
+  same window's retention, or in the next valid window.

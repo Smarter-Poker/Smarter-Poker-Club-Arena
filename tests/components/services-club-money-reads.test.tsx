@@ -114,7 +114,7 @@ describe('ChipTransferModal reads the Club Bank through fn_club_money_panel', ()
     );
     render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
     await waitFor(() => expect(screen.getByText('Your Club Bank:')).toBeTruthy());
-    await waitFor(() => expect(balance()).toBe((1234567).toLocaleString()));
+    await waitFor(() => expect(balance()).toBe('1.2M'));
     expect(h.rpc).toHaveBeenCalledWith('fn_club_money_panel', { p_club_id: CLUB });
     expect(
       h.selects.filter((s) => s.table === 'clubs' && /chip_treasury|promo_balance|\*/.test(s.arg))
@@ -162,11 +162,11 @@ describe('ChipTransferModal reads the Club Bank through fn_club_money_panel', ()
     view.rerender(
       <ChipTransferModal isOpen onClose={() => {}} clubId={CLUB_2} recipientId={AGENT} />
     );
-    await waitFor(() => expect(balance()).toBe('222'));
+    await waitFor(() => expect(balance()).toBe('222.00'));
     await act(async () => {
       first.resolve({ data: { authorized: true, club_treasury: 111 }, error: null });
       await first.promise;
     });
-    expect(balance()).toBe('222');
+    expect(balance()).toBe('222.00');
   });
 });

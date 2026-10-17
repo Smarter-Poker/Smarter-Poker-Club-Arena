@@ -144,6 +144,7 @@ import {
   saveViewPrefs,
   fetchRemoteViewPrefs,
   pushRemoteViewPrefs,
+  hasUnsyncedViewPrefs,
   sortForTab,
   EMPTY_VIEW_PREFS,
   type LobbyViewPrefs,
@@ -163,6 +164,10 @@ import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
+  persistFilters,
+  pushRemoteFilters,
+  fetchRemoteFilters,
+  hasUnsyncedFilters,
   type FilterStore,
 } from '../components/lobby/AdvancedFilters';
 import {
@@ -179,34 +184,18 @@ import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
 import { warmTable } from '../services/tableWarmup';
 import { gameManagementService } from '../services/GameManagementService';
+import { isRetiredClubBanner } from '../utils/clubBannerDisplay';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
    wide CARD graphic being cropped into a square avatar slot, so most of the
    art was thrown away by object-fit. shark-club-logo.jpg is the square
-   emblem and fills the box as intended. */
-const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
-
-// Club Arena is deployed beneath /hub/club-arena/. Root-relative /assets URLs
-// bypass Vite's configured base path in production and silently 404, leaving
-// the live lobby DOM visible without its premium chassis or campaign artwork.
-const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
-/* ONE CROP, EVERY WIDTH (Dan 2026-09-01: "the 'dynamic ad image' is cut off,
-   and it needs to scale to size. because when you 'shrink the page' it fits
-   perfectly").
-
-   There were two files of the same artwork: `-v2` at 2172 x 724 (3:1, the ad
-   centred in a tall black field) served above 900px, and `-mobile-v4` at
-   2172 x 302 (7.2:1, the identical ad cropped tight) served below it. The
-   campaign bay is a short wide strip at EVERY width - roughly 11:1 on a 1440px
-   desktop - so the 3:1 file could only ever be shown by cropping it, which is
-   the top of the trophy and the whole buy-in line that Dan lost. The tight
-   crop is not a phone variant, it is the shape this bay actually is, so it is
-   what both regimes serve now and the bay's aspect-ratio matches it.
-
-   The filename still says "mobile" because renaming a published asset breaks
-   every cached service-worker entry pointing at it. */
-const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-mobile-v4.png`;
+   emblem and fills the box as intended.
+   Dan 2026-10-16: the Shark Club logo is now his new emblem,
+   shark-club-logo-v2.png, which clubs.logo_url and the club's social page
+   also carry. */
+const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo-v2.png`;
 
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
@@ -305,6 +294,7 @@ function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
 
 // Types
 interface ClubData {
+  settings?: Record<string, unknown> | null;
   id: string;
   club_id: number;
   name: string;
@@ -919,6 +909,7 @@ function ClubHomePageContent({
    */
   const bootCache = useState(() => (clubId ? getClubHomeCache(clubId) : null))[0];
   const [club, setClub] = useState<ClubData | null>(bootCache?.club ?? null);
+  usePageTitle(club?.name ?? null);
   const [tables, setTables] = useState<TableData[]>(bootCache?.tables ?? []);
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
   const [jackpotAmount, setJackpotAmount] = useState(0);
@@ -1003,6 +994,17 @@ function ClubHomePageContent({
      paint of the lobby rather than flashing an unfiltered list first. */
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [advFilters, setAdvFilters] = useState<FilterStore>({});
+  /* Has the player (or the lobby's own auto-clear) changed the filters since
+     they were loaded for this club. A late database reply must never undo a
+     chip tapped during the round trip, the same rule as viewPrefsTouched. */
+  const advFiltersTouched = useRef(false);
+  /** Every lobby-side filter change goes through here: this browser's cache
+   *  and the player's row together, so a quick chip follows them to every
+   *  device exactly like the sheet does. */
+  const persistAdvFilters = (clubUuid: string, next: FilterStore) => {
+    advFiltersTouched.current = true;
+    persistFilters(clubUuid, next);
+  };
   /* THE TAB, THE SORT AND THE FAVORITES CHIP ARE PREFERENCES TOO
      (Dan 2026-08-26: "they should auto save until changed"). The saved
      Advanced Filters beside this have persisted since 2026-08-20; these three
@@ -2072,12 +2074,34 @@ function ClubHomePageContent({
      the UUID is known. Re-runs on a club switch: one club's "Bomb Pot only"
      must never silently apply to another club's lobby. */
   useEffect(() => {
+    advFiltersTouched.current = false;
     if (!resolvedClubId) {
       setAdvFilters({});
       return;
     }
-    setAdvFilters(loadFilters(resolvedClubId));
-  }, [resolvedClubId]);
+    const cached = loadFilters(resolvedClubId, currentUser?.id ?? null);
+    setAdvFilters(cached);
+
+    /* THEN THE PLAYER'S ROW (2026-10-16). Until now only the open filter
+       sheet ever read it, so a phone opened the lobby with the laptop's
+       filters missing until the sheet happened to be opened. Same three
+       refusals as the tab/sort hydration: a newer unconfirmed choice on this
+       device is finished rather than overwritten, a reply for a club already
+       left is dropped, and a chip tapped during the round trip wins. */
+    if (hasUnsyncedFilters(resolvedClubId, currentUser?.id ?? null)) {
+      pushRemoteFilters(resolvedClubId, cached);
+      return;
+    }
+    let cancelled = false;
+    void fetchRemoteFilters(resolvedClubId).then((remote) => {
+      if (cancelled || !remote || advFiltersTouched.current) return;
+      setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
+      saveFilters(resolvedClubId, remote, currentUser?.id ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedClubId, currentUser?.id]);
 
   /* The same rule for the tab / sort / Favorites triple, keyed the same way.
      `viewPrefsTouched` is the guard described where the ref is declared: if
@@ -2143,6 +2167,14 @@ function ClubHomePageContent({
          - it does not touch anything on a null result. Signed out, no row, or
            a failed read are indistinguishable on purpose, and all three mean
            "keep what the cache gave you" rather than "reset". */
+    /* A CHOICE THE ROW NEVER CONFIRMED OUTRANKS THE ROW. When this device's
+       last save failed, the row still holds the choice before it, and letting
+       it "correct" the cache would quietly undo the player's newer pick. Finish
+       that same write instead; the row is the truth again once it lands. */
+    if (hasUnsyncedViewPrefs(resolvedClubId, currentUser?.id)) {
+      pushRemoteViewPrefs(resolvedClubId, saved, currentUser?.id);
+      return;
+    }
     let cancelled = false;
     void fetchRemoteViewPrefs(resolvedClubId, currentUser?.id).then((remote) => {
       if (cancelled || !remote) return;
@@ -2414,7 +2446,7 @@ function ClubHomePageContent({
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
+              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, settings, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -3613,7 +3645,7 @@ function ClubHomePageContent({
         [gameType]: emptyFilterValue(narrowing.fSpec),
       };
       setAdvFilters(next);
-      if (resolvedClubId) saveFilters(resolvedClubId, next);
+      if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
     }
   }, [narrowing.fSpec, advFilters, gameType, resolvedClubId, selectFavoritesOnly, selectGameType]);
 
@@ -4092,9 +4124,9 @@ function ClubHomePageContent({
     (tournamentId: string) => {
       const target = `/tournaments/${tournamentId}`;
       if (window.location.pathname.endsWith(target)) return;
-      navigate(target);
+      navigate(withClubContext(target, clubId));
     },
-    [navigate]
+    [navigate, clubId]
   );
 
   const openEntry = useCallback(
@@ -4496,7 +4528,7 @@ function ClubHomePageContent({
       [gameType]: emptyFilterValue(narrowing.fSpec),
     };
     setAdvFilters(next);
-    if (resolvedClubId) saveFilters(resolvedClubId, next);
+    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
     toast.info('Filters Cleared, They Were Hiding Every Game');
   }, [
     loading,
@@ -5169,16 +5201,16 @@ function ClubHomePageContent({
               isAutomaticArena
                 ? undefined
                 : () => {
-                  /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
+                    /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
                      short code (smarter.poker/i/<CODE>), so whoever shares it is
                      credited and the new player lands in their downline. It used
                      to be /invite/<club>?ref=<player number>, which sent a
                      signed-out friend to LOGIN and lost the club on the way
                      through signup. The sheet holds the link, Copy, Share, a QR
                      code and the sender's results. */
-                  haptic.medium();
-                  setShowShareSheet(true);
-                }
+                    haptic.medium();
+                    setShowShareSheet(true);
+                  }
             }
           />
           {/* The Bad Beat Jackpot reads its own asset's pool. An arena strip
@@ -5621,7 +5653,7 @@ function ClubHomePageContent({
                               [gameType]: { ...qVal, statuses: [] },
                             };
                             setAdvFilters(next);
-                            if (resolvedClubId) saveFilters(resolvedClubId, next);
+                            if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                           }}
                         >
                           All
@@ -5655,7 +5687,7 @@ function ClubHomePageContent({
                                   },
                                 };
                                 setAdvFilters(next);
-                                if (resolvedClubId) saveFilters(resolvedClubId, next);
+                                if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                               }}
                             >
                               {sf.label}
@@ -5682,32 +5714,30 @@ function ClubHomePageContent({
               )}
             </section>
           }
+          /* The chip-club campaign opens announcements, an operator surface
+             the Diamond boundary deliberately does not admit. Do not advertise
+             another club's event or send an Arena player to the safe shell. */
           campaign={
-            <button
-              type="button"
-              className="club-lobby-command-top__campaign-button"
-              aria-label={`Open ${club.name} Promotions`}
-              onClick={() => {
-                haptic.selection();
-                navigate(`/clubs/${clubId}/announcements`);
-              }}
-            >
-              {/* The <picture> wrapper stays although both regimes now resolve
+            !isAutomaticArena && club.banner_url && !isRetiredClubBanner(club.banner_url) ? (
+              <button
+                type="button"
+                className="club-lobby-command-top__campaign-button"
+                aria-label={`Open ${club.name} Promotions`}
+                onClick={() => {
+                  haptic.selection();
+                  navigate(`/clubs/${clubId}/announcements`);
+                }}
+              >
+                {/* The <picture> wrapper stays although both regimes now resolve
                   to the same file: it is the box the campaign bay's CSS sizes
                   (`.club-lobby-command-top__campaign-picture`), and it is where
                   a per-breakpoint <source> goes if a club ever ships two crops
                   of its own banner. */}
-              <picture className="club-lobby-command-top__campaign-picture">
-                <img
-                  src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
-                  alt={
-                    club.banner_url
-                      ? `${club.name} Promotion`
-                      : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
-                  }
-                />
-              </picture>
-            </button>
+                <picture className="club-lobby-command-top__campaign-picture">
+                  <img src={club.banner_url} alt={`${club.name} Promotion`} />
+                </picture>
+              </button>
+            ) : null
           }
         />
 
@@ -5791,9 +5821,15 @@ function ClubHomePageContent({
                  so closing without Apply must still show what was saved -
                  re-read storage so the lobby matches the persisted store. */
               setFiltersOpen(false);
+              /* The sheet has already saved (and synced) every change, so
+                 the lobby takes its store and a late row reply must not. */
+              advFiltersTouched.current = true;
               setAdvFilters(loadFilters(resolvedClubId || club!.id));
             }}
-            onApply={setAdvFilters}
+            onApply={(next: FilterStore) => {
+              advFiltersTouched.current = true;
+              setAdvFilters(next);
+            }}
             sortKey={sortKey}
             onSortChange={selectSortKey}
             sortOptions={SORT_OPTIONS}
@@ -5863,7 +5899,7 @@ function ClubHomePageContent({
                     haptic.selection();
                     const next: FilterStore = { ...advFilters, [gameType]: { ...vVal, games } };
                     setAdvFilters(next);
-                    if (resolvedClubId) saveFilters(resolvedClubId, next);
+                    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                   },
                 };
               })()}
@@ -5887,7 +5923,7 @@ function ClubHomePageContent({
                     haptic.selection();
                     const next: FilterStore = { ...advFilters, [gameType]: { ...sVal, styles } };
                     setAdvFilters(next);
-                    if (resolvedClubId) saveFilters(resolvedClubId, next);
+                    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                   },
                 };
               })()}

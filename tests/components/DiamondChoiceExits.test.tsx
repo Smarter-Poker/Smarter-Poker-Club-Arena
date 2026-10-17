@@ -3,10 +3,10 @@
  *
  * The exit guard holds a Donkey Cross or Diamond Mines page while a won game
  * could start, so the game can start itself. It also swallowed the setup's own
- * exits: the Double Down offer's Buy More, shown to a player short of the
- * diamonds to double, answered "Finish Your Bonus Game Before Leaving." and went
- * nowhere, and so did Buy More and Earn Diamonds under the award. Each exit now
- * lets go of the hold and leaves.
+ * exits: Buy More and Earn Diamonds under the award answered "Finish Your Bonus
+ * Game Before Leaving." and went nowhere. Each exit now lets go of the hold and
+ * leaves. (The Double Your Diamonds offer and its own Buy More are retired,
+ * Dan 2026-10-16: a won game opens straight on its setup.)
  *
  * It can only do that when no money is in flight: the setup is disabled while a
  * start is out, while a saved wager settles and while a refused ticket is
@@ -14,7 +14,7 @@
  * pinned below too. The guard and the router are real here; the clock is fake.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import DiamondChoicePage from '../../src/pages/DiamondChoicePage';
 import { CHOICE_MODE } from '../../src/utils/diamondChoiceMath';
@@ -76,7 +76,7 @@ const state = (game: Game, diamonds: number) => ({
   diamonds_today: 0,
   seconds_until_next: 0,
 });
-/** A wheel award for the game: 100 diamonds funded, 100 spun, so doubling costs 100. */
+/** A wheel award for the game: 100 diamonds funded, 100 spun. */
 const award = (game: Game) => ({
   id: '00000000-0000-0000-0000-000000000077',
   game,
@@ -126,8 +126,11 @@ const mount = async (game: Game) => {
   );
   await settle();
 };
-const offer = () => screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-const revealOffer = () => fireEvent.animationEnd(offer().querySelector('[data-motion="keep"]')!);
+/** Double Diamonds is retired (Dan 2026-10-16): no offer ever stands in front of the setup. */
+const noOffer = () => {
+  expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+  expect(screen.queryByText(/Double Down|Double Your Diamonds|Add The Diamonds/)).toBeNull();
+};
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -158,14 +161,14 @@ afterEach(() => {
 describe.each(['mines', 'crossing'] as const)(
   '%s: the setup exits while a won game could start',
   (game) => {
-    it("takes a player short of the diamonds to double from the offer's Buy More to the marketplace", async () => {
+    it('never asks a player with few diamonds to add more, and Buy More still leaves', async () => {
       won(game, 40);
       await mount(game);
-      revealOffer();
-      expect(
-        within(offer()).getByText(/You Need 60 More Diamonds To Add Them/)
-      ).toBeInTheDocument();
-      fireEvent.click(within(offer()).getByRole('button', { name: 'Buy More' }));
+      noOffer();
+      // The award is funded, so a short wallet changes nothing about starting it.
+      expect(screen.queryByText(/More Diamonds/)).toBeNull();
+      expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Buy More' }));
       await settle();
       expect(screen.getByRole('heading', { name: 'Marketplace Page' })).toBeInTheDocument();
       expect(screen.queryByText(BLOCKED)).toBeNull();
@@ -175,13 +178,12 @@ describe.each(['mines', 'crossing'] as const)(
     it.each([
       ['Buy More', 'Marketplace Page'],
       ['Earn Diamonds', 'Earn Diamonds Page'],
-    ])('leaves by %s while the answered award waits on its plate', async (exit, page) => {
+    ])('leaves by %s while the won award waits on its plate', async (exit, page) => {
       won(game, 10000);
       await mount(game);
-      revealOffer();
-      fireEvent.click(within(offer()).getByRole('button', { name: 'Play Without' }));
+      noOffer();
       await advance(1000);
-      // The offer is answered, so the hold is armed and Start is the player's.
+      // The hold is armed and Start is the player's.
       expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
       fireEvent.click(screen.getByRole('button', { name: exit }));
       await settle();
@@ -197,13 +199,11 @@ describe('money in flight keeps the exits shut', () => {
   it('while a start is out, every exit is disabled and the page holds the player', async () => {
     won('mines', 10000);
     await mount('mines');
-    revealOffer();
-    fireEvent.click(within(offer()).getByRole('button', { name: 'Play Without' }));
-    await settle();
+    noOffer();
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
     expect(backend.start).toHaveBeenCalledTimes(1);
-    for (const exit of ['Buy More', 'Earn Diamonds', 'Playing Without Extra Diamonds: Change'])
+    for (const exit of ['Buy More', 'Earn Diamonds'])
       expect(screen.getByRole('button', { name: exit })).toBeDisabled();
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Diamond Spins/ }));

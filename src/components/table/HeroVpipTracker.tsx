@@ -169,9 +169,19 @@ export default function HeroVpipTracker({
     const node = anchor.current;
     const plane = node?.parentElement;
     const info = plane?.querySelector<HTMLElement>('.seat-wrapper--hero .seat__info');
-    const actionPanel = plane?.closest('.table-page')?.querySelector<HTMLElement>('.action-panel');
+    const page = plane?.closest('.table-page');
+    let observedPanel: HTMLElement | null = null;
+    let observer: ResizeObserver | null = null;
     if (!node || !plane || !info) return;
     const place = () => {
+      // The action panel can mount after the tracker during a cold table load.
+      // Resolve it on each placement instead of retaining that initial null.
+      const actionPanel = page?.querySelector<HTMLElement>('.action-panel') ?? null;
+      if (actionPanel !== observedPanel) {
+        if (observedPanel) observer?.unobserve(observedPanel);
+        if (actionPanel) observer?.observe(actionPanel);
+        observedPanel = actionPanel;
+      }
       const parent = plane.getBoundingClientRect();
       const plate = info.getBoundingClientRect();
       if (
@@ -196,15 +206,20 @@ export default function HeroVpipTracker({
       const height = node.getBoundingClientRect().height / scaleY;
       node.style.top = `${Math.min(center, bottom - height / 2)}px`;
     };
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(place);
+      observer.observe(plane);
+      observer.observe(info);
+      observer.observe(node);
+      if (info.parentElement) observer.observe(info.parentElement);
+    }
     place();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(place);
-    observer.observe(plane);
-    observer.observe(info);
-    observer.observe(node);
-    if (actionPanel) observer.observe(actionPanel);
-    if (info.parentElement) observer.observe(info.parentElement);
-    return () => observer.disconnect();
+    const mounts = typeof MutationObserver !== 'undefined' ? new MutationObserver(place) : null;
+    if (page) mounts?.observe(page, { childList: true, subtree: true });
+    return () => {
+      observer?.disconnect();
+      mounts?.disconnect();
+    };
   }, [tableId, enabled, heroPos?.x, heroPos?.y, showVpip, showClock]);
 
   if (!enabled || !heroPos || (!showVpip && !showClock)) return null;

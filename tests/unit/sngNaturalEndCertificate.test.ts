@@ -385,10 +385,23 @@ describe('the certificate spec wires these classifiers without a retry-to-green'
     expect(tournament).toContain('boardReader.accountClosedBoard(selected.boardFacts, atFailure)');
   });
 
-  it('re-selects only on a proven natural completion, inside the one case deadline', () => {
-    expect(tournament).toContain(
-      'if (!(error instanceof NaturalCompletionDuringObservation)) throw error;'
+  it('re-selects only on proven completion or pre-HUD qualification attrition, inside one deadline', () => {
+    expect(tournament).toMatch(
+      /if \(\s*!\(error instanceof NaturalCompletionDuringObservation\) &&\s*!\(error instanceof PreHudCandidateAttrition\)\s*\)\s*throw error;/
     );
+    expect(tournament).toContain(
+      'provenPreHudAttrition(selected.boardFacts, qualification, Date.now())'
+    );
+    const attritionThrow = tournament.indexOf(
+      'throw new PreHudCandidateAttrition(preHudAttrition)'
+    );
+    expect(attritionThrow).toBeGreaterThan(
+      tournament.indexOf('spectator attempted to join, register, spend or leave')
+    );
+    expect(attritionThrow).toBeGreaterThan(
+      tournament.indexOf('const unsubscribeVerdict = classifyUnsubscribes(')
+    );
+    expect(tournament.match(/new PreHudCandidateAttrition\(/g)).toHaveLength(1);
     expect(tournament).toContain('remainingMs: caseStartedAt + testInfo.timeout - Date.now()');
     expect(tournament).toContain('observationDeadline: caseStartedAt + testInfo.timeout');
     expect(tournament).toContain('deadline: observationDeadline');

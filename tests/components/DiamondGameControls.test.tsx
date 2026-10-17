@@ -53,14 +53,14 @@ describe('visible Plinko allocation controls', () => {
     expect(choices().filter((b) => b.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: '100 Diamonds Per Drop, 1 Drop' }));
     expect(screen.getByText('1 Drop × 100 Diamonds = 100 Diamonds')).toBeTruthy();
-    // Double Down doubles the entry: 100 a drop still divides 200, so the choice
-    // stays and the drops move with it.
-    fireEvent.click(screen.getByRole('checkbox'));
-    expect(screen.getByText('2 Drops × 100 Diamonds = 200 Diamonds')).toBeTruthy();
+    // Double Diamonds is retired (Dan 2026-10-16): there is no Double Down box
+    // to grow the entry, so the choice stays on the funded 100.
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByText(/Double Down|Double Your Diamonds/)).toBeNull();
     // Nothing offers a risk level any more.
     expect(screen.queryByRole('button', { name: /Risk/ })).toBeNull();
   });
-  it('locks the entry, Double Down and the selector during admission and animation', () => {
+  it('locks the entry and the selector during admission and animation', () => {
     const change = vi.fn();
     render(
       <MemoryRouter>
@@ -76,9 +76,8 @@ describe('visible Plinko allocation controls', () => {
     );
     const entry = screen.getByLabelText('Entry Diamonds');
     expect(entry).toBeDisabled();
-    expect(screen.getByRole('checkbox')).toBeDisabled();
+    expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.getByText('10 Drops × 10 Diamonds = 100 Diamonds')).toBeTruthy();
-    fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: '4 Diamonds Per Drop, 25 Drops' }));
     expect(change).not.toHaveBeenCalled();
   });

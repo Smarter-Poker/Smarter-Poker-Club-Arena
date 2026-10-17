@@ -134,9 +134,11 @@ describe('the solver stack is measurable at all', () => {
     // Before 2026-09-01 none of them did: V29 through V32 shipped, displaced
     // the V15-V23 layers on the spots they answer, and nothing on the card
     // could say whether the trade was positive.
-    for (const flag of ['v29GtoFlop', 'v30GtoTurnRiver', 'v31GtoSuitAware', 'v32FacingDefense']) {
+    for (const flag of ['v29GtoFlop', 'v30GtoTurnRiver', 'v31GtoSuitAware']) {
       expect(league, `${flag} needs a league matchup`).toContain(`{ ${flag}: false }`);
     }
+    // V32 is default OFF since 2026-10-16, so its matchup turns it ON.
+    expect(league).toContain('a: { v32FacingDefense: true }');
     // V33 is default OFF, so its matchup turns it ON against today's brain.
     expect(league).toContain('{ v33DepthCeiling: true }');
   });

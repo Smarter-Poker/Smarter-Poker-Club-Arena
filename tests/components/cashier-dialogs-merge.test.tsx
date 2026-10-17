@@ -89,7 +89,9 @@ describe('the promo float switch is offered on the agents row itself', () => {
   it('a Club Bank role with no agents row stands at the club pot alone', async () => {
     fx.balances.mockResolvedValue(promoSnapshot({ promoFloat: 0, hasFloat: false }));
     openPromo();
-    await waitFor(() => expect(document.querySelector('.cbc-bank strong')?.textContent).toBe('25'));
+    await waitFor(() =>
+      expect(document.querySelector('.cbc-bank strong')?.textContent).toBe('25.00')
+    );
     // The empty float reads 0 now, which is not a float this owner holds.
     expect(screen.queryByRole('radiogroup', { name: 'Promo Wallet Source' })).toBeNull();
     expect(screen.queryByText('My Promo Float')).toBeNull();
@@ -102,7 +104,9 @@ describe('the promo float switch is offered on the agents row itself', () => {
     expect(group.textContent).toContain('Club Promo Wallet');
     expect(group.textContent).toContain('My Promo Float');
     fireEvent.click(screen.getByRole('radio', { name: /My Promo Float/ }));
-    await waitFor(() => expect(document.querySelector('.cbc-bank strong')?.textContent).toBe('15'));
+    await waitFor(() =>
+      expect(document.querySelector('.cbc-bank strong')?.textContent).toBe('15.00')
+    );
   });
 });
 
@@ -145,7 +149,7 @@ describe('a Club Bank move that got no answer says so', () => {
     fireEvent.click(await screen.findByText('Fish Finder'));
     fireEvent.change(screen.getByLabelText('Chips To Send'), { target: { value: '100' } });
     const plate = () =>
-      screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button')!;
+      screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button')!;
     await waitFor(() => expect(plate().disabled).toBe(false));
     fireEvent.click(plate());
     return plate;
@@ -171,7 +175,7 @@ describe('a Club Bank move that got no answer says so', () => {
     await waitFor(() => expect(sends()).toHaveLength(1));
     await waitFor(() =>
       expect(
-        screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button')!.disabled
+        screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button')!.disabled
       ).toBe(false)
     );
     expect(screen.queryByText(/Got No Answer/)).toBeNull();
@@ -182,7 +186,7 @@ describe('a Club Bank move that got no answer says so', () => {
     await waitFor(() => expect(sends()).toHaveLength(1));
     await waitFor(() =>
       expect(
-        screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button')!.disabled
+        screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button')!.disabled
       ).toBe(false)
     );
     expect(screen.queryByText(/Got No Answer/)).toBeNull();

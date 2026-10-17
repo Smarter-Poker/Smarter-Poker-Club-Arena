@@ -102,6 +102,8 @@ export function assertStageTarget(game, clubId) {
     !target ||
     !UUID.test(game?.id ?? '') ||
     game.club_id !== clubId ||
+    game.template_name !== target.templateName ||
+    game.variant !== 'nlh' ||
     game.handedness !== target.handedness ||
     Number(game.sb) !== target.sb ||
     Number(game.bb) !== target.bb ||
@@ -115,6 +117,9 @@ export function assertStageTarget(game, clubId) {
 
 export async function runPilotStage(env = process.env, clientFactory, accessRunner) {
   const stage = env.PILOT_STAGE;
+  const consentInput = env.PILOT_ACCEPT_OUTSIDER_TERMS ?? 'false';
+  if (!['true', 'false'].includes(consentInput) || (consentInput === 'true' && stage !== 'access'))
+    throw new Error('Outsider Terms Acceptance Requires An Explicit Access Stage');
   if (!Object.hasOwn(STAGE_ACTIONS, stage)) throw new Error('Unknown Pilot Stage');
   const controlAction = env.PILOT_CONTROL_ACTION ?? '';
   if (stage === 'control' && !PILOT_RECOVERY_CONTROLS.includes(controlAction))
@@ -215,6 +220,7 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
           requestId: stageRequestId(operationId, club.id, 'pending_access_proof'),
           chromium,
           WebSocket,
+          acceptOutsiderTerms: consentInput === 'true',
         });
       } catch (error) {
         report.access = error.pilotAccessReport ?? { verdict: 'unknown' };

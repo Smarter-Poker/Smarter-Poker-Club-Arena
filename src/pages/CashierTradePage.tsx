@@ -127,8 +127,9 @@ import { UnionService } from '../services/UnionService';
 import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
+import { useFitText } from '../components/lobby/game-cards/useFitText';
 import { SpadeConsole } from '../components/console/SpadeConsole';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips } from '../utils/format';
 import {
   exactChipFigure,
   parseTradeAmount,
@@ -152,6 +153,7 @@ import {
   mergeCashierBatchReceiptRows,
   type CashierBatchReceiptRow,
 } from '../utils/cashierBatch';
+import { chipKindWord } from '../utils/chipKindWord';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -257,9 +259,8 @@ type InvoiceRow = ClubWeeklyStatement;
 
 type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 
-/* #ClubArenaConsole law: chip figures outside the felt never print decimal
-   points. The authoritative ledger keeps its cents; this display deliberately
-   uses the shared rounded-down K/M/B reading without changing stored values. */
+/* Transaction amounts and aggregates retain the console reading. Wallet
+   balances use formatWalletChips explicitly: exact cents below one million. */
 const fmt = compactChips;
 
 /**
@@ -294,6 +295,7 @@ function CashierPlayerCard({
   walletControl?: React.ReactNode;
   walletBalance?: number | null;
 }) {
+  const nameRef = useFitText<HTMLElement>(row.name, 1, 0.1);
   return (
     <section className={styles.playerCard} aria-label="Selected Player">
       <img
@@ -308,20 +310,28 @@ function CashierPlayerCard({
       />
       <span className={styles.playerCardPlate}>
         <span className={styles.playerCardIdentity}>
-          <strong className={styles.playerCardName}>{row.name}</strong>
+          <strong ref={nameRef} className={styles.playerCardName}>
+            {row.name}
+          </strong>
           <span className={styles.playerCardId}>
             {row.playerNumber ? `ID: ${row.playerNumber}` : 'ID Unavailable'}
           </span>
         </span>
         <span className={styles.playerCardBalance}>
-          {walletControl || <span>{balanceLabel}</span>}
+          <span>{balanceLabel}</span>
+          {walletControl && (
+            <svg className={styles.entityChevron} viewBox="0 0 12 8" aria-hidden="true">
+              <path d="M1 1.5 6 6.5 11 1.5" fill="none" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          )}
           <strong>
             {walletBalance === null
               ? 'Unavailable'
-              : compactChips(walletBalance ?? row.chipBalance)}
+              : formatWalletChips(walletBalance ?? row.chipBalance)}
           </strong>
         </span>
       </span>
+      {walletControl}
     </section>
   );
 }
@@ -345,11 +355,17 @@ function CashierWalletRow({
         />
       </span>
       <span className={styles.walletRowPlate}>
-        {children || <span className={styles.walletRowLabel}>{label}</span>}
+        <span className={styles.walletRowLabel}>{label}</span>
+        {children && (
+          <svg className={styles.entityChevron} viewBox="0 0 12 8" aria-hidden="true">
+            <path d="M1 1.5 6 6.5 11 1.5" fill="none" stroke="currentColor" strokeWidth="2" />
+          </svg>
+        )}
         <strong className={styles.walletRowValue}>
-          {balance === null ? '-' : compactChips(balance)}
+          {balance === null ? '-' : formatWalletChips(balance)}
         </strong>
       </span>
+      {children}
     </section>
   );
 }
@@ -393,12 +409,11 @@ function newOpId(): string {
  * Raw Postgres enums were rendered straight at the user: "peer_transfer",
  * "awaiting_payment". Title Case them, the way ROLE_LABEL does for roles.
  */
+/* The kinds read the statement's words (2026-10-17): the Trade Record printed
+   "Cashout" and "Tournament Buyin" where the statement reads "Cash-Out" and
+   "Tournament Buy-In". */
 function txLabel(value: string | null | undefined): string {
-  return String(value || '')
-    .split('_')
-    .filter(Boolean)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+  return value ? chipKindWord(value) : '';
 }
 
 // Retire dialogs and read/write refs immediately when the account or route changes.
@@ -1796,6 +1811,43 @@ function CashierTradeWorkspace() {
     return rows;
   }, [downline, search, sortKey, groupByRole, mineOnly, roleFilter, recentIds]);
 
+  const [rosterWalletBalances, setRosterWalletBalances] = useState<
+    Record<string, Partial<Record<SendDestination, number>>>
+  >({});
+  const visibleWalletIds = JSON.stringify(list.slice(0, visibleCount).map((row) => row.userId));
+  useEffect(() => {
+    if (!clubUuid || !roleResolved || myRole === 'player') return;
+    let live = true;
+    setRosterWalletBalances({});
+    void (async () => {
+      const ids = JSON.parse(visibleWalletIds) as string[];
+      const balances: Record<string, Partial<Record<SendDestination, number>>> = {};
+      try {
+        for (let offset = 0; offset < ids.length; offset += 25) {
+          const { data, error } = await supabase.rpc('fn_cashier_recipient_wallet_balances', {
+            p_club_id: clubUuid,
+            p_user_ids: ids.slice(offset, offset + 25),
+          });
+          if (error) throw error;
+          if (!Array.isArray(data)) throw new Error('Recipient Balance Response Missing');
+          for (const row of data) {
+            balances[row.user_id] = {};
+            for (const wallet of ['player_wallet', 'agent_wallet'] as const) {
+              if (row[wallet] != null && Number.isFinite(Number(row[wallet])))
+                balances[row.user_id][wallet] = Number(row[wallet]);
+            }
+          }
+        }
+        if (live) setRosterWalletBalances(balances);
+      } catch (error) {
+        reportError(error, 'CashierTradePage.rosterWalletBalances');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [clubUuid, roleResolved, myRole, visibleWalletIds, downline]);
+
   const agencyBalance = useMemo(() => sumChips(recipients.map((r) => r.chipBalance)), [recipients]);
 
   /** Fast client-side ledger controls over the bounded, newest-first page. */
@@ -2073,7 +2125,7 @@ function CashierTradeWorkspace() {
           {SEND_DESTINATION_LABELS[wallet]}:{' '}
           {targetBalances[target.userId]?.[wallet] === undefined
             ? 'Unavailable'
-            : compactChips(targetBalances[target.userId][wallet]!)}
+            : formatWalletChips(targetBalances[target.userId][wallet]!)}
         </option>
       ))}
     </select>
@@ -2432,6 +2484,16 @@ function CashierTradeWorkspace() {
 
           for (const target of chunk) {
             const result = cashierBatchAcknowledgement(envelope.results, target.userId);
+            if (result.outcome === 'Refused' && result.message === 'Transfer Failed') {
+              // The batch rolled this item back. The photographed refusal was
+              // inside the recorded maintenance freeze; name that authoritative
+              // state instead of treating a definite refusal as a lost outcome.
+              const { data: frozen, error: freezeError } = await supabase.rpc('fn_platform_frozen');
+              if (freezeError) reportError(freezeError, 'CashierTradePage.refusalMaintenanceState');
+              else if (frozen === true)
+                result.message =
+                  'Paused For Maintenance. No Chips Were Moved. Try Again When Play Resumes';
+            }
             const receiptRow = receiptById.get(target.userId)!;
             receiptRow.outcome = result.outcome;
             if (result.reference) receiptRow.reference = result.reference;
@@ -2579,9 +2641,9 @@ function CashierTradeWorkspace() {
       // The one branch that did not exist. A batch where every target failed
       // produced no summary at all.
       toast?.error?.(
-        ok > 0
-          ? `${failed.length} Of ${targets.length} Need Outcome Verification`
-          : `Transfer Outcomes Need Verification For ${failed.length} Recipients`
+        uncertain.length > 0
+          ? `Transfer Outcomes Need Verification For ${uncertain.length} Recipients`
+          : `${failed.length} Transfers Were Refused. No Chips Were Moved For Those Recipients`
       );
     }
   };
@@ -3266,6 +3328,28 @@ function CashierTradeWorkspace() {
   // determined separately for the selected player or agent wallet.
   const selfCanFundPlayerWallet = currentClub?.entityType === 'club' && canSeeClubBank(myRole);
 
+  const modeToggle = (
+    <button
+      type="button"
+      className={styles.modeToggle}
+      aria-pressed={advanced}
+      onClick={() => {
+        if (advanced) {
+          setTab('trade');
+          setRoleFilter('all');
+          setMineOnly(false);
+          setGroupByRole(false);
+        }
+        setAdvanced((value) => !value);
+      }}
+    >
+      {advanced ? 'Simple' : 'Advanced'}
+      {!advanced && pendingCount + heldTicketCount > 0
+        ? ` (${(pendingCount + heldTicketCount).toLocaleString()})`
+        : ''}
+    </button>
+  );
+
   return (
     <div
       className={`${styles.page} ${!advanced ? styles.simple : ''}`}
@@ -3276,34 +3360,22 @@ function CashierTradeWorkspace() {
         compact={!advanced}
         eyebrow="Secure Cashier"
         title="Cashier"
-        pill={isOnline ? 'Live Ledger' : 'Locked'}
-        pillInk={isOnline ? 'green' : 'red'}
+        // Dan 2026-10-16: no "Live Ledger" pill. A locked cashier still says so.
+        pill={isOnline ? undefined : 'Locked'}
+        pillInk="red"
         foot="foot"
         className={styles.console}
       >
         <div className={styles.glass}>
-          <div className={styles.modeToolbar}>
-            <span>{advanced ? 'Advanced Cashier' : 'Simple Cashier'}</span>
-            <button
-              type="button"
-              className={styles.modeToggle}
-              aria-pressed={advanced}
-              onClick={() => {
-                if (advanced) {
-                  setTab('trade');
-                  setRoleFilter('all');
-                  setMineOnly(false);
-                  setGroupByRole(false);
-                }
-                setAdvanced((value) => !value);
-              }}
-            >
-              {advanced ? 'Simple' : 'Advanced'}
-              {!advanced && pendingCount + heldTicketCount > 0
-                ? ` (${(pendingCount + heldTicketCount).toLocaleString()})`
-                : ''}
-            </button>
-          </div>
+          {/* Dan 2026-10-16: the Simple view carries no "Simple Cashier" caption
+          and no toolbar row; its Advanced switch sits beside the club so the
+          club leads the glass. Advanced keeps its labelled toolbar. */}
+          {advanced && (
+            <div className={styles.modeToolbar}>
+              <span>Advanced Cashier</span>
+              {modeToggle}
+            </div>
+          )}
           <section
             className={styles.hero}
             aria-labelledby={advanced ? 'cashier-title' : undefined}
@@ -3322,24 +3394,53 @@ function CashierTradeWorkspace() {
                 {currentClub?.logoUrl ? (
                   <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
                 ) : null}
-                <span className={styles.entityName}>{currentClubLabel}</span>
-                <span className={`${styles.entityCaret} sc-label sc-ink--blue`} aria-hidden="true">
-                  Choose
+                <span className={styles.entityText}>
+                  <span className={styles.entityName}>{currentClubLabel}</span>
+                  <span
+                    className={`${styles.entityCaret} ${pickerOpen ? styles.entityCaretOpen : ''} sc-label`}
+                    aria-hidden="true"
+                  >
+                    Choose
+                    <svg className={styles.entityChevron} viewBox="0 0 12 8" focusable="false">
+                      <path
+                        d="M1 1.5 6 6.5 11 1.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                  </span>
                 </span>
               </button>
+              {!advanced && modeToggle}
             </div>
 
             {holdsPlayerWallet(myRole) && roleResolved && (
+              // Dan 2026-10-16: the button carries the viewer's own player
+              // balance in this club, the same figure the cashout sheet checks.
               <button
                 type="button"
-                className={styles.classicLink}
+                className={styles.cashoutButton}
+                aria-label="Request Cash Out"
+                aria-describedby="cashier-cashout-balance"
                 onClick={() => setShowCashoutRequest(true)}
               >
-                Request Cash Out
+                <span className={styles.cashoutLabel}>Request Cash Out</span>
+                <span id="cashier-cashout-balance" className={styles.cashoutBalance}>
+                  {loading || isHydrating ? 'Loading Balance' : `${fmt(myBalance)} Chips`}
+                </span>
               </button>
             )}
             {!advanced && (
-              <div className={styles.simpleStatus} role="status">
+              // Dan 2026-10-16: a healthy cashier prints no "Balances Synchronized"
+              // line. The status stays announced to assistive technology, and any
+              // other state (offline, reconciling, an error) is still shown.
+              <div
+                className={
+                  cashierSyncMessage === 'Balances Synchronized' ? 'sr-only' : styles.simpleStatus
+                }
+                role="status"
+              >
                 {cashierSyncMessage}
               </div>
             )}
@@ -3364,13 +3465,15 @@ function CashierTradeWorkspace() {
               <div className={styles.heroMetric}>
                 <span className={styles.heroMetricLabel}>Club Chips</span>
                 <strong className={styles.heroMetricValue}>
-                  {loading || isHydrating ? '-' : fmt(myBalance)}
+                  {loading || isHydrating ? '-' : formatWalletChips(myBalance)}
                 </strong>
               </div>
               <div className={styles.heroMetric}>
                 <span className={styles.heroMetricLabel}>Agent Wallet</span>
                 <strong className={styles.heroMetricValue}>
-                  {loading || isHydrating || agentWallet === null ? '-' : fmt(agentWallet)}
+                  {loading || isHydrating || agentWallet === null
+                    ? '-'
+                    : formatWalletChips(agentWallet)}
                 </strong>
               </div>
               <div className={styles.heroMetric}>
@@ -3458,7 +3561,9 @@ function CashierTradeWorkspace() {
                       ) : null}
                       <span className={styles.pickerName}>{titleCase(m.name)}</span>
                       <span className={styles.pickerBalance}>
-                        {m.entityType === 'union' ? 'Union Wallets' : `${fmt(m.chipBalance)} Chips`}
+                        {m.entityType === 'union'
+                          ? 'Union Wallets'
+                          : `${formatWalletChips(m.chipBalance)} Chips`}
                       </span>
                     </button>
                   ))}
@@ -3631,7 +3736,7 @@ function CashierTradeWorkspace() {
               <div className={styles.strip}>
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Club Chips</span>
-                  <span className={styles.stripValue}>{fmt(myBalance)}</span>
+                  <span className={styles.stripValue}>{formatWalletChips(myBalance)}</span>
                 </div>
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Downline Holdings</span>
@@ -3647,7 +3752,7 @@ function CashierTradeWorkspace() {
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Agent Wallet</span>
                   <span className={styles.stripValue}>
-                    {agentWallet === null ? '--' : fmt(agentWallet)}
+                    {agentWallet === null ? '--' : formatWalletChips(agentWallet)}
                     {canSeeClubBank(myRole) && (
                       <button
                         className={styles.plusBtn}
@@ -3674,9 +3779,7 @@ function CashierTradeWorkspace() {
                   type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder={
-                    advanced ? 'Search Name, Number, Handle, Or Role' : 'Search Name Or ID'
-                  }
+                  placeholder="Search Name Or ID Number"
                   aria-label={`Search ${downline.length} Member${downline.length === 1 ? '' : 's'}`}
                 />
                 {search && (
@@ -3691,10 +3794,10 @@ function CashierTradeWorkspace() {
                     Clear Search
                   </button>
                 )}
-                <span className={styles.memberCount} role="status" aria-live="polite">
-                  {list.length.toLocaleString()} Results
-                </span>
               </div>
+              <span className={styles.memberCount} role="status" aria-live="polite">
+                {list.length.toLocaleString()} Results
+              </span>
               <div className={styles.filterRow}>
                 <label className={styles.roleFilter}>
                   Role
@@ -3898,11 +4001,21 @@ function CashierTradeWorkspace() {
                             }}
                           />
                         </label>
-                        <img
-                          src={r.avatarUrl || generateAvatarSvg(r.userId, r.name || '?')}
-                          alt=""
-                          className={styles.avatar}
-                        />
+                        <span className={styles.rosterPortrait}>
+                          <img
+                            src={r.avatarUrl || generateAvatarSvg(r.userId, r.name || '?')}
+                            alt=""
+                            className={styles.avatar}
+                            onError={(event) => {
+                              const image = event.currentTarget;
+                              image.onerror = null;
+                              image.src = generateAvatarSvg(r.userId, r.name || '?');
+                            }}
+                          />
+                          <span className={`${styles.rowSub} ${styles.simpleId}`}>
+                            {r.playerNumber ? `ID: ${r.playerNumber}` : 'ID Unavailable'}
+                          </span>
+                        </span>
                         {/* The record stays a real link for the keyboard and
                             for assistive technology (Enter opens it). A tap is
                             the row's: one selects, two open. */}
@@ -3923,44 +4036,33 @@ function CashierTradeWorkspace() {
                             {r.name}
                             {r.isSelf ? <span className={styles.rowYou}>You</span> : null}
                           </span>
-                          <span className={`${styles.rowSub} ${styles.simpleId}`}>
-                            {!advanced ? (
-                              r.playerNumber ? (
-                                `ID: ${r.playerNumber}`
-                              ) : (
-                                'ID Unavailable'
-                              )
-                            ) : (
-                              <>
-                                {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
-                                {titleCase(roleLabel(r.role as ClubRole))}
-                                {r.username ? ` · @${r.username}` : ''}
-                              </>
-                            )}
-                          </span>
+                          {advanced && (
+                            <span className={styles.rowSub}>
+                              {titleCase(roleLabel(r.role as ClubRole))}
+                              {r.username ? ` · @${r.username}` : ''}
+                            </span>
+                          )}
                         </Link>
                         <span className={styles.rosterWallet}>
-                          <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
-                          <span className={styles.rowSub}>Player Wallet</span>
+                          {canHoldAgentWallet(r.role) && (
+                            <span className={styles.rosterBalanceLine}>
+                              <span className={styles.rowSub}>Agent Wallet</span>
+                              <strong className={styles.rowBalance}>
+                                {rosterWalletBalances[r.userId]?.agent_wallet === undefined
+                                  ? 'Unavailable'
+                                  : formatWalletChips(rosterWalletBalances[r.userId].agent_wallet!)}
+                              </strong>
+                            </span>
+                          )}
+                          {holdsPlayerWallet(r.role) && (
+                            <span className={styles.rosterBalanceLine}>
+                              <span className={styles.rowSub}>Player Wallet</span>
+                              <strong className={styles.rowBalance}>
+                                {formatWalletChips(r.chipBalance)}
+                              </strong>
+                            </span>
+                          )}
                         </span>
-                        {selectable ? (
-                          <button
-                            type="button"
-                            className={`${styles.checkbox} ${isSelected ? styles.checkboxOn : ''}`}
-                            disabled={busy}
-                            aria-label={`Select ${r.name}`}
-                            aria-pressed={isSelected}
-                            onClick={(event) => {
-                              // The button only toggles. A double tap opens the
-                              // record from the row itself, never from here.
-                              event.stopPropagation();
-                              lastRowTapRef.current = null;
-                              if (selectable && !busy) toggle();
-                            }}
-                          >
-                            {isSelected ? 'Selected' : 'Select'}
-                          </button>
-                        ) : null}
                       </div>
                     );
                   })}
@@ -4846,7 +4948,11 @@ function CashierTradeWorkspace() {
                       {picked.length === 1 && (
                         <CashierPlayerCard
                           row={picked[0]}
-                          balanceLabel="Player Wallet"
+                          balanceLabel={
+                            amountModal === 'send'
+                              ? SEND_DESTINATION_LABELS[transferDestination(picked[0])]
+                              : 'Player Wallet'
+                          }
                           walletControl={
                             amountModal === 'send' ? recipientWalletControl(picked[0]) : undefined
                           }
@@ -4858,6 +4964,25 @@ function CashierTradeWorkspace() {
                               : undefined
                           }
                         />
+                      )}
+                      {amountModal === 'send' && picked.length === 1 && (
+                        <section
+                          className={styles.recipientWalletSummary}
+                          aria-label="Selected Player Wallet Balances"
+                        >
+                          {(['agent_wallet', 'player_wallet'] as const)
+                            .filter((wallet) =>
+                              recipientSendWallets(picked[0].role).includes(wallet)
+                            )
+                            .map((wallet) => (
+                              <span key={wallet}>
+                                {SEND_DESTINATION_LABELS[wallet]}:{' '}
+                                {targetBalances[picked[0].userId]?.[wallet] === undefined
+                                  ? 'Unavailable'
+                                  : formatWalletChips(targetBalances[picked[0].userId][wallet]!)}
+                              </span>
+                            ))}
+                        </section>
                       )}
                       {sourceLabel && (
                         <CashierWalletRow label={sourceLabel} balance={sourceBalance}>
@@ -4877,7 +5002,7 @@ function CashierTradeWorkspace() {
                                   From {SEND_SOURCE_LABELS[source]}:{' '}
                                   {sourceBalanceFor(source) === null
                                     ? 'Unavailable'
-                                    : compactChips(sourceBalanceFor(source)!)}
+                                    : formatWalletChips(sourceBalanceFor(source)!)}
                                 </option>
                               ))}
                             </select>
@@ -4983,7 +5108,7 @@ function CashierTradeWorkspace() {
                         <div key={`wallet-${r.userId}`}>
                           <CashierPlayerCard
                             row={r}
-                            balanceLabel="Player Wallet"
+                            balanceLabel={SEND_DESTINATION_LABELS[transferDestination(r)]}
                             walletControl={recipientWalletControl(r)}
                             walletBalance={
                               targetBalances[r.userId]?.[transferDestination(r)] ?? null
@@ -5061,7 +5186,9 @@ function CashierTradeWorkspace() {
                     {transferFailures.length > 0 && (
                       <div className={styles.modalFailures} role="alert">
                         <div className={styles.modalFailuresTitle}>
-                          {transferFailures.length} Need Outcome Verification
+                          {transferRecovery
+                            ? `${transferRecovery.failures.length} Need Outcome Verification`
+                            : `${transferFailures.length} Transfers Refused`}
                         </div>
                         {transferFailures.map((f) => (
                           <div className={styles.modalFailureRow} key={f.userId}>
@@ -5178,7 +5305,7 @@ function CashierTradeWorkspace() {
                         )
                       }
                     >
-                      Claim All {compactChips(managementClaimTarget.chipBalance)}
+                      Claim All {formatWalletChips(managementClaimTarget.chipBalance)}
                     </button>
                   </>
                 )}

@@ -63,6 +63,10 @@ const CAT_NAMES = [
 import { SUITS, RANKS, validateAction, calculateBettingState } from '../engine/PokerEngine.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
+import {
+  liveHorseDecisionWorkerStatus,
+  type LiveHorseDecisionLaneStatus,
+} from '../engine/horseDecision/lane.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -581,15 +585,29 @@ export function playHand(
       // 0.00 +/- 0.00 every night from 2026-09-13 to 09-21: the two arms played
       // byte-identical poker because neither could see a read. Same scope
       // derivation as HorseLogic.decide: variant x dealt count.
-      HorseMind.runInSandbox(sandbox, () =>
-        HorseMind.observeHandComplete(
-          `league:${ts}`,
-          history,
-          BB,
-          showdown,
-          readScopeOf(gameVariant, seats.length)
-        )
-      );
+      // 2026-10-17: complete the action stream the way production does
+      // (workerRuntime observeCompletedHand). observe() only ever saw the
+      // prefix each decision was taken on, so the action that ENDS a hand
+      // (a river call, a fold to a bet) never reached league memory: every
+      // fold/call counter missed its last entry and riverBetOpps stayed 0 for
+      // every seat (riverFoldRate null on all 159 reads of a 400-pair probe).
+      // With this, 641 of 818 reads in a 2,000-pair probe return a rate.
+      // v23_river_reads still changes no decision in self-play: league horses
+      // fold rivers 43-88%, so the read only raises bluffScale, which every
+      // consumer clamps at 1.2-1.3 where it already sits. Same scope as the
+      // decisions; no identity, so the per-action keys equal the ones the
+      // decisions recorded and nothing is counted twice.
+      const handScope = readScopeOf(gameVariant, seats.length);
+      HorseMind.runInSandbox(sandbox, () => {
+        const previousScope = HorseMind.currentScope();
+        HorseMind.setDecisionScope(handScope);
+        try {
+          HorseMind.observe(history, []);
+        } finally {
+          HorseMind.setDecisionScope(previousScope);
+        }
+        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown, handScope);
+      });
     } catch {
       /* the harness is measurement plumbing — never let it break a deal */
     }
@@ -793,7 +811,10 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'v16_deep_reads', pairs: 6000, a: {}, b: { v16Reads: false } },
   // ── V17 (2026-08-26) ──
   { name: 'v17_positional', pairs: 6000, a: {}, b: { v17Pos: false } },
-  { name: 'v17_river_probe', pairs: 6000, a: {}, b: { v17RiverProbe: false } },
+  // 2026-10-16: the river probe resolved NEGATIVE pooled over the audit's
+  // 7-day window (-0.11 +/- 0.04) and is default OFF. Same matchup, same
+  // sign: arm A is still "probe on".
+  { name: 'v17_river_probe', pairs: 6000, a: { v17RiverProbe: true }, b: {} },
   { name: 'shortdeck_v17', variant: 'short_deck', pairs: 6000, a: {}, b: { v17ShortDeck: false } },
   // ── V18 (2026-08-26) ──
   { name: 'v18_squeeze_response', pairs: 6000, a: {}, b: { v18Squeeze: false } },
@@ -821,7 +842,16 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
    * 4242 and 20260921 (INERT); a heads-up v11 control diverged in 7 and 2 of 1,000.
    */
   // { name: 'v31_gto_suit_aware', seats: 2, pairs: 6000, a: {}, b: { v31GtoSuitAware: false } },
-  { name: 'v32_facing_defense', seats: 2, pairs: 6000, a: {}, b: { v32FacingDefense: false } },
+  // 2026-10-16: the facing-bet defence resolved NEGATIVE heads-up (-0.31 +/-
+  // 0.15 over 41 nightly runs) and is default OFF. Same matchup, same sign:
+  // arm A is still "defence on".
+  {
+    name: 'v32_facing_defense',
+    seats: 2,
+    pairs: 6000,
+    a: { v32FacingDefense: true },
+    b: {},
+  },
   // The depth ceiling only changes a decision ABOVE it, so dealing this at
   // the standard 100bb would measure exactly nothing and report 0.00 +/- 0.00
   // forever - the inert-matchup shape the audit now flags. 400bb is past
@@ -885,7 +915,11 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // they ship scenario-tested with telemetry, the way V16 real ICM did.
   { name: 'v23_raise_plans', pairs: 6000, a: {}, b: { v23Plan: false } },
   { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
-  { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: {}, b: { v23Variants: false } },
+  // 2026-10-16: the short-deck half of V23 resolved NEGATIVE (-0.36 +/- 0.14
+  // over 44 nightly runs) and is default OFF behind v23ShortDeck; the plo8
+  // low-draw half wins (+1.63 +/- 0.18) and stays on under v23Variants. Same
+  // matchup, same sign: arm A is still "short-deck polish on".
+  { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: { v23ShortDeck: true }, b: {} },
   { name: 'plo8_v23_lowdraw', variant: 'plo8', pairs: 6000, a: {}, b: { v23Variants: false } },
   // ── V24 (2026-08-28) ── Dan full-potted 8 PLO hands in a PKO and was never
   // called once. The price defense is measurable on a PLO card; the bounty
@@ -959,6 +993,7 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       v23Plan: false,
       v23Reads: false,
       v23Variants: false,
+      v23ShortDeck: false,
       v23Spin: false,
       v24Bounty: false,
       v24PloDefense: false,
@@ -983,7 +1018,17 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
 // every matchup and solver-agreement scan to HorseLeagueComputeWorker. The
 // yield inside runMatchup remains the worker's cancellation/heartbeat edge;
 // it is not permission to put this CPU loop back on the dealer thread.
-const LEAGUE_HOUR_UTC = 4;
+//
+// 2026-10-16: MOVED FROM 04:00 TO 13:00 UTC. Seven days of hand_history
+// (2026-10-09 to 10-16, read-only) put the six quietest hours of the floor at
+// 13:00-18:59 UTC (28,796-37,267 hands an hour, against 40,006-42,614 at
+// 04:00-07:59 and 45,458 at the 23:00 peak). With every horse now deciding at
+// the full sample (horseDecision/workerRuntime.ts), the league's one core of
+// Monte Carlo competes with the decision workers for the same four physical
+// cores, so both windows now sit in that quiet stretch (13:00 and 16:00, each
+// with its three-hour catch-up), and every matchup also waits for the
+// decision lane to be calm before it starts (decisionLaneHasHeadroom).
+const LEAGUE_HOUR_UTC = 13;
 // V13: was 30 minutes against a ONE-HOUR window, so any engine restart in the
 // back half of the window pushed the next tick past it and the league silently
 // did not run that day at all. This repo deploys many times a day; on
@@ -1150,6 +1195,11 @@ const CLAIM_EVIDENCE: Record<string, { table: string; column: string; dateColumn
   league: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
   league_pm: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
   daily_audit: { table: 'horse_daily_audit', column: 'day', dateColumn: 'day' },
+  reference_agreement: {
+    table: 'horse_reference_agreement_daily',
+    column: 'day',
+    dateColumn: 'day',
+  },
   self_tuner: {
     table: 'horse_tuner_study_completions',
     column: 'run_date',
@@ -1553,10 +1603,45 @@ class RequiredV31AgreementError extends Error {
   override readonly name = 'RequiredV31AgreementError';
 }
 
+/**
+ * THE LEAGUE NEVER TAKES A CORE FROM A HORSE THAT IS WAITING (2026-10-16).
+ *
+ * The league's compute process runs at nice 19 inside the engine container,
+ * so the kernel preempts it whenever a live thread wants its core. That is not
+ * enough on this host: four physical cores carry eight hyperthreads, and a
+ * league matchup on one thread slows the decision worker on its sibling. On
+ * 2026-10-16 at 17:20Z (the PM window) the lane's oldest queued decision was
+ * six seconds old while the league process held 99% of a core for 72 minutes.
+ *
+ * So a matchup starts only while the decision lane is calm: its oldest queued
+ * DECISION job (DECIDE_FAST, DECIDE_DEEP, DECIDE_DISCARD) is at most
+ * LEAGUE_LANE_MAX_QUEUED_AGE_MS old. Observation, effect and mirrored-hand
+ * jobs are not a horse waiting: every completed hand is mirrored to every
+ * shard (horseDecision/mindMirror.ts), and gating on the age of THAT traffic
+ * would starve the league on a busy floor while no horse was waiting at all. Otherwise the run stands
+ * down with what it has (a partial card is resumable, see alreadyRanToday)
+ * and the next ten-minute tick inside the window tries again. A process with
+ * no live lane (tests, offline tools) has nothing to protect; a lane that is
+ * starting, failing or stopping is never a calm one.
+ */
+export const LEAGUE_LANE_MAX_QUEUED_AGE_MS = 1_000;
+
+export function decisionLaneHasHeadroom(
+  status: Pick<
+    LiveHorseDecisionLaneStatus,
+    'phase' | 'oldestQueuedDecisionAgeMs'
+  > = liveHorseDecisionWorkerStatus()
+): boolean {
+  if (status.phase === 'stopped') return true;
+  if (status.phase !== 'ready') return false;
+  return (status.oldestQueuedDecisionAgeMs ?? 0) <= LEAGUE_LANE_MAX_QUEUED_AGE_MS;
+}
+
 export async function runLeague(
   runDate?: string,
   shouldContinue: () => boolean = () => true,
-  computeFactory: () => HorseLeagueCompute = () => new HorseLeagueComputeWorkerClient()
+  computeFactory: () => HorseLeagueCompute = () => new HorseLeagueComputeWorkerClient(),
+  laneHasHeadroom: () => boolean = () => decisionLaneHasHeadroom()
 ): Promise<LeagueResult[]> {
   if (leagueRunning) return [];
   leagueRunning = true;
@@ -1626,6 +1711,15 @@ export async function runLeague(
     // its HorseMind sandbox intact on another core. There is deliberately no
     // sync fallback: failed analysis is retried from its durable claim;
     // delaying live poker to finish a benchmark is never an allowed fallback.
+    // Booting the compute process hydrates a whole solver corpus: not while
+    // a horse is waiting for its decision either.
+    if (!laneHasHeadroom()) {
+      console.log(
+        `[HorseLeague] run ${date} not starting: the live decision lane has a decision waiting ` +
+          `more than ${LEAGUE_LANE_MAX_QUEUED_AGE_MS} ms; the next tick in the window tries again`
+      );
+      return results;
+    }
     compute = computeFactory();
     const solverStores = await compute.ready();
     requiresV31Agreement = solverStores.postflopV31 > 0;
@@ -1834,6 +1928,14 @@ export async function runLeague(
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
     for (const m of card) {
       if (!shouldContinue()) break;
+      if (!laneHasHeadroom()) {
+        console.log(
+          `[HorseLeague] run ${date} standing down after ${results.length}/${card.length} ` +
+            `matchups: the live decision lane has a decision waiting more than ` +
+            `${LEAGUE_LANE_MAX_QUEUED_AGE_MS} ms; the next tick in the window resumes the card`
+        );
+        break;
+      }
       // V13: a wall-clock budget. Even isolated analysis must not consume a
       // host core across the next run window. Stop cleanly and keep what
       // completed; partial results are still valid measurements.

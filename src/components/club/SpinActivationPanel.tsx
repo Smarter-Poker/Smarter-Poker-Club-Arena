@@ -31,7 +31,7 @@ import {
   type SpinOwnerState,
 } from '../../services/SpinActivationService';
 import { useToast } from '../common/Toast';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatWalletChips } from '../../utils/format';
 import './SpinActivationPanel.css';
 
 interface Props {
@@ -264,7 +264,7 @@ export default function SpinActivationPanel({ clubId }: Props) {
           <dl className="sap-rows">
             <div className="sap-row">
               <dt className="sap-label">Wallet Balance</dt>
-              <dd className="sap-value">{compactChips(state.balance)}</dd>
+              <dd className="sap-value">{formatWalletChips(state.balance)}</dd>
             </div>
             <div className="sap-row">
               <dt className="sap-label">Largest Stake Offered</dt>

@@ -143,6 +143,11 @@ describe('a selected pack ships its evidence inside the engine image', () => {
     '%s: a committed, unwithdrawn selection is admitted from the shipped copy alone',
     (_name, c) => {
       if (c.selection === null || c.selection.withdrawn !== null) return;
+      // A committed selection the running source refuses (for any reason,
+      // policy_digest_mismatch included) is not shipped evidence: a source
+      // change that moves a selected pack's digest sets that selection to null
+      // until it requalifies (the #6777 / #6886 precedent), and only null
+      // selections are skipped above.
       expect(c.admit(), c.name).toMatchObject({ status: 'admitted' });
     }
   );

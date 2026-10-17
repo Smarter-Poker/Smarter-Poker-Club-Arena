@@ -1165,6 +1165,13 @@
   line-height: 1.5;
 }
 
+/* Watch At Table: the painted action shell, under the identity while the
+   player is seated (components/club/WatchAtTableButton draws nothing else). */
+.mm-watch {
+  display: flex;
+  margin: 20px 0 0;
+}
+
 .mm-ledger-grid {
   display: grid;
   width: min(1180px, calc(100% - 24px));

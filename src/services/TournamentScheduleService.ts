@@ -46,6 +46,22 @@ export interface TournamentScheduleRow {
   updated_at: string;
 }
 
+/**
+ * True for a row of the hard-coded daily board (server/src/config/fixedBoard.ts,
+ * 2026-10-16). The engine owns those rows: it re-writes them every ten minutes
+ * and the database refuses an owner edit, so the owner screens show them as
+ * fixed instead of offering a button that would only appear to work.
+ */
+export function isFixedBoardSchedule(row: Pick<TournamentScheduleRow, 'config'>): boolean {
+  const cfg = row.config;
+  return (
+    !!cfg &&
+    typeof cfg === 'object' &&
+    !Array.isArray(cfg) &&
+    (cfg.type === 'fixed_board' || typeof cfg.fixedBoard === 'string')
+  );
+}
+
 export interface TournamentScheduleDraft {
   /** Present = update that row; absent = create. */
   id?: string;

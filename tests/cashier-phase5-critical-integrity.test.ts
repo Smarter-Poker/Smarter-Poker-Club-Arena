@@ -47,6 +47,34 @@ describe('cashier Phase 1 critical integrity contracts', () => {
 });
 
 describe('cashier Phase 5 production certification contracts', () => {
+  it('pins the installed Union directory after the deleted-account filter', () => {
+    const canary = source('scripts/verification-harness/cashier-release-contract.sql');
+    const entry = canary.match(
+      /'signature', 'public\.fn_union_player_directory\(uuid\)'([\s\S]*?)\n {4}\)/
+    );
+    expect(entry).not.toBeNull();
+    expect(
+      [...entry![1].matchAll(/'(?:replacement_)?hash', '([a-f0-9]{32})'/g)].map((match) => match[1])
+    ).toEqual(['fc06a6bf8f02822da43f6f4b4fe76385']);
+    expect(canary).toContain("version = '20261017001657'");
+    expect(canary).toContain("name = 'a_deleted_account_leaves_every_club_and_every_list'");
+  });
+
+  it('pins only the qualified conservation preimage and cutoff-statistics replacement', () => {
+    const canary = source('scripts/verification-harness/cashier-release-contract.sql');
+    const entry = canary.match(
+      /'signature', 'public\.fn_cashier_conservation_report\(uuid\)'([\s\S]*?)\n {4}\)/
+    );
+    expect(entry).not.toBeNull();
+    expect(
+      [...entry![1].matchAll(/'(?:replacement_)?hash', '([a-f0-9]{32})'/g)].map((match) => match[1])
+    ).toEqual(['9bc52994306a0c6519cbea5e031dce21', 'f3728357280a30789ff8d7bb30140eae']);
+    // An unqualified third definition must still raise rather than certify.
+    expect(canary).toContain(
+      "IF v_actual_hash <> v_item ->> 'hash'\n       AND v_actual_hash <> coalesce(v_item ->> 'replacement_hash', '') THEN\n      RAISE EXCEPTION 'cashier function drift: % expected %, got %'"
+    );
+  });
+
   it('pins the launch wallet wrappers after the global intent lock', () => {
     const authority = source(
       'supabase/migrations/20261004124327_cashier_authority_and_retry_keys_are_exact.sql'
@@ -111,8 +139,8 @@ describe('cashier Phase 5 production certification contracts', () => {
       ['3cc86bbb6317359a7b43fc34524d5876', '61b3478f0332f8ee7945d6eb2810bb71'],
       // fn_respond_chip_request (20261010003544)
       ['10fb3a12f5113521a2366a98af90ecbd', 'f6b8bf0d7d035d063780b37ff614b068'],
-      // fn_club_bank_ledger (20261012040542)
-      ['f17eb94522c177856683617945d9f371', '39ff91f5cc60c6300942f51e4ab2c3bb'],
+      // fn_club_bank_ledger (20261016155801; superseded 20261012040542)
+      ['cb7edf507b92e7c22535d6fed10a416b', 'f17eb94522c177856683617945d9f371'],
       // fn_ca_chip_statement_page (20261012040542)
       ['d513f6f312b29835cc5e74aa8ff00ce0', 'c706109ed8dab335912f046aaa6ee215'],
     ] as const) {

@@ -46,6 +46,16 @@ const CLUSTER = '22222222-2222-4222-8222-222222222222';
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 
 describe('TablePage on a pool-session id', () => {
+  it('captures the active rendered hand before sending a special fold', () => {
+    expect(PAGE).toMatch(
+      /const lightningFoldHandId =\s*lightningRoom && lightningHandLive\s*\? lightningHandId\(engineSnapshot as LightningSnapshotFields\)\s*: null/
+    );
+    expect(PAGE).toContain('await sendLightningFold(tableId, userId, kind, lightningFoldHandId)');
+    expect(PAGE).toMatch(
+      /\[tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId\]/
+    );
+  });
+
   it('reads no tables row for a pool session: every read is behind the room check', () => {
     const lines = PAGE.split('\n');
     const reads = lines.flatMap((l, i) => (l.includes(".from('tables')") ? [i] : []));

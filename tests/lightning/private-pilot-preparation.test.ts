@@ -7,16 +7,26 @@ const pilot = {
   union_id: null,
   name: PILOT.gameName,
   variant: 'nlh',
+  template_name: 'action',
   handedness: 6,
   must_move: true,
   lightning_enabled: false,
   cluster_mode: 'must_move',
-  ruleset_snapshot: { options: { is_private: true } },
+  ruleset_snapshot: {
+    template: 'action',
+    variant: 'nlh',
+    regular_ante: 'sb',
+    vpip_floor: 30,
+    vpip_window: 10,
+    bombs: { enabled: true, trigger: 'timed_15m', ante_bb: 2, boards: 2 },
+    options: { is_private: true },
+  },
 };
 const seeded = Array.from({ length: 9 }, (_, i) => ({
   ...pilot,
   id: `seeded-${i}`,
   name: `Classic Default ${i}`,
+  template_name: 'classic',
   ruleset_snapshot: { options: { is_private: false } },
 }));
 describe('durable pilot discovery after normal club provisioning', () => {

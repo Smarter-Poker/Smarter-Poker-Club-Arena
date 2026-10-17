@@ -122,7 +122,11 @@ describe('a lost response cannot send twice', () => {
     }
     expect(INTENT_CODE).toContain('intent.kind');
     expect(INTENT_CODE).toContain('intent.amount.toFixed(2)');
-    expect(INTENT_CODE).toContain("intent.destination === 'agent_wallet' ? ['agent_wallet'] : []");
+    // 2026-10-16: a non-player destination names itself, so an Agent Wallet key
+    // is byte-identical to before and a Promo Wallet send never shares a Player key.
+    expect(INTENT_CODE).toMatch(
+      /intent\.destination && intent\.destination !== 'player_wallet'\s*\?\s*\[intent\.destination\]\s*:\s*\[\]/
+    );
     expect(INTENT_CODE).toMatch(
       /const prior = session\.getItem\(key\) \?\? storage\.getItem\(key\);/
     );

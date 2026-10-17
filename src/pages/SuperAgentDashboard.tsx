@@ -14,7 +14,7 @@ import type { CommissionSpread } from '../services/CommissionService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useProfilePresence } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
-import { fmt } from '../utils/format';
+import { fmt, formatWalletChips } from '../utils/format';
 import {
   clubBankRecipientWallets,
   clubBankDestinationFor,
@@ -33,6 +33,8 @@ import CreditRequestWidget from '../components/agent/CreditRequestWidget';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
+import { useRecipientWalletBalances, walletOptionLabel } from '../hooks/useRecipientWalletBalances';
 import './SuperAgentDashboard.css';
 import { reportError } from '../utils/errorReporter';
 import AgentBackOffice from '../components/agent/AgentBackOffice';
@@ -85,6 +87,13 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
     ? clubBankDestinationFor(transferRecipient.role, transferWallet)
     : 'player_wallet';
   useEffect(() => setTransferWallet(null), [transferPlayerId]);
+  // Every wallet the recipient holds, with its current balance (Dan 2026-10-15).
+  const [transferBalanceRefresh, setTransferBalanceRefresh] = useState(0);
+  const transferBalances = useRecipientWalletBalances(
+    clubId,
+    transferRecipient?.userId,
+    transferBalanceRefresh
+  );
   // The rakeback this agent gives their own players (Dan, 2026-10-15: "THE
   // AGENT ASSIGNS WHAT THEY WANT TO GIVE THEIR PLAYERS"). Blank until they type;
   // the saved figure is shown beside it.
@@ -388,6 +397,7 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
       }
       setTransferPlayerId('');
       setTransferAmount('');
+      setTransferBalanceRefresh((n) => n + 1);
       if (isMounted.current)
         toast.success(`Transferred ${amount.toLocaleString()} chips successfully`);
       loadDashboardData();
@@ -516,11 +526,11 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
             <div className="balance-cards">
               <div className="balance-card">
                 <span className="label">Business Balance</span>
-                <span className="value">{agent.businessBalance.toLocaleString()}</span>
+                <span className="value">{formatWalletChips(agent.businessBalance)}</span>
               </div>
               <div className="balance-card">
                 <span className="label">Player Balance</span>
-                <span className="value">{agent.playerBalance.toLocaleString()}</span>
+                <span className="value">{formatWalletChips(agent.playerBalance)}</span>
               </div>
               <div className="balance-card">
                 <span className="label">Credit Used</span>
@@ -657,7 +667,7 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
                       {((player.rakebackPercent || 0) * 100).toFixed(1)}% Rakeback
                     </span>
                   </div>
-                  <div className="player-balance">{(player.chipBalance ?? 0).toLocaleString()}</div>
+                  <div className="player-balance">{formatWalletChips(player.chipBalance ?? 0)}</div>
                 </div>
               ))}
             </div>
@@ -717,7 +727,11 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
                   >
                     {transferWallets.map((wallet) => (
                       <option key={wallet} value={wallet}>
-                        {wallet === 'agent_wallet' ? 'Agent Wallet' : 'Player Wallet'}
+                        {walletOptionLabel(
+                          SEND_DESTINATION_LABELS[wallet],
+                          transferBalances,
+                          wallet
+                        )}
                       </option>
                     ))}
                   </select>

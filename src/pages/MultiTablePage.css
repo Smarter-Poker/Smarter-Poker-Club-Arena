@@ -320,11 +320,11 @@
      modifier below, which is applied under exactly the condition that draws
      the button. */
   padding-right: 0;
-  /* October 15: the enlarged profit control shares the action pills' centre. */
+  /* October 16: the session tracker matches the hand tabs beside it. */
   align-items: center;
-  --mtp-profit-width: 128px;
-  --mtp-profit-font: 1.44rem;
-  --mtp-profit-height: 52px;
+  --mtp-profit-width: 100px;
+  --mtp-profit-font: 0.8125rem;
+  --mtp-profit-height: 36px;
   gap: 0;
   padding: 0;
   /* Dan 2026-08-28: the strip either side of the P&L chip / tile toggle
@@ -355,19 +355,23 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-/* Reserve the largest header in CSS even before a funded tracker appears.
-   Runtime chrome offsets position controls; they must never resize the felt. */
+/* Static reserve: 49px tab bar plus the 1px wrapper border; on phones
+   43px plus 1px. Tracker visibility never resizes the felt. */
 .multi-table-page {
-  --sp-tabbar-h: calc(53px + env(safe-area-inset-top, 0px));
+  --sp-tabbar-h: calc(50px + env(safe-area-inset-top, 0px));
 }
 @media (max-width: 480px) {
   .multi-table-page__tab-bar-wrapper {
-    --mtp-profit-width: 104px;
-    --mtp-profit-font: 1.24rem;
-    --mtp-profit-height: 44px;
+    --mtp-profit-width: 52px;
+    --mtp-profit-font: 0.8125rem;
+    --mtp-profit-height: 34px;
+  }
+  .multi-table-page__tab-bar-wrapper > .multi-table-page__pnl-chip {
+    /* Keep a signed cents total legible inside the compact phone pill. */
+    padding-inline: 1px;
   }
   .multi-table-page {
-    --sp-tabbar-h: calc(45px + env(safe-area-inset-top, 0px));
+    --sp-tabbar-h: calc(44px + env(safe-area-inset-top, 0px));
   }
 }
 
@@ -671,14 +675,11 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
     min-width: 0;
   }
 
-  /* October 15 doubles the old 52px chip. Keep that mobile width bounded;
-     long figures clip inside their control and remain available in the
-     session breakdown without pushing Lobby outside the viewport. */
+  /* Keep the hand-tab-sized tracker bounded; long figures remain available
+     in the session breakdown without pushing Lobby outside the viewport. */
   .multi-table-page__pnl-chip {
-    /* border-box is the global reset (src/styles/club-engine.css), so 104px is
-       the whole chip, border and padding included. */
-    max-width: 104px;
-    padding: 8px 12px;
+    max-width: var(--mtp-profit-width);
+    padding: 0 6px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1184,7 +1185,7 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   border: 1px solid rgb(255 255 255 / 14%);
   background: rgb(5 6 7 / 70%);
   color: #9aa5b3;
-  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-family: 'Roboto Condensed', Arial, sans-serif;
   font-size: var(--mtp-profit-font);
   font-weight: 800;
   font-variant-numeric: tabular-nums;

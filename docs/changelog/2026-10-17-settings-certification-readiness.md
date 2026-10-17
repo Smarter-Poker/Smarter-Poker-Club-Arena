@@ -1,0 +1,7 @@
+# Wait For The Settings Row Before Certifying The Panel
+
+Production client run 39017429775 passed all Cashier, Lightning, Statements and connected certificate groups, plus 492 of 493 sweep cases. The remaining Auto Time Bank case inspected `aria-busy` after five seconds although `useUserTableSettings` allows its complete-row read eight seconds.
+
+Observe the complete settings read before navigation, verify that it belongs to the actual signed-in account, and await it before the existing UI assertion. Apply the same own-row and HTTP checks on reload. Partial shell projections, writes, duplicate owner filters, foreign-account payloads, failed responses and malformed rows cannot satisfy readiness. Preserve the default-on, both-switch, save acknowledgment, false readback and final-on checks, with the same five-second UI assertion and overall test deadline. No product, SDK, timeout, retry or financial behavior changes.
+
+Validation: the new phase-order regression fails against the old spec (one failure, two passes). Seventeen focused/native-read tests pass, including a held six-second read and negative scope/HTTP/shape cases. Helper and application compilation pass. On published client 038f4c5ac26bb0e510edc2718e2e830f62f46ede, the maintained Auto Time Bank case and Chromium/WebKit lobby cold-return cases all pass (three cases, 41.9 seconds). The reserved account cleanup outcome is recorded separately in the task checkpoint. Normal hooks, required protected checks and source-qualified post-deploy verification remain required.

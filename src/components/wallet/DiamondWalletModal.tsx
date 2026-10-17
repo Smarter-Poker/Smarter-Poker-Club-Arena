@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
@@ -17,6 +18,8 @@ import DiamondCustodyBalance from '../arena/DiamondCustodyBalance';
 import DiamondWalletTransfer from './DiamondWalletTransfer';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { WalletDesk, WalletDeskHeading, WalletDeskRow } from './WalletDesk';
+import './WalletDesk.css';
 import './DiamondWalletModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { formatPopupText } from '../../utils/popupStyle';
@@ -175,6 +178,9 @@ export function diamondTxLabel(rawType: string | null | undefined): string {
 }
 
 const TX_LIMIT = 50;
+/** What can take keyboard focus inside the desk or its sheet. */
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -216,8 +222,20 @@ export default function DiamondWalletModal({
   const [filter, setFilter] = useState('all');
   const [balanceRevision, setBalanceRevision] = useState(0);
   const [historyOwnerId, setHistoryOwnerId] = useState<string | null>(null);
+  /* THE HISTORY PAGES (2026-10-17). It read the newest 50 and stopped, so a
+     716-row ledger showed "50 Entries" with no way to see the rest. It pages
+     now, 50 at a time, on a unique order (created_at, then id) so a page seam
+     never serves a row twice or skips one, continuing from the rows on
+     screen, and says when the ledger has ended. */
   const historyRequest = useRef(0);
+  const historyCursor = useRef<{ owner: string; createdAt: string; id: string } | null>(null);
+  const pageInFlight = useRef(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
+  /** The desk itself: the focus fallback (the trap wrapper is display: contents). */
+  const deskRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   /**
@@ -237,17 +255,35 @@ export default function DiamondWalletModal({
     if (transferBusyRef.current) return;
     onCloseRef.current();
   }, []);
+  /** The transfer sheet over the desk (Dan 2026-10-16, the wallet desk). */
+  const [sendSheet, setSendSheet] = useState(false);
+  const sendSheetRef = useRef(false);
+  sendSheetRef.current = sendSheet;
+  const closeSendSheet = useCallback(() => {
+    if (transferBusyRef.current) return;
+    setSendSheet(false);
+  }, []);
   const isMounted = useIsMounted();
 
-  const fetchTransactions = useCallback(async () => {
-    if (!user?.id || !isOpen) return;
-    const request = ++historyRequest.current;
-    const isCurrent = () => isMounted.current && request === historyRequest.current;
-    setLoading(true);
-    setLoadError(false);
+  const fetchTransactions = useCallback(
+    async (append = false) => {
+      if (!user?.id || !isOpen) return;
+      const cursor = historyCursor.current;
+      if (append && (pageInFlight.current || !cursor || cursor.owner !== user.id)) return;
+      pageInFlight.current = append;
+      setLoadingMore(append);
+      setMoreError(false);
+      if (!append) {
+        historyCursor.current = null;
+        setHasMore(false);
+      }
+      const request = ++historyRequest.current;
+      const isCurrent = () => isMounted.current && request === historyRequest.current;
+      if (!append) setLoading(true);
+      setLoadError(false);
 
-    try {
-      /* ── THE `wallet_transactions` HALF OF THIS FETCH IS GONE ───────────────
+      try {
+        /* ── THE `wallet_transactions` HALF OF THIS FETCH IS GONE ───────────────
          It filtered on `category IN (diamond_purchase, diamond_deduction,
          vip_purchase, mint, diamond_reward, diamond_refund)`. Five of those six
          values are REJECTED by `wallet_transactions_category_check`, so no row
@@ -263,56 +299,88 @@ export default function DiamondWalletModal({
          movement in a wallet that never moved.
 
          Diamonds live in `diamond_transactions`. One source, one currency. */
-      const { data: dtData, error: dtError } = await supabase
-        .from('diamond_transactions')
-        /* `type` is selected as well as `transaction_type`, and that is the
+        let query = supabase
+          .from('diamond_transactions')
+          /* `type` is selected as well as `transaction_type`, and that is the
            whole fix for 773 of the ~1,540 rows in this table. `transaction_type`
            is NULL on 774 of them — 557 `reconciliation` rows and 216
            `signup_bonus` rows carry their kind in the older `type` column
            instead — and this component read only `transaction_type`. So a
            player's Welcome Bonus, the first diamond movement on every account
            ever created, rendered in their own wallet as a grey "Adjustment". */
-        .select('id, type, transaction_type, amount, player_line, balance_after, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(TX_LIMIT);
+          .select('id, type, transaction_type, amount, player_line, balance_after, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false });
+        // A stable tuple cursor survives newer receipts arriving between pages.
+        // The user_id predicate remains outside this OR and scopes every page.
+        if (append && cursor) {
+          query = query.or(
+            `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
+          );
+        }
+        const { data: dtData, error: dtError } = await query.limit(TX_LIMIT);
 
-      /* supabase-js RESOLVES with `{ data: null, error }`; it does not throw.
+        /* supabase-js RESOLVES with `{ data: null, error }`; it does not throw.
          Both reads here discarded `error` entirely, so an RLS denial or a
          dropped connection produced an empty array and this modal told the
          player "No Transactions Yet" — a statement about their money that was
          not true, with no error, no retry and nothing in local diagnostics. */
-      if (dtError) throw dtError;
+        if (dtError) throw dtError;
 
-      const combined: DiamondTransaction[] = (dtData || []).map((t: any) => ({
-        id: t.id,
-        type: t.transaction_type || t.type || '',
-        transaction_type: t.transaction_type || t.type || '',
-        amount: Number(t.amount) || 0,
-        line: typeof t.player_line === 'string' ? t.player_line : undefined,
-        balance_after: t.balance_after,
-        created_at: t.created_at,
-      }));
+        const combined: DiamondTransaction[] = (dtData || []).map((t: any) => ({
+          id: t.id,
+          type: t.transaction_type || t.type || '',
+          transaction_type: t.transaction_type || t.type || '',
+          amount: Number(t.amount) || 0,
+          line: typeof t.player_line === 'string' ? t.player_line : undefined,
+          balance_after: t.balance_after,
+          created_at: t.created_at,
+        }));
 
-      if (isCurrent()) {
-        setTransactions(combined);
-        setHistoryOwnerId(user.id);
+        if (isCurrent()) {
+          setTransactions((previous) =>
+            append
+              ? [
+                  ...previous,
+                  ...combined.filter((row) => !previous.some((old) => old.id === row.id)),
+                ]
+              : combined
+          );
+          const last = combined[combined.length - 1];
+          historyCursor.current = last
+            ? { owner: user.id, createdAt: last.created_at, id: last.id }
+            : null;
+          setHasMore(combined.length === TX_LIMIT);
+          setHistoryOwnerId(user.id);
+        }
+      } catch (err) {
+        if (isCurrent()) {
+          reportError(err, 'DiamondWalletModal.Fetch_error');
+          setHistoryOwnerId(user.id);
+          if (append) setMoreError(true);
+          else setLoadError(true);
+        }
+      } finally {
+        if (isCurrent()) {
+          pageInFlight.current = false;
+          setLoadingMore(false);
+          setLoading(false);
+        }
       }
-    } catch (err) {
-      if (isCurrent()) {
-        reportError(err, 'DiamondWalletModal.Fetch_error');
-        setHistoryOwnerId(user.id);
-        setLoadError(true);
-      }
-    } finally {
-      if (isCurrent()) setLoading(false);
-    }
-  }, [user?.id, isOpen, isMounted]);
+    },
+    [user?.id, isOpen, isMounted]
+  );
 
   useEffect(() => {
     const requestRef = historyRequest;
     setTransactions([]);
     setHistoryOwnerId(null);
+    historyCursor.current = null;
+    pageInFlight.current = false;
+    setHasMore(false);
+    setLoadingMore(false);
+    setMoreError(false);
     setLoadError(false);
     setLoading(true);
     if (isOpen) void fetchTransactions();
@@ -331,19 +399,25 @@ export default function DiamondWalletModal({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    const focusable = () =>
-      Array.from(
-        dialogRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-        ) ?? []
-      );
+    /* With the send sheet up, the desk behind it is inert, so Tab cycles the
+       sheet alone; otherwise the desk. */
+    const scope = () =>
+      (sendSheetRef.current ? dialogRef.current?.querySelector<HTMLElement>('.dwc-sheet') : null) ??
+      dialogRef.current;
+    const focusable = () => Array.from(scope()?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
     const focusFrame = window.requestAnimationFrame(() => {
-      (focusable()[0] ?? dialogRef.current)?.focus();
+      (focusable()[0] ?? deskRef.current)?.focus();
     });
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        // The transfer sheet closes first, then the wallet; neither while a
+        // transfer travels.
+        if (sendSheetRef.current) {
+          if (!transferBusyRef.current) setSendSheet(false);
+          return;
+        }
         if (!transferBusyRef.current) onCloseRef.current();
         return;
       }
@@ -352,17 +426,18 @@ export default function DiamondWalletModal({
       const controls = focusable();
       if (controls.length === 0) {
         event.preventDefault();
-        dialogRef.current?.focus();
+        deskRef.current?.focus();
         return;
       }
 
       const first = controls[0];
       const last = controls[controls.length - 1];
       const active = document.activeElement;
-      if (event.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+      const inside = scope()?.contains(active) ?? false;
+      if (event.shiftKey && (active === first || !inside)) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && (active === last || !dialogRef.current?.contains(active))) {
+      } else if (!event.shiftKey && (active === last || !inside)) {
         event.preventDefault();
         first.focus();
       }
@@ -376,6 +451,26 @@ export default function DiamondWalletModal({
       previousFocus?.focus();
     };
   }, [isOpen]);
+
+  /* Opening the send sheet moves focus into it; closing it returns focus to
+     the dock word that opened it. */
+  const sheetReturnRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    if (sendSheet) {
+      sheetReturnRef.current = document.activeElement as HTMLElement | null;
+      const frame = window.requestAnimationFrame(() => {
+        const sheet = dialogRef.current?.querySelector<HTMLElement>('.dwc-sheet');
+        const controls = Array.from(sheet?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+        (controls.find((el) => !el.classList.contains('sc__close')) ?? controls[0])?.focus();
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const back = sheetReturnRef.current;
+    sheetReturnRef.current = null;
+    if (back && document.contains(back)) back.focus();
+    return undefined;
+  }, [sendSheet, isOpen]);
 
   // Refresh when diamond balance changes from another component
   useMasterBusSubscription('DIAMOND_BALANCE_CHANGED', () => {
@@ -398,86 +493,127 @@ export default function DiamondWalletModal({
 
   if (!isOpen) return null;
 
-  /* ONE CONSOLE (#ClubArenaConsole): the flat master keeps the wallet title
-     in the approved frame without adding a floating or mismatched crest. The
-     balances, the transfer, the filters and every receipt are
-     printed on the black glass between the rails in the master's own inks,
-     with an engraved rule between rows. The two painted plates in the foot
-     are the wallet's controls: Close on steel, Buy Diamonds on the blue
-     glass. Nothing else is drawn. */
-  return (
+  /* ON THE WALLET DESK (Dan 2026-10-16): "When you click the union bank
+     wallet, promo wallet or diamond wallet, they should look feel and
+     function like this cashier functionality. Remove the bulky generic
+     frames." The wallet opens as the Cashier does: the identity row (the
+     diamond art, the wallet's name, a white Close), the two custody figures,
+     the filter words, the history as hairline rows, and the painted action
+     dock with Send Diamonds | Buy Diamonds. A transfer is asked for on the
+     flat-crested console (the Marketplace dress, #4805) over the desk, and
+     every close path still holds shut while it travels (launch audit D-13). */
+  const dockLine = transferBusy
+    ? 'Sending'
+    : `${FILTER_OPTIONS.find((opt) => opt.value === filter)?.label ?? 'All'} · ${filteredTx.length.toLocaleString()} Entries`;
+
+  /* Portaled to <body> (2026-10-17), as the union desk is, so no host page's
+     stacking context can put its nav or header over the desk. */
+  return createPortal(
     <div className="diamond-wallet-backdrop" onClick={closeIfIdle} role="presentation">
       <div
         ref={dialogRef}
-        className="dwc"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dwc-title"
+        className="wdesk__trap"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
-        <SpadeConsole
-          /* The X is not rendered while a transfer travels (launch audit
-             D-13), as the cashout sheet and the mint already do. The flat
-             crest stays: it is the deliberate Marketplace dress (#4805,
-             pinned by tests/marketplace-console-visual-contract.test.ts), and
-             the Cashier console law carries the allowance for it. */
-          onClose={transferBusy ? undefined : closeIfIdle}
-          crest="flat"
-          eyebrow="Club Arena"
-          title="Diamond Wallet"
-          titleId="dwc-title"
-          pill={
-            transferBusy
-              ? 'Sending'
-              : (FILTER_OPTIONS.find((opt) => opt.value === filter)?.label ?? 'All')
-          }
-          pillInk={transferBusy ? 'gold' : 'blue'}
-          plates={{
-            secondary: {
-              label: 'Close',
-              ink: 'silver',
-              onClick: closeIfIdle,
-              disabled: transferBusy,
-              'aria-label': 'Close',
+        <WalletDesk
+          deskRef={deskRef}
+          ariaLabel="Diamond Wallet"
+          art={`${import.meta.env.BASE_URL}images/diamond-icon.png`}
+          name="Diamond Wallet"
+          line="Club Arena Diamonds"
+          onClose={closeIfIdle}
+          closeDisabled={transferBusy}
+          dockLine={dockLine}
+          actions={[
+            {
+              label: 'Send Diamonds',
+              lit: true,
+              onClick: () => setSendSheet(true),
+              disabled: transferBusy || !user?.id,
+              'aria-label': 'Send Diamonds',
             },
-            primary: {
+            {
               label: 'Buy Diamonds',
-              ink: 'white',
-              disabled: transferBusy,
               onClick: () => {
                 if (transferBusyRef.current) return;
                 onClose();
                 onBuyClick?.();
               },
+              disabled: transferBusy,
             },
-          }}
-          className="dwc__console"
+          ]}
+          sheet={
+            sendSheet && user?.id ? (
+              <div className="dwc-sheet" onClick={closeSendSheet}>
+                <div
+                  className="dwc"
+                  aria-labelledby="dwc-title"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <SpadeConsole
+                    /* The X is not rendered while a transfer travels (launch
+                       audit D-13), as the cashout sheet and the mint already
+                       do. The flat crest stays: it is the deliberate
+                       Marketplace dress (#4805), pinned by
+                       tests/marketplace-console-visual-contract.test.ts, and
+                       the Cashier console law carries the allowance for it. */
+                    onClose={transferBusy ? undefined : closeSendSheet}
+                    crest="flat"
+                    eyebrow="Diamond Wallet"
+                    title="Send Diamonds"
+                    titleId="dwc-title"
+                    pill={transferBusy ? 'Sending' : 'Friends'}
+                    pillInk={transferBusy ? 'gold' : 'blue'}
+                    plates={{
+                      secondary: {
+                        label: 'Back',
+                        ink: 'silver',
+                        onClick: closeSendSheet,
+                        disabled: transferBusy,
+                        'aria-label': 'Back',
+                      },
+                      primary: {
+                        label: 'Buy Diamonds',
+                        ink: 'white',
+                        disabled: transferBusy,
+                        onClick: () => {
+                          if (transferBusyRef.current) return;
+                          onClose();
+                          onBuyClick?.();
+                        },
+                      },
+                    }}
+                    className="dwc__console"
+                  >
+                    <DiamondWalletTransfer
+                      key={user.id}
+                      userId={user.id}
+                      initiallyOpen
+                      onBusyChange={onTransferBusyChange}
+                      onComplete={() => {
+                        setBalanceRevision((value) => value + 1);
+                        void fetchTransactions();
+                      }}
+                    />
+                  </SpadeConsole>
+                </div>
+              </div>
+            ) : null
+          }
         >
           {/* Balances: available and in play are two figures, never a total. */}
           <div className="diamond-wallet-modal__custody-balances">
             <DiamondCustodyBalance key={balanceRevision} />
           </div>
 
-          {user?.id && (
-            <DiamondWalletTransfer
-              key={user.id}
-              userId={user.id}
-              onBusyChange={onTransferBusyChange}
-              onComplete={() => {
-                setBalanceRevision((value) => value + 1);
-                void fetchTransactions();
-              }}
-            />
-          )}
-
           {/* Filters: lit words in a row; the chosen one burns white. */}
-          <div className="dwc__filters" role="group" aria-label="Filter Transactions">
+          <div className="wdesk__words" role="group" aria-label="Filter Transactions">
             {FILTER_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
-                className={`dwc-word ${filter === opt.value ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                className="wdesk__word"
                 aria-pressed={filter === opt.value}
                 onClick={() => setFilter(opt.value)}
               >
@@ -486,29 +622,34 @@ export default function DiamondWalletModal({
             ))}
           </div>
 
+          <WalletDeskHeading
+            title="History"
+            meta={`${filteredTx.length.toLocaleString()} Entries`}
+          />
+
           {/* Receipts */}
-          <div className="dwc__list">
+          <div className="wdesk__list">
             {loading || historyOwnerId !== user?.id ? (
-              <p className="sc-copy sc-copy--center dwc__status" role="status">
+              <p className="wdesk__empty" role="status">
                 Loading Transactions
               </p>
             ) : loadError ? (
               /* "No Transactions Yet" is a claim about the player's money. It
                  must never be shown for a read that failed - see the error note
                  in fetchTransactions. */
-              <div className="dwc__status" role="status">
-                <p className="sc-copy sc-copy--center">Could Not Load Your Diamond History</p>
-                <button
-                  type="button"
-                  className="dwc-word sc-ink--white"
-                  onClick={() => fetchTransactions()}
-                >
+              <div className="wdesk__empty" role="status">
+                <p>Could Not Load Your Diamond History</p>
+                <button type="button" className="wdesk__more" onClick={() => fetchTransactions()}>
                   Retry
                 </button>
               </div>
             ) : filteredTx.length === 0 ? (
-              <p className="sc-copy sc-copy--center dwc__status">
-                {filter === 'all' ? 'No Transactions Yet' : 'No Transactions Of This Kind'}
+              <p className="wdesk__empty">
+                {filter === 'all'
+                  ? 'No Transactions Yet'
+                  : hasMore
+                    ? 'No Matching Transactions Loaded Yet'
+                    : 'No Transactions Of This Kind'}
               </p>
             ) : (
               filteredTx.map((tx) => {
@@ -518,40 +659,71 @@ export default function DiamondWalletModal({
                 const dt = new Date(tx.created_at);
 
                 return (
-                  <div key={tx.id} className="dwc__tx">
-                    <div className="dwc__tx-body">
-                      <span className="dwc__tx-label sc-ink--silver">{label}</span>
-                      {/* Phase 6: the ledger's own player line, never the
-                          raw description - an operator's audit note, a
-                          challenge id or a test row is not the player's. */}
-                      <span className="dwc__tx-desc sc-ink--muted">
-                        {formatPopupText(tx.line || label)}
-                      </span>
-                    </div>
-                    <div className="dwc__tx-figures">
-                      <span
-                        className={`dwc__tx-amount ${isPositive ? 'sc-ink--blue' : 'sc-ink--red'}`}
-                      >
+                  <WalletDeskRow
+                    key={tx.id}
+                    name={label}
+                    sub={
+                      <>
+                        {/* Phase 6: the ledger's own player line, never the
+                            raw description - an operator's audit note, a
+                            challenge id or a test row is not the player's. */}
+                        <span>{formatPopupText(tx.line || label)}</span>
+                        <br />
+                        <span>
+                          {dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                          {dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {tx.balance_after != null && (
+                          <span className="wdesk__sep">
+                            Balance {tx.balance_after.toLocaleString()}
+                          </span>
+                        )}
+                      </>
+                    }
+                    figure={
+                      <span className={isPositive ? 'wdesk__in' : 'wdesk__out'}>
                         {isPositive ? '+' : ''}
                         {tx.amount.toLocaleString()}
                       </span>
-                      {tx.balance_after != null && (
-                        <span className="dwc__tx-meta sc-ink--muted">
-                          Balance {tx.balance_after.toLocaleString()}
-                        </span>
-                      )}
-                      <span className="dwc__tx-meta sc-ink--muted">
-                        {dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
-                        {dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                  </div>
+                    }
+                  />
                 );
               })
             )}
           </div>
-        </SpadeConsole>
+          {!loading && !loadError && historyOwnerId === user?.id && transactions.length > 0 && (
+            <div className="wdesk__list">
+              {moreError ? (
+                <div className="wdesk__empty wdesk__empty--bad" role="status">
+                  <p>Could Not Load Older Diamonds.</p>
+                  <button
+                    type="button"
+                    className="wdesk__more"
+                    disabled={loadingMore}
+                    onClick={() => void fetchTransactions(true)}
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : hasMore ? (
+                <button
+                  type="button"
+                  className="wdesk__more"
+                  onClick={() => void fetchTransactions(true)}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? 'Loading...' : 'Load Older Diamonds'}
+                </button>
+              ) : (
+                <p className="wdesk__empty">
+                  That Is Every Diamond Movement. {transactions.length.toLocaleString()} Entries.
+                </p>
+              )}
+            </div>
+          )}
+        </WalletDesk>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

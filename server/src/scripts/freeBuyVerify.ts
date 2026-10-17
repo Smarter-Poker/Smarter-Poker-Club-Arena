@@ -67,7 +67,7 @@ async function main(): Promise<void> {
     const at = chicagoParts(startMs);
     const slot = slotForChicagoHour(at.hour);
     console.log(
-      `  ${(slot?.tier ?? '?').padEnd(8)} ${String(at.hour).padStart(2, '0')}:00 ` +
+      `  ${(slot?.tier ?? '?').padEnd(8)} ${String(at.hour).padStart(2, '0')}:${String(at.minute).padStart(2, '0')} ` +
         `${String(e.name).padEnd(28)} gtd ${e.guaranteed_prize} rebuy ${e.rebuy_cost} ` +
         `addon ${e.addon_cost}x${e.addon_chips} entrants ${e.current_players} pool ${e.prize_pool} [${e.status}]`
     );

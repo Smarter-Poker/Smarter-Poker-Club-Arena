@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261015221949: a concurrent resolution must not be repeated.
 -- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_ca_launch_health()'::regprocedure))='8a0ef4270d9396ef148276482c1346c1' AND md5(pg_get_functiondef('public.fn_ca_operator_floor_hold_watchdog()'::regprocedure))='548f8211e96c5856776d7d5725ba9c20' AND to_regprocedure('public.fn_ca_launch_health_tournament_held(uuid,uuid)') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.financial_alerts WHERE id IN ('38fd1e96-4a87-4561-a7bc-31cd1a1c2772','67c3926b-770e-40f4-bffb-c386ba1f56fe','1af6c215-3001-4bc0-b96f-99377501c076','95ae599f-f683-46fd-b60d-8b00be0309d7') AND resolved IS NOT TRUE))
 -- 20261015182553_a_parked_floor_is_not_an_overdue_start_and_the_verified_aler.sql
 --

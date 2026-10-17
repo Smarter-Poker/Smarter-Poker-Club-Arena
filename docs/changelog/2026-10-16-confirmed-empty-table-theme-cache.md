@@ -1,0 +1,9 @@
+# Keep A Confirmed Empty Theme Snapshot Ready
+
+The natural mobile proof exposed an account that received successful empty saved-theme responses, then opened another table whose theme read did not reach the network. The appearance cache saved the authoritative empty array but treated it like an unknown cache on later mounts. Accounts without a saved theme therefore lost the same first-frame readiness that accounts with a saved row already receive.
+
+Retain account-scoped confirmation for an authoritative empty snapshot. Only a successful empty read establishes that the default appearance is the account's known selection. Missing, corrupt, unmarked and filtered-invalid caches remain unknown; another account or an unresolved bucket cannot borrow the confirmation. Existing saved rows, live precedence, authoritative refresh and read errors remain available to existing consumers.
+
+This repairs appearance cache semantics. It does not change authentication, refresh-token locking, artwork, setup budgets or production proof requirements, and it does not claim to repair the separate SDK admission failure. The ongoing sanitized production diagnostic retains that investigation.
+
+The explicit client mobile proof also needs the existing client-publication admission semantics. Runs 38964862854 and 38984544797 selected an engine before queueing, then stood down before any tests because an unrelated protected release replaced it. An explicit typed `mobile_multirun: true` request can omit the engine pin and select the exact healthy protected-main engine when the job starts. A supplied engine pin retains its immutable release-certificate semantics. All actual gameplay, river, recipient and before/after identity requirements remain unchanged; a changed engine during observation still cannot certify.

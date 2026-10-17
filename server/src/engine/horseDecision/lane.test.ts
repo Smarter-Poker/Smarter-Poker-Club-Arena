@@ -11,7 +11,7 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...os, availableParallelism: () => 8 };
 });
 import type { HorseDecisionWorkerReady, HorseDecisionWorkerResponse } from './protocol.js';
-import type { WorkerLike } from './client.js';
+import { HORSE_MIND_MIRROR_MAX_PENDING, type WorkerLike } from './client.js';
 import { solverStoreIdentity } from '../../gto/SolverStoreIdentity.js';
 import {
   DEFAULT_HORSE_DECISION_WORKERS,
@@ -126,12 +126,12 @@ describe('horseDecisionWorkerCount', () => {
     expect(horseDecisionWorkerCount({ requested: '1', cores: 4, canYield: true })).toBe(1);
   });
 
-  it('runs one yielding worker per physical core but one, never fewer than two (2026-10-12)', () => {
+  it('runs one yielding worker per physical core, never fewer than two (2026-10-16)', () => {
     // The engine host: eight logical CPUs on four EPYC Milan cores. Three.
-    expect(horseDecisionWorkerCount({ cores: 8, canYield: true })).toBe(3);
-    expect(horseDecisionWorkerCount({ cores: 6, canYield: true })).toBe(2);
-    expect(horseDecisionWorkerCount({ cores: 10, canYield: true })).toBe(4);
-    expect(horseDecisionWorkerCount({ cores: 16, canYield: true })).toBe(7);
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true })).toBe(4);
+    expect(horseDecisionWorkerCount({ cores: 6, canYield: true })).toBe(3);
+    expect(horseDecisionWorkerCount({ cores: 10, canYield: true })).toBe(5);
+    expect(horseDecisionWorkerCount({ cores: 16, canYield: true })).toBe(8);
     expect(horseDecisionWorkerCount({ cores: 32, canYield: true })).toBe(
       MAX_HORSE_DECISION_WORKERS
     );
@@ -139,13 +139,13 @@ describe('horseDecisionWorkerCount', () => {
 
   it('never defaults to more shards than the journal disk can hold, nor bounds an explicit request', () => {
     expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 3 })).toBe(3);
-    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 5 })).toBe(3);
+    expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 5 })).toBe(4);
     expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 2 })).toBe(2);
     expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards: 1 })).toBe(1);
     expect(horseDecisionWorkerCount({ cores: 8, journalShards: 1 })).toBe(1);
     // No journal, or no reading of it: the CPU rule alone.
     for (const journalShards of [undefined, 0, -1, 1.5, Number.NaN])
-      expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards })).toBe(3);
+      expect(horseDecisionWorkerCount({ cores: 8, canYield: true, journalShards })).toBe(4);
     // The operator who sets HORSE_DECISION_WORKERS sizes the journal too.
     expect(
       horseDecisionWorkerCount({ requested: '4', cores: 8, canYield: true, journalShards: 2 })
@@ -330,26 +330,28 @@ describe('LiveHorseDecisionWorkerPool', () => {
     for (const table of tables) {
       for (const hand of [1, 2, 3]) {
         const ack = pool.observeCompletedHand(observation(table, hand) as any);
-        // Dispatch is synchronous below maxInFlight, so the owner has it now.
+        // Dispatch is synchronous below maxInFlight, so every shard has it now:
+        // the owner to observe and journal, the other to learn (2026-10-16).
         const posted = workers.map((w) =>
           w.sent.filter(
             (m) => m.type === 'OBSERVE_COMPLETED_HAND' && m.fence.startsWith(`${table}:`)
           )
         );
-        const owner = posted.findIndex((jobs) => jobs.length === hand);
-        expect(owner).toBeGreaterThanOrEqual(0);
-        expect(posted.filter((jobs) => jobs.length > 0)).toHaveLength(1);
+        expect(posted.every((jobs) => jobs.length === hand)).toBe(true);
+        const owner = horseDecisionShard(`${table}:${hand}`, 2);
         if (owners.has(table)) expect(owners.get(table)).toBe(owner);
         owners.set(table, owner);
+        // The owner's acknowledgement is the hand's; a mirror never holds it.
         workers[owner]!.ackAll();
         await ack;
+        workers[1 - owner]!.ackAll();
       }
     }
     expect(new Set(owners.values()).size).toBe(2);
     const status = pool.status();
-    expect(status.completedJobs).toBe(tables.length * 3);
+    expect(status.completedJobs).toBe(tables.length * 3 * 2);
     expect(status.workers.map((w) => w.completedJobs).reduce((a, b) => a + b, 0)).toBe(
-      tables.length * 3
+      tables.length * 3 * 2
     );
     for (const worker of workers) {
       const fences = worker.sent
@@ -376,9 +378,10 @@ describe('LiveHorseDecisionWorkerPool', () => {
     void pool.observeCompletedHand(observation('t-b', 1) as any).catch(() => undefined);
     void pool.observeCompletedHand(observation('t-c', 1) as any).catch(() => undefined);
     const busy = pool.status();
-    expect(busy.queueDepth).toBe(3);
-    expect(busy.inFlightJobs).toBe(3);
-    expect(busy.workers.map((w) => w.queueDepth).reduce((a, b) => a + b, 0)).toBe(3);
+    // Three hands, each on both shards (owner plus mirror).
+    expect(busy.queueDepth).toBe(6);
+    expect(busy.inFlightJobs).toBe(6);
+    expect(busy.workers.map((w) => w.queueDepth).reduce((a, b) => a + b, 0)).toBe(6);
     workers[1]!.emit({ type: 'ERROR_UNKNOWN_PROTOCOL' } as never);
     expect(pool.status().phase).toBe('failed');
     expect(pool.status().lastError).not.toBeNull();
@@ -405,7 +408,7 @@ describe('LiveHorseDecisionWorkerPool', () => {
         (n, w) => n + w.sent.filter((m) => m.type === 'OBSERVE_COMPLETED_HAND').length,
         0
       )
-    ).toBe(6);
+    ).toBe(18);
     for (const worker of workers) worker.ackAll();
     await Promise.all(acks);
   });
@@ -422,5 +425,64 @@ describe('LiveHorseDecisionWorkerPool', () => {
     await stopping;
     expect(pool.status().phase).toBe('stopped');
     expect(workers.every((worker) => worker.terminateCalls === 1)).toBe(true);
+  });
+});
+
+describe('ONE FLOOR, ONE READ: every shard learns every completed hand (2026-10-16)', () => {
+  const TABLE = '10000000-0000-4000-8000-0000000000aa';
+  const roster = { rosterDigest: 'r'.repeat(64) };
+
+  it('sends the owner the hand as before and every other shard a mirror without the private roster', async () => {
+    const { pool, workers } = poolOf(3);
+    for (const worker of workers) worker.emit(ready());
+    await pool.ready();
+    const hand = { ...observation(TABLE, 1_000_001), acceptedActorRoster: roster };
+    const ack = pool.observeCompletedHand(hand as any);
+    const owner = horseDecisionShard(hand.fence, 3);
+    for (const worker of workers) {
+      const jobs = worker.sent.filter((m) => m.type === 'OBSERVE_COMPLETED_HAND');
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].fence).toBe(hand.fence);
+      expect(jobs[0].handKey).toBe(hand.handKey);
+      if (worker.index === owner) expect(jobs[0].acceptedActorRoster).toEqual(roster);
+      else expect(Object.hasOwn(jobs[0], 'acceptedActorRoster')).toBe(false);
+    }
+    workers[owner]!.ackAll();
+    await expect(ack).resolves.toMatchObject({ type: 'ACK' });
+  });
+
+  it('a lost mirror never fails the hand', async () => {
+    const { pool, workers } = poolOf(2);
+    for (const worker of workers) worker.emit(ready());
+    await pool.ready();
+    const hand = observation(TABLE, 1_000_002);
+    const owner = horseDecisionShard(hand.fence, 2);
+    const ack = pool.observeCompletedHand(hand as any);
+    workers[owner]!.ackAll();
+    const mirror = workers[1 - owner]!.sent.find((m) => m.type === 'OBSERVE_COMPLETED_HAND');
+    workers[1 - owner]!.emit({
+      type: 'ERROR',
+      requestId: mirror.requestId,
+      generation: mirror.generation,
+      fence: mirror.fence,
+      message: 'refused',
+      recoverable: true,
+    });
+    await expect(ack).resolves.toMatchObject({ type: 'ACK' });
+  });
+
+  it('bounds what a lagging shard holds: past the bound a mirror is shed, never queued', async () => {
+    const { pool, workers } = poolOf(2);
+    for (const worker of workers) worker.emit(ready());
+    await pool.ready();
+    const owner = horseDecisionShard(`${TABLE}:1`, 2);
+    for (let i = 0; i < HORSE_MIND_MIRROR_MAX_PENDING + 40; i++)
+      void pool
+        .observeCompletedHand(observation(TABLE, 1_000_000 + i) as any)
+        .catch(() => undefined);
+    const status = pool.status();
+    expect(status.workers[owner]!.queueDepth).toBe(HORSE_MIND_MIRROR_MAX_PENDING + 40);
+    expect(status.workers[1 - owner]!.queueDepth).toBe(HORSE_MIND_MIRROR_MAX_PENDING);
+    void pool.stop().catch(() => undefined);
   });
 });

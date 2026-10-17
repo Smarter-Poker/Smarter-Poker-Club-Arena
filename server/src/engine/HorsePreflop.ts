@@ -108,6 +108,22 @@ export interface PreflopCtx {
    *  folds 70% to 3-bets gets 3-bet-bluffed relentlessly; one who never
    *  folds gets bluffed at all only with real equity. */
   raiserFoldTo3Bet?: number | null;
+  /**
+   * 2026-10-16 OPPONENT EXPLOIT (HorseOpponentExploit.preflopVsOpener): the
+   * single raiser's own read, present ONLY when it is credibly outside the
+   * horse envelope. Bars are on the strength scale. Undefined = every bar
+   * below is exactly what it was (the neutrality contract).
+   */
+  exploitOpener?: {
+    wide: boolean;
+    threeBetBar: number | null;
+    flatBar: number | null;
+    bbFlatBar: number | null;
+    noBluffThreeBet: boolean;
+  };
+  /** 2026-10-16: the last re-raiser's read (preflopVsReRaiser), facing a
+   *  3-bet or more. Undefined = unchanged. */
+  exploitReRaiser?: { fourBetBar: number; callBar: number };
   /** V20 M-ZONES (2026-08-27): ante cost of ONE ORBIT in BB units, already
    *  resolved for the table's ante style by AnteMath.anteOrbitCostBB (0 = no
    *  ante). NOT per-player: multiplying this by the seat count is the bug of
@@ -1168,6 +1184,22 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       threeBetThresh -= 0.05 * hunted;
       callThresh -= 0.04 * hunted;
     }
+    // 2026-10-16 OPPONENT EXPLOIT: this opener's raises are priced by what
+    // THEY raise, not by their seat. Against a wide opener the value 3-bet
+    // and the flat both widen to the top of their actual range; against a
+    // credible nit the 3-bet narrows. Absent read = no change at all.
+    const vsOpener = ctx.exploitOpener;
+    if (vsOpener) {
+      if (vsOpener.threeBetBar !== null) {
+        const bar = t(vsOpener.threeBetBar);
+        threeBetThresh = vsOpener.wide
+          ? Math.min(threeBetThresh, bar)
+          : Math.max(threeBetThresh, bar);
+      }
+      const flat = position === 'bb' ? vsOpener.bbFlatBar : vsOpener.flatBar;
+      if (flat !== null) callThresh = Math.min(callThresh, tCall(flat));
+    }
+    const noBluff3 = vsOpener?.noBluffThreeBet === true;
     threeBetThresh = phase6CapBar(threeBetThresh);
     callThresh = phase6CapBar(callThresh);
     const bbDiscount = position === 'bb' ? 0.06 : 0;
@@ -1226,6 +1258,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       strength >= t(0.55) &&
       strength < threeBetThresh &&
       !ctx.isOmaha &&
+      !noBluff3 &&
       rand() < bluffBudget * 0.3 * blockerMult
     ) {
       // V28 AUDIT FIX: the bluff squeeze was sized 4.0-5.5x with no IP/OOP
@@ -1257,6 +1290,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       callers === 0 &&
       strength >= t(bluffFloor) &&
       strength < threeBetThresh &&
+      !noBluff3 &&
       rand() < bluffFreqHere
     ) {
       if (ctx.isPotLimit) {
@@ -1373,7 +1407,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // changes, spins and SNGs included.
     const deepT =
       ctx.deepDiscipline === true && stackBB > 120 ? Math.min(0.05, (stackBB - 120) / 2600) : 0;
-    const fourBetThresh = phase6CapBar(
+    let fourBetThresh = phase6CapBar(
       t(0.93 - (ctx.aggression - 1) * 0.04) -
         0.04 * hunted3 -
         0.03 * sq +
@@ -1381,9 +1415,16 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
         vs35.fourBet +
         phase6Shift('fourBet')
     );
-    const callThresh = phase6CapBar(
+    let callThresh = phase6CapBar(
       t(ip ? 0.74 : 0.78) - 0.03 * hunted3 - 0.02 * sq + deepT * 0.5 + phase6Shift('call')
     );
+    // 2026-10-16 OPPONENT EXPLOIT: a credible over-re-raiser's 3-bets and
+    // 4-bets are 4-bet and called from the top of THEIR re-raising range.
+    const vsReRaiser = ctx.exploitReRaiser;
+    if (vsReRaiser) {
+      fourBetThresh = phase6CapBar(Math.min(fourBetThresh, t(vsReRaiser.fourBetBar)));
+      callThresh = phase6CapBar(Math.min(callThresh, t(vsReRaiser.callBar)));
+    }
 
     // ═══ V25 NEVER RAISE-FOLD A COMMITTED PLO STACK ═══════════════════
     // Having raised a short PLO stack, the chips in the middle are already a

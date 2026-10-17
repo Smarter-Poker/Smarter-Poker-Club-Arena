@@ -292,11 +292,17 @@ export class TableDriver {
   private fold(host: LightningHandHost, userId: string, kind: string): void {
     this.folds++;
     this.foldSeq++;
-    const res = host.handlePlayerAction(userId, kind);
+    // The input device saw this hand when it made the intent. A duplicate
+    // delivery keeps that exact token even if the persistent room advances.
+    const context =
+      kind === 'fast_fold' || kind === 'fold_watch'
+        ? `lightning-hand:${host.currentHandId}`
+        : undefined;
+    const res = host.handlePlayerAction(userId, kind, undefined, context);
     if (this.opts.duplicateFoldEvery && this.foldSeq % this.opts.duplicateFoldEvery === 0) {
       // The same tap delivered twice: the second must be refused, never a second fold.
       this.duplicateFolds++;
-      host.handlePlayerAction(userId, kind);
+      host.handlePlayerAction(userId, kind, undefined, context);
     }
     if (!res.success && kind !== 'fold') host.handlePlayerAction(userId, 'fold');
   }

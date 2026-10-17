@@ -65,6 +65,7 @@ import {
   externalDeclaredProofs,
   errorSqlState,
   matchedByName,
+  matchedByOwnBytes,
   proofIsRunnable,
 } from '../scripts/ci/check-migrations-are-live.mjs';
 import { classifyMigration } from '../scripts/ci/recording-only.mjs';
@@ -158,6 +159,25 @@ describe('a merged migration must be live', () => {
     // Two verdicts, and only one of them is an accusation.
     expect(SRC).toContain('MERGED BUT NOT LIVE');
     expect(SRC).toContain('unverifiable');
+  });
+
+  it("a null-named row under the file's own version with its exact bytes is that file", () => {
+    // Measured 2026-10-16: 20261015173123 is installed with a NULL name and
+    // statements byte-identical to the file, while its @live-proof pins a
+    // function body two later installed migrations replaced.
+    const file = '20261015173123_a_calculating_week_advances_on_its_own_tick.sql';
+    const sql = fs.readFileSync(`supabase/migrations/${file}`, 'utf8');
+    const md5 = createHash('md5').update(sql).digest('hex');
+    expect(md5).toBe('c0326d2c100dd1295822f61ee981cecb');
+    expect(matchedByOwnBytes(file, sql, new Map([['20261015173123', md5]]))).toBe(true);
+    // Same version, different bytes: not proven here, it goes on to objects and proofs.
+    expect(matchedByOwnBytes(file, `${sql}\n`, new Map([['20261015173123', md5]]))).toBe(false);
+    // The same bytes under ANOTHER version are not this file.
+    expect(matchedByOwnBytes(file, sql, new Map([['20261015173124', md5]]))).toBe(false);
+    expect(matchedByOwnBytes('not_a_stamp.sql', sql, new Map([['20261015173123', md5]]))).toBe(
+      false
+    );
+    expect(SRC).toContain('if (matchedByOwnBytes(file, sql, appliedMd5ByVersion)) continue;');
   });
 
   it('a name recorded as the whole file stem matches by name, never by a freeze-sensitive proof', () => {
@@ -423,7 +443,9 @@ describe('a merged migration must be live', () => {
     expect(declared.length).toBeGreaterThanOrEqual(150);
     const refused = declared.filter((p) => !proofIsRunnable(p));
     expect(refused.length / declared.length).toBeLessThan(0.02);
-  });
+    // Reads every migration in the window; on a loaded worktree that exceeds
+    // the 5 s default without anything being wrong.
+  }, 30_000);
 
   it('a syntax error is about the text we sent, never about what production holds', () => {
     // VERBOSITY=verbose is what makes the two distinguishable at all.

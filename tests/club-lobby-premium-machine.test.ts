@@ -66,10 +66,9 @@ describe('responsive premium Club Arena', () => {
     expect(PAGE).toContain('<LobbyTable');
     expect(PAGE).toContain('onSelect={openEntry}');
     expect(PAGE).toContain('onActivate={openEntry}');
-    expect(PAGE).toContain('src={club.banner_url || CLUB_LOBBY_CAMPAIGN}');
-    expect(PAGE).toContain(
-      'const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`'
-    );
+    expect(PAGE).toContain('src={club.banner_url}');
+    expect(PAGE).toContain('isRetiredClubBanner(club.banner_url)');
+    expect(PAGE).not.toContain('CLUB_LOBBY_CAMPAIGN');
   });
 
   it('builds the approved desktop two-column workspace without a duplicate welcome panel', () => {
@@ -311,7 +310,7 @@ describe('responsive premium Club Arena', () => {
       /\.club-lobby-command-top__campaign-button img\s*\{[^}]*object-fit:\s*contain/s
     );
     expect(finalMobile).not.toContain('scaleY(');
-    expect(PAGE).toContain('shark-club-championship-ad-mobile-v4.png');
+    expect(PAGE).not.toContain('shark-club-championship-ad-mobile-v4.png');
     expect(PAGE).toContain('<picture className="club-lobby-command-top__campaign-picture">');
   });
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   eligibleHudClock,
+  provenPreHudAttrition,
   createHudClockReader,
   hudEventObservationMs,
   mttCaseTimeoutMs,
@@ -684,5 +685,73 @@ describe('a natural HUD witness must fit the real clock and keep independent wir
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('pre-HUD population qualification attrition', () => {
+  const admitted = {
+    tableId: 'table',
+    tournamentId: id,
+    tournamentStatus: 'RUNNING',
+    currentPlayers: 4,
+    tableStatus: 'running',
+    endedAt: null,
+    bigBlind: 80,
+    seatedUserIds: [],
+    seatStacks: [],
+  };
+  const qualification = {
+    tableId: 'table',
+    clock: null,
+    row: { ...row, current_players: 3 },
+    category: 'insufficient_players' as const,
+    levelCapMs: MTT_HUD_LEVEL_CAP_MS,
+  };
+  it('recognizes the actual four-to-three attrition only while the remaining clock is valid', () => {
+    expect(eligibleHudClock(qualification.row, now)).toBeNull();
+    expect(provenPreHudAttrition(admitted, qualification, now)).toBe(true);
+  });
+  it('refuses unknown, changed, paused, terminal and malformed subjects', () => {
+    for (const patch of [
+      { current_players: 4 },
+      { current_players: null },
+      { current_players: -1 },
+      { id: 'other' },
+      { status: 'FINISHED' },
+      { on_break: true },
+      { accelerated_mtt: true },
+      { blind_structure: [] },
+      { level_started_at: null },
+      { blind_structure: [{ durationMinutes: 16 }] },
+    ])
+      expect(
+        provenPreHudAttrition(
+          admitted,
+          {
+            ...qualification,
+            row: { ...qualification.row, ...patch },
+          },
+          now
+        )
+      ).toBe(false);
+    expect(provenPreHudAttrition(null, qualification, now)).toBe(false);
+    expect(provenPreHudAttrition({ ...admitted, endedAt: 'ended' }, qualification, now)).toBe(
+      false
+    );
+    expect(provenPreHudAttrition(admitted, undefined, now)).toBe(false);
+    expect(provenPreHudAttrition(admitted, { ...qualification, row: null }, now)).toBe(false);
+    expect(provenPreHudAttrition(admitted, { ...qualification, tableId: 'other' }, now)).toBe(
+      false
+    );
+    expect(provenPreHudAttrition(admitted, { ...qualification, category: 'on_break' }, now)).toBe(
+      false
+    );
+    expect(provenPreHudAttrition({ ...admitted, currentPlayers: 3 }, qualification, now)).toBe(
+      false
+    );
+    expect(
+      provenPreHudAttrition({ ...admitted, tournamentStatus: 'FINISHED' }, qualification, now)
+    ).toBe(false);
+    expect(provenPreHudAttrition(admitted, qualification, now + 70_000)).toBe(false);
   });
 });

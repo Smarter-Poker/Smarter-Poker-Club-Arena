@@ -120,14 +120,12 @@ describe('desktop lobby campaign bay', () => {
     expect(TOP_CSS).not.toMatch(/object-fit:\s*fill/);
   });
 
-  it('serves the tight crop at every width, not only below 900px', () => {
-    expect(PAGE).toContain('shark-club-championship-ad-mobile-v4.png');
-    // The tall 3:1 file is the one that could not fit this bay. It is still a
-    // real asset used by the tournament surfaces, but the club lobby must not
-    // reach for it again.
+  it('uses only an actual club banner and never restores the universal Shark placeholder', () => {
+    expect(PAGE).not.toContain('shark-club-championship-ad-mobile-v4.png');
     expect(PAGE).not.toContain('shark-club-championship-ad-v2.png');
-    // And no breakpoint-scoped <source> may reintroduce a second crop for the
-    // house ad without this pin being reconsidered.
+    expect(PAGE).not.toContain('CLUB_LOBBY_CAMPAIGN');
+    expect(PAGE).toContain('isRetiredClubBanner(club.banner_url)');
+    expect(PAGE).toContain('src={club.banner_url}');
     expect(PAGE).not.toMatch(/<source media="\(max-width: 900px\)"/);
   });
 });

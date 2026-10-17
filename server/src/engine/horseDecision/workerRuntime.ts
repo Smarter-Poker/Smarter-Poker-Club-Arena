@@ -55,6 +55,7 @@ import {
 import { HorseLogic } from '../HorseLogic.js';
 import { HorseMind } from '../HorseMind.js';
 import { completedHandActionsForMind } from './completedHandActions.js';
+import { HorseMindMirror, type HorseMindMirrorOutcome } from './mindMirror.js';
 import { readReturnedRosterTransport } from '../../services/horseAcceptedRoster/schema.js';
 import {
   horseMindHandFromDecision,
@@ -229,6 +230,15 @@ export interface HorseDecisionWorkerDependencies {
   /** This thread's decision journal report, relayed by STATUS to /health. */
   journalHealth?(): HorseJournalHealth | null;
   observeCompletedHand(request: ObserveCompletedHandRequest): void;
+  /**
+   * Whether this worker's shard owns the completed hand's table (lane.ts
+   * shards by the fence's table id). Absent: every hand is this worker's own,
+   * exactly as before 2026-10-16 (one worker, or an injected test runtime).
+   */
+  ownsCompletedHand?(request: ObserveCompletedHandRequest): boolean;
+  /** Learn a completed hand another shard owns (mindMirror.ts). Absent: the
+   * runtime's own HorseMindMirror over `observeCompletedHand`. */
+  learnMirroredHand?(request: ObserveCompletedHandRequest): HorseMindMirrorOutcome;
   noteDecision(scope: string, ms: number): void;
   noteFeature(feature: string): void;
   now(): number;
@@ -296,6 +306,10 @@ export async function startOwnedServices(shard?: {
   ownedServicesStarted = true;
 
   try {
+    // A decision worker whose Monte Carlo can be cut by its own loop delay
+    // is not the brain the packs qualified with (client.ts,
+    // horseDecisionWorkerEnv). Refuse readiness rather than decide with it.
+    assertDecisionWorkerRunsFullSample();
     // Persistence starts before hydration, matching the production invariant:
     // a slow read may never prevent newly learned rows from becoming flushable.
     startHorseMindPersistence();
@@ -339,6 +353,17 @@ export async function startOwnedServices(shard?: {
   }
 }
 
+/** The decision worker thread's governor is off, so every decision runs at
+ * scale 1 (EQUITY_GOVERNOR=off from horseDecisionWorkerEnv). Exported for tests. */
+export function assertDecisionWorkerRunsFullSample(
+  governor: { snapshot(): { enabled: boolean }; current(): number } = equityGovernor
+): void {
+  if (governor.snapshot().enabled || governor.current() !== 1)
+    throw new Error(
+      'live horse decision worker must start with EQUITY_GOVERNOR=off: a governed worker cuts the qualified Monte Carlo sample'
+    );
+}
+
 /** Stop clocks first, then drain the two durable writers. Idempotent. */
 async function stopOwnedServices(): Promise<void> {
   if (!ownedServicesStarted) return;
@@ -376,6 +401,11 @@ export const defaultHorseDecisionWorkerDependencies: HorseDecisionWorkerDependen
   applyDecisionEffects: (effects) => HorseMind.applyDecisionEffects(effects),
   saveRng: saveFastRandom,
   restoreRng: restoreFastRandom,
+  // THE WORKER DECIDES WITH THE QUALIFIED BRAIN (2026-10-16). The decision
+  // worker thread is spawned with EQUITY_GOVERNOR=off (client.ts,
+  // horseDecisionWorkerEnv) and startOwnedServices refuses to become ready
+  // otherwise, so the scale every decision reads, and journals, is 1: the
+  // same full sample every Phase 10-13 strength league qualified.
   governorScale: () => equityGovernor.current(),
   atGovernorScale: (fn) => equityGovernor.withDecisionScale(fn),
   journalHealth: horseDecisionJournalHealth,
@@ -580,6 +610,8 @@ export class HorseDecisionWorkerRuntime {
   private phase12AuthorityAdmitted = false;
   private readonly phase13Authority: Readonly<Record<JointVariant, HorseQualifiedAuthorityHolder>>;
   private phase13AuthorityAdmitted = false;
+  /** Completed hands of other shards' tables, learned once each (mindMirror.ts). */
+  private readonly mindMirror = new HorseMindMirror();
   constructor(
     private readonly send: (message: HorseDecisionWorkerResponse) => void,
     private readonly deps: HorseDecisionWorkerDependencies = defaultHorseDecisionWorkerDependencies,
@@ -2331,6 +2363,28 @@ export class HorseDecisionWorkerRuntime {
   }
 
   private executeObservation(received: ObserveCompletedHandRequest): void {
+    // ONE FLOOR, ONE READ (2026-10-16): a hand another shard owns is only
+    // learned. Its owner journals it, binds its roster and settles its plans;
+    // here it touches nothing but this worker's opponent memory.
+    if (this.deps.ownsCompletedHand && !this.deps.ownsCompletedHand(received)) {
+      let outcome: HorseMindMirrorOutcome | 'refused';
+      try {
+        outcome = this.deps.learnMirroredHand
+          ? this.deps.learnMirroredHand(received)
+          : this.mindMirror.learn(received, (request) => this.deps.observeCompletedHand(request));
+      } catch {
+        outcome = 'refused';
+      }
+      this.deps.noteFeature(`horse_mind_mirror_${outcome}`);
+      this.send({
+        type: 'ACK',
+        requestId: received.requestId,
+        generation: received.generation,
+        fence: received.fence,
+        operation: 'OBSERVE_COMPLETED_HAND',
+      });
+      return;
+    }
     // P14.2: an accepted roster crosses the worker boundary only when it is the
     // exact private transport for THIS hand. Anything else is dropped (the
     // explicit unknown) and counted; the hand is still observed and journaled.

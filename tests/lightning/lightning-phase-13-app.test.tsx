@@ -126,7 +126,8 @@ const rpc = vi.fn();
 const gameRow = {
   id: CLUSTER,
   club_id: null,
-  name: 'NLH 1/2 Classic',
+  name: 'NLH 1/2 Action',
+  template_name: 'action',
   variant: 'nlh',
   sb: 1,
   bb: 2,
@@ -261,6 +262,7 @@ describe('joins closed: JOIN LIGHTNING shown, not offered', () => {
         main_index: 1,
         lifecycle: 'live',
         cluster_must_move: true,
+        cluster_template: 'action',
         cluster_players: 5,
         cluster_tables: 1,
         cluster_mode: 'lightning',

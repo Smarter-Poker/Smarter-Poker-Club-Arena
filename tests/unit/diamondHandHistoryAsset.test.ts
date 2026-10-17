@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { money } from '../../src/utils/handFormat';
 import { describe, it, expect, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
   asset: 'diamonds' as string | undefined,
@@ -77,6 +80,7 @@ describe('canonical hand history denomination', () => {
     const hand = await handHistoryService.getHand('hand-1');
     expect(fixture.tableSelect).toContain('arena:clubs!fk_tables_club_id(asset)');
     expect(hand?.arenaAsset).toBe('diamonds');
+    expect(hand?.replay.arenaAsset).toBe('diamonds');
     expect(adaptServiceHandToPanel(hand!, 'hero').arenaAsset).toBe('diamonds');
   });
   it('does not infer an asset from a Diamond-looking table name', async () => {
@@ -84,6 +88,7 @@ describe('canonical hand history denomination', () => {
     const hand = await handHistoryService.getHand('hand-1');
     expect(hand?.table_name).toBe('Diamond NLH');
     expect(hand?.arenaAsset).toBeUndefined();
+    expect(hand?.replay.arenaAsset).toBeUndefined();
   });
 });
 
@@ -181,5 +186,24 @@ describe('a Diamond hand history is scoped by the server', () => {
       asset: 'diamonds',
     });
     expect(fixture.rpcArgs).toMatchObject({ p_club_id: 'some-other-club' });
+  });
+});
+
+// The same archive can show both assets. Each row, including signed net and
+// rake, must use its authoritative denomination rather than the route's filter.
+describe('archive row amount denomination', () => {
+  it('uses row precision on pot, rake and signed net while preserving chip precision', () => {
+    const source = readFileSync(resolve(__dirname, '../../src/pages/HandHistoryPage.tsx'), 'utf8');
+    expect(source).toContain("const amountPrecision = hand.arenaAsset === 'diamonds' ? 0 : 2");
+    for (const call of [
+      'money(hand.replay.potTotal, amountPrecision)',
+      'money(hand.rake, amountPrecision)',
+      'signed(net, amountPrecision)',
+      'money(Math.abs(n), dp)',
+    ])
+      expect(source).toContain(call);
+    expect(money(5362, 0)).toBe('5,362');
+    expect(money(58, 0)).toBe('58');
+    expect(money(20.25, 2)).toBe('20.25');
   });
 });

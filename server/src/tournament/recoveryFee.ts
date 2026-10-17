@@ -55,6 +55,16 @@ export function tournamentFeeRatio(buyIn: number, buyInFee: number): number {
   return a + f > 0 && f > 0 ? f / (a + f) : 0.1;
 }
 
+/** A Diamond freeroll recovery purchase goes wholly to its prize pool. */
+export function tournamentPurchaseFeeRatio(
+  buyIn: number,
+  buyInFee: number,
+  unitCents: number
+): number {
+  if (unitCents === 100 && buyIn === 0 && buyInFee === 0) return 0;
+  return tournamentFeeRatio(buyIn, buyInFee);
+}
+
 /**
  * The recovery fee, in cents: the ratio, capped at ten percent, truncated
  * DOWN to the smallest amount this tournament can pay.

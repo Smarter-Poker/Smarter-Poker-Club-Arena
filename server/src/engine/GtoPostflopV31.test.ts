@@ -4,6 +4,7 @@ import type { Card, CardRank, CardSuit } from '../types.js';
 import { enableBrainTelemetry, drainFires } from './BrainTelemetry.js';
 import { boardRelativeFeatureKeyV2 } from './GtoBoardRelativeFeaturesV2.js';
 import { gtoV31ExecutionMatches, HorseLogic } from './HorseLogic.js';
+import { seedFastRandom } from './HorseEval.js';
 import {
   _clearGtoPostflopV31,
   gtoPostflopV31Count,
@@ -12,6 +13,7 @@ import {
   gtoPostflopV31EvaluationCount,
   gtoV31CellMatrix,
   gtoStreetAdviceV31,
+  gtoV31StoreIsEmpty,
   replaceGtoPostflopV31,
   replaceGtoPostflopV31Evaluation,
   v31HandKey,
@@ -1172,5 +1174,123 @@ describe('V31 reaches the full horse decision path', () => {
     expect(worker).toContain('startGtoPostflopV31Loader()');
     expect(loader).toContain("supabase.rpc('fn_gto_v31_active_cells'");
     expect(loader).not.toContain(".from('gto_postflop_v31')");
+  });
+});
+
+describe('an empty V31 store is skipped before the consult (2026-10-16)', () => {
+  /** Heads-up flop: villain jams into hero (the all-in response cell's spot). */
+  function spot(hole: string, jam: boolean) {
+    const hero = {
+      seat: 1,
+      user_id: 'hero',
+      username: 'Hero',
+      stack: 8_000,
+      bet: 0,
+      totalInvested: 0,
+      is_folded: false,
+      is_all_in: false,
+      is_sitting_out: false,
+      cards: cards(hole),
+    };
+    const villain = { ...hero, seat: 2, user_id: 'villain', username: 'Villain', cards: [] };
+    if (jam) Object.assign(villain, { bet: 8_000, totalInvested: 8_000 });
+    const state = {
+      players: [hero, villain],
+      communityCards: BOARD.slice(0, 3),
+      pot: jam ? 8_100 : 100,
+      currentBet: jam ? 8_000 : 0,
+      minRaise: jam ? 8_000 : 100,
+      stage: 'flop',
+      gameVariant: 'nlh',
+      gameMode: 'cash',
+      format: 'cash',
+      bigBlind: 100,
+      smallBlind: 50,
+      dealerSeat: 2,
+      actionHistory: [
+        { stage: 'flop', seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 0 },
+        ...(jam
+          ? [
+              {
+                stage: 'flop',
+                seat: 2,
+                userId: 'villain',
+                action: 'bet',
+                amount: 8_000,
+                timestamp: 1,
+              },
+            ]
+          : []),
+      ],
+    };
+    return { hero, state };
+  }
+  const HOLES = ['3c4d', 'AsKs', 'QdQs', '9h8h', 'Tc2d', 'Ah5h', '7s7d', 'JcTd'];
+  const decide = (hole: string, jam: boolean, seed: number, opts: Record<string, unknown>) => {
+    const { hero, state } = spot(hole, jam);
+    seedFastRandom(seed);
+    const d = HorseLogic.decide(hero as never, state as never, 'balanced', {}, {
+      mind: false,
+      ...opts,
+    } as never);
+    return `${d.action}:${d.amount ?? 0}`;
+  };
+
+  it('knows which store a lookup would read', () => {
+    expect(gtoV31StoreIsEmpty()).toBe(true);
+    expect(gtoV31StoreIsEmpty(H64)).toBe(true);
+    replaceGtoPostflopV31([CELL]);
+    expect(gtoV31StoreIsEmpty()).toBe(false);
+    // The evaluation store named by a checksum is separate from the active one.
+    expect(gtoV31StoreIsEmpty(H64)).toBe(true);
+  });
+
+  it('decides exactly as the empty-store miss did, with one counter instead of three', () => {
+    enableBrainTelemetry();
+    drainFires();
+    let decisions = 0;
+    for (const hole of HOLES)
+      for (const jam of [true, false])
+        for (let seed = 1; seed <= 5; seed++) {
+          // The miss fell through to the heuristics, which is exactly the
+          // path with the consult switched off.
+          const consultOff = decide(hole, jam, seed * 104_729, { v31GtoSuitAware: false });
+          expect(decide(hole, jam, seed * 104_729, { telemetry: true }), `${hole} ${jam}`).toBe(
+            consultOff
+          );
+          decisions++;
+        }
+    const fires = Object.fromEntries(drainFires().map((row) => [row.feature, row.fires]));
+    expect(fires.v31_certified_skip_empty_store).toBe(decisions);
+    for (const feature of Object.keys(fires)) {
+      expect(feature).not.toMatch(/^v31_certified_miss_|^v31_miss_/);
+    }
+  });
+
+  it('a stocked store is still consulted', () => {
+    replaceGtoPostflopV31([
+      {
+        ...CELL,
+        street: 'flop',
+        hero_position: 'BB',
+        opponent_position: 'SB',
+        node_role: 'all_in',
+        facing_kind: 'all_in',
+        facing_size_bucket: 'all_in',
+        hand_matrix: { '43o:11': { f: 0, c: 1 } },
+        action_specs: {
+          f: { family: 'fold', size_unit: 'none', size_value: null, all_in: false },
+          c: { family: 'call', size_unit: 'none', size_value: null, all_in: false },
+        },
+        policy_ev_matrix: { '43o:11': 1 },
+        action_ev_matrix: { '43o:11': { f: 0, c: 1 } },
+      },
+    ]);
+    enableBrainTelemetry();
+    drainFires();
+    expect(decide('3c4d', true, 1, { telemetry: true })).toMatch(/^all_in:/);
+    const fires = Object.fromEntries(drainFires().map((row) => [row.feature, row.fires]));
+    expect(fires.v31_certified_skip_empty_store ?? 0).toBe(0);
+    expect(fires.v31_certified_all_in).toBe(1);
   });
 });

@@ -1,6 +1,6 @@
 import { winnerViewportPoint, potViewportPoint } from '../lib/chipAwardGeometry';
 import { observeDealPresentationTiming } from '../utils/dealPresentationTiming';
-import { formatPrizeAtUnit } from '../utils/format';
+import { formatPrizeAtUnit, formatWalletChips } from '../utils/format';
 import {
   getTournamentFormatKind,
   getTournamentEntryCapacity,
@@ -472,6 +472,7 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
+import { NATIVE_PAUSE_EVENT, NATIVE_RESUME_EVENT, isNativeAppActive } from '../lib/nativeResume';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import { useTableArt } from '../hooks/useTableArt';
 import { useProtectedCardLayout } from '../hooks/useProtectedCardLayout';
@@ -3827,6 +3828,7 @@ function LiveTablePage({
      would restart the five-second interval on every render. */
   const probeEngineLinkRef = useRef(probeEngineLink);
   probeEngineLinkRef.current = probeEngineLink;
+  const autoTimeBankPreferenceRef = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     if (!tableId || !userId) return;
     // 2026-08-20: both `.catch`es here were dead — `sendHeartbeat` resolves
@@ -3851,6 +3853,7 @@ function LiveTablePage({
          socket connects again or the row turns out to be wakeable, so a table
          that comes back is beaten again at once. */
       if (tableClosedToastShownRef.current) return;
+      if (!isNativeAppActive() || document.visibilityState === 'hidden') return;
       /* PHASE 2 (2026-08-31): tell the engine whether this client has actually
          PUT THE ACTION IN FRONT OF THE PLAYER, not merely that it is online.
 
@@ -3872,6 +3875,7 @@ function LiveTablePage({
         // The engine will not stand up a busted seat whose owner is at the
         // cashier (2026-09-04); this is how it knows.
         rebuyPromptOpen: bustRebuyOpenRef.current,
+        autoTimeBank: autoTimeBankPreferenceRef.current,
       });
       if (res?.success) {
         // Silent recovery (Dan 2026-08-23). A "Reconnected" toast is only
@@ -3919,7 +3923,18 @@ function LiveTablePage({
     };
     void beat();
     const heartbeatInterval = setInterval(() => void beat(), 5000);
-    return () => clearInterval(heartbeatInterval);
+    const onResume = () => {
+      if (document.visibilityState !== 'hidden' && isNativeAppActive()) void beat();
+    };
+    window.addEventListener(NATIVE_RESUME_EVENT, onResume);
+    window.addEventListener('pageshow', onResume);
+    document.addEventListener('visibilitychange', onResume);
+    return () => {
+      clearInterval(heartbeatInterval);
+      window.removeEventListener(NATIVE_RESUME_EVENT, onResume);
+      window.removeEventListener('pageshow', onResume);
+      document.removeEventListener('visibilitychange', onResume);
+    };
   }, [tableId, userId]);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3946,7 +3961,7 @@ function LiveTablePage({
   // real page/app exit counts.
   useEffect(() => {
     if (!tableId || !userId) return;
-    const onPageHide = () => {
+    const onPageHide = (event?: Event) => {
       // ── AWAY-BEACON GUARD (2026-08-26) ──────────────────────────────────────
       // iOS Safari fires `pagehide` on every soft navigation, including the
       // transition FROM the lobby panel INTO this table. A player who just
@@ -3960,7 +3975,12 @@ function LiveTablePage({
       //   b) the engine WS has not yet reported 'connected'
       const acquiredAt = seatAcquiredAtRef.current;
       const seatAge = acquiredAt != null ? Date.now() - acquiredAt : Infinity;
-      if (acquiredAt != null && seatAge < 5_000 && engineWsStatus !== 'connected') {
+      if (
+        event?.type === 'pagehide' &&
+        acquiredAt != null &&
+        seatAge < 5_000 &&
+        engineWsStatus !== 'connected'
+      ) {
         return; // spurious iOS pagehide on fresh-join — skip the beacon
       }
 
@@ -3975,8 +3995,17 @@ function LiveTablePage({
       }
       sendAwayBeacon(tableId, accessToken);
     };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') onPageHide();
+    };
     window.addEventListener('pagehide', onPageHide);
-    return () => window.removeEventListener('pagehide', onPageHide);
+    window.addEventListener(NATIVE_PAUSE_EVENT, onPageHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener(NATIVE_PAUSE_EVENT, onPageHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [tableId, userId, engineWsStatus]);
 
   // ── Dan 2026-08-21: "the games can never freeze or die" — last-resort
@@ -9044,6 +9073,20 @@ function LiveTablePage({
     toggleSetting: toggleV8Setting,
     setAlias: setV8TableAlias,
   } = useUserTableSettings(userId !== 'guest' ? userId : null);
+  autoTimeBankPreferenceRef.current = v8SettingsLoading ? undefined : v8Settings.auto_time_bank;
+  useEffect(() => {
+    if (
+      !tableId ||
+      !userId ||
+      userId === 'guest' ||
+      v8SettingsLoading ||
+      !isNativeAppActive() ||
+      document.visibilityState === 'hidden'
+    )
+      return;
+    // Send an explicit false too. Transport pongs never change this choice.
+    void sendHeartbeat(tableId, { autoTimeBank: v8Settings.auto_time_bank });
+  }, [tableId, userId, v8Settings.auto_time_bank, v8SettingsLoading]);
 
   /**
    * ═══ THE VIP ALL-IN SQUEEZE (Dan 2026-09-05) ═════════════════════════════
@@ -13365,7 +13408,7 @@ function LiveTablePage({
                 { userId, tableId }
               );
             }
-            const walletBalance = balance.balance ?? 0;
+            const walletBalance = balance.balance ?? NaN;
 
             let cost = Math.round(Number(addonData.addOnCost)) || 0;
             let chips = Number(addonData.addOnChips) || 0;
@@ -22678,29 +22721,16 @@ function LiveTablePage({
       /* Server-authoritative: when the client timer expires, try to activate a
          time bank.
 
-         AUDIT 2026-08-25 — WHAT `auto_time_bank` NOW MEANS, AND WHAT IT DID NOT.
-         Bible V8 §11.1's auto_time_bank is a paid/VIP setting. Its ONLY
-         consumer anywhere in the app was a `setShowTimeBank(true)` on this
-         line, and `showTimeBank` was read nowhere — the panel it used to open
-         had been deleted. So the setting a player spends diamonds on changed
-         precisely nothing at the table, in either position, and a bank was
-         auto-spent for everyone regardless.
-
-         The bank is still auto-spent for everyone: that behaviour is the
-         engine's and this pass does not touch who pays what. What the setting
-         now genuinely controls is whether it happens SILENTLY. Off (the
-         default) the player is told a bank was just spent on their behalf,
-         which is the one moment that information matters and the moment they
-         are least able to work it out. On — which is what "auto" was sold as —
-         it stays quiet. If the intent was that non-subscribers should instead
-         be PROMPTED before a bank is spent, that is a real feature with a
-         countdown and a decision in it, and it belongs in the engine's hands,
-         not bolted on here. */
-      if (tableId && userId && (timeBankUnlimited || (timeBanksRemaining ?? 0) > 0)) {
+         The account switch controls automatic use on both transports. The
+         server receives it on every app heartbeat and resolves expired turns. */
+      if (
+        !v8SettingsLoading &&
+        v8Settings.auto_time_bank &&
+        tableId &&
+        userId &&
+        (timeBankUnlimited || (timeBanksRemaining ?? 0) > 0)
+      ) {
         setTimeBankActive(true);
-        if (!v8Settings.auto_time_bank) {
-          toast?.info?.('Time Bank Used');
-        }
         // 2026-08-20: this was a `.catch(...)` that could NEVER run.
         // GameServerAPI.activateTimeBank does not throw: every failure
         // (non-OK status, unreachable server, a thrown fetch) is converted
@@ -23965,6 +23995,10 @@ function LiveTablePage({
   const [lightningPrefersWatch, setLightningPrefersWatch] = useState(
     () => readLightningPrefs().preferFoldWatch
   );
+  const lightningFoldHandId =
+    lightningRoom && lightningHandLive
+      ? lightningHandId(engineSnapshot as LightningSnapshotFields)
+      : null;
   const handleLightningFold = useCallback(
     async (kind: LightningFoldKind) => {
       if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
@@ -23977,7 +24011,7 @@ function LiveTablePage({
         writeLightningPrefs({ preferFoldWatch: kind === 'fold_watch' }).preferFoldWatch
       );
       try {
-        const result = await sendLightningFold(tableId, userId, kind);
+        const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
           toast.warning(result.error || 'That Action Could Not Be Confirmed');
         } else if (
@@ -23994,7 +24028,7 @@ function LiveTablePage({
         setLightningFoldBusy(false);
       }
     },
-    [tableId, userId, toast, isMultiTable, isActive, lightningCaps]
+    [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
   );
   /* LIGHTNING PHASE 12 (spec HOTKEYS): Shift+F and Shift+V run the strip's
      own handler, only while the strip offers that fold and the platform row
@@ -26973,7 +27007,11 @@ function LiveTablePage({
                     telling a funded player "Your Balance 0" beside an enabled
                     spend button. */}
                 <span className="sc-label sc-ink--silver">
-                  {accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}
+                  {accountBalance === null
+                    ? 'Unknown'
+                    : tableState.arenaAsset === 'diamonds'
+                      ? Number(accountBalance).toLocaleString()
+                      : formatWalletChips(accountBalance)}
                 </span>
               </div>
               {buyInSecondsLeft !== null && (
@@ -28479,7 +28517,9 @@ function LiveTablePage({
             if (outcome.kind !== 'unknown') {
               // Cleanup failure leaves a safely replayable receipt, never a new
               // apparent failure after the server has confirmed the purchase.
-              void cashBuyInJournal
+              // Keep the confirm latch until the journal transition completes.
+              // Otherwise a corrected click can recover the just-rejected payload.
+              await cashBuyInJournal
                 .complete(attempt)
                 .catch((error) =>
                   reportError(error, 'TablePage.cash_buyin_journal_cleanup_failed')

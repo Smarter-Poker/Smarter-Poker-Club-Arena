@@ -66,7 +66,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
-import { fmt, fmtChips, timeAgo } from '../utils/format';
+import { fmt, fmtChips, formatWalletChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import AgentBackOffice from '../components/agent/AgentBackOffice';
 
@@ -74,6 +74,8 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { EmptyState } from '../components/common/EmptyState';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { resolvePageClubId, pickPreferredClubId } from '../utils/resolvePageClubId';
+import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
+import type { ClubBankRecipientWallet } from '../components/wallet/cashierModes';
 type AgentTab =
   | 'overview'
   | 'players'
@@ -192,6 +194,13 @@ function AgentDashboardContent() {
   const [transferAmount, setTransferAmount] = useState('');
   const [transferNotes, setTransferNotes] = useState('');
   const walletOperationInFlightRef = useRef(false);
+  // THE SENDER CHOOSES THE RECIPIENT'S WALLET (Dan 2026-10-15: "SELECTABLE TO
+  // SEND TO ANY WALLET I WANT THAT THE USER HAS (PLAYER WALLET, AGENT WALLET,
+  // PROMO WALLET ETC)"). This form used to send every transfer into the Agent
+  // Wallet with no choice. Agent Wallet stays the default; the server refuses a
+  // wallet the recipient does not hold.
+  const [transferDestination, setTransferDestination] =
+    useState<ClubBankRecipientWallet>('agent_wallet');
 
   // Credit management (owner-only)
   const [creditTarget, setCreditTarget] = useState('');
@@ -836,8 +845,8 @@ function AgentDashboardContent() {
    * all, from a form that asks for a club member.
    *
    * fn_agent_wallet_send is the send the platform actually uses. It is
-   * definer, it is granted, it enforces the downline server-side, it derives
-   * the destination wallet from the recipient's role, and it takes a retry key
+   * definer, it is granted, it enforces the downline server-side, it credits
+   * the wallet the sender chose (2026-10-16), and it takes a retry key
    * so a repeated call replays rather than sending twice. The note the form
    * has always collected and thrown away is now the send's reason.
    */
@@ -863,7 +872,7 @@ function AgentDashboardContent() {
           clubId: resolvedClub,
           targetId: transferTarget,
           kind: 'agent_send',
-          destination: 'agent_wallet',
+          destination: transferDestination,
           amount: amt,
         },
         async (operation) => {
@@ -871,12 +880,12 @@ function AgentDashboardContent() {
             p_club_id: resolvedClub,
             p_to_user_id: transferTarget,
             p_amount: amt,
-            p_destination: 'agent_wallet',
+            p_destination: transferDestination,
             p_reason: transferNotes.trim() || 'Agent transfer',
             p_op_id: operation.operationId,
           });
           if (sendError) throw sendError;
-          if (!confirmedAgentWalletReceipt(data, amt, 'agent_send', 'agent_wallet')) {
+          if (!confirmedAgentWalletReceipt(data, amt, 'agent_send', transferDestination)) {
             throw new Error(data?.error || 'The Cashier Did Not Confirm That Transfer');
           }
         }
@@ -887,6 +896,7 @@ function AgentDashboardContent() {
       setTransferTarget('');
       setTransferAmount('');
       setTransferNotes('');
+      setTransferDestination('agent_wallet');
       loadDashboard(clubId);
     } catch (err: unknown) {
       setError(safeErrorMessage(err));
@@ -999,6 +1009,26 @@ function AgentDashboardContent() {
                     onChange={(e) => setTransferTarget(e.target.value)}
                     placeholder="UUID Of Receiving Agent"
                   />
+                </div>
+                <div>
+                  <label className="admin-label" htmlFor="agent-transfer-recipient-wallet">
+                    Recipient Wallet
+                  </label>
+                  <select
+                    id="agent-transfer-recipient-wallet"
+                    className="admin-input"
+                    value={transferDestination}
+                    disabled={processing}
+                    onChange={(event) =>
+                      setTransferDestination(event.target.value as ClubBankRecipientWallet)
+                    }
+                  >
+                    {(['agent_wallet', 'promo_wallet', 'player_wallet'] as const).map((wallet) => (
+                      <option key={wallet} value={wallet}>
+                        {SEND_DESTINATION_LABELS[wallet]}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="admin-label">Amount (Chips)</label>
@@ -1386,7 +1416,7 @@ function AgentDashboardContent() {
                       >
                         <span>
                           {' '}
-                          {p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}
+                          {p.chip_balance !== undefined ? formatWalletChips(p.chip_balance) : '...'}
                         </span>
                         <span> {timeAgo(p.profile?.last_played)}</span>
                       </div>
@@ -1658,7 +1688,11 @@ function AgentDashboardContent() {
                           <td style={{ fontWeight: 600 }}>
                             {p.profile ? playerDisplayName(p.profile) : p.user_id?.substring(0, 8)}
                           </td>
-                          <td>{p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}</td>
+                          <td>
+                            {p.chip_balance !== undefined
+                              ? formatWalletChips(p.chip_balance)
+                              : '...'}
+                          </td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                             {timeAgo(lastSeen)}
                           </td>
@@ -1699,7 +1733,8 @@ function AgentDashboardContent() {
                   {agents.map((a: DownlineMember) => (
                     <option key={a.user_id} value={a.user_id}>
                       {a.profile ? playerDisplayName(a.profile) : a.user_id?.slice(0, 8)} (
-                      {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'} Chips)
+                      {a.chip_balance !== undefined ? formatWalletChips(a.chip_balance) : '...'}{' '}
+                      Chips)
                     </option>
                   ))}
                 </select>
@@ -1789,7 +1824,9 @@ function AgentDashboardContent() {
                                   : 'var(--text-secondary)',
                             }}
                           >
-                            {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'}
+                            {a.chip_balance !== undefined
+                              ? formatWalletChips(a.chip_balance)
+                              : '...'}
                           </td>
                         </tr>
                       ))}
@@ -1859,76 +1896,71 @@ function AgentDashboardContent() {
                   />
                 </div>
                 <button
-                    className="admin-btn admin-btn-primary"
-                    disabled={processing || !creditTarget || !creditAmount}
-                    style={{ marginTop: '4px' }}
-                    onClick={async () => {
-                      if (!user?.id || !clubId || walletOperationInFlightRef.current) return;
-                      walletOperationInFlightRef.current = true;
-                      setProcessing(true);
-                      setError(null);
-                      try {
-                        const amt = Number(creditAmount);
-                        assertChipAmount(amt);
-                        /* Every agent is prepaid with no credit line (Dan,
+                  className="admin-btn admin-btn-primary"
+                  disabled={processing || !creditTarget || !creditAmount}
+                  style={{ marginTop: '4px' }}
+                  onClick={async () => {
+                    if (!user?.id || !clubId || walletOperationInFlightRef.current) return;
+                    walletOperationInFlightRef.current = true;
+                    setProcessing(true);
+                    setError(null);
+                    try {
+                      const amt = Number(creditAmount);
+                      assertChipAmount(amt);
+                      /* Every agent is prepaid with no credit line (Dan,
                            October 2026). Funding an agent means sending chips
                            into their agent wallet through fn_agent_wallet_send. */
-                        const resolvedCreditClub = await resolveClubUUID(clubId || '');
-                        const note = creditNotes.trim() || undefined;
-                        await runAgentWalletOperation(
+                      const resolvedCreditClub = await resolveClubUUID(clubId || '');
+                      const note = creditNotes.trim() || undefined;
+                      await runAgentWalletOperation(
+                        {
+                          userId: user.id,
+                          clubId: resolvedCreditClub,
+                          targetId: creditTarget,
+                          kind: 'agent_send',
+                          destination: 'agent_wallet',
+                          amount: amt,
+                        },
+                        async (operation) => {
+                          const { data, error: fundError } = await supabase.rpc(
+                            'fn_agent_wallet_send',
                             {
-                              userId: user.id,
-                              clubId: resolvedCreditClub,
-                              targetId: creditTarget,
-                              kind: 'agent_send',
-                              destination: 'agent_wallet',
-                              amount: amt,
-                            },
-                            async (operation) => {
-                              const { data, error: fundError } = await supabase.rpc(
-                                'fn_agent_wallet_send',
-                                {
-                                  p_club_id: resolvedCreditClub,
-                                  p_to_user_id: creditTarget,
-                                  p_amount: amt,
-                                  p_destination: 'agent_wallet',
-                                  p_reason: note || 'Prepaid funding',
-                                  p_op_id: operation.operationId,
-                                }
-                              );
-                              if (fundError) throw fundError;
-                              if (
-                                !confirmedAgentWalletReceipt(
-                                  data,
-                                  amt,
-                                  'agent_send',
-                                  'agent_wallet'
-                                )
-                              ) {
-                                throw new Error(
-                                  data?.error || 'The Cashier Did Not Confirm That Funding'
-                                );
-                              }
+                              p_club_id: resolvedCreditClub,
+                              p_to_user_id: creditTarget,
+                              p_amount: amt,
+                              p_destination: 'agent_wallet',
+                              p_reason: note || 'Prepaid funding',
+                              p_op_id: operation.operationId,
                             }
                           );
-                        setSuccess(`Prepaid Chips Sent - ${fmtChips(amt)} Chips`);
-                        masterBus.emit('CREDIT_UPDATED', {
-                          clubId: clubId || '',
-                          userId: creditTarget,
-                        });
-                        setCreditAmount('');
-                        setCreditNotes('');
-                        loadDashboard(clubId);
-                      } catch (err: unknown) {
-                        setError(safeErrorMessage(err));
-                      } finally {
-                        walletOperationInFlightRef.current = false;
-                        setProcessing(false);
-                      }
-                    }}
-                  >
-                    {processing ? 'Processing...' : 'Send Prepaid Chips'}
-                  </button>
+                          if (fundError) throw fundError;
+                          if (
+                            !confirmedAgentWalletReceipt(data, amt, 'agent_send', 'agent_wallet')
+                          ) {
+                            throw new Error(
+                              data?.error || 'The Cashier Did Not Confirm That Funding'
+                            );
+                          }
+                        }
+                      );
+                      setSuccess(`Prepaid Chips Sent - ${fmtChips(amt)} Chips`);
+                      masterBus.emit('CREDIT_UPDATED', {
+                        clubId: clubId || '',
+                        userId: creditTarget,
+                      });
+                      setCreditAmount('');
+                      setCreditNotes('');
+                      loadDashboard(clubId);
+                    } catch (err: unknown) {
+                      setError(safeErrorMessage(err));
+                    } finally {
+                      walletOperationInFlightRef.current = false;
+                      setProcessing(false);
+                    }
+                  }}
+                >
+                  {processing ? 'Processing...' : 'Send Prepaid Chips'}
+                </button>
               </div>
             </div>
           </div>

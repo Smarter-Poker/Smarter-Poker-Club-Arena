@@ -323,3 +323,54 @@ describe('post-deploy E2E concurrency', () => {
     expect(gameplayCertification).not.toContain('writerProfileGate.release()');
   });
 });
+
+describe('explicit passive multirun queue ownership', () => {
+  const liveJob = workflow
+    .slice(workflow.indexOf('  live-table-e2e:'))
+    .split(/\n(?= {2}[a-z][\w-]*:)/)[0];
+  const rawGroup = liveJob.match(/^\s+group: (.+)$/m)![1].trim();
+  function group(eventName: string, optIn?: unknown): string {
+    if (!rawGroup.startsWith('${{')) return rawGroup;
+    const expression = rawGroup
+      .slice(3, -2)
+      .replaceAll('github.event.client_payload.mobile_multirun', 'optIn')
+      .replaceAll('github.event_name', 'eventName')
+      .replaceAll('toJSON(', 'JSON.stringify(');
+    return Function('eventName', 'optIn', `return (${expression});`)(eventName, optIn);
+  }
+
+  it('ordinary publication replacement cannot cancel a requested passive observation', () => {
+    // GitHub keeps one running and one newest pending job PER GROUP.
+    const slots = new Map<string, { running: string; pending?: string }>();
+    const cancelled: string[] = [];
+    function enqueue(name: string, event: string, flag?: unknown) {
+      const key = group(event, flag);
+      const slot = slots.get(key);
+      if (!slot) slots.set(key, { running: name });
+      else {
+        if (slot.pending) cancelled.push(slot.pending);
+        slot.pending = name;
+      }
+    }
+    enqueue('ordinary-running', 'workflow_run');
+    enqueue('explicit-multirun', 'repository_dispatch', true);
+    enqueue('new-publication', 'workflow_run');
+    expect(cancelled).not.toContain('explicit-multirun');
+    expect([...slots.values()].some((slot) => slot.running === 'explicit-multirun')).toBe(true);
+  });
+
+  it('serializes explicit observations in one static group and preserves running work', () => {
+    expect(group('repository_dispatch', true)).not.toBe(group('workflow_run'));
+    expect(group('repository_dispatch', true)).toBe('post-deploy-live-table-multirun-production');
+    expect(liveJob).toContain('cancel-in-progress: false');
+    expect(rawGroup).not.toContain('run_id');
+  });
+
+  it.each([undefined, false, 'true', 'false', 1])(
+    'keeps non-boolean opt-in %j in the ordinary queue',
+    (flag) => {
+      expect(group('repository_dispatch', flag)).toBe('post-deploy-live-table-production');
+      expect(group('workflow_run', flag)).toBe('post-deploy-live-table-production');
+    }
+  );
+});

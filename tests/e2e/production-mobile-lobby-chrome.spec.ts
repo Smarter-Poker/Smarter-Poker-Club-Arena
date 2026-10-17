@@ -2,6 +2,14 @@ import { test, expect, devices, type Page } from '@playwright/test';
 import { prepareCashLobbyActions } from './support/cashLobbyOverlays';
 import { observeCashierFailure } from './support/cashierFailureDiagnostics';
 import { diamondEntryRead, settleDiamondSpinsOffer } from './support/diamondInvitationOffer';
+import {
+  restoreLobbyPreference,
+  selectLobbyPreference,
+  observeLobbyPreferenceProof,
+  readLobbyPreferenceOwner,
+  lobbyTabLabel,
+  type LobbyPreferenceProof,
+} from './support/lobbyPreferenceProof';
 
 /**
  * THE THREE THINGS DAN PHOTOGRAPHED, ON THE LIVE LOBBY (2026-09-10).
@@ -27,11 +35,21 @@ const CLUB_ID = process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4
  *  percentage of the plate; the count line is centred on it. */
 const TITLE_CENTRE_PCT = 54.65;
 
+const preferenceDiagnostics = new WeakMap<Page, Map<Page, LobbyPreferenceProof>>();
 const diagnostics = new WeakMap<Page, ReturnType<typeof observeCashierFailure>>();
 test.beforeEach(async ({ page }) => {
   diagnostics.set(page, observeCashierFailure(page));
 });
 test.afterEach(async ({ page }, testInfo) => {
+  let index = 0;
+  for (const proof of preferenceDiagnostics.get(page)?.values() ?? []) {
+    proof.stop();
+    await testInfo.attach(`lobby-preference-phases-${index++}.json`, {
+      body: Buffer.from(JSON.stringify(proof.snapshot())),
+      contentType: 'application/json',
+    });
+  }
+  preferenceDiagnostics.delete(page);
   const observer = diagnostics.get(page);
   if (!observer) return;
   observer.stop();
@@ -44,7 +62,9 @@ test.afterEach(async ({ page }, testInfo) => {
   diagnostics.delete(page);
 });
 
-test.use({ ...devices['iPhone 13'] });
+// Production has no retries. Preserve the first failed action's trace rather
+// than relying on on-first-retry, which never records these failures.
+test.use({ ...devices['iPhone 13'], trace: 'retain-on-failure' });
 
 async function openLobby(page: Page) {
   // The Diamond Spins offer opens on the answer to this read. Listen before
@@ -90,46 +110,104 @@ test.describe('the mobile lobby chrome on production', () => {
   test.describe.configure({ mode: 'default', timeout: 120_000 });
 
   test('the selected game list survives a cold return to the lobby', async ({ page }, testInfo) => {
-    await openLobby(page);
+    const proofs = new Map<Page, LobbyPreferenceProof>();
+    preferenceDiagnostics.set(page, proofs);
+    let ownerId: string | undefined;
+    const proofFor = (document: Page) => {
+      const proof = proofs.get(document);
+      if (!proof) throw new Error('Lobby preference observer was not installed before navigation');
+      return proof;
+    };
+    const openPreferenceLobby = async (document: Page, phase: string) => {
+      const proof = observeLobbyPreferenceProof(document, CLUB_ID);
+      proofs.set(document, proof);
+      proof.phase(phase);
+      await openLobby(document);
+      const documentOwner = await readLobbyPreferenceOwner(document);
+      if (ownerId && documentOwner !== ownerId) throw new Error('Lobby preference account changed');
+      ownerId = documentOwner;
+      const saved = await proof.ready(ownerId);
+      if (saved) {
+        await expect(
+          document
+            .getByRole('tablist', { name: 'Game Type', exact: true })
+            .getByRole('tab', { name: lobbyTabLabel(saved), exact: true })
+        ).toHaveAttribute('aria-selected', 'true');
+      }
+      return ownerId;
+    };
+    const certificateOwner = await openPreferenceLobby(page, 'original-open');
     const tabs = page.getByRole('tablist', { name: 'Game Type', exact: true });
     const original = (await tabs.getByRole('tab', { selected: true }).textContent())!.trim();
     const target = original === 'PLO' ? 'NLH' : 'PLO';
-    const save = () =>
-      page.waitForResponse(
-        (response) =>
-          response.ok() &&
-          response.request().method() === 'POST' &&
-          new URL(response.url()).pathname.endsWith('/rest/v1/user_lobby_filters')
-      );
     let returningPage: Page | undefined;
+    let returningReady = false;
+    const failures: unknown[] = [];
     let returningDiagnostics: ReturnType<typeof observeCashierFailure> | undefined;
     try {
-      await Promise.all([save(), tabs.getByRole('tab', { name: target, exact: true }).click()]);
+      proofFor(page).phase('target-save');
+      await selectLobbyPreference(page, CLUB_ID, target, certificateOwner, proofFor(page));
       // A new document has no mounted filter state or tab session cache.
       // Reusing the old document raced its legitimate chunk recovery with
       // goto(), which aborted that recovery and the requested navigation.
       returningPage = await page.context().newPage();
       returningDiagnostics = observeCashierFailure(returningPage);
-      await openLobby(returningPage);
+      await openPreferenceLobby(returningPage, 'cold-return');
+      returningReady = true;
       await expect(
         returningPage
           .getByRole('tablist', { name: 'Game Type', exact: true })
           .getByRole('tab', { name: target, exact: true })
       ).toHaveAttribute('aria-selected', 'true');
     } catch (error) {
+      failures.push(error);
       if (returningDiagnostics)
         await testInfo.attach('cold-return-network-diagnostics', {
           body: Buffer.from(JSON.stringify(returningDiagnostics.snapshot())),
           contentType: 'application/json',
         });
-      throw error;
     } finally {
-      returningDiagnostics?.stop();
-      await returningPage?.close();
       // This is the isolated certificate account; restore its original view
-      // so the next maintained journey inherits the same starting preference.
-      await Promise.all([save(), tabs.getByRole('tab', { name: original, exact: true }).click()]);
+      // on the ready document before closing it, then independently read it
+      // from another document. Only a failed cold open falls back to the old
+      // page. Neither a failed journey nor failed restoration is concealed.
+      try {
+        await restoreLobbyPreference({
+          originalPage: page,
+          returningPage,
+          returningReady,
+          clubId: CLUB_ID,
+          original,
+          ownerId: certificateOwner,
+          proofFor,
+          verify: async () => {
+            const restoredPage = await page.context().newPage();
+            try {
+              await openPreferenceLobby(restoredPage, 'restored-readback');
+              await expect(
+                restoredPage
+                  .getByRole('tablist', { name: 'Game Type', exact: true })
+                  .getByRole('tab', { name: original, exact: true })
+              ).toHaveAttribute('aria-selected', 'true');
+            } finally {
+              await restoredPage.close();
+            }
+          },
+        });
+      } catch (cleanupError) {
+        failures.push(cleanupError);
+        if (returningDiagnostics)
+          await testInfo.attach('cold-return-restoration-network-diagnostics', {
+            body: Buffer.from(JSON.stringify(returningDiagnostics.snapshot())),
+            contentType: 'application/json',
+          });
+      } finally {
+        returningDiagnostics?.stop();
+      }
     }
+    if (failures.length > 1)
+      throw new AggregateError(failures, 'Cold return and preference restoration failed');
+    if (failures.length === 1) throw failures[0];
   });
 
   test('MY WALLETS prints the count, keeps it, centred and unclipped', async ({ page }) => {

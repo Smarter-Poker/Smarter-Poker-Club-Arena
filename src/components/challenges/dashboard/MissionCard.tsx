@@ -116,6 +116,7 @@ export function ChallengeCard({
       }
     >
       <span className={styles.bevelFrame} aria-hidden="true" />
+      <span className={styles.cardOrnament} aria-hidden="true" />
       <div className={styles.cardTopline} data-mission-topline="">
         <span>{TIER_LABELS[tier]} Challenge</span>
         <span className={styles.cardState}>

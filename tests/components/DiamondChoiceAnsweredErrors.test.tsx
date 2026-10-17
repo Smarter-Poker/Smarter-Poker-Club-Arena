@@ -147,13 +147,14 @@ const advance = async (ms: number) => {
   });
   await settle();
 };
-const answerOffer = async () => {
-  const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-  fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-  fireEvent.click(screen.getByRole('button', { name: 'Play Without' }));
+/** Double Diamonds is retired (Dan 2026-10-16): a won game opens straight on
+ * its setup, with no offer to answer. This lets the reads land and confirms it. */
+const noOfferToAnswer = async () => {
   await settle();
+  expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+  expect(screen.queryByText(/Double Down|Double Your Diamonds|Add The Diamonds/)).toBeNull();
 };
-/** Screen two: the player's own press. Nothing on this page starts a round (R1). */
+/** The player's own press. Nothing on this page starts a round (R1). */
 const pressStart = async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
   await settle();
@@ -217,7 +218,7 @@ describe('an error the database answered is an answer', () => {
     startAnswer = () => failure('23503');
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     // A won game this page can start holds the exit until it starts.
     expect(guardHolds()).toBe(true);
     await pressStart();
@@ -300,7 +301,7 @@ describe('a wager this browser could not save was never sent', () => {
     });
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     await pressStart();
     // The press tried to start the won game; the wager could not be kept, so
     // it never left.
@@ -386,9 +387,8 @@ describe('an answer this browser cannot verify', () => {
     expect(backend.rpc.mock.calls.filter(([fn]) => fn === 'fn_diamond_game_commit')).toHaveLength(
       0
     );
-    // The plate is still screen one's, and disabled: a saved wager is not a
-    // second round, and the offer cannot be answered over it either.
-    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+    // The plate is disabled: a saved wager is not a second round.
+    expect(screen.getByRole('button', { name: 'Start Round' })).toBeDisabled();
     noCheckControl();
   });
 

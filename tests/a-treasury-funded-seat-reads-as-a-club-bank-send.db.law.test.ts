@@ -75,9 +75,13 @@ describe('a treasury-funded seat reads as a Club Bank send', () => {
   it('the Club Bank ledger lists, filters and counts a funded seat as a Club Bank send', () => {
     const kind =
       "CASE WHEN t.transaction_type = 'horse_treasury_funding' THEN 'club_bank_send' ELSE t.transaction_type END";
-    expect(bank.body.split(`(p_types is null or (${kind}) = any (p_types))`)).toHaveLength(3);
+    expect(bank.body.split(`(p_types is null or (${kind}) = any (p_types))`)).toHaveLength(2);
+    expect(bank.body).toContain('with per_type as (');
+    expect(bank.body).toContain('where p_types is null or transaction_type = any (p_types)');
+    expect(bank.body).toContain('coalesce(sum(entries) filter (');
+    expect(bank.body).toContain('group by 1');
     expect(bank.body).toContain(
-      "select distinct CASE WHEN transaction_type = 'horse_treasury_funding' THEN 'club_bank_send' ELSE transaction_type END AS transaction_type"
+      "coalesce(jsonb_agg(transaction_type order by transaction_type), '[]'::jsonb)"
     );
     expect(bank.body).toContain(`'transaction_type', ${kind},`);
     expect(bank.body).toContain(

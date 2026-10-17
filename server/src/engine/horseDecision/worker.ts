@@ -9,17 +9,38 @@ import {
   startOwnedServices,
 } from './workerRuntime.js';
 import { lowerDecisionWorkerPriority } from './workerPriority.js';
+import { horseDecisionShard } from './shard.js';
 import { prespawnHorseDecisionJournalWriter } from '../../services/HorseDecisionJournal.js';
 
 /** This worker's position among its decision-lane peers, from the
  * `workerData` client.ts's defaultWorkerFactory posts at creation; absent
  * (a caller that predates sharding, or a test harness) is shard 0 - the one
  * archive this journal has always used (see startHorseDecisionJournal). */
-function shardFromWorkerData(data: unknown): { index: number } | undefined {
+export function shardFromWorkerData(data: unknown): { index: number } | undefined {
   const shardIndex = (data as { shardIndex?: unknown } | null)?.shardIndex;
   return typeof shardIndex === 'number' && Number.isSafeInteger(shardIndex) && shardIndex >= 0
     ? { index: shardIndex }
     : undefined;
+}
+
+/** How many decision workers share the lane, from the same `workerData`
+ * (2026-10-16); absent or invalid means this worker owns every hand. */
+export function shardCountFromWorkerData(data: unknown): number | undefined {
+  const shardCount = (data as { shardCount?: unknown } | null)?.shardCount;
+  return typeof shardCount === 'number' && Number.isSafeInteger(shardCount) && shardCount >= 1
+    ? shardCount
+    : undefined;
+}
+
+/** Whether a completed hand belongs to this worker's tables (lane.ts routes by
+ * the same hash), so it is journaled and learned here, or to another shard's,
+ * so it is only learned (workerRuntime.ts executeObservation). */
+export function completedHandOwnership(
+  shard: { index: number } | undefined,
+  count: number | undefined
+): ((request: { fence: string }) => boolean) | undefined {
+  if (!shard || count === undefined || count <= 1 || shard.index >= count) return undefined;
+  return (request) => horseDecisionShard(request.fence, count) === shard.index;
 }
 
 if (!isMainThread && parentPort) {
@@ -39,8 +60,13 @@ if (!isMainThread && parentPort) {
       (priority.nice !== null ? ` nice ${priority.nice}` : '') +
       (priority.reason ? ` (${priority.reason})` : '')
   );
+  const ownsCompletedHand = completedHandOwnership(shard, shardCountFromWorkerData(workerData));
   const deps = shard
-    ? { ...defaultHorseDecisionWorkerDependencies, startServices: () => startOwnedServices(shard) }
+    ? {
+        ...defaultHorseDecisionWorkerDependencies,
+        startServices: () => startOwnedServices(shard),
+        ...(ownsCompletedHand ? { ownsCompletedHand } : {}),
+      }
     : defaultHorseDecisionWorkerDependencies;
   const port = parentPort;
   const runtime = new HorseDecisionWorkerRuntime((message) => port.postMessage(message), deps);

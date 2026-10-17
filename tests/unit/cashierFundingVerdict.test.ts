@@ -14,6 +14,28 @@ describe('the production cashier canary derives the batch verdict from the print
     expect(batchVerdictFor('short', 2)).toBe('Insufficient Chips In The Funding Wallet');
   });
 
+  it.each([
+    ['0.00', 10.2, 'short'],
+    ['10.19', 10.2, 'short'],
+    ['10.20', 10.2, 'covers'],
+    ['10.21', 10.2, 'covers'],
+    ['1,234.56', 1234.56, 'covers'],
+    ['1,234.56', 1234.57, 'short'],
+    ['-10.20', 0, 'short'],
+  ] as const)('reads exact wallet %s against %s as %s', (figure, total, expected) => {
+    expect(fundingCoverage(figure, total)).toBe(expected);
+  });
+
+  it.each(['1234.56', '12,34.56', '10.200', '0.30000000000000004', '12.5', '01.00'])(
+    'refuses a malformed exact wallet figure %s',
+    (figure) => expect(fundingCoverage(figure, 10.2)).toBe('unknown')
+  );
+
+  it('does not decide exact coverage against an unreadable total', () => {
+    expect(fundingCoverage('10.20', Number.NaN)).toBe('unknown');
+    expect(fundingCoverage('10.20', Number.POSITIVE_INFINITY)).toBe('unknown');
+  });
+
   it('reads a funded wallet as covering, and counts the recipients in the verdict', () => {
     expect(fundingCoverage('11', 10.2)).toBe('covers');
     expect(fundingCoverage('1.2K', 10.2)).toBe('covers');
@@ -70,6 +92,6 @@ describe('the production cashier canary derives the batch verdict from the print
     );
     expect(row).toContain('aria-label={label}');
     expect(row.match(/<strong/g)?.length).toBe(1);
-    expect(row).toContain("balance === null ? '-' : compactChips(balance)");
+    expect(row).toContain("balance === null ? '-' : formatWalletChips(balance)");
   });
 });

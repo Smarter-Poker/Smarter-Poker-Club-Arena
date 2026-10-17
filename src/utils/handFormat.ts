@@ -36,6 +36,12 @@ export function money(n: number | null | undefined, dp = 2): string {
   });
 }
 
+/** Actual Diamond custody is whole; an absent asset preserves legacy chip precision. */
+export function moneyForHand(hand: { arenaAsset?: 'chips' | 'diamonds' } | null | undefined) {
+  const precision = hand?.arenaAsset === 'diamonds' ? 0 : 2;
+  return (amount: number | null | undefined) => money(amount, precision);
+}
+
 /**
  * Stakes print as typed: 0.05/0.1, never 0.05/0.10.
  *

@@ -117,14 +117,18 @@ export function defaultPersonaFor(horseId: string): HorsePersonaV2 {
   // structure, and three fields drawn from one 32-bit value is exactly how
   // two horses end up with the same personality.
   const hs = personaHash(`${horseId}|straddle`);
-  const hg = personaHash(`${horseId}|gto`);
   const bucket = hs % 100;
   const straddleRate =
     bucket < 60 ? 0 : bucket < 85 ? 0.08 + ((hs >>> 8) % 8) / 100 : 0.25 + ((hs >>> 16) % 15) / 100;
   return {
     straddleRate: Math.round(straddleRate * 100) / 100,
-    // 0.80 .. 1.00 - nobody in the fleet ignores the solver entirely.
-    gtoAdherence: Math.round((0.8 + (hg % 21) / 100) * 100) / 100,
+    // G4 (2026-10-16): 1 - the default horse takes the solver line wherever
+    // one exists. It was 0.80..1.00 by id hash, which declined the chart on
+    // up to a fifth of solved spots for 95.3% of live decisions and threw away
+    // 10.4% of open-jam chart answers; the charts' own mixed strategies
+    // already give the fleet its variety. An AUTHORED persona may still set
+    // less (resolvePersona bounds it to 0.5..1).
+    gtoAdherence: 1,
   };
 }
 

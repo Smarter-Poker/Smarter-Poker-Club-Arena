@@ -10,8 +10,8 @@
  *  - a saved wager is replayed on its own schedule, and the round opens;
  *  - a start the server refused for its ticket alone is sent again, once, on
  *    a freshly dealt ticket;
- *  - a won game starts itself after a five-second window, which Double Down
- *    opens again;
+ *  - a won game waits on its plate for the player's own press, with no
+ *    Double Your Diamonds offer in front of it (retired, Dan 2026-10-16);
  *  - the exit guard holds money in flight, never a won game that cannot start;
  *  - a ticket deal, or a game read, that fails is tried again by itself.
  *
@@ -257,14 +257,13 @@ const settle = async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 };
-/** Answer the Double Down offer. A won game never starts over it: it spends
- * the player's own diamonds, so the countdown waits for the answer (or for the
- * offer to keep the bonus by itself). */
-const answerOffer = async (name: 'Play Without' | 'Add The Diamonds' = 'Play Without') => {
-  const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-  fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-  fireEvent.click(screen.getByRole('button', { name }));
+/** Double Diamonds is retired (Dan 2026-10-16): a won game opens straight on
+ * its setup. There is no offer to answer, and nothing on screen offers the
+ * add-on; this lets the reads land and confirms exactly that. */
+const noOfferToAnswer = async () => {
   await settle();
+  expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+  expect(screen.queryByText(/Double Down|Double Your Diamonds|Add The Diamonds/)).toBeNull();
 };
 const advance = async (ms: number) => {
   await act(async () => {
@@ -308,9 +307,9 @@ describe('a saved Donkey Cross wager settles itself', () => {
     expect(backend.start).toHaveBeenCalledTimes(1);
     expect(backend.start).toHaveBeenCalledWith(saved, 'player-a');
     expect(screen.getByText('Settling')).toBeInTheDocument();
-    // The plate is screen one's while the setup is disabled under the replay,
-    // and disabled either way: no second round starts over a saved wager.
-    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+    // The plate is disabled under the replay: no second round starts over a
+    // saved wager.
+    expect(screen.getByRole('button', { name: 'Start Round' })).toBeDisabled();
     noCheckControl();
     await act(async () => {
       sessionStorage.removeItem(SAVED_KEY);
@@ -360,7 +359,7 @@ describe('a refused ticket is re-dealt and the wager goes again', () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
     expect(dealt).toHaveLength(1);
-    await answerOffer();
+    await noOfferToAnswer();
     // The player presses Start; the server refuses its ticket.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await advance(0);
@@ -398,7 +397,7 @@ describe('a refused ticket is re-dealt and the wager goes again', () => {
     );
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await advance(0);
     // The first send and its re-sends on fresh tickets, then no more.
@@ -440,8 +439,8 @@ describe('a won game waits for the player, and starts on the entry they answered
   it('waits on its plate however long, then starts exactly once when it is pressed', async () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
-    // R1: the offer is answered and nothing counts down behind the plate.
+    await noOfferToAnswer();
+    // R1: nothing counts down behind the plate.
     expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
     await advance(60000);
     expect(backend.start).not.toHaveBeenCalled();
@@ -463,32 +462,25 @@ describe('a won game waits for the player, and starts on the entry they answered
     expect(backend.start).toHaveBeenCalledTimes(1);
   });
 
-  it('starts the doubled entry after the player changes their Double Down answer', async () => {
+  it('never offers Double Diamonds, and starts only the funded entry (retired 2026-10-16)', async () => {
     render(<DiamondChoicePage game="crossing" />);
-    await settle();
-    await answerOffer();
-    // Reopening the offer takes the plate back until the new answer is given.
-    fireEvent.click(screen.getByRole('button', { name: 'Playing Without Extra Diamonds: Change' }));
-    await settle();
-    // The offer is modal: it is the only thing the player can answer.
-    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
-    await answerOffer('Add The Diamonds');
-    expect(backend.start).not.toHaveBeenCalled();
+    await noOfferToAnswer();
+    // No way back to an offer, and no control that changes the funded entry.
+    expect(screen.queryByRole('button', { name: /Change$/ })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
     expect(backend.start).toHaveBeenCalledTimes(1);
-    expect(backend.start.mock.calls[0][0].budget).toMatchObject({ base: 200, doubled: true });
+    expect(backend.start.mock.calls[0][0].budget).toMatchObject({ base: 200, doubled: false });
+    // Every quote read asked for the entry without the add-on.
+    expect(backend.awardState.mock.calls.every((call) => call[2] === false)).toBe(true);
   });
 });
 
 describe('the exit guard holds money in flight, not a won game that cannot start', () => {
-  it('holds a won game this page can start, once its offer is answered', async () => {
+  it('holds a won game this page can start', async () => {
     render(<DiamondChoicePage game="crossing" />);
-    await settle();
-    // Screen one decides nothing about money yet, and the award keeps until
-    // the player comes back, so the offer alone never holds them (R9).
-    expect(guardHolds()).toBe(false);
-    await answerOffer();
+    await noOfferToAnswer();
     expect(guardHolds()).toBe(true);
   });
 
@@ -503,7 +495,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     await settle();
     expect(guardHolds()).toBe(false);
     // A game that cannot start says so on its plate, and nothing is sent.
-    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Start Round' })).toBeDisabled();
     await advance(10000);
     expect(backend.start).not.toHaveBeenCalled();
     expect(guardHolds()).toBe(false);
@@ -517,9 +509,8 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     expect(guardHolds()).toBe(false);
     await advance(1000);
     expect(dealt).toHaveLength(1);
-    // The ticket alone is not enough now: screen one is answered first (R9).
-    expect(guardHolds()).toBe(false);
-    await answerOffer();
+    // Dealt, the won game can start, so the guard holds it.
+    await noOfferToAnswer();
     expect(guardHolds()).toBe(true);
   });
 
@@ -538,7 +529,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     backend.act.mockResolvedValue({ ...fixtures.receipts.crossing, award_id: AWARD.id });
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await advance(0);
     expect(backend.start).toHaveBeenCalledTimes(1);
@@ -575,7 +566,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     });
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
@@ -625,7 +616,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     });
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
@@ -668,7 +659,7 @@ describe('the exit guard holds money in flight, not a won game that cannot start
     });
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
@@ -739,28 +730,21 @@ describe('the exit guard holds money in flight, not a won game that cannot start
   });
 
   /**
-   * WHAT THE SCENE IS FOR. Nothing is looking at the road behind the Double
-   * Down offer or under the receipt, and 60 frames a second of traffic there
-   * is heat and battery for nobody. Pausing on offerOpen alone would be worse
-   * than not pausing at all: it starts true and stays true whenever BonusSetup
-   * is not mounted, which is exactly a resumed open round, and that round's
-   * reveal would never draw and never settle.
+   * WHAT THE SCENE IS FOR. Nothing is looking at the road under the receipt,
+   * and 60 frames a second of traffic there is heat and battery for nobody.
+   * With the Double Diamonds offer retired (2026-10-16) the receipt is the
+   * only thing that pauses it: an idle road behind a won game's setup runs.
    */
-  it('pauses the road behind the Double Down offer, and lets it go on the answer', async () => {
+  it('never pauses the idle road in front of a won game', async () => {
     render(<DiamondChoicePage game="crossing" />);
-    await settle();
-    expect(screen.getByRole('region', { name: 'Scene idle' })).toHaveAttribute(
-      'data-paused',
-      'true'
-    );
-    await answerOffer();
+    await noOfferToAnswer();
     expect(screen.getByRole('region', { name: 'Scene idle' })).toHaveAttribute(
       'data-paused',
       'false'
     );
   });
 
-  it('never pauses a resumed open round, whose offer was never answered', async () => {
+  it('never pauses a resumed open round', async () => {
     // The saved round is read back once; the read after the move no longer
     // carries it, exactly as the server answers a round that has just ended.
     backend.state.mockResolvedValueOnce({ ...state, open_round: { ...openRound, picked: [0] } });
@@ -899,7 +883,7 @@ describe('a refused ticket re-sends the saved wager, never the one on screen', (
       commitId: dealt[0].commit_id,
       serverSeedHash: dealt[0].server_seed_hash,
     });
-    // Nothing went out for the award on screen: its own offer was never answered.
+    // Nothing went out for the award on screen: nobody pressed its Start.
     expect(
       backend.start.mock.calls.some(
         ([request]) => (request as typeof saved).budget.award.id === AWARD.id
@@ -915,7 +899,7 @@ describe('a refusal that is not about the ticket never traps the player', () => 
     );
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     const reads = backend.awardState.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await advance(0);
@@ -940,7 +924,7 @@ describe('a refusal that is not about the ticket never traps the player', () => 
       .mockImplementationOnce(settles);
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await advance(0);
     expect(backend.start).toHaveBeenCalledTimes(1);
@@ -981,7 +965,7 @@ describe('each street settles on its own answer', () => {
     backend.start.mockImplementationOnce(async () => street([0]));
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
@@ -1089,7 +1073,7 @@ describe('a blank seed never stalls a won game', () => {
   it('never starts a cleared-seed game by itself, and deals its own seed when pressed', async () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     fireEvent.change(seedField(), { target: { value: '' } });
     // An emptied field is not a press: two idle minutes still send nothing.
     expect(screen.getByRole('button', { name: 'Start Round' })).toBeEnabled();
@@ -1109,7 +1093,7 @@ describe('a blank seed never stalls a won game', () => {
     backend.start.mockImplementationOnce(checksTheSeed);
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     fireEvent.change(seedField(), { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
@@ -1125,7 +1109,7 @@ describe('a blank seed never stalls a won game', () => {
   it('refills the field when the player leaves it empty', async () => {
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     const dealtSeed = seedField().value;
     fireEvent.change(seedField(), { target: { value: '  ' } });
     expect(seedField().value).toBe('  ');
@@ -1162,7 +1146,7 @@ describe('focus stays on the plate from street to street', () => {
     );
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     // Games can never auto start (R1): the round opens on the player's press.
     fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
     await settle();
@@ -1774,7 +1758,7 @@ describe('every ticket brings a fresh player seed', () => {
     backend.start.mockRejectedValueOnce(new backend.BonusRefusal('This Award Was Already Used'));
     render(<DiamondChoicePage game="crossing" />);
     await settle();
-    await answerOffer();
+    await noOfferToAnswer();
     const seedField = () => (screen.getByLabelText('Your Seed') as HTMLInputElement).value;
     expect(dealt).toHaveLength(1);
     const first = seedField();

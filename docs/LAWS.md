@@ -98,13 +98,16 @@ whichever test the next agent notices first.
   violation and remove it; do not read 10.6 as a reason to give the squeeze
   to seats Dan excluded.
 
-- **The header portrait's frame is a 0.5px black hairline and the baked
+- **Owner update October 16, 2026: a very thin 1 pixel invisible black frame.**
+  The decorative chrome ornament stays masked.
+
+- **The header portrait's frame is a 1px black hairline and the baked
   ornament is masked (ruled 2026-09-07, Dan, fourth time):** the approved
   artwork bakes a silver ring with a blue glow around the profile slot. That
   ring is never shown. `.profileBtn` paints an opaque `#000` disc over the
   whole ornament at every width - centred on it, covering the glow (r 52 on
   the 1648x168 plane) and clear of the rails (r 62) - and the photo's only
-  frame is `border: 0.5px solid rgba(0, 0, 0, 0.94)` on `.profileAvatarSlot`,
+  frame is `border: 1px solid rgba(0, 0, 0, 0.94)` on `.profileAvatarSlot`,
   declared once. Dan, 2026-09-07, with a screenshot of the ring: "the profile
   pic is supposed to be a .5 pixel black frame that 'appears invisible'
   instead of this thick broken frame that exists now. once you fix it back, i

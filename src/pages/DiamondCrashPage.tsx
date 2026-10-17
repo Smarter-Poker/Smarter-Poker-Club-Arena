@@ -74,7 +74,7 @@ import CrashCurve, { type CrashPhase } from '../components/crash/CrashCurve';
 import { GameConsole, GamePanel } from '../components/games/GameConsole';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import { useSceneBudget } from '../hooks/useSceneBudget';
-import BonusSetup, { bonusEntryStep, guaranteeCopy } from '../components/games/BonusSetup';
+import BonusSetup, { guaranteeCopy } from '../components/games/BonusSetup';
 import {
   bonusTotal,
   bonusWalletDebit,
@@ -108,7 +108,7 @@ import {
   verifyCrashRound,
   type CrashFairnessVerdict,
 } from '../utils/diamondGamesFairness';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips, formatWalletDiamonds } from '../utils/format';
 import { crossedMilestone } from '../utils/crashMilestones';
 import TodayLine from '../components/games/TodayLine';
 import SealedPrize from '../components/games/SealedPrize';
@@ -204,13 +204,11 @@ function DiamondCrashGame() {
   const [quoteTry, setQuoteTry] = useState(0);
   const ticketInFlight = useRef<Promise<void> | null>(null);
   const [clientSeed, setClientSeed] = useState<string>(() => randomClientSeed());
-  const [selectedBudget, setBudget, offer] = useBonusBudget(routeClubId, 'crash');
+  const [selectedBudget, setBudget] = useBonusBudget(routeClubId, 'crash');
   const earned = useEarnedBonus(clubUuid, 'crash', selectedBudget);
   const budget = earned.budget;
-  // Screen one of a won game is the Double Your Diamonds decision; only the
-  // player's own tap on Start begins the climb (Dan 2026-09-21, R9).
-  const offerAnswered = budget.award ? offer.answered(budget.award.id) : true;
-  const step = bonusEntryStep(budget, offerAnswered);
+  // Only the player's own tap on Start begins the climb (Dan 2026-09-21, R9).
+  // Double Diamonds is retired (Dan 2026-10-16), so there is no offer step.
   const state = (earned.gameState as GameState | null) ?? legacyState;
   const bet = bonusTotal(budget);
   const budgetRef = useRef(budget);
@@ -680,7 +678,6 @@ function DiamondCrashGame() {
   const shortOfDiamonds = blocker === SHORT_OF_DIAMONDS;
   const canStart = Boolean(
     earned.ready &&
-    step === 'setup' &&
     clubUuid &&
     commit &&
     validBonusBudget(budget) &&
@@ -704,7 +701,7 @@ function DiamondCrashGame() {
     if (!clubUuid || !validBonusBudget(budget) || open || starting) return;
     loadState(clubUuid).catch((e) => reportError(e, 'DiamondCrashPage.entryQuote'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clubUuid, budget.base, budget.doubled, open, starting, loadState, quoteTry]);
+  }, [clubUuid, budget.base, open, starting, loadState, quoteTry]);
   // Behind the skeleton and the reconnect screen the load's own retry reads
   // the game, so the quote does not read it a second time there.
   useAutoSettle(
@@ -1184,15 +1181,13 @@ function DiamondCrashGame() {
   const runSize = budget.award ? 0 : autoSize;
   const startLabel = starting
     ? 'Starting'
-    : step === 'offer'
-      ? 'Answer The Offer First'
-      : autoRun
-        ? `Round ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
-        : waitSeconds > 0
-          ? `Ready In ${waitSeconds}s`
-          : runSize
-            ? `Auto Play ${runSize}`
-            : `Start ${bet.toLocaleString()}`;
+    : autoRun
+      ? `Round ${Math.min(autoRun.done + 1, autoRun.total)} Of ${autoRun.total}`
+      : waitSeconds > 0
+        ? `Ready In ${waitSeconds}s`
+        : runSize
+          ? `Auto Play ${runSize}`
+          : `Start ${bet.toLocaleString()}`;
   const runLabel = running ? 'Stop' : runSize ? `Run ${runSize}` : 'Run Off';
   const boost = (round ? round.bonus?.boost_multiplier === 2 : budget.award?.boostMultiplier === 2)
     ? 2
@@ -1324,8 +1319,6 @@ function DiamondCrashGame() {
                 releaseGuard();
                 navigate(to);
               }}
-              offerAnswered={offerAnswered}
-              onOfferAnswered={offer.answer}
             />
           )
         }
@@ -1361,8 +1354,8 @@ function DiamondCrashGame() {
             pressLabel: 'Change Auto Cash Out',
             disabled: open || starting || running,
           },
-          { label: 'Diamonds', value: compactChips(player?.diamonds ?? 0), ink: 'blue' },
-          { label: 'Chips', value: compactChips(player?.member_chips ?? 0), ink: 'silver' },
+          { label: 'Diamonds', value: formatWalletDiamonds(player?.diamonds ?? 0), ink: 'blue' },
+          { label: 'Chips', value: formatWalletChips(player?.member_chips ?? 0), ink: 'silver' },
         ]}
         secondary={
           earned.required || budget.award

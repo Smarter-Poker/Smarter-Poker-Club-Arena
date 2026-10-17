@@ -57,6 +57,8 @@ import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 
 import { useToast } from '../components/common/Toast';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
+import { useRecipientWalletBalances, walletOptionLabel } from '../hooks/useRecipientWalletBalances';
 import {
   resolveTargetClub,
   readCachedQuickLinkClubs,
@@ -85,7 +87,7 @@ import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips } from '../utils/format';
 import { enumToTitleCase, titleCase } from '../utils/titleCase';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
@@ -218,7 +220,7 @@ function newOpId(): string {
   });
 }
 
-/** #ClubArenaConsole chip reading for every forward-facing non-felt figure. */
+/** Non-wallet amounts retain the console reading; balances use formatWalletChips. */
 const chipFigure = compactChips;
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -287,8 +289,8 @@ function CashierContent() {
   const { loadBalances: loadWalletBalances } = useWalletStore();
   const [walletRevision, setWalletRevision] = useState(0);
   const loadBalances = useCallback(
-    async (userId: string) => {
-      await loadWalletBalances(userId);
+    async (userId: string, force = false) => {
+      await loadWalletBalances(userId, { force });
       setWalletRevision((revision) => revision + 1);
     },
     [loadWalletBalances]
@@ -1455,8 +1457,20 @@ function CashierContent() {
   });
   useMasterBusSubscriptions(['MEMBER_ROLE_CHANGED', 'AGENT_UPDATED'], refreshCashierAuthority);
 
-  // Cashier history and balance reads follow initial navigation, explicit
-  // refresh and completed user commands. No background event reloads the page.
+  // The existing own-account realtime stream announces receipts from other
+  // browsers too. Refresh money without invalidating authority or the send form.
+  useMasterBusSubscriptions(
+    ['BALANCE_UPDATED'],
+    (payload) => {
+      const event = payload as { userId?: string };
+      if (!user?.id || (event?.userId && event.userId !== user.id)) return;
+      clearClubChipBalanceCache();
+      void loadBalances(user.id, true);
+      setClubChipsNonce((value) => value + 1);
+      void loadTransactions();
+    },
+    { debounce: 200 }
+  );
 
   // ─────────────────────────────────────────────────────────────────────────────
   // DETERMINE AVAILABLE TABS
@@ -1576,6 +1590,9 @@ function CashierContent() {
   const distributeDestination: ClubBankRecipientWallet = selectedRecipientData
     ? clubBankDestinationFor(selectedRecipientData.role, distributeWallet)
     : 'player_wallet';
+  // Each wallet the recipient holds, with its current balance (Dan 2026-10-15:
+  // "AND IT SHOULD HAVE THERE CURRENT CHIP BALANCES AS WELL").
+  const distributeBalances = useRecipientWalletBalances(clubId, selectedRecipientData?.id);
 
   // ── Keyboard navigation for tabs (Arrow Left/Right, Home/End) ──
   const tabNavRef = useRef<HTMLElement | null>(null);
@@ -1822,7 +1839,7 @@ function CashierContent() {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text: `Insufficient chips in your agent wallet. Available: ${chipFigure(myAgentWallet + myAgentCredit)}`,
+                text: `Insufficient chips in your agent wallet. Available: ${formatWalletChips(myAgentWallet + myAgentCredit)}`,
               });
             if (isMounted.current) setIsProcessing(false);
             return;
@@ -2059,7 +2076,7 @@ function CashierContent() {
               if (isMounted.current)
                 setMessage({
                   type: 'error',
-                  text: `Insufficient chips in this club. Available: ${available !== null ? chipFigure(available) : 'unavailable'}`,
+                  text: `Insufficient chips in this club. Available: ${available !== null ? formatWalletChips(available) : 'unavailable'}`,
                 });
               if (isMounted.current) setIsProcessing(false);
               return;
@@ -2175,7 +2192,7 @@ function CashierContent() {
         if (isMounted.current)
           setMessage({
             type: 'error',
-            text: `Insufficient chips in this club. Available: ${available !== null ? chipFigure(available) : 'unavailable'}`,
+            text: `Insufficient chips in this club. Available: ${available !== null ? formatWalletChips(available) : 'unavailable'}`,
           });
         if (isMounted.current) setIsProcessing(false);
         return;
@@ -2336,7 +2353,6 @@ function CashierContent() {
       {user?.id && clubId && (
         <div className={styles.walletHeader}>
           <DynamicWallet
-            manualOnly
             actionClassName={styles.wordAction}
             refreshKey={walletRevision}
             userId={user.id}
@@ -2501,7 +2517,6 @@ function CashierContent() {
             clubId &&
             user?.id && (
               <AgentPromoPanel
-                manualOnly
                 actionClassName={styles.wordAction}
                 clubId={clubId}
                 userId={user.id}
@@ -2593,13 +2608,8 @@ function CashierContent() {
                       aria-label="Selected Player Wallet Context"
                     >
                       <strong>{selectedRecipientData.username}</strong>
-                      <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
-                      <span>
-                        Destination:{' '}
-                        {distributeDestination === 'agent_wallet'
-                          ? 'Agent Wallet'
-                          : 'Player Wallet'}
-                      </span>
+                      <span>Player Wallet: {formatWalletChips(selectedRecipientData.balance)}</span>
+                      <span>Destination: {SEND_DESTINATION_LABELS[distributeDestination]}</span>
                       {canHoldAgentWallet(selectedRecipientData.role) && (
                         <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
                       )}
@@ -2646,7 +2656,7 @@ function CashierContent() {
                           return (
                             <option key={r.id} value={r.id}>
                               {roleTag ? `[${roleTag}${commInfo}${typeInfo}] ` : ''}
-                              {r.username} (Bal: {chipFigure(r.balance)})
+                              {r.username} (Bal: {formatWalletChips(r.balance)})
                             </option>
                           );
                         })}
@@ -2670,7 +2680,11 @@ function CashierContent() {
                         disabled={isProcessing}
                         onClick={() => setDistributeWallet(wallet)}
                       >
-                        {wallet === 'agent_wallet' ? 'Agent Wallet' : 'Player Wallet'}
+                        {walletOptionLabel(
+                          SEND_DESTINATION_LABELS[wallet],
+                          distributeBalances,
+                          wallet
+                        )}
                       </button>
                     ))}
                   </div>
@@ -2737,8 +2751,8 @@ function CashierContent() {
                     <div className={styles.row}>
                       <span className="sc-label sc-ink--blue">Your Agent Wallet</span>
                       <span className={`${styles.value} sc-ink--silver`}>
-                        {chipFigure(myAgentWallet)} →{' '}
-                        {chipFigure(Math.max(0, myAgentWallet - typedChips))}
+                        {formatWalletChips(myAgentWallet)} →{' '}
+                        {formatWalletChips(Math.max(0, myAgentWallet - typedChips))}
                       </span>
                     </div>
                     <div className={styles.row}>
@@ -2748,7 +2762,7 @@ function CashierContent() {
                       <span className={`${styles.value} sc-ink--silver`}>
                         {canHoldAgentWallet(selectedRecipientData.role)
                           ? `Agent Wallet Receives ${chipFigure(typedChips)} Chips`
-                          : `${chipFigure(selectedRecipientData.balance)} → ${chipFigure(selectedRecipientData.balance + typedChips)}`}
+                          : `${formatWalletChips(selectedRecipientData.balance)} → ${formatWalletChips(selectedRecipientData.balance + typedChips)}`}
                       </span>
                     </div>
                     <div className={styles.row}>
@@ -2853,15 +2867,13 @@ function CashierContent() {
                       aria-label="Selected Player Wallet Context"
                     >
                       <strong>{selectedRecipientData.username}</strong>
-                      <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
-                      <span>
-                        Destination:{' '}
-                        {distributeDestination === 'agent_wallet'
-                          ? 'Agent Wallet'
-                          : 'Player Wallet'}
-                      </span>
-                      {distributeDestination === 'agent_wallet' && (
-                        <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
+                      <span>Player Wallet: {formatWalletChips(selectedRecipientData.balance)}</span>
+                      <span>Destination: {SEND_DESTINATION_LABELS[distributeDestination]}</span>
+                      {distributeDestination !== 'player_wallet' && (
+                        <span>
+                          The Player Wallet Above Is Separate From Their{' '}
+                          {SEND_DESTINATION_LABELS[distributeDestination]}.
+                        </span>
                       )}
                     </section>
                   )}
@@ -2880,7 +2892,11 @@ function CashierContent() {
                           className={`${styles.presetBtn} ${distributeDestination === wallet ? 'sc-ink--blue' : 'sc-ink--muted'}`}
                           onClick={() => setDistributeWallet(wallet)}
                         >
-                          {wallet === 'agent_wallet' ? 'Into Agent Wallet' : 'Into Player Wallet'}
+                          {walletOptionLabel(
+                            `Into ${SEND_DESTINATION_LABELS[wallet]}`,
+                            distributeBalances,
+                            wallet
+                          )}
                         </button>
                       ))}
                     </div>
@@ -2900,7 +2916,8 @@ function CashierContent() {
                       {filteredRecipients.map((r) => (
                         <option key={r.id} value={r.id}>
                           {r.id === user?.id ? '(You) ' : ''}
-                          {r.username} ({enumToTitleCase(r.role)}) - {chipFigure(r.balance)} Chips
+                          {r.username} ({enumToTitleCase(r.role)}) - {formatWalletChips(r.balance)}{' '}
+                          Chips
                         </option>
                       ))}
                     </select>

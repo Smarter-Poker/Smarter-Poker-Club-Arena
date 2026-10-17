@@ -87,6 +87,7 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
   let nextHealthAt = 0;
   let failures = 0;
   let captureFailures = 0;
+  let nextCaptureAt = 0;
   let captureNext = false;
   let captureFromBacklog = false;
   let journalTurns = 0;
@@ -200,7 +201,7 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
       }
       continue;
     }
-    if (captureNext && d.processCapture) {
+    if (captureNext && d.processCapture && d.now() >= nextCaptureAt) {
       // Acquisition has up to three bounded RPCs. Keep maintenance/health in
       // ordinary journal cycles so this cycle remains below the watchdog.
       captureNext = false;
@@ -224,8 +225,11 @@ export async function runJournalLoop(signal: AbortSignal, d: Dependencies): Prom
           ? 5000
           : 1000
         : Math.min(60000, 1000 * 2 ** captureFailures);
+      // Capture backoff belongs to capture alone. Continue the existing
+      // journal/retention turns while its retry deadline is still pending.
+      nextCaptureAt = healthy ? 0 : d.now() + delay;
       try {
-        await pause(delay);
+        await pause(healthy ? delay : 1000);
       } catch (error) {
         if (!signal.aborted) throw error;
       }

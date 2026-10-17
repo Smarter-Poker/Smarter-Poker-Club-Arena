@@ -1,0 +1,597 @@
+--- a/package/dist/main/GoTrueClient.js
++++ b/package/dist/main/GoTrueClient.js
+@@ -97,0 +98 @@
++        this.pendingLockAcquisition = null;
+@@ -197 +198,3 @@
+-        this.initialize();
++        this.initialize().catch((error) => {
++            console.warn('[AuthClient] Initial session admission failed', error?.name ?? 'Error')
++        });
+@@ -232,9 +235,23 @@
+-        if (this.initializePromise) {
+-            return await this.initializePromise;
+-        }
+-        this.initializePromise = (async () => {
+-            return await this._acquireLock(this.lockAcquireTimeout, async () => {
+-                return await this._initialize();
+-            });
+-        })();
+-        return await this.initializePromise;
++      if (this.initializePromise) {
++        return await this.initializePromise
++      }
++      let entered = false
++
++      const initialization = (async () => {
++        try {
++          return await this._acquireLock(this.lockAcquireTimeout, async () => {
++            entered = true
++            return await this._initialize()
++          })
++        } catch (error) {
++          // An unacquired lock executed no initializer effects. Retire only this
++          // failed generation; a later explicit API request may initialize anew.
++          if (!entered && this.initializePromise === initialization &&
++              (error?.name === 'AbortError' || error instanceof locks_1.LockAcquireTimeoutError)) {
++            this.initializePromise = null
++          }
++          throw error
++        }
++      })()
++      this.initializePromise = initialization
++      return await initialization
+@@ -502 +519 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1006 +1023 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1088 +1105 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1100,51 +1117,64 @@
+-        this._debug('#_acquireLock', 'begin', acquireTimeout);
+-        try {
+-            if (this.lockAcquired) {
+-                const last = this.pendingInLock.length
+-                    ? this.pendingInLock[this.pendingInLock.length - 1]
+-                    : Promise.resolve();
+-                const result = (async () => {
+-                    await last;
+-                    return await fn();
+-                })();
+-                this.pendingInLock.push((async () => {
+-                    try {
+-                        await result;
+-                    }
+-                    catch (e) {
+-                        // we just care if it finished
+-                    }
+-                })());
+-                return result;
+-            }
+-            return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
+-                this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey);
+-                try {
+-                    this.lockAcquired = true;
+-                    const result = fn();
+-                    this.pendingInLock.push((async () => {
+-                        try {
+-                            await result;
+-                        }
+-                        catch (e) {
+-                            // we just care if it finished
+-                        }
+-                    })());
+-                    await result;
+-                    // keep draining the queue until there's nothing to wait on
+-                    while (this.pendingInLock.length) {
+-                        const waitOn = [...this.pendingInLock];
+-                        await Promise.all(waitOn);
+-                        this.pendingInLock.splice(0, waitOn.length);
+-                    }
+-                    return await result;
+-                }
+-                finally {
+-                    this._debug('#_acquireLock', 'lock released for storage key', this.storageKey);
+-                    this.lockAcquired = false;
+-                }
+-            });
+-        }
+-        finally {
+-            this._debug('#_acquireLock', 'end');
+-        }
++      this._debug('#_acquireLock', 'begin', acquireTimeout)
++      // Only admitted operations enter pendingInLock. Waiting for a native
++      // acquisition must never be mistaken for owning that native lock.
++      const enqueue = (operation) => {
++        const last = this.pendingInLock.length
++          ? this.pendingInLock[this.pendingInLock.length - 1] : Promise.resolve()
++        const result = (async () => { await last; return await operation() })()
++        this.pendingInLock.push(result.then(() => {}, () => {}))
++        return result
++      }
++      try {
++        if (this.lockAcquired) return await enqueue(fn)
++        const pending = this.pendingLockAcquisition
++        if (acquireTimeout > 0 && pending && pending.timeout === acquireTimeout) {
++          return await new Promise((resolve, reject) => {
++            pending.waiting.push({ fn, resolve, reject })
++          })
++        }
++        // Immediate probes and other budgets keep their independent native request.
++        const admission = acquireTimeout > 0 && !pending
++          ? { timeout: acquireTimeout, waiting: [] } : null
++        if (admission) this.pendingLockAcquisition = admission
++        let entered = false
++        try {
++          return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
++            entered = true
++            this.lockAcquired = true
++            if (this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++            this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey)
++            try {
++              // Enqueue the complete admitted cohort before the first callback runs.
++              const result = enqueue(fn)
++              for (const request of admission?.waiting ?? []) {
++                enqueue(request.fn).then(request.resolve, request.reject)
++              }
++              if (admission) admission.waiting.length = 0
++              try {
++                return await result
++              } finally {
++                // A failed first operation cannot release native ownership while
++                // subsequent admitted operations are still executing.
++                while (this.pendingInLock.length) {
++                  const waitOn = [...this.pendingInLock]
++                  await Promise.all(waitOn)
++                  this.pendingInLock.splice(0, waitOn.length)
++                }
++              }
++            } finally {
++              this.lockAcquired = false
++              this._debug('#_acquireLock', 'lock released for storage key', this.storageKey)
++            }
++          })
++        } catch (error) {
++          if (!entered && admission) {
++            for (const request of admission.waiting) request.reject(error)
++            admission.waiting.length = 0
++          }
++          throw error
++        } finally {
++          if (admission && this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++        }
++      } finally {
++        this._debug('#_acquireLock', 'end')
++      }
+@@ -1249 +1279 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1301 +1331 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1353 +1383 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1414 +1444 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1569 +1599 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1613 +1643 @@
+-            await this.initializePromise;
++            await this.initialize();
+@@ -1617 +1647,3 @@
+-        })();
++        })().catch((error) => {
++            console.warn('[AuthClient] Initial auth subscription admission failed', error?.name ?? 'Error');
++        });
+@@ -2127 +2159 @@
+-            await this.initializePromise;
++            await this.initialize();
+@@ -2279 +2311 @@
+-                await this.initializePromise;
++                await this.initialize();
+--- a/package/dist/module/GoTrueClient.js
++++ b/package/dist/module/GoTrueClient.js
+@@ -94,0 +95 @@
++        this.pendingLockAcquisition = null;
+@@ -194 +195,3 @@
+-        this.initialize();
++        this.initialize().catch((error) => {
++            console.warn('[AuthClient] Initial session admission failed', error?.name ?? 'Error')
++        });
+@@ -229,9 +232,23 @@
+-        if (this.initializePromise) {
+-            return await this.initializePromise;
+-        }
+-        this.initializePromise = (async () => {
+-            return await this._acquireLock(this.lockAcquireTimeout, async () => {
+-                return await this._initialize();
+-            });
+-        })();
+-        return await this.initializePromise;
++      if (this.initializePromise) {
++        return await this.initializePromise
++      }
++      let entered = false
++
++      const initialization = (async () => {
++        try {
++          return await this._acquireLock(this.lockAcquireTimeout, async () => {
++            entered = true
++            return await this._initialize()
++          })
++        } catch (error) {
++          // An unacquired lock executed no initializer effects. Retire only this
++          // failed generation; a later explicit API request may initialize anew.
++          if (!entered && this.initializePromise === initialization &&
++              (error?.name === 'AbortError' || error instanceof LockAcquireTimeoutError)) {
++            this.initializePromise = null
++          }
++          throw error
++        }
++      })()
++      this.initializePromise = initialization
++      return await initialization
+@@ -499 +516 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1003 +1020 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1085 +1102 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1097,51 +1114,64 @@
+-        this._debug('#_acquireLock', 'begin', acquireTimeout);
+-        try {
+-            if (this.lockAcquired) {
+-                const last = this.pendingInLock.length
+-                    ? this.pendingInLock[this.pendingInLock.length - 1]
+-                    : Promise.resolve();
+-                const result = (async () => {
+-                    await last;
+-                    return await fn();
+-                })();
+-                this.pendingInLock.push((async () => {
+-                    try {
+-                        await result;
+-                    }
+-                    catch (e) {
+-                        // we just care if it finished
+-                    }
+-                })());
+-                return result;
+-            }
+-            return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
+-                this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey);
+-                try {
+-                    this.lockAcquired = true;
+-                    const result = fn();
+-                    this.pendingInLock.push((async () => {
+-                        try {
+-                            await result;
+-                        }
+-                        catch (e) {
+-                            // we just care if it finished
+-                        }
+-                    })());
+-                    await result;
+-                    // keep draining the queue until there's nothing to wait on
+-                    while (this.pendingInLock.length) {
+-                        const waitOn = [...this.pendingInLock];
+-                        await Promise.all(waitOn);
+-                        this.pendingInLock.splice(0, waitOn.length);
+-                    }
+-                    return await result;
+-                }
+-                finally {
+-                    this._debug('#_acquireLock', 'lock released for storage key', this.storageKey);
+-                    this.lockAcquired = false;
+-                }
+-            });
+-        }
+-        finally {
+-            this._debug('#_acquireLock', 'end');
+-        }
++      this._debug('#_acquireLock', 'begin', acquireTimeout)
++      // Only admitted operations enter pendingInLock. Waiting for a native
++      // acquisition must never be mistaken for owning that native lock.
++      const enqueue = (operation) => {
++        const last = this.pendingInLock.length
++          ? this.pendingInLock[this.pendingInLock.length - 1] : Promise.resolve()
++        const result = (async () => { await last; return await operation() })()
++        this.pendingInLock.push(result.then(() => {}, () => {}))
++        return result
++      }
++      try {
++        if (this.lockAcquired) return await enqueue(fn)
++        const pending = this.pendingLockAcquisition
++        if (acquireTimeout > 0 && pending && pending.timeout === acquireTimeout) {
++          return await new Promise((resolve, reject) => {
++            pending.waiting.push({ fn, resolve, reject })
++          })
++        }
++        // Immediate probes and other budgets keep their independent native request.
++        const admission = acquireTimeout > 0 && !pending
++          ? { timeout: acquireTimeout, waiting: [] } : null
++        if (admission) this.pendingLockAcquisition = admission
++        let entered = false
++        try {
++          return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
++            entered = true
++            this.lockAcquired = true
++            if (this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++            this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey)
++            try {
++              // Enqueue the complete admitted cohort before the first callback runs.
++              const result = enqueue(fn)
++              for (const request of admission?.waiting ?? []) {
++                enqueue(request.fn).then(request.resolve, request.reject)
++              }
++              if (admission) admission.waiting.length = 0
++              try {
++                return await result
++              } finally {
++                // A failed first operation cannot release native ownership while
++                // subsequent admitted operations are still executing.
++                while (this.pendingInLock.length) {
++                  const waitOn = [...this.pendingInLock]
++                  await Promise.all(waitOn)
++                  this.pendingInLock.splice(0, waitOn.length)
++                }
++              }
++            } finally {
++              this.lockAcquired = false
++              this._debug('#_acquireLock', 'lock released for storage key', this.storageKey)
++            }
++          })
++        } catch (error) {
++          if (!entered && admission) {
++            for (const request of admission.waiting) request.reject(error)
++            admission.waiting.length = 0
++          }
++          throw error
++        } finally {
++          if (admission && this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++        }
++      } finally {
++        this._debug('#_acquireLock', 'end')
++      }
+@@ -1246 +1276 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1298 +1328 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1350 +1380 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1411 +1441 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1566 +1596 @@
+-        await this.initializePromise;
++        await this.initialize();
+@@ -1610 +1640 @@
+-            await this.initializePromise;
++            await this.initialize();
+@@ -1614 +1644,3 @@
+-        })();
++        })().catch((error) => {
++            console.warn('[AuthClient] Initial auth subscription admission failed', error?.name ?? 'Error');
++        });
+@@ -2124 +2156 @@
+-            await this.initializePromise;
++            await this.initialize();
+@@ -2276 +2308 @@
+-                await this.initializePromise;
++                await this.initialize();
+--- a/package/dist/main/GoTrueClient.d.ts
++++ b/package/dist/main/GoTrueClient.d.ts
+@@ -74,0 +75 @@
++    private pendingLockAcquisition;
+--- a/package/dist/module/GoTrueClient.d.ts
++++ b/package/dist/module/GoTrueClient.d.ts
+@@ -74,0 +75 @@
++    private pendingLockAcquisition;
+--- a/package/src/GoTrueClient.ts
++++ b/package/src/GoTrueClient.ts
+@@ -272,0 +273,4 @@
++  private pendingLockAcquisition: {
++    timeout: number
++    waiting: { fn: () => Promise<any>; resolve: (value: any) => void; reject: (reason: any) => void }[]
++  } | null = null
+@@ -405 +409,3 @@
+-    this.initialize()
++    this.initialize().catch((error: any) => {
++      console.warn('[AuthClient] Initial session admission failed', error?.name ?? 'Error')
++    })
+@@ -451,5 +457,17 @@
+-
+-    this.initializePromise = (async () => {
+-      return await this._acquireLock(this.lockAcquireTimeout, async () => {
+-        return await this._initialize()
+-      })
++    let entered = false
++    let initialization!: Promise<InitializeResult>;
++    initialization = (async () => {
++      try {
++        return await this._acquireLock(this.lockAcquireTimeout, async () => {
++          entered = true
++          return await this._initialize()
++        })
++      } catch (error: any) {
++        // An unacquired lock executed no initializer effects. Retire only this
++        // failed generation; a later explicit API request may initialize anew.
++        if (!entered && this.initializePromise === initialization &&
++            (error?.name === 'AbortError' || error instanceof LockAcquireTimeoutError)) {
++          this.initializePromise = null
++        }
++        throw error
++      }
+@@ -457,2 +475,2 @@
+-
+-    return await this.initializePromise
++    this.initializePromise = initialization
++    return await initialization
+@@ -752 +770 @@
+-    await this.initializePromise
++    await this.initialize()
+@@ -1386 +1404 @@
+-    await this.initializePromise
++    await this.initialize()
+@@ -1473 +1491 @@
+-    await this.initializePromise
++    await this.initialize()
+@@ -1489,14 +1507,35 @@
+-
+-    try {
+-      if (this.lockAcquired) {
+-        const last = this.pendingInLock.length
+-          ? this.pendingInLock[this.pendingInLock.length - 1]
+-          : Promise.resolve()
+-
+-        const result = (async () => {
+-          await last
+-          return await fn()
+-        })()
+-
+-        this.pendingInLock.push(
+-          (async () => {
++    // Only admitted operations enter pendingInLock. Waiting for a native
++    // acquisition must never be mistaken for owning that native lock.
++    const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
++      const last = this.pendingInLock.length
++        ? this.pendingInLock[this.pendingInLock.length - 1] : Promise.resolve()
++      const result = (async () => { await last; return await operation() })()
++      this.pendingInLock.push(result.then(() => {}, () => {}))
++      return result
++    }
++    try {
++      if (this.lockAcquired) return await enqueue(fn)
++      const pending = this.pendingLockAcquisition
++      if (acquireTimeout > 0 && pending && pending.timeout === acquireTimeout) {
++        return await new Promise<R>((resolve, reject) => {
++          pending.waiting.push({ fn, resolve, reject })
++        })
++      }
++      // Immediate probes and other budgets keep their independent native request.
++      const admission: typeof this.pendingLockAcquisition = acquireTimeout > 0 && !pending
++        ? { timeout: acquireTimeout, waiting: [] } : null
++      if (admission) this.pendingLockAcquisition = admission
++      let entered = false
++      try {
++        return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
++          entered = true
++          this.lockAcquired = true
++          if (this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++          this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey)
++          try {
++            // Enqueue the complete admitted cohort before the first callback runs.
++            const result = enqueue(fn)
++            for (const request of admission?.waiting ?? []) {
++              enqueue(request.fn).then(request.resolve, request.reject)
++            }
++            if (admission) admission.waiting.length = 0
+@@ -1504,3 +1543,9 @@
+-              await result
+-            } catch (e: any) {
+-              // we just care if it finished
++              return await result
++            } finally {
++              // A failed first operation cannot release native ownership while
++              // subsequent admitted operations are still executing.
++              while (this.pendingInLock.length) {
++                const waitOn = [...this.pendingInLock]
++                await Promise.all(waitOn)
++                this.pendingInLock.splice(0, waitOn.length)
++              }
+@@ -1508,33 +1553,3 @@
+-          })()
+-        )
+-
+-        return result
+-      }
+-
+-      return await this.lock(`lock:${this.storageKey}`, acquireTimeout, async () => {
+-        this._debug('#_acquireLock', 'lock acquired for storage key', this.storageKey)
+-
+-        try {
+-          this.lockAcquired = true
+-
+-          const result = fn()
+-
+-          this.pendingInLock.push(
+-            (async () => {
+-              try {
+-                await result
+-              } catch (e: any) {
+-                // we just care if it finished
+-              }
+-            })()
+-          )
+-
+-          await result
+-
+-          // keep draining the queue until there's nothing to wait on
+-          while (this.pendingInLock.length) {
+-            const waitOn = [...this.pendingInLock]
+-
+-            await Promise.all(waitOn)
+-
+-            this.pendingInLock.splice(0, waitOn.length)
++          } finally {
++            this.lockAcquired = false
++            this._debug('#_acquireLock', 'lock released for storage key', this.storageKey)
+@@ -1542,8 +1557,10 @@
+-
+-          return await result
+-        } finally {
+-          this._debug('#_acquireLock', 'lock released for storage key', this.storageKey)
+-
+-          this.lockAcquired = false
+-        }
+-      })
++        })
++      } catch (error: any) {
++        if (!entered && admission) {
++          for (const request of admission.waiting) request.reject(error)
++          admission.waiting.length = 0
++        }
++        throw error
++      } finally {
++        if (admission && this.pendingLockAcquisition === admission) this.pendingLockAcquisition = null
++      }
+@@ -1719 +1736 @@
+-    await this.initializePromise
++    await this.initialize()
+@@ -1785 +1802 @@
+-    await this.initializePromise
++    await this.initialize()
+@@ -1855 +1872 @@
+-    await this.initializePromise
++    await this.initialize()
+@@ -1927 +1944 @@
+-    await this.initializePromise
++    await this.initialize()
+@@ -2141 +2158 @@
+-    await this.initializePromise
++    await this.initialize()
+@@ -2226 +2243 @@
+-      await this.initializePromise
++      await this.initialize()
+@@ -2231 +2248,3 @@
+-    })()
++    })().catch((error: any) => {
++      console.warn('[AuthClient] Initial auth subscription admission failed', error?.name ?? 'Error')
++    })
+@@ -2880 +2899 @@
+-      await this.initializePromise
++      await this.initialize()
+@@ -3060 +3079 @@
+-        await this.initializePromise
++        await this.initialize()

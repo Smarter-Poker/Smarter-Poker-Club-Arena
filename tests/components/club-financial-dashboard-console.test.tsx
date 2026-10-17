@@ -220,7 +220,7 @@ describe('Club Financial Dashboard console and truth boundary', () => {
   it('renders verified server figures on approved painted consoles', async () => {
     mount();
 
-    expect(await screen.findByText('1.2K')).toBeInTheDocument();
+    expect(await screen.findByText('1,250')).toBeInTheDocument();
     expect(screen.getAllByText('700')).toHaveLength(2);
     expect(screen.getByText('4')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Club Bank Cashier' })).toBeEnabled();
@@ -235,7 +235,7 @@ describe('Club Financial Dashboard console and truth boundary', () => {
 
   it('binds realtime to the verified uuid when the route uses a slug', async () => {
     mount('shark-club');
-    await screen.findByText('1.2K');
+    await screen.findByText('1,250');
 
     await waitFor(() =>
       expect(m.channel.on).toHaveBeenCalledWith(
@@ -259,7 +259,7 @@ describe('Club Financial Dashboard console and truth boundary', () => {
       financials: parseClubFinancialsPayload(financialPayload(), { clubId: CLUB_ID, start, end }),
     });
 
-    expect(await screen.findByText('1.2K')).toBeInTheDocument();
+    expect(await screen.findByText('1,250')).toBeInTheDocument();
     expect(screen.getByText('4')).toBeInTheDocument();
     expect(m.resolveClub).not.toHaveBeenCalled();
     expect(m.rpc.mock.calls.filter(([name]) => name === 'ca_club_financials')).toHaveLength(0);
@@ -324,7 +324,7 @@ describe('Club Financial Dashboard console and truth boundary', () => {
 
   it('routes financial actions to their maintained selected-club surfaces without mutating money', async () => {
     mount();
-    await screen.findByText('1.2K');
+    await screen.findByText('1,250');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Club Bank Cashier' }));
     expect(m.navigate).toHaveBeenCalledWith(`/clubs/${CLUB_ID}/cashier`);
@@ -338,7 +338,7 @@ describe('Club Financial Dashboard console and truth boundary', () => {
 
   it('routes finance readers without club-control authority to their legitimate agent network', async () => {
     mount(CLUB_ID, undefined, false);
-    await screen.findByText('1.2K');
+    await screen.findByText('1,250');
 
     expect(screen.queryByRole('button', { name: 'Open Agent Management' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Open Agent Network' }));

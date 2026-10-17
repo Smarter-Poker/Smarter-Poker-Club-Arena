@@ -80,9 +80,9 @@ vi.mock('../../src/components/games/TodayLine', () => ({ default: () => null }))
  *
  * R6: "On Plinko the player must choose how many diamonds to drop and the
  * value of each drop. Today it is just defaulted at 10 diamonds." R9: after
- * Play Game, the next screen decides whether to double the diamonds, and for
- * Plinko the screen after that is the selector. R1: games can never auto
- * start. This file moves the 2026-09-19 pins that the value was the tenth and
+ * Play Game, Plinko opens on the selector; the Double Your Diamonds screen that
+ * used to come first is retired with the add-on (Dan 2026-10-16). R1: games
+ * can never auto start. This file moves the 2026-09-19 pins that the value was the tenth and
  * that nothing on the page offered a choice: the selector is back, nothing is
  * pre-selected, Drop Diamonds waits for the choice, every further ball is the
  * player's own release, and the finished receipt stays until a tap.
@@ -136,13 +136,16 @@ const expectedChoices = (stake: number) =>
     (a) =>
       `${a.diamondsPerDrop.toLocaleString()} ${a.diamondsPerDrop === 1 ? 'Diamond' : 'Diamonds'} Per Drop, ${a.drops.toLocaleString()} ${a.drops === 1 ? 'Drop' : 'Drops'}`
   );
-/** Screen one: answer the Double Your Diamonds offer. */
-async function answerOffer(choice: 'Add The Diamonds' | 'Play Without') {
-  const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-  fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-  fireEvent.click(within(offer).getByRole('button', { name: choice }));
-  await act(async () => {});
-}
+/** Double Diamonds is retired (Dan 2026-10-16): no offer, no Double Down, ever. */
+const expectNoAddOn = () => {
+  expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
+  expect(screen.queryByText(/Double Down|Double Your Diamonds|Add The Diamonds/)).toBeNull();
+};
+/** Every award read asked for the funded entry alone, never the add-on. */
+const expectNeverQuotedDoubled = () => {
+  expect(backend.awardState).toHaveBeenCalled();
+  for (const call of backend.awardState.mock.calls) expect(call[2]).toBe(false);
+};
 const superAward = {
   id: '00000000-0000-0000-0000-000000000077',
   game: 'plinko',
@@ -245,7 +248,7 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
       { replace: true }
     );
   });
-  it('walks a Super award through the offer, then the selector, then the Super table with the chosen value', async () => {
+  it('opens a Super award straight on the selector, then plays the Super table with the chosen value', async () => {
     backend.awardState.mockResolvedValue({
       enabled: true,
       award: superAward,
@@ -255,12 +258,8 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     render(<DiamondPlinkoPage />);
     await act(async () => {});
     expect(screen.getByRole('heading', { name: 'Super Plinko' })).toBeVisible();
-    // Screen one: the offer. No selector yet, and Drop Diamonds is not on offer.
-    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: 'Diamonds Per Drop' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
-    await answerOffer('Play Without');
-    // Screen two: the selector, with nothing pressed and the figures unknown.
+    // No offer screen: the selector opens first, with nothing pressed and the figures unknown.
+    expectNoAddOn();
     expect(choiceLabels()).toEqual(expectedChoices(200));
     expect(pressed()).toHaveLength(0);
     expect(bay('Per Drop')).toHaveTextContent('Choose');
@@ -296,8 +295,9 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     // An earned entry is quoted by the award read alone: no legacy direct quote.
     expect(backend.getState).not.toHaveBeenCalled();
     expect(backend.latest).not.toHaveBeenCalled();
+    expectNeverQuotedDoubled();
   });
-  it('offers only the values that split a doubled 5,000 into 1 to 100 drops, and plays the board its floor chose', async () => {
+  it('offers only the values that split the funded 2,500 into 1 to 100 drops, and never asks for the add-on', async () => {
     backend.latest.mockResolvedValue(fixtures.receipts.plinko);
     backend.getState.mockRejectedValue(new Error('Legacy direct entry is unavailable'));
     backend.awardState.mockImplementation(async (_club, _game, doubled) => ({
@@ -313,24 +313,19 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     render(<DiamondPlinkoPage />);
     await act(async () => {});
     expect(screen.getByRole('heading', { name: 'Diamond Plinko' })).toBeVisible();
-    await answerOffer('Add The Diamonds');
-    // 5,000 diamonds: 1 to 25 a drop would be more than 100 drops, so they are
-    // not offered; the whole stake as one drop always is (the server's rule).
-    expect(choiceLabels()).toEqual(expectedChoices(5000));
-    expect(choiceLabels()).toEqual([
-      '50 Diamonds Per Drop, 100 Drops',
-      '100 Diamonds Per Drop, 50 Drops',
-      '250 Diamonds Per Drop, 20 Drops',
-      '500 Diamonds Per Drop, 10 Drops',
-      '5,000 Diamonds Per Drop, 1 Drop',
-    ]);
-    expect(bay('Guaranteed')).toHaveTextContent('50.00 Chips');
+    expectNoAddOn();
+    // 2,500 diamonds: only values that make 1 to 100 drops are offered; the
+    // whole stake as one drop always is (the server's rule).
+    expect(choiceLabels()).toEqual(expectedChoices(2500));
+    expect(choiceLabels()).toContain('250 Diamonds Per Drop, 10 Drops');
+    expect(choiceLabels()).toContain('2,500 Diamonds Per Drop, 1 Drop');
+    expect(bay('Guaranteed')).toHaveTextContent('25.00 Chips');
     expect(bay('Guaranteed')).not.toHaveAttribute('data-ink', 'gold');
     expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: '250 Diamonds Per Drop, 20 Drops' }));
-    expect(screen.getByText('20 Drops × 250 Diamonds = 5,000 Diamonds')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '250 Diamonds Per Drop, 10 Drops' }));
+    expect(screen.getByText('10 Drops × 250 Diamonds = 2,500 Diamonds')).toBeVisible();
     expect(screen.queryByText(/Chips Booked From/)).not.toBeInTheDocument();
-    // The offer is answered and a value chosen, so Drop is the player's to press (R1).
+    // A value is chosen, so Drop is the player's to press (R1).
     expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
     expect(backend.start).toHaveBeenCalledTimes(1);
@@ -339,7 +334,7 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
         tableVersion: 4,
         budget: {
           base: 2500,
-          doubled: true,
+          doubled: false,
           denomination: 250,
           award: { id: ordinaryAward.id, entryDiamonds: 2500, boostMultiplier: 1 },
         },
@@ -348,8 +343,9 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     );
     expect(backend.getState).not.toHaveBeenCalled();
     expect(backend.latest).not.toHaveBeenCalled();
+    expectNeverQuotedDoubled();
   });
-  it('never starts by itself: two idle minutes on the offer, and two more on the selector, start nothing', async () => {
+  it('never starts by itself: two idle minutes before the choice, and two more after it, start nothing', async () => {
     vi.useFakeTimers();
     backend.awardState.mockResolvedValue({
       enabled: true,
@@ -359,14 +355,13 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     });
     render(<DiamondPlinkoPage />);
     await act(async () => {});
-    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+    expectNoAddOn();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(120_000);
     });
-    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
     expect(backend.start).not.toHaveBeenCalled();
     expect(backend.navigate).not.toHaveBeenCalled();
-    await answerOffer('Play Without');
     fireEvent.click(screen.getByRole('button', { name: '20 Diamonds Per Drop, 10 Drops' }));
     expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeEnabled();
     await act(async () => {
@@ -376,7 +371,7 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     expect(backend.navigate).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeEnabled();
   });
-  it('remembers the answered offer for this award across a remount, and asks again for another', async () => {
+  it('remembers the chosen drop value for this award across a remount, and never carries it to another', async () => {
     backend.awardState.mockResolvedValue({
       enabled: true,
       award: superAward,
@@ -385,7 +380,6 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     });
     const first = render(<DiamondPlinkoPage />);
     await act(async () => {});
-    await answerOffer('Play Without');
     fireEvent.click(screen.getByRole('button', { name: '20 Diamonds Per Drop, 10 Drops' }));
     first.unmount();
     render(<DiamondPlinkoPage />);
@@ -405,29 +399,48 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     });
     render(<DiamondPlinkoPage />);
     await act(async () => {});
-    expect(screen.getByRole('dialog', { name: 'Double Your Diamonds' })).toBeInTheDocument();
+    // A new award opens on the selector with nothing pressed, and no offer.
+    expectNoAddOn();
+    expect(pressed()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
   });
-  it('refuses an uncovered entry and explains how to remove the added diamonds', async () => {
+  it('never sends the add-on, even when an older page saved a Double Down answer for this award', async () => {
+    // A selection the previous bundle saved with the add-on taken.
+    sessionStorage.setItem(
+      'diamond-spins-budget:player-a:00000000-0000-0000-0000-000000000003:plinko',
+      JSON.stringify({
+        base: 2500,
+        doubled: true,
+        denomination: 500,
+        award: { id: ordinaryAward.id, entryDiamonds: 2500, boostMultiplier: 1 },
+      })
+    );
     backend.awardState.mockImplementation(async (_club, _game, doubled) => ({
       enabled: true,
       award: ordinaryAward,
       gameState: {
         ...state,
         tables: [SUPER_TABLE],
-        bets: [
-          { bet_diamonds: doubled ? 5000 : 2500, cap_cents: doubled ? 1000 : 2000, playable: true },
-        ],
+        bets: [{ bet_diamonds: doubled ? 5000 : 2500, cap_cents: 2000, playable: true }],
         player: { ...state.player, spendable: 10000 },
       },
       quote: quoteFor(1, 25),
     }));
     render(<DiamondPlinkoPage />);
     await act(async () => {});
-    await answerOffer('Add The Diamonds');
-    fireEvent.click(screen.getByRole('button', { name: '500 Diamonds Per Drop, 10 Drops' }));
-    expect(screen.getByText(/This Bonus Does Not Cover A Doubled Entry/)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
-    expect(backend.start).not.toHaveBeenCalled();
+    expectNoAddOn();
+    expect(screen.queryByText(/This Bonus Does Not Cover A Doubled Entry/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '500 Diamonds Per Drop, 5 Drops' }));
+    expect(screen.getByText('5 Drops × 500 Diamonds = 2,500 Diamonds')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
+    expect(backend.start).toHaveBeenCalledTimes(1);
+    expect(backend.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        budget: expect.objectContaining({ base: 2500, doubled: false, denomination: 500 }),
+      }),
+      'player-a'
+    );
+    expectNeverQuotedDoubled();
   });
   it('replays the one held request when a start is uncertain, and debits nothing twice', async () => {
     backend.awardState.mockResolvedValue({
@@ -444,7 +457,6 @@ describe('Plinko starts only its earned funding, on the player choice', () => {
     });
     render(<DiamondPlinkoPage />);
     await act(async () => {});
-    await answerOffer('Play Without');
     fireEvent.click(screen.getByRole('button', { name: '20 Diamonds Per Drop, 10 Drops' }));
     fireEvent.click(screen.getByRole('button', { name: 'Drop Diamonds' }));
     await act(async () => {});

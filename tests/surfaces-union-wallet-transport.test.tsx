@@ -14,6 +14,13 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const UNION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const rpc = vi.fn();
+/** The roster is read in pages (.order().range()); one mocked page holds it all. */
+function pageable(value: unknown) {
+  const p: any = Promise.resolve(value);
+  p.order = () => p;
+  p.range = () => p;
+  return p;
+}
 const unionClubs = [{ club_id: 'c-2', clubs: { name: 'SHARK CLUB' } }];
 const fromChain = (table?: string) => {
   const chain: Record<string, unknown> = {};
@@ -89,6 +96,7 @@ beforeEach(() => {
 async function sendToFish(amount = '250') {
   await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
   fireEvent.click(screen.getByText('Fish'));
+  fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
   fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: amount } });
   fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 }
@@ -97,7 +105,7 @@ describe('a member send whose response is lost keeps its operation id', () => {
   it('retries a committed send under the SAME id, and says the outcome is not yet confirmed', async () => {
     let attempt = 0;
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_send_to_member') {
         attempt += 1;
         return attempt === 1
@@ -123,7 +131,7 @@ describe('a member send whose response is lost keeps its operation id', () => {
   it('still retires the id after a real SQL refusal, so a corrected send is new', async () => {
     let attempt = 0;
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_send_to_member') {
         attempt += 1;
         return attempt === 1
@@ -145,7 +153,7 @@ describe('a member send whose response is lost keeps its operation id', () => {
   it('holds the id across a 503 gateway answer as well', async () => {
     let attempt = 0;
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_send_to_member') {
         attempt += 1;
         return attempt === 1
@@ -172,7 +180,7 @@ describe('a clawback whose response is lost keeps its operation id', () => {
   it('pulls again under the SAME id', async () => {
     let attempt = 0;
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_clawback_from_club') {
         attempt += 1;
         return attempt === 1
@@ -183,8 +191,8 @@ describe('a clawback whose response is lost keeps its operation id', () => {
     });
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
     fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from shark club/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
     expect((await screen.findByRole('alert')).textContent).toMatch(/Not Yet Confirmed/);

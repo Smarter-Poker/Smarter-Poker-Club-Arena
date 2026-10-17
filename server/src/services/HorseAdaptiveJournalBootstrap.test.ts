@@ -42,6 +42,7 @@ function actualBootstrap(leader: boolean, stop: () => Promise<void>) {
     'HorseSelfTuner',
     'HorseLeague',
     'HorseDailyAudit',
+    'HorseReferenceAgreementReport',
     'BrainTelemetryFlush',
     'HorseDataLedgerSync',
     'HorseLaneLoader',

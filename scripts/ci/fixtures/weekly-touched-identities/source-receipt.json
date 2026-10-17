@@ -1,0 +1,9 @@
+{
+  "report_before_md5": "edecfc5273ee4c96b608baa0ea863578",
+  "report_after_md5": "7b465b7055e80234bd8c40ed5899f4dd",
+  "matcher_before_md5": "4a98179afccf2d31c127f50ed5ab9270",
+  "matcher_after_md5": "aaa32399c66e1e9d378a5634f8e79cb5",
+  "outside_touched_query_byte_identical": true,
+  "inverse_report_restores_before": true,
+  "inverse_matcher_restores_before": true
+}

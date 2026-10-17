@@ -196,12 +196,14 @@ describe('a recovered turn clock carries its actual turn state', () => {
   );
 
   it.each(['manual', 'automatic'])(
-    'one accepted %s bank forced fold sits out until explicit return',
+    'the second accepted %s bank forced fold sits out until explicit return',
     async (path) => {
       const h = harness();
       h.strikes.mockRestore();
       const seats = isolatedSitOutSeats(h.engine);
       h.engine.disconnectEngine.registerPlayer(TABLE, PLAYER);
+      h.engine.disconnectEngine.recordConnectedTimeout(TABLE, PLAYER);
+      expect(h.engine.disconnectEngine.isSittingOut(TABLE, PLAYER)).toBe(false);
       h.engine.startTurnTimer(PLAYER, 2, 15);
       if (path === 'manual') {
         h.now.mockReturnValue(Date.now() + 15_000);
@@ -212,7 +214,7 @@ describe('a recovered turn clock carries its actual turn state', () => {
       h.expire(`timebank:${PLAYER}`);
       expect(h.engine.forceResolveSeat).toHaveBeenCalledWith(2, false);
       expect(h.engine.disconnectEngine.getState(TABLE, PLAYER)).toMatchObject({
-        consecutiveTimeouts: 1,
+        consecutiveTimeouts: 2,
         isSittingOut: true,
         sitOutReason: 'forced',
       });
@@ -236,10 +238,7 @@ describe('a recovered turn clock carries its actual turn state', () => {
       h.engine.disconnectEngine.sitBack(TABLE, PLAYER);
       expect(h.engine.disconnectEngine.getState(TABLE, PLAYER).isSittingOut).toBe(false);
       expect(seats.current.is_sitting_out).toBe(false);
-      expect(seats.writes).toEqual([
-        seats.writes[0],
-        { ...seats.writes[0], value: false },
-      ]);
+      expect(seats.writes).toEqual([seats.writes[0], { ...seats.writes[0], value: false }]);
       expect(seats.from).toHaveBeenCalledTimes(2);
       expect(seats.others.map((row) => row.is_sitting_out)).toEqual([false, false, false, false]);
     }

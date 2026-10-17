@@ -7,6 +7,20 @@ export const CLUB_WEEKLY_STATEMENT_LIMIT = 50;
 export const CLUB_WEEKLY_EXPORT_LIMIT = 1000;
 export const CLUB_WEEKLY_INVOICE_TYPE = 'club_weekly_accounting';
 
+/*
+ * WHAT AN ISSUED WEEKLY STATEMENT'S STATUS MAY SAY (2026-10-17).
+ * A weekly accounting statement is a record, not a bill: it is written once,
+ * delivered, and never collected. Since production migration
+ * 20261015180754 (trigger trg_weekly_statement_issue_settled) every
+ * club_weekly_accounting row is stamped 'paid' AT ISSUE, so all seven on
+ * production read 'paid' and a reader that demanded 'generated' refused the
+ * whole Settlement Record for every club. 'generated' (the pre-trigger state)
+ * and 'paid' (the issued-settled state) both mean the statement exists and was
+ * delivered; every other status (pending, overdue, disputed, cancelled, sent)
+ * still refuses, as does every amount, scope and delivery check below.
+ */
+const ISSUED_WEEKLY_STATUSES: ReadonlySet<string> = new Set(['generated', 'paid']);
+
 // Read money and JSON numeric facts as text. Never recover cents from a rounded
 // JavaScript JSON number or reinterpret an individual/correction invoice.
 const COLUMNS =
@@ -228,7 +242,7 @@ export async function readClubWeeklyStatements(options: {
       value.currency !== 'CHIPS' ||
       value.ready_to_issue !== 'true' ||
       value.summary_status !== 'complete' ||
-      value.status !== 'generated' ||
+      !ISSUED_WEEKLY_STATUSES.has(value.status as string) ||
       value.message_sent !== true ||
       !timestamp(value.created_at) ||
       !timestamp(value.period_start) ||

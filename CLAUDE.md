@@ -704,10 +704,13 @@ around his photo: "the profile pic is supposed to be a .5 pixel black frame
 that 'appears invisible' instead of this thick broken frame that exists now."
 Fourth time he has said it (08-31, 09-03, 09-05, 09-07).
 
+Owner update, October 16, 2026: use a very thin 1 pixel invisible black frame.
+This replaces the older half-pixel width below; the chrome ornament stays masked.
+
 The approved header artwork bakes a silver ring with a blue glow around the
 profile slot. **That ring is never shown.** `.profileBtn` in
 `GlobalHeader.module.css` paints an opaque black disc over the whole ornament
-at every width, and the photo's only frame is the 0.5px hairline on
+at every width, and the photo's only frame is the 1px black hairline on
 `.profileAvatarSlot`, declared once. The ruling and its history are in
 `docs/LAWS.md` (resolved conflicts); the law is
 `tests/the-header-portrait-frame-is-a-hairline.law.test.ts` (geometry, by

@@ -123,20 +123,17 @@ export function parseBonusGuarantee(
   };
 }
 /**
- * The award's funded entry with the player's own answers for THIS award: the
- * Double Your Diamonds choice and, for Plinko, the drop value. An answer given
- * for an earlier award never pre-answers a new one (Dan 2026-09-21, R9: the
- * decision is its own step; R6: nothing is pre-selected).
+ * The award's funded entry with the player's own Plinko drop value for THIS
+ * award. A drop value chosen for an earlier award never pre-answers a new one
+ * (Dan 2026-09-21, R6: nothing is pre-selected). The entry never carries the
+ * Double Diamonds add-on, which is retired (Dan 2026-10-16).
  */
 export function awardBudget(award: WheelBonusAward, preference: BonusBudget): BonusBudget {
   const own = preference.award?.id === award.id;
-  return fundedBudget(
-    award,
-    own ? preference.doubled : false,
-    own ? preference.denomination : null
-  );
+  return fundedBudget(award, false, own ? preference.denomination : null);
 }
-/** The award's funded entry at a stated Double Your Diamonds answer, as the server was asked to quote it. */
+/** The award's funded entry as the server was asked to quote it. `doubled` is
+ * true only when reading back a round an older page started with the add-on. */
 function fundedBudget(
   award: WheelBonusAward,
   doubled: boolean,

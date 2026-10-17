@@ -1,4 +1,4 @@
-import { act, cleanup, render, fireEvent, screen } from '@testing-library/react';
+import { act, cleanup, render, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
@@ -7,6 +7,7 @@ const fixture = vi.hoisted(() => ({
   agent: 40,
   float: 15,
   failure: false,
+  roster: [] as Array<Record<string, unknown>>,
   reads: [] as Array<{ table: string; fields: string; filters: Record<string, string> }>,
   rpc: vi.fn(),
   channel: vi.fn(),
@@ -54,7 +55,30 @@ vi.mock('../../src/lib/supabase', () => ({
     rpc: (name: string, args: Record<string, unknown>) => {
       if (name !== 'fn_club_money_panel') {
         fixture.rpc(name, args);
-        return Promise.resolve({ data: [], error: null });
+        return Promise.resolve({
+          data:
+            name === 'fn_club_cashier_members'
+              ? fixture.roster
+              : name === 'fn_club_bank_ledger'
+                ? {
+                    authorized: true,
+                    total: 1,
+                    types: ['send'],
+                    totals: { into_bank: 0, out_of_bank: 10, net: -10 },
+                    rows: [
+                      {
+                        id: 'ledger-1',
+                        amount: 10,
+                        transaction_type: 'send',
+                        notes: 'Preserved Ledger Entry',
+                        balance_after: 90,
+                        created_at: '2026-10-16T12:00:00Z',
+                      },
+                    ],
+                  }
+                : [],
+          error: null,
+        });
       }
       const request = {
         table: 'clubs',
@@ -106,7 +130,15 @@ const flush = () =>
 describe('the open cashier reads the balances that changed elsewhere', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    Object.assign(fixture, { bank: 100, pot: 25, agent: 40, float: 15, failure: false, reads: [] });
+    Object.assign(fixture, {
+      bank: 100,
+      pot: 25,
+      agent: 40,
+      float: 15,
+      failure: false,
+      reads: [],
+      roster: [],
+    });
     fixture.rpc.mockReset();
     fixture.channel.mockClear();
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
@@ -115,6 +147,49 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
     cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('keeps the Club Bank ledger accessible beside the Send Out transfer form', async () => {
+    fixture.roster = [
+      {
+        user_id: '11111111-1111-4111-8111-111111111111',
+        role: 'owner',
+        name: 'KingFish',
+        player_number: '1',
+        chip_balance: 12,
+      },
+    ];
+    render(
+      <WalletCashierModal
+        {...base}
+        walletType="club_bank"
+        initialRecipientId="11111111-1111-4111-8111-111111111111"
+      />
+    );
+    await flush();
+    expect(screen.getByRole('heading', { name: 'Send Out' })).toBeInTheDocument();
+    const card = screen.getByRole('region', { name: 'Selected Player' });
+    expect(card).toHaveTextContent('KingFish');
+    const selector = within(card).getByRole('combobox', { name: 'Send Into' });
+    expect(selector.parentElement).toBe(card);
+    fireEvent.change(selector, { target: { value: 'player_wallet' } });
+    expect(selector).toHaveValue('player_wallet');
+    const face = card.cloneNode(true) as HTMLElement;
+    face.querySelector('select')!.remove();
+    expect(face.textContent).toContain('Player Wallet');
+    expect(face.textContent?.match(/12\.00/g)).toHaveLength(1);
+    expect(screen.getByRole('region', { name: 'From The Club Bank' })).toHaveTextContent('100');
+    const input = screen.getByRole('textbox', { name: 'Chips To Send' });
+    fireEvent.change(input, { target: { value: '1,00000' } });
+    expect(input).toHaveValue('100,000');
+    fireEvent.click(screen.getByRole('tab', { name: 'Transaction Ledger' }));
+    await flush();
+    expect(fixture.rpc).toHaveBeenCalledWith(
+      'fn_club_bank_ledger',
+      expect.objectContaining({ p_club_id: CLUB, p_offset: 0 })
+    );
+    expect(screen.getByText('Preserved Ledger Entry')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Export/i })).toBeInTheDocument();
   });
 
   it('keeps the working balance until explicit refresh', async () => {

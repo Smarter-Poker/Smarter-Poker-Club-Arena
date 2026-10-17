@@ -23,6 +23,7 @@ import {
 
 import {
   lightningLobbyBadge,
+  isLightningTemplate,
   type LightningLobbyState,
   type LightningPoolStatus,
 } from '../../lightning/lightningLobby';
@@ -1386,7 +1387,11 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const lightning =
     t.cluster_id && figures
       ? lightningLobbyBadge({
-          clusterMode: t.cluster_mode,
+          clusterMode: isLightningTemplate(t.cluster_template)
+            ? t.cluster_mode
+            : ['paused', 'frozen', 'dead'].includes(t.cluster_mode ?? '')
+              ? t.cluster_mode
+              : 'must_move',
           state: t.cluster_lightning,
           boardPlayers: figures.players,
         })

@@ -5,7 +5,6 @@ import {
 import {
   omahaVariantActionEconomics,
   omahaVariantActionEconomicsIsValid,
-  OMAHA_VARIANT_NET_ACTION_BUDGET_MS,
   type OmahaVariantActionEconomics,
 } from './OmahaVariantActionEconomics.js';
 import type { HorseDecision, SeatPlayer } from '../../types.js';
@@ -776,6 +775,8 @@ export function evaluateOmahaVariantPolicy(
   baseline: HorseDecision,
   evidence: OmahaVariantEquityEvidence | null,
   mode: OmahaVariantMode = 'shadow',
+  /** Measures `latencyMs` and the net-action pass's `analysisMs` only. Since
+   * 2026-10-16 no clock decides any part of the decision or its work. */
   now = () => performance.now(),
   decisionEquityCeiling = 1,
   sampleWhenMissing = true,
@@ -783,14 +784,20 @@ export function evaluateOmahaVariantPolicy(
    * recorded and executed in the exact legal form the owner will give it, so
    * a unit or all-in rewrite never turns a measured proposal into an
    * `illegal_candidate` refusal (audit 2026-10-05). */
-  legalForm?: (decision: HorseDecision) => HorseDecision
+  legalForm?: (decision: HorseDecision) => HorseDecision,
+  /** 2026-10-16: a live opponent's read is a credible station
+   * (HorseOpponentExploit.isStation); the deviations stay out, the reference
+   * (which carries the exploit read) is retained. */
+  opponentStation = false
 ) {
   const start = now();
-  const externalAnalysisMs = evidence
-    ? Number.isFinite(evidence.analysisMs) && evidence.analysisMs >= 0
+  // A supplied sample's own cost, added to latencyMs as a measurement. A
+  // non-finite one is not a time (the evidence check refuses such a sample as
+  // malformed wherever it would be consumed) and adds nothing.
+  const externalAnalysisMs =
+    evidence && Number.isFinite(evidence.analysisMs) && evidence.analysisMs >= 0
       ? evidence.analysisMs
-      : Infinity
-    : 0;
+      : 0;
   const variant = isOmahaPolicyVariant(s.gameVariant) ? s.gameVariant : null;
   const pack = variant ? OMAHA_VARIANT_PACKS[variant] : null;
   const receipt: OmahaVariantReceipt = {
@@ -832,16 +839,15 @@ export function evaluateOmahaVariantPolicy(
   /** Assembled only once every canonical check has passed. */
   let bind: (() => OmahaVariantInputBinding) | null = null;
   const finish = (reason: string, proposal = baseline) => {
-    // Bound inside the timed region: recording the inputs is policy work.
+    // Bound inside the measured region: recording the inputs is policy work.
     if (bind) receipt.inputs = bind();
     if (legalForm && proposal !== baseline)
       proposal = { ...legalForm(proposal), thinkTime: proposal.thinkTime };
+    // A measurement only (2026-10-16). The 4 ms wall-clock fallback that stood
+    // here replaced the proposal by the reference (reason work_budget) whenever
+    // the host was slow, so a live decision could differ from the decision the
+    // fixed-clock P11.2 matrix measured and depended on host load.
     const elapsed = Math.max(0, now() - start) + externalAnalysisMs;
-    if (elapsed > OMAHA_VARIANT_DOMAIN.liveBudgetMs) {
-      reason = 'work_budget';
-      proposal = baseline;
-      receipt.fired = false;
-    }
     if (!s.legalActions?.includes(proposal.action)) {
       proposal = baseline;
       reason = 'proposal_outside_legal_menu';
@@ -1169,11 +1175,12 @@ export function evaluateOmahaVariantPolicy(
    * result for every legal candidate.
    *
    * It runs on the showdowns the sampler ALREADY scored (no extra sample,
-   * card or deck draw) and STRICTLY AFTER `finish`, on its own budget, the
-   * order P12-B proved necessary: `finish` has already fixed the reason, the
-   * proposal, `changed`, `applied` and `latencyMs`, so no cost incurred here
-   * can turn a firing proposal into a `work_budget` fallback. A refused node
-   * is not priced at all, and an unavailable pass is NAMED.
+   * card or deck draw) and STRICTLY AFTER `finish`: `finish` has already fixed
+   * the reason, the proposal, `changed`, `applied` and `latencyMs`, so nothing
+   * here can change the decision. Its work is declared, never timed (since
+   * 2026-10-16): at most 32 showdowns for fold, call and at most
+   * OMAHA_VARIANT_MAX_PRICED_WAGERS wager sizes. A refused node is not priced
+   * at all, and an unavailable pass is NAMED.
    *
    * The wager sizes priced are the controller's minimum and the largest the
    * pot-limit, stack and controller bounds allow, each in the owner's legal
@@ -1183,7 +1190,6 @@ export function evaluateOmahaVariantPolicy(
   const finishPriced = (reason: string, proposal = baseline) => {
     const out = finish(reason, proposal);
     if (!out.receipt.fired || s.stage !== 'river') return out;
-    const economicsStart = now();
     const wagerAction = s.currentBet > 0 ? 'raise' : 'bet';
     const sizes: number[] = [];
     if (
@@ -1222,7 +1228,7 @@ export function evaluateOmahaVariantPolicy(
       dealerSeat: s.dealerSeat!,
       rakeConfig: rake,
       bbjConfig: s.bbjConfig ?? null,
-      withinBudget: () => now() - economicsStart < OMAHA_VARIANT_NET_ACTION_BUDGET_MS,
+      // No deadline is passed: the pass completes its declared work (above).
       now,
     });
     out.receipt.netActionEconomics = economics;
@@ -1233,18 +1239,20 @@ export function evaluateOmahaVariantPolicy(
    * shared kernel) or the reference itself. A deviation is a wager or
    * nothing: a wager the legal menu cannot hold retains the reference. */
   const deviation = () =>
-    plo4ReferenceDeviation(
-      {
-        street: s.stage,
-        dealtSeats: seats.length,
-        liveOpponents: active.length,
-        role: receipt.role,
-        position: receipt.position,
-        baseline,
-        callCost,
-      },
-      pack.deviations
-    );
+    opponentStation
+      ? null
+      : plo4ReferenceDeviation(
+          {
+            street: s.stage,
+            dealtSeats: seats.length,
+            liveOpponents: active.length,
+            role: receipt.role,
+            position: receipt.position,
+            baseline,
+            callCost,
+          },
+          pack.deviations
+        );
   const decide = (done: typeof finish) => {
     const chosen = deviation();
     if (!chosen) return done('reference_retained');
@@ -1263,7 +1271,10 @@ export function evaluateOmahaVariantPolicy(
       variant,
       hero,
       s,
-      () => now() - start < 3,
+      // The declared work, never a clock (2026-10-16): the full 32 samples,
+      // at most three prior draws per dealt opponent each, as the P11.2
+      // matrix drew them. The 3 ms deadline that stood here is gone.
+      () => true,
       (showdowns) => {
         terminal = showdowns;
       }

@@ -28,7 +28,7 @@ import * as EngineMetrics from '../observability/engineInstruments.js';
 export interface DisconnectConfig {
   /** Seconds before auto-action on disconnect (default: 30) */
   disconnectTimeoutSeconds: number;
-  /** Number of consecutive timeouts before auto-sit-out (default: 3) */
+  /** Number of consecutive timeouts before auto-sit-out (default: 2) */
   maxConsecutiveTimeouts: number;
   /** If true, auto-check when possible instead of auto-fold (default: true) */
   preferCheckOverFold: boolean;
@@ -64,7 +64,7 @@ export interface PlayerConnectionState {
   sitOutOrbits?: number;
   /**
    * 2026-09-04 (disconnect audit item 3): WHY the current sit-out began.
-   * 'forced' is three consecutive timeouts; 'voluntary' is the player's own
+   * 'forced' is two consecutive timeouts; 'voluntary' is the player's own
    * Sit Out. The client shows a different sentence for each; until today it
    * could not tell them apart and told a player who never chose to sit out
    * that they were "sitting out".
@@ -258,13 +258,17 @@ export class DisconnectEngine {
   private transportGraceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   /** Just over the client's 5s heartbeat period, so one missed beat is forgiven. */
   private static readonly TRANSPORT_GRACE_MS = 8_000;
+  /** Two missed 5s app beats plus the normal 2s network grace. Checked only
+   * at an expiring decision, so a blackholed OPEN socket cannot spend banks
+   * before the ordinary 30s presence sweep notices it. */
+  private static readonly UNANSWERED_TURN_SILENCE_MS = 12_000;
   private actionCallbacks: Map<string, (action: DisconnectAction) => void> = new Map();
   private preciseTimer: PreciseActionTimer;
   private onEvent?: (event: DisconnectEvent) => void;
 
   private readonly DEFAULT_CONFIG: DisconnectConfig = {
     disconnectTimeoutSeconds: 30,
-    maxConsecutiveTimeouts: 3,
+    maxConsecutiveTimeouts: 2,
     preferCheckOverFold: true,
     reconnectGraceSeconds: 5,
   };
@@ -387,10 +391,13 @@ export class DisconnectEngine {
    * Process a heartbeat from a connected player.
    * Should be called periodically (e.g., every 5s via WebSocket ping).
    */
-  heartbeat(tableId: string, playerId: string): void {
+  heartbeat(tableId: string, playerId: string, transportOnly = false): void {
     const key = `${tableId}:${playerId}`;
     const state = this.playerStates.get(key);
     if (!state) return;
+    // A suspended app can still answer socket pings. Only an app/foreground
+    // heartbeat may end an explicit away signal; a pong cannot see the felt.
+    if (transportOnly && state.pageLeftAt !== null && state.pageLeftAt !== undefined) return;
 
     // Proof of life from the other transport. Cancel any open websocket window
     // BEFORE it can conclude — this is the line that removes the false alarm.
@@ -514,6 +521,14 @@ export class DisconnectEngine {
       tableId,
       playerId,
     });
+  }
+
+  protectExpiredTurn(tableId: string, playerId: string): void {
+    const state = this.playerStates.get(`${tableId}:${playerId}`);
+    if (!state?.isConnected || state.isSittingOut) return;
+    if (Date.now() - state.lastHeartbeat >= DisconnectEngine.UNANSWERED_TURN_SILENCE_MS) {
+      this.markDisconnected(tableId, playerId);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -890,6 +905,9 @@ export class DisconnectEngine {
       if (!state) continue;
       if (state.awayBlindSbCharged !== true || state.awayBlindBbCharged !== true) continue;
       if (!this.isAway(tableId, playerId)) continue;
+      // Keep the seat throughout its existing absolute reconnect allowance.
+      // Spent blinds still evict after grace; reconnect flapping cannot refill it.
+      if (this.getFsmState(tableId, playerId)?.state === 'MISSING') continue;
       evict.push(playerId);
     }
     return evict;

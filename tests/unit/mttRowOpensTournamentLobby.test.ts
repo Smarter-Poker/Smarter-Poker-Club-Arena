@@ -81,7 +81,7 @@ describe('there is exactly one route to a tournament lobby', () => {
   const helper = (() => {
     const start = src.indexOf('const openTournamentLobby = useCallback(');
     expect(start, 'the openTournamentLobby helper has moved or been renamed').toBeGreaterThan(-1);
-    return src.slice(start, src.indexOf('[navigate]', start));
+    return src.slice(start, src.indexOf('[navigate, clubId]', start));
   })();
 
   it('the helper is the only place that builds the path', () => {
@@ -91,7 +91,7 @@ describe('there is exactly one route to a tournament lobby', () => {
       'a second hand-rolled navigate to /tournaments/<id> can drift from the helper'
     ).toBe(0);
     expect(helper).toContain('const target = `/tournaments/${tournamentId}`;');
-    expect(helper).toContain('navigate(target);');
+    expect(helper).toContain('navigate(withClubContext(target, clubId));');
   });
 
   it('a double click cannot push a duplicate history entry', () => {

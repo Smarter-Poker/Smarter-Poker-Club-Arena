@@ -452,7 +452,7 @@ describe('large cashier roster stays complete and progressively rendered', () =>
       `/clubs/${CLUB_A}/members/44444444-4444-4444-8444-000000001999`
     );
     expect(screen.getAllByRole('checkbox', { name: /^Include / })).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Select Roster Player 1999' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include Roster Player 1999' }));
     fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
     const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
     fireEvent.change(within(dialog).getByRole('textbox', { name: 'Amount' }), {
@@ -1012,8 +1012,8 @@ it('keeps a late uncertain transfer in its original club instead of poisoning th
   await synchronized();
   await act(async () => batch.resolve({ data: null, error: { message: 'Connection Lost' } }));
   expect(screen.queryByText(/Nothing Was Sent/)).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Select Player 1' })).toBeEnabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Select Player 1' }));
+  expect(screen.getByRole('checkbox', { name: 'Include Player 1' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include Player 1' }));
   fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
   expect(await screen.findByRole('dialog', { name: /Send Out/ })).toBeInTheDocument();
 });
@@ -1186,7 +1186,7 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   state.roster = [{ ...player(0, 120, 'First Agent'), role: 'agent', role_rank: 3 }];
   mountCashier();
   await synchronized();
-  fireEvent.click(screen.getByRole('button', { name: 'Select First Agent' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include First Agent' }));
   fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
   const dialog = await screen.findByRole('dialog', { name: 'Send Out' });
   // Dan 2026-10-15: a large name, the player number, a large balance and the
@@ -1194,6 +1194,9 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   const card = within(dialog).getByRole('region', { name: 'Selected Player' });
   expect(card).toHaveTextContent('First Agent');
   await waitFor(() => expect(card).toHaveTextContent('340'));
+  const balances = within(dialog).getByRole('region', { name: 'Selected Player Wallet Balances' });
+  expect(balances).toHaveTextContent('Agent Wallet: 340.00');
+  expect(balances).toHaveTextContent('Player Wallet: 120.00');
   expect(
     within(card).getByRole('combobox', { name: 'Recipient Wallet For First Agent' })
   ).toHaveValue('agent_wallet');
@@ -1553,7 +1556,7 @@ it('Phase 7: the native player composer traps both Tab directions and returns fo
   state.roster = [player(0, 75)];
   mountCashier();
   await synchronized();
-  fireEvent.click(screen.getByRole('button', { name: 'Select Player 1', exact: true }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include Player 1', exact: true }));
   const trigger = screen.getByRole('button', { name: 'Send Out', exact: true });
   trigger.focus();
   fireEvent.click(trigger);
@@ -1586,8 +1589,8 @@ describe('Simple Cashier Default', () => {
     for (const name of ['Claim Back', 'Send Ticket', 'Send Out']) {
       expect(screen.getByRole('button', { name, exact: true })).toBeInTheDocument();
     }
-    expect(screen.getByPlaceholderText('Search Name Or ID')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Manage Player 1' })).toHaveTextContent('ID: P-1');
+    expect(screen.getByPlaceholderText('Search Name Or ID Number')).toBeInTheDocument();
+    expect(screen.getByText('ID: P-1').parentElement?.querySelector('img')).not.toBeNull();
     expect(
       within(screen.getByRole('link', { name: 'Manage Player 1' }).parentElement!).getByText(
         '75.00',
@@ -1833,9 +1836,9 @@ it('preloads the most recent own ticket, send and claim counterparties before hi
   await waitFor(() =>
     expect(
       screen
-        .getAllByRole('button', { name: /^Select Player/ })
+        .getAllByRole('checkbox', { name: /^Include Player/ })
         .map((button) => button.getAttribute('aria-label'))
-    ).toEqual(['Select Player 3', 'Select Player 2', 'Select Player 1'])
+    ).toEqual(['Include Player 3', 'Include Player 2', 'Include Player 1'])
   );
 });
 

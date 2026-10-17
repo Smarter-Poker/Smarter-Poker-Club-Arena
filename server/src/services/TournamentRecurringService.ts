@@ -3953,12 +3953,17 @@ export class TournamentRecurringService {
       // targets required by the scheduled branch after activation. This read
       // is eligibility only: the paired creator locks and chooses its own ABI.
       // A union event is never a Diamond event; a club's host is read off its
-      // own row. Unread (null) leaves diamond_host null, which refuses only the
-      // bounty targets, never a plain one.
-      const diamondHost = owner.unionId ? false : await this.diamondArenaHost(owner.clubId);
-      const admitted = (await projectTournamentAdmission((data ?? []) as SatelliteTargetRow[])).map(
-        (target) => ({ ...target, diamond_host: diamondHost })
-      );
+      // own row, and only when a bounty target is in the read (the one kind
+      // the Diamond Arena refuses). Unread (null) leaves diamond_host null,
+      // which refuses only the bounty targets, never a plain one.
+      const rows = (data ?? []) as SatelliteTargetRow[];
+      const anyBounty = rows.some((r) => r.is_bounty || r.is_pko || r.is_mystery_bounty);
+      const diamondHost =
+        owner.unionId || !anyBounty ? false : await this.diamondArenaHost(owner.clubId);
+      const admitted = (await projectTournamentAdmission(rows)).map((target) => ({
+        ...target,
+        diamond_host: diamondHost,
+      }));
       const now = Date.now();
       const targets = pickSatelliteTargets(
         admitted.filter(

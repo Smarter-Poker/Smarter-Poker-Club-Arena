@@ -760,6 +760,23 @@ export async function createHudClockReader() {
       }
       return facts;
     },
+    /** The persisted add-on window of one tournament, read-only; null when unreadable. */
+    async addOnBreakWindow(
+      tournamentId: string
+    ): Promise<{ addonPeriodEndsAt: string | null; addonBreakMinutes: number | null } | null> {
+      const { data, error } = await client
+        .from('tournaments')
+        .select('id,addon_period_ends_at,addon_break_minutes')
+        .eq('id', tournamentId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      const minutes = Number(data.addon_break_minutes);
+      return {
+        addonPeriodEndsAt: data.addon_period_ends_at ? String(data.addon_period_ends_at) : null,
+        addonBreakMinutes: Number.isFinite(minutes) ? minutes : null,
+      };
+    },
     async accountClosedBoard(
       start: TournamentBoardFacts,
       end: TournamentBoardFacts

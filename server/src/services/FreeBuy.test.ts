@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   FREE_BUY_SLOT_MINUTE,
+  FREE_BUY_HALF_HOUR_SLOTS_FROM_MS,
   freeBuySlotTime,
   FREE_BUY_TIERS,
   FREE_BUY_SLOTS,
@@ -675,6 +676,37 @@ describe('auditFreeBuyRow', () => {
     const p = auditFreeBuyRow(feature);
     expect(p.some((x) => x.includes('rebuy 2'))).toBe(true);
     expect(p.some((x) => x.includes('add-on 2'))).toBe(true);
+  });
+
+  it('reads an event that started before the board moved against the board it ran on', () => {
+    // The last four of the old board ran at the top of the hour on 2026-10-16
+    // and 10-17, and the audit reads 24 hours back.
+    const at = (hour: number, day: string, minute: number) =>
+      new Date(chicagoWallClockToUtcMs(day, hour, minute)).toISOString();
+    for (const [hour, day, prize] of [
+      [12, '2026-10-16', 250],
+      [16, '2026-10-16', 250],
+      [20, '2026-10-16', 500],
+      [0, '2026-10-17', 250],
+    ] as const) {
+      const name = FREE_BUY_SLOTS.find((s) => s.chicagoHour === hour)!.label + ' (NLH)';
+      expect(
+        auditFreeBuyRow(good({ name, start_time: at(hour, day, 0), guaranteed_prize: prize }))
+      ).toEqual([]);
+    }
+    // The first slot of the half-hour board onward must start on the half hour.
+    expect(Date.parse(at(8, '2026-10-17', 0))).toBe(FREE_BUY_HALF_HOUR_SLOTS_FROM_MS);
+    expect(
+      auditFreeBuyRow(good({ start_time: at(8, '2026-10-17', 0), guaranteed_prize: 250 })).some(
+        (x) => x.includes('not on the half hour')
+      )
+    ).toBe(true);
+    // Before the move, only the old minute is excused; any other minute is wrong.
+    expect(
+      auditFreeBuyRow(good({ start_time: at(12, '2026-10-16', 15), guaranteed_prize: 250 })).some(
+        (x) => x.includes('not on the half hour')
+      )
+    ).toBe(true);
   });
 
   it('accepts the guarantee a date before the doubling was published with, but never its old hour', () => {

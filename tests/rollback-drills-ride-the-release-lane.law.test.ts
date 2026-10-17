@@ -17,6 +17,7 @@
  * in tests/operations/engine-drill-admission.py against real Git histories.
  */
 import { spawnSync } from 'node:child_process';
+import { parse } from 'yaml';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -112,6 +113,41 @@ describe('the drill is a reviewed default-branch event, never a workstation', ()
     expect(verify).toContain('l.get("role")=="leader" and l.get("holder")==i');
     expect(workflowCode).not.toMatch(/server\/\.env/);
     expect(verify).toContain('[ "$PUBLIC_INSTANCE" = "$LOCAL_INSTANCE" ]');
+  });
+});
+
+describe('every shell the drill workflow runs parses', () => {
+  // 2026-10-17: the first sealed rollback drill (run 39050314819) failed its
+  // independent proof on `bash: syntax error near unexpected token (`. An
+  // apostrophe in a comment inside a single-quoted `python3 -c '...'` body
+  // ended the quote. Text pins never execute a step, so parse every one, and
+  // every heredoc body that is shipped to the host's bash, with `bash -n`.
+  const parsed = parse(workflow) as {
+    jobs: Record<string, { steps?: { name?: string; run?: string }[] }>;
+  };
+  const scripts: { name: string; source: string }[] = [];
+  for (const [job, definition] of Object.entries(parsed.jobs)) {
+    for (const step of definition.steps ?? []) {
+      if (!step.run) continue;
+      const name = `${job}: ${step.name ?? '(unnamed)'}`;
+      scripts.push({ name, source: step.run });
+      for (const match of step.run.matchAll(/<<'(\w+)'\n([\s\S]*?)\n\s*\1\n/g)) {
+        if (match[1] === 'PY') continue;
+        scripts.push({ name: `${name} <<'${match[1]}'`, source: match[2] });
+      }
+    }
+  }
+
+  it('finds the steps and the remote scripts it is meant to check', () => {
+    expect(scripts.length).toBeGreaterThan(10);
+    expect(scripts.filter((script) => script.name.endsWith("<<'REMOTE'")).length).toBeGreaterThan(
+      2
+    );
+  });
+
+  it.each(scripts.map((script) => [script.name, script.source]))('%s', (_name, source) => {
+    const result = spawnSync('bash', ['-n'], { input: source, encoding: 'utf8' });
+    expect(result.status, result.stderr).toBe(0);
   });
 });
 

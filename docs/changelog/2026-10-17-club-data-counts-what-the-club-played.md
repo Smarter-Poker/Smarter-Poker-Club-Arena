@@ -110,3 +110,15 @@ while roles were still loading.
   reads and the cashier's view of super agents; the everyday screen and the
   footer follow Dan's rule now, and the advanced report's scope is the next
   item.
+
+## Install (2026-10-17)
+
+The first two `apply-merged-migration` runs committed nothing. 17:41 UTC: the
+5-second lock timeout, behind a `union-weekly-rakeback-close` run holding
+`wallet_transactions` for over two minutes. 18:07 UTC: deadlock. The
+migration had created its `rake_records` trigger and then asked for ACCESS
+EXCLUSIVE on `wallet_transactions` for a drop-if-exists that had nothing to
+drop, while a payment held `wallet_transactions` and waited on `rake_records`.
+The never-installed file now uses `CREATE OR REPLACE TRIGGER` (SHARE ROW
+EXCLUSIVE, which readers never wait for) and takes both tables in one `LOCK`
+statement immediately before the triggers and the COMMIT.

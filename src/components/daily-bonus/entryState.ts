@@ -89,6 +89,11 @@ export function chicagoToday(now: number = Date.now()): string | null {
 
 export function isQuietPath(pathname: string): boolean {
   return (
+    // An invite landing has one job: let the player JOIN the club they were
+    // invited to (2026-10-17). A brand-new referred player met the bonus sheet
+    // there first and joined minutes later. It opens in the club, once joined.
+    pathname.startsWith('/invite') ||
+    pathname.startsWith('/i/') ||
     pathname.startsWith('/table') ||
     pathname.startsWith('/bonuses') ||
     pathname.startsWith('/multi-table') ||

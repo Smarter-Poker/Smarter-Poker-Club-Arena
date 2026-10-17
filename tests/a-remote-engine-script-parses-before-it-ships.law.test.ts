@@ -18,6 +18,11 @@
  * the remote shell, and the next `(` was shell syntax. Nothing parsed the
  * remote script before it ran on production, so nothing could catch it.
  *
+ * #7304 fixed the comment and pinned the drill workflow's own scripts
+ * (rollback-drills-ride-the-release-lane.law). The same transport - a
+ * quoted <<'REMOTE' heredoc carrying python3 -c '...' - is how the RELEASE
+ * lane (auto-deploy-hetzner) and the crash drill (engine-drill) reach the
+ * engine host, and a stray quote there would strand a release the same way.
  * This parses every remote heredoc in every workflow with `bash -n`, the way
  * the engine host will read it, so a script that cannot even be read fails
  * here instead of in the middle of a release or a drill.

@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useUnionRouteId } from '../hooks/useUnionRouteId';
 import { supabase } from '../lib/supabase';
+import { readUnionDirectory } from '../services/unionDirectory';
 import { unionApi } from '../services/UnionApiService';
 import { masterBus } from '../core/MasterBus';
 import { watchBbjPool } from '../lib/bbjPoolFeed';
@@ -896,17 +897,16 @@ export default function UnionDashboardPage() {
   useEffect(() => {
     if (tab !== 'players' || !authorizedUnionId) return;
     setRosterLoading(true);
-    void supabase
-      .rpc('fn_union_player_directory', { p_union_id: authorizedUnionId })
-      .then(({ data, error }) => {
-        if (error) {
-          reportError(error, 'UnionDashboard.roster_load_failed');
-          setRoster([]);
-        } else {
-          setRoster((data as typeof roster) || []);
-        }
-        setRosterLoading(false);
-      });
+    /* fn_union_player_directory, read past the API's 1,000-row cap. */
+    void readUnionDirectory<(typeof roster)[number]>(authorizedUnionId).then(({ data, error }) => {
+      if (error) {
+        reportError(error, 'UnionDashboard.roster_load_failed');
+        setRoster([]);
+      } else {
+        setRoster((data as typeof roster) || []);
+      }
+      setRosterLoading(false);
+    });
   }, [tab, authorizedUnionId]);
 
   const filteredRoster = useMemo(() => {

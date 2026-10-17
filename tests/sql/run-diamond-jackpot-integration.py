@@ -208,6 +208,7 @@ def main():
                 raise RuntimeError('missing qualification input: ' + str(path))
         load(before.read_text(), 'fail-before counterexamples')
         load(MIGRATION.read_text(), 'complete migration verbatim')
+        load("DO $$ BEGIN IF md5(pg_get_functiondef('public.fn_poker_diamond_settle_cash_hand(uuid,bigint,jsonb,numeric,numeric,text,numeric)'::regprocedure)) <> '42026f4929fe2adc0aae9bfd307c516f' THEN RAISE EXCEPTION 'installed cash settler differs from this qualified fixture'; END IF; RAISE NOTICE 'PASS: accepted-hand settlement matches the live October 15 definition'; END $$;", 'installed cash settlement parity')
         # Exact existing freeze sources and captured maintenance table shapes.
         freeze_source = (ROOT / 'scripts/qualification/original-seven-discharge/fixtures/bootstrap-complete.sql').read_text()
         load(freeze_source[freeze_source.index('CREATE OR REPLACE FUNCTION auth.role()'):freeze_source.index('CREATE OR REPLACE FUNCTION auth.uid()')], 'actual auth role reader for release boundary')

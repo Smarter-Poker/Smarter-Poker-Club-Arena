@@ -227,11 +227,12 @@ export default function DiamondWalletModal({
      now, 50 at a time, on a unique order (created_at, then id) so a page seam
      never serves a row twice or skips one, continuing from the rows on
      screen, and says when the ledger has ended. */
+  const historyRequest = useRef(0);
+  const historyCursor = useRef<{ owner: string; createdAt: string; id: string } | null>(null);
+  const pageInFlight = useRef(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState(false);
-  const txRef = useRef<DiamondTransaction[]>([]);
-  const historyRequest = useRef(0);
   const dialogRef = useRef<HTMLDivElement>(null);
   /** The desk itself: the focus fallback (the trap wrapper is display: contents). */
   const deskRef = useRef<HTMLDivElement>(null);
@@ -265,19 +266,21 @@ export default function DiamondWalletModal({
   const isMounted = useIsMounted();
 
   const fetchTransactions = useCallback(
-    async (mode: 'reset' | 'more' = 'reset') => {
+    async (append = false) => {
       if (!user?.id || !isOpen) return;
+      const cursor = historyCursor.current;
+      if (append && (pageInFlight.current || !cursor || cursor.owner !== user.id)) return;
+      pageInFlight.current = append;
+      setLoadingMore(append);
+      setMoreError(false);
+      if (!append) {
+        historyCursor.current = null;
+        setHasMore(false);
+      }
       const request = ++historyRequest.current;
       const isCurrent = () => isMounted.current && request === historyRequest.current;
-      const from = mode === 'more' ? txRef.current.length : 0;
-      if (mode === 'more') {
-        setLoadingMore(true);
-        setMoreError(false);
-      } else {
-        setLoading(true);
-        setLoadError(false);
-        setMoreError(false);
-      }
+      if (!append) setLoading(true);
+      setLoadError(false);
 
       try {
         /* ── THE `wallet_transactions` HALF OF THIS FETCH IS GONE ───────────────
@@ -296,7 +299,7 @@ export default function DiamondWalletModal({
          movement in a wallet that never moved.
 
          Diamonds live in `diamond_transactions`. One source, one currency. */
-        const { data: dtData, error: dtError } = await supabase
+        let query = supabase
           .from('diamond_transactions')
           /* `type` is selected as well as `transaction_type`, and that is the
            whole fix for 773 of the ~1,540 rows in this table. `transaction_type`
@@ -308,8 +311,15 @@ export default function DiamondWalletModal({
           .select('id, type, transaction_type, amount, player_line, balance_after, created_at')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
-          .order('id', { ascending: false })
-          .range(from, from + TX_LIMIT - 1);
+          .order('id', { ascending: false });
+        // A stable tuple cursor survives newer receipts arriving between pages.
+        // The user_id predicate remains outside this OR and scopes every page.
+        if (append && cursor) {
+          query = query.or(
+            `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`
+          );
+        }
+        const { data: dtData, error: dtError } = await query.limit(TX_LIMIT);
 
         /* supabase-js RESOLVES with `{ data: null, error }`; it does not throw.
          Both reads here discarded `error` entirely, so an RLS denial or a
@@ -329,13 +339,18 @@ export default function DiamondWalletModal({
         }));
 
         if (isCurrent()) {
-          const seen = new Set(txRef.current.map((tx) => tx.id));
-          const merged =
-            mode === 'more'
-              ? [...txRef.current, ...combined.filter((tx) => !seen.has(tx.id))]
-              : combined;
-          txRef.current = merged;
-          setTransactions(merged);
+          setTransactions((previous) =>
+            append
+              ? [
+                  ...previous,
+                  ...combined.filter((row) => !previous.some((old) => old.id === row.id)),
+                ]
+              : combined
+          );
+          const last = combined[combined.length - 1];
+          historyCursor.current = last
+            ? { owner: user.id, createdAt: last.created_at, id: last.id }
+            : null;
           setHasMore(combined.length === TX_LIMIT);
           setHistoryOwnerId(user.id);
         }
@@ -343,14 +358,14 @@ export default function DiamondWalletModal({
         if (isCurrent()) {
           reportError(err, 'DiamondWalletModal.Fetch_error');
           setHistoryOwnerId(user.id);
-          // A failed LATER page keeps the pages already read.
-          if (mode === 'more') setMoreError(true);
+          if (append) setMoreError(true);
           else setLoadError(true);
         }
       } finally {
         if (isCurrent()) {
-          if (mode === 'more') setLoadingMore(false);
-          else setLoading(false);
+          pageInFlight.current = false;
+          setLoadingMore(false);
+          setLoading(false);
         }
       }
     },
@@ -359,12 +374,13 @@ export default function DiamondWalletModal({
 
   useEffect(() => {
     const requestRef = historyRequest;
-    txRef.current = [];
-    setHasMore(false);
-    setMoreError(false);
-    setLoadingMore(false);
     setTransactions([]);
     setHistoryOwnerId(null);
+    historyCursor.current = null;
+    pageInFlight.current = false;
+    setHasMore(false);
+    setLoadingMore(false);
+    setMoreError(false);
     setLoadError(false);
     setLoading(true);
     if (isOpen) void fetchTransactions();
@@ -629,7 +645,11 @@ export default function DiamondWalletModal({
               </div>
             ) : filteredTx.length === 0 ? (
               <p className="wdesk__empty">
-                {filter === 'all' ? 'No Transactions Yet' : 'No Transactions Of This Kind'}
+                {filter === 'all'
+                  ? 'No Transactions Yet'
+                  : hasMore
+                    ? 'No Matching Transactions Loaded Yet'
+                    : 'No Transactions Of This Kind'}
               </p>
             ) : (
               filteredTx.map((tx) => {
@@ -679,7 +699,8 @@ export default function DiamondWalletModal({
                   <button
                     type="button"
                     className="wdesk__more"
-                    onClick={() => void fetchTransactions('more')}
+                    disabled={loadingMore}
+                    onClick={() => void fetchTransactions(true)}
                   >
                     Retry
                   </button>
@@ -688,7 +709,7 @@ export default function DiamondWalletModal({
                 <button
                   type="button"
                   className="wdesk__more"
-                  onClick={() => void fetchTransactions('more')}
+                  onClick={() => void fetchTransactions(true)}
                   disabled={loadingMore}
                 >
                   {loadingMore ? 'Loading...' : 'Load Older Diamonds'}

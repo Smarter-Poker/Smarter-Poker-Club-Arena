@@ -1,4 +1,4 @@
-import { act, cleanup, render, fireEvent, screen } from '@testing-library/react';
+import { act, cleanup, render, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
@@ -168,7 +168,16 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
     );
     await flush();
     expect(screen.getByRole('heading', { name: 'Send Out' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Selected Player' })).toHaveTextContent('KingFish');
+    const card = screen.getByRole('region', { name: 'Selected Player' });
+    expect(card).toHaveTextContent('KingFish');
+    const selector = within(card).getByRole('combobox', { name: 'Send Into' });
+    expect(selector.parentElement).toBe(card);
+    fireEvent.change(selector, { target: { value: 'player_wallet' } });
+    expect(selector).toHaveValue('player_wallet');
+    const face = card.cloneNode(true) as HTMLElement;
+    face.querySelector('select')!.remove();
+    expect(face.textContent).toContain('Player Wallet');
+    expect(face.textContent?.match(/12\.00/g)).toHaveLength(1);
     expect(screen.getByRole('region', { name: 'From The Club Bank' })).toHaveTextContent('100');
     const input = screen.getByRole('textbox', { name: 'Chips To Send' });
     fireEvent.change(input, { target: { value: '1,00000' } });

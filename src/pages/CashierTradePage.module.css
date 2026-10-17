@@ -2230,3 +2230,22 @@
 .page.simple .glass .rosterBalanceLine .rowSub {
   display: block;
 }
+
+/* The native selector owns the entire painted player frame. Its option labels
+   keep each wallet balance; the selected face prints that balance only once. */
+.console .playerCard > select.walletSelect {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.console .playerCard > select.walletSelect:disabled {
+  cursor: default;
+}
+.console .playerCard:focus-within {
+  outline: 1px solid var(--ink-blue);
+  outline-offset: -2px;
+}

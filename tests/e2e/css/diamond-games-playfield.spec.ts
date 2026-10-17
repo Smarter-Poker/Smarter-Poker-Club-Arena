@@ -109,6 +109,37 @@ const SUPER_TITLES = {
 } as const;
 const GAMES = ['plinko', 'crash', 'crossing', 'mines'] as const;
 
+/** Only the existing, documented TapHaptic native-switch exception is allowed. */
+async function expectOnlyTapSwitchNesting(
+  page: Page,
+  scan: { violations: { id: string; help: string; nodes: { target: unknown[] }[] }[] }
+) {
+  for (const violation of scan.violations) {
+    if (violation.id === 'nested-interactive') {
+      for (const node of violation.nodes) {
+        const allowed = await page.evaluate(
+          (selector) => {
+            const input = document.querySelector<HTMLInputElement>(
+              `${selector} > input[data-tap-haptic]`
+            );
+            return (
+              input?.type === 'checkbox' &&
+              input.hasAttribute('switch') &&
+              input.getAttribute('aria-hidden') === 'true' &&
+              input.tabIndex === -1
+            );
+          },
+          String(node.target[node.target.length - 1])
+        );
+        expect(
+          allowed,
+          `nested-interactive on ${node.target} is not the documented native tap switch`
+        ).toBe(true);
+      }
+    } else expect(violation, `${violation.id}: ${violation.help}`).toBeUndefined();
+  }
+}
+
 /** A bucket paying five times the drop or better prints larger (BIG_WIN_CENTS). */
 const isBigSlot = (label: string) => Number.parseFloat(label) >= 5;
 
@@ -294,7 +325,10 @@ for (const superGame of [false, true])
     await page.route('**/*', (route) => {
       const url = new URL(route.request().url());
       if (url.hostname !== 'diamond-test.local') network.push(url.href);
-      return route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' });
+      return route.fulfill({
+        contentType: 'text/html',
+        body: '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div>',
+      });
     });
     // CONTRACT 4. 100 simulated diamonds is one chip. An ordinary game pays for
     // its whole stake and keeps HALF of it. A Super award with the Double
@@ -439,7 +473,10 @@ for (const game of ['plinko', 'crash', 'crossing', 'mines'])
       await page.route('**/*', (route) => {
         const url = new URL(route.request().url());
         if (url.hostname !== 'diamond-test.local') network.push(url.href);
-        return route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' });
+        return route.fulfill({
+          contentType: 'text/html',
+          body: '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div>',
+        });
       });
       // Fix a safe local outcome so every test reaches a meaningful interaction.
       await page.addInitScript(() => {
@@ -523,12 +560,18 @@ for (const game of ['plinko', 'crash', 'crossing', 'mines'])
  * the browser says has focus, so the spec fails the moment the plate stops
  * being that thing.
  */
-test('Donkey Cross crosses street after street on the keyboard alone', async ({ page }) => {
+test('Donkey Cross crosses street after street on the keyboard alone', async ({
+  page,
+  browserName,
+}) => {
   const { diamondTestFixture } = await import('../helpers/diamond-test-fixture.mjs');
   const bundle = await diamondTestFixture();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route('**/*', (route) =>
-    route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' })
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div>',
+    })
   );
   // A sealed road of zero survives every street, so the round reaches street
   // three however the scene is compiled on this host.
@@ -554,9 +597,15 @@ test('Donkey Cross crosses street after street on the keyboard alone', async ({ 
         dimmed: element?.disabled ?? null,
       };
     });
+  // macOS Safari's native navigation key is Option+Tab when Keyboard
+  // Navigation is off. A two-native-button baseline reproduces it outside
+  // this app; Playwright describes the same platform behavior in #41808.
+  // Preserve actual keyboard navigation and every focus/round assertion.
+  const navigationTab =
+    browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab';
   let tabs = 0;
   while ((await under()).label !== 'Start Test' && tabs < 30) {
-    await page.keyboard.press('Tab');
+    await page.keyboard.press(navigationTab);
     tabs += 1;
   }
   expect((await under()).label, 'the primary plate is reachable by Tab').toBe('Start Test');
@@ -592,7 +641,7 @@ test('Donkey Cross crosses street after street on the keyboard alone', async ({ 
     .include('[data-game-console] aside')
     .include('[data-game-console] [data-game-actions]')
     .analyze();
-  expect(scan.violations.map((violation) => violation.id)).toEqual([]);
+  await expectOnlyTapSwitchNesting(page, scan);
 });
 
 /**
@@ -622,7 +671,10 @@ for (const game of ['crossing', 'mines'] as const)
     await page.route('**/*', (route) => {
       const url = new URL(route.request().url());
       if (url.hostname !== 'diamond-choice.local') network.push(url.href);
-      return route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' });
+      return route.fulfill({
+        contentType: 'text/html',
+        body: '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div>',
+      });
     });
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto(`http://diamond-choice.local/choice.html?game=${game}`);
@@ -737,7 +789,10 @@ for (const game of GAMES)
     const bundle = await diamondTestFixture();
     await page.setViewportSize({ width: 393, height: 852 });
     await page.route('**/*', (route) =>
-      route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' })
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div>',
+      })
     );
     await page.goto(`http://diamond-test.local/diamond-test.html?game=${game}`);
     await page.addStyleTag({ content: bundle.css });
@@ -885,7 +940,10 @@ test('An iPhone browser gets a tap switch on every live Diamond control, and eve
     const { diamondTestFixture } = await import('../helpers/diamond-test-fixture.mjs');
     const bundle = await diamondTestFixture();
     await page.route('**/*', (route) =>
-      route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' })
+      route.fulfill({
+        contentType: 'text/html',
+        body: '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div>',
+      })
     );
     await page.goto('http://diamond-test.local/diamond-test.html?game=mines');
     await page.addStyleTag({ content: bundle.css });
@@ -939,17 +997,7 @@ test('An iPhone browser gets a tap switch on every live Diamond control, and eve
     // exception (a switch inside its button, aria-hidden and out of the tab
     // order; see TapHaptic.tsx), and that exception only ever on a tap switch.
     const axe = await new AxeBuilder({ page }).include('[data-game-console]').analyze();
-    for (const violation of axe.violations) {
-      if (violation.id === 'nested-interactive') {
-        for (const node of violation.nodes) {
-          const hasSwitch = await page.evaluate(
-            (selector) => Boolean(document.querySelector(`${selector} > input[data-tap-haptic]`)),
-            String(node.target[node.target.length - 1])
-          );
-          expect(hasSwitch, `nested-interactive on ${node.target} is not a tap switch`).toBe(true);
-        }
-      } else expect(violation, `${violation.id}: ${violation.help}`).toBeUndefined();
-    }
+    await expectOnlyTapSwitchNesting(page, axe);
     // A tap lands on the switch (the topmost thing under the finger) and still plays.
     await page.getByRole('button', { name: 'Start Test', exact: true }).tap();
     await expect(page.getByRole('button', { name: 'Tile 2', exact: true })).toBeEnabled();
@@ -1046,7 +1094,10 @@ async function openGamePage(page: Page, game: keyof typeof START_LABEL, live = f
   await page.route('**/*', (route) => {
     const url = new URL(route.request().url());
     if (url.hostname !== 'diamond-pages.local') network.push(url.href);
-    return route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' });
+    return route.fulfill({
+      contentType: 'text/html',
+      body: '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div>',
+    });
   });
   await page.goto(`http://diamond-pages.local/game.html?game=${game}${live ? '&live=1' : ''}`);
   await page.addStyleTag({ content: bundle.css });

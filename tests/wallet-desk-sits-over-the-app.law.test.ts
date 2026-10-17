@@ -58,12 +58,17 @@ describe('the wallet desk sits over the whole app', () => {
 
   it('pages the Diamond history on a unique order instead of stopping at 50', () => {
     const src = read('src/components/wallet/DiamondWalletModal.tsx');
+    // A tuple cursor keeps the unique order stable when newer receipts arrive.
     expect(src).toMatch(
-      /\.order\('created_at', \{ ascending: false \}\)\s*\.order\('id', \{ ascending: false \}\)\s*\.range\(from, from \+ TX_LIMIT - 1\)/
+      /\.order\('created_at', \{ ascending: false \}\)\s*\.order\('id', \{ ascending: false \}\)/
     );
-    expect(src).toContain("const from = mode === 'more' ? txRef.current.length : 0;");
+    expect(src).toContain(
+      'created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})'
+    );
+    expect(src).toContain('query.limit(TX_LIMIT)');
+    expect(src).toContain('cursor.owner !== user.id');
     expect(src).toContain('Load Older Diamonds');
     expect(src).toContain('Could Not Load Older Diamonds.');
-    expect(src).not.toMatch(/\.limit\(TX_LIMIT\)/);
+    expect(src).not.toMatch(/\.range\(/);
   });
 });

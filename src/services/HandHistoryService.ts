@@ -878,6 +878,7 @@ class HandHistoryServiceClass {
     /* The model resolves the button the same way (`replayInputFromRow`); the
        `players[].isButton` floor above is kept for the position badges on the
        legacy per-player shape only. */
+    replay.arenaAsset = tableNames?.get(String(row.table_id))?.arenaAsset;
     const netByUser = new Map(replay.players.map((p) => [p.userId, p.net]));
 
     const buildResult = (userId: string): number => netByUser.get(userId) ?? 0;

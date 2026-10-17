@@ -12,6 +12,13 @@ const UNION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const sourceState = vi.hoisted(() => ({ clubError: null as null | { message: string } }));
 
 const rpc = vi.fn();
+/** The roster is read in pages (.order().range()); one mocked page holds it all. */
+function pageable(value: unknown) {
+  const p: any = Promise.resolve(value);
+  p.order = () => p;
+  p.range = () => p;
+  return p;
+}
 // The modal also loads a recent-sends feed via supabase.from(...); a thenable
 // chain stub keeps that path alive without a real client.
 const unionClubs = [
@@ -94,7 +101,7 @@ beforeEach(() => {
   promoSend.mockResolvedValue({ success: true });
   sendToClub.mockResolvedValue({ success: true });
   rpc.mockImplementation((fn: string) => {
-    if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+    if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
     if (fn === 'fn_union_send_to_member')
       return Promise.resolve({ data: { success: true }, error: null });
     return Promise.resolve({ data: null, error: null });
@@ -181,7 +188,7 @@ describe('UnionWalletModal', () => {
 
   it('stays open and shows the refusal when the server says no', async () => {
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       return Promise.resolve({
         data: { success: false, error: 'Insufficient balance in the selected union wallet.' },
         error: null,
@@ -253,7 +260,7 @@ describe('UnionWalletModal', () => {
   it('retires the key after a definitive business refusal', async () => {
     let sendAttempt = 0;
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_send_to_member') {
         sendAttempt += 1;
         return Promise.resolve({
@@ -285,7 +292,7 @@ describe('UnionWalletModal', () => {
   it('reuses the member-send operation id after a lost response and a remount', async () => {
     let sendAttempt = 0;
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_send_to_member') {
         sendAttempt += 1;
         if (sendAttempt === 1) return Promise.reject(new TypeError('Failed to fetch'));
@@ -326,7 +333,7 @@ describe('UnionWalletModal', () => {
       settle = resolve;
     });
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_send_to_member') return pending;
       return Promise.resolve({ data: null, error: null });
     });
@@ -484,7 +491,7 @@ describe('UnionWalletModal', () => {
       error: null,
     });
     rpc.mockImplementation((fn: string, args: { p_wallet?: string }) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_promo_wallet_ledger')
         return args.p_wallet === 'rake_wallet'
           ? rakePage
@@ -521,7 +528,7 @@ describe('UnionWalletModal', () => {
 
   it('has a ledger tab that reads fn_promo_wallet_ledger for the open wallet', async () => {
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_promo_wallet_ledger')
         return Promise.resolve({
           data: {
@@ -574,7 +581,7 @@ describe('UnionWalletModal', () => {
      RPC and carries an op id too. */
   it('pulls from the club promo wallet when opened on the promo wallet', async () => {
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_clawback_promo_from_club')
         return Promise.resolve({ data: { success: true, promo_after: 33000 }, error: null });
       return Promise.resolve({ data: null, error: null });
@@ -604,7 +611,7 @@ describe('UnionWalletModal', () => {
 
   it('pulls from the club bank when opened on the union bank, with an op id', async () => {
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_clawback_from_club')
         return Promise.resolve({ data: { success: true, union_balance: 70000 }, error: null });
       return Promise.resolve({ data: null, error: null });
@@ -627,7 +634,7 @@ describe('UnionWalletModal', () => {
   it('reuses the clawback operation id after an ambiguous transport failure', async () => {
     let clawbackAttempt = 0;
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_clawback_from_club') {
         clawbackAttempt += 1;
         if (clawbackAttempt === 1) return Promise.reject(new TypeError('Failed to fetch'));
@@ -656,7 +663,7 @@ describe('UnionWalletModal', () => {
 
   it('treats a duplicate clawback response as the confirmed earlier operation', async () => {
     rpc.mockImplementation((fn: string) => {
-      if (fn === 'fn_union_player_directory') return Promise.resolve({ data: roster, error: null });
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
       if (fn === 'fn_union_clawback_from_club') {
         return Promise.resolve({
           data: { success: false, duplicate: true, error: 'operation already processed' },

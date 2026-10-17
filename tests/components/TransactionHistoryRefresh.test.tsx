@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom';
 /**
  * THE /transactions PAGE READS THE CHIP JOURNAL (launch audit, 2026-10-06).
  *
@@ -14,7 +15,7 @@
  *   3. a tab returning after a while, and a wallet change elsewhere in the app,
  *      both read the statement again rather than leaving it stale.
  */
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render as renderUI, screen, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -24,6 +25,7 @@ const backend = vi.hoisted(() => ({
   bus: new Map<string, () => void>(),
   rpc: vi.fn(),
   from: vi.fn(),
+  route: '/',
 }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -61,6 +63,15 @@ vi.mock('../../src/lib/supabase', () => ({
     from: (...a: unknown[]) => backend.from(...a),
   },
 }));
+
+vi.mock('../../src/components/arena/DiamondArenaWallet', () => ({
+  default: ({ initialOpen }: { initialOpen?: boolean }) => (
+    <div>{initialOpen ? 'Own Diamond History' : 'Closed Diamond History'}</div>
+  ),
+}));
+function render(ui: React.ReactNode) {
+  return renderUI(<MemoryRouter initialEntries={[backend.route]}>{ui}</MemoryRouter>);
+}
 
 import TransactionHistoryPage, {
   TRANSACTION_PAGE_SIZE,
@@ -104,6 +115,7 @@ const statement = (legs: ReturnType<typeof leg>[]) => ({
 });
 
 beforeEach(() => {
+  backend.route = '/transactions';
   backend.rpc.mockReset();
   backend.from.mockReset();
   backend.bus.clear();
@@ -167,3 +179,16 @@ it('reads the statement again when the tab returns and when the wallet changes',
   await waitFor(() => expect(backend.rpc).toHaveBeenCalledTimes(3));
   expect(await screen.findByText('Tournament Prize')).toBeInTheDocument();
 });
+
+it.each(['diamond-arena', '002c2d27-9584-4e52-835a-bb2be148fc81'])(
+  'reads Diamond history instead of the chip journal for %s',
+  async (club) => {
+    backend.route = '/transactions?club=' + club;
+    render(<TransactionHistoryPage />);
+    expect(await screen.findByText('Own Diamond History')).toBeInTheDocument();
+    expect(screen.queryByText('Your Chip Statement')).not.toBeInTheDocument();
+    expect(backend.rpc).not.toHaveBeenCalled();
+    act(() => backend.bus.get('BALANCE_UPDATED')?.());
+    expect(screen.getByText('Own Diamond History')).toBeInTheDocument();
+  }
+);

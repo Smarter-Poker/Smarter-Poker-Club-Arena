@@ -112,7 +112,11 @@ vi.mock('../src/lib/supabase', () => ({
           error: null,
         });
       }
-      return Promise.resolve({ data: [], error: null });
+      // The players roster is paged (.order().range()); one empty page ends it.
+      const page: any = Promise.resolve({ data: [], error: null });
+      page.order = () => page;
+      page.range = () => page;
+      return page;
     }),
   },
 }));

@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { Locator } from '@playwright/test';
 
 // Exercise the maintained format assertions without starting Playwright's
 // runner/transform service inside the unit runner. Browser locator checks run
@@ -7,7 +10,47 @@ vi.mock('@playwright/test', async () => ({ expect: (await import('vitest')).expe
 import {
   expectCashierAmountPresets as certifyPresets,
   expectCashierWalletFigure as certifyWallet,
+  cashierRosterWalletValue,
 } from '../e2e/support/cashierProductionCertification';
+
+describe('production Cashier roster balance selection', () => {
+  function locatorFor(elements: Element[]): Locator {
+    return {
+      locator: (selector: string) =>
+        locatorFor(
+          elements.flatMap((element) =>
+            selector === '..' ? [element.parentElement!] : [...element.querySelectorAll(selector)]
+          )
+        ),
+      first: () => locatorFor(elements.slice(0, 1)),
+      textContent: async () => {
+        expect(elements).toHaveLength(1);
+        return elements[0].textContent;
+      },
+    } as unknown as Locator;
+  }
+
+  it.each(['1,234.56', 'Unavailable'])(
+    'reads the player value beside its label, preserving validation for %s',
+    async (figure) => {
+      const roster = document.createElement('div');
+      roster.innerHTML = `<span><span>Agent Wallet</span><strong>99.00</strong></span><span><span>Player Wallet</span><strong>${figure}</strong></span>`;
+      const label = [...roster.querySelectorAll('span')].find(
+        (element) => element.textContent === 'Player Wallet'
+      )!;
+      const selected = await cashierRosterWalletValue(locatorFor([label])).textContent();
+      expect(selected).toBe(figure);
+      if (figure === 'Unavailable')
+        expect(() => certifyWallet(selected!, 'Player Wallet')).toThrow();
+      else expect(() => certifyWallet(selected!, 'Player Wallet')).not.toThrow();
+    }
+  );
+
+  it('uses the maintained locator in the production certificate', () => {
+    const source = readFileSync(resolve(__dirname, '../e2e/production-cashier.spec.ts'), 'utf8');
+    expect(source).toContain('cashierRosterWalletValue(rosterWalletLabels.nth(index))');
+  });
+});
 
 describe('production Cashier wallet certificate', () => {
   it.each([

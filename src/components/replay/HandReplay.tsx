@@ -67,7 +67,7 @@ import {
   type ReplayCue,
   type ReplayRate,
 } from '../../utils/replayMotion';
-import { blindLabel, gameTypeLabel, money, stamp } from '../../utils/handFormat';
+import { blindLabel, gameTypeLabel, moneyForHand, stamp } from '../../utils/handFormat';
 import { getAnimationSpeed } from '../../utils/animationSpeed';
 import { soundService } from '../../services/SoundService';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -422,6 +422,7 @@ function Felt({
   motion: FrameMotion;
   heroId: string | null;
 }) {
+  const money = moneyForHand(model);
   const seats = useMemo(() => frameSeats(model), [model]);
   const hero = model.players.find((p) => p.userId === heroId);
   const heroSeat = hero?.seat ?? null;
@@ -758,6 +759,7 @@ export default function HandReplay({
   }, [propSource, handData, authId]);
 
   const model = source?.model ?? null;
+  const money = moneyForHand(model);
   /* The seat this replay is read FROM. The signed-in viewer on their own
      hand; the sharer on a hand that arrived in a link. */
   const heroId = source?.viewerId ?? null;

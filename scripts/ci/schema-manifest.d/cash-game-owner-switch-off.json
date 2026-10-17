@@ -1,0 +1,4 @@
+{
+  "_owner": "claude/cash-game-owner-switch-off (2026-10-17): owner switch for a running cash game, OPORD 18.4",
+  "functions": ["fn_cash_game_switch_off"]
+}

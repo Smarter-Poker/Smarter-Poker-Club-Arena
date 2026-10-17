@@ -20,6 +20,10 @@ The broader launch verdict remains incomplete: dedicated funded buy-in/hand/leav
 
 Local qualification: 77 native PASS lines across the independent historical and current 134-authority / 22-CHECK scenes, including the actual purchase, refund reconstruction, duplicate request and migration replay refusal. The player quote regression failed three cases before repair; 178 focused client assertions and 49 engine assertions pass after repair. Both TypeScript compilers passed. No production installation or new release is claimed by these local results.
 
+### Installation receipt, October17 04:31 UTC
+
+Qualified source migration `20261017042014` was installed once through Supabase, recorded as history `20261017043129`. Do not replay either identifier. At04:31:44.949023 UTC the actual purchase full MD5 was `30b96a6e6fe359d10e186c68a023c8fd`, refund reconstruction `26545c9dc6b043859f3090a915e5347a`, and new pure helper `df828634be00eac4e90cdee78dd826c9`. Ownership, execute ACLs, security/search-path settings and purchase timeout match qualification. The helper is immutable, invoker and postgres-execute-only. Direct read-only live ratio results are0 for Diamond freerolls,0.1 for the chip fallback and0.1 for a90+10 paid Diamond event. No production purchase was submitted and no financial record was edited. Application source merge/publication and engine quote activation remain pending.
+
 ## Complete audit disposition at this checkpoint
 
 | Item                                | Evidence and remaining action                                                                                                                                                                                                                                                                                                                       |

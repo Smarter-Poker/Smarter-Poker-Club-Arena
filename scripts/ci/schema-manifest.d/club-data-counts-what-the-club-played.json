@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/club-data-accurate-realtime-and-roles. Applied to production as migration 20261017105645_club_data_counts_what_the_club_played: accurate cash/union attribution, role-based scope checker, and real-time club data screen.",
+  "tables": [],
+  "functions": [
+    "fn_ca_cash_reporting_club",
+    "fn_ca_club_user_reporting_scope",
+    "ca_club_data_screen"
+  ]
+}

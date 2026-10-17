@@ -20,6 +20,8 @@ export const ACCOUNTING_ADMISSION_SOURCES = Object.freeze({
     'c4bfe7a004845a8326a73896c451cb17b0262e2f41ed172e05203bf45267e6b1',
   '20261017065530_deleted_wallets_settle_recorded_weekly_obligations_before_fr.sql':
     '94701e2b83ffb5ce1eae34a683f93e882d238f8609616a43f543fa6e52b8e488',
+  '20261017121500_an_in_progress_close_is_visited_without_the_whole_scan.sql':
+    '0a3a41049501cc30211b570531db7fa3ef622e34da59522cd7873e6fd4f87a06',
 });
 
 export const ACCOUNTING_ADMISSION_SQL = `

@@ -148,3 +148,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Each touched identity is proved once while every original event still counts.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-touched-identities-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# An in-progress close is visited without the whole scope-eligibility scan.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-in-progress-tick-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

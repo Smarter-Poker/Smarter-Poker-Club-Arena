@@ -65,18 +65,25 @@ test('requires the existing service owner, private standalone club and admission
 
 const windowRequest = '57b786b4-1f87-4b57-b65f-ea9997ca9dc8';
 const integrityRequest = '4ffbcbb6-f273-4c13-9dcb-bcd27b1d1005';
-const game9 = {
+const gameM = {
   ...game,
-  id: 'private-game-9',
-  name: 'Lightning Pilot NLH Madness 9',
+  id: 'private-game-madness',
+  name: 'Lightning Pilot NLH Madness 6',
   template_name: 'madness',
   ruleset_snapshot: templateSnapshot('madness'),
-  handedness: 9,
+  handedness: 6,
   sb: 0.02,
   bb: 0.04,
 };
-const windowRequest9 = '92836685-da27-433b-b25c-d524d6199f9b';
-const integrityRequest9 = '9c2c4d5b-2911-413d-87f4-befc54820391';
+const windowRequestM = '56373ee1-2e80-4826-b456-60e45a35b8f8';
+const integrityRequestM = 'd89cc46f-8d5c-4120-ac46-890f65adaf25';
+const retired9 = {
+  ...gameM,
+  id: 'retired-madness-nine',
+  name: 'Lightning Pilot NLH Madness 9',
+  handedness: 9,
+  closed_at: null,
+};
 const oldState = { cluster_mode: 'must_move', lightning_enabled: false };
 function controlReceipt(action, clusterId = game.id) {
   const telemetry = action === 'set_integrity_telemetry';
@@ -85,15 +92,15 @@ function controlReceipt(action, clusterId = game.id) {
     action,
     cluster_id: clusterId,
     request_id:
-      clusterId === game9.id
+      clusterId === gameM.id
         ? telemetry
-          ? integrityRequest9
-          : windowRequest9
+          ? integrityRequestM
+          : windowRequestM
         : telemetry
           ? integrityRequest
           : windowRequest,
     idempotent: false,
-    event_id: clusterId === game9.id ? (telemetry ? 202 : 201) : telemetry ? 102 : 101,
+    event_id: clusterId === gameM.id ? (telemetry ? 202 : 201) : telemetry ? 102 : 101,
     before: { ...oldState, shadow_window_ms: 300000, integrity_telemetry: false },
     after: { ...oldState, shadow_window_ms: 60000, integrity_telemetry: telemetry },
   };
@@ -115,7 +122,7 @@ async function runPilotWithReceipt(replaceReceipt, finalGame = game, finalMember
                   : [{ user_id: PILOT.ownerId, status: 'active', role: 'owner' }]
                 : table === 'clubs'
                   ? club
-                  : [game, game9];
+                  : [game, gameM];
           return {
             select() {
               return this;
@@ -134,7 +141,7 @@ async function runPilotWithReceipt(replaceReceipt, finalGame = game, finalMember
             async maybeSingle() {
               return {
                 data:
-                  table === 'cash_games' ? (this.filterId === game9.id ? game9 : finalGame) : data,
+                  table === 'cash_games' ? (this.filterId === gameM.id ? gameM : finalGame) : data,
               };
             },
             then(resolve, reject) {
@@ -349,13 +356,13 @@ test('prepares both explicitly named private table sizes without changing the or
   const receipt = await runPilotWithReceipt((r) => r);
   assert.deepEqual(
     receipt.targets?.map((t) => t.handedness),
-    [6, 9]
+    [6, 6]
   );
   assert.equal(receipt.clusterId, game.id);
   assert.equal(receipt.windowRequestId, windowRequest);
-  assert.equal(receipt.targets[1].clusterId, game9.id);
-  assert.equal(receipt.targets[1].windowRequestId, windowRequest9);
-  assert.equal(receipt.targets[1].integrityRequestId, integrityRequest9);
+  assert.equal(receipt.targets[1].clusterId, gameM.id);
+  assert.equal(receipt.targets[1].windowRequestId, windowRequestM);
+  assert.equal(receipt.targets[1].integrityRequestId, integrityRequestM);
 });
 
 async function runTwoTargetFlow(estate, options = {}) {
@@ -380,10 +387,14 @@ async function runTwoTargetFlow(estate, options = {}) {
                     : (options.initialRoster ?? ownerRoster)
                   : table === 'clubs'
                     ? (options.finalClub ?? club)
-                    : filters.id
-                      ? (options.finalGames?.[filters.id] ??
-                        estate.find((g) => g.id === filters.id))
-                      : estate;
+                    : table === 'tables'
+                      ? (options.retiredTables ?? [])
+                      : table === 'managed_game_contract_versions'
+                        ? (options.contractVersions ?? [{ version: 1 }])
+                        : filters.id
+                          ? (options.finalGames?.[filters.id] ??
+                            estate.find((g) => g.id === filters.id))
+                          : estate;
             return {
               select() {
                 return this;
@@ -394,6 +405,12 @@ async function runTwoTargetFlow(estate, options = {}) {
               },
               in(key, values) {
                 filters.in = values;
+                return this;
+              },
+              order() {
+                return this;
+              },
+              limit() {
                 return this;
               },
               maybeSingle: async () => ({ data: data() }),
@@ -427,12 +444,30 @@ async function runTwoTargetFlow(estate, options = {}) {
           async rpc(name, args) {
             calls.push({ name, args });
             if (name === 'fn_create_club_atomic') return { data: club };
+            if (name === 'fn_execute_managed_game_command') {
+              const answer = options.closeAnswer?.(args) ?? { ok: true };
+              if (answer.ok === true) {
+                const row = estate.find((g) => g.id === retired9.id);
+                if (row) Object.assign(row, { enabled: false, closed_at: '2026-10-17T12:00:00Z' });
+              }
+              return { data: answer };
+            }
             if (name === 'fn_cash_game_create') {
+              if (
+                estate.some(
+                  (g) =>
+                    g.enabled === true &&
+                    g.template_name === args.p_template &&
+                    g.bb === args.p_bb &&
+                    g.must_move === true
+                )
+              )
+                return { data: null, error: { code: '23505' } };
               const target = PILOT_TARGETS.find((t) => t.gameName === args.p_name);
               assert.ok(target);
               estate.push({
                 ...game,
-                id: target.handedness === 6 ? game.id : game9.id,
+                id: target.templateName === 'action' ? game.id : gameM.id,
                 name: target.gameName,
                 template_name: target.templateName,
                 ruleset_snapshot: templateSnapshot(target.templateName),
@@ -465,11 +500,11 @@ async function runTwoTargetFlow(estate, options = {}) {
   }
 }
 
-test('target definitions retain all original IDs and use separate stable nine-seat operations and stakes', () => {
+test('target definitions retain the Action IDs and give six-seat Madness its own operations and stakes', () => {
   assert.equal(PILOT_TARGETS[0].windowRequestId, windowRequest);
   assert.equal(PILOT_TARGETS[0].integrityRequestId, integrityRequest);
-  assert.equal(PILOT_TARGETS[1].windowRequestId, windowRequest9);
-  assert.equal(PILOT_TARGETS[1].integrityRequestId, integrityRequest9);
+  assert.equal(PILOT_TARGETS[1].windowRequestId, windowRequestM);
+  assert.equal(PILOT_TARGETS[1].integrityRequestId, integrityRequestM);
   assert.equal(
     new Set(PILOT_TARGETS.flatMap((t) => [t.windowRequestId, t.integrityRequestId])).size,
     4
@@ -477,11 +512,11 @@ test('target definitions retain all original IDs and use separate stable nine-se
   assert.notEqual(PILOT_TARGETS[0].bb, PILOT_TARGETS[1].bb);
   assert.deepEqual(
     PILOT_TARGETS.map((t) => t.handedness),
-    [6, 9]
+    [6, 6]
   );
 });
 
-test('half-completed preparation creates only named nine-seat target and preserves all ordinary seeded games', async () => {
+test('half-completed preparation creates only named Madness target and preserves all ordinary seeded games', async () => {
   const defaults = Array.from({ length: 9 }, (_, n) => ({
     ...game,
     id: `seed-${n}`,
@@ -500,9 +535,9 @@ test('half-completed preparation creates only named nine-seat target and preserv
     p_variant: 'nlh',
     p_sb: 0.02,
     p_bb: 0.04,
-    p_handedness: 9,
+    p_handedness: 6,
     p_overrides: { options: { is_private: true }, lightning_enabled: false },
-    p_name: game9.name,
+    p_name: gameM.name,
     p_must_move: true,
   });
   assert.equal(JSON.stringify(estate.slice(0, 9)), original);
@@ -516,7 +551,7 @@ test('half-completed preparation creates only named nine-seat target and preserv
     ]),
     [
       [6, 'off', false, 60000, true],
-      [9, 'off', false, 60000, true],
+      [6, 'off', false, 60000, true],
     ]
   );
   const recovered = await runTwoTargetFlow(estate);
@@ -527,7 +562,7 @@ test('half-completed preparation creates only named nine-seat target and preserv
   );
 });
 
-test('unknown nine-seat creation acknowledgment ends once and explicit recovery reads durable target first', async () => {
+test('unknown Madness creation acknowledgment ends once and explicit recovery reads durable target first', async () => {
   const estate = [game];
   let failedCalls;
   await assert.rejects(
@@ -540,10 +575,10 @@ test('unknown nine-seat creation acknowledgment ends once and explicit recovery 
     /UNKNOWN_ACK/
   );
   assert.equal(failedCalls.filter((c) => c.name === 'fn_cash_game_create').length, 1);
-  assert.equal(estate.filter((g) => g.name === game9.name).length, 1);
+  assert.equal(estate.filter((g) => g.name === gameM.name).length, 1);
   const recovered = await runTwoTargetFlow(estate);
   assert.equal(recovered.calls.filter((c) => c.name === 'fn_cash_game_create').length, 0);
-  assert.equal(recovered.receipt.targets[1].clusterId, game9.id);
+  assert.equal(recovered.receipt.targets[1].clusterId, gameM.id);
 });
 
 for (const patch of [
@@ -551,18 +586,18 @@ for (const patch of [
   { bb: 0.05 },
   { enabled: false },
   { template_name: 'classic' },
-  { handedness: 6 },
+  { handedness: 9 },
   { lightning_enabled: true },
   { ruleset_snapshot: { options: { is_private: false } } },
 ])
-  test(`nine-seat target identity refuses drift ${JSON.stringify(patch)}`, () => {
-    assert.throws(() => selectPilotGame([game, { ...game9, ...patch }], club.id, PILOT_TARGETS[1]));
+  test(`Madness target identity refuses drift ${JSON.stringify(patch)}`, () => {
+    assert.throws(() => selectPilotGame([game, { ...gameM, ...patch }], club.id, PILOT_TARGETS[1]));
   });
 
-test('ambiguous named nine-seat target is rejected before any operator write', async () => {
+test('ambiguous named Madness target is rejected before any operator write', async () => {
   let calls;
   await assert.rejects(
-    runTwoTargetFlow([game, game9, { ...game9, id: 'duplicate' }], {
+    runTwoTargetFlow([game, gameM, { ...gameM, id: 'duplicate' }], {
       inspectCalls: (seen) => {
         calls = seen;
       },
@@ -572,7 +607,7 @@ test('ambiguous named nine-seat target is rejected before any operator write', a
   assert.equal(calls.filter((c) => c.name === 'fn_lightning_operator_control').length, 0);
 });
 
-test('never qualifies malformed nine-seat receipts or extends historical compatibility to a new operation', async () => {
+test('never qualifies malformed Madness receipts or extends historical compatibility to a new operation', async () => {
   for (const mutation of [
     (r) => ({ ok: true }),
     (r) => ({ ...r, cluster_id: game.id }),
@@ -587,9 +622,9 @@ test('never qualifies malformed nine-seat receipts or extends historical compati
     }),
   ]) {
     await assert.rejects(
-      runTwoTargetFlow([game, game9], {
+      runTwoTargetFlow([game, gameM], {
         replaceReceipt: (r, args) =>
-          args.p_cluster_id === game9.id && args.p_action === 'set_shadow_window' ? mutation(r) : r,
+          args.p_cluster_id === gameM.id && args.p_action === 'set_shadow_window' ? mutation(r) : r,
       }),
       /Receipt/
     );
@@ -600,11 +635,11 @@ for (const [label, options] of [
   [
     'activation',
     {
-      finalGames: { [game9.id]: { ...game9, cluster_mode: 'lightning', lightning_enabled: true } },
+      finalGames: { [gameM.id]: { ...gameM, cluster_mode: 'lightning', lightning_enabled: true } },
     },
   ],
-  ['stake drift', { finalGames: { [game9.id]: { ...game9, bb: 0.05 } } }],
-  ['running worker', { configs: { [game9.id]: { worker_mode: 'form' } } }],
+  ['stake drift', { finalGames: { [gameM.id]: { ...gameM, bb: 0.05 } } }],
+  ['running worker', { configs: { [gameM.id]: { worker_mode: 'form' } } }],
   ['public club', { finalClub: { ...club, is_public: true } }],
   [
     'new admission',
@@ -617,7 +652,7 @@ for (const [label, options] of [
   ],
 ])
   test(`final two-target readback refuses ${label}`, async () => {
-    await assert.rejects(runTwoTargetFlow([game, game9], options));
+    await assert.rejects(runTwoTargetFlow([game, gameM], options));
   });
 
 test('fresh preparation creates both private sizes through the ordinary authenticated creation door', async () => {
@@ -628,18 +663,18 @@ test('fresh preparation creates both private sizes through the ordinary authenti
     creations.map((c) => [c.args.p_name, c.args.p_handedness, c.args.p_sb, c.args.p_bb]),
     [
       [PILOT.gameName, 6, 0.01, 0.02],
-      ['Lightning Pilot NLH Madness 9', 9, 0.02, 0.04],
+      ['Lightning Pilot NLH Madness 6', 6, 0.02, 0.04],
     ]
   );
   assert.equal(receipt.targets.length, 2);
   assert.equal(estate.length, 2);
 });
 
-test('a malformed nine-seat integrity acknowledgment never qualifies the two-target setup', async () => {
+test('a malformed Madness integrity acknowledgment never qualifies the two-target setup', async () => {
   await assert.rejects(
-    runTwoTargetFlow([game, game9], {
+    runTwoTargetFlow([game, gameM], {
       replaceReceipt: (r, args) =>
-        args.p_cluster_id === game9.id && args.p_action === 'set_integrity_telemetry'
+        args.p_cluster_id === gameM.id && args.p_action === 'set_integrity_telemetry'
           ? { ...r, after: { ...r.after, integrity_telemetry: false } }
           : r,
     }),
@@ -649,14 +684,14 @@ test('a malformed nine-seat integrity acknowledgment never qualifies the two-tar
 
 test('final private club readback must retain the original club ID', async () => {
   await assert.rejects(
-    runTwoTargetFlow([game, game9], { finalClub: { ...club, id: 'different-private-club' } }),
+    runTwoTargetFlow([game, gameM], { finalClub: { ...club, id: 'different-private-club' } }),
     /Final Club Identity/
   );
 });
 
 test('setup refuses a failed service-session cleanup instead of reporting success', async () => {
   await assert.rejects(
-    runTwoTargetFlow([game, game9], {
+    runTwoTargetFlow([game, gameM], {
       cleanupResult: {
         error: { code: 'ISOLATED_CLEANUP_FAILURE', message: 'raw provider detail must not print' },
       },
@@ -667,7 +702,7 @@ test('setup refuses a failed service-session cleanup instead of reporting succes
 
 test('setup preserves its primary failure diagnostic when local-session cleanup also fails', async () => {
   await assert.rejects(
-    runTwoTargetFlow([game, game9], {
+    runTwoTargetFlow([game, gameM], {
       finalClub: { ...club, is_public: true },
       cleanupResult: { error: { code: 'ISOLATED_CLEANUP_FAILURE' } },
     }),
@@ -683,7 +718,7 @@ test('setup preserves its primary failure diagnostic when local-session cleanup 
 
 test('successful null or no-error cleanup outcomes retain setup compatibility', async () => {
   for (const cleanupResult of [null, { error: null }, {}]) {
-    const { receipt } = await runTwoTargetFlow([game, game9], { cleanupResult });
+    const { receipt } = await runTwoTargetFlow([game, gameM], { cleanupResult });
     assert.equal(receipt.targets.length, 2);
     assert.equal(receipt.publicLaunch, 'NO_GO');
   }
@@ -695,7 +730,7 @@ test('the roster accepts the owner plus admitted horses and counts them on the r
     { user_id: PILOT.ownerId, status: 'active', role: 'owner' },
     ...horses.map((id) => ({ user_id: id, status: 'active', role: 'player' })),
   ];
-  const { receipt } = await runTwoTargetFlow([game, game9], {
+  const { receipt } = await runTwoTargetFlow([game, gameM], {
     initialRoster: roster,
     finalRoster: roster,
     profiles: horses.map((id) => ({ id, is_horse: true })),
@@ -725,7 +760,7 @@ for (const [label, member, profile] of [
   test(`the roster refuses ${label}`, async () => {
     const roster = [{ user_id: PILOT.ownerId, status: 'active', role: 'owner' }, member];
     await assert.rejects(
-      runTwoTargetFlow([game, game9], {
+      runTwoTargetFlow([game, gameM], {
         initialRoster: roster,
         finalRoster: roster,
         profiles: profile ? [profile] : [],
@@ -735,10 +770,10 @@ for (const [label, member, profile] of [
 
 test('Action and Madness keep their own immutable rules and never accept Classic or relabeled snapshots', () => {
   assert.doesNotThrow(() => assertPilotGame(game, club.id, PILOT_TARGETS[0]));
-  assert.doesNotThrow(() => assertPilotGame(game9, club.id, PILOT_TARGETS[1]));
+  assert.doesNotThrow(() => assertPilotGame(gameM, club.id, PILOT_TARGETS[1]));
   for (const [candidate, target] of [
     [game, PILOT_TARGETS[0]],
-    [game9, PILOT_TARGETS[1]],
+    [gameM, PILOT_TARGETS[1]],
   ]) {
     for (const patch of [
       { template_name: 'classic' },
@@ -763,7 +798,13 @@ test('Action and Madness keep their own immutable rules and never accept Classic
 test('normal creation preserves both original Classic pilots and creates distinct Action/Madness categories', async () => {
   const legacy = [
     { ...game, id: 'legacy-six', name: 'Lightning Pilot NLH 6', template_name: 'classic' },
-    { ...game9, id: 'legacy-nine', name: 'Lightning Pilot NLH 9', template_name: 'classic' },
+    {
+      ...gameM,
+      id: 'legacy-nine',
+      name: 'Lightning Pilot NLH 9',
+      template_name: 'classic',
+      handedness: 9,
+    },
   ];
   const original = JSON.stringify(legacy);
   const estate = [...legacy];
@@ -774,8 +815,109 @@ test('normal creation preserves both original Classic pilots and creates distinc
     created.map((c) => [c.args.p_template, c.args.p_handedness, c.args.p_sb, c.args.p_bb]),
     [
       ['action', 6, 0.01, 0.02],
-      ['madness', 9, 0.02, 0.04],
+      ['madness', 6, 0.02, 0.04],
     ]
   );
   assert.equal(new Set(created.map((c) => c.args.p_template)).size, 2);
+});
+
+const retiredMain = [
+  { id: 'retired-main', role: 'main', status: 'running', cluster_id: retired9.id },
+];
+
+test('the replaced nine-seat Madness is never closed over a seated player and nothing is created', async () => {
+  const estate = [game, { ...retired9 }];
+  let failedCalls;
+  await assert.rejects(
+    runTwoTargetFlow(estate, {
+      retiredTables: retiredMain,
+      closeAnswer: () => ({ ok: false, reason: 'players_seated' }),
+      inspectCalls: (calls) => {
+        failedCalls = calls;
+      },
+    }),
+    /Still Has Seated Players; Run This Same Setup Again After They Leave Normally/
+  );
+  assert.equal(failedCalls.filter((c) => c.name === 'fn_cash_game_create').length, 0);
+  assert.equal(failedCalls.filter((c) => c.name === 'fn_lightning_operator_control').length, 0);
+  assert.equal(estate.find((g) => g.id === retired9.id).enabled, true);
+});
+
+test('an empty replaced nine-seat Madness closes through the owner door before six-seat creation', async () => {
+  const estate = [game, { ...retired9 }];
+  const { receipt, calls } = await runTwoTargetFlow(estate, { retiredTables: retiredMain });
+  const close = calls.find((c) => c.name === 'fn_execute_managed_game_command');
+  assert.deepEqual(
+    [close.args.p_kind, close.args.p_game_id, close.args.p_action, close.args.p_expected_version],
+    ['table', 'retired-main', 'close', 1]
+  );
+  assert.match(close.args.p_command_id, /^[0-9a-f-]{36}$/);
+  const order = calls.map((c) => c.name);
+  assert.ok(
+    order.indexOf('fn_execute_managed_game_command') < order.indexOf('fn_cash_game_create')
+  );
+  assert.deepEqual(
+    calls
+      .filter((c) => c.name === 'fn_cash_game_create')
+      .map((c) => [c.args.p_name, c.args.p_handedness]),
+    [['Lightning Pilot NLH Madness 6', 6]]
+  );
+  assert.deepEqual(
+    receipt.retirements.map((r) => [r.gameName, r.outcome]),
+    [['Lightning Pilot NLH Madness 9', 'closed']]
+  );
+  assert.deepEqual(
+    receipt.targets.map((t) => [t.gameName, t.handedness]),
+    [
+      [PILOT.gameName, 6],
+      ['Lightning Pilot NLH Madness 6', 6],
+    ]
+  );
+});
+
+test('a replaced target already closed is read, not closed again', async () => {
+  const estate = [game, { ...retired9, enabled: false, closed_at: '2026-10-17T12:00:00Z' }];
+  const { receipt, calls } = await runTwoTargetFlow(estate);
+  assert.equal(calls.filter((c) => c.name === 'fn_execute_managed_game_command').length, 0);
+  assert.deepEqual(
+    receipt.retirements.map((r) => r.outcome),
+    ['already_closed']
+  );
+});
+
+for (const [label, options, pattern] of [
+  [
+    'an unexplained close refusal',
+    { closeAnswer: () => ({ ok: false, reason: 'stale_contract_version' }) },
+    /Close Refused: stale_contract_version/,
+  ],
+  [
+    'two open main tables',
+    { retiredTables: [...retiredMain, { ...retiredMain[0], id: 'second' }] },
+    /Main Table Is Ambiguous/,
+  ],
+  ['a missing contract version', { contractVersions: [] }, /Contract Version Is Missing/],
+])
+  test(`retirement refuses ${label} before any creation`, async () => {
+    const estate = [game, { ...retired9 }];
+    let failedCalls;
+    await assert.rejects(
+      runTwoTargetFlow(estate, {
+        retiredTables: retiredMain,
+        ...options,
+        inspectCalls: (calls) => {
+          failedCalls = calls;
+        },
+      }),
+      pattern
+    );
+    assert.equal(failedCalls.filter((c) => c.name === 'fn_cash_game_create').length, 0);
+  });
+
+test('retirement refuses an active or drifted nine-seat game instead of closing it', async () => {
+  for (const patch of [{ lightning_enabled: true }, { handedness: 6 }, { club_id: 'other' }]) {
+    await assert.rejects(
+      runTwoTargetFlow([game, { ...retired9, ...patch }], { retiredTables: retiredMain })
+    );
+  }
 });

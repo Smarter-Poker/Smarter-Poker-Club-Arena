@@ -708,7 +708,7 @@ export async function collectQualification({
     ...(report.club.status !== 'known' ? ['PILOT_CLUB_NOT_ESTABLISHED'] : []),
     ...report.targets
       .filter((t) => t.observation.status !== 'known')
-      .map((t) => `${t.handedness}_MAX_TARGET_NOT_ESTABLISHED`),
+      .map((t) => `${t.templateName.toUpperCase()}_TARGET_NOT_ESTABLISHED`),
     ...report.targets.flatMap((t) => {
       if (t.observation.status !== 'known') return [];
       const blockers = [];

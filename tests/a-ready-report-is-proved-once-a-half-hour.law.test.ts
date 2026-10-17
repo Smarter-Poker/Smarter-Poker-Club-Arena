@@ -40,8 +40,9 @@ describe('a ready report is proved once a half hour', () => {
   });
 
   it('pins the scope preimage and postimage and keeps the receipts private', () => {
-    expect(sql).toContain("'6bd020f058339c34e51a88717cf4fbd6'");
-    expect(sql).toContain("'9d5ede8aa77afecfb993e305a755175a'");
+    for (const md5 of ['56eb1c0de1083bddd8a1e218a85df511', '31c800832cef83681bf0a492a41fe076', '86c6a68eec0928c90aea883b48101c9f', '63eea798a2390accfd91d68f06dd9958']) {
+      expect(sql).toContain(`'${md5}'`);
+    }
     expect(sql).toContain('ENABLE ROW LEVEL SECURITY');
     expect(sql).toContain(
       'REVOKE ALL ON TABLE public.accounting_close_report_receipts FROM PUBLIC, anon, authenticated;'

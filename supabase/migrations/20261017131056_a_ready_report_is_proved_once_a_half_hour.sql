@@ -45,8 +45,11 @@
 -- over 30 minutes old and a warming report are all refused.
 --
 -- GUARDS: refuses in the break window; the scope function substitution pins
--- the live preimage (6bd020f0..., the postimage of 20261017121500) and the
--- postimage (9d5ede8a..., derived read-only on production with replace()), each
+-- one of two reviewed live bodies, each with its own exact postimage (both
+-- derived from fixtures and checked read-only on production with replace()):
+--   56eb1c0d... (postimage of 20261017132500)                -> 31c80083...
+--   86c6a68e... (that, with 20261017132354's alarm closers)  -> 63eea798...
+-- so it installs before or after 20261017132354, whichever lands first; each
 -- anchor exactly once; owner, SECURITY DEFINER, configuration and ACL are
 -- proven unchanged; the readback must be the exact postimage.
 --
@@ -54,7 +57,7 @@
 -- only the new body calls the two new helpers, and they commit in this same
 -- transaction. So the install neither waits on job 272 nor fails when a tick
 -- holds union-accounting-scheduler.
--- @live-proof: md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure)) = '9d5ede8aa77afecfb993e305a755175a'
+-- @live-proof: md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure)) IN ('31c800832cef83681bf0a492a41fe076', '63eea798a2390accfd91d68f06dd9958')
 -- @live-proof: to_regclass('public.accounting_close_report_receipts') IS NOT NULL
 
 BEGIN;
@@ -69,7 +72,7 @@ BEGIN
     RAISE EXCEPTION 'READY_REPORT_RECEIPT_REFUSED: %', v_reason USING ERRCODE = '55000';
   END IF;
   IF md5(pg_get_functiondef('public.fn_process_weekly_accounting_scope(uuid,uuid)'::regprocedure))
-       NOT IN ('6bd020f058339c34e51a88717cf4fbd6', '9d5ede8aa77afecfb993e305a755175a') THEN
+       NOT IN ('56eb1c0de1083bddd8a1e218a85df511', '31c800832cef83681bf0a492a41fe076', '86c6a68eec0928c90aea883b48101c9f', '63eea798a2390accfd91d68f06dd9958') THEN
     RAISE EXCEPTION 'READY_REPORT_RECEIPT_REFUSED: unexpected weekly scope body';
   END IF;
 END
@@ -222,17 +225,20 @@ $o2$;
   v_report_seeded boolean := false;
 $n2$;
   v_oid oid := to_regprocedure(c_sig);
-  v_def text; v_new text;
+  v_def text; v_new text; v_want text;
   v_owner oid; v_secdef boolean; v_config text[]; v_acl text;
 BEGIN
   IF current_user <> 'postgres' OR v_oid IS NULL THEN
     RAISE EXCEPTION 'ready report: owner/target mismatch';
   END IF;
   v_def := pg_get_functiondef(v_oid);
-  IF md5(v_def) = '9d5ede8aa77afecfb993e305a755175a' THEN
+  IF md5(v_def) IN ('31c800832cef83681bf0a492a41fe076', '63eea798a2390accfd91d68f06dd9958') THEN
     RETURN;
   END IF;
-  IF md5(v_def) <> '6bd020f058339c34e51a88717cf4fbd6' THEN
+  v_want := CASE md5(v_def)
+              WHEN '56eb1c0de1083bddd8a1e218a85df511' THEN '31c800832cef83681bf0a492a41fe076'
+              WHEN '86c6a68eec0928c90aea883b48101c9f' THEN '63eea798a2390accfd91d68f06dd9958' END;
+  IF v_want IS NULL THEN
     RAISE EXCEPTION 'ready report: unexpected live body %', md5(v_def);
   END IF;
   IF (length(v_def) - length(replace(v_def, c_old1, ''))) / length(c_old1) <> 1
@@ -240,7 +246,7 @@ BEGIN
     RAISE EXCEPTION 'ready report: an anchor is not exactly once';
   END IF;
   v_new := replace(replace(v_def, c_old1, c_new1), c_old2, c_new2);
-  IF md5(v_new) <> '9d5ede8aa77afecfb993e305a755175a' THEN
+  IF md5(v_new) <> v_want THEN
     RAISE EXCEPTION 'ready report: computed postimage is %', md5(v_new);
   END IF;
   SELECT p.proowner, p.prosecdef, p.proconfig, p.proacl::text

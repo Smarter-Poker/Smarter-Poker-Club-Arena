@@ -36,7 +36,7 @@ slot.
 
 ## Verified
 
-Rebased onto the postimage of `20261017121500` (live `6bd020f0...`). On native Postgres 16: the migration runs twice cleanly, the scope readback
+It installs on either reviewed live body: `56eb1c0d` (after `20261017132500`) -> `31c80083`, or `86c6a68e` (after `20261017132354` too) -> `63eea798`. On native Postgres 16: the migration runs twice cleanly, the scope readback
 is the exact postimage with its ACL unchanged; keep then seed restores the
 memo under the report's exact key; a different generation, an unchunked
 session, a receipt over 30 minutes old and a warming report are refused.

@@ -10219,7 +10219,12 @@ function LiveTablePage({
         const { data, error } = await supabase.rpc('atomic_table_rebuy', payload);
         if (error || typeof data !== 'number' || !Number.isFinite(data) || data < 0) {
           const failure = error ?? new Error('Rebuy Purchase Receipt Was Not Confirmed');
-          if (failure.message?.includes('FetchError') || !navigator.onLine) {
+          const frozenRebuy = platformFrozenMessage(error);
+          if (frozenRebuy) {
+            // Maintenance break refusal (2026-10-16): name the break. The
+            // retry key is kept; a repeat after the break runs fresh.
+            toast?.error(frozenRebuy);
+          } else if (failure.message?.includes('FetchError') || !navigator.onLine) {
             // A rebuy is a debit against a live wallet. It is not queued for
             // later: nothing on the client can prove, at replay time, that the
             // player still wants it or that the seat still exists. Fail here,
@@ -28795,6 +28800,12 @@ function LiveTablePage({
               addOnPurchasePendingRef.current = false;
               throw error;
             }
+            // Maintenance break refusal is definitive (2026-10-16).
+            const frozenAddOn = platformFrozenMessage(error);
+            if (frozenAddOn) {
+              addOnPurchasePendingRef.current = false;
+              throw new TournamentPurchaseNotSubmittedError(new Error(frozenAddOn));
+            }
             toast?.error('Add-On Not Confirmed. Retry To Check The Same Purchase.');
             return false;
           } finally {
@@ -28860,6 +28871,14 @@ function LiveTablePage({
               rebuyPurchasePendingRef.current = false;
               setRebuyUnconfirmed(false);
               toast?.error('The Purchase Was Not Submitted. Please Try Again.');
+              return;
+            }
+            // Maintenance break refusal is definitive (2026-10-16).
+            const frozenRebuy = platformFrozenMessage(error);
+            if (frozenRebuy) {
+              rebuyPurchasePendingRef.current = false;
+              setRebuyUnconfirmed(false);
+              toast?.error(frozenRebuy);
               return;
             }
             setRebuyUnconfirmed(true);

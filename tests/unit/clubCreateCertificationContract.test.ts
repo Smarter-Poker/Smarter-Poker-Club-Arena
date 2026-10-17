@@ -122,6 +122,16 @@ describe('Create Club production certification contract', () => {
     expect(script).toContain('record: { id: userId, email }');
     expect(script).not.toContain('Fixture User Delete Skipped');
     expect(script).toContain('await cleanupResidualDirectCertificates()');
+    // The fixture profile carries its email so the guarded door can prove it,
+    // and a residual missing it has the email restored before cleanup.
+    expect(script).toMatch(
+      /upsert\(\s*\{\s*id: userId,[\s\S]*?\n\s*email,\n\s*username: fixtureName,/
+    );
+    expect(script).toContain('.update({ email: fixture.email })');
+    expect(script).toContain(".is('email', null)");
+    expect(script.indexOf('.update({ email: fixture.email })')).toBeLessThan(
+      script.indexOf('record: { id: fixture.id, email: fixture.email }')
+    );
     expect(script).toContain('retireCertificationClubWithRetry({');
     expect(script).toContain('environment: process.env');
     expect(script).toContain('cert-residue-recovery');

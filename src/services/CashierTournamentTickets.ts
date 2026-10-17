@@ -20,6 +20,7 @@
  * pressing Register on that tournament; the existing ticket finder offers it.
  */
 import { supabase } from '../lib/supabase';
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 
 /** One row of the Send Ticket drop-down. */
 export interface TicketableTournament {
@@ -167,6 +168,8 @@ export async function issueTournamentEntryTicket(args: {
     p_idempotency_key: args.idempotencyKey,
     p_expected_price: args.tournament.price,
   });
+  // Maintenance break refusal is definitive (2026-10-16).
+  if (isPlatformFrozenError(error)) throw new Error(PLATFORM_FROZEN_MESSAGE);
   if (error) {
     // The outcome is unknown, not refused: retry with the SAME key.
     throw new Error('Could Not Confirm The Ticket. Retry To Check, You Will Not Be Charged Twice.');

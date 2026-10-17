@@ -75,12 +75,13 @@ Per pack, once its strength verdict is qualified:
 
 ## 5. Launch-Readiness Register (Updated)
 
-1. CAPACITY (highest risk, Dan's action). At 06:00Z (01:00 CDT) with 556 tables the decision lane already sat at
+1. CAPACITY (Dan APPROVED 2026-10-17 11:09Z). At 06:00Z (01:00 CDT) with 556 tables the decision lane already sat at
    ~700 queued, oldest 6-7 s; 1,578 optional second looks expired (no fallback by themselves). Daily worker compute
-   ~230,000 s (NLH decisions 68.6k s, per-decision tournament utility 63.8k s, reference 27.2k s, second looks only ~2.7k s),
-   so reordering the queue cannot fix it. Root fix: rescale Hetzner 132435945 to ccx43 (lane then runs 8 workers, no code
-   change). Fallback: `HORSE_DECISION_WORKERS=4` on the host. Watch `poker_horse_decision_fallbacks_total` and
-   /health oldestQueuedDecisionAgeMs at the 23:00Z peak.
+   ~230,000 s, so reordering the queue cannot fix it.
+   - Root fix APPROVED: rescale Hetzner 132435945 to ccx43 (16 dedicated vCPU, 64 GB RAM, 360 GB disk; lane then runs 8 workers, no code change).
+   - SCHEDULED DOWNTIME: 11:55 UTC (06:55 CDT), during the :55 table break in the quiet hour window. Antigravity powers off, executes `hcloud server change-type 132435945 ccx43`, powers on, and verifies 8 workers and tournament resumption.
+   - HORSE BRAIN NOTICE: Avoid running journal completion extracts across the 11:55-12:05Z window.
+   - Post-rescale verification: /health releaseSha, liveHorseDecision.workerCount 8, governor.enabled false, stalledTableCount 0, tournamentResumesFailing 0, and poker_horse_decision_fallbacks_total stays flat at tonight's 23:00Z peak.
 2. Requalification (section 4).
 3. Tournament ICM context gaps: 79% of incomplete contexts are `live_field_recovery_pending` +
    `live_field_stack_cardinality_mismatch` (busted players holding an open rebuy/re-entry prompt; fail-closed by design;

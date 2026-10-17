@@ -41,6 +41,7 @@ import { getIdentityDNAStatus } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 // The file is PushNotificationService.ts. macOS resolves './push...' anyway and
 // Linux CI does not, which is exactly how a red test reached main on 2026-08-21.
 
@@ -569,6 +570,10 @@ async function mutateCashout(
     // the player can act on, never an outcome that needs a receipt lookup.
     const refused = definitiveCashoutRefusal(error, context);
     if (refused) throw refused;
+    // The maintenance break (2026-10-16): name it, but keep the operation, so
+    // a repeat after the break replays rather than files a second request.
+    if (isPlatformFrozenError(error))
+      throw new CashoutOutcomeUnknownError(PLATFORM_FROZEN_MESSAGE, context);
     throw new CashoutOutcomeUnknownError(
       'Cashout Could Not Be Confirmed. Refresh Its Status Before Retrying The Same Operation.',
       context

@@ -193,6 +193,67 @@ export function classifyCaseFailure(input: {
   };
 }
 
+/**
+ * A tournament's add-on break is an authoritative hold, not a frozen table.
+ *
+ * The engine persists one add-on window (`addon_period_ends_at`) and holds
+ * every table for its final `addon_break_minutes` (clamped to 1..10, exactly
+ * as TournamentManagerBase.addOnBreakDurationMs does). Selection already
+ * refuses a board whose window is open; this names the case where the window
+ * opened while the browser watched. The hold explains ONLY the time inside
+ * the break: silence before the break began, and after it ended, must each
+ * still fit the ordinary gameplay silence limit, so a table that stalls into
+ * a break or fails to resume after one is still a failure.
+ */
+export type AddOnBreakHold =
+  | { held: true; breakStartedAt: number; breakEndsAt: number; reason: string }
+  | { held: false; reason: string };
+
+export function classifyAddOnBreakHold(input: {
+  addonPeriodEndsAt: string | null | undefined;
+  addonBreakMinutes: number | null | undefined;
+  silenceStartedAt: number;
+  observedAt: number;
+  maxSilenceMs: number;
+}): AddOnBreakHold {
+  const breakEndsAt = Date.parse(String(input.addonPeriodEndsAt ?? ''));
+  if (!Number.isFinite(breakEndsAt)) return { held: false, reason: 'no persisted add-on window' };
+  const configured = Number(input.addonBreakMinutes ?? 1);
+  const minutes = Math.min(
+    10,
+    Math.max(1, Number.isFinite(configured) ? Math.floor(configured) : 1)
+  );
+  const breakStartedAt = breakEndsAt - minutes * 60_000;
+  if (
+    !Number.isFinite(input.silenceStartedAt) ||
+    !Number.isFinite(input.observedAt) ||
+    !(input.maxSilenceMs > 0)
+  )
+    return { held: false, reason: 'the observed silence is not measurable' };
+  if (input.silenceStartedAt >= breakEndsAt || input.observedAt <= breakStartedAt)
+    return { held: false, reason: 'the silence does not overlap the persisted add-on break' };
+  const beforeBreakMs = Math.max(0, breakStartedAt - input.silenceStartedAt);
+  if (beforeBreakMs > input.maxSilenceMs)
+    return {
+      held: false,
+      reason: `the table was silent ${beforeBreakMs}ms before the add-on break began`,
+    };
+  const afterBreakMs = Math.max(0, input.observedAt - breakEndsAt);
+  if (afterBreakMs > input.maxSilenceMs)
+    return {
+      held: false,
+      reason: `the table did not resume within ${input.maxSilenceMs}ms after the add-on break ended`,
+    };
+  return {
+    held: true,
+    breakStartedAt,
+    breakEndsAt,
+    reason:
+      `the silence lies inside the persisted ${minutes}-minute add-on break ` +
+      `(${new Date(breakStartedAt).toISOString()} to ${new Date(breakEndsAt).toISOString()})`,
+  };
+}
+
 /** A re-selection needs room for a whole case: selection, one hand, an outage, one more hand. */
 export const MIN_RESELECTION_BUDGET_MS = 150_000;
 export const MAX_NATURAL_COMPLETION_RESELECTIONS = 2;

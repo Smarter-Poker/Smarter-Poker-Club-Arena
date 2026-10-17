@@ -61,6 +61,7 @@ import {
 import { useTournamentEntries } from '../hooks/useTournamentEntries';
 import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
 import { reportError } from '../utils/errorReporter';
+import { platformFrozenMessage } from '../utils/platformFrozen';
 import { openTableAsObserver } from '../utils/observeTable';
 import { spinMultiplierLabel } from '../utils/spinReveal';
 import { useMysteryBounty } from '../hooks/useMysteryBounty';
@@ -957,7 +958,8 @@ export default function TournamentPage() {
         toast.error('Rebuy failed');
       }
     } catch (error) {
-      toast.error('Rebuy failed: ' + (error as Error).message);
+      // Maintenance break refusal is definitive (2026-10-16).
+      toast.error(platformFrozenMessage(error) ?? 'Rebuy failed: ' + (error as Error).message);
     }
     setIsProcessingRebuy(false);
   };
@@ -978,7 +980,8 @@ export default function TournamentPage() {
         toast.error('Add-on failed');
       }
     } catch (error) {
-      toast.error('Add-on failed: ' + (error as Error).message);
+      // Maintenance break refusal is definitive (2026-10-16).
+      toast.error(platformFrozenMessage(error) ?? 'Add-on failed: ' + (error as Error).message);
     }
     setIsProcessingRebuy(false);
   };

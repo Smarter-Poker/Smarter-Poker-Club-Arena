@@ -677,6 +677,36 @@ describe('auditFreeBuyRow', () => {
     expect(p.some((x) => x.includes('add-on 2'))).toBe(true);
   });
 
+  it('reads a date published before the half-hour board against the timetable that published it', () => {
+    // 2026-10-17 was on the board before the change shipped: 8:00, guarantee 250.
+    const onTheHour = (hour: number, day: string) =>
+      new Date(chicagoWallClockToUtcMs(day, hour, 0)).toISOString();
+    expect(
+      auditFreeBuyRow(good({ start_time: onTheHour(8, '2026-10-17'), guaranteed_prize: 250 }))
+    ).toEqual([]);
+    expect(
+      auditFreeBuyRow(
+        good({
+          name: 'Prime Time Free Buy (NLH)',
+          start_time: onTheHour(20, '2026-10-19'),
+          guaranteed_prize: 500,
+        })
+      )
+    ).toEqual([]);
+    // The previous timetable's minute does not excuse the previous prize being short.
+    expect(
+      auditFreeBuyRow(good({ start_time: onTheHour(8, '2026-10-17'), guaranteed_prize: 100 })).some(
+        (x) => x.includes('guarantee 100')
+      )
+    ).toBe(true);
+    // From the first date the half-hour board owns, the hour is wrong again.
+    const p = auditFreeBuyRow(
+      good({ start_time: onTheHour(8, '2026-10-20'), guaranteed_prize: 250 })
+    );
+    expect(p.some((x) => x.includes('not on the half hour'))).toBe(true);
+    expect(p.some((x) => x.includes('guarantee 250'))).toBe(true);
+  });
+
   it('catches a paid first entry', () => {
     expect(auditFreeBuyRow(good({ buy_in_amount: 5 }))).toContain('the first entry is not free');
   });

@@ -493,6 +493,21 @@ async function cleanupResidualDirectCertificates() {
       );
     }
 
+    // A fixture left by a run whose profile upsert beat the signup hook has no
+    // profile email, and the guarded door refuses it for ever. Restore the
+    // email from the auth record (only when it is missing) so the door can
+    // prove the identity and retire it.
+    const { error: profileEmailError } = await admin
+      .from('profiles')
+      .update({ email: fixture.email })
+      .eq('id', fixture.id)
+      .is('email', null);
+    if (profileEmailError) {
+      throw new Error(
+        `Residual Certificate Profile Email Restore Failed: ${profileEmailError.message}`
+      );
+    }
+
     await cleanupProductionE2EAccount({
       record: { id: fixture.id, email: fixture.email },
       environment: process.env,
@@ -525,6 +540,11 @@ try {
   const { error: profileError } = await admin.from('profiles').upsert(
     {
       id: userId,
+      // The guarded retirement door proves identity by profiles.email matching
+      // the auth email. When this upsert wins the race with the signup hook it
+      // creates the row, so it must carry the email or cleanup is refused
+      // (CERTIFICATION_RETIREMENT_PROFILE_REFUSED, 2026-10-17 08:29 UTC).
+      email,
       username: fixtureName,
       display_name: 'Club Create Certification',
     },

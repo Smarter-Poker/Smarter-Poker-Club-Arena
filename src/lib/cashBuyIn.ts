@@ -32,6 +32,8 @@
  */
 
 /** The standard band the table's BuyInModal offers, in big blinds. */
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
+
 export const CASH_MIN_BB = 40;
 export const CASH_MAX_BB = 200;
 
@@ -127,8 +129,11 @@ export function cashBuyInSeatConflictText(raw: unknown): string | null {
 export function cashBuyInRefusalText(raw: unknown): string | null {
   const seatConflict = cashBuyInSeatConflictText(raw);
   if (seatConflict) return seatConflict;
+  // Maintenance break refusal is definitive (2026-10-16).
+  if (isPlatformFrozenError(raw)) return PLATFORM_FROZEN_MESSAGE;
   const m = String((raw as { message?: string })?.message ?? raw ?? '');
   if (!m) return null;
+  if (/PLATFORM_FROZEN/.test(m)) return PLATFORM_FROZEN_MESSAGE;
   if (/GAME_CLOSED/.test(m)) return 'This Game Is Not Taking New Players';
   if (/TABLE_CLOSING/.test(m)) return 'This Table Is Closing And Is Not Taking New Players';
 

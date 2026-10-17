@@ -1,0 +1,66 @@
+name: The club messenger welcome triggers are declared
+
+# ca_declared_money_triggers (migration 20261016104521). Runs
+# scripts/ci/test-the-club-messenger-welcome-triggers-are-declared.py against a
+# throwaway PostgreSQL 17 cluster, never production: production's exact
+# fn_undeclared_money_triggers (md5 equal to the live function on 2026-10-16)
+# must report both club Messenger welcome triggers before the migration and
+# neither after, still report an unreviewed trigger, and the migration must
+# refuse a trigger of that name bound to another function. No timer
+# (CLAUDE.md 10.85): pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261016104521_the_club_messenger_welcome_triggers_are_declared.sql
+      - scripts/ci/fixtures/the-club-messenger-welcome-triggers-are-declared/**
+      - scripts/ci/test-the-club-messenger-welcome-triggers-are-declared.py
+      - .github/workflows/the-club-messenger-welcome-triggers-are-declared.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: the-club-messenger-welcome-triggers-are-declared-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  the-club-messenger-welcome-triggers-are-declared:
+    name: The club messenger welcome triggers are declared
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: The club messenger welcome triggers are declared
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-the-club-messenger-welcome-triggers-are-declared.py --output artifacts/the-club-messenger-welcome-triggers-are-declared
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: the-club-messenger-welcome-triggers-are-declared-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/the-club-messenger-welcome-triggers-are-declared/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

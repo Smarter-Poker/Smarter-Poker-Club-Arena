@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { tournamentService } from '../src/services/TournamentService';
 import { supabase } from '../src/lib/supabase';
 import { TournamentPurchaseNotSubmittedError } from '../src/services/TournamentPurchaseIntent';
+import { platformFrozenMessage, PLATFORM_FROZEN_MESSAGE } from '../src/utils/platformFrozen';
 
 const source = (path: string): string => readFileSync(resolve(process.cwd(), path), 'utf8');
 
@@ -72,6 +73,7 @@ describe('the mounted tournament purchase callbacks preserve unknown outcomes', 
         current: null as { active: boolean; bound: boolean } | null,
       },
       TournamentPurchaseNotSubmittedError,
+      platformFrozenMessage,
       isCurrentPurchase: () => true,
       rebuyProcessing: false,
       rebuyProcessingRef: { current: false },
@@ -192,6 +194,31 @@ describe('the mounted tournament purchase callbacks preserve unknown outcomes', 
     expect(f.bustHoldRef.current.pendingExit).toBeNull();
     expect(f.rebuyJustSucceededRef.current).toBe(true);
     expect(f.endRebuyPrompt).toHaveBeenCalledOnce();
+  });
+
+  it('treats a maintenance break refusal as definitive, never as an unconfirmed purchase', async () => {
+    const frozen = Object.assign(new Error('PLATFORM_FROZEN: maintenance'), { code: '55006' });
+    const f = fixture();
+    f.tournamentService.processRebuy.mockRejectedValueOnce(frozen);
+    await tableCallback('onConfirmRebuy', f)();
+    expect(f.rebuyPurchasePendingRef.current).toBe(false);
+    expect(f.setRebuyUnconfirmed).not.toHaveBeenCalledWith(true);
+    expect(f.toast.error).toHaveBeenLastCalledWith(PLATFORM_FROZEN_MESSAGE);
+
+    const g = fixture();
+    g.tournamentService.processAddOn.mockRejectedValueOnce(frozen);
+    const accept = tableCallback('onAddOnAccept', g);
+    await expect(accept()).rejects.toBeInstanceOf(TournamentPurchaseNotSubmittedError);
+    await expect(
+      tableCallback('onAddOnAccept', {
+        ...fixture(),
+        tournamentService: { processAddOn: vi.fn().mockRejectedValue(frozen) },
+      })()
+    ).rejects.toThrow(PLATFORM_FROZEN_MESSAGE);
+    expect(g.addOnPurchasePendingRef.current).toBe(false);
+    expect(g.toast.error).not.toHaveBeenCalledWith(
+      'Add-On Not Confirmed. Retry To Check The Same Purchase.'
+    );
   });
 
   it('allows decline after a proven fresh pre-submit failure, without retiring the retry token', async () => {

@@ -83,6 +83,13 @@ describe('the tree janitor only removes what can be made again', () => {
   it('leaves a tree alone while somebody is working in it', () => {
     expect(janitor).toContain('IDLE_DAYS');
     expect(janitor).toContain('KEEP_PATTERN');
-    expect(janitor).toMatch(/-newermt "@\$IDLE_CUTOFF"/);
+    // BSD find (macOS) cannot parse -newermt "@<epoch>": the idle test then
+    // matched nothing and every tree looked idle (2026-10-17). The cutoff is
+    // handed to find as a calendar time both BSD and GNU find accept.
+    expect(janitor).toMatch(/-newermt "\$IDLE_STAMP"/);
+    expect(janitor).toMatch(/IDLE_STAMP=\$\(stamp "\$IDLE_CUTOFF"\)/);
+    expect(janitor).toContain('date -r "$1" \'+%Y-%m-%d %H:%M:%S\'');
+    expect(janitor).not.toMatch(/-newermt "@/);
+    expect(janitor).toContain('refusing to sweep');
   });
 });

@@ -56,6 +56,15 @@ FREED=0; T1=0; T2=0; T3=0; KEPT=0
 NOW=$(date +%s)
 IDLE_CUTOFF=$(( NOW - IDLE_DAYS * 86400 ))
 ARCHIVE_CUTOFF=$(( NOW - ARCHIVE_DAYS * 86400 ))
+# BSD find (macOS) cannot parse "@<epoch>" for -newermt: it printed
+# "Can't parse date/time", matched nothing, and every registered tree looked
+# idle, so --apply stripped node_modules from trees agents were working in
+# (2026-10-17: src-S, src-9ccf, hb-select, hb-league... freed hours after
+# creation). Give find a calendar time both BSD and GNU find accept.
+stamp() { date -r "$1" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -d "@$1" '+%Y-%m-%d %H:%M:%S'; }
+IDLE_STAMP=$(stamp "$IDLE_CUTOFF")
+ARCHIVE_STAMP=$(stamp "$ARCHIVE_CUTOFF")
+[ -n "$IDLE_STAMP" ] && [ -n "$ARCHIVE_STAMP" ] || { echo "cannot format the idle cutoff; refusing to sweep" >&2; exit 1; }
 
 say "ca-tree-janitor  $(date '+%Y-%m-%d %H:%M')  apply=$APPLY archive=$ARCHIVE idle=${IDLE_DAYS}d archive_after=${ARCHIVE_DAYS}d"
 say "clone: $CLONE"
@@ -77,7 +86,7 @@ while IFS= read -r T; do
   NEWEST=$(find "$T" -maxdepth 4 -type f \
       -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist*/*' \
       -not -path '*/coverage/*' -not -path '*/test-results/*' -not -path '*/playwright-report/*' \
-      -newermt "@$IDLE_CUTOFF" -print -quit 2>/dev/null)
+      -newermt "$IDLE_STAMP" -print -quit 2>/dev/null)
   if [ -n "$NEWEST" ]; then
     KEPT=$((KEPT+1))
     continue   # somebody is working in there right now
@@ -94,7 +103,7 @@ while IFS= read -r T; do
   # TIER 3 — abandoned with work in it: archive, then remove.
   if [ "$ARCHIVE" = 1 ]; then
     OLDEST_OK=$(find "$T" -maxdepth 4 -type f -not -path '*/node_modules/*' -not -path '*/.git/*' \
-        -newermt "@$ARCHIVE_CUTOFF" -print -quit 2>/dev/null)
+        -newermt "$ARCHIVE_STAMP" -print -quit 2>/dev/null)
     if [ -z "$OLDEST_OK" ]; then
       DIRTY=$(git -C "$T" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
       BRANCH=$(git -C "$T" rev-parse --abbrev-ref HEAD 2>/dev/null)

@@ -4122,9 +4122,9 @@ function ClubHomePageContent({
     (tournamentId: string) => {
       const target = `/tournaments/${tournamentId}`;
       if (window.location.pathname.endsWith(target)) return;
-      navigate(target);
+      navigate(withClubContext(target, clubId));
     },
-    [navigate]
+    [navigate, clubId]
   );
 
   const openEntry = useCallback(
@@ -5712,8 +5712,11 @@ function ClubHomePageContent({
               )}
             </section>
           }
+          /* The chip-club campaign opens announcements, an operator surface
+             the Diamond boundary deliberately does not admit. Do not advertise
+             another club's event or send an Arena player to the safe shell. */
           campaign={
-            club.banner_url && !isRetiredClubBanner(club.banner_url) ? (
+            !isAutomaticArena && club.banner_url && !isRetiredClubBanner(club.banner_url) ? (
               <button
                 type="button"
                 className="club-lobby-command-top__campaign-button"

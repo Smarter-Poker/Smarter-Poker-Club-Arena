@@ -42,7 +42,7 @@ import type { ReplayModel, ReplayRow, ReplayShowdownRow } from '../../utils/hand
 import type { HeroHandFacts } from '../../services/HandHistoryService';
 import { computeEquity, type EquityResult } from '../../utils/equity';
 import './HandDetailView.css';
-import { blindLabel, money, stamp } from '../../utils/handFormat';
+import { blindLabel, money, moneyForHand, stamp } from '../../utils/handFormat';
 
 export interface HandDetailViewProps {
   model: ReplayModel;
@@ -80,7 +80,14 @@ const STREET_WORD: Record<string, string> = {
  * what actually happened. `all_in_equity` is a fraction; every chip figure is
  * money. Nothing here is computed on the client; it is the record.
  */
-function AllInFacts({ facts }: { facts: HeroHandFacts }) {
+function AllInFacts({
+  facts,
+  arenaAsset,
+}: {
+  facts: HeroHandFacts;
+  arenaAsset?: ReplayModel['arenaAsset'];
+}) {
+  const actualMoney = moneyForHand({ arenaAsset });
   if (!facts.was_all_in || facts.all_in_equity === null) return null;
   const pct = Math.round(facts.all_in_equity * 1000) / 10;
   const luck = facts.ev_returned === null ? null : money(facts.net - facts.ev_net);
@@ -98,7 +105,7 @@ function AllInFacts({ facts }: { facts: HeroHandFacts }) {
         {facts.all_in_at_risk !== null && (
           <div className="hdv__allin-cell">
             <span className="hdv__allin-label">At Risk</span>
-            <span className="hdv__allin-value">{money(facts.all_in_at_risk)}</span>
+            <span className="hdv__allin-value">{actualMoney(facts.all_in_at_risk)}</span>
           </div>
         )}
         {facts.ev_returned !== null && (
@@ -109,7 +116,7 @@ function AllInFacts({ facts }: { facts: HeroHandFacts }) {
         )}
         <div className="hdv__allin-cell">
           <span className="hdv__allin-label">Got Back</span>
-          <span className="hdv__allin-value">{money(facts.returned)}</span>
+          <span className="hdv__allin-value">{actualMoney(facts.returned)}</span>
         </div>
         <div className="hdv__allin-cell">
           <span className="hdv__allin-label">Expected Net</span>
@@ -122,7 +129,7 @@ function AllInFacts({ facts }: { facts: HeroHandFacts }) {
           <span className="hdv__allin-label">Actual Net</span>
           <span className={`hdv__allin-value${facts.net >= 0 ? ' is-up' : ' is-down'}`}>
             {facts.net >= 0 ? '+' : '-'}
-            {money(Math.abs(facts.net))}
+            {actualMoney(Math.abs(facts.net))}
           </span>
         </div>
       </div>
@@ -194,12 +201,15 @@ function ActionRow({
   isYou,
   showStack,
   muckCount,
+  arenaAsset,
 }: {
+  arenaAsset?: ReplayModel['arenaAsset'];
   row: ReplayRow;
   isYou: boolean;
   showStack: boolean;
   muckCount: number;
 }) {
+  const money = moneyForHand({ arenaAsset });
   return (
     <div className="hdv__row">
       <span className="hdv__pos">{row.position}</span>
@@ -252,13 +262,16 @@ function ShowdownRow({
   isYou,
   muckCount,
   isBadBeat,
+  arenaAsset,
 }: {
+  arenaAsset?: ReplayModel['arenaAsset'];
   row: ReplayShowdownRow;
   isYou: boolean;
   muckCount: number;
   /** The hand the jackpot was paid for. It is the story; mark it. */
   isBadBeat: boolean;
 }) {
+  const money = moneyForHand({ arenaAsset });
   const net = row.net;
   return (
     <div
@@ -335,6 +348,7 @@ function ShowdownRow({
  * is the record's own. Nothing renders on a hand with no kill facts.
  */
 function KillPotFacts({ model }: { model: ReplayModel }) {
+  const money = moneyForHand(model);
   const k = model.killPot;
   if (!k) return null;
   return (
@@ -397,6 +411,7 @@ export function HandDetailView({
   badBeatUserId,
   viewerFacts,
 }: HandDetailViewProps) {
+  const money = moneyForHand(model);
   const equities = useStreetEquities(model);
   const nameOf = (uid: string) => model.players.find((p) => p.userId === uid)?.username || 'Player';
   // Id first: two players can share a display name, and lighting the wrong row
@@ -508,6 +523,7 @@ export function HandDetailView({
 
           {street.rows.map((row) => (
             <ActionRow
+              arenaAsset={model.arenaAsset}
               key={row.key}
               row={row}
               isYou={isYou(row.userId, row.name)}
@@ -558,13 +574,14 @@ export function HandDetailView({
         </div>
       )}
 
-      {viewerFacts && <AllInFacts facts={viewerFacts} />}
+      {viewerFacts && <AllInFacts facts={viewerFacts} arenaAsset={model.arenaAsset} />}
 
       {model.showdown.length > 0 && (
         <section className="hdv__showdown">
           <header className="hdv__section-head">Showdown</header>
           {model.showdown.map((row) => (
             <ShowdownRow
+              arenaAsset={model.arenaAsset}
               key={row.key}
               row={row}
               isYou={isYou(row.userId, row.name)}

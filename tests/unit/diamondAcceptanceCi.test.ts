@@ -285,6 +285,7 @@ describe('a Diamond acceptance input routes to the accounting job', () => {
        money doors and their pins, the production-shape tables and the seed. */
     'tests/sql/diamond-concurrency-doors.sql',
     'tests/sql/diamond-concurrency-doors.manifest.json',
+    'tests/sql/diamond-concurrency-current.manifest.json',
     'tests/sql/diamond-concurrency-schema.sql',
     'tests/sql/diamond-concurrency-seed.sql',
     /* The cross-format conservation runner's md5 pin list. Its two .sql

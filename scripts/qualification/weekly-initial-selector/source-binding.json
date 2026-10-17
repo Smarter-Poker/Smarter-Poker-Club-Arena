@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 226627,
-      "sha256": "6285b934c8f40fef32acac5a784ec5db8f09f767f4260a49bb6e9cf886b2d863"
+      "bytes": 226873,
+      "sha256": "644205b767e2e51248e0e42281c26aa2e1624c75d8eccd2af850e435e6874acc"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -85,5 +85,19 @@
       "bytes": 56447,
       "sha256": "0e9661dc97f699f25859a37e182744ae980e0949b0fa6194f82180d9e5b3b7ff"
     }
+  },
+  "diamondOwnHistoryCiInput20261015": {
+    "reason": "Additive Diamond own-history native regression in existing accounting shard 3. Only current workflow identity changes. Financial sources, historical evidence, assertions and qualification verdicts remain unchanged.",
+    "previousWorkflow": {
+      "bytes": 225112,
+      "sha256": "bd79793d22be38b73aa77ace9091c975c772494623da76b903b5f26bdfecd853"
+    },
+    "currentWorkflow": {
+      "bytes": 225358,
+      "sha256": "72457a984cf3fdc8119a4fd3ebaa5f5583bfe78a475c3c7923d196658827cd5e"
+    }
+  },
+  "diamondIntegratedMain20261017": {
+    "reason": "Reviewed combined workflow preserves all protected main and Diamond qualifications. Refresh only integrated workflow source identity, preserving historical evidence and financial qualification status."
   }
 }

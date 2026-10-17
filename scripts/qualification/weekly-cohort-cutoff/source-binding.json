@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 226627,
-      "sha256": "6285b934c8f40fef32acac5a784ec5db8f09f767f4260a49bb6e9cf886b2d863"
+      "bytes": 226873,
+      "sha256": "644205b767e2e51248e0e42281c26aa2e1624c75d8eccd2af850e435e6874acc"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -105,5 +105,19 @@
       "bytes": 11065,
       "sha256": "0d963d68abc79558029bd3a44069f851c03ccfa882b041dc785e280261027b54"
     }
+  },
+  "diamondOwnHistoryCiInput20261015": {
+    "reason": "Additive Diamond own-history native regression in existing accounting shard 3. Only current workflow identity changes. Financial sources, historical evidence, assertions and qualification verdicts remain unchanged.",
+    "previousWorkflow": {
+      "bytes": 225112,
+      "sha256": "bd79793d22be38b73aa77ace9091c975c772494623da76b903b5f26bdfecd853"
+    },
+    "currentWorkflow": {
+      "bytes": 225358,
+      "sha256": "72457a984cf3fdc8119a4fd3ebaa5f5583bfe78a475c3c7923d196658827cd5e"
+    }
+  },
+  "diamondIntegratedMain20261017": {
+    "reason": "Reviewed combined workflow preserves all protected main and Diamond qualifications. Refresh only integrated workflow source identity, preserving historical evidence and financial qualification status."
   }
 }

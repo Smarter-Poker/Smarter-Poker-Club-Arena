@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 226627,
-      "sha256": "6285b934c8f40fef32acac5a784ec5db8f09f767f4260a49bb6e9cf886b2d863"
+      "bytes": 226873,
+      "sha256": "644205b767e2e51248e0e42281c26aa2e1624c75d8eccd2af850e435e6874acc"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -133,5 +133,19 @@
       "bytes": 2671,
       "sha256": "aef92500e63a4e1cd6632b8616ec1c1d138f2ff09f464368baeef185ca93fb1b"
     }
+  },
+  "diamondOwnHistoryCiInput20261015": {
+    "reason": "Additive Diamond own-history native regression in existing accounting shard 3. Only current workflow identity changes. Financial sources, historical evidence, assertions and qualification verdicts remain unchanged.",
+    "previousWorkflow": {
+      "bytes": 225112,
+      "sha256": "bd79793d22be38b73aa77ace9091c975c772494623da76b903b5f26bdfecd853"
+    },
+    "currentWorkflow": {
+      "bytes": 225358,
+      "sha256": "72457a984cf3fdc8119a4fd3ebaa5f5583bfe78a475c3c7923d196658827cd5e"
+    }
+  },
+  "diamondIntegratedMain20261017": {
+    "reason": "Reviewed combined workflow preserves all protected main and Diamond qualifications. Refresh only integrated workflow source identity, preserving historical evidence and financial qualification status."
   }
 }

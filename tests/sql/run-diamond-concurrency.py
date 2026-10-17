@@ -533,6 +533,32 @@ def build(cluster, until=None):
         if until and f.name == until:
             return
 
+    # Retain the historical fixture and its pins, then qualify the actual newer
+    # deployed authorities. The SQL is used only after this owned socket-only
+    # PostgreSQL 17 boundary has been established above.
+    current = json.loads((SQL / 'diamond-concurrency-current.manifest.json').read_text())['doors']
+    if len(current) != 8 or len({d['signature'] for d in current}) != 8:
+        raise Failure('current Diamond authority capture must contain eight distinct doors')
+    for door in current:
+        if hashlib.md5(door['definition'].encode()).hexdigest() != door['full_md5']:
+            raise Failure('current authority capture bytes changed: ' + door['signature'])
+        cluster.sql(door['definition'].rstrip(';\n') + ';')
+        signature = 'public.' + door['signature']
+        if not re.fullmatch(r'[a-z_0-9(), ]+', door['signature']):
+            raise Failure('unsafe captured signature')
+        cluster.sql('ALTER FUNCTION %s OWNER TO postgres; REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated, service_role;' % (signature, signature))
+        for role in ('authenticated', 'service_role'):
+            if role + '=X/' in door['acl']:
+                cluster.sql('GRANT EXECUTE ON FUNCTION %s TO %s' % (signature, role))
+        observed = cluster.sql("SELECT md5(pg_get_functiondef('%s'::regprocedure))" % signature)
+        if observed != door['full_md5']:
+            raise Failure('current authority installation differs: ' + signature)
+        metadata = json.loads(cluster.sql("SELECT json_build_object('owner',pg_get_userbyid(proowner),'security_definer',prosecdef,'config',proconfig,'acl',proacl::text) FROM pg_proc WHERE oid='%s'::regprocedure" % signature))
+        if metadata != {key: door[key] for key in ('owner', 'security_definer', 'config', 'acl')}:
+            raise Failure('current authority metadata differs: ' + signature)
+
+    print('PASS: eight October 15 deployed authorities retain their exact definitions and execute grants', flush=True)
+
 
 # ---------------------------------------------------------------------------
 # RACE: one balance, many spenders at once.
@@ -1337,6 +1363,13 @@ def collect_executed(suite):
 
 def check_executed(suite):
     pins = json.loads((SQL / 'diamond-concurrency-doors.manifest.json').read_text()).get('executed_pins', {})
+    current = json.loads((SQL / 'diamond-concurrency-current.manifest.json').read_text())['doors']
+    for door in current:
+        name = 'public.' + door['signature'].split('(')[0]
+        matches = [identity for identity in pins if identity.split('(')[0] == name]
+        if len(matches) != 1:
+            raise Failure('current authority has no unambiguous retained executed pin: ' + name)
+        pins[matches[0]] = door['full_md5']
     unpinned = sorted(i for i in suite.executed if i not in pins)
     moved = sorted(i for i in suite.executed if i in pins and pins[i] != suite.executed[i])
     suite.check(not unpinned and not moved,

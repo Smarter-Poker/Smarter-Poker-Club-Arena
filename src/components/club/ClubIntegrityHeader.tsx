@@ -6,7 +6,7 @@ import {
 } from '../../config/clubIntegrityNavigation';
 import { useClubNavigationAccess } from '../../hooks/useClubNavigationAccess';
 import styles from './ClubIntegrityHeader.module.css';
-import { mediaUrl } from '../../utils/mediaBase';
+import PageBar from '../help/PageBar';
 
 interface IntegrityMetric {
   label: string;
@@ -18,18 +18,32 @@ interface ClubIntegrityHeaderProps {
   compact?: boolean;
   clubId?: string;
   active: ClubIntegrityPageId;
-  eyebrow: string;
   title: string;
+  /** What the page is for. Shown behind the "?" in the top right, never on the page. */
   description: string;
   metrics: IntegrityMetric[];
   action?: ReactNode;
 }
 
+const TONE: Record<NonNullable<IntegrityMetric['tone']>, 'default' | 'live' | 'attention'> = {
+  neutral: 'default',
+  active: 'live',
+  risk: 'attention',
+};
+
+/**
+ * The top of the integrity and casework pages.
+ *
+ * Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL
+ * DESCRIPTIONS". The signal line, the eyebrow, the giant title, the paragraph
+ * and the artwork are gone. The live case counts, the page action and the
+ * casework rail stay; each rail stop is its name alone, and the explanation of
+ * the page lives behind the painted "?".
+ */
 export default function ClubIntegrityHeader({
   compact = false,
   clubId,
   active,
-  eyebrow,
   title,
   description,
   metrics,
@@ -39,37 +53,18 @@ export default function ClubIntegrityHeader({
   const navigation = clubId ? getClubIntegrityNavigation(clubId, access) : [];
 
   return (
-    <header className={styles.header} data-compact={compact || undefined}>
-      <div className={styles.hero}>
-        <div className={styles.copy}>
-          <div className={styles.signal} aria-hidden="true">
-            <span />
-            Integrity Circuit Online
-          </div>
-          <p className={styles.eyebrow}>{eyebrow}</p>
-          <h1>{title}</h1>
-          <p className={styles.description}>{description}</p>
-        </div>
-
-        <div className={styles.visual} aria-hidden="true">
-          <img
-            src={mediaUrl('assets/club-buttons/club/club-identity-template-bbj-finish-v1.png')}
-            alt=""
-          />
-          <div className={styles.scanLine} />
-        </div>
-
-        <dl className={styles.metrics} aria-label="Current Case Metrics">
-          {metrics.map((metric) => (
-            <div key={metric.label} data-tone={metric.tone || 'neutral'}>
-              <dt>{metric.label}</dt>
-              <dd>{metric.value}</dd>
-            </div>
-          ))}
-        </dl>
-
-        {action && <div className={styles.action}>{action}</div>}
-      </div>
+    <div className={styles.header} data-compact={compact || undefined}>
+      <PageBar
+        title={title}
+        summary={description}
+        metrics={metrics.map((metric) => ({
+          label: metric.label,
+          value: metric.value,
+          tone: TONE[metric.tone || 'neutral'],
+        }))}
+      >
+        {action}
+      </PageBar>
 
       {navigation.length > 0 && (
         <nav className={styles.caseRail} aria-label="Integrity And Casework">
@@ -84,7 +79,6 @@ export default function ClubIntegrityHeader({
                   <span className={styles.sequence}>{String(index + 1).padStart(2, '0')}</span>
                   <span>
                     <strong>{item.label}</strong>
-                    <small>{item.description}</small>
                   </span>
                 </Link>
               </li>
@@ -92,6 +86,6 @@ export default function ClubIntegrityHeader({
           </ol>
         </nav>
       )}
-    </header>
+    </div>
   );
 }

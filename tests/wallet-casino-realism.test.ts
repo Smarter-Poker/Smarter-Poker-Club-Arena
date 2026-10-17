@@ -64,7 +64,10 @@ describe('the wallet opens on the Cashier desk (Dan 2026-10-16)', () => {
   });
 
   it('opens on the routed Cashier workspace', () => {
-    expect(PAGE).toContain('<CashierWorkspace compact eyebrow="Secure Wallet" title="Wallet">');
+    // 2026-10-17: no eyebrow on any page (Dan: "PAGES DON'T NEED TITLES LIKE
+    // THIS"); what the wallet is for lives behind the "?".
+    expect(PAGE).toMatch(/<CashierWorkspace\s+compact\s+title="Wallet"\s+summary="[^"]+"/);
+    expect(PAGE).not.toMatch(/<CashierWorkspace[^>]*eyebrow=/);
     expect(PAGE).not.toContain('RewardsSurfaceHeader');
   });
 });

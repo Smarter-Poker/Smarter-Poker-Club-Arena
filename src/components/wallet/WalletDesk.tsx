@@ -76,8 +76,8 @@ export function WalletDesk({
       <div className="wdesk__scroll" inert={covered} aria-hidden={covered || undefined}>
         <CashierWorkspace
           compact
-          eyebrow="Secure Cashier"
           title="Cashier"
+          summary="Move Chips Between Your Club Wallets, Answer Chip Requests, Redeem Tickets And Check Every Ledger Entry."
           className="wdesk__workspace"
         >
           <div className="wdesk__glass">

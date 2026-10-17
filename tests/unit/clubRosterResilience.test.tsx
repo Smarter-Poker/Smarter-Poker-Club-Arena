@@ -364,16 +364,19 @@ describe('Player Command resilience wiring', () => {
     );
   });
 
-  it('announces a summary label before its value and exposes independent freshness', () => {
+  /* The roster totals print in the page bar now (Dan 2026-10-17: the hero
+     is gone). PageBar renders each as <dt>label</dt><dd>value</dd>, and the
+     freshness line is the bar's own live status. */
+  it('announces summary figures through the page bar and exposes independent freshness', () => {
     expect(PAGE).toMatch(
-      /<dt className="stat-label">\{label\}<\/dt>[\s\S]*<dd className="stat-value">\{value\}<\/dd>/
+      /metrics=\{[\s\S]*label: 'Total Members', value: stat\(summary\.counts\.total\)/
     );
-    expect(PAGE).toContain('members-summary__status');
+    expect(PAGE).toContain('status={simpleMode ? undefined : (summaryStatusMessage ?? undefined)}');
     expect(PAGE).toContain("summaryFreshness === 'failed'");
   });
 
-  it('compresses the cinematic command deck on short desktop viewports', () => {
+  it('compresses the console on short desktop viewports, with no hero left to size', () => {
     expect(CSS).toContain('@media (min-width: 721px) and (max-height: 820px)');
-    expect(CSS).toMatch(/max-height:\s*820px[\s\S]*\.members-hero[\s\S]*min-height:\s*222px/);
+    expect(CSS).not.toContain('.members-hero');
   });
 });

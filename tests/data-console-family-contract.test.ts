@@ -16,7 +16,9 @@ describe('Club Data painted-console contract', () => {
     expect(clubData).not.toContain('family="riveted"');
     expect(rake).toContain('family="spade"');
     expect(rake).not.toMatch(/family="(?:shark|riveted)"/);
-    expect(union).toContain('family="riveted"');
+    // 2026-10-17: the Union Data header is a page bar, not a painted console
+    // (Dan: "PAGES DON'T NEED TITLES LIKE THIS"). Its doors stay as plates.
+    expect(union).not.toMatch(/<CasinoSurfaceHeader\b[^>]*?\bfamily=/);
     expect(`${clubData}\n${rake}\n${union}`).not.toMatch(/crest="(?:club|diamond)"/);
   });
 

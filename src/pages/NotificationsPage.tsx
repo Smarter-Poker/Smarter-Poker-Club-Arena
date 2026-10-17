@@ -666,8 +666,6 @@ function NotificationFeed({ userId }: { userId: string | null }) {
   return (
     <div className="ca-notif">
       <AccountSurfaceHeader
-        artwork="images/account/signal-desk-hero-v1.webp"
-        eyebrow="Signal Inbox // Live Player Network"
         title="Notifications"
         description="Seat Calls, Tournament Starts, Settlements, Messages And Club Announcements. Tap A Signal To Go Straight To It."
         status={
@@ -679,16 +677,7 @@ function NotificationFeed({ userId }: { userId: string | null }) {
                 ? connectionStatus
                 : 'Sign In Required'
         }
-      >
-        <span className="ca-notif__heroMetric">
-          <small>Unread</small>
-          {unreadCount}
-        </span>
-        <span className="ca-notif__heroMetric">
-          <small>Loaded</small>
-          {notifications.length}
-        </span>
-      </AccountSurfaceHeader>
+      />
 
       <div className="ca-notif__bar">
         <div className="ca-notif__filters" role="group" aria-label="Filter Notifications">

@@ -376,7 +376,6 @@ export default function BlacklistManagerPage() {
       <ClubIntegrityHeader
         clubId={clubId}
         active="blacklist"
-        eyebrow="Access Control / Final Case State"
         title="Club Exclusion Control"
         description="Apply Deliberate, Auditable Club-Access Exclusions With A Stated Reason And An Optional Expiry."
         metrics={[

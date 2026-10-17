@@ -42,9 +42,25 @@ import ClubRosterService, {
   type MemberRange,
   type MemberStatistics,
 } from '../services/ClubRosterService';
+import PageBar from '../components/help/PageBar';
+import type { TutorialStep } from '../components/help/PageHelp';
 import './PlayerStatisticsPage.css';
 
-const PLAYER_INSTRUMENT_ART = `${import.meta.env.BASE_URL}images/club-members/player-instrument-felt-v1.webp`;
+/* The hero's eyebrow, title, paragraph, felt art and range readouts are gone
+   (Dan, 2026-10-17). The readouts repeated the Volume and Club Result cards.
+   The words live behind the "?", and each step lights the control it names. */
+const PERFORMANCE_TOUR: TutorialStep[] = [
+  {
+    title: 'Instrument Controls',
+    body: 'Choose The Game And The Ledger Window. Every Card Below Is Measured Over Them.',
+    target: '.ps-controls',
+  },
+  {
+    title: 'Playing Style',
+    body: 'VPIP, PFR, 3-Bet And Continuation Bets Show How This Player Plays Their Hands.',
+    target: '.ps-cards',
+  },
+];
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    RANGE (requirement 7)
@@ -248,55 +264,21 @@ export default function PlayerStatisticsPage() {
 
   return (
     <div className="player-stats-page" aria-busy={loading}>
-      <header className="ps-hero" aria-labelledby="ps-page-title">
-        <img
-          className="ps-hero__art"
-          src={PLAYER_INSTRUMENT_ART}
-          alt=""
-          aria-hidden="true"
-          width="1672"
-          height="941"
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-        />
-        <div className="ps-hero__shade" aria-hidden="true" />
-        <div className="ps-header">
-          <button
-            type="button"
-            className="ps-back"
-            onClick={() => navigate(-1)}
-            aria-label="Go Back"
-          >
-            ‹
-          </button>
-          <span className="ps-header__location">Players / Performance</span>
-          <span className="ps-header__spacer" aria-hidden="true" />
-        </div>
-        <div className="ps-hero__content">
-          <span className="ps-eyebrow">Measured From Verified Hands</span>
-          <h1 id="ps-page-title" className="ps-title">
-            Player Performance
-          </h1>
-          <p>Read Playing Style, Volume, And Club Results Across Any Recorded Game Window.</p>
-          {stats?.authorized && stats.hands > 0 && (
-            <dl className="ps-hero__readouts" aria-label="Displayed Range Summary">
-              <HeroReadout label="Hands" value={count(stats.hands)} />
-              <HeroReadout label="Win Rate" value={pct(stats.win_rate)} />
-              <HeroReadout
-                label="Net"
-                value={compactChips(stats.net)}
-                tone={stats.net > 0 ? 'up' : stats.net < 0 ? 'down' : undefined}
-              />
-            </dl>
-          )}
-        </div>
-      </header>
+      <PageBar
+        title="Player Performance"
+        titleId="ps-page-title"
+        summary="Read Playing Style, Volume, And Club Results Across Any Recorded Game Window. Every Figure Is Measured From Verified Hands."
+        steps={PERFORMANCE_TOUR}
+        className="ps-page-bar"
+      >
+        <button type="button" className="ps-back" onClick={() => navigate(-1)} aria-label="Go Back">
+          ‹
+        </button>
+      </PageBar>
 
       <section className="ps-controls" aria-labelledby="ps-controls-title">
         <div className="ps-controls__heading">
           <h2 id="ps-controls-title">Instrument Controls</h2>
-          <span>Choose The Game And Ledger Window</span>
         </div>
         <label className="ps-variant">
           <span className="ps-variant__label">Game</span>
@@ -519,23 +501,6 @@ function StatRow({ label, value, signed }: { label: string; value: string; signe
     <div className={`ps-stat${tone}`}>
       <span className="ps-stat__label">{label}</span>
       <span className="ps-stat__value">{value}</span>
-    </div>
-  );
-}
-
-function HeroReadout({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: 'up' | 'down';
-}) {
-  return (
-    <div className={`ps-hero__readout${tone ? ` ps-hero__readout--${tone}` : ''}`}>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
     </div>
   );
 }

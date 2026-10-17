@@ -17,8 +17,18 @@
   color: #e4e7ec;
 }
 .heading {
+  position: relative;
   text-align: center;
   font-family: 'Roboto Condensed', sans-serif;
+}
+/* The painted "?" holds the top right of the heading; the title stays centred
+   and the heading keeps its height, so the wheel's viewport budget is
+   unchanged (Dan 2026-10-17). */
+.help {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
 }
 .heading h1 {
   margin: 0;

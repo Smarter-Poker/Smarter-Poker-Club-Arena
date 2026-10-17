@@ -97,7 +97,10 @@ test.describe('Cashier Statements - authenticated production route', () => {
     const surface = page.locator('[data-cashier-surface="statements"]');
     await expect(surface).toBeVisible({ timeout: 60_000 });
     await expect(surface.locator('[data-cashier-layout="directory"]')).toHaveCount(1);
-    await expect(surface.locator('.cashier-workspace__eyebrow')).toHaveText('Full Statement');
+    // 2026-10-17: a page bar with the painted "?" replaced the eyebrow and
+    // the giant title (Dan: "PAGES DON'T NEED TITLES LIKE THIS").
+    await expect(surface.locator('.ca-page-bar')).toHaveCount(1);
+    await expect(surface.getByRole('button', { name: 'Page Help', exact: true })).toBeVisible();
     await expect(surface.getByRole('heading', { name: 'Cashier', exact: true })).toHaveText(
       'Cashier'
     );
@@ -124,7 +127,7 @@ test.describe('Cashier Statements - authenticated production route', () => {
       contentType: 'application/json',
     });
 
-    const pill = surface.locator('.cashier-workspace__status');
+    const pill = surface.locator('.ca-page-bar__status');
     const totals = surface.locator('[aria-label="Statement Totals"]');
     const exportSection = surface.locator('section[aria-labelledby="statement-export-title"]');
     const exportWord = exportSection.getByRole('button', { name: 'Export CSV', exact: true });

@@ -12,6 +12,7 @@ import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useToast } from '../components/common/Toast';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import { useAuthUser } from '../hooks/useAuthUser';
 
 import { useIsMounted } from '../hooks/useIsMounted';
@@ -226,7 +227,6 @@ export default function SettlementHistoryPage() {
           className={styles.console}
           family="shark"
           crest="flat"
-          eyebrow="Club Arena Data"
           title="Settlement History Needs A Club"
           subtitle="Open This Console From A Club Financial Scope"
           pill="Club Required"
@@ -243,12 +243,18 @@ export default function SettlementHistoryPage() {
 
   return (
     <main className={styles.page}>
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow and
+          the descriptive subtitle moved behind the painted "?"; the head keeps
+          its title and its live pill. */}
+      <PageBar
+        title="Settlement History"
+        titleAs={false}
+        summary="Weekly Settlement Cycles And Revenue Trends For This Club."
+      />
       <SpadeConsole
         className={styles.console}
         family="shark"
-        eyebrow="Club Arena"
         title="Settlement History"
-        subtitle="Weekly Settlement Cycles And Revenue Trends"
         pill={loading ? 'Loading' : loadError ? 'Unavailable' : `${cycles.length} Cycles`}
         pillInk={loadError ? 'red' : loading ? 'blue' : 'green'}
         plates={{ primary: { label: 'Back', onClick: () => navigate(-1) } }}

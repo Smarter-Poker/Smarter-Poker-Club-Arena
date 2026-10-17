@@ -463,12 +463,9 @@ export default function VIPPage() {
     return (
       <div className="vip-page">
         <RewardsSurfaceHeader
-          eyebrow="Rewards Circuit / VIP"
           title="VIP Membership"
           description="Manage Your Membership And Included Benefits."
-          art="vip"
           status="VIP TELEMETRY // SYNCING"
-          crest="vip"
         />
         <div className="loading-state">
           <PageSkeleton variant="stats" />
@@ -480,12 +477,9 @@ export default function VIPPage() {
   return (
     <div className="vip-page">
       <RewardsSurfaceHeader
-        eyebrow="Rewards Circuit / VIP"
         title="VIP Membership"
         description="Manage Your Membership And Included Benefits."
-        art="vip"
         status="VIP TELEMETRY // LIVE"
-        crest="vip"
       />
       {/* MEMBERSHIP AND ALLOWANCES.
           Replaces VIPStatsHeader + TierProgressionCard + VIPBenefitsGrid, all

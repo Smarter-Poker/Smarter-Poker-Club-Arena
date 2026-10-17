@@ -578,7 +578,6 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
               as="div"
               className={styles.console}
               onClose={isCreating ? undefined : requestClose}
-              eyebrow="Club Arena"
               title="Create A Club"
               titleId="create-club-title"
               pill={draftRestored ? 'Draft Restored' : 'New Club'}

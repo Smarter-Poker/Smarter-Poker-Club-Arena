@@ -25,7 +25,6 @@ export function statsScopeForSearch(search: string): StatsScope {
 export interface ArenaStatsScope {
   scope: StatsScope;
   scopedKey: (key: string) => string;
-  eyebrow: string;
 }
 
 export function useArenaStatsScope(): ArenaStatsScope {
@@ -35,12 +34,5 @@ export function useArenaStatsScope(): ArenaStatsScope {
     (key: string) => (scope === CHIP_STATS ? key : `${scope}:${key}`),
     [scope]
   );
-  return {
-    scope,
-    scopedKey,
-    eyebrow:
-      scope === DIAMOND_STATS
-        ? 'Diamond Arena // Player Analytics In Diamonds'
-        : 'Club Arena // Player Analytics',
-  };
+  return { scope, scopedKey };
 }

@@ -85,12 +85,16 @@ function firstRule(css: string, selector: string): string {
 }
 
 describe('Stats visual authority', () => {
-  it('keeps the owner dossier and club instrument on distinct approved master art', () => {
+  it('keeps the owner dossier and club instrument masters distinct, and off the page heads', () => {
     const ownerAsset = 'images/stats/player-intelligence-dossier-v2.webp';
     const clubAsset = 'images/club-members/player-instrument-felt-v1.webp';
 
-    expect(OWNER_PAGE).toContain(ownerAsset);
-    expect(CLUB_PAGE).toContain(clubAsset);
+    // Dan 2026-10-17: both were hero art beside an eyebrow, a title and a
+    // paragraph. The heroes are gone, so neither page paints them now.
+    expect(OWNER_PAGE).not.toContain(ownerAsset);
+    expect(CLUB_PAGE).not.toContain(clubAsset);
+    expect(OWNER_PAGE).toContain('<PageBar');
+    expect(CLUB_PAGE).toContain('<PageBar');
     expect(ownerAsset).not.toBe(clubAsset);
     const ownerPath = resolve(__dirname, '../public', ownerAsset);
     const clubPath = resolve(__dirname, '../public', clubAsset);

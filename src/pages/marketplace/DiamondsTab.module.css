@@ -27,19 +27,6 @@
   box-shadow: none;
 }
 
-.eyebrow {
-  position: relative;
-  z-index: 1;
-  display: block;
-  color: var(--vault-blue);
-  font:
-    800 9px/1.2 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.15em;
-  text-transform: capitalize;
-}
-
 .title {
   position: relative;
   z-index: 1;
@@ -51,16 +38,6 @@
     sans-serif;
   letter-spacing: 0.018em;
   text-transform: capitalize;
-}
-
-.titleSub {
-  position: relative;
-  z-index: 1;
-  max-width: 560px;
-  margin: 10px 0 0;
-  color: #98a7b1;
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 .navBar {
@@ -409,7 +386,6 @@
   color: #f2f8fb;
 }
 
-:global([data-theme='light']) .titleSub,
 :global([data-theme='light']) .promoBody,
 :global([data-theme='light']) .pkgSub,
 :global([data-theme='light']) .balance,

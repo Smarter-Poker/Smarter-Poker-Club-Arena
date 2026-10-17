@@ -98,7 +98,6 @@
   min-width: 0;
 }
 
-.eyebrow,
 .modalEyebrow {
   display: block;
   color: var(--market-blue);
@@ -293,19 +292,6 @@
   color: var(--market-muted);
   font-size: 12px;
   line-height: 1.55;
-}
-
-.deliveryStatus {
-  align-self: start;
-  display: inline-flex;
-  align-items: center;
-  color: #bfe8fb;
-  font:
-    800 9px/1 'Roboto Condensed',
-    Inter,
-    sans-serif;
-  letter-spacing: 0.08em;
-  text-transform: capitalize;
 }
 
 /* Discovery controls. */
@@ -1689,8 +1675,7 @@
   color: #8f2630;
 }
 
-:global([data-theme='light']) .priceValueBalance,
-:global([data-theme='light']) .deliveryStatus {
+:global([data-theme='light']) .priceValueBalance {
   color: #087caf;
 }
 

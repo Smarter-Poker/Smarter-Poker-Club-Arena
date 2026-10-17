@@ -1,4 +1,5 @@
 import GameLifetimeAverages from '../components/games/GameLifetimeAverages';
+import PageHelp from '../components/help/PageHelp';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import { pendingBonus, PriorBonusPending } from '../services/diamondBonusRecovery';
 import { useAutoSettle, useStandingRefresh } from '../hooks/useAutoSettle';
@@ -1322,9 +1323,26 @@ function DiamondCrashGame() {
             />
           )
         }
-        eyebrow="Diamond Spins"
         title={title}
         titleId="diamond-crash-title"
+        help={
+          <PageHelp
+            title={title}
+            summary="Cash Out Before The Crash To Collect Your Chip Prize. An Auto Cash Out Target Is Saved With The Round And Remains Active If You Disconnect."
+            steps={[
+          {
+            title: 'Your Numbers',
+            body: 'Your Entry, The Guaranteed Minimum And The Prize So Far, Updated As You Play.',
+            target: '[data-game-console] dl',
+          },
+          {
+            title: 'Play',
+            body: 'The Plates At The Foot Of The Game Start A Round And Book Your Win.',
+            target: '[data-game-actions]',
+          },
+            ]}
+          />
+        }
         pill={pill}
         pillInk={pillInk}
         aria-labelledby="diamond-crash-title"
@@ -1535,7 +1553,7 @@ function DiamondCrashGame() {
           clubId={clubUuid}
           revision={round ? `${round.round_id}:${round.status}` : null}
         />
-        <GamePanel eyebrow="Your Game" title="How To Play" foot="foot">
+        <GamePanel title="How To Play" foot="foot">
           <p className="sc-copy">
             Cash Out Before The Crash To Collect Your Chip Prize. Your Confirmed Result Shows The
             Chips Paid. Your Round Limit Is Shown Before You Start. An Auto Cash Out Target Is Saved
@@ -1545,7 +1563,6 @@ function DiamondCrashGame() {
       </div>
 
       <GamePanel
-        eyebrow="Provably Fair"
         title="Check Any Round"
         plates={{
           secondary: {
@@ -1641,7 +1658,7 @@ function DiamondCrashGame() {
         limit={8}
       />
 
-      <GamePanel eyebrow="Your Rounds" title="History" foot="foot">
+      <GamePanel title="History" foot="foot">
         {history.length === 0 ? (
           <p className="sc-copy sc-copy--center sc-ink--muted">No Rounds Yet.</p>
         ) : (

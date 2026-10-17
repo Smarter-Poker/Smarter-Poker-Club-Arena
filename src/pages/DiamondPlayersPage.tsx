@@ -40,6 +40,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PageSkeleton from '../components/common/PageSkeleton';
+import PageBar from '../components/help/PageBar';
+import type { TutorialStep } from '../components/help/PageHelp';
 import { useDebounce } from '../hooks/useDebounce';
 import { useOnlineNow } from '../hooks/useProfilePresence';
 import { COUNT_UNKNOWN } from '../lib/countFigure';
@@ -62,7 +64,24 @@ import { reportError } from '../utils/errorReporter';
 import './ClubMembersPage.css';
 import './DiamondPlayersPage.css';
 
-const ROSTER_ART = `${import.meta.env.BASE_URL}images/club-members/roster-ledger-desk-v2.webp`;
+/* The words the hero printed live behind the "?" now (Dan 2026-10-17). */
+const DIAMOND_PLAYERS_TOUR: TutorialStep[] = [
+  {
+    title: 'Search',
+    body: 'Find A Player By Name, Username Or Player Number.',
+    target: '.members-search',
+  },
+  {
+    title: 'Player Views',
+    body: 'Switch Between Every Player And The Players Seated At A Table Right Now.',
+    target: '.members-filter-rail',
+  },
+  {
+    title: 'The Players',
+    body: 'Everyone In The Diamond Arena, With Who Is Online And Who Is Seated.',
+    target: '.members-list',
+  },
+];
 const PAGE_SIZE = 80;
 
 const FILTER_LABEL: Record<DiamondRosterFilter, string> = {
@@ -201,58 +220,25 @@ export default function DiamondPlayersPage() {
 
   return (
     <div className="club-members-page diamond-players" aria-busy={loading}>
-      <section className="members-hero" aria-labelledby="diamond-players-title">
-        <img
-          className="members-hero__art"
-          src={ROSTER_ART}
-          alt=""
-          aria-hidden="true"
-          width="1774"
-          height="887"
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-        />
-        <div className="members-hero__content">
-          <div className="members-hero__copy">
-            <span className="members-eyebrow">Diamond Arena</span>
-            <h1 id="diamond-players-title">Players</h1>
-            <p>Every Player On Smarter.Poker Is A Member Of The Diamond Arena.</p>
-          </div>
-          <div className="members-summary-shell">
-            <dl
-              className="members-summary"
-              aria-label="Diamond Arena Totals"
-              aria-busy={countsPhase === 'loading'}
-            >
-              <Figure label="Members" value={diamondFigureText(counts.members)} />
-              <Figure
-                label="Online Now"
-                value={diamondFigureText(counts.online)}
-                modifier="online"
-              />
-              <Figure
-                label="At Tables"
-                value={diamondFigureText(counts.seated)}
-                modifier="seated"
-              />
-              <Figure label="Tables" value={diamondFigureText(counts.tables)} modifier="tables" />
-            </dl>
-            {status && (
-              <span className="members-summary__status" role="status" aria-live="polite">
-                {status}
-              </span>
-            )}
-          </div>
-        </div>
-      </section>
+      <PageBar
+        className="members-page-bar"
+        title="Players"
+        titleId="diamond-players-title"
+        summary="Every Player On Smarter.Poker Is A Member Of The Diamond Arena."
+        status={status ?? undefined}
+        statusTone={countsPhase === 'failed' ? 'danger' : 'default'}
+        metrics={[
+          { label: 'Members', value: diamondFigureText(counts.members) },
+          { label: 'Online Now', value: diamondFigureText(counts.online), tone: 'live' },
+          { label: 'At Tables', value: diamondFigureText(counts.seated) },
+          { label: 'Tables', value: diamondFigureText(counts.tables) },
+        ]}
+        steps={DIAMOND_PLAYERS_TOUR}
+      />
 
       <section className="members-console" aria-labelledby="diamond-players-directory">
         <div className="members-console__heading">
-          <div>
-            <span className="members-eyebrow">Diamond Arena</span>
-            <h2 id="diamond-players-directory">Find A Player</h2>
-          </div>
+          <h2 id="diamond-players-directory">Find A Player</h2>
           <span className="members-result-count" aria-live="polite">
             {loading ? 'Loading...' : total === null ? '' : `${total.toLocaleString()} Results`}
           </span>
@@ -340,15 +326,6 @@ export default function DiamondPlayersPage() {
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-function Figure({ label, value, modifier }: { label: string; value: string; modifier?: string }) {
-  return (
-    <div className={`summary-stat${modifier ? ` summary-stat--${modifier}` : ''}`}>
-      <dt className="stat-label">{label}</dt>
-      <dd className="stat-value">{value}</dd>
     </div>
   );
 }

@@ -140,7 +140,10 @@ test.describe('Production Cashier Certification', () => {
       await attachCashierScreenshot(page, testInfo, `simple-cashier-${width}`);
     }
     await page.getByRole('button', { name: /^Advanced(?: \([\d,]+\))?$/ }).click();
-    await expect(page.getByRole('heading', { name: 'Wallet Command', exact: true })).toBeVisible();
+    // 2026-10-17: the "Wallet Command" title and its paragraph are gone; the
+    // desk is still named for assistive technology, and the "?" explains it.
+    await expect(page.getByRole('region', { name: 'Wallet Command' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Page Help', exact: true })).toBeVisible();
 
     const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
     await expect(tablist).toBeVisible();

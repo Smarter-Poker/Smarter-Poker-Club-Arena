@@ -37,6 +37,7 @@ import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
 import { reportError } from '../../utils/errorReporter';
 import { SpadeConsole } from '../../components/console/SpadeConsole';
+import PageBar from '../../components/help/PageBar';
 import { titleCase } from '../../utils/titleCase';
 import styles from './TableBombSettingsPage.module.css';
 
@@ -290,7 +291,6 @@ export default function TableBombSettingsPage() {
       <div className={styles.page}>
         <SpadeConsole
           className={styles.console}
-          eyebrow="Table Settings"
           title="Bomb Pots"
           titleId="table-bomb-settings-title"
           pill="Loading"
@@ -308,7 +308,6 @@ export default function TableBombSettingsPage() {
       <div className={styles.page}>
         <SpadeConsole
           className={styles.console}
-          eyebrow="Table Settings"
           title="Bomb Pots"
           titleId="table-bomb-settings-title"
           pill="Error"
@@ -333,9 +332,16 @@ export default function TableBombSettingsPage() {
 
   return (
     <div className={styles.page}>
+      {/* Dan, 2026-10-17: the descriptive eyebrow and the intro line moved
+          behind the painted "?". The table's name stays: it is live, and it
+          says which running game these settings change. */}
+      <PageBar
+        title="Bomb Pots"
+        titleAs={false}
+        summary="These Take Effect On A Running Table. The Engine Picks Them Up Within A Minute, So You Do Not Need To Close The Game."
+      />
       <SpadeConsole
         className={styles.console}
-        eyebrow="Table Settings"
         title="Bomb Pots"
         titleId="table-bomb-settings-title"
         subtitle={tableName ? titleCase(tableName) : undefined}
@@ -351,11 +357,6 @@ export default function TableBombSettingsPage() {
           },
         }}
       >
-        <p className={`sc-copy ${styles.lede}`}>
-          These Take Effect On A Running Table. The Engine Picks Them Up Within A Minute, So You Do
-          Not Need To Close The Game.
-        </p>
-
         <label className={styles.toggleRow}>
           <span className={`${styles.label} sc-ink--blue`}>Bomb Pots</span>
           <input

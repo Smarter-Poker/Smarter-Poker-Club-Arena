@@ -42,12 +42,12 @@ export function GameConsole({
   setup,
   dock,
   footer,
+  help,
   children,
 }: {
   title: string;
   titleId?: string;
   pill?: string;
-  eyebrow?: string;
   pillInk?: ConsoleInk;
   bays: DeckBay[];
   secondary?: GamePlate;
@@ -69,6 +69,13 @@ export function GameConsole({
    * player reads it after the bays instead of before the board.
    */
   footer?: ReactNode;
+  /**
+   * The painted "?" (Dan 2026-10-17: "ADD A ? MARK ICON INSTEAD IN THE UPPER
+   * RIGHT CORNER OF THE PAGES"). It rides at the right end of the header, so
+   * the game's own height budget is untouched: a bar above the console would
+   * push the plates back under the fold on a phone.
+   */
+  help?: ReactNode;
   children?: ReactNode;
 } & Record<string, unknown>) {
   /**
@@ -142,6 +149,7 @@ export function GameConsole({
       <header className={styles.header}>
         <h1 id={titleId}>{title}</h1>
         <span className={styles.status}>{pill}</span>
+        {help}
       </header>
       <div className={styles.playfield}>{children}</div>
       <aside className={styles.controls} aria-label={`${title} Controls`}>

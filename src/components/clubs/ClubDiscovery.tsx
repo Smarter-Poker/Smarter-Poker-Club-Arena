@@ -216,7 +216,6 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
     <SpadeConsole
       className="club-discovery"
       aria-busy={loading || undefined}
-      eyebrow="Club Arena"
       title="Discover Clubs"
       pill={loading ? 'Loading' : countPill(filteredClubs.length)}
       pillInk={loading || filteredClubs.length === 0 ? 'muted' : 'blue'}

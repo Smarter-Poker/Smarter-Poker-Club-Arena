@@ -72,7 +72,10 @@ describe('Support And Trust Workspace', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Legal Center' })).toHaveAttribute('href', '/legal');
-    expect(screen.getAllByText(documentCode)).toHaveLength(2);
+    // 2026-10-17: the hero (eyebrow, summary, metadata, seal) is gone; the
+    // document code prints once, with the effective date, in the footer.
+    expect(screen.getByText(new RegExp(`^${documentCode} · Effective `))).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: title })).toHaveClass('sr-only');
     expect(screen.getByRole('navigation', { name: `${title} Sections` })).toBeInTheDocument();
     expect(screen.getByRole('article', { name: title })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Legal Documents' })).toBeInTheDocument();
@@ -101,7 +104,19 @@ describe('Support And Trust Workspace', () => {
   it('renders accurate help actions, live status, and stable searchable questions', () => {
     renderRoute(<HelpPage />, '/help');
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Help Center' })).toBeInTheDocument();
+    // The hero is gone (Dan 2026-10-17): the title is a hidden h1 and its
+    // sentence sits behind the painted "?"; the support actions stay visible.
+    expect(screen.getByRole('heading', { level: 1, name: 'Help Center' })).toHaveClass('sr-only');
+    expect(screen.queryByText('Player Support Circuit')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Search Verified Poker Arena Guidance/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send Support Request' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Page Help' }));
+    expect(
+      within(screen.getByRole('dialog', { name: 'Help Center' })).getByText(
+        'Search Verified Poker Arena Guidance, Check The Live Data Circuit, Or Send A Request Directly To Support.'
+      )
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close Help' }));
     expect(screen.getByText('Systems Operational')).toBeInTheDocument();
     expect(screen.getByText('Supabase Responded In 42 Ms')).toBeInTheDocument();
     expect(screen.queryByText(/Geeves/i)).not.toBeInTheDocument();

@@ -234,37 +234,20 @@ describe('every Daily Challenges entry keeps the club and the shell paints the p
     expect(wide).toContain('.tileLabel small {\n    display: block;');
   });
 
-  it('200% text grows the page title and wraps its long words inside the column', () => {
-    // WCAG 1.4.4, and the post-deploy accessibility certification, require the
-    // title to grow at least 1.5x at 200% text. A column cap (18cqi, #5065)
-    // held it to 1.12x at 320px and failed that certification on production,
-    // so no `.heroCopy h1` size in any partial may use container units, and
-    // the copy column is not a size container.
-    const sized: string[] = [];
+  it('the page title is a hidden heading, so no visible title can clip at 200% text', () => {
+    // Dan 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The giant hero
+    // title is gone, so the 200%-text rule that kept it inside its column
+    // (WCAG 1.4.4, #5065) has nothing left to hold: the h1 is visually hidden
+    // in the page bar and keeps its exact text for the browser outline.
     for (const partial of readdirSync(resolve(__dirname, '../src/pages/daily-challenges'))) {
       const css = read(`src/pages/daily-challenges/${partial}`);
       expect(css, partial).not.toMatch(/container-type/);
-      for (const rule of css.matchAll(/\.heroCopy h1\s*\{([^}]*)\}/g)) {
-        const size = rule[1].match(/font-size:\s*([^;]+);/);
-        if (!size) continue;
-        sized.push(partial);
-        expect(size[1], partial).not.toMatch(/cq(?:i|w|b|h|min|max)\b/);
-      }
+      expect(css, partial).not.toMatch(/\.heroCopy\b/);
     }
-    expect(sized.sort()).toEqual([
-      '10-hero.base.module.css',
-      '10-hero.realism.module.css',
-      '99-media.base.module.css',
-      '99-media.command.module.css',
-      '99-media.realism.module.css',
-    ]);
-    // A word that outgrows the column wraps inside it. The heading keeps its
-    // exact text: no <wbr> or soft hyphen, which Chrome would announce.
-    const base = read('src/pages/daily-challenges/10-hero.base.module.css');
-    expect(between(base, '.heroCopy h1 {', '}')).toContain('overflow-wrap: anywhere;');
-    expect(read('src/components/challenges/dashboard/MissionHero.tsx')).toContain(
-      '<h1 id="missions-title">{TIER_PRESENTATION[tier].title}</h1>'
-    );
+    const hero = read('src/components/challenges/dashboard/MissionHero.tsx');
+    expect(hero).toContain('title={TIER_PRESENTATION[tier].title}');
+    expect(hero).toContain('titleId="missions-title"');
+    expect(hero).toContain('aria-labelledby="missions-title"');
   });
 
   it('the route shell paints the same frame width as the page it hands over to', () => {
@@ -284,80 +267,16 @@ describe('every Daily Challenges entry keeps the club and the shell paints the p
     expect(between(shell, '.container > div {', '}')).toContain(`max-width: ${pageFrame};`);
   });
 
-  it('the route shell title prints at the size the page title resolves to', () => {
-    // Top-level rules, and rules inside `@media (max-width: 680px)`, of one
-    // stylesheet, in source order.
-    const rules = (css: string) => {
-      const found: Array<{ phone: boolean; selector: string; body: string }> = [];
-      const walk = (text: string, phone: boolean) => {
-        let depth = 0;
-        let start = 0;
-        let prelude = '';
-        for (let i = 0; i < text.length; i += 1) {
-          if (text[i] === '{') {
-            if (depth === 0) {
-              prelude = text
-                .slice(start, i)
-                .replace(/\/\*[\s\S]*?\*\//g, '')
-                .trim();
-              start = i + 1;
-            }
-            depth += 1;
-          } else if (text[i] === '}') {
-            depth -= 1;
-            if (depth === 0) {
-              const body = text.slice(start, i);
-              if (prelude.startsWith('@media (max-width: 680px)')) walk(body, true);
-              else if (!prelude.startsWith('@')) found.push({ phone, selector: prelude, body });
-              start = i + 1;
-            }
-          }
-        }
-      };
-      walk(css, false);
-      return found;
-    };
-    const titleSize = (css: string, phone: boolean) => {
-      let size: string | undefined;
-      for (const rule of rules(css)) {
-        if (rule.phone !== phone || rule.selector !== '.heroCopy h1') continue;
-        size = rule.body.match(/font-size:\s*([^;]+);/)?.[1] ?? size;
-      }
-      return size;
-    };
-    // The page's cascade, in manifest order: the last declaration wins.
-    const manifest = read('src/pages/DailyChallengesPage.module.css');
-    const page = { phone: undefined as string | undefined, wide: undefined as string | undefined };
-    for (const [, partial] of manifest.matchAll(/@import '\.\/daily-challenges\/([^']+)';/g)) {
-      const css = read(`src/pages/daily-challenges/${partial}`);
-      page.wide = titleSize(css, false) ?? page.wide;
-      page.phone = titleSize(css, true) ?? page.phone;
-    }
-    expect(page).toEqual({
-      wide: 'clamp(3.6rem, 7vw, 6rem)',
-      phone: 'clamp(2rem, calc(8vw + 0.75rem), 3.75rem)',
-    });
-    const shell = read('src/components/challenges/DailyChallengesRouteFallback.module.css');
-    expect({ wide: titleSize(shell, false), phone: titleSize(shell, true) }).toEqual(page);
-    const title = between(shell, '.heroCopy h1 {', '}');
-    expect(title).toContain('font-weight: 600;');
-    expect(title).toContain('letter-spacing: 0.025em;');
-  });
-
-  it('200% text keeps the route shell title inside its column too', () => {
-    // The shell is the first paint the preloader warms, so it holds the same
-    // line as the page: the title grows with the text size and wraps inside
-    // its column, never running under the hero's clip.
+  it('the route shell names the page without printing a hero', () => {
+    // The shell is the first paint the preloader warms. It names the cycle
+    // for screen readers and prints only its state, never the eyebrow,
+    // giant title or scene art (Dan 2026-10-17).
     const css = read('src/components/challenges/DailyChallengesRouteFallback.module.css');
     expect(css).not.toMatch(/container-type|cqi/);
-    expect(between(css, '.heroCopy h1 {', '}')).toContain('overflow-wrap: anywhere;');
-    expect(read('src/components/challenges/DailyChallengesRouteFallback.tsx')).toContain(
-      '<h1>{TITLES[tier]}</h1>'
-    );
-    // On a phone the copy clears the cycle instrument (20px down, 58px tall),
-    // so text that grows makes the hero taller instead of running under it.
-    const phone = css.slice(css.indexOf('@media (max-width: 680px)'));
-    expect(between(phone, '.heroCopy {', '}')).toContain('padding: 92px 22px 28px;');
-    expect(between(phone, '.heroCycleInstrument {', '}')).toContain('top: 20px;');
+    expect(css).not.toMatch(/\.heroCopy\b|\.heroArtwork\b|\.eyebrow\b/);
+    const fallback = read('src/components/challenges/DailyChallengesRouteFallback.tsx');
+    expect(fallback).toContain('<h1 className={styles.srOnly}>{TITLES[tier]}</h1>');
+    expect(fallback).not.toContain('EYEBROWS');
+    expect(fallback).not.toContain('daily-missions-casino-v2');
   });
 });

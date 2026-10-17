@@ -41,7 +41,8 @@ describe('cinematic retained route families', () => {
     // with the pages within this chat": the Cashier's workspace, not the
     // Rewards Circuit console.
     const source = readFileSync('src/pages/PlayerWalletPage.tsx', 'utf8');
-    expect(source).toContain('<CashierWorkspace compact eyebrow="Secure Wallet" title="Wallet">');
+    // 2026-10-17: no eyebrow (Dan: "PAGES DON'T NEED TITLES LIKE THIS").
+    expect(source).toMatch(/<CashierWorkspace\s+compact\s+title="Wallet"\s+summary="[^"]+"/);
     expect(source).toContain('data-arena-surface="wallet"');
   });
 
@@ -57,7 +58,10 @@ describe('cinematic retained route families', () => {
     expect(source).toContain('data-arena-surface="leaderboard-console"');
     expect(source).toContain('ClubPageSection as SpadeConsole');
     expect(source).toContain('titleAs="h1"');
-    expect(source).toContain('eyebrow="Club Arena"');
+    // Dan 2026-10-17: the "Club Arena" eyebrow went; the "?" sits above the console.
+    expect(source).not.toContain('eyebrow="Club Arena"');
+    expect(source).toContain('<PageBar');
+    expect(source).toContain('titleAs={false}');
     expect(source).not.toContain('className="lb-hero"');
     expect(existsSync('public/assets/club-buttons/console/spade-console-v1/top.png')).toBe(true);
   });
@@ -65,18 +69,19 @@ describe('cinematic retained route families', () => {
   it('preserves the mission-native Daily Challenges visual authority', () => {
     const source = readFileSync('src/pages/DailyChallengesPage.tsx', 'utf8');
     expect(source).toContain('data-arena-surface="missions"');
-    expect(readDailyChallengesUnit('MissionHero.tsx')).toContain('className={styles.hero}');
+    const hero = readDailyChallengesUnit('MissionHero.tsx');
+    expect(hero).toContain('className={styles.hero}');
+    // Dan 2026-10-17: the hero keeps its live meters on the bevel frame; the
+    // eyebrows, the scene art and the description moved behind the "?".
+    expect(hero).toContain('<PageBar');
+    expect(hero).not.toContain('MissionHeroArtwork');
     const presentation = readDailyChallengesUnit('missionPresentation.ts');
-    expect(presentation).toContain('Club Arena / Daily Challenge Vault');
-    expect(presentation).toContain('Club Arena / Weekly Challenge Circuit');
-    expect(presentation).toContain('Club Arena / Monthly High-Roller Ledger');
-    expect(presentation).toContain("'images/challenges/daily-missions-casino-v2.webp'");
-    expect(presentation).toContain("'images/challenges/daily-missions-casino-v2-mobile.webp'");
+    expect(presentation).not.toContain('Club Arena / Daily Challenge Vault');
+    expect(presentation).not.toContain('eyebrow:');
+    expect(presentation).not.toContain('daily-missions-casino-v2');
     expect(presentation).toContain("'images/challenges/daily-missions-reward-pedestal-v1.webp'");
     expect(presentation).toContain("'images/challenges/daily-missions-streak-freeze-v1.webp'");
     expect(presentation).toContain("'images/challenges/daily-missions-diamond-96-v1.webp'");
-    expect(existsSync('public/images/challenges/daily-missions-casino-v2.webp')).toBe(true);
-    expect(existsSync('public/images/challenges/daily-missions-casino-v2-mobile.webp')).toBe(true);
     expect(existsSync('public/images/challenges/daily-missions-reward-pedestal-v1.webp')).toBe(
       true
     );
@@ -112,30 +117,37 @@ describe('cinematic retained route families', () => {
     expect(homeCss).toMatch(/\.tileImageNative\s*\{[^}]*object-fit:\s*contain/s);
   });
 
-  it.each(UNION_PAGES)('%s uses the Union Network visual anchor', (path) => {
+  it.each(UNION_PAGES)('%s opens on the shared page bar, not a hero', (path) => {
+    // 2026-10-17, Dan: "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL
+    // DESCRIPTIONS". The union pages keep their header component, which now
+    // prints the page bar and the "?"; the union-bank hero art is gone.
     const source = readFileSync(path, 'utf8');
     expect(source).toContain('CasinoSurfaceHeader');
-    expect(source).toContain('wallet-union-bank-v1.webp');
+    expect(source).not.toMatch(/<CasinoSurfaceHeader\b[^>]*?\b(?:eyebrow|artPath)=/);
   });
 
   it('resolves cinematic artwork through the deploy- and CDN-aware media base', () => {
     // The Rewards header prints on the spade console (#ClubArenaConsole,
-    // 2026-09-09) and carries no art of its own, so it left this list.
-    const account = readFileSync('src/components/account/AccountSurfaceHeader.tsx', 'utf8');
-    const community = readFileSync('src/components/community/CommunitySurfaceHeader.tsx', 'utf8');
-    const workspaces = readFileSync('src/pages/workspaces/ArenaWorkspacePages.tsx', 'utf8');
+    // 2026-09-09) and carries no art of its own, so it left this list. On
+    // 2026-10-17 the account, community and workspace heroes left it too:
+    // they are page bars now (Dan: "PAGES DON'T NEED TITLES LIKE THIS") and
+    // paint no artwork, which the second loop pins.
     // The Daily Challenges artwork prints from its dashboard units.
     const missions = readDailyChallengesSurface();
-
-    for (const source of [account, community, workspaces, missions]) {
-      expect(source).toContain('mediaUrl(');
+    expect(missions).toContain('mediaUrl(');
+    for (const path of [
+      'src/components/account/AccountSurfaceHeader.tsx',
+      'src/components/community/CommunitySurfaceHeader.tsx',
+      'src/pages/workspaces/ArenaWorkspacePages.tsx',
+    ]) {
+      const source = readFileSync(path, 'utf8');
+      expect(source, path).toMatch(/import PageBar from '[./]+(?:components\/)?help\/PageBar';/);
+      expect(source, path).not.toContain('mediaUrl(');
     }
     for (const path of [
       'public/assets/club-buttons/wallets/desktop/wallet-diamonds-v1.webp',
       'public/assets/club-buttons/lobby/shark-club-championship-ad-v2.png',
       'public/images/community/community-network-v1.webp',
-      'public/images/challenges/daily-missions-casino-v2.webp',
-      'public/images/challenges/daily-missions-casino-v2-mobile.webp',
       'public/images/challenges/daily-missions-reward-pedestal-v1.webp',
       'public/images/challenges/daily-missions-streak-freeze-v1.webp',
       'public/images/challenges/daily-missions-diamond-96-v1.webp',

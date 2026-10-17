@@ -39,11 +39,3 @@
 .emptyState .retryButton {
   margin-top: 18px;
 }
-
-.unavailableHero {
-  min-height: min(54vh, 510px);
-}
-
-.unavailableState {
-  margin-top: 18px;
-}

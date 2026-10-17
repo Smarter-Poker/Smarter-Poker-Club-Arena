@@ -2319,12 +2319,10 @@ function CashierContent() {
     return (
       <StandardContentLayout className={styles.page}>
         <CashierWorkspace
-          eyebrow="Club Arena Cashier"
           title="Cashier"
-          subtitle="Club Wallet Access"
+          summary="Move Chips Between Your Club Wallets, Answer Chip Requests, Redeem Tickets And Check Every Ledger Entry."
           pill={hasNoClubs ? 'No Club' : 'Loading'}
-          pillInk={hasNoClubs ? 'red' : 'blue'}
-          foot="foot"
+          pillTone={hasNoClubs ? 'danger' : 'default'}
           className={styles.console}
         >
           <div className={styles.glass}>
@@ -2424,12 +2422,10 @@ function CashierContent() {
       )}
 
       <CashierWorkspace
-        eyebrow="Club Arena Cashier"
         title="Cashier"
-        subtitle={titleCase(clubName || 'Club Wallet')}
+        summary="Move Chips Between Your Club Wallets, Answer Chip Requests, Redeem Tickets And Check Every Ledger Entry."
+        context={titleCase(clubName || 'Club Wallet')}
         pill="Manual"
-        pillInk="blue"
-        foot="foot"
         className={styles.console}
       >
         <div className={styles.glass}>

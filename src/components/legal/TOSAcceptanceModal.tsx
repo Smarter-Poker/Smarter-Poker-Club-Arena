@@ -73,7 +73,6 @@ export default function TOSAcceptanceModal({ onAccept }: TOSAcceptanceModalProps
         }}
       >
         <SpadeConsole
-          eyebrow="Club Arena"
           title="Terms Of Service"
           titleId="tos-title"
           subtitle="Please Review And Accept To Continue"

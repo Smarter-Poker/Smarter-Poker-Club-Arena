@@ -997,13 +997,9 @@ export default function MarketplacePage() {
   return (
     <div className={styles.page}>
       <RewardsSurfaceHeader
-        eyebrow="Rewards Circuit / Marketplace"
         title="Club Marketplace"
         description="Acquire Table Upgrades, Player Perks, Club Exclusives, Diamond Packages, And VIP Access Through The Existing Server-Priced Storefront."
-        art="market"
         status="Player Exchange / Live"
-        pillInk="blue"
-        crest="club"
         metrics={[
           {
             label: 'Diamonds',

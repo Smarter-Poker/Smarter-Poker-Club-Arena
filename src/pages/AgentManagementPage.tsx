@@ -41,6 +41,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import styles from './AgentManagementPage.module.css';
 import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import ConfirmModal from '@/components/common/ConfirmModal';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { AgentService, type Agent, type ReversibleDistribution } from '@/services/AgentService';
@@ -954,7 +955,6 @@ export default function AgentManagementPage() {
         <SpadeConsole
           className={styles.console}
           aria-busy
-          eyebrow="Club Arena"
           title="Agent Management"
           pill="Loading"
           pillInk="muted"
@@ -982,12 +982,29 @@ export default function AgentManagementPage() {
 
   return (
     <StandardContentLayout className={styles.page}>
+      {/* Dan, 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS". The eyebrow and
+          the descriptive subtitle moved behind the painted "?"; the head keeps
+          its title and its live pill. */}
+      <PageBar
+        title="Agent Management"
+        titleAs={false}
+        summary="Manage Agents, Commissions, And Payouts."
+        steps={[
+          {
+            title: 'Agent Views',
+            body: 'Agents, Players, Hierarchy, Commissions And Payouts Each Have Their Own View. Swipe Or Tap To Switch.',
+            target: '[aria-label="Agent Views"]',
+          },
+          {
+            title: 'Add Agent',
+            body: 'Promote A Club Member To Agent And Set Their Commission. Export Downloads The Roster.',
+          },
+        ]}
+      />
       {/* ── The head: the roster's own figures as rows on the glass ──── */}
       <SpadeConsole
         className={styles.console}
-        eyebrow="Club Arena"
         title="Agent Management"
-        subtitle="Manage Agents, Commissions, And Payouts"
         pill={compactChips(totalAgents)}
         pillInk={totalAgents === 0 ? 'muted' : 'blue'}
         foot="plates"

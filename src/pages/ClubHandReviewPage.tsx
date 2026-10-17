@@ -73,7 +73,6 @@ function HandReviewState({
         <SpadeConsole
           family={action ? 'shark' : 'spade'}
           crest={action ? 'spade' : 'flat'}
-          eyebrow="Integrity Casework"
           title={title}
           pill={tone === 'red' ? 'Attention' : 'Protected'}
           pillInk={tone}
@@ -374,7 +373,6 @@ export default function ClubHandReviewPage() {
         compact
         clubId={clubParam}
         active="hand-review"
-        eyebrow="Integrity / Hands"
         title="Hand Review"
         description="Hands Your Players Flagged, And The Audited Lookup That Opens Any Hand Dealt At This Club."
         metrics={[
@@ -388,7 +386,6 @@ export default function ClubHandReviewPage() {
           <SpadeConsole
             className="chr-lookup"
             family="riveted"
-            eyebrow="Audited Control Read"
             title="Open A Hand"
             pill="Logged"
             pillInk="gold"
@@ -455,7 +452,6 @@ export default function ClubHandReviewPage() {
             className="chr-lookup"
             family="spade"
             crest="flat"
-            eyebrow="Audited Control Read"
             title="Hand Lookup Locked"
             pill="Protected"
             pillInk="gold"
@@ -471,7 +467,6 @@ export default function ClubHandReviewPage() {
           <SpadeConsole
             className="chr-hand"
             family="shark"
-            eyebrow="Audited Operator Replay"
             title={`Hand ${String(activeRead.row.hand_number ?? '')}`}
             pill={activeRead.cardsComplete ? 'Complete' : 'Partial'}
             pillInk={activeRead.cardsComplete ? 'blue' : 'gold'}
@@ -501,7 +496,6 @@ export default function ClubHandReviewPage() {
             className="chr-hand"
             family="spade"
             crest="flat"
-            eyebrow="Audited Operator Replay"
             title="Replay Unavailable"
             pill="Protected"
             pillInk="red"

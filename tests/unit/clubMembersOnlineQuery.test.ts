@@ -31,7 +31,7 @@
  * column would have happily passed.
  */
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync, statSync } from 'fs';
+import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
 const PAGE = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.tsx'), 'utf8');
@@ -51,10 +51,6 @@ const CSS_RULES = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
 const SERVICE = readFileSync(resolve(__dirname, '../../src/services/ClubRosterService.ts'), 'utf8');
 const CACHE = readFileSync(resolve(__dirname, '../../src/lib/rosterCache.ts'), 'utf8');
 const VIRTUAL = readFileSync(resolve(__dirname, '../../src/hooks/useVirtualScroll.ts'), 'utf8');
-const ROSTER_OPERATIONS_ART = resolve(
-  __dirname,
-  '../../public/images/club-members/roster-ledger-desk-v2.webp'
-);
 const MIGRATION = readFileSync(
   resolve(__dirname, '../../supabase/migrations/20260823_03_club_members_overview.sql'),
   'utf8'
@@ -180,18 +176,16 @@ describe('Players tab palette', () => {
 });
 
 describe('Players tab #smarterCasinoRealism presentation', () => {
-  it('ships the purpose-built roster vault as an optimized local asset', () => {
-    expect(existsSync(ROSTER_OPERATIONS_ART)).toBe(true);
-    expect(statSync(ROSTER_OPERATIONS_ART).size).toBeLessThan(180_000);
-    expect(PAGE).toContain('images/club-members/roster-ledger-desk-v2.webp');
-    expect(PAGE).not.toContain('images/club-members/roster-vault.webp');
-    expect(PAGE).toContain('fetchPriority="high"');
-  });
-
-  it('keeps the artwork decorative and the live roster data in HTML', () => {
-    expect(PAGE).toContain('alt=""');
-    expect(PAGE).toContain('Club Players');
-    expect(PAGE).toContain('members-summary');
+  /* Dan 2026-10-17: "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL
+     DESCRIPTIONS". The roster hero (eyebrow, title, sentence, desk artwork)
+     is gone; its live totals print in the page bar, the words behind the "?". */
+  it('prints no page hero, and keeps the live roster totals in HTML', () => {
+    expect(PAGE).not.toContain('roster-ledger-desk-v2.webp');
+    expect(PAGE).not.toContain('members-hero');
+    expect(PAGE).not.toContain('Club Players');
+    expect(PAGE).toContain('<PageBar');
+    expect(PAGE).toContain("label: 'Total Members'");
+    expect(PAGE).toContain('Find Any Member, Read Their Live Club Status');
   });
 
   it('does not put a blur compositor on every roster row', () => {

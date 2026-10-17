@@ -11,8 +11,7 @@
   border-bottom: 1px solid rgba(174, 190, 201, 0.17);
 }
 
-.boardHeader h2,
-.footer h2 {
+.boardHeader h2 {
   margin: 8px 0 0;
   color: var(--mission-white);
   font-size: clamp(1.65rem, 3.5vw, 2.45rem);

@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuthUser } from '../hooks/useAuthUser';
 import WeeklyAccountingWorkspace from '../components/accounting/WeeklyAccountingWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import PageBar from '../components/help/PageBar';
 import styles from './SettlementPage.module.css';
 
 /** Route-scoped automatic accounting. No browser open, close or payout controls. */
@@ -13,10 +14,16 @@ export default function SettlementPage() {
   const reference = kind === 'club' ? clubId : unionId;
   return (
     <main className={styles.page}>
+      {/* Dan, 2026-10-17: the decorative eyebrow is gone; what this page is
+          lives behind the painted "?". */}
+      <PageBar
+        title="Weekly Accounting"
+        titleAs={false}
+        summary="Weekly Accounting For This Club Or Union Is Posted Automatically And Verified. Nothing Here Opens, Closes Or Pays A Week By Hand."
+      />
       <SpadeConsole
         className={styles.console}
         family="spade"
-        eyebrow="Club Arena"
         title="Weekly Accounting"
         titleAs="h1"
         pill={kind === 'club' ? 'Club' : kind === 'union' ? 'Union' : 'Unavailable'}

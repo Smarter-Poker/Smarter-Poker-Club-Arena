@@ -12,9 +12,10 @@ const diamond = read('src/components/wallet/DiamondWalletModal.tsx');
 
 describe('the union and diamond wallets open on the Cashier desk', () => {
   it('prints the Cashier heading, an identity row and the painted action dock', () => {
-    expect(desk).toMatch(
-      /<CashierWorkspace\s+compact\s+eyebrow="Secure Cashier"\s+title="Cashier"/
-    );
+    // 2026-10-17: the heading is for assistive technology and the "?" holds
+    // what the desk is for (Dan: "PAGES DON'T NEED TITLES LIKE THIS").
+    expect(desk).toMatch(/<CashierWorkspace\s+compact\s+title="Cashier"\s+summary="[^"]+"/);
+    expect(desk).not.toMatch(/<CashierWorkspace[^>]*eyebrow=/);
     expect(desk).toContain('className="wdesk__header"');
     expect(css).toContain("url('/images/cashier-actions/cashier-action-dock-v1.png')");
     expect(css).toContain("url('/images/cashier-actions/cashier-action-dock-tall-v1.png')");

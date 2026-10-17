@@ -761,14 +761,11 @@ export default function UnionDetailPage() {
   return (
     <div className={styles.page}>
       <CasinoSurfaceHeader
-        crest="club"
-        eyebrow="Union Network / Overview"
         title={union.name}
         description={
           union.description ||
           'Inspect This Connected Club Network, Its Live Games, Player Scale, And Governed Operations.'
         }
-        artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
         status="UNION NETWORK // LIVE"
         metrics={[
           { label: 'Clubs', value: union.clubCount },

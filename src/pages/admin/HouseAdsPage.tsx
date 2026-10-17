@@ -36,6 +36,7 @@ import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import CampaignQueue from '../../components/ads/CampaignQueue';
+import PageBar from '../../components/help/PageBar';
 import '../AdminDashboardPage.css';
 import { isPlatformStaffRole } from '../../utils/platformRoles';
 
@@ -689,12 +690,10 @@ export default function HouseAdsPage() {
   return (
     <div className="admin-page">
       <div className="admin-container">
-        <div className="admin-page-header">
-          <h1 className="admin-page-title">House Ads</h1>
-          <p className="admin-text-secondary">
-            Smarter.Poker Promotions. These Run In Every Club Lobby, Below A Club's Own Notices.
-          </p>
-        </div>
+        <PageBar
+          title="House Ads"
+          summary="Smarter.Poker Promotions. These Run In Every Club Lobby, Below A Club's Own Notices."
+        />
 
         {actionError && <div className="admin-error-banner">{actionError}</div>}
         {notice && <div className="admin-success-banner">{notice}</div>}

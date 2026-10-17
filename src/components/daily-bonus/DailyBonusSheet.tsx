@@ -688,7 +688,6 @@ export default function DailyBonusSheet({
         onClose={onClose}
         as="section"
         crest="diamond"
-        eyebrow="Club Arena"
         title="Daily Bonus"
         titleId="dbs-title"
         pill={pill}

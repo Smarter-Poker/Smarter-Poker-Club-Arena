@@ -83,7 +83,9 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
     ? 'Working'
     : purchaseUnconfirmed
       ? 'Retry Confirmation'
-      : `Rebuy ${money(totalCost)}`;
+      : !fundingUnit
+        ? 'Rebuy Unavailable'
+        : `Rebuy ${money(totalCost)}`;
 
   return (
     <div className="rebuy-modal__overlay addon-console__overlay" onClick={dismiss}>
@@ -114,9 +116,11 @@ const RebuyModal: React.FC<RebuyModalProps> = ({
                     ? 'Working'
                     : purchaseUnconfirmed
                       ? 'Pending'
-                      : canAfford
-                        ? 'Ready'
-                        : 'Balance Low'}
+                      : !fundingUnit
+                        ? 'Unavailable'
+                        : canAfford
+                          ? 'Ready'
+                          : 'Balance Low'}
                 </PurchaseText>
               </strong>
               <span>{purchaseUnconfirmed ? 'Confirmation Needed' : 'Rebuy Status'}</span>

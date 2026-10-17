@@ -538,7 +538,11 @@ describe('Chip conversion remains available only for known Chip funding', () => 
     expect(Boolean(screen.queryByRole('button', { name: /Diamond Spins/i }))).toBe(
       arenaAsset === 'chips'
     );
-    if (!arenaAsset) expect(screen.getByText('Unavailable')).toBeTruthy();
+    if (!arenaAsset) {
+      expect(screen.getAllByText('Unavailable')).toHaveLength(2);
+      expect(screen.queryByText('Balance Low')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Rebuy Unavailable' })).toBeDisabled();
+    }
   });
   it('add-on retains the Chip conversion and known-unit affordability guard', () => {
     render(

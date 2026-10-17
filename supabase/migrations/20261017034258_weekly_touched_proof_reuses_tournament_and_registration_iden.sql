@@ -17,6 +17,12 @@ BEGIN
  IF NULLIF(current_setting('ca.break_window_migration_override',true),'')IS NOT NULL OR public.fn_platform_frozen()IS DISTINCT FROM false OR public.fn_active_maintenance_release_boundary()IS NOT NULL THEN RAISE EXCEPTION 'weekly_touched_freeze_or_override_refused';END IF;
  IF NOT pg_try_advisory_xact_lock(hashtextextended('union-accounting-scheduler',0))THEN RAISE EXCEPTION 'weekly_touched_scheduler_owned';END IF;
  IF EXISTS(SELECT FROM supabase_migrations.schema_migrations WHERE version='20261017034258')THEN RAISE EXCEPTION 'weekly_touched_history_replay';END IF;
+ -- THE SECOND PIN (2026-10-17). fn_accounting_union_earned_plan_advance also
+ -- pins this report's md5 (edecfc...): installing the report without moving
+ -- that pin turns the two-hour flow-window path off, so the report re-proves
+ -- every flow of the week in one statement, and the new generation voids every
+ -- certificate of an open close. Refuse until the same transaction moves it.
+ IF EXISTS(SELECT FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_accounting_union_earned_plan_advance(uuid,timestamptz,timestamptz)')AND p.prosrc LIKE '%edecfc5273ee4c96b608baa0ea863578%')THEN RAISE EXCEPTION 'weekly_touched_earned_plan_advance_pin_not_moved';END IF;
  generation:=smarter_private.original_inventory_basis_generation();
  IF smarter_private.original_inventory_proof_sources_match()IS DISTINCT FROM true OR generation IS NULL THEN RAISE EXCEPTION 'weekly_touched_original_inventory_seal_required';END IF;
  IF NOT EXISTS(SELECT FROM pg_proc p WHERE p.oid=to_regprocedure('public.fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)')AND md5(pg_get_functiondef(p.oid))='edecfc5273ee4c96b608baa0ea863578'AND md5(p.prosrc)='4e7c5597b6c5630ca1d8fd9e021a1f5f'AND p.proowner='postgres'::regrole AND p.prosecdef=true AND p.provolatile='v'AND p.proacl::text='{postgres=X/postgres}'AND p.proconfig=ARRAY['search_path=public, pg_temp'])THEN RAISE EXCEPTION 'weekly_touched_preimage_authority_refused_0';END IF;

@@ -1645,3 +1645,24 @@ body:has([data-players-mode='simple']) nav[aria-label='Club Operations Sections'
     padding-inline: 2px;
   }
 }
+
+/* ── Win / loss (Dan 2026-10-16) ────────────────────────────────────────────
+   The window selector shares the Sort control's frame. On a row the net reads
+   arena cyan when up and danger red when down - the record's own inks. */
+.members-winloss-period {
+  min-width: 190px;
+}
+.member-simple-balance > .member-simple-balance__winloss {
+  color: #9aa5b3;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.member-simple-balance > .member-simple-balance__winloss.member-winloss--up,
+.member-metric--winloss.member-winloss--up .member-metric__value {
+  color: var(--members-cyan);
+}
+.member-simple-balance > .member-simple-balance__winloss.member-winloss--down,
+.member-metric--winloss.member-winloss--down .member-metric__value {
+  color: var(--danger-red, #ff4757);
+}

@@ -29,8 +29,11 @@ vi.mock('../../src/hooks/useMasterBusChannel', () => ({
   },
 }));
 vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
-  useMasterBusBroadcastChannel: (config: { onPayload: (p: unknown) => void }) => {
-    f.walletSignal = config.onPayload;
+  // Only the roster's own wallet channel. PlayerChangeHistory renders inside
+  // the page with a broadcast channel of its own, and capturing every caller
+  // let any re-render of the page hand these cases the wrong handler.
+  useMasterBusBroadcastChannel: (config: { event?: string; onPayload: (p: unknown) => void }) => {
+    if (config.event === 'wallet_changed') f.walletSignal = config.onPayload;
   },
 }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => f.toast }));
@@ -47,6 +50,8 @@ vi.mock('../../src/services/ClubRosterService', () => ({
     getSummary: f.summary,
     exportRoster: f.export,
     getMemberDetail: f.detail,
+    // The roster asks for win / loss on financially visible rows (2026-10-17).
+    getMembersWinLoss: async () => new Map(),
   },
   mapRosterRow: (row: unknown) => row,
   MemberAccessDeniedError: class MemberAccessDeniedError extends Error {},

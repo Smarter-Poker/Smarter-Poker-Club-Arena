@@ -76,3 +76,39 @@ The 62 accounts hold 1,524,176.95 there, untouched since 2026-08-20, as do
 many live players. It belongs to no club and no screen reads it, so moving it
 into a club bank would mint club chips that never existed in that club. It is
 left exactly as it is.
+
+## Applied, and the second defect it exposed (2026-10-17 00:16 UTC)
+
+Applied to production at 00:16 UTC (history `20261017001657`). The live proof
+holds: 186 memberships departed with 186 audit rows, 24 agent rows suspended,
+245 members and 17 agent rows re-homed, 0 chips to return, repeat 0. Fifteen
+live lists read as the owner return 0 deleted ids and 0 tombstone names.
+
+Then a rolled-back deletion of a live account was **refused**:
+`could not obtain lock on row in relation "clubs"`. That happened for an agent
+with 10,183.67 chips and for a player with zero chips in three clubs. The
+cause was older than this work. `fn_deleted_account_custody_settled`
+(20261011051848) locked the main bank of every chip club the person belonged
+to, NOWAIT, even when nothing was going there. `fn_ca_deleted_wallet_credit`
+also called the bank return, which locks the bank before reading the amount,
+for every membership. A house bank is written by rake on almost every hand, so
+deleting anyone in JAQK, SHARK or Midway, through Close Account included, was
+refused far more often than not.
+
+`20261017002119_a_deletion_locks_only_the_banks_it_pays`:
+
+- The guard owns the person's own wallets first, still NOWAIT.
+- It then takes only the banks that will receive chips, through
+  `fn_ca_try_lock_bank`. That makes up to 40 NOWAIT attempts, 50 ms apart, and
+  never queues, so the October 11 no-deadlock property holds.
+- The profile branch of the credit hook returns chips only from wallets that
+  hold free chips.
+- Every custody refusal is unchanged.
+
+Proved after applying, with rolled-back deletions:
+
+- **Zero-chip player:** 3 memberships departed, with 3 audit rows.
+- **Agent:** 2 memberships departed and its agent row suspended. Its 10
+  downline players moved to the nearest live upline.
+- **Agent's chips:** 10,183.67 left its wallets, and 10,183.67 is in both the
+  bank receipts and the chip ledger. Its wallets are now 0.00.

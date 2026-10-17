@@ -89,4 +89,31 @@ describe('a deleted account leaves every club and every list', () => {
     expect(sql).toContain("'deleted_accounts_leave_every_club_20261016'");
     expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.fn_ca_deleted_account_leaves_every_club\(uuid\) FROM PUBLIC, anon, authenticated/);
   });
+
+  it('a deletion locks only the banks that receive chips, and never queues behind one', () => {
+    const lock = readdirSync(dir).filter((name) =>
+      name.endsWith('_a_deletion_locks_only_the_banks_it_pays.sql')
+    );
+    expect(lock).toHaveLength(1);
+    const fix = readFileSync(`${dir}/${lock[0]}`, 'utf8');
+    // Measured 2026-10-17: a zero-chip deletion was refused because every
+    // house bank was locked up front. Only banks receiving chips are locked.
+    expect(fix).toContain('PERFORM public.fn_ca_try_lock_bank(v_bank);');
+    expect(fix).toMatch(/coalesce\(m\.chip_balance,0\) - coalesce\(m\.held_chips,0\) - coalesce\(m\.locked_chips,0\) > 0/);
+    expect(fix).toMatch(/coalesce\(a\.agent_wallet_balance,0\) > 0/);
+    // Wallets are owned before banks, and every lock stays NOWAIT (polled,
+    // never queued), so the October 11 no-deadlock property holds.
+    expect(fix.indexOf('FROM public.club_members m WHERE m.user_id = OLD.id')).toBeLessThan(
+      fix.indexOf('PERFORM public.fn_ca_try_lock_bank(v_bank);')
+    );
+    expect(fix).toContain('FOR UPDATE NOWAIT');
+    expect(fix).toContain('EXCEPTION WHEN lock_not_available');
+    expect(fix).not.toMatch(/ORDER BY c\.id FOR UPDATE NOWAIT/);
+    // Every custody refusal is kept.
+    for (const reason of ['seated', 'tournament_entry', 'pending_cashout', 'escrow', 'held_chips']) {
+      expect(fix).toContain(`ACCOUNT_CUSTODY_UNSETTLED: ${reason}`);
+    }
+    expect(fix).toContain('DELETION_BANK_LOCK_PREIMAGE_CHANGED');
+    expect(fix).not.toMatch(/DELETE FROM|cron\.schedule|is_horse/i);
+  });
 });

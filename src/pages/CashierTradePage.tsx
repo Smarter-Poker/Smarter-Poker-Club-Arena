@@ -317,7 +317,12 @@ function CashierPlayerCard({
           </span>
         </span>
         <span className={styles.playerCardBalance}>
-          {walletControl || <span>{balanceLabel}</span>}
+          <span>{balanceLabel}</span>
+          {walletControl && (
+            <svg className={styles.entityChevron} viewBox="0 0 12 8" aria-hidden="true">
+              <path d="M1 1.5 6 6.5 11 1.5" fill="none" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          )}
           <strong>
             {walletBalance === null
               ? 'Unavailable'
@@ -325,6 +330,7 @@ function CashierPlayerCard({
           </strong>
         </span>
       </span>
+      {walletControl}
     </section>
   );
 }
@@ -4936,7 +4942,11 @@ function CashierTradeWorkspace() {
                       {picked.length === 1 && (
                         <CashierPlayerCard
                           row={picked[0]}
-                          balanceLabel="Player Wallet"
+                          balanceLabel={
+                            amountModal === 'send'
+                              ? SEND_DESTINATION_LABELS[transferDestination(picked[0])]
+                              : 'Player Wallet'
+                          }
                           walletControl={
                             amountModal === 'send' ? recipientWalletControl(picked[0]) : undefined
                           }
@@ -5092,7 +5102,7 @@ function CashierTradeWorkspace() {
                         <div key={`wallet-${r.userId}`}>
                           <CashierPlayerCard
                             row={r}
-                            balanceLabel="Player Wallet"
+                            balanceLabel={SEND_DESTINATION_LABELS[transferDestination(r)]}
                             walletControl={recipientWalletControl(r)}
                             walletBalance={
                               targetBalances[r.userId]?.[transferDestination(r)] ?? null

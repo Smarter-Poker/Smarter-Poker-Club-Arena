@@ -51,6 +51,36 @@ let lifecycleGeneration = 0;
 const lifecycleJobs = new Set<Promise<void>>();
 /** The dedupe: the drift alert is filed at most once per process. */
 let driftAlertedThisBoot = false;
+/**
+ * AN UNREADABLE TICK CLOSES ON THE NEXT READABLE ONE (2026-10-17). The
+ * `RakeSpec.checksum_unavailable` warning describes one tick; the next tick
+ * that reads the checksum ends it. Nothing closed it, so the 08:26 UTC warning
+ * of 2026-10-17 stayed open while every later tick matched. True at boot so the
+ * first readable tick also closes a warning the replaced engine left open.
+ */
+let unavailableAlertMayBeOpen = true;
+
+/** Resolve every open `RakeSpec.checksum_unavailable` row. Never throws. */
+async function closeChecksumUnavailableAlerts(verdict: 'match' | 'mismatch'): Promise<void> {
+  try {
+    const at = new Date().toISOString();
+    const { error } = await (supabase as any)
+      .from('financial_alerts')
+      .update({
+        resolved: true,
+        resolved_at: at,
+        resolution:
+          `Cleared by the rake spec guard at ${at}: fn_rake_spec_checksum() was read again ` +
+          `(verdict: ${verdict}), so the tick this warning described is over.`,
+      })
+      .eq('source', 'RakeSpec.checksum_unavailable')
+      .eq('resolved', false);
+    if (error) throw error;
+    unavailableAlertMayBeOpen = false;
+  } catch (err) {
+    reportError(err, 'rakeSpecGuard.unavailable_close_failed');
+  }
+}
 
 /** Minimal shape of the client this guard needs; tests pass a stub. */
 export interface RakeSpecRpcClient {
@@ -65,6 +95,7 @@ export type RakeSpecVerdict = 'match' | 'mismatch' | 'unavailable';
 /** Test seam: forget that this boot already alerted. */
 export function resetRakeSpecGuardForTests(): void {
   driftAlertedThisBoot = false;
+  unavailableAlertMayBeOpen = true;
   setRakeSpecDriftState({
     drifted: false,
     databaseChecksum: null,
@@ -108,7 +139,12 @@ export async function verifyRakeSpecAgainstDatabase(
       'The engine could not read fn_rake_spec_checksum(); the rake spec is unverified this tick',
       { compiledChecksum: compiled, previouslyDrifted: before.drifted }
     ).catch((err) => reportError(err, 'rakeSpecGuard.unavailable_alert_failed'));
+    unavailableAlertMayBeOpen = true;
     return 'unavailable';
+  }
+
+  if (unavailableAlertMayBeOpen) {
+    await closeChecksumUnavailableAlerts(databaseChecksum === compiled ? 'match' : 'mismatch');
   }
 
   if (databaseChecksum === compiled) {

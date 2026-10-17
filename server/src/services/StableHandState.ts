@@ -217,9 +217,19 @@ export async function writeStateRows(rows: readonly StateRow[], chunkSize = 250)
   let written = 0;
   for (let i = 0; i < rows.length; i += chunkSize) {
     const chunk = rows.slice(i, i + chunkSize);
-    const { error } = await (supabase as any)
-      .from('stable_hand_horse_state')
-      .upsert(chunk, { onConflict: 'horse_id' });
+    /* ONE FAILED ROUND TRIP IS NOT A FAILED WRITE (2026-10-17). On 2026-10-16
+       the first cycle after the 13:00 thaw lost its write before it reached
+       the API (no POST in the edge log) and the next cycle's, 30 s later,
+       succeeded - and that single miss filed a warning nobody closed. The
+       chunk is a full-row upsert keyed on horse_id, so sending it again is
+       idempotent: the second attempt is the same write, not a second one. */
+    let error: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      ({ error } = await (supabase as any)
+        .from('stable_hand_horse_state')
+        .upsert(chunk, { onConflict: 'horse_id' }));
+      if (!error) break;
+    }
     if (error) {
       reportError(error, 'StableHandState.writeStateRows');
       continue;

@@ -127,6 +127,24 @@ export const FREE_BUY_SLOTS: FreeBuySlot[] = [
  */
 export const FREE_BUY_SLOT_MINUTE = 30;
 
+/**
+ * THE DATES ALREADY PUBLISHED KEEP THE TIMETABLE THEY WERE PUBLISHED UNDER
+ * (2026-10-16, docs/changelog/2026-10-16-a-real-rooms-day.md). Free Buys are
+ * spawned three days ahead, so every date before Tuesday 2026-10-20 was on
+ * the board under the previous timetable - on the hour, 250 standard and 500
+ * feature - before the half-hour board shipped, and keeps it: moving a
+ * published event's start or prize under its registrants is not the change
+ * Dan asked for. The audit reads those dates against the timetable that
+ * published them and every later date against the current one, so the watch
+ * names a wrong board, not a deliberate changeover.
+ */
+export const FREE_BUY_HALF_HOUR_BOARD_FROM = '2026-10-20';
+export const FREE_BUY_PREVIOUS_SLOT_MINUTE = 0;
+export const FREE_BUY_PREVIOUS_GUARANTEES: Record<FreeBuyTier, number> = {
+  standard: 250,
+  feature: 500,
+};
+
 /** 'HH:MM' Chicago start of a slot. */
 export function freeBuySlotTime(slot: FreeBuySlot): string {
   return `${String(slot.chicagoHour).padStart(2, '0')}:${String(FREE_BUY_SLOT_MINUTE).padStart(2, '0')}`;
@@ -733,12 +751,19 @@ export function auditFreeBuyRow(
     );
     return problems;
   }
-  if (at.minute !== FREE_BUY_SLOT_MINUTE)
+  // A date published before the half-hour board, on the previous timetable's
+  // minute, is read against that timetable (FREE_BUY_HALF_HOUR_BOARD_FROM).
+  const previousTimetable =
+    chicagoDayKey(startMs) < FREE_BUY_HALF_HOUR_BOARD_FROM &&
+    at.minute === FREE_BUY_PREVIOUS_SLOT_MINUTE;
+  if (at.minute !== FREE_BUY_SLOT_MINUTE && !previousTimetable)
     problems.push(
       `starts at ${at.hour}:${String(at.minute).padStart(2, '0')}, not on the half hour`
     );
 
-  const cfg = FREE_BUY_TIERS[slot.tier];
+  const cfg = previousTimetable
+    ? { ...FREE_BUY_TIERS[slot.tier], guarantee: FREE_BUY_PREVIOUS_GUARANTEES[slot.tier] }
+    : FREE_BUY_TIERS[slot.tier];
   const say = (ok: boolean, msg: string) => {
     if (!ok) problems.push(msg);
   };

@@ -122,6 +122,34 @@ describe('rakeSpecGuard: unavailable', () => {
   });
 });
 
+describe('rakeSpecGuard: an unreadable tick closes on the next readable one', () => {
+  it('resolves open checksum_unavailable rows once the checksum is read again', async () => {
+    const { supabase } = (await import('./supabase.js')) as unknown as {
+      supabase: Record<string, unknown>;
+    };
+    const calls: Array<[string, unknown]> = [];
+    const chain = {
+      update: (v: unknown) => (calls.push(['update', v]), chain),
+      eq: (c: string, v: unknown) => {
+        calls.push([c, v]);
+        return calls.filter((x) => x[0] === 'resolved').length
+          ? Promise.resolve({ error: null })
+          : chain;
+      },
+    };
+    supabase.from = vi.fn(() => chain);
+    await guard.verifyRakeSpecAgainstDatabase(failingClient);
+    await guard.verifyRakeSpecAgainstDatabase(clientReturning(spec.rakeSpecChecksum()));
+    expect(calls).toContainEqual(['source', 'RakeSpec.checksum_unavailable']);
+    expect(calls).toContainEqual(['resolved', false]);
+    // Closed once; a later matching tick does not ask again.
+    (supabase.from as ReturnType<typeof vi.fn>).mockClear();
+    await guard.verifyRakeSpecAgainstDatabase(clientReturning(spec.rakeSpecChecksum()));
+    expect(supabase.from).not.toHaveBeenCalled();
+    delete supabase.from;
+  });
+});
+
 describe('rakeSpecGuard: it never holds a table (Dan 2026-09-02 risk ruling)', () => {
   const SRC = join(__dirname, '..');
   const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8');

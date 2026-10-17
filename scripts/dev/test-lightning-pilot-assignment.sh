@@ -26,6 +26,28 @@ grep -q 'predecessor mismatch' "$scratch/wrong.log"
 test "$("${psql[@]}" -Atc "SELECT to_regclass('lightning_pilot_assignment') IS NULL")" = t
 "${psql[@]}" -c "ALTER FUNCTION fn_register_horse_for_tournament(uuid,uuid,boolean) VOLATILE;" >/dev/null
 "${psql[@]}" -f "$migration" >/dev/null
+# Readiness identifies the exact qualified fleet-input control; common play
+# remains covered by the broad source guard. No control is invoked here.
+"${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-readiness-fleet-predecessor.sql" >/dev/null
+"${psql[@]}" -c "DO \$\$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='postgres') THEN CREATE ROLE postgres SUPERUSER; END IF; END \$\$; ALTER FUNCTION fn_lightning_rollout_readiness(uuid) OWNER TO postgres; REVOKE ALL ON FUNCTION fn_lightning_rollout_readiness(uuid) FROM PUBLIC,anon; GRANT EXECUTE ON FUNCTION fn_lightning_rollout_readiness(uuid) TO authenticated,service_role;" >/dev/null
+"${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-readiness-fleet-assertions.sql" >/dev/null
+readiness_migration="$root/supabase/migrations/20261017072701_lightning_readiness_recognizes_exact_authorized_fleet_contro.sql"
+# A wrong authority preimage refuses atomically and leaves the actual law false.
+"${psql[@]}" -c "ALTER FUNCTION fn_lightning_rollout_readiness(uuid) VOLATILE;" >/dev/null
+if "${psql[@]}" -f "$readiness_migration" >"$scratch/readiness-wrong.log" 2>&1; then echo 'FAIL readiness wrong predecessor accepted'; exit 1; fi
+grep -q 'predecessor mismatch' "$scratch/readiness-wrong.log"
+"${psql[@]}" -c "ALTER FUNCTION fn_lightning_rollout_readiness(uuid) STABLE;" >/dev/null
+"${psql[@]}" -c "ALTER FUNCTION fn_lightning_pilot_assignment_set(boolean,uuid,text,uuid[],text) STABLE;" >/dev/null
+if "${psql[@]}" -f "$readiness_migration" >"$scratch/readiness-control-wrong.log" 2>&1; then echo 'FAIL readiness changed control preimage accepted'; exit 1; fi
+grep -q 'predecessor mismatch' "$scratch/readiness-control-wrong.log"
+"${psql[@]}" -c "ALTER FUNCTION fn_lightning_pilot_assignment_set(boolean,uuid,text,uuid[],text) VOLATILE;" >/dev/null
+"${psql[@]}" -f "$readiness_migration" >/dev/null
+"${psql[@]}" -Atc "SELECT 'Readiness postimage MD5: '||md5(pg_get_functiondef('public.fn_lightning_rollout_readiness(uuid)'::regprocedure));"
+"${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-readiness-fleet-after.sql" >/dev/null
+if "${psql[@]}" -f "$readiness_migration" >"$scratch/readiness-replay.log" 2>&1; then echo 'FAIL readiness replay accepted'; exit 1; fi
+grep -q 'predecessor mismatch' "$scratch/readiness-replay.log"
+echo 'PASS readiness actual guard before-false/after-true; unknown functions/control revisions refused; comments stripped; wrong predecessor/replay refused'
+
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-pilot-assignment-assertions.sql" >/dev/null
 if "${psql[@]}" -c 'SELECT witness.unsafe_lifecycle_withdrawal();' >"$scratch/before-race.log" 2>&1; then echo 'FAIL lifecycle race not reproduced'; exit 1; fi
 grep -q 'WRONG_LIFECYCLE_WITHDRAWN' "$scratch/before-race.log"

@@ -44,28 +44,6 @@ const SUPER_SLOTS = [
   '20x',
   '20x',
 ];
-/** Super Double (6), the only board whose lowest slot carries the two thirds a
- *  Super award with the Double Diamonds add-on paid. */
-const SUPER_DOUBLE_SLOTS = [
-  '20x',
-  '20x',
-  '10x',
-  '1.7x',
-  '0.8x',
-  '0.75x',
-  '0.75x',
-  '0.73x',
-  '0.72x',
-  '0.73x',
-  '0.75x',
-  '0.75x',
-  '0.8x',
-  '1.7x',
-  '10x',
-  '20x',
-  '20x',
-];
-
 /**
  * THE ONE ROAD, BY STREET (contract 4, 2026-09-21). Donkey Cross deals the
  * twelve-street `road` ladder, 0.80x to 20.00x, so every street sits inside
@@ -315,7 +293,7 @@ for (const width of [320, 390, 1280])
  * of whether the host can compile a WebGL scene at all.
  */
 for (const superGame of [false, true])
-  test(`Every Diamond surface fits a 375px phone on the ${superGame ? 'Super Double' : 'Super'} table`, async ({
+  test(`Every Diamond surface fits a 375px phone ${superGame ? 'on a Super award' : 'on an ordinary award'}`, async ({
     page,
   }) => {
     const { diamondTestFixture } = await import('../helpers/diamond-test-fixture.mjs');
@@ -331,14 +309,14 @@ for (const superGame of [false, true])
       });
     });
     // CONTRACT 4. 100 simulated diamonds is one chip. An ordinary game pays for
-    // its whole stake and keeps HALF of it. A Super award with the Double
-    // Diamonds add-on is a 300 diamond stake the player paid 200 for, and keeps
-    // those 200 - two thirds - which is why it is dealt the only board whose
-    // lowest slot carries them.
-    const guaranteed = superGame ? '2.00 Chips' : '0.50 Chips';
+    // its whole stake and keeps HALF of it. A Super award is a 200 diamond
+    // stake the player paid 100 for, and keeps those 100 - half again - so it is
+    // dealt the same Super board. (The Double Diamonds add-on, which made a
+    // 300 diamond stake keep two thirds on Super Double, is retired.)
+    const guaranteed = superGame ? '1.00 Chips' : '0.50 Chips';
     for (const game of GAMES) {
       await page.goto(
-        `http://diamond-test.local/diamond-test.html?game=${game}${superGame ? '&super=1&double=1' : ''}`
+        `http://diamond-test.local/diamond-test.html?game=${game}${superGame ? '&super=1' : ''}`
       );
       await page.addStyleTag({ content: bundle.css });
       await page.addScriptTag({ content: bundle.javascript });
@@ -378,15 +356,13 @@ for (const superGame of [false, true])
         await expect(page.getByLabel('Payout Range')).toHaveCount(0);
         await expect(page.getByRole('button', { name: /Diamonds Per Drop/ })).toHaveCount(0);
         // THE BOARD FOLLOWS THE FLOOR, NOT THE BOOST (contract 4). Every
-        // half-the-stake floor is carried by Super (4); only the two thirds a
-        // Super award with the add-on paid needs Super Double (6). The Diamond
+        // half-the-stake floor is carried by Super (4), and with the Double
+        // Diamonds add-on retired every live stake keeps half. The Diamond
         // board (5) closed on 2026-09-21 and no stake reaches it any more.
-        await expect(
-          page.getByText(superGame ? 'On The Super Double Table' : 'On The Super Table')
-        ).toBeVisible();
+        await expect(page.getByText('On The Super Table')).toBeVisible();
         const legend = page.getByRole('list', { name: 'Plinko Payout Slots' });
         await sits(legend, 'the Plinko bucket legend');
-        await bucketLegendReads(legend, superGame ? SUPER_DOUBLE_SLOTS : SUPER_SLOTS);
+        await bucketLegendReads(legend, SUPER_SLOTS);
       }
 
       if (game === 'crossing') {
@@ -1033,8 +1009,7 @@ test('An iPhone browser gets a tap switch on every live Diamond control, and eve
  * THE STOP BUTTON SHOULD BE FLASHING".
  *
  * Every game is mounted as App.tsx routes it, inside AppLayout, in the state a
- * player arrives in from the wheel: a pending award, the Double Your Diamonds
- * offer answered, nothing started. scrollY is asserted as well as the box: a
+ * player arrives in from the wheel: a pending award, nothing started. scrollY is asserted as well as the box: a
  * plate that is only on screen because something scrolled the window is not a
  * plate on the opening screen. Then Crash is mounted on a live, cashable round
  * and Book The Win must occupy Start's exact box, pulse, and be pressable.
@@ -1106,13 +1081,11 @@ async function openGamePage(page: Page, game: keyof typeof START_LABEL, live = f
   return network;
 }
 
-/** Screen one of a won game is the Double Your Diamonds decision (R9); the
- * opening screen of the GAME is the one behind it. */
-async function answerTheOffer(page: Page) {
-  const without = page.getByRole('button', { name: 'Play Without', exact: true });
-  await expect(without).toBeEnabled({ timeout: 30_000 });
-  await without.click();
+/** A won game opens on the game itself: the Double Your Diamonds screen is
+ * retired (Dan 2026-10-16), so nothing stands in front of the opening screen. */
+async function noOfferStands(page: Page) {
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText('Double Your Diamonds')).toHaveCount(0);
 }
 
 for (const viewport of START_VIEWPORTS)
@@ -1122,7 +1095,7 @@ for (const viewport of START_VIEWPORTS)
     await page.setViewportSize(viewport);
     for (const game of GAMES) {
       const network = await openGamePage(page, game);
-      await answerTheOffer(page);
+      await noOfferStands(page);
       const start = page.locator(PRIMARY_PLATE);
       await expect(start).toHaveText(START_LABEL[game]);
       if (game === 'plinko') {
@@ -1153,7 +1126,7 @@ for (const viewport of START_VIEWPORTS)
   }) => {
     await page.setViewportSize(viewport);
     await openGamePage(page, 'crash');
-    await answerTheOffer(page);
+    await noOfferStands(page);
     const plate = page.locator(PRIMARY_PLATE);
     await expect(plate).toHaveText(/^Start /);
     await expect(plate).toBeEnabled({ timeout: 30_000 });

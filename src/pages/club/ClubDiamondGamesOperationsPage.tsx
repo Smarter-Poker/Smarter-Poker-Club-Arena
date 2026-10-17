@@ -585,7 +585,7 @@ export default function ClubDiamondGamesOperationsPage() {
             mode="text"
             value={draft.bet_options}
             onChange={set('bet_options')}
-            hint="25 To 2,500 Diamonds. A Doubled Entry May Reach 5,000."
+            hint="25 To 2,500 Diamonds."
           />
           <Field
             label="Exposure Allowance (Chips)"
@@ -594,8 +594,7 @@ export default function ClubDiamondGamesOperationsPage() {
             hint={`The Most ${word} May Pay Beyond What It Has Taken In.`}
           />
           <p className="sc-copy">
-            Entries Are 25 To 2,500 Diamonds. One Equal Double Down Can Bring The Bonus Total To
-            5,000. Earned And Purchased Diamonds Are Accepted.
+            Entries Are 25 To 2,500 Diamonds. Earned And Purchased Diamonds Are Accepted.
           </p>
           <Field
             label="Cap Fraction"

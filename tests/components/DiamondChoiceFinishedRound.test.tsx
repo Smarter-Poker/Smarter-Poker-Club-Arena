@@ -5,9 +5,10 @@
  *  - While the last pick was revealed, the setup panel under the board told
  *    the player to "Win This Game On Diamond Spins To Play.": it described the
  *    next round, which this page never plays (the receipt returns the player to
- *    the wheel), and with a second award pending it opened that award's Double
- *    Down offer over the reveal. The setup stays off screen from the moment a
- *    round opens until its receipt has taken the player back.
+ *    the wheel), and with a second award pending it opened that award's setup
+ *    over the reveal. The setup stays off screen from the moment a round opens
+ *    until its receipt has taken the player back. (The Double Your Diamonds
+ *    offer that used to open there is retired, Dan 2026-10-16.)
  *  - The Guaranteed bay read "Pending" beside a booked loss: it described the
  *    next entry, not the round on the board. It shows that round's own floor.
  *  - A round finished on the page it was won for, then reopened from its wheel
@@ -173,13 +174,10 @@ const advance = async (ms: number) => {
 };
 const text = () => document.body.textContent ?? '';
 const bay = (label: string) => screen.getByText(label).nextElementSibling as HTMLElement;
-/** Answers the offer with Play Without, then presses Start: the two taps a
- *  won game takes (R1, R9). */
+/** Presses Start: the one tap a won game takes (R1). No Double Your Diamonds
+ *  offer stands in front of it (retired, Dan 2026-10-16). */
 const keepAndStart = async () => {
-  const offer = screen.getByRole('dialog', { name: 'Double Your Diamonds' });
-  fireEvent.animationEnd(offer.querySelector('[data-motion="keep"]')!);
-  fireEvent.click(screen.getByRole('button', { name: 'Play Without' }));
-  await settle();
+  expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Start Round' }));
   await settle();
   expect(backend.start).toHaveBeenCalledTimes(1);
@@ -203,7 +201,7 @@ const revealEnds = async () => {
   await settle();
 };
 const setupOnScreen = () =>
-  ['Spin The Wheel', 'Buy More', 'Earn Diamonds', 'Playing Without Extra Diamonds: Change'].filter(
+  ['Spin The Wheel', 'Buy More', 'Earn Diamonds'].filter(
     (name) => screen.queryByRole('button', { name }) !== null
   );
 
@@ -269,7 +267,7 @@ describe.each(['mines', 'crossing'] as const)('%s: the round that just finished'
     expect(bay('Guaranteed').textContent).toBe('0.10 Chips');
   });
 
-  it("never opens a next award's Double Down offer over the reveal", async () => {
+  it("never opens a next award's setup, or any offer, over the reveal", async () => {
     await play(true);
     await advance(10_000);
     expect(screen.queryByRole('dialog', { name: 'Double Your Diamonds' })).toBeNull();

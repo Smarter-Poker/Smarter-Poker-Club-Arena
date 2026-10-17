@@ -268,9 +268,9 @@ describe('an answer this browser cannot verify', () => {
     expect(backend.awardState.mock.calls.length).toBeGreaterThan(reads);
     expect(statusLine()).toHaveTextContent(BONUS_SAVED);
     expect(screen.queryByText('Settling')).toBeNull();
-    // Nothing is dealt or dropped over it: the plate is still screen one's.
+    // Nothing is dealt or dropped over it: the plate stays shut.
     expect(backend.commit).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Answer The Offer First' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Drop Diamonds' })).toBeDisabled();
     noCheckControl();
   });
 });

@@ -132,5 +132,26 @@ describe('Horse Fleet Status Dashboard', () => {
       expect(fleet[0].shardsTotal).toBe(111);
       expect(fleet[0].verdict).toBe('-');
     });
+
+    it('falls back to completed status for previously qualified archived runs when API is unreachable', () => {
+      const fleet = fetchFleetStatus({
+        runs: [
+          {
+            phase: 10,
+            variant: 'plo4',
+            runId: '38936316718',
+            expectedShards: 111,
+            initialVerdict: 'qualified',
+          },
+        ],
+        ghBin: 'non-existent-gh-bin-test',
+      });
+      expect(fleet).toHaveLength(1);
+      expect(fleet[0].status).toBe('completed');
+      expect(fleet[0].shardsCompleted).toBe(111);
+      expect(fleet[0].shardsTotal).toBe(111);
+      expect(fleet[0].verdict).toBe('qualified');
+      expect(fleet[0].progressBar).toContain('100%');
+    });
   });
 });

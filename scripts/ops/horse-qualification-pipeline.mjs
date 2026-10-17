@@ -51,7 +51,7 @@ export function getPhaseConfig(phase, variant) {
 /**
  * Builds the exact CLI arguments for the assembler invocation.
  */
-export function buildAssemblerArgs({ phase, variant, runsDir, outDir, noFormat = true, defectiveFile }) {
+export function buildAssemblerArgs({ phase, variant, runsDir, outDir, repoRoot, noFormat = true, defectiveFile }) {
   const config = getPhaseConfig(phase, variant);
   if (!runsDir) throw new Error('runsDir is required');
   if (!outDir) throw new Error('outDir is required');
@@ -63,6 +63,10 @@ export function buildAssemblerArgs({ phase, variant, runsDir, outDir, noFormat =
     `--runs=${runsDir}`,
     `--out=${outDir}`,
   ];
+
+  if (repoRoot) {
+    args.push(`--repo-root=${repoRoot}`);
+  }
 
   if (config.needsVariantFlag) {
     args.push(`--variant=${config.variant}`);
@@ -190,6 +194,7 @@ export function downloadRunArtifacts({ runId, targetDir, repo = DEFAULT_REPO, gh
 
   const output = execFileSync(ghBin, args, {
     encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
     maxBuffer: 64 * 1024 * 1024,
     timeout: 300000,
   });
@@ -210,16 +215,20 @@ export function runStrengthAssembler({
   defectiveFile,
   nodeBin = 'node',
 }) {
+  const resolvedRepoRoot = path.resolve(repoRoot);
+  const resolvedOutDir = path.isAbsolute(outDir) ? outDir : path.resolve(resolvedRepoRoot, outDir);
+  const resolvedRunsDir = path.isAbsolute(runsDir) ? runsDir : path.resolve(resolvedRepoRoot, runsDir);
   const { command, args } = buildAssemblerArgs({
     phase,
     variant,
-    runsDir,
-    outDir,
+    runsDir: resolvedRunsDir,
+    outDir: resolvedOutDir,
+    repoRoot: resolvedRepoRoot,
     noFormat,
     defectiveFile,
   });
 
-  const serverDir = path.resolve(repoRoot, 'server');
+  const serverDir = path.resolve(resolvedRepoRoot, 'server');
   const stdout = execFileSync(nodeBin, args, {
     cwd: serverDir,
     encoding: 'utf8',
@@ -242,7 +251,7 @@ export function retryFailedShards({ runId, repo = DEFAULT_REPO, ghBin = 'gh' }) 
     viewArgs.push('-R', repo.replace(/^repos\//, ''));
   }
 
-  const raw = execFileSync(ghBin, viewArgs, { encoding: 'utf8', timeout: 30000 });
+  const raw = execFileSync(ghBin, viewArgs, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 });
   const parsed = JSON.parse(raw);
   const failedJobs = (parsed.jobs || []).filter((j) => j.conclusion === 'failure');
 
@@ -260,7 +269,7 @@ export function retryFailedShards({ runId, repo = DEFAULT_REPO, ghBin = 'gh' }) 
     rerunArgs.push('-R', repo.replace(/^repos\//, ''));
   }
 
-  const output = execFileSync(ghBin, rerunArgs, { encoding: 'utf8', timeout: 30000 });
+  const output = execFileSync(ghBin, rerunArgs, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 });
 
   return {
     retried: true,
@@ -291,7 +300,7 @@ export async function pollRunCompletion({
 
   while (Date.now() - startTime < maxWaitMs) {
     try {
-      const raw = execFileSync(ghBin, viewArgs, { encoding: 'utf8', timeout: 30000 });
+      const raw = execFileSync(ghBin, viewArgs, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 30000 });
       const parsed = JSON.parse(raw);
       const summary = summarizeRunJobs(parsed.jobs || []);
 
@@ -446,6 +455,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       archiveDir: args.archive,
       noFormat: args.noFormat !== 'false',
       watch: Boolean(args.watch),
+      expectedEngineDigest: args.expectedDigest || args.expectedEngineDigest || args['expected-digest'],
       onProgress: (p) => {
         if (p.error) {
           console.error(`[Watch ${p.runId}] Error: ${p.error}`);

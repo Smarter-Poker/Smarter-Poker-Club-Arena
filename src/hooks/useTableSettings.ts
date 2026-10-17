@@ -47,6 +47,16 @@ export interface TableUserSettings {
    */
   autoMuckExplicit: boolean;
   autoMuckWinners: boolean;
+  /**
+   * Dan 2026-10-17: "USE THE 4 COLOR DECK AS THE STANDARD AND IF USERS WANT TO
+   * CHANGE IT, THEY CAN CHANGE IT BACK TO THE TRADITIONAL DECK IN THE TABLE
+   * SETTINGS." The same trap autoMuck hit: this hook persists the WHOLE object,
+   * so every player who ever changed any table setting has
+   * `fourColorDeck: false` in localStorage without having chosen it. True only
+   * once the player has personally set the deck; until then the loader lifts a
+   * stored false to the four-colour standard.
+   */
+  fourColorDeckExplicit: boolean;
   autoPostBlinds: boolean;
   cardBack: string; // Card back design ID
   showStackInBB: boolean;
@@ -73,7 +83,10 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   isHapticEnabled: true,
   animationSpeed: 1,
   theme: 'black',
-  fourColorDeck: false,
+  // Dan 2026-10-17: the four-colour deck is the standard. Traditional is the
+  // opt-out in table settings.
+  fourColorDeck: true,
+  fourColorDeckExplicit: false,
   showHUD: true,
   showPotOdds: false,
   showBetSizePresets: true,
@@ -332,6 +345,11 @@ function loadFromStorage(): TableUserSettings {
       if (merged.autoMuckExplicit !== true) {
         merged.autoMuck = true;
       }
+      // 2026-10-17 — the same hostile-state migration for the deck. A stored
+      // false predates the four-colour standard unless the player set it.
+      if (merged.fourColorDeckExplicit !== true) {
+        merged.fourColorDeck = true;
+      }
       // 2026-09-05 — the same shape of hostile state, one field over. A theme
       // that is not a felt palette is not a preference this setting can hold;
       // FELT_THEMES above records what was found live and what it did.
@@ -555,6 +573,7 @@ function attachBusOnce(): void {
         // deliberate as local ones — mark them explicit too, or the other
         // tab's loader would lift the user's own choice back to true.
         ...(setting === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+        ...(setting === 'fourColorDeck' ? { fourColorDeckExplicit: true } : {}),
       }));
     }
   });
@@ -768,6 +787,13 @@ async function hydrateFromServer(userId: string): Promise<void> {
         (merged as unknown as Record<string, unknown>)[key] = adopted;
         changed = true;
       }
+      // The account CHOSE this deck (settings_touched), so it is explicit on
+      // this browser too - otherwise the next cold load would lift a chosen
+      // Traditional deck back to four colours until the row arrived again.
+      if (key === 'fourColorDeck' && merged.fourColorDeckExplicit !== true) {
+        merged.fourColorDeckExplicit = true;
+        changed = true;
+      }
     } else if (mayAdoptLocal && local[key] !== DEFAULT_SETTINGS[key]) {
       // The account has never chosen this; carry this browser's choice up to it.
       toPush.push([key, local[key]]);
@@ -838,6 +864,8 @@ export function setTableSetting<K extends keyof TableUserSettings>(
     // SHOWDOWN AUDIT 2026-08-25: a personal autoMuck toggle is the ONLY
     // thing that makes a stored false authoritative — see the loader.
     ...(key === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+    // Dan 2026-10-17: picking a deck is what makes a stored Traditional stick.
+    ...(key === 'fourColorDeck' ? { fourColorDeckExplicit: true } : {}),
   }));
   // Broadcast for cross-TAB sync. Within this tab the shared store above
   // has already updated every consumer, so a dropped message costs nothing.
@@ -899,6 +927,7 @@ export function useTableSettings() {
       // SHOWDOWN AUDIT 2026-08-25: same rule as updateSetting — an autoMuck
       // value arriving through the bulk path is a user action too.
       ...('autoMuck' in updates ? { autoMuckExplicit: true } : {}),
+      ...('fourColorDeck' in updates ? { fourColorDeckExplicit: true } : {}),
     }));
     // Broadcast each change for cross-tab sync
     for (const [key, value] of Object.entries(updates)) {

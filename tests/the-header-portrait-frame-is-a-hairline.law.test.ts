@@ -151,6 +151,28 @@ describe('the header portrait frame is a hairline: the ornament is masked', () =
     );
   });
 
+  /* Dan 2026-10-17 ("ON MOBILE THE HEADERS AND FOOTERS ARE TOO SMALL"): phones
+     render global-header-mobile-v1.png, a 1435-wide plane cut from the same
+     art. Columns came out only away from the ornament, so its centre moves to
+     x 976.75 and its radii and y are unchanged. The same mask law, resolved on
+     that plane. */
+  it('the phone plane keeps the mask: the disc still covers the moved ornament and stays off the rails', () => {
+    const phone = btnRules.find((r) => /max-width:\s*600px/.test(r.media || ''));
+    expect(phone, '.profileBtn must have a @media (max-width: 600px) rule').toBeTruthy();
+    expect(CSS).toContain('aspect-ratio: 1435 / 168');
+    expect(TSX).toContain('global-header-mobile-v1.png');
+    const PHONE_W = 1435;
+    const PHONE_ORNAMENT_CX = 976.75;
+    const left = (pct(phone!.decls.get('left'), 'phone .profileBtn left') / 100) * PHONE_W;
+    const top =
+      (pct(phone!.decls.get('top') ?? base!.decls.get('top'), '.profileBtn top') / 100) * PLANE_H;
+    const size = (pct(phone!.decls.get('width'), 'phone .profileBtn width') / 100) * PHONE_W;
+    const r = size / 2;
+    const offset = Math.hypot(left + r - PHONE_ORNAMENT_CX, top + r - ORNAMENT.cy);
+    expect(r - offset).toBeGreaterThanOrEqual(ORNAMENT.glowR + 2);
+    expect(r + offset).toBeLessThanOrEqual(ORNAMENT.railR - 2);
+  });
+
   it('every .profileBtn rule that paints a background, in any media query, bottoms out in #000', () => {
     expect(btnRules.length).toBeGreaterThanOrEqual(1);
     for (const rule of btnRules) {

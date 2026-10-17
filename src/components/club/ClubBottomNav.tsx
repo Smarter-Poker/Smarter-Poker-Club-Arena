@@ -38,6 +38,15 @@ interface AccountResolvedClub {
 }
 
 const APPROVED_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-v3.webp`;
+/**
+ * Dan 2026-10-17: "ON MOBILE THE HEADERS AND FOOTERS ARE TOO SMALL." The phone
+ * composition is cut from the master above with the Diamond Spins cell baked
+ * in and one 77px quilt period taken out of each gap between the cells; see the
+ * phone block in ClubBottomNav.module.css and club-engine.css. Same breakpoint
+ * in all three places.
+ */
+const PHONE_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-mobile-v1.webp`;
+const PHONE_FOOTER_MEDIA = '(max-width: 600px)';
 
 function useResolvedClubId(explicit?: string, routeClubId?: string | null): string | null {
   const { user } = useAuthUser();
@@ -192,15 +201,18 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
     >
       <div className={styles.viewport}>
         <div className={styles.artwork}>
-          <img
-            className={styles.artworkImage}
-            src={APPROVED_FOOTER_ART}
-            alt=""
-            width="1916"
-            height="256"
-            decoding="async"
-            draggable={false}
-          />
+          <picture>
+            <source media={PHONE_FOOTER_MEDIA} srcSet={PHONE_FOOTER_ART} width="1531" height="256" />
+            <img
+              className={styles.artworkImage}
+              src={APPROVED_FOOTER_ART}
+              alt=""
+              width="1916"
+              height="256"
+              decoding="async"
+              draggable={false}
+            />
+          </picture>
           <div className={styles.diamondArtwork} aria-hidden="true">
             <img
               src={`${import.meta.env.BASE_URL}images/club-footer/diamond-spins-footer-art.png`}

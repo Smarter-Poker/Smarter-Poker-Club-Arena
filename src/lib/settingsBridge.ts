@@ -73,7 +73,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
 
   theme: PROFILE_PREFERENCE_DEFAULTS.theme,
   cardBack: 'classic_blue',
-  fourColorDeck: false,
+  // Dan 2026-10-17: four-colour is the standard deck.
+  fourColorDeck: true,
   animationSpeed: 'normal',
   showPotOdds: false,
   showTicker: true,

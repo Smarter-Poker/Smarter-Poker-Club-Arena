@@ -279,8 +279,11 @@ export default function JoinClubModal({
       : preview
         ? 'Verified'
         : 'Code';
+  /* No gold on the way into a club (Dan 2026-10-17: "YELLOW IS NOT A APPROVED
+     COLOR IN THE SMARTER.POKER COLOR SCHEMA ... WHEN JOINING A CLUB"). A
+     pending request is the schema's lit blue. */
   const pillInk: ConsoleInk =
-    preview?.membership_status === 'pending' ? 'gold' : preview ? 'green' : 'muted';
+    preview?.membership_status === 'pending' ? 'blue' : preview ? 'green' : 'muted';
 
   /* Two literal branches rather than one clever ternary: the plate label is
      what a test reads, and `Confirm Join <club>` is pinned by name. */
@@ -433,7 +436,7 @@ export default function JoinClubModal({
             {isPreviewing ? (
               <span className="sc-ink--blue">Verifying Club</span>
             ) : statusMessage ? (
-              <span className="sc-ink--gold">{titleCase(statusMessage)}</span>
+              <span className="sc-ink--blue">{titleCase(statusMessage)}</span>
             ) : (
               <span className="sc-ink--muted">A Club Code Is Five Or Six Digits</span>
             )}

@@ -138,3 +138,40 @@ describe('the account surfaces carry no yellow', () => {
     expect(read(sheet)).toContain("[data-theme='light']");
   });
 });
+
+/* Dan 2026-10-17: "YELLOW IS NOT A APPROVED COLOR IN THE SMARTER.POKER COLOR
+   SCHEMA, SO THIS NEEDS TO BE CHANGED ACROSS THE BOARD WHEN JOINING A CLUB."
+   The invitation page (InvitePage and InviteCodePage share its sheet) and the
+   Join Club console are the way into a club. */
+describe('joining a club carries no yellow', () => {
+  const JOIN_YELLOW = [
+    '#ffd700',
+    '#f7e7a3',
+    '#ffa500',
+    '#fbbf24',
+    '#f59e0b',
+    '#eab308',
+    '#facc15',
+    '#fcd34d',
+    '#d4af37',
+    'rgba(255, 215, 0',
+    'rgba(212, 175, 55',
+    'rgba(251, 191, 36',
+    '--iv-gold',
+  ];
+
+  it('the invitation sheet uses the schema blues', () => {
+    const css = read('src/pages/InvitePage.css').replace(/\/\*[\s\S]*?\*\//g, '').toLowerCase();
+    for (const colour of JOIN_YELLOW) {
+      expect(css, `${colour} is back on the invite page`).not.toContain(colour.toLowerCase());
+    }
+  });
+
+  it('the Join Club console prints no gold ink', () => {
+    const tsx = strip(read('src/components/modals/JoinClubModal.tsx'));
+    expect(tsx).not.toContain('sc-ink--gold');
+    expect(tsx).not.toMatch(/['"]gold['"]/);
+    const css = read('src/components/modals/JoinClubModal.module.css').toLowerCase();
+    for (const colour of JOIN_YELLOW) expect(css).not.toContain(colour.toLowerCase());
+  });
+});

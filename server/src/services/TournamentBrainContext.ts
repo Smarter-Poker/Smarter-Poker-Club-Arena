@@ -40,7 +40,11 @@ import {
   type TournamentContextStatus,
 } from '../engine/HorseTournamentPreflop.js';
 import { selectInChunks } from './supabase/chunkedIn.js';
-import { recoveryFeeCents, tournamentFeeRatio, unitFloorCents } from '../tournament/recoveryFee.js';
+import {
+  recoveryFeeCents,
+  tournamentPurchaseFeeRatio,
+  unitFloorCents,
+} from '../tournament/recoveryFee.js';
 import { UNIT_CENTS_ASSET_NOT_READ, normalizeUnitCents } from '../tournament/tournamentUnit.js';
 import { horseRebuyAllowance } from './FreeBuy.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -1433,8 +1437,9 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   };
-  const buyIn = finite(row.buy_in_amount) ?? 0;
-  const buyInFee = finite(row.buy_in_fee) ?? 0;
+  const configuredBuyIn = row.buy_in_amount == null ? null : finite(row.buy_in_amount);
+  const configuredBuyInFee = row.buy_in_fee == null ? null : finite(row.buy_in_fee);
+  const buyIn = configuredBuyIn ?? 0;
   const startingChips = finite(row.starting_chips);
   const configuredRecovery = finite(row.rebuy_cost);
   const recoveryUnits = Math.round(
@@ -1444,7 +1449,6 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
   let recoveryPrizeContributionCents: number | null = null;
   let recoveryBountyContributionCents: number | null = null;
   if (recoveryCostCents !== null) {
-    const feeRatio = tournamentFeeRatio(buyIn, buyInFee);
     /**
      * The recovery fee is the ratio, capped at ten percent, truncated DOWN to
      * the smallest amount this tournament can pay. It used to truncate to a
@@ -1477,6 +1481,11 @@ function tournamentPurchaseQuote(row: TournamentRowLite): TournamentPurchaseQuot
      */
     const unitCents =
       row.unit_cents == null ? UNIT_CENTS_ASSET_NOT_READ : normalizeUnitCents(row.unit_cents);
+    const feeRatio = tournamentPurchaseFeeRatio(
+      configuredBuyIn ?? Number.NaN,
+      configuredBuyInFee ?? Number.NaN,
+      unitCents
+    );
     const floorToUnit = (cents: number) => unitFloorCents(cents, unitCents);
     const feeCents = recoveryFeeCents(recoveryCostCents, feeRatio, unitCents);
     const netCents = Math.max(0, recoveryCostCents - feeCents);

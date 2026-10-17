@@ -21,6 +21,8 @@ import { TournamentPurchaseNotSubmittedError } from '../../services/TournamentPu
 
 interface AddOnModalProps {
   isVisible: boolean;
+  /** Canonical funding asset; tournament playing stacks always remain Chips. */
+  arenaAsset?: 'chips' | 'diamonds';
   /** Base add-on cost — the part that feeds the prize pool. */
   addOnCost: number;
   /**
@@ -71,6 +73,7 @@ function AddOnText({ children }: { children: string }) {
 
 export default function AddOnModal({
   isVisible,
+  arenaAsset,
   addOnCost,
   addOnFee = 0,
   addOnChips,
@@ -125,8 +128,15 @@ export default function AddOnModal({
   // realtime broadcast that defaults it to 0 when the field is missing; a 0
   // price made canAfford unconditionally true and let players buy at a price
   // the modal never actually showed them.
+  const fundingLabel = (amount: number): string =>
+    arenaAsset === 'diamonds' ? `${money(amount)} Diamonds` : chipLabel(money(amount));
+  const fundingKnown = arenaAsset === 'diamonds' || arenaAsset === 'chips';
   const priceKnown =
-    Number.isFinite(totalCost) && totalCost > 0 && Number(addOnCost) >= 0 && Number(addOnFee) >= 0;
+    fundingKnown &&
+    Number.isFinite(totalCost) &&
+    totalCost > 0 &&
+    Number(addOnCost) >= 0 &&
+    Number(addOnFee) >= 0;
   const walletKnown = Number.isFinite(walletBalance);
   const chipsKnown = Number.isFinite(addOnChips) && addOnChips > 0;
   const canAfford = priceKnown && walletKnown && walletBalance >= totalCost;
@@ -285,7 +295,7 @@ export default function AddOnModal({
           <div className="addon-console__row addon-console__row--cost">
             <span>Add-On Cost</span>
             <strong>
-              <AddOnText>{priceKnown ? chipLabel(money(totalCost)) : 'Unavailable'}</AddOnText>
+              <AddOnText>{priceKnown ? fundingLabel(totalCost) : 'Unavailable'}</AddOnText>
             </strong>
           </div>
           <div className="addon-console__row addon-console__row--chips">
@@ -301,7 +311,9 @@ export default function AddOnModal({
           >
             <span>Your Balance</span>
             <strong>
-              <AddOnText>{walletKnown ? chipLabel(money(walletBalance)) : 'Unavailable'}</AddOnText>
+              <AddOnText>
+                {walletKnown && fundingKnown ? fundingLabel(walletBalance) : 'Unavailable'}
+              </AddOnText>
             </strong>
           </div>
           <button
@@ -341,16 +353,21 @@ export default function AddOnModal({
             <p role="alert">Wallet Balance Unavailable - Cannot Purchase Right Now</p>
           )}
           {!decided && priceKnown && walletKnown && !canAfford && (
-            <p role="alert">Insufficient Balance - You Need {chipLabel(money(totalCost))}</p>
+            <p role="alert">Insufficient Balance - You Need {fundingLabel(totalCost)}</p>
           )}
-          {!decided && priceKnown && walletKnown && !canAfford && onPlayDiamonds && (
-            <DiamondsToChipsButton
-              clubId={diamondGamesClubId}
-              enabled={isVisible}
-              size="compact"
-              onGo={onPlayDiamonds}
-            />
-          )}
+          {!decided &&
+            priceKnown &&
+            walletKnown &&
+            !canAfford &&
+            arenaAsset === 'chips' &&
+            onPlayDiamonds && (
+              <DiamondsToChipsButton
+                clubId={diamondGamesClubId}
+                enabled={isVisible}
+                size="compact"
+                onGo={onPlayDiamonds}
+              />
+            )}
         </div>
       </section>
     </div>

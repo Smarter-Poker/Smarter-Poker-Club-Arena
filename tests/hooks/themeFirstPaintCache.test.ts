@@ -33,6 +33,7 @@ import { masterBus } from '../../src/core/MasterBus';
 import { useUserThemeSettings, resolveCachedTheme } from '../../src/hooks/useUserThemeSettings';
 
 const CACHE_KEY = 'ca_user_theme_rows:user-1';
+const EMPTY_KEY = 'ca_user_theme_confirmed_empty:user-1';
 
 const cachedRows = [
   {
@@ -85,6 +86,118 @@ describe('theme first paint comes from the cache', () => {
     const { result } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
     expect(result.current.theme.table_id).toBe('jade_city'); // first paint
     await waitFor(() => expect(result.current.theme.table_id).toBe('classic_green'));
+  });
+
+  it('remembers an authoritative empty snapshot as a ready default while still reading and reporting a later failure', async () => {
+    eq.mockResolvedValue({ data: [], error: null });
+    const first = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    expect(first.result.current.ready).toBe(true);
+    first.unmount();
+
+    let finish!: (value: unknown) => void;
+    eq.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const calls = eq.mock.calls.length;
+    const second = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    try {
+      expect(second.result.current.ready).toBe(true);
+      expect(second.result.current.theme.table_id).toBe('classic_green');
+      expect(second.result.current.loading).toBe(true);
+      await waitFor(() => expect(eq.mock.calls.length).toBeGreaterThan(calls));
+    } finally {
+      // A readiness regression must not strand the shared read for later cases.
+      await act(async () => finish({ data: null, error: { message: 'later read failed' } }));
+    }
+    await waitFor(() => expect(second.result.current.error).toBe('later read failed'));
+    expect(second.result.current.ready).toBe(true);
+  });
+
+  it.each([null, 'broken-json', '{}', 'null', '[null]'])(
+    'does not interpret a missing or malformed cache as confirmed empty: %s',
+    (raw) => {
+      localStorage.setItem(
+        EMPTY_KEY,
+        JSON.stringify({ version: 1, userId: 'user-1', empty: true })
+      );
+      if (raw !== null) localStorage.setItem(CACHE_KEY, raw);
+      expect(resolveCachedTheme('user-1', 'NLH')).toBeNull();
+    }
+  );
+
+  it.each([
+    null,
+    'true',
+    '{}',
+    'broken-json',
+    JSON.stringify({ version: 1, userId: 'user-2', empty: true }),
+  ])('does not trust an unmarked or incorrectly marked old empty array: %s', (marker) => {
+    localStorage.setItem(CACHE_KEY, '[]');
+    if (marker !== null) localStorage.setItem(EMPTY_KEY, marker);
+    expect(resolveCachedTheme('user-1', 'NLH')).toBeNull();
+  });
+
+  it('never grants confirmed default readiness to another account, a guest or an unresolved bucket', async () => {
+    eq.mockResolvedValue({ data: [], error: null });
+    const first = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    first.unmount();
+    expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('classic_green');
+    expect(resolveCachedTheme('user-2', 'NLH')).toBeNull();
+    expect(resolveCachedTheme(null, 'NLH')).toBeNull();
+    expect(resolveCachedTheme('user-1', null)).toBeNull();
+    eq.mockResolvedValue({ data: null, error: { message: 'new account read failed' } });
+    const next = renderHook(() => useUserThemeSettings('user-2', 'nlh'));
+    expect(next.result.current.ready).toBe(false);
+    await waitFor(() => expect(next.result.current.error).toBe('new account read failed'));
+    expect(next.result.current.ready).toBe(false);
+  });
+
+  it('a later nonempty authoritative snapshot retires confirmed-empty metadata', async () => {
+    eq.mockResolvedValue({ data: [], error: null });
+    const first = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(first.result.current.loading).toBe(false));
+    first.unmount();
+    expect(localStorage.getItem(EMPTY_KEY)).not.toBeNull();
+    eq.mockResolvedValue({ data: cachedRows, error: null });
+    const next = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(next.result.current.theme.table_id).toBe('jade_city'));
+    expect(localStorage.getItem(EMPTY_KEY)).toBeNull();
+    localStorage.setItem(CACHE_KEY, '[]');
+    expect(resolveCachedTheme('user-1', 'NLH')).toBeNull();
+  });
+
+  it.each([
+    { data: [], error: { message: 'read failed' } },
+    { data: null, error: null },
+  ])('does not mark a failed or absent authoritative snapshot as empty: %j', async (response) => {
+    eq.mockResolvedValue(response);
+    const mounted = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(mounted.result.current.loading).toBe(false));
+    expect(localStorage.getItem(EMPTY_KEY)).toBeNull();
+    expect(resolveCachedTheme('user-1', 'NLH')).toBeNull();
+  });
+
+  it('an optimistic row invalidates old empty metadata without establishing a new empty snapshot', async () => {
+    eq.mockResolvedValue({ data: [], error: null });
+    const mounted = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(mounted.result.current.loading).toBe(false));
+    expect(localStorage.getItem(EMPTY_KEY)).not.toBeNull();
+    act(() => {
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: { table_id: 'carbon_ion' },
+        userId: 'user-1',
+      } as never);
+    });
+    expect(resolveCachedTheme('user-1', 'NLH')?.table_id).toBe('carbon_ion');
+    expect(localStorage.getItem(EMPTY_KEY)).toBeNull();
+    localStorage.setItem(CACHE_KEY, '[]');
+    expect(resolveCachedTheme('user-1', 'NLH')).toBeNull();
   });
 
   it('a failed load keeps the cached theme on screen rather than defaults', async () => {
@@ -210,7 +323,12 @@ describe('every saved bucket reaches the first-paint cache, without trusting the
       CACHE_KEY,
       JSON.stringify([
         { ...cachedRows[0], updated_at: '2026-08-01T00:00:00Z' },
-        { ...cachedRows[0], game_type: 'PLO', table_id: 'old_plo', updated_at: '2026-08-02T00:00:00Z' },
+        {
+          ...cachedRows[0],
+          game_type: 'PLO',
+          table_id: 'old_plo',
+          updated_at: '2026-08-02T00:00:00Z',
+        },
       ])
     );
     const { result } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));

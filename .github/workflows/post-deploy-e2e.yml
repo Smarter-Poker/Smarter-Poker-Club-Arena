@@ -78,11 +78,22 @@ jobs:
           SOURCE_TRIGGER_SHA: ${{ github.event.workflow_run.head_sha || '' }}
           REPOSITORY_ID: ${{ github.repository_id }}
           ENGINE_TRIGGER_SHA: ${{ github.event.client_payload.engine_sha || '' }}
+          ENGINE_TRIGGER_JSON: ${{ toJSON(github.event.client_payload.engine_sha) }}
+          MOBILE_MULTIRUN_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun) }}
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = repository_dispatch ]; then
+            if [ "$MOBILE_MULTIRUN_JSON" = true ] && [ "$ENGINE_TRIGGER_JSON" = null ]; then
+              # An explicit client observation binds the healthy serving engine
+              # when its job starts, just like the publication-triggered lane.
+              echo 'engine_trigger_sha=' >> "$GITHUB_OUTPUT"
+              echo 'should_run=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             [[ "$ENGINE_TRIGGER_SHA" =~ ^[0-9a-f]{40}$ ]] \
               || { echo '::error::An engine-triggered production certificate requires one full lowercase engine SHA.'; exit 1; }
+            [ "$ENGINE_TRIGGER_JSON" = "\"$ENGINE_TRIGGER_SHA\"" ] \
+              || { echo '::error::An engine pin must be a JSON string containing its full SHA.'; exit 1; }
             echo "engine_trigger_sha=$ENGINE_TRIGGER_SHA" >> "$GITHUB_OUTPUT"
             echo 'should_run=true' >> "$GITHUB_OUTPUT"
             exit 0
@@ -1259,15 +1270,18 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           ENGINE_TRIGGER_SHA: ${{ needs.publication-gate.outputs.engine_trigger_sha }}
+          ENGINE_TRIGGER_JSON: ${{ toJSON(github.event.client_payload.engine_sha) }}
+          MOBILE_MULTIRUN_JSON: ${{ toJSON(github.event.client_payload.mobile_multirun) }}
         run: |
           set -euo pipefail
           git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
           MAIN_SHA="$(git rev-parse --verify 'origin/main^{commit}')"
-          if [ "$EVENT_NAME" = repository_dispatch ]; then
+          if [ "$EVENT_NAME" = repository_dispatch ] && [ -n "$ENGINE_TRIGGER_SHA" ]; then
             # Certify the immutable release that requested this run. A newer
             # unshipped merge cannot substitute a different release identity.
             ENGINE_SHA="$ENGINE_TRIGGER_SHA"
-          elif [ "$EVENT_NAME" = workflow_run ] && [ -z "$ENGINE_TRIGGER_SHA" ]; then
+          elif [ -z "$ENGINE_TRIGGER_SHA" ] && { [ "$EVENT_NAME" = workflow_run ] || \
+               { [ "$EVENT_NAME" = repository_dispatch ] && [ "${MOBILE_MULTIRUN_JSON:-}" = true ] && [ "${ENGINE_TRIGGER_JSON:-}" = null ]; }; }; then
             # Test the published client with the engine actually serving it.
             # Latest main may contain another task's staged, unshipped engine.
             #

@@ -4207,14 +4207,25 @@ export class GameServer {
       // sockets land first), reports every open session whose player holds
       // no connected anchor or room presence through the ordinary reporter path. The presence door
       // is idempotent, so over-reporting an already-stamped player is free.
-      this.lightningPresenceReconcileTimer = setTimeout(() => {
-        this.lightningPresenceReconcileTimer = null;
-        void reconcileLightningPresence({
-          presenceSource: () => this.lightningPresenceReports(),
-          report: this.lightningPresenceReporter,
-        });
-      }, LIGHTNING_PRESENCE_RECONCILE_DELAY_MS);
-      (this.lightningPresenceReconcileTimer as { unref?: () => void }).unref?.();
+      // NOT INSIDE THE FREEZE (2026-10-17): during the hourly break the anchor
+      // engines are parked or not yet adopted, so presence read then is a
+      // missing report, not an absence. The pass waits for the thaw and then
+      // the same settling delay before it judges anyone.
+      const scheduleLightningPresenceReconcile = (): void => {
+        this.lightningPresenceReconcileTimer = setTimeout(() => {
+          this.lightningPresenceReconcileTimer = null;
+          if (isMaintenanceFrozen()) {
+            scheduleLightningPresenceReconcile();
+            return;
+          }
+          void reconcileLightningPresence({
+            presenceSource: () => this.lightningPresenceReports(),
+            report: this.lightningPresenceReporter,
+          });
+        }, LIGHTNING_PRESENCE_RECONCILE_DELAY_MS);
+        (this.lightningPresenceReconcileTimer as { unref?: () => void }).unref?.();
+      };
+      scheduleLightningPresenceReconcile();
 
       // Step 3: Start tournament recurring service (creates MTTs, SNGs, Spins)
       this.tournamentRecurring.start();

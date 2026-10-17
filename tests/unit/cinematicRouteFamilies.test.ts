@@ -7,7 +7,6 @@ import {
 } from '../helpers/dailyChallengesSources';
 
 const REWARD_PAGES = [
-  'src/pages/PlayerWalletPage.tsx',
   'src/pages/TransactionHistoryPage.tsx',
   'src/pages/VIPPage.tsx',
   'src/pages/RakebackPage.tsx',
@@ -35,6 +34,15 @@ const UNION_PAGES = [
 describe('cinematic retained route families', () => {
   it.each(REWARD_PAGES)('%s uses the live Rewards Circuit visual anchor', (path) => {
     expect(readFileSync(path, 'utf8')).toContain('RewardsSurfaceHeader');
+  });
+
+  it('opens the wallet on the routed Cashier desk (Dan 2026-10-16)', () => {
+    // "it needs a complete upgrade and enhancement to be like what you created
+    // with the pages within this chat": the Cashier's workspace, not the
+    // Rewards Circuit console.
+    const source = readFileSync('src/pages/PlayerWalletPage.tsx', 'utf8');
+    expect(source).toContain('<CashierWorkspace compact eyebrow="Secure Wallet" title="Wallet">');
+    expect(source).toContain('data-arena-surface="wallet"');
   });
 
   it.each(PLAY_PAGES)('%s uses the Play & Review visual anchor', (path) => {

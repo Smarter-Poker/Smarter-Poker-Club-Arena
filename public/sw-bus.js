@@ -163,28 +163,65 @@ async function trimCache(cacheName, maxEntries) {
  */
 const SHELL_FRESH_RACE_MS = 300;
 
+// Cache storage is optional. Bound open + match together with the existing
+// freshness allowance so unavailable storage cannot hold a real request forever.
+async function lookupCachedResponse(cacheName, request) {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(async () => {
+        const cache = await caches.open(cacheName);
+        const cached = await cache.match(request);
+        return { cache, cached };
+      }).catch(() => ({})),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve({}), SHELL_FRESH_RACE_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function keepOptionalCacheWork(event, work) {
+  // A rejected write/trim must not reject an already successful real fetch.
+  event.waitUntil(Promise.resolve().then(work).catch(() => {}));
+}
+
+function cacheAssetResponse(event, cache, response, cacheName, maxEntries) {
+  if (!cache || !response.ok) return;
+  const copy = response.clone();
+  keepOptionalCacheWork(event, async () => {
+    await cache.put(event.request, copy);
+    await trimCache(cacheName, maxEntries);
+  });
+}
+
 async function shellFromCache(event) {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(SHELL_KEY);
+  const { cache, cached } = await lookupCachedResponse(CACHE_NAME, SHELL_KEY);
 
   const revalidate = fetch(event.request, { cache: 'no-cache' })
-    .then(async (response) => {
-      if (!response || !response.ok) return response;
-      // Compare before storing so we can tell clients something actually moved.
-      let changed = false;
-      if (cached) {
-        try {
-          const [before, after] = await Promise.all([cached.clone().text(), response.clone().text()]);
-          changed = before !== after;
-        } catch {
-          /* comparison is best-effort */
+    .then((response) => {
+      if (!response || !response.ok || !cache) return response;
+      const stored = response.clone();
+      const compared = response.clone();
+      keepOptionalCacheWork(event, async () => {
+        // Comparison and persistence never hold the genuine network response.
+        let changed = false;
+        if (cached) {
+          try {
+            const [before, after] = await Promise.all([cached.clone().text(), compared.text()]);
+            changed = before !== after;
+          } catch {
+            /* comparison is best-effort */
+          }
         }
-      }
-      await cache.put(SHELL_KEY, response.clone());
-      if (changed) {
-        const clients = await sw.clients.matchAll({ type: 'window' });
-        clients.forEach((c) => c.postMessage({ type: 'SHELL_UPDATED' }));
-      }
+        await cache.put(SHELL_KEY, stored);
+        if (changed) {
+          const clients = await sw.clients.matchAll({ type: 'window' });
+          clients.forEach((c) => c.postMessage({ type: 'SHELL_UPDATED' }));
+        }
+      });
       return response;
     })
     .catch(() => null);
@@ -199,8 +236,8 @@ async function shellFromCache(event) {
       new Promise((resolve) => setTimeout(resolve, SHELL_FRESH_RACE_MS)),
     ]);
     if (fresh && fresh.ok) {
-      // revalidate has fully settled (compare + cache.put done); the response
-      // body itself is unconsumed — only clones were read. Serve it.
+      // The genuine network response is ready; optional persistence continues
+      // independently. Its body is unconsumed — only clones were retained.
       return fresh;
     }
     // Keep the revalidation alive past the response we are about to return.
@@ -212,7 +249,7 @@ async function shellFromCache(event) {
   // the only path that waits on the network, and it is once per device.
   const fresh = await revalidate;
   if (fresh && fresh.ok) return fresh;
-  const offline = await cache.match('/hub/club-arena/offline.html');
+  const { cached: offline } = await lookupCachedResponse(CACHE_NAME, '/hub/club-arena/offline.html');
   if (offline) return offline;
   return fresh || fetch(event.request);
 }
@@ -306,26 +343,22 @@ sw.addEventListener('fetch', (event) => {
     // Cache-first: hashed assets are immutable — serve from cache if available
     // With network fallback: if cached response is somehow corrupt/stale, try network
     event.respondWith(
-      caches.open(CACHE_NAME).then((cache) =>
-        cache.match(event.request).then((cached) => {
-          if (cached) return cached;
-          return fetch(event.request).then((response) => {
-            if (response.ok) {
-              cache.put(event.request, response.clone());
-              // Async eviction — don't block response
-              trimCache(CACHE_NAME, MAX_CACHE_ENTRIES);
-            }
-            return response;
-          }).catch(() => {
-            // Network failed and no cache — return a proper error so the app
-            // can trigger its chunk-reload recovery logic instead of hanging
-            return new Response('/* chunk load failed */', {
-              status: 503,
-              headers: { 'Content-Type': 'application/javascript' },
-            });
+      lookupCachedResponse(CACHE_NAME, event.request).then(({ cache, cached }) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response.ok) {
+            cacheAssetResponse(event, cache, response, CACHE_NAME, MAX_CACHE_ENTRIES);
+          }
+          return response;
+        }).catch(() => {
+          // Network failed and no cache — return a proper error so the app
+          // can trigger its chunk-reload recovery logic instead of hanging
+          return new Response('/* chunk load failed */', {
+            status: 503,
+            headers: { 'Content-Type': 'application/javascript' },
           });
-        })
-      )
+        });
+      })
     );
   } else if (isImage) {
     // ─────────────────────────────────────────────────────────────────────
@@ -375,38 +408,35 @@ sw.addEventListener('fetch', (event) => {
     // updates — which would leave this looking fixed while behaving exactly
     // as it did before.
     event.respondWith(
-      caches.open(MEDIA_CACHE).then((cache) =>
-        cache.match(event.request).then((cached) => {
-          if (cached && cachedAgeMs(cached) < MEDIA_REVALIDATE_AFTER_MS) {
-            return cached;
-          }
+      lookupCachedResponse(MEDIA_CACHE, event.request).then(({ cache, cached }) => {
+        if (cached && cachedAgeMs(cached) < MEDIA_REVALIDATE_AFTER_MS) {
+          return cached;
+        }
 
-          const revalidate = fetch(
-            new Request(event.request, { cache: 'no-cache' })
-          ).then((response) => {
-            if (response.ok) {
-              cache.put(event.request, response.clone());
-              trimCache(MEDIA_CACHE, MAX_MEDIA_ENTRIES);
-            }
-            return response;
-          }).catch(() => {
-            // Offline: the cached copy, however old, beats a broken image.
-            if (cached) return cached;
-            // No cache and no network: a real network error, never an empty
-            // 200. A 0-byte "image/png" paints nothing, fires no error and
-            // can never be retried, which is how the table felt and room art
-            // went missing together on a dropped first fetch (Dan
-            // 2026-10-15). An error lets the page's own loader retry it.
-            return Response.error();
-          });
-
-          if (cached) {
-            event.waitUntil(revalidate);
-            return cached;
+        const revalidate = fetch(
+          new Request(event.request, { cache: 'no-cache' })
+        ).then((response) => {
+          if (response.ok) {
+            cacheAssetResponse(event, cache, response, MEDIA_CACHE, MAX_MEDIA_ENTRIES);
           }
-          return revalidate;
-        })
-      )
+          return response;
+        }).catch(() => {
+          // Offline: the cached copy, however old, beats a broken image.
+          if (cached) return cached;
+          // No cache and no network: a real network error, never an empty
+          // 200. A 0-byte "image/png" paints nothing, fires no error and
+          // can never be retried, which is how the table felt and room art
+          // went missing together on a dropped first fetch (Dan
+          // 2026-10-15). An error lets the page's own loader retry it.
+          return Response.error();
+        });
+
+        if (cached) {
+          event.waitUntil(revalidate);
+          return cached;
+        }
+        return revalidate;
+      })
     );
   }
   // All other requests (API, etc.) fall through to normal network fetch

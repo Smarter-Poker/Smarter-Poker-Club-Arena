@@ -1204,10 +1204,24 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   expect(
     within(card).getByRole('combobox', { name: 'Recipient Wallet For First Agent' })
   ).toHaveValue('agent_wallet');
+  // The one native control is a direct child of the frame, allowing its
+  // transparent hit area to cover the avatar, identity and balance together.
+  const selector = within(card).getByRole('combobox');
+  expect(selector.parentElement).toBe(card);
+  selector.focus();
+  expect(selector).toHaveFocus();
+  const face = card.cloneNode(true) as HTMLElement;
+  face.querySelector('select')!.remove();
+  expect(face.textContent).toContain('Agent Wallet');
+  expect(face.textContent?.match(/340\.00/g)).toHaveLength(1);
   expect(card).not.toHaveTextContent('Sending To');
   expect(within(card).getByRole('option', { name: 'Promo Wallet: 80.00' })).toBeInTheDocument();
   fireEvent.change(within(card).getByRole('combobox'), { target: { value: 'player_wallet' } });
   expect(within(card).getByRole('option', { name: 'Player Wallet: 120.00' })).toBeInTheDocument();
+  const changedFace = card.cloneNode(true) as HTMLElement;
+  changedFace.querySelector('select')!.remove();
+  expect(changedFace.textContent).toContain('Player Wallet');
+  expect(changedFace.textContent?.match(/120\.00/g)).toHaveLength(1);
   expect(within(dialog).getByRole('region', { name: 'From Your Agent Wallet' })).toHaveTextContent(
     '500'
   );

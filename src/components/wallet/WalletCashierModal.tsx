@@ -1913,24 +1913,37 @@ export default function WalletCashierModal({
                           </span>
                         </span>
                         <span className={transferStyles.playerCardBalance}>
-                          <select
-                            className={transferStyles.walletSelect}
-                            aria-label={tab === 'claim' ? 'Claim From' : 'Send Into'}
-                            value={destination}
-                            disabled={inFlight}
-                            onChange={(event) =>
-                              setDestination(event.target.value as DestinationWallet)
-                            }
+                          <span>{DESTINATION_LABELS[destination]}</span>
+                          <svg
+                            className={transferStyles.entityChevron}
+                            viewBox="0 0 12 8"
+                            aria-hidden="true"
                           >
-                            {destinations.map((key) => (
-                              <option key={key} value={key}>
-                                {DESTINATION_LABELS[key]}
-                              </option>
-                            ))}
-                          </select>
+                            <path
+                              d="M1 1.5 6 6.5 11 1.5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            />
+                          </svg>
                           <strong>{fmtWallet(holderHeld)}</strong>
                         </span>
                       </span>
+                      <select
+                        className={transferStyles.walletSelect}
+                        aria-label={tab === 'claim' ? 'Claim From' : 'Send Into'}
+                        value={destination}
+                        disabled={inFlight}
+                        onChange={(event) =>
+                          setDestination(event.target.value as DestinationWallet)
+                        }
+                      >
+                        {destinations.map((key) => (
+                          <option key={key} value={key}>
+                            {DESTINATION_LABELS[key]}
+                          </option>
+                        ))}
+                      </select>
                     </section>
                   )}
                   {bankTransfer && recipient && (

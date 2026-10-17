@@ -160,6 +160,10 @@ export interface LightningLivePassObservation {
   epoch?: number | null;
   /** The database's legal count for the pass (the live answer's legal_count), when it gave one. */
   legalCount?: number | null;
+  /** Read in the same SQL statement as the plan, with actual queue/blind keys. */
+  authoritativeSnapshot?: LightningPoolSnapshot | null;
+  /** Hash of SQL matcher sources and the effective matcher parameters. */
+  snapshotBinding?: string | null;
   /**
    * Worker 'shadow' mode: fn_lightning_match's diagnosis, by player - null
    * for a legal player, else the reason code. A presence player it does not
@@ -387,6 +391,9 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
   private windowStartMs: number | null = null;
   private live = new SideWindow();
   private shadow = new SideWindow();
+  private snapshotBinding: string | null = null;
+  private snapshotBindingSeen = false;
+  private snapshotBindingMixed = false;
   private latencies = new Map<LightningLatencySegment, BoundedSample>();
   private integrity = new LightningIntegrityWindow();
   private skipSize = 0;
@@ -540,6 +547,14 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
 
   /** The population snapshot this pass saw: a fresh object every time. */
   buildSnapshot(pass: LightningLivePassObservation): LightningPoolSnapshot {
+    if (pass.authoritativeSnapshot) {
+      const actual = pass.authoritativeSnapshot;
+      return {
+        ...actual,
+        players: actual.players.map((p) => ({ ...p, positions: { ...p.positions } })),
+        recentHands: actual.recentHands.map(copyHand),
+      };
+    }
     const nowMs = pass.nowMs;
     const players: LightningPoolPlayer[] = [];
     const seen = new Set<string>();
@@ -645,6 +660,16 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
       skipped = false;
     }
     if (model && !skipped) {
+      const binding =
+        pass.authoritativeSnapshot && /^[0-9a-f]{32}$/.test(pass.snapshotBinding ?? '')
+          ? pass.snapshotBinding!
+          : null;
+      if (!this.snapshotBindingSeen) {
+        this.snapshotBinding = binding;
+        this.snapshotBindingSeen = true;
+      } else if (this.snapshotBinding !== binding) {
+        this.snapshotBindingMixed = true;
+      }
       const snapshot = this.buildSnapshot(pass);
       addScore(this.live, scoreLightningDecision(snapshot, params, pass.groups), true);
       // The shadow plans on its OWN copy: nothing it does can reach the model.
@@ -828,6 +853,7 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
       shadowVersion: cfg.version,
       live: {
         ...this.live.json(max),
+        snapshot_binding: this.snapshotBindingMixed ? null : this.snapshotBinding,
         matcher_version: liveVersion,
         latency_ms: latency,
         // Hand creation -> first client render (Lightning Phase 12): measured on
@@ -836,6 +862,7 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
       },
       shadow: {
         ...this.shadow.json(max),
+        snapshot_binding: this.snapshotBindingMixed ? null : this.snapshotBinding,
         matcher_version: cfg.version,
         skipped: {
           size_cap: this.skipSize,
@@ -923,6 +950,9 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
   private resetWindow(): void {
     this.live = new SideWindow();
     this.shadow = new SideWindow();
+    this.snapshotBinding = null;
+    this.snapshotBindingSeen = false;
+    this.snapshotBindingMixed = false;
     this.latencies = new Map();
     this.integrity.reset();
     this.skipSize = 0;

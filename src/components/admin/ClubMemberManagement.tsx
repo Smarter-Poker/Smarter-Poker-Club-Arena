@@ -1,3 +1,4 @@
+import { formatWalletChips } from '../../utils/format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB MEMBER MANAGEMENT — Admin Panel for Members
@@ -360,7 +361,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
                 </span>
               </span>
               <span className="stats">
-                Balance: {member.balance.toLocaleString()} • Rake:{' '}
+                Balance: {formatWalletChips(member.balance)} • Rake:{' '}
                 {member.totalRake.toLocaleString()}
                 {member.chipsAtRisk > member.balance && (
                   <> • Held {(member.chipsAtRisk - member.balance).toLocaleString()}</>

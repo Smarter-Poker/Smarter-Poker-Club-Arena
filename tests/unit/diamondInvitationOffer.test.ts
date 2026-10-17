@@ -63,10 +63,24 @@ function page(states: string[]) {
     getByRole: vi.fn(() => notNow),
     isVisible: vi.fn(async () => last === 'open'),
   };
+  const greeting = { isVisible: vi.fn(async () => false) };
+  const addLocatorHandler = vi.fn(
+    async (_locator: unknown, _handler: () => Promise<void>) => undefined
+  );
   const evaluate = vi.fn(async () => (last = states.shift() ?? last));
   const removeLocatorHandler = vi.fn(async () => undefined);
   return {
-    page: { evaluate, removeLocatorHandler, getByRole: vi.fn(() => prompt) } as unknown as Page,
+    page: {
+      evaluate,
+      addLocatorHandler,
+      removeLocatorHandler,
+      getByRole: vi.fn((_role: string, options: { name: unknown }) =>
+        options.name instanceof RegExp ? greeting : prompt
+      ),
+    } as unknown as Page,
+    prompt,
+    greeting,
+    addLocatorHandler,
     evaluate,
     removeLocatorHandler,
     click,
@@ -115,22 +129,23 @@ describe('the Diamond Spins offer is settled before the lobby is measured', () =
     expect(quiet.removeLocatorHandler).not.toHaveBeenCalled();
   });
 
-  it('waits for an offered invitation, retires the handler and takes the real Not Now', async () => {
-    const offered = page(['pending', 'open']);
+  it('requires the arrival invitation to stay hidden even when the empty wallet is eligible', async () => {
+    const arrival = page(['pending']);
+    hidden.mockClear();
     await expect(
-      settleDiamondSpinsOffer(offered.page, Promise.resolve(response(200, OFFER)))
-    ).resolves.toBe('declined');
-    expect(offered.evaluate).toHaveBeenCalledTimes(2);
-    expect(offered.removeLocatorHandler).toHaveBeenCalledTimes(1);
-    expect(offered.click).toHaveBeenCalledWith({ timeout: DIAMOND_DECLINE_CLICK_TIMEOUT_MS });
+      settleDiamondSpinsOffer(arrival.page, Promise.resolve(response(200, OFFER)))
+    ).resolves.toBe('not offered');
+    expect(arrival.evaluate).not.toHaveBeenCalled();
+    expect(arrival.removeLocatorHandler.mock.calls).toEqual([[arrival.prompt], [arrival.greeting]]);
+    // The original greeting callback is drained during explicit settlement,
+    // then a greeting owner remains for independently late messages.
+    expect(arrival.addLocatorHandler).toHaveBeenCalledTimes(2);
+    expect(arrival.addLocatorHandler.mock.calls.map(([locator]) => locator)).toEqual([
+      arrival.greeting,
+      arrival.greeting,
+    ]);
+    expect(arrival.click).not.toHaveBeenCalled();
     expect(hidden).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not click again when the handler already declined it', async () => {
-    const declined = page(['declined']);
-    await settleDiamondSpinsOffer(declined.page, Promise.resolve(response(200, OFFER)));
-    expect(declined.removeLocatorHandler).toHaveBeenCalledTimes(1);
-    expect(declined.click).not.toHaveBeenCalled();
   });
 
   it('retains an original handler failure when retirement sees the invitation already hidden', async () => {

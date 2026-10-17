@@ -263,12 +263,11 @@ describe('every awarded pot plays its animation', () => {
     expect(TABLE_PAGE).toContain('EVERY completed action that awards a pot plays BOTH:');
   });
 
-  it('slides the pot pill on split pots too', () => {
-    // The old guard skipped the pill on every chop.
-    expect(TABLE_PAGE).not.toContain(
-      'if (winnerIds.length === 1) {\n            const soleSeatIdx'
-    );
-    expect(TABLE_PAGE).toContain('winnerPoints.length === 1');
+  it('sends split shares to individual winners rather than an empty midpoint', () => {
+    // Owner update October 15: each actual recipient gets their own flight.
+    expect(TABLE_PAGE).toContain('recipientId: w.userId');
+    expect(TABLE_PAGE).toContain('winnerViewportPoint(root, event.recipientId');
+    expect(TABLE_PAGE).not.toContain('winnerPoints.reduce');
   });
 
   it('animates a winner whose seat cannot be resolved instead of skipping them', () => {

@@ -1,3 +1,4 @@
+import { workflowJobBudget } from '../productionJobBudget';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -39,16 +40,8 @@ const CLUB_CREATE_WORKFLOW = readFileSync(
 );
 
 function workflowJobTimeoutMinutes(source: string, job: string) {
-  const marker = `\n  ${job}:\n`;
-  const start = source.indexOf(marker);
-  expect(start).toBeGreaterThanOrEqual(0);
-  const bodyStart = start + marker.length;
-  const remaining = source.slice(bodyStart);
-  const nextJob = remaining.search(/\n {2}[a-z0-9-]+:\n/);
-  const body = nextJob === -1 ? remaining : remaining.slice(0, nextJob);
-  const timeout = body.match(/^ {4}timeout-minutes: (\d+)$/m);
-  expect(timeout).not.toBeNull();
-  return Number(timeout?.[1]);
+  const budget = workflowJobBudget(source, job);
+  return Math.max(budget.ordinary, budget.optIn);
 }
 
 function environment(directory: string) {
@@ -283,6 +276,58 @@ describe('post-deploy production account', () => {
     }
   );
 
+  it('concurrent observer lanes create distinct principals and clean up only their own record', async () => {
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(Date, 'now').mockReturnValue(1792160000000);
+    const lanes = [1, 2].map((n) => {
+      const id = `00000000-0000-4000-8000-00000000009${n}`;
+      const directory = mkdtempSync(join(tmpdir(), 'production-e2e-observer-'));
+      const env = environment(directory);
+      writeFileSync(env.GITHUB_ENV, '');
+      const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith('/auth/v1/admin/users') && init?.method === 'POST')
+          return Response.json({ id });
+        if (url.includes('/rest/v1/profiles?select=id,arena_avatar_url'))
+          return Response.json([{ id, arena_avatar_url: AVATAR }]);
+        if (url.includes('/rest/v1/profiles?select=id')) return Response.json([{ id }]);
+        if (url.includes('/rest/v1/profiles?id=eq.') && init?.method === 'PATCH')
+          return new Response(null, { status: 204 });
+        if (url.includes('/rpc/cleanup_reserved_certification_account')) {
+          expect(String(init?.body)).toContain(id);
+          return Response.json({ success: true });
+        }
+        if (url.includes(`/auth/v1/admin/users/${id}`)) return new Response(null, { status: 404 });
+        throw new Error(`Unexpected observer request ${url}`);
+      });
+      return { id, env, fetchMock, directory };
+    });
+    const accounts = await Promise.all(
+      lanes.map((lane) =>
+        createProductionE2EAccount({
+          environment: lane.env,
+          fetchImpl: lane.fetchMock,
+          wait: async () => undefined,
+        })
+      )
+    );
+    expect(accounts[0].id).not.toBe(accounts[1].id);
+    expect(accounts[0].email).not.toBe(accounts[1].email);
+    expect(accounts[0].password).not.toBe(accounts[1].password);
+    await cleanupProductionE2EAccount({ environment: lanes[0].env, fetchImpl: lanes[0].fetchMock });
+    expect(existsSync(join(lanes[1].directory, 'club-arena-production-e2e-account.json'))).toBe(
+      true
+    );
+    await cleanupProductionE2EAccount({ environment: lanes[1].env, fetchImpl: lanes[1].fetchMock });
+    for (const lane of lanes)
+      expect(
+        lane.fetchMock.mock.calls.some(([url]) =>
+          String(url).includes('fn_ca_stale_certification_accounts')
+        )
+      ).toBe(false);
+  });
+
   it('creates one normalized reserved identity, exports it, then proves hard deletion', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'production-e2e-account-'));
     const env = environment(directory);
@@ -447,7 +492,13 @@ describe('post-deploy production account', () => {
       if (url.includes('/rest/v1/club_members?') && init?.method === 'PATCH') {
         const body = JSON.parse(String(init.body));
         return Response.json([
-          { club_id: SHARK, user_id: USER_ID, role: body.role, status: body.status, chip_balance: 0 },
+          {
+            club_id: SHARK,
+            user_id: USER_ID,
+            role: body.role,
+            status: body.status,
+            chip_balance: 0,
+          },
         ]);
       }
       return new Response('unexpected request', { status: 500 });
@@ -938,7 +989,14 @@ describe('post-deploy production account', () => {
     const query = decodeURIComponent(String(fetchMock.mock.calls[0]?.[0]));
     expect(query).toContain('/rpc/fn_ca_stale_certification_accounts');
     const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T22:30:00.000Z' });
+    expect(JSON.parse(String(request[1]?.body))).toEqual({ p_before: '2026-09-04T22:08:00.000Z' });
+  });
+
+  it('keeps the ordinary job ceiling and grants only the explicit multirun observation its extra time', () => {
+    expect(workflowJobBudget(POST_DEPLOY_WORKFLOW, 'live-table-e2e')).toEqual({
+      ordinary: 76,
+      optIn: 98,
+    });
   });
 
   it('cannot classify an account stale while any fixture-owning job may still run', () => {
@@ -948,6 +1006,8 @@ describe('post-deploy production account', () => {
       workflowJobTimeoutMinutes(CLUB_CREATE_WORKFLOW, 'certify')
     );
     expect(STALE_ACCOUNT_AGE_MS).toBeGreaterThanOrEqual((longestOwningJobMinutes + 10) * 60_000);
+    const live = workflowJobTimeoutMinutes(POST_DEPLOY_WORKFLOW, 'live-table-e2e');
+    expect(STALE_ACCOUNT_AGE_MS).toBeGreaterThanOrEqual((live + 14) * 60_000);
   });
 
   it('waits out the maintenance freeze instead of abandoning the fixture', async () => {

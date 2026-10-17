@@ -37,6 +37,7 @@ import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { formatBuyInShort } from '../utils/buyIn';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
 import {
+  isFixedBoardSchedule,
   tournamentScheduleService,
   type TournamentScheduleRow,
 } from '../services/TournamentScheduleService';
@@ -1471,19 +1472,29 @@ export default function UnionDetailPage() {
                           )}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button
-                          className={styles.joinButton}
-                          disabled={scheduleBusyId === s.id}
-                          onClick={() => handleScheduleActiveToggle(s, !s.active)}
-                        >
-                          {scheduleBusyId === s.id
-                            ? 'Working...'
-                            : s.active
-                              ? 'Deactivate'
-                              : 'Reactivate'}
-                        </button>
-                      </div>
+                      {/* The hard-coded daily board (2026-10-16) is written by
+                          the engine every ten minutes and the database refuses
+                          an owner edit of it, so it offers no button that would
+                          only appear to work. */}
+                      {isFixedBoardSchedule(s) ? (
+                        <div className={styles.tableCardDetails}>
+                          <span>Fixed Daily Board</span>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            className={styles.joinButton}
+                            disabled={scheduleBusyId === s.id}
+                            onClick={() => handleScheduleActiveToggle(s, !s.active)}
+                          >
+                            {scheduleBusyId === s.id
+                              ? 'Working...'
+                              : s.active
+                                ? 'Deactivate'
+                                : 'Reactivate'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

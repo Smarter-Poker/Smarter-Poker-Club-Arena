@@ -88,13 +88,13 @@ describe('the modal is no longer a fourth money path', () => {
     // to someone holding BOTH wallets (an owner) pays the one the sender chose
     // - a-club-owner-can-be-paid-into-their-player-wallet.law.test.ts.
     expect(MODAL_CODE).toMatch(
-      /const destination: ClubBankRecipientWallet = viaClubBank\s+\? clubBankDestinationFor\(recipientData\.role, chosenWallet\)\s+: canHoldAgentWallet\(recipientData\.role\)/
+      /const destination = clubBankDestinationFor\(recipientData\.role, chosenWallet\)/
     );
     expect(MODAL_CODE).not.toMatch(/canHoldAgentWallet\(recipientData\?\.role\)/);
     expect(MODAL_CODE).toMatch(/if \(!selectedRecipientData\) \{/);
     expect(TRANSFER_CODE).toMatch(/p_destination: destination/);
     expect(TRANSFER_CODE.indexOf('if (!selectedRecipientData)')).toBeLessThan(
-      TRANSFER_CODE.indexOf('const destination: ClubBankRecipientWallet =')
+      TRANSFER_CODE.indexOf('const destination =')
     );
   });
 });
@@ -122,7 +122,11 @@ describe('a lost response cannot send twice', () => {
     }
     expect(INTENT_CODE).toContain('intent.kind');
     expect(INTENT_CODE).toContain('intent.amount.toFixed(2)');
-    expect(INTENT_CODE).toContain("intent.destination === 'agent_wallet' ? ['agent_wallet'] : []");
+    // 2026-10-16: a non-player destination names itself, so an Agent Wallet key
+    // is byte-identical to before and a Promo Wallet send never shares a Player key.
+    expect(INTENT_CODE).toMatch(
+      /intent\.destination && intent\.destination !== 'player_wallet'\s*\?\s*\[intent\.destination\]\s*:\s*\[\]/
+    );
     expect(INTENT_CODE).toMatch(
       /const prior = session\.getItem\(key\) \?\? storage\.getItem\(key\);/
     );
@@ -208,7 +212,9 @@ describe('the list agrees with the server', () => {
   });
 
   it('does not offer an agent a self-send the server refuses outright', () => {
-    expect(MODAL_CODE).toMatch(/\.filter\(\(m\) => String\(m\.user_id\) !== user\.id\)/);
+    expect(MODAL_CODE).toMatch(
+      /\.filter\(\(m\) => viaClubBank \|\| String\(m\.user_id\) !== user\.id\)/
+    );
   });
 
   it('checks the result, so a refusal cannot print success', () => {

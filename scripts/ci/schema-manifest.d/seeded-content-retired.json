@@ -1,0 +1,5 @@
+{
+  "_owner": "agent/claude-audit/cron-roster-and-seeded-content-tombstone",
+  "_comment": "seeded_content was retired by Smarter-Poker-World-Hub migration 20261009005600_retire_seeded_content_orphan.sql, which renames it to seeded_content_retired_20261009 and preserves its rows after proving no foreign key or function still reads it. Production no longer has public.seeded_content (Schema Integrity Audit run 38883243665 reports it as the one phantom). Nothing in Club Arena reads it; the only Club Arena mention is the 2026-09-12 grant revocation.",
+  "removedTables": ["seeded_content"]
+}

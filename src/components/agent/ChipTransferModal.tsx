@@ -1,3 +1,4 @@
+import { formatWalletChips } from '../../utils/format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CHIP TRANSFER MODAL - Cashier-Based Chip Distribution
@@ -34,13 +35,9 @@
  * (fn_agent_wallet_send, downline enforced server-side). Both carry a uuid
  * op_id, write one chip_transactions row, and open a ten minute clawback window.
  *
- * WHICH WALLET THE CHIPS LAND IN (Dan 2026-10-11: "CLUB OWNERS CAN PLAY AND
- * HAVE CHIPS SENT TO THEIR PLAYER WALLETS"). An agent wallet send credits a
- * staff or agent recipient's float whatever is asked, so it follows the
- * recipient's role. A Club Bank send honours p_destination, and an owner,
- * co-owner or super agent holds BOTH wallets - so the sender chooses, through
- * clubBankRecipientWallets. Deriving it from the role alone paid every owner
- * into their float and made their own player wallet unreachable.
+ * Owner direction 2026-10-15: every sender chooses the recipient wallet.
+ * Both bank and agent sends honor that choice, restricted to wallets the
+ * recipient actually holds. Retry identity includes the selected wallet.
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -48,7 +45,7 @@ import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
-import { CLUB_BANK_ROLES, canHoldAgentWallet } from '../wallet/walletRows';
+import { CLUB_BANK_ROLES } from '../wallet/walletRows';
 import {
   clubBankDestinationFor,
   clubBankRecipientWallets,
@@ -61,6 +58,11 @@ import {
   confirmedAgentWalletReceipt,
 } from '../../services/AgentWalletIntent';
 import { resolveClubIdFilter, resolveClubUUID } from '../../utils/clubIdResolver';
+import { SEND_DESTINATION_LABELS } from '../../utils/cashierSendWallets';
+import {
+  useRecipientWalletBalances,
+  walletOptionLabel,
+} from '../../hooks/useRecipientWalletBalances';
 import './ChipTransferModal.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -379,7 +381,7 @@ export default function ChipTransferModal({
         const scopedList: Recipient[] = ((scoped || []) as Array<Record<string, unknown>>)
           // fn_agent_wallet_send refuses a self-send outright, so offering it
           // is offering a guaranteed refusal.
-          .filter((m) => String(m.user_id) !== user.id)
+          .filter((m) => viaClubBank || String(m.user_id) !== user.id)
           .map((m) => ({
             id: String(m.user_id),
             username: String(m.username || m.name || 'Unknown'),
@@ -489,53 +491,50 @@ export default function ChipTransferModal({
     return recipients.find((r) => r.id === selectedRecipient);
   }, [pinnedRecipient, recipients, selectedRecipient]);
 
-  /* The preview must show the wallet the chips land in. An agent wallet send
-     follows the recipient's role (fn_agent_wallet_send credits a staff or
-     agent recipient's float whatever is asked). A Club Bank send credits the
-     wallet the sender chose, out of the ones the recipient holds. */
-  const recipientWallets: ClubBankRecipientWallet[] =
-    selectedRecipientData && viaClubBank
-      ? clubBankRecipientWallets(selectedRecipientData.role)
-      : [];
-  const previewDestination: ClubBankRecipientWallet = !selectedRecipientData
-    ? 'player_wallet'
-    : viaClubBank
-      ? clubBankDestinationFor(selectedRecipientData.role, chosenWallet)
-      : canHoldAgentWallet(selectedRecipientData.role)
-        ? 'agent_wallet'
-        : 'player_wallet';
-  const destinationIsAgentWallet = !!selectedRecipientData && previewDestination === 'agent_wallet';
+  // Preview and submission share the sender's choice and recipient eligibility.
+  const recipientWallets: ClubBankRecipientWallet[] = selectedRecipientData
+    ? clubBankRecipientWallets(selectedRecipientData.role)
+    : [];
+  const previewDestination: ClubBankRecipientWallet = selectedRecipientData
+    ? clubBankDestinationFor(selectedRecipientData.role, chosenWallet)
+    : 'player_wallet';
+  const destinationLabel = SEND_DESTINATION_LABELS[previewDestination];
+  // Every wallet the recipient holds, with its current balance, from the same
+  // cashier read the Send Out screen uses (Dan 2026-10-15: "AND IT SHOULD HAVE
+  // THERE CURRENT CHIP BALANCES AS WELL").
+  const [balanceRefresh, setBalanceRefresh] = useState(0);
+  const recipientBalances = useRecipientWalletBalances(
+    isOpen ? clubId : null,
+    selectedRecipientData?.id,
+    balanceRefresh
+  );
 
   // A different recipient starts from their default wallet again.
   useEffect(() => {
     setChosenWallet(null);
   }, [selectedRecipient]);
   useEffect(() => {
-    let cancelled = false;
-    setDestinationBalance(null);
-    if (!selectedRecipientData) return;
-    if (!destinationIsAgentWallet) {
-      setDestinationBalance(selectedRecipientData.balance);
+    if (!selectedRecipientData) {
+      setDestinationBalance(null);
       return;
     }
-    (async () => {
-      const resolvedClub = await resolveClubUUID(clubId);
-      const { data, error: floatErr } = await supabase
-        .from('agents')
-        .select('agent_wallet_balance')
-        .eq('club_id', resolvedClub)
-        .eq('user_id', selectedRecipientData.id)
-        .maybeSingle();
-      if (cancelled) return;
-      // No agents row yet is a float of zero (fn_ensure_agent_row creates it
-      // on the send); a row that could not be read stays unknown.
-      if (!floatErr) setDestinationBalance(Number(data?.agent_wallet_balance ?? 0) || 0);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    const read = recipientBalances?.[previewDestination];
+    if (read !== undefined) {
+      setDestinationBalance(read);
+    } else if (previewDestination === 'player_wallet') {
+      // The roster row already carries the player wallet; an unread agent or
+      // promo wallet stays Unknown rather than a fabricated zero.
+      setDestinationBalance(selectedRecipientData.balance);
+    } else {
+      setDestinationBalance(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRecipientData?.id, destinationIsAgentWallet, clubId]);
+  }, [
+    selectedRecipientData?.id,
+    selectedRecipientData?.balance,
+    previewDestination,
+    recipientBalances,
+  ]);
 
   const getTransferDescription = () => {
     const recipientData = selectedRecipientData;
@@ -594,7 +593,7 @@ export default function ChipTransferModal({
     // credit line the server knows about and this browser does not, so the
     // server is the one to refuse an agent send.
     if (viaClubBank && senderBalance !== null && transferAmount > senderBalance) {
-      setError(`Your ${sourceLabel} Only Holds ${senderBalance.toLocaleString()} Chips.`);
+      setError(`Your ${sourceLabel} Only Holds ${formatWalletChips(senderBalance)} Chips.`);
       return;
     }
     if (!user?.id) return;
@@ -616,13 +615,8 @@ export default function ChipTransferModal({
       const resolvedForSend = (await resolveClubUUID(clubId)) || clubId;
 
       // Read from the recipient's real row, after the check above, never
-      // defaulted. The Club Bank honours the wallet the sender chose; an agent
-      // wallet send pays a staff or agent recipient into their float.
-      const destination: ClubBankRecipientWallet = viaClubBank
-        ? clubBankDestinationFor(recipientData.role, chosenWallet)
-        : canHoldAgentWallet(recipientData.role)
-          ? 'agent_wallet'
-          : 'player_wallet';
+      // defaulted. Both money paths honor the wallet the sender chose.
+      const destination = clubBankDestinationFor(recipientData.role, chosenWallet);
       const kind = viaClubBank ? 'club_bank_send' : 'agent_send';
       let confirmationHeadline: string | undefined;
       await runAgentWalletOperation(
@@ -672,7 +666,8 @@ export default function ChipTransferModal({
       setAmount('');
       setNote('');
 
-      // Refresh sender balance
+      // Refresh sender balance, and the recipient's wallets beside the choice.
+      setBalanceRefresh((n) => n + 1);
       await loadSenderInfo();
 
       if (onTransferComplete) onTransferComplete();
@@ -765,7 +760,7 @@ export default function ChipTransferModal({
               which of two RPCs moves it. "Your Balance" was true of neither. */}
           <span>Your {sourceLabel}:</span>
           <span className="balance-amount">
-            {senderBalance === null ? 'Unknown' : senderBalance.toLocaleString()}
+            {senderBalance === null ? 'Unknown' : formatWalletChips(senderBalance)}
           </span>
         </div>
         {senderRoleFailed && (
@@ -781,15 +776,12 @@ export default function ChipTransferModal({
         {recipientId && selectedRecipientData && (
           <div className="agent-balance">
             <span>To {selectedRecipientData.username}:</span>
-            <span className="balance-amount">
-              {destinationIsAgentWallet ? 'Agent Wallet' : 'Player Wallet'}
-            </span>
+            <span className="balance-amount">{destinationLabel}</span>
           </div>
         )}
 
         <div className="chip-transfer-form">
-          {/* WHICH WALLET (Dan 2026-10-11). Offered only when the Club Bank is
-              paying someone who holds two - an owner, co-owner or super agent.
+          {/* WHICH WALLET (Dan 2026-10-11). Offered when the recipient holds two - an owner, co-owner or super agent.
               The owner's player wallet is the one they sit down with. */}
           {recipientWallets.length > 1 && (
             <div className="form-group">
@@ -810,7 +802,11 @@ export default function ChipTransferModal({
                     className={previewDestination === wallet ? 'is-on' : undefined}
                     onClick={() => setChosenWallet(wallet)}
                   >
-                    {wallet === 'agent_wallet' ? 'Into Agent Wallet' : 'Into Player Wallet'}
+                    {walletOptionLabel(
+                      `Into ${SEND_DESTINATION_LABELS[wallet]}`,
+                      recipientBalances,
+                      wallet
+                    )}
                   </button>
                 ))}
               </div>
@@ -868,7 +864,7 @@ export default function ChipTransferModal({
                       <option key={r.id} value={r.id}>
                         {isSelf ? '(You) ' : ''}
                         {roleTag}
-                        {r.username} (Bal: {r.balance.toLocaleString()})
+                        {r.username} (Bal: {formatWalletChips(r.balance)})
                       </option>
                     );
                   })}
@@ -920,18 +916,17 @@ export default function ChipTransferModal({
                   {/* An unread balance is Unknown, never a fabricated 0 -> 0. */}
                   {senderBalance === null
                     ? 'Unknown'
-                    : `${senderBalance.toLocaleString()} → ${Math.max(0, senderBalance - parseFloat(amount)).toLocaleString()}`}
+                    : `${formatWalletChips(senderBalance)} → ${formatWalletChips(Math.max(0, senderBalance - parseFloat(amount)))}`}
                 </span>
               </div>
               <div className="preview-row">
                 <span>
-                  {selectedRecipientData.username} (
-                  {destinationIsAgentWallet ? 'Agent Wallet' : 'Player Wallet'}):
+                  {selectedRecipientData.username} ({destinationLabel}):
                 </span>
                 <span>
                   {destinationBalance === null
                     ? 'Unknown'
-                    : `${destinationBalance.toLocaleString()} → ${(destinationBalance + parseFloat(amount)).toLocaleString()}`}
+                    : `${formatWalletChips(destinationBalance)} → ${formatWalletChips(destinationBalance + parseFloat(amount))}`}
                 </span>
               </div>
             </div>

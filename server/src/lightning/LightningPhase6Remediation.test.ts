@@ -370,7 +370,14 @@ describe('4. a room this hand stops publishing to is told the felt is empty', ()
     const st = t.host.peekState()!;
     const current = st.players.find((p) => p.seat === st.currentPlayerSeat)!;
     const room = t.host.roomOf(current.user_id)!;
-    expect(t.host.handlePlayerAction(current.user_id, 'fast_fold').success).toBe(true);
+    expect(
+      t.host.handlePlayerAction(
+        current.user_id,
+        'fast_fold',
+        undefined,
+        `lightning-hand:${t.host.currentHandId}`
+      ).success
+    ).toBe(true);
     await flush();
     const last = t.hub
       .inRoom(room)

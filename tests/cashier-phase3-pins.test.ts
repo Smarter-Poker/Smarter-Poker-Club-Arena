@@ -51,3 +51,14 @@ describe('the phase-3 migration keeps its guarantees', () => {
     expect(MIGRATION).toMatch(/coalesce\(cm\.status, 'active'\) in \('active', 'approved'\)/);
   });
 });
+
+describe('Cashier page observes completed account balance events', () => {
+  it('refreshes from the existing account balance event without a hot transaction subscription', () => {
+    expect(PAGE).not.toContain('cashier-chip-txns-');
+    expect(PAGE).toMatch(/useMasterBusSubscriptions\(\s*\['BALANCE_UPDATED'\]/);
+    expect(PAGE).toContain('event.userId !== user.id');
+    expect(PAGE).toContain('clearClubChipBalanceCache()');
+    expect(PAGE).toContain('refreshKey={walletRevision}');
+    expect(PAGE).not.toContain('Reconnecting To Live Updates');
+  });
+});

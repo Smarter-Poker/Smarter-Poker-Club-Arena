@@ -816,3 +816,66 @@ describe('all required live-table subjects must pass before certification', () =
     expect(LIVE_TABLE).toContain(titles[3]);
   });
 });
+
+describe('explicit natural multirun certificate gates its own release verdict', () => {
+  it.each([
+    [undefined, undefined, true],
+    ['false', 'skipped', true],
+    ['true', 'success', true],
+    ['true', 'failure', false],
+    ['true', 'skipped', false],
+    ['true', undefined, false],
+  ])('requested %s and outcome %s certify %s', (requested, outcome, certified) => {
+    const proof = step(TABLE_WORKFLOW, 'Classify the release window this certificate covers');
+    const script = proof.split('\n        run: |\n')[1].replace(/^ {10}/gm, '');
+    const dir = mkdtempSync(join(tmpdir(), 'e2e-multirun-verdict-'));
+    const summary = join(dir, 'summary.md');
+    const output = join(dir, 'output.txt');
+    writeFileSync(summary, '');
+    writeFileSync(output, '');
+    try {
+      const result = spawnSync(
+        'bash',
+        [
+          '--noprofile',
+          '--norc',
+          '-e',
+          '-o',
+          'pipefail',
+          '-c',
+          `
+        curl() { printf '%s' '{"ca_sha":"${'a'.repeat(40)}"}'; }
+        timeout() { shift; "$@"; }
+        git() { return 0; }
+        node() { cat >/dev/null; printf 'certified'; return 0; }
+        ${script}
+      `,
+        ],
+        {
+          cwd: ROOT,
+          encoding: 'utf8',
+          timeout: 5_000,
+          env: {
+            ...process.env,
+            EXPECTED_LIVE_SHA: 'a'.repeat(40),
+            RUNTIME_RESUMED: 'true',
+            LIVE_COVERAGE_COMPLETE: 'true',
+            GITHUB_STEP_SUMMARY: summary,
+            GITHUB_OUTPUT: output,
+            ...(requested === undefined ? {} : { MULTIRUN_REQUESTED: requested as string }),
+            ...(outcome === undefined ? {} : { MULTIRUN_OUTCOME: outcome as string }),
+          },
+        }
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status, result.stderr).toBe(0);
+      expect(readFileSync(output, 'utf8').includes('certified=true')).toBe(certified);
+      if (!certified)
+        expect(readFileSync(summary, 'utf8')).toContain(
+          'requested natural two/three-run mobile certificate did not pass'
+        );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

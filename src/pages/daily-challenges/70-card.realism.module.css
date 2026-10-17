@@ -23,7 +23,7 @@
   height: 3px;
 }
 
-.challengeCard::after {
+.cardOrnament::after {
   right: -42px;
   bottom: -42px;
   width: 126px;

@@ -145,7 +145,7 @@ for (const clubMessage of [false, true]) {
     await page.setContent(`
       <button role="tab" aria-selected="false"
         onclick="this.setAttribute('aria-selected', 'true')">NLH</button>
-      ${clubMessage ? '<button onclick="this.remove()">Close Club Message</button>' : ''}
+      ${clubMessage ? '<div role="dialog" aria-label="Club Message From Fixture"><button onclick="this.parentElement.remove()">Enter Lobby</button></div>' : ''}
       <output id="declines">0</output>
       <div role="dialog" aria-label="Diamond Spins" style="position:fixed;inset:0;background:white">
         <button id="decline" disabled onclick="document.getElementById('declines').textContent='1';this.parentElement.remove()">Not Now</button>
@@ -160,7 +160,7 @@ for (const clubMessage of [false, true]) {
     await expect(page.getByRole('dialog', { name: 'Diamond Spins', exact: true })).toBeHidden();
     await expect(page.locator('#declines')).toHaveText('1');
     await expect(tab).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('button', { name: 'Close Club Message' })).toBeHidden();
+    await expect(page.getByRole('dialog', { name: /^Club Message From / })).toBeHidden();
   });
 }
 
@@ -262,7 +262,8 @@ async function mountLobbyDoors(
   {
     invitationCloses = true,
     notNowDelayMs = 0,
-  }: { invitationCloses?: boolean; notNowDelayMs?: number } = {}
+    startClosed = false,
+  }: { invitationCloses?: boolean; notNowDelayMs?: number; startClosed?: boolean } = {}
 ) {
   const { javascript, css } = await stackedLobbyDoorsFixture();
   await page.route('https://fixture.invalid/rest/v1/rpc/fn_dismiss_club_message', (route) =>
@@ -278,12 +279,18 @@ async function mountLobbyDoors(
   );
   await page.addScriptTag({ content: javascript });
   await page.evaluate(
-    ([order, closes, delay]) =>
+    ([order, closes, delay, closed]) =>
       (
-        window as unknown as { mountLobbyDoors: (f: string, c: boolean, d: number) => void }
-      ).mountLobbyDoors(order as string, closes as boolean, delay as number),
-    [first, invitationCloses, notNowDelayMs] as const
+        window as unknown as {
+          mountLobbyDoors: (f: string, c: boolean, d: number, s: boolean) => void;
+        }
+      ).mountLobbyDoors(order as string, closes as boolean, delay as number, closed as boolean),
+    [first, invitationCloses, notNowDelayMs, startClosed] as const
   );
+  if (startClosed) {
+    await expect(page.getByRole('tab', { name: 'NLH', exact: true })).toBeVisible();
+    return;
+  }
   // Both doors are up before any owner acts, so the stack is decided by
   // which one opened second, never by how fast this test clicks.
   await expect(page.getByRole('dialog')).toHaveCount(2);
@@ -322,10 +329,94 @@ for (const first of ['invitation', 'greeting'] as const) {
     await tab.click({ timeout: 10_000 });
     await expect(tab).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    // The X closes the greeting for now; only the setup's control persists it.
+    // Enter Lobby closes the greeting for now; only the setup's control persists it.
     expect(await lobbyDoorCounts(page)).toEqual({ declines: 1, dismissals: 0 });
   });
 }
+
+for (const first of ['invitation', 'greeting'] as const) {
+  test(`cash lobby retires Diamond with both doors open and ${first} first`, async ({ page }) => {
+    await mountLobbyDoors(page, first);
+    await prepareCashLobbyActions(page);
+    // No intervening browser action runs either retained locator handler.
+    await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await lobbyDoorCounts(page)).toEqual({ declines: 1, dismissals: 0 });
+  });
+
+  test(`cash lobby handles late greeting after Diamond retirement with ${first} first`, async ({
+    page,
+  }) => {
+    await mountLobbyDoors(page, first, { startClosed: true });
+    await prepareCashLobbyActions(page);
+    // Eligibility can finish without an offer; its handler is retired before
+    // an independently loaded Club Message arrives. Keep the greeting owner.
+    await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+    for (const door of [first, first === 'greeting' ? 'invitation' : 'greeting']) {
+      await page.evaluate(
+        (name) =>
+          (window as unknown as { showLobbyDoor: (door: string) => void }).showLobbyDoor(name),
+        door
+      );
+      // A locator assertion would run the owner before the intended tab action.
+      await expect
+        .poll(() => page.evaluate(() => document.querySelectorAll('[role="dialog"]').length))
+        .toBe(door === first ? 1 : 2);
+    }
+    // Re-register the optional offer only when it exists, as a later lobby
+    // action can. The greeting must also own the standalone late case below.
+    await prepareCashLobbyActions(page);
+    const tab = page.getByRole('tab', { name: 'NLH', exact: true });
+    await tab.click({ timeout: 10_000 });
+    await expect(tab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(await lobbyDoorCounts(page)).toEqual({ declines: 1, dismissals: 0 });
+  });
+}
+
+test('cash lobby handles a standalone late greeting after Diamond retirement', async ({ page }) => {
+  await mountLobbyDoors(page, 'greeting', { startClosed: true });
+  await prepareCashLobbyActions(page);
+  await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+  await page.evaluate(() =>
+    (window as unknown as { showLobbyDoor: (door: string) => void }).showLobbyDoor('greeting')
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Boolean(document.querySelector('[role="dialog"][aria-label^="Club Message From "]'))
+      )
+    )
+    .toBe(true);
+  const tab = page.getByRole('tab', { name: 'NLH', exact: true });
+  await tab.click({ timeout: 10_000 });
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await lobbyDoorCounts(page)).toEqual({ declines: 0, dismissals: 0 });
+});
+
+test('cash lobby refuses an unowned layer over a late greeting', async ({ page }) => {
+  await mountLobbyDoors(page, 'greeting', { startClosed: true });
+  await prepareCashLobbyActions(page);
+  await page.evaluate(() => {
+    (window as unknown as { showLobbyDoor: (door: string) => void }).showLobbyDoor('greeting');
+    const cover = document.createElement('div');
+    cover.style.cssText = 'position:fixed;inset:0;z-index:2147483647';
+    document.body.append(cover);
+  });
+  await expect
+    .poll(() => page.evaluate(() => document.querySelectorAll('[role="dialog"]').length))
+    .toBe(1);
+  await expect(prepareCashLobbyActions(page, { retainInvitationHandler: false })).rejects.toThrow(
+    /Club Message Enter Lobby control is covered by an unowned layer/
+  );
+  await expect(page.getByRole('tab', { name: 'NLH', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'false'
+  );
+  await expect(page.getByRole('dialog', { name: /^Club Message From / })).toBeVisible();
+  expect(await lobbyDoorCounts(page)).toEqual({ declines: 0, dismissals: 0 });
+});
 
 for (const notNowDelayMs of [0, 3_000]) {
   test(`an invitation that stays open after Not Now fails setup with its own error (Not Now ready after ${notNowDelayMs}ms)`, async ({
@@ -685,6 +776,7 @@ async function measureChrome(page: Page) {
       sortbarIsTopmost: sortbar === hit || sortbar.contains(hit),
       deckTop: r('.club-lobby-command-top__controls').top,
       deckBottom: r('.club-lobby-command-top__controls').bottom,
+      headerBottom: r('.fx-header').bottom,
       frameBottom: r('.bottomNav .artwork').bottom,
       viewportBottom: edgeBottom,
     };
@@ -693,6 +785,55 @@ async function measureChrome(page: Page) {
 
 test.describe('mobile lobby chrome', () => {
   test.use({ viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true });
+
+  for (const width of [375, 393]) {
+    for (const inTab of [false, true]) {
+      test(`the ticker band clears the entire sticky deck and row at ${width}px ${inTab ? 'in a tab' : 'standalone'}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 852 });
+        await page.setContent(
+          lobby({ countText: '5 Balances', publishControlsHeight: true, inTab })
+        );
+        for (const height of [38, 54, 0]) {
+          await page.evaluate(
+            (h) => document.documentElement.style.setProperty('--mtt-ticker-h', `${h}px`),
+            height
+          );
+          await page.evaluate(() => window.scrollTo(0, 700));
+          const m = await measureChrome(page);
+          expect(
+            Math.abs(m.deckTop - m.headerBottom - height),
+            'the ticker covers the selector deck'
+          ).toBeLessThan(1);
+          expect(
+            Math.abs(m.sortbarTop - m.deckBottom),
+            'the sort row does not follow the shifted deck'
+          ).toBeLessThan(1);
+          expect(m.sortbarIsTopmost).toBe(true);
+          if (!inTab) {
+            const focus = await page.evaluate(() => {
+              const root = document.documentElement;
+              const row = document.querySelector('.lobby-sortbar')!.getBoundingClientRect();
+              root.setAttribute('data-lobby-scrollport', 'true');
+              root.style.setProperty('--ca-lobby-sortbar-h', `${row.height}px`);
+              return {
+                padding: parseFloat(getComputedStyle(root).scrollPaddingTop),
+                bottom: row.bottom,
+                // Mobile WebKit reports client rects relative to its panned
+                // visual viewport; scroll padding uses layout coordinates.
+                visualOffset: window.visualViewport?.offsetTop ?? 0,
+              };
+            });
+            expect(
+              Math.abs(focus.padding - focus.bottom - focus.visualOffset),
+              'native focus scrolls behind the ticker'
+            ).toBeLessThan(1);
+          }
+        }
+      });
+    }
+  }
 
   test('the wallets count is centred on the painted title and never clipped', async ({ page }) => {
     for (const countText of ['1 Balance', '5 Balances', '12 Balances']) {
@@ -815,4 +956,58 @@ for (const width of [375, 390]) {
     const { verifyLobbyScrollClearance } = await import('./helpers/lobby-scroll-clearance.mjs');
     await verifyLobbyScrollClearance(page, width);
   });
+}
+
+// The Messenger producer can offer a room taller than the space remaining
+// above the footer. The toast consumer must honor both bounds at 200% text.
+test.describe('notification reflow above Messenger and navigation', () => {
+  for (const [width, height] of [
+    [320, 568],
+    [393, 852],
+    [568, 320],
+  ]) {
+    for (const messengerActive of [false, true]) {
+      test(`notification stack stays reachable at ${width}x${height}, Messenger ${messengerActive}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height });
+        const bottom = messengerActive ? 180 : 84;
+        const room = messengerActive ? height - 200 : height - 12;
+        const messages = [
+          'Daily Mission Settlement Confirmed With Every Diamond Recorded In The Vault Ledger And Reconciled Against The Current Wallet Before The Reward Window Closed',
+          'Streak Freeze Protection Is Ready And The Protected Date Remains Visible After Reload Across Every Open Club Arena Challenge Window',
+        ];
+        await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1">
+          <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600&family=Roboto+Condensed:wght@600&display=swap"><style>${css('src/components/common/Toast.css')}</style>
+          <body data-toast-theme="daily-missions-casino" style="--bottom-nav-clearance:72px;--sp-messenger-toast-clearance:${messengerActive ? bottom : 0}px;--sp-messenger-toast-room:${room}px">
+          <div class="toast-container">${messages.map((message) => `<div class="toast toast--success"><span class="toast__icon"></span><span class="toast__message">${message}</span><button class="toast__close" aria-label="Dismiss Notification">X</button></div>`).join('')}</div></body>`);
+        await page.evaluate(() => {
+          document.documentElement.style.fontSize = '200%';
+        });
+        await documentFontsReady(page);
+        const stack = page.locator('.toast-container');
+        const geometry = await stack.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return {
+            top: box.top,
+            bottom: box.bottom,
+            viewport: innerHeight,
+            scroll: node.scrollHeight,
+            client: node.clientHeight,
+          };
+        });
+        expect(geometry.top).toBeGreaterThanOrEqual(15);
+        expect(geometry.bottom).toBeLessThanOrEqual(height - bottom + 1);
+        expect(geometry.scroll).toBeGreaterThan(geometry.client);
+        const close = stack.getByRole('button').first();
+        await close.scrollIntoViewIfNeeded();
+        await expect(close).toBeInViewport();
+        await close.click();
+      });
+    }
+  }
+});
+
+async function documentFontsReady(page: Page) {
+  await page.evaluate(() => document.fonts.ready);
 }

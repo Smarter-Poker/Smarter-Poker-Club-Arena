@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 225358,
-      "sha256": "72457a984cf3fdc8119a4fd3ebaa5f5583bfe78a475c3c7923d196658827cd5e"
+      "bytes": 226162,
+      "sha256": "525de87623f75189528b811091dcb554d879814222ad1ecbb29133d432317424"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -58,8 +58,8 @@
       "sha256": "57fce087e84ef59f1be3963ec29c49de49eb263c4a9aa19d5232c69312a309aa"
     },
     "scripts/qualification/weekly-cohort-cutoff/run-native.py": {
-      "bytes": 1259,
-      "sha256": "6f75a24a2e63b2adcbb49ba6d913d328b0b6af53c477bbd1dd1c35b17fade75d"
+      "bytes": 1481,
+      "sha256": "c22c18ffcfb3f1e3e755bad7895c9c0ee4af7f468c08963a9ccc3ce9182736d0"
     },
     "scripts/qualification/weekly-cohort-cutoff/semantic-bootstrap.sql": {
       "bytes": 10091,
@@ -116,5 +116,8 @@
       "bytes": 225358,
       "sha256": "72457a984cf3fdc8119a4fd3ebaa5f5583bfe78a475c3c7923d196658827cd5e"
     }
+  },
+  "diamondIntegratedMain20261017": {
+    "reason": "Reviewed combined workflow preserves all protected main and Diamond qualifications. Refresh only integrated workflow source identity, preserving historical evidence and financial qualification status."
   }
 }

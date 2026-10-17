@@ -1,0 +1,67 @@
+name: A club bank send is not a dump
+
+# fn_union_integrity_sweep (migration 20261016013849). Runs
+# scripts/ci/test-a-club-bank-send-is-not-a-dump.py against a throwaway
+# PostgreSQL 17 cluster, never production: the exact production definition
+# captured 2026-10-16 (pg_get_functiondef md5 equal to the live function) must
+# flag a club bank send as a direct chip transfer, and the migration must stop
+# flagging it while a player to player transfer is still flagged and an
+# agent's transfer and a club bank claim are still not, and reproduce
+# production's derived postimage md5. No timer (CLAUDE.md 10.85):
+# pull_request only, scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261016013849_a_club_bank_send_is_not_a_player_transfer.sql
+      - scripts/ci/fixtures/bank-send-not-a-dump/**
+      - scripts/ci/test-a-club-bank-send-is-not-a-dump.py
+      - .github/workflows/a-club-bank-send-is-not-a-dump.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a-club-bank-send-is-not-a-dump-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  a-club-bank-send-is-not-a-dump:
+    name: A club bank send is not a direct chip transfer
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      # Runs as the runner user (non-root), exactly as the ci.yml step would.
+      - name: A club bank send is not a direct chip transfer
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-a-club-bank-send-is-not-a-dump.py --output artifacts/a-club-bank-send-is-not-a-dump
+      - name: Retain the regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a-club-bank-send-is-not-a-dump-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/a-club-bank-send-is-not-a-dump/RESULTS.json
+          retention-days: 7
+          if-no-files-found: warn

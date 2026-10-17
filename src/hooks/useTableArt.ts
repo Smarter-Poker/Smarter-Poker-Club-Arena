@@ -111,28 +111,51 @@ export interface TableArt {
   reveal: boolean;
 }
 
-export function useTableArt(skinUrl: string, backgroundUrl: string): TableArt {
-  const both = () => isTableImageDecoded(skinUrl) && isTableImageDecoded(backgroundUrl);
+export function useTableArt(
+  skinUrl: string,
+  backgroundUrl: string,
+  selectionReady = true,
+  selectionScope = 'default'
+): TableArt {
+  const both = () =>
+    selectionReady && isTableImageDecoded(skinUrl) && isTableImageDecoded(backgroundUrl);
   const [state, setState] = useState(() => ({
     key: `${skinUrl}|${backgroundUrl}`,
+    scope: selectionScope,
     skinSrc: decodedTableImageUrl(skinUrl),
     backgroundSrc: decodedTableImageUrl(backgroundUrl),
     ready: both(),
   }));
   const [coverExpired, setCoverExpired] = useState(false);
+  /* A shared load gives up after TABLE_ART_MAX_ATTEMPTS. Before 2026-10-16
+     that ended this table's art for the rest of the mount (nothing in the
+     effect's dependencies changes), contradicting "retried for as long as the
+     table is open". A spent load now starts a fresh shared one after the
+     longest backoff, and stops the moment the table closes or the art changes. */
+  const [retryRound, setRetryRound] = useState(0);
   const key = `${skinUrl}|${backgroundUrl}`;
 
   useEffect(() => {
+    if (!selectionReady) return;
     let cancelled = false;
+    let retryTimer: number | undefined;
     void Promise.all([loadTableImage(skinUrl), loadTableImage(backgroundUrl)])
       .then(([skinSrc, backgroundSrc]) => {
-        if (!cancelled) setState({ key, skinSrc, backgroundSrc, ready: true });
+        if (!cancelled)
+          setState({ key, scope: selectionScope, skinSrc, backgroundSrc, ready: true });
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (cancelled) return;
+        retryTimer = window.setTimeout(
+          () => setRetryRound((round) => round + 1),
+          TABLE_ART_RETRY_MS[TABLE_ART_RETRY_MS.length - 1]
+        );
+      });
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [key, skinUrl, backgroundUrl]);
+  }, [key, skinUrl, backgroundUrl, selectionReady, selectionScope, retryRound]);
 
   useEffect(() => {
     const id = window.setTimeout(() => setCoverExpired(true), TABLE_ART_MAX_COVER_MS);
@@ -141,14 +164,27 @@ export function useTableArt(skinUrl: string, backgroundUrl: string): TableArt {
 
   // A theme change keeps painting the previous, already-decoded art until the
   // new pair has decoded, so the felt never blinks out mid-session.
-  const current = state.key === key;
+  const current = state.key === key && state.scope === selectionScope;
   const ready = current ? state.ready : false;
-  const everReady = state.ready;
+  const everReady = state.ready && state.scope === selectionScope;
   return {
-    skinSrc: current || !everReady ? (current ? state.skinSrc : skinUrl) : state.skinSrc,
-    backgroundSrc:
-      current || !everReady ? (current ? state.backgroundSrc : backgroundUrl) : state.backgroundSrc,
-    ready,
-    reveal: ready || everReady || coverExpired,
+    skinSrc: !selectionReady
+      ? ''
+      : current || !everReady
+        ? current
+          ? state.skinSrc
+          : skinUrl
+        : state.skinSrc,
+    backgroundSrc: !selectionReady
+      ? ''
+      : current || !everReady
+        ? current
+          ? state.backgroundSrc
+          : backgroundUrl
+        : state.backgroundSrc,
+    ready: selectionReady && ready,
+    // Preserve the existing gameplay deadline. A failed preference read may
+    // leave neutral artwork, but must never conceal a seated player's turn.
+    reveal: (selectionReady && (ready || everReady)) || coverExpired,
   };
 }

@@ -72,7 +72,6 @@ const PANEL_MIGRATION = codeOnly(
 const MEMBER_MANAGEMENT = read('src/pages/MemberManagementPage.tsx');
 const MEMBER_MANAGEMENT_CODE = codeOnly(MEMBER_MANAGEMENT);
 const MEMBERSHIP_SERVICE = read('src/services/MembershipService.ts');
-const MEMBER_CSS = read('src/pages/MemberManagementPage.css');
 
 describe('the promotion assigns the funding', () => {
   it('fn_club_set_member_role takes a prepaid flag and a credit limit', () => {
@@ -350,47 +349,39 @@ describe('the migration is safe to apply', () => {
   });
 });
 
-describe('the promote screen collects the funding', () => {
-  it('sends both new arguments', () => {
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/p_is_prepaid:\s*funding === 'prepaid'/);
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/p_credit_limit:\s*limit/);
+/**
+ * SUPERSEDED BY DAN, OCTOBER 2026: "agents have no credit lines; all agents are
+ * prepaid from now on." The promote screen no longer offers a funding choice:
+ * it always sends prepaid with a zero line, and the database refuses a line on
+ * any agent row (agents_are_prepaid, 20261016001952).
+ */
+describe('the promote screen sends every agent prepaid', () => {
+  it('sends prepaid and a zero line, always', () => {
+    expect(MEMBER_MANAGEMENT_CODE).toMatch(/p_is_prepaid:\s*true/);
+    expect(MEMBER_MANAGEMENT_CODE).toMatch(/p_credit_limit:\s*0/);
   });
 
-  it('offers prepaid and a credit line, and a limit only for the line', () => {
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/mm-roles__funding-option/);
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/funding === 'credit' && \(/);
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/Credit Limit In Chips/);
+  it('offers no credit line and no funding choice', () => {
+    expect(MEMBER_MANAGEMENT_CODE).not.toMatch(/mm-roles__funding-option/);
+    expect(MEMBER_MANAGEMENT_CODE).not.toMatch(/Credit Limit In Chips/);
+    expect(MEMBER_MANAGEMENT_CODE).not.toMatch(/Choose Prepaid Or A Credit Line/);
+    expect(MEMBER_MANAGEMENT_CODE).toMatch(/Every Agent Is Prepaid\./);
   });
 
-  /**
-   * Nothing pre-filled. A rate that arrives already in the box is a rate nobody
-   * chose, which is the bug phase 0 removed from the rates; the funding arrived
-   * in the same instruction and gets the same treatment.
-   */
-  it('pre-fills nothing, and clears itself when another role is picked', () => {
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/useState<'' \| 'prepaid' \| 'credit'>\(''\)/);
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(
-      /const \[creditLimit, setCreditLimit\] = useState\(''\)/
+  it('is held by the database, not only the screen', () => {
+    const sql = read(
+      'supabase/migrations/20261016001952_agents_are_prepaid_and_carry_no_credit_line.sql'
     );
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(
-      /setFunding\(''\);\s*\n\s*setCreditLimit\(''\);\s*\n\s*setConfirmRole\(role\)/
-    );
-  });
-
-  it('refuses to submit without a funding choice, before the server has to', () => {
-    expect(MEMBER_MANAGEMENT_CODE).toMatch(/Choose Prepaid Or A Credit Line\./);
-  });
-
-  it('keeps every touch target at 44px, mobile first', () => {
-    expect(MEMBER_CSS).toMatch(/\.mm-roles__funding-option \{[\s\S]{0,200}min-height: 44px/);
+    expect(sql).toMatch(/CHECK \(is_prepaid AND credit_limit = 0\)/);
+    expect(sql).toMatch(/BEFORE INSERT OR UPDATE OF is_prepaid, credit_limit ON public\.agents/);
   });
 
   /** CLAUDE.md section 5.7: popup and page copy is Title Case, em dashes forbidden. */
   it('adds no em dash to the copy', () => {
-    const added = (
-      MEMBER_MANAGEMENT.match(/^.*(Prepaid|Credit Line|Credit Limit).*$/gm) ?? []
-    ).join('\n');
-    expect(added).not.toMatch(/—/);
+    const added = (MEMBER_MANAGEMENT.match(/^.*(Prepaid|Credit Line|Credit Limit).*$/gm) ?? []).join(
+      '\n'
+    );
+    expect(added).not.toMatch(/\u2014/);
   });
 });
 

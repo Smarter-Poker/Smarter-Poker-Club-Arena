@@ -166,7 +166,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   THE PROFILE FRAME IS A 0.5px BLACK HAIRLINE. THE BAKED ORNAMENT IS MASKED.
+   THE PROFILE FRAME IS A 1px BLACK HAIRLINE. THE BAKED ORNAMENT IS MASKED.
    (LAW - tests/the-header-portrait-frame-is-a-hairline.law.test.ts)
 
    Dan, 2026-09-07, with a screenshot of the chrome ring showing around his
@@ -228,8 +228,8 @@
 }
 
 /* The live photo: a circle of 72% of the disc (80.6 units, the size of the
-   well the ornament used to show), centred on it, with the 0.5px hairline as
-   its ONLY frame. Half a pixel of near-black is invisible as a border and does
+   well the ornament used to show), centred on it, with the 1px hairline as
+   its ONLY frame. One pixel of near-black is invisible as a border and does
    the whole job as an anti-alias mask on the photo's edge. This is the only
    rule in the file allowed to declare the slot's border; the desktop override
    below resizes the slot and inherits the hairline rather than restating it,
@@ -246,7 +246,7 @@
   transform: translate(-50%, -50%) !important;
   overflow: hidden;
   box-sizing: border-box;
-  border: 0.5px solid rgba(0, 0, 0, 0.94);
+  border: 1px solid rgba(0, 0, 0, 0.94);
   border-radius: 50%;
   background: transparent;
   /* The button is `overflow: hidden`, so a slot taller than its box is not

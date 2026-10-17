@@ -34,6 +34,7 @@ import styles from './PlayerInviteModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import { publicOrigin } from '../../lib/appBase';
+import { getMyInviteLink } from '../../services/ClubInviteService';
 import { SpadeConsole } from '../console/SpadeConsole';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -220,7 +221,23 @@ export default function PlayerInviteModal({
         .maybeSingle();
 
       const ref = profile?.player_number || agentUserId;
-      const link = `${publicOrigin()}/hub/club-arena/invite/${resolvedClubId}?ref=${ref}`;
+      let link = `${publicOrigin()}/hub/club-arena/invite/${resolvedClubId}?ref=${ref}`;
+
+      // SHARE & INVITE (Dan 2026-10-15): an agent inviting for THEMSELVES
+      // gets their own short link (smarter.poker/i/<CODE>), which carries a
+      // signed-out friend through signup and credits the sender.
+      // fn_club_invite_link always credits the CALLER, so an owner opening
+      // this for another agent keeps the ref link naming that agent. If the
+      // RPC fails, the ref link above is used unchanged.
+      try {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (sessionData.session?.user?.id === agentUserId) {
+          link = (await getMyInviteLink(resolvedClubId)).shortUrl;
+        }
+      } catch (err) {
+        reportError(err, 'PlayerInviteModal.shortLink');
+      }
 
       if (isMounted.current) {
         setInviteCode(link);

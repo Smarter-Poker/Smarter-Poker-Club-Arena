@@ -164,8 +164,8 @@ describe('a club switch never shows the club that was left', () => {
   it('counts club B up from nothing, never down from club A', async () => {
     const view = render(<DynamicWallet {...base} role="owner" clubId={CLUB_A} variant="club" />);
     await flush();
-    expect(text(view.container, 'club_bank')).toBe('777K');
-    expect(text(view.container, 'player_wallet')).toBe('900');
+    expect(text(view.container, 'club_bank')).toBe('777,000.00');
+    expect(text(view.container, 'player_wallet')).toBe('900.00');
 
     view.rerender(<DynamicWallet {...base} role="owner" clubId={CLUB_B} variant="club" />);
     const banks: (string | null)[] = [text(view.container, 'club_bank')];
@@ -181,14 +181,14 @@ describe('a club switch never shows the club that was left', () => {
     }
     for (const printed of banks) expect(figure(printed) ?? 0).toBeLessThanOrEqual(5);
     for (const printed of chips) expect(figure(printed) ?? 0).toBeLessThanOrEqual(3);
-    expect(text(view.container, 'club_bank')).toBe('5');
-    expect(text(view.container, 'player_wallet')).toBe('3');
+    expect(text(view.container, 'club_bank')).toBe('5.00');
+    expect(text(view.container, 'player_wallet')).toBe('3.00');
   });
 
   it("keeps club A's jackpot and balances off club B when club B's first read fails", async () => {
     const view = render(<DynamicWallet {...base} role="owner" clubId={CLUB_A} variant="club" />);
     await flush();
-    expect(view.container.querySelector('.dw__bbj-amount')?.textContent).toBe('9K');
+    expect(view.container.querySelector('.dw__bbj-amount')?.textContent).toBe('9,000.00');
 
     fx.failClubs.add(CLUB_B);
     view.rerender(<DynamicWallet {...base} role="owner" clubId={CLUB_B} variant="club" />);
@@ -262,7 +262,7 @@ describe('Retry never takes the badge down before a read lands', () => {
     fireEvent.click(badge(view.container)!);
     await flush();
     expect(badge(view.container)).toBeNull();
-    expect(text(view.container, 'club_bank')).toBe('777K');
+    expect(text(view.container, 'club_bank')).toBe('777,000.00');
   });
 
   it('keeps the last good figure and the badge when a later read and its retry fail', async () => {
@@ -276,7 +276,7 @@ describe('Retry never takes the badge down before a read lands', () => {
     fireEvent.click(badge(view.container)!);
     await flush();
     expect(badge(view.container)).not.toBeNull();
-    expect(text(view.container, 'club_bank')).toBe('777K');
+    expect(text(view.container, 'club_bank')).toBe('777,000.00');
   });
 });
 
@@ -302,6 +302,6 @@ describe('an unresolvable club id', () => {
     await flush();
     expect(fx.panelCalls).toBeGreaterThan(0);
     expect(badge(view.container)).toBeNull();
-    expect(text(view.container, 'club_bank')).toBe('777K');
+    expect(text(view.container, 'club_bank')).toBe('777,000.00');
   });
 });

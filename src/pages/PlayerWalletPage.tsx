@@ -28,6 +28,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
+import { formatWalletChips } from '../utils/format';
 import { useState, useEffect, useRef, useCallback, useMemo, type RefObject } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { readClubContextParam, withClubContext } from '../utils/clubScopedPath';
@@ -1195,10 +1196,10 @@ function PlayerWalletAccount({
         metrics={[
           {
             label: 'Playable Now',
-            value: balances.PLAYER.available.toLocaleString(),
+            value: formatWalletChips(balances.PLAYER.available),
             tone: 'live',
           },
-          { label: 'All Wallets', value: animatedTotal.toLocaleString() },
+          { label: 'All Wallets', value: formatWalletChips(animatedTotal) },
           { label: 'Diamonds', value: animatedDiamonds.toLocaleString(), tone: 'attention' },
         ]}
       />
@@ -1226,12 +1227,12 @@ function PlayerWalletAccount({
             All Wallets Combined
           </h2>
           <div className="vault-hero__figure" aria-live="polite">
-            {animatedTotal.toLocaleString()}
+            {formatWalletChips(animatedTotal)}
           </div>
           <dl className="vault-hero__meta">
             <div className="vault-hero__meta-item live">
               <dt>Playable Now</dt>
-              <dd>{balances.PLAYER.available.toLocaleString()}</dd>
+              <dd>{formatWalletChips(balances.PLAYER.available)}</dd>
             </div>
             <div className="vault-hero__meta-item diamond">
               <dt>Diamonds</dt>
@@ -1250,7 +1251,7 @@ function PlayerWalletAccount({
             {escrow > 0 && (
               <div className="vault-hero__meta-item escrow">
                 <dt>In Escrow</dt>
-                <dd>{escrow.toLocaleString()} Chips Secured At The Table</dd>
+                <dd>{formatWalletChips(escrow)} Chips Secured At The Table</dd>
               </div>
             )}
             {walletSummary && walletSummary.inArena > 0 && (

@@ -20,7 +20,7 @@ describe('player plates stay readable across the complete responsive cascade', (
       const matches = rules(css, selector);
       expect(matches.length).toBeGreaterThan(0);
       for (const body of matches) {
-        const size = body.match(/font-size:\s*([\d.]+)rem/);
+        const size = body.match(/font-size:\s*(?:clamp\()?([\d.]+)rem/);
         expect(size, selector).not.toBeNull();
         expect(Number(size![1]), selector).toBeGreaterThanOrEqual(floor);
       }
@@ -32,9 +32,10 @@ describe('player plates stay readable across the complete responsive cascade', (
   it('each plate fills its seat so wider names do not silently shrink the box', () => {
     expect(rules(css, '.seat__info')[0]).toMatch(/width:\s*100%/);
     for (const body of rules(css, '.seat__info')) {
-      const height = body.match(/min-height:\s*([\d.]+)px/);
+      const height = body.match(/min-height:\s*(?:clamp\()?([\d.]+)px/);
       expect(height).not.toBeNull();
-      expect(Number(height![1])).toBeGreaterThanOrEqual(48);
+      // Owner-requested proportional mobile boxes retain room for two readable lines.
+      expect(Number(height![1])).toBeGreaterThanOrEqual(40);
     }
   });
 });

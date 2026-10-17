@@ -195,7 +195,7 @@ describe('C2-1: the Agent Wallet sends against the float plus the credit line', 
     openCashier({ role: 'agent', walletType: 'agent_wallet' });
     await pick(/Kingfish/);
     typeAmount('101');
-    expect(await screen.findByText(/Cover 100 Chips/)).toBeTruthy();
+    expect(await screen.findByText(/Cover 100\.00 Chips/)).toBeTruthy();
     expect(plate('Send Chips')).toBeDisabled();
   });
 });
@@ -208,8 +208,8 @@ describe('C2-3: the corner X cannot close the cashier with a send in flight', ()
     await toPlayerWallet();
     await pick(/Kingfish/);
     typeAmount('10');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     await waitFor(() => expect(sends('fn_club_bank_send')).toHaveLength(1));
     const x = document.querySelector('[data-testid="sc-close"]');
     if (x) fireEvent.click(x);
@@ -237,12 +237,12 @@ describe('C2-5: the reason is part of the retry key', () => {
     await toPlayerWallet();
     await pick(/Kingfish/);
     typeAmount('10');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     await waitFor(() => expect(fx.toast.error).toHaveBeenCalled());
     fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Weekly Float' } });
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     await waitFor(() => expect(sends('fn_club_bank_send')).toHaveLength(2));
     const [first, second] = sends('fn_club_bank_send');
     expect(second.args.p_reason).toBe('Weekly Float');
@@ -330,10 +330,10 @@ describe('C2-17: the modal, item by item', () => {
     expect(view.container.contains(overlay)).toBe(false);
   });
 
-  it('prints balances the house way: compact, never with decimals', async () => {
+  it('prints exact wallet amounts below one million', async () => {
     fx.club = { ...fx.club, chip_treasury: 12500.5 };
     openCashier({ walletType: 'club_bank' });
-    await waitFor(() => expect(bankFigure()).toHaveTextContent('12.5K'));
+    await waitFor(() => expect(bankFigure()).toHaveTextContent('12,500.50'));
   });
 
   it('reads a missing agents row as an empty wallet, not an unknown one', async () => {
@@ -359,8 +359,8 @@ describe('C2-17: the modal, item by item', () => {
     await toPlayerWallet();
     await pick(/Kingfish/);
     typeAmount('10');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     await waitFor(() => expect(fx.toast.success).toHaveBeenCalled());
     expect(fx.toast.success.mock.calls[0][0]).toContain('To Kingfish');
   });
@@ -445,9 +445,67 @@ describe('the confirm box is still the same box', () => {
     await toPlayerWallet();
     await pick(/Kingfish/);
     typeAmount('250');
-    await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
-    fireEvent.click(plate('Send Chips'));
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
     const box = await screen.findByRole('alert');
     expect(within(box).getByText(/That Is 25\.0 Percent Of The Club Bank\./)).toBeTruthy();
+  });
+});
+
+describe('The Sender Chooses The Recipient Wallet', () => {
+  it.each(['owner', 'co_owner', 'super_agent', 'agent', 'sub_agent'])(
+    'sends to the player wallet of a %s without replacing the selection',
+    async (role) => {
+      fx.agentRow = { agent_wallet_balance: 1000, is_prepaid: true, credit_used: 0 };
+      fx.members = [{ data: [{ ...kingfish, role }], error: null }];
+      openCashier({ role: 'owner', walletType: 'agent_wallet' });
+      await pick(/Kingfish/);
+      await toPlayerWallet();
+      typeAmount('5');
+      await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
+      fireEvent.click(plate('Send Chips'));
+      await waitFor(() => expect(sends('fn_agent_wallet_send')).toHaveLength(1));
+      expect(sends('fn_agent_wallet_send')[0].args.p_destination).toBe('player_wallet');
+    }
+  );
+
+  it.each(['player_wallet', 'agent_wallet'])(
+    'funds the owner self from the club bank into %s',
+    async (destination) => {
+      fx.members = [
+        {
+          data: [{ ...kingfish, user_id: '11111111-1111-4111-8111-111111111111', role: 'owner' }],
+          error: null,
+        },
+      ];
+      openCashier({ role: 'owner', walletType: 'club_bank' });
+      if (destination === 'player_wallet') await toPlayerWallet();
+      await pick(/Kingfish/);
+      typeAmount('5');
+      await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+      fireEvent.click(plate('Confirm'));
+      await waitFor(() => expect(sends('fn_club_bank_send')).toHaveLength(1));
+      expect(sends('fn_club_bank_send')[0].args).toMatchObject({
+        p_to_user_id: '11111111-1111-4111-8111-111111111111',
+        p_destination: destination,
+      });
+    }
+  );
+});
+
+describe('The Main Bank Never Fails Silently', () => {
+  it('shows a definitive bank refusal inside the cashier', async () => {
+    fx.members = [{ data: [{ ...kingfish, role: 'agent' }], error: null }];
+    fx.sends = [
+      { data: { success: false, error: 'Recipient Wallet Is Unavailable' }, error: null },
+    ];
+    openCashier({ role: 'owner', walletType: 'club_bank' });
+    await pick(/Kingfish/);
+    typeAmount('5');
+    await waitFor(() => expect(plate('Confirm')).not.toBeDisabled());
+    fireEvent.click(plate('Confirm'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Recipient Wallet Is Unavailable');
+    expect(fx.toast.success).not.toHaveBeenCalled();
+    expect(sends('fn_club_bank_send')[0].args.p_destination).toBe('agent_wallet');
   });
 });

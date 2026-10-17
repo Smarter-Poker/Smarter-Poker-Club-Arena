@@ -1,0 +1,18 @@
+[
+  {
+    "signature": "public.fn_rake_bbj_invariants(integer)",
+    "file": "bbj-before.sql",
+    "old": "r.pot_size, r.num_players, r.rake_method, r.player_contributions,",
+    "new": "r.pot_size, COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(hh.players) = 'array' THEN hh.players END), r.num_players) AS num_players, r.rake_method, r.player_contributions,",
+    "before": "f0cfc5a0b6a7a362e400ee01081804c0",
+    "after": "1c8bda472ed556ae781c2416ebb0ec94"
+  },
+  {
+    "signature": "public.fn_rake_law_violations(interval)",
+    "file": "rake-before.sql",
+    "old": "COALESCE(rr.num_players, jsonb_array_length(CASE WHEN jsonb_typeof(hh.players) = 'array' THEN hh.players END)) AS dealt,",
+    "new": "COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(hh.players) = 'array' THEN hh.players END), rr.num_players) AS dealt,",
+    "before": "a3e1fde3f45140c91640389d419ed553",
+    "after": "6fe1606ee718c52848c28fb1774673ea"
+  }
+]

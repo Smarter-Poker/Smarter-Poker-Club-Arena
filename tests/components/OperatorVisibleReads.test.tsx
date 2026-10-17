@@ -141,6 +141,23 @@ describe('operator views observe only their visible scope', () => {
 });
 
 describe('promo float observation does not rewrite money', () => {
+  it('Cashier promo manual mode ignores background updates and refreshes explicitly', async () => {
+    render(<AgentPromoPanel clubId="club-a" userId="agent-a" role="agent" manualOnly />);
+    await flush();
+    const reads = state.query.mock.calls.length;
+    expect(state.channel).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(120_000));
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event('online'));
+    });
+    await flush();
+    expect(state.query).toHaveBeenCalledTimes(reads);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh Promo' }));
+    await flush();
+    expect(state.query.mock.calls.length).toBeGreaterThan(reads);
+  });
+
   it('uses scoped balance payloads without rereading every player for activity, and fences deletes', async () => {
     state.query.mockImplementation(async (name: string) => ({
       data:
@@ -171,7 +188,7 @@ describe('promo float observation does not rewrite money', () => {
     });
     expect(readCount()).toBe(1);
     await act(async () => event({ eventType: 'UPDATE', new: { ...row, chip_balance: '75' } }));
-    expect(screen.getByRole('option', { name: /Chips: 75$/ })).toBeDefined();
+    expect(screen.getByRole('option', { name: /Chips: 75\.00$/ })).toBeDefined();
     expect(readCount()).toBe(1);
     await act(async () =>
       event({ eventType: 'DELETE', old: { club_id: 'club-a', user_id: 'player-one' } })
@@ -239,8 +256,8 @@ describe('promo float observation does not rewrite money', () => {
         error: null,
       });
     });
-    expect(screen.getByRole('option', { name: /Chips: 75$/ })).toBeDefined();
-    expect(screen.queryByRole('option', { name: /Chips: 30$/ })).toBeNull();
+    expect(screen.getByRole('option', { name: /Chips: 75\.00$/ })).toBeDefined();
+    expect(screen.queryByRole('option', { name: /Chips: 30\.00$/ })).toBeNull();
   });
   it('rereads unknown and malformed membership data without inventing zero or accepting an old scope', async () => {
     state.query.mockImplementation(async (name: string) => ({
@@ -285,7 +302,7 @@ describe('promo float observation does not rewrite money', () => {
       })
     );
     expect(screen.getByRole('alert')).toBeDefined();
-    expect(screen.queryByRole('option', { name: /Chips: 0$/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /Chips: 0\.00$/ })).toBeNull();
     view.rerender(<AgentPromoPanel clubId="club-b" userId="agent-b" role="agent" />);
     await flush();
     const calls = state.query.mock.calls.length;
@@ -333,7 +350,7 @@ describe('promo float observation does not rewrite money', () => {
         },
       })
     );
-    expect(screen.queryByRole('option', { name: /Chips: 20$/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /Chips: 20\.00$/ })).toBeNull();
     expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('');
     players = [];
     // A reassignment no longer matching agent_id may send no WAL event.
@@ -343,13 +360,13 @@ describe('promo float observation does not rewrite money', () => {
   it('refreshes only the narrow float every eight seconds and retains the low-cost membership carrier', async () => {
     render(<AgentPromoPanel clubId="club-a" userId="agent-a" role="agent" />);
     await flush();
-    expect(screen.getByText('100')).toBeDefined();
+    expect(screen.getByText('100.00')).toBeDefined();
     state.query.mockImplementation(async (name: string) => ({
       data: name === 'agents' ? { id: 'agent', promo_wallet_balance: 70 } : [],
       error: null,
     }));
     await act(() => vi.advanceTimersByTimeAsync(8_000));
-    expect(screen.getByText('70')).toBeDefined();
+    expect(screen.getByText('70.00')).toBeDefined();
     expect(state.query.mock.calls.filter(([name]) => name === 'club_members')).toHaveLength(1);
     expect(state.channel.mock.calls.map(([, spec]) => spec.table)).toEqual(['club_members']);
     expect(state.rpc).not.toHaveBeenCalled();
@@ -384,8 +401,8 @@ describe('promo float observation does not rewrite money', () => {
     await act(async () =>
       finish({ data: { id: 'agent-a', promo_wallet_balance: 999 }, error: null })
     );
-    expect(screen.getByText('22')).toBeDefined();
-    expect(screen.queryByText('999')).toBeNull();
+    expect(screen.getByText('22.00')).toBeDefined();
+    expect(screen.queryByText('999.00')).toBeNull();
   });
   it('keeps a delayed command reply owned by its original account', async () => {
     let finish!: (value: unknown) => void;

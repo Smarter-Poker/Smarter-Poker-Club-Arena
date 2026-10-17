@@ -634,3 +634,112 @@ test('the enlarged player plates stay inside the phone viewport on every ring', 
     }
   }
 });
+
+test('mobile seat plates, straight private cards and waiting-list text fit their frames', async ({
+  page,
+}) => {
+  const waitingCss = readFileSync(
+    resolve(ROOT, 'src/components/table/WaitlistCallToAction.css'),
+    'utf8'
+  );
+  let priorPlate = 0;
+  for (const width of [375, 393, 430]) {
+    await page.setViewportSize({ width, height: 852 });
+    await page.setContent(buildHtml(css + waitingCss));
+    await page.evaluate(() => {
+      const scaler = document.querySelector<HTMLElement>('.table-scaler')!;
+      scaler.style.setProperty('--table-w', `${scaler.getBoundingClientRect().width}px`);
+      const row = document.querySelector('.seat--hero .seat__cards--hero')!;
+      row.innerHTML = Array.from(
+        { length: 5 },
+        () => '<span class="seat__card-pick"><div class="seat__card seat__card--face"></div></span>'
+      ).join('');
+      const cta = document.createElement('button');
+      cta.className = 'waitlist-cta';
+      cta.innerHTML =
+        '<span class="waitlist-cta__face"><span class="waitlist-cta__line"><span class="waitlist-cta__eyebrow">Table Full · 0 Waiting</span></span><span class="waitlist-cta__line"><span class="waitlist-cta__title">Join The Waiting List</span></span></span>';
+      document.querySelector('.table-page')!.append(cta);
+    });
+    const measured = await page.evaluate(() => {
+      const face = document.querySelector('.waitlist-cta__face')!.getBoundingClientRect();
+      const lines = Array.from(document.querySelectorAll('.waitlist-cta__line')).map((el) =>
+        el.getBoundingClientRect()
+      );
+      const cards = Array.from(document.querySelectorAll('.seat--hero .seat__card-pick')).map(
+        (el) => ({ transform: getComputedStyle(el).transform, top: el.getBoundingClientRect().top })
+      );
+      return {
+        plate: document.querySelector('.seat:not(.seat--hero)')!.getBoundingClientRect().width,
+        face: { top: face.top, bottom: face.bottom },
+        lines: lines.map((r) => ({ top: r.top, bottom: r.bottom })),
+        cards,
+      };
+    });
+    expect(measured.plate, `${width}px: plate must scale below the old fixed minimum`).toBeLessThan(
+      width * 0.24
+    );
+    expect(measured.plate).toBeGreaterThan(priorPlate);
+    priorPlate = measured.plate;
+    for (const line of measured.lines) {
+      expect(line.top).toBeGreaterThanOrEqual(measured.face.top - 1);
+      expect(line.bottom).toBeLessThanOrEqual(measured.face.bottom + 1);
+    }
+    expect(
+      Math.abs(
+        (measured.lines[0].top + measured.lines[1].bottom) / 2 -
+          (measured.face.top + measured.face.bottom) / 2
+      )
+    ).toBeLessThan(1);
+    expect(measured.cards.every((card) => card.transform === 'none')).toBe(true);
+    expect(
+      Math.max(...measured.cards.map((card) => card.top)) -
+        Math.min(...measured.cards.map((card) => card.top))
+    ).toBeLessThan(1);
+  }
+});
+
+test('the compact profit tracker shares the hand-pill centre beside the rightmost Lobby', async ({
+  page,
+}) => {
+  const styles = ['src/pages/MultiTablePage.css', 'src/components/table/TableTabBar.css']
+    .map((path) => readFileSync(resolve(ROOT, path), 'utf8'))
+    .join('\n');
+  for (const width of [375, 393, 430, 1024])
+    for (const inset of [0, 28]) {
+      await page.setViewportSize({ width, height: 852 });
+      await page.setContent(`<style>*{box-sizing:border-box}body{margin:0}${styles}</style>
+      <div class="multi-table-page" style="--sp-tabbar-inset:${inset}px;--mtt-ticker-h:24px">
+        <div class="multi-table-page__tab-bar-wrapper multi-table-page__tab-bar-wrapper--with-lobby">
+          <div class="table-tab-bar"><div class="table-tab-bar__menu-container" style="width:34px;flex-shrink:0"></div><div class="table-tab-bar__tabs"><button class="table-tab-bar__tab">PLO5</button><button class="table-tab-bar__tab">PLO4</button></div></div>
+          <button class="multi-table-page__pnl-chip multi-table-page__pnl-chip--down">-170.37</button>
+          <button class="mtp-lobby-btn">Lobby</button>
+        </div>
+      </div>`);
+      const measured = await page.evaluate(() => {
+        const profit = document.querySelector<HTMLElement>('.multi-table-page__pnl-chip')!;
+        const tab = document.querySelector('.table-tab-bar__tab')!.getBoundingClientRect();
+        const pnl = profit.getBoundingClientRect();
+        const lobby = document.querySelector('.mtp-lobby-btn')!.getBoundingClientRect();
+        return {
+          width: pnl.width,
+          height: pnl.height,
+          pnlCenter: pnl.top + pnl.height / 2,
+          tabCenter: tab.top + tab.height / 2,
+          lobbyCenter: lobby.top + lobby.height / 2,
+          pnlRight: pnl.right,
+          lobbyLeft: lobby.left,
+          lobbyRight: lobby.right,
+          fullText: profit.scrollWidth <= profit.clientWidth,
+        };
+      });
+      expect(measured.width).toBe(width <= 480 ? 52 : 100);
+      expect(measured.height).toBe(width <= 480 ? 34 : 36);
+      expect(Math.abs(measured.pnlCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
+      expect(Math.abs(measured.lobbyCenter - measured.tabCenter)).toBeLessThanOrEqual(1);
+      expect(measured.pnlRight).toBeLessThanOrEqual(measured.lobbyLeft);
+      expect(measured.lobbyRight).toBeLessThanOrEqual(width);
+      expect(measured.fullText, `${width}px inset=${inset}: ${JSON.stringify(measured)}`).toBe(
+        true
+      );
+    }
+});

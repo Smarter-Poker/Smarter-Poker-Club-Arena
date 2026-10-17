@@ -98,13 +98,9 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_batch_transfer(uuid,text,jsonb,uuid)',
-      -- 20261015132042 lets a 'ticket' item name a tournament_id and routes it
-      -- to fn_issue_tournament_entry_ticket; items without one are unchanged.
-      -- The replacement hash was computed from that migration's text in an
-      -- isolated PostgreSQL; re-read it live after the apply and drop the
-      -- superseded hash once production carries the new body.
-      'hash', '0252faecc9c3e8dd506ccd00061243cb',
-      'replacement_hash', '522bb44fb336bfbf0d13277729a58de3'
+      -- Installed 20261016024912 binds the explicitly selected source and
+      -- destination wallets. Qualified full definition read back live.
+      'hash', '859bb844228d65085bf134c4dbd8b32b'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_cashier_can_transact(uuid,uuid,uuid)',
@@ -162,7 +158,9 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',
-      'hash', 'd858bb9dbc4c2657c940c99f0c03b015'
+      -- Installed 20261016021637 takes the agreement mutex before the retained
+      -- bank core. Exact full definition and owner/ACL posture read back live.
+      'hash', '08e0c75b5fb1f51fc8c31a8928271fb6'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_claim_back(uuid,uuid,numeric,text,text,uuid)',
@@ -284,7 +282,9 @@ BEGIN
       -- 20261006005823, not the last CREATE (20260823170000).
       -- 20261012040542 (installed and read back live 2026-10-12) lists,
       -- filters and counts a treasury-funded seat as a Club Bank send.
-      'hash', 'f17eb94522c177856683617945d9f371'
+      -- 20261016155801 (#7115, installed 2026-10-16) reads the same rows and
+      -- totals in one pass; its transaction asserts this post-image.
+      'hash', 'cb7edf507b92e7c22535d6fed10a416b'
     ),
     jsonb_build_object(
       'signature', 'public.fn_promo_wallet_ledger(text,uuid,integer,integer,text)',
@@ -314,7 +314,13 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_promo_disburse(text,uuid,text,uuid,numeric,text,uuid,uuid)',
-      'hash', '54539cb4d66ffdcdacd85521e5fbb929',
+      -- Installed 20261016132743 (#7104, Midway weekly horse promo): the
+      -- engine/cron caller reads fn_caller_is_engine(), a union's own club
+      -- members are eligible, and the union promo leg journals its own
+      -- labelled ledger row. Owner checks for signed-in callers are unchanged.
+      -- Full definition derived from the merged migration and read back live
+      -- by post-deploy run 38929938237.
+      'hash', 'e54e4f3949335c61d4c1492d81b5ca21',
       'search_path', 'search_path=public'
     ),
     jsonb_build_object(
@@ -425,7 +431,7 @@ BEGIN
     jsonb_build_object('signature', 'public.fn_cashier_operation_mutex_guard()',
       'hash', '57750a582bad567907f62a2460cfc8c1', 'service_execute', false),
     jsonb_build_object('signature', 'public.fn_cashier_operation_intent_guard()',
-      'hash', '40132499b244772fe6820efb3217fccd', 'service_execute', false),
+      'hash', '4441e55c7f8b750b93b513c6e18f3f24', 'service_execute', false),
     jsonb_build_object('signature', 'public.fn_cashier_exact_intent_begin(text,uuid,uuid,jsonb)',
       -- 20261012181905 preserves completed receipts and refuses unfinished
       -- requests outside their original launch accounting boundary.
@@ -467,9 +473,9 @@ BEGIN
     jsonb_build_object('signature', 'public.fn_admin_remove_chips_core_20261004(uuid,uuid,numeric,text,uuid)',
       'hash', 'ac293c1623da0db62d74f5e888c1011a'),
     jsonb_build_object('signature', 'public.fn_promo_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
-      'hash', 'b101fc1f3280218d04d7addd155ed4ea'),
+      'hash', 'b6b0c7686b67d33e2b01c132f8775cbc'),
     jsonb_build_object('signature', 'public.fn_club_promo_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
-      'hash', 'fe490fcc75f305338160eca2a7a88b25'),
+      'hash', '5990c675526e842d0671f47890c1ff27'),
     jsonb_build_object('signature', 'public.fn_agent_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
       'hash', '7a357ba95a8ca4eb13f00f798233d8d4'),
     jsonb_build_object('signature', 'public.fn_agent_wallet_claim_back_core_20261004(uuid,uuid,numeric,text,uuid)',

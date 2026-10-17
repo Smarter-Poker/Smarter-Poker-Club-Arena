@@ -1,0 +1,3 @@
+# tests/a-mid-hand-add-on-rebase-is-movement-evidence.law.test.ts
+
+A parked tournament table whose last sealed hand rebased a seat for an add-on bought while that hand was dealt is still provable: `smarter_private.f06_movement_prior` admits the rebase only by its one `ca_seat_stack_rebases` receipt and the add-on funding receipts walked back from the seat the settlement found to the stack the engine dealt, and admits a chair bought back after a sealed bust and re-taken while the proven hand was dealt only by that rebuy receipt and that bust; every other refusal is unchanged (MTT 85313174 froze F06_MOVEMENT_STACK_RECEIPT on three tables from 17:03 UTC, 2026-10-16).

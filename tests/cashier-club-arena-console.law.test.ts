@@ -233,6 +233,19 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     }
   });
 
+  it('clips only the orphan pixels below both transfer row frames', () => {
+    const css = read('src/pages/CashierTradePage.module.css');
+    expect(css).toMatch(
+      /\.console \.walletRow,\s*\.console \.entryRow\s*\{[^}]*aspect-ratio: 1280 \/ 274;[^}]*clip-path: inset\(0 0 calc\(9 \/ 274 \* 100%\) 0\)/
+    );
+    expect(read('src/components/wallet/WalletCashierModal.tsx')).toContain(
+      'transferStyles.walletRow'
+    );
+    expect(read('src/components/wallet/WalletCashierModal.tsx')).toContain(
+      'transferStyles.entryRow'
+    );
+  });
+
   it('puts every Trade Cashier dialog on the painted authority', () => {
     const trade = read('src/pages/CashierTradePage.tsx');
     for (const title of ['Transaction Receipt', 'Request Chips', 'Send Out', 'Claim Back']) {
@@ -245,11 +258,12 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     // phone and `step="1"` flags 12.34 as invalid, so the two-decimal rule the
     // copy advertises was unreachable on the device most agents use.
     const trade = read('src/pages/CashierTradePage.tsx');
-    const tradeInputs = trade.match(/<input[^>]*type="number"[^>]*>/gs) ?? [];
+    const tradeInputs = (trade.match(/<input[^>]*type="text"[^>]*>/gs) ?? []).filter((tag) =>
+      /aria-label="(Amount|Chips Requested|Claim Back Amount)/.test(tag)
+    );
     expect(tradeInputs.length).toBeGreaterThanOrEqual(2);
     for (const tag of tradeInputs) {
       expect(tag).toContain('inputMode="decimal"');
-      expect(tag).toContain('step="0.01"');
     }
     // Dan 2026-10-15: "IT SHOULD NEVER SAY AMOUNT PER PLAYER".
     expect(trade).not.toContain('Amount Per Player');
@@ -309,7 +323,7 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     );
   });
 
-  it('prints every Cashier chip figure through compactChips, never decimal locale formatting', () => {
+  it('prints wallet amounts through the exact wallet formatter', () => {
     for (const { tsx } of CASHIER_SURFACES) {
       for (const tag of consoleTags(read(tsx))) {
         for (const zone of ['eyebrow', 'subtitle', 'pill']) {
@@ -319,6 +333,10 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
       }
     }
     expect(read('src/pages/CashierTradePage.tsx')).toContain('const fmt = compactChips;');
+    expect(read('src/pages/CashierTradePage.tsx')).toContain('formatWalletChips(r.chipBalance)');
+    expect(read('src/pages/CashierPage.tsx')).toContain(
+      'formatWalletChips(selectedRecipientData.balance)'
+    );
     expect(read('src/pages/CashierPage.tsx')).toContain('const chipFigure = compactChips;');
     expect(read('src/pages/CashierStatementsPage.tsx')).toContain(
       'return compactChips(Number(value));'
@@ -328,8 +346,8 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     );
 
     const wallet = read('src/components/wallet/DynamicWallet.tsx');
-    expect(wallet).toContain("import { compactChips } from '../../utils/format';");
-    expect(wallet).toContain('return compactChips(num);');
+    expect(wallet).toContain("import { formatWalletChips } from '../../utils/format';");
+    expect(wallet).toContain('return formatWalletChips(num);');
     expect(wallet).not.toContain('minimumFractionDigits: 2');
   });
 
@@ -355,7 +373,7 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     expect(tile).toContain('<SpadeConsole');
     expect(tile).toContain('family="shark"');
     expect(tile).toContain('className={styles.cashierSwitchConsole}');
-    expect(tile).toContain('compactChips(visibleBalances.get(club.id))');
+    expect(tile).toContain('formatWalletChips(visibleBalances.get(club.id))');
     expect(tile).not.toContain('cashierSwitchLogoFallback');
 
     expect(directoryCss).toContain('.cashierSwitchConsole');
@@ -364,9 +382,9 @@ describe('#ClubArenaConsole is the Cashier visual authority', () => {
     expect(directoryCss).not.toMatch(/^\s*[^*\n]*:hover\b[^\n]*\{/m);
   });
 
-  it('prints the in-Cashier club switcher balance through compactChips', () => {
+  it('prints exact in-Cashier club switcher balances', () => {
     const switcher = read('src/components/club/CashierClubSwitcher.tsx');
-    expect(switcher).toContain('compactChips(visibleBalances.get(club.id))');
+    expect(switcher).toContain('formatWalletChips(visibleBalances.get(club.id))');
     expect(switcher).not.toContain('maximumFractionDigits');
   });
 });

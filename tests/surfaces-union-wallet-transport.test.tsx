@@ -89,6 +89,7 @@ beforeEach(() => {
 async function sendToFish(amount = '250') {
   await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
   fireEvent.click(screen.getByText('Fish'));
+  fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
   fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: amount } });
   fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 }
@@ -183,8 +184,8 @@ describe('a clawback whose response is lost keeps its operation id', () => {
     });
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
     fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from shark club/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
     expect((await screen.findByRole('alert')).textContent).toMatch(/Not Yet Confirmed/);

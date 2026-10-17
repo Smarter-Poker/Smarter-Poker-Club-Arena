@@ -1,3 +1,5 @@
+import { useRecentRecipients } from '../hooks/useRecentRecipients';
+import { formatCashierAmountInput, cashierAmountInputValue } from '../utils/cashierAmount';
 import {
   reserveCashierWalletOperation,
   clearCashierWalletOperation,
@@ -30,10 +32,7 @@ import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { withClubContext } from '../utils/clubScopedPath';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
-import {
-  useMasterBusSubscription,
-  useMasterBusSubscriptions,
-} from '../hooks/useMasterBusSubscription';
+import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../stores/useWalletStore';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useBridgeRate } from '../hooks/useBridgeRate';
@@ -57,15 +56,15 @@ import { creditHeadroomOf } from '../services/cashierBalanceRead';
 import CashierClubSwitcher from '../components/club/CashierClubSwitcher';
 
 import { useToast } from '../components/common/Toast';
-import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
+import { useRecipientWalletBalances, walletOptionLabel } from '../hooks/useRecipientWalletBalances';
 import {
   resolveTargetClub,
   readCachedQuickLinkClubs,
   fetchQuickLinkClubs,
   fetchClubChipBalances,
   clearClubChipBalanceCache,
-  CHIP_BALANCE_EVENTS,
 } from '../utils/clubQuickLink';
 import { checkSettlementLock } from '../utils/settlementLock';
 import AgentPromoPanel from '../components/agent/AgentPromoPanel';
@@ -88,7 +87,7 @@ import { reportError } from '../utils/errorReporter';
 import { formatPopupText } from '../utils/popupStyle';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
-import { compactChips } from '../utils/format';
+import { compactChips, formatWalletChips } from '../utils/format';
 import { enumToTitleCase, titleCase } from '../utils/titleCase';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
@@ -221,7 +220,7 @@ function newOpId(): string {
   });
 }
 
-/** #ClubArenaConsole chip reading for every forward-facing non-felt figure. */
+/** Non-wallet amounts retain the console reading; balances use formatWalletChips. */
 const chipFigure = compactChips;
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -252,7 +251,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   bonus: 'Bonus',
 };
 
-import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
 import { useCashierHistory } from '../hooks/useCashierHistory';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
@@ -266,7 +264,6 @@ export default function CashierPage() {
 }
 
 function CashierContent() {
-  useRealtimeFinancials();
   useEffect(() => {
     document.title = 'Cashier | Smarter Poker';
   }, []);
@@ -289,7 +286,15 @@ function CashierContent() {
      (myClubChips, what a cashout debits) or the agent wallet (myAgentWallet,
      what a send debits). Leaving it destructured is an invitation to reach for
      it again. */
-  const { loadBalances } = useWalletStore();
+  const { loadBalances: loadWalletBalances } = useWalletStore();
+  const [walletRevision, setWalletRevision] = useState(0);
+  const loadBalances = useCallback(
+    async (userId: string, force = false) => {
+      await loadWalletBalances(userId, { force });
+      setWalletRevision((revision) => revision + 1);
+    },
+    [loadWalletBalances]
+  );
   // The live diamonds-per-chip rate fn_mint_chips_from_diamonds charges at.
   const { diamondsPerChip: mintRate, failed: mintRateFailed } = useBridgeRate();
   const toast = useToast();
@@ -360,13 +365,6 @@ function CashierContent() {
   const mintOpIdRef = useRef<string | null>(null);
   const RATE_LIMIT_MS = 2000;
 
-  // Connection status: track realtime channel health
-  // Starts 'reconnecting', not 'connected': asserting a healthy live link
-  // before any channel has reported SUBSCRIBED is the same unearned claim the
-  // fabricated AML checklist made.
-  const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'reconnecting' | 'error'>(
-    'reconnecting'
-  );
   const [message, setMessage] = useState<{
     type: 'success' | 'error' | 'info';
     text: string;
@@ -386,6 +384,7 @@ function CashierContent() {
     value: number;
     recipientId: string;
     recipientName: string;
+    destination?: ClubBankRecipientWallet;
   }>({ show: false, value: 0, recipientId: '', recipientName: '' });
 
   /* High-value Send confirm dialog focus management (launch audit 2026-10-09,
@@ -502,14 +501,21 @@ function CashierContent() {
   const [recipientSearch, setRecipientSearch] = useState('');
   const recipientSearchRef = useRef<HTMLInputElement>(null);
 
+  const { recentIds } = useRecentRecipients(user?.id, clubId || null, 'cashier');
   const filteredRecipients = useMemo(() => {
     const candidates = action === 'send' ? recipients.filter((r) => r.id !== user?.id) : recipients;
-    if (!recipientSearch.trim()) return candidates;
+    if (!recipientSearch.trim())
+      return [...candidates].sort(
+        (a, b) =>
+          (recentIds.includes(a.id) ? recentIds.indexOf(a.id) : Infinity) -
+            (recentIds.includes(b.id) ? recentIds.indexOf(b.id) : Infinity) ||
+          a.username.localeCompare(b.username)
+      );
     const q = recipientSearch.trim().toLowerCase();
     return candidates.filter(
       (r) => r.searchText.includes(q) || (r.id === user?.id && 'you'.includes(q))
     );
-  }, [recipients, recipientSearch, user?.id, action]);
+  }, [recipients, recipientSearch, user?.id, action, recentIds]);
 
   // A filtered-out recipient must never remain the hidden destination.
   useEffect(() => {
@@ -550,21 +556,6 @@ function CashierContent() {
     };
   }, [user?.id, clubId, clubChipsNonce]);
 
-  // Any chip movement invalidates the per-club figure. Without this the nonce
-  // was bumped in exactly ONE place (the cashout modal's onComplete), so an
-  // inline cashout, a send or a distribute left `myClubChips` showing the
-  // pre-transaction balance — and the modal's Max button would then prefill an
-  // amount the server rejects. CashierClubSwitcher and ClubQuickLinkTile
-  // already subscribe to the same event group and clear the shared memo; this
-  // page was clearing it only from the modal.
-  useMasterBusSubscriptions(
-    [...CHIP_BALANCE_EVENTS],
-    () => {
-      clearClubChipBalanceCache();
-      setClubChipsNonce((n) => n + 1);
-    },
-    { debounce: 500 }
-  );
   const [txFilter, setTxFilter] = useState('all');
   const [txPage, setTxPage] = useState(1);
   const TX_PAGE_SIZE = 25;
@@ -703,8 +694,6 @@ function CashierContent() {
       }
     }
   }, [clubId, user?.id, isCashoutCurrent]);
-
-  useVisibilityRefresh(() => loadPendingCashouts());
 
   const loadUserContext = async () => {
     if (!clubId || !user?.id) return;
@@ -1467,194 +1456,21 @@ function CashierContent() {
     },
   });
   useMasterBusSubscriptions(['MEMBER_ROLE_CHANGED', 'AGENT_UPDATED'], refreshCashierAuthority);
-  useVisibilityRefresh(refreshCashierAuthority);
 
-  // Wallets channel
-  const handleWalletUpdate = useCallback(
-    (payload: { eventType: string }) => {
-      if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-        if (user?.id) loadBalances(user.id);
-      }
-    },
-    [user?.id, loadBalances]
-  );
-
-  useMasterBusChannel({
-    channelName: user?.id ? `cashier-realtime-wallets-${user.id}` : null,
-    table: 'wallets',
-    filter: user?.id ? `user_id=eq.${user.id}` : null,
-    event: '*',
-    onPayload: handleWalletUpdate,
-    enabled: !!user?.id,
-    // Without this a dead wallets/cashouts channel was completely silent: the
-    // page has a degraded-connection banner and a realtimeStatus state, but
-    // only the chip_transactions channel ever drove them. Balances could go
-    // stale with the UI still claiming a live connection.
-    onSubscriptionError: () => {
-      if (isMounted.current) setRealtimeStatus('error');
-    },
-  });
-
-  // Wallet transactions channel — DISABLED (Phase 2 cost cut).
-  // wallet_transactions is being dropped from supabase_realtime to save egress.
-  // The page already refreshes on the canonical balance events via
-  // useMasterBusSubscriptions below (BALANCE_UPDATED, CHIPS_ADDED,
-  // CHIPS_WITHDRAWN, CASHIER_BALANCE_CHANGED, DAILY_REWARD_CLAIMED). The
-  // `cashout_requests` subscription still covers
-  // pending-cashout state which is the cashier's primary action surface.
-
-  // Cashout requests channel
-  const handleCashoutUpdate = useCallback(() => {
-    loadPendingCashouts();
-  }, [loadPendingCashouts]);
-
-  useMasterBusChannel({
-    channelName: user?.id ? `cashier-realtime-cashouts-${user.id}` : null,
-    table: 'cashout_requests',
-    filter: user?.id ? `player_id=eq.${user.id}` : null,
-    event: '*',
-    onPayload: handleCashoutUpdate,
-    enabled: !!user?.id,
-    // Without this a dead wallets/cashouts channel was completely silent: the
-    // page has a degraded-connection banner and a realtimeStatus state, but
-    // only the chip_transactions channel ever drove them. Balances could go
-    // stale with the UI still claiming a live connection.
-    onSubscriptionError: () => {
-      if (isMounted.current) setRealtimeStatus('error');
-    },
-  });
-
-  // ── Bus Listeners: instant balance refresh from engine events ──
-  // Load balances only
+  // The existing own-account realtime stream announces receipts from other
+  // browsers too. Refresh money without invalidating authority or the send form.
   useMasterBusSubscriptions(
-    ['BALANCE_UPDATED', 'CHIPS_ADDED', 'CASHIER_BALANCE_CHANGED', 'DAILY_REWARD_CLAIMED'],
-    () => {
-      if (user?.id) loadBalances(user.id, { force: true });
+    ['BALANCE_UPDATED'],
+    (payload) => {
+      const event = payload as { userId?: string };
+      if (!user?.id || (event?.userId && event.userId !== user.id)) return;
+      clearClubChipBalanceCache();
+      void loadBalances(user.id, true);
+      setClubChipsNonce((value) => value + 1);
+      void loadTransactions();
     },
-    { debounce: 500 }
+    { debounce: 200 }
   );
-
-  // Refresh history after ledger changes or financial snapshot invalidations.
-  useMasterBusSubscriptions(
-    [
-      'TRANSACTION_LOGGED',
-      'BALANCE_UPDATED',
-      'CHIPS_ADDED',
-      'CASHIER_BALANCE_CHANGED',
-      'DAILY_REWARD_CLAIMED',
-      'WALLET_REFRESHED',
-      'CHIPS_DISTRIBUTED',
-      'CASHOUT_CANCELLED',
-      'CASHOUT_APPROVED',
-    ],
-    () => {
-      loadTransactions({ force: true });
-    },
-    { debounce: 1000 }
-  );
-
-  // Load balances and pending cashouts
-  useMasterBusSubscriptions(
-    ['WALLET_REFRESHED', 'CHIPS_DISTRIBUTED', 'CASHOUT_CANCELLED', 'CASHOUT_APPROVED'],
-    () => {
-      if (user?.id) {
-        loadBalances(user.id);
-        loadPendingCashouts();
-      }
-    },
-    { debounce: 500 }
-  );
-
-  // Load pending cashouts only
-  useMasterBusSubscription(
-    'CASHOUT_REQUESTED',
-    () => {
-      if (user?.id) loadPendingCashouts();
-    },
-    { debounce: 500 }
-  );
-
-  // Load balances and transactions (HAND_COMPLETED debounces at 1000ms, others at 500ms)
-  useMasterBusSubscription(
-    'HAND_COMPLETED',
-    () => {
-      if (user?.id) {
-        loadBalances(user.id);
-        loadTransactions({ force: true });
-      }
-    },
-    { debounce: 1000 }
-  );
-
-  // Supabase Realtime channel for chip_transactions (cross-device sync)
-  //
-  // Registered with a FACTORY. Previously this called getOrCreateChannel and
-  // subscribed directly, with no registerChannelFactory. MasterBus's 30s health
-  // monitor takes the no-factory branch for such a channel and simply removes
-  // it ("No factory for ... -- removed only"), which also aborts Supabase's own
-  // auto-rejoin. The effect deps never change, so nothing rebuilt it: one
-  // transient error and cross-device chip sync was dead for the whole session.
-  //
-  // The subscribe callback also had no 'CLOSED' case, and removeChannel drives
-  // the channel to CLOSED rather than CHANNEL_ERROR — so realtimeStatus stayed
-  // 'connected' and the degraded-connection banner never appeared. On a money
-  // screen that means a stale balance presented as live.
-  useEffect(() => {
-    if (!user?.id) return;
-    const key = `cashier-chip-txns-${user.id}`;
-    const onRowChange = () => {
-      loadBalances(user.id);
-      loadTransactions({ force: true });
-    };
-    const subscribeChannel = () =>
-      masterBus
-        .getOrCreateChannel(key)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'chip_transactions',
-            filter: `from_user_id=eq.${user.id}`,
-          },
-          onRowChange
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'chip_transactions',
-            filter: `to_user_id=eq.${user.id}`,
-          },
-          onRowChange
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'SUBSCRIBED') {
-            if (isMounted.current) setRealtimeStatus('connected');
-          }
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'CashierPage._Realtime_channel_error');
-            if (isMounted.current) setRealtimeStatus('error');
-          }
-          if (status === 'CLOSED') {
-            if (isMounted.current) setRealtimeStatus('error');
-          }
-          if (status === 'TIMED_OUT') {
-            reportError('Realtime channel timed out', 'CashierPage._Realtime_channel_timed_out');
-            if (isMounted.current) setRealtimeStatus('reconnecting');
-          }
-        });
-
-    // Factory FIRST, so a channel that dies on its very first subscribe can
-    // still be recovered by the health monitor.
-    masterBus.registerChannelFactory(key, subscribeChannel);
-    subscribeChannel();
-    return () => {
-      masterBus.removeChannelFactory(key);
-      masterBus.removeRegisteredChannel(key);
-    };
-  }, [user?.id, loadBalances, loadTransactions]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   // DETERMINE AVAILABLE TABS
@@ -1760,7 +1576,7 @@ function CashierContent() {
    * 'player_wallet'` - so an owner (including the sender themselves, who is on
    * this list) could only ever be paid into their float, never into the wallet
    * they play from. A recipient holding both wallets now offers both.
-   * An agent's Distribute is fn_agent_wallet_send and still follows the role.
+   * Owner update 2026-10-15: agent sends honor the same wallet choice.
    */
   const distributeViaClubBank =
     ['owner', 'co_owner', 'admin', 'super_agent'].includes(userRole) || isUnionOwner;
@@ -1768,17 +1584,15 @@ function CashierContent() {
   useEffect(() => {
     setDistributeWallet(null);
   }, [selectedRecipient]);
-  const distributeWallets: ClubBankRecipientWallet[] =
-    distributeViaClubBank && selectedRecipientData
-      ? clubBankRecipientWallets(selectedRecipientData.role)
-      : [];
-  const distributeDestination: ClubBankRecipientWallet = !selectedRecipientData
-    ? 'player_wallet'
-    : distributeViaClubBank
-      ? clubBankDestinationFor(selectedRecipientData.role, distributeWallet)
-      : canHoldAgentWallet(selectedRecipientData.role)
-        ? 'agent_wallet'
-        : 'player_wallet';
+  const distributeWallets: ClubBankRecipientWallet[] = selectedRecipientData
+    ? clubBankRecipientWallets(selectedRecipientData.role)
+    : [];
+  const distributeDestination: ClubBankRecipientWallet = selectedRecipientData
+    ? clubBankDestinationFor(selectedRecipientData.role, distributeWallet)
+    : 'player_wallet';
+  // Each wallet the recipient holds, with its current balance (Dan 2026-10-15:
+  // "AND IT SHOULD HAVE THERE CURRENT CHIP BALANCES AS WELL").
+  const distributeBalances = useRecipientWalletBalances(clubId, selectedRecipientData?.id);
 
   // ── Keyboard navigation for tabs (Arrow Left/Right, Home/End) ──
   const tabNavRef = useRef<HTMLElement | null>(null);
@@ -1839,7 +1653,11 @@ function CashierContent() {
     }
   };
 
-  const handleAction = async (override?: { value?: number; recipientId?: string }) => {
+  const handleAction = async (override?: {
+    value?: number;
+    recipientId?: string;
+    destination?: ClubBankRecipientWallet;
+  }) => {
     if (cashoutActionInFlight.current || cashoutBusy.current || transferBusy.current) return;
     // At a table, Buy-In and Cash-Out move no money here: both are done at the
     // table itself (atomic_table_buyin, and leaving the seat). There is no
@@ -2014,16 +1832,14 @@ function CashierContent() {
            * row, one op_id, a downline check before any money moves, and a ten
            * minute clawback window the Claim Back surfaces can act on.
            *
-           * `p_destination` follows the RECIPIENT's role - chips to an agent land
-           * in the float they distribute from, chips to a player land in the
-           * balance they buy in with - and the database derives it again from the
-           * recipient regardless of what is sent here.
+           * Owner update 2026-10-15: p_destination is the sender's explicit
+           * choice, validated against the wallets the recipient holds.
            */
           if (myAgentWallet !== null && myAgentWallet + myAgentCredit < value) {
             if (isMounted.current)
               setMessage({
                 type: 'error',
-                text: `Insufficient chips in your agent wallet. Available: ${chipFigure(myAgentWallet + myAgentCredit)}`,
+                text: `Insufficient chips in your agent wallet. Available: ${formatWalletChips(myAgentWallet + myAgentCredit)}`,
               });
             if (isMounted.current) setIsProcessing(false);
             return;
@@ -2034,7 +1850,7 @@ function CashierContent() {
             p_club_id: resolvedForTransfer,
             p_to_user_id: recipientIdForAction,
             p_amount: value,
-            p_destination: canHoldAgentWallet(recipient?.role) ? 'agent_wallet' : 'player_wallet',
+            p_destination: override?.destination ?? distributeDestination,
             p_reason: 'Cashier Send',
           };
           const operation = await reserveCashierWalletOperation(
@@ -2077,6 +1893,14 @@ function CashierContent() {
                 ? `That send had already gone through. ${chipFigure(value)} chips are with ${recipient?.username || 'them'}`
                 : `Sent ${chipFigure(value)} chips to ${recipient?.username || 'them'} from your agent wallet`,
             });
+          toast.success(
+            `Sent ${chipFigure(value)} Chips To ${recipient?.username || 'Player'}`,
+            undefined,
+            undefined,
+            operation.operationId
+          );
+          clearClubChipBalanceCache();
+          setClubChipsNonce((n) => n + 1);
           loadBalances(user.id);
           loadUserContext(); // the agent wallet figure on screen just changed
           loadRecipients(true); // Force refresh — a send just changed recipient balances; skip the 60s cache
@@ -2236,17 +2060,23 @@ function CashierContent() {
             // here let a player request a cashout the server always rejects, and
             // blocked one it would have allowed. Send is deliberately left on the
             // global figure because atomic_chip_transfer really does debit that.
-            if (myClubChips === null) {
+            clearClubChipBalanceCache();
+            const snapshot = await fetchClubChipBalances(user.id);
+            assertCashoutStartCurrent(cashoutStart);
+            const resolvedClub = await resolveClubUUID(clubId!);
+            assertCashoutStartCurrent(cashoutStart);
+            const available = snapshot === null ? null : (snapshot.get(resolvedClub) ?? 0);
+            if (available === null) {
               if (isMounted.current)
                 setMessage({ type: 'error', text: 'Still loading your club balance - try again.' });
               if (isMounted.current) setIsProcessing(false);
               return;
             }
-            if (myClubChips < value) {
+            if (available < value) {
               if (isMounted.current)
                 setMessage({
                   type: 'error',
-                  text: `Insufficient chips in this club. Available: ${myClubChips !== null ? chipFigure(myClubChips) : 'unavailable'}`,
+                  text: `Insufficient chips in this club. Available: ${available !== null ? formatWalletChips(available) : 'unavailable'}`,
                 });
               if (isMounted.current) setIsProcessing(false);
               return;
@@ -2351,11 +2181,18 @@ function CashierContent() {
       }
       // Per-club figure: this is the high-value cashout path and the server
       // debits club_members.chip_balance.
-      if (myClubChips === null || myClubChips < value) {
+      clearClubChipBalanceCache();
+      const currentChips = await fetchClubChipBalances(user.id);
+      assertCashoutStartCurrent(start);
+      const currentClubUuid = clubId ? await resolveClubUUID(clubId) : null;
+      assertCashoutStartCurrent(start);
+      const available =
+        currentChips === null || !currentClubUuid ? null : (currentChips.get(currentClubUuid) ?? 0);
+      if (available === null || available < value) {
         if (isMounted.current)
           setMessage({
             type: 'error',
-            text: `Insufficient chips in this club. Available: ${myClubChips !== null ? chipFigure(myClubChips) : 'unavailable'}`,
+            text: `Insufficient chips in this club. Available: ${available !== null ? formatWalletChips(available) : 'unavailable'}`,
           });
         if (isMounted.current) setIsProcessing(false);
         return;
@@ -2480,7 +2317,7 @@ function CashierContent() {
           title="Cashier"
           subtitle="Club Wallet Access"
           pill={hasNoClubs ? 'No Club' : 'Loading'}
-          pillInk={hasNoClubs ? 'red' : 'gold'}
+          pillInk={hasNoClubs ? 'red' : 'blue'}
           foot="foot"
           className={styles.console}
         >
@@ -2516,6 +2353,8 @@ function CashierContent() {
       {user?.id && clubId && (
         <div className={styles.walletHeader}>
           <DynamicWallet
+            actionClassName={styles.wordAction}
+            refreshKey={walletRevision}
             userId={user.id}
             clubId={clubId}
             /**
@@ -2582,8 +2421,8 @@ function CashierContent() {
         eyebrow="Club Arena Cashier"
         title="Cashier"
         subtitle={titleCase(clubName || 'Club Wallet')}
-        pill={realtimeStatus === 'connected' ? 'Live' : 'Syncing'}
-        pillInk={realtimeStatus === 'connected' ? 'green' : 'gold'}
+        pill="Manual"
+        pillInk="blue"
         foot="foot"
         className={styles.console}
       >
@@ -2610,19 +2449,6 @@ function CashierContent() {
           />
 
           {/* Action Tabs */}
-          {/* Connection status indicator */}
-          {realtimeStatus !== 'connected' && (
-            <p
-              className={`sc-copy ${realtimeStatus === 'reconnecting' ? 'sc-ink--gold' : 'sc-ink--red'}`}
-              role="status"
-              aria-live="polite"
-            >
-              {realtimeStatus === 'reconnecting'
-                ? 'Reconnecting To Live Updates…'
-                : 'Live Connection Lost - Data May Be Stale'}
-            </p>
-          )}
-
           {/* No tab set while the role is unknown: an owner whose role read
             failed must not be handed the player tabs (P-01). */}
           {!contextError && (
@@ -2672,7 +2498,7 @@ function CashierContent() {
               <button
                 type="button"
                 onClick={() => clubId && navigate(`/clubs/${clubId}/disputes`)}
-                className={`${styles.quickLink} sc-ink--gold`}
+                className={`${styles.quickLink} sc-ink--blue`}
               >
                 Disputes
               </button>
@@ -2691,6 +2517,7 @@ function CashierContent() {
             clubId &&
             user?.id && (
               <AgentPromoPanel
+                actionClassName={styles.wordAction}
                 clubId={clubId}
                 userId={user.id}
                 role={userRole}
@@ -2781,13 +2608,8 @@ function CashierContent() {
                       aria-label="Selected Player Wallet Context"
                     >
                       <strong>{selectedRecipientData.username}</strong>
-                      <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
-                      <span>
-                        Destination:{' '}
-                        {canHoldAgentWallet(selectedRecipientData.role)
-                          ? 'Agent Wallet'
-                          : 'Player Wallet'}
-                      </span>
+                      <span>Player Wallet: {formatWalletChips(selectedRecipientData.balance)}</span>
+                      <span>Destination: {SEND_DESTINATION_LABELS[distributeDestination]}</span>
                       {canHoldAgentWallet(selectedRecipientData.role) && (
                         <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
                       )}
@@ -2834,13 +2656,39 @@ function CashierContent() {
                           return (
                             <option key={r.id} value={r.id}>
                               {roleTag ? `[${roleTag}${commInfo}${typeInfo}] ` : ''}
-                              {r.username} (Bal: {chipFigure(r.balance)})
+                              {r.username} (Bal: {formatWalletChips(r.balance)})
                             </option>
                           );
                         })}
                     </select>
                   )}
                 </div>
+
+                {distributeWallets.length > 1 && (
+                  <div
+                    className={styles.presetGrid}
+                    role="radiogroup"
+                    aria-label="Recipient Wallet"
+                  >
+                    {distributeWallets.map((wallet) => (
+                      <button
+                        key={wallet}
+                        type="button"
+                        role="radio"
+                        aria-checked={distributeDestination === wallet}
+                        className={styles.presetBtn}
+                        disabled={isProcessing}
+                        onClick={() => setDistributeWallet(wallet)}
+                      >
+                        {walletOptionLabel(
+                          SEND_DESTINATION_LABELS[wallet],
+                          distributeBalances,
+                          wallet
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 <div className={styles.formGroup}>
                   <label className="sc-label sc-ink--blue" htmlFor="cashier-send-amount">
@@ -2851,10 +2699,12 @@ function CashierContent() {
                     aria-invalid={amountInvalid}
                     aria-describedby={amountInvalid ? 'cashier-amount-validation' : undefined}
                     className={styles.input}
-                    type="number"
+                    type="text"
                     placeholder="0"
-                    value={amount}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                    value={formatCashierAmountInput(amount)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setAmount(cashierAmountInputValue(e.target.value))
+                    }
                     min={0.01}
                     step={0.01}
                     max={MAX_CHIP_AMOUNT}
@@ -2901,8 +2751,8 @@ function CashierContent() {
                     <div className={styles.row}>
                       <span className="sc-label sc-ink--blue">Your Agent Wallet</span>
                       <span className={`${styles.value} sc-ink--silver`}>
-                        {chipFigure(myAgentWallet)} →{' '}
-                        {chipFigure(Math.max(0, myAgentWallet - typedChips))}
+                        {formatWalletChips(myAgentWallet)} →{' '}
+                        {formatWalletChips(Math.max(0, myAgentWallet - typedChips))}
                       </span>
                     </div>
                     <div className={styles.row}>
@@ -2912,7 +2762,7 @@ function CashierContent() {
                       <span className={`${styles.value} sc-ink--silver`}>
                         {canHoldAgentWallet(selectedRecipientData.role)
                           ? `Agent Wallet Receives ${chipFigure(typedChips)} Chips`
-                          : `${chipFigure(selectedRecipientData.balance)} → ${chipFigure(selectedRecipientData.balance + typedChips)}`}
+                          : `${formatWalletChips(selectedRecipientData.balance)} → ${formatWalletChips(selectedRecipientData.balance + typedChips)}`}
                       </span>
                     </div>
                     <div className={styles.row}>
@@ -2950,6 +2800,7 @@ function CashierContent() {
                         value,
                         recipientId: selectedRecipient,
                         recipientName: selectedRecipientData.username,
+                        destination: distributeDestination,
                       });
                     } else {
                       handleAction();
@@ -3016,15 +2867,13 @@ function CashierContent() {
                       aria-label="Selected Player Wallet Context"
                     >
                       <strong>{selectedRecipientData.username}</strong>
-                      <span>Player Wallet: {chipFigure(selectedRecipientData.balance)}</span>
-                      <span>
-                        Destination:{' '}
-                        {distributeDestination === 'agent_wallet'
-                          ? 'Agent Wallet'
-                          : 'Player Wallet'}
-                      </span>
-                      {distributeDestination === 'agent_wallet' && (
-                        <span>The Player Wallet Above Is Separate From Their Agent Wallet.</span>
+                      <span>Player Wallet: {formatWalletChips(selectedRecipientData.balance)}</span>
+                      <span>Destination: {SEND_DESTINATION_LABELS[distributeDestination]}</span>
+                      {distributeDestination !== 'player_wallet' && (
+                        <span>
+                          The Player Wallet Above Is Separate From Their{' '}
+                          {SEND_DESTINATION_LABELS[distributeDestination]}.
+                        </span>
                       )}
                     </section>
                   )}
@@ -3043,7 +2892,11 @@ function CashierContent() {
                           className={`${styles.presetBtn} ${distributeDestination === wallet ? 'sc-ink--blue' : 'sc-ink--muted'}`}
                           onClick={() => setDistributeWallet(wallet)}
                         >
-                          {wallet === 'agent_wallet' ? 'Into Agent Wallet' : 'Into Player Wallet'}
+                          {walletOptionLabel(
+                            `Into ${SEND_DESTINATION_LABELS[wallet]}`,
+                            distributeBalances,
+                            wallet
+                          )}
                         </button>
                       ))}
                     </div>
@@ -3063,7 +2916,8 @@ function CashierContent() {
                       {filteredRecipients.map((r) => (
                         <option key={r.id} value={r.id}>
                           {r.id === user?.id ? '(You) ' : ''}
-                          {r.username} ({enumToTitleCase(r.role)}) - {chipFigure(r.balance)} Chips
+                          {r.username} ({enumToTitleCase(r.role)}) - {formatWalletChips(r.balance)}{' '}
+                          Chips
                         </option>
                       ))}
                     </select>
@@ -3080,10 +2934,12 @@ function CashierContent() {
                     aria-invalid={amountInvalid}
                     aria-describedby={amountInvalid ? 'cashier-amount-validation' : undefined}
                     className={styles.input}
-                    type="number"
+                    type="text"
                     placeholder="Enter Chip Amount"
-                    value={amount}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)}
+                    value={formatCashierAmountInput(amount)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setAmount(cashierAmountInputValue(e.target.value))
+                    }
                     min={0.01}
                     step={0.01}
                     max={MAX_CHIP_AMOUNT}
@@ -3230,6 +3086,14 @@ function CashierContent() {
                       // The money moved: report it unless the view itself changed.
                       if (!isMounted.current || transferView.current !== owningView) return;
                       const recipient = recipientRow;
+                      toast.success(
+                        `Distributed ${chipFigure(value)} Chips To ${recipient?.username || 'Player'}`,
+                        undefined,
+                        undefined,
+                        operation.operationId
+                      );
+                      clearClubChipBalanceCache();
+                      setClubChipsNonce((n) => n + 1);
                       if (isMounted.current)
                         setMessage({
                           type: 'success',
@@ -3302,7 +3166,7 @@ function CashierContent() {
                   </h3>
                   <p className="sc-copy">
                     You Are Requesting A High-Value Cashout Of{' '}
-                    <strong className="sc-ink--gold">
+                    <strong className="sc-ink--blue">
                       {chipFigure(cashoutConfirm.value)} Chips
                     </strong>
                     .<br />
@@ -3324,12 +3188,12 @@ function CashierContent() {
                       </span>
                     </div>
                     <div className={styles.row}>
-                      <span className="sc-copy sc-ink--gold">
+                      <span className="sc-copy sc-ink--blue">
                         Chips Will Be Held After You Confirm This Request
                       </span>
                     </div>
                     <div className={styles.row}>
-                      <span className="sc-copy sc-ink--gold">
+                      <span className="sc-copy sc-ink--blue">
                         Club Agent Review Follows The Verified Hold
                       </span>
                     </div>
@@ -3394,7 +3258,7 @@ function CashierContent() {
                           <span className={`${styles.value} sc-ink--silver`}>
                             {chipFigure(pc.amount)} Chips
                           </span>
-                          <span className="sc-label sc-ink--gold">
+                          <span className="sc-label sc-ink--blue">
                             {pc.status === 'pending' ? 'Awaiting Agent' : 'Processing'}
                           </span>
                         </div>
@@ -3433,11 +3297,11 @@ function CashierContent() {
                       aria-invalid={amountInvalid}
                       aria-describedby={amountInvalid ? 'cashier-amount-validation' : undefined}
                       className={styles.input}
-                      type="number"
+                      type="text"
                       placeholder="0"
-                      value={amount}
+                      value={formatCashierAmountInput(amount)}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                        setAmount(e.target.value)
+                        setAmount(cashierAmountInputValue(e.target.value))
                       }
                       min={action === 'mint' ? 1 : 0.01}
                       step={action === 'mint' ? 1 : 0.01}
@@ -3536,6 +3400,13 @@ function CashierContent() {
               aria-labelledby="cashier-tab-history"
             >
               <h2 className={`${styles.panelTitle} sc-ink--silver`}>Transaction History</h2>
+              <button
+                type="button"
+                className={styles.txFilterBtn}
+                onClick={() => void loadTransactions({ force: true })}
+              >
+                Refresh History
+              </button>
               <div className={styles.txContainer}>
                 {/* Filters */}
                 <div className={styles.txFilters}>
@@ -3703,7 +3574,7 @@ function CashierContent() {
               titleId="send-confirm-title"
               subtitle={`${compactChips(sendConfirm.value)} Chips To ${sendConfirm.recipientName}`}
               pill="Verify"
-              pillInk="gold"
+              pillInk="blue"
               foot="plates"
               className={styles.console}
               plates={{
@@ -3732,6 +3603,7 @@ function CashierContent() {
                     const confirmed = {
                       value: sendConfirm.value,
                       recipientId: sendConfirm.recipientId,
+                      destination: sendConfirm.destination,
                     };
                     setSendConfirm({
                       show: false,

@@ -51,7 +51,8 @@ import { DEFAULT_TABLE_USER_SETTINGS } from '../src/hooks/useTableSettings';
  * `enhanced_view`, which were broken in exactly the same way.
  */
 const DB_COLUMN_DEFAULTS = {
-  auto_time_bank: false,
+  // Owner 2026-10-16: automatic use starts on; saved opt-outs stay off.
+  auto_time_bank: true,
   // 2026-09-05: ON, and the column is NOT NULL DEFAULT true
   // (20260905172514_user_table_settings_gain_the_rabbit_hunt_button_toggle).
   // The switch HIDES an offer the player already had, so a row that predates

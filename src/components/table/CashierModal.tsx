@@ -19,6 +19,7 @@
  * client, the engine or the database, and this modal must not grow one back.
  */
 
+import { formatWalletChips } from '../../utils/format';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { haptic } from '../../services/SoundService';
 import { PurchaseConsole, PurchaseText } from './PurchaseConsole';
@@ -346,7 +347,11 @@ export function CashierModal({
     if (!busyRef.current && !isProcessing) onClose();
   };
   const unit = currency || 'Chips';
-  const balanceValue = balanceKnown ? formatAmount(accountBalance, currency) : 'Unavailable';
+  const balanceValue = balanceKnown
+    ? /diamond/i.test(currency)
+      ? formatAmount(accountBalance, currency)
+      : formatWalletChips(accountBalance)
+    : 'Unavailable';
   /** The stack already fills the table maximum, so there is no room to add into (audit C2-17). */
   const atTableMax = balanceKnown && currentStack >= maxStack;
   /** An unread balance affords nothing: the money plate offers the re-read instead. */

@@ -65,3 +65,23 @@ export function parseTradeAmount(
   }
   return { ok: true, value: raw };
 }
+
+/** Group the editable whole part without rounding or hiding invalid input. */
+export function formatCashierAmountInput(input: string): string {
+  const raw = cashierAmountInputValue(input);
+  if (!/^\d*(\.\d*)?$/.test(raw)) return input;
+  const [whole, fraction] = raw.split('.');
+  return (
+    whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (fraction === undefined ? '' : `.${fraction}`)
+  );
+}
+
+/**
+ * Normalize the editable figure before regrouping it. Inserting a digit into
+ * "1,000" produces "1,0000" before React renders again; grouping validation
+ * belongs to the submitted amount, not this intermediate editing state.
+ * Letters, signs and other invalid spelling stay visible and are refused.
+ */
+export function cashierAmountInputValue(input: string): string {
+  return /^[\d,]+(\.\d*)?$/.test(input) ? input.replace(/,/g, '') : input;
+}

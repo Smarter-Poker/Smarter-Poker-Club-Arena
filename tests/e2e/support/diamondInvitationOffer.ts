@@ -106,15 +106,9 @@ export async function settleDiamondSpinsOffer(
   if (!response) return 'unknown';
   const body: unknown = await response.json().catch(() => null);
   if (!offersDiamondSpins(response.status(), body)) return 'not offered';
-  await expect
-    .poll(() => readDiamondOfferState(page), {
-      timeout: DIAMOND_OFFER_RENDER_TIMEOUT_MS,
-      message:
-        'fn_diamond_games_entry offered Diamond Spins, but the invitation neither opened nor was declined',
-    })
-    .not.toBe('pending');
-  // Retires the handler, then declines through Not Now if the invitation is
-  // still open, with the full two-stage click budget and the 8s hidden check.
+  // The first club-page read is eligibility, not a shortage event. Arrival
+  // must not display an invitation, even if the wallet is already empty.
+  await expect(page.getByRole('dialog', { name: 'Diamond Spins' })).toBeHidden();
   await prepareCashLobbyActions(page, { retainInvitationHandler: false });
-  return 'declined';
+  return 'not offered';
 }

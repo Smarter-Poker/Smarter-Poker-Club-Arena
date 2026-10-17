@@ -20,6 +20,10 @@ that kind as a filter, and the treasury statement carries 'horse_funding' and
 the horse's user id. PASS AFTER: a funded seat and a person's Club Bank send
 are the same row but for id, time, amount and recipient; every row, order,
 count and figure is what it was.
+
+Also qualifies 20261016155801: all Bank JSON answers stay identical as the
+summary moves to one grouped scan, including a two-million-row fixture under
+forced generic prepared plans, installer refusal, rollback and replay guards.
 """
 import json
 import os
@@ -28,6 +32,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -339,6 +344,85 @@ try:
     expected |= {(d, 1, r, k) for d in ("page", "stmt") for r in ("8101", "8102") for k in ("category", "description")}
     require(cells == expected, f"only the horse tells and the Club Bank send's shape change ({len(cells)} cells; "
                                f"unexpected {sorted(cells - expected)[:6]}, missing {sorted(expected - cells)[:6]})")
+    # The Bank ledger must retain this exact read contract as its summaries
+    # move from three receipt scans to one. Exercise the real role helpers,
+    # browser grants, JSON rows, filters, pagination and untouched money data.
+    ledger_file = MIGS / "20261016155801_club_bank_ledger_reads_its_totals_in_one_pass.sql"
+    ledger_sql = ledger_file.read_text()
+    ledger_post = re.search(r"-- @live-proof: .* = '([0-9a-f]{32})'", ledger_sql).group(1)
+    bank_preimage = q("live", "SELECT pg_get_functiondef('" + SIG["bank"] + "'::regprocedure)") + ";"
+    q("live", """
+      INSERT INTO clubs VALUES (public.u(101), public.u(1), 'Empty Ledger');
+      INSERT INTO club_members(club_id,user_id,role) VALUES (public.u(101),public.u(1),'owner');
+      INSERT INTO chip_transactions(id,created_at,club_id,transaction_type,amount,from_user_id,to_user_id,is_reversed)
+      SELECT public.u(100000+i), '2025-01-01'::timestamptz + i * interval '1 second', public.u(100),
+             (ARRAY['mint','club_bank_reversal','treasury_credit','club_bank_claim','club_bank_send',
+                    'club_bank_send','treasury_debit','peer_transfer','horse_treasury_funding'])[i],
+             (ARRAY[100.01,20.02,30.03,40.04,50.05,60.06,70.07,80.08,90.09])[i],
+             public.u(1), public.u(21), CASE WHEN i=6 THEN true WHEN i=7 THEN NULL ELSE false END
+        FROM generate_series(1,9) i;
+    """)
+    filters = ["NULL", "ARRAY[]::text[]", "ARRAY['club_bank_send']", "ARRAY['horse_treasury_funding']",
+               "ARRAY['mint','treasury_debit']", "ARRAY['not_a_kind']"]
+    pages = [(50,0), (0,-2), (300,1), (2,3), (50,999)]
+    def bank_cases():
+        answers = {}
+        for viewer in (1,2,21):
+            for kinds in filters:
+                for limit, offset in pages:
+                    key = (viewer,kinds,limit,offset)
+                    answers[key] = as_viewer("live",viewer,
+                        f"SELECT public.fn_club_bank_ledger(public.u(100),{limit},{offset},{kinds})")
+        answers['empty'] = as_viewer("live",1,"SELECT public.fn_club_bank_ledger(public.u(101),50,0,NULL)")
+        return answers
+    ledger_before = bank_cases()
+    base_bank = ledger_before[(1,"NULL",50,0)]
+    require(base_bank['totals'] == {'into_bank':220.10,'out_of_bank':260.12,'net':-40.02},
+            "independent bank totals include raw bank kinds, exclude reversed debits and preserve null reversal semantics")
+    require(ledger_before[(1,"ARRAY['club_bank_send']",50,0)]['total'] == 7,
+            "normalized send count includes both treasury-funded seats and ordinary sends")
+    table_fingerprint = q("live","SELECT md5(string_agg(t::text,',' ORDER BY id)) FROM chip_transactions t")
+    run(psql("live"), "SET ROLE authenticated;\n" + ledger_sql, expect_fail="ERROR")
+    require(md5_of("live", SIG['bank']) == POST[SIG['bank']], "a browser cannot install the Bank summary change")
+    run(psql("live"), ledger_sql.replace("\nCOMMIT;\n", "\nROLLBACK;\n"))
+    require(md5_of("live", SIG['bank']) == POST[SIG['bank']], "rolling back the Bank summary change preserves the old definition")
+    run(psql("drift"),ledger_sql,expect_fail="Club Bank ledger preimage")
+    run(psql("live"),ledger_sql)
+    require(md5_of("live",SIG['bank']) == ledger_post, "Bank summary postimage matches its declared live proof")
+    require(bank_cases() == ledger_before, "all 91 Bank role/filter/pagination/empty answers are byte-equivalent JSON values")
+    require(q("live",posture_sql) == before_posture, "Bank summary change preserves owner, grants, definer, volatility, search path and result shape")
+    require(q("live","SELECT md5(string_agg(t::text,',' ORDER BY id)) FROM chip_transactions t") == table_fingerprint,
+            "Bank summary read changes no receipt or money row")
+    run(psql("live"),ledger_sql,expect_fail="Club Bank ledger preimage")
+    require(md5_of("live",SIG['bank']) == ledger_post, "Bank summary replay is refused without altering the definition")
+
+    # Disposable native pressure fixture. Recreate the observed preimage only
+    # inside this private cluster to compare the same two-million-row dataset.
+    q("live",bank_preimage)
+    q("live", """
+      INSERT INTO chip_transactions(id,created_at,club_id,transaction_type,amount,from_user_id,to_user_id,is_reversed)
+      SELECT public.u(1000000+i), '2020-01-01'::timestamptz + i * interval '1 millisecond',
+             public.u(CASE WHEN i%3=0 THEN 102 ELSE 100 END),
+             (ARRAY['mint','club_bank_send','horse_treasury_funding','treasury_debit',
+                    'peer_transfer','treasury_credit','club_bank_claim','club_bank_reversal'])[1+i%8],
+             (i%10000)::numeric/100, public.u(1), public.u(21),
+             CASE WHEN i%5=0 THEN true WHEN i%7=0 THEN NULL ELSE false END
+        FROM generate_series(1,2000000) i;
+      CREATE INDEX pressure_club_created ON chip_transactions(club_id,created_at DESC);
+      ANALYZE chip_transactions;
+    """)
+    started_read = time.perf_counter()
+    pressure_before = as_viewer("live",1,"SET plan_cache_mode=force_generic_plan; SELECT public.fn_club_bank_ledger(public.u(100),50,0,NULL)")
+    old_seconds = time.perf_counter() - started_read
+    run(psql("live"),ledger_sql)
+    started_read = time.perf_counter()
+    pressure_after = as_viewer("live",1,"SET plan_cache_mode=force_generic_plan; SELECT public.fn_club_bank_ledger(public.u(100),50,0,NULL)")
+    new_seconds = time.perf_counter() - started_read
+    require(pressure_after == pressure_before, "two-million-row Bank pressure fixture retains exact rows, totals, types and count")
+    require(new_seconds < 8, "Bank pressure read completes inside the existing eight-second browser database deadline")
+    print(json.dumps({'bank_ledger_pressure_rows':2000000,'before_seconds':round(old_seconds,3),
+                      'after_seconds':round(new_seconds,3),'postimage_md5':ledger_post,'plan_cache_mode':'force_generic_plan'}),flush=True)
+
     print("PASS: a treasury-funded seat reads as a Club Bank send", flush=True)
 finally:
     if started:

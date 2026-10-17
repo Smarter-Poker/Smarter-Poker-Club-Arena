@@ -1,0 +1,27 @@
+# Mobile Live Table Layout And Seat Entry
+
+Owner scope: proportional player name/stack plates and corner controls; centered waiting-list and action text; intact waiting-list-to-table/buy-in handoff; hole cards clear of boards and important totals; straight private PLO cards; a dismissible Seat Change control with an account-scoped hamburger switch; and a higher, smaller top player below Mini BBJ.
+
+The 00:48 UTC first-party client records show a `23505` seat-number collision followed immediately by the modal's generic `BUY_IN_NOT_CONFIRMED` message. A definitive refusal now returns its actual explanation, releases the failed seat selection, and requests the current engine roster. Unknown financial outcomes keep their original durable request and receipt recovery. Explicit chair acceptance carries buy-in intent through an embedded tab move or an already-open destination, and waits for that destination's live roster before selecting an open seat. A delayed REST prefetch cannot replace an engine-owned roster.
+
+Player plate widths and mobile heights derive from the measured table width, with readable text floors. The geometry used by viewport/chip placement follows the same dimensions. Top pods use a narrower, shorter plate. Their mobile avatar bounds align four pixels below the measured Mini BBJ frame; the desktop cap also moves up eight pixels. Private PLO rows are flat; revealed opponent rows fit their own plate width. Revealed card placement measures boards, pots, player boxes, bets, position/action labels, and bottom controls inside the owning table and chooses the nearest clear position without changing game state or canceling animations. Resize and reveal events remeasure the same layout.
+
+The waiting-list text rows reset inherited line spacing and center their live text inside the painted face. Action controls clear inherited button padding and use an explicit amount line height. The smaller hero block gives back one pixel of reserved bottom space; landscape keeps its previous minimum felt width independently of player-plate width. The recorded geometry baseline changes intentionally reflect these requested proportions.
+
+The artwork loading cover and button preloader were written inside a CSS string and a comment respectively. They now execute as JSX and an import. The existing artwork law parses the TypeScript syntax tree to prevent text-shaped inactive markup from passing again.
+
+Seat Change dismissal and the ON/OFF hamburger switch share one account-scoped preference across mounted tables and browser storage events. Hiding the optional control leaves pending-move notices and waiting-list status visible.
+
+Validation evidence and exact delivery identities are retained in the task checkpoint. Local renders are fixtures using the actual components and styles, not production or real-chip purchase evidence. This change contains no engine or database replacement.
+
+The production cash-table certificate now measures the deployed, occupied table at 375, 393 and 430 pixels after its existing real-hand/reconnect proof, tests the actual Seat Change menu toggle, and retains mobile screenshots and measurements on successful runs. This uses the existing isolated spectator and makes no chip or seat writes. Its added read-only UI budget does not extend the causal-hand deadlines.
+
+Added owner scope: two-/three-run winner presentation waits for the fifth card's actual presentation completion. Each board reports that event to its original table; labels/highlights and queued payouts consume it. A payout that arrives early stays with its original board/hand and is canceled at the hand boundary. Stack display release follows actual chip landings. No settlement, wallet or engine state is changed.
+
+Payout fans and amount floats now read the current pot and recipient plate bounds at launch, rather than saved seat percentages. Their overlay converts viewport coordinates into the offset/scaled tile frame exactly once. The sprites land on the recipient center; split shares fly individually instead of sending a merged pill toward the empty midpoint between winners. The previous midpoint source pins are updated for the owner's October 15 ruling. The production spectator certificate retains actual recipient landing distances and checks naturally observed multi-board ordering without injecting or paying a hand.
+
+Regression evidence: the new two-/three-run real-board cases fail three times against the previous component and pass after the repair. A real browser flight inside a translated 0.8-scale table lands on both recipient centers within 0.001 pixels. Exact final candidate checks and hosted/live evidence remain in the existing checkpoint.
+
+Added owner scope: the multi-table profit tracker doubles its previous 52px mobile width and text scale, centers alongside the action pills and Lobby, and stays immediately left of the rightmost Lobby control. Lobby now participates in the same flow instead of using an independent fixed top offset. The table's inherited header-height reserve grows only while the tracker is present. Existing click, long-press, right-click, menu toggle and session accounting behavior are preserved. Mobile/desktop and 0/28px safe-area cases are measured in the maintained browser suite.
+
+The enlarged multi-table tracker reserves its maximum header height in CSS for both funded and unfunded states. Top-chrome measurements position the controls without entering the felt sizing graph; the static reserve regression now covers tab-bar height as well.

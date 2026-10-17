@@ -252,11 +252,12 @@ describe('clause 5 — sends and claim backs move the AGENT wallet', () => {
     expect(CLASSIC).toContain("throw new Error(sendRes?.error || 'The Cashier Refused That Send')");
   });
 
-  it('the destination follows the recipient role on every surface', () => {
+  it('the destination follows the sender choice on every surface', () => {
     for (const src of [CLASSIC, TRADE]) {
       expect(src).toContain('canHoldAgentWallet(');
-      expect(src).toContain("'agent_wallet' : 'player_wallet'");
     }
+    expect(CLASSIC).toContain('p_destination: override?.destination ?? distributeDestination');
+    expect(TRADE).toContain('transferDestination(target)');
     for (const r of [...STAFF, ...AGENTS]) expect(canHoldAgentWallet(r)).toBe(true);
     expect(canHoldAgentWallet('player')).toBe(false);
   });
@@ -385,7 +386,7 @@ describe('the cashier never offers a recipient the server will refuse', () => {
     expect(TRADE).toContain('const selectable = !r.isSelf || selfCanFundPlayerWallet;');
     expect(TRADE).toContain('target.isSelf || target.userId === user.id');
     expect(TRADE).toContain("'Send To Yourself On Its Own, Then Send To The Others'");
-    expect(TRADE).toContain("p_destination: 'player_wallet'");
+    expect(TRADE).toContain('p_destination: transferDestination(picked[0])');
   });
 });
 
@@ -395,8 +396,8 @@ describe('the cashier tells the truth when it cannot read a balance', () => {
     // `bank ?? 0` printed "The Wallet Would Hold -500.00 Afterwards" directly
     // under a header already showing "..." for the same number.
     expect(MODAL).toContain('amt > 0 && !overCap && bank !== null');
-    expect(MODAL).not.toContain('fmt((bank ?? 0) - amt)');
-    expect(MODAL).not.toContain('fmt((bank ?? 0) + amt)');
+    expect(MODAL).not.toContain('fmtWallet((bank ?? 0) - amt)');
+    expect(MODAL).not.toContain('fmtWallet((bank ?? 0) + amt)');
   });
 
   it('the amount field is named for a screen reader', () => {

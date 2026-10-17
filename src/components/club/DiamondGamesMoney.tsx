@@ -36,7 +36,7 @@ import DiamondGamesService, {
   type GameRoom,
   type GameRoomState,
 } from '../../services/DiamondGamesService';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatWalletDiamonds } from '../../utils/format';
 import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { DIAMOND_GAME_TITLES } from '../../utils/diamondGameTitles';
@@ -299,7 +299,8 @@ export default function DiamondGamesMoney({ clubId }: { clubId: string | null })
                 </span>
               </span>
               <span className={`${styles.rowValue} sc-ink--red`}>
-                {compactChips(room?.owner_diamonds ?? 0)} Will Not Cover The Top Diamond Prize
+                {formatWalletDiamonds(room?.owner_diamonds ?? 0)} Will Not Cover The Top Diamond
+                Prize
               </span>
             </div>
           ) : null}

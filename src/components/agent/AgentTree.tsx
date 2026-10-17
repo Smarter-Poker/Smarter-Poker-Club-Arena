@@ -1,3 +1,4 @@
+import { formatWalletChips } from '../../utils/format';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * 🌳 AGENT TREE — Nested Agent Hierarchy Visualization
@@ -64,9 +65,7 @@ function buildTree(agents: Agent[]): AgentNode[] {
   return roots;
 }
 
-function formatCurrency(amount: number): string {
-  return amount.toLocaleString('en-US', { minimumFractionDigits: 0 });
-}
+const formatCurrency = formatWalletChips;
 
 function countNodes(nodes: AgentNode[]): number {
   return nodes.reduce((sum, n) => sum + 1 + countNodes(n.children), 0);

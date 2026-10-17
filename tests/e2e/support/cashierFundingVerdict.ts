@@ -14,11 +14,11 @@
 // funding figure the dialog itself prints and requires the verdict that figure
 // owes, so a wrong verdict in EITHER direction still fails.
 //
-// The dialog prints the funding figure with compactChips: whole chips under
-// 1,000, one floored decimal with a K/M/B suffix above. The printed figure is
-// therefore a range, never overstated. "unknown" is its own outcome (CLAUDE.md
-// 10.86): a figure whose range straddles the total cannot decide the verdict,
-// and the caller must say so rather than guess.
+// Current wallets print exact grouped two-decimal amounts below one million.
+// Those figures decide coverage directly, including equality. Legacy compact
+// figures remain ranges: whole chips below 1,000, one floored decimal with a
+// K/M/B suffix above. "unknown" remains its own outcome (CLAUDE.md 10.86):
+// a compact range straddling the total cannot decide the verdict.
 //
 // No Playwright import: tests/unit/cashierFundingVerdict.test.ts pins this.
 
@@ -26,11 +26,31 @@ export type FundingCoverage = 'covers' | 'short' | 'unreadable' | 'unknown';
 
 const UNITS: Record<string, number> = { '': 1, K: 1_000, M: 1_000_000, B: 1_000_000_000 };
 
+/**
+ * The figure one painted funding row prints. CashierWalletRow renders
+ * <section aria-label={label}> with the figure as its only <strong>, so the
+ * caller passes that element's textContent (never the dialog's innerText,
+ * which applies the label's text-transform and runs label and figure
+ * together). Anything but exactly one value element is not a reading.
+ */
+export function printedFundingFigure(valueTexts: readonly string[]): string {
+  return valueTexts.length === 1 ? valueTexts[0].trim() : '';
+}
+
 export function fundingCoverage(printedFigure: string, total: number): FundingCoverage {
   const figure = printedFigure.trim();
-  if (figure === '--') return 'unreadable';
+  // The trade dialog's CashierWalletRow prints a single hyphen for a wallet it
+  // could not read; the classic surfaces print two. Both are the same answer.
+  if (figure === '--' || figure === '-') return 'unreadable';
+  if (!Number.isFinite(total)) return 'unknown';
+  if (/^-?(?:0|[1-9]\d{0,2}(?:,\d{3})*)\.\d{2}$/.test(figure)) {
+    const held = Number(figure.replace(/,/g, ''));
+    return Number.isFinite(held) ? (held >= total ? 'covers' : 'short') : 'unknown';
+  }
   const match = /^(-?)(\d+(?:\.\d)?)([KMB]?)$/.exec(figure);
-  if (!match || !Number.isFinite(total)) return 'unknown';
+  // An unsuffixed fractional figure must satisfy the exact wallet contract;
+  // it is never a legacy whole-chip compact figure.
+  if (!match || (!match[3] && match[2].includes('.'))) return 'unknown';
   const unit = UNITS[match[3]];
   const shown = Number(match[2]) * unit;
   // compactChips floors the magnitude: whole chips below 1,000, tenths of a

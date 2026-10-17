@@ -22,7 +22,7 @@ import {
  * - Active tables/games grid
  */
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import type { ClubRole } from '../types/clubRoles';
 import { isClubStaff } from '../types/clubRoles';
 import { MEDIA_BASE } from '../utils/mediaBase';
@@ -144,6 +144,7 @@ import {
   saveViewPrefs,
   fetchRemoteViewPrefs,
   pushRemoteViewPrefs,
+  hasUnsyncedViewPrefs,
   sortForTab,
   EMPTY_VIEW_PREFS,
   type LobbyViewPrefs,
@@ -154,6 +155,7 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import { ShareInviteSheet } from '../components/club/ShareInviteSheet';
 import { COUNT_UNKNOWN, type CountFigure } from '../lib/countFigure';
 import DiamondBustPrompt from '../components/games/DiamondBustPrompt';
 import { playerDisplayName } from '../utils/playerDisplayName';
@@ -162,6 +164,10 @@ import ClubEntryMessage from '../components/club/ClubEntryMessage';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
+  persistFilters,
+  pushRemoteFilters,
+  fetchRemoteFilters,
+  hasUnsyncedFilters,
   type FilterStore,
 } from '../components/lobby/AdvancedFilters';
 import {
@@ -178,6 +184,7 @@ import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
 import { warmTable } from '../services/tableWarmup';
 import { gameManagementService } from '../services/GameManagementService';
+import { isRetiredClubBanner } from '../utils/clubBannerDisplay';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
@@ -185,27 +192,6 @@ import { gameManagementService } from '../services/GameManagementService';
    art was thrown away by object-fit. shark-club-logo.jpg is the square
    emblem and fills the box as intended. */
 const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
-
-// Club Arena is deployed beneath /hub/club-arena/. Root-relative /assets URLs
-// bypass Vite's configured base path in production and silently 404, leaving
-// the live lobby DOM visible without its premium chassis or campaign artwork.
-const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
-/* ONE CROP, EVERY WIDTH (Dan 2026-09-01: "the 'dynamic ad image' is cut off,
-   and it needs to scale to size. because when you 'shrink the page' it fits
-   perfectly").
-
-   There were two files of the same artwork: `-v2` at 2172 x 724 (3:1, the ad
-   centred in a tall black field) served above 900px, and `-mobile-v4` at
-   2172 x 302 (7.2:1, the identical ad cropped tight) served below it. The
-   campaign bay is a short wide strip at EVERY width - roughly 11:1 on a 1440px
-   desktop - so the 3:1 file could only ever be shown by cropping it, which is
-   the top of the trophy and the whole buy-in line that Dan lost. The tight
-   crop is not a phone variant, it is the shape this bay actually is, so it is
-   what both regimes serve now and the bay's aspect-ratio matches it.
-
-   The filename still says "mobile" because renaming a published asset breaks
-   every cached service-worker entry pointing at it. */
-const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-mobile-v4.png`;
 
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
@@ -304,6 +290,7 @@ function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
 
 // Types
 interface ClubData {
+  settings?: Record<string, unknown> | null;
   id: string;
   club_id: number;
   name: string;
@@ -729,7 +716,6 @@ import PageErrorBoundary from '../components/common/PageErrorBoundary';
 import ArenaAccessBoundary from '../components/arena/ArenaAccessBoundary';
 import { useArenaAccess } from '../components/arena/arenaAccess';
 import { useDiamondFreerollCountdown } from '../hooks/useNextDiamondFreeroll';
-import { publicOrigin } from '../lib/appBase';
 
 /**
  * Dan 2026-10-04: `initialGameType` opens the embedded lobby ON a named list.
@@ -1003,6 +989,17 @@ function ClubHomePageContent({
      paint of the lobby rather than flashing an unfiltered list first. */
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [advFilters, setAdvFilters] = useState<FilterStore>({});
+  /* Has the player (or the lobby's own auto-clear) changed the filters since
+     they were loaded for this club. A late database reply must never undo a
+     chip tapped during the round trip, the same rule as viewPrefsTouched. */
+  const advFiltersTouched = useRef(false);
+  /** Every lobby-side filter change goes through here: this browser's cache
+   *  and the player's row together, so a quick chip follows them to every
+   *  device exactly like the sheet does. */
+  const persistAdvFilters = (clubUuid: string, next: FilterStore) => {
+    advFiltersTouched.current = true;
+    persistFilters(clubUuid, next);
+  };
   /* THE TAB, THE SORT AND THE FAVORITES CHIP ARE PREFERENCES TOO
      (Dan 2026-08-26: "they should auto save until changed"). The saved
      Advanced Filters beside this have persisted since 2026-08-20; these three
@@ -1014,6 +1011,7 @@ function ClubHomePageContent({
      different ticks and the gap between them is a cross-club leak (see the
      persistence effect). */
   const viewPrefsOwner = useRef<string | null>(null);
+  const viewPrefsAccount = useRef<string | null>(currentUser?.id ?? null);
   /* Has the player changed anything since the prefs in state were loaded.
      resolvedClubId arrives after first paint, so without this a tab tapped
      during those few hundred milliseconds would be silently undone by the
@@ -1045,6 +1043,7 @@ function ClubHomePageContent({
   // match so the watchdog and the reset guard agree with what is on screen.
   const [loading, setLoading] = useState(!bootCache?.club);
   const [userRole, setUserRole] = useState<ClubRole>('player');
+  const [showShareSheet, setShowShareSheet] = useState(false);
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [, setIsInUnion] = useState(false);
   const [, setUnionName] = useState<string | null>(null);
@@ -2070,20 +2069,45 @@ function ClubHomePageContent({
      the UUID is known. Re-runs on a club switch: one club's "Bomb Pot only"
      must never silently apply to another club's lobby. */
   useEffect(() => {
+    advFiltersTouched.current = false;
     if (!resolvedClubId) {
       setAdvFilters({});
       return;
     }
-    setAdvFilters(loadFilters(resolvedClubId));
-  }, [resolvedClubId]);
+    const cached = loadFilters(resolvedClubId, currentUser?.id ?? null);
+    setAdvFilters(cached);
+
+    /* THEN THE PLAYER'S ROW (2026-10-16). Until now only the open filter
+       sheet ever read it, so a phone opened the lobby with the laptop's
+       filters missing until the sheet happened to be opened. Same three
+       refusals as the tab/sort hydration: a newer unconfirmed choice on this
+       device is finished rather than overwritten, a reply for a club already
+       left is dropped, and a chip tapped during the round trip wins. */
+    if (hasUnsyncedFilters(resolvedClubId, currentUser?.id ?? null)) {
+      pushRemoteFilters(resolvedClubId, cached);
+      return;
+    }
+    let cancelled = false;
+    void fetchRemoteFilters(resolvedClubId).then((remote) => {
+      if (cancelled || !remote || advFiltersTouched.current) return;
+      setAdvFilters((prev) => (JSON.stringify(prev) === JSON.stringify(remote) ? prev : remote));
+      saveFilters(resolvedClubId, remote, currentUser?.id ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedClubId, currentUser?.id]);
 
   /* The same rule for the tab / sort / Favorites triple, keyed the same way.
      `viewPrefsTouched` is the guard described where the ref is declared: if
      the player has already picked a tab in this visit, their pick wins over
      whatever the last visit left behind. */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!resolvedClubId) return;
-    if (viewPrefsOwner.current === resolvedClubId) return;
+    const account = currentUser?.id ?? null;
+    const switchingAccounts = viewPrefsAccount.current !== account;
+    if (viewPrefsOwner.current === resolvedClubId && !switchingAccounts) return;
+    viewPrefsAccount.current = account;
 
     /* A SWITCH IS NOT A FIRST LOAD. Going from club A to club B must clear
        "the player already chose" -- that choice was about A. Leaving it set
@@ -2094,10 +2118,11 @@ function ClubHomePageContent({
     const switchingClubs = viewPrefsOwner.current !== null;
     viewPrefsOwner.current = resolvedClubId;
     if (switchingClubs) viewPrefsTouched.current = false;
+    if (switchingAccounts) viewPrefsTouched.current = false;
     // The landing was a request about the club it was made in.
     if (switchingClubs) landingGameTypeRef.current = undefined;
 
-    const saved = loadViewPrefs(resolvedClubId);
+    const saved = loadViewPrefs(resolvedClubId, currentUser?.id);
     setViewPrefs(saved);
 
     const applyView = (p: LobbyViewPrefs) => {
@@ -2137,8 +2162,16 @@ function ClubHomePageContent({
          - it does not touch anything on a null result. Signed out, no row, or
            a failed read are indistinguishable on purpose, and all three mean
            "keep what the cache gave you" rather than "reset". */
+    /* A CHOICE THE ROW NEVER CONFIRMED OUTRANKS THE ROW. When this device's
+       last save failed, the row still holds the choice before it, and letting
+       it "correct" the cache would quietly undo the player's newer pick. Finish
+       that same write instead; the row is the truth again once it lands. */
+    if (hasUnsyncedViewPrefs(resolvedClubId, currentUser?.id)) {
+      pushRemoteViewPrefs(resolvedClubId, saved, currentUser?.id);
+      return;
+    }
     let cancelled = false;
-    void fetchRemoteViewPrefs(resolvedClubId).then((remote) => {
+    void fetchRemoteViewPrefs(resolvedClubId, currentUser?.id).then((remote) => {
       if (cancelled || !remote) return;
       if (viewPrefsOwner.current !== resolvedClubId) return;
       if (viewPrefsTouched.current) return;
@@ -2146,12 +2179,12 @@ function ClubHomePageContent({
       applyView(remote);
       // Bring this browser's cache forward so the next cold open is already
       // right, instead of flashing the stale tab on every visit.
-      saveViewPrefs(resolvedClubId, remote);
+      saveViewPrefs(resolvedClubId, remote, currentUser?.id);
     });
     return () => {
       cancelled = true;
     };
-  }, [resolvedClubId]);
+  }, [resolvedClubId, currentUser?.id]);
 
   /**
    * Record a preference and write it through in the same breath.
@@ -2195,16 +2228,17 @@ function ClubHomePageContent({
   useEffect(() => {
     if (!resolvedClubId) return;
     if (viewPrefsOwner.current !== resolvedClubId) return;
+    if (viewPrefsAccount.current !== (currentUser?.id ?? null)) return;
     if (!viewPrefsTouched.current) return;
-    saveViewPrefs(resolvedClubId, viewPrefs);
+    saveViewPrefs(resolvedClubId, viewPrefs, currentUser?.id);
     /* And to the row, so the next device starts where this one finished.
        Fire and forget by design (see lobbyViewPrefs): the local write above
        has already made the choice real on this screen, and a preference must
        never wait on, or be undone by, the network. Both writes are guarded by
        the same two conditions, so the remote can no more receive club A's tab
        under club B's id than the local one can. */
-    pushRemoteViewPrefs(resolvedClubId, viewPrefs);
-  }, [resolvedClubId, viewPrefs]);
+    pushRemoteViewPrefs(resolvedClubId, viewPrefs, currentUser?.id);
+  }, [resolvedClubId, viewPrefs, currentUser?.id]);
 
   /** Pick a tab: remember it, and restore that tab's own last sort. */
   const selectGameType = useCallback(
@@ -2407,7 +2441,7 @@ function ClubHomePageContent({
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
+              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, settings, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -3606,7 +3640,7 @@ function ClubHomePageContent({
         [gameType]: emptyFilterValue(narrowing.fSpec),
       };
       setAdvFilters(next);
-      if (resolvedClubId) saveFilters(resolvedClubId, next);
+      if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
     }
   }, [narrowing.fSpec, advFilters, gameType, resolvedClubId, selectFavoritesOnly, selectGameType]);
 
@@ -4489,7 +4523,7 @@ function ClubHomePageContent({
       [gameType]: emptyFilterValue(narrowing.fSpec),
     };
     setAdvFilters(next);
-    if (resolvedClubId) saveFilters(resolvedClubId, next);
+    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
     toast.info('Filters Cleared, They Were Hiding Every Game');
   }, [
     loading,
@@ -5022,7 +5056,7 @@ function ClubHomePageContent({
     {
       id: 'first-agent',
       label: 'Configure Your First Agent',
-      detail: 'Promote A Player, Choose Prepaid Or Credit, And Assign Rakeback',
+      detail: 'Promote A Player And Assign The Agent Rakeback',
       complete: Boolean(configuredAgentUserId),
       optional: true,
       actionLabel: Number(club.member_count || 0) > 1 ? 'Choose Player' : 'Invite Player First',
@@ -5155,60 +5189,24 @@ function ClubHomePageContent({
                 : undefined
             }
             shareIcon={<IconShareLink />}
-            onShare={async () => {
-              haptic.medium();
-              let refQuery = '';
-              let profRefNum: number | null = null;
-              try {
-                // readLocalSession, not the auth SDK's remote user lookup: the
-                // session is already local and the referral action must open
-                // instantly when the player taps it.
-                const session = readLocalSession();
-                if (session?.userId) {
-                  const { data: prof, error: profErr } = await supabase
-                    .from('profiles')
-                    .select('player_number')
-                    .eq('id', session.userId)
-                    .maybeSingle();
-                  // ROUND 9 (2026-08-29): the uuid fallback below still
-                  // credits the referral, so behaviour is unchanged - but a
-                  // failed read was silently downgrading share links from the
-                  // friendly player number to a raw uuid.
-                  if (profErr) {
-                    reportError(profErr, 'ClubHomePage.share_ref_profile_read_failed');
+            onShare={
+              /* The automatic Diamond Arena has no club_members row, so
+                 fn_club_invite_link cannot create a link there: no handler,
+                 and the card draws no Share & Invite button. */
+              isAutomaticArena
+                ? undefined
+                : () => {
+                    /* SHARE & INVITE (Dan 2026-10-15): the link is the SENDER's own
+                     short code (smarter.poker/i/<CODE>), so whoever shares it is
+                     credited and the new player lands in their downline. It used
+                     to be /invite/<club>?ref=<player number>, which sent a
+                     signed-out friend to LOGIN and lost the club on the way
+                     through signup. The sheet holds the link, Copy, Share, a QR
+                     code and the sender's results. */
+                    haptic.medium();
+                    setShowShareSheet(true);
                   }
-                  if (prof?.player_number) {
-                    profRefNum = prof.player_number;
-                    refQuery = `?ref=${prof.player_number}`;
-                  } else {
-                    refQuery = `?ref=${session.userId}`;
-                  }
-                }
-              } catch (err) {
-                reportError(err, 'ClubHomePage.share_ref_lookup_failed');
-              }
-              const shareUrl = `${publicOrigin()}/hub/club-arena/invite/${club.id}${refQuery}`;
-              /* The same leak as the card, and further out: this string is
-                 handed to the OS share sheet, so `display_name` was carrying a
-                 player's legal name into WhatsApp, SMS and anywhere else the
-                 invite was forwarded. An invite to a poker club is signed with
-                 the handle. */
-              const inviterName = playerDisplayName(currentUser, 'arena');
-              const playerNumText = profRefNum ? `\nYour Referral Number: ${profRefNum}` : '';
-              const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
-
-              try {
-                if (navigator.share) {
-                  await navigator.share({ title: club.name, text: shareText, url: shareUrl });
-                } else {
-                  await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
-                  toast.success('Club link copied!');
-                }
-              } catch (e) {
-                reportError(e, 'ClubHomePage.async');
-                /* user cancelled share */
-              }
-            }}
+            }
           />
           {/* The Bad Beat Jackpot reads its own asset's pool. An arena strip
               appears only when its dedicated Diamond switch is explicitly on. */}
@@ -5650,7 +5648,7 @@ function ClubHomePageContent({
                               [gameType]: { ...qVal, statuses: [] },
                             };
                             setAdvFilters(next);
-                            if (resolvedClubId) saveFilters(resolvedClubId, next);
+                            if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                           }}
                         >
                           All
@@ -5684,7 +5682,7 @@ function ClubHomePageContent({
                                   },
                                 };
                                 setAdvFilters(next);
-                                if (resolvedClubId) saveFilters(resolvedClubId, next);
+                                if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                               }}
                             >
                               {sf.label}
@@ -5715,7 +5713,7 @@ function ClubHomePageContent({
              the Diamond boundary deliberately does not admit. Do not advertise
              another club's event or send an Arena player to the safe shell. */
           campaign={
-            !isAutomaticArena && (
+            !isAutomaticArena && club.banner_url && !isRetiredClubBanner(club.banner_url) ? (
               <button
                 type="button"
                 className="club-lobby-command-top__campaign-button"
@@ -5731,17 +5729,10 @@ function ClubHomePageContent({
                   a per-breakpoint <source> goes if a club ever ships two crops
                   of its own banner. */}
                 <picture className="club-lobby-command-top__campaign-picture">
-                  <img
-                    src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
-                    alt={
-                      club.banner_url
-                        ? `${club.name} Promotion`
-                        : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
-                    }
-                  />
+                  <img src={club.banner_url} alt={`${club.name} Promotion`} />
                 </picture>
               </button>
-            )
+            ) : null
           }
         />
 
@@ -5825,9 +5816,15 @@ function ClubHomePageContent({
                  so closing without Apply must still show what was saved -
                  re-read storage so the lobby matches the persisted store. */
               setFiltersOpen(false);
+              /* The sheet has already saved (and synced) every change, so
+                 the lobby takes its store and a late row reply must not. */
+              advFiltersTouched.current = true;
               setAdvFilters(loadFilters(resolvedClubId || club!.id));
             }}
-            onApply={setAdvFilters}
+            onApply={(next: FilterStore) => {
+              advFiltersTouched.current = true;
+              setAdvFilters(next);
+            }}
             sortKey={sortKey}
             onSortChange={selectSortKey}
             sortOptions={SORT_OPTIONS}
@@ -5897,7 +5894,7 @@ function ClubHomePageContent({
                     haptic.selection();
                     const next: FilterStore = { ...advFilters, [gameType]: { ...vVal, games } };
                     setAdvFilters(next);
-                    if (resolvedClubId) saveFilters(resolvedClubId, next);
+                    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                   },
                 };
               })()}
@@ -5921,7 +5918,7 @@ function ClubHomePageContent({
                     haptic.selection();
                     const next: FilterStore = { ...advFilters, [gameType]: { ...sVal, styles } };
                     setAdvFilters(next);
-                    if (resolvedClubId) saveFilters(resolvedClubId, next);
+                    if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
                   },
                 };
               })()}
@@ -6194,6 +6191,20 @@ function ClubHomePageContent({
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
 
+      {club && !isAutomaticArena && (
+        <ShareInviteSheet
+          isOpen={showShareSheet}
+          onClose={() => setShowShareSheet(false)}
+          clubId={club.id}
+          clubName={club.name}
+          clubNumber={club.club_id}
+          inviterAlias={playerDisplayName(currentUser, 'arena')}
+          canSeeClubStats={
+            isOwner ||
+            ['co_owner', 'admin', 'super_agent', 'agent', 'sub_agent'].includes(String(userRole))
+          }
+        />
+      )}
       {showOpeningWizard && isOwner && club && openingChecklistEligible && (
         <ClubOpeningWizard
           clubId={club.id}

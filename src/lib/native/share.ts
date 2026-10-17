@@ -38,3 +38,21 @@ export async function nativeShareBlob(
   await Share.share({ title: title || safe, files: [written.uri] });
   return true;
 }
+
+/**
+ * Share a link and its message through the system share sheet (native only).
+ * Android's webview has no navigator.share, so without this the Share button
+ * on the Share & Invite sheet only ever copied the link. Resolves false when
+ * the player closes the sheet without sharing.
+ */
+export async function nativeShareText(title: string, text: string, url: string): Promise<boolean> {
+  const { Share } = await import('@capacitor/share');
+  try {
+    await Share.share({ title, text, url, dialogTitle: title });
+    return true;
+  } catch (err) {
+    // The plugin rejects with "Share canceled" when the sheet is dismissed.
+    if (/cancel/i.test(String((err as Error)?.message || err))) return false;
+    throw err;
+  }
+}

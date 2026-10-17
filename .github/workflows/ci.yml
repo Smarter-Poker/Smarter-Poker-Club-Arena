@@ -2535,6 +2535,23 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Midway weekly promo pays each eligible club wallet once
+        id: midway_weekly_promo
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: |
+          set -euo pipefail
+          python3 -B scripts/qualification/midway-weekly-promo/run-native.py --output "$RUNNER_TEMP/midway-weekly-promo"
+      - name: Retain Midway weekly promo native proof
+        if: always() && matrix.shard == 3 && contains(fromJSON('["success", "failure", "cancelled"]'), steps.midway_weekly_promo.outcome)
+        uses: actions/upload-artifact@v4
+        with:
+          name: midway-weekly-promo-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/midway-weekly-promo/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Initial weekly selector reads the launch cutoff once per cash club
         id: weekly_initial_selector
         if: matrix.shard == 3

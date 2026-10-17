@@ -1,0 +1,91 @@
+{
+  "A": {
+    "decisions": 0
+  },
+  "V-09807183": {
+    "decisions": 450,
+    "first": 1792177270908,
+    "last": 1792177319995,
+    "variants": {
+      "flh": 50,
+      "flo8": 50,
+      "nlh": 50,
+      "pineapple": 50,
+      "plo4": 50,
+      "plo5": 50,
+      "plo6": 50,
+      "plo8": 50,
+      "short_deck": 50
+    },
+    "lanes": {
+      "DECIDE_FAST": 434,
+      "DECIDE_DEEP": 16
+    },
+    "candidate": 288,
+    "applied": {
+      "remainingVariantPolicy": 1,
+      "plo4Policy": 1,
+      "omahaVariantPolicy": 1
+    }
+  },
+  "Q-09807183": {
+    "decisions": 600,
+    "first": 1792177293793,
+    "last": 1792177319964,
+    "variants": {
+      "nlh": 246,
+      "plo4": 82,
+      "flo8": 29,
+      "short_deck": 39,
+      "plo5": 53,
+      "plo6": 48,
+      "pineapple": 35,
+      "plo8": 45,
+      "flh": 23
+    },
+    "lanes": {
+      "DECIDE_FAST": 600
+    },
+    "candidate": 600,
+    "applied": {
+      "plo4Policy": 1,
+      "omahaVariantPolicy": 3,
+      "remainingVariantPolicy": 1
+    }
+  },
+  "window_population": {
+    "decisions": 9867,
+    "bySource": {
+      "4c3509e5": 5229,
+      "09807183": 4638
+    },
+    "byVariant": {
+      "nlh": 5213,
+      "plo4": 2013,
+      "pineapple": 185,
+      "plo5": 1117,
+      "plo8": 267,
+      "plo6": 615,
+      "flo8": 133,
+      "short_deck": 220,
+      "flh": 104
+    },
+    "byMode": {
+      "cash": 3381,
+      "tournament": 6486
+    },
+    "candidate": 3237,
+    "applied": {
+      "plo4Policy": 3,
+      "omahaVariantPolicy": 10,
+      "remainingVariantPolicy": 3
+    },
+    "appliedByVariant": {
+      "plo4": 3,
+      "plo8": 4,
+      "flh": 3,
+      "plo5": 3,
+      "plo6": 3
+    }
+  }
+}

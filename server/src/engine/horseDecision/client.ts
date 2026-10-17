@@ -12,6 +12,7 @@ import { horsePhase6AttributionMismatch } from '../HorsePhase6Attribution.js';
 import { Worker } from 'node:worker_threads';
 import { HorseCommittedDecisionTracker } from '../HorseCommittedDecisionTracker.js';
 import { noteFire } from '../BrainTelemetry.js';
+import { observeHorsePolicyDecision } from '../HorsePolicyLedgerObserver.js';
 import {
   horseDecisionJournalConfigured,
   relayHorseDecisionJournalHealth,
@@ -97,7 +98,7 @@ export interface LiveHorseDecisionWorkerClientOptions {
    * passes it); reaches the spawned worker so its journal writer opens its own
    * archive instead of sharing one with every other shard. Absent is shard 0,
    * unchanged from before sharding existed. */
-  shard?: { index: number };
+  shard?: { index: number; count?: number };
   readyTimeoutMs?: number;
   /** Caller deadline from enqueue and worker-integrity deadline from dispatch. */
   jobTimeoutMs?: number;
@@ -141,6 +142,14 @@ export interface LiveHorseDecisionWorkerStatus {
   activeRequestId: number | null;
   activeJobAgeMs: number | null;
   oldestQueuedAgeMs: number | null;
+  /**
+   * The same age over DECISION jobs only (DECIDE_FAST, DECIDE_DEEP,
+   * DECIDE_DISCARD): how long a horse has been waiting for an answer.
+   * Observation, effect and mirrored-hand jobs are left out, so a burst of
+   * mirror traffic (mirrorCompletedHand) is not read as a horse waiting
+   * (HorseLeague's decisionLaneHasHeadroom reads this).
+   */
+  oldestQueuedDecisionAgeMs: number | null;
   lastCompletedAt: number | null;
   lastComputeMs: number | null;
   completedJobs: number;
@@ -209,6 +218,8 @@ interface QueuedJob {
   executionDeadlineCheck: ReturnType<typeof setImmediate> | null;
   /** Queued in the capture lane, ahead of every unposted decision (see HORSE_CAPTURE_LANE_TYPES). */
   captureLane?: boolean;
+  /** Queued in the effect lane, ahead of every unposted decision (see HORSE_EFFECT_LANE_TYPES). */
+  effectLane?: boolean;
 }
 
 /**
@@ -274,12 +285,67 @@ const HORSE_CAPTURE_LANE_TYPES: ReadonlySet<string> = new Set([
   'OBSERVE_DISCARD_EXECUTION',
   'OBSERVE_REQUEST_RETIREMENT',
 ]);
+/** Mirrored completed hands one client holds at once (mirrorCompletedHand). */
+export const HORSE_MIND_MIRROR_MAX_PENDING = 1024;
 /** Jobs the capture lane holds at once; past it a job queues at the tail. */
 export const HORSE_CAPTURE_LANE_MAX_QUEUED = 1024;
 /** Deadline, from enqueue, for observation and capture jobs (never below `jobTimeoutMs`). */
 export const HORSE_OBSERVATION_DEADLINE_MS = 60_000;
+/**
+ * THE ACCEPTED PLAN DOES NOT WAIT BEHIND THE DECISION BACKLOG EITHER
+ * (2026-10-16, engine 4c3509e5 / 5780828e).
+ *
+ * An effect commit is posted only after the table controller accepted the
+ * exact wager that issued it, and its retirement only after the decision is
+ * finished with. Until today both took the decision FIFO's tail: the commit
+ * at the dispatch-barrier index, which is `queue.length` when the barrier
+ * opens (after EVERY unposted job, not only the ones it must follow), and the
+ * retirement at the plain tail; both carried the 8-second decision deadline.
+ *
+ * Measured the same day (`horse_brain_telemetry`, 2026-10-16, and engine
+ * /health on 4c3509e5):
+ *
+ *     phase15_plan_commit_posted          262,544
+ *     phase15_plan_receipt_applied        262,080   (464 commits never reached the worker)
+ *     phase15_plan_refused_*              0         (the worker refused none)
+ *     phase15_plan_retirement_unconfirmed 154       (the retirement expired as well)
+ *     /health lastExpiredRequestType      COMMIT_DECISION_EFFECTS, phase queued
+ *     worker FIFO                         ~100 .. 491 deep, oldest 1.7 .. 6.8 s
+ *
+ * The worker refused nothing and failed nothing: every posted commit without a
+ * receipt is a commit that expired in the queue before dispatch, and its
+ * `commit_unconfirmed` retirement then queued at the tail of the same backlog
+ * with the same deadline. An accepted wager's plan was lost (the horse plays
+ * its later streets without the intent it bet with) and, past the retirement's
+ * own expiry, its issue slot stayed open.
+ *
+ * THE EFFECT LANE. Commit and retirement queue ahead of every unposted job,
+ * in arrival order among the front-lane jobs (capture and effect), so they wait
+ * only for the jobs already posted to the worker. The ordering the dispatch
+ * barrier exists for is kept and strengthened: a commit still precedes the
+ * TURN_CHANGE work its own action enqueues (it now also precedes older
+ * unposted work). Moving it ahead of older unposted work moves nothing those
+ * jobs read: an effect is keyed by its own `plan-hand-v1:<table>:<hand>`, no
+ * older job can be a decision of the same horse in the same hand (that seat
+ * acted only now), and a second look reads the FAST view it retained, never
+ * live plan state. A commit and its own retirement keep their relative order
+ * (the retirement is enqueued only after the commit fails). The lane is
+ * naturally bounded by the worker's issued-batch bound (128 per shard), so it
+ * has no separate cap. Both kinds get the observation deadline: nobody waits
+ * on their answer, and FIFO order, not the deadline, is what keeps a commit
+ * ahead of the next decision.
+ */
+const HORSE_EFFECT_LANE_TYPES: ReadonlySet<string> = new Set([
+  'COMMIT_DECISION_EFFECTS',
+  'RETIRE_DECISION_EFFECTS',
+]);
+/** The jobs a horse is waiting on for its action (status().oldestQueuedDecisionAgeMs). */
+export const HORSE_DECISION_JOB_TYPES: ReadonlySet<HorseDecisionJobRequest['type']> = new Set<
+  HorseDecisionJobRequest['type']
+>(['DECIDE_FAST', 'DECIDE_DEEP', 'DECIDE_DISCARD']);
 const HORSE_OBSERVATION_TYPES: ReadonlySet<string> = new Set([
   ...HORSE_CAPTURE_LANE_TYPES,
+  ...HORSE_EFFECT_LANE_TYPES,
   'OBSERVE_COMPLETED_HAND',
 ]);
 
@@ -287,14 +353,44 @@ const HORSE_OBSERVATION_TYPES: ReadonlySet<string> = new Set([
  * worker.ts reads so its journal writer opens its own archive/catalog
  * instead of the one every shard shared until 2026-09-28 (see
  * runtimeHorseJournalArchiveOptions and HORSE_DECISION_WORKERS in lane.ts). */
-function defaultWorkerFactory(shard?: { index: number }): WorkerLike {
+function defaultWorkerFactory(shard?: { index: number; count?: number }): WorkerLike {
   // Production executes compiled JS; `npm run dev` executes this source via
   // tsx and workers inherit that loader. Point each runtime at an entry it can
   // actually open rather than making the development engine fail at boot.
   const entry = import.meta.url.endsWith('.ts') ? './worker.ts' : './worker.js';
   return new Worker(new URL(entry, import.meta.url), {
-    workerData: shard ? { shardIndex: shard.index } : undefined,
+    workerData: shard
+      ? {
+          shardIndex: shard.index,
+          ...(shard.count === undefined ? {} : { shardCount: shard.count }),
+        }
+      : undefined,
+    env: horseDecisionWorkerEnv(process.env),
   }) as WorkerLike;
+}
+
+/**
+ * THE DECISION WORKER RUNS THE QUALIFIED BRAIN (2026-10-16).
+ *
+ * The worker thread's EquityLoadGovernor sampled the worker's OWN event loop,
+ * and a decision worker's loop is nothing but the decisions it is running, so
+ * any busy worker read its own work as saturation and cut every Monte Carlo
+ * read: on 2026-10-16 (release 5780828e) 87.6% of 36,758 live decisions ran
+ * at 0.6 and 3.2% at 0.35, while every Phase 10-13 strength league qualified
+ * the packs with `EQUITY_GOVERNOR off, scale 1`. The live brain was not the
+ * qualified brain. The cut bought almost nothing: in the same journal, at the
+ * same hour, a fast decision cost 30.4 ms mean at scale 1 and 28.9 ms at 0.6.
+ *
+ * So the worker thread starts with the governor off, exactly like the league
+ * process and the strength contracts, and every decision journals scale 1.
+ * The main thread's own governor is untouched (it governs nothing horse-side
+ * since the 2026-09-08 worker move). Capacity is the lane's job: worker count
+ * (lane.ts) and keeping analysis off the live CPU (HorseLeague.ts).
+ */
+export function horseDecisionWorkerEnv(
+  parent: NodeJS.ProcessEnv
+): Record<string, string | undefined> {
+  return { ...parent, EQUITY_GOVERNOR: 'off' };
 }
 
 function errorMessage(error: unknown): string {
@@ -335,9 +431,10 @@ function errorMessage(error: unknown): string {
  *     predecessor is not charged that predecessor's compute; charging it would
  *     fail a healthy worker, and a failed worker restarts the whole fleet (see
  *     onJobDeadline).
- *   - The dispatch barrier still holds every post, so a priority effect commit
- *     still lands after older work and before the TURN_CHANGE work it must
- *     precede.
+ *   - The dispatch barrier still holds every post, so an effect commit still
+ *     lands before the TURN_CHANGE work it must precede (since 2026-10-16 it
+ *     queues in the effect lane, ahead of older unposted work as well; see
+ *     HORSE_EFFECT_LANE_TYPES).
  * The worker turns its event loop between jobs (HorseDecisionWorkerRuntime
  * .receive), so a full window can never starve its timers, its CANCEL handling
  * or its governor's sampler.
@@ -345,6 +442,8 @@ function errorMessage(error: unknown): string {
 let journalRelaySources = 0;
 export class LiveHorseDecisionWorkerClient {
   private readonly journalConfigured = horseDecisionJournalConfigured();
+  /** Mirrored completed hands enqueued and not yet answered (mirrorCompletedHand). */
+  private pendingMirrors = 0;
   /** Each shard's journal report keeps its own /health slot (HorseDecisionJournal.ts). */
   private readonly journalRelaySource = `shard-${++journalRelaySources}`;
   private retirementCaptureCount = 0;
@@ -539,10 +638,16 @@ export class LiveHorseDecisionWorkerClient {
     const active = this.inFlight[0] ?? null;
     // Everything still waiting for its turn: posted jobs behind the head, and
     // jobs not yet posted. The head is running and is reported as active.
-    const oldestQueued = [...this.inFlight.slice(1), ...this.queue].reduce<QueuedJob | null>(
-      (oldest, job) =>
-        job.settled || (oldest && oldest.enqueuedAt <= job.enqueuedAt) ? oldest : job,
-      null
+    const waiting = [...this.inFlight.slice(1), ...this.queue];
+    const oldestOf = (jobs: QueuedJob[]): QueuedJob | null =>
+      jobs.reduce<QueuedJob | null>(
+        (oldest, job) =>
+          job.settled || (oldest && oldest.enqueuedAt <= job.enqueuedAt) ? oldest : job,
+        null
+      );
+    const oldestQueued = oldestOf(waiting);
+    const oldestQueuedDecision = oldestOf(
+      waiting.filter((job) => HORSE_DECISION_JOB_TYPES.has(job.request.type))
     );
     return {
       phase: this.phase,
@@ -555,6 +660,9 @@ export class LiveHorseDecisionWorkerClient {
       activeJobAgeMs:
         active && this.activeStartedAt !== null ? Math.max(0, now - this.activeStartedAt) : null,
       oldestQueuedAgeMs: oldestQueued ? Math.max(0, now - oldestQueued.enqueuedAt) : null,
+      oldestQueuedDecisionAgeMs: oldestQueuedDecision
+        ? Math.max(0, now - oldestQueuedDecision.enqueuedAt)
+        : null,
       lastCompletedAt: this.lastCompletedAt,
       lastComputeMs: this.lastComputeMs,
       completedJobs: this.completedJobs,
@@ -653,6 +761,53 @@ export class LiveHorseDecisionWorkerClient {
       requestId: this.nextRequestId++,
     };
     return this.enqueue<HorseDecisionWorkerAck>(request, 'ACK', signal);
+  }
+
+  /**
+   * ONE FLOOR, ONE READ (2026-10-16). The same completed hand, sent to a
+   * worker that does NOT own its table so that worker's opponent memory
+   * learns it too (lane.ts, "WHAT CHANGES"). The worker recognises a hand it
+   * does not own by the shard hash of its fence and only learns from it: no
+   * journal record, no accepted-roster transport, no plan or decision state
+   * (workerRuntime.ts executeObservation, mindMirror.ts). So none of the
+   * owner's audit bookkeeping runs here either, and the private P14.2 roster
+   * never leaves its owner.
+   *
+   * Bounded: at most HORSE_MIND_MIRROR_MAX_PENDING mirrored hands wait in this
+   * client at once (about 50 seconds of the whole floor's hands at the
+   * measured 19.4 a second). Past that the shard is far behind and the hand
+   * is not queued; `horse_mind_mirror_shed` counts it. Never throws, never
+   * rejects into the caller: the owner's acknowledgement is the hand's.
+   */
+  mirrorCompletedHand(observation: CompletedHandObservation): void {
+    if (this.pendingMirrors >= HORSE_MIND_MIRROR_MAX_PENDING) {
+      noteFire('horse_mind_mirror_shed');
+      return;
+    }
+    const mirror: CompletedHandObservation = { ...observation };
+    delete mirror.acceptedActorRoster;
+    const request = {
+      ...mirror,
+      type: 'OBSERVE_COMPLETED_HAND' as const,
+      requestId: this.nextRequestId++,
+    };
+    this.pendingMirrors++;
+    let settled: Promise<HorseDecisionWorkerAck>;
+    try {
+      settled = this.enqueue<HorseDecisionWorkerAck>(request, 'ACK');
+    } catch {
+      settled = Promise.reject(new Error('mirror enqueue failed'));
+    }
+    void settled
+      .catch(() => noteFire('horse_mind_mirror_unavailable'))
+      .finally(() => {
+        this.pendingMirrors--;
+      });
+  }
+
+  /** Mirrored completed hands this client holds that have not been answered. */
+  get pendingMirrorCount(): number {
+    return this.pendingMirrors;
   }
 
   async commitDecisionEffects(
@@ -934,14 +1089,17 @@ export class LiveHorseDecisionWorkerClient {
         job.abortListener = () => this.abort(job);
         signal.addEventListener('abort', job.abortListener, { once: true });
       }
-      const captureIndex = HORSE_CAPTURE_LANE_TYPES.has(request.type)
-        ? this.captureLaneInsertIndex()
-        : null;
-      if (captureIndex !== null) {
-        job.captureLane = true;
-        this.queue.splice(captureIndex, 0, job);
+      const capture = HORSE_CAPTURE_LANE_TYPES.has(request.type);
+      const frontIndex =
+        capture || HORSE_EFFECT_LANE_TYPES.has(request.type)
+          ? this.frontLaneInsertIndex(capture)
+          : null;
+      if (frontIndex !== null) {
+        if (capture) job.captureLane = true;
+        else job.effectLane = true;
+        this.queue.splice(frontIndex, 0, job);
         // Keep the barrier pointing at the same job it pointed at.
-        if (this.priorityInsertIndex !== null && captureIndex <= this.priorityInsertIndex)
+        if (this.priorityInsertIndex !== null && frontIndex <= this.priorityInsertIndex)
           this.priorityInsertIndex += 1;
       } else if (priority && this.priorityInsertIndex !== null) {
         this.queue.splice(this.priorityInsertIndex, 0, job);
@@ -953,11 +1111,19 @@ export class LiveHorseDecisionWorkerClient {
     });
   }
 
-  /** After the capture jobs already waiting, or null once the lane is full. */
-  private captureLaneInsertIndex(): number | null {
+  /** After the capture and effect jobs already waiting, in arrival order; null
+   * for a capture job once the capture lane holds its bound. */
+  private frontLaneInsertIndex(capture: boolean): number | null {
     let index = 0;
-    while (index < this.queue.length && this.queue[index].captureLane) index++;
-    return index >= HORSE_CAPTURE_LANE_MAX_QUEUED ? null : index;
+    let captures = 0;
+    while (
+      index < this.queue.length &&
+      (this.queue[index].captureLane || this.queue[index].effectLane)
+    ) {
+      if (this.queue[index].captureLane) captures++;
+      index++;
+    }
+    return capture && captures >= HORSE_CAPTURE_LANE_MAX_QUEUED ? null : index;
   }
 
   private abort(job: QueuedJob): void {
@@ -1323,6 +1489,10 @@ export class LiveHorseDecisionWorkerClient {
       // record reconciled from that receipt goes with it; the decision keeps
       // its actual action and every other check below still applies. Any other
       // PLO4 receipt that fails the binding still fails closed below.
+      // Whether a dropped shadow receipt took the decision's ownership record
+      // with it: the Phase 15 ledger counts that as its own outcome, never as
+      // a decision with no owner (HorsePolicyLedgerObserver).
+      let ownershipDroppedWithShadowReceipt = false;
       const plo4Shadow = message.decision.plo4Policy;
       if (
         plo4Shadow &&
@@ -1333,8 +1503,10 @@ export class LiveHorseDecisionWorkerClient {
         !plo4LiveReceiptBindingIsValid(plo4Shadow)
       ) {
         delete message.decision.plo4Policy;
-        if (message.decision.policyOwnership?.owner === 'phase10')
+        if (message.decision.policyOwnership?.owner === 'phase10') {
           delete message.decision.policyOwnership;
+          ownershipDroppedWithShadowReceipt = true;
+        }
         noteFire('phase10_shadow_receipt_binding_dropped');
       }
       // P11.1, the same rule: a shadow-only PLO5/PLO6/PLO8 receipt (shadow,
@@ -1350,8 +1522,10 @@ export class LiveHorseDecisionWorkerClient {
         !omahaVariantReceiptBindingIsValid(phase11Shadow)
       ) {
         delete message.decision.omahaVariantPolicy;
-        if (message.decision.policyOwnership?.owner === 'phase11')
+        if (message.decision.policyOwnership?.owner === 'phase11') {
           delete message.decision.policyOwnership;
+          ownershipDroppedWithShadowReceipt = true;
+        }
         noteFire('phase11_shadow_receipt_binding_dropped');
       }
       // P12.1, the same rule for Short Deck, Pineapple, FLH and FLO8: a
@@ -1368,8 +1542,10 @@ export class LiveHorseDecisionWorkerClient {
         !remainingVariantReceiptBindingIsValid(phase12Shadow)
       ) {
         delete message.decision.remainingVariantPolicy;
-        if (message.decision.policyOwnership?.owner === 'phase12')
+        if (message.decision.policyOwnership?.owner === 'phase12') {
           delete message.decision.policyOwnership;
+          ownershipDroppedWithShadowReceipt = true;
+        }
         noteFire('phase12_shadow_receipt_binding_dropped');
       }
       // P13.1, the same rule for the joint owner: a shadow-only Phase 13
@@ -1478,6 +1654,13 @@ export class LiveHorseDecisionWorkerClient {
       });
       message.decision.executionWitness = witness;
       this.committedDecisions.track(witness);
+      // Phase 15 policy ledger: the OOD/silence alarms and the live reference
+      // agreement read every validated FAST decision once (a DEEP second look
+      // re-decides the same turn). Read-only; it never changes the decision.
+      if (message.type === 'FAST_RESULT')
+        observeHorsePolicyDecision(active.request.gameState, message.decision, {
+          ownershipDroppedWithShadowReceipt,
+        });
       const ownedFast =
         message.type === 'FAST_RESULT' && message.planIssueDisposition === 'issued'
           ? message

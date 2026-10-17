@@ -228,9 +228,9 @@
   flex-direction: column;
   align-items: center;
   /* A full-width plate makes both the name and chip count readable. The
-     minimum grows on phones; the avatar term still follows the real felt.
+     minimum follows the felt width; the avatar term uses the same scale.
      The corresponding marker keep-outs are in tableGeometry.ts. */
-  --seat-plate-min-width: 98px;
+  --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
   width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -3530,21 +3530,21 @@
      including this one. What stays is the TEXT floor, which does not scale with
      the felt because rem does not. */
   .seat {
-    --seat-plate-min-width: 112px;
+    --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
     width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
   }
 
   .seat__info {
     min-width: 0;
-    min-height: 48px;
-    padding: 7px 8px;
+    min-height: clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px);
+    padding: clamp(3px, calc(var(--table-w, 360px) * 0.012), 7px) 5px;
   }
   .seat__name {
-    font-size: 0.75rem;
+    font-size: clamp(0.75rem, calc(var(--table-w, 360px) * 0.033), 0.875rem);
     max-width: 100%;
   }
   .seat__stack {
-    font-size: 0.875rem;
+    font-size: clamp(0.875rem, calc(var(--table-w, 360px) * 0.04), 1rem);
   }
 
   /* `.seat__card { width: 28px; height: 38px }` DELETED 2026-08-28 — dead on
@@ -3595,7 +3595,7 @@
      coefficients on the base `.seat` rule come from. So this breakpoint renders
      what it always rendered; it just no longer has to say so. */
   .seat {
-    --seat-plate-min-width: 104px;
+    --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
     width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
   }
 
@@ -3606,15 +3606,15 @@
 
   .seat__info {
     min-width: 0;
-    min-height: 48px;
-    padding: 7px 8px;
+    min-height: clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px);
+    padding: clamp(3px, calc(var(--table-w, 360px) * 0.012), 7px) 5px;
   }
   .seat__name {
-    font-size: 0.75rem;
+    font-size: clamp(0.75rem, calc(var(--table-w, 360px) * 0.033), 0.875rem);
     max-width: 100%;
   }
   .seat__stack {
-    font-size: 0.875rem;
+    font-size: clamp(0.875rem, calc(var(--table-w, 360px) * 0.04), 1rem);
   }
 
   /* `.seat__card { width: 24px; height: 34px }` DELETED 2026-08-28 — see the
@@ -3653,22 +3653,22 @@
      That is the one place a proportion is deliberately overruled, and it is
      overruled in the direction of the smallest screen. */
   .seat {
-    --seat-plate-min-width: 100px;
+    --seat-plate-min-width: clamp(66px, calc(var(--table-w, 360px) * 0.235), 112px);
     width: max(var(--seat-plate-min-width), calc(var(--seat-avatar-full) * 1.143));
   }
 
   .seat__info {
     min-width: 0;
-    min-height: 48px;
-    padding: 7px 8px;
+    min-height: clamp(40px, calc(var(--table-w, 360px) * 0.105), 48px);
+    padding: clamp(3px, calc(var(--table-w, 360px) * 0.012), 7px) 5px;
     border-radius: 6px;
   }
   .seat__name {
-    font-size: 0.75rem;
+    font-size: clamp(0.75rem, calc(var(--table-w, 360px) * 0.033), 0.875rem);
     max-width: 100%;
   }
   .seat__stack {
-    font-size: 0.875rem;
+    font-size: clamp(0.875rem, calc(var(--table-w, 360px) * 0.04), 1rem);
   }
 
   /* `.seat__card { width: 22px; height: 30px }` DELETED 2026-08-28 — see the
@@ -3909,7 +3909,7 @@
 .seat-wrapper--top .seat {
   /* Centering the taller plate otherwise lifts the unchanged avatar into
      the banner. Keep its crown at the previously clear top position. */
-  top: 12px;
+  top: 4px;
   /* min(), not a ratio. This is a CLEARANCE against the BBJ banner, and the
      banner does not scale with the viewport, so neither may its ceiling.
      (It is no longer one number: since 2026-09-11 --sp-bbj-h is the nameplate
@@ -4483,47 +4483,9 @@
   box-shadow: none;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   HERO OMAHA FAN — Dan 2026-08-26 (PokerBros reference, PLO5 close-up)
-   ═══════════════════════════════════════════════════════════════════════════
-   "All PLO games should display the hero's cards fanned out like this."
-
-   Four-plus-card hero hands get a held-hand arc: each card rotates about its
-   bottom-centre and drops slightly toward the edges (a parabolic arc — the
-   squared centred index — because CSS calc() has no abs()). Two-card hold'em
-   hands are untouched, per the long-standing no-fan ruling for the pair.
-
-   The transform lands on the FLEX CHILD (the .seat__card-pick wrapper), not
-   on .seat__card, so the `transform: none` inline-guard on the card and the
-   hover/deal animations underneath it keep working unchanged. A card marked
-   with the show-picker keeps its straight -6px lift (`:not()` below) — the
-   lift IS its marker.
-
-   The child index and the count are both derived here in CSS (`--sp-hfan-i`
-   by nth-child, `--sp-hfan-n` by the same child-counting :has() device the
-   size guards use), so no TSX change and no per-card inline style. Written
-   `:has(> :nth-child(n))` — WITHOUT the `*` — deliberately: these rules add
-   an ARC, not a size, and the HeroCardRowGeometry test counts the starred
-   form to pin the four per-breakpoint size tunings. */
-.seat__cards--hero > :nth-child(1) {
-  --sp-hfan-i: 0;
-}
-.seat__cards--hero > :nth-child(2) {
-  --sp-hfan-i: 1;
-}
-.seat__cards--hero > :nth-child(3) {
-  --sp-hfan-i: 2;
-}
-.seat__cards--hero > :nth-child(4) {
-  --sp-hfan-i: 3;
-}
-.seat__cards--hero > :nth-child(5) {
-  --sp-hfan-i: 4;
-}
-.seat__cards--hero > :nth-child(6) {
-  --sp-hfan-i: 5;
-}
-
+/* Owner update, 2026-10-15: private PLO cards run straight across. This
+   supersedes the August held-hand arc. Keep the row count for the tabled
+   hand's width calculation and preserve the show-picker's explicit lift. */
 .seat__cards--hero:has(> :nth-child(4)) {
   --sp-hfan-n: 4;
 }
@@ -4535,13 +4497,7 @@
 }
 
 .seat__cards--hero:has(> :nth-child(4)) > *:not(.seat__card-pick--marked) {
-  /* Centred index: -1.5..+1.5 at four cards, -2.5..+2.5 at six. */
-  --sp-hfan-c: calc(var(--sp-hfan-i, 0) - (var(--sp-hfan-n, 4) - 1) / 2);
-  transform-origin: bottom center;
-  /* 3deg per card (PLO6 edges reach +/-7.5deg, the PokerBros read) and a
-     gentle arc: the edge cards sit lower, like a hand actually held. */
-  transform: rotate(calc(var(--sp-hfan-c) * 3deg))
-    translateY(calc(var(--sp-hfan-c) * var(--sp-hfan-c) * 1.4px));
+  transform: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -4720,4 +4676,23 @@
       )
     );
   }
+}
+
+/* Revealed hands own the avatar's lane. Their inboard edge must never grow
+   across a board or pot when four, five or six cards are tabled. */
+.seat .seat__cards--opponent.seat__cards--revealed {
+  --vh-card-w: min(
+    calc(var(--seat-avatar-full, 84px) * 0.346 * 1.6 * 0.714),
+    calc(var(--seat-plate-min-width) / (1 + (var(--vh-n) - 1) * 1.06))
+  );
+  --vh-card-h: calc(var(--vh-card-w) * 1.4);
+}
+
+/* The top pod clears Mini BBJ and spends less of the centre pot lane. */
+.seat-wrapper--top .seat {
+  --seat-plate-min-width: clamp(62px, calc(var(--table-w, 360px) * 0.2), 96px);
+}
+.seat-wrapper--top .seat__info {
+  min-height: clamp(30px, calc(var(--table-w, 360px) * 0.09), 42px);
+  padding-block: 3px;
 }

@@ -103,6 +103,7 @@ export interface TimeBankEvent {
 export class TimeBankEngine {
   private tableConfigs: Map<string, TimeBankConfig> = new Map();
   private playerBanks: Map<string, PlayerTimeBank> = new Map();
+  private autoActivatePreferences = new Map<string, boolean>();
   private preciseTimer: PreciseActionTimer;
   private onEvent?: (event: TimeBankEvent) => void;
 
@@ -177,6 +178,20 @@ export class TimeBankEngine {
       this.preciseTimer.cancelTimer(tableId, `timebank:${playerId}`);
     }
     this.playerBanks.delete(key);
+    this.autoActivatePreferences.delete(key);
+  }
+
+  /** The account's choice, independent of paid bank balance and manual arming. */
+  setAutoActivate(tableId: string, playerId: string, enabled: boolean): void {
+    this.autoActivatePreferences.set(`${tableId}:${playerId}`, enabled);
+  }
+
+  hasAutoActivatePreference(tableId: string, playerId: string): boolean {
+    return this.autoActivatePreferences.has(`${tableId}:${playerId}`);
+  }
+
+  isAutoActivateEnabled(tableId: string, playerId: string): boolean {
+    return this.autoActivatePreferences.get(`${tableId}:${playerId}`) ?? true;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -195,7 +210,8 @@ export class TimeBankEngine {
   onPrimaryTimerExpired(tableId: string, playerId: string, onExpire: () => void): boolean {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     const bank = this.playerBanks.get(`${tableId}:${playerId}`);
-    if (!config.autoActivate && !bank?.armed) return false;
+    if ((!config.autoActivate || !this.isAutoActivateEnabled(tableId, playerId)) && !bank?.armed)
+      return false;
     return this.activate(tableId, playerId, onExpire);
   }
 
@@ -510,10 +526,14 @@ export class TimeBankEngine {
       }
     }
     this.tableConfigs.delete(tableId);
+    for (const key of this.autoActivatePreferences.keys()) {
+      if (key.startsWith(`${tableId}:`)) this.autoActivatePreferences.delete(key);
+    }
   }
 
   disposeAll(): void {
     this.playerBanks.clear();
+    this.autoActivatePreferences.clear();
     this.tableConfigs.clear();
   }
 

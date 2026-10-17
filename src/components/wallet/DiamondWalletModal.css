@@ -346,3 +346,17 @@
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
+
+/* The transfer sheet over the wallet desk (Dan 2026-10-16). */
+.dwc-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: max(10px, env(safe-area-inset-top)) 8px max(10px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgb(2 4 7 / 88%);
+}

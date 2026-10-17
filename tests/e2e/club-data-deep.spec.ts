@@ -250,15 +250,13 @@ test.describe('Club Data production experience', () => {
       if (playerPageReceipts.length > 25) playerPageReceipts.shift();
     };
     page.on('request', (request) => {
-      if (
-        request.method() !== 'POST' ||
-        !request.url().includes('/rest/v1/rpc/ca_club_player_page')
-      )
+      if (request.method() !== 'POST' || !request.url().includes('/rest/v1/rpc/ca_club_player_'))
         return;
       try {
         const payload = request.postDataJSON();
         notePlayerPage({
           phase: 'requested',
+          rpc: new URL(request.url()).pathname.split('/').pop(),
           sort: payload?.p_sort,
           continuation: Boolean(payload?.p_cursor),
           limit: payload?.p_limit,
@@ -270,7 +268,7 @@ test.describe('Club Data production experience', () => {
     page.on('response', async (response) => {
       if (
         response.request().method() !== 'POST' ||
-        !response.url().includes('/rest/v1/rpc/ca_club_player_page')
+        !response.url().includes('/rest/v1/rpc/ca_club_player_')
       )
         return;
       try {
@@ -278,6 +276,7 @@ test.describe('Club Data production experience', () => {
         const payload = await response.json();
         notePlayerPage({
           phase: 'response',
+          rpc: new URL(response.url()).pathname.split('/').pop(),
           status: response.status(),
           sort: request?.p_sort,
           continuation: Boolean(request?.p_cursor),
@@ -288,6 +287,7 @@ test.describe('Club Data production experience', () => {
             : null,
           hasMore: payload?.has_more,
           hasCursor: Boolean(payload?.next_cursor),
+          playerCount: payload?.player_count,
           errorCode: payload?.code,
         });
       } catch {
@@ -295,13 +295,24 @@ test.describe('Club Data production experience', () => {
       }
     });
     page.on('requestfailed', (request) => {
-      if (request.url().includes('/rest/v1/rpc/ca_club_player_page')) {
-        notePlayerPage({ transportFailure: request.failure()?.errorText || 'unknown' });
+      if (request.url().includes('/rest/v1/rpc/ca_club_player_')) {
+        notePlayerPage({
+          rpc: new URL(request.url()).pathname.split('/').pop(),
+          transportFailure: request.failure()?.errorText || 'unknown',
+        });
       }
     });
-    await page.getByRole('tab', { name: 'Players' }).click();
     const playersList = page.getByRole('list', { name: 'Players' });
-    await expect(playersList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
+    try {
+      await page.getByRole('tab', { name: 'Players' }).click();
+      await expect(playersList.getByRole('listitem').first()).toBeVisible({ timeout: 60_000 });
+    } catch (error) {
+      await testInfo.attach('player-first-load-receipts', {
+        body: JSON.stringify({ receipts: playerPageReceipts }, null, 2),
+        contentType: 'application/json',
+      });
+      throw error;
+    }
     const biggestLosers = page.getByRole('button', { name: 'Biggest losers' });
     let firstLosers = await observePlayerPage(page, 'losers', null, () => biggestLosers.click());
     await expect(biggestLosers).toHaveAttribute('aria-pressed', 'true');

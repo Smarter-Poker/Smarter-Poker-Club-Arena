@@ -1,3 +1,4 @@
+import { formatCashierAmountInput, cashierAmountInputValue } from '../../utils/cashierAmount';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  CLUB BANK CASHIER (Dan 2026-08-23, BINDING; Claim Back + Promo Send 2026-08-24)
@@ -108,7 +109,6 @@ import {
   canUseCashier,
   destinationBlurb,
   claimNeedsConfirm,
-  coercesToAgentWallet,
   cashierRefusesSelfSend,
   secondsLeftFromServer,
   DEFAULT_CASHIER_WALLET,
@@ -127,10 +127,12 @@ import { SpadeConsole } from '../console/SpadeConsole';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
+import transferStyles from '../../pages/CashierTradePage.module.css';
 import { downloadBlob } from '../../utils/downloadCsv';
 import { statementCsvCell } from '../../utils/cashierStatementCsv';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatWalletChips } from '../../utils/format';
+import { generateAvatarSvg } from '../../utils/avatarGenerator';
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 
 type DestinationWallet = CashierDestination;
@@ -254,17 +256,11 @@ interface WalletCashierModalProps {
   initialDestination?: CashierDestination | null;
 }
 
-/**
- * A chip figure on the glass: compactChips, the house reading for every chip
- * count outside the felt (Dan 2026-09-09: "NEVER USE DECIMAL POINTS ON ANY
- * FORWARD FACING PAGE ... IF ITS 1200 USE 1.2K"). This printed 12,500.5 -
- * decimals and all - on balances, member rows and the ledgers (audit C2-17).
- * Rounded down, so a balance is never overstated. Unknown is "...", and a
- * value that is not a number is "Unavailable" - it used to print a confident
- * 0.00, which is an invented balance.
- */
-const fmt = (n?: number | null) =>
-  n === undefined || n === null ? '...' : Number.isFinite(n) ? compactChips(n) : 'Unavailable';
+/** Wallet balances retain cents and separators below one million (Dan 2026-10-16).
+ * Unknown and unreadable balances remain distinct from a verified zero.
+ * Transactions and ledger aggregates use compactChips at their render sites. */
+const fmtWallet = (n?: number | null) =>
+  n === undefined || n === null ? '...' : Number.isFinite(n) ? formatWalletChips(n) : 'Unavailable';
 
 /** The amount being moved, exactly: a confirmation or a receipt never abbreviates it. */
 const fmtWhole = (n: number) => Math.round(n).toLocaleString('en-US');
@@ -378,6 +374,8 @@ export default function WalletCashierModal({
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sendReceipt, setSendReceipt] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
   /**
@@ -454,6 +452,8 @@ export default function WalletCashierModal({
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerError, setLedgerError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const exportBusyRef = useRef(false);
   const [reversingId, setReversingId] = useState<string | null>(null);
 
   const [showMint, setShowMint] = useState(false);
@@ -483,6 +483,9 @@ export default function WalletCashierModal({
   const actionViewKey = JSON.stringify([isOpen, clubId, user?.id, walletType, role]);
   const actionView = useRef({ key: actionViewKey });
   if (actionView.current.key !== actionViewKey) actionView.current = { key: actionViewKey };
+  const exportViewKey = JSON.stringify([actionViewKey, tab, promoSource, typeFilter]);
+  const exportView = useRef({ key: exportViewKey });
+  if (exportView.current.key !== exportViewKey) exportView.current = { key: exportViewKey };
   const busyRef = useRef(false);
 
   const viewerRole = normaliseRole(role);
@@ -494,45 +497,10 @@ export default function WalletCashierModal({
     walletType === 'club_bank' && canMintInClubBank(viewerRole, { standalone: inUnion === false });
 
   const tabs = cashierTabs(walletType);
-  /* AGENT TO AGENT ALWAYS CREDITS THE AGENT WALLET (Dan 2026-08-25).
-     A recipient who holds a float is funded IN that float, so the choice
-     disappears rather than being offered and then overridden. The database
-     coerces it too - fn_agent_wallet_send derives the destination from the
-     recipient's role and ignores what the client asked for - because a
-     dropdown is a suggestion and anything holding a session can call the RPC
-     directly. This is the half that stops the mistake being OFFERED.
-
-     SCOPED TO THE AGENT WALLET'S SEND TAB, and only there (2026-08-25 fix).
-     The narrowing used to apply to EVERY cashier and BOTH tabs, which broke
-     three things the law never touched:
-       - the Club Bank could no longer fund an agent's PROMO wallet, because
-         picking an agent collapsed the segmented control to Agent Wallet -
-         and fn_club_bank_send happily accepts promo_wallet;
-       - the Club Bank could no longer send a plain player-wallet credit to
-         someone who happens to be an agent;
-       - the Club Bank's Claim Back could only ever pull from an agent's float,
-         never from their promo wallet or their player balance, even though
-         fn_club_bank_claim_back takes all three.
-     "Agent to agent" is fn_agent_wallet_send. It is not the club bank. */
-  const recipientHoldsFloat = recipient ? canHoldAgentWallet(recipient.role) : false;
-  const coerceToAgentWallet = coercesToAgentWallet(walletType, tab, recipientHoldsFloat);
-  const destinations = useMemo(() => {
-    const all = cashierDestinations(walletType);
-    if (!coerceToAgentWallet) return all;
-    const only = all.filter((d) => d === 'agent_wallet');
-    return only.length > 0 ? only : all;
-  }, [walletType, coerceToAgentWallet]);
-  /** The agent wallet's Claim Back tab is a different shape from the bank's. */
+  // Every send honors the selected wallet. Eligibility is explained on each
+  // roster row; the transaction validates it again before moving chips.
+  const destinations = cashierDestinations(walletType);
   const agentClaimTab = walletType === 'agent_wallet' && tab === 'claim';
-
-  /* Picking a player, choosing their player wallet, then switching to an agent
-     would otherwise leave `destination` on a value the list no longer offers -
-     the send would still be coerced server-side, but the summary line above
-     the button would be describing a transfer that is not the one about to
-     happen. */
-  useEffect(() => {
-    if (coerceToAgentWallet && destination !== 'agent_wallet') setDestination('agent_wallet');
-  }, [coerceToAgentWallet, destination]);
 
   const balanceScopeRef = useRef(0);
   /* The member the cashier was opened for (initialRecipientId). Cleared on use
@@ -545,6 +513,7 @@ export default function WalletCashierModal({
   // every hand's treasury/agent updates across the platform. Money commands
   // still authorize and lock the actual balance inside their transaction.
   const loadClub = useVisibleRead({
+    manualOnly: true,
     scopeKey: `${clubId}:${user?.id}:${walletType}`,
     enabled: isOpen && allowed && Boolean(clubId && user?.id),
     read: (signal) => readCashierBalances(clubId, user!.id, walletType, signal),
@@ -696,6 +665,11 @@ export default function WalletCashierModal({
         isMounted.current && seq === ledgerSeqRef.current && scope === balanceScopeRef.current;
       setLedgerLoading(true);
       setLedgerError(null);
+      if (offset === 0) {
+        setLedger([]);
+        setLedgerTotal(0);
+        setLedgerTotals(null);
+      }
       try {
         const { data, error } = await supabase.rpc('fn_club_bank_ledger', {
           p_club_id: uuid,
@@ -747,6 +721,11 @@ export default function WalletCashierModal({
         isMounted.current && seq === promoLedgerSeqRef.current && scope === balanceScopeRef.current;
       setLedgerLoading(true);
       setLedgerError(null);
+      if (offset === 0) {
+        setPromoLedger([]);
+        setPromoLedgerTotal(0);
+        setPromoLedgerTotals(null);
+      }
       try {
         const { data, error } = await supabase.rpc('fn_promo_wallet_ledger', {
           p_scope: promoLedgerScope(source),
@@ -795,6 +774,8 @@ export default function WalletCashierModal({
   useEffect(() => {
     if (!isOpen || !user?.id) return;
     setTab('send');
+    setSendError(null);
+    setSendReceipt(null);
     setPromoSource(promoSourceFor(role));
     setPromoPot(null);
     setPromoFloat(null);
@@ -932,7 +913,7 @@ export default function WalletCashierModal({
   // promo floats live on the agents table and are fetched when the holder is
   // chosen. The claim button stays disabled until the figure is known.
   useEffect(() => {
-    if (tab !== 'claim' || !recipient || !clubUuid) {
+    if ((tab !== 'claim' && walletType !== 'club_bank') || !recipient || !clubUuid) {
       setHolderHeld(null);
       return;
     }
@@ -972,7 +953,7 @@ export default function WalletCashierModal({
     return () => {
       cancelled = true;
     };
-  }, [tab, destination, recipient, clubUuid, isMounted, holderNonce]);
+  }, [tab, destination, recipient, clubUuid, isMounted, holderNonce, walletType]);
 
   // A send that lands, a claim, a reversal, or a mint changes the bank and the
   // recipient. Refetch rather than patching state by hand — a hand-patched
@@ -1036,11 +1017,8 @@ export default function WalletCashierModal({
         refusesSelfSend: excludeSelf,
         destinationNeedsAgentWallet: AGENT_ONLY.includes(destination),
         memberHoldsAgentWallet: canHoldAgentWallet(m.role),
-        /* An admin holds no player wallet, so fn_club_bank_send refuses that
-           credit. An OWNER does hold one and is sendable (Dan 2026-10-11).
-           The agent wallet cashier is exempt: it pays a staff recipient into
-           their float whatever is asked, so nothing is refused there. */
-        destinationIsPlayerWallet: destination === 'player_wallet' && walletType !== 'agent_wallet',
+        // An admin holds no player wallet; every send honors this eligibility.
+        destinationIsPlayerWallet: destination === 'player_wallet',
         memberHoldsPlayerWallet: holdsPlayerWallet(m.role),
       }),
     [user?.id, excludeSelf, destination, walletType]
@@ -1135,7 +1113,12 @@ export default function WalletCashierModal({
      the typist never saw written out. Digits only. */
   const amountIsWhole =
     Number.isFinite(amt) && Number.isInteger(amt) && amt >= 1 && WHOLE_CHIPS.test(amount.trim());
-  const canSend = Boolean(recipient) && amountIsWhole && cap !== null && !overCap && !sending;
+  const canSend =
+    Boolean(recipient && !blockFor(recipient)) &&
+    amountIsWhole &&
+    cap !== null &&
+    !overCap &&
+    !sending;
   // A send that borrows on the credit line always asks first: it creates debt.
   const needsConfirm =
     tab === 'claim'
@@ -1161,6 +1144,7 @@ export default function WalletCashierModal({
   useEffect(() => {
     opIdRef.current = newOpId();
     setConfirming(false);
+    setSendError(null);
   }, [recipient?.user_id, amount, destination, tab, reason]);
 
   const doSend = async () => {
@@ -1168,6 +1152,8 @@ export default function WalletCashierModal({
     const owningView = actionView.current;
     busyRef.current = true;
     setSending(true);
+    setSendError(null);
+    setSendReceipt(null);
     try {
       const action =
         tab === 'claim'
@@ -1266,7 +1252,10 @@ export default function WalletCashierModal({
             : `Claimed ${fmtWhole(amt)} Chips Back From ${titleCase(recipient.name)} Into The Club Bank`
           : res.replayed
             ? `That Send Had Already Gone Through. ${fmtWhole(amt)} Chips Are With ${titleCase(recipient.name)}`
-            : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`
+            : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`,
+        undefined,
+        undefined,
+        operation.operationId
       );
       masterBus.emit('CHIPS_DISTRIBUTED', {
         clubId: clubUuid,
@@ -1277,6 +1266,11 @@ export default function WalletCashierModal({
       addRecipient(recipient.user_id);
       setAmount('');
       setReason('');
+      setSendReceipt(
+        tab === 'claim'
+          ? `Claimed ${fmtWhole(amt)} Chips Into The Club Bank`
+          : `Sent ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)} ${destLabel}`
+      );
       setConfirming(false);
       opIdRef.current = newOpId();
       setHolderNonce((n) => n + 1);
@@ -1286,7 +1280,9 @@ export default function WalletCashierModal({
       if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.send');
       // A refusal sentence passes through; a thrown object never prints raw.
-      toast?.error?.(safeErrorMessage(e, 'Send Failed'));
+      const message = safeErrorMessage(e, 'Send Failed');
+      setSendError(message);
+      toast?.error?.(message);
       // The key is NOT rotated here. If this failed because the response was
       // lost rather than because the send was refused, the retry must be able
       // to find the original instead of sending a second time. And the sheet
@@ -1365,8 +1361,12 @@ export default function WalletCashierModal({
       toast?.success?.(
         res.replayed
           ? `That Claim Had Already Gone Through. ${fmtWhole(Number(res.amount) || 0)} Chips Are Back In Your Agent Wallet`
-          : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${titleCase(row.to_name)}`
+          : `Claimed ${fmtWhole(Number(res.amount) || 0)} Chips Back From ${titleCase(row.to_name)}`,
+        undefined,
+        undefined,
+        operation.operationId
       );
+      addRecipient(row.to_user_id);
       masterBus.emit('BALANCE_UPDATED', { source: 'agent_wallet_claim', userId: user?.id || '' });
       masterBus.emit('BALANCE_UPDATED', {
         source: 'agent_wallet_claim',
@@ -1441,25 +1441,46 @@ export default function WalletCashierModal({
       Safari/Firefox revoke timing AND the app's share-sheet branch; this
       used to be a local copy with the same name, which is why a grep for
       the helper looked clean while the app silently downloaded nothing. */
-  const downloadLedgerCsv = (name: string, header: string[], body: string[]) => {
-    downloadBlob(
-      `${name}-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date()
-        .toISOString()
-        .slice(0, 10)}.csv`,
-      /* The byte order mark and the trailing CRLF are the statement export's
-         convention (buildStatementCsv): Excel reads UTF-8 instead of guessing,
-         and the last row ends like every other. */
-      new Blob(['\ufeff' + [header.map(csvText).join(','), ...body].join('\r\n') + '\r\n'], {
-        type: 'text/csv;charset=utf-8',
-      })
-    );
+  // Observe the actual file handoff, including native sharing. A closed or
+  // changed ledger cannot hand an old account's bytes to the share sheet.
+  const downloadLedgerCsv = async (name: string, header: string[], body: string[]) => {
+    if (exportBusyRef.current || ledgerLoading) return;
+    const owningView = exportView.current;
+    const ledgerRequest = ledgerSeqRef.current;
+    const promoRequest = promoLedgerSeqRef.current;
+    const current = () =>
+      isMounted.current &&
+      exportView.current === owningView &&
+      ledgerSeqRef.current === ledgerRequest &&
+      promoLedgerSeqRef.current === promoRequest;
+    exportBusyRef.current = true;
+    setExporting(true);
+    try {
+      const handedOff = await downloadBlob(
+        `${name}-${clubName.replace(/\W+/g, '-').toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`,
+        new Blob(['\ufeff' + [header.map(csvText).join(','), ...body].join('\r\n') + '\r\n'], {
+          type: 'text/csv;charset=utf-8',
+        }),
+        current
+      );
+      if (!current()) return;
+      if (!handedOff) throw new Error('Could Not Export The Ledger');
+      toast?.success?.(`Exported ${body.length.toLocaleString('en-US')} Ledger Entries`);
+    } catch (error) {
+      if (!current()) return;
+      reportError(error, 'WalletCashierModal.exportLedger');
+      toast?.error?.(safeErrorMessage(error, 'Could Not Export The Ledger'));
+    } finally {
+      exportBusyRef.current = false;
+      if (isMounted.current) setExporting(false);
+    }
   };
 
   /** The promo ledger rows on screen, as a spreadsheet. */
   const exportPromoCsv = () => {
     const rows = promoLedger.slice(0, EXPORT_MAX);
     if (rows.length === 0) return;
-    downloadLedgerCsv(
+    void downloadLedgerCsv(
       promoSource === 'club_pot' ? 'club-promo-wallet-ledger' : 'promo-float-ledger',
       ['When', 'Direction', 'Category', 'Amount', 'Counterparty', 'By', 'Wallet After', 'Note'],
       rows.map((r) =>
@@ -1475,7 +1496,6 @@ export default function WalletCashierModal({
         ].join(',')
       )
     );
-    toast?.success?.(`Exported ${rows.length.toLocaleString('en-US')} Ledger Entries`);
   };
 
   /** The rows on screen, as a spreadsheet. Nothing leaves that is not shown. */
@@ -1506,13 +1526,8 @@ export default function WalletCashierModal({
         csvText(r.notes ?? ''),
       ].join(',')
     );
-    /* REVOKE AFTER THE DOWNLOAD HAS STARTED, not in the same tick. Safari and
-       Firefox read the blob asynchronously once the click is dispatched, so a
-       synchronous revoke cancelled the save and the Export button did nothing
-       at all on those browsers. One second is long enough for the fetch to be
-       issued and short enough that the blob is not held. (downloadCsv above.) */
-    downloadLedgerCsv('club-bank-ledger', header, body);
-    toast?.success?.(`Exported ${rows.length.toLocaleString('en-US')} Ledger Entries`);
+    // The shared downloader retains the browser read window before revoking.
+    void downloadLedgerCsv('club-bank-ledger', header, body);
   };
 
   if (!isOpen) return null;
@@ -1544,6 +1559,7 @@ export default function WalletCashierModal({
      one, so they close with the flat cap and print that action as a lit word
      on the glass. */
   const formTab = !agentClaimTab && (tab === 'send' || tab === 'claim');
+  const bankTransfer = walletType === 'club_bank' && formTab;
 
   // Belt and braces: this modal is only mounted behind a role check, and the
   // row that opens it only renders for roles that hold the wallet. If it is
@@ -1602,7 +1618,11 @@ export default function WalletCashierModal({
         aria-label={`${cashierTitle} Cashier`}
         onClick={closeIfIdle}
       >
-        <div ref={panelRef} className="cbc-panel wcm ac-popup" onClick={(e) => e.stopPropagation()}>
+        <div
+          ref={panelRef}
+          className={`cbc-panel wcm ac-popup${bankTransfer ? ' cbc-bank-transfer' : ''}`}
+          onClick={(e) => e.stopPropagation()}
+        >
           <SpadeConsole
             onClose={inFlight || showMint ? undefined : closeIfIdle}
             as="div"
@@ -1617,10 +1637,13 @@ export default function WalletCashierModal({
                travelling or the Chip Mint is up, exactly as the cashout sheet
                and the mint hide theirs; the overlay, Escape and every Close
                word guard the same. */
-            eyebrow={clubName || 'Club Arena'}
-            title={cashierTitle}
-            pill={roleLabel(viewerRole)}
-            pillInk="blue"
+            className={bankTransfer ? transferStyles.console : undefined}
+            eyebrow={
+              bankTransfer ? `${clubName || 'Club Arena'} · Club Bank` : clubName || 'Club Arena'
+            }
+            title={bankTransfer ? (tab === 'claim' ? 'Claim Back' : 'Send Out') : cashierTitle}
+            pill={bankTransfer ? (inFlight ? 'Working' : 'Ready') : roleLabel(viewerRole)}
+            pillInk={bankTransfer ? (inFlight ? 'blue' : 'green') : 'blue'}
             foot={formTab ? 'plates' : 'foot'}
             plates={
               formTab
@@ -1640,9 +1663,11 @@ export default function WalletCashierModal({
                           ? tab === 'claim'
                             ? 'Yes, Claim It'
                             : 'Yes, Send It'
-                          : tab === 'claim'
-                            ? 'Claim Chips'
-                            : 'Send Chips',
+                          : bankTransfer
+                            ? 'Confirm'
+                            : tab === 'claim'
+                              ? 'Claim Chips'
+                              : 'Send Chips',
                       ink: canSend ? 'white' : 'muted',
                       disabled: !canSend,
                       onClick: onSendPressed,
@@ -1651,7 +1676,10 @@ export default function WalletCashierModal({
                 : undefined
             }
           >
-            <div className="cbc-bank">
+            <button type="button" className="cbc-word" disabled={inFlight} onClick={refresh}>
+              Refresh Balances
+            </button>
+            <div className="cbc-bank" hidden={bankTransfer}>
               <span>
                 {walletType === 'promo_wallet'
                   ? promoBalanceLabel(promoSource)
@@ -1666,7 +1694,7 @@ export default function WalletCashierModal({
                     ? clubLoading
                       ? '...'
                       : 'Unavailable'
-                    : fmt(bank)}
+                    : fmtWallet(bank)}
               </strong>
               {walletType === 'promo_wallet' && clubName && (
                 <em className="cbc-bank-sub">
@@ -1677,7 +1705,7 @@ export default function WalletCashierModal({
                   there is one, so a prepaid agent reads what they always read. */}
               {walletType === 'agent_wallet' && bank !== null && credit !== null && credit > 0 && (
                 <em className="cbc-bank-sub">
-                  {`Plus ${fmt(credit)} Credit Line Left, So You Can Send ${fmt(bank + credit)}`}
+                  {`Plus ${fmtWallet(credit)} Credit Line Left, So You Can Send ${fmtWallet(bank + credit)}`}
                 </em>
               )}
             </div>
@@ -1698,6 +1726,7 @@ export default function WalletCashierModal({
                 <div className="cbc-source" role="radiogroup" aria-label="Promo Wallet Source">
                   <button
                     role="radio"
+                    disabled={inFlight}
                     aria-checked={promoSource === 'club_pot'}
                     className={promoSource === 'club_pot' ? 'cbc-source-on' : ''}
                     onClick={() => {
@@ -1707,11 +1736,16 @@ export default function WalletCashierModal({
                   >
                     <span>Club Promo Wallet</span>
                     <strong>
-                      {promoPot === null ? (clubLoading ? '...' : 'Unavailable') : fmt(promoPot)}
+                      {promoPot === null
+                        ? clubLoading
+                          ? '...'
+                          : 'Unavailable'
+                        : fmtWallet(promoPot)}
                     </strong>
                   </button>
                   <button
                     role="radio"
+                    disabled={inFlight}
                     aria-checked={promoSource === 'own_float'}
                     className={promoSource === 'own_float' ? 'cbc-source-on' : ''}
                     onClick={() => {
@@ -1720,7 +1754,7 @@ export default function WalletCashierModal({
                     }}
                   >
                     <span>My Promo Float</span>
-                    <strong>{fmt(promoFloat)}</strong>
+                    <strong>{fmtWallet(promoFloat)}</strong>
                   </button>
                 </div>
               )}
@@ -1737,7 +1771,7 @@ export default function WalletCashierModal({
             {/* Chip Mint lives HERE and only for a standalone club. A club inside
                 a union has no mint at all - chips flow down from the union. */}
             {mayMint && (
-              <button className="cbc-mint" onClick={() => setShowMint(true)}>
+              <button className="cbc-mint" disabled={inFlight} onClick={() => setShowMint(true)}>
                 Mint Chips Into The Club Bank
               </button>
             )}
@@ -1748,11 +1782,12 @@ export default function WalletCashierModal({
                 <button
                   key={t}
                   role="tab"
+                  disabled={inFlight}
                   aria-selected={tab === t}
                   className={tab === t ? 'cbc-tab cbc-tab--on' : 'cbc-tab'}
                   onClick={() => setTab(t)}
                 >
-                  {TAB_LABELS[t]}
+                  {walletType === 'club_bank' && t === 'send' ? 'Send Out' : TAB_LABELS[t]}
                 </button>
               ))}
             </div>
@@ -1788,7 +1823,7 @@ export default function WalletCashierModal({
                       <div key={row.transaction_id} className="cbc-tx">
                         <div className="cbc-tx-top">
                           <span className="cbc-tx-type">{titleCase(row.to_name)}</span>
-                          <span className="cbc-tx-amount">{fmt(row.remaining)}</span>
+                          <span className="cbc-tx-amount">{compactChips(row.remaining)}</span>
                         </div>
                         <div className="cbc-tx-mid">
                           <span>Into {enumToTitleCase(row.destination)}</span>
@@ -1803,13 +1838,14 @@ export default function WalletCashierModal({
                         {Number(row.claimed_back) > 0 && (
                           <div className="cbc-tx-foot">
                             <span>
-                              Sent {fmt(row.amount)}, {fmt(row.claimed_back)} Already Claimed Back
+                              Sent {compactChips(row.amount)}, {compactChips(row.claimed_back)}{' '}
+                              Already Claimed Back
                             </span>
                           </div>
                         )}
                         <button
                           className="cbc-undo"
-                          disabled={claimingId !== null}
+                          disabled={inFlight}
                           onClick={() => void claimBack(row)}
                         >
                           {claimingId === row.transaction_id
@@ -1828,7 +1864,7 @@ export default function WalletCashierModal({
               ) : tab === 'send' || tab === 'claim' ? (
                 <>
                   {/* Destination (send) or source (claim) */}
-                  <div className="cbc-field">
+                  <div className="cbc-field" hidden={bankTransfer && Boolean(recipient)}>
                     <label className="cbc-label">
                       {tab === 'claim' ? 'Claim From' : 'Send Into'}
                     </label>
@@ -1836,6 +1872,7 @@ export default function WalletCashierModal({
                       {destinations.map((key) => (
                         <button
                           key={key}
+                          disabled={inFlight}
                           className={destination === key ? 'cbc-seg-on' : ''}
                           onClick={() => setDestination(key)}
                         >
@@ -1849,7 +1886,64 @@ export default function WalletCashierModal({
                   </div>
 
                   {/* Recipient (send) or holder (claim) */}
-                  <div className="cbc-field">
+                  {bankTransfer && recipient && (
+                    <section className={transferStyles.playerCard} aria-label="Selected Player">
+                      <img
+                        className={transferStyles.playerCardAvatar}
+                        src={
+                          recipient.avatar_url ||
+                          generateAvatarSvg(recipient.user_id, recipient.name)
+                        }
+                        alt=""
+                        onError={(event) => {
+                          event.currentTarget.onerror = null;
+                          event.currentTarget.src = generateAvatarSvg(
+                            recipient.user_id,
+                            recipient.name
+                          );
+                        }}
+                      />
+                      <span className={transferStyles.playerCardPlate}>
+                        <span className={transferStyles.playerCardIdentity}>
+                          <strong className={transferStyles.playerCardName}>
+                            {titleCase(recipient.name)}
+                          </strong>
+                          <span className={transferStyles.playerCardId}>
+                            ID: {recipient.short_id}
+                          </span>
+                        </span>
+                        <span className={transferStyles.playerCardBalance}>
+                          <select
+                            className={transferStyles.walletSelect}
+                            aria-label={tab === 'claim' ? 'Claim From' : 'Send Into'}
+                            value={destination}
+                            disabled={inFlight}
+                            onChange={(event) =>
+                              setDestination(event.target.value as DestinationWallet)
+                            }
+                          >
+                            {destinations.map((key) => (
+                              <option key={key} value={key}>
+                                {DESTINATION_LABELS[key]}
+                              </option>
+                            ))}
+                          </select>
+                          <strong>{fmtWallet(holderHeld)}</strong>
+                        </span>
+                      </span>
+                    </section>
+                  )}
+                  {bankTransfer && recipient && (
+                    <button
+                      type="button"
+                      className="cbc-word"
+                      disabled={inFlight}
+                      onClick={() => setRecipient(null)}
+                    >
+                      Change Recipient
+                    </button>
+                  )}
+                  <div className="cbc-field" hidden={bankTransfer && Boolean(recipient)}>
                     <label className="cbc-label" htmlFor="cbc-search">
                       {tab === 'claim' ? 'Claim From Member' : 'Recipient'}
                     </label>
@@ -1862,6 +1956,7 @@ export default function WalletCashierModal({
                         AGENT_ONLY.includes(destination) ? 'Search Agents' : 'Search Members'
                       }
                       aria-label="Search Recipients"
+                      disabled={inFlight}
                     />
                     <div className="cbc-list">
                       {membersLoading && <div className="cbc-empty">Loading Members...</div>}
@@ -1896,6 +1991,7 @@ export default function WalletCashierModal({
                         return (
                           <button
                             key={m.user_id}
+                            disabled={inFlight}
                             className={
                               block
                                 ? 'cbc-member cbc-member--blocked'
@@ -1932,7 +2028,7 @@ export default function WalletCashierModal({
                             {block ? (
                               <span className="cbc-member-block">{block.label}</span>
                             ) : (
-                              <span className="cbc-member-bal">{fmt(m.chip_balance)}</span>
+                              <span className="cbc-member-bal">{fmtWallet(m.chip_balance)}</span>
                             )}
                           </button>
                         );
@@ -1940,36 +2036,65 @@ export default function WalletCashierModal({
                     </div>
                   </div>
 
+                  {bankTransfer && (
+                    <section
+                      className={transferStyles.walletRow}
+                      aria-label={tab === 'claim' ? 'Into The Club Bank' : 'From The Club Bank'}
+                    >
+                      <span className={transferStyles.walletRowSlot} aria-hidden="true">
+                        <img
+                          src={`${import.meta.env.BASE_URL}assets/club-buttons/wallets/wallet-mark-v1.svg`}
+                          alt=""
+                        />
+                      </span>
+                      <span className={transferStyles.walletRowPlate}>
+                        <span className={transferStyles.walletRowLabel}>
+                          {tab === 'claim' ? 'Into The Club Bank' : 'From The Club Bank'}
+                        </span>
+                        <strong className={transferStyles.walletRowValue}>
+                          {bank === null ? 'Unavailable' : fmtWallet(bank)}
+                        </strong>
+                      </span>
+                    </section>
+                  )}
                   {/* Amount */}
                   <div className="cbc-field">
-                    <label className="cbc-label" htmlFor="cbc-amount">
-                      Amount
-                    </label>
-                    <input
-                      id="cbc-amount"
-                      className="cbc-input"
-                      type="number"
-                      /* Whole chips only (see amountIsWhole), so the keypad that
+                    <label className={bankTransfer ? transferStyles.entryRow : undefined}>
+                      {bankTransfer && <span className={transferStyles.entryRowSlot}>Amount</span>}
+                      <span className={bankTransfer ? transferStyles.entryRowPlate : undefined}>
+                        <span className="cbc-label" hidden={bankTransfer}>
+                          Amount
+                        </span>
+                        <input
+                          id="cbc-amount"
+                          disabled={inFlight}
+                          className={bankTransfer ? transferStyles.entryInput : 'cbc-input'}
+                          type="text"
+                          /* Whole chips only (see amountIsWhole), so the keypad that
                          comes up is the numeric one rather than the decimal one
                          offering a point the field will then reject. */
-                      inputMode="numeric"
-                      min={1}
-                      step={1}
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      placeholder="Whole Chips"
-                      /* aria-label was the EMPTY STRING, which is worse than
+                          inputMode="numeric"
+                          min={1}
+                          step={1}
+                          value={formatCashierAmountInput(amount)}
+                          onChange={(e) => setAmount(cashierAmountInputValue(e.target.value))}
+                          placeholder="Whole Chips"
+                          /* aria-label was the EMPTY STRING, which is worse than
                          absent: it overrides the visible <label> and announces an
                          unnamed spin button to a screen reader on the one field
                          that decides how much money moves. */
-                      aria-label={tab === 'claim' ? 'Chips To Claim Back' : 'Chips To Send'}
-                    />
-
+                          aria-label={tab === 'claim' ? 'Chips To Claim Back' : 'Chips To Send'}
+                        />
+                      </span>
+                    </label>
+                    {bankTransfer && (
+                      <div className={transferStyles.modalTotal}>Total: {fmtWhole(amt)}</div>
+                    )}
                     {tab === 'claim' && recipient && (
                       <div className="cbc-blurb">
                         {holderHeld === null
                           ? 'Reading That Wallet...'
-                          : `${titleCase(recipient.name)} Holds ${fmt(holderHeld)} In That Wallet.`}
+                          : `${titleCase(recipient.name)} Holds ${fmtWallet(holderHeld)} In That Wallet.`}
                       </div>
                     )}
                     {/* A BALANCE WE COULD NOT READ CANNOT PROJECT AN AFTER
@@ -1981,19 +2106,29 @@ export default function WalletCashierModal({
                     {amt > 0 && !overCap && bank !== null && (
                       <div className="cbc-blurb">
                         {tab === 'claim'
-                          ? `Claiming ${fmtWhole(amt)}. The Club Bank Would Hold ${fmt(bank + amt)} Afterwards.`
+                          ? `Claiming ${fmtWhole(amt)}. The Club Bank Would Hold ${fmtWallet(bank + amt)} Afterwards.`
                           : creditDraw > 0
                             ? `Sending ${fmtWhole(amt)}. ${fmtExact(creditDraw)} Of It Is Drawn From Your Credit Line.`
-                            : `Sending ${fmtWhole(amt)}. The Wallet Would Hold ${fmt(bank - amt)} Afterwards.`}
+                            : `Sending ${fmtWhole(amt)}. The Wallet Would Hold ${fmtWallet(bank - amt)} Afterwards.`}
                       </div>
                     )}
                     {overCap && (
                       <div className="cbc-warn">
                         {tab === 'claim'
-                          ? `That Wallet Only Holds ${fmt(cap ?? 0)} Chips.`
+                          ? `That Wallet Only Holds ${fmtWallet(cap ?? 0)} Chips.`
                           : creditLine > 0
-                            ? `Your Wallet And Credit Line Cover ${fmt(cap ?? 0)} Chips.`
-                            : `The Wallet Only Holds ${fmt(cap ?? 0)} Chips.`}
+                            ? `Your Wallet And Credit Line Cover ${fmtWallet(cap ?? 0)} Chips.`
+                            : `The Wallet Only Holds ${fmtWallet(cap ?? 0)} Chips.`}
+                      </div>
+                    )}
+                    {sendError && (
+                      <div className="cbc-warn" role="alert" ref={revealOnMount}>
+                        {titleCase(sendError)}
+                      </div>
+                    )}
+                    {sendReceipt && (
+                      <div className="cbc-blurb" role="status" ref={revealOnMount}>
+                        {titleCase(sendReceipt)}
                       </div>
                     )}
                     {/* THE UNKNOWN OUTCOME, INSIDE THE FRAME and under the
@@ -2020,6 +2155,7 @@ export default function WalletCashierModal({
                     </label>
                     <input
                       id="cbc-reason"
+                      disabled={inFlight}
                       className="cbc-input"
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
@@ -2061,15 +2197,15 @@ export default function WalletCashierModal({
                     <div className="cbc-totals">
                       <div>
                         <span>Received</span>
-                        <strong className="cbc-in">{fmt(promoLedgerTotals.in)}</strong>
+                        <strong className="cbc-in">{compactChips(promoLedgerTotals.in)}</strong>
                       </div>
                       <div>
                         <span>Handed Out</span>
-                        <strong className="cbc-out">{fmt(promoLedgerTotals.out)}</strong>
+                        <strong className="cbc-out">{compactChips(promoLedgerTotals.out)}</strong>
                       </div>
                       <div>
                         <span>Net</span>
-                        <strong>{fmt(promoLedgerTotals.net)}</strong>
+                        <strong>{compactChips(promoLedgerTotals.net)}</strong>
                       </div>
                     </div>
                   )}
@@ -2084,7 +2220,7 @@ export default function WalletCashierModal({
                       <button
                         className="cbc-export"
                         onClick={exportPromoCsv}
-                        disabled={promoLedger.length === 0}
+                        disabled={exporting || ledgerLoading || promoLedger.length === 0}
                       >
                         Export CSV
                       </button>
@@ -2107,7 +2243,7 @@ export default function WalletCashierModal({
                               className={inbound ? 'cbc-tx-amount cbc-in' : 'cbc-tx-amount cbc-out'}
                             >
                               {inbound ? '+' : '-'}
-                              {fmt(row.amount)}
+                              {compactChips(row.amount)}
                             </span>
                           </div>
                           <div className="cbc-tx-mid">
@@ -2125,7 +2261,7 @@ export default function WalletCashierModal({
                             {note && <span>{titleCase(note)}</span>}
                             {row.actor_name && <span>By {titleCase(row.actor_name)}</span>}
                             {row.balance_after !== null && row.balance_after !== undefined && (
-                              <span>Wallet After {fmt(Number(row.balance_after))}</span>
+                              <span>Wallet After {fmtWallet(Number(row.balance_after))}</span>
                             )}
                           </div>
                         </div>
@@ -2169,15 +2305,17 @@ export default function WalletCashierModal({
                     <div className="cbc-totals">
                       <div>
                         <span>Into The Bank</span>
-                        <strong className="cbc-in">{fmt(ledgerTotals.into_bank)}</strong>
+                        <strong className="cbc-in">{compactChips(ledgerTotals.into_bank)}</strong>
                       </div>
                       <div>
                         <span>Out Of The Bank</span>
-                        <strong className="cbc-out">{fmt(ledgerTotals.out_of_bank)}</strong>
+                        <strong className="cbc-out">
+                          {compactChips(ledgerTotals.out_of_bank)}
+                        </strong>
                       </div>
                       <div>
                         <span>Net</span>
-                        <strong>{fmt(ledgerTotals.net)}</strong>
+                        <strong>{compactChips(ledgerTotals.net)}</strong>
                       </div>
                     </div>
                   )}
@@ -2191,7 +2329,7 @@ export default function WalletCashierModal({
                       <button
                         className="cbc-export"
                         onClick={exportCsv}
-                        disabled={ledger.length === 0}
+                        disabled={exporting || ledgerLoading || ledger.length === 0}
                       >
                         Export CSV
                       </button>
@@ -2231,7 +2369,7 @@ export default function WalletCashierModal({
                             <span className="cbc-tx-type">
                               {enumToTitleCase(row.transaction_type)}
                             </span>
-                            <span className="cbc-tx-amount">{fmt(row.amount)}</span>
+                            <span className="cbc-tx-amount">{compactChips(row.amount)}</span>
                           </div>
                           <div className="cbc-tx-mid">
                             <span>
@@ -2258,14 +2396,14 @@ export default function WalletCashierModal({
                               <span>From {enumToTitleCase(src)}</span>
                             )}
                             {row.balance_after !== null && (
-                              <span>Bank After {fmt(Number(row.balance_after))}</span>
+                              <span>Bank After {fmtWallet(Number(row.balance_after))}</span>
                             )}
                             {row.is_reversed && <span className="cbc-tx-rev">Reversed</span>}
                           </div>
                           {row.reversible && (
                             <button
                               className="cbc-undo"
-                              disabled={reversingId !== null}
+                              disabled={inFlight}
                               onClick={() => void reverse(row)}
                             >
                               {reversingId === row.id ? 'Reversing...' : 'Reverse This Send'}

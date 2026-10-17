@@ -111,8 +111,8 @@ describe('cashier Phase 5 production certification contracts', () => {
       ['3cc86bbb6317359a7b43fc34524d5876', '61b3478f0332f8ee7945d6eb2810bb71'],
       // fn_respond_chip_request (20261010003544)
       ['10fb3a12f5113521a2366a98af90ecbd', 'f6b8bf0d7d035d063780b37ff614b068'],
-      // fn_club_bank_ledger (20261012040542)
-      ['f17eb94522c177856683617945d9f371', '39ff91f5cc60c6300942f51e4ab2c3bb'],
+      // fn_club_bank_ledger (20261016155801; superseded 20261012040542)
+      ['cb7edf507b92e7c22535d6fed10a416b', 'f17eb94522c177856683617945d9f371'],
       // fn_ca_chip_statement_page (20261012040542)
       ['d513f6f312b29835cc5e74aa8ff00ce0', 'c706109ed8dab335912f046aaa6ee215'],
     ] as const) {
@@ -126,7 +126,7 @@ describe('cashier Phase 5 production certification contracts', () => {
     expect(canary).toContain("'hash', '424fc2b2ee2ec319ecbbb7f267515f27'");
     expect(canary).not.toContain("'hash', '3ec6fc367b3dae5c4bf3978d0175ef22'");
     expect(canary).not.toContain("'hash', '910f8859d4c683aafd4403c4f386772b'");
-    expect(canary).toContain("'hash', 'fe490fcc75f305338160eca2a7a88b25'");
+    expect(canary).toContain("'hash', '5990c675526e842d0671f47890c1ff27'");
     expect(canary).toContain("'hash', '7a357ba95a8ca4eb13f00f798233d8d4'");
     expect(canary).toContain("has_function_privilege('anon', v_oid, 'EXECUTE')");
     expect(canary).toContain('fn_record_cashier_operation');

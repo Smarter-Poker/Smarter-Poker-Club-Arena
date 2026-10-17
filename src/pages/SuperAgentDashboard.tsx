@@ -14,7 +14,12 @@ import type { CommissionSpread } from '../services/CommissionService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useProfilePresence } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
-import { fmt } from '../utils/format';
+import { fmt, formatWalletChips } from '../utils/format';
+import {
+  clubBankRecipientWallets,
+  clubBankDestinationFor,
+  type ClubBankRecipientWallet,
+} from '../components/wallet/cashierModes';
 
 /* The three agent roles, spelled the way an operator reads them. This list
    used to print the raw enum - a person saw "super_agent" where every other
@@ -28,6 +33,8 @@ import CreditRequestWidget from '../components/agent/CreditRequestWidget';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
+import { useRecipientWalletBalances, walletOptionLabel } from '../hooks/useRecipientWalletBalances';
 import './SuperAgentDashboard.css';
 import { reportError } from '../utils/errorReporter';
 import AgentBackOffice from '../components/agent/AgentBackOffice';
@@ -73,6 +80,20 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
 
   const [transferPlayerId, setTransferPlayerId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
+  const [transferWallet, setTransferWallet] = useState<ClubBankRecipientWallet | null>(null);
+  const transferRecipient = players.find((player) => player.userId === transferPlayerId);
+  const transferWallets = transferRecipient ? clubBankRecipientWallets(transferRecipient.role) : [];
+  const transferDestination = transferRecipient
+    ? clubBankDestinationFor(transferRecipient.role, transferWallet)
+    : 'player_wallet';
+  useEffect(() => setTransferWallet(null), [transferPlayerId]);
+  // Every wallet the recipient holds, with its current balance (Dan 2026-10-15).
+  const [transferBalanceRefresh, setTransferBalanceRefresh] = useState(0);
+  const transferBalances = useRecipientWalletBalances(
+    clubId,
+    transferRecipient?.userId,
+    transferBalanceRefresh
+  );
   // The rakeback this agent gives their own players (Dan, 2026-10-15: "THE
   // AGENT ASSIGNS WHAT THEY WANT TO GIVE THEIR PLAYERS"). Blank until they type;
   // the saved figure is shown beside it.
@@ -359,7 +380,7 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
   };
 
   const handleTransfer = async () => {
-    if (!agent || !transferPlayerId || !transferAmount || transferInFlight.current) return;
+    if (!agent || !transferRecipient || !transferAmount || transferInFlight.current) return;
     const amount = parseFloat(transferAmount);
     if (!Number.isFinite(amount) || amount <= 0) return;
 
@@ -369,13 +390,14 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
       // The sender is no longer a parameter: fn_agent_wallet_send derives it
       // from auth.uid(). This used to pass agent.id - the agents-table ROW id -
       // where a user id was expected, so the transfer could never have landed.
-      await AgentService.transferToPlayer(transferPlayerId, clubId!, amount);
+      await AgentService.transferToPlayer(transferPlayerId, clubId!, amount, transferDestination);
       if (!isMounted.current) {
         transferInFlight.current = false;
         return;
       }
       setTransferPlayerId('');
       setTransferAmount('');
+      setTransferBalanceRefresh((n) => n + 1);
       if (isMounted.current)
         toast.success(`Transferred ${amount.toLocaleString()} chips successfully`);
       loadDashboardData();
@@ -504,11 +526,11 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
             <div className="balance-cards">
               <div className="balance-card">
                 <span className="label">Business Balance</span>
-                <span className="value">{agent.businessBalance.toLocaleString()}</span>
+                <span className="value">{formatWalletChips(agent.businessBalance)}</span>
               </div>
               <div className="balance-card">
                 <span className="label">Player Balance</span>
-                <span className="value">{agent.playerBalance.toLocaleString()}</span>
+                <span className="value">{formatWalletChips(agent.playerBalance)}</span>
               </div>
               <div className="balance-card">
                 <span className="label">Credit Used</span>
@@ -645,7 +667,7 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
                       {((player.rakebackPercent || 0) * 100).toFixed(1)}% Rakeback
                     </span>
                   </div>
-                  <div className="player-balance">{(player.chipBalance ?? 0).toLocaleString()}</div>
+                  <div className="player-balance">{formatWalletChips(player.chipBalance ?? 0)}</div>
                 </div>
               ))}
             </div>
@@ -676,15 +698,15 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
 
         {activeTab === 'transfers' && (
           <div className="transfers-section">
-            <h3>Transfer To Player</h3>
+            <h3>Send Chips</h3>
             <div className="transfer-form">
               <div className="form-row">
-                <label>Select Player</label>
+                <label>Select Recipient</label>
                 <select
                   value={transferPlayerId}
                   onChange={(e) => setTransferPlayerId(e.target.value)}
                 >
-                  <option value="">Choose Player...</option>
+                  <option value="">Choose Recipient...</option>
                   {players.map((p) => (
                     <option key={p.id} value={p.userId}>
                       {p.displayName}
@@ -692,6 +714,29 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
                   ))}
                 </select>
               </div>
+              {transferRecipient && (
+                <div className="form-row">
+                  <label htmlFor="super-agent-recipient-wallet">Recipient Wallet</label>
+                  <select
+                    id="super-agent-recipient-wallet"
+                    value={transferDestination}
+                    disabled={isTransferring}
+                    onChange={(event) =>
+                      setTransferWallet(event.target.value as ClubBankRecipientWallet)
+                    }
+                  >
+                    {transferWallets.map((wallet) => (
+                      <option key={wallet} value={wallet}>
+                        {walletOptionLabel(
+                          SEND_DESTINATION_LABELS[wallet],
+                          transferBalances,
+                          wallet
+                        )}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="form-row">
                 <label>Amount</label>
                 <input
@@ -704,7 +749,7 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
               <button
                 className="btn btn-primary"
                 onClick={handleTransfer}
-                disabled={isTransferring || !transferPlayerId || !transferAmount}
+                disabled={isTransferring || !transferRecipient || !transferAmount}
               >
                 {isTransferring ? 'Sending...' : 'Send Chips'}
               </button>

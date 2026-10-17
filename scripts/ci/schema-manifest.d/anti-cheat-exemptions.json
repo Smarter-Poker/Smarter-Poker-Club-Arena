@@ -1,0 +1,5 @@
+{
+  "_owner": "20261015170348 anti-cheat multi-account exemptions for the owner's beta-testing accounts (KingFish, Danimal). Applied to PokerIQ-Production on 2026-10-15 and recorded in supabase_migrations.schema_migrations; this fragment declares its objects until the nightly base snapshot regenerates.",
+  "tables": ["anti_cheat_exemptions"],
+  "functions": ["fn_anti_cheat_flags_skip_exempt"]
+}

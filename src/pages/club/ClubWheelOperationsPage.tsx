@@ -49,7 +49,7 @@ import DiamondWheelService, {
   type WheelMetrics,
 } from '../../services/DiamondWheelService';
 import DiamondGamesService from '../../services/DiamondGamesService';
-import { compactChips } from '../../utils/format';
+import { compactChips, formatWalletChips, formatWalletDiamonds } from '../../utils/format';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
 import DiamondGamesMoney from '../../components/club/DiamondGamesMoney';
@@ -403,11 +403,11 @@ export default function ClubWheelOperationsPage() {
             label="Cover"
             value={chips(metrics?.cover_chips)}
             ink={(metrics?.cover_chips ?? 0) <= 0 ? 'red' : 'silver'}
-            meta={`${chips(metrics?.promo_chips)} Promo Plus ${chips(metrics?.bank_chips)} Bank`}
+            meta={`${formatWalletChips(metrics?.promo_chips)} Promo Plus ${formatWalletChips(metrics?.bank_chips)} Bank`}
           />
           <Row
             label={`${hostWord} Promo Wallet`}
-            value={chips(metrics?.promo_chips)}
+            value={formatWalletChips(metrics?.promo_chips)}
             ink={(metrics?.promo_chips ?? 0) <= 0 ? 'gold' : 'silver'}
             meta={
               (metrics?.promo_chips ?? 0) <= 0
@@ -417,13 +417,13 @@ export default function ClubWheelOperationsPage() {
           />
           <Row
             label={`${hostWord} Bank`}
-            value={chips(metrics?.bank_chips)}
+            value={formatWalletChips(metrics?.bank_chips)}
             ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'blue'}
             meta="Behind The Promo Wallet, And Only When It Runs Dry"
           />
           <Row
             label="Owner Diamonds"
-            value={compactChips(metrics?.owner_diamonds ?? 0)}
+            value={formatWalletDiamonds(metrics?.owner_diamonds ?? 0)}
             ink="blue"
             meta="Where The Diamonds Taken In Land, And Where Diamond Prizes Come From"
           />
@@ -495,13 +495,13 @@ export default function ClubWheelOperationsPage() {
           />
           <Row
             label="Promo Wallet"
-            value={chips(metrics?.promo_chips)}
+            value={formatWalletChips(metrics?.promo_chips)}
             ink={promoDry ? 'gold' : 'green'}
             meta={promoDry ? 'Empty: The Bank Is Carrying The Games' : 'Paid First'}
           />
           <Row
             label={`${hostWord} Bank`}
-            value={chips(metrics?.bank_chips)}
+            value={formatWalletChips(metrics?.bank_chips)}
             ink={(metrics?.bank_chips ?? 0) <= 0 ? 'red' : 'blue'}
             meta="The Backstop"
           />

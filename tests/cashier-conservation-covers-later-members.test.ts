@@ -19,8 +19,22 @@ const latest = readdirSync(dir)
 const body = readFileSync(resolve(dir, latest), 'utf8');
 
 describe('cashier conservation report coverage', () => {
+  it('plans cutoffs from the analyzed source without losing null or future cutoffs', () => {
+    const cutoffs = body.slice(
+      body.indexOf('cutoffs AS MATERIALIZED'),
+      body.indexOf('legs AS MATERIALIZED')
+    );
+    expect(cutoffs).toMatch(
+      /SELECT DISTINCT taken_at FROM public\.ca_chip_baseline WHERE club_id=p_club_id/
+    );
+    expect(cutoffs).not.toMatch(/FROM baselines|taken_at\s*(?:IS NOT NULL|<=|<)/);
+  });
+
   it('checks members who joined after the baseline from zero at the same cutoff', () => {
-    const baselines = body.slice(body.indexOf('baselines AS MATERIALIZED'), body.indexOf('cutoffs AS'));
+    const baselines = body.slice(
+      body.indexOf('baselines AS MATERIALIZED'),
+      body.indexOf('cutoffs AS')
+    );
     expect(baselines).toContain('UNION ALL');
     expect(baselines).toContain('SELECT m.user_id,0::numeric,f.taken_at');
     expect(baselines).toContain('m.joined_at>=f.taken_at');

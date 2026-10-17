@@ -177,14 +177,14 @@
     "tests/credit-admin-data.test.ts": "fbb77922279019b1f8e00f16637b76c647772b39ba46f68d80df6e09c148d33b",
     "tests/credit-admin-panel-scope.test.tsx": "5b05b519ce6c4fbc7d86af31e9d05eb23bbaa5b2783d554544e5ade77dd469a4",
     "tests/credit-request-widget-scope.test.tsx": "45ad84f004fe5fd39fcb8affa7a6c0f16c5782335966f4c01728305de8cd126d",
-    "tests/super-agent-credit-routing.test.tsx": "81ec47fdf9b2d6bf4aa9a5e5e03552a557a35a9c30a58eed769447b3e0dbc996",
+    "tests/super-agent-credit-routing.test.tsx": "0741030aba402bac0adda0a47f95679981789d3fa873e0fc09f5c5f503261580",
     "tests/unit/CreditRequestAuthority.test.ts": "0dce14c178ef4f5bd8f8a2aa794cfc8f76fec4fe3207e0882add16e162abb821",
     "tests/unit/CreditRequestLegacyCaller.test.ts": "ef6f8458a54ce3b5e646d831c176f279456e8f59598616e20dbb3a9dbc7f2e7b",
     "tests/unit/CreditRequestService.test.ts": "47bc48d13b54901999a6a58b36a93edb79e4f2d057427a4a6d622ff009d7c0c3",
     "tests/components/agent-cashout-scope.test.tsx": "58f7be7a87a7f3f4d5f585ea0c297f7fe0fc9b64fc67a02d6edc2a81d36f9446",
     "tests/unit/CashoutService.test.ts": "528149522222b33c55598df5b1ece548928b27f364241c5912ff3b1b05c01449",
     "tests/config/roleScopedCashier.test.ts": "a233e4072262ad4356b705c37db292d78f49dd613506e0d6c13b92fb787eb4d8",
-    "tests/cashout-escrow-flow.test.ts": "8b7c9e4943ac8bc8fc4e8f7c2bfd22e54fb15a19b35188ab0ffb797f54efb327",
+    "tests/cashout-escrow-flow.test.ts": "40d60032482e553ccd6ee12e6d67cdba807abd491853f2dbbe25ca6be7598dd6",
     "tests/fixtures/cashier-document-authority/captured-legacy-route-catalog.json": "edef6d6318f142277069de1fead9cbfe8ea732cc5d774987d8f4894bdc06807f",
     "tests/fixtures/cashier-document-authority/captured-preimages.sql": "1219fa1b0c4ab26bf155f3c58d3f4c7f5fd108940c1780c5047f61d88727412a",
     "tests/unit/leaveClubReleasesEscrow.test.ts": "4faed6fab4a8eac765219b794e555edf9186064bc19b7ba02c8bc9f0572c1fca",
@@ -192,8 +192,8 @@
     "tests/fixtures/cashier-document-authority/regression.sql": "e2b63df49609d6b318c0cbae5d41173c1f15f1dbb8466d01a6c15ceb32f50a65",
     "tests/fixtures/cashier-document-authority/captured-manual-writers.json": "70645c393822b197621f4f8ff7313deb99578c33b21c76850fe9422ef5d4c484",
     "tests/helpers/cashoutV2Receipt.ts": "db760aae934fbae5c3b14c5e1bd5ca2011bf9a1dd7d0f294d90684e9ff18d20a",
-    "tests/components/agent-dashboard-durable-transfers.test.tsx": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138",
-    "tests/unit/CashoutRequestModal.test.tsx": "01dce8b14e1793534c604d17fe6566c0a30c643b9a3590fc1d3203a906cf7d04",
+    "tests/components/agent-dashboard-durable-transfers.test.tsx": "10a6ac5cd00135fe4d6466c17a8508d6d5901fadf6ff5ce8591f66d94391221b",
+    "tests/unit/CashoutRequestModal.test.tsx": "8e2e923904906d57440bdf89738d4a91026b774c354e4f4485ac286b34f80d40",
     "tests/fixtures/cashier-document-authority/README.md": "fe65d50c5ed2aa2507e0ed8cc1149c4c9dbcc12d55cca1822352c4aa05ec8580",
     "tests/fixtures/cashier-document-authority/captured-cashier-catalog.json": "4037cbccb52b206a4f1a1b158b055cb7cc8819cd14241d0becb74127819328c2",
     "tests/unit/CashoutOperation.test.ts": "ae28da4c627e0ecf78a3d8308f0ce0316d8f34be31efa2d486f86abd989957ea",
@@ -225,7 +225,7 @@
     "tests/helpers/accountingObservation.ts": "9dba06d97c2f9cce2356fa8c6800ff9a07e4618ea2028370a278b4820b6199f6",
     "tests/components/FinancialAlertsExport.test.tsx": "8863dfb7e552fdf23d4e8e00eefce37b16f3cfbf1eb1858f9db9274b1f987d80",
     "tests/components/cashier-cashout-generations.test.tsx": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
-    "tests/components/cashout-own-event-acknowledgment.test.tsx": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
+    "tests/components/cashout-own-event-acknowledgment.test.tsx": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
     "tests/unit/discardedErrorReadRatchet.test.ts": "6ee42c44014a340d3618dd48c107786fa7b3ab379ccc5fb90c2445b8e716573c",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
@@ -4872,5 +4872,54 @@
         "currentSha256": "b7f75ba00b61d2418db86c10bbd53acfa40c19e529862572ad89c5692007ac77"
       }
     }
+  },
+  "agentsArePrepaidFundingTabRebinding20261016": {
+    "reason": "Dan, October 2026: every agent is prepaid and no agent carries a credit line. The agent dashboard credit tab lost its action selector (Set Credit Line To, Send Prepaid Chips, Reduce Credit Line By) because sending prepaid chips is now its one action. The durable-transfer fixture no longer sets the removed selector; it still selects the agent, enters the amount, presses Send Prepaid Chips and asserts the same agent_wallet destination, durable operation key, replay and double-click behaviour. The complete diff was read before restamping; no financial source, SQL image, write amount, assertion or historical audit entry is removed or weakened.",
+    "changed_repository_bindings": [
+      {
+        "path": "tests/components/agent-dashboard-durable-transfers.test.tsx",
+        "previous_sha256": "86a984352a74d27c8365270b20485d52e55873ee7bb900af71796b59da84c138",
+        "sha256": "10a6ac5cd00135fe4d6466c17a8508d6d5901fadf6ff5ce8591f66d94391221b"
+      }
+    ]
+  },
+  "cashierManualRefreshAndGroupedInputRebinding20261015": {
+    "reason": "Reviewed the complete two-test diffs for PR7033. This updates current client test-source identity for the owner-requested Cashier behavior. Financial SQL, fixtures, transaction assertions, historical audits and qualification statuses are unchanged. Matching hashes do not certify native money behavior or production delivery.",
+    "changes": {
+      "tests/components/cashout-own-event-acknowledgment.test.tsx": {
+        "previous_sha256": "51094ea1ec27a4e1e4c43f1e6fc919c84f41fd1f3a29326bb3508bd708566eb9",
+        "current_sha256": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
+        "reason": "The request modal no longer subscribes to background cashout rows under the explicit no-auto-refresh instruction. Keep the agent approval event path and the existing own-acknowledgment single-read assertions; only invoke the provider change for that still-subscribed approval path."
+      },
+      "tests/unit/CashoutRequestModal.test.tsx": {
+        "previous_sha256": "01dce8b14e1793534c604d17fe6566c0a30c643b9a3590fc1d3203a906cf7d04",
+        "current_sha256": "8e2e923904906d57440bdf89738d4a91026b774c354e4f4485ac286b34f80d40",
+        "reason": "Assert displayed grouped input spelling while retaining invalid-money refusal and no-RPC assertions. Replace the obsolete background row-refresh expectation with an initial read and no background subscription, as explicitly requested by the owner."
+      }
+    }
+  },
+  "chipWalletChoiceDashboardRegression20261015": {
+    "reason": "Reviewed the complete dashboard regression diff: adds an explicit recipient wallet submission assertion and transfer mock while preserving every existing credit authority and route assertion. Current test source identity only; financial fixtures, SQL, historical audits and qualification states are unchanged. This fingerprint is not native or production certification.",
+    "path": "tests/super-agent-credit-routing.test.tsx",
+    "previous_sha256": "81ec47fdf9b2d6bf4aa9a5e5e03552a557a35a9c30a58eed769447b3e0dbc996",
+    "current_sha256": "0741030aba402bac0adda0a47f95679981789d3fa873e0fc09f5c5f503261580"
+  },
+  "wallet_precision_display_rebinding_20261016": {
+    "reason": "Owner requires wallet amounts below one million to retain commas and two decimals. Reviewed the complete diff: pending cashout amount display assertions change 876 Chips to 876.00 Chips; same-ID account epoch isolation, stale-response ownership and all transaction assertions remain intact. This updates current test source identity only and makes no financial qualification or production claim.",
+    "file": "tests/components/cashier-cashout-generations.test.tsx",
+    "previous_sha256": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
+    "sha256": "ef6c974a4a13cfd32561cd7a864a3ee24e866f88a8c7b1441ddf99aefdccb020"
+  },
+  "wallet_precision_guard_rebinding_20261016": {
+    "reason": "Reviewed the complete one-line display-contract diff: the cashout request available balance now prints through formatWalletChips, whose maintained contract retains two cent digits below one million. The guard still requires formatting for pending request amounts, and no cashout transaction, scope, receipt, idempotency or failure assertion changes. Current test source identity only; historical audits and native qualification states remain unchanged.",
+    "file": "tests/cashout-escrow-flow.test.ts",
+    "previous_sha256": "8b7c9e4943ac8bc8fc4e8f7c2bfd22e54fb15a19b35188ab0ffb797f54efb327",
+    "sha256": "40d60032482e553ccd6ee12e6d67cdba807abd491853f2dbbe25ca6be7598dd6"
+  },
+  "cashier_wallet_amount_separation_20261016": {
+    "reason": "Reviewed the complete three-line display assertion diff. The owner precision instruction is for wallet balances; pending cashout transaction amounts retain their compact console display. Restores 876 Chips while preserving same-ID account epoch isolation, stale-response suppression and the no-financial-command assertion. Current test source identity only; financial fixtures, historical audits and qualification status are unchanged. Matching source identity does not certify native money behavior or production delivery.",
+    "file": "tests/components/cashier-cashout-generations.test.tsx",
+    "previous_sha256": "ef6c974a4a13cfd32561cd7a864a3ee24e866f88a8c7b1441ddf99aefdccb020",
+    "sha256": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39"
   }
 }

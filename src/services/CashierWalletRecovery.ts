@@ -1,6 +1,8 @@
 import { CASHIER_WALLET_RECOVERY_PREFIX } from '../lib/financialJournalKeys';
 import { uuid } from '../utils/uuid';
 
+const ENTITY_UUID =
+  /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ACTIONS = new Set([
   'fn_club_bank_send',
@@ -37,7 +39,7 @@ export async function reserveCashierWalletOperation(
   createId = uuid,
   storage?: Storage
 ): Promise<CashierWalletOperation | null> {
-  if (!UUID.test(userId) || !UUID.test(clubId) || !ACTIONS.has(action)) return null;
+  if (!ENTITY_UUID.test(userId) || !ENTITY_UUID.test(clubId) || !ACTIONS.has(action)) return null;
   try {
     const store = storage ?? window.localStorage;
     const canonical = JSON.stringify(
@@ -109,7 +111,8 @@ export function readCashierWalletRecoveryState(
   unreadable: boolean;
 } {
   const rows: CashierWalletOperation[] = [];
-  if (!UUID.test(userId) || !UUID.test(clubId)) return { operations: rows, unreadable: false };
+  if (!ENTITY_UUID.test(userId) || !ENTITY_UUID.test(clubId))
+    return { operations: rows, unreadable: false };
   let unreadable = false;
   try {
     const prefix = `${CASHIER_WALLET_RECOVERY_PREFIX}:${userId}:${clubId}:`;

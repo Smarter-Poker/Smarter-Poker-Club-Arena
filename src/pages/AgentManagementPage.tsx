@@ -2,7 +2,8 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ENGINE — Agent Management Page
  * ═══════════════════════════════════════════════════════════════════════════════
- * Admin dashboard for managing agents, commissions, and credit lines
+ * Admin dashboard for managing agents, commissions and payouts. Every agent
+ * is prepaid with no credit line (Dan, October 2026).
  * Real Supabase integration — no demo data
  *
  * ── #ClubArenaConsole (2026-09-09) ────────────────────────────────────────
@@ -80,7 +81,8 @@ import { parseAgentPayablesPayload, type AgentPayables } from '../utils/agentMan
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type TabType = 'agents' | 'players' | 'hierarchy' | 'credit-limits' | 'commissions' | 'payouts';
+// No Credit Limits view: every agent is prepaid (Dan, October 2026).
+type TabType = 'agents' | 'players' | 'hierarchy' | 'commissions' | 'payouts';
 
 /**
  * What fn_ca_agent_payables returns, read from the commission rollup. The
@@ -92,7 +94,6 @@ const EMPTY_AGENT_FORM = {
   role: 'agent' as const,
   parentAgentId: '',
   commissionRate: 50,
-  creditLimit: 0,
 };
 
 export default function AgentManagementPage() {
@@ -154,7 +155,6 @@ export default function AgentManagementPage() {
       'agents',
       'players',
       'hierarchy',
-      'credit-limits',
       'commissions',
       'payouts',
     ] as TabType[],
@@ -165,8 +165,6 @@ export default function AgentManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [editingLimit, setEditingLimit] = useState<string | null>(null);
-  const [newLimit, setNewLimit] = useState<number>(0);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferAgentId, setTransferAgentId] = useState<string | null>(null);
   const [showCommissionModal, setShowCommissionModal] = useState(false);
@@ -203,7 +201,6 @@ export default function AgentManagementPage() {
     role: 'super_agent' | 'agent' | 'sub_agent';
     parentAgentId: string;
     commissionRate: number;
-    creditLimit: number;
   }>({ ...EMPTY_AGENT_FORM });
 
   // Animation state
@@ -231,8 +228,6 @@ export default function AgentManagementPage() {
     setIsLoading(false);
     setError(null);
     setShowAddModal(false);
-    setEditingLimit(null);
-    setNewLimit(0);
     setShowTransferModal(false);
     setTransferAgentId(null);
     setShowCommissionModal(false);
@@ -266,8 +261,6 @@ export default function AgentManagementPage() {
     setActiveTab('agents');
     setError(null);
     setShowAddModal(false);
-    setEditingLimit(null);
-    setNewLimit(0);
     setShowTransferModal(false);
     setTransferAgentId(null);
     setShowCommissionModal(false);
@@ -573,7 +566,6 @@ export default function AgentManagementPage() {
   const activeAgents = agents.filter((a) => a.status === 'active').length;
   const totalPlayers = agents.reduce((sum, a) => sum + a.totalPlayers, 0);
   const weeklyRake = agents.reduce((sum, a) => sum + a.weeklyRakeGenerated, 0);
-  const totalCreditExtended = agents.reduce((sum, a) => sum + a.creditLimit, 0);
 
   // Format helpers
   /* One place the three agent roles are spelled. The Credit Limits table used
@@ -600,23 +592,6 @@ export default function AgentManagementPage() {
   // Commission and rakeback are payment rates, not chip counts. Preserve the
   // contract's tenth instead of rounding 32.5% into a different deal.
   const formatPercent = (rate: number) => `${(rate * 100).toFixed(1)}%`;
-  const getCreditUtilization = (agent: Agent) =>
-    agent.creditLimit > 0 ? (agent.creditUsed / agent.creditLimit) * 100 : 0;
-
-  const getUtilizationStatus = (agent: Agent) => {
-    const util = getCreditUtilization(agent);
-    if (util >= 90) return 'critical';
-    if (util >= 75) return 'warning';
-    return 'healthy';
-  };
-
-  /* The ink a utilisation reads in. Same three thresholds as the badge it
-     replaces (90 critical, 75 warning) - only the dress changed. */
-  const utilizationInk = (agent: Agent): ConsoleInk => {
-    const status = getUtilizationStatus(agent);
-    return status === 'critical' ? 'red' : status === 'warning' ? 'gold' : 'green';
-  };
-
   /* Lifted verbatim out of the old header button so the foot's painted plate
      can call it. Same rows, same columns, same filename, same silent-catch. */
   const handleExportAgents = () => {
@@ -627,7 +602,6 @@ export default function AgentManagementPage() {
           role: a.role,
           status: a.status,
           commissionRate: formatPercent(a.commissionRate),
-          creditLimit: a.creditLimit,
           totalPlayers: a.totalPlayers,
           weeklyRake: a.weeklyRakeGenerated,
         })),
@@ -637,7 +611,6 @@ export default function AgentManagementPage() {
           { key: 'role', label: 'Role' },
           { key: 'status', label: 'Status' },
           { key: 'commissionRate', label: 'Commission' },
-          { key: 'creditLimit', label: 'Credit Limit' },
           { key: 'totalPlayers', label: 'Players' },
           { key: 'weeklyRake', label: 'Weekly Rake' },
         ]
@@ -646,34 +619,6 @@ export default function AgentManagementPage() {
       reportError(e, 'AgentManagementPage.map');
       /* silent */
     }
-  };
-
-  // Direct credit limit assignment (real Supabase call)
-  const handleSetCreditLimit = async (agentId: string, limit: number) => {
-    if (!user?.id) return;
-    const requestScope = captureScope();
-    try {
-      const success = await AgentService.setCreditLimit(agentId, limit, user.id, undefined, clubId);
-      if (!scopeIsCurrent(requestScope)) return;
-      if (success) {
-        setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, creditLimit: limit } : a)));
-        toast.success(`Credit limit updated to ${limit.toLocaleString()}`);
-        // Emit CREDIT_UPDATED so AgentDashboard, SuperAgentDashboard, etc. auto-refresh
-        masterBus.emit('CREDIT_UPDATED', { clubId: clubId || '', amount: limit });
-      } else {
-        toast.error('Failed to update credit limit');
-      }
-    } catch (err: unknown) {
-      if (!scopeIsCurrent(requestScope)) return;
-      if (isAuthzError(err)) {
-        reportError(err, 'AgentManagementPage.credit_authority_revoked', { clubId, agentId });
-        revokeAgentManagementAccess();
-        return;
-      }
-      const message = err instanceof Error ? err.message : 'Failed to update credit limit';
-      toast.error(message);
-    }
-    setEditingLimit(null);
   };
 
   // Suspend agent (optimistic UI with rollback)
@@ -913,11 +858,7 @@ export default function AgentManagementPage() {
     if (!clubId || !newAgentForm.userId) return;
     const requestScope = captureScope();
 
-    // Validate mandatory fields
-    if (newAgentForm.creditLimit <= 0) {
-      toast.error('Credit Limit is required and must be greater than 0');
-      return;
-    }
+    // Every agent is prepaid; there is no credit line to assign (Dan, October 2026).
     if (newAgentForm.commissionRate <= 0 || newAgentForm.commissionRate > 70) {
       toast.error('Agent Rakeback Rate must be between 1% and 70%');
       return;
@@ -932,7 +873,6 @@ export default function AgentManagementPage() {
         parentAgentId: newAgentForm.parentAgentId || undefined,
         // The player rakeback is the new agent's own choice (Dan, 2026-10-15).
         commissionRate: newAgentForm.commissionRate / 100, // Convert to decimal
-        creditLimit: newAgentForm.creditLimit,
       });
 
       if (!scopeIsCurrent(requestScope)) return;
@@ -1000,7 +940,7 @@ export default function AgentManagementPage() {
           eyebrow="Club Context Required"
           tone="permission"
           title="Choose A Club To Manage Agents"
-          description="Agent Roles, Commissions, Credit Lines, And Players Belong To One Club. Open This Tool From That Club's Operations Menu."
+          description="Agent Roles, Commissions, And Players Belong To One Club. Open This Tool From That Club's Operations Menu."
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
         />
       </StandardContentLayout>
@@ -1047,7 +987,7 @@ export default function AgentManagementPage() {
         className={styles.console}
         eyebrow="Club Arena"
         title="Agent Management"
-        subtitle="Manage Agents, Commissions, And Credit Lines"
+        subtitle="Manage Agents, Commissions, And Payouts"
         pill={compactChips(totalAgents)}
         pillInk={totalAgents === 0 ? 'muted' : 'blue'}
         foot="plates"
@@ -1093,10 +1033,8 @@ export default function AgentManagementPage() {
             <dd className={`${styles.factValue} sc-ink--green`}>{formatMoney(weeklyRake)}</dd>
           </div>
           <div className={styles.fact}>
-            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Credit Extended</dt>
-            <dd className={`${styles.factValue} sc-ink--gold`}>
-              {formatMoney(totalCreditExtended)}
-            </dd>
+            <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Funding</dt>
+            <dd className={`${styles.factValue} sc-ink--silver`}>Prepaid</dd>
           </div>
         </dl>
 
@@ -1108,7 +1046,6 @@ export default function AgentManagementPage() {
               'agents',
               'players',
               'hierarchy',
-              'credit-limits',
               'commissions',
               'payouts',
             ] as TabType[]
@@ -1126,7 +1063,6 @@ export default function AgentManagementPage() {
               {tab === 'agents' && 'Agents'}
               {tab === 'players' && 'Players'}
               {tab === 'hierarchy' && 'Hierarchy'}
-              {tab === 'credit-limits' && 'Credit Limits'}
               {tab === 'commissions' && 'Commissions'}
               {tab === 'payouts' && 'Payouts'}
             </button>
@@ -1246,20 +1182,6 @@ export default function AgentManagementPage() {
                           {formatMoney(agent.promoBalance)}
                         </dd>
                       </div>
-                      {!agent.isPrepaid && (
-                        /* The drawn progress bar is gone. The same three
-                           thresholds now colour the figure itself, which says
-                           the same thing without painting a control. */
-                        <div className={styles.fact}>
-                          <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>
-                            Credit Line
-                          </dt>
-                          <dd className={`${styles.factValue} sc-ink--${utilizationInk(agent)}`}>
-                            {formatMoney(agent.creditUsed)} / {formatMoney(agent.creditLimit)} (
-                            {(getCreditUtilization(agent) || 0).toFixed(0)}% Used)
-                          </dd>
-                        </div>
-                      )}
                     </dl>
 
                     <div className={styles.rowActions}>
@@ -1500,144 +1422,6 @@ export default function AgentManagementPage() {
               setShowTransferModal(true);
             }}
           />
-        )}
-
-        {/* ═══════════════════════════════════════════════════════════════════════════════ */}
-        {/* CREDIT LIMITS TAB — Direct Assignment */}
-        {/* ═══════════════════════════════════════════════════════════════════════════════ */}
-        {activeTab === 'credit-limits' && (
-          /* THE TABLE IS GONE, AND HAD TO GO. Seven columns of credit figures
-             on a 393px phone scrolled sideways off the screen; this is one row
-             per agent with its fields stacked as label/value pairs. The Save /
-             Cancel / Edit controls and handleSetCreditLimit are unchanged. */
-          <SpadeConsole
-            className={styles.console}
-            eyebrow="Credit Limit Assignment"
-            title="Credit Limits"
-            pill={compactChips(agents.length)}
-            pillInk="blue"
-            foot="foot"
-          >
-            <p className="sc-copy">
-              Assign Credit Limits Directly. Clubs Set Limits For Agents. Agents Set Limits For
-              Sub-Agents.
-            </p>
-
-            <ol className={styles.list}>
-              {agents.map((agent) => (
-                <li key={agent.id} className={styles.row}>
-                  <span className={`${styles.rowName} sc-ink--silver`}>{agent.displayName}</span>
-                  <span className={styles.rowFlags}>
-                    <span className="sc-label sc-ink--blue">
-                      {AGENT_ROLE_LABELS[agent.role] || agent.role}
-                    </span>
-                    {agent.status !== 'active' && (
-                      <span className="sc-label sc-ink--red">{agent.status}</span>
-                    )}
-                  </span>
-
-                  <dl className={styles.facts}>
-                    <div className={styles.fact}>
-                      <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Assigned By</dt>
-                      <dd className={`${styles.factValue} sc-ink--silver`}>
-                        {/* A super agent is assigned by the club, the same as an
-                            agent; only a sub-agent hangs off a parent. The old
-                            two-branch test sent super agents down the parent
-                            branch and printed the word "Agent" where the club
-                            belonged. */}
-                        {agent.parentAgentName || 'Club'}
-                      </dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Credit Limit</dt>
-                      <dd className={`${styles.factValue} sc-ink--silver`}>
-                        {editingLimit === agent.id ? (
-                          <input
-                            type="number"
-                            className={`${styles.groove} sc-ink--silver`}
-                            value={newLimit}
-                            onChange={(e) => setNewLimit(Number(e.target.value))}
-                            aria-label="Credit Limit"
-                            autoFocus
-                          />
-                        ) : (
-                          formatMoney(agent.creditLimit)
-                        )}
-                      </dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Used</dt>
-                      <dd className={`${styles.factValue} sc-ink--silver`}>
-                        {formatMoney(agent.creditUsed)}
-                      </dd>
-                    </div>
-                    <div className={styles.fact}>
-                      <dt className={`${styles.factLabel} sc-label sc-ink--blue`}>Utilization</dt>
-                      <dd className={`${styles.factValue} sc-ink--${utilizationInk(agent)}`}>
-                        {(getCreditUtilization(agent) || 0).toFixed(0)}%
-                      </dd>
-                    </div>
-                  </dl>
-
-                  <div className={styles.rowActions}>
-                    {editingLimit === agent.id ? (
-                      <>
-                        <button
-                          type="button"
-                          className={`${styles.word} sc-ink--green`}
-                          onClick={() => handleSetCreditLimit(agent.id, newLimit)}
-                        >
-                          Save
-                        </button>
-                        {/* This button had NO CONTENT - an emoji was stripped
-                            from it and the empty wrapper was left, so beside
-                            Save there was an invisible control that only a
-                            screen reader could find. */}
-                        <button
-                          type="button"
-                          className={`${styles.word} sc-ink--muted`}
-                          onClick={() => setEditingLimit(null)}
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        className={`${styles.word} sc-ink--blue`}
-                        onClick={() => {
-                          setEditingLimit(agent.id);
-                          setNewLimit(agent.creditLimit);
-                        }}
-                      >
-                        Edit
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ol>
-
-            <div className={styles.rules}>
-              <span className="sc-label sc-ink--blue">Credit Assignment Rules</span>
-              <ul className={styles.ruleList}>
-                <li className="sc-copy">
-                  <strong>Club To Agent:</strong> Club Owner Assigns Credit Limits When Creating An
-                  Agent
-                </li>
-                <li className="sc-copy">
-                  <strong>Agent To Sub-Agent:</strong> Agents Assign Limits To Their Sub-Agents
-                  (Cannot Exceed Their Own Limit)
-                </li>
-                <li className="sc-copy">
-                  <strong>Adjustable:</strong> Limits Can Be Changed Anytime By The Assigning Level
-                </li>
-                <li className="sc-copy">
-                  <strong>Suspension:</strong> Agents At 90%+ Utilization Should Be Reviewed
-                </li>
-              </ul>
-            </div>
-          </SpadeConsole>
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
@@ -1885,29 +1669,9 @@ export default function AgentManagementPage() {
                 Agent Sets The Rakeback Their Players Receive From Their Agent Dashboard.
               </p>
 
-              {/* Credit Limit */}
-              <div className={styles.formGroup}>
-                <label>
-                  Credit Limit * <span className={styles.formHint}>(Required)</span>
-                </label>
-                <div className={styles.creditInputGroup}>
-                  {/* The chip glyph that used to sit here was a mark stuck on
-                      top of a control; the field says what it holds instead. */}
-                  <span className={styles.currencySymbol}>Chips</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="1000"
-                    placeholder="Enter Credit Limit"
-                    value={newAgentForm.creditLimit || ''}
-                    onChange={(e) =>
-                      setNewAgentForm({ ...newAgentForm, creditLimit: Number(e.target.value) })
-                    }
-                    className={styles.creditInput}
-                  />
-                </div>
-                <p className={styles.fieldDesc}>Maximum Credit This Agent Can Extend To Players</p>
-              </div>
+              <p className={styles.fieldDesc}>
+                Every Agent Is Prepaid. They Send Only Chips They Already Hold.
+              </p>
 
               {/* Summary */}
               <div className={styles.formSummary}>
@@ -1920,13 +1684,7 @@ export default function AgentManagementPage() {
                     Agent Rakeback: <strong>{newAgentForm.commissionRate}%</strong>
                   </div>
                   <div>
-                    Credit Limit:{' '}
-                    <strong>
-                      {newAgentForm.creditLimit.toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </strong>
+                    Funding: <strong>Prepaid</strong>
                   </div>
                 </div>
               </div>
@@ -1939,7 +1697,7 @@ export default function AgentManagementPage() {
               <button
                 className={styles.createBtn}
                 onClick={handleCreateAgent}
-                disabled={isCreating || !newAgentForm.userId || newAgentForm.creditLimit <= 0}
+                disabled={isCreating || !newAgentForm.userId}
               >
                 {isCreating ? 'Creating...' : 'Create Agent'}
               </button>

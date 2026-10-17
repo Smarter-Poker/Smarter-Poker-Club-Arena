@@ -264,7 +264,7 @@ describe('D-02: the corner X respects the in-flight lock', () => {
     fireEvent.click(screen.getByText('Fish Finder'));
     fireEvent.change(screen.getByLabelText('Chips To Send'), { target: { value: '100' } });
     await settle();
-    fireEvent.click(screen.getByText('Send Chips', { selector: '.sc-plate__text' }));
+    fireEvent.click(screen.getByText('Confirm', { selector: '.sc-plate__text' }));
     await settle();
 
     expect(screen.queryByTestId('sc-close')).toBeNull();
@@ -300,7 +300,7 @@ describe('D-03: nothing from the previous club survives a reopen', () => {
     const { view } = await openCashier();
     fireEvent.click(screen.getByText('Transaction Ledger'));
     await waitFor(() => expect(screen.getByText('Test Club')).toBeTruthy());
-    await waitFor(() => expect(document.body.textContent).toContain('Bank After 9.5K'));
+    await waitFor(() => expect(document.body.textContent).toContain('Bank After 9,500.00'));
 
     // Club B: balances and ledger never answer, so whatever prints is a leak.
     fx.balances.mockReturnValue(new Promise(() => {}));
@@ -334,21 +334,21 @@ describe('D-04: the holder figure follows the roster after a claim', () => {
       }
       return { data: null, error: null };
     });
-    await openCashier();
+    await openCashier({ initialDestination: 'player_wallet' });
     fireEvent.click(screen.getByText('Claim Back'));
     // A player holds no agent wallet, so the source is their player wallet.
     fireEvent.click(screen.getByText('Player Wallet', { selector: '.cbc-seg button' }));
     const player = await screen.findByText('Fish Finder');
     fireEvent.click(player);
-    await waitFor(() => expect(screen.getByText(/Holds 1K In That Wallet/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Holds 1,000\.00 In That Wallet/)).toBeTruthy());
 
     fireEvent.change(screen.getByLabelText('Chips To Claim Back'), { target: { value: '500' } });
     await settle();
-    fireEvent.click(screen.getByText('Claim Chips', { selector: '.sc-plate__text' }));
+    fireEvent.click(screen.getByText('Confirm', { selector: '.sc-plate__text' }));
     await settle();
     fireEvent.click(screen.getByText('Yes, Claim It', { selector: '.sc-plate__text' }));
     await waitFor(() => expect(claimed).toBe(true));
-    await waitFor(() => expect(screen.getByText(/Holds 500 In That Wallet/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Holds 500\.00 In That Wallet/)).toBeTruthy());
   });
 });
 
@@ -358,12 +358,12 @@ describe('D-15: the amount is read from its spelling', () => {
     fireEvent.click(screen.getByText('Fish Finder'));
     fireEvent.change(screen.getByLabelText('Chips To Send'), { target: { value: '1e3' } });
     await settle();
-    const plate = screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button');
+    const plate = screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button');
     expect(plate?.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Chips To Send'), { target: { value: '1000' } });
     await settle();
     expect(
-      screen.getByText('Send Chips', { selector: '.sc-plate__text' }).closest('button')?.disabled
+      screen.getByText('Confirm', { selector: '.sc-plate__text' }).closest('button')?.disabled
     ).toBe(false);
   });
 });
@@ -675,9 +675,12 @@ describe('D-13: the Diamond Wallet holds its door while a transfer travels', () 
 
     fireEvent.keyDown(document, { key: 'Escape' });
     fireEvent.click(view.container.querySelector('.diamond-wallet-backdrop')!);
-    fireEvent.click(screen.getByText('Close', { selector: '.sc-plate__text' }));
+    fireEvent.click(screen.getByText('Back', { selector: '.sc-plate__text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByTestId('sc-close')).toBeNull();
+    // The sheet itself is still open: Back did not dismiss a travelling transfer.
+    expect(screen.getByText('Back', { selector: '.sc-plate__text' })).toBeTruthy();
 
     await act(async () => {
       transfer.resolve({
@@ -693,6 +696,9 @@ describe('D-13: the Diamond Wallet holds its door while a transfer travels', () 
       await settle();
     });
     await waitFor(() => expect(screen.getByTestId('sc-close')).toBeTruthy());
+    // Escape closes the transfer sheet first, then the wallet desk.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
   });

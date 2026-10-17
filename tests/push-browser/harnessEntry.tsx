@@ -1,8 +1,8 @@
 /**
  * Browser harness for the push opt-in flow. Mounts the REAL prompt host
  * (src/components/notifications/FirstRunPushPrompt.tsx), the REAL push client
- * (src/lib/pushClient.ts) and the REAL nudge policy. Only the auth hook is
- * replaced (harnessAuth.ts) and the hub API is served by harnessServer.mjs.
+ * (src/lib/pushClient.ts) and the REAL nudge policy. The auth hook and scoped profile read are
+ * replaced by local adapters; the hub API is served by harnessServer.mjs.
  */
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -14,6 +14,11 @@ import { hasLocalSubscription } from '../../src/lib/pushClient';
 function Harness() {
   const [taps, setTaps] = useState(0);
   const [status, setStatus] = useState('unknown');
+  const [phone, setPhone] = useState(
+    new URLSearchParams(window.location.search).get('phone') === 'unverified'
+      ? 'Unverified'
+      : 'Verified'
+  );
   return (
     <MemoryRouter initialEntries={['/clubs/harness-club']}>
       <main style={{ padding: 16, fontFamily: 'sans-serif' }}>
@@ -32,6 +37,22 @@ function Harness() {
         >
           Harness Read Status
         </button>
+        <button
+          type="button"
+          onClick={async () => {
+            const uid =
+              new URLSearchParams(window.location.search).get('uid') || 'harness-player-0001';
+            const response = await fetch(`/__harness/profile?uid=${encodeURIComponent(uid)}`, {
+              method: 'POST',
+            });
+            if (!response.ok) throw new Error('Harness Verification Failed');
+            setPhone('Verified');
+            window.dispatchEvent(new Event('profile-updated'));
+          }}
+        >
+          Harness Verify Phone
+        </button>
+        <output data-testid="phone">{phone}</output>
         <output data-testid="taps">{taps}</output>
         <output data-testid="status">{status}</output>
       </main>

@@ -222,36 +222,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('Agent Management same-user authority revocation', () => {
-  it('clears protected agent data and exits when the credit writer returns 42501', async () => {
+  it('offers no credit line: every agent is prepaid (Dan, October 2026)', async () => {
     render(<View />);
     expect(await screen.findByText('Agent Alpha')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Credit Limits' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
-    fireEvent.change(screen.getByRole('spinbutton', { name: 'Credit Limit' }), {
-      target: { value: '200' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-    await waitFor(() =>
-      expect(screen.getByTestId('location')).toHaveTextContent('/clubs/shark-club/operations')
-    );
-    expect(mocks.setCreditLimit).toHaveBeenCalledWith(
-      'agent-a',
-      200,
-      'owner-a',
-      undefined,
-      'shark-club'
-    );
-    expect(screen.queryByText('Agent Alpha')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('spinbutton', { name: 'Credit Limit' })).not.toBeInTheDocument();
-    expect(mocks.reportError).toHaveBeenCalledWith(
-      expect.objectContaining({ code: '42501' }),
-      'AgentManagementPage.credit_authority_revoked',
-      { clubId: 'shark-club', agentId: 'agent-a' }
-    );
-    expect(mocks.toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByRole('tab', { name: 'Credit Limits' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Add Agent' }));
+    expect(await screen.findByRole('option', { name: 'Member Beta' })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Enter Credit Limit')).not.toBeInTheDocument();
+    expect(mocks.setCreditLimit).not.toHaveBeenCalled();
   });
 
   it('retires the roster when a suspend reports revoked authority', async () => {
@@ -290,16 +268,13 @@ describe('Agent Management same-user authority revocation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add Agent' }));
     expect(await screen.findByRole('option', { name: 'Member Beta' })).toBeInTheDocument();
     fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'person-b' } });
-    fireEvent.change(screen.getByPlaceholderText('Enter Credit Limit'), {
-      target: { value: '500' },
-    });
     fireEvent.click(screen.getByRole('button', { name: 'Create Agent' }));
 
     await waitFor(() =>
       expect(screen.getByTestId('location')).toHaveTextContent('/clubs/shark-club/operations')
     );
     expect(mocks.createAgent).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: 'person-b', clubId: 'shark-club', creditLimit: 500 })
+      expect.objectContaining({ userId: 'person-b', clubId: 'shark-club' })
     );
     expect(screen.queryByText('Agent Alpha')).not.toBeInTheDocument();
     expect(mocks.toast.error).not.toHaveBeenCalled();

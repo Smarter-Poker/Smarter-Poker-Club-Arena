@@ -17,6 +17,7 @@ interface ClubArenaNavigationContext {
   clubRole?: string | null;
   isPlatformStaff?: boolean;
   canManageGames?: boolean;
+  canCustomizeWelcome?: boolean;
   /**
    * fn_can_i_operate_the_union_network said yes for this account
    * (see useCanOperateUnionNetwork). Fails closed: absent an explicit yes the
@@ -93,6 +94,7 @@ export function getClubArenaNavigation({
   clubRole = null,
   isPlatformStaff = false,
   canManageGames = false,
+  canCustomizeWelcome = false,
   canOperateUnionNetwork = false,
 }: ClubArenaNavigationContext): ClubArenaNavGroup[] {
   const clubPath = (suffix = '') => (clubId ? `/clubs/${clubId}${suffix}` : '/');
@@ -226,6 +228,22 @@ export function getClubArenaNavigation({
     },
   ];
 
+  if (
+    canCustomizeWelcome ||
+    ['owner', 'co_owner', 'super_agent', 'agent', 'sub_agent'].includes(clubRole || '')
+  ) {
+    groups.push({
+      label: 'Club Messaging',
+      items: [
+        {
+          label: 'Custom Welcome Message',
+          path: clubId ? clubPath('/welcome-message') : '/welcome-messages',
+          description: 'Your Automatic Message To New Downline Players',
+        },
+      ],
+    });
+  }
+
   if (clubId) {
     const { isClubStaff, canViewFinance, canControlClub } = getClubNavigationCapabilities(
       clubRole,
@@ -238,6 +256,16 @@ export function getClubArenaNavigation({
         description: 'Games, Schedule, And Club Activity',
       },
     ];
+
+    // Club-owned presentation remains editable when a union owns the games.
+    // The database grants direct banner updates to the actual club owner.
+    if (clubRole === 'owner') {
+      operationItems.push({
+        label: 'Banner Displays',
+        path: clubPath('/banner-displays'),
+        description: 'Manage Your Club Banner',
+      });
+    }
 
     if (canManageGames) {
       operationItems.push({

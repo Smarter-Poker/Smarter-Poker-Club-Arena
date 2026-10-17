@@ -102,12 +102,19 @@ beforeEach(() => {
 });
 
 describe('UnionWalletModal', () => {
+  it('prints the chip wallet to cents while transaction amounts retain their ledger format', async () => {
+    render(<UnionWalletModal {...base} balance={1000} />);
+    expect(await screen.findByText('1,000.00 Chips')).toBeTruthy();
+    expect(screen.getByText('Weekly Rake Wallet Balance 1,000.00')).toBeTruthy();
+    expect(screen.queryByText('1K')).toBeNull();
+  });
+
   it('loads the union-wide roster with roles when opened', async () => {
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('Danny')).toBeTruthy());
     expect(rpc).toHaveBeenCalledWith('fn_union_player_directory', { p_union_id: UNION_ID });
-    expect(screen.getByText('OWNER')).toBeTruthy();
-    expect(screen.getByText('MEMBER')).toBeTruthy();
+    expect(screen.getByText('Owner')).toBeTruthy();
+    expect(screen.getByText('Member')).toBeTruthy();
     expect(screen.getByText('SHARK')).toBeTruthy();
   });
 
@@ -125,6 +132,8 @@ describe('UnionWalletModal', () => {
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
 
     fireEvent.click(screen.getByText('Fish'));
+
+    fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
     fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 
@@ -156,8 +165,9 @@ describe('UnionWalletModal', () => {
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
 
-    fireEvent.click(screen.getByRole('button', { name: 'Diamonds' }));
     fireEvent.click(screen.getByText('Fish'));
+    fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Diamonds' }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 
@@ -181,6 +191,8 @@ describe('UnionWalletModal', () => {
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
 
     fireEvent.click(screen.getByText('Fish'));
+
+    fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
     /* Within the figure on screen (5,000), so the screen lets it go and the
        SERVER is the one refusing: another session may have drained the wallet
        since the balance was read. Over-balance amounts never reach the RPC;
@@ -198,9 +210,10 @@ describe('UnionWalletModal', () => {
       render(<UnionWalletModal {...base} />);
       await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
       fireEvent.click(screen.getByText('Fish'));
+      fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
       fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '9000' } });
 
-      expect(screen.getByRole('alert').textContent).toBe('This Wallet Only Holds 5,000.');
+      expect(screen.getByRole('alert').textContent).toBe('This Wallet Only Holds 5,000.00.');
       expect(screen.queryByText(/Would Hold/)).toBeNull();
       expect(document.body.textContent).not.toMatch(/-4,000/);
       const plate = screen.getByRole('button', { name: /send to fish/i });
@@ -217,6 +230,7 @@ describe('UnionWalletModal', () => {
       render(<UnionWalletModal {...base} />);
       await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
       fireEvent.click(screen.getByText('Fish'));
+      fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
       fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: typed } });
       expect(screen.getByRole('alert').textContent).toBe(sentence);
       expect(
@@ -229,9 +243,10 @@ describe('UnionWalletModal', () => {
       render(<UnionWalletModal {...base} />);
       await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
       fireEvent.click(screen.getByText('Fish'));
+      fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
       fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '12.50' } });
       expect(screen.queryByRole('alert')).toBeNull();
-      expect(screen.getByText(/Would Hold 4,987\.5 Afterwards/)).toBeTruthy();
+      expect(screen.getByText(/Would Hold 4,987\.50 Afterwards/)).toBeTruthy();
     });
   });
 
@@ -254,6 +269,7 @@ describe('UnionWalletModal', () => {
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
     fireEvent.click(screen.getByText('Fish'));
+    fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
     fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
     await screen.findByRole('alert');
@@ -281,6 +297,7 @@ describe('UnionWalletModal', () => {
     const firstView = render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
     fireEvent.click(screen.getByText('Fish'));
+    fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
     fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
     await screen.findByRole('alert');
@@ -293,6 +310,7 @@ describe('UnionWalletModal', () => {
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
     fireEvent.click(screen.getByText('Fish'));
+    fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
     fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
     expect((await screen.findByRole('status')).textContent).toMatch(/sent 250/i);
@@ -316,6 +334,7 @@ describe('UnionWalletModal', () => {
     render(<UnionWalletModal {...base} />);
     await screen.findByText('Fish');
     fireEvent.click(screen.getByText('Fish'));
+    fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '25' } });
     fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -334,6 +353,7 @@ describe('UnionWalletModal', () => {
       render(<UnionWalletModal {...base} />);
       await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
       fireEvent.click(screen.getByText('Fish'));
+      fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
       fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
       fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 
@@ -358,9 +378,11 @@ describe('UnionWalletModal', () => {
   it('sends from the promo wallet to a club through promoSend, never sendToClub', async () => {
     render(<UnionWalletModal {...base} walletKey="promo" walletLabel="Promo Wallet" />);
     await waitFor(() => expect(screen.getByText('Club JAQK')).toBeTruthy());
-    expect(screen.getAllByText('CLUB PROMO WALLET').length).toBe(2);
+    expect(screen.getAllByText('Club Promo Wallet').length).toBe(2);
 
     fireEvent.click(screen.getByText('Club JAQK'));
+
+    fireEvent.click(screen.getByRole('button', { name: /send out to club jaqk/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '5000' } });
     fireEvent.click(screen.getByRole('button', { name: /send to club jaqk/i }));
 
@@ -385,6 +407,7 @@ describe('UnionWalletModal', () => {
     render(<UnionWalletModal {...base} walletKey="promo" walletLabel="Promo Wallet" />);
     await waitFor(() => expect(screen.getByText('Club JAQK')).toBeTruthy());
     fireEvent.click(screen.getByText('Club JAQK'));
+    fireEvent.click(screen.getByRole('button', { name: /send out to club jaqk/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '500' } });
     fireEvent.click(screen.getByRole('button', { name: /send to club jaqk/i }));
     await screen.findByRole('alert');
@@ -400,9 +423,11 @@ describe('UnionWalletModal', () => {
   it('sends from the union bank to a club through sendToClub, into the Club Bank', async () => {
     render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
     await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
-    expect(screen.getAllByText('CLUB BANK').length).toBe(2);
+    expect(screen.getAllByText('Club Bank').length).toBe(2);
 
     fireEvent.click(screen.getByText('SHARK CLUB'));
+
+    fireEvent.click(screen.getByRole('button', { name: /send out to shark club/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
     fireEvent.click(screen.getByRole('button', { name: /send to shark club/i }));
 
@@ -470,7 +495,7 @@ describe('UnionWalletModal', () => {
       <UnionWalletModal {...base} walletKey="rake" walletLabel="Weekly Rake Wallet" />
     );
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name: 'Ledger' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ledger' }));
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith(
         'fn_promo_wallet_ledger',
@@ -481,7 +506,7 @@ describe('UnionWalletModal', () => {
     view.rerender(<UnionWalletModal {...base} walletKey="promo" walletLabel="Promo Wallet" />);
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
     // The reset put the count back to 0 before the promo page answered.
-    fireEvent.click(screen.getByRole('tab', { name: 'Ledger' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ledger' }));
     expect(await screen.findByText('Promo To Club')).toBeTruthy();
     expect(screen.getByText(/7 Entries/)).toBeTruthy();
 
@@ -524,7 +549,7 @@ describe('UnionWalletModal', () => {
     });
     render(<UnionWalletModal {...base} walletKey="promo" walletLabel="Promo Wallet" />);
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name: 'Ledger' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ledger' }));
     await waitFor(() =>
       expect(rpc).toHaveBeenCalledWith(
         'fn_promo_wallet_ledger',
@@ -556,9 +581,9 @@ describe('UnionWalletModal', () => {
     });
     render(<UnionWalletModal {...base} walletKey="promo" walletLabel="Promo Wallet" />);
     await waitFor(() => expect(screen.getByText('Club JAQK')).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
-    expect(screen.getAllByText('Pull From The Club Promo Wallet').length).toBe(2);
+    expect(screen.getAllByText('Into The Club Promo Wallet').length).toBe(2);
     fireEvent.click(screen.getByText('Club JAQK'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from club jaqk/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '400' } });
     fireEvent.click(screen.getByRole('button', { name: /pull from club jaqk/i }));
     await waitFor(() =>
@@ -574,7 +599,7 @@ describe('UnionWalletModal', () => {
     );
     expect(rpc).not.toHaveBeenCalledWith('fn_union_clawback_from_club', expect.anything());
     expect((await screen.findByRole('status')).textContent).toMatch(/promo wallet/i);
-    expect(screen.getByText('33,000')).toBeTruthy();
+    expect(screen.getByText('33,000.00')).toBeTruthy();
   });
 
   it('pulls from the club bank when opened on the union bank, with an op id', async () => {
@@ -586,8 +611,8 @@ describe('UnionWalletModal', () => {
     });
     render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
     await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
     fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from shark club/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
     await waitFor(() =>
@@ -596,7 +621,7 @@ describe('UnionWalletModal', () => {
         expect.objectContaining({ p_club_id: 'c-2', p_amount: 10, p_op_id: expect.any(String) })
       )
     );
-    expect(await screen.findByText('70,000')).toBeTruthy();
+    expect(await screen.findByText('70,000.00')).toBeTruthy();
   });
 
   it('reuses the clawback operation id after an ambiguous transport failure', async () => {
@@ -612,8 +637,8 @@ describe('UnionWalletModal', () => {
     });
     render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
     await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
     fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from shark club/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
     await screen.findByRole('alert');
@@ -645,8 +670,8 @@ describe('UnionWalletModal', () => {
       <UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" onSent={onSent} />
     );
     await screen.findByText('SHARK CLUB');
-    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
     fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from shark club/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
 
@@ -657,7 +682,6 @@ describe('UnionWalletModal', () => {
   it('refuses a pull from the rake wallet instead of pulling into the bank in silence', async () => {
     render(<UnionWalletModal {...base} />);
     await waitFor(() => expect(screen.getByText('Club JAQK')).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name: 'Pull (Clawback)' }));
     const row = screen.getByText('Club JAQK').closest('button') as HTMLButtonElement;
     expect(row.getAttribute('aria-disabled')).toBe('true');
     expect(screen.getAllByText('Not Available From Here').length).toBeGreaterThan(0);
@@ -669,6 +693,8 @@ describe('UnionWalletModal', () => {
     await waitFor(() => expect(screen.getByText('Fish')).toBeTruthy());
 
     fireEvent.click(screen.getByText('Fish'));
+
+    fireEvent.click(screen.getByRole('button', { name: /send out to fish/i }));
     fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '50' } });
     fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 

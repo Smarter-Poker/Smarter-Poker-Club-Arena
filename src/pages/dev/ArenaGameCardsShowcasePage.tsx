@@ -134,6 +134,7 @@ function MobileLobbyReview({
               playerId="1"
               playersPlaying={223}
               shareIcon={<ClubLinkIcon />}
+              onShare={() => undefined}
             />
 
             <button type="button" className="lobby-bbj" aria-label="Bad Beat Jackpot: 93,293.98">

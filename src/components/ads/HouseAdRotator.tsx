@@ -45,6 +45,7 @@ import {
 } from '../../services/AdService';
 import type { AdSlot, HouseAd } from '../../services/AdService';
 import { openInBrowser } from '../../lib/openExternal';
+import { reportError } from '../../utils/errorReporter';
 import './HouseAdRotator.css';
 
 /* The full-screen popup is fetched on the first tap, not before first paint.
@@ -103,15 +104,22 @@ export default function HouseAdRotator({
   const openRef = useRef(false);
   openRef.current = open;
 
-  // ── Load: ask for more than we show, keep only the ones with a picture ────
+  // Resolve only platform-managed creatives. Owner presentation settings
+  // never hide this surface or supply or replace its advertising.
   useEffect(() => {
     let cancelled = false;
-    AdService.resolve(slot, clubId, Math.min(10, Math.max(limit * 2, limit))).then((rows) => {
-      if (cancelled) return;
-      const withImage = rows.filter((a) => isSafeAdImage(a.imageUrl)).slice(0, limit);
-      setAds(withImage);
-      setIndex(0);
-    });
+    setAds([]);
+    setIndex(0);
+    setOpen(false);
+    void AdService.resolve(slot, clubId, Math.min(10, Math.max(limit * 2, limit)))
+      .then((rows) => {
+        if (cancelled) return;
+        setAds(rows.filter((ad) => isSafeAdImage(ad.imageUrl)).slice(0, limit));
+        setIndex(0);
+      })
+      .catch((failure) => {
+        if (!cancelled) reportError(failure, 'HouseAdRotator.load');
+      });
     return () => {
       cancelled = true;
     };

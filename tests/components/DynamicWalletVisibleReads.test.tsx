@@ -1,4 +1,4 @@
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
@@ -13,7 +13,7 @@ const fixture = vi.hoisted(() => ({
 }));
 vi.mock('../../src/hooks/useMasterBusSubscription', () => ({ useMasterBusSubscriptions: vi.fn() }));
 vi.mock('../../src/hooks/useSpinsWallet', () => ({
-  useSpinsWallet: () => ({ balance: 0, state: {} }),
+  useSpinsWallet: () => ({ balance: 0, state: {}, reload: vi.fn() }),
 }));
 vi.mock('../../src/components/arena/arenaAccess', () => ({
   useArenaHasChipWallet: () => fixture.chipWallet,
@@ -88,6 +88,7 @@ vi.mock('../../src/lib/supabase', () => {
 
 import DynamicWallet from '../../src/components/wallet/DynamicWallet';
 import * as clubIds from '../../src/utils/clubIdResolver';
+import { useMasterBusSubscriptions } from '../../src/hooks/useMasterBusSubscription';
 const base = {
   userId: '11111111-1111-4111-8111-111111111111',
   clubId: '22222222-2222-4222-8222-222222222222',
@@ -124,6 +125,28 @@ describe('wallet displays follow authenticated reads, not unpublished channels',
     vi.restoreAllMocks();
   });
 
+  it('Cashier manual mode ignores timers, wake and balance events, but reads on explicit refresh', async () => {
+    const view = render(<DynamicWallet {...base} manualOnly refreshKey={0} />);
+    await flush();
+    const reads = fixture.rpc.mock.calls.length;
+    fixture.bank = 64;
+    await act(() => vi.advanceTimersByTimeAsync(60_000));
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.mocked(useMasterBusSubscriptions).mock.calls.at(-1)?.[1]({});
+    });
+    await flush();
+    expect(fixture.rpc).toHaveBeenCalledTimes(reads);
+    expect(value(view.container, 'club_bank')).toHaveTextContent('100');
+    fireEvent.click(view.getByRole('button', { name: 'Refresh Balances' }));
+    await flush();
+    expect(value(view.container, 'club_bank')).toHaveTextContent('64');
+    fixture.bank = 50;
+    view.rerender(<DynamicWallet {...base} manualOnly refreshKey={1} />);
+    await flush();
+    expect(value(view.container, 'club_bank')).toHaveTextContent('50');
+  });
+
   it('refreshes club and agent figures changed by a second session without exposing union money', async () => {
     const view = render(<DynamicWallet {...base} variant="club" />);
     await flush();
@@ -138,15 +161,31 @@ describe('wallet displays follow authenticated reads, not unpublished channels',
     expect(fixture.channel).not.toHaveBeenCalled();
   });
 
-  it('keeps exact balance state while printing forward-facing Cashier figures without cents', async () => {
+  it('repaints exact wallet values from the existing receipt event without a refresh or timer', async () => {
+    const view = render(<DynamicWallet {...base} variant="club" />);
+    await flush();
+    fixture.bank = 1000.25;
+    fixture.agent = 250.5;
+    const binding = vi
+      .mocked(useMasterBusSubscriptions)
+      .mock.calls.filter(([events]) => events.includes('BALANCE_UPDATED'))
+      .at(-1);
+    expect(binding).toBeDefined();
+    await act(async () => binding![1]({ userId: 'user-1' }));
+    await flush();
+    expect(value(view.container, 'club_bank')).toHaveTextContent('1,000.25');
+    expect(value(view.container, 'agent_wallet')).toHaveTextContent('250.50');
+  });
+
+  it('keeps exact balance state while printing forward-facing Cashier figures with exact cents', async () => {
     fixture.bank = 1299.99;
     fixture.agent = 23.75;
     const view = render(<DynamicWallet {...base} variant="club" />);
     await flush();
-    expect(value(view.container, 'club_bank')).toHaveTextContent('1.2K');
+    expect(value(view.container, 'club_bank')).toHaveTextContent('1,299.99');
     expect(value(view.container, 'agent_wallet')).toHaveTextContent('23');
-    expect(view.container).not.toHaveTextContent('1,299.99');
-    expect(view.container).not.toHaveTextContent('23.75');
+    expect(view.container).toHaveTextContent('1,299.99');
+    expect(view.container).toHaveTextContent('23.75');
   });
 
   it('refreshes the union bank through the existing permission-aware money panel', async () => {

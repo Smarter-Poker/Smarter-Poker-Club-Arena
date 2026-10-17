@@ -139,7 +139,6 @@ describe('AgentService', () => {
           role: 'agent',
           commissionRate: 0.75,
           playerRakebackRate: 0.3,
-          creditLimit: 10000,
         })
         // 2026-08-15: regex updated to the message createAgent actually throws.
         // The 70% cap IS enforced (AgentService.ts:270-271); only the wording
@@ -156,7 +155,6 @@ describe('AgentService', () => {
           role: 'agent',
           commissionRate: 0.71,
           playerRakebackRate: 0.3,
-          creditLimit: 10000,
         })
       ).rejects.toThrow();
     });
@@ -175,7 +173,6 @@ describe('AgentService', () => {
           role: 'agent',
           commissionRate: 0.5,
           playerRakebackRate: 0.55,
-          creditLimit: 10000,
         })
         // 2026-08-15: regex updated to the message createAgent actually throws.
         // The 50% rakeback cap IS enforced (AgentService.ts:272-273); the
@@ -197,7 +194,6 @@ describe('AgentService', () => {
           role: 'agent',
           commissionRate: undefined as any,
           playerRakebackRate: 0.3,
-          creditLimit: 10000,
         })
       ).rejects.toThrow(/commission rate is required/i);
     });
@@ -209,22 +205,30 @@ describe('AgentService', () => {
           clubId: 'club-1',
           role: 'agent',
           commissionRate: 0.5,
-          creditLimit: 10000,
         })
       ).rejects.not.toThrow(/rakeback rate/i);
     });
 
-    it('should reject missing credit limit', async () => {
+    it('refuses a credit line: every agent is prepaid (Dan, October 2026)', async () => {
       await expect(
         AgentService.createAgent({
           userId: 'user-1',
           clubId: 'club-1',
           role: 'agent',
           commissionRate: 0.5,
-          playerRakebackRate: 0.3,
-          creditLimit: undefined as any,
+          creditLimit: 500,
         })
-      ).rejects.toThrow(/credit limit is required/i);
+      ).rejects.toThrow(/Agents Are Prepaid/);
+      await expect(
+        AgentService.createAgent({
+          userId: 'user-1',
+          clubId: 'club-1',
+          role: 'agent',
+          commissionRate: 0.5,
+          isPrepaid: false,
+        })
+      ).rejects.toThrow(/Agents Are Prepaid/);
+      expect(supabase.rpc).not.toHaveBeenCalled();
     });
   });
 
@@ -321,7 +325,6 @@ describe('AgentService', () => {
             role: 'agent',
             commissionRate: 0.5,
             playerRakebackRate: 0.3,
-            creditLimit: 500,
           }),
       ],
     ])('normalizes the real JSON refusal for %s', async (_label, call) => {
@@ -401,7 +404,6 @@ describe('AgentService', () => {
             role: 'agent',
             commissionRate: 0.5,
             playerRakebackRate: 0.3,
-            creditLimit: 500.25,
           }),
       ],
     ])('requires literal boolean success for %s', async (_label, call) => {
@@ -446,7 +448,6 @@ describe('AgentService', () => {
           role: 'agent',
           commissionRate: 0.5,
           playerRakebackRate: 0.3,
-          creditLimit: 500.25,
         })
       ).rejects.toThrow(/readback/);
       getAgentSpy.mockRestore();
@@ -489,6 +490,30 @@ describe('AgentService', () => {
       } as never);
 
       await expect(AgentService.reversibleDistributions(CLUB_ID)).rejects.toThrow(/remaining/);
+    });
+
+    it('lists a send into a Promo Wallet instead of failing the whole list (2026-10-16)', async () => {
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: [
+          {
+            transaction_id: TRANSACTION_ID,
+            to_user_id: USER_ID,
+            to_name: 'Agent One',
+            amount: '10.00',
+            claimed_back: '2.00',
+            remaining: '8.00',
+            destination: 'promo_wallet',
+            created_at: '2026-10-05T00:00:00.000Z',
+            reversible_until: '2026-10-05T00:10:00.000Z',
+            seconds_left: 300,
+          },
+        ],
+        error: null,
+      } as never);
+
+      const rows = await AgentService.reversibleDistributions(CLUB_ID);
+      expect(rows).toHaveLength(1);
+      expect(rows[0].destination).toBe('promo_wallet');
     });
 
     it('preserves a 42501 claim-back refusal for immediate page revocation', async () => {

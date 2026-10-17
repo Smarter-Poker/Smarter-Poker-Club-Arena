@@ -77,7 +77,7 @@ import { useSpinsWallet } from '../../hooks/useSpinsWallet';
 import { useArenaHasChipWallet } from '../arena/arenaAccess';
 import './DynamicWallet.css';
 import { reportError } from '../../utils/errorReporter';
-import { compactChips } from '../../utils/format';
+import { formatWalletChips } from '../../utils/format';
 import { ClubBBJShell, ClubWalletShell, type ClubWalletArtworkKind } from './ClubWalletArtwork';
 
 // All bus events that should trigger a wallet refresh
@@ -110,6 +110,10 @@ const FRESH_WINDOW_MS = 15_000;
 type WalletVariant = 'club' | 'union';
 
 interface DynamicWalletProps {
+  /** Cashier reads follow initial navigation, explicit refresh and own commands. */
+  manualOnly?: boolean;
+  actionClassName?: string;
+  refreshKey?: number;
   userId: string;
   clubId: string;
   variant?: WalletVariant;
@@ -399,7 +403,7 @@ function formatBalance(num: number): string {
      surface is worse than none - so they render as unknown, the same mark
      every unreadable figure already uses. */
   if (!Number.isFinite(num)) return '-';
-  return compactChips(num);
+  return formatWalletChips(num);
 }
 
 /* Dan 2026-08-24: "DIAMONDS ARE ALWAYS WHOLE NUMBERS SO YOU CAN DELETE THE
@@ -466,6 +470,9 @@ interface CachedPanel {
 }
 
 export default function DynamicWallet({
+  manualOnly = false,
+  actionClassName,
+  refreshKey = 0,
   userId,
   clubId,
   variant = 'club',
@@ -770,12 +777,13 @@ export default function DynamicWallet({
 
   // ── Fetch data — uses resolvedId (UUID) for all Supabase queries ───────────
   const fetchData = useVisibleRead({
+    manualOnly,
     scopeKey: `${userId}:${clubId}:${resolvedId}:${variant}:${hasChipWallet}`,
     enabled: Boolean(userId && resolvedId && resolveClubUUIDSync(clubId) === resolvedId),
     deferInitial: () => {
       const fresh = skipNextFetchRef.current;
       skipNextFetchRef.current = false;
-      return fresh;
+      return !manualOnly && fresh;
     },
     onReset: () => {
       if (!userId || !clubId) setLoading(false);
@@ -974,14 +982,14 @@ export default function DynamicWallet({
      2026-09-11 for timing out and 500ing there, and leaving it here would have
      re-opened it from the wallet on every arena load. */
   useEffect(() => {
-    if (!resolvedId || !hasChipWallet) return;
+    if (manualOnly || !resolvedId || !hasChipWallet) return;
     return watchBbjPool(resolvedId, (snap) => {
       if (!isMounted.current) return;
       setData((prev) =>
         prev.bbjPool === snap.mainBalance ? prev : { ...prev, bbjPool: snap.mainBalance }
       );
     });
-  }, [resolvedId, hasChipWallet]);
+  }, [resolvedId, hasChipWallet, manualOnly]);
 
   // ── Authoritative read write-through ────────────────────────────────────────────────
   // Authoritative reads and the shared jackpot source update `data`. Mirror
@@ -1023,10 +1031,18 @@ export default function DynamicWallet({
   useMasterBusSubscriptions(
     [...WALLET_BUS_EVENTS],
     () => {
-      fetchData();
+      if (!manualOnly) fetchData();
     },
     { debounce: 500 }
   );
+
+  const lastRefreshKey = useRef(refreshKey);
+  useEffect(() => {
+    if (lastRefreshKey.current === refreshKey) return;
+    lastRefreshKey.current = refreshKey;
+    fetchData();
+    spins.reload();
+  }, [refreshKey, fetchData, spins.reload]);
 
   // The visible read above replaces three silent subscriptions to agents,
   // clubs and union_wallets. All three tables are intentionally unpublished.
@@ -1321,6 +1337,7 @@ export default function DynamicWallet({
       return;
     }
     fetchData();
+    spins.reload();
   };
 
   // ── Keyboard handler for BBJ banner (accessibility) ─────────────────────────
@@ -1363,6 +1380,11 @@ export default function DynamicWallet({
       role="region"
       aria-label="Wallet Balances"
     >
+      {manualOnly && !fetchError && (
+        <button type="button" className={actionClassName} onClick={retryRead}>
+          Refresh Balances
+        </button>
+      )}
       {/* ── Error indicator — subtle, non-blocking ──────────────────────── */}
       {fetchError && (
         <button

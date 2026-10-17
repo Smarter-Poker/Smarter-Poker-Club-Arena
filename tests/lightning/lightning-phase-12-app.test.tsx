@@ -177,7 +177,7 @@ describe('the fold cue (spec SOUND SYSTEM)', () => {
     const page = read('src/pages/TablePage.tsx');
     const handler = sliceEnclosingBlock(
       page,
-      'await sendLightningFold(tableId, userId, kind)',
+      'await sendLightningFold(tableId, userId, kind, lightningFoldHandId)',
       0,
       1
     );

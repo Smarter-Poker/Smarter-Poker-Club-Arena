@@ -432,7 +432,7 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
       'if (!cancelledRef.current && showSpinner && playersSpinnerVersion.current === myVersion)'
     );
     expect(loadPlayers).toContain(
-      'if (preserveOnError && backgroundPlayersInFlight.current) return true;'
+      'if (preserveOnError && playersReadInFlight.current !== null) return true;'
     );
     expect(loadPlayers.match(/setPlayersLoading\(false\)/g)).toHaveLength(1);
   });

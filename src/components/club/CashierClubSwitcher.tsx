@@ -28,7 +28,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import haptic from '../../services/HapticService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
-import { compactChips } from '../../utils/format';
+import { formatWalletChips } from '../../utils/format';
 import { titleCase } from '../../utils/titleCase';
 import { cashierDestination } from '../../utils/cashierDestination';
 import {
@@ -347,7 +347,7 @@ export default function CashierClubSwitcher({ clubId, clubName }: CashierClubSwi
                   <span className={styles.itemName}>{titleCase(club.name || 'Unnamed Club')}</span>
                   {visibleBalances?.has(club.id) && (
                     <span className={styles.itemBalance}>
-                      {compactChips(visibleBalances.get(club.id))} Chips
+                      {formatWalletChips(visibleBalances.get(club.id))} Chips
                     </span>
                   )}
                 </span>

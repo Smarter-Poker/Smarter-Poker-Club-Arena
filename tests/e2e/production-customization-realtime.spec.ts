@@ -11,6 +11,7 @@ import { rawProfileHeading } from './support/rawProfileHeading';
 import { navigateToRenderedProfile } from './support/renderedProfileNavigation';
 import { readProfileInterfaceMode } from './support/profileInterfaceMode';
 import { walletPlayableAmount } from './support/walletPlayableAmount';
+import { expectedWalletChipDisplay } from './support/walletExpectedDisplay';
 
 import { ensureAcceptedTerms } from './support/ensureAcceptedTerms';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
@@ -806,6 +807,18 @@ test.describe('production Table Studio realtime contract', () => {
       await expectSelectedAppearanceTiles(mobileStudio, finalPrimary);
       console.log('[customization-realtime] persisted appearance survived a device reload');
 
+      // The editor's game scope is a preference too. This changes no assets
+      // or ledger rows, and must survive the same cold account rehydrate.
+      await mobileStudio.getByLabel('Apply To').selectOption('PLO');
+      mobileStudio = await openStudio(mobilePage, { expectedLook: 'custom' });
+      await expect(mobileStudio.getByLabel('Apply To')).toHaveValue('PLO');
+      await expectAppearance(mobileStudio, finalPrimary);
+      await mobileStudio.getByLabel('Apply To').selectOption('ALL');
+      await expect(mobileStudio.locator('.theme-modal__grid')).toHaveAttribute(
+        'aria-busy',
+        'false'
+      );
+
       const otherPreset = different(primaryPreset, Object.keys(PRESETS));
       markTableArtOperation([primaryPage, mobilePage, otherPage], 'other-player-preset');
       await selectAsset(otherStudio, 'Looks', otherPreset);
@@ -1026,7 +1039,7 @@ test.describe('production Table Studio realtime contract', () => {
         { waitUntil: 'domcontentloaded' }
       );
       await expect(walletPlayableAmount(primaryPage)).toHaveText(
-        Math.max(0, total - locked).toLocaleString(),
+        expectedWalletChipDisplay(Math.max(0, total - locked)),
         {
           timeout: PRODUCTION_RESPONSE_TIMEOUT,
         }

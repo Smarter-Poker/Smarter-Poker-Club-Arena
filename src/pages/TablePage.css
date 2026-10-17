@@ -3487,6 +3487,9 @@
     max-width: var(--sp-ls-table-w);
     max-height: var(--sp-ls-table-h);
     width: auto;
+    /* Preserve the landscape felt when narrower player plates stop supplying
+       its historical intrinsic minimum. The table never sizes from a seat. */
+    min-width: 98px;
     /* aspect-ratio on .table-scaler now holds by construction */
   }
 
@@ -4611,8 +4614,8 @@ button.post-bb-overlay-button {
        14px in the same commit, so the oval slides 6px down and the top villain
        gets the room. On Dan's phone the reserve frees 11.1px, 6 of it buys the
        slide, and the felt still ends up ~5px longer than it was. */
-    /* The taller readable player plate needs seven more pixels below the felt. */
-    --sp-hero-clear: clamp(57px, calc(14.6vw + 7px), 75px);
+    /* The compact readable player plate needs six more pixels below the felt. */
+    --sp-hero-clear: clamp(56px, calc(14.6vw + 6px), 74px);
     /* 2026-08-26: gutters removed per Dan — edge-to-edge felt at 375px
        measures 375x619.8 (up from 367x606.6 with 4px gutters). Side-seat
        overhang at narrow viewports is addressed by the max-width: 340px
@@ -4999,6 +5002,8 @@ button.post-bb-overlay-button {
    room, the whole table sits behind this cover, so the player never sees
    seats on a bare gradient. It lifts in one frame with everything painted. */
 .table-art-cover {
+  flex-direction: column;
+  gap: 12px;
   position: absolute;
   inset: 0;
   z-index: 5000;

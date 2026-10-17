@@ -1,0 +1,188 @@
+{
+  "P-09807183": {
+    "replayed": 6,
+    "outcomes": {
+      "replayed_exact": 6
+    },
+    "byVariant": {
+      "flh": {
+        "replayed_exact": 1
+      },
+      "plo4": {
+        "replayed_exact": 1
+      },
+      "plo5": {
+        "replayed_exact": 1
+      },
+      "plo6": {
+        "replayed_exact": 1
+      },
+      "plo8": {
+        "replayed_exact": 2
+      }
+    },
+    "firstDifferences": {},
+    "durableEffectReceipt": {
+      "no_effects": 6
+    },
+    "acceptance": {
+      "joined:intended": 6
+    },
+    "wallClockBudgetBound": 0,
+    "recordedRuntime": {
+      "{\"arch\": \"x64\", \"node\": \"v22.23.2\", \"v8\": \"12.4.254.21-node.56\"}": 6
+    }
+  },
+  "P-4c3509e5": {
+    "replayed": 10,
+    "outcomes": {
+      "replayed_mismatch": 2,
+      "replayed_exact": 8
+    },
+    "byVariant": {
+      "flh": {
+        "replayed_exact": 2
+      },
+      "plo4": {
+        "replayed_exact": 2
+      },
+      "plo5": {
+        "replayed_exact": 2
+      },
+      "plo6": {
+        "replayed_exact": 1,
+        "replayed_mismatch": 1
+      },
+      "plo8": {
+        "replayed_mismatch": 1,
+        "replayed_exact": 1
+      }
+    },
+    "firstDifferences": {
+      "replayed_mismatch decision.omahaVariantPolicy.equity.analysisMs": 2
+    },
+    "durableEffectReceipt": {
+      "no_effects": 10
+    },
+    "acceptance": {
+      "joined:intended": 10
+    },
+    "wallClockBudgetBound": 0,
+    "recordedRuntime": {
+      "{\"arch\": \"x64\", \"node\": \"v22.23.2\", \"v8\": \"12.4.254.21-node.56\"}": 10
+    }
+  },
+  "Q-09807183": {
+    "replayed": 600,
+    "outcomes": {
+      "replayed_exact": 598,
+      "non_replayable:wall_clock_budget": 2
+    },
+    "byVariant": {
+      "flh": {
+        "replayed_exact": 22,
+        "non_replayable:wall_clock_budget": 1
+      },
+      "flo8": {
+        "replayed_exact": 29
+      },
+      "nlh": {
+        "replayed_exact": 246
+      },
+      "pineapple": {
+        "replayed_exact": 35
+      },
+      "plo4": {
+        "replayed_exact": 82
+      },
+      "plo5": {
+        "replayed_exact": 53
+      },
+      "plo6": {
+        "replayed_exact": 48
+      },
+      "plo8": {
+        "non_replayable:wall_clock_budget": 1,
+        "replayed_exact": 44
+      },
+      "short_deck": {
+        "replayed_exact": 39
+      }
+    },
+    "firstDifferences": {
+      "non_replayable:wall_clock_budget decision.policyOwnership.outcome": 2
+    },
+    "durableEffectReceipt": {
+      "no_effects": 517,
+      "applied": 83
+    },
+    "acceptance": {
+      "joined:intended": 600
+    },
+    "wallClockBudgetBound": 2,
+    "recordedRuntime": {
+      "{\"arch\": \"x64\", \"node\": \"v22.23.2\", \"v8\": \"12.4.254.21-node.56\"}": 600
+    }
+  },
+  "V-09807183": {
+    "replayed": 450,
+    "outcomes": {
+      "replayed_exact": 432,
+      "non_replayable:retained_fast_read_view": 16,
+      "non_replayable:wall_clock_budget": 2
+    },
+    "byVariant": {
+      "flh": {
+        "replayed_exact": 49,
+        "non_replayable:wall_clock_budget": 1
+      },
+      "flo8": {
+        "replayed_exact": 50
+      },
+      "nlh": {
+        "replayed_exact": 50
+      },
+      "pineapple": {
+        "replayed_exact": 45,
+        "non_replayable:retained_fast_read_view": 5
+      },
+      "plo4": {
+        "replayed_exact": 49,
+        "non_replayable:retained_fast_read_view": 1
+      },
+      "plo5": {
+        "replayed_exact": 46,
+        "non_replayable:retained_fast_read_view": 4
+      },
+      "plo6": {
+        "replayed_exact": 49,
+        "non_replayable:retained_fast_read_view": 1
+      },
+      "plo8": {
+        "non_replayable:wall_clock_budget": 1,
+        "replayed_exact": 48,
+        "non_replayable:retained_fast_read_view": 1
+      },
+      "short_deck": {
+        "replayed_exact": 46,
+        "non_replayable:retained_fast_read_view": 4
+      }
+    },
+    "firstDifferences": {
+      "non_replayable:wall_clock_budget decision.policyOwnership.outcome": 2
+    },
+    "durableEffectReceipt": {
+      "no_effects": 406,
+      "applied": 44
+    },
+    "acceptance": {
+      "joined:intended": 434,
+      "joined:not_executed": 16
+    },
+    "wallClockBudgetBound": 2,
+    "recordedRuntime": {
+      "{\"arch\": \"x64\", \"node\": \"v22.23.2\", \"v8\": \"12.4.254.21-node.56\"}": 434,
+      "null": 16
+    }
+  }
+}

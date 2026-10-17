@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { createClient } from '@supabase/supabase-js';
 
 const certificationEnabled = process.env.E2E_NEW_CLUB_CERT === '1';
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -10,7 +11,7 @@ test.describe('Production Create A Club Certificate', () => {
   test.skip(!certificationEnabled, 'Runs only with an isolated production certification account.');
 
   test('a brand-new player creates and opens a real standalone club', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(240_000);
     await page.setViewportSize({ width: 393, height: 852 });
     const stamp = `${Date.now()}`.slice(-9);
     const clubName = `Crest Cert ${stamp}`;
@@ -261,6 +262,149 @@ test.describe('Production Create A Club Certificate', () => {
     await expect(page.getByText('New Club Opening Checklist', { exact: true })).toBeVisible({
       timeout: 60_000,
     });
+
+    // The disposable owner has a real banner door, independent of game setup.
+    await page.getByRole('button', { name: 'Open Menu', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Banner Displays\b/ }).click();
+    await expect(page).toHaveURL(/\/banner-displays$/);
+    const bannerInput = page.getByLabel('Choose Banner Image', { exact: true });
+    await expect(bannerInput).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('button', { name: 'Save Banner', exact: true })).toBeDisabled();
+    await page.screenshot({ path: 'test-results/banner-displays-mobile.png', fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+    ).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: 'test-results/banner-displays-desktop.png', fullPage: true });
+    await page.setViewportSize({ width: 393, height: 852 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+    ).toBeLessThanOrEqual(1);
+
+    const adminUrl = process.env.SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!adminUrl || !serviceKey)
+      throw new Error('The Isolated Banner Certificate Requires Its Configured Cleanup Access');
+    const admin = createClient(adminUrl, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    // A tiny isolated PNG proves upload without depending on a retired house banner.
+    const fixtureImage = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAYAAAABCAYAAAD9yd/wAAAAD0lEQVR4nGOQKP/0HxsGALIJDwGvxefVAAAAAElFTkSuQmCC',
+      'base64'
+    );
+    await expect(page.getByText('No Club Banner Set.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('switch')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Save Ad Visibility', exact: true })).toHaveCount(
+      0
+    );
+    let bannerUploadCount = 0;
+    page.on('response', (response) => {
+      if (
+        response.request().method() === 'POST' &&
+        response.url().includes('/storage/v1/object/club-assets/club-cards/')
+      )
+        bannerUploadCount += 1;
+    });
+    let uploadedPath: string | null = null;
+    let savedClubId: string | null = null;
+    let originalSettings: Record<string, unknown> | null | undefined;
+    const cleanupErrors: string[] = [];
+    try {
+      await bannerInput.setInputFiles({
+        name: 'banner-certificate.png',
+        mimeType: 'image/png',
+        buffer: fixtureImage,
+      });
+      await expect(page.getByRole('button', { name: 'Save Banner', exact: true })).toBeEnabled();
+      const uploadResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes('/storage/v1/object/club-assets/club-cards/')
+      );
+      const updateResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          new URL(response.url()).pathname.endsWith('/rest/v1/clubs')
+      );
+      await page.getByRole('button', { name: 'Save Banner', exact: true }).click();
+      const upload = await uploadResponse;
+      uploadedPath = decodeURIComponent(
+        new URL(upload.url()).pathname.split('/object/club-assets/')[1]
+      );
+      expect(upload.ok()).toBe(true);
+      const update = await updateResponse;
+      expect(update.ok()).toBe(true);
+      expect(Object.keys(update.request().postDataJSON())).toEqual(['banner_url']);
+      const savedBanner = await update.json();
+      originalSettings = savedBanner.settings;
+      expect(typeof savedBanner.id).toBe('string');
+      savedClubId = savedBanner.id;
+      expect(savedBanner.banner_url).toContain(uploadedPath);
+      await expect(page.getByRole('button', { name: 'Save Banner', exact: true })).toBeDisabled();
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page.getByAltText('Club Lobby Banner Preview')).toHaveAttribute(
+        'src',
+        savedBanner.banner_url,
+        { timeout: 30_000 }
+      );
+      await page.getByRole('button', { name: 'Back To Club', exact: true }).click();
+      await expect(page.locator('.club-lobby-command-top__campaign-button img')).toHaveAttribute(
+        'src',
+        savedBanner.banner_url,
+        { timeout: 30_000 }
+      );
+      await page.goto(`./clubs/${createdClubRef}/banner-displays`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await page.getByRole('button', { name: 'Remove Club Banner', exact: true }).click();
+      const resetResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PATCH' &&
+          new URL(response.url()).pathname.endsWith('/rest/v1/clubs')
+      );
+      await page.getByRole('button', { name: 'Save Banner', exact: true }).click();
+      const reset = await resetResponse;
+      expect(reset.ok()).toBe(true);
+      expect((await reset.json()).banner_url).toBeNull();
+
+      expect(reset.request().postDataJSON()).toEqual({ banner_url: null });
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect(page.getByText('No Club Banner Set.', { exact: true })).toBeVisible({
+        timeout: 30000,
+      });
+      await expect(page.getByAltText('Club Lobby Banner Preview')).toHaveCount(0);
+      await expect(page.getByRole('switch')).toHaveCount(0);
+      await page.screenshot({ path: 'test-results/rotating-banners-mobile.png', fullPage: true });
+      await page.getByRole('button', { name: 'Back To Club', exact: true }).click();
+      await expect(page.locator('.club-lobby-command-top__campaign-button img')).toHaveCount(0);
+      await expect(page.locator('.ad-rotator--lobby-strip img')).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('img[src*="shark-club-championship-ad"]')).toHaveCount(0);
+      expect(bannerUploadCount, 'Only The Top Club Banner May Upload An Image').toBe(1);
+    } finally {
+      // Delete only this exact disposable club's image, including a failed
+      // persistence attempt. Never leave an auth-owned object blocking teardown.
+      if (savedClubId) {
+        const { error } = await admin
+          .from('clubs')
+          .update({
+            banner_url: null,
+            ...(originalSettings === undefined ? {} : { settings: originalSettings }),
+          })
+          .eq('id', savedClubId);
+        if (error) cleanupErrors.push(error.message);
+      }
+      if (uploadedPath) {
+        const { error } = await admin.storage.from('club-assets').remove([uploadedPath]);
+        if (error) cleanupErrors.push(error.message);
+      }
+    }
+
+    expect(cleanupErrors, 'The Disposable Banner Image Must Be Removed').toEqual([]);
 
     // Prove the owner-facing lifecycle all the way through the published UI.
     // A pristine welcome club deliberately owns preloaded games and 100K of

@@ -200,10 +200,10 @@ describe('the client stopped calling functions it may not execute', () => {
     expect(DASHBOARD).not.toContain("creditAction === 'add_prepaid'\n                        );");
   });
 
-  it('says what each action does on the control itself', () => {
-    expect(DASHBOARD).toContain('Set Credit Line To');
+  it('offers prepaid funding only: every agent is prepaid (Dan, October 2026)', () => {
     expect(DASHBOARD).toContain('Send Prepaid Chips');
-    expect(DASHBOARD).toContain('Reduce Credit Line By');
+    expect(DASHBOARD).not.toContain('Set Credit Line To');
+    expect(DASHBOARD).not.toContain('<CreditReductionControls');
   });
 
   it('passes the note the operator typed instead of discarding it', () => {

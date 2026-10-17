@@ -17,6 +17,8 @@ import DiamondCustodyBalance from '../arena/DiamondCustodyBalance';
 import DiamondWalletTransfer from './DiamondWalletTransfer';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { WalletDesk, WalletDeskHeading, WalletDeskRow } from './WalletDesk';
+import './WalletDesk.css';
 import './DiamondWalletModal.css';
 import { reportError } from '../../utils/errorReporter';
 import { formatPopupText } from '../../utils/popupStyle';
@@ -242,6 +244,14 @@ export default function DiamondWalletModal({
     if (transferBusyRef.current) return;
     onCloseRef.current();
   }, []);
+  /** The transfer sheet over the desk (Dan 2026-10-16, the wallet desk). */
+  const [sendSheet, setSendSheet] = useState(false);
+  const sendSheetRef = useRef(false);
+  sendSheetRef.current = sendSheet;
+  const closeSendSheet = useCallback(() => {
+    if (transferBusyRef.current) return;
+    setSendSheet(false);
+  }, []);
   const isMounted = useIsMounted();
 
   const fetchTransactions = useCallback(
@@ -391,6 +401,12 @@ export default function DiamondWalletModal({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
+        // The transfer sheet closes first, then the wallet; neither while a
+        // transfer travels.
+        if (sendSheetRef.current) {
+          if (!transferBusyRef.current) setSendSheet(false);
+          return;
+        }
         if (!transferBusyRef.current) onCloseRef.current();
         return;
       }
@@ -445,86 +461,124 @@ export default function DiamondWalletModal({
 
   if (!isOpen) return null;
 
-  /* ONE CONSOLE (#ClubArenaConsole): the flat master keeps the wallet title
-     in the approved frame without adding a floating or mismatched crest. The
-     balances, the transfer, the filters and every receipt are
-     printed on the black glass between the rails in the master's own inks,
-     with an engraved rule between rows. The two painted plates in the foot
-     are the wallet's controls: Close on steel, Buy Diamonds on the blue
-     glass. Nothing else is drawn. */
+  /* ON THE WALLET DESK (Dan 2026-10-16): "When you click the union bank
+     wallet, promo wallet or diamond wallet, they should look feel and
+     function like this cashier functionality. Remove the bulky generic
+     frames." The wallet opens as the Cashier does: the identity row (the
+     diamond art, the wallet's name, a white Close), the two custody figures,
+     the filter words, the history as hairline rows, and the painted action
+     dock with Send Diamonds | Buy Diamonds. A transfer is asked for on the
+     flat-crested console (the Marketplace dress, #4805) over the desk, and
+     every close path still holds shut while it travels (launch audit D-13). */
+  const dockLine = transferBusy
+    ? 'Sending'
+    : `${FILTER_OPTIONS.find((opt) => opt.value === filter)?.label ?? 'All'} · ${filteredTx.length.toLocaleString()} Entries`;
+
   return (
     <div className="diamond-wallet-backdrop" onClick={closeIfIdle} role="presentation">
       <div
         ref={dialogRef}
-        className="dwc"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dwc-title"
+        className="wdesk__trap"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
-        <SpadeConsole
-          /* The X is not rendered while a transfer travels (launch audit
-             D-13), as the cashout sheet and the mint already do. The flat
-             crest stays: it is the deliberate Marketplace dress (#4805,
-             pinned by tests/marketplace-console-visual-contract.test.ts), and
-             the Cashier console law carries the allowance for it. */
-          onClose={transferBusy ? undefined : closeIfIdle}
-          crest="flat"
-          eyebrow="Club Arena"
-          title="Diamond Wallet"
-          titleId="dwc-title"
-          pill={
-            transferBusy
-              ? 'Sending'
-              : (FILTER_OPTIONS.find((opt) => opt.value === filter)?.label ?? 'All')
-          }
-          pillInk={transferBusy ? 'gold' : 'blue'}
-          plates={{
-            secondary: {
-              label: 'Close',
-              ink: 'silver',
-              onClick: closeIfIdle,
-              disabled: transferBusy,
-              'aria-label': 'Close',
+        <WalletDesk
+          ariaLabel="Diamond Wallet"
+          art={`${import.meta.env.BASE_URL}images/diamond-icon.png`}
+          name="Diamond Wallet"
+          line="Club Arena Diamonds"
+          onClose={closeIfIdle}
+          closeDisabled={transferBusy}
+          dockLine={dockLine}
+          actions={[
+            {
+              label: 'Send Diamonds',
+              lit: true,
+              onClick: () => setSendSheet(true),
+              disabled: transferBusy || !user?.id,
+              'aria-label': 'Send Diamonds',
             },
-            primary: {
+            {
               label: 'Buy Diamonds',
-              ink: 'white',
-              disabled: transferBusy,
               onClick: () => {
                 if (transferBusyRef.current) return;
                 onClose();
                 onBuyClick?.();
               },
+              disabled: transferBusy,
             },
-          }}
-          className="dwc__console"
+          ]}
+          sheet={
+            sendSheet && user?.id ? (
+              <div className="dwc-sheet" onClick={closeSendSheet}>
+                <div
+                  className="dwc"
+                  aria-labelledby="dwc-title"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <SpadeConsole
+                    /* The X is not rendered while a transfer travels (launch
+                       audit D-13), as the cashout sheet and the mint already
+                       do. The flat crest stays: it is the deliberate
+                       Marketplace dress (#4805), pinned by
+                       tests/marketplace-console-visual-contract.test.ts, and
+                       the Cashier console law carries the allowance for it. */
+                    onClose={transferBusy ? undefined : closeSendSheet}
+                    crest="flat"
+                    eyebrow="Diamond Wallet"
+                    title="Send Diamonds"
+                    titleId="dwc-title"
+                    pill={transferBusy ? 'Sending' : 'Friends'}
+                    pillInk={transferBusy ? 'gold' : 'blue'}
+                    plates={{
+                      secondary: {
+                        label: 'Back',
+                        ink: 'silver',
+                        onClick: closeSendSheet,
+                        disabled: transferBusy,
+                        'aria-label': 'Back',
+                      },
+                      primary: {
+                        label: 'Buy Diamonds',
+                        ink: 'white',
+                        disabled: transferBusy,
+                        onClick: () => {
+                          if (transferBusyRef.current) return;
+                          onClose();
+                          onBuyClick?.();
+                        },
+                      },
+                    }}
+                    className="dwc__console"
+                  >
+                    <DiamondWalletTransfer
+                      key={user.id}
+                      userId={user.id}
+                      initiallyOpen
+                      onBusyChange={onTransferBusyChange}
+                      onComplete={() => {
+                        setBalanceRevision((value) => value + 1);
+                        void fetchTransactions();
+                      }}
+                    />
+                  </SpadeConsole>
+                </div>
+              </div>
+            ) : null
+          }
         >
           {/* Balances: available and in play are two figures, never a total. */}
           <div className="diamond-wallet-modal__custody-balances">
             <DiamondCustodyBalance key={balanceRevision} />
           </div>
 
-          {user?.id && (
-            <DiamondWalletTransfer
-              key={user.id}
-              userId={user.id}
-              onBusyChange={onTransferBusyChange}
-              onComplete={() => {
-                setBalanceRevision((value) => value + 1);
-                void fetchTransactions();
-              }}
-            />
-          )}
-
           {/* Filters: lit words in a row; the chosen one burns white. */}
-          <div className="dwc__filters" role="group" aria-label="Filter Transactions">
+          <div className="wdesk__words" role="group" aria-label="Filter Transactions">
             {FILTER_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
-                className={`dwc-word ${filter === opt.value ? 'sc-ink--white' : 'sc-ink--muted'}`}
+                className="wdesk__word"
                 aria-pressed={filter === opt.value}
                 onClick={() => setFilter(opt.value)}
               >
@@ -533,28 +587,29 @@ export default function DiamondWalletModal({
             ))}
           </div>
 
+          <WalletDeskHeading
+            title="History"
+            meta={`${filteredTx.length.toLocaleString()} Entries`}
+          />
+
           {/* Receipts */}
-          <div className="dwc__list">
+          <div className="wdesk__list">
             {loading || historyOwnerId !== user?.id ? (
-              <p className="sc-copy sc-copy--center dwc__status" role="status">
+              <p className="wdesk__empty" role="status">
                 Loading Transactions
               </p>
             ) : loadError ? (
               /* "No Transactions Yet" is a claim about the player's money. It
                  must never be shown for a read that failed - see the error note
                  in fetchTransactions. */
-              <div className="dwc__status" role="status">
-                <p className="sc-copy sc-copy--center">Could Not Load Your Diamond History</p>
-                <button
-                  type="button"
-                  className="dwc-word sc-ink--white"
-                  onClick={() => fetchTransactions()}
-                >
+              <div className="wdesk__empty" role="status">
+                <p>Could Not Load Your Diamond History</p>
+                <button type="button" className="wdesk__more" onClick={() => fetchTransactions()}>
                   Retry
                 </button>
               </div>
             ) : filteredTx.length === 0 ? (
-              <p className="sc-copy sc-copy--center dwc__status">
+              <p className="wdesk__empty">
                 {filter === 'all'
                   ? 'No Transactions Yet'
                   : hasMore
@@ -569,47 +624,43 @@ export default function DiamondWalletModal({
                 const dt = new Date(tx.created_at);
 
                 return (
-                  <div key={tx.id} className="dwc__tx">
-                    <div className="dwc__tx-body">
-                      <span className="dwc__tx-label sc-ink--silver">{label}</span>
-                      {/* Phase 6: the ledger's own player line, never the
-                          raw description - an operator's audit note, a
-                          challenge id or a test row is not the player's. */}
-                      <span className="dwc__tx-desc sc-ink--muted">
-                        {formatPopupText(tx.line || label)}
-                      </span>
-                    </div>
-                    <div className="dwc__tx-figures">
-                      <span
-                        className={`dwc__tx-amount ${isPositive ? 'sc-ink--blue' : 'sc-ink--red'}`}
-                      >
+                  <WalletDeskRow
+                    key={tx.id}
+                    name={label}
+                    sub={
+                      <>
+                        {/* Phase 6: the ledger's own player line, never the
+                            raw description - an operator's audit note, a
+                            challenge id or a test row is not the player's. */}
+                        <span>{formatPopupText(tx.line || label)}</span>
+                        <br />
+                        <span>
+                          {dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                          {dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {tx.balance_after != null && (
+                          <span className="wdesk__sep">
+                            Balance {tx.balance_after.toLocaleString()}
+                          </span>
+                        )}
+                      </>
+                    }
+                    figure={
+                      <span className={isPositive ? 'wdesk__in' : 'wdesk__out'}>
                         {isPositive ? '+' : ''}
                         {tx.amount.toLocaleString()}
                       </span>
-                      {tx.balance_after != null && (
-                        <span className="dwc__tx-meta sc-ink--muted">
-                          Balance {tx.balance_after.toLocaleString()}
-                        </span>
-                      )}
-                      <span className="dwc__tx-meta sc-ink--muted">
-                        {dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
-                        {dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                  </div>
+                    }
+                  />
                 );
               })
             )}
             {!loading && !loadError && historyOwnerId === user?.id && hasMore && (
-              <div className="dwc__status">
-                {moreError && (
-                  <p className="sc-copy sc-copy--center" role="status">
-                    Could Not Load Earlier Transactions
-                  </p>
-                )}
+              <div className="wdesk__empty">
+                {moreError && <p role="status">Could Not Load Earlier Transactions</p>}
                 <button
                   type="button"
-                  className="dwc-word sc-ink--white"
+                  className="wdesk__more"
                   disabled={loadingMore}
                   onClick={() => void fetchTransactions(true)}
                 >
@@ -618,7 +669,7 @@ export default function DiamondWalletModal({
               </div>
             )}
           </div>
-        </SpadeConsole>
+        </WalletDesk>
       </div>
     </div>
   );

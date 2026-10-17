@@ -1,5 +1,6 @@
+import { winnerViewportPoint, potViewportPoint } from '../lib/chipAwardGeometry';
 import { observeDealPresentationTiming } from '../utils/dealPresentationTiming';
-import { formatPrizeAtUnit } from '../utils/format';
+import { formatPrizeAtUnit, formatWalletChips } from '../utils/format';
 import {
   getTournamentFormatKind,
   getTournamentEntryCapacity,
@@ -16,6 +17,7 @@ import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOve
 /* #ClubArenaConsole: the felt's own dialogs print into Dan's approved master
    rather than drawing a card in CSS. See .claude/skills/club-arena-console. */
 import { SpadeConsole } from '../components/console/SpadeConsole';
+import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
 import { WaitlistCallToAction } from '../components/table/WaitlistCallToAction';
 
 /**
@@ -52,7 +54,6 @@ import { WaitlistCallToAction } from '../components/table/WaitlistCallToAction';
  * TournamentWinnerOverlay, useTableModals, retryAsync, resolveClubUUID,
  * handPersistenceService, and the unused types ChatMessage, Throwable,
  * ThrowEvent, HandHistoryAction, HandHistoryStreet.
-import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
  *
  * Almost all of the components above are still imported and rendered by
  * TableModalsLayer or another owner, so nothing lost its stylesheet.
@@ -178,7 +179,7 @@ import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import lobbyButtonArt from '../assets/lobby-button.webp';
 import { useButtonImage } from '../hooks/useButtonImage';
 
-import { cashBuyInRange, cashBuyInRefusalText } from '../lib/cashBuyIn';
+import { cashBuyInRange, cashBuyInRefusalText, cashBuyInSeatConflictText } from '../lib/cashBuyIn';
 import {
   cashBuyInJournal,
   executeCashBuyIn,
@@ -471,8 +472,10 @@ import SpectatorBadge from '../components/table/SpectatorBadge';
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
 import { horseBugReporter } from '../services/HorseBugReporter';
 import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
+import { NATIVE_PAUSE_EVENT, NATIVE_RESUME_EVENT, isNativeAppActive } from '../lib/nativeResume';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import { useTableArt } from '../hooks/useTableArt';
+import { useProtectedCardLayout } from '../hooks/useProtectedCardLayout';
 import PineappleDiscard from '../components/table/PineappleDiscard';
 import GameServerAPI, {
   submitAction,
@@ -1146,6 +1149,8 @@ const NO_SEATED_IDS: readonly (string | undefined)[] = [];
 interface TablePageProps {
   /** When set, overrides the URL :tableId param (used by MultiTablePage) */
   embeddedTableId?: string;
+  /** Explicit chair acceptance follows the tab to its buy-in sheet. */
+  openBuyInOnArrival?: boolean;
   /** Callback to report table info updates to the multi-table container */
   onTableInfoUpdate?: (info: {
     name?: string;
@@ -1209,6 +1214,7 @@ interface TablePageProps {
      * no-auto-table-switch law is about activeIndex, which this leaves alone).
      */
     movedToTableId?: string;
+    buyInRequested?: boolean;
     /**
      * THE LOBBY BUTTON (Dan 2026-09-05): the must-move game this table belongs
      * to, or '' when it belongs to none. The action pill row shows its LOBBY
@@ -1683,6 +1689,7 @@ export default function TablePage(props: TablePageProps = {}) {
 
 function LiveTablePage({
   embeddedTableId,
+  openBuyInOnArrival = false,
   onTableInfoUpdate,
   isMultiTable = false,
   isActive = true,
@@ -2485,7 +2492,7 @@ function LiveTablePage({
     return {
       tableId: tableId || '',
       tableName: init?.tableName || 'Loading...',
-      gameType: init?.gameType || 'NLH',
+      gameType: init?.gameType || '',
       blinds: b,
       minBuyIn: init?.minBuyIn || 0,
       maxBuyIn: init?.maxBuyIn || 0,
@@ -2571,6 +2578,7 @@ function LiveTablePage({
 
     const applySeats = (seats: any[]) => {
       setTableState((prev) => {
+        if (!active || engineSnapshotRef.current?.table_id === tableId) return prev;
         const p = [...prev.players];
         /* THE SAME DROP, IN THE PATH THAT PAINTS FIRST (Dan 2026-08-31).
            This forEach used to skip any seat whose index fell outside the
@@ -3820,6 +3828,7 @@ function LiveTablePage({
      would restart the five-second interval on every render. */
   const probeEngineLinkRef = useRef(probeEngineLink);
   probeEngineLinkRef.current = probeEngineLink;
+  const autoTimeBankPreferenceRef = useRef<boolean | undefined>(undefined);
   useEffect(() => {
     if (!tableId || !userId) return;
     // 2026-08-20: both `.catch`es here were dead — `sendHeartbeat` resolves
@@ -3844,6 +3853,7 @@ function LiveTablePage({
          socket connects again or the row turns out to be wakeable, so a table
          that comes back is beaten again at once. */
       if (tableClosedToastShownRef.current) return;
+      if (!isNativeAppActive() || document.visibilityState === 'hidden') return;
       /* PHASE 2 (2026-08-31): tell the engine whether this client has actually
          PUT THE ACTION IN FRONT OF THE PLAYER, not merely that it is online.
 
@@ -3865,6 +3875,7 @@ function LiveTablePage({
         // The engine will not stand up a busted seat whose owner is at the
         // cashier (2026-09-04); this is how it knows.
         rebuyPromptOpen: bustRebuyOpenRef.current,
+        autoTimeBank: autoTimeBankPreferenceRef.current,
       });
       if (res?.success) {
         // Silent recovery (Dan 2026-08-23). A "Reconnected" toast is only
@@ -3912,7 +3923,18 @@ function LiveTablePage({
     };
     void beat();
     const heartbeatInterval = setInterval(() => void beat(), 5000);
-    return () => clearInterval(heartbeatInterval);
+    const onResume = () => {
+      if (document.visibilityState !== 'hidden' && isNativeAppActive()) void beat();
+    };
+    window.addEventListener(NATIVE_RESUME_EVENT, onResume);
+    window.addEventListener('pageshow', onResume);
+    document.addEventListener('visibilitychange', onResume);
+    return () => {
+      clearInterval(heartbeatInterval);
+      window.removeEventListener(NATIVE_RESUME_EVENT, onResume);
+      window.removeEventListener('pageshow', onResume);
+      document.removeEventListener('visibilitychange', onResume);
+    };
   }, [tableId, userId]);
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -3939,7 +3961,7 @@ function LiveTablePage({
   // real page/app exit counts.
   useEffect(() => {
     if (!tableId || !userId) return;
-    const onPageHide = () => {
+    const onPageHide = (event?: Event) => {
       // ── AWAY-BEACON GUARD (2026-08-26) ──────────────────────────────────────
       // iOS Safari fires `pagehide` on every soft navigation, including the
       // transition FROM the lobby panel INTO this table. A player who just
@@ -3953,7 +3975,12 @@ function LiveTablePage({
       //   b) the engine WS has not yet reported 'connected'
       const acquiredAt = seatAcquiredAtRef.current;
       const seatAge = acquiredAt != null ? Date.now() - acquiredAt : Infinity;
-      if (acquiredAt != null && seatAge < 5_000 && engineWsStatus !== 'connected') {
+      if (
+        event?.type === 'pagehide' &&
+        acquiredAt != null &&
+        seatAge < 5_000 &&
+        engineWsStatus !== 'connected'
+      ) {
         return; // spurious iOS pagehide on fresh-join — skip the beacon
       }
 
@@ -3968,8 +3995,17 @@ function LiveTablePage({
       }
       sendAwayBeacon(tableId, accessToken);
     };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') onPageHide();
+    };
     window.addEventListener('pagehide', onPageHide);
-    return () => window.removeEventListener('pagehide', onPageHide);
+    window.addEventListener(NATIVE_PAUSE_EVENT, onPageHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener(NATIVE_PAUSE_EVENT, onPageHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [tableId, userId, engineWsStatus]);
 
   // ── Dan 2026-08-21: "the games can never freeze or die" — last-resort
@@ -5594,6 +5630,17 @@ function LiveTablePage({
   // reshape of the table artwork.
   const tableScalerRef = useRef<HTMLDivElement | null>(null);
   const [scalerSize, setScalerSize] = useState<{ w: number; h: number }>({ w: 320, h: 571 });
+  useProtectedCardLayout(
+    tableScalerRef,
+    JSON.stringify([
+      tableState.players.map((p) => p && [p.id, p.showCards, p.status, p.holeCards?.length]),
+      tableState.communityCards,
+      tableState.communityCards2,
+      tableState.communityCards3,
+      tableState.pot,
+      tableState.heroSeat,
+    ])
+  );
 
   useEffect(() => {
     const el = tableScalerRef.current;
@@ -6062,6 +6109,18 @@ function LiveTablePage({
    * board's ribbon/highlight/share label gates on its own run's turn.
    */
   const [ritRevealedRuns, setRitRevealedRuns] = useState(0);
+  const [ritFaceUpBoards, setRitFaceUpBoards] = useState<number[]>([]);
+  const ritFaceUpBoardsRef = useRef(new Set<number>());
+  const pendingRitAwardsRef = useRef(new Map<number, Array<() => void>>());
+  const markRitBoardPresented = useCallback((board: number, hand: number) => {
+    if (hand !== (tableStateRef.current.handNumber ?? 0)) return;
+    ritFaceUpBoardsRef.current.add(board);
+    setRitFaceUpBoards((prev) => (prev.includes(board) ? prev : [...prev, board]));
+    const pending = pendingRitAwardsRef.current.get(board) ?? [];
+    pendingRitAwardsRef.current.delete(board);
+    for (const launch of pending) launch();
+  }, []);
+
   /** Absolute wall-clock ms at which each run's ribbon lands (index = run-1).
    *  POT_WIN aligns each run's award groups to these. */
   const ritRunRibbonAtRef = useRef<number[]>([]);
@@ -6165,6 +6224,9 @@ function LiveTablePage({
     setRitRevealCounts(null);
     setRitRevealDone(false);
     setRitRevealedRuns(0);
+    setRitFaceUpBoards([]);
+    ritFaceUpBoardsRef.current.clear();
+    pendingRitAwardsRef.current.clear();
     ritRunRibbonAtRef.current = [];
     ritLastAcceptBannerAtRef.current = 0;
     ritDeadlineRef.current = 0;
@@ -6353,7 +6415,10 @@ function LiveTablePage({
       // then replays RUN BY RUN — each board's ribbon, highlights and share
       // label appear on its own turn (ritRevealedRuns), ships aligned to it.
       const visibleCount = ritRevealCounts?.[bi] ?? 5;
-      const revealed = ritRevealCounts === null || ritRevealDone || bi < ritRevealedRuns;
+      const revealed =
+        visibleCount >= 5 &&
+        ritFaceUpBoards.includes(bi) &&
+        (ritRevealCounts === null || ritRevealDone || bi < ritRevealedRuns);
 
       return {
         boardIndex: bi,
@@ -6379,6 +6444,7 @@ function LiveTablePage({
     ritRevealCounts,
     ritRevealDone,
     ritRevealedRuns,
+    ritFaceUpBoards,
   ]);
 
   // MULTI-BOARD PARITY 2026-08-26: union of each RIT board winner's hole
@@ -6424,6 +6490,7 @@ function LiveTablePage({
    */
   const winnerBandActive =
     winnerInfo.playerIds.length > 0 &&
+    ((ritRunsThisHand <= 1 && !ritResult) || (ritRevealedRuns > 0 && ritFaceUpBoards.length > 0)) &&
     (winnerInfo.handNumber === 0 || winnerInfo.handNumber === (tableState.handNumber ?? 0));
 
   // SECOND board never highlighted its winning five — the engine's
@@ -9006,6 +9073,20 @@ function LiveTablePage({
     toggleSetting: toggleV8Setting,
     setAlias: setV8TableAlias,
   } = useUserTableSettings(userId !== 'guest' ? userId : null);
+  autoTimeBankPreferenceRef.current = v8SettingsLoading ? undefined : v8Settings.auto_time_bank;
+  useEffect(() => {
+    if (
+      !tableId ||
+      !userId ||
+      userId === 'guest' ||
+      v8SettingsLoading ||
+      !isNativeAppActive() ||
+      document.visibilityState === 'hidden'
+    )
+      return;
+    // Send an explicit false too. Transport pongs never change this choice.
+    void sendHeartbeat(tableId, { autoTimeBank: v8Settings.auto_time_bank });
+  }, [tableId, userId, v8Settings.auto_time_bank, v8SettingsLoading]);
 
   /**
    * ═══ THE VIP ALL-IN SQUEEZE (Dan 2026-09-05) ═════════════════════════════
@@ -9116,7 +9197,13 @@ function LiveTablePage({
   cardsPreSortRef.current = v8Settings.cards_pre_sort;
 
   // Bible V8 §11.2: Per-game-type theme from Supabase
-  const { theme: v8Theme } = useUserThemeSettings(
+  const {
+    theme: v8Theme,
+    ready: themeReady,
+    scope: themeScope,
+    error: themeError,
+    retry: retryTheme,
+  } = useUserThemeSettings(
     userId !== 'guest' ? userId : null,
     tableState.gameType,
     tableState.isTournament,
@@ -9129,7 +9216,8 @@ function LiveTablePage({
      * attributes on the table root come off that same value, so a Spin did not
      * merely miss a preference, it rendered a different table.
      */
-    tournamentFormat ?? undefined
+    tournamentFormat ?? undefined,
+    Boolean(tableState.gameType)
   );
 
   /* Dan 2026-10-15: "IT MUST ALWAYS LOAD THE ACTUAL TABLE AND BACKGROUND
@@ -9144,7 +9232,7 @@ function LiveTablePage({
   const tableBackgroundUrl = resolveBackground(
     tableState.isFinalTable ? 'final_table_broadcast' : v8Theme.background_id || 'midnight'
   );
-  const tableArt = useTableArt(tableSkinUrl, tableBackgroundUrl);
+  const tableArt = useTableArt(tableSkinUrl, tableBackgroundUrl, themeReady, themeScope);
 
   /**
    * Dan 2026-08-20 — THE CARDS TAB NEVER APPLIED ANYTHING.
@@ -12170,6 +12258,9 @@ function LiveTablePage({
           // runout cadence. Winner ribbons + highlights + the pot ship all
           // wait for ritRevealDone / ritTimelineEndsAtRef.
           clearRitRevealTimers();
+          setRitRevealedRuns(0);
+          setRitFaceUpBoards([]);
+          ritFaceUpBoardsRef.current.clear();
           const baseCount = Math.min(
             5,
             Math.max(0, Number(handState.base_board_count as number) || 0)
@@ -16790,7 +16881,11 @@ function LiveTablePage({
                 holeCards:
                   sp.user_id === userId
                     ? sp.cards?.length
-                      ? heroDisplayHoleCards(sp.cards, existing?.holeCards, !!cardsPreSortRef.current)
+                      ? heroDisplayHoleCards(
+                          sp.cards,
+                          existing?.holeCards,
+                          !!cardsPreSortRef.current
+                        )
                       : heroHoldIsExpired(existing?.holeCards)
                         ? []
                         : existing?.holeCards || []
@@ -18541,6 +18636,13 @@ function LiveTablePage({
         //   center to each winner's seat position over 400-600ms.
         const winnerIds = ((evt.data as any).winner_ids as string[]) || [];
         const potAmount = ((evt.data as any).pot as number) || 0;
+        const payoutCelebrations: Array<() => void> = [];
+        const presentPayoutVisual = (cue: () => void) => {
+          if (ritExpectedRunsRef.current > 1 || (ritResultRef.current?.boards.length ?? 0) > 1)
+            payoutCelebrations.push(cue);
+          else cue();
+        };
+
         // 2026-04-16 fix: Server sends hand_name INSIDE the per-winner
         // `winners[]` array, not at the top level. Extract from winners[0]
         // as fallback when top-level hand_name is empty.
@@ -18907,66 +19009,70 @@ function LiveTablePage({
               heroHandOutcomeRef.current.potWon += amounts[userId] || 0;
             }
             if (winHandName) heroHandOutcomeRef.current.handRank = winHandName;
-            const bb = safeBB(tableStateRef.current.blinds, 1);
-            const winBB = (amounts[userId] || potAmount) / bb;
-            if (winBB >= 10) {
-              // ANIMATION AUDIT 2026-08-27: setShowConfetti(true) was a no-op
-              // when the previous burst was still airborne (ConfettiCanvas
-              // only fires on the false→true edge) — back-to-back qualifying
-              // wins produced ONE burst. Clear-then-set on the next macrotask
-              // so every win gets its own burst (same pattern as
-              // useAnimationQueue.complete()).
-              setShowConfetti(false);
-              setTimeout(() => setShowConfetti(true), 0);
-            }
-            if (winBB >= 50) {
-              // Screen shake for massive win.
-              // ANIMATION AUDIT 2026-08-27: three fixes. (1) In multi-table
-              // mode document.querySelector('.table-page') always hit the
-              // FIRST table in DOM order — the shake landed on another table.
-              // (2) The 600ms removal was hardcoded while the keyframe runs
-              // calc(0.4s * --animation-speed) — at speed 2 the class was
-              // stripped at 75% and the shake snapped back. (3) The shake now
-              // targets the SCALER, not .table-page: a transform on any
-              // ancestor of the fixed-position chip layer re-anchors it and
-              // displaced every chip in flight — and this shake fires exactly
-              // while the pot-to-winner chips are flying. The chip layer now
-              // mounts outside the scaler, so shaking the scaler leaves it
-              // untouched.
-              const tableEl = tableScalerRef.current;
-              if (tableEl) {
-                tableEl.classList.add('table-page--shake');
-                setTimeout(
-                  () => tableEl.classList.remove('table-page--shake'),
-                  Math.round(600 * getAnimationSpeed())
-                );
+            presentPayoutVisual(() => {
+              const bb = safeBB(tableStateRef.current.blinds, 1);
+              const winBB = (amounts[userId] || potAmount) / bb;
+              if (winBB >= 10) {
+                // ANIMATION AUDIT 2026-08-27: setShowConfetti(true) was a no-op
+                // when the previous burst was still airborne (ConfettiCanvas
+                // only fires on the false→true edge) — back-to-back qualifying
+                // wins produced ONE burst. Clear-then-set on the next macrotask
+                // so every win gets its own burst (same pattern as
+                // useAnimationQueue.complete()).
+                setShowConfetti(false);
+                setTimeout(() => setShowConfetti(true), 0);
               }
-              // ANIMATION/SOUND AUDIT 2026-08-19: playBigWin fired here AND
-              // inside playWinSound (called below) — double celebration.
-              // playWinSound owns the escalation now.
-            }
+              if (winBB >= 50) {
+                // Screen shake for massive win.
+                // ANIMATION AUDIT 2026-08-27: three fixes. (1) In multi-table
+                // mode document.querySelector('.table-page') always hit the
+                // FIRST table in DOM order — the shake landed on another table.
+                // (2) The 600ms removal was hardcoded while the keyframe runs
+                // calc(0.4s * --animation-speed) — at speed 2 the class was
+                // stripped at 75% and the shake snapped back. (3) The shake now
+                // targets the SCALER, not .table-page: a transform on any
+                // ancestor of the fixed-position chip layer re-anchors it and
+                // displaced every chip in flight — and this shake fires exactly
+                // while the pot-to-winner chips are flying. The chip layer now
+                // mounts outside the scaler, so shaking the scaler leaves it
+                // untouched.
+                const tableEl = tableScalerRef.current;
+                if (tableEl) {
+                  tableEl.classList.add('table-page--shake');
+                  setTimeout(
+                    () => tableEl.classList.remove('table-page--shake'),
+                    Math.round(600 * getAnimationSpeed())
+                  );
+                }
+                // ANIMATION/SOUND AUDIT 2026-08-19: playBigWin fired here AND
+                // inside playWinSound (called below) — double celebration.
+                // playWinSound owns the escalation now.
+              }
+            });
           }
           // Bible V8 §5.1: Particle burst from first winner's seat position
-          const firstWinnerIdx = tableStateRef.current.players.findIndex(
-            (p) => p && winnerIds.includes(p.id)
-          );
-          if (firstWinnerIdx >= 0) {
-            // AUDIT FIX 2026-07-19: seatPositions is physical-seat-indexed
-            // (players[] index = seatNumber-1); the +1 sent the burst to the
-            // seat one past the winner. The PLAYER_ACTION path uses no offset.
-            const seatPct = seatPositions[firstWinnerIdx] || { x: 50, y: 50 };
-            // ANIMATION AUDIT 2026-08-27: like the confetti above, a second
-            // burst while one is active never retriggered (edge-gated).
-            // Clear-then-set so every winner gets their burst.
-            const nextParticle = {
-              active: true,
-              // 2026-08-04 FIX: scaler-relative percentages, not viewport
-              origin: seatPctToViewportPx(tableScalerRef.current, seatPct),
-              intensity: potAmount > 500 ? 2 : 1, // Big win = 2x particle intensity
-            };
-            setWinnerParticle((prev) => (prev.active ? { ...prev, active: false } : prev));
-            setTimeout(() => setWinnerParticle(nextParticle), 0);
-          }
+          presentPayoutVisual(() => {
+            const firstWinnerIdx = tableStateRef.current.players.findIndex(
+              (p) => p && winnerIds.includes(p.id)
+            );
+            if (firstWinnerIdx >= 0) {
+              // AUDIT FIX 2026-07-19: seatPositions is physical-seat-indexed
+              // (players[] index = seatNumber-1); the +1 sent the burst to the
+              // seat one past the winner. The PLAYER_ACTION path uses no offset.
+              const seatPct = seatPositions[firstWinnerIdx] || { x: 50, y: 50 };
+              // ANIMATION AUDIT 2026-08-27: like the confetti above, a second
+              // burst while one is active never retriggered (edge-gated).
+              // Clear-then-set so every winner gets their burst.
+              const nextParticle = {
+                active: true,
+                // 2026-08-04 FIX: scaler-relative percentages, not viewport
+                origin: seatPctToViewportPx(tableScalerRef.current, seatPct),
+                intensity: potAmount > 500 ? 2 : 1, // Big win = 2x particle intensity
+              };
+              setWinnerParticle((prev) => (prev.active ? { ...prev, active: false } : prev));
+              setTimeout(() => setWinnerParticle(nextParticle), 0);
+            }
+          });
         }
 
         // Bible V8 §4.19: Show/muck prompt when hero wins without showdown
@@ -19044,9 +19150,11 @@ function LiveTablePage({
         }
 
         if (winnerIds.length > 0 && winnerIds.includes(userId)) {
-          playWinSound(potAmount);
-          // Bible V8 §5.4: heavy celebration haptic on hero win
-          import('../services/HapticService').then(({ haptic }) => haptic.heavy());
+          presentPayoutVisual(() => {
+            playWinSound(potAmount);
+            // Bible V8 §5.4: heavy celebration haptic on hero win
+            import('../services/HapticService').then(({ haptic }) => haptic.heavy());
+          });
         }
         if (winnerIds.length > 0 && potAmount > 0) {
           /**
@@ -19181,6 +19289,7 @@ function LiveTablePage({
               toX: number;
               toY: number;
               amount: number;
+              userId: string;
             }>;
             /** RUN index (1..N) on run-it-twice hands; 1 otherwise. */
             board: number;
@@ -19253,7 +19362,12 @@ function LiveTablePage({
                   potAmount / (winnerIds.length || 1);
               // createPotToWinnerEvent already returns a fan of 3-8 chips with
               // bezier arc, staggered 40ms each, 600ms duration — spec match.
-              anim.events.push(...createPotToWinnerEvent(potPos, winnerPos, share));
+              anim.events.push(
+                ...createPotToWinnerEvent(potPos, winnerPos, share).map((event) => ({
+                  ...event,
+                  recipientId: w.userId,
+                }))
+              );
               // Dan 2026-08-21: the floating "+N" rides with this fan and ends
               // above the winner's seat naming the exact share they won.
               anim.floats.push({
@@ -19262,6 +19376,7 @@ function LiveTablePage({
                 toX: winnerPos.x,
                 toY: winnerPos.y,
                 amount: share,
+                userId: w.userId,
               });
               // 2026-09-05: the same share, keyed by player, so the stack hold
               // can release precisely this much when THIS fan lands. A player
@@ -19309,13 +19424,19 @@ function LiveTablePage({
                   ? seatPositionsRef.current[seatIdx] || { x: 50, y: 50 }
                   : UNSEATED_WINNER_PCT;
               const winnerPos = seatPctToViewportPx(tableScalerRef.current, seatPct);
-              fallback.events.push(...createPotToWinnerEvent(potPos, winnerPos, fallbackShare));
+              fallback.events.push(
+                ...createPotToWinnerEvent(potPos, winnerPos, fallbackShare).map((event) => ({
+                  ...event,
+                  recipientId: wid,
+                }))
+              );
               fallback.floats.push({
                 fromX: potPos.x,
                 fromY: potPos.y,
                 toX: winnerPos.x,
                 toY: winnerPos.y,
                 amount: fallbackShare,
+                userId: wid,
               });
               fallback.perPlayer[wid] = (fallback.perPlayer[wid] ?? 0) + fallbackShare;
             }
@@ -19325,6 +19446,7 @@ function LiveTablePage({
             }
           }
 
+          let remainingAwardLandings = awardGroups.filter((g) => g.events.length > 0).length;
           if (awardGroups.some((g) => g.events.length > 0)) {
             /**
              * PER-POT / PER-BOARD SHIPPING (rewritten 2026-09-05).
@@ -19406,18 +19528,38 @@ function LiveTablePage({
               if (g.events.length === 0) continue;
               beatsLeftByPot.set(g.potIndex, (beatsLeftByPot.get(g.potIndex) ?? 0) + 1);
             }
+            const awardHand = tableStateRef.current.handNumber ?? 0;
             const fireGroup = (g: AwardGroupAnim) => {
-              if (g.events.length === 0) return;
+              if (g.events.length === 0 || (tableStateRef.current.handNumber ?? 0) !== awardHand)
+                return;
+              if (
+                (ritExpectedRunsRef.current > 1 ||
+                  (ritResultRef.current?.boards.length ?? 0) > 1) &&
+                !ritFaceUpBoardsRef.current.has(g.board - 1)
+              ) {
+                const waiting = pendingRitAwardsRef.current.get(g.board - 1) ?? [];
+                pendingRitAwardsRef.current.set(g.board - 1, [...waiting, () => fireGroup(g)]);
+                return;
+              }
+              for (const cue of payoutCelebrations.splice(0)) cue();
               // Stamp the REAL start so the 5s safety sweep measures this fan
               // from the moment it went on screen, not from when it was built
               // (which on a run-it-twice hold is many seconds earlier).
               const startedAt = Date.now();
               for (const e of g.events) chipAnimStartedAtRef.current.set(e.id, startedAt);
-              setChipAnimations((prev) => [...prev, ...g.events]);
+              const root = tableScalerRef.current?.closest('.table-page') ?? null;
+              const source = potViewportPoint(root, potPos);
+              const flights = g.events.map((event) => ({
+                ...event,
+                from: source,
+                to: winnerViewportPoint(root, event.recipientId ?? '', event.to),
+              }));
+              setChipAnimations((prev) => [...prev, ...flights]);
               // Dan 2026-08-21: launch each winner's floating "+N" in the same
               // frame as their chip fan so the number travels WITH the pot.
               for (const plan of g.floats) {
-                spawnPotWinFloat(plan.fromX, plan.fromY, plan.toX, plan.toY, plan.amount);
+                const target = winnerViewportPoint(root, plan.userId, { x: plan.toX, y: plan.toY });
+                spawnPotWinFloat(source.x, source.y, target.x, target.y, plan.amount);
               }
               /**
                * THE STACK RISES WITH THIS FAN, NOT AT THE END OF THE HAND.
@@ -19433,6 +19575,8 @@ function LiveTablePage({
                 stackReleaseTimersRef.current = stackReleaseTimersRef.current.filter(
                   (x) => x !== releaseTimer
                 );
+                remainingAwardLandings--;
+                if (remainingAwardLandings === 0) setStackHoldReleased(true);
                 setStackReleasedByPlayer((prev) => {
                   const next = { ...prev };
                   for (const [pid, amt] of Object.entries(g.perPlayer)) {
@@ -19544,7 +19688,7 @@ function LiveTablePage({
           stackHoldReleaseTimerRef.current = setTimeout(
             () => {
               stackHoldReleaseTimerRef.current = null;
-              setStackHoldReleased(true);
+              if (remainingAwardLandings === 0) setStackHoldReleased(true);
             },
             lastGroupDelay + 700 * getAnimationSpeed()
           );
@@ -19584,73 +19728,51 @@ function LiveTablePage({
           // all along, documented as "set by JS" — nothing ever set them, so
           // the pot simply vanished at the end of every hand.
           //
-          /**
-           * SPLIT POTS ANIMATE TOO (Dan 2026-08-26 / 2026-08-27, the ship-pot
-           * invariant). Both branches of this merge arrived at the same fix on
-           * consecutive days; this is the shape that survived, and the older
-           * `soleSeatPct` average it replaces computed exactly the same point.
-           *
-           * This was `if (winnerIds.length === 1)`, with the comment "on a chop
-           * there is no one seat to push to". True, and it meant the pot pill
-           * never moved on ANY chopped or split pot — it just disappeared from
-           * the middle. Chops are common (a board that plays, a hi-lo split, a
-           * counterfeited pair) and every one of them lost the single clearest
-           * beat in the whole award.
-           *
-           * CHOSEN BEHAVIOUR: the pill slides to the MIDPOINT of the winners'
-           * seats, once. Not toward each winner in turn — a second slide would
-           * have to start from the pot's original centre after the first has
-           * already faded out at opacity 0 (`--pd-collect-*` with `forwards`),
-           * so the pill would blink back into existence mid-award. The midpoint
-           * is one honest motion in the direction the money went, and the
-           * per-winner fans and "+N" floats above carry the who-got-what.
-           */
-          {
-            const winnerPoints = winnerIds
-              .map((wid) => {
-                const idx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
-                return idx >= 0 ? seatPositions[idx] : null;
-              })
-              .filter((p): p is NonNullable<typeof p> => !!p);
-            // No winner is on screen at all — nothing to aim at. The chip fans
-            // above still fired (they fall back to UNSEATED_WINNER_PCT), so the
-            // invariant holds; there is simply no direction for the pill.
-            const targetPct =
-              winnerPoints.length === 0
-                ? null
-                : winnerPoints.length === 1
-                  ? winnerPoints[0]
-                  : {
-                      x: winnerPoints.reduce((s, p) => s + p.x, 0) / winnerPoints.length,
-                      y: winnerPoints.reduce((s, p) => s + p.y, 0) / winnerPoints.length,
-                    };
-            if (targetPct) {
-              const winnerPx = seatPctToViewportPx(tableScalerRef.current, targetPct);
-              const collectTo = {
-                dx: Math.round(winnerPx.x - potPos.x),
-                dy: Math.round(winnerPx.y - potPos.y),
-              };
-              // Beat 2 — the pot itself travels, AFTER the sweep has landed.
-              const startPush = () => {
-                setPotCollectTo(collectTo);
-                if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
-                // Slightly longer than --pd-collect-duration (0.5s) so the pot is
-                // never yanked back to centre mid-slide.
-                potCollectTimerRef.current = setTimeout(() => {
-                  potCollectTimerRef.current = null;
-                  setPotCollectTo(null);
-                }, 700 * getAnimationSpeed());
-              };
-              if (shipDelayMs > 0) {
-                if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
-                potPushDelayTimerRef.current = setTimeout(() => {
-                  potPushDelayTimerRef.current = null;
-                  startPush();
-                }, shipDelayMs);
-              } else {
-                startPush();
+          // October 15: a split pot has one flight per actual recipient above.
+          // Never slide a merged pill to the empty midpoint between winners.
+          if (winnerIds.length === 1) {
+            const pillHand = tableStateRef.current.handNumber ?? 0;
+            const startPush = () => {
+              if ((tableStateRef.current.handNumber ?? 0) !== pillHand) return;
+              if (
+                (ritExpectedRunsRef.current > 1 ||
+                  (ritResultRef.current?.boards.length ?? 0) > 1) &&
+                !ritFaceUpBoardsRef.current.has(0)
+              ) {
+                const waiting = pendingRitAwardsRef.current.get(0) ?? [];
+                pendingRitAwardsRef.current.set(0, [...waiting, startPush]);
+                return;
               }
-            }
+              const wid = winnerIds[0];
+              const idx = tableStateRef.current.players.findIndex((p) => p?.id === wid);
+              if (idx < 0) return;
+              const root = tableScalerRef.current?.closest('.table-page') ?? null;
+              const source = potViewportPoint(root, potPos);
+              const target = winnerViewportPoint(
+                root,
+                wid,
+                seatPctToViewportPx(tableScalerRef.current, seatPositionsRef.current[idx])
+              );
+              const scale =
+                (tableScalerRef.current?.getBoundingClientRect().width ?? 0) /
+                  (tableScalerRef.current?.offsetWidth || 1) || 1;
+              setPotCollectTo({
+                dx: (target.x - source.x) / scale,
+                dy: (target.y - source.y) / scale,
+              });
+              if (potCollectTimerRef.current) clearTimeout(potCollectTimerRef.current);
+              potCollectTimerRef.current = setTimeout(() => {
+                potCollectTimerRef.current = null;
+                setPotCollectTo(null);
+              }, 700 * getAnimationSpeed());
+            };
+            if (shipDelayMs > 0) {
+              if (potPushDelayTimerRef.current) clearTimeout(potPushDelayTimerRef.current);
+              potPushDelayTimerRef.current = setTimeout(() => {
+                potPushDelayTimerRef.current = null;
+                startPush();
+              }, shipDelayMs);
+            } else startPush();
           }
         }
         break;
@@ -20864,19 +20986,19 @@ function LiveTablePage({
      painted and the hero is not already seated, open the buy-in flow on the
      first open seat exactly as if they had tapped it. Fires at most once per
      mount, and never on a tournament table (handleSeatClick refuses those). */
+  const [acceptedChair, setAcceptedChair] = useState(0);
   const autoBuyInFiredRef = useRef(false);
   useEffect(() => {
     if (autoBuyInFiredRef.current) return;
-    let wantsBuyIn = false;
+    let wantsBuyIn = openBuyInOnArrival || acceptedChair > 0;
     try {
-      wantsBuyIn = new URLSearchParams(window.location.search).get('buyin') === '1';
+      wantsBuyIn ||=
+        location.pathname.endsWith(`/table/${tableId}`) &&
+        new URLSearchParams(window.location.search).get('buyin') === '1';
     } catch {
       wantsBuyIn = false;
     }
-    if (!wantsBuyIn) {
-      autoBuyInFiredRef.current = true;
-      return;
-    }
+    if (!wantsBuyIn) return;
     if (!tableState.players.length) return; // table not painted yet - wait
     /* AND ITS FUNDING IS KNOWN (launch audit 2026-10-05). The seat array is
        painted before the table's asset is read, and handleSeatClick answers a
@@ -20887,14 +21009,34 @@ function LiveTablePage({
        here, before the latch, so the tap is made once handleSeatClick can
        act on it. */
     if (!tableState.arenaAsset) return;
-    autoBuyInFiredRef.current = true;
+    // An opening table may seed players after its metadata. Never choose a
+    // chair from that empty bootstrap while a live roster is still arriving.
+    if (
+      !engineSnapshot ||
+      engineSnapshot.table_id !== tableId ||
+      !Array.isArray(engineSnapshot.players)
+    )
+      return;
     if (heroSeatRef.current > 0 || tableState.heroSeat > 0) return;
     if (tableState.players.some((p) => p && p.id === userId)) return;
-    const openIdx = tableState.players.findIndex((p) => !p);
+    const occupied = new Set(
+      engineSnapshot.players.map((p: { seat?: unknown } | null) => Number(p?.seat))
+    );
+    const openIdx = tableState.players.findIndex((p, index) => !p && !occupied.has(index + 1));
     if (openIdx < 0) return;
+    autoBuyInFiredRef.current = true;
     handleSeatClick(openIdx + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tableState.players, tableState.heroSeat, tableState.arenaAsset]);
+  }, [
+    tableState.players,
+    tableState.heroSeat,
+    tableState.arenaAsset,
+    engineSnapshot,
+    tableId,
+    openBuyInOnArrival,
+    acceptedChair,
+    location.pathname,
+  ]);
 
   /**
    * SEAT-FIRST COMMIT (Dan 2026-08-23). The only place a seat-first buy-in
@@ -22579,29 +22721,16 @@ function LiveTablePage({
       /* Server-authoritative: when the client timer expires, try to activate a
          time bank.
 
-         AUDIT 2026-08-25 — WHAT `auto_time_bank` NOW MEANS, AND WHAT IT DID NOT.
-         Bible V8 §11.1's auto_time_bank is a paid/VIP setting. Its ONLY
-         consumer anywhere in the app was a `setShowTimeBank(true)` on this
-         line, and `showTimeBank` was read nowhere — the panel it used to open
-         had been deleted. So the setting a player spends diamonds on changed
-         precisely nothing at the table, in either position, and a bank was
-         auto-spent for everyone regardless.
-
-         The bank is still auto-spent for everyone: that behaviour is the
-         engine's and this pass does not touch who pays what. What the setting
-         now genuinely controls is whether it happens SILENTLY. Off (the
-         default) the player is told a bank was just spent on their behalf,
-         which is the one moment that information matters and the moment they
-         are least able to work it out. On — which is what "auto" was sold as —
-         it stays quiet. If the intent was that non-subscribers should instead
-         be PROMPTED before a bank is spent, that is a real feature with a
-         countdown and a decision in it, and it belongs in the engine's hands,
-         not bolted on here. */
-      if (tableId && userId && (timeBankUnlimited || (timeBanksRemaining ?? 0) > 0)) {
+         The account switch controls automatic use on both transports. The
+         server receives it on every app heartbeat and resolves expired turns. */
+      if (
+        !v8SettingsLoading &&
+        v8Settings.auto_time_bank &&
+        tableId &&
+        userId &&
+        (timeBankUnlimited || (timeBanksRemaining ?? 0) > 0)
+      ) {
         setTimeBankActive(true);
-        if (!v8Settings.auto_time_bank) {
-          toast?.info?.('Time Bank Used');
-        }
         // 2026-08-20: this was a `.catch(...)` that could NEVER run.
         // GameServerAPI.activateTimeBank does not throw: every failure
         // (non-OK status, unreachable server, a thrown fetch) is converted
@@ -23866,6 +23995,10 @@ function LiveTablePage({
   const [lightningPrefersWatch, setLightningPrefersWatch] = useState(
     () => readLightningPrefs().preferFoldWatch
   );
+  const lightningFoldHandId =
+    lightningRoom && lightningHandLive
+      ? lightningHandId(engineSnapshot as LightningSnapshotFields)
+      : null;
   const handleLightningFold = useCallback(
     async (kind: LightningFoldKind) => {
       if (!tableId || !lightningRoomRef.current || !userId || userId === 'guest') return;
@@ -23878,7 +24011,7 @@ function LiveTablePage({
         writeLightningPrefs({ preferFoldWatch: kind === 'fold_watch' }).preferFoldWatch
       );
       try {
-        const result = await sendLightningFold(tableId, userId, kind);
+        const result = await sendLightningFold(tableId, userId, kind, lightningFoldHandId);
         if (!result.success) {
           toast.warning(result.error || 'That Action Could Not Be Confirmed');
         } else if (
@@ -23895,7 +24028,7 @@ function LiveTablePage({
         setLightningFoldBusy(false);
       }
     },
-    [tableId, userId, toast, isMultiTable, isActive, lightningCaps]
+    [tableId, userId, toast, isMultiTable, isActive, lightningCaps, lightningFoldHandId]
   );
   /* LIGHTNING PHASE 12 (spec HOTKEYS): Shift+F and Shift+V run the strip's
      own handler, only while the strip offers that fold and the platform row
@@ -24364,19 +24497,24 @@ function LiveTablePage({
         // designed backdrop, so a 404 / decode failure / slow first paint can
         // no longer leave the page empty — see lib/tableTheme.
         backgroundColor: DEFAULT_TABLE_BACKDROP_COLOR,
-        backgroundImage: resolveBackgroundLayersForUrl(tableArt.backgroundSrc),
+        backgroundImage: themeReady
+          ? resolveBackgroundLayersForUrl(tableArt.backgroundSrc)
+          : undefined,
         backgroundSize: `var(--sp-background-layers-size, ${TABLE_BACKGROUND_SIZE})`,
         backgroundPosition: `var(--sp-background-layers-position, ${TABLE_BACKGROUND_POSITION})`,
         backgroundRepeat: TABLE_BACKGROUND_REPEAT,
       }}
     >
-      <style>{`
-      {!tableArt.reveal && (
+      {!tableArt.reveal && !tableLoadFailure && (
         <div className="table-art-cover" role="status" aria-live="polite">
-          <span className="table-art-cover__label">Loading Table</span>
+          <span className="table-art-cover__label">
+            {themeError ? 'Could Not Load Saved Table' : 'Loading Table'}
+          </span>
+          {themeError && <button onClick={retryTheme}>Retry</button>}
         </div>
       )}
       <ButtonImagePreloader />
+      <style>{`
                 @keyframes boardSlideIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
                 @keyframes boardFade { from { opacity: 0.7; } to { opacity: 1; } }
                 .community-area { animation: boardFade 0.4s ease-out; }
@@ -24897,20 +25035,24 @@ function LiveTablePage({
                 height (.hud-seat-change-dock, TableHUD.css). */}
             {!tableState.isTournament && tableState.clusterId && (
               <div className="hud-seat-change-dock">
-              <CashClusterHUD
-                gameId={tableState.clusterId}
-                refreshKey={clusterRefreshKey}
-                onOpenLobby={() => setShowMustMoveLobby(true)}
-                onSeatChange={() => setShowMustMoveLobby(true)}
-                onGoToTable={(dest) => {
-                  if (dest === tableId) return;
-                  if (embeddedTableId) {
-                    onTableInfoUpdate?.({ movedToTableId: dest });
-                    return;
-                  }
-                  navigate(`/table/${dest}`);
-                }}
-              />
+                <CashClusterHUD
+                  gameId={tableState.clusterId}
+                  refreshKey={clusterRefreshKey}
+                  onOpenLobby={() => setShowMustMoveLobby(true)}
+                  onSeatChange={() => setShowMustMoveLobby(true)}
+                  onGoToTable={(dest) => {
+                    if (dest === tableId) {
+                      autoBuyInFiredRef.current = false;
+                      setAcceptedChair((count) => count + 1);
+                      return;
+                    }
+                    if (embeddedTableId) {
+                      onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
+                      return;
+                    }
+                    navigate(`/table/${dest}?buyin=1`);
+                  }}
+                />
               </div>
             )}
             {/* The MiniStatsCard stats icon that used to sit under the bar is
@@ -25105,7 +25247,7 @@ function LiveTablePage({
                 and + SIT buttons sit ON the rail at every breakpoint. */}
             <img
               className="table-art"
-              src={tableArt.skinSrc}
+              src={tableArt.skinSrc || undefined}
               alt=""
               draggable={false}
               decoding="sync"
@@ -25568,6 +25710,9 @@ function LiveTablePage({
                           tableId={tableId}
                           handId={tableState.handNumber}
                           boardIndex={board.boardIndex}
+                          onRiverPresented={() =>
+                            markRitBoardPresented(board.boardIndex, tableState.handNumber ?? 0)
+                          }
                           /* VIP ALL-IN SQUEEZE 2026-09-05: a re-run board is
                              told it is one of several, so it can never
                              squeeze whatever else it is handed. */
@@ -25882,23 +26027,6 @@ function LiveTablePage({
           {/* Dan 2026-08-21: floating pot-win amount — "+N" rides the pushed
               pot to the winner, then rises and fades above their avatar
               (PokerBros reference). Pure CSS animation, self-cleaning. */}
-          {potWinFloats.map((f) => (
-            <div
-              key={f.id}
-              className="pot-win-float"
-              style={
-                {
-                  '--pwf-from-x': `${f.fromX}px`,
-                  '--pwf-from-y': `${f.fromY}px`,
-                  '--pwf-to-x': `${f.toX}px`,
-                  '--pwf-to-y': `${f.toY}px`,
-                } as React.CSSProperties
-              }
-              aria-hidden="true"
-            >
-              {f.label}
-            </div>
-          ))}
 
           {/* COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner — fires
               once when the runout locks in (first equity broadcast). */}
@@ -26753,6 +26881,8 @@ function LiveTablePage({
             tableId={tableId}
             heroSeated={tableState.heroSeat > 0}
             isTournament={tableState.isTournament}
+            leaveClockRemainingMs={heroLeaveLocked ? heroLeaveMs : null}
+            leaveClockRunning={heroLeave?.running === true}
             handNumber={tableState.handNumber ?? 0}
             heroPos={
               tableState.heroSeat > 0 ? (seatPositions[tableState.heroSeat - 1] ?? null) : null
@@ -26773,6 +26903,7 @@ function LiveTablePage({
             still hides with the table in multi-table mode. */}
         <ChipAnimationManager
           animations={chipAnimations}
+          floats={potWinFloats}
           onAnimationComplete={handleAnimationComplete}
         />
       </div>
@@ -26876,7 +27007,11 @@ function LiveTablePage({
                     telling a funded player "Your Balance 0" beside an enabled
                     spend button. */}
                 <span className="sc-label sc-ink--silver">
-                  {accountBalance === null ? 'Unknown' : Number(accountBalance).toLocaleString()}
+                  {accountBalance === null
+                    ? 'Unknown'
+                    : tableState.arenaAsset === 'diamonds'
+                      ? Number(accountBalance).toLocaleString()
+                      : formatWalletChips(accountBalance)}
                 </span>
               </div>
               {buyInSecondsLeft !== null && (
@@ -28382,7 +28517,9 @@ function LiveTablePage({
             if (outcome.kind !== 'unknown') {
               // Cleanup failure leaves a safely replayable receipt, never a new
               // apparent failure after the server has confirmed the purchase.
-              void cashBuyInJournal
+              // Keep the confirm latch until the journal transition completes.
+              // Otherwise a corrected click can recover the just-rejected payload.
+              await cashBuyInJournal
                 .complete(attempt)
                 .catch((error) =>
                   reportError(error, 'TablePage.cash_buyin_journal_cleanup_failed')
@@ -28407,8 +28544,18 @@ function LiveTablePage({
             setCashBuyInRecovery(null);
             if (outcome.kind === 'rejected') {
               reportError(outcome.error, 'TablePage.atomic_table_buyin_returned_failure');
-              toast.error(cashBuyInRefusalText(outcome.error) ?? 'The Server Refused This Buy-In.');
-              return false;
+              const message =
+                cashBuyInRefusalText(outcome.error) ?? 'The Server Refused This Buy-In.';
+              toast.error(message);
+              if (cashBuyInSeatConflictText(outcome.error)) {
+                // A proven seat collision moved no chips. Release only this
+                // failed selection, and refresh the authoritative roster.
+                setPendingSeat(null);
+                setSelectedSeat(null);
+                setShowBuyInModal(false);
+                requestEngineSnapshot();
+              }
+              return { status: 'rejected' as const, message };
             }
             buyInCommitted = true;
             const paid = attempt.payload;
@@ -28845,12 +28992,16 @@ function LiveTablePage({
         currentTableId={tableId}
         onClose={() => setShowMustMoveLobby(false)}
         onGoToTable={(dest) => {
-          if (dest === tableId) return;
-          if (embeddedTableId) {
-            onTableInfoUpdate?.({ movedToTableId: dest });
+          if (dest === tableId) {
+            autoBuyInFiredRef.current = false;
+            setAcceptedChair((count) => count + 1);
             return;
           }
-          navigate(`/table/${dest}`);
+          if (embeddedTableId) {
+            onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
+            return;
+          }
+          navigate(`/table/${dest}?buyin=1`);
         }}
       />
       {/* THE TOURNAMENT LOBBY, ON THE FELT (Dan 2026-08-28). Opened by the

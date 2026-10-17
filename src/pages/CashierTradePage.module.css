@@ -4,7 +4,8 @@
    Page typography is bounded on desktop, controls retain 44px touch targets,
    and the compact directory uses the Players page inks and hairline rules. */
 
-.page {
+.page,
+.console {
   /* The master's inks (SpadeConsole.css), for copy that carries a module class
      rather than an sc-ink class. Schema colours only. */
   --ink-blue: #45adff;
@@ -27,15 +28,17 @@
   --ink-red-glow:
     0 0 min(1cqw, 5px) rgb(240 40 73 / 80%), 0 0 min(2cqw, 10px) rgb(240 40 73 / 35%),
     0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%);
-  --ink-gold: #ffd700;
+  --ink-gold: #45adff;
   --ink-gold-glow:
-    0 0 min(1cqw, 5px) rgb(255 215 0 / 70%), 0 0 min(2cqw, 10px) rgb(255 215 0 / 30%),
+    0 0 min(1cqw, 5px) rgb(69 173 255 / 30%), 0 0 min(2cqw, 10px) rgb(69 173 255 / 15%),
     0 min(0.25cqw, 1.25px) 0 rgb(0 0 0 / 70%);
   --ink-muted: #9aa5b3;
   --ink-muted-shadow: 0 min(0.2cqw, 1px) min(0.3cqw, 1.5px) rgb(0 0 0 / 80%);
   --ink-copy: #d7dee7;
   --engraved-rule-lip: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
 
+.page {
   position: relative;
   isolation: isolate;
   display: flex;
@@ -1601,6 +1604,8 @@
 .console .entryRow {
   aspect-ratio: 1280 / 274;
   background-image: url('/assets/club-buttons/wallet-row-shell.png');
+  /* The approved frame ends at row 265. Orphan pixels below it are not chrome. */
+  clip-path: inset(0 0 calc(9 / 274 * 100%) 0);
 }
 
 .console .playerCardAvatar {
@@ -1777,8 +1782,8 @@
 
 .console input.entryInput:focus-visible,
 .console select.entrySelect:focus-visible {
-  color: var(--ink-gold) !important;
-  text-shadow: var(--ink-gold-glow);
+  color: var(--ink-silver) !important;
+  text-shadow: none;
 }
 
 .modalTotal {
@@ -1860,13 +1865,14 @@
   /* One column: the base .footer grid lays out three, which put the
      selection line and the actions side by side. */
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  aspect-ratio: 1916 / 334;
+  grid-template-rows: 28px 44px;
+  min-height: 92px;
+  aspect-ratio: auto;
   gap: 0;
   width: 100%;
   max-width: 1000px;
   margin: 0 auto;
-  padding: calc(34 / 1916 * 100%) calc(64 / 1916 * 100%) calc(30 / 1916 * 100%);
+  padding: 10px 3.4%;
   border: 0;
   background: url('/images/cashier-actions/cashier-action-dock-v1.png') center / 100% 100% no-repeat;
   box-shadow: none;
@@ -1875,7 +1881,7 @@
 @media (max-width: 640px) {
   .console .actionBar,
   .page.simple .actionBar {
-    aspect-ratio: 1916 / 412;
+    aspect-ratio: auto;
     background-image: url('/images/cashier-actions/cashier-action-dock-tall-v1.png');
   }
 }
@@ -1947,4 +1953,177 @@
 .page.simple .actionBar .footerBtn:last-child {
   color: var(--ink-white);
   text-shadow: var(--ink-white-glow);
+}
+
+/* Editable figures stay crisp; chrome glow belongs on the painted artwork. */
+.console input.entryInput {
+  color: var(--ink-silver) !important;
+  text-shadow: none;
+}
+.console input.entryInput::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+  text-shadow: none;
+}
+
+/* Identity owns the upper line; exactly one selected wallet owns the lower. */
+.console .playerCardPlate {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1cqw;
+}
+.console .playerCardIdentity {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2cqw;
+}
+.console .playerCardName {
+  font-size: 4.5cqw;
+}
+.console .playerCardId {
+  flex: 0 0 auto;
+  font-size: 2.8cqw;
+}
+.console .playerCardBalance {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2cqw;
+}
+.console .playerCardBalance strong {
+  font-size: 4.5cqw;
+}
+.console select.walletSelect {
+  min-width: 0;
+  width: 100%;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  color: var(--ink-silver) !important;
+  font:
+    700 3cqw/1.3 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif !important;
+  text-overflow: ellipsis;
+  appearance: auto;
+}
+.console select.walletSelect option {
+  background: #0a0b0d;
+  color: var(--ink-white);
+}
+.console select.walletSelect:focus-visible {
+  outline: 1px solid var(--ink-blue);
+}
+
+/* ── Cashier header, Dan 2026-10-16 ─────────────────────────────────────
+   The club leads the glass: no toolbar row above it in Simple, the logo at
+   the size of the club's own mark with its name and a "Choose" dropdown
+   (a lit chevron that turns when the club list opens beneath it) stacked
+   beside it, and the Advanced switch on the same row. Request Cash Out sits
+   in the same painted frame as the action dock ("Tap A Player To Select",
+   Dan 2026-10-16): cashier-action-dock-v1.png at its own 1916 x 334 ratio. Nothing is drawn in CSS. */
+.page.simple .header {
+  justify-content: space-between;
+  gap: 12px;
+}
+.page.simple .header .modeToggle {
+  flex: 0 0 auto;
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 0 4px;
+}
+.page .header .entityBtn {
+  gap: 14px;
+  min-height: 72px;
+  text-align: left;
+}
+.page .header .entityLogo {
+  width: 72px;
+  height: 72px;
+}
+.entityText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.page .header .entityName {
+  font-size: 20px;
+}
+.entityCaret {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-white);
+  text-shadow: var(--ink-white-glow);
+}
+.entityChevron {
+  width: 12px;
+  height: 8px;
+  transition: transform 160ms ease;
+}
+.entityCaretOpen .entityChevron {
+  transform: rotate(180deg);
+}
+.cashoutButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 300px;
+  max-width: 100%;
+  aspect-ratio: 1916 / 334;
+  margin: 10px auto 0;
+  padding: 0 8%;
+  border: 0;
+  background: url('/images/cashier-actions/cashier-action-dock-v1.png') center / 100% 100% no-repeat;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* The same ink as the roster's "522 Available" line (Dan 2026-10-16). */
+.cashoutLabel,
+.cashoutBalance {
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+  text-shadow: var(--ink-muted-shadow);
+  text-transform: uppercase;
+}
+.cashoutButton:active {
+  filter: brightness(1.2);
+}
+.cashoutButton:focus-visible {
+  outline: 2px solid var(--ink-blue);
+  outline-offset: 2px;
+}
+
+/* Dan 2026-10-16: "Tap A Player To Select" (and the selection count that
+   replaces it) is centred in the dock frame; Clear keeps the right edge. */
+.console .actionBar .selBar,
+.page.simple .actionBar .selBar {
+  position: relative;
+  justify-content: center;
+  text-align: center;
+}
+.console .actionBar .selBar > span,
+.page.simple .actionBar .selBar > span {
+  max-width: calc(100% - 120px);
+}
+.console .actionBar .selClear,
+.page.simple .actionBar .selClear {
+  position: absolute;
+  top: 50%;
+  right: calc(16 / 1916 * 100%);
+  transform: translateY(-50%);
 }

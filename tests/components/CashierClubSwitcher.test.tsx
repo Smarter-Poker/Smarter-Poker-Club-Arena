@@ -101,8 +101,8 @@ describe('CashierClubSwitcher', () => {
     });
     renderSwitcher(A.id);
     await user.click(screen.getByRole('button', { name: /Current Club: Alpha Club/ }));
-    expect(await screen.findByText(/4\.2K Chips/i)).toBeInTheDocument();
-    expect(screen.getByText(/15 chips/i)).toBeInTheDocument();
+    expect(await screen.findByText(/4,200\.00 Chips/i)).toBeInTheDocument();
+    expect(screen.getByText(/15\.00 chips/i)).toBeInTheDocument();
   });
 
   it('never offers a union as a cashier destination', () => {
@@ -188,6 +188,6 @@ describe('CashierClubSwitcher', () => {
     expect(await screen.findByText(/Balances Unavailable/i)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Retry$/i }));
 
-    expect(await screen.findByText(/4\.2K Chips/i)).toBeInTheDocument();
+    expect(await screen.findByText(/4,200\.00 Chips/i)).toBeInTheDocument();
   });
 });

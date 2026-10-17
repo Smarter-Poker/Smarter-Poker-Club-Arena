@@ -128,6 +128,9 @@ export interface HorseExactReplayAcceptance {
 export interface HorseExactReplayVerdict {
   version: typeof HORSE_EXACT_REPLAY_VERSION;
   decisionId: string;
+  /** The journal record's own content digest (its `sha256`), so a verdict
+   * binds to the exact record it replayed, not only to its event id. */
+  recordSha256: string | null;
   recordedSource: string | null;
   runningSource: string;
   /** The JavaScript runtime the record names (null when it names none) and this process's. */
@@ -335,6 +338,7 @@ export async function exactReplayHorseDecisionRecord(
   const verdict: HorseExactReplayVerdict = {
     version: HORSE_EXACT_REPLAY_VERSION,
     decisionId: obj(raw) && typeof raw.eventId === 'string' ? raw.eventId : 'unknown',
+    recordSha256: null,
     recordedSource: null,
     runningSource: options.runningSource,
     recordedRuntime: null,
@@ -360,6 +364,7 @@ export async function exactReplayHorseDecisionRecord(
     return finish('non_replayable:record');
   }
   const record = raw;
+  verdict.recordSha256 = record.sha256;
   verdict.recordedSource = record.sourceRelease;
   let body: Record<string, unknown> = {};
   try {

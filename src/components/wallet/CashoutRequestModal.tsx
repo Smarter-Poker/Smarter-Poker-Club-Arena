@@ -1,3 +1,5 @@
+import { formatCashierAmountInput, cashierAmountInputValue } from '../../utils/cashierAmount';
+import { formatWalletChips } from '../../utils/format';
 import {
   CASHOUT_AMOUNT_LIMIT,
   cashoutPercentage,
@@ -11,8 +13,6 @@ import {
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useIsMounted } from '../../hooks/useIsMounted';
-import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { cashoutService, CashoutRequest } from '../../services/CashoutService';
 import {
   outcomeNeedsReceiptCheck,
@@ -31,7 +31,6 @@ import {
   usePreparedCashoutOperations,
   isCashoutStartCurrent,
 } from '../../hooks/usePreparedCashoutOperations';
-import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
 import { formatRelativeShort } from '@/lib/date';
 import { SpadeConsole } from '../console/SpadeConsole';
@@ -129,7 +128,7 @@ function CashoutStepTracker({ status }: { status: string }) {
           : isComplete
             ? 'sc-ink--green'
             : isCurrent
-              ? 'sc-ink--gold'
+              ? 'sc-ink--blue'
               : 'sc-ink--muted';
         return (
           <li key={step.key} className="cashout-step" aria-current={isCurrent ? 'step' : undefined}>
@@ -178,7 +177,6 @@ function CashoutRequestContent({
   const rowsScope = useRef<(() => boolean) | null>(null);
   const [pendingCashouts, setPendingCashouts] = useState<CashoutRequest[]>([]);
   const visiblePendingCashouts = rowsScope.current?.() ? pendingCashouts : [];
-  const isMounted = useIsMounted();
   const [loadingPending, setLoadingPending] = useState(true);
   const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -385,76 +383,8 @@ function CashoutRequestContent({
     }
   }, [isOpen, playerId, clubId, loadPendingCashouts]);
 
-  // ── Realtime: auto-refresh when cashout status changes (agent approves/rejects) ──
-  useEffect(() => {
-    if (!isOpen || !playerId) return;
-
-    const channelKey = `cashout-modal-${playerId}`;
-    // The returned channel was bound to a `channel` const nobody read. Teardown
-    // goes through masterBus.removeRegisteredChannel(channelKey), not the handle.
-    /* SCOPED TO THIS PLAYER, RELOADED FOR THIS CLUB (launch audit D-23,
-       regression review G-02). A player-only filter woke this sheet for the
-       player's cashouts in every club they belong to; the reload is
-       club-scoped, so nothing wrong was shown, only read for nothing. The
-       first fix moved the filter to `club_id`, which is WIDER, not narrower:
-       RLS delivers every member's cashout in the club to a staff viewer, so
-       an owner's own sheet reloaded for the whole club. Postgres filters take
-       one column, so the filter stays on the player and the club is checked
-       on the payload: resolved to a uuid first (a code or slug matches
-       nothing), and an unresolvable club reloads on every own-row change. */
-    let cancelled = false;
-    (async () => {
-      const resolved = clubId ? await resolveClubUUID(clubId) : null;
-      if (cancelled || !isMounted.current) return;
-      masterBus
-        .getOrCreateChannel(channelKey)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'cashout_requests',
-            filter: `player_id=eq.${playerId}`,
-          },
-          (payload: { new?: { club_id?: unknown }; old?: { club_id?: unknown } }) => {
-            // A DELETE carries `new: {}` and, without REPLICA IDENTITY FULL,
-            // an `old` with the key only: a row whose club is not on the
-            // payload is not known to be another club's, so it reloads.
-            const rowClub = payload?.new?.club_id ?? payload?.old?.club_id;
-            if (!resolved || rowClub === undefined || rowClub === resolved) {
-              loadPendingCashouts();
-            }
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err)
-              reportError(err?.message || err, 'CashoutRequestModal._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            reportError(
-              'Realtime channel timed out',
-              'CashoutRequestModal._Realtime_channel_timeout'
-            );
-          }
-        });
-    })();
-
-    // Bus listener: reload when balance changes
-    const unsubBalance = masterBus.subscribeDebounced(
-      'BALANCE_UPDATED',
-      () => {
-        loadPendingCashouts();
-      },
-      500
-    );
-
-    return () => {
-      cancelled = true;
-      masterBus.removeRegisteredChannel(channelKey);
-      unsubBalance();
-    };
-  }, [isOpen, playerId, clubId, loadPendingCashouts, isMounted]);
+  // Pending requests load on open and after this user's completed command.
+  // Background status/balance events never refresh a working Cashier form.
 
   const handleSubmit = async () => {
     if (submitLockRef.current || !isCurrent()) return;
@@ -619,13 +549,13 @@ function CashoutRequestContent({
           }
           pillInk={
             heldCount > 0
-              ? 'gold'
+              ? 'blue'
               : success
                 ? 'green'
                 : combinedError || !balanceAvailable
                   ? 'red'
                   : isSubmitting || loadingPending
-                    ? 'gold'
+                    ? 'blue'
                     : 'green'
           }
           plates={{
@@ -661,13 +591,7 @@ function CashoutRequestContent({
           <div className="cro-row">
             <span className="sc-label sc-ink--blue">Available Balance</span>
             <strong className={`cro-value ${balanceAvailable ? 'sc-ink--silver' : 'sc-ink--red'}`}>
-              {balanceAvailable
-                ? `${
-                    Number.isInteger(currentBalance)
-                      ? currentBalance!.toLocaleString()
-                      : currentBalance!.toLocaleString(undefined, TWO_PLACES)
-                  } Chips`
-                : 'Unavailable'}
+              {balanceAvailable ? `${formatWalletChips(currentBalance)} Chips` : 'Unavailable'}
             </strong>
           </div>
 
@@ -695,7 +619,7 @@ function CashoutRequestContent({
               {visiblePendingCashouts.map((cashout) => (
                 <div key={cashout.id} className="cro-pending">
                   <div className="cro-row cro-row--plain">
-                    <strong className="cro-value sc-ink--gold">
+                    <strong className="cro-value sc-ink--blue">
                       {Number.isInteger(cashout.amount)
                         ? cashout.amount.toLocaleString()
                         : cashout.amount.toLocaleString(undefined, TWO_PLACES)}{' '}
@@ -719,7 +643,7 @@ function CashoutRequestContent({
                   </button>
                 </div>
               ))}
-              <p className="sc-copy sc-copy--center cro-note sc-ink--gold">
+              <p className="sc-copy sc-copy--center cro-note sc-ink--blue">
                 These Chips Are Locked Until Your Agent Processes The Request Or You Cancel.
               </p>
             </div>
@@ -739,10 +663,10 @@ function CashoutRequestContent({
                   <input
                     id="cashout-amount"
                     className="cro-input cro-input--amount"
-                    type="number"
+                    type="text"
                     placeholder="0"
-                    value={amount}
-                    onChange={(e) => editAmount(e.target.value)}
+                    value={formatCashierAmountInput(amount)}
+                    onChange={(e) => editAmount(cashierAmountInputValue(e.target.value))}
                     disabled={isSubmitting}
                     max={
                       balanceAvailable

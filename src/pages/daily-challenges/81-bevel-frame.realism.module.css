@@ -90,6 +90,8 @@
 }
 
 .challengeCard > .bevelFrame {
+  /* The positioned containing block starts inside the card's 1px border. */
+  inset: -1px;
   --bevel-frame-color: color-mix(in srgb, var(--card-tier-color) 48%, var(--mission-chrome));
 }
 

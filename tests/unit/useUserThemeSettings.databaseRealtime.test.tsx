@@ -101,6 +101,23 @@ describe('useUserThemeSettings database realtime', () => {
     localStorage.clear();
   });
 
+  it('keeps cold and unknown game scopes unready until the saved row is resolved', async () => {
+    mocks.deferRead = true;
+    const { result, rerender } = renderHook(
+      ({ known }) => useUserThemeSettings('user-1', 'plo4', false, undefined, known),
+      { initialProps: { known: false } }
+    );
+    expect(result.current.ready).toBe(false);
+    rerender({ known: true });
+    expect(result.current.ready).toBe(false);
+    await waitFor(() => expect(mocks.deferredRead).toBeTypeOf('function'));
+    await act(async () => {
+      mocks.deferredRead?.({ data: [{ game_type: 'PLO', table_id: 'neon_city' }], error: null });
+    });
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.theme.table_id).toBe('neon_city');
+  });
+
   it('shares one account channel and repaints every mounted table from a cross-device row', async () => {
     const { result, unmount } = renderHook(() => ({
       nlh: useUserThemeSettings('user-1', 'nlh'),

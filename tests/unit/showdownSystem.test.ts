@@ -117,12 +117,11 @@ describe('the client RENDERS the sequence, the muck, and the description', () =>
     expect(TABLE_PAGE, 'the push carries no awarded amount').toMatch(/awardedPot=\{/);
   });
 
-  it('the pot push is not restricted to a single winner', () => {
-    /* A chop used to get no push at all ("no one seat to push to"); it now
-       pushes to the midpoint of the winning seats. */
-    expect(TABLE_PAGE, 'the single-winner gate on the pot push is back').not.toMatch(
-      /if \(winnerIds\.length === 1\) \{/
-    );
+  it('split pot flights target every actual recipient, never their midpoint', () => {
+    // October 15 replaces the old merged-pill midpoint with per-recipient fans.
+    expect(TABLE_PAGE).toContain('recipientId: w.userId');
+    expect(TABLE_PAGE).toContain('winnerViewportPoint(root, event.recipientId');
+    expect(TABLE_PAGE).not.toContain('winnerPoints.reduce');
   });
 
   it('the seat accepts the MUCKED ruling and the reveal stagger', () => {

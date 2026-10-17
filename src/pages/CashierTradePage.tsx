@@ -1,3 +1,10 @@
+import {
+  SEND_SOURCE_LABELS,
+  SEND_DESTINATION_LABELS,
+  recipientSendWallets,
+  type SendSource,
+  type SendDestination,
+} from '../utils/cashierSendWallets';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import CashierConservationReport from '../components/wallet/CashierConservationReport';
 import CashierPendingOperations from '../components/wallet/CashierPendingOperations';
@@ -63,6 +70,8 @@ import {
  * ./cashier-classic and is linked from the bottom of the Trade tab.
  */
 
+import { useRecentRecipients } from '../hooks/useRecentRecipients';
+import CashoutRequestModal from '../components/wallet/CashoutRequestModal';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { roleLabel, roleRank, type ClubRole } from '../types/clubRoles';
 import { Link, useParams, useNavigate } from 'react-router-dom';
@@ -119,8 +128,14 @@ import { unionRouteRef } from '../utils/unionIdResolver';
 import { rememberLastClub } from '../utils/clubQuickLink';
 import { CashierWorkspace } from '../components/wallet/CashierWorkspace';
 import { SpadeConsole } from '../components/console/SpadeConsole';
-import { compactChips } from '../utils/format';
-import { exactChipFigure, parseTradeAmount, sumChips } from '../utils/cashierAmount';
+import { compactChips, formatWalletChips } from '../utils/format';
+import {
+  exactChipFigure,
+  parseTradeAmount,
+  sumChips,
+  formatCashierAmountInput,
+  cashierAmountInputValue,
+} from '../utils/cashierAmount';
 import { titleCase } from '../utils/titleCase';
 import { generateAvatarSvg } from '../utils/avatarGenerator';
 import { creditHeadroomOf, readCashierBalances } from '../services/cashierBalanceRead';
@@ -242,9 +257,8 @@ type InvoiceRow = ClubWeeklyStatement;
 
 type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 
-/* #ClubArenaConsole law: chip figures outside the felt never print decimal
-   points. The authoritative ledger keeps its cents; this display deliberately
-   uses the shared rounded-down K/M/B reading without changing stored values. */
+/* Transaction amounts and aggregates retain the console reading. Wallet
+   balances use formatWalletChips explicitly: exact cents below one million. */
 const fmt = compactChips;
 
 /**
@@ -271,9 +285,13 @@ const CASHIER_SEND_OUT_REASON = 'Cashier Send Out';
 function CashierPlayerCard({
   row,
   balanceLabel,
+  walletControl,
+  walletBalance,
 }: {
   row: Pick<DownlineRow, 'userId' | 'name' | 'playerNumber' | 'avatarUrl' | 'chipBalance'>;
   balanceLabel: string;
+  walletControl?: React.ReactNode;
+  walletBalance?: number | null;
 }) {
   return (
     <section className={styles.playerCard} aria-label="Selected Player">
@@ -295,8 +313,12 @@ function CashierPlayerCard({
           </span>
         </span>
         <span className={styles.playerCardBalance}>
-          <strong>{compactChips(row.chipBalance)}</strong>
-          <span>{balanceLabel}</span>
+          {walletControl || <span>{balanceLabel}</span>}
+          <strong>
+            {walletBalance === null
+              ? 'Unavailable'
+              : formatWalletChips(walletBalance ?? row.chipBalance)}
+          </strong>
         </span>
       </span>
     </section>
@@ -304,7 +326,15 @@ function CashierPlayerCard({
 }
 
 /** A wallet the dialog spends from or fills, with its live balance. */
-function CashierWalletRow({ label, balance }: { label: string; balance: number | null }) {
+function CashierWalletRow({
+  label,
+  balance,
+  children,
+}: {
+  label: string;
+  balance: number | null;
+  children?: React.ReactNode;
+}) {
   return (
     <section className={styles.walletRow} aria-label={label}>
       <span className={styles.walletRowSlot} aria-hidden="true">
@@ -314,9 +344,9 @@ function CashierWalletRow({ label, balance }: { label: string; balance: number |
         />
       </span>
       <span className={styles.walletRowPlate}>
-        <span className={styles.walletRowLabel}>{label}</span>
+        {children || <span className={styles.walletRowLabel}>{label}</span>}
         <strong className={styles.walletRowValue}>
-          {balance === null ? '-' : compactChips(balance)}
+          {balance === null ? '-' : formatWalletChips(balance)}
         </strong>
       </span>
     </section>
@@ -437,7 +467,7 @@ function CashierTradeWorkspace() {
   const rosterSearchRef = useRef<HTMLInputElement>(null);
   const [roleFilter, setRoleFilter] = useState('all');
   const [groupByRole, setGroupByRole] = useState(false);
-  const [sortKey, setSortKey] = useState<'balance' | 'name'>('balance');
+  const [sortKey, setSortKey] = useState<'recent' | 'balance' | 'name'>('recent');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleCount, setVisibleCount] = useState(25);
 
@@ -547,6 +577,16 @@ function CashierTradeWorkspace() {
   const transferRecoveryRef = useRef<CashierTransferRecovery | null>(null);
   transferRecoveryRef.current = transferRecovery;
   const [amount, setAmount] = useState('');
+  const [sendSource, setSendSource] = useState<SendSource>('agent_wallet');
+  const [promoBalances, setPromoBalances] = useState<{ own: number | null; club: number | null }>({
+    own: null,
+    club: null,
+  });
+  const [targetBalances, setTargetBalances] = useState<
+    Record<string, Partial<Record<SendDestination, number>>>
+  >({});
+  const [walletBalancesError, setWalletBalancesError] = useState<string | null>(null);
+  const [recipientWallets, setRecipientWallets] = useState<Record<string, SendDestination>>({});
   const [recipientAmounts, setRecipientAmounts] = useState<Record<string, string>>({});
   const [batchReceipt, setBatchReceipt] = useState<{
     batchId: string;
@@ -620,6 +660,8 @@ function CashierTradeWorkspace() {
     user?.id,
     clubUuid,
     amount,
+    sendSource,
+    Object.entries(recipientWallets).sort(([left], [right]) => left.localeCompare(right)),
     Object.entries(recipientAmounts).sort(([left], [right]) => left.localeCompare(right)),
     [...selected].sort(),
     // A different tournament is a different ticket intent: it must never
@@ -895,232 +937,219 @@ function CashierTradeWorkspace() {
     return true;
   }, [clubUuid, user?.id]);
 
-  const loadClub = useCallback(async () => {
-    // Bail-before-try left `loading` true forever, because the finally that
-    // clears it is inside the try: a signed-out moment or an unresolvable club
-    // gave a permanent "Loading members...". Clear it here instead.
-    if (!user?.id || !clubUuid) {
-      setLoading(false);
-      return false;
-    }
-    const myVersion = ++loadVersion.current;
-    const stale = () => loadVersion.current !== myVersion;
-    setLoading(true);
-    setLoadError(null);
-    setRosterWarning(null);
-    setRosterLoadingMore(false);
-    let complete = true;
-    try {
-      const [meRes, floatRes] = await Promise.all([
-        supabase
-          .from('club_members')
-          .select('role, chip_balance, status')
-          .eq('club_id', clubUuid)
-          .eq('user_id', user.id)
-          .maybeSingle(),
-        // The account Send Out spends. An owner has one of these too - the
-        // Club Bank funds it, and fn_agent_wallet_send refuses every role
-        // that has not been funded, staff included.
-        supabase
-          .from('agents')
-          .select('agent_wallet_balance, status, is_prepaid, credit_limit, credit_used')
-          .eq('club_id', clubUuid)
-          .eq('user_id', user.id)
-          .maybeSingle(),
-      ]);
-      // Swallowing this error rendered an owner as a `player` with a 0.00
-      // balance and silently flipped the downline into agent scope. A failure
-      // has to look like a failure.
-      if (meRes.error) throw meRes.error;
-      if (floatRes.error) {
-        complete = false;
-        reportError(floatRes.error, 'CashierTradePage.agentWallet');
+  const loadClub = useCallback(
+    async (silent = false) => {
+      // Bail-before-try left `loading` true forever, because the finally that
+      // clears it is inside the try: a signed-out moment or an unresolvable club
+      // gave a permanent "Loading members...". Clear it here instead.
+      if (!user?.id || !clubUuid) {
+        setLoading(false);
+        return false;
       }
-      memberAuthoritySnapshot.current = {
-        clubId: clubUuid,
-        role: String(meRes.data?.role || 'player'),
-        status: meRes.data?.status || 'active',
-      };
-      let role =
-        meRes.data && (!meRes.data.status || MEMBER_IN_CLUB.includes(meRes.data.status))
-          ? String(meRes.data.role || 'player')
-          : 'player';
-      if (
-        ['super_agent', 'agent', 'sub_agent'].includes(role) &&
-        floatRes.data?.status !== undefined &&
-        floatRes.data.status !== 'active'
-      )
-        role = 'player';
-      const bal = meRes.data?.chip_balance ? Number(meRes.data.chip_balance) : 0;
-      // A row that does not exist is a float of zero. A row we could not READ
-      // is unknown, and stays null so the pre-flight check does not refuse a
-      // send the server would have allowed.
-      const float = floatRes.error
-        ? null
-        : floatRes.data
-          ? Number(floatRes.data.agent_wallet_balance) || 0
-          : 0;
-      // A credit agent may send past the float, drawn against the line the
-      // server allows (credit_limit - credit_used). Prepaid agents have none.
-      const credit = floatRes.error ? 0 : creditHeadroomOf(floatRes.data);
+      const myVersion = ++loadVersion.current;
+      const stale = () => loadVersion.current !== myVersion;
+      if (!silent) setLoading(true);
+      setLoadError(null);
+      setRosterWarning(null);
+      setRosterLoadingMore(false);
+      let complete = true;
+      try {
+        const [meRes, floatRes] = await Promise.all([
+          supabase
+            .from('club_members')
+            .select('role, chip_balance, status')
+            .eq('club_id', clubUuid)
+            .eq('user_id', user.id)
+            .maybeSingle(),
+          // The account Send Out spends. An owner has one of these too - the
+          // Club Bank funds it, and fn_agent_wallet_send refuses every role
+          // that has not been funded, staff included.
+          supabase
+            .from('agents')
+            .select('agent_wallet_balance, status, is_prepaid, credit_limit, credit_used')
+            .eq('club_id', clubUuid)
+            .eq('user_id', user.id)
+            .maybeSingle(),
+        ]);
+        // Swallowing this error rendered an owner as a `player` with a 0.00
+        // balance and silently flipped the downline into agent scope. A failure
+        // has to look like a failure.
+        if (meRes.error) throw meRes.error;
+        if (floatRes.error) {
+          complete = false;
+          reportError(floatRes.error, 'CashierTradePage.agentWallet');
+        }
+        memberAuthoritySnapshot.current = {
+          clubId: clubUuid,
+          role: String(meRes.data?.role || 'player'),
+          status: meRes.data?.status || 'active',
+        };
+        let role =
+          meRes.data && (!meRes.data.status || MEMBER_IN_CLUB.includes(meRes.data.status))
+            ? String(meRes.data.role || 'player')
+            : 'player';
+        if (
+          ['super_agent', 'agent', 'sub_agent'].includes(role) &&
+          floatRes.data?.status !== undefined &&
+          floatRes.data.status !== 'active'
+        )
+          role = 'player';
+        const bal = meRes.data?.chip_balance ? Number(meRes.data.chip_balance) : 0;
+        // A row that does not exist is a float of zero. A row we could not READ
+        // is unknown, and stays null so the pre-flight check does not refuse a
+        // send the server would have allowed.
+        const float = floatRes.error
+          ? null
+          : floatRes.data
+            ? Number(floatRes.data.agent_wallet_balance) || 0
+            : 0;
+        // A credit agent may send past the float, drawn against the line the
+        // server allows (credit_limit - credit_used). Prepaid agents have none.
+        const credit = floatRes.error ? 0 : creditHeadroomOf(floatRes.data);
 
-      /**
-       * WHO THIS PAGE MAY TRANSACT WITH — asked in the database.
-       *
-       * This used to page club_members by hand and scope it from
-       * ca_club_my_downline, in three different ways depending on the role, with
-       * a super_agent branch that also swept up every UNASSIGNED member of the
-       * club. None of that agreed with the server: fn_agent_wallet_send refuses
-       * on fn_club_cashier_can_transact, which walks the recursive
-       * club_members.agent_id edge and nothing else. A list that offers someone
-       * the RPC will reject is a dead end nobody can diagnose from the screen.
-       *
-       * fn_club_cashier_members IS that edge: everyone for an owner, co owner or
-       * admin; the recursive downline for a super agent, agent or sub agent;
-       * nobody for a plain player. It also carries `depth`, so "Assigned To Me"
-       * is a direct hop rather than a second query for agent_id.
-       */
-      const dl: CashierRosterRpcRow[] = [];
-      if (role !== 'player') {
-        // Paint page one instead of holding the whole workspace hostage while
-        // a large club downloads. The cursor is deterministic and avoids the
-        // repeated OFFSET walk; later pages enrich the same authoritative list.
-        const rosterPageSize = 500;
-        let afterRoleRank: number | null = null;
-        let afterUserId: string | null = null;
-        let pageNumber = 0;
-        for (;;) {
-          const rosterPageStartedAt = Date.now();
-          const { data: memberRows, error: dlErr } = await supabase.rpc(
-            'fn_club_cashier_members_page_v3',
-            {
-              p_club_id: clubUuid,
-              p_after_role_rank: afterRoleRank,
-              p_after_user_id: afterUserId,
-              p_limit: rosterPageSize,
+        /**
+         * WHO THIS PAGE MAY TRANSACT WITH — asked in the database.
+         *
+         * This used to page club_members by hand and scope it from
+         * ca_club_my_downline, in three different ways depending on the role, with
+         * a super_agent branch that also swept up every UNASSIGNED member of the
+         * club. None of that agreed with the server: fn_agent_wallet_send refuses
+         * on fn_club_cashier_can_transact, which walks the recursive
+         * club_members.agent_id edge and nothing else. A list that offers someone
+         * the RPC will reject is a dead end nobody can diagnose from the screen.
+         *
+         * fn_club_cashier_members IS that edge: everyone for an owner, co owner or
+         * admin; the recursive downline for a super agent, agent or sub agent;
+         * nobody for a plain player. It also carries `depth`, so "Assigned To Me"
+         * is a direct hop rather than a second query for agent_id.
+         */
+        const dl: CashierRosterRpcRow[] = [];
+        if (role !== 'player') {
+          // Paint page one instead of holding the whole workspace hostage while
+          // a large club downloads. The cursor is deterministic and avoids the
+          // repeated OFFSET walk; later pages enrich the same authoritative list.
+          const rosterPageSize = 500;
+          let afterRoleRank: number | null = null;
+          let afterUserId: string | null = null;
+          let pageNumber = 0;
+          for (;;) {
+            const rosterPageStartedAt = Date.now();
+            const { data: memberRows, error: dlErr } = await supabase.rpc(
+              'fn_club_cashier_members_page_v3',
+              {
+                p_club_id: clubUuid,
+                p_after_role_rank: afterRoleRank,
+                p_after_user_id: afterUserId,
+                p_limit: rosterPageSize,
+              }
+            );
+            if (dlErr) {
+              complete = false;
+              recordCashierOperation({
+                userId: user.id,
+                clubId: clubUuid,
+                event: 'roster_page_failed',
+                operation: 'roster',
+                durationMs: Date.now() - rosterPageStartedAt,
+                pageNumber,
+                itemCount: dl.length,
+                reasonCode: cashierReasonCode(dlErr),
+              });
+              if (pageNumber === 0) throw dlErr;
+              reportError(dlErr, 'CashierTradePage.rosterContinuation');
+              if (isMounted.current && !stale()) {
+                setRosterWarning(
+                  `Loaded ${dl.length.toLocaleString()} Members. The Rest Could Not Be Reached.`
+                );
+              }
+              break;
             }
-          );
-          if (dlErr) {
-            complete = false;
+            if (stale()) return false;
+            const page = (memberRows || []) as CashierRosterRpcRow[];
+            dl.push(...page);
             recordCashierOperation({
               userId: user.id,
               clubId: clubUuid,
-              event: 'roster_page_failed',
+              event: 'roster_page_succeeded',
               operation: 'roster',
               durationMs: Date.now() - rosterPageStartedAt,
               pageNumber,
-              itemCount: dl.length,
-              reasonCode: cashierReasonCode(dlErr),
+              itemCount: page.length,
             });
-            if (pageNumber === 0) throw dlErr;
-            reportError(dlErr, 'CashierTradePage.rosterContinuation');
+            pageNumber++;
+
             if (isMounted.current && !stale()) {
-              setRosterWarning(
-                `Loaded ${dl.length.toLocaleString()} Members. The Rest Could Not Be Reached.`
-              );
+              if (!initialTabResolvedRef.current) {
+                setTab(role === 'player' ? 'record' : 'trade');
+                initialTabResolvedRef.current = true;
+              }
+              setMyRole(role);
+              setRoleResolved(true);
+              setMyBalance(bal);
+              setAgentWallet(float);
+              setAgentCredit(credit);
+              setDownline(mapCashierRoster(dl, user.id));
+              setLoading(false);
+              setRosterLoadingMore(page.length === rosterPageSize);
             }
-            break;
+            if (page.length < rosterPageSize) break;
+            const cursor = page[page.length - 1];
+            afterRoleRank = Number(cursor.role_rank);
+            afterUserId = String(cursor.user_id);
           }
-          if (stale()) return false;
-          const page = (memberRows || []) as CashierRosterRpcRow[];
-          dl.push(...page);
-          recordCashierOperation({
-            userId: user.id,
-            clubId: clubUuid,
-            event: 'roster_page_succeeded',
-            operation: 'roster',
-            durationMs: Date.now() - rosterPageStartedAt,
-            pageNumber,
-            itemCount: page.length,
-          });
-          pageNumber++;
-
-          if (isMounted.current && !stale()) {
-            if (!initialTabResolvedRef.current) {
-              setTab(role === 'player' ? 'record' : 'trade');
-              initialTabResolvedRef.current = true;
-            }
-            setMyRole(role);
-            setRoleResolved(true);
-            setMyBalance(bal);
-            setAgentWallet(float);
-            setAgentCredit(credit);
-            setDownline(mapCashierRoster(dl, user.id));
-            setLoading(false);
-            setRosterLoadingMore(page.length === rosterPageSize);
-          }
-          if (page.length < rosterPageSize) break;
-          const cursor = page[page.length - 1];
-          afterRoleRank = Number(cursor.role_rank);
-          afterUserId = String(cursor.user_id);
         }
-      }
 
-      if (!isMounted.current || stale()) return false;
-      if (!initialTabResolvedRef.current) {
-        setTab(role === 'player' ? 'record' : 'trade');
-        initialTabResolvedRef.current = true;
-      }
-      setMyRole(role);
-      setRoleResolved(true);
-      setMyBalance(bal);
-      setAgentWallet(float);
-      setAgentCredit(credit);
-      setDownline(mapCashierRoster(dl, user.id));
-      setRosterLoadingMore(false);
-      if (complete) setLastVerifiedAt(Date.now());
-      return complete;
-    } catch (e) {
-      reportError(e, 'CashierTradePage.loadClub');
-      // An empty list used to be the only symptom of a failed load, so the
-      // owner of a 588-member club was told they had no downline.
-      if (isMounted.current && !stale()) {
-        setDownline([]);
+        if (!isMounted.current || stale()) return false;
+        if (!initialTabResolvedRef.current) {
+          setTab(role === 'player' ? 'record' : 'trade');
+          initialTabResolvedRef.current = true;
+        }
+        setMyRole(role);
+        setRoleResolved(true);
+        setMyBalance(bal);
+        setAgentWallet(float);
+        setAgentCredit(credit);
+        setDownline(mapCashierRoster(dl, user.id));
         setRosterLoadingMore(false);
-        setLoadError('Could Not Load This Club. Check Your Connection And Try Again.');
-      }
-      return false;
-    } finally {
-      if (isMounted.current && !stale()) setLoading(false);
-    }
-  }, [user?.id, clubUuid]);
-
-  // Refresh on any balance event
-  useEffect(() => {
-    // AUDIT 2026-08-21: BALANCE_UPDATED alone missed mints, distributions and
-    // cashier changes, so the strip could sit stale after real money moved.
-    const events = [
-      'BALANCE_UPDATED',
-      'CHIPS_ADDED',
-      'CHIPS_DISTRIBUTED',
-      'CASHIER_BALANCE_CHANGED',
-      'MEMBER_ROLE_CHANGED',
-      'MEMBER_UPDATED',
-      'AGENT_UPDATED',
-    ] as const;
-    // Only OUR club. CHIPS_DISTRIBUTED and CASHIER_BALANCE_CHANGED both carry a
-    // clubId that was thrown away, so a chip event anywhere on the platform
-    // triggered a full reload here - up to ten paged queries on a large club,
-    // and each one wiped the selection out from under an open amount modal.
-    const unsubs = events.map((e) =>
-      masterBus.subscribe(e as never, (payload: unknown) => {
-        const pid = (payload as { clubId?: string } | null)?.clubId;
-        if (pid && clubUuid && pid !== clubUuid) return;
-        if (e === 'MEMBER_ROLE_CHANGED' || e === 'MEMBER_UPDATED' || e === 'AGENT_UPDATED') {
-          transferAuthorityEpoch.current++;
-          setRoleResolved(false);
+        if (complete) setLastVerifiedAt(Date.now());
+        return complete;
+      } catch (e) {
+        reportError(e, 'CashierTradePage.loadClub');
+        // An empty list used to be the only symptom of a failed load, so the
+        // owner of a 588-member club was told they had no downline.
+        if (isMounted.current && !stale()) {
+          setDownline([]);
+          setRosterLoadingMore(false);
+          setLoadError('Could Not Load This Club. Check Your Connection And Try Again.');
         }
-        loadClub();
-        // The badge's own comment promised this and it was never wired: the
-        // only caller was the mount effect, so an owner on the Trade tab saw
-        // the count frozen at whatever it was when the page opened - the exact
-        // scenario the badge exists for.
-        void loadPendingCount();
-        void loadHeldTicketCount();
+        return false;
+      } finally {
+        if (isMounted.current && !stale()) setLoading(false);
+      }
+    },
+    [user?.id, clubUuid]
+  );
+
+  // Keep the working page stable. Mutations still validate authority in the
+  // server transaction; explicit role changes invalidate controls immediately.
+  useEffect(() => {
+    const events = ['MEMBER_ROLE_CHANGED', 'MEMBER_UPDATED', 'AGENT_UPDATED'] as const;
+    const unsubs = events.map((event) =>
+      masterBus.subscribe(event, (payload: unknown) => {
+        const changed = payload as { clubId?: string; userId?: string } | null;
+        if (changed?.clubId && changed.clubId !== clubUuid) return;
+        if (changed?.userId !== user?.id) return;
+        transferAuthorityEpoch.current++;
+        setRoleResolved(false);
+        setDownline([]);
+        setSelected(new Set());
+        setAmountModal(null);
+        const role = (payload as { newRole?: string } | null)?.newRole;
+        if (role) setMyRole(role);
       })
     );
-    return () => unsubs.forEach((u) => u());
-  }, [loadClub, clubUuid, loadPendingCount, loadHeldTicketCount]);
+    return () => unsubs.forEach((unsubscribe) => unsubscribe());
+  }, [clubUuid, user?.id]);
 
   const refreshAuthority = (payload: {
     eventType?: string;
@@ -1139,7 +1168,12 @@ function CashierTradeWorkspace() {
       return;
     transferAuthorityEpoch.current++;
     setRoleResolved(false);
-    void loadClub();
+    // Revoked access retires protected rows and any open intent immediately.
+    // This is authority invalidation, never a background directory reload.
+    setDownline([]);
+    setSelected(new Set());
+    setAmountModal(null);
+    if (payload.new?.role) setMyRole(payload.new.role);
   };
   useMasterBusChannel({
     channelName: user?.id && clubUuid ? `cashier-member-authority:${user.id}:${clubUuid}` : null,
@@ -1186,21 +1220,6 @@ function CashierTradeWorkspace() {
       })();
     },
   });
-  // Agents are deliberately not published to Realtime. Refresh on explicit
-  // management events and returning to this view; each mutation rechecks the
-  // active agent inside its own database transaction.
-  useEffect(() => {
-    const refresh = () => {
-      if (document.visibilityState !== 'hidden') void loadClub();
-    };
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
-    };
-  }, [loadClub]);
-
   // ── Trade record tab data ──────────────────────────────────────────────────
   // Cleared BEFORE every club load: the previous club's trades used to stay on
   // screen until the new query landed.
@@ -1231,6 +1250,10 @@ function CashierTradeWorkspace() {
     // still in the list - on the screen that moves the chips.
     setMyBalance(0);
     setAgentWallet(null);
+    setBankBalance(null);
+    setPromoBalances({ own: null, club: null });
+    setTargetBalances({});
+    setSendSource('agent_wallet');
     setDownline([]);
     setRosterLoadingMore(false);
     setRosterWarning(null);
@@ -1240,6 +1263,7 @@ function CashierTradeWorkspace() {
     setAmountModal(null);
     setAmount('');
     setActiveCashier(null);
+    setShowCashoutRequest(false);
     setCashierPreset(null);
     setTransferFailures([]);
     setTransferRecovery(null);
@@ -1733,6 +1757,9 @@ function CashierTradeWorkspace() {
     [downline]
   );
 
+  const { recentIds, addRecipient } = useRecentRecipients(user?.id, clubUuid, 'cashier');
+  const [showCashoutRequest, setShowCashoutRequest] = useState(false);
+
   const rosterById = useMemo(() => new Map(downline.map((row) => [row.userId, row])), [downline]);
 
   const list = useMemo(() => {
@@ -1743,7 +1770,14 @@ function CashierTradeWorkspace() {
     if (mineOnly) rows = rows.filter((r) => r.isMine);
     if (roleFilter !== 'all') rows = rows.filter((r) => r.role === roleFilter);
     const bySort = (a: DownlineRow, b: DownlineRow) =>
-      sortKey === 'balance' ? b.chipBalance - a.chipBalance : a.name.localeCompare(b.name);
+      sortKey === 'recent'
+        ? (recentIds.includes(a.userId) ? recentIds.indexOf(a.userId) : Infinity) -
+            (recentIds.includes(b.userId) ? recentIds.indexOf(b.userId) : Infinity) ||
+          b.chipBalance - a.chipBalance ||
+          a.name.localeCompare(b.name)
+        : sortKey === 'balance'
+          ? b.chipBalance - a.chipBalance
+          : a.name.localeCompare(b.name);
     // A search is a question about a NAME. Answer it by match quality first
     // (rosterMatchRank), and only then by the chosen sort - a balance sort on
     // a search put the owner, at 0.00, twenty-first behind twenty horses
@@ -1759,7 +1793,7 @@ function CashierTradeWorkspace() {
       rows = [...rows].sort((a, b) => roleRank(b.role as ClubRole) - roleRank(a.role as ClubRole));
     }
     return rows;
-  }, [downline, search, sortKey, groupByRole, mineOnly, roleFilter]);
+  }, [downline, search, sortKey, groupByRole, mineOnly, roleFilter, recentIds]);
 
   const agencyBalance = useMemo(() => sumChips(recipients.map((r) => r.chipBalance)), [recipients]);
 
@@ -1869,6 +1903,7 @@ function CashierTradeWorkspace() {
 
   useEffect(() => {
     setRecipientAmounts({});
+    setRecipientWallets({});
     setBatchReceipt(null);
   }, [user?.id, clubUuid]);
 
@@ -1949,10 +1984,106 @@ function CashierTradeWorkspace() {
     !batchPlan.ok &&
     (picked.length === 1 || recipientAmounts[batchPlan.userId] === undefined);
 
-  const transferDestination = (target: DownlineRow): 'agent_wallet' | 'player_wallet' =>
+  useEffect(() => {
+    if (amountModal === null && !transferRecovery) {
+      setSendSource('agent_wallet');
+      setRecipientWallets({});
+    }
+  }, [amountModal, transferRecovery]);
+
+  const pickedWalletKey = JSON.stringify(picked.map((row) => row.userId).sort());
+  useEffect(() => {
+    if (amountModal !== 'send' || !clubUuid || !user?.id) return;
+    let live = true;
+    setTargetBalances({});
+    setWalletBalancesError(null);
+    const ids = [...new Set([...(JSON.parse(pickedWalletKey) as string[]), user.id])];
+    void (async () => {
+      const result: Record<string, Partial<Record<SendDestination, number>>> = {};
+      try {
+        for (let offset = 0; offset < ids.length; offset += 25) {
+          const chunk = ids.slice(offset, offset + 25);
+          const { data, error } = await supabase.rpc('fn_cashier_recipient_wallet_balances', {
+            p_club_id: clubUuid,
+            p_user_ids: chunk,
+          });
+          if (error) throw error;
+          if (!Array.isArray(data)) throw new Error('Recipient Balance Response Missing');
+          for (const row of data) {
+            result[row.user_id] = {};
+            for (const wallet of ['player_wallet', 'agent_wallet', 'promo_wallet'] as const) {
+              if (
+                row[wallet] !== null &&
+                row[wallet] !== undefined &&
+                Number.isFinite(Number(row[wallet]))
+              )
+                result[row.user_id][wallet] = Number(row[wallet]);
+            }
+          }
+        }
+        if (live) {
+          setTargetBalances(result);
+          if (result[user.id]?.player_wallet !== undefined)
+            setMyBalance(result[user.id].player_wallet!);
+        }
+      } catch (error) {
+        reportError(error, 'CashierTradePage.recipientWalletBalances');
+        if (live) setWalletBalancesError('Recipient Balances Could Not Be Verified');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [amountModal, clubUuid, user?.id, pickedWalletKey]);
+
+  const availableSendSources: SendSource[] = [
+    ...(canSeeClubBank(myRole)
+      ? (['agent_wallet', 'club_bank', 'promo_wallet', 'club_promo_wallet'] as const)
+      : (['agent_wallet', 'promo_wallet'] as const)),
+    ...(holdsPlayerWallet(myRole) ? (['player_wallet'] as const) : []),
+  ];
+  const sourceBalanceFor = (source: SendSource): number | null =>
+    source === 'player_wallet'
+      ? myBalance
+      : source === 'agent_wallet'
+        ? agentWallet
+        : source === 'club_bank'
+          ? bankBalance
+          : source === 'promo_wallet'
+            ? promoBalances.own
+            : promoBalances.club;
+  const selectedSourceBalance = sourceBalanceFor(sendSource);
+  const recipientWalletControl = (target: DownlineRow) => (
+    <select
+      className={styles.walletSelect}
+      aria-label={`Recipient Wallet For ${target.name}`}
+      value={transferDestination(target)}
+      disabled={busy || Boolean(transferRecovery)}
+      onChange={(event) => {
+        setRecipientWallets((previous) => ({
+          ...previous,
+          [target.userId]: event.target.value as SendDestination,
+        }));
+        setTransferFailures([]);
+      }}
+    >
+      {recipientSendWallets(target.role).map((wallet) => (
+        <option key={wallet} value={wallet}>
+          {SEND_DESTINATION_LABELS[wallet]}:{' '}
+          {targetBalances[target.userId]?.[wallet] === undefined
+            ? 'Unavailable'
+            : formatWalletChips(targetBalances[target.userId][wallet]!)}
+        </option>
+      ))}
+    </select>
+  );
+
+  const transferDestination = (target: DownlineRow): SendDestination =>
     (transferRecovery?.submissionId === submissionIdRef.current
       ? transferRecovery.destinations?.[target.userId]
-      : undefined) || (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
+      : undefined) ||
+    recipientWallets[target.userId] ||
+    (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
 
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
@@ -2013,14 +2144,22 @@ function CashierTradeWorkspace() {
      * past the old check and collected N server refusals instead.
      */
     const selfTargeted = targets.some((target) => target.isSelf || target.userId === user.id);
-    if (selfTargeted) {
+    if (
+      selfTargeted &&
+      (kind !== 'send' || !['club_promo_wallet', 'player_wallet'].includes(sendSource))
+    ) {
       /* SENDING TO YOURSELF (Dan 2026-10-15: "INCLUDING OWNERS, I CURRENTLY
          CAN'T SEND CHIPS TO MYSELF"). An agent wallet cannot pay its own
          holder (fn_agent_wallet_send refuses it), so an owner or co owner's
          own player wallet is funded from the Club Bank, the account that
          already pays them through Fund Me. On its own, so a batch never
          mixes two funding accounts. */
-      if (kind === 'send' && targets.length === 1 && selfCanFundPlayerWallet) {
+      if (
+        kind === 'send' &&
+        targets.length === 1 &&
+        selfCanFundPlayerWallet &&
+        sendSource === 'club_bank'
+      ) {
         await sendToSelf();
         return;
       }
@@ -2039,16 +2178,24 @@ function CashierTradeWorkspace() {
       toast?.error?.('Your Cashier Authority Is No Longer Active');
       return;
     }
-    if (kind === 'send' && agentWallet === null) {
-      toast?.error?.('Agent Wallet Could Not Be Verified');
+    if (kind === 'send' && !availableSendSources.includes(sendSource)) {
+      toast?.error?.('Your Cashier Authority Is No Longer Active');
+      return;
+    }
+    if (kind === 'send' && selectedSourceBalance === null) {
+      toast?.error?.('Selected Wallet Could Not Be Verified');
       return;
     }
     const total = parsedAmount.total;
-    if (kind === 'send' && agentWallet !== null && total > agentWallet + agentCredit) {
+    if (
+      kind === 'send' &&
+      selectedSourceBalance !== null &&
+      total > selectedSourceBalance + (sendSource === 'agent_wallet' ? agentCredit : 0)
+    ) {
       toast?.error?.(
-        agentCredit > 0
-          ? `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet And Credit Line Allow, ${exactChipFigure(agentWallet + agentCredit)}`
-          : `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet Holds, ${exactChipFigure(agentWallet)}`
+        sendSource === 'agent_wallet' && agentCredit > 0
+          ? `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than Your Agent Wallet And Credit Line Allow, ${exactChipFigure((agentWallet ?? 0) + agentCredit)}`
+          : `Insufficient Chips: Sending ${exactChipFigure(total)} Needs More Than ${SEND_SOURCE_LABELS[sendSource]} Holds, ${exactChipFigure(selectedSourceBalance)}`
       );
       return;
     }
@@ -2140,14 +2287,13 @@ function CashierTradeWorkspace() {
                 : ticketTournament.tournamentId,
           }
         : {}),
+      source:
+        transferRecovery?.submissionId === submissionId ? transferRecovery.source : sendSource,
       destinations:
         transferRecovery?.submissionId === submissionId
           ? transferRecovery.destinations
           : Object.fromEntries(
-              targets.map((target) => [
-                target.userId,
-                canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet',
-              ])
+              targets.map((target) => [target.userId, transferDestination(target)])
             ),
       createdAt: recoveryCreatedAt,
     };
@@ -2176,9 +2322,9 @@ function CashierTradeWorkspace() {
       destination:
         kind === 'ticket'
           ? 'Tournament Ticket'
-          : uncertainRecovery.destinations?.[target.userId] === 'agent_wallet'
-            ? 'Agent Wallet'
-            : 'Player Wallet',
+          : SEND_DESTINATION_LABELS[
+              uncertainRecovery.destinations?.[target.userId] ?? 'player_wallet'
+            ],
       outcome: 'Not Submitted',
       reference:
         kind === 'send'
@@ -2245,6 +2391,7 @@ function CashierTradeWorkspace() {
                   amount: parsedAmount.amounts[target.userId],
                   ...(kind === 'send'
                     ? {
+                        source: uncertainRecovery.source ?? 'agent_wallet',
                         destination:
                           uncertainRecovery.destinations?.[target.userId] ||
                           (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet'),
@@ -2404,6 +2551,7 @@ function CashierTradeWorkspace() {
 
     if (!isMounted.current || transferView.current !== owningView) return;
     if (ok > 0) {
+      for (const row of receiptRows) if (row.outcome === 'Confirmed') addRecipient(row.userId);
       // Name the counterparty on a single-target move. The Toast layer bars an
       // identical type+text for 60s, so "Sent 100.00 To 1 Player" twice in a
       // minute confirmed only the FIRST real chip movement - a receipt must
@@ -2411,11 +2559,19 @@ function CashierTradeWorkspace() {
       const who = targets.length === 1 ? targets[0].name : `${ok} Player${ok === 1 ? '' : 's'}`;
       toast?.success?.(
         kind === 'send'
-          ? `Sent ${exactChipFigure(sumChips(receiptRows.filter((row) => row.outcome === 'Confirmed').map((row) => row.amount)))} Total To ${who} From Your Agent Wallet`
-          : `Issued ${ok} Ticket${ok === 1 ? '' : 's'} To ${who}. Review The Exact Values In Your Batch Receipt`
+          ? `Sent ${exactChipFigure(sumChips(receiptRows.filter((row) => row.outcome === 'Confirmed').map((row) => row.amount)))} Total To ${who} From ${SEND_SOURCE_LABELS[sendSource]}`
+          : `Issued ${ok} Ticket${ok === 1 ? '' : 's'} To ${who}. Review The Exact Values In Your Batch Receipt`,
+        undefined,
+        undefined,
+        `${submissionId}:${receiptRows
+          .filter((row) => row.outcome === 'Confirmed')
+          .map((row) => row.reference)
+          .sort()
+          .join(',')}`
       );
-      // The bus event is already wired to reload this page, so calling
-      // loadClub() as well fired two identical loads at once.
+      // Read back this completed command without a loading reset. Background
+      // balance events never reload the working directory.
+      void loadClub(true);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade', userId: user.id });
     }
     if (failed.length > 0) {
@@ -2528,11 +2684,16 @@ function CashierTradeWorkspace() {
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
       clearCashierWalletOperation(operation);
       if (!current()) return;
+      addRecipient(row.to_user_id);
+      void loadClub(true);
       const claimedAmount = Number(res.amount) || 0;
       toast?.success?.(
         res.replayed
           ? `That Claim Had Already Gone Through. ${fmt(claimedAmount)} Chips Are Back In Your Agent Wallet`
-          : `Claimed ${fmt(claimedAmount)} Back From ${row.to_name}`
+          : `Claimed ${fmt(claimedAmount)} Back From ${row.to_name}`,
+        undefined,
+        undefined,
+        operation.operationId
       );
       claimOpIdsRef.current.delete(row.transaction_id);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_claim', userId: user?.id || '' });
@@ -2574,20 +2735,28 @@ function CashierTradeWorkspace() {
   const loadBankBalance = useCallback(async () => {
     if (!clubUuid || !user?.id) return;
     const requestedClub = clubUuid;
+    const owningView = transferView.current;
     const controller = new AbortController();
     try {
       const snapshot = await readCashierBalances(
         requestedClub,
         user.id,
-        'club_bank',
+        'agent_wallet',
         controller.signal
       );
-      if (!isMounted.current) return;
-      setBankBalance(Number.isFinite(snapshot.bank) ? (snapshot.bank as number) : null);
+      if (!isMounted.current || transferView.current !== owningView) return;
+      setAgentWallet(snapshot.bank);
+      setAgentCredit(snapshot.credit);
+      setPromoBalances({ own: snapshot.promoFloat, club: snapshot.promoPot });
+      // The agent snapshot also carries the authorized club panel's treasury.
+      setBankBalance(snapshot.clubBank);
     } catch (error) {
       reportError(error, 'CashierTradePage.loadBankBalance');
       // An unread bank is unknown, never zero.
-      if (isMounted.current) setBankBalance(null);
+      if (isMounted.current && transferView.current === owningView) {
+        setBankBalance(null);
+        setPromoBalances({ own: null, club: null });
+      }
     }
   }, [clubUuid, user?.id]);
 
@@ -2619,7 +2788,7 @@ function CashierTradeWorkspace() {
         {
           p_club_id: clubUuid,
           p_to_user_id: user.id,
-          p_destination: 'player_wallet',
+          p_destination: transferDestination(picked[0]),
           p_amount: value,
           p_reason: 'Cashier Send To Self',
         }
@@ -2629,7 +2798,7 @@ function CashierTradeWorkspace() {
         p_club_id: clubUuid,
         p_to_user_id: user.id,
         p_amount: value,
-        p_destination: 'player_wallet',
+        p_destination: transferDestination(picked[0]),
         p_reason: 'Cashier Send To Self',
         p_op_id: operation.operationId,
       });
@@ -2646,12 +2815,17 @@ function CashierTradeWorkspace() {
       if (!isMounted.current || transferView.current !== owningView) return;
       toast?.success?.(
         res.replayed
-          ? `That Send Had Already Gone Through. ${exactChipFigure(value)} Chips Are In Your Player Wallet`
-          : `Sent ${exactChipFigure(value)} From The Club Bank To Your Player Wallet`
+          ? `That Send Had Already Gone Through. ${exactChipFigure(value)} Chips Are In Your ${SEND_DESTINATION_LABELS[transferDestination(picked[0])].replace(' Wallet', '')} Wallet`
+          : `Sent ${exactChipFigure(value)} From The Club Bank To Your ${SEND_DESTINATION_LABELS[transferDestination(picked[0])].replace(' Wallet', '')} Wallet`,
+        undefined,
+        undefined,
+        operation.operationId
       );
       setAmountModal(null);
       setAmount('');
       setRecipientAmounts({});
+      void loadClub(true);
+      void loadBankBalance();
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_self', userId: user.id });
     } catch (e) {
       if (!isMounted.current) return;
@@ -2714,8 +2888,14 @@ function CashierTradeWorkspace() {
       toast?.success?.(
         res.replayed
           ? `That Claim Had Already Gone Through. ${exactChipFigure(parsed.value)} Chips Are In The Club Bank`
-          : `Claimed ${exactChipFigure(parsed.value)} From ${titleCase(target.name)} Into The Club Bank`
+          : `Claimed ${exactChipFigure(parsed.value)} From ${titleCase(target.name)} Into The Club Bank`,
+        undefined,
+        undefined,
+        operation.operationId
       );
+      addRecipient(target.userId);
+      void loadClub(true);
+      void loadBankBalance();
       setMgmtClaimAmount('');
       setClaimOpen(false);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_bank_claim', userId: user.id });
@@ -2878,9 +3058,7 @@ function CashierTradeWorkspace() {
             destination:
               saved.kind === 'ticket'
                 ? 'Tournament Ticket'
-                : saved.destinations?.[id] === 'agent_wallet'
-                  ? 'Agent Wallet'
-                  : 'Player Wallet',
+                : SEND_DESTINATION_LABELS[saved.destinations?.[id] ?? 'player_wallet'],
             outcome: 'Confirmed',
             reference: saved.kind === 'send' ? saved.opIds[id] : savedTicketKey(saved, id),
           })),
@@ -2905,9 +3083,7 @@ function CashierTradeWorkspace() {
         destination:
           saved.kind === 'ticket'
             ? 'Tournament Ticket'
-            : saved.destinations?.[id] === 'agent_wallet'
-              ? 'Agent Wallet'
-              : 'Player Wallet',
+            : SEND_DESTINATION_LABELS[saved.destinations?.[id] ?? 'player_wallet'],
         outcome: confirmedTargets.has(id) ? 'Confirmed' : 'Outcome Needs Verification',
         reference: saved.kind === 'send' ? saved.opIds[id] : savedTicketKey(saved, id),
       })),
@@ -2921,12 +3097,16 @@ function CashierTradeWorkspace() {
       user.id,
       clubUuid,
       String(saved.amount),
+      saved.source ?? 'agent_wallet',
+      Object.entries(saved.destinations ?? {}).sort(([left], [right]) => left.localeCompare(right)),
       Object.entries(saved.targetAmounts ?? {})
         .map(([id, value]) => [id, String(value)] as [string, string])
         .sort(([left], [right]) => left.localeCompare(right)),
       [...pendingTargets].sort(),
       saved.tournamentId ?? ticketTournamentId,
     ]);
+    setSendSource(saved.source ?? 'agent_wallet');
+    setRecipientWallets(saved.destinations ?? {});
     submissionIdRef.current = saved.submissionId;
     opIdsRef.current = new Map(Object.entries(saved.opIds));
     transferRecoveryScopeRef.current = {
@@ -3081,10 +3261,31 @@ function CashierTradeWorkspace() {
   // ── Render ────────────────────────────────────────────────────────────────
   const cashierAuthorityBlocked = busy || loading || !roleResolved || !!loadError;
   /** Whether the viewer's own row offers "Fund Me" (see cashierPreset). */
-  // Not inside a union house: fn_has_player_wallet gives nobody a player wallet
-  // in a union, so the chips would land in a balance no table reads.
-  const selfCanFundPlayerWallet =
-    currentClub?.entityType === 'club' && canSeeClubBank(myRole) && holdsPlayerWallet(myRole);
+  // Only a club cashier may spend its own bank; recipient eligibility is
+  // determined separately for the selected player or agent wallet.
+  const selfCanFundPlayerWallet = currentClub?.entityType === 'club' && canSeeClubBank(myRole);
+
+  const modeToggle = (
+    <button
+      type="button"
+      className={styles.modeToggle}
+      aria-pressed={advanced}
+      onClick={() => {
+        if (advanced) {
+          setTab('trade');
+          setRoleFilter('all');
+          setMineOnly(false);
+          setGroupByRole(false);
+        }
+        setAdvanced((value) => !value);
+      }}
+    >
+      {advanced ? 'Simple' : 'Advanced'}
+      {!advanced && pendingCount + heldTicketCount > 0
+        ? ` (${(pendingCount + heldTicketCount).toLocaleString()})`
+        : ''}
+    </button>
+  );
 
   return (
     <div
@@ -3096,34 +3297,22 @@ function CashierTradeWorkspace() {
         compact={!advanced}
         eyebrow="Secure Cashier"
         title="Cashier"
-        pill={isOnline ? 'Live Ledger' : 'Locked'}
-        pillInk={isOnline ? 'green' : 'red'}
+        // Dan 2026-10-16: no "Live Ledger" pill. A locked cashier still says so.
+        pill={isOnline ? undefined : 'Locked'}
+        pillInk="red"
         foot="foot"
         className={styles.console}
       >
         <div className={styles.glass}>
-          <div className={styles.modeToolbar}>
-            <span>{advanced ? 'Advanced Cashier' : 'Simple Cashier'}</span>
-            <button
-              type="button"
-              className={styles.modeToggle}
-              aria-pressed={advanced}
-              onClick={() => {
-                if (advanced) {
-                  setTab('trade');
-                  setRoleFilter('all');
-                  setMineOnly(false);
-                  setGroupByRole(false);
-                }
-                setAdvanced((value) => !value);
-              }}
-            >
-              {advanced ? 'Simple' : 'Advanced'}
-              {!advanced && pendingCount + heldTicketCount > 0
-                ? ` (${(pendingCount + heldTicketCount).toLocaleString()})`
-                : ''}
-            </button>
-          </div>
+          {/* Dan 2026-10-16: the Simple view carries no "Simple Cashier" caption
+          and no toolbar row; its Advanced switch sits beside the club so the
+          club leads the glass. Advanced keeps its labelled toolbar. */}
+          {advanced && (
+            <div className={styles.modeToolbar}>
+              <span>Advanced Cashier</span>
+              {modeToggle}
+            </div>
+          )}
           <section
             className={styles.hero}
             aria-labelledby={advanced ? 'cashier-title' : undefined}
@@ -3142,15 +3331,53 @@ function CashierTradeWorkspace() {
                 {currentClub?.logoUrl ? (
                   <img src={currentClub.logoUrl} alt="" className={styles.entityLogo} />
                 ) : null}
-                <span className={styles.entityName}>{currentClubLabel}</span>
-                <span className={`${styles.entityCaret} sc-label sc-ink--blue`} aria-hidden="true">
-                  Choose
+                <span className={styles.entityText}>
+                  <span className={styles.entityName}>{currentClubLabel}</span>
+                  <span
+                    className={`${styles.entityCaret} ${pickerOpen ? styles.entityCaretOpen : ''} sc-label`}
+                    aria-hidden="true"
+                  >
+                    Choose
+                    <svg className={styles.entityChevron} viewBox="0 0 12 8" focusable="false">
+                      <path
+                        d="M1 1.5 6 6.5 11 1.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      />
+                    </svg>
+                  </span>
                 </span>
               </button>
+              {!advanced && modeToggle}
             </div>
 
+            {holdsPlayerWallet(myRole) && roleResolved && (
+              // Dan 2026-10-16: the button carries the viewer's own player
+              // balance in this club, the same figure the cashout sheet checks.
+              <button
+                type="button"
+                className={styles.cashoutButton}
+                aria-label="Request Cash Out"
+                aria-describedby="cashier-cashout-balance"
+                onClick={() => setShowCashoutRequest(true)}
+              >
+                <span className={styles.cashoutLabel}>Request Cash Out</span>
+                <span id="cashier-cashout-balance" className={styles.cashoutBalance}>
+                  {loading || isHydrating ? 'Loading Balance' : `${fmt(myBalance)} Chips`}
+                </span>
+              </button>
+            )}
             {!advanced && (
-              <div className={styles.simpleStatus} role="status">
+              // Dan 2026-10-16: a healthy cashier prints no "Balances Synchronized"
+              // line. The status stays announced to assistive technology, and any
+              // other state (offline, reconciling, an error) is still shown.
+              <div
+                className={
+                  cashierSyncMessage === 'Balances Synchronized' ? 'sr-only' : styles.simpleStatus
+                }
+                role="status"
+              >
                 {cashierSyncMessage}
               </div>
             )}
@@ -3175,13 +3402,15 @@ function CashierTradeWorkspace() {
               <div className={styles.heroMetric}>
                 <span className={styles.heroMetricLabel}>Club Chips</span>
                 <strong className={styles.heroMetricValue}>
-                  {loading || isHydrating ? '-' : fmt(myBalance)}
+                  {loading || isHydrating ? '-' : formatWalletChips(myBalance)}
                 </strong>
               </div>
               <div className={styles.heroMetric}>
                 <span className={styles.heroMetricLabel}>Agent Wallet</span>
                 <strong className={styles.heroMetricValue}>
-                  {loading || isHydrating || agentWallet === null ? '-' : fmt(agentWallet)}
+                  {loading || isHydrating || agentWallet === null
+                    ? '-'
+                    : formatWalletChips(agentWallet)}
                 </strong>
               </div>
               <div className={styles.heroMetric}>
@@ -3269,7 +3498,9 @@ function CashierTradeWorkspace() {
                       ) : null}
                       <span className={styles.pickerName}>{titleCase(m.name)}</span>
                       <span className={styles.pickerBalance}>
-                        {m.entityType === 'union' ? 'Union Wallets' : `${fmt(m.chipBalance)} Chips`}
+                        {m.entityType === 'union'
+                          ? 'Union Wallets'
+                          : `${formatWalletChips(m.chipBalance)} Chips`}
                       </span>
                     </button>
                   ))}
@@ -3442,7 +3673,7 @@ function CashierTradeWorkspace() {
               <div className={styles.strip}>
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Club Chips</span>
-                  <span className={styles.stripValue}>{fmt(myBalance)}</span>
+                  <span className={styles.stripValue}>{formatWalletChips(myBalance)}</span>
                 </div>
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Downline Holdings</span>
@@ -3458,7 +3689,7 @@ function CashierTradeWorkspace() {
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Agent Wallet</span>
                   <span className={styles.stripValue}>
-                    {agentWallet === null ? '--' : fmt(agentWallet)}
+                    {agentWallet === null ? '--' : formatWalletChips(agentWallet)}
                     {canSeeClubBank(myRole) && (
                       <button
                         className={styles.plusBtn}
@@ -3561,9 +3792,18 @@ function CashierTradeWorkspace() {
                 </label>
                 <button
                   className={styles.sortBtn}
-                  onClick={() => setSortKey((k) => (k === 'balance' ? 'name' : 'balance'))}
+                  onClick={() =>
+                    setSortKey((k) =>
+                      k === 'recent' ? 'balance' : k === 'balance' ? 'name' : 'recent'
+                    )
+                  }
                 >
-                  Sort By {sortKey === 'balance' ? 'Chip Balance' : 'Name'}
+                  Sort By{' '}
+                  {sortKey === 'recent'
+                    ? 'Most Recent'
+                    : sortKey === 'balance'
+                      ? 'Chip Balance'
+                      : 'Name'}
                 </button>
               </div>
 
@@ -3742,7 +3982,9 @@ function CashierTradeWorkspace() {
                           </span>
                         </Link>
                         <span className={styles.rosterWallet}>
-                          <span className={styles.rowBalance}>{fmt(r.chipBalance)}</span>
+                          <span className={styles.rowBalance}>
+                            {formatWalletChips(r.chipBalance)}
+                          </span>
                           <span className={styles.rowSub}>Player Wallet</span>
                         </span>
                         {selectable ? (
@@ -4451,7 +4693,7 @@ function CashierTradeWorkspace() {
               title="Request Chips"
               titleId="cashier-ask-title"
               pill={asking ? 'Sending' : 'Ready'}
-              pillInk={asking ? 'gold' : 'green'}
+              pillInk={asking ? 'blue' : 'green'}
               foot="plates"
               className={styles.console}
               plates={{
@@ -4470,13 +4712,13 @@ function CashierTradeWorkspace() {
             >
               <div className={styles.glass}>
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
                   min={0}
-                  value={askAmount}
+                  value={formatCashierAmountInput(askAmount)}
                   step="0.01"
                   aria-label="Chips Requested"
-                  onChange={(e) => setAskAmount(e.target.value)}
+                  onChange={(e) => setAskAmount(cashierAmountInputValue(e.target.value))}
                   placeholder="How Many Chips?"
                   autoFocus
                 />
@@ -4502,9 +4744,7 @@ function CashierTradeWorkspace() {
       <WalletCashierModal
         isOpen={!!activeCashier}
         onClose={() => {
-          // The modal emits its own balance bus event on every money move and
-          // that event reloads this page; a second loadClub() here doubled
-          // every paged read on a large club (P-18).
+          // Closing a dialog never reloads or resets the working page.
           setActiveCashier(null);
           setCashierPreset(null);
         }}
@@ -4514,6 +4754,18 @@ function CashierTradeWorkspace() {
         initialRecipientId={cashierPreset?.recipientId ?? null}
         initialDestination={cashierPreset?.destination ?? null}
       />
+
+      {clubUuid && user?.id && (
+        <CashoutRequestModal
+          key={`${user.id}:${clubUuid}`}
+          isOpen={showCashoutRequest}
+          onClose={() => setShowCashoutRequest(false)}
+          playerId={user.id}
+          clubId={clubUuid}
+          currentBalance={loading ? null : myBalance}
+          onComplete={() => void loadClub(true)}
+        />
+      )}
 
       {/* Amount modal */}
       {amountModal && (
@@ -4554,7 +4806,7 @@ function CashierTradeWorkspace() {
               }
               titleId="cashier-amount-title"
               pill={busy ? 'Working' : 'Ready'}
-              pillInk={busy ? 'gold' : 'green'}
+              pillInk={busy ? 'blue' : 'green'}
               foot={amountModal === 'diamonds' ? 'foot' : 'plates'}
               className={styles.console}
               plates={
@@ -4579,9 +4831,7 @@ function CashierTradeWorkspace() {
                           !isOnline ||
                           picked.length === 0 ||
                           cashierAuthorityBlocked ||
-                          (amountModal === 'send' &&
-                            agentWallet === null &&
-                            !(picked.length === 1 && picked[0].userId === user?.id)) ||
+                          (amountModal === 'send' && selectedSourceBalance === null) ||
                           (amountModal === 'ticket' && !ticketTournament) ||
                           !canHoldAgentWallet(myRole),
                         onClick: () => void runTransfers(amountModal),
@@ -4627,39 +4877,56 @@ function CashierTradeWorkspace() {
                   </button>
                 </div>
                 {(() => {
-                  /* THE SENDER'S BALANCE, ALWAYS (Dan 2026-10-15). Each
-                     action names the one account it spends:
-                       Send Out          your agent wallet
-                       Send Out to you   the Club Bank (an agent wallet
-                                         cannot pay its own holder)
-                       Send Ticket       your player wallet */
-                  const selfOnly = picked.length === 1 && picked[0].userId === user?.id;
                   const sourceLabel =
                     amountModal === 'ticket'
                       ? 'From Your Player Wallet'
                       : amountModal === 'send'
-                        ? selfOnly
-                          ? 'From The Club Bank'
-                          : 'From Your Agent Wallet'
+                        ? `From ${SEND_SOURCE_LABELS[sendSource]}`
                         : null;
                   const sourceBalance =
-                    amountModal === 'ticket' ? myBalance : selfOnly ? bankBalance : agentWallet;
+                    amountModal === 'ticket' ? myBalance : selectedSourceBalance;
                   return (
                     <>
                       {picked.length === 1 && (
                         <CashierPlayerCard
                           row={picked[0]}
-                          balanceLabel={
-                            amountModal === 'send' &&
-                            !selfOnly &&
-                            transferDestination(picked[0]) === 'agent_wallet'
-                              ? 'Player Wallet, Sending To Agent Wallet'
-                              : 'Player Wallet'
+                          balanceLabel="Player Wallet"
+                          walletControl={
+                            amountModal === 'send' ? recipientWalletControl(picked[0]) : undefined
+                          }
+                          walletBalance={
+                            amountModal === 'send'
+                              ? (targetBalances[picked[0].userId]?.[
+                                  transferDestination(picked[0])
+                                ] ?? null)
+                              : undefined
                           }
                         />
                       )}
                       {sourceLabel && (
-                        <CashierWalletRow label={sourceLabel} balance={sourceBalance} />
+                        <CashierWalletRow label={sourceLabel} balance={sourceBalance}>
+                          {amountModal === 'send' && (
+                            <select
+                              className={styles.walletSelect}
+                              aria-label="Send From"
+                              value={sendSource}
+                              disabled={busy || Boolean(transferRecovery)}
+                              onChange={(event) => {
+                                setSendSource(event.target.value as SendSource);
+                                setTransferFailures([]);
+                              }}
+                            >
+                              {availableSendSources.map((source) => (
+                                <option key={source} value={source}>
+                                  From {SEND_SOURCE_LABELS[source]}:{' '}
+                                  {sourceBalanceFor(source) === null
+                                    ? 'Unavailable'
+                                    : formatWalletChips(sourceBalanceFor(source)!)}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </CashierWalletRow>
                       )}
                     </>
                   );
@@ -4733,17 +5000,15 @@ function CashierTradeWorkspace() {
                         <span className={styles.entryRowPlate}>
                           <input
                             className={styles.entryInput}
-                            type="number"
+                            type="text"
                             inputMode="decimal"
-                            min={0}
-                            step="0.01"
                             aria-label="Amount"
                             aria-invalid={uniformAmountInvalid}
                             aria-describedby="cashier-amount-validation"
-                            value={uniformAmountValue}
+                            value={formatCashierAmountInput(uniformAmountValue)}
                             disabled={busy}
                             onChange={(e) => {
-                              setAmount(e.target.value);
+                              setAmount(cashierAmountInputValue(e.target.value));
                               setRecipientAmounts({});
                               if (transferFailures.length) setTransferFailures([]);
                             }}
@@ -4753,10 +5018,51 @@ function CashierTradeWorkspace() {
                         </span>
                       </label>
                     )}
+                    {walletBalancesError && amountModal === 'send' && (
+                      <p role="alert">{walletBalancesError}</p>
+                    )}
+                    {amountModal === 'send' &&
+                      picked.length > 1 &&
+                      picked.map((r) => (
+                        <div key={`wallet-${r.userId}`}>
+                          <CashierPlayerCard
+                            row={r}
+                            balanceLabel="Player Wallet"
+                            walletControl={recipientWalletControl(r)}
+                            walletBalance={
+                              targetBalances[r.userId]?.[transferDestination(r)] ?? null
+                            }
+                          />
+                          <label className={styles.entryRow}>
+                            <span className={styles.entryRowSlot}>Amount</span>
+                            <span className={styles.entryRowPlate}>
+                              <input
+                                className={styles.entryInput}
+                                type="text"
+                                inputMode="decimal"
+                                aria-label={`Amount For ${r.name}`}
+                                aria-invalid={!batchPlan.ok && batchPlan.userId === r.userId}
+                                aria-describedby="cashier-amount-validation"
+                                disabled={busy}
+                                value={formatCashierAmountInput(
+                                  recipientAmounts[r.userId] ?? amount
+                                )}
+                                onChange={(event) => {
+                                  setRecipientAmounts((previous) => ({
+                                    ...previous,
+                                    [r.userId]: cashierAmountInputValue(event.target.value),
+                                  }));
+                                  setTransferFailures([]);
+                                }}
+                              />
+                            </span>
+                          </label>
+                        </div>
+                      ))}
                     {/* WHO, WHEN THERE IS MORE THAN ONE (Dan 2026-08-25). On a
                         375px screen the selection has scrolled out of view, so
                         every recipient is named with its own amount. */}
-                    {picked.length > 1 && (
+                    {picked.length > 1 && amountModal !== 'send' && (
                       <div className={styles.modalTargets}>
                         {picked.map((r) => (
                           <div className={styles.modalTargetRow} key={r.userId}>
@@ -4769,35 +5075,11 @@ function CashierTradeWorkspace() {
                               {r.name}
                               <small>
                                 {r.playerNumber ? `ID: ${r.playerNumber}` : 'ID Unavailable'}
-                                {amountModal === 'send' && transferDestination(r) === 'agent_wallet'
-                                  ? ' · Agent Wallet'
-                                  : ''}
                               </small>
                             </span>
-                            {amountModal === 'send' ? (
-                              <input
-                                type="number"
-                                inputMode="decimal"
-                                min={0}
-                                step="0.01"
-                                aria-label={`Amount For ${r.name}`}
-                                aria-invalid={!batchPlan.ok && batchPlan.userId === r.userId}
-                                aria-describedby="cashier-amount-validation"
-                                disabled={busy}
-                                value={recipientAmounts[r.userId] ?? amount}
-                                onChange={(event) => {
-                                  setRecipientAmounts((previous) => ({
-                                    ...previous,
-                                    [r.userId]: event.target.value,
-                                  }));
-                                  setTransferFailures([]);
-                                }}
-                              />
-                            ) : (
-                              <span>
-                                {exactChipFigure(batchPlan.ok ? batchPlan.amounts[r.userId] : 0)}
-                              </span>
-                            )}
+                            <span>
+                              {exactChipFigure(batchPlan.ok ? batchPlan.amounts[r.userId] : 0)}
+                            </span>
                           </div>
                         ))}
                       </div>
@@ -4809,19 +5091,16 @@ function CashierTradeWorkspace() {
                           ? batchPlan.error
                           : `Amount For ${picked.find((row) => row.userId === batchPlan.userId)?.name || 'Cashier Recipient'}: ${batchPlan.error}`
                         : cashierAuthorityBlocked || !canHoldAgentWallet(myRole)
-                          ? 'Cashier Access Must Be Verified Before Sending'
-                          : amountModal === 'send' &&
-                              !(picked.length === 1 && picked[0].userId === user?.id) &&
-                              agentWallet === null
-                            ? 'Agent Wallet Could Not Be Verified'
+                          ? ''
+                          : amountModal === 'send' && selectedSourceBalance === null
+                            ? 'Selected Wallet Could Not Be Verified'
                             : batchPlan.total >
                                 (amountModal === 'send'
-                                  ? picked.length === 1 && picked[0].userId === user?.id
-                                    ? (bankBalance ?? Number.POSITIVE_INFINITY)
-                                    : agentWallet! + agentCredit
+                                  ? (selectedSourceBalance ?? Number.POSITIVE_INFINITY) +
+                                    (sendSource === 'agent_wallet' ? agentCredit : 0)
                                   : myBalance)
                               ? 'Insufficient Chips In The Funding Wallet'
-                              : `${picked.length} Recipients Ready For Server Verification`}
+                              : ''}
                     </div>
                     {transferFailures.length > 0 && (
                       <div className={styles.modalFailures} role="alert">
@@ -4879,7 +5158,7 @@ function CashierTradeWorkspace() {
               pill={
                 claimingId || mgmtClaiming ? 'Working' : managementClaims ? 'Any Time' : 'Limited'
               }
-              pillInk={claimingId || mgmtClaiming ? 'gold' : managementClaims ? 'blue' : 'red'}
+              pillInk={claimingId || mgmtClaiming ? 'blue' : managementClaims ? 'blue' : 'red'}
               foot={managementClaimTarget ? 'plates' : 'foot'}
               plates={
                 managementClaimTarget
@@ -4918,14 +5197,16 @@ function CashierTradeWorkspace() {
                       <span className={styles.entryRowPlate}>
                         <input
                           className={styles.entryInput}
-                          type="number"
+                          type="text"
                           inputMode="decimal"
                           min={0}
                           step="0.01"
                           aria-label="Claim Back Amount"
-                          value={mgmtClaimAmount}
+                          value={formatCashierAmountInput(mgmtClaimAmount)}
                           disabled={mgmtClaiming}
-                          onChange={(event) => setMgmtClaimAmount(event.target.value)}
+                          onChange={(event) =>
+                            setMgmtClaimAmount(cashierAmountInputValue(event.target.value))
+                          }
                           placeholder="Enter Amount"
                           autoFocus
                         />
@@ -4941,7 +5222,7 @@ function CashierTradeWorkspace() {
                         )
                       }
                     >
-                      Claim All {compactChips(managementClaimTarget.chipBalance)}
+                      Claim All {formatWalletChips(managementClaimTarget.chipBalance)}
                     </button>
                   </>
                 )}
@@ -5008,9 +5289,11 @@ function CashierTradeWorkspace() {
                               <div className={styles.rowInfo}>
                                 <span className={styles.rowName}>{row.to_name}</span>
                                 <span className={styles.rowSub}>
-                                  {row.destination === 'agent_wallet'
-                                    ? 'Agent Wallet'
-                                    : 'Player Wallet'}{' '}
+                                  {row.destination === 'promo_wallet'
+                                    ? 'Promo Wallet'
+                                    : row.destination === 'agent_wallet'
+                                      ? 'Agent Wallet'
+                                      : 'Player Wallet'}{' '}
                                   &middot; {mm}:{ss} Left
                                 </span>
                               </div>

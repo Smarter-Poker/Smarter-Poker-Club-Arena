@@ -242,7 +242,7 @@ describe('Cashier Classic launch audit', () => {
       start();
       await screen.findByRole('tab', { name: 'Send', selected: true });
       fireEvent.click(screen.getByRole('tab', { name: tab, exact: true }));
-      const field = await screen.findByRole('spinbutton', { name: label, exact: true });
+      const field = await screen.findByRole('textbox', { name: label, exact: true });
       expect(field).toHaveAttribute('aria-invalid', 'false');
       fireEvent.change(field, { target: { value: invalid } });
       expect(field).toHaveAttribute('aria-invalid', 'true');
@@ -274,7 +274,7 @@ describe('Cashier Classic launch audit', () => {
     const recipient = await screen.findByLabelText('Send To Recipient');
     await waitFor(() => expect((recipient as HTMLSelectElement).options.length).toBe(2));
     fireEvent.change(recipient, { target: { value: PLAYER_ONE } });
-    const field = screen.getByRole('spinbutton', { name: 'Amount', exact: true });
+    const field = screen.getByRole('textbox', { name: 'Amount', exact: true });
     fireEvent.change(field, { target: { value: '10.005' } });
     fireEvent.click(
       screen.getByRole('button', { name: 'Send 10.005 Chips To Selected Recipient' })
@@ -287,6 +287,19 @@ describe('Cashier Classic launch audit', () => {
   });
 
   // ── P-01 ─────────────────────────────────────────────────────────────────
+  it('keeps presets compact while recipient wallets retain exact cents', async () => {
+    start();
+    await screen.findByRole('tab', { name: 'Send', selected: true });
+    expect(screen.getByRole('button', { name: '100', exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '1K', exact: true })).toBeInTheDocument();
+    const recipient = await screen.findByLabelText('Send To Recipient');
+    await waitFor(() => expect((recipient as HTMLSelectElement).options.length).toBe(2));
+    fireEvent.change(recipient, { target: { value: PLAYER_ONE } });
+    expect(
+      await screen.findByRole('region', { name: 'Selected Player Wallet Context' })
+    ).toHaveTextContent('Player Wallet: 5.00');
+  });
+
   it('P-01: a failed role read shows an error with Retry and never the player tab set', async () => {
     roleReads[CLUB] = () => Promise.resolve({ data: null, error: { code: '57014' } });
     start();

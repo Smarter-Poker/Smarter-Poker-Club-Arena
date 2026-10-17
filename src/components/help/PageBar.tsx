@@ -24,6 +24,8 @@ export interface PageBarProps {
   /** The words the hero used to print. Now they live behind the "?". */
   summary?: string;
   status?: ReactNode;
+  /** How the status reads: a locked cashier is 'danger', a sync in flight 'attention'. */
+  statusTone?: 'default' | 'live' | 'attention' | 'danger';
   metrics?: PageBarMetric[];
   steps?: TutorialStep[];
   /** The page's own controls, kept in the bar beside its live figures. */
@@ -39,6 +41,7 @@ export default function PageBar({
   title,
   summary,
   status,
+  statusTone = 'default',
   metrics = [],
   steps,
   children,
@@ -57,7 +60,7 @@ export default function PageBar({
       {hasLive && (
         <div className="ca-page-bar__live">
           {status && (
-            <span className="ca-page-bar__status" role="status">
+            <span className="ca-page-bar__status" role="status" data-tone={statusTone}>
               <span aria-hidden="true" />
               {status}
             </span>

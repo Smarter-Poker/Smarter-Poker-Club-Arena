@@ -25,9 +25,9 @@
  * the steps the page passed in, or a tour built from the page itself - the
  * sentences of its explanation, then each section heading on the page.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useLocation } from 'react-router-dom';
+import { UNSAFE_LocationContext } from 'react-router-dom';
 import { mediaUrl } from '../../utils/mediaBase';
 import { titleCase } from '../../utils/titleCase';
 import { tutorialForPath, type TutorialStep } from './pageTutorials';
@@ -106,8 +106,19 @@ function resolveTarget(target: TutorialStep['target']): Element | null {
   }
 }
 
+/**
+ * The route, read without demanding a router. The help also renders on the
+ * prerendered static pages and in isolated component renders, where there is
+ * no router and useLocation() would throw; there it reads the address bar.
+ */
+function usePathname(): string {
+  const routed = useContext(UNSAFE_LocationContext)?.location?.pathname;
+  if (routed) return routed;
+  return typeof window === 'undefined' ? '/' : window.location.pathname;
+}
+
 export default function PageHelp({ title, summary, steps, className }: PageHelpProps) {
-  const location = useLocation();
+  const pathname = usePathname();
   const panelId = useId();
   const titleId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -128,7 +139,7 @@ export default function PageHelp({ title, summary, steps, className }: PageHelpP
   }, [pageTitle, summary]);
 
   const buildTour = useCallback((): TutorialStep[] => {
-    const curated = tutorialForPath(location.pathname);
+    const curated = tutorialForPath(pathname);
     let body: TutorialStep[];
     if (curated && curated.length > 0) {
       body = curated;
@@ -152,7 +163,7 @@ export default function PageHelp({ title, summary, steps, className }: PageHelpP
         body: 'Tap The Question Mark In The Top Right Any Time To See This Again.',
       },
     ];
-  }, [intro, location.pathname, pageTitle, steps, summary]);
+  }, [intro, pathname, pageTitle, steps, summary]);
 
   const clearFocus = useCallback(() => {
     document.querySelectorAll(`[${FOCUS_ATTR}]`).forEach((el) => el.removeAttribute(FOCUS_ATTR));
@@ -200,7 +211,7 @@ export default function PageHelp({ title, summary, steps, className }: PageHelpP
   useEffect(() => {
     setOpen(false);
     clearFocus();
-  }, [location.pathname, clearFocus]);
+  }, [pathname, clearFocus]);
   useEffect(() => clearFocus, [clearFocus]);
 
   const step = tour[index];

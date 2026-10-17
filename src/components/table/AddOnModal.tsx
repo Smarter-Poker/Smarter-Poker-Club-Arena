@@ -18,6 +18,7 @@ import { haptic, soundService } from '../../services/SoundService';
 import { money } from '../../utils/buyIn';
 import DiamondsToChipsButton from '../games/DiamondsToChipsButton';
 import { TournamentPurchaseNotSubmittedError } from '../../services/TournamentPurchaseIntent';
+import { PLATFORM_FROZEN_MESSAGE } from '../../utils/platformFrozen';
 
 interface AddOnModalProps {
   isVisible: boolean;
@@ -218,7 +219,12 @@ export default function AddOnModal({
         decidedRef.current = false;
         setDecided(false);
         setResult(null);
-        setFailureMessage('The Purchase Was Not Submitted. Please Try Again.');
+        setFailureMessage(
+          // Maintenance break refusal is definitive (2026-10-16).
+          error.message === PLATFORM_FROZEN_MESSAGE
+            ? PLATFORM_FROZEN_MESSAGE
+            : 'The Purchase Was Not Submitted. Please Try Again.'
+        );
         return;
       }
       if (timerRef.current) clearInterval(timerRef.current);

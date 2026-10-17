@@ -1,4 +1,5 @@
 import { parseTradeAmount, sumChips } from './cashierAmount';
+import { PLATFORM_FROZEN_MESSAGE } from './platformFrozen';
 
 export type CashierBatchOutcome =
   | 'Confirmed'
@@ -67,7 +68,14 @@ export function cashierBatchAcknowledgement(
   if (row.success === false)
     return {
       outcome: 'Refused',
-      message: typeof row.error === 'string' ? row.error : 'Transfer Was Refused',
+      // fn_cashier_batch_transfer reports a maintenance-break refusal as
+      // "Transfer Failed" with error_code 55006 (2026-10-16): name the break.
+      message:
+        row.error_code === '55006' || row.reason === 'platform_frozen'
+          ? PLATFORM_FROZEN_MESSAGE
+          : typeof row.error === 'string'
+            ? row.error
+            : 'Transfer Was Refused',
     };
   return { outcome: 'Outcome Needs Verification' };
 }

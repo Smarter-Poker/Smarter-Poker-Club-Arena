@@ -64,6 +64,7 @@ import {
   type WalletDeskAction,
 } from '../wallet/WalletDesk';
 import '../wallet/WalletDesk.css';
+import { platformFrozenMessage } from '../../utils/platformFrozen';
 
 export type TreasuryDetailMode = 'rake' | 'bbj' | 'backup';
 
@@ -264,7 +265,11 @@ export default function UnionTreasuryDetailModal({
       onMoved?.();
     } catch (e) {
       reportError(e, 'UnionTreasuryDetail.backupTransfer');
-      setNotice({ ok: false, text: e instanceof Error ? e.message : 'Transfer Failed.' });
+      setNotice({
+        ok: false,
+        // Maintenance break refusal is definitive (2026-10-16).
+        text: platformFrozenMessage(e) ?? (e instanceof Error ? e.message : 'Transfer Failed.'),
+      });
     }
     setBusy(false);
   }, [amount, dest, bbj, unionId, load, onMoved]);

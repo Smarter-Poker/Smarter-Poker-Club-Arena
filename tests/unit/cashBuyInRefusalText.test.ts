@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { cashBuyInRefusalText } from '../../src/lib/cashBuyIn';
+import { PLATFORM_FROZEN_MESSAGE } from '../../src/utils/platformFrozen';
 
 /**
  * These strings are the ACTUAL raise texts in `atomic_table_buyin` and the two
@@ -19,6 +20,12 @@ describe('cashBuyInRefusalText', () => {
     expect(
       cashBuyInRefusalText('TABLE_CLOSING: this Diamond table is not taking new players')
     ).toBe('This Table Is Closing And Is Not Taking New Players');
+  });
+
+  it('names the maintenance break as a definitive refusal, in both raise shapes', () => {
+    const raw = 'PLATFORM_FROZEN: scheduled maintenance has closed cash buy-ins; no chips moved';
+    expect(cashBuyInRefusalText({ code: '55006', message: raw })).toBe(PLATFORM_FROZEN_MESSAGE);
+    expect(cashBuyInRefusalText(raw)).toBe(PLATFORM_FROZEN_MESSAGE);
   });
 
   it('names the four-table cap rather than the balance', () => {

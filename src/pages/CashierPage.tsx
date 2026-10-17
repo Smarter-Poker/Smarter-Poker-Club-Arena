@@ -254,6 +254,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 import { useCashierHistory } from '../hooks/useCashierHistory';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { platformFrozenMessage } from '../utils/platformFrozen';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 export default function CashierPage() {
   const { user } = useAuthUser();
@@ -2106,7 +2107,10 @@ function CashierContent() {
                 setMessage({
                   type: 'error',
                   text:
-                    (err instanceof Error ? err.message : String(err)) || 'Cashout request failed.',
+                    // Maintenance break refusal is definitive (2026-10-16).
+                    platformFrozenMessage(err) ??
+                    ((err instanceof Error ? err.message : String(err)) ||
+                      'Cashout request failed.'),
                 });
             }
             // A failed cashout used to fall through to the blanket setAmount('')
@@ -2130,8 +2134,10 @@ function CashierContent() {
           setMessage({
             type: 'error',
             text:
-              (error instanceof Error ? error.message : String(error)) ||
-              'Transaction failed. Please try again.',
+              // Maintenance break refusal is definitive (2026-10-16).
+              platformFrozenMessage(error) ??
+              ((error instanceof Error ? error.message : String(error)) ||
+                'Transaction failed. Please try again.'),
           });
       }
       if (isMounted.current) setIsProcessing(false);
@@ -3124,7 +3130,10 @@ function CashierContent() {
                       // removed promo route and could relabel a club-bank
                       // refusal as a promo one. The server's reason is printed.
                       const msg =
-                        (err instanceof Error ? err.message : String(err)) || 'Distribution failed';
+                        // Maintenance break refusal is definitive (2026-10-16).
+                        platformFrozenMessage(err) ??
+                        ((err instanceof Error ? err.message : String(err)) ||
+                          'Distribution failed');
                       if (transferCurrent()) setMessage({ type: 'error', text: msg });
                     } finally {
                       transferBusy.current = false;

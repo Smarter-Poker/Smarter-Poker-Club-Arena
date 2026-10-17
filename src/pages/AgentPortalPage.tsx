@@ -25,6 +25,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { compactChips, formatWalletChips } from '../utils/format';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { platformFrozenMessage } from '../utils/platformFrozen';
 import { titleCase } from '../utils/titleCase';
 import styles from './AgentPortalPage.module.css';
 
@@ -438,7 +439,11 @@ export default function AgentPortalPage() {
       }
     } catch (err) {
       reportError(err, 'AgentPortalPage.transfer_failed');
-      if (isCurrent()) toast.error('Transfer Failed: ' + safeErrorMessage(err, 'Try Again'));
+      if (isCurrent())
+        toast.error(
+          // Maintenance break refusal is definitive (2026-10-16).
+          platformFrozenMessage(err) ?? 'Transfer Failed: ' + safeErrorMessage(err, 'Try Again')
+        );
     } finally {
       transferInFlight.current = false;
       if (isMounted.current) setIsTransferring(false);

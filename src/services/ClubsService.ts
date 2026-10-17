@@ -17,6 +17,7 @@ import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { serverRefusalMessage } from '../utils/safeErrorMessage';
+import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../utils/platformFrozen';
 import { ClubCardGenerator } from './ClubCardGenerator';
 import { captureCashoutAccountGuard } from './CashoutService';
 import {
@@ -703,6 +704,8 @@ export async function leaveClub(clubId: string): Promise<void> {
   assertCurrent();
   if (leaveErr) {
     reportError(leaveErr, 'ClubsService.Leave_club_failed');
+    // Maintenance break refusal is definitive (2026-10-16).
+    if (isPlatformFrozenError(leaveErr)) throw new Error(PLATFORM_FROZEN_MESSAGE);
     // A union owner stays a member of every club in the union (20261012112707).
     throw new Error(serverRefusalMessage(leaveErr) ?? 'Failed to leave club - please try again');
   }

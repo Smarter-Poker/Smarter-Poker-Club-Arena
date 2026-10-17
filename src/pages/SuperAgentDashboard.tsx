@@ -37,6 +37,7 @@ import { SEND_DESTINATION_LABELS } from '../utils/cashierSendWallets';
 import { useRecipientWalletBalances, walletOptionLabel } from '../hooks/useRecipientWalletBalances';
 import './SuperAgentDashboard.css';
 import { reportError } from '../utils/errorReporter';
+import { platformFrozenMessage } from '../utils/platformFrozen';
 import AgentBackOffice from '../components/agent/AgentBackOffice';
 
 type DashboardTab = 'overview' | 'agents' | 'players' | 'commissions' | 'transfers' | 'backoffice';
@@ -403,7 +404,8 @@ function SuperAgentDashboardForScope({ userId, clubId }: { userId: string; clubI
       loadDashboardData();
     } catch (error) {
       reportError(error, 'SuperAgentDashboard.Transfer_failed');
-      if (isMounted.current) toast.error('Transfer failed');
+      // Maintenance break refusal is definitive (2026-10-16).
+      if (isMounted.current) toast.error(platformFrozenMessage(error) ?? 'Transfer failed');
     }
     transferInFlight.current = false;
     if (isMounted.current) setIsTransferring(false);

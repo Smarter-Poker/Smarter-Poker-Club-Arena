@@ -25,9 +25,10 @@ import {
   isOmahaPolicyVariant,
   type OmahaPolicyVariant,
 } from './omaha/OmahaVariantPolicyPack.js';
+import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v4';
+export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-digest-v5';
 
 /**
  * The code that determines Phase 11 candidate behaviour, as server-relative
@@ -50,7 +51,9 @@ export const HORSE_PHASE11_POLICY_DIGEST_DEFINITION = 'horse-phase11-policy-dige
  * P11-A river net-action economics (omaha/OmahaVariantActionEconomics.ts):
  * priced after the decision and read by nothing that decides, but its
  * validator gates the receipt at the worker boundary, where an invalid
- * applied receipt fails closed.
+ * applied receipt fails closed. v5 (2026-10-16) adds the reference decision's
+ * own sources (HorseReferenceDecisionSources.ts): the packs return the
+ * reference wherever they do not deviate, and those files decide it.
  */
 export const HORSE_PHASE11_POLICY_SOURCE_FILES: readonly string[] = Object.freeze([
   'src/engine/omaha/OmahaVariantPolicyPack.ts',
@@ -75,6 +78,11 @@ export const HORSE_PHASE11_POLICY_SOURCE_FILES: readonly string[] = Object.freez
   'src/config/tableSeating.ts',
   'src/engine/BettingStructure.ts',
   'src/engine/omaha/OmahaVariantActionEconomics.ts',
+  // v5 (2026-10-16): the reference decision's own sources (the digest hole),
+  // less the ones already listed above.
+  ...HORSE_REFERENCE_DECISION_SOURCE_FILES.filter(
+    (f) => !['src/engine/BettingStructure.ts', 'src/engine/VariantRules.ts'].includes(f)
+  ),
 ]);
 
 /**

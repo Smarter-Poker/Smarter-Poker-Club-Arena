@@ -110,6 +110,15 @@ import {
 // exploit adjustments, board texture, blockers. See HorseMind.ts.
 import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
 import { HorseMind, SNAP_MS, TANK_MS, readScopeOf } from './HorseMind.js';
+import {
+  isStation,
+  isolationWiden,
+  preflopVsOpener,
+  preflopVsReRaiser,
+  trapMultiplier,
+  valueThinMod as readValueThinMod,
+  type PreflopOpenerExploit,
+} from './HorseOpponentExploit.js';
 // V7 (2026-07-24): position-pair preflop mastery — 3-bet/4-bet bluffs, blind
 // vs blind, squeezes, stack depth, reshoves, ICM. See HorsePreflop.ts.
 import {
@@ -153,6 +162,7 @@ import {
 } from './GtoPostflop.js';
 import {
   gtoStreetAdviceV31,
+  gtoV31StoreIsEmpty,
   type GtoV31ActionFamily,
   type GtoV31GameFamily,
   type GtoV31Objective,
@@ -1726,9 +1736,14 @@ export interface HorseDecideOpts {
    *  — the binary ip/oop model treated first-of-four like first-of-two
    *  (default: enabled) */
   v17Pos?: boolean;
-  /** disable the V17 river delayed probe: when the turn checked through, the
+  /** ENABLE the V17 river delayed probe: when the turn checked through, the
    *  capped field gets attacked on the river too, at a lower frequency than
-   *  the turn probe (default: enabled) */
+   *  the turn probe. DEFAULT OFF since 2026-10-16: v17_river_probe resolved
+   *  NEGATIVE in the league pooled over the audit's 7-day window
+   *  (-0.11 +/- 0.04 bb/100, 8 runs) and over the 14 runs since 2026-10-03
+   *  (-0.10 +/- 0.05); over all 32 runs since 2026-09-15 it is
+   *  -0.02 +/- 0.03, i.e. it never earned a positive result either. League
+   *  arm A of v17_river_probe turns it on. */
   v17RiverProbe?: boolean;
   /** disable the V17 call-side blocker read: holding the missed front-door
    *  draw yourself removes bluff combos from a big river bettor's range —
@@ -1793,9 +1808,17 @@ export interface HorseDecideOpts {
    *  scales river bluffs up against folders and thin value down against
    *  stations (default: enabled; rides the mind layer) */
   v23Reads?: boolean;
-  /** disable the V23 variant polish: short-deck draw/thin-value recalibration
-   *  and plo8 low-only draw discipline (default: enabled) */
+  /** disable the V23 variant polish: plo8 low-only draw discipline
+   *  (default: enabled; plo8_v23_lowdraw +1.63 +/- 0.18 bb/100). Its
+   *  short-deck half is v23ShortDeck, default OFF. */
   v23Variants?: boolean;
+  /** V23 short deck, DEFAULT OFF since 2026-10-16. The short-deck half of the
+   *  V23 variant polish (one-pair thin value shrinks, draws earn extra implied
+   *  credit) lost: shortdeck_v23 measured -0.36 +/- 0.14 bb/100 over 44
+   *  nightly league runs, while the plo8 low-draw half of the same flag wins
+   *  (+1.63 +/- 0.18) and stays on under v23Variants (the V46 split of
+   *  2026-10-05). Set true to measure it (league arm A of shortdeck_v23). */
+  v23ShortDeck?: boolean;
   /** disable the V23 spin overlay: 3-max hypers reward aggression — bluff
    *  volume up, value thresholds down a notch (default: enabled). The overlay
    *  is about the STRUCTURE (three-handed, shallow, 3-minute levels), not the
@@ -1863,7 +1886,10 @@ export interface HorseDecideOpts {
    * only after the ordinary V31 lookup, sample, and legalization path runs.
    */
   onGtoV31Decision?: (receipt: GtoV31DecisionReceipt) => void;
-  /** V32: facing-a-bet defence from the solver's own betting range. */
+  /** ENABLE V32: facing-a-bet defence from the solver's own betting range.
+   *  DEFAULT OFF since 2026-10-16: v32_facing_defense (heads-up NLH)
+   *  measured -0.31 +/- 0.15 bb/100 over 41 nightly league runs. League arm
+   *  A of v32_facing_defense turns it on. */
   v32FacingDefense?: boolean;
   /** V33 (2026-09-01): refuse a solver consult the warehouse cannot honestly
    *  answer. DEPTH_BUCKETS stops at 150 and snapDepthBucket returns 150 for
@@ -2489,7 +2515,8 @@ export class HorseLogic {
               : horsePolicyDealtPlayers(gameState.players, player.seat, gameState.dealtSeatIds)
                   .length
             : 0
-        )
+        ),
+        typeof gameState.gameVariant === 'string' ? gameState.gameVariant : null
       );
       // V3: ingest the action stream into the opponent-intelligence layer.
       // Wrapped so observation can never take down a decision.
@@ -2741,6 +2768,24 @@ export class HorseLogic {
       decision: this.legalize(decision, player, gs, vi),
     })).decision;
     const beforePhase10 = decision;
+    // 2026-10-16 OPPONENT EXPLOIT: the variant packs deviate into an
+    // opponent-blind horse field. A live opponent read as a credible station
+    // keeps the reference (which already carries the read). False unless a
+    // read is engaged, so every pack sees exactly what it saw before.
+    let readStation = false;
+    if (opts.mind !== false) {
+      try {
+        readStation = gs.players.some(
+          (p) =>
+            p.seat !== player.seat &&
+            !p.is_folded &&
+            (!p.is_sitting_out || p.is_all_in) &&
+            isStation(HorseMind.opponentRead(p.user_id))
+        );
+      } catch {
+        /* reads are best-effort */
+      }
+    }
     const variants = graph.run('variant_policy', decision, () => {
       const phase10 =
         registration.owner === 'phase10' && opts.phase10Plo4 !== 'off'
@@ -2751,7 +2796,8 @@ export class HorseLogic {
               phase10EquityEvidence,
               opts.phase10Plo4 ?? 'shadow',
               opts.phase10EvidenceMode && !tele ? () => 0 : undefined,
-              (d) => this.legalize(d, player, gs, vi)
+              (d) => this.legalize(d, player, gs, vi),
+              readStation
             )
           : null;
       if (phase10) {
@@ -2778,7 +2824,8 @@ export class HorseLogic {
               opts.phase11EvidenceMode && !tele ? () => 0 : undefined,
               phase11DecisionEquityCeiling ?? 1,
               true,
-              (d) => this.legalize(d, player, gs, vi)
+              (d) => this.legalize(d, player, gs, vi),
+              readStation
             )
           : null;
       if (phase11) {
@@ -2804,7 +2851,9 @@ export class HorseLogic {
               null,
               opts.phase12Remaining ?? 'shadow',
               opts.phase12EvidenceMode && !tele ? () => 0 : undefined,
-              phase12DecisionEquityCeiling ?? 1
+              phase12DecisionEquityCeiling ?? 1,
+              undefined,
+              readStation
             )
           : null;
       if (phase12) {
@@ -4062,6 +4111,38 @@ export class HorseLogic {
       }
     }
 
+    // 2026-10-16 OPPONENT EXPLOIT (Dan: "I'm raising and potting at a 100%
+    // VPIP and raise frequency and the horses are not adjusting"): the raiser
+    // is priced by what THEY raise, and a credibly loose limper is isolated
+    // wider. Every field stays undefined / zero unless that opponent's read is
+    // credibly outside the horse envelope, so horse-vs-horse is unchanged.
+    let exploitOpener: PreflopOpenerExploit | undefined;
+    let exploitReRaiser: { fourBetBar: number; callBar: number } | undefined;
+    let exploitIso = 0;
+    if (opts.mind !== false) {
+      try {
+        const raiser =
+          lastRaiserSeat >= 0 ? gs.players.find((p) => p.seat === lastRaiserSeat) : undefined;
+        if (raiser && raiser.user_id !== player.user_id) {
+          const read = HorseMind.opponentRead(raiser.user_id);
+          if (read && raises === 1) exploitOpener = preflopVsOpener(read, vi.isOmaha) ?? undefined;
+          else if (read && raises >= 2)
+            exploitReRaiser = preflopVsReRaiser(read, raises) ?? undefined;
+        }
+        if (raises === 0 && limpers > 0 && !vi.isOmaha) {
+          for (const a of gs.actionHistory ?? []) {
+            if (a.stage !== 'preflop' || a.action !== 'call' || a.userId === player.user_id)
+              continue;
+            exploitIso = Math.max(exploitIso, isolationWiden(HorseMind.opponentRead(a.userId)));
+          }
+        }
+        if (telemetryOn(opts) && (exploitOpener || exploitReRaiser || exploitIso > 0))
+          noteFire('opponent_exploit_preflop');
+      } catch {
+        /* reads are best-effort */
+      }
+    }
+
     const preflopRisk = icmRisk(
       gs,
       stackBB,
@@ -4095,7 +4176,7 @@ export class HorseLogic {
       riskAdd: preflopRisk,
       // NLH only: widening the iso range vs limpers is an NLH edge; PLO limped
       // pots play multiway/postflop where a wide iso bloats pots out of line.
-      isoWiden: (opts.v10Iso ?? opts.v10) !== false && !vi.isOmaha ? 0.06 : 0,
+      isoWiden: ((opts.v10Iso ?? opts.v10) !== false && !vi.isOmaha ? 0.06 : 0) + exploitIso,
       // V11: explicit game mode + ante awareness (undefined when disabled so
       // the preflop layer keeps exact legacy behavior in ablation runs).
       mode: opts.v11 !== false ? (isTournamentMode(gs) ? 'tournament' : 'cash') : undefined,
@@ -4186,6 +4267,8 @@ export class HorseLogic {
         opts.v12 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
       targeted,
       raiserFoldTo3Bet: raiserF3b,
+      exploitOpener,
+      exploitReRaiser,
       // V18 STRADDLE: the shape the fallback above detected - hand the
       // truth to the preflop engine so its unopened branch owns the pot.
       // V28: the single source of truth computed above — unopened for EVERY
@@ -4691,6 +4774,35 @@ export class HorseLogic {
         /* intelligence layer is best-effort — fall back to V2 behavior */
       }
     }
+    // 2026-10-16 OPPONENT EXPLOIT: against a credible over-aggressor, strong
+    // hands trap more (slowplay / check-raise); into a credible station,
+    // value bets size up. Both stay exactly 1x unless a live opponent's read
+    // is engaged, so horse-vs-horse sizing and frequencies are unchanged.
+    let exploitValueSize = 1;
+    if (useMind) {
+      try {
+        let trap = 1;
+        let thin = 1;
+        for (const o of opponents) {
+          const read = HorseMind.opponentRead(o.user_id);
+          if (!read) continue;
+          trap = Math.max(trap, trapMultiplier(read));
+          if (!o.is_all_in && !o.is_sitting_out && isStation(read))
+            thin = Math.max(thin, readValueThinMod(read) ?? 1);
+        }
+        if (trap !== 1) {
+          params = {
+            ...params,
+            slowplayFreq: Math.min(0.6, params.slowplayFreq * trap),
+            checkRaiseFreq: Math.min(0.6, params.checkRaiseFreq * trap),
+          };
+        }
+        if (thin !== 1) exploitValueSize = 1 + (thin - 1) * 0.6;
+        if (tele15 && (trap !== 1 || thin !== 1)) noteFire('opponent_exploit_postflop');
+      } catch {
+        /* reads are best-effort */
+      }
+    }
 
     // Real equity vs the opponents' READ RANGES (V3) — draws priced by runout.
     // V7: ADAPTIVE early exit — when the estimate is already far from every
@@ -5052,9 +5164,11 @@ export class HorseLogic {
       useHR && street === 'turn' && HorseMind.streetCheckedThrough(gs.actionHistory, 'flop');
     // V17: the same capped-field read one street later. The V5 probe stopped
     // at the turn ("river probes are thinner") — thinner is a frequency, not
-    // a reason to play zero.
+    // a reason to play zero. 2026-10-16: opt-in. The league measured it
+    // negative over the last two weeks and never positive; see the
+    // v17RiverProbe option.
     const riverPrevChecked =
-      (opts.v17RiverProbe ?? true) !== false &&
+      opts.v17RiverProbe === true &&
       useHR &&
       street === 'river' &&
       HorseMind.streetCheckedThrough(gs.actionHistory, 'turn');
@@ -5371,8 +5485,11 @@ export class HorseLogic {
     // ═══ V23 VARIANT POLISH ═══ short deck: straights arrive more often and
     // draws complete more — draws earn a touch more implied credit, while
     // one-pair thin value shrinks (everyone has more).
+    // 2026-10-16: the short-deck half is opt-in (v23ShortDeck); it measured
+    // negative in the league while the plo8 low-draw half wins.
     const useV23Var = (opts.v23Variants ?? true) !== false;
-    if (useV23Var && vi.isShortDeck && cat === 2) thinAdj23 += 0.03;
+    const useV23ShortDeck = useV23Var && opts.v23ShortDeck === true;
+    if (useV23ShortDeck && vi.isShortDeck && cat === 2) thinAdj23 += 0.03;
     // ═══ V18 SELF-IMAGE ═══ the table watched hero's recent line too. A
     // horse coming off a bluff-heavy stretch gets called down - throttle the
     // bluffs until the image cools; a rock's rare bets get instant credit -
@@ -5519,7 +5636,13 @@ export class HorseLogic {
     // lookup key. An open policy can never answer a response decision, and a
     // chip-EV tournament policy can never masquerade as ICM. The compact
     // loader has already rejected any row without a complete active seal.
-    if (
+    //
+    // 2026-10-16: an EMPTY store is checked once, before any of the consult's
+    // work. Every lookup against it returns `empty_store` and falls through to
+    // the heuristics (283k such misses a day while the PioSOLVER hosts are
+    // off and V31 is parked), so skipping it decides identically. One counter
+    // keeps the empty store visible instead of three miss counters.
+    const v31Eligible =
       (opts.v31GtoSuitAware ?? true) !== false &&
       (street === 'flop' || street === 'turn' || street === 'river') &&
       player.cards.length === 2 &&
@@ -5534,8 +5657,10 @@ export class HorseLogic {
       // retain ownership until a separately keyed straddle corpus exists.
       gs.straddleActive !== true &&
       gs.bombPot !== true &&
-      !(gs.communityCards2 && gs.communityCards2.length > 0)
-    ) {
+      !(gs.communityCards2 && gs.communityCards2.length > 0);
+    const v31StoreEmpty = v31Eligible && gtoV31StoreIsEmpty(opts.gtoV31DatasetChecksum);
+    if (v31StoreEmpty && tele15) noteFire('v31_certified_skip_empty_store');
+    if (v31Eligible && !v31StoreEmpty) {
       const opponent31 = opponents[0];
       const heroSeat31 = gtoV31Position({
         seat: player.seat,
@@ -5828,7 +5953,8 @@ export class HorseLogic {
     // threshold PASS (null) so the aggression layers keep owning raises.
     // Gate mirrors the open consult exactly: heads-up hold'em, one board.
     if (
-      (opts.v32FacingDefense ?? true) !== false &&
+      // 2026-10-16: opt-in; the league measured it negative heads-up.
+      opts.v32FacingDefense === true &&
       facingBet &&
       // NOT `initiative === 'opp'`: readInitiative reads EARLIER streets only,
       // so a villain betting THIS street after the action checked to them
@@ -6188,7 +6314,16 @@ export class HorseLogic {
         // as a monster by MC sizes down instead of bombing — the calling side
         // already knew this; the betting side did not.
         if (useV21 && dominated21) monsterFrac = Math.min(monsterFrac, 0.5);
-        return this.betSize(planHandKey, pot, monsterFrac, player, gs, vi, params, useSizing);
+        return this.betSize(
+          planHandKey,
+          pot,
+          monsterFrac * exploitValueSize,
+          player,
+          gs,
+          vi,
+          params,
+          useSizing
+        );
       }
       // Strong value. V4: a vulnerable made hand sizes UP and never checks
       // back; a dangered hand slows down instead of firing into the new nuts.
@@ -6226,7 +6361,10 @@ export class HorseLogic {
         return this.betSize(
           planHandKey,
           pot,
-          Math.min(cap40Frac, (sizeBase + 0.12 + protection + fastRandom() * 0.15) * ploDamp),
+          Math.min(
+            cap40Frac,
+            (sizeBase + 0.12 + protection + fastRandom() * 0.15) * ploDamp * exploitValueSize
+          ),
           player,
           gs,
           vi,
@@ -6288,7 +6426,7 @@ export class HorseLogic {
           return this.betSize(
             planHandKey,
             pot,
-            (sizeBase + fastRandom() * 0.12) * ploDamp,
+            (sizeBase + fastRandom() * 0.12) * ploDamp * exploitValueSize,
             player,
             gs,
             vi,
@@ -7254,7 +7392,7 @@ export class HorseLogic {
       useV23Var && useHiLo && !!hiLoSplit && hiLoSplit.hi < 0.15 && hiLoSplit.lo > 0.3;
     const impliedBonus =
       drawsLive && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
-        ? 0.04 + (useV23Var && vi.isShortDeck ? 0.02 : 0)
+        ? 0.04 + (useV23ShortDeck && vi.isShortDeck ? 0.02 : 0)
         : 0;
     // V35: fixed limit calls lighter — the pot always lays the price.
     let respect = 2 - exploit.callDownMod + (params.callRespect ?? 0); // maniac 0.8, neutral 1, passive 1.15
@@ -7278,6 +7416,15 @@ export class HorseLogic {
         if (bettorId) {
           const hunted = HorseMind.targetingOf(player.user_id, bettorId);
           if (hunted > 0) respect -= 0.25 * hunted;
+          // 2026-10-16 OPPONENT EXPLOIT: the CURRENT bettor's read decides
+          // how much this bet is respected, not the table average (a
+          // multiway pot averaged a maniac's read away). Heads-up the two
+          // are the same read and this is a no-op; no read, no change.
+          if (HorseMind.opponentRead(bettorId)) {
+            respect +=
+              exploit.callDownMod - HorseMind.exploit(bettorId, useCounterAdapt).callDownMod;
+            if (telemetryOn(opts)) noteFire('opponent_exploit_calldown');
+          }
           // V16 DEEP READS: a big river bet from a player whose big bets
           // have SHOWN DOWN as value gets real respect; one who bombs with
           // air gets called down. Only on the river, only on big sizings —

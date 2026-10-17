@@ -78,25 +78,16 @@ mechanism, and `HorseDecisionEffectCommit.test.ts` proves it in behaviour for
 every policy receipt: a deep answer landing after the turn was cancelled, or
 after the hand moved on, while the action was waiting for it never acts.
 
-## FOLLOW-UP: the mirror must merge the opponent-exploit counters
+## The mirror carries the opponent-exploit read (done in the policy bundle)
 
-**Not done here, on purpose.** The 2026-10-16 policy bundle (branch
-`claude/horse-brain-requal-bundle-20261016`, hashed files) adds a decaying
-opponent read: `HorseMind` keeps `exploitCounters` per `<scope>|<user>` and
-the sandbox carries them as `HorseMindSandbox.exploit`, updated with
-`decayAndAdd(row, increments)` from `HorseOpponentExploit.ts`. Neither exists
-on main, so `mindMirror.ts` is not written against them. When the bundle is on
-main, `mergeSandboxIntoLiveMind` (`server/src/engine/horseDecision/mindMirror.ts`)
-must also add each `sandbox.exploit` row into the live row with `decayAndAdd`
-(a sandbox row starts from `freshExploitCounters()`, so it holds exactly the
-mirrored hand's increments). HorseMind exposes only a read
-(`HorseMind.getExploitCounters(userId, scope)`) on that branch; creating a row
-for a player the live mind has not seen needs a HorseMind entry point for its
-private `exploitCounters` map, which is a hashed-file change and belongs to
-the bundle (or its follow-up), with a `mindMirror.test.ts` case that a mirrored
-hand moves `HorseMind.opponentRead` exactly as the owner's observe() does.
-Until then a shard that does not own a table learns that table's hands for
-every read except the bundle's exploit read.
+The 2026-10-16 policy bundle (`claude/horse-brain-requal-bundle-20261016`)
+merged this branch and wired it: `mergeSandboxIntoLiveMind` calls
+`HorseMind.mergeSandboxExploit(sandbox)` (decay-and-add per row, the same
+least-recently-used cap as a live observe), and the nothing-to-learn check
+counts `HorseMind.sandboxExploitRows(sandbox)`. `mindMirror.test.ts` now
+compares the exploit counters in every owner-versus-mirror case and proves a
+maniac read learned only through mirrored hands gives exactly the owner's
+`HorseMind.opponentRead`; both fail with the merge call removed.
 
 ## Arithmetic
 

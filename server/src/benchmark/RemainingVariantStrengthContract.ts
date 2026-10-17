@@ -730,11 +730,11 @@ export const REMAINING_VARIANT_STRENGTH_CONTRACT = deepFreeze({
       },
       {
         id: 'policy_clock',
-        live: `the real clock: RemainingVariantLivePolicy falls back to the reference action (reason work_budget) beyond REMAINING_VARIANT_DOMAIN.liveBudgetMs (${REMAINING_VARIANT_DOMAIN.liveBudgetMs} ms), and the sampler stops starting work at ${REMAINING_VARIANT_DOMAIN.samplingDeadlineMs} ms, which can truncate sampling`,
+        live: `the fixed declared work, no clock (since 2026-10-16): RemainingVariantLivePolicy, its sampler and its fixed-limit river net-action pass read the clock only to measure latency; every live decision draws the full ${REMAINING_VARIANT_DOMAIN.defaultSamples} samples and is never replaced by the reference action because of elapsed time`,
         harness:
-          'phase12EvidenceMode: a fixed policy clock, so the fallback never fires and sampling completes its fixed work',
+          'phase12EvidenceMode: a fixed policy clock, which only zeroes the latency measurement; the same declared work as live',
         handling:
-          'named limit; P12.3 admission must also require natural completion-share evidence (admissionAlsoRequires)',
+          'design: live and harness evaluate the same declared work, so no clock can make a live decision differ from the measured one; P12.3 admission still requires natural completion-share evidence (admissionAlsoRequires)',
       },
       {
         id: 'second_look',

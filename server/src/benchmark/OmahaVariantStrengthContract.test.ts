@@ -175,8 +175,11 @@ describe('P11.2 Phase 11 strength contract object', () => {
     // under the old digest is then refused by name. Round 3 (2026-10-08)
     // moved it only through the three pack versions (round3-v2); every term
     // of the locked matrices is unchanged (was 0e58a56a...0326).
+    // 2026-10-16 (docs/changelog/2026-10-16-packs-do-declared-work.md): only
+    // the policy_clock entry's live, harness and handling text moved, to state
+    // that live and harness do the same declared work (was 5b93ae20...7fc).
     expect(omahaVariantStrengthContractDigest()).toBe(
-      '5b93ae20962ff79798b998f437ed43d2bd224a64995d86e34ed63d7bb22057fc'
+      '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05'
     );
   });
 

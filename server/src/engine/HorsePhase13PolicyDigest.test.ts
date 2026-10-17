@@ -10,6 +10,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
 import { describe, expect, it } from 'vitest';
 import {
   HORSE_PHASE13_POLICY_BOUNDARY,
@@ -73,6 +74,12 @@ function runtimeClosure(roots: string[]): string[] {
   }
   return [...seen].sort();
 }
+/** The reference sources Phase 13 v1 already hashed (of its 36 files). */
+const HORSE_P13_V1 = [
+  'src/engine/BettingStructure.ts',
+  'src/engine/VariantRules.ts',
+  'src/engine/HorseTournamentUtility.ts',
+];
 /** Every non-test owner of the joint policy. */
 const MULTIWAY_OWNERS = readdirSync(path.join(serverRoot, 'src/engine/multiway'))
   .filter((f) => f.endsWith('.ts') && !f.includes('.test'))
@@ -85,20 +92,28 @@ describe('P13.3 Phase 13 policy digest', () => {
     const hashed = new Set(HORSE_PHASE13_POLICY_SOURCE_FILES);
     for (const owner of MULTIWAY_OWNERS) expect(hashed.has(owner), owner).toBe(true);
     const closure = runtimeClosure(MULTIWAY_OWNERS);
-    expect(closure).toHaveLength(46);
+    // 47 since 2026-10-16: HorseMind (named, traversed) reads HorseOpponentExploit.
+    expect(closure).toHaveLength(47);
     const excluded = new Set(Object.keys(HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES));
     for (const file of closure)
       expect(hashed.has(file) !== excluded.has(file), `${file} hashed xor excluded`).toBe(true);
     // Every excluded file and every boundary is really in the closure.
     for (const file of excluded) expect(closure).toContain(file);
     for (const file of HORSE_PHASE13_POLICY_BOUNDARY) expect(closure).toContain(file);
-    // Beyond the closure: the owner that invokes and legalizes the policy, and
-    // the registry that routes every variant through it.
-    expect([...hashed].filter((f) => !closure.includes(f)).sort()).toEqual([
-      'src/engine/HorseLogic.ts',
-      'src/engine/HorsePolicyRegistry.ts',
-    ]);
-    expect(hashed.size).toBe(36);
+    // Beyond the closure: the owner that invokes and legalizes the policy, the
+    // registry that routes every variant through it, and (v2, 2026-10-16) the
+    // reference decision's own sources that build every baseline
+    // (HorseReferenceDecisionSources.test.ts pins that list).
+    expect([...hashed].filter((f) => !closure.includes(f)).sort()).toEqual(
+      [
+        'src/engine/HorseLogic.ts',
+        'src/engine/HorsePolicyRegistry.ts',
+        ...HORSE_REFERENCE_DECISION_SOURCE_FILES.filter((f) => !closure.includes(f)),
+      ].sort()
+    );
+    expect(hashed.size).toBe(
+      36 + HORSE_REFERENCE_DECISION_SOURCE_FILES.filter((f) => !HORSE_P13_V1.includes(f)).length
+    );
   });
 
   it('never reaches the table controller or the database client', () => {
@@ -156,7 +171,7 @@ describe('P13.3 Phase 13 policy digest', () => {
     }
     for (const reason of Object.values(HORSE_PHASE13_POLICY_EXCLUDED_CLOSURE_FILES))
       expect(reason.length).toBeGreaterThan(20);
-    expect(HORSE_PHASE13_POLICY_DIGEST_DEFINITION).toBe('horse-phase13-policy-digest-v1');
+    expect(HORSE_PHASE13_POLICY_DIGEST_DEFINITION).toBe('horse-phase13-policy-digest-v2');
   });
 
   it('gives each of the nine variants its own digest, moves with any hashed byte, and fails closed', () => {

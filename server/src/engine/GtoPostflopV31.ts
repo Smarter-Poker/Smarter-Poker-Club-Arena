@@ -826,6 +826,19 @@ export function gtoV31CellMatrix(args: {
   return null;
 }
 
+/**
+ * True when the store a `gtoStreetAdviceV31` lookup would read holds no cells
+ * (the active store, or the benchmark evaluation store `datasetChecksum`
+ * names). Every lookup against it answers `empty_store`, so a caller may skip
+ * the consult's work and decide exactly as the miss would have.
+ */
+export function gtoV31StoreIsEmpty(datasetChecksum?: string): boolean {
+  const selected = datasetChecksum
+    ? evaluationStores.get(datasetChecksum)?.cells
+    : activeStore.cells;
+  return !selected || selected.size === 0;
+}
+
 export function gtoPostflopV31Count(): number {
   return activeStore.cells.size;
 }

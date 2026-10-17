@@ -21,9 +21,10 @@
  * equity governor is pinned to the declared scale 1 (no load scaling), and the
  * decisions run in population order, one per event-loop turn, through the
  * runtime's own envelope validation. Nothing here touches a network, database,
- * journal or plan effect; no limit is changed: PHASE8_POLICY's 4 ms work, 5 ms
- * wall and 2 ms policy limits and the existing sample/trial counts are read
- * from the compiled source and recorded in the result.
+ * journal or plan effect; no limit is changed: PHASE8_POLICY's declared work
+ * (since 2026-10-16 no clock cuts it; budgetMs is the league's measured p99
+ * gate) and the existing sample/trial counts are read from the compiled
+ * source and recorded in the result.
  *
  * cold: a fresh process; each decision runs once, in order, immediately after
  *       worker readiness (the fixed card preparation runs before readiness,

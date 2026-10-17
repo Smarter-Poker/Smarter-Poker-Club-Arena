@@ -533,11 +533,11 @@ export const OMAHA_VARIANT_STRENGTH_CONTRACT = deepFreeze({
       },
       {
         id: 'policy_clock',
-        live: 'the real clock: OmahaVariantLivePolicy falls back to the reference action (reason work_budget) beyond OMAHA_VARIANT_DOMAIN.liveBudgetMs (4 ms), and the sampler stops at 3 ms, which can truncate river sampling',
+        live: 'the fixed declared work, no clock (since 2026-10-16): OmahaVariantLivePolicy, its sampler and its river net-action pass read the clock only to measure latency; every live decision draws the full 32 samples and is never replaced by the reference action because of elapsed time',
         harness:
-          'phase11EvidenceMode: a fixed policy clock, so the fallback never fires and sampling completes its fixed work',
+          'phase11EvidenceMode: a fixed policy clock, which only zeroes the latency measurement; the same declared work as live',
         handling:
-          'named limit; P11.3 admission must also require natural completion-share evidence (admissionAlsoRequires)',
+          'design: live and harness evaluate the same declared work, so no clock can make a live decision differ from the measured one; P11.3 admission still requires natural completion-share evidence (admissionAlsoRequires)',
       },
       {
         id: 'second_look',

@@ -34,9 +34,10 @@ import { JOINT_LIVE_DOMAIN } from './multiway/JointSampleAcquisition.js';
 import { JOINT_RANGE_PACK } from './multiway/JointRangeSampler.js';
 import { JOINT_ACTION_PACK } from './multiway/JointActionModel.js';
 import { isJointVariant, type JointVariant } from './multiway/JointInputBinding.js';
+import { HORSE_REFERENCE_DECISION_SOURCE_REASONS } from './HorseReferenceDecisionSources.js';
 
 /** Bump whenever the file list or the hashing below changes. */
-export const HORSE_PHASE13_POLICY_DIGEST_DEFINITION = 'horse-phase13-policy-digest-v1';
+export const HORSE_PHASE13_POLICY_DIGEST_DEFINITION = 'horse-phase13-policy-digest-v2';
 
 /**
  * The code that determines a Phase 13 joint proposal, as server-relative
@@ -117,6 +118,19 @@ export const HORSE_PHASE13_POLICY_SOURCE_REASONS: Readonly<Record<string, string
     'remainingVariantChipUnit: the legal chip step the binding records and the boundary validator recomputes',
   'src/engine/HorseTournamentUtilityEvidence.ts':
     'horseCanonicalMaterialSha256, the binding commitment the witness carries and the reviewer recomputes',
+  // v2 (2026-10-16): the reference decision's own sources (the digest hole):
+  // they decide the baseline every joint proposal is paired against, and the
+  // opponent-exploit read HorseMind now carries.
+  ...Object.fromEntries(
+    Object.entries(HORSE_REFERENCE_DECISION_SOURCE_REASONS).filter(
+      ([f]) =>
+        ![
+          'src/engine/BettingStructure.ts',
+          'src/engine/VariantRules.ts',
+          'src/engine/HorseTournamentUtility.ts',
+        ].includes(f)
+    )
+  ),
 });
 
 /**

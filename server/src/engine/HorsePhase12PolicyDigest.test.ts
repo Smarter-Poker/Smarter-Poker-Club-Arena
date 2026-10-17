@@ -9,6 +9,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
 import { describe, expect, it } from 'vitest';
 import {
   HORSE_PHASE12_POLICY_DIGEST_DEFINITION,
@@ -80,19 +81,25 @@ describe('P12.2 Phase 12 policy digest', () => {
       'src/engine/remainingVariants/RemainingVariantSampler.ts',
       'src/engine/remainingVariants/RemainingVariantPolicyPack.ts',
     ]);
-    expect(closure).toHaveLength(27);
+    // 28 since 2026-10-16: HorseMind reads HorseOpponentExploit.
+    expect(closure).toHaveLength(28);
     const hashed = new Set(HORSE_PHASE12_POLICY_SOURCE_FILES);
     const excluded = new Set(Object.keys(HORSE_PHASE12_POLICY_EXCLUDED_CLOSURE_FILES));
     for (const file of closure)
       expect(hashed.has(file) !== excluded.has(file), `${file} hashed xor excluded`).toBe(true);
     // Every excluded file is really in the closure, and nothing is both.
     for (const file of excluded) expect(closure).toContain(file);
-    // Beyond the closure: the owner that invokes and legalizes the policy, and
-    // the registry that routes the variant to it.
-    expect([...hashed].filter((f) => !closure.includes(f)).sort()).toEqual([
-      'src/engine/HorseLogic.ts',
-      'src/engine/HorsePolicyRegistry.ts',
-    ]);
+    // Beyond the closure: the owner that invokes and legalizes the policy, the
+    // registry that routes the variant to it, and (v2, 2026-10-16) the
+    // reference decision's own sources the packs return wherever they do not
+    // deviate (HorseReferenceDecisionSources.test.ts pins that list).
+    expect([...hashed].filter((f) => !closure.includes(f)).sort()).toEqual(
+      [
+        'src/engine/HorseLogic.ts',
+        'src/engine/HorsePolicyRegistry.ts',
+        ...HORSE_REFERENCE_DECISION_SOURCE_FILES.filter((f) => !closure.includes(f)),
+      ].sort()
+    );
   });
 
   it('names the files the brief requires and gives every hashed file a reason', () => {
@@ -116,7 +123,7 @@ describe('P12.2 Phase 12 policy digest', () => {
     }
     for (const reason of Object.values(HORSE_PHASE12_POLICY_EXCLUDED_CLOSURE_FILES))
       expect(reason.length).toBeGreaterThan(20);
-    expect(HORSE_PHASE12_POLICY_DIGEST_DEFINITION).toBe('horse-phase12-policy-digest-v1');
+    expect(HORSE_PHASE12_POLICY_DIGEST_DEFINITION).toBe('horse-phase12-policy-digest-v2');
   });
 
   it('gives each pack its own digest, moves with any hashed byte, and fails closed', () => {

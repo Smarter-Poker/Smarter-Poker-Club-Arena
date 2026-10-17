@@ -1,8 +1,12 @@
 /**
  * P10 audit F7: the range-provenance capture is work the PLO4 proposal
- * consumes, so it runs inside the policy's timed region and counts against
- * `PLO4_POLICY_PACK.liveBudgetMs`. Before the fix HorseLogic captured it before
- * the policy clock started, so its cost was never counted.
+ * consumes, so it runs inside the policy's measured region and its cost is in
+ * `latencyMs`. Before the fix HorseLogic captured it before the policy clock
+ * started, so its cost was never counted.
+ *
+ * 2026-10-16 (docs/changelog/2026-10-16-packs-do-declared-work.md): the clock
+ * is a measurement only. A slow capture is measured and changes nothing else;
+ * there is no `liveBudgetMs` fallback to the reference any more.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -40,7 +44,7 @@ import { plo4ReferenceSpot } from '../../benchmark/Plo4PolicyEvidence.js';
 import { HorseLogic } from '../HorseLogic.js';
 import { seedFastRandom } from '../HorseEval.js';
 import { evaluatePlo4LivePolicy } from './Plo4LivePolicy.js';
-import { PLO4_POLICY_PACK } from './Plo4PolicyPack.js';
+import { withoutMeasurements } from '../HorseDeclaredWork.test-support.js';
 
 const decide = (captureCost: number) => {
   probe.t = 0;
@@ -62,7 +66,7 @@ const decide = (captureCost: number) => {
   }
 };
 
-describe('P10 audit F7: the range capture counts against the PLO4 work budget', () => {
+describe('P10 audit F7: the range capture is measured inside the PLO4 policy, and no clock decides', () => {
   it('HorseLogic captures the provenance inside the policy clock, once', () => {
     const quick = decide(0);
     expect(probe.captures).toEqual([true]);
@@ -72,20 +76,16 @@ describe('P10 audit F7: the range capture counts against the PLO4 work budget', 
     expect(quick.plo4Policy?.inputs?.range.provenance?.source).toBe('uniform_mind_disabled');
   });
 
-  it('a capture that exhausts the budget makes the work_budget fallback fire by name', () => {
-    const slow = decide(PLO4_POLICY_PACK.liveBudgetMs + 1);
-    expect(slow.plo4Policy?.reason).toBe('work_budget');
+  it('a slow capture is measured in latencyMs and the decision is the one a free capture makes', () => {
+    const quick = decide(0);
+    const slow = decide(1_000);
     expect(probe.captures).toEqual([true]);
-    expect(slow.plo4Policy).toMatchObject({
-      reason: 'work_budget',
-      fired: false,
-      applied: false,
-      proposalAction: slow.plo4Policy?.baselineAction,
-    });
-    expect(slow.plo4Policy!.latencyMs).toBeGreaterThan(PLO4_POLICY_PACK.liveBudgetMs);
+    expect(slow.plo4Policy?.reason).not.toBe('work_budget');
+    expect(slow.plo4Policy!.latencyMs).toBeGreaterThanOrEqual(1_000);
+    expect(withoutMeasurements(slow)).toEqual(withoutMeasurements(quick));
   });
 
-  it('a deferred capture is timed by the policy itself; a throwing one leaves the sample unattributed', () => {
+  it('a deferred capture is timed by the policy itself; a throwing one leaves the sample unattributed, slow or not', () => {
     const input = plo4ReferenceSpot('non_nut_flush');
     const evidence = { equity: 0.5, samples: 500, standardError: 0.02 };
     let clock = 0;
@@ -96,15 +96,14 @@ describe('P10 audit F7: the range capture counts against the PLO4 work budget', 
       {
         ...evidence,
         captureRange: () => {
-          clock += PLO4_POLICY_PACK.liveBudgetMs + 1;
+          clock += 1_000;
           throw new Error('capture failed');
         },
       },
       'candidate',
       () => clock
     );
-    expect(slow.receipt.reason).toBe('work_budget');
-    expect(slow.decision).toBe(input.baseline);
+    expect(slow.receipt.latencyMs).toBeGreaterThanOrEqual(1_000);
     const quick = evaluatePlo4LivePolicy(
       input.hero,
       input.state,
@@ -120,5 +119,6 @@ describe('P10 audit F7: the range capture counts against the PLO4 work budget', 
     );
     expect(quick.receipt.reason).not.toBe('work_budget');
     expect(quick.receipt.inputs?.range.status).toBe('consumed_unattributed');
+    expect(withoutMeasurements(slow)).toEqual(withoutMeasurements(quick));
   });
 });

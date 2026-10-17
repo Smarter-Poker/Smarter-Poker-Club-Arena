@@ -153,6 +153,10 @@ export function mergeSandboxIntoLiveMind(sandbox: HorseMindSandbox): void {
     } else pairs.push({ attacker_id: attacker, victim_id: victim, ...hand });
   }
   if (pairs.length) HorseMind.importPairs(pairs);
+
+  // The opponent-exploit read (decayed per-opponent counters) travels too, so
+  // a player read on one shard is read the same way on every other shard.
+  HorseMind.mergeSandboxExploit(sandbox);
 }
 
 export class HorseMindMirror {
@@ -176,7 +180,12 @@ export class HorseMindMirror {
     this.learnedHands.add(key);
     while (this.learnedHands.size > this.dedupeLimit)
       this.learnedHands.delete(this.learnedHands.values().next().value!);
-    if (sandbox.stats.size === 0 && sandbox.scoped.size === 0 && sandbox.pairs.size === 0)
+    if (
+      sandbox.stats.size === 0 &&
+      sandbox.scoped.size === 0 &&
+      sandbox.pairs.size === 0 &&
+      HorseMind.sandboxExploitRows(sandbox).size === 0
+    )
       return 'nothing_to_learn';
     mergeSandboxIntoLiveMind(sandbox);
     return 'learned';

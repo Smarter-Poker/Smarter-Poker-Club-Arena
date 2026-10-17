@@ -597,7 +597,10 @@ export function sampleRemainingVariantEquity(
   // every proposal at scale 1, and the P12.3 completion floor admits a pack
   // only when its live decisions price that same sample. Governor scaling made
   // about 4% of natural postflop decisions governor-reduced on release
-  // c1deef24. Load stays bounded by the sampler's own deadline.
+  // c1deef24. Since 2026-10-16 the live policy passes no deadline either: the
+  // work is the declared full request with at most three prior draws per dealt
+  // opponent each, never cut by a clock. `withinBudget` remains for offline
+  // callers that stop a sample early (counted as budget exhausted).
   const requested = remainingVariantRequestedSamples(1);
   const samples: HorseEquityOutcomeSample[] = [];
   // P12.1: what the prior actually did, recorded with the sample it produced.

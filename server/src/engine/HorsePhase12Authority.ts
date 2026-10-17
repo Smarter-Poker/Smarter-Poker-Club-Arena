@@ -170,6 +170,11 @@ export const HORSE_PHASE12_FULL_SAMPLES: number = REMAINING_VARIANT_DOMAIN.defau
  *    scaled it down under load: it completed what it asked for, but it priced
  *    a smaller sample than the matrix did. (The Phase 11 audit found its
  *    definition counted such samples as completed; this one does not.)
+ *
+ * Since 2026-10-16 the live source reads no clock to decide its work
+ * (docs/changelog/2026-10-16-packs-do-declared-work.md), so its receipts carry
+ * neither `workBudget` nor `samplerBudgetExhausted`; the definition is
+ * unchanged and still classifies receipts of earlier releases.
  */
 export const HORSE_PHASE12_COMPLETION_DEFINITION = 'horse-phase12-completion-definition-v1';
 
@@ -439,30 +444,23 @@ export interface HorsePhase12AuthoritySelection {
  * natural completion window on release c92768c8 (2026-10-15 00:02 to 00:50Z,
  * docs/evidence/phase12/declaration-completion-pfr-repair-2026-10-14.txt) meets
  * the 0.95 floor on every street (lowest Wilson bound 0.9807, river).
+ *
+ * October 16: the packs do their declared work (no wall-clock fallback) and
+ * FLO8 gets its own rule set without the big blind defence
+ * (`fixed-limit-omaha8-round4-v1`), docs/changelog/2026-10-16-packs-do-declared-work.md.
+ * Every Phase 12 policy digest moves (FLH 67f964ba... to the running value;
+ * FLH's rule set and decisions are unchanged and its contract stays the frozen
+ * v1), and contract v2 moves (FLO8's pack version and the policy_clock entry).
+ * FLH generation 3 is explicitly null until the locked FLH v1 matrix
+ * requalifies the exact new source and fresh natural completion is read; a
+ * renewal is generation 4. Every earlier generation's evidence stays committed.
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
 > = Object.freeze({
   short_deck: null,
   pineapple: null,
-  flh: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase12',
-    variant: 'flh',
-    sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
-    packVersion: 'fixed-limit-holdem-round3-v1',
-    contractVersion: 'remaining-variant-strength-contract-v1',
-    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
-    domain: 'flh-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase12/c92768c8/phase12-qualification-2026-10-15-flh.json',
-    qualificationSha256: '0b349ec894b1d5f0db47c052abf87a336b9fb4aa087265a96acb613083cb315d',
-    completionPath: 'docs/evidence/phase12/c92768c8/phase12-completion-2026-10-15-flh.json',
-    completionSha256: '55c641c6f3c6818311be024b005a01136a7a37507991f2d6c33be6170c1641c2',
-    approvalGeneration: 3,
-    issuedAt: '2026-10-15T01:05:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  flh: null,
   flo8: null,
 });
 

@@ -1,3 +1,4 @@
+import { HORSE_REFERENCE_DECISION_SOURCE_FILES } from './HorseReferenceDecisionSources.js';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +41,10 @@ import {
 } from './HorsePhase10Authority.test-support.js';
 import { PLO4_POLICY_PACK } from './plo4/Plo4PolicyPack.js';
 import { plo4StrengthContractDigest } from '../benchmark/Plo4StrengthContract.js';
-import { PREVIOUS_PHASE10_SELECTION } from './HorsePreviousSelections.test-support.js';
+import {
+  PREVIOUS_PHASE10_SELECTION,
+  RETIRED_2026_10_16_PHASE10_SELECTION,
+} from './HorsePreviousSelections.test-support.js';
 
 const admit = (
   selection: HorsePhase10AuthoritySelection | null,
@@ -64,12 +68,14 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P10.3 the PFR repair requalified the round-3 PLO4 pack at generation 2', () => {
+describe('P10.3 the declared-work change (2026-10-16) requires fresh qualification of the round-3 PLO4 pack', () => {
   const committed = PREVIOUS_PHASE10_SELECTION;
+  const retired = RETIRED_2026_10_16_PHASE10_SELECTION;
 
-  it('retains the previous c8bfc617 identity and selects generation 2 on the repaired source under the unchanged contract', () => {
+  it('retains generations 1 (c8bfc617) and 2 (c92768c8) with selection null under the unchanged contract', () => {
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
     expect(committed).not.toBeNull();
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toMatchObject({
+    expect(retired).toMatchObject({
       sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
       packVersion: PLO4_POLICY_PACK.version,
       contractDigest: PHASE10_RUNNING_CONTRACT_DIGEST,
@@ -79,7 +85,7 @@ describe('P10.3 the PFR repair requalified the round-3 PLO4 pack at generation 2
       expiresAt: null,
       withdrawn: null,
     });
-    expect(Object.isFrozen(PHASE10_PROTECTED_RELEASE_SELECTION)).toBe(true);
+    expect(Object.isFrozen(retired)).toBe(true);
     expect(Object.isFrozen(committed)).toBe(true);
     expect(committed).toMatchObject({
       schema: 'horse-qualified-authority-selection-v1',
@@ -97,47 +103,32 @@ describe('P10.3 the PFR repair requalified the round-3 PLO4 pack at generation 2
     expect(PHASE10_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('the committed generation 2 admits for this digest and source, and the retained generation 1 cannot', () => {
-    const selected = admitHorsePhase10ReleaseAuthority();
-    expect(selected.status).toBe('admitted');
-    expect(selectedHorsePhase10Authority(selected)).toMatchObject({
-      phase: 'phase10',
-      sourceSha: PHASE10_PROTECTED_RELEASE_SELECTION!.sourceSha,
-      continuationVersion: PLO4_POLICY_PACK.version,
-      policyDigest: horsePhase10PolicyDigest(),
-      domain: HORSE_PHASE10_DOMAIN,
-      evidencePath: PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath,
-      evidenceSha256: PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationSha256,
-      approvalGeneration: 2,
-    });
-    const release = admitHorsePhase10ReleaseAuthority(Date.now(), committed);
-    expect(release).toEqual({
+  it('the default is shadow and neither retained generation can admit the modified policy', () => {
+    expect(admitHorsePhase10ReleaseAuthority()).toEqual({
       status: 'refused',
-      reason: 'policy_digest_mismatch',
+      reason: 'unselected',
       transient: false,
     });
-    expect(selectedHorsePhase10Authority(release)).toBeNull();
-    const file = JSON.parse(
-      readFileSync(
-        fileURLToPath(new URL(`../../../${committed!.qualificationPath}`, import.meta.url)),
-        'utf8'
-      )
-    ) as Record<string, unknown>;
-    expect(file).toMatchObject({
-      qualified: true,
-      mode: 'contract',
-      policyDigestDefinition: HORSE_PHASE10_POLICY_DIGEST_DEFINITION,
-    });
-    expect(file.policyDigest).not.toBe(horsePhase10PolicyDigest());
-    expect(
-      createHash('sha256')
-        .update(
-          readFileSync(
-            fileURLToPath(new URL(`../../../${committed!.qualificationPath}`, import.meta.url))
-          )
-        )
-        .digest('hex')
-    ).toBe(committed!.qualificationSha256);
+    for (const previous of [committed!, retired]) {
+      const release = admitHorsePhase10ReleaseAuthority(Date.now(), previous);
+      expect(release, previous.sourceSha).toEqual({
+        status: 'refused',
+        reason: 'policy_digest_mismatch',
+        transient: false,
+      });
+      expect(selectedHorsePhase10Authority(release)).toBeNull();
+      const bytes = readFileSync(
+        fileURLToPath(new URL(`../../../${previous.qualificationPath}`, import.meta.url))
+      );
+      const file = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
+      expect(file).toMatchObject({
+        qualified: true,
+        mode: 'contract',
+        policyDigestDefinition: 'horse-phase10-policy-digest-v2',
+      });
+      expect(file.policyDigest).not.toBe(horsePhase10PolicyDigest());
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(previous.qualificationSha256);
+    }
   });
 
   it('the running code refuses a well-formed qualified selection made under another contract', () => {
@@ -164,9 +155,9 @@ describe('P10.3 the PFR repair requalified the round-3 PLO4 pack at generation 2
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate is usable under the committed generation 2', () => {
+  it('the live main-scheduler gate stays unselected until requalification', () => {
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
+    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
   });
 
   it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {
@@ -190,7 +181,7 @@ describe('P10.3 the PFR repair requalified the round-3 PLO4 pack at generation 2
     expect(gate.mainState()).toBe('withdrawn');
   });
 
-  it('the only qualified file on the running policy is the selected one; generation 1 is retained on its old digest', () => {
+  it('no qualified file is on the running policy; generations 1 and 2 are retained on their old digests', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase10/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -199,12 +190,8 @@ describe('P10.3 the PFR repair requalified the round-3 PLO4 pack at generation 2
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === 'horse-phase10-qualification-v1' && parsed.qualified === true) {
         const path = `docs/evidence/phase10/${file}`;
-        if (path === PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath)
-          expect(parsed.policyDigest, path).toBe(horsePhase10PolicyDigest());
-        else {
-          expect(path).toBe(committed!.qualificationPath);
-          expect(parsed.policyDigest, path).not.toBe(horsePhase10PolicyDigest());
-        }
+        expect([committed!.qualificationPath, retired.qualificationPath]).toContain(path);
+        expect(parsed.policyDigest, path).not.toBe(horsePhase10PolicyDigest());
       }
     }
   });
@@ -460,7 +447,7 @@ describe('P10 audit F1: Phase 10 authority is bound to the running code', () => 
   const serverFile = (path: string) => fileURLToPath(new URL(`../../${path}`, import.meta.url));
 
   it('the running policy digest is the versioned hash of exactly the PLO4 candidate code', () => {
-    expect(HORSE_PHASE10_POLICY_DIGEST_DEFINITION).toBe('horse-phase10-policy-digest-v2');
+    expect(HORSE_PHASE10_POLICY_DIGEST_DEFINITION).toBe('horse-phase10-policy-digest-v3');
     expect(HORSE_PHASE10_POLICY_SOURCE_FILES).toEqual([
       'src/engine/plo4/Plo4PolicyPack.ts',
       'src/engine/plo4/Plo4LivePolicy.ts',
@@ -473,10 +460,12 @@ describe('P10 audit F1: Phase 10 authority is bound to the running code', () => 
       'src/engine/HorseObservationWindow.ts',
       'src/engine/HorseTournamentUtilityEvidence.ts',
       'src/engine/HorseMind.ts',
+      // v3 (2026-10-16): the reference decision's own sources (digest hole).
+      ...HORSE_REFERENCE_DECISION_SOURCE_FILES,
     ]);
     // Independent recomputation from the files on disk.
     const hash = createHash('sha256').update(
-      `horse-phase10-policy-digest-v2\0${PLO4_POLICY_PACK.version}\0`
+      `horse-phase10-policy-digest-v3\0${PLO4_POLICY_PACK.version}\0`
     );
     for (const file of HORSE_PHASE10_POLICY_SOURCE_FILES)
       hash

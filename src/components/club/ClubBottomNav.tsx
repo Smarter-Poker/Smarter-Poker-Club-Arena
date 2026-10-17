@@ -21,6 +21,7 @@ import { clubIdFromPath } from './clubIdFromPath';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
 import { useHideFooterOnScroll } from './useHideFooterOnScroll';
 import { useClubRole } from '../../hooks';
+import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import styles from './ClubBottomNav.module.css';
 
 interface ClubBottomNavProps {
@@ -145,8 +146,20 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
     [location.pathname, location.search]
   );
   const resolvedClubId = useResolvedClubId(clubId, routeClubId);
-  const { isOwner, isAdmin, isAgent } = useClubRole(resolvedClubId || '');
-  const canSeeData = isOwner || isAdmin || isAgent;
+  const workspace = useClubWorkspace();
+  const { isOwner, isAdmin, isAgent, role: directRole } = useClubRole(resolvedClubId || '');
+  const effectiveRole = workspace.clubRole ?? directRole;
+  const isWorkspaceStaff =
+    workspace.isClubStaff ||
+    workspace.isPlatformStaff ||
+    workspace.canViewFinance ||
+    effectiveRole === 'owner' ||
+    effectiveRole === 'co_owner' ||
+    effectiveRole === 'admin' ||
+    effectiveRole === 'super_agent' ||
+    effectiveRole === 'agent' ||
+    effectiveRole === 'sub_agent';
+  const canSeeData = isOwner || isAdmin || isAgent || isWorkspaceStaff;
 
   const activeTab = useMemo(() => activeTabForPath(location.pathname), [location.pathname]);
   const { hidden, reveal } = useHideFooterOnScroll(location.pathname);

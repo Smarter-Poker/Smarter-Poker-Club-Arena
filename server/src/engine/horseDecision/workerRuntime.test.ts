@@ -4194,16 +4194,16 @@ describe('P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 authority (the Phase 
   const CHANGED_TOURNAMENT = ['short_deck', 'flh', 'flo8'] as const;
 
   it.each(LIVE_STATES)(
-    'live behaviour under the committed selections (refused since 2026-10-16, shadow): %s %s %s with %i seats (seed %i)',
+    'live behaviour under the committed selections: %s %s %s with %i seats (seed %i)',
     async (variant, format, street, seats, seed, eligible, changed, baseAction) => {
       const r = request(format, variant, street, seats);
       const live = await decideThrough(r, (v) => admitHorsePhase12ReleaseAuthority(v), false, seed);
       const reference = await decideThrough(r, undefined, true, seed);
-      // 2026-10-16: the opponent-exploit change moved the Phase 12 policy
-      // digest; the committed FLH selection is refused (policy_digest_mismatch)
-      // and runs shadow until requalified on this source.
+      // 2026-10-17: FLH generation 4 is selected on the declared-work source
+      // d9190c9e; a selected pack is the candidate at cash tables and shadow
+      // in tournaments, every unselected pack is shadow.
       const selected = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
-      const candidate = false;
+      const candidate = selected && format === 'cash';
       expect(live.h.decisionOpts[0].phase12Remaining).toBe(candidate ? 'candidate' : 'shadow');
       expect(act(reference.decision)).toEqual(baseAction);
       expect(reference.decision.remainingVariantPolicy).toBeUndefined();
@@ -4214,7 +4214,7 @@ describe('P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 authority (the Phase 
         eligible,
         applied: candidate && changed,
         authority: {
-          state: selected ? 'refused' : 'unselected',
+          state: selected ? 'usable' : 'unselected',
           continuationVersion: REMAINING_VARIANT_PACKS[variant].version,
         },
       });
@@ -4231,7 +4231,7 @@ describe('P12.3 worker-owned Short Deck/Pineapple/FLH/FLO8 authority (the Phase 
       expect(receipt.finalAction).toBe(live.decision.action);
       for (const pack of ['short_deck', 'pineapple', 'flh', 'flo8'] as const)
         expect(live.result.phase12Authority?.[pack]).toMatchObject({
-          state: PHASE12_PROTECTED_RELEASE_SELECTIONS[pack] === null ? 'unselected' : 'refused',
+          state: PHASE12_PROTECTED_RELEASE_SELECTIONS[pack] === null ? 'unselected' : 'usable',
           continuationVersion: REMAINING_VARIANT_PACKS[pack].version,
         });
       expect(horseDecisionReceiptIsValid(structuredClone(live.decision), variant)).toBe(true);

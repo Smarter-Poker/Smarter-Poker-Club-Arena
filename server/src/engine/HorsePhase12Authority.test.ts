@@ -129,16 +129,16 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
   );
 
-  it('FLH generations 2 and 3 are retained and no pack is selected; each pack keeps its own contract digest, FLH the frozen v1', () => {
+  it('FLH generations 2 and 3 are retained and FLH generation 4 is selected on d9190c9e; each pack keeps its own contract digest, FLH the frozen v1', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
     // FLH's generation-1 selection measured policy digest a55db7fe..., which
     // the round-4 sampler kernels and scoped packs moved: it was re-measured
     // under contract v1 on 9d567463 and selected at generation 2. The PFR
     // repair moved it again; generation 3 requalified the repaired source.
-    // The declared-work change (2026-10-16) moved it again: none is selected
-    // until the combined requalification.
-    expect(selected).toEqual([]);
+    // The declared-work change (2026-10-16) moved it again; generation 4
+    // requalified the declared-work source d9190c9e (2026-10-17).
+    expect(selected).toEqual(['flh']);
     expect(RETIRED_2026_10_16_PHASE12_SELECTIONS.flh).toMatchObject({
       sourceSha: 'c92768c85bc53a4a5a5972d09c6ee58561010035',
       contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS.flh,
@@ -185,22 +185,17 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
         variant,
         packVersion: REMAINING_VARIANT_PACKS[variant].version,
         contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS[variant],
-        approvalGeneration: 3,
+        sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
+        approvalGeneration: 4,
         expiresAt: null,
         withdrawn: null,
       });
-      // 2026-10-16: the opponent-exploit change moved the Phase 12 policy
-      // digest (definition v2), so generation 3 no longer measured the running
-      // code. It is refused - exactly as stale evidence always is - and the
-      // pack is shadow until requalified. Nothing here re-points it.
-      expect(release, variant).toEqual({
-        status: 'refused',
-        reason: 'policy_digest_mismatch',
-        transient: false,
-      });
-      expect(selectedHorsePhase12Authority(variant, release), variant).toBeNull();
-      // Once requalified, an admitted pack is the candidate at cash tables and
-      // shadow in tournaments.
+      // 2026-10-17: generation 4 measured the running policy digest, so the
+      // committed selection is admitted from its shipped evidence.
+      expect(release.status, variant).toBe('admitted');
+      expect(selectedHorsePhase12Authority(variant, release), variant).not.toBeNull();
+      // An admitted pack is the candidate at cash tables and shadow in
+      // tournaments.
       for (const [gameMode, expected] of [
         ['cash', 'candidate'],
         ['tournament', 'shadow'],
@@ -255,7 +250,7 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     expect(holder.receipt().approvalGeneration).toBe(4);
   });
 
-  it('FLH generation 3 stays shipped with its evidence while no pack is selected', () => {
+  it('FLH generation 3 stays shipped with its evidence after generation 4 replaces it', () => {
     const retired = RETIRED_2026_10_16_PHASE12_SELECTIONS.flh!;
     expect(retired.approvalGeneration).toBeGreaterThan(
       PREVIOUS_PHASE12_SELECTIONS.flh!.approvalGeneration
@@ -269,7 +264,10 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
         expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
       }
     }
-    for (const variant of HORSE_PHASE12_VARIANTS)
+    expect(PHASE12_PROTECTED_RELEASE_SELECTIONS.flh!.approvalGeneration).toBeGreaterThan(
+      retired.approvalGeneration
+    );
+    for (const variant of ['short_deck', 'pineapple', 'flo8'] as const)
       expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
   });
 
@@ -312,12 +310,12 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
     ).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('each live main-scheduler gate refuses its selection until requalified (digest moved 2026-10-16); an unselected gate accepts no receipt', () => {
+  it('each live main-scheduler gate is usable exactly when its pack is selected; an unselected gate accepts no receipt', () => {
     for (const variant of HORSE_PHASE12_VARIANTS) {
       const gate = liveHorsePhase12Authorities[variant];
       gate.refresh();
       const isSelected = PHASE12_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
-      expect(gate.mainState(), variant).toBe(isSelected ? 'refused' : 'unselected');
+      expect(gate.mainState(), variant).toBe(isSelected ? 'usable' : 'unselected');
       if (isSelected) continue;
       const worker = new HorseQualifiedAuthorityHolder(
         `p123-null-${variant}`,
@@ -377,7 +375,7 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
   // measured policy digest no longer runs, which no admission can accept.
   // Since the generation-2 FLH selection (2026-10-12) the only qualified:true
   // FLH qualification on the running FLH policy digest is the selected one.
-  it('every qualified:true qualification of each pack was measured on a policy that no longer runs (2026-10-16), the selected one included', () => {
+  it('the only qualified:true qualification of each pack is the one its selection names, or one measured on a policy that no longer runs', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase12/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -390,17 +388,17 @@ describe('P12.3 the declared-work change (2026-10-16) requires fresh qualificati
         const named =
           PHASE12_PROTECTED_RELEASE_SELECTIONS[variant]?.qualificationPath ===
           `docs/evidence/phase12/${file}`;
-        // The opponent-exploit change moved the running digest: no file,
-        // the selected one included, measured this code.
-        expect(parsed.policyDigest, file).not.toBe(horsePhase12PolicyDigest(variant));
-        if (named) qualifiedSelected.push(`${variant}:${file}`);
+        if (!named) expect(parsed.policyDigest, file).not.toBe(horsePhase12PolicyDigest(variant));
+        else {
+          expect(parsed.policyDigest, file).toBe(horsePhase12PolicyDigest(variant));
+          qualifiedSelected.push(`${variant}:${file}`);
+        }
       }
       if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA)
         expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
-    // Every selected pack names a qualified:true file on its running policy;
-    // since 2026-10-16 none is selected.
-    expect(qualifiedSelected).toEqual([]);
+    // Every selected pack names a qualified:true file on its running policy.
+    expect(qualifiedSelected).toEqual(['flh:d9190c9e/phase12-qualification-2026-10-17-flh.json']);
   });
 });
 

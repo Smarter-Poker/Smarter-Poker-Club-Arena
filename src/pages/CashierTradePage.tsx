@@ -1834,7 +1834,7 @@ function CashierTradeWorkspace() {
     return () => {
       live = false;
     };
-  }, [clubUuid, roleResolved, myRole, visibleWalletIds]);
+  }, [clubUuid, roleResolved, myRole, visibleWalletIds, downline]);
 
   const agencyBalance = useMemo(() => sumChips(recipients.map((r) => r.chipBalance)), [recipients]);
 

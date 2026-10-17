@@ -2201,6 +2201,7 @@
 }
 
 .console .playerCardName {
+  display: block;
   overflow: visible;
   text-overflow: clip;
   font-size: calc(4.5cqw * var(--fit, 1));

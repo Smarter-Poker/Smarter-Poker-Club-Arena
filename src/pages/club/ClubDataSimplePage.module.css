@@ -292,6 +292,20 @@
   line-height: 1.15;
 }
 
+.agentScopeBanner {
+  margin: 8px 16px 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(111, 220, 255, 0.08);
+  border: 1px solid var(--cd-hairline);
+  color: var(--cd-accent);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .liveLine {
   display: flex;
   align-items: center;

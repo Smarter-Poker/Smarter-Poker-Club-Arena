@@ -20,6 +20,7 @@ import { readClubContextParam, withClubContext } from '../../utils/clubScopedPat
 import { clubIdFromPath } from './clubIdFromPath';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
 import { useHideFooterOnScroll } from './useHideFooterOnScroll';
+import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import styles from './ClubBottomNav.module.css';
 
 interface ClubBottomNavProps {
@@ -38,6 +39,7 @@ interface AccountResolvedClub {
 }
 
 const APPROVED_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-v3.webp`;
+const APPROVED_PLAYER_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-player-v1.webp`;
 
 function useResolvedClubId(explicit?: string, routeClubId?: string | null): string | null {
   const { user } = useAuthUser();
@@ -143,6 +145,27 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
     [location.pathname, location.search]
   );
   const resolvedClubId = useResolvedClubId(clubId, routeClubId);
+  const workspace = useClubWorkspace();
+  const effectiveRole = workspace.clubRole;
+  // Route check: probe route dev/footer always displays all 6 approved controls
+  const isDevFooter = location.pathname.includes('/dev/footer');
+  // Regular player accounts do not see the Data tab; club staff, owners, and agents do.
+  const isPlayer =
+    effectiveRole === 'member' || effectiveRole === 'player' || effectiveRole === 'guest';
+  const canSeeData =
+    isDevFooter ||
+    workspace.isClubStaff ||
+    workspace.isPlatformStaff ||
+    workspace.canViewFinance ||
+    effectiveRole === 'owner' ||
+    effectiveRole === 'co_owner' ||
+    effectiveRole === 'admin' ||
+    effectiveRole === 'super_agent' ||
+    effectiveRole === 'agent' ||
+    effectiveRole === 'sub_agent' ||
+    (!resolvedClubId && !isPlayer) ||
+    (!isPlayer && !effectiveRole);
+
   const activeTab = useMemo(() => activeTabForPath(location.pathname), [location.pathname]);
   const { hidden, reveal } = useHideFooterOnScroll(location.pathname);
   const navRef = useRef<HTMLElement | null>(null);
@@ -150,7 +173,7 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
 
   const destinations = useMemo<FooterDestination[]>(() => {
     const clubRoot = resolvedClubId ? `/clubs/${resolvedClubId}` : null;
-    return [
+    const items: FooterDestination[] = [
       {
         key: 'diamond-spins',
         label: 'Diamond Spins',
@@ -158,20 +181,20 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
       },
       { key: 'players', label: 'Players', to: clubRoot ? `${clubRoot}/members` : '/players' },
       { key: 'cashier', label: 'Cashier', to: clubRoot ? `${clubRoot}/cashier` : '/cashier' },
-      /* Market and Stats have no club-scoped ROUTE, so they used to be
-         hardcoded global while the four cells around them were club-aware —
-         the same footer both keeping and dropping the club depending on which
-         cell you pressed. Both pages read `?club=`, and `resolvedClubId` was
-         already sitting right here; `withClubContext` supplies it. */
       {
         key: 'marketplace',
         label: 'Market',
         to: withClubContext('/marketplace', resolvedClubId),
       },
-      { key: 'data', label: 'Data', to: clubRoot ? `${clubRoot}/data` : '/data' },
-      { key: 'stats', label: 'Stats', to: withClubContext('/stats', resolvedClubId) },
     ];
-  }, [resolvedClubId]);
+    if (canSeeData) {
+      items.push({ key: 'data', label: 'Data', to: clubRoot ? `${clubRoot}/data` : '/data' });
+    }
+    items.push({ key: 'stats', label: 'Stats', to: withClubContext('/stats', resolvedClubId) });
+    return items;
+  }, [resolvedClubId, canSeeData]);
+
+  const footerArt = canSeeData ? APPROVED_FOOTER_ART : APPROVED_PLAYER_FOOTER_ART;
 
   return (
     <nav
@@ -194,7 +217,7 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
         <div className={styles.artwork}>
           <img
             className={styles.artworkImage}
-            src={APPROVED_FOOTER_ART}
+            src={footerArt}
             alt=""
             width="1916"
             height="256"
@@ -210,7 +233,7 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
             />
           </div>
           <span className={styles.diamondGlint} aria-hidden="true" />
-          <ul className={styles.navItems}>
+          <ul className={canSeeData ? styles.navItems : styles.navItemsFive}>
             {destinations.map((destination) => (
               <li key={destination.key} className={styles.navCell}>
                 <Link

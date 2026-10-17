@@ -74,6 +74,7 @@ interface Snapshot {
   range: { start: string; end: string; days: number };
   summary: ClubDataSummary;
   rows: ClubDataRow[];
+  scope?: 'club' | 'downline';
   generated_at?: string;
 }
 
@@ -185,6 +186,7 @@ export default function ClubDataSimplePage() {
   const clubParam = params.clubId || searchParams.get('club') || '';
 
   const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
+  const [clubName, setClubName] = useState<string>('');
   const [preset, setPreset] = useState<Preset>(1);
   const [endDate, setEndDate] = useState<string>(() => utcToday());
   const [game, setGame] = useState<GameFilter>('ALL');
@@ -231,6 +233,26 @@ export default function ClubDataSimplePage() {
       dead = true;
     };
   }, [clubParam]);
+
+  // Fetch club name for the header
+  useEffect(() => {
+    if (!clubUuid) return;
+    if (typeof supabase?.from !== 'function') return;
+    let dead = false;
+    void supabase
+      .from('clubs')
+      .select('name')
+      .eq('id', clubUuid)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!dead && data?.name) {
+          setClubName(data.name);
+        }
+      });
+    return () => {
+      dead = true;
+    };
+  }, [clubUuid]);
 
   // A new filter or window starts a fresh picture: the old one described
   // something else and must not sit under the new heading.
@@ -334,7 +356,7 @@ export default function ClubDataSimplePage() {
   if (denied) {
     return (
       <div className={styles.page}>
-        <Header onBack={() => navigate(-1)} />
+        <Header clubName={clubName} onBack={() => navigate(-1)} />
         <div className={styles.empty}>
           <SpadeMark />
           <p className={styles.emptyText}>
@@ -345,12 +367,17 @@ export default function ClubDataSimplePage() {
     );
   }
 
+  const isDownlineScope = snapshot?.scope === 'downline';
+
   return (
     <div className={styles.page}>
       <Header
+        clubName={clubName}
         onBack={() => navigate(-1)}
-        onAdvanced={() => navigate(`/clubs/${clubKey}/data/advanced`)}
+        onAdvanced={isDownlineScope ? undefined : () => navigate(`/clubs/${clubKey}/data/advanced`)}
       />
+
+      {isDownlineScope && <div className={styles.agentScopeBanner}>You And Your Downline</div>}
 
       <div className={styles.rangeBar}>
         <button
@@ -553,7 +580,16 @@ export default function ClubDataSimplePage() {
   );
 }
 
-function Header({ onBack, onAdvanced }: { onBack: () => void; onAdvanced?: () => void }) {
+function Header({
+  clubName,
+  onBack,
+  onAdvanced,
+}: {
+  clubName?: string;
+  onBack: () => void;
+  onAdvanced?: () => void;
+}) {
+  const titleText = clubName ? `${clubName.toUpperCase()} - CLUB DATA` : 'Club Data';
   return (
     <header className={styles.header}>
       <button type="button" className={styles.back} onClick={onBack} aria-label="Back">
@@ -561,7 +597,7 @@ function Header({ onBack, onAdvanced }: { onBack: () => void; onAdvanced?: () =>
           <path d="M12 5 L5 12 L12 19 M19 5 L12 12 L19 19" />
         </svg>
       </button>
-      <h1 className={styles.title}>Club Data</h1>
+      <h1 className={styles.title}>{titleText}</h1>
       {onAdvanced ? (
         <button type="button" className={styles.headerAction} onClick={onAdvanced}>
           Report

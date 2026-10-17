@@ -135,6 +135,17 @@
   list-style: none;
 }
 
+.navItemsFive {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 24.6fr 18.3fr 17.6fr 17.3fr 22.2fr;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
 .navCell {
   display: flex;
   min-width: 0;

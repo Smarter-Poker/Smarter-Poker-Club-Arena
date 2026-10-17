@@ -27,7 +27,11 @@ vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) },
-    from: () => ({ select: () => ({ eq: () => ({ order: () => ({ limit: mocks.history }) }) }) }),
+    from: () => ({
+      select: () => ({
+        eq: () => ({ order: () => ({ order: () => ({ range: mocks.history }) }) }),
+      }),
+    }),
   },
 }));
 import DiamondWalletModal from '../../src/components/wallet/DiamondWalletModal';

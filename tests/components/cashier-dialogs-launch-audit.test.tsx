@@ -88,6 +88,7 @@ vi.mock('../../src/lib/supabase', () => ({
         },
         or: () => q,
         limit: () => q,
+        range: () => q,
         order: () => q,
         abortSignal: () => q,
         maybeSingle: () => fx.tables(table, filters),
@@ -674,9 +675,13 @@ describe('D-13: the Diamond Wallet holds its door while a transfer travels', () 
     await settle();
 
     fireEvent.keyDown(document, { key: 'Escape' });
-    fireEvent.click(view.container.querySelector('.diamond-wallet-backdrop')!);
+    fireEvent.click(document.querySelector('.diamond-wallet-backdrop')!);
     fireEvent.click(screen.getByText('Back', { selector: '.sc-plate__text' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    /* The desk's Close is under the sheet: inert and hidden from assistive
+       tech while the sheet is up (2026-10-17), and disabled while money moves. */
+    const deskClose = screen.getByRole('button', { name: 'Close', hidden: true });
+    expect(deskClose.closest('[inert]')).not.toBeNull();
+    fireEvent.click(deskClose);
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByTestId('sc-close')).toBeNull();
     // The sheet itself is still open: Back did not dismiss a travelling transfer.

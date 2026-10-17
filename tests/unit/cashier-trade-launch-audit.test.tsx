@@ -1225,6 +1225,16 @@ it('Phase 4: shows the selected identity, separate player balance and actual sen
   expect(within(dialog).getByRole('region', { name: 'From Your Agent Wallet' })).toHaveTextContent(
     '500'
   );
+  const funding = within(dialog).getByRole('region', { name: 'From Your Agent Wallet' });
+  const source = within(funding).getByRole('combobox', { name: 'Send From' });
+  expect(source.parentElement).toBe(funding);
+  const fundingFace = funding.cloneNode(true) as HTMLElement;
+  fundingFace.querySelector('select')!.remove();
+  expect(fundingFace.textContent).toContain('From Your Agent Wallet');
+  expect(fundingFace.textContent?.match(/500\.00/g)).toHaveLength(1);
+  expect(
+    within(source).getByRole('option', { name: 'From Your Agent Wallet: 500.00' })
+  ).toBeInTheDocument();
   expect(dialog).not.toHaveTextContent('Amount Per Player');
   fireEvent.click(within(dialog).getByRole('button', { name: 'Send Ticket' }));
   expect(within(dialog).getByRole('region', { name: 'From Your Player Wallet' })).toHaveTextContent(

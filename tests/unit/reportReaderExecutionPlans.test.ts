@@ -6,6 +6,23 @@ const read = (path: string) => readFileSync(path, 'utf8');
 const migration = '20261018183243_report_reader_generic_plans_retain_bounded_bitmap_scans.sql';
 
 describe('qualified report execution settings', () => {
+  it('uses the qualified generic bitmap plan on the first call as well as warm backends', () => {
+    const sql = read(
+      'supabase/migrations/20261018195533_bomb_catchup_retains_its_qualified_generic_bitmap_plan.sql'
+    );
+    expect(sql).toContain('SET plan_cache_mode=force_generic_plan');
+    expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION|ALTER ROLE|ALTER DATABASE/);
+    const runner = read('scripts/dev/test-statement-availability-postgres.sh');
+    expect(runner).toContain(
+      '20261018195533_bomb_catchup_retains_its_qualified_generic_bitmap_plan.sql'
+    );
+    expect(runner).toContain('bomb-plan-cache-after.sql');
+    expect(runner).toContain('cache-replay.log');
+    const native = read('tests/fixtures/union-statement-availability/bomb-plan-cache-after.sql');
+    expect(native).toContain('18e6c2541c8d13062478fe22b4670147');
+    expect(native).toContain('has_function_privilege');
+    expect(native).toContain('cache setting escaped its call');
+  });
   it('body source resolution ignores settings-only migrations', () => {
     const source = latestDeclaring('ca_rake_snapshot');
     expect(source.name).not.toBe(migration);

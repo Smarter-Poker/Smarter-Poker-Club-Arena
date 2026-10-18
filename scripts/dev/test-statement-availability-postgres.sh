@@ -38,4 +38,9 @@ grep -q 'Bomb report source changed' "$work/bomb-replay.log"
 "${psql[@]}" -f "$repo/tests/fixtures/union-statement-availability/rake-snapshot-before.sql" -f "$repo/supabase/migrations/20261018183243_report_reader_generic_plans_retain_bounded_bitmap_scans.sql" -f "$repo/tests/fixtures/union-statement-availability/reader-settings-after.sql"
 if "${psql[@]}" -f "$repo/supabase/migrations/20261018183243_report_reader_generic_plans_retain_bounded_bitmap_scans.sql" >"$work/settings-replay.log" 2>&1; then echo 'Reader settings replay allowed' >&2; exit 1; fi
 grep -q 'Report reader source or settings changed' "$work/settings-replay.log"
+if "${psql[@]}" -f "$repo/tests/fixtures/union-statement-availability/bomb-plan-cache-after.sql" >"$work/cache-before.log" 2>&1; then echo 'Old custom plan unexpectedly qualified' >&2; exit 1; fi
+grep -q 'Bomb catchup qualified generic plan or source changed' "$work/cache-before.log"
+"${psql[@]}" -f "$repo/supabase/migrations/20261018195533_bomb_catchup_retains_its_qualified_generic_bitmap_plan.sql" -f "$repo/tests/fixtures/union-statement-availability/bomb-plan-cache-after.sql"
+if "${psql[@]}" -f "$repo/supabase/migrations/20261018195533_bomb_catchup_retains_its_qualified_generic_bitmap_plan.sql" >"$work/cache-replay.log" 2>&1; then echo 'Bomb plan cache replay allowed' >&2; exit 1; fi
+grep -q 'Bomb catchup plan source or settings changed' "$work/cache-replay.log"
 echo 'Statement availability PostgreSQL17 fail-before/pass-after, source preservation, authorization and replay refusal passed.'

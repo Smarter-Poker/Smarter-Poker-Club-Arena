@@ -452,3 +452,64 @@ test('targets are chosen by template, and the old 6 and 9 inputs still name Acti
     /No Pilot Target Selected/
   );
 });
+
+const measuredSignal = {
+  id: 8,
+  pattern_type: 'TIMING_CORRELATION',
+  source: 'engine',
+  severity: 'high',
+  status: 'open',
+  player_a: '07db1c71-d567-46dd-8f92-e922b6d470ae',
+  player_b: '285055c6-96a7-4a60-9033-51f83f49dbcb',
+  evidence: {
+    latest_window_end: '2026-10-17T19:27:00+00:00',
+    correlation_method: 'pooled_paired_hand_moments',
+    correlation_hands: 32,
+    latency_corr: 0.7681,
+    hands_together: 39,
+    fast_follows: 6,
+  },
+};
+const measuredGame = {
+  ...game6,
+  id: '56d5d6f0-23e9-41b0-b407-852aa1026c2a',
+  cluster_mode: 'lightning',
+  lightning_enabled: true,
+};
+test('the separately investigated measured finding can be reviewed without clearing it or changing play', async () => {
+  const f = fakeClients({ signals: [measuredSignal], games: [measuredGame] });
+  await runPilotStage(
+    { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: '8' },
+    f.factory
+  );
+  const writes = f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].args.p_status, 'reviewed');
+  assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_control').length, 0);
+});
+test('measured review refuses changed evidence, another pair, another cluster and an uninvestigated ID', async () => {
+  for (const [signal, game, id] of [
+    [
+      { ...measuredSignal, evidence: { ...measuredSignal.evidence, correlation_hands: 33 } },
+      measuredGame,
+      '8',
+    ],
+    [
+      { ...measuredSignal, evidence: { ...measuredSignal.evidence, latency_corr: 0.8 } },
+      measuredGame,
+      '8',
+    ],
+    [{ ...measuredSignal, player_a: OP }, measuredGame, '8'],
+    [measuredSignal, game6, '8'],
+    [{ ...measuredSignal, id: 9 }, measuredGame, '9'],
+  ]) {
+    const f = fakeClients({ signals: [signal], games: [game] });
+    await assert.rejects(
+      runPilotStage(
+        { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: id },
+        f.factory
+      )
+    );
+    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
+  }
+});

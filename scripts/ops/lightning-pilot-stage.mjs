@@ -170,9 +170,9 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
   const signalId = Number(env.PILOT_SIGNAL_ID);
   if (
     stage === 'review' &&
-    (wanted.length !== 1 || !Number.isSafeInteger(signalId) || signalId < 1 || signalId > 7)
+    (wanted.length !== 1 || !Number.isSafeInteger(signalId) || signalId < 1 || signalId > 8)
   )
-    throw new Error('Review Requires One Target And One Of The Seven Investigated Pilot Findings');
+    throw new Error('Review Requires One Target And One Investigated Pilot Finding');
   const report = {
     stage,
     operationId: operationId || null,
@@ -258,12 +258,29 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
         ? detail.integrity_signals.filter((s) => Number(s.id) === signalId)
         : [];
       const signal = matches[0];
+      // Finding 8 is a separate, measured timing review, not one of the
+      // legacy short-sample findings. Preserve its exact evidence and live
+      // workload; this door only records reviewed, never cleared/actioned.
+      const measured =
+        signalId === 8 &&
+        game.id === '56d5d6f0-23e9-41b0-b407-852aa1026c2a' &&
+        signal?.player_a === '07db1c71-d567-46dd-8f92-e922b6d470ae' &&
+        signal?.player_b === '285055c6-96a7-4a60-9033-51f83f49dbcb' &&
+        signal?.evidence?.latest_window_end === '2026-10-17T19:27:00+00:00' &&
+        signal.evidence.correlation_method === 'pooled_paired_hand_moments' &&
+        signal.evidence.correlation_hands === 32 &&
+        signal.evidence.latency_corr === 0.7681 &&
+        signal.evidence.hands_together === 39 &&
+        signal.evidence.fast_follows === 6;
+      const legacy =
+        signalId <= 7 &&
+        game.cluster_mode === 'must_move' &&
+        game.lightning_enabled === false &&
+        Number.isFinite(Date.parse(signal?.evidence?.latest_window_end)) &&
+        Date.parse(signal.evidence.latest_window_end) <= Date.parse('2026-10-15T20:55:08.098Z') &&
+        signal.evidence.correlation_method == null;
       if (
-        game.cluster_mode !== 'must_move' ||
-        game.lightning_enabled !== false ||
-        !Number.isFinite(Date.parse(signal?.evidence?.latest_window_end)) ||
-        Date.parse(signal.evidence.latest_window_end) > Date.parse('2026-10-15T20:55:08.098Z') ||
-        signal.evidence.correlation_method != null ||
+        !(measured || legacy) ||
         detail?.ok !== true ||
         detail.cluster_id !== game.id ||
         matches.length !== 1 ||

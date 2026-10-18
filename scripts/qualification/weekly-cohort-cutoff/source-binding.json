@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 228031,
-      "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
+      "bytes": 228284,
+      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -144,6 +144,21 @@
     "currentWorkflow": {
       "bytes": 228031,
       "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
+    }
+  },
+  "onTimeThawInputIdentity20261018": {
+    "reason": "Add isolated on-time maintenance qualification to existing required accounting. Current workflow input identity only; all financial source, assertions and prior qualification statuses retained. No financial certificate restamp.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 228031,
+          "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
+        },
+        "current": {
+          "bytes": 228284,
+          "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+        }
+      }
     }
   }
 }

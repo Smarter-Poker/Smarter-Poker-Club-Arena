@@ -518,7 +518,7 @@ describe('action latency: each leg per window, p50/p95 on the live side', () => 
     s.metrics.observeLatency('fold_ack', 99_999, uid(2)); // another Cluster
     s.metrics.observeLatency('fold_ack', 99_999); // unattributed
     s.metrics.noteIdle(POP[0], s.now() - 700, 'fast', CLUSTER);
-    s.metrics.noteMatched([POP[0]], s.now());
+    s.metrics.noteMatched([POP[0]], s.now(), CLUSTER);
     s.advance(61_000);
     await s.worker.pass();
     await s.runner.settled();

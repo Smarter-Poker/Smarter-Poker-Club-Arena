@@ -50,28 +50,47 @@ function WinLossRow({ label, figure }: { label: string; figure: WinLossFigure })
   );
 }
 
-export default function MemberWinLossCard({ clubId, userId }: { clubId: string; userId: string }) {
-  const [data, setData] = useState<MemberWinLoss | null>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'error' | 'hidden'>('loading');
+export default function MemberWinLossCard({
+  clubId,
+  userId,
+  refreshKey = 0,
+}: {
+  clubId: string;
+  userId: string;
+  refreshKey?: number;
+}) {
+  const scope = `${clubId}:${userId}`;
+  type Result = {
+    scope: string;
+    state: 'loading' | 'ready' | 'error' | 'hidden';
+    data: MemberWinLoss | null;
+  };
+  const [result, setResult] = useState<Result>({ scope, state: 'loading', data: null });
+  const current: Result = result.scope === scope ? result : { scope, state: 'loading', data: null };
+  const { data, state } = current;
 
   useEffect(() => {
     const controller = new AbortController();
-    setState('loading');
-    // Inside a promise so a synchronous throw is handled like a failed read.
+    // Keep a verified card in place during a background refresh. A changed
+    // club/member gets its own loading state and never sees the former record.
+    setResult((previous) =>
+      previous.scope === scope && previous.state === 'ready'
+        ? previous
+        : { scope, state: 'loading', data: null }
+    );
     Promise.resolve()
       .then(() => ClubRosterService.getMemberWinLoss(clubId, userId, controller.signal))
-      .then((result) => {
+      .then((data) => {
         if (controller.signal.aborted) return;
-        setData(result);
-        setState(result ? 'ready' : 'hidden');
+        setResult({ scope, data, state: data ? 'ready' : 'hidden' });
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
         reportError(error, 'MemberWinLossCard.Load');
-        setState('error');
+        setResult({ scope, data: null, state: 'error' });
       });
     return () => controller.abort();
-  }, [clubId, userId]);
+  }, [clubId, userId, scope, refreshKey]);
 
   if (state === 'hidden') return null;
 

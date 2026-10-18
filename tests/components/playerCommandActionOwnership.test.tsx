@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
     userId: '11111111-1111-4111-8111-111111111111',
   } as Record<string, string>,
   viewerId: 'viewer-1',
+  viewerRole: 'owner',
   navigate: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   getMemberDetail: vi.fn(),
@@ -21,6 +22,10 @@ const state = vi.hoisted(() => ({
   roster: vi.fn(),
   wallet: vi.fn(),
   memberChannel: null as null | { onPayload: (value: unknown) => void },
+  recordChannel: null as null | {
+    onPayload: (value: unknown) => void;
+    onSubscriptionStatus?: (status: string) => void;
+  },
   walletChannel: null as null | { onPayload: (value: unknown) => void },
 }));
 
@@ -40,6 +45,7 @@ vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
     event: string;
     onPayload: (value: unknown) => void;
   }) => {
+    if (options.event === 'record_changed') state.recordChannel = options;
     if (options.event === 'wallet_changed') state.walletChannel = options;
   },
 }));
@@ -70,7 +76,7 @@ vi.mock('../../src/lib/supabase', () => ({
         maybeSingle: async () =>
           table === 'club_diamond_wallets'
             ? state.wallet()
-            : { data: { role: 'owner' }, error: null },
+            : { data: { role: state.viewerRole }, error: null },
       });
       return chain;
     },
@@ -189,6 +195,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 beforeEach(() => {
+  state.viewerRole = 'owner';
   state.memberChannel = null;
   state.walletChannel = null;
   state.wallet.mockResolvedValue({ data: { balance: 100 }, error: null });
@@ -499,4 +506,68 @@ it('complete access loss removes the old record and cannot be restored by a dela
   expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
   await act(async () => pending.resolve(memberDetail));
   expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+});
+
+it('updates every record section on a source event while preserving an unsaved note', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const nickname = screen.getByDisplayValue('The Closer');
+  fireEvent.change(nickname, { target: { value: 'Unsaved Local Name' } });
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    identity: { ...memberDetail.identity, alias: 'Updated Shark', nickname: 'Remote Name' },
+    presence: { is_online: false, is_seated: false },
+    stats: { ...memberDetail.stats, hands: 321, total_winnings: -44 },
+    downline: { downline_direct: 3, downline_total: 8 },
+  });
+  await act(async () =>
+    state.recordChannel?.onPayload({ payload: { user_id: state.params.userId } })
+  );
+  expect(await screen.findByText('Updated Shark')).toBeInTheDocument();
+  expect(screen.getByText('Last Active')).toBeInTheDocument();
+  expect(screen.getByText('321')).toBeInTheDocument();
+  expect(screen.getByText('-44.00')).toBeInTheDocument();
+  expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
+});
+
+it('reconciles on focus and a recovered record subscription', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const baseline = state.getMemberDetail.mock.calls.length;
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBeGreaterThan(baseline));
+  const focused = state.getMemberDetail.mock.calls.length;
+  await act(async () => state.recordChannel?.onSubscriptionStatus?.('SUBSCRIBED'));
+  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBeGreaterThan(focused));
+});
+
+it('coalesces source bursts and reads again after an event arrives during a read', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const pending = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(pending.promise);
+  const before = state.getMemberDetail.mock.calls.length;
+  await act(async () => {
+    state.recordChannel?.onPayload({});
+    state.recordChannel?.onPayload({});
+    state.recordChannel?.onPayload({});
+  });
+  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBe(before + 1));
+  await act(async () => pending.resolve(memberDetail));
+  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBe(before + 2));
+});
+
+it('refreshes role options when the viewer authority changes on the mounted record', async () => {
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: { ...memberDetail.capabilities, can_manage_role: true },
+  });
+  state.getGrantableRoles.mockResolvedValue(['admin']);
+  render(<MemberManagementPage />);
+  await screen.findByRole('button', { name: /^Admin/ });
+  state.viewerRole = 'agent';
+  state.getGrantableRoles.mockResolvedValue(['sub_agent']);
+  await act(async () => state.recordChannel?.onPayload({}));
+  expect(await screen.findByRole('button', { name: /^Sub Agent/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
 });

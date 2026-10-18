@@ -1,0 +1,16 @@
+{
+  "_owner": "fix/member-data-audit-20261018. Prepared migrations 20261018135655 and 20261018140249; production installation remains pending and must be verified separately. These are promised names, not a live-schema observation.",
+  "tables": ["member_record_daily_facts", "member_record_daily_facts_state"],
+  "functions": [
+    "ca_member_record_can_subscribe",
+    "ca_member_record_daily_facts",
+    "fn_member_record_daily_delete",
+    "fn_member_record_daily_insert",
+    "fn_member_record_daily_update",
+    "fn_member_record_fact_club",
+    "fn_publish_member_record_facts",
+    "fn_publish_member_record_row",
+    "fn_publish_member_record_transaction",
+    "fn_publish_member_record_user"
+  ]
+}

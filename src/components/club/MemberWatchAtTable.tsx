@@ -26,6 +26,7 @@ export interface MemberWatchAtTableProps {
   memberUserId: string;
   /** presence.is_seated from the record; nothing is fetched while false. */
   seated: boolean;
+  refreshKey?: number;
   /** Printed instead while no live table is known. */
   fallback?: ReactNode;
 }
@@ -34,6 +35,7 @@ export default function MemberWatchAtTable({
   clubUuid,
   memberUserId,
   seated,
+  refreshKey = 0,
   fallback = null,
 }: MemberWatchAtTableProps) {
   const navigate = useNavigate();
@@ -61,7 +63,7 @@ export default function MemberWatchAtTable({
     return () => {
       generationRef.current += 1;
     };
-  }, [clubUuid, memberUserId, seated]);
+  }, [clubUuid, memberUserId, seated, refreshKey]);
 
   if (!table) return <>{fallback}</>;
 

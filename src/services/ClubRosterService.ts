@@ -559,6 +559,10 @@ export const ClubRosterService = {
       throw new Error('The Member Response Was Incomplete');
     }
     const d = (data ?? {}) as Record<string, any>;
+    // Removed/deleted members have an intentionally minimal SQL sentinel.
+    // It is an unavailable record, not a malformed financial envelope.
+    if (d.identity && typeof d.identity === 'object' && d.identity.user_id === null)
+      throw new MemberAccessDeniedError();
     // SQL deliberately redacts the three sensitive objects to null for an
     // identity-only viewer. A populated object must carry every owning SQL metric.
     const sensitive = d.capabilities?.can_view_financials === true;

@@ -213,3 +213,40 @@ describe('the migration measures money, under the record access rule', () => {
     );
   });
 });
+
+it('refreshes the mounted win/loss card when its record changes', async () => {
+  const spy = vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue(record);
+  const view = render(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={0} />);
+  await screen.findByText('+70');
+  spy.mockResolvedValue({ ...record, today: figure(77, 0) });
+  view.rerender(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={1} />);
+  expect(await screen.findByText('+77')).toBeInTheDocument();
+});
+
+it('keeps verified figures visible during an in-flight background refresh', async () => {
+  const spy = vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue(record);
+  const view = render(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={0} />);
+  await screen.findByText('+70');
+  let finish!: (data: MemberWinLoss) => void;
+  spy.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    })
+  );
+  view.rerender(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={1} />);
+  await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+  expect(screen.getByText('+70')).toBeInTheDocument();
+  expect(screen.queryByText('Loading Win And Loss...')).not.toBeInTheDocument();
+  finish({ ...record, today: figure(88, 0) });
+  expect(await screen.findByText('+88')).toBeInTheDocument();
+});
+
+it('withdraws the old card immediately when the member changes', async () => {
+  const spy = vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue(record);
+  const view = render(<MemberWinLossCard clubId="club-1" userId="player-1" />);
+  await screen.findByText('+70');
+  spy.mockReturnValueOnce(new Promise(() => {}));
+  view.rerender(<MemberWinLossCard clubId="club-1" userId="player-2" />);
+  expect(screen.queryByText('+70')).not.toBeInTheDocument();
+  expect(screen.getByText('Loading Win And Loss...')).toBeInTheDocument();
+});

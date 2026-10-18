@@ -108,4 +108,15 @@ AS $function$
     FROM (SELECT DISTINCT r.union_id FROM unnest(p_union_ids) r(union_id)) requested;
 $function$;
 
+-- Signed-in players and the engine only, exactly as production already holds
+-- them (PUBLIC and anon have no EXECUTE). Restated so the file says so.
+REVOKE ALL ON FUNCTION public.fn_batch_club_realtime_member_counts(uuid[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_batch_club_realtime_member_counts(uuid[]) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_get_club_realtime_member_count(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_get_club_realtime_member_count(uuid) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_batch_club_member_counts(uuid[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_batch_club_member_counts(uuid[]) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_batch_union_realtime_member_counts(uuid[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_batch_union_realtime_member_counts(uuid[]) TO authenticated, service_role;
+
 COMMIT;

@@ -48,4 +48,9 @@ AS $function$
    GROUP BY requested.union_id;
 $function$;
 
+-- Signed-in players and the engine only, exactly as production already holds
+-- them (PUBLIC and anon have no EXECUTE). Restated so the file says so.
+REVOKE ALL ON FUNCTION public.fn_batch_union_realtime_member_counts(uuid[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_batch_union_realtime_member_counts(uuid[]) TO authenticated, service_role;
+
 COMMIT;

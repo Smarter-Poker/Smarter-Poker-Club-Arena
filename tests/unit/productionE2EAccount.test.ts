@@ -586,7 +586,18 @@ describe('post-deploy production account', () => {
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1);
   });
 
-  it.each(['created', 'unknown', 'probe-refused', 'rollback-refused', 'recovered'])(
+  it.each([
+    'created',
+    'unknown',
+    'probe-refused',
+    'rollback-refused',
+    'recovered',
+    'schedule-missing',
+    'schedule-foreign',
+    'schedule-refused',
+    'schedule-active',
+    'recovered-active',
+  ])(
     'owns a standalone template request through %s without touching a player club',
     async (mode) => {
       const directory = mkdtempSync(join(tmpdir(), 'production-e2e-owned-template-'));
@@ -617,21 +628,65 @@ describe('post-deploy production account', () => {
         requires_approval: true,
       };
       const member = { role: 'owner', status: 'active', chip_balance: 0 };
+      const schedule = {
+        id: '00000000-0000-4000-8000-000000000099',
+        club_id: clubId,
+        union_id: null,
+        active: false,
+      };
       const operations: string[] = [];
       const claims = { sub: USER_ID, role: 'authenticated' };
       const token = `header.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`;
       const client = {
         connect: vi.fn(),
         end: vi.fn(),
-        query: vi.fn(async (sql: string) => {
+        query: vi.fn(async (sql: string, parameters?: unknown[]) => {
           operations.push(sql);
+          if (sql === 'COMMIT' && mode === 'unknown')
+            throw new Error('transport acknowledgement unknown');
           if (sql === 'ROLLBACK' && mode === 'rollback-refused')
             throw new Error('rollback refused');
           if (sql.includes('fn_create_club_atomic')) {
+            const record = JSON.parse(readFileSync(accountPath, 'utf8'));
+            expect(record.templateFixtureRequest.requestId).toBe(requestId);
+            expect(parameters).toEqual([
+              requestId,
+              club.name,
+              'Disposable post-deploy standalone template certificate',
+              'royal-blue',
+              false,
+              true,
+              null,
+            ]);
             if (mode === 'probe-refused') throw new Error('probe refused');
             return { rows: [{ club }] };
           }
           if (sql.includes('FROM public.club_members')) return { rows: [member] };
+          if (sql.includes('FROM public.club_welcome_package_items'))
+            return {
+              rows:
+                mode === 'schedule-missing'
+                  ? []
+                  : [
+                      {
+                        ...schedule,
+                        club_id: mode === 'schedule-foreign' ? 'foreign-club' : clubId,
+                      },
+                    ],
+            };
+          if (sql.includes('fn_delete_tournament_schedule'))
+            return {
+              rows: [
+                {
+                  result:
+                    mode === 'schedule-refused'
+                      ? { error: 'not_authorised' }
+                      : { ok: true, schedule_id: schedule.id },
+                },
+              ],
+            };
+          if (sql.includes('FROM public.tournament_schedules'))
+            return { rows: [{ ...schedule, active: mode === 'schedule-active' }] };
           return { rows: [] };
         }),
       };
@@ -640,19 +695,13 @@ describe('post-deploy production account', () => {
         if (url.includes('/auth/v1/token')) return Response.json({ access_token: token });
         if (url.includes('/auth/v1/user')) return Response.json({ id: USER_ID });
         if (url.includes('/club_creation_requests?'))
-          return Response.json(mode === 'recovered' ? [{ club_id: clubId }] : []);
-        if (url.includes('/rpc/fn_create_club_atomic')) {
-          operations.push('COMMITTED_API');
-          const record = JSON.parse(readFileSync(accountPath, 'utf8'));
-          expect(record.templateFixtureRequest.requestId).toBe(requestId);
-          expect(JSON.parse(String(init?.body))).toMatchObject({
-            p_request_id: requestId,
-            p_is_public: false,
-            p_requires_approval: true,
-          });
-          if (mode === 'unknown') throw new Error('transport acknowledgement unknown');
-          return Response.json(club);
-        }
+          return Response.json(mode.startsWith('recovered') ? [{ club_id: clubId }] : []);
+        if (url.includes('/rpc/fn_create_club_atomic'))
+          throw new Error('Non-atomic HTTP create forbidden');
+        if (url.includes('/club_welcome_package_items?'))
+          return Response.json([{ entity_id: schedule.id }]);
+        if (url.includes('/tournament_schedules?'))
+          return Response.json([{ ...schedule, active: mode === 'recovered-active' }]);
         if (url.includes('/clubs?')) return Response.json([club]);
         if (url.includes('/club_members?')) return Response.json([member]);
         throw new Error('Unexpected request ' + url);
@@ -662,14 +711,19 @@ describe('post-deploy production account', () => {
         fetchImpl: fetchMock,
         databaseClientFactory: async () => client,
       });
-      if (mode === 'unknown' || mode === 'probe-refused' || mode === 'rollback-refused') {
-        await expect(operation).rejects.toThrow(
-          mode === 'unknown'
-            ? 'acknowledgement unknown'
-            : mode === 'rollback-refused'
-              ? 'rollback refused'
-              : 'probe refused'
-        );
+      const refusals: Record<string, string> = {
+        unknown: 'acknowledgement unknown',
+        'probe-refused': 'probe refused',
+        'rollback-refused': 'rollback refused',
+        'schedule-missing': 'welcome schedule lineage was not exact',
+        'schedule-foreign': 'welcome schedule lineage was not exact',
+        'schedule-refused': 'welcome schedule isolation was refused',
+        'schedule-active': 'welcome schedule remained active',
+        'recovered-active': 'welcome schedule isolation was not verified',
+      };
+      const refusal = refusals[mode];
+      if (refusal) {
+        await expect(operation).rejects.toThrow(refusal);
         expect(existsSync(env.GITHUB_ENV)).toBe(false);
         expect(JSON.parse(readFileSync(accountPath, 'utf8')).templateFixtureRequest.requestId).toBe(
           requestId
@@ -678,20 +732,28 @@ describe('post-deploy production account', () => {
         await expect(operation).resolves.toMatchObject(club);
         expect(readFileSync(env.GITHUB_ENV, 'utf8')).toBe(`E2E_TEMPLATE_CLUB_ID=${clubId}\n`);
       }
-      if (mode === 'recovered') {
+      if (mode.startsWith('recovered')) {
         expect(operations).toEqual([]);
         expect(client.connect).not.toHaveBeenCalled();
       } else {
         expect(operations[0]).toBe('BEGIN');
         expect(operations).toContain('SET LOCAL ROLE authenticated');
         expect(operations).toContain('ROLLBACK');
-        expect(operations).not.toContain('COMMIT');
-        expect(client.end).toHaveBeenCalledTimes(1);
-        if (mode === 'probe-refused' || mode === 'rollback-refused')
-          expect(operations).not.toContain('COMMITTED_API');
-        else
-          expect(operations.indexOf('ROLLBACK')).toBeLessThan(operations.indexOf('COMMITTED_API'));
+        expect(client.end).toHaveBeenCalled();
+        if (mode === 'created' || mode === 'unknown') {
+          const commitIndex = operations.indexOf('COMMIT');
+          const disableIndexes = operations.flatMap((sql, index) =>
+            sql.includes('fn_delete_tournament_schedule') ? [index] : []
+          );
+          expect(disableIndexes).toHaveLength(2);
+          expect(operations.indexOf('ROLLBACK')).toBeLessThan(disableIndexes[1]);
+          expect(disableIndexes[1]).toBeLessThan(commitIndex);
+          expect(client.end).toHaveBeenCalledTimes(2);
+        } else expect(operations).not.toContain('COMMIT');
       }
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url).includes('/rpc/fn_create_club_atomic'))
+      ).toBe(false);
     }
   );
 
@@ -737,6 +799,13 @@ describe('post-deploy production account', () => {
             );
           return { rows: [{ club }] };
         }
+        if (
+          sql.includes('FROM public.club_welcome_package_items') ||
+          sql.includes('FROM public.tournament_schedules')
+        )
+          return { rows: [{ id: 'schedule', club_id: clubId, union_id: null, active: false }] };
+        if (sql.includes('fn_delete_tournament_schedule'))
+          return { rows: [{ result: { ok: true, schedule_id: 'schedule' } }] };
         if (sql.includes('FROM public.club_members'))
           return { rows: [{ role: 'owner', status: 'active', chip_balance: 0 }] };
         return { rows: [] };
@@ -751,6 +820,10 @@ describe('post-deploy production account', () => {
       if (url.includes('/engine_maintenance_break')) return Response.json([]);
       if (url.includes('/rpc/fn_platform_frozen')) return Response.json(++frozenReads < 2);
       if (url.includes('/rpc/fn_create_club_atomic')) return Response.json(club);
+      if (url.includes('/club_welcome_package_items?'))
+        return Response.json([{ entity_id: 'schedule' }]);
+      if (url.includes('/tournament_schedules?'))
+        return Response.json([{ id: 'schedule', club_id: clubId, union_id: null, active: false }]);
       if (url.includes('/clubs?')) return Response.json([club]);
       if (url.includes('/club_members?'))
         return Response.json([{ role: 'owner', status: 'active', chip_balance: 0 }]);
@@ -765,7 +838,7 @@ describe('post-deploy production account', () => {
         wait,
       })
     ).resolves.toMatchObject({ id: clubId });
-    expect(qualifications).toBe(2);
+    expect(qualifications).toBe(3);
     expect(wait).toHaveBeenCalled();
     expect(readFileSync(env.GITHUB_ENV, 'utf8')).toBe(`E2E_TEMPLATE_CLUB_ID=${clubId}\n`);
   });

@@ -522,11 +522,12 @@ export function prepareProductionE2ETemplateMembership({
 
 /** Qualify the unchanged money-writing creation door before committing the
  * owned fixture. Claims come from this reserved account's verified login. */
-export async function qualifyTemplateClubCreate({
+async function createIsolatedTemplateClub({
   environment,
   claims,
   args,
   databaseClientFactory,
+  commit = false,
 }) {
   if (!environment.DATABASE_URL)
     throw new Error('Template fixture creation requires DATABASE_URL for rollback qualification.');
@@ -534,11 +535,15 @@ export async function qualifyTemplateClubCreate({
     ? await databaseClientFactory(environment.DATABASE_URL)
     : new (await import('pg')).Client({
         connectionString: environment.DATABASE_URL,
-        application_name: 'postdeploy-template-create-rollback',
+        application_name: commit
+          ? 'postdeploy-template-create'
+          : 'postdeploy-template-create-rollback',
       });
   await client.connect();
   try {
     await client.query('BEGIN');
+    let completed = false;
+    let failure;
     try {
       await client.query("SET LOCAL statement_timeout = '120s'");
       await client.query("SET LOCAL lock_timeout = '15s'");
@@ -576,12 +581,69 @@ export async function qualifyTemplateClubCreate({
         throw new Error(
           'Rolled-back template creation changed the reserved owner balance or authority.'
         );
+      // The welcome schedule is created synchronously. Disable it through the
+      // normal owner door before this transaction becomes visible to workers;
+      // otherwise a long browser run can spawn/cancel a tournament and create
+      // immutable escrow history that pristine-fixture retirement must refuse.
+      const schedules = await client.query(
+        `SELECT s.id,s.club_id,s.union_id,s.active
+           FROM public.club_welcome_package_items i
+           JOIN public.tournament_schedules s ON s.id=i.entity_id
+          WHERE i.club_id=$1::uuid AND i.entity_kind='tournament_schedule'
+            AND i.retired_at IS NULL`,
+        [club.id]
+      );
+      const schedule = schedules.rows?.[0];
+      if (
+        schedules.rows?.length !== 1 ||
+        !schedule?.id ||
+        schedule.club_id !== club.id ||
+        schedule.union_id !== null
+      )
+        throw new Error('Owned template welcome schedule lineage was not exact.');
+      const disabled = await client.query(
+        'SELECT public.fn_delete_tournament_schedule($1::uuid) AS result',
+        [schedule.id]
+      );
+      if (
+        disabled.rows?.[0]?.result?.ok !== true ||
+        disabled.rows[0].result.schedule_id !== schedule.id
+      )
+        throw new Error('Owned template welcome schedule isolation was refused.');
+      const readback = await client.query(
+        'SELECT id,club_id,union_id,active FROM public.tournament_schedules WHERE id=$1::uuid',
+        [schedule.id]
+      );
+      if (
+        readback.rows?.length !== 1 ||
+        readback.rows[0].id !== schedule.id ||
+        readback.rows[0].club_id !== club.id ||
+        readback.rows[0].union_id !== null ||
+        readback.rows[0].active !== false
+      )
+        throw new Error('Owned template welcome schedule remained active.');
+      await client.query(commit ? 'COMMIT' : 'ROLLBACK');
+      completed = true;
+      return club;
+    } catch (error) {
+      failure = error;
+      throw error;
     } finally {
-      await client.query('ROLLBACK');
+      if (!completed) {
+        try {
+          await client.query('ROLLBACK');
+        } catch (rollbackError) {
+          if (!failure) throw rollbackError;
+        }
+      }
     }
   } finally {
     await client.end();
   }
+}
+
+export async function qualifyTemplateClubCreate(options) {
+  return createIsolatedTemplateClub({ ...options, commit: false });
 }
 
 /** A template book must stay standalone. Provision one private, task-owned
@@ -613,11 +675,7 @@ export async function prepareProductionE2ETemplateFixture({
   const session = await responseBody(login);
   if (!login.ok || !session?.access_token)
     throw new Error('Reserved template authentication failed.');
-  const authHeaders = {
-    apikey: anonKey,
-    Authorization: `Bearer ${session.access_token}`,
-    'Content-Type': 'application/json',
-  };
+  const authHeaders = { apikey: anonKey, Authorization: `Bearer ${session.access_token}` };
   const verified = await fetchImpl(`${configuration.supabaseUrl}/auth/v1/user`, {
     headers: authHeaders,
   });
@@ -676,18 +734,13 @@ export async function prepareProductionE2ETemplateFixture({
     for (let freezesWaited = 0; ; ) {
       try {
         await qualifyTemplateClubCreate({ environment, claims, args, databaseClientFactory });
-        const response = await fetchImpl(
-          `${configuration.supabaseUrl}/rest/v1/rpc/fn_create_club_atomic`,
-          { method: 'POST', headers: authHeaders, body: JSON.stringify(args) }
-        );
-        club = await responseBody(response);
-        if (!response.ok) {
-          const refusal = new Error(
-            `Owned template create refused (${response.status}); request retained for readback.`
-          );
-          refusal.body = club;
-          throw refusal;
-        }
+        club = await createIsolatedTemplateClub({
+          environment,
+          claims,
+          args,
+          databaseClientFactory,
+          commit: true,
+        });
         break;
       } catch (error) {
         if (!isPlatformFreezeRefusal(error)) throw error;
@@ -720,6 +773,31 @@ export async function prepareProductionE2ETemplateFixture({
     club.requires_approval !== true
   )
     throw new Error('Owned template club identity or isolation readback failed.');
+  const welcomeItems = await serviceRequest(
+    configuration,
+    `/rest/v1/club_welcome_package_items?club_id=eq.${club.id}` +
+      '&entity_kind=eq.tournament_schedule&retired_at=is.null&select=entity_id',
+    {},
+    fetchImpl
+  );
+  if (!Array.isArray(welcomeItems) || welcomeItems.length !== 1 || !welcomeItems[0]?.entity_id)
+    throw new Error('Persisted template welcome schedule lineage was not exact.');
+  const isolatedSchedules = await serviceRequest(
+    configuration,
+    `/rest/v1/tournament_schedules?id=eq.${encodeURIComponent(welcomeItems[0].entity_id)}` +
+      '&select=id,club_id,union_id,active',
+    {},
+    fetchImpl
+  );
+  if (
+    !Array.isArray(isolatedSchedules) ||
+    isolatedSchedules.length !== 1 ||
+    isolatedSchedules[0].id !== welcomeItems[0].entity_id ||
+    isolatedSchedules[0].club_id !== club.id ||
+    isolatedSchedules[0].union_id !== null ||
+    isolatedSchedules[0].active !== false
+  )
+    throw new Error('Persisted template welcome schedule isolation was not verified.');
   const persisted = await serviceRequest(
     configuration,
     `/rest/v1/clubs?id=eq.${club.id}&select=id,name,owner_id,union_id,status,is_public,requires_approval`,

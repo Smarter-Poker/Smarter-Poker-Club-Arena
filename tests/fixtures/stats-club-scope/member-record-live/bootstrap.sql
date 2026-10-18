@@ -34,3 +34,17 @@ CREATE TABLE ca_club_rake_daily_user(user_id uuid,club_id uuid);
 CREATE TABLE ca_club_member_tournament_fee_daily(user_id uuid,club_id uuid);
 
 CREATE FUNCTION fn_ca_launch_accounting_cutoff(text,uuid) RETURNS timestamptz LANGUAGE sql AS $$ SELECT nullif(current_setting('test.cutoff',true),'')::timestamptz $$;
+
+-- A separate member changes funding clubs on the same physical table, then
+-- returns. Initialization must agree with the scalar live-trigger resolver.
+INSERT INTO clubs VALUES('00000000-0000-0000-0000-000000000007','Second');
+INSERT INTO cash_participant_funding_receipts
+SELECT ('00000000-0000-0000-0001-'||lpad(n::text,12,'0'))::uuid,'buyin',
+ '00000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-000000000008',
+ CASE WHEN n=2 THEN '00000000-0000-0000-0000-000000000007'::uuid ELSE '00000000-0000-0000-0000-000000000001'::uuid END,
+ now()-interval '4 hours'+n*interval '1 hour',now() FROM generate_series(1,3) n;
+INSERT INTO ca_hand_facts(hand_id,user_id,club_id,table_id,played_at,game_variant,net,rake_paid)
+SELECT ('00000000-0000-0000-0002-'||lpad(n::text,12,'0'))::uuid,
+ '00000000-0000-0000-0000-000000000008','00000000-0000-0000-0000-000000000007',
+ '00000000-0000-0000-0000-000000000004',now()-interval '4 hours'+n*interval '1 hour','nlh',n,0
+FROM generate_series(0,3) n;

@@ -1,3 +1,16 @@
+DO $$ BEGIN
+ IF EXISTS (
+   (SELECT public.fn_member_record_fact_club(f) club_id,f.user_id,count(*)::bigint hands,sum(f.net) net
+    FROM ca_hand_facts f WHERE user_id='00000000-0000-0000-0000-000000000008' GROUP BY 1,2
+    EXCEPT SELECT club_id,user_id,sum(hands)::bigint,sum(net) FROM member_record_daily_facts
+    WHERE user_id='00000000-0000-0000-0000-000000000008' GROUP BY 1,2)
+   UNION ALL
+   (SELECT club_id,user_id,sum(hands)::bigint,sum(net) FROM member_record_daily_facts
+    WHERE user_id='00000000-0000-0000-0000-000000000008' GROUP BY 1,2
+    EXCEPT SELECT public.fn_member_record_fact_club(f),f.user_id,count(*)::bigint,sum(f.net)
+    FROM ca_hand_facts f WHERE user_id='00000000-0000-0000-0000-000000000008' GROUP BY 1,2)
+ ) THEN RAISE EXCEPTION 'Mixed funding history or pre-first-receipt fallback differs from live capture'; END IF;
+END $$;
 DO $$ DECLARE d jsonb; n bigint; BEGIN
  d:=ca_club_member_detail('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',NULL,NULL);
  IF d#>>'{stats,hands}'<>'12' OR (d#>>'{stats,total_winnings}')::numeric<>-120 THEN RAISE EXCEPTION 'Overall wrong %',d; END IF;

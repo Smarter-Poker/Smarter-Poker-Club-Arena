@@ -358,6 +358,61 @@ it('does not borrow unrelated, unknown, stale or excessive continuation classifi
   expect(missing.spin_atomic_creation_failed.sqlstates).toEqual({});
 });
 
+it('reads existing shutdown milestones without exporting table counts or raw records', () => {
+  const milestones = [
+    ['shutdown_fleet_started', '[GameServer] Shutting down...'],
+    ['shutdown_horse_fleet_stopped', '[HorseFleet] Stopped'],
+    ['shutdown_scheduled_stopped', '[ScheduledTournaments] Stopped'],
+    ['shutdown_recurring_stopped', '[TournamentRecurring] Stopped'],
+    ['shutdown_lifecycle_stopped', '[Lifecycle] Stopped'],
+    ['shutdown_settler_stopped', '[RakebackSettler] Stopped'],
+    ['shutdown_tables_drained', '[GameServer] Drained all 408 table(s) between hands'],
+    [
+      'shutdown_table_drain_elapsed',
+      '[GameServer] Drain window elapsed with 2/408 table(s) still mid-hand - stopping anyway',
+    ],
+    ['shutdown_ownership_complete', '[GameServer] Shutdown complete.'],
+  ];
+  const logs = milestones.map(([, literal]) => `2026-10-18T20:55:24Z ${literal} private-secret`);
+  const ran = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      'import json,runpy,sys; m=runpy.run_path(sys.argv[1]); print(json.dumps(m["process_signals"](json.loads(sys.stdin.read()))))',
+      script,
+    ],
+    { input: JSON.stringify(logs.join('\n')), encoding: 'utf8', timeout: 5000 }
+  );
+  expect(ran.status, ran.stderr).toBe(0);
+  const data = JSON.parse(ran.stdout);
+  expect(Object.keys(data).sort()).toEqual(milestones.map(([key]) => key).sort());
+  for (const [key] of milestones) {
+    expect(data[key]).toEqual({
+      count: 1,
+      lastTimestamp: '2026-10-18T20:55:24Z',
+      causes: {},
+      frames: [],
+    });
+  }
+  expect(ran.stdout).not.toMatch(/private-secret|408|2\/408/);
+  const streamed = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      'import json,runpy,sys; m=runpy.run_path(sys.argv[1]); raw=json.loads(sys.stdin.read()); print(json.dumps(m["process_history"]([sys.executable,"-c","import sys; sys.stdout.write("+repr(raw)+")"])))',
+      script,
+    ],
+    { input: JSON.stringify(logs.join('\n') + '\n'), encoding: 'utf8', timeout: 5000 }
+  );
+  expect(streamed.status, streamed.stderr).toBe(0);
+  const history = JSON.parse(streamed.stdout);
+  expect(history.coverage.status).toBe('complete');
+  expect(history.signals).toEqual(data);
+  expect(streamed.stdout).not.toMatch(/private-secret|408|2\/408/);
+});
+
 it('exports only typed restart events and exact process categories with bounded source frames', () => {
   const fixture = `
 import json,runpy,sys

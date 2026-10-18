@@ -216,6 +216,15 @@ PROCESS_SIGNALS = {
     'fatal_rejection': '[GameServer] FATAL (GameServer.Unhandled_rejection)',
     'fatal_boot': '[GameServer] FATAL (GameServer.Fatal_error)',
     'shutdown_requested': '[GameServer] Received shutdown signal',
+    'shutdown_fleet_started': '[GameServer] Shutting down...',
+    'shutdown_horse_fleet_stopped': '[HorseFleet] Stopped',
+    'shutdown_scheduled_stopped': '[ScheduledTournaments] Stopped',
+    'shutdown_recurring_stopped': '[TournamentRecurring] Stopped',
+    'shutdown_lifecycle_stopped': '[Lifecycle] Stopped',
+    'shutdown_settler_stopped': '[RakebackSettler] Stopped',
+    'shutdown_tables_drained': '[GameServer] Drained all ',
+    'shutdown_table_drain_elapsed': '[GameServer] Drain window elapsed with ',
+    'shutdown_ownership_complete': '[GameServer] Shutdown complete.',
     'shutdown_deadline': '[GameServer] graceful shutdown exceeded',
     'shutdown_failed': '[GameServer] GameServer.shutdown_failed',
     'leadership_lost': '[leadership] LOST LEADERSHIP',
@@ -320,7 +329,7 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
     outcome = 'complete'
     markers = ('[GameServer.', '[GameServer] FATAL', '[GameServer] Received shutdown',
                '[GameServer] graceful shutdown', '[GameServer] GameServer.shutdown_failed', '[leadership]', '[Leadership.',
-               '[Tournament.abandoned_generation_refused]', 'FATAL ERROR:')
+               '[Tournament.abandoned_generation_refused]', 'FATAL ERROR:', *PROCESS_SIGNALS.values())
 
     def record(raw):
         nonlocal records, block, oldest, newest

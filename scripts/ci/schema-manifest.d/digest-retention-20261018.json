@@ -1,0 +1,5 @@
+{
+  "_owner": "codex/digest-retention-20261018, install through apply-merged-migration after protected merge",
+  "functions": ["fn_prune_ca_hand_facts", "fn_sp_daily_metrics_compute"],
+  "tables": ["smarter_private.horse_fact_card_prune_cursor"]
+}

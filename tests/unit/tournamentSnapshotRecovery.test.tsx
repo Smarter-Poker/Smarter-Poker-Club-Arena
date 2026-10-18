@@ -251,6 +251,45 @@ afterEach(() => {
 });
 
 describe('Tournament details snapshot recovery', () => {
+  it.each(['002c2d27-9584-4e52-835a-bb2be148fc81', 'regular-club'])(
+    'retires both late-entry actions when the clock closes before the levels for %s',
+    async (clubId) => {
+      const started = Date.parse('2026-10-18T18:00:00Z');
+      vi.setSystemTime(started + 7 * 60_000 + 55_000);
+      fixture.getTournament.mockResolvedValue(
+        tournament('a', {
+          club_id: clubId,
+          format_contract: 'mtt-v2',
+          current_level: 1,
+          late_reg_levels: 12,
+          late_reg_mins: 8,
+          started_at: new Date(started).toISOString(),
+        })
+      );
+      render(<Page />);
+      await flush();
+      expect(screen.getAllByRole('button', { name: /Late Register/ })).toHaveLength(2);
+      await act(async () => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(screen.queryAllByRole('button', { name: /Late Register/ })).toHaveLength(0);
+      expect(fixture.register).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not advertise a level-and-clock late entry without a confirmed start', async () => {
+    fixture.getTournament.mockResolvedValue(
+      tournament('a', {
+        late_reg_levels: 12,
+        late_reg_mins: 120,
+        started_at: null,
+      })
+    );
+    render(<Page />);
+    await flush();
+    expect(screen.queryAllByRole('button', { name: /Late Register/ })).toHaveLength(0);
+  });
+
   it.each([
     ['002c2d27-9584-4e52-835a-bb2be148fc81', 'header'],
     ['002c2d27-9584-4e52-835a-bb2be148fc81', 'footer'],

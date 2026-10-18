@@ -285,6 +285,9 @@ describe('a Diamond acceptance input routes to the accounting job', () => {
     'tests/sql/diamond-tournament-current-schema.sql',
     'tests/sql/diamond-tournament-current-economics.sql',
     'tests/sql/diamond-tournament-current-cases.sql',
+    'tests/sql/diamond-tournament-late-clock-before.sql',
+    'tests/sql/diamond-tournament-late-clock-authority.sql',
+    'tests/sql/diamond-tournament-late-clock-cases.sql',
     /* Every file the concurrency runner loads out of tests/sql: the captured
        money doors and their pins, the production-shape tables and the seed. */
     'tests/sql/diamond-concurrency-doors.sql',

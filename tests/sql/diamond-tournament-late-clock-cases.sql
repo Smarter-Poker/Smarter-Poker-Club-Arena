@@ -17,6 +17,26 @@ DO $cases$ BEGIN
   PERFORM sched.ok(true,'registered windows refuse arbitrary changes after correction');END;
 END $cases$;
 SELECT sched.as_service();
+UPDATE public.tournaments SET late_reg_mins=8 WHERE id=sched.id('late_legacy');
+SELECT sched.as_user(sched.p(8));
+SET ROLE authenticated;
+DO $role_boundary$ BEGIN
+ BEGIN
+  UPDATE public.tournaments SET late_reg_mins=120 WHERE id=sched.id('late_legacy');
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ WHEN raise_exception THEN
+  IF SQLERRM<>'This tournament cannot be modified after a player has registered' THEN RAISE; END IF;
+ END;
+END $role_boundary$;
+RESET ROLE;
+SELECT sched.ok((SELECT late_reg_mins=8 FROM public.tournaments WHERE id=sched.id('late_legacy')),
+ 'an authenticated player cannot use the postgres-only canonical clock exception');
+-- The identical correction succeeds for the actual management connection,
+-- with no player or engine JWT, exactly as the migration installer runs.
+SELECT set_config('request.jwt.claims','{}',false),set_config('request.jwt.claim.sub','',false),
+ set_config('request.jwt.claim.role','',false),set_config('request.headers','{}',false);
+UPDATE public.tournaments SET late_reg_mins=120 WHERE id=sched.id('late_legacy');
+SELECT sched.as_service();
 SELECT sched.lock(sched.id('late_legacy'));
 UPDATE public.tournaments SET started_at=now()-interval '9 minutes',current_level=0
  WHERE id=sched.id('late_legacy');

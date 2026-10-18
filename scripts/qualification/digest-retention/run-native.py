@@ -46,6 +46,23 @@ try:
  except RuntimeError as e:assert 'compactor-refused' in str(e)
  else:raise AssertionError('compactor failure must propagate')
  assert sql('select coalesce(last_hand_id::text,\'empty\') from smarter_private.horse_fact_card_prune_cursor')==before
+ # Execute the exact Stripe aggregate extracted from the installed full body.
+ sql("CREATE TABLE public.stripe_webhook_events(processed_at timestamptz,processing_status text)")
+ before_metrics=(Path(__file__).parent/'metrics-before.sql').read_text()
+ sql(before_metrics)
+ import re
+ aggregate=re.search(r"SELECT jsonb_build_object\('total', count\(\*\), 'not_completed'.*?FROM public.stripe_webhook_events WHERE processed_at >= s AND processed_at < e",before_metrics,re.S)[0]
+ aggregate=aggregate.replace('processed_at >= s AND processed_at < e',"processed_at >= '2026-10-16 05:00Z' AND processed_at < '2026-10-17 05:00Z'")
+ sql("INSERT INTO stripe_webhook_events VALUES('2026-10-17 01:10Z','done'),('2026-10-17 01:55Z','done')")
+ assert json.loads(sql(aggregate))['not_completed']==2
+ sql((root/'supabase/migrations/20261018140428_successful_stripe_webhook_receipts_are_completed_for_digest_.sql').read_text())
+ patched=sql("SELECT pg_get_functiondef('fn_sp_daily_metrics_compute(date)'::regprocedure)")
+ after_aggregate=aggregate.replace("processing_status IS DISTINCT FROM 'completed'","(processing_status IS NULL OR processing_status NOT IN ('done','completed'))")
+ assert "processing_status NOT IN ('done','completed')" in patched
+ assert json.loads(sql(after_aggregate))['not_completed']==0
+ sql("INSERT INTO stripe_webhook_events SELECT '2026-10-16 08:00Z',s FROM unnest(ARRAY['completed','failed','error','dead_letter','processing',NULL])s")
+ assert json.loads(sql(after_aggregate))['not_completed']==5
+ print('PASS: native Stripe aggregate reproduces two false alarms before; done/completed succeed after; failed/error/dead_letter/processing/null remain visible')
  print('PASS: one million historical receipts, bounded six passes, three sparse pending hands compacted, totals unchanged, cursor wraps, freeze and failure preserve cursor')
  print(json.dumps(results))
 finally:

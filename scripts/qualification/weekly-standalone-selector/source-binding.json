@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 227755,
-      "sha256": "f0af84c185ff0cbe3804d0c8bf90470adb9362a161d24df005ee5818a6400b0b"
+      "bytes": 227864,
+      "sha256": "d54145118753e31f5c55c513b8d2f7478a491960dfeeee71b5de6bb7e03e4576"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,

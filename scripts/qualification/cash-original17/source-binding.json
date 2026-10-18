@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 227755,
-      "sha256": "f0af84c185ff0cbe3804d0c8bf90470adb9362a161d24df005ee5818a6400b0b"
+      "bytes": 227864,
+      "sha256": "d54145118753e31f5c55c513b8d2f7478a491960dfeeee71b5de6bb7e03e4576"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,

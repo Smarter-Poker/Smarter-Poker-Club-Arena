@@ -1283,7 +1283,7 @@ export default function ClubDashboard() {
                   >
                     {/* ca_club_dashboard_stats.daily_series carries hands
                         DEALT beside the club's cash rake. */}
-                    <ClubActivityChart data={dashStats.dailySeries} handsLabel="Hands Dealt" />
+                    <ClubActivityChart data={dashStats.dailySeries} handsLabel="Hosted Hands" />
                   </Suspense>
                 </div>
               )}
@@ -1802,15 +1802,26 @@ export default function ClubDashboard() {
                     },
                     { label: 'Raked Hands', value: formatInt(revenue.totals.hands) },
                     {
-                      label: 'Hands Dealt',
-                      value: formatInt(revenue.totals.hands_dealt ?? revenue.totals.hands),
+                      label: 'Hosted Hands',
+                      value:
+                        revenue.totals.hands_dealt == null
+                          ? 'Not Available'
+                          : formatInt(revenue.totals.hands_dealt),
                     },
                     {
                       label: 'Rake Per Raked Hand',
                       value: formatChips(revenue.totals.rake_per_hand),
                     },
-                    { label: 'Average Raked Pot', value: formatChips(revenue.totals.avg_pot) },
-                    { label: 'Raked Pot Volume', value: formatChips(revenue.totals.pot_total) },
+                    {
+                      label: 'Average Hosted Pot',
+                      // Union rake counts contributing clubs; pot volume is
+                      // held by the host. Their ratio is not an average pot.
+                      value:
+                        revenue.insurance?.bank === 'union'
+                          ? 'Not Available'
+                          : formatChips(revenue.totals.avg_pot),
+                    },
+                    { label: 'Hosted Pot Volume', value: formatChips(revenue.totals.pot_total) },
                     // INSURANCE P&L 2026-08-27 (Dan): net = premiums - payouts
                     // over the window. The bank suffix says whose profit it is
                     // - a union-affiliated club's insurance settles to the

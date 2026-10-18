@@ -401,10 +401,12 @@ describe('the client asks the server for the money', () => {
 
   it('the dashboard separates raked hands from hands dealt', () => {
     expect(DASHBOARD).toContain("label: 'Raked Hands'");
-    expect(DASHBOARD).toContain("label: 'Hands Dealt'");
-    expect(DASHBOARD).toContain("label: 'Average Raked Pot'");
+    expect(DASHBOARD).toContain("label: 'Hosted Hands'");
+    expect(DASHBOARD).toContain("label: 'Average Hosted Pot'");
+    expect(DASHBOARD).toContain("revenue.insurance?.bank === 'union'");
+    expect(DASHBOARD).toContain("? 'Not Available'");
     expect(DASHBOARD).toContain("label: 'Tournament Fees'");
-    expect(STATS_CARDS).toContain("label: 'Hands Dealt Today'");
+    expect(STATS_CARDS).toContain("label: 'Hosted Hands Today'");
     expect(STATS_CARDS).toContain("label: 'Cash Rake Today'");
   });
 
@@ -556,7 +558,7 @@ describe('the gate on phase 6: hands still meant two things in two places', () =
     expect(ACTIVITY_CHART).toContain('handsLabel: string;');
     expect(ACTIVITY_CHART).toContain('name={handsLabel}');
     expect(ACTIVITY_CHART).not.toContain('name="Hands"');
-    expect(DASHBOARD).toContain('handsLabel="Hands Dealt"');
+    expect(DASHBOARD).toContain('handsLabel="Hosted Hands"');
     expect(DASHBOARD).toContain('handsLabel="Raked Hands"');
   });
 

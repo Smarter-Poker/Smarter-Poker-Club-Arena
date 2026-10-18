@@ -29,7 +29,7 @@ async function expectFrameOnTheBottomEdge(page: Page, nav: Locator) {
     return edge;
   });
   // The diamond overlay is a second image; measure the approved base frame.
-  const artwork = nav.locator('img[src$="/club-arena-footer-v3.webp"]').locator('..');
+  const artwork = nav.locator('picture').locator('..');
   await expect(artwork).toHaveCount(1);
   const frame = await artwork.boundingBox();
   expect(frame).not.toBeNull();

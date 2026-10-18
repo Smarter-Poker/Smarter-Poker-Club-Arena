@@ -8,6 +8,10 @@ const footerArt = readFileSync(
   join(ROOT, 'public/images/club-footer/club-arena-footer-v3.webp')
 ).toString('base64');
 
+const phoneFooterArt = readFileSync(
+  join(ROOT, 'public/images/club-footer/club-arena-footer-mobile-v1.webp')
+).toString('base64');
+
 /* READ THE SHIPPED CONSTANT, DO NOT RESTATE IT (2026-09-05).
    This test used to paste `clamp(44px, 13.72vw, 132px)` into its own :root, so
    it went on asserting a value the app had stopped using and could never have
@@ -20,6 +24,10 @@ const footerArt = readFileSync(
    keeps all three in step. */
 const engineCss = readFileSync(join(ROOT, 'src/styles/club-engine.css'), 'utf8');
 const HEIGHT_DECL = /--bottom-nav-height:\s*([^;]+);/.exec(engineCss)?.[1]?.trim();
+const PHONE_HEIGHT_DECL = /@media \(max-width: 600px\)[\s\S]*?--bottom-nav-height:\s*([^;]+);/
+  .exec(engineCss)?.[1]
+  ?.trim();
+if (!PHONE_HEIGHT_DECL) throw new Error('The phone footer reserve is missing');
 if (!HEIGHT_DECL) throw new Error('club-engine.css no longer declares --bottom-nav-height');
 
 /* The frame inside the approved asset: the rect x=25 y=14 1866x230 of a
@@ -29,7 +37,6 @@ const HEIGHT_CEILING = 132;
 const HEIGHT_FLOOR = 44;
 /* Above this width the ceiling binds, and the bar centres instead of growing.
    Stopping the height without stopping the width IS the distortion. */
-const FULL_BLEED_MAX_WIDTH = HEIGHT_CEILING * FRAME_ASPECT;
 
 const VIEWPORTS = [
   { width: 320, height: 568 },
@@ -48,12 +55,15 @@ test.describe('Club Arena footer visual contract', () => {
     page,
   }, testInfo) => {
     for (const viewport of VIEWPORTS) {
+      const frameAspect = viewport.width <= 600 ? 1481 / 230 : FRAME_ASPECT;
+      const fullBleedMaxWidth = HEIGHT_CEILING * frameAspect;
       await page.setViewportSize(viewport);
       await page.setContent(`
         <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <style>
           :root { --bottom-nav-height: ${HEIGHT_DECL}; }
+          @media (max-width: 600px) { :root { --bottom-nav-height: ${PHONE_HEIGHT_DECL}; } }
           html, body { margin: 0; min-height: 200vh; background: #07101d; }
           ${footerCss}
         </style>
@@ -62,8 +72,8 @@ test.describe('Club Arena footer visual contract', () => {
         <nav class="bottomNav" aria-label="Poker Arena">
           <div class="viewport">
             <div class="artwork">
-              <img class="artworkImage" alt="" width="1916" height="256"
-                src="data:image/webp;base64,${footerArt}" />
+              <picture><source media="(max-width: 600px)" srcset="data:image/webp;base64,${phoneFooterArt}" width="1531" height="256" /><img class="artworkImage" alt="" width="1916" height="256"
+                src="data:image/webp;base64,${footerArt}" /></picture>
               <ul class="navItems">
                 ${controls
                   .map(
@@ -101,7 +111,7 @@ test.describe('Club Arena footer visual contract', () => {
          touch target and capped at the approved desktop height. */
       const expectedHeight = Math.min(
         HEIGHT_CEILING,
-        Math.max(HEIGHT_FLOOR, viewport.width / FRAME_ASPECT)
+        Math.max(HEIGHT_FLOOR, viewport.width / frameAspect)
       );
       expect(Math.abs(navBox!.height - expectedHeight)).toBeLessThanOrEqual(1);
 
@@ -120,14 +130,14 @@ test.describe('Club Arena footer visual contract', () => {
       expect(artwork).not.toBeNull();
       const drawnAspect = artwork!.width / artwork!.height;
       expect(
-        Math.abs(drawnAspect / FRAME_ASPECT - 1),
+        Math.abs(drawnAspect / frameAspect - 1),
         `frame distorted at ${viewport.width}px: drawn ${drawnAspect.toFixed(3)}:1 ` +
-          `against the asset's ${FRAME_ASPECT.toFixed(3)}:1`
+          `against the asset's ${frameAspect.toFixed(3)}:1`
       ).toBeLessThan(0.01);
 
       const artworkBox = await page.locator('.artworkImage').boundingBox();
       expect(artworkBox).not.toBeNull();
-      if (viewport.width <= FULL_BLEED_MAX_WIDTH) {
+      if (viewport.width <= fullBleedMaxWidth) {
         // Full-bleed: the canvas gutter is pushed off both edges so the frame's
         // chrome reaches x=0 and the far edge.
         expect(artworkBox!.x).toBeLessThan(0);
@@ -136,7 +146,7 @@ test.describe('Club Arena footer visual contract', () => {
         // Past the ceiling the bar is a centred dock of the approved height.
         // Its rounded end caps become visible for the first time - full-bleed
         // had always cropped them off.
-        expect(artwork!.width).toBeLessThanOrEqual(FULL_BLEED_MAX_WIDTH + 1);
+        expect(artwork!.width).toBeLessThanOrEqual(fullBleedMaxWidth + 1);
         const leftGap = artwork!.x;
         const rightGap = viewport.width - (artwork!.x + artwork!.width);
         expect(Math.abs(leftGap - rightGap), 'the bar is not centred').toBeLessThanOrEqual(1);

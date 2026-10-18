@@ -208,18 +208,26 @@ function assertAtomicBodyAfterRecovery(source) {
   const admission = source.indexOf(
     'admittedSQL = MAINTENANCE_THAW_REPAIR\n    ? thawRepairSQL(atomicSQL)\n    : accountingAdmissionSQL(file, sql, atomicSQL);'
   );
-  const send = source.indexOf('await client.query(admittedSQL)');
+  const identity = source.indexOf(
+    'transactionSQL = bindMigrationSession(SETTLEMENT_LANE ? atomicSQL : admittedSQL);'
+  );
+  const send = source.indexOf('await client.query(transactionSQL)');
   for (const [label, position] of [
     ['recovery', recovery],
     ['body selection', body],
     ['atomic binding', binding],
     ['explicit repair selection', admission],
+    ['transaction identity', identity],
     ['transaction send', send],
   ]) {
     assert.ok(position >= 0, `${label} is missing`);
   }
   assert.ok(
-    recovery < body && body < binding && binding < admission && admission < send,
+    recovery < body &&
+      body < binding &&
+      binding < admission &&
+      admission < identity &&
+      identity < send,
     'recovery precedes unchanged body selection, atomic history binding, and send'
   );
 }
@@ -243,11 +251,19 @@ test('body-order assertion refuses missing or reordered owning steps', () => {
     'const transactionBody = preamble.length > 0 ? shape.body : sql',
     'const atomicSQL = transactionBody.replace(',
     'admittedSQL = MAINTENANCE_THAW_REPAIR\n    ? thawRepairSQL(atomicSQL)\n    : accountingAdmissionSQL(file, sql, atomicSQL);',
-    'await client.query(admittedSQL)',
+    'transactionSQL = bindMigrationSession(SETTLEMENT_LANE ? atomicSQL : admittedSQL);',
+    'await client.query(transactionSQL)',
   ]) {
     assert.throws(() => assertAtomicBodyAfterRecovery(source.replace(part, 'removed step')), part);
   }
-  const send = 'await client.query(admittedSQL)';
+  const identity =
+    'transactionSQL = bindMigrationSession(SETTLEMENT_LANE ? atomicSQL : admittedSQL);';
+  assert.throws(
+    () =>
+      assertAtomicBodyAfterRecovery(identity + '\n' + source.replace(identity, 'removed identity')),
+    /recovery precedes/
+  );
+  const send = 'await client.query(transactionSQL)';
   assert.throws(
     () => assertAtomicBodyAfterRecovery(send + '\n' + source.replace(send, 'removed send')),
     /recovery precedes/

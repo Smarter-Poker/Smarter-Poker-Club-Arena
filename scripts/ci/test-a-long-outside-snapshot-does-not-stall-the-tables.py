@@ -105,8 +105,8 @@ def check(name, ok, detail=''):
 
 class Cluster:
     def __init__(self, port):
-        self.dir = Path(tempfile.mkdtemp(prefix='long-snapshot-', dir='/tmp'))
-        self.sock = self.dir / 'socket'
+        self.dir = Path(tempfile.mkdtemp(prefix='snap-', dir=os.environ.get('TMPDIR', '/tmp')))
+        self.sock = self.dir / 's'
         self.sock.mkdir(mode=0o700)
         if AS_PG:
             shutil.chown(self.dir, 'postgres')
@@ -241,6 +241,38 @@ def main():
         check('LOG one row per action, with the right action and a delivered signal',
               log == 'club-arena-isolated-recovery-test:cancel:true,dashboard-reader:terminate:true,psql-idle-holder:terminate:true',
               log)
+
+        # A real proxy replaces the startup identity with Supavisor. The
+        # installer's exact transaction binder must restore its existing
+        # exemption on the same backend, while leaving an ordinary proxy
+        # snapshot subject to the original bound.
+        tx = "BEGIN; SELECT 1 FROM public.tournament_players LIMIT 1; SELECT pg_sleep(120);"
+        bound = subprocess.run(
+            ['node', '--input-type=module', '-e',
+             "import {bindMigrationSession} from './scripts/ci/migration-session-identity.mjs'; "
+             "process.stdout.write(bindMigrationSession(process.argv[1]));", tx],
+            cwd=ROOT, text=True, capture_output=True, check=True).stdout
+        sessions.append(c.hold('postgres', 'Supavisor', tx))
+        sessions.append(c.hold('postgres', 'Supavisor', bound))
+        check('PROXY both startup-rewritten transactions are active', wait_for(c,
+              "SELECT count(*)=2 FROM pg_stat_activity WHERE application_name IN "
+              "('Supavisor','apply-recorded-migration') AND backend_xmin IS NOT NULL"))
+        time.sleep(1.6)
+        proxy_result = c.psql("SELECT public.fn_ca_bound_outside_snapshots('1 second'::interval)::text;",
+                              app='pg_cron').stdout.strip()
+        check('PROXY the ordinary Supavisor snapshot is still cancelled',
+              '"acted": 1' in proxy_result and '"application_name": "Supavisor"' in proxy_result,
+              proxy_result)
+        check('PROXY the transaction-bound installer retains its snapshot',
+              c.psql("SELECT count(*)=1 FROM pg_stat_activity WHERE application_name="
+                     "'apply-recorded-migration' AND backend_xmin IS NOT NULL",
+                     user='supabase_admin').stdout.strip() == 't')
+        # Cleanup only this isolated cluster's two proxy sessions.
+        c.psql("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name IN "
+               "('Supavisor','apply-recorded-migration') AND pid<>pg_backend_pid();",
+               user='supabase_admin')
+        wait_for(c, "SELECT NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name IN "
+                    "('Supavisor','apply-recorded-migration'))")
 
         # SPARED: everything that must be left alone, each holding a snapshot past the bound.
         spared = {

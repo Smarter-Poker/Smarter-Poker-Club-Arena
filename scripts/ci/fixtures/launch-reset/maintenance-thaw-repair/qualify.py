@@ -22,6 +22,8 @@ with tempfile.TemporaryDirectory(prefix='installer-native-',dir=a.scratch) as tm
   for dep in re.findall(r"(?:from\s+|import\s*)['\"]\./([^'\"]+\.mjs)['\"]",text):copy_module(dep)
  for dep in ['check-migrations-are-live.mjs','migration-concurrent-preamble.mjs','contract-index-recovery.mjs','final-table-cleanup-batches.mjs']:copy_module(dep)
  installer=ci/'apply-recorded-migration.mjs';installer.write_bytes(original)
+ # Root imports also belong to the isolated dependency closure.
+ for dep in re.findall(r"(?:from\s+|import\s*)['\"]\./([^'\"]+\.mjs)['\"]",original.decode('utf-8')):copy_module(dep)
  copy_module('settlement-lane.mjs')
  copy_module('accounting-migration-admission.mjs')
  (ci/'maintenance-thaw-repair.mjs').write_bytes((a.installer.parent/'maintenance-thaw-repair.mjs').read_bytes())

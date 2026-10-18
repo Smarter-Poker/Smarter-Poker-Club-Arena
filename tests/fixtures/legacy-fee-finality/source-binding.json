@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "79d86ee1493d729919b64dd519cc5c9b67d7047b7f79eb75c7e616d75158332e",
+    "scripts/ci/classify-ci-changes.mjs": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
@@ -1014,5 +1014,16 @@
     "path": "scripts/ci/classify-ci-changes.mjs",
     "previousSha256": "2a40f38369ca31102aff8322a1944ba41dc6cc134456ef8b91dd5468ceb154ab",
     "currentSha256": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417"
+  },
+  "statementAvailabilityRoutingIntegration20261018": {
+    "reason": "Add statement-availability fixture-only input routing to the existing required Data Console native job. Preserve all existing financial sources, assertions and qualification status. Reviewed additive classifier change only; hash binding is not runtime qualification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous_sha256": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417",
+    "current_sha256": "32c1f6f91fea456e6884e9d4bd1f13008a428162ade9eea676535a24bee328c0"
+  },
+  "onTimeStatementRoutingMerge20261018": {
+    "reason": "Preserve protected-main statement-availability routing and on-time thaw routing together. Active input identity only; both audit histories, financial SQL, assertions and qualification states retained. No financial certificate restamp.",
+    "previous": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234",
+    "current": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
   }
 }

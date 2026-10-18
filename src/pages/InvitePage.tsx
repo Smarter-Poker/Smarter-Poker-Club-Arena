@@ -32,7 +32,7 @@ const inviteStepAnimationStyle = {
 
 /**
  * Inline SVG, never emoji — house rule 5, and emoji break the SWC compiler.
- * `currentColor` so each one takes the gold or red from the CSS around it
+ * `currentColor` so each one takes the blue or red from the CSS around it
  * rather than carrying a second copy of the palette.
  */
 const MembersIcon = () => (
@@ -449,7 +449,7 @@ export default function InvitePage() {
 
           {club.description && <p className="club-description">{club.description}</p>}
 
-          {/* A gold-bordered chip, as in Dan's reference. Singular/plural
+          {/* A blue-bordered chip, as in Dan's reference. Singular/plural
               because "1 members" on a new club is the kind of detail that makes
               a product look unfinished. */}
           <p className="club-stats">
@@ -460,7 +460,7 @@ export default function InvitePage() {
 
           <hr className="invite-divider" />
 
-          {/* The club's own name is picked out in gold inside the sentence,
+          {/* The club's own name is picked out in blue inside the sentence,
               rather than repeated in the same silver as the words around it.
 
               "You Are", not "You've": `check-title-case` capitalises the first

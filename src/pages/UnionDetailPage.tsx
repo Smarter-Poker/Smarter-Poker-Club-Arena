@@ -55,7 +55,7 @@ interface SettlementRecord {
   clubName: string;
   rakeGenerated: number | null;
   unionShare: number | null;
-  status: 'missing' | 'cancelled' | 'pending' | 'paid' | 'overdue' | 'disputed';
+  status: 'missing' | 'cancelled' | 'pending' | 'paid' | 'overdue' | 'disputed' | 'unverified';
   paidAt?: string;
 }
 
@@ -64,8 +64,8 @@ interface FinancialSummary {
   unionRevenue: number | null;
   periodLabel: string;
   coverageLabel: string;
-  pendingSettlements: number;
-  overdueAmount: number;
+  pendingSettlements: number | null;
+  overdueAmount: number | null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1156,18 +1156,22 @@ export default function UnionDetailPage() {
                   <div>
                     <span>Pending</span>
                     <strong>
-                      {financialSummary.pendingSettlements} Settlement
+                      {financialSummary.pendingSettlements === null
+                        ? 'Unavailable'
+                        : financialSummary.pendingSettlements}{' '}
+                      Settlement
                       {financialSummary.pendingSettlements !== 1 ? 's' : ''}
                     </strong>
                   </div>
-                  {financialSummary.overdueAmount > 0 && (
-                    <div>
-                      <span>Overdue</span>
-                      <strong className={styles.negative}>
-                        {financialSummary.overdueAmount.toLocaleString()}
-                      </strong>
-                    </div>
-                  )}
+                  {financialSummary.overdueAmount !== null &&
+                    financialSummary.overdueAmount > 0 && (
+                      <div>
+                        <span>Overdue</span>
+                        <strong className={styles.negative}>
+                          {financialSummary.overdueAmount.toLocaleString()}
+                        </strong>
+                      </div>
+                    )}
                 </div>
               </div>
             )}
@@ -1562,22 +1566,25 @@ export default function UnionDetailPage() {
                     <span className={styles.financialIcon}>◷</span>
                     <div>
                       <span className={styles.financialValue}>
-                        {financialSummary.pendingSettlements}
+                        {financialSummary.pendingSettlements === null
+                          ? 'Unavailable'
+                          : financialSummary.pendingSettlements}
                       </span>
                       <span className={styles.financialLabel}>Pending Settlements</span>
                     </div>
                   </div>
-                  {financialSummary.overdueAmount > 0 && (
-                    <div className={`${styles.financialCard} ${styles.overdue}`}>
-                      <span className={styles.financialIcon}>!</span>
-                      <div>
-                        <span className={`${styles.financialValue} ${styles.negative}`}>
-                          {financialSummary.overdueAmount.toLocaleString()}
-                        </span>
-                        <span className={styles.financialLabel}>Overdue</span>
+                  {financialSummary.overdueAmount !== null &&
+                    financialSummary.overdueAmount > 0 && (
+                      <div className={`${styles.financialCard} ${styles.overdue}`}>
+                        <span className={styles.financialIcon}>!</span>
+                        <div>
+                          <span className={`${styles.financialValue} ${styles.negative}`}>
+                            {financialSummary.overdueAmount.toLocaleString()}
+                          </span>
+                          <span className={styles.financialLabel}>Overdue</span>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
                 </div>
 
                 {/* Settlement History */}
@@ -1621,7 +1628,7 @@ export default function UnionDetailPage() {
                           <td className={styles.positive}>{statementMoney(s.unionShare)}</td>
                           <td>
                             <span className={`${styles.statusBadge} ${styles[s.status]}`}>
-                              {s.status}
+                              {s.status === 'unverified' ? 'Payment Details Unavailable' : s.status}
                             </span>
                           </td>
                         </tr>

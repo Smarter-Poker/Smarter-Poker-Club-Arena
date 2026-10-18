@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,6 +7,7 @@ const fixture = vi.hoisted(() => ({
   user: { id: 'viewer' },
   realOverview: false,
   register: vi.fn(),
+  isRegistering: false,
   health: vi.fn(),
   getTournament: vi.fn(),
   reportError: vi.fn(),
@@ -66,7 +67,10 @@ vi.mock('../../src/components/tournament/TournamentDealReview', () => ({ default
 
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: fixture.user }) }));
 vi.mock('../../src/hooks/useTournamentRegistration', () => ({
-  useTournamentRegistration: () => ({ register: fixture.register, isRegistering: false }),
+  useTournamentRegistration: () => ({
+    register: fixture.register,
+    isRegistering: fixture.isRegistering,
+  }),
   isLateStatus: (status: string) => ['RUNNING', 'LATE_REG'].includes(status),
 }));
 vi.mock('../../src/context/InTabLobbyContext', () => ({ useAppNavigate: () => fixture.navigate }));
@@ -238,6 +242,7 @@ beforeEach(() => {
   fixture.reportError.mockClear();
   fixture.navigate.mockClear();
   fixture.register.mockReset();
+  fixture.isRegistering = false;
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
 });
 afterEach(() => {
@@ -246,43 +251,73 @@ afterEach(() => {
 });
 
 describe('Tournament details snapshot recovery', () => {
-  it.each(['002c2d27-9584-4e52-835a-bb2be148fc81', 'regular-club'])(
-    'header registration preserves the exact club and price for %s',
-    async (clubId) => {
-      fixture.getTournament.mockResolvedValue(
-        tournament('a', { status: 'REGISTERING', format_contract: 'mtt-v2', club_id: clubId })
-      );
-      render(<Page />);
-      await flush();
-      fireEvent.click(screen.getByRole('button', { name: 'Register', exact: true }));
-      expect(fixture.register).toHaveBeenCalledTimes(1);
-      expect(fixture.register).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'a',
-          club_id: clubId,
-          buy_in_amount: 10,
-          buy_in_fee: 1,
-          status: 'REGISTERING',
-        }),
-        expect.any(Function)
-      );
-    }
-  );
+  it.each([
+    ['002c2d27-9584-4e52-835a-bb2be148fc81', 'header'],
+    ['002c2d27-9584-4e52-835a-bb2be148fc81', 'footer'],
+    ['regular-club', 'header'],
+    ['regular-club', 'footer'],
+  ])('registration preserves the exact club and price for %s via %s', async (clubId, placement) => {
+    fixture.getTournament.mockResolvedValue(
+      tournament('a', { status: 'REGISTERING', format_contract: 'mtt-v2', club_id: clubId })
+    );
+    render(<Page />);
+    await flush();
+    fireEvent.click(
+      within(
+        document.querySelector(
+          placement === 'header' ? '.details-header__actions' : '.details-footer'
+        ) as HTMLElement
+      ).getByRole('button', { name: 'Register', exact: true })
+    );
+    expect(fixture.register).toHaveBeenCalledTimes(1);
+    expect(fixture.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'a',
+        club_id: clubId,
+        buy_in_amount: 10,
+        buy_in_fee: 1,
+        status: 'REGISTERING',
+      }),
+      expect.any(Function)
+    );
+  });
 
   it.each([false, true])(
-    'keeps one Register action in the header for embedded=%s',
+    'keeps one Register at each entry point for embedded=%s',
     async (embedded) => {
       fixture.getTournament.mockResolvedValue(
         tournament('a', { status: 'REGISTERING', format_contract: 'mtt-v2' })
       );
       render(<Page embedded={embedded} />);
       await flush();
-      const action = screen.getByRole('button', { name: 'Register', exact: true });
+      const action = within(
+        document.querySelector('.details-header__actions') as HTMLElement
+      ).getByRole('button', { name: 'Register', exact: true });
       expect(action.closest('.details-header__actions')).not.toBeNull();
       expect(action.closest('.details-footer')).toBeNull();
-      expect(screen.getAllByRole('button', { name: 'Register', exact: true })).toHaveLength(1);
+      expect(screen.getAllByRole('button', { name: 'Register', exact: true })).toHaveLength(2);
+      const footer = within(document.querySelector('.details-footer') as HTMLElement);
+      expect(footer.getByRole('button', { name: 'Register', exact: true }).className).toBe(
+        footer.getByRole('button', { name: 'Share', exact: true }).className
+      );
     }
   );
+
+  it('disables both entry points during the same pending registration', async () => {
+    fixture.isRegistering = true;
+    fixture.getTournament.mockResolvedValue(
+      tournament('a', { status: 'REGISTERING', format_contract: 'mtt-v2' })
+    );
+    render(<Page />);
+    await flush();
+    const buttons = screen.getAllByRole('button', { name: 'Processing...', exact: true });
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+    }
+    expect(fixture.register).not.toHaveBeenCalled();
+  });
 
   it.each([false, true])(
     'renders the actual break clock through row updates in the modal=%s caller',

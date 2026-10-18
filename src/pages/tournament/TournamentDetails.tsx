@@ -63,6 +63,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import type { Tournament } from '../../types/database.types';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './TournamentDetails.css';
+import { TournamentRegisterButton } from '../../components/tournament/TournamentRegisterButton';
 import { useToast } from '../../components/common/Toast';
 import PageErrorBoundary from '../../components/common/PageErrorBoundary';
 import { FinalTableOverlay } from '../../components/tournament/FinalTableOverlay';
@@ -1849,8 +1850,11 @@ export default function TournamentDetails({
     return { label: titleCase(raw.replace(/_/g, ' ').toLowerCase()) || 'Scheduled', tone: 'open' };
   })();
 
-  // One state machine and one live action, reachable above every tab.
-  const tournamentAction = (() => {
+  // One state machine serves the header and the matching Share-style footer entry.
+  const tournamentAction = (placement: 'header' | 'footer') => {
+    const footer = placement === 'footer';
+    const RegisterButton = footer ? 'button' : TournamentRegisterButton;
+    const registerClass = footer ? 'btn btn-share' : 'btn btn-register';
     const myEntry = entries.find((e) => e.user_id === user?.id);
 
     /* `isWatchable` covers LATE_REG as well as RUNNING. A late-reg
@@ -1892,6 +1896,7 @@ export default function TournamentDetails({
      */
     if (isWatchable) {
       if (myEntry?.table_id && (myEntry.status === 'playing' || myEntry.status === 'registered')) {
+        if (footer) return null;
         /* ALREADY AT THAT TABLE (2026-10-04). In the in-game popup the
                    player is usually sitting at the very table this link names.
                    Navigating to the route you are standing on changes nothing
@@ -1924,18 +1929,20 @@ export default function TournamentDetails({
                  waiting for a seat" and "I want to see the action" are not
                  mutually exclusive, and a busted player still wants to watch
                  the rest of it out. See featuredTableId. */
-      const watchBtn = featuredTableId ? (
-        <button
-          className="btn btn-watch"
-          type="button"
-          onClick={() => watchTable(featuredTableId)}
-          title="Watch The Featured Table"
-        >
-          WATCH
-        </button>
-      ) : null;
+      const watchBtn =
+        !footer && featuredTableId ? (
+          <button
+            className="btn btn-watch"
+            type="button"
+            onClick={() => watchTable(featuredTableId)}
+            title="Watch The Featured Table"
+          >
+            WATCH
+          </button>
+        ) : null;
 
       if (myEntry?.status === 'registered') {
+        if (footer) return null;
         return (
           <>
             <span className="tournament-status-badge running">WAITING FOR SEAT...</span>
@@ -1947,8 +1954,8 @@ export default function TournamentDetails({
         if (reEntryOffer) {
           return (
             <>
-              <button
-                className="btn btn-register late-reg"
+              <RegisterButton
+                className={footer ? registerClass : `${registerClass} late-reg`}
                 type="button"
                 onClick={() => void handleReEnter()}
                 disabled={isReEntering}
@@ -1956,11 +1963,12 @@ export default function TournamentDetails({
                 {isReEntering
                   ? 'Processing...'
                   : `${tournament.is_rebuy ? 'Rebuy' : 'Re-Enter'} (${chipsCompact(reEntryOffer.cost)})`}
-              </button>
+              </RegisterButton>
               {watchBtn}
             </>
           );
         }
+        if (footer) return null;
         return (
           <>
             <span className="tournament-status-badge cancelled">ELIMINATED</span>
@@ -1971,8 +1979,8 @@ export default function TournamentDetails({
       if (!isRegistered && lateRegCountdown) {
         return (
           <>
-            <button
-              className="btn btn-register late-reg"
+            <RegisterButton
+              className={footer ? registerClass : `${registerClass} late-reg`}
               type="button"
               onClick={() => handleRegister(true)}
               disabled={
@@ -1980,12 +1988,13 @@ export default function TournamentDetails({
                 isTournamentEntryUnavailable(tournament, tournament.current_players)
               }
             >
-              Late Register ({lateRegCountdown})
-            </button>
+              {`Late Register (${lateRegCountdown})`}
+            </RegisterButton>
             {watchBtn}
           </>
         );
       }
+      if (footer) return null;
       return (
         <>
           <span className="tournament-status-badge running">In Progress</span>
@@ -1998,16 +2007,19 @@ export default function TournamentDetails({
                dealing, so a registered player must not be offered Unregister
                and nobody else Register. The Overview carries the schedule. */
     if (isBaggedStatus(tournament.status)) {
-      return <span className="tournament-status-badge running">{DAY_COMPLETE_LABEL}</span>;
+      return footer ? null : (
+        <span className="tournament-status-badge running">{DAY_COMPLETE_LABEL}</span>
+      );
     }
     if (tournament.status === 'COMPLETED') {
-      return <span className="tournament-status-badge completed">Completed</span>;
+      return footer ? null : <span className="tournament-status-badge completed">Completed</span>;
     }
     if (tournament.status === 'CANCELLED') {
-      return <span className="tournament-status-badge cancelled">Cancelled</span>;
+      return footer ? null : <span className="tournament-status-badge cancelled">Cancelled</span>;
     }
 
     if (isRegistered) {
+      if (footer) return null;
       return (
         <button
           className="btn btn-unregister"
@@ -2021,8 +2033,8 @@ export default function TournamentDetails({
     }
 
     return (
-      <button
-        className="btn btn-register"
+      <RegisterButton
+        className={registerClass}
         type="button"
         onClick={() => handleRegister(false)}
         disabled={
@@ -2034,9 +2046,9 @@ export default function TournamentDetails({
           : isRegisteringMtt
             ? 'Processing...'
             : 'Register'}
-      </button>
+      </RegisterButton>
     );
-  })();
+  };
 
   return (
     <PageErrorBoundary pageName="TournamentDetails">
@@ -2061,7 +2073,7 @@ export default function TournamentDetails({
               {lobbyStatus.label}
             </span>
             <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>
-            <div className="details-header__actions">{tournamentAction}</div>
+            <div className="details-header__actions">{tournamentAction('header')}</div>
             {closeButton}
           </div>
           <h1 className="tournament-name">
@@ -2160,6 +2172,7 @@ export default function TournamentDetails({
           <button className="btn btn-share" type="button" onClick={() => void shareTournament()}>
             Share
           </button>
+          {tournamentAction('footer')}
         </div>
 
         {/* The Sign Up card that used to live here is now

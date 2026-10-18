@@ -12,8 +12,9 @@ export interface UnionStatementClub {
   direction: string | null;
   message_sent: boolean;
   overdue: boolean;
-  paid_total: number;
-  outstanding: number;
+  payment_details_available?: boolean;
+  paid_total: number | null;
+  outstanding: number | null;
   rake_generated: number;
   rakeback_due: number;
   union_fee_kept: number;
@@ -42,8 +43,9 @@ export interface UnionStatementTotals {
   clubs_owe: number;
   union_owes: number;
   net: number;
-  collected: number;
-  outstanding: number;
+  payment_details_available?: boolean;
+  collected: number | null;
+  outstanding: number | null;
   rake_generated: number;
   eco_amount: number;
 }
@@ -149,6 +151,15 @@ function parseClub(value: unknown): ParsedClub {
   if (direction !== null && !DIRECTIONS.has(direction)) {
     throw new Error('Statement direction is invalid');
   }
+  const available =
+    row.payment_details_available === undefined
+      ? true
+      : booleanValue(row.payment_details_available, 'Statement payment availability');
+  if (
+    !available &&
+    (status !== 'paid' || row.paid_total !== null || row.outstanding !== null || row.amount === 0)
+  )
+    throw new Error('Statement payment availability is inconsistent');
   const rawAmount = moneyValue(row.amount, 'Statement amount');
   const parsed: UnionStatementClub = {
     club_id: textValue(row.club_id, 'Statement club identity'),
@@ -164,8 +175,11 @@ function parseClub(value: unknown): ParsedClub {
     direction,
     message_sent: booleanValue(row.message_sent, 'Statement delivery state'),
     overdue: booleanValue(row.overdue, 'Statement overdue state'),
-    paid_total: moneyValue(row.paid_total, 'Statement paid total', true),
-    outstanding: moneyValue(row.outstanding, 'Statement outstanding total', true),
+    payment_details_available: available,
+    paid_total: available ? moneyValue(row.paid_total, 'Statement paid total', true) : null,
+    outstanding: available
+      ? moneyValue(row.outstanding, 'Statement outstanding total', true)
+      : null,
     rake_generated: moneyValue(row.rake_generated, 'Statement rake', true),
     rakeback_due: moneyValue(row.rakeback_due, 'Statement rakeback', true),
     union_fee_kept: moneyValue(row.union_fee_kept, 'Statement union fee', true),
@@ -193,7 +207,7 @@ function parseClub(value: unknown): ParsedClub {
         parsed.players_won,
         parsed.eco_amount,
         parsed.presettled,
-      ].some((amount) => cents(amount) !== 0)
+      ].some((amount) => amount !== null && cents(amount) !== 0)
     ) {
       throw new Error('Missing statement row carries invoice data');
     }
@@ -214,20 +228,20 @@ function parseClub(value: unknown): ParsedClub {
     parsed.amount =
       parsed.direction === 'club owes union' ? Math.abs(rawAmount) : -Math.abs(rawAmount);
   }
-  if (parsed.paid_total > Math.abs(parsed.amount)) {
+  if (parsed.paid_total !== null && parsed.paid_total > Math.abs(parsed.amount)) {
     throw new Error('Statement paid total exceeds its amount');
   }
   const expectedOutstanding = Math.max(
-    Math.abs(cents(parsed.amount)) - cents(parsed.paid_total),
+    Math.abs(cents(parsed.amount)) - cents(parsed.paid_total ?? 0),
     0
   );
-  if (cents(parsed.outstanding) !== expectedOutstanding) {
+  if (available && cents(parsed.outstanding as number) !== expectedOutstanding) {
     throw new Error('Statement outstanding total does not reconcile');
   }
   if (cents(parsed.rake_generated) !== cents(parsed.rakeback_due) + cents(parsed.union_fee_kept)) {
     throw new Error('Statement rake split does not reconcile');
   }
-  if (status === 'paid' && cents(parsed.outstanding) !== 0) {
+  if (available && status === 'paid' && cents(parsed.outstanding as number) !== 0) {
     throw new Error('Paid statement still has an outstanding balance');
   }
   return { club: parsed, rawAmount };
@@ -235,7 +249,14 @@ function parseClub(value: unknown): ParsedClub {
 
 function parseTotals(value: unknown): UnionStatementTotals {
   const totals = objectValue(value, 'Statement totals');
+  const available =
+    totals.payment_details_available === undefined
+      ? true
+      : booleanValue(totals.payment_details_available, 'Statement totals payment availability');
+  if (!available && (totals.collected !== null || totals.outstanding !== null))
+    throw new Error('Statement totals payment availability is inconsistent');
   return {
+    payment_details_available: available,
     clubs: countValue(totals.clubs, 'Statement club count'),
     issued: countValue(totals.issued, 'Statement issued count'),
     missing: countValue(totals.missing, 'Statement missing count'),
@@ -244,8 +265,8 @@ function parseTotals(value: unknown): UnionStatementTotals {
     clubs_owe: moneyValue(totals.clubs_owe, 'Statement clubs owed', true),
     union_owes: moneyValue(totals.union_owes, 'Statement union owed', true),
     net: moneyValue(totals.net, 'Statement net'),
-    collected: moneyValue(totals.collected, 'Statement collected', true),
-    outstanding: moneyValue(totals.outstanding, 'Statement outstanding', true),
+    collected: available ? moneyValue(totals.collected, 'Statement collected', true) : null,
+    outstanding: available ? moneyValue(totals.outstanding, 'Statement outstanding', true) : null,
     rake_generated: moneyValue(totals.rake_generated, 'Statement rake generated', true),
     eco_amount: moneyValue(totals.eco_amount, 'Statement ECO total'),
   };
@@ -356,17 +377,28 @@ export function parseUnionStatementBoard(
     throw new Error('Statement signed totals do not reconcile');
   }
 
+  const available = clubs.every((row) => row.payment_details_available !== false);
+  if (available !== totals.payment_details_available)
+    throw new Error('Statement payment availability total does not reconcile');
   const moneyChecks: Array<[number, number, string]> = [
-    [totals.collected, sumCents(clubs.map((row) => row.paid_total)), 'collected'],
-    [
-      totals.outstanding,
-      sumCents(
-        clubs
-          .filter((row) => row.status !== 'missing' && row.status !== 'cancelled')
-          .map((row) => row.outstanding)
-      ),
-      'outstanding',
-    ],
+    ...(available
+      ? ([
+          [
+            totals.collected as number,
+            sumCents(clubs.map((row) => row.paid_total as number)),
+            'collected',
+          ],
+          [
+            totals.outstanding as number,
+            sumCents(
+              clubs
+                .filter((row) => row.status !== 'missing' && row.status !== 'cancelled')
+                .map((row) => row.outstanding as number)
+            ),
+            'outstanding',
+          ],
+        ] as Array<[number, number, string]>)
+      : []),
     [totals.rake_generated, sumCents(clubs.map((row) => row.rake_generated)), 'rake'],
     [totals.eco_amount, sumCents(clubs.map((row) => row.eco_amount)), 'ECO'],
   ];

@@ -69,6 +69,42 @@ describe('parseUnionStatementBoard', () => {
     });
   });
 
+  it('keeps explicitly unavailable legacy payment details unknown while retaining invoice amounts', () => {
+    const value: any = board();
+    value.clubs[0].status = 'paid';
+    value.clubs[0].payment_details_available = false;
+    value.clubs[0].paid_total = null;
+    value.clubs[0].outstanding = null;
+    value.totals.paid = 1;
+    value.totals.payment_details_available = false;
+    value.totals.collected = null;
+    value.totals.outstanding = null;
+    expect(parseUnionStatementBoard(value, 'union-a', '2026-09-14')).toMatchObject({
+      totals: { collected: null, outstanding: null, net: 120.25 },
+      clubs: [
+        {
+          status: 'paid',
+          amount: 120.25,
+          paid_total: null,
+          outstanding: null,
+          payment_details_available: false,
+        },
+      ],
+    });
+    value.totals.outstanding = 0;
+    expect(() => parseUnionStatementBoard(value, 'union-a', '2026-09-14')).toThrow(/availability/);
+  });
+
+  it('continues to refuse a paid modern invoice whose explicit payment detail contradicts its balance', () => {
+    const value: any = board();
+    value.clubs[0].status = 'paid';
+    value.clubs[0].payment_details_available = true;
+    value.totals.paid = 1;
+    expect(() => parseUnionStatementBoard(value, 'union-a', '2026-09-14')).toThrow(
+      'Paid statement still has an outstanding balance'
+    );
+  });
+
   it('binds a current absolute invoice amount to its persisted union-owes direction', () => {
     const value = board();
     value.clubs[0].direction = 'union owes club';

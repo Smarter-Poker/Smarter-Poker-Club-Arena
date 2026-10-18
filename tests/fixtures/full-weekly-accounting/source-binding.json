@@ -465,10 +465,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "79d86ee1493d729919b64dd519cc5c9b67d7047b7f79eb75c7e616d75158332e",
+    "scripts/ci/classify-ci-changes.mjs": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "22f901c45ca796c891e545ccfab869a465089e89e7b5ae54d4f6557959aa1bfe",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "44183b53a02b820e826f37bb9a32e55629803a81471b77922966674b4d92c3f1",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -487,7 +487,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "81d6a3f1a746de52ccd7981e5ab2872af9ebc2221fcc3def6ca88a0525959c61",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "64b7ec88e94688696ab1f53b0e84fe19619179947f08bf35ef4bcb22d397eb87",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -4956,5 +4956,38 @@
     ],
     "reason": "Dan's 2026-10-17 sweep found the Advanced Cashier Settlement Record refusing every club: production trigger trg_weekly_statement_issue_settled (migration 20261015180754) stamps every club_weekly_accounting row 'paid' at issue, and readClubWeeklyStatements accepted only 'generated'. The reader now accepts the two issued statuses ('generated', 'paid'); this test's refusal list replaces the single {status:'paid'} fault with cancelled, disputed, pending and null, and adds one case proving a paid-at-issue statement reads. Every other refusal (scope, amounts, ready_to_issue, message_sent, accounting_version) is unchanged.",
     "verification": "The replacement is the exact SHA-256 of the reviewed file bytes in this branch; the diff was read in full before restamping. tests/unit/ClubWeeklyAccountingReader.test.ts passes, and scripts/ci/verify-source-bindings.py re-reads every pin after this restamp."
+  },
+  "statementAvailabilityRoutingIntegration20261018": {
+    "reason": "Add statement-availability fixture-only input routing to the existing required Data Console native job. Preserve all existing financial sources, assertions and qualification status. Reviewed additive classifier change only; hash binding is not runtime qualification.",
+    "path": "scripts/ci/classify-ci-changes.mjs",
+    "previous_sha256": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417",
+    "current_sha256": "32c1f6f91fea456e6884e9d4bd1f13008a428162ade9eea676535a24bee328c0",
+    "dependent_bindings": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous_sha256": "820a553a07ac809c6927e73cc39e5cbd80c9060c238a9dc9a74b1a5f2aa68cf2",
+        "current_sha256": "7f03d62d9d793cc789ed9b602e0f1d51d199a1485c8398c792cec40c74acceec"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous_sha256": "b7f75ba00b61d2418db86c10bbd53acfa40c19e529862572ad89c5692007ac77",
+        "current_sha256": "589c30abce2f3b6bd27c253570e895c779aaa3b90d0e5c3f345efaaa209b4c65"
+      }
+    }
+  },
+  "onTimeStatementRoutingMerge20261018": {
+    "reason": "Preserve both current classifier additions and connected binding audits; historical financial source/assertions/qualification states unchanged. Current source identity only.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234",
+        "current": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "140f29efe21349b785c4fe9f8e460e08a7e2e73c3d6239197bc3d3b4fafc7acc",
+        "current": "44183b53a02b820e826f37bb9a32e55629803a81471b77922966674b4d92c3f1"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "ddba3fd1738110e7004f9a3c14a702a70f2d840d8ce7336b225a0af5efbc0760",
+        "current": "64b7ec88e94688696ab1f53b0e84fe19619179947f08bf35ef4bcb22d397eb87"
+      }
+    }
   }
 }

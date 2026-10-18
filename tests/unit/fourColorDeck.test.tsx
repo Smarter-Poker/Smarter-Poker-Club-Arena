@@ -134,15 +134,20 @@ describe('four colors are the standard and the cards follow the switch', () => {
     expect(panel.result.current.settings.fourColorDeck).toBe(true);
   });
 
-  it('keeps the chosen colors when both image formats fail', () => {
-    const cards = render(<CardImage card={{ rank: 'A', suit: 'd' }} deckStyle="2color" />);
-    const image = cards.container.querySelector('img')!;
-    fireEvent.error(image);
-    fireEvent.error(image);
-    expect(cards.container.querySelector<HTMLElement>('.card-image__fallback')!.style.color).toBe(
-      '#ef4444'
-    );
-    expect(getCardImagePath({ rank: 'A', suit: 'c' })).toContain('/4color/');
-    expect(SUIT_COLOR.h).toBe('#ef4444');
-  });
+  it.each(['d', 'diamonds'] as const)(
+    'keeps the chosen colors when both image formats fail for %s',
+    (suit) => {
+      const cards = render(
+        <CardImage card={{ rank: 'A', suit: suit as 'd' }} deckStyle="2color" />
+      );
+      const image = cards.container.querySelector('img')!;
+      fireEvent.error(image);
+      fireEvent.error(image);
+      expect(cards.container.querySelector<HTMLElement>('.card-image__fallback')!.style.color).toBe(
+        '#ef4444'
+      );
+      expect(getCardImagePath({ rank: 'A', suit: 'c' })).toContain('/4color/');
+      expect(SUIT_COLOR.h).toBe('#ef4444');
+    }
+  );
 });

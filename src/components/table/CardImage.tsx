@@ -335,7 +335,7 @@ export function CardImage({
             fontWeight: 800,
             color:
               effectiveDeckStyle === '2color'
-                ? card.suit === 'h' || card.suit === 'd'
+                ? SUIT_MAP[card.suit] === 'hearts' || SUIT_MAP[card.suit] === 'diamonds'
                   ? SUIT_COLOR.h
                   : SUIT_COLOR.s
                 : SUIT_COLOR[card.suit] || '#000',

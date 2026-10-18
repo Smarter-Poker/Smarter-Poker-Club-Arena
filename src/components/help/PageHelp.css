@@ -60,6 +60,41 @@
   align-self: center;
 }
 
+/* A phone cannot put the live controls beside an intrinsic-width heading.
+   Keep the title centered on its own wrapping row; controls and the 44px help
+   retain a separate row instead of overlapping the title's hit area. */
+@media (max-width: 703px) {
+  .ca-page-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ca-page-bar__title {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .ca-page-bar__live {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
+  }
+
+  .ca-page-bar > .ca-page-help {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  /* Console-owned headings use titleAs={false}; do not reserve a blank row. */
+  .ca-page-bar:not(:has(> .ca-page-bar__title)) > .ca-page-bar__live,
+  .ca-page-bar:not(:has(> .ca-page-bar__title)) > .ca-page-help {
+    grid-row: 1;
+  }
+}
+
 .ca-page-bar__status {
   display: inline-flex;
   align-items: center;

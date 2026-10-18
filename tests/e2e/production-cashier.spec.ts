@@ -8,7 +8,6 @@ import {
 import {
   attachCashierScreenshot,
   expectCashierAxeClean,
-  expectCompactCashierFigure,
   expectCashierAmountPresets,
   cashierRosterWalletValue,
   expectCashierWalletBalance,
@@ -267,7 +266,7 @@ test.describe('Production Cashier Certification', () => {
       );
     }
     const aggregates = surface.locator('[class*="stripValue"]');
-    expectCompactCashierFigure(await aggregates.nth(1).innerText(), 'Downline Holdings');
+    await expectCashierWalletBalance(aggregates.nth(1), 'Downline Holdings');
     await expectCashierAxeClean(page, testInfo, '[data-cashier-surface="trade"]', 'trade-cashier');
     await attachCashierScreenshot(page, testInfo, 'trade-cashier');
     await expect(surface.locator('[data-cashier-layout="directory"]')).toHaveCount(1);

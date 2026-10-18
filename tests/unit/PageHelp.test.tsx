@@ -1,4 +1,6 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -78,5 +80,28 @@ describe('the "?" explains the page and walks its tutorial from the bottom', () 
   it('renders without a router (prerendered pages, isolated renders)', () => {
     render(<PageHelp title="Legal Center" summary="Platform Rules." />);
     expect(screen.getByRole('button', { name: 'Page Help' })).toBeTruthy();
+  });
+});
+
+// The production 375px Players mode switch was behind the centered heading;
+// Monthly Challenges also exceeded 320px at 200% text. Browser proof exercises
+// those real components; keep the responsible layout boundary in normal CI.
+describe('PageBar responsive heading and control rows', () => {
+  it('preserves centered desktop titles and separates wrapping phone titles from controls', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/components/help/PageHelp.css'), 'utf8');
+    const mobile = css.match(/@media \(max-width: 703px\) \{([\s\S]*?)\n\}/)?.[1];
+    expect(mobile).toBeDefined();
+    expect(css.slice(0, css.indexOf('@media (max-width: 703px)'))).toContain(
+      'grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr)'
+    );
+    expect(mobile).toMatch(
+      /\.ca-page-bar__title\s*\{[^}]*grid-column: 1 \/ -1;[^}]*grid-row: 1;[^}]*min-width: 0;[^}]*max-width: 100%;[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;/s
+    );
+    expect(mobile).toMatch(/\.ca-page-bar__live\s*\{[^}]*grid-column: 1;[^}]*grid-row: 2;/s);
+    expect(mobile).toMatch(
+      /\.ca-page-bar > \.ca-page-help\s*\{[^}]*grid-column: 2;[^}]*grid-row: 2;/s
+    );
+    expect(mobile).toMatch(/:not\(:has\(> \.ca-page-bar__title\)\)[\s\S]*grid-row: 1;/);
+    expect(mobile).not.toMatch(/font-size|pointer-events/);
   });
 });

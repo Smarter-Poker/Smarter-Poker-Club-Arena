@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Locator } from '@playwright/test';
+import { formatWalletChips } from '../../src/utils/format';
 
 // Exercise the maintained format assertions without starting Playwright's
 // runner/transform service inside the unit runner. Browser locator checks run
@@ -60,11 +61,12 @@ describe('production Cashier wallet certificate', () => {
     '999,999.99',
     '1,000,000.00',
     '-1,234.50',
-    '1M',
-    '1.2M',
-    '999.9M',
-    '1B',
-    '12.5B',
+    '1,000,000.01',
+    '1,250,000.00',
+    '5,533,125.65',
+    '79,345,678.12',
+    '1,000,000,000.00',
+    '-1,250,000.50',
   ])('accepts the approved chip wallet figure %s', (value) =>
     expect(() => certifyWallet(value, 'Wallet')).not.toThrow()
   );
@@ -83,7 +85,11 @@ describe('production Cashier wallet certificate', () => {
     '1.2K',
     '1.0M',
     '0.9M',
-    '1,000,000.01',
+    '1M',
+    '1.2M',
+    '999.9M',
+    '1B',
+    '12.5B',
     '+12.50',
     '-',
     'Unavailable',
@@ -92,6 +98,29 @@ describe('production Cashier wallet certificate', () => {
   ])('rejects the malformed or unverified chip wallet figure %s', (value) =>
     expect(() => certifyWallet(value, 'Wallet')).toThrow()
   );
+  it.each([
+    [1_000_000.01, '1,000,000.01'],
+    [5_533_125.65, '5,533,125.65'],
+    [79_345_678.12, '79,345,678.12'],
+    [1_000_000_000, '1,000,000,000.00'],
+    [-1_250_000.5, '-1,250,000.50'],
+  ])('agrees with the exact wallet formatter for %s', (amount, expected) => {
+    expect(formatWalletChips(Number(amount))).toBe(expected);
+    expect(() => certifyWallet(String(expected), 'Wallet')).not.toThrow();
+  });
+
+  it('checks Downline Holdings as an exact wallet balance', () => {
+    const source = readFileSync(resolve(__dirname, '../e2e/production-cashier.spec.ts'), 'utf8');
+    expect(source).toContain(
+      "await expectCashierWalletBalance(aggregates.nth(1), 'Downline Holdings')"
+    );
+  });
+
+  it('refuses a syntactically grouped amount that is not finite', () => {
+    const overflow = `${'999,'.repeat(110)}999.00`;
+    expect(() => certifyWallet(overflow, 'Wallet')).toThrow();
+  });
+
   it('permits only the documented absent Agent Float state when explicitly requested', () => {
     const options = { allowAbsentAgentFloat: true };
     expect(() =>

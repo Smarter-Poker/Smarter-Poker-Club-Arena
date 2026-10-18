@@ -18,6 +18,10 @@
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='8min';
+-- Bound memory to this one initializer. Hash aggregation avoids sorting all
+-- historical hands merely because the cutoff join underestimates its rows.
+SET LOCAL work_mem='64MB';
+SET LOCAL enable_sort=off;
 SELECT pg_advisory_xact_lock(hashtextextended('member_record_daily_initialization',0));
 DO $$ BEGIN
  IF NOT EXISTS(SELECT 1 FROM public.member_record_daily_facts_state WHERE singleton AND NOT initialized)
@@ -28,15 +32,28 @@ WITH buyins AS MATERIALIZED (
    table_id,account_entity_id,seat_joined_at,funding_club_id
  FROM public.cash_participant_funding_receipts WHERE operation_kind='buyin' AND seat_joined_at IS NOT NULL
  ORDER BY table_id,account_entity_id,seat_joined_at,recorded_at DESC,id DESC
-), funding AS MATERIALIZED (
- SELECT *,lead(seat_joined_at) OVER(PARTITION BY table_id,account_entity_id ORDER BY seat_joined_at) until_at FROM buyins
+), funding AS NOT MATERIALIZED (
+ -- One hash key per table/player, rather than joining every hand against
+ -- every historical occupancy. Uniform histories resolve in constant time;
+ -- a player who changed funding club still resolves the exact latest receipt.
+ SELECT table_id,account_entity_id,min(seat_joined_at) first_at,
+   count(DISTINCT funding_club_id)=1 uniform_club,
+   array_agg(funding_club_id ORDER BY seat_joined_at DESC) clubs,
+   array_agg(seat_joined_at ORDER BY seat_joined_at DESC) starts
+ FROM buyins GROUP BY table_id,account_entity_id
 ), bounds AS MATERIALIZED (
  SELECT id club_id,public.fn_ca_launch_accounting_cutoff('club',id) cutoff FROM public.clubs
 ), projected AS (
  SELECT coalesce(x.funding_club_id,tp.club_id,ra.club_id,f.club_id) attributed_club,f.*
  FROM public.ca_hand_facts f
- LEFT JOIN funding x ON f.tournament_id IS NULL AND x.table_id=f.table_id AND x.account_entity_id=f.user_id
-   AND f.played_at>=x.seat_joined_at AND (x.until_at IS NULL OR f.played_at<x.until_at)
+ LEFT JOIN funding k ON f.tournament_id IS NULL AND k.table_id=f.table_id AND k.account_entity_id=f.user_id
+   AND f.played_at>=k.first_at
+ LEFT JOIN LATERAL (
+   SELECT CASE WHEN k.uniform_club THEN k.clubs[1] ELSE
+     (SELECT k.clubs[i] FROM generate_subscripts(k.starts,1) i
+      WHERE f.played_at>=k.starts[i] ORDER BY i LIMIT 1)
+   END funding_club_id
+ ) x ON true
  LEFT JOIN public.tournament_players tp ON tp.tournament_id=f.tournament_id AND tp.user_id=f.user_id
  LEFT JOIN public.rake_attributions ra ON x.funding_club_id IS NULL AND tp.club_id IS NULL
    AND ra.hand_id=f.hand_id AND ra.player_id=f.user_id

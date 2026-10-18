@@ -44,7 +44,7 @@ try:
     out, err = seed.communicate(timeout=15)
     if seed.returncode:
         raise RuntimeError(err)
-    result = query("SELECT sum(hands)||':'||sum(net) FROM member_record_daily_facts WHERE club_id='00000000-0000-0000-0000-000000000001'")
+    result = query("SELECT sum(hands)||':'||sum(net) FROM member_record_daily_facts WHERE club_id='00000000-0000-0000-0000-000000000001' AND user_id='00000000-0000-0000-0000-000000000002'")
     assert result == '13:-130', result
     print('MEMBER_RECORD_CONCURRENCY PASS: concurrent fact counted exactly once')
 finally:

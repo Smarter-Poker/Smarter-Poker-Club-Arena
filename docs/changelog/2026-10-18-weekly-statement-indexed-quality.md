@@ -1,0 +1,7 @@
+# Weekly Statement Quality Uses Indexed Event Owners
+
+The original October 5-12 union week has committed rounds 1-3 but cannot finish its statement proof within the existing budget. Its materialized rake and receipt relations are underestimated by several orders of magnitude. The authoritative quality function now reads each event’s original rake, batch, source and recognized receipts through their indexed owners, preserving every original result field, condition and slow-path refusal. Bank cardinality still follows its validated primary key. No payment, source inventory, lifetime, budget, wallet, receipt or fee rule changes.
+
+A production READ ONLY all-field measurement processed 183,871 events in 78.738214 seconds; earlier bulk-keyset alternatives exceeded 120 seconds. This measurement is performance evidence only, not a READY quality certificate or committed settlement. The complete original and candidate quality bodies, native whole-result/refusal/installer regressions, and the existing required Accounting 1 parent retain regression protection. Protected checks, installation, original coordinator trial/commit, causal alert closure and live verification remain separate required evidence.
+
+The first hosted Accounting 1 run exposed an unrelated random public club-ID collision in the existing native launch-reset fixture before its ECO assertion. Its five fixture clubs now receive distinct explicit IDs. The real schema/default and every financial assertion remain unchanged; the complete required parent is rerun.

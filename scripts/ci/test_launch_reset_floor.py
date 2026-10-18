@@ -151,3 +151,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # An in-progress close is visited without the whole scope-eligibility scan.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-in-progress-tick-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# The real certificate CHECK accepts the per-club quality key written by R4.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-statement-certificate-kind-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('weekly-statement-certificate-kind'))], text=True))

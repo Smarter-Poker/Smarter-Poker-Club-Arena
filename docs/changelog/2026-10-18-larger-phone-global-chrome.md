@@ -5,3 +5,5 @@ Dedicated phone artwork from the unpublished October 17 branch now reaches the s
 Current main's five-door member footer is preserved. Its phone composition clips native columns from that same approved master, removing empty gaps without stretching icons; operator accounts retain their six-door composition. Both reserve the same enlarged height. Desktop, sticky/fixed positioning, safe areas and route permissions remain intact.
 
 Source/asset contracts and rendered portrait verification cover the responsive switch. Isolated before/after renders at 375, 393, 430, 600, 601, 768, 901 and 1680px show no horizontal overflow and unchanged desktop dimensions. Deployment identities and remaining proof are recorded in the task checkpoint.
+
+On short phones (including 320×568), the Diamond Spins controls reclaim 8px of empty vertical padding to accommodate the larger navigation. Existing button sizes, artwork and safe-area inset remain intact. The real page fixture reproduces the former 96.77px paused-state wheel and verifies the corrected layout against the unchanged readability, control-target and no-overflow assertions across six viewport/font cases.

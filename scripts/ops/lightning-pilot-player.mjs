@@ -352,6 +352,7 @@ export async function witnessPlayer({
         if (!latestHand) throw new Error('Actual Browser Render Unobserved');
         row.render = 'observed';
         const before = latestHand;
+        const requestedAt = new Date().toISOString();
         report.subphase = 'fold_request';
         report.cause = 'fold_ack_unverified';
         const responsePromise = page.waitForResponse(
@@ -374,7 +375,17 @@ export async function witnessPlayer({
         const answer = await bounded(response.json(), remaining());
         const action = {
           kind,
-          accepted: response.ok() && answer.success === true,
+          accepted: response.ok() && answer?.success === true,
+          httpStatus: response.status(),
+          // Native codes and UUIDs are safe evidence; raw errors and frames are not.
+          refusalCode:
+            typeof answer?.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(answer.code)
+              ? answer.code
+              : null,
+          requestHandId: before,
+          replyHandId: latestHand,
+          requestedAt,
+          repliedAt: new Date().toISOString(),
           nextHand: 'unknown',
         };
         row.actions.push(action);

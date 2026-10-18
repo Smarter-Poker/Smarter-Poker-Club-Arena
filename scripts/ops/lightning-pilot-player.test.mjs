@@ -258,7 +258,12 @@ test('fixtures match maintained SQL, UI sender and HTTP producer contracts', () 
   );
 });
 
-function fakeBrowser(refused = false, respectCapabilities = false, broken = null) {
+function fakeBrowser(
+  refused = false,
+  respectCapabilities = false,
+  broken = null,
+  refusalCode = 'STALE_ACTION'
+) {
   let frame,
     respond,
     serial = 1,
@@ -320,7 +325,12 @@ function fakeBrowser(refused = false, respectCapabilities = false, broken = null
         actionDevices.push({ kind, mountedWidth });
         const response = {
           ok: () => !refused,
-          json: async () => ({ success: !refused }),
+          status: () => (refused ? 400 : 200),
+          json: async () => ({
+            success: !refused,
+            code: refused ? refusalCode : undefined,
+            error: 'private fixture message',
+          }),
           url: () => 'https://engine.smarter.poker/action',
           request: () => ({
             method: () => 'POST',
@@ -568,4 +578,40 @@ test('missing desktop Fold and Watch remains an unqualified failure', async () =
   assert.equal(r.cause, 'fold_control_unavailable');
   assert.equal(b.actionDevices.length, 3);
   assert.deepEqual(f.calls, [{ scope: 'local' }]);
+});
+
+test('native refusal code and hand identities survive without retaining a private error message', async () => {
+  const f = fixture(),
+    b = fakeBrowser(true);
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  const a = r.devices[0].actions[0];
+  assert.equal(r.status, 'unknown');
+  assert.equal(a.httpStatus, 400);
+  assert.equal(a.refusalCode, 'STALE_ACTION');
+  assert.match(a.requestHandId, /^[0-9a-f-]{36}$/);
+  assert.match(a.replyHandId, /^[0-9a-f-]{36}$/);
+  assert.ok(Number.isFinite(Date.parse(a.requestedAt)));
+  assert.ok(Number.isFinite(Date.parse(a.repliedAt)));
+  assert.doesNotMatch(JSON.stringify(r), /private fixture message/);
+  assert.deepEqual(f.calls, [{ scope: 'local' }]);
+});
+test('an unrecognized refusal payload cannot leak into evidence or become a pass', async () => {
+  const f = fixture(),
+    b = fakeBrowser(true, false, null, 'private token or card payload');
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.devices[0].actions[0].refusalCode, null);
+  assert.doesNotMatch(JSON.stringify(r), /private token or card payload|private fixture message/);
 });

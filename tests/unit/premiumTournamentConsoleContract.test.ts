@@ -11,6 +11,22 @@ const GAME_PANEL = read('src/components/lobby/GameLobbyPanel.tsx');
 const GAME_PREMIUM = read('src/components/lobby/PremiumGameLobbyPanel.css');
 
 describe('tournament lobby shell contract', () => {
+  it('reserves global navigation for a table lobby without shrinking its full-screen modal', () => {
+    expect(PAGE).toContain('data-lobby-tab={inLobbyTab}');
+    expect(read('src/pages/MultiTablePage.tsx')).toMatch(
+      /tournamentIdOverride=\{top.tournamentId\}\s+inLobbyTab/
+    );
+    expect(SHELL).toMatch(
+      /\.tournament-details\[data-lobby-tab='true'\]\s*\{[^}]*height: calc\(var\(--details-h, 100dvh\) - var\(--ca-bottom-chrome-h, 0px\)\)/s
+    );
+    const short = SHELL.slice(SHELL.indexOf('/* On a short landscape viewport'));
+    expect(short).toContain(".tournament-details[data-lobby-tab='true']");
+    expect(short).toContain('height: auto');
+    expect(short).toContain('overflow: visible');
+    expect(short).toContain('padding-bottom: var(--ca-bottom-chrome-h, 0px)');
+    expect(short).not.toContain("data-embedded='true'");
+  });
+
   it('publishes exactly the seven approved tab labels', () => {
     for (const label of [
       'Details',

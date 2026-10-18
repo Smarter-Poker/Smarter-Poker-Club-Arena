@@ -176,8 +176,10 @@ describe('the drill-in carries everything the route carried', () => {
     for (const tok of ['lobbyTournamentStack', 'pushLobbyTournament', 'popLobbyTournament']) {
       expect(MULTI, `${tok} missing`).toContain(tok);
     }
-    // The back pill must pop ONE level, never blank the whole history.
-    expect(MULTI).toContain('popLobbyTournamentTab(table.id)');
+    // The existing header Back owns navigation; no duplicate overlay.
+    expect(MULTI).toContain('goBack: goBackInTab');
+    expect(MULTI).toContain('popLobbyTournament(t)');
+    expect(MULTI).not.toContain('multi-table-page__lobby-back');
     expect(MULTI).not.toContain('clearLobbyTournament(table.id)');
   });
 

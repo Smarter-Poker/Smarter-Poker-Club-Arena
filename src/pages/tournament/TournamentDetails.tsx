@@ -124,6 +124,7 @@ export default function TournamentDetails({
   searchOverride,
   onClose,
   currentTableId,
+  inLobbyTab = false,
 }: {
   tournamentIdOverride?: string;
   suppressAutoOpenTable?: boolean;
@@ -155,6 +156,8 @@ export default function TournamentDetails({
   /** The table the popup was opened FROM, so the footer can tell "take your
       seat" from "you are already in it". Only meaningful with `onClose`. */
   currentTableId?: string;
+  /** The in-table browser tab shares the global navigation; the modal does not. */
+  inLobbyTab?: boolean;
 } = {}) {
   const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
 
@@ -1846,6 +1849,195 @@ export default function TournamentDetails({
     return { label: titleCase(raw.replace(/_/g, ' ').toLowerCase()) || 'Scheduled', tone: 'open' };
   })();
 
+  // One state machine and one live action, reachable above every tab.
+  const tournamentAction = (() => {
+    const myEntry = entries.find((e) => e.user_id === user?.id);
+
+    /* `isWatchable` covers LATE_REG as well as RUNNING. A late-reg
+               event has players at tables — refusing to show WATCH for it was
+               the same blind spot the registration side already fixed. */
+    /**
+     * ═════════════════════════════════════════════════════════════════
+     *  TAKE SEAT (Dan 2026-08-30, binding: "there needs to be a take
+     *  seat button, there isn't")
+     * ═════════════════════════════════════════════════════════════════
+     *
+     * There was one control here that took a player to their own seat,
+     * it was labelled ENTER TABLE, and it was gated on
+     * `status === 'playing'`. Three things were wrong with that.
+     *
+     * IT SAID THE WRONG THING. "Enter table" is what a spectator does.
+     * The player has paid a buy-in and has a seat with their stack in
+     * it; the action is taking it. Now that the engine seats the field
+     * a minute before the cards (TOURNAMENT_PRESEAT_LEAD_MS), that
+     * minute is exactly when a player wants a button that says so.
+     *
+     * IT WAS NOT OFFERED TO A SEATED 'registered' PLAYER. Late
+     * registration seats you at the moment you register
+     * (fn_seat_late_registrant) while your row can still read
+     * 'registered' for a beat — so a player who had just paid, and
+     * whose seat existed, was shown the passive badge WAITING FOR
+     * SEAT... over the top of a seat they already had. The test is a
+     * table id, which is the thing that is true when there is a seat to
+     * take, not a status enum that is true slightly later.
+     *
+     * IT WAS THE ONLY WAY IN, AND IT WAS AUTOMATIC. The auto-open
+     * effect above navigates once per tournament; if a player dismisses
+     * that, opens the lobby from the felt (where auto-open is
+     * deliberately suppressed), or is looking at the card on a second
+     * device, there was nothing on screen to press. A button that is
+     * always there costs nothing and removes a whole class of "it
+     * froze" — which is what a card with no control on it looks like,
+     * whatever the server is doing.
+     */
+    if (isWatchable) {
+      if (myEntry?.table_id && (myEntry.status === 'playing' || myEntry.status === 'registered')) {
+        /* ALREADY AT THAT TABLE (2026-10-04). In the in-game popup the
+                   player is usually sitting at the very table this link names.
+                   Navigating to the route you are standing on changes nothing
+                   and leaves the popup open over the felt: a full-width blue
+                   button that, when pressed, does nothing at all. There the
+                   honest action is the way back to the seat. */
+        if (onClose && currentTableId && myEntry.table_id === currentTableId) {
+          return (
+            <button className="btn btn-enter-table btn-take-seat" type="button" onClick={onClose}>
+              Back To Table
+            </button>
+          );
+        }
+        return (
+          <Link
+            to={`/table/${myEntry.table_id}`}
+            className="btn btn-enter-table btn-take-seat"
+            /* Moved to another table while the popup was open: go
+                       there, and do not leave the popup covering it. */
+            onClick={onClose}
+          >
+            TAKE SEAT
+          </Link>
+        );
+      }
+      /* Dan 2026-08-25: every branch below used to END the footer - a
+                 badge, a countdown, or nothing. So a running tournament you
+                 were not playing in offered no way onto its felt at all. WATCH
+                 rides alongside whatever else the branch says, because "I am
+                 waiting for a seat" and "I want to see the action" are not
+                 mutually exclusive, and a busted player still wants to watch
+                 the rest of it out. See featuredTableId. */
+      const watchBtn = featuredTableId ? (
+        <button
+          className="btn btn-watch"
+          type="button"
+          onClick={() => watchTable(featuredTableId)}
+          title="Watch The Featured Table"
+        >
+          WATCH
+        </button>
+      ) : null;
+
+      if (myEntry?.status === 'registered') {
+        return (
+          <>
+            <span className="tournament-status-badge running">WAITING FOR SEAT...</span>
+            {watchBtn}
+          </>
+        );
+      }
+      if (myEntry?.status === 'eliminated') {
+        if (reEntryOffer) {
+          return (
+            <>
+              <button
+                className="btn btn-register late-reg"
+                type="button"
+                onClick={() => void handleReEnter()}
+                disabled={isReEntering}
+              >
+                {isReEntering
+                  ? 'Processing...'
+                  : `${tournament.is_rebuy ? 'Rebuy' : 'Re-Enter'} (${chipsCompact(reEntryOffer.cost)})`}
+              </button>
+              {watchBtn}
+            </>
+          );
+        }
+        return (
+          <>
+            <span className="tournament-status-badge cancelled">ELIMINATED</span>
+            {watchBtn}
+          </>
+        );
+      }
+      if (!isRegistered && lateRegCountdown) {
+        return (
+          <>
+            <button
+              className="btn btn-register late-reg"
+              type="button"
+              onClick={() => handleRegister(true)}
+              disabled={
+                isRegisteringMtt ||
+                isTournamentEntryUnavailable(tournament, tournament.current_players)
+              }
+            >
+              Late Register ({lateRegCountdown})
+            </button>
+            {watchBtn}
+          </>
+        );
+      }
+      return (
+        <>
+          <span className="tournament-status-badge running">In Progress</span>
+          {watchBtn}
+        </>
+      );
+    }
+
+    /* Multi-day, between days: entries are closed and nothing is
+               dealing, so a registered player must not be offered Unregister
+               and nobody else Register. The Overview carries the schedule. */
+    if (isBaggedStatus(tournament.status)) {
+      return <span className="tournament-status-badge running">{DAY_COMPLETE_LABEL}</span>;
+    }
+    if (tournament.status === 'COMPLETED') {
+      return <span className="tournament-status-badge completed">Completed</span>;
+    }
+    if (tournament.status === 'CANCELLED') {
+      return <span className="tournament-status-badge cancelled">Cancelled</span>;
+    }
+
+    if (isRegistered) {
+      return (
+        <button
+          className="btn btn-unregister"
+          type="button"
+          onClick={handleUnregister}
+          disabled={isProcessing}
+        >
+          {isProcessing ? 'Processing...' : 'Unregister'}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        className="btn btn-register"
+        type="button"
+        onClick={() => handleRegister(false)}
+        disabled={
+          isRegisteringMtt || isTournamentEntryUnavailable(tournament, tournament.current_players)
+        }
+      >
+        {isTournamentEntryUnavailable(tournament, tournament.current_players)
+          ? 'Entry Unavailable'
+          : isRegisteringMtt
+            ? 'Processing...'
+            : 'Register'}
+      </button>
+    );
+  })();
+
   return (
     <PageErrorBoundary pageName="TournamentDetails">
       <div
@@ -1853,6 +2045,7 @@ export default function TournamentDetails({
         ref={shellRef}
         data-active-tab={activeTab}
         data-embedded={isEmbedded}
+        data-lobby-tab={inLobbyTab}
       >
         {recoveryNotice}
         {/* THE HEADER (Dan 2026-10-04: "remove all these large frames, and make
@@ -1868,6 +2061,7 @@ export default function TournamentDetails({
               {lobbyStatus.label}
             </span>
             <span className="tournament-id">ID:{tournament.id.slice(0, 8)}</span>
+            <div className="details-header__actions">{tournamentAction}</div>
             {closeButton}
           </div>
           <h1 className="tournament-name">
@@ -1966,201 +2160,6 @@ export default function TournamentDetails({
           <button className="btn btn-share" type="button" onClick={() => void shareTournament()}>
             Share
           </button>
-          {(() => {
-            const myEntry = entries.find((e) => e.user_id === user?.id);
-
-            /* `isWatchable` covers LATE_REG as well as RUNNING. A late-reg
-               event has players at tables — refusing to show WATCH for it was
-               the same blind spot the registration side already fixed. */
-            /**
-             * ═════════════════════════════════════════════════════════════════
-             *  TAKE SEAT (Dan 2026-08-30, binding: "there needs to be a take
-             *  seat button, there isn't")
-             * ═════════════════════════════════════════════════════════════════
-             *
-             * There was one control here that took a player to their own seat,
-             * it was labelled ENTER TABLE, and it was gated on
-             * `status === 'playing'`. Three things were wrong with that.
-             *
-             * IT SAID THE WRONG THING. "Enter table" is what a spectator does.
-             * The player has paid a buy-in and has a seat with their stack in
-             * it; the action is taking it. Now that the engine seats the field
-             * a minute before the cards (TOURNAMENT_PRESEAT_LEAD_MS), that
-             * minute is exactly when a player wants a button that says so.
-             *
-             * IT WAS NOT OFFERED TO A SEATED 'registered' PLAYER. Late
-             * registration seats you at the moment you register
-             * (fn_seat_late_registrant) while your row can still read
-             * 'registered' for a beat — so a player who had just paid, and
-             * whose seat existed, was shown the passive badge WAITING FOR
-             * SEAT... over the top of a seat they already had. The test is a
-             * table id, which is the thing that is true when there is a seat to
-             * take, not a status enum that is true slightly later.
-             *
-             * IT WAS THE ONLY WAY IN, AND IT WAS AUTOMATIC. The auto-open
-             * effect above navigates once per tournament; if a player dismisses
-             * that, opens the lobby from the felt (where auto-open is
-             * deliberately suppressed), or is looking at the card on a second
-             * device, there was nothing on screen to press. A button that is
-             * always there costs nothing and removes a whole class of "it
-             * froze" — which is what a card with no control on it looks like,
-             * whatever the server is doing.
-             */
-            if (isWatchable) {
-              if (
-                myEntry?.table_id &&
-                (myEntry.status === 'playing' || myEntry.status === 'registered')
-              ) {
-                /* ALREADY AT THAT TABLE (2026-10-04). In the in-game popup the
-                   player is usually sitting at the very table this link names.
-                   Navigating to the route you are standing on changes nothing
-                   and leaves the popup open over the felt: a full-width blue
-                   button that, when pressed, does nothing at all. There the
-                   honest action is the way back to the seat. */
-                if (onClose && currentTableId && myEntry.table_id === currentTableId) {
-                  return (
-                    <button
-                      className="btn btn-enter-table btn-take-seat"
-                      type="button"
-                      onClick={onClose}
-                    >
-                      Back To Table
-                    </button>
-                  );
-                }
-                return (
-                  <Link
-                    to={`/table/${myEntry.table_id}`}
-                    className="btn btn-enter-table btn-take-seat"
-                    /* Moved to another table while the popup was open: go
-                       there, and do not leave the popup covering it. */
-                    onClick={onClose}
-                  >
-                    TAKE SEAT
-                  </Link>
-                );
-              }
-              /* Dan 2026-08-25: every branch below used to END the footer - a
-                 badge, a countdown, or nothing. So a running tournament you
-                 were not playing in offered no way onto its felt at all. WATCH
-                 rides alongside whatever else the branch says, because "I am
-                 waiting for a seat" and "I want to see the action" are not
-                 mutually exclusive, and a busted player still wants to watch
-                 the rest of it out. See featuredTableId. */
-              const watchBtn = featuredTableId ? (
-                <button
-                  className="btn btn-watch"
-                  type="button"
-                  onClick={() => watchTable(featuredTableId)}
-                  title="Watch The Featured Table"
-                >
-                  WATCH
-                </button>
-              ) : null;
-
-              if (myEntry?.status === 'registered') {
-                return (
-                  <>
-                    <span className="tournament-status-badge running">WAITING FOR SEAT...</span>
-                    {watchBtn}
-                  </>
-                );
-              }
-              if (myEntry?.status === 'eliminated') {
-                if (reEntryOffer) {
-                  return (
-                    <>
-                      <button
-                        className="btn btn-register late-reg"
-                        type="button"
-                        onClick={() => void handleReEnter()}
-                        disabled={isReEntering}
-                      >
-                        {isReEntering
-                          ? 'Processing...'
-                          : `${tournament.is_rebuy ? 'Rebuy' : 'Re-Enter'} (${chipsCompact(reEntryOffer.cost)})`}
-                      </button>
-                      {watchBtn}
-                    </>
-                  );
-                }
-                return (
-                  <>
-                    <span className="tournament-status-badge cancelled">ELIMINATED</span>
-                    {watchBtn}
-                  </>
-                );
-              }
-              if (!isRegistered && lateRegCountdown) {
-                return (
-                  <>
-                    <button
-                      className="btn btn-register late-reg"
-                      type="button"
-                      onClick={() => handleRegister(true)}
-                      disabled={
-                        isRegisteringMtt ||
-                        isTournamentEntryUnavailable(tournament, tournament.current_players)
-                      }
-                    >
-                      Late Register ({lateRegCountdown})
-                    </button>
-                    {watchBtn}
-                  </>
-                );
-              }
-              return (
-                <>
-                  <span className="tournament-status-badge running">In Progress</span>
-                  {watchBtn}
-                </>
-              );
-            }
-
-            /* Multi-day, between days: entries are closed and nothing is
-               dealing, so a registered player must not be offered Unregister
-               and nobody else Register. The Overview carries the schedule. */
-            if (isBaggedStatus(tournament.status)) {
-              return <span className="tournament-status-badge running">{DAY_COMPLETE_LABEL}</span>;
-            }
-            if (tournament.status === 'COMPLETED') {
-              return <span className="tournament-status-badge completed">Completed</span>;
-            }
-            if (tournament.status === 'CANCELLED') {
-              return <span className="tournament-status-badge cancelled">Cancelled</span>;
-            }
-
-            if (isRegistered) {
-              return (
-                <button
-                  className="btn btn-unregister"
-                  type="button"
-                  onClick={handleUnregister}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? 'Processing...' : 'Unregister'}
-                </button>
-              );
-            }
-
-            return (
-              <button
-                className="btn btn-register"
-                type="button"
-                onClick={() => handleRegister(false)}
-                disabled={
-                  isRegisteringMtt ||
-                  isTournamentEntryUnavailable(tournament, tournament.current_players)
-                }
-              >
-                {isTournamentEntryUnavailable(tournament, tournament.current_players)
-                  ? 'Entry Unavailable'
-                  : isRegisteringMtt
-                    ? 'Processing...'
-                    : 'Register'}
-              </button>
-            );
-          })()}
         </div>
 
         {/* The Sign Up card that used to live here is now

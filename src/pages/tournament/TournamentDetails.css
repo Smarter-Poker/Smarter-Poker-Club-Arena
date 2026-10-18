@@ -94,7 +94,8 @@
 /* The routed page shares the global Poker Arena footer. Its live occupied
    height is published by ClubBottomNav, including zero while hidden. Keep
    Register above that bar without subtracting it from an embedded sheet. */
-.tournament-details[data-embedded='false'] {
+.tournament-details[data-embedded='false'],
+.tournament-details[data-lobby-tab='true'] {
   height: calc(var(--details-h, 100dvh) - var(--ca-bottom-chrome-h, 0px));
 }
 
@@ -128,6 +129,7 @@
   align-items: center;
   gap: 10px;
   min-height: 44px;
+  flex-wrap: wrap;
 }
 
 .details-status {
@@ -213,7 +215,9 @@
 .details-close:focus-visible,
 .details-tabs .tab:focus-visible,
 .details-footer button:focus-visible,
-.details-footer .btn-enter-table:focus-visible {
+.details-header__actions button:focus-visible,
+.details-footer .btn-enter-table:focus-visible,
+.details-header__actions .btn-enter-table:focus-visible {
   outline: 2px solid #6fdcff;
   outline-offset: 2px;
 }
@@ -576,7 +580,9 @@
 }
 
 .details-footer button,
-.details-footer .btn-enter-table {
+.details-header__actions button,
+.details-footer .btn-enter-table,
+.details-header__actions .btn-enter-table {
   flex: 1 1 0;
   display: flex;
   align-items: center;
@@ -598,12 +604,15 @@
 }
 
 .details-footer button:active,
-.details-footer .btn-enter-table:active {
+.details-header__actions button:active,
+.details-footer .btn-enter-table:active,
+.details-header__actions .btn-enter-table:active {
   filter: brightness(0.9);
 }
 
 /* Share is the quiet one: it never competes with the action beside it. */
-.details-footer .btn-share {
+.details-footer .btn-share,
+.details-header__actions .btn-share {
   flex: 0 0 auto;
   min-width: 96px;
   color: #e8eaf0;
@@ -614,7 +623,8 @@
 /* WATCH - Dan 2026-08-25. Sits beside whatever else the running footer says,
    never instead of it. Accent outline rather than the action fill: watching
    is not registering, and the two must not look like the same button. */
-.details-footer .btn-watch {
+.details-footer .btn-watch,
+.details-header__actions .btn-watch {
   flex: 0 0 auto;
   min-width: 96px;
   color: #6fdcff;
@@ -623,18 +633,22 @@
 }
 
 .details-footer .btn-register,
-.details-footer .btn-enter-table {
+.details-header__actions .btn-register,
+.details-footer .btn-enter-table,
+.details-header__actions .btn-enter-table {
   color: #ffffff;
   background: #1877f2;
 }
 
-.details-footer .btn-unregister {
+.details-footer .btn-unregister,
+.details-header__actions .btn-unregister {
   color: #ffb4b4;
   background: transparent;
   border-color: rgba(239, 68, 68, 0.55);
 }
 
-.details-footer button:disabled {
+.details-footer button:disabled,
+.details-header__actions button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   filter: none;
@@ -680,13 +694,18 @@
   }
 
   .details-footer button,
+  .details-header__actions button,
   .details-footer .btn-enter-table,
-  .details-footer .tournament-status-badge {
+  .details-header__actions .btn-enter-table,
+  .details-footer .tournament-status-badge,
+  .details-header__actions .tournament-status-badge {
     flex: 0 1 280px;
   }
 
   .details-footer .btn-share,
-  .details-footer .btn-watch {
+  .details-header__actions .btn-share,
+  .details-footer .btn-watch,
+  .details-header__actions .btn-watch {
     flex: 0 0 auto;
     min-width: 120px;
   }
@@ -720,7 +739,9 @@
   }
 
   .details-footer button,
+  .details-header__actions button,
   .details-footer .btn-enter-table,
+  .details-header__actions .btn-enter-table,
   .tournament-status-badge {
     min-height: 44px;
   }
@@ -728,7 +749,9 @@
 
 @media (max-width: 380px) {
   .details-footer .btn-share,
-  .details-footer .btn-watch {
+  .details-header__actions .btn-share,
+  .details-footer .btn-watch,
+  .details-header__actions .btn-watch {
     min-width: 80px;
     padding: 0 10px;
   }
@@ -757,4 +780,42 @@
 
 .details-content > .tl-panel::before {
   display: none;
+}
+
+/* The tournament action stays in the upper-right on every tab and mount.
+   Reuse the established tournament control skin and preserve a 44px target. */
+.details-header__actions {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 55%;
+  margin-left: auto;
+  min-width: 0;
+}
+.details-header__actions > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* On a short landscape viewport the header, tabs and 44px controls cannot
+   share one bounded column with the global chrome. Let the page/tab scroll
+   instead of clipping its last controls; a full-screen modal keeps its own
+   independently bounded layout. */
+@media (max-height: 520px) {
+  .tournament-details[data-embedded='false'],
+  .tournament-details[data-lobby-tab='true'] {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    padding-bottom: var(--ca-bottom-chrome-h, 0px);
+  }
+
+  .tournament-details[data-embedded='false'] .details-content,
+  .tournament-details[data-lobby-tab='true'] .details-content {
+    flex: 0 0 auto;
+    min-height: 160px;
+    max-height: 65dvh;
+  }
 }

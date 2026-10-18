@@ -160,11 +160,9 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
         return;
       }
 
-      const state = travel.get(source);
-      if (!state) {
-        travel.set(source, { last: y, anchor: y, direction: 0 });
-        return;
-      }
+      // The first real flick is travel too, not merely an anchor at its end.
+      const state = travel.get(source) ?? { last: 0, anchor: 0, direction: 0 };
+      travel.set(source, state);
 
       const direction = y > state.last ? 1 : y < state.last ? -1 : 0;
       if (direction !== 0 && direction !== state.direction) {

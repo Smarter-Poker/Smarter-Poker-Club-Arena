@@ -693,7 +693,6 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   .multi-table-page__take-seat-btn,
   .multi-table-page__quickjoin-row,
   .multi-table-page__quickjoin-lobby,
-  .multi-table-page__lobby-back,
   .multi-table-grid__action {
     min-height: 44px;
     touch-action: manipulation;
@@ -860,35 +859,6 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
     animation: none;
     background: linear-gradient(180deg, rgba(60, 16, 22, 0.97) 0%, rgba(36, 12, 16, 0.97) 100%);
   }
-}
-
-/* The tournament drill-in renders the take-seat bar in normal flow AND an
-   absolutely-positioned back-pill at top:10px. Push the pill clear of the bar
-   so the two do not stack on the same pixels. */
-.multi-table-page__lobby-tab--tournament .multi-table-page__lobby-back {
-  /* Dan 2026-09-04: the GlobalHeader now renders at the top of the tab, in
-     flow, above the take-seat bar. Its measured height is published on the
-     tab element by the header itself (GlobalHeader `inTab`), so the pill sits
-     below both rather than on top of the artwork. */
-  top: calc(var(--ca-in-tab-header-height, 0px) + 62px);
-}
-
-/* Floating "back to lobby" pill shown while a lobby tab renders
-   TournamentDetails in place. Matches the tab bar's dark glass + cyan accent. */
-.multi-table-page__lobby-back {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 60;
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 212, 255, 0.35);
-  background: rgba(10, 10, 15, 0.85);
-  color: rgba(0, 212, 255, 0.9);
-  font-size: 0.8rem;
-  font-weight: 600;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

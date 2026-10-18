@@ -165,7 +165,7 @@ test.describe('Watching a running tournament', () => {
        and the test concluded "no live table" and skipped itself. Wait for one
        of them to actually exist before branching. */
     const felt = page.locator('.table-hud').or(page.locator('.spectator-footer-bar')).first();
-    const watch = page.locator('.details-footer .btn-watch');
+    const watch = page.locator('.details-header__actions .btn-watch');
     await expect(felt.or(watch).first()).toBeVisible({ timeout: 25_000 });
 
     if (!onTable(page)) {

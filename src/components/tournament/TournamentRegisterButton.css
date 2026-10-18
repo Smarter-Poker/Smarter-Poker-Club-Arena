@@ -1,0 +1,82 @@
+/* Dan October18: the registration control wears rendered chrome and blue glass.
+   The page remains the approved industry-standard tournament layout. */
+.details-header__actions .tournament-register-button.tournament-register-button {
+  position: relative;
+  flex: 0 1 144px;
+  width: 144px;
+  max-width: 100%;
+  min-height: 48px;
+  aspect-ratio: 3 / 1;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  background-image: url('/assets/club-buttons/tournament-register-v1.webp') !important;
+  background-size: 100% 100% !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  box-shadow: none !important;
+  container-type: inline-size;
+  color: #f4f7fb;
+  touch-action: manipulation;
+}
+
+.details-header__actions .tournament-register-button.late-reg {
+  flex-basis: 168px;
+  width: 168px;
+  min-height: 56px;
+  animation: tournamentRegisterLight 2s infinite;
+}
+
+@keyframes tournamentRegisterLight {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.14);
+  }
+}
+
+.tournament-register-button__face {
+  position: absolute;
+  inset: 20% 9%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.tournament-register-button__text {
+  display: inline-block;
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: calc(11.1cqw * var(--fit, 1));
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.045em;
+  white-space: nowrap;
+  color: #f4f7fb;
+  text-shadow:
+    0 1px 0 #050607,
+    0 -1px 0 rgb(255 255 255 / 25%);
+}
+
+.tournament-register-button__text[data-fit-wrap='true'] {
+  white-space: normal;
+  font-size: calc(9.2cqw * var(--fit, 1));
+  line-height: 1.05;
+}
+
+.details-header__actions .tournament-register-button:focus-visible {
+  outline: 2px solid #6fdcff;
+  outline-offset: 2px;
+}
+
+.details-header__actions .tournament-register-button:active:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+.details-header__actions .tournament-register-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

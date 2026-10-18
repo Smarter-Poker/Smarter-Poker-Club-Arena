@@ -144,3 +144,12 @@ describe('directory response truth', () => {
     await expect(ClubRosterService.getSummary('club')).resolves.toBeNull();
   });
 });
+
+it('recognizes the authoritative removed-member sentinel as unavailable rather than an outage', async () => {
+  state.fetch.mockResolvedValue(
+    new Response(JSON.stringify({ identity: { user_id: null } }), { status: 200 })
+  );
+  await expect(ClubRosterService.getMemberDetail('club', 'player')).rejects.toBeInstanceOf(
+    MemberAccessDeniedError
+  );
+});

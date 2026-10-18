@@ -740,7 +740,7 @@ export default function MemberManagementPage() {
             Membership Record
           </h2>
           {detail!.capabilities.can_view_financials && (
-            <InfoLine label="Last Login" value={formatTimestamp(identity!.last_login)} />
+            <InfoLine label="Last Active" value={formatTimestamp(identity!.last_login)} />
           )}
           <InfoLine label="Joined" value={formatTimestamp(identity!.joined_at)} />
           {/* The RPC nulls upline_name for viewers without financial access;

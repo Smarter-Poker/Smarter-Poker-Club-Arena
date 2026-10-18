@@ -522,6 +522,7 @@ it('updates every record section on a source event while preserving an unsaved n
     state.recordChannel?.onPayload({ payload: { user_id: state.params.userId } })
   );
   expect(await screen.findByText('Updated Shark')).toBeInTheDocument();
+  expect(screen.getByText('Last Active')).toBeInTheDocument();
   expect(screen.getByText('321')).toBeInTheDocument();
   expect(screen.getByText('-44.00')).toBeInTheDocument();
   expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();

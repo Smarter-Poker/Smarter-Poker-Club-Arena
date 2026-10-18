@@ -43,6 +43,7 @@ import { supabase } from '../lib/supabase';
 import { sizedStorageUrl, generateAvatarSvg } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useRosterWalletUpdates } from '../hooks/useRosterWalletUpdates';
+import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -145,6 +146,8 @@ export default function MemberManagementPage() {
   const isMountedRef = useIsMounted();
 
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
+  const recordRefreshRef = useRef<() => void>(() => {});
+  const [recordRevision, setRecordRevision] = useState(0);
   const [detail, setDetail] = useState<MemberDetail | null>(null);
   const [downline, setDownline] = useState<DownlineMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -268,6 +271,7 @@ export default function MemberManagementPage() {
     walletRowsRef,
     (rows) => {
       if (detailOwnerRef.current !== walletScopeKey) return;
+      setRecordRevision((revision) => revision + 1);
       if (rows[0]?.can_view_financials === false) setDownline([]);
       setDetail((current) => (current ? applyWalletRow(current, rows[0]) : current));
     },
@@ -282,10 +286,17 @@ export default function MemberManagementPage() {
       : null,
     table: 'club_members',
     filter: resolvedClubId ? `club_id=eq.${resolvedClubId}` : null,
-    event: 'UPDATE',
+    event: '*',
     enabled: !!resolvedClubId && !!user?.id,
     onPayload: (value) => {
       if (value?.new) walletUpdates.membership(value.new);
+      if (
+        value?.eventType !== 'UPDATE' ||
+        value?.new?.agent_id !== value?.old?.agent_id ||
+        value?.new?.role !== value?.old?.role ||
+        value?.new?.status !== value?.old?.status
+      )
+        recordRefreshRef.current();
     },
     onSubscriptionStatus: (status) => {
       if (status === 'SUBSCRIBED') walletUpdates.refresh(userId);
@@ -308,6 +319,32 @@ export default function MemberManagementPage() {
     onSubscriptionError: () => toast.error('The Live Wallet Connection Could Not Be Established.'),
   });
 
+  useMasterBusBroadcastChannel({
+    channelName: resolvedClubId && userId ? `member-record:${resolvedClubId}:${userId}` : null,
+    event: 'record_changed',
+    enabled: !!resolvedClubId && !!user?.id,
+    onPayload: () => recordRefreshRef.current(),
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') recordRefreshRef.current();
+    },
+    onSubscriptionError: () => toast.error('The Live Member Connection Could Not Be Established.'),
+  });
+  useMasterBusSubscriptions(
+    ['CLUB_UPDATED', 'MEMBER_ROLE_CHANGED', 'AGENT_UPDATED', 'PROFILE_UPDATED', 'BALANCE_UPDATED'],
+    (payload) => {
+      const change = payload as { clubId?: string; userId?: string } | null;
+      if (change?.clubId && change.clubId !== resolvedClubId) return;
+      if (
+        !change?.clubId &&
+        change?.userId &&
+        change.userId !== userId &&
+        change.userId !== user?.id
+      )
+        return;
+      recordRefreshRef.current();
+    }
+  );
+
   /* ── Load ───────────────────────────────────────────────────────────────── */
 
   useEffect(() => {
@@ -319,7 +356,7 @@ export default function MemberManagementPage() {
   }, [clubId, userId, user?.id]);
 
   const loadDetail = useCallback(
-    async (activeRange: MemberRange, getIsMounted?: () => boolean) => {
+    async (activeRange: MemberRange, getIsMounted?: () => boolean, background = false) => {
       detailAbortRef.current?.abort();
       const controller = new AbortController();
       detailAbortRef.current = controller;
@@ -337,7 +374,7 @@ export default function MemberManagementPage() {
         isMountedRef.current;
 
       if (live()) {
-        setLoading(true);
+        if (!background) setLoading(true);
         setLoadError(false);
       }
       try {
@@ -391,7 +428,8 @@ export default function MemberManagementPage() {
         }
         setDetail(currentDetail);
         setDownline(currentDetail.capabilities.can_view_financials ? memberDownline : []);
-        setDownlineShown(DOWNLINE_RENDER_CAP);
+        if (!background) setDownlineShown(DOWNLINE_RENDER_CAP);
+        setRecordRevision((revision) => revision + 1);
 
         // Whoever is reading decides what this page lets them do. One row, and
         // only for the viewer, so it costs a single indexed lookup.
@@ -441,6 +479,50 @@ export default function MemberManagementPage() {
   const reload = useCallback(() => {
     void loadDetail(range);
   }, [loadDetail, range]);
+
+  // Coalesce invalidations behind the active read. A late event always gets a
+  // subsequent authoritative read; range/account changes retire the old owner.
+  const refreshOwnerRef = useRef<{ active: boolean; queued: boolean } | null>(null);
+  useEffect(() => {
+    const owner = { active: false, queued: false };
+    refreshOwnerRef.current = owner;
+    const refresh = () => {
+      if (refreshOwnerRef.current !== owner) return;
+      if (rangeMode === 'week') {
+        const currentWeek = lastDaysRange(7);
+        if (currentWeek.from !== range.from || currentWeek.to !== range.to) {
+          setRange(currentWeek);
+          return;
+        }
+      }
+      if (owner.active) {
+        owner.queued = true;
+        return;
+      }
+      owner.active = true;
+      void loadDetail(range, () => refreshOwnerRef.current === owner, true).finally(() => {
+        owner.active = false;
+        if (owner.queued && refreshOwnerRef.current === owner) {
+          owner.queued = false;
+          refresh();
+        }
+      });
+    };
+    recordRefreshRef.current = refresh;
+    const visible = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      refreshOwnerRef.current = null;
+      recordRefreshRef.current = () => {};
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [loadDetail, range, rangeMode]);
 
   /* ── Range ──────────────────────────────────────────────────────────────── */
 
@@ -620,6 +702,7 @@ export default function MemberManagementPage() {
             clubUuid={resolvedClubId ?? ''}
             memberUserId={identity!.user_id ?? ''}
             seated={detail!.presence.is_seated}
+            refreshKey={recordRevision}
             fallback={
               <p className="mm-credential__note">
                 Club Identity, Live Presence, Wallet Access, Activity, And Role Authority In One
@@ -638,6 +721,7 @@ export default function MemberManagementPage() {
             key={`winloss:${resolvedClubId}:${identity!.user_id}`}
             clubId={resolvedClubId}
             userId={identity!.user_id}
+            refreshKey={recordRevision}
           />
         )}
 
@@ -768,10 +852,10 @@ export default function MemberManagementPage() {
             <details className="mm-metric-guide" aria-label="Activity Metric Definitions">
               <summary>Metric Definitions</summary>
               <p>
-                Hand Counts Come From Recorded Hands In This Club. Cash Fees Are Cash Game Rake
-                Attributed To This Player; MTT Fees Are Their Tournament Entry Fees. Fees Come From
-                The Club Fee Ledgers And Count From The Week Of October 12, 2026 (Monday Midnight
-                Pacific) Onward, Within The Displayed Range.
+                Hand Counts Follow The Club Recorded On The Hand Funding And Rake Receipts. Cash
+                Fees Are Cash Game Rake Attributed To This Player; MTT Fees Are Their Tournament
+                Entry Fees. Fees Come From The Club Fee Ledgers And Count From The Week Of October
+                12, 2026 (Monday Midnight Pacific) Onward, Within The Displayed Range.
               </p>
               <p>
                 Total Winnings Is The Cash Net Result; MTT Winnings Is The Tournament-Hand Net

@@ -50,7 +50,15 @@ function WinLossRow({ label, figure }: { label: string; figure: WinLossFigure })
   );
 }
 
-export default function MemberWinLossCard({ clubId, userId }: { clubId: string; userId: string }) {
+export default function MemberWinLossCard({
+  clubId,
+  userId,
+  refreshKey = 0,
+}: {
+  clubId: string;
+  userId: string;
+  refreshKey?: number;
+}) {
   const [data, setData] = useState<MemberWinLoss | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'hidden'>('loading');
 
@@ -71,7 +79,7 @@ export default function MemberWinLossCard({ clubId, userId }: { clubId: string; 
         setState('error');
       });
     return () => controller.abort();
-  }, [clubId, userId]);
+  }, [clubId, userId, refreshKey]);
 
   if (state === 'hidden') return null;
 

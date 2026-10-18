@@ -213,3 +213,12 @@ describe('the migration measures money, under the record access rule', () => {
     );
   });
 });
+
+it('refreshes the mounted win/loss card when its record changes', async () => {
+  const spy = vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue(record);
+  const view = render(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={0} />);
+  await screen.findByText('+70');
+  spy.mockResolvedValue({ ...record, today: figure(77, 0) });
+  view.rerender(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={1} />);
+  expect(await screen.findByText('+77')).toBeInTheDocument();
+});

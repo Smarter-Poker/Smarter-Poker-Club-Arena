@@ -21,6 +21,10 @@ const state = vi.hoisted(() => ({
   roster: vi.fn(),
   wallet: vi.fn(),
   memberChannel: null as null | { onPayload: (value: unknown) => void },
+  recordChannel: null as null | {
+    onPayload: (value: unknown) => void;
+    onSubscriptionStatus?: (status: string) => void;
+  },
   walletChannel: null as null | { onPayload: (value: unknown) => void },
 }));
 
@@ -40,6 +44,7 @@ vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
     event: string;
     onPayload: (value: unknown) => void;
   }) => {
+    if (options.event === 'record_changed') state.recordChannel = options;
     if (options.event === 'wallet_changed') state.walletChannel = options;
   },
 }));
@@ -499,4 +504,52 @@ it('complete access loss removes the old record and cannot be restored by a dela
   expect(screen.queryByRole('textbox', { name: 'Nickname' })).not.toBeInTheDocument();
   await act(async () => pending.resolve(memberDetail));
   expect(screen.queryByText('River Shark')).not.toBeInTheDocument();
+});
+
+it('updates every record section on a source event while preserving an unsaved note', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const nickname = screen.getByDisplayValue('The Closer');
+  fireEvent.change(nickname, { target: { value: 'Unsaved Local Name' } });
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    identity: { ...memberDetail.identity, alias: 'Updated Shark', nickname: 'Remote Name' },
+    presence: { is_online: false, is_seated: false },
+    stats: { ...memberDetail.stats, hands: 321, total_winnings: -44 },
+    downline: { downline_direct: 3, downline_total: 8 },
+  });
+  await act(async () =>
+    state.recordChannel?.onPayload({ payload: { user_id: state.params.userId } })
+  );
+  expect(await screen.findByText('Updated Shark')).toBeInTheDocument();
+  expect(screen.getByText('321')).toBeInTheDocument();
+  expect(screen.getByText('-44.00')).toBeInTheDocument();
+  expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
+});
+
+it('reconciles on focus and a recovered record subscription', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const baseline = state.getMemberDetail.mock.calls.length;
+  await act(async () => window.dispatchEvent(new Event('focus')));
+  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBeGreaterThan(baseline));
+  const focused = state.getMemberDetail.mock.calls.length;
+  await act(async () => state.recordChannel?.onSubscriptionStatus?.('SUBSCRIBED'));
+  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBeGreaterThan(focused));
+});
+
+it('coalesces source bursts and reads again after an event arrives during a read', async () => {
+  render(<MemberManagementPage />);
+  await screen.findByText('River Shark');
+  const pending = deferred<typeof memberDetail>();
+  state.getMemberDetail.mockReturnValueOnce(pending.promise);
+  const before = state.getMemberDetail.mock.calls.length;
+  await act(async () => {
+    state.recordChannel?.onPayload({});
+    state.recordChannel?.onPayload({});
+    state.recordChannel?.onPayload({});
+  });
+  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBe(before + 1));
+  await act(async () => pending.resolve(memberDetail));
+  await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBe(before + 2));
 });

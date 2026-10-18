@@ -2,6 +2,10 @@ DO $$ DECLARE r record; BEGIN
  SELECT * INTO r FROM ca_club_roster_rows('30000000-0000-0000-0000-000000000001') WHERE user_id='30000000-0000-0000-0000-000000000003';
  IF r.total_hands<>12 OR r.total_fees<>16.55 OR r.player_wallet<>100 OR r.promo_wallet<>5 THEN RAISE EXCEPTION 'Roster values wrong %',r; END IF;
  IF (ca_club_member_detail('30000000-0000-0000-0000-000000000001','30000000-0000-0000-0000-000000000003',NULL,NULL)#>>'{identity,last_login}')::timestamptz IS DISTINCT FROM r.last_login THEN RAISE EXCEPTION 'Detail and roster last-active differ'; END IF;
+ IF r.upline_name<>'PokerHandle' THEN RAISE EXCEPTION 'Upline alias fallback differs'; END IF;
+ IF EXISTS(SELECT 1 FROM ca_club_roster_rows('30000000-0000-0000-0000-000000000001') x WHERE x.user_id IN ('30000000-0000-0000-0000-000000000004','30000000-0000-0000-0000-000000000006','30000000-0000-0000-0000-000000000007') AND
+  (x.alias IS DISTINCT FROM (ca_club_member_detail('30000000-0000-0000-0000-000000000001',x.user_id,NULL,NULL)#>>'{identity,alias}') OR x.display_name IS DISTINCT FROM (ca_club_member_detail('30000000-0000-0000-0000-000000000001',x.user_id,NULL,NULL)#>>'{identity,display_name}'))) THEN RAISE EXCEPTION 'Canonical identity fields differ'; END IF;
+ IF (SELECT alias FROM ca_club_roster_rows('30000000-0000-0000-0000-000000000001') WHERE user_id='30000000-0000-0000-0000-000000000007')<>'Player' THEN RAISE EXCEPTION 'Real name disclosed'; END IF;
  IF (SELECT total_hands FROM ca_club_roster_rows('40000000-0000-0000-0000-000000000001') WHERE user_id='30000000-0000-0000-0000-000000000003')<>0 THEN RAISE EXCEPTION 'Physical club received funded hands'; END IF;
  PERFORM set_config('test.viewer','30000000-0000-0000-0000-000000000003',true);
  SELECT * INTO r FROM ca_club_roster_rows('30000000-0000-0000-0000-000000000001') WHERE user_id='30000000-0000-0000-0000-000000000003';
@@ -22,6 +26,13 @@ DO $$ BEGIN
  IF NOT EXISTS(SELECT 1 FROM signals WHERE topic LIKE 'member-record:%') THEN RAISE EXCEPTION 'Member signals regressed'; END IF;
 END $$;
 COMMIT;
+TRUNCATE signals;
+UPDATE club_members SET chip_balance=chip_balance+2,promo_balance=promo_balance+1 WHERE user_id='30000000-0000-0000-0000-000000000003';
+DO $$ DECLARE r record; BEGIN
+ IF (SELECT count(*) FROM signals WHERE topic LIKE 'club-roster:%')<>3 THEN RAISE EXCEPTION 'Wallet update not relayed exactly once per club'; END IF;
+ SELECT * INTO r FROM ca_club_roster_rows('30000000-0000-0000-0000-000000000001') WHERE user_id='30000000-0000-0000-0000-000000000003';
+ IF r.player_wallet<>102 OR r.promo_wallet<>6 THEN RAISE EXCEPTION 'Wallet source amount changed'; END IF;
+END $$;
 -- Dedup is transaction-local and rolls back with the write.
 TRUNCATE signals;
 BEGIN; UPDATE profiles SET alias='Rolled back' WHERE id='30000000-0000-0000-0000-000000000003'; ROLLBACK;

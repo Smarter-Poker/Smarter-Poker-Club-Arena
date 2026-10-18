@@ -27,6 +27,25 @@ BEGIN
            AND r.accounting_cutoff IS NOT DISTINCT FROM public.fn_ca_launch_accounting_cutoff('club',p_club_id)
          GROUP BY r.user_id$new$;
  IF strpos(d,old_source)=0 THEN RAISE EXCEPTION 'Roster physical hand source missing'; END IF;
+ d:=replace(d,old_source,new_source);
+ old_source:=$old$    coalesce(nullif(btrim(pr.alias), ''),
+             nullif(btrim(b.m_display_name), ''),
+             nullif(btrim(pr.display_name), ''),
+             pr.username,
+             'Unknown')::text$old$;
+ new_source:=$new$    coalesce(nullif(btrim(pr.alias), ''), nullif(btrim(b.m_display_name), ''),
+             nullif(btrim(public.fn_arena_name(pr.alias, pr.username, pr.display_name, pr.first_name, pr.last_name, pr.full_name)), ''), pr.username)::text$new$;
+ IF strpos(d,old_source)=0 THEN RAISE EXCEPTION 'Roster alias preimage missing'; END IF;
+ d:=replace(d,old_source,new_source);
+ old_source:=$old$coalesce(nullif(btrim(pr.display_name), ''), pr.username, '')::text$old$;
+ new_source:=$new$coalesce(nullif(btrim(public.fn_arena_name(pr.alias, pr.username, pr.display_name, pr.first_name, pr.last_name, pr.full_name)), ''), pr.username)::text$new$;
+ IF strpos(d,old_source)=0 THEN RAISE EXCEPTION 'Roster display-name preimage missing'; END IF;
+ d:=replace(d,old_source,new_source);
+ old_source:=$old$    SELECT coalesce(nullif(btrim(u.alias), ''),
+                    nullif(btrim(u.display_name), ''),
+                    u.username)::text AS upline_name$old$;
+ new_source:=$new$    SELECT coalesce(nullif(btrim(u.alias), ''), nullif(btrim(public.fn_arena_name(u.alias, u.username, u.display_name, u.first_name, u.last_name, u.full_name)), ''), u.username)::text AS upline_name$new$;
+ IF strpos(d,old_source)=0 THEN RAISE EXCEPTION 'Roster upline-name preimage missing'; END IF;
  EXECUTE replace(d,old_source,new_source);
 END $patch$;
 DO $patch$
@@ -43,7 +62,7 @@ END $patch$;
 INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note) VALUES
 ('club_members','member_record_membership','Private member/roster invalidation includes membership activity; no money writes.')
 ON CONFLICT DO NOTHING;
-CREATE OR REPLACE TRIGGER member_record_membership AFTER INSERT OR DELETE OR UPDATE OF user_id,club_id,role,agent_id,status,nickname,notes,display_name,joined_at,last_active_at
+CREATE OR REPLACE TRIGGER member_record_membership AFTER INSERT OR DELETE OR UPDATE OF user_id,club_id,role,agent_id,status,nickname,notes,display_name,joined_at,last_active_at,chip_balance,promo_balance
 ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_row();
 CREATE FUNCTION public.ca_club_roster_can_subscribe(topic text) RETURNS boolean
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=public,pg_temp AS $$

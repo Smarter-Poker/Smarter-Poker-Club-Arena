@@ -1463,6 +1463,11 @@ ASSERT
 # ===========================================================================
 # THE RUN.
 # ===========================================================================
+followup=()
+if [ -n "${LIGHTNING_P6S_FOLLOWUP_SQL:-}" ]; then
+  test -f "$LIGHTNING_P6S_FOLLOWUP_SQL"
+  followup=(-f "$LIGHTNING_P6S_FOLLOWUP_SQL")
+fi
 set +e
 "${PSQL[@]}" \
   -f "$base_fixture" -f "$pop_fixture" -f "$p5_fixture" \
@@ -1486,7 +1491,7 @@ set +e
   -f "$fixture/fix-own-proofs.sql" \
   -f "$fixture/fix-precapture.sql" \
   -f "$fix" \
-  -f "$fixture/fix-reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
+  -f "$fixture/fix-reapply.sql" "${followup[@]}" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
 status=${PIPESTATUS[0]}
 set -e
 if [ "$status" != 0 ]; then

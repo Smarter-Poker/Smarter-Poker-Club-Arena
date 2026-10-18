@@ -1852,6 +1852,11 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: bash scripts/dev/test-lightning-phase6-settlement.sh
+      - name: Lightning zero-payer folders settle through the real physical fee contract
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-lightning-zero-payer-settlement.py
       - name: Lightning Phase 7 reverts a drained pool to must move without moving a chip, and the tick drives both conversions
         if: matrix.shard == 3
         env:

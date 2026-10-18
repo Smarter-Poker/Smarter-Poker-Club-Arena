@@ -396,6 +396,21 @@ it('reads existing shutdown milestones without exporting table counts or raw rec
     });
   }
   expect(ran.stdout).not.toMatch(/private-secret|408|2\/408/);
+  const streamed = spawnSync(
+    'python3',
+    [
+      '-B',
+      '-c',
+      'import json,runpy,sys; m=runpy.run_path(sys.argv[1]); raw=json.loads(sys.stdin.read()); print(json.dumps(m["process_history"]([sys.executable,"-c","import sys; sys.stdout.write("+repr(raw)+")"])))',
+      script,
+    ],
+    { input: JSON.stringify(logs.join('\n') + '\n'), encoding: 'utf8', timeout: 5000 }
+  );
+  expect(streamed.status, streamed.stderr).toBe(0);
+  const history = JSON.parse(streamed.stdout);
+  expect(history.coverage.status).toBe('complete');
+  expect(history.signals).toEqual(data);
+  expect(streamed.stdout).not.toMatch(/private-secret|408|2\/408/);
 });
 
 it('exports only typed restart events and exact process categories with bounded source frames', () => {

@@ -329,7 +329,7 @@ def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
     outcome = 'complete'
     markers = ('[GameServer.', '[GameServer] FATAL', '[GameServer] Received shutdown',
                '[GameServer] graceful shutdown', '[GameServer] GameServer.shutdown_failed', '[leadership]', '[Leadership.',
-               '[Tournament.abandoned_generation_refused]', 'FATAL ERROR:')
+               '[Tournament.abandoned_generation_refused]', 'FATAL ERROR:', *PROCESS_SIGNALS.values())
 
     def record(raw):
         nonlocal records, block, oldest, newest

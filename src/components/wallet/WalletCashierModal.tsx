@@ -107,7 +107,6 @@ import {
   cashierTabs,
   cashierDestinations,
   canUseCashier,
-  destinationBlurb,
   claimNeedsConfirm,
   cashierRefusesSelfSend,
   secondsLeftFromServer,
@@ -1056,14 +1055,8 @@ export default function WalletCashierModal({
    */
   const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource);
 
-  /**
-   * ONE RULE FOR EVERY CASHIER SURFACE (Dan 2026-09-04 round 2, see
-   * lib/cashierRoster). This list used to DELETE the viewer, and delete every
-   * member whose role cannot hold an agent wallet, whenever the send would be
-   * refused - the same "gone, not explained" shape that made the club owner
-   * unsearchable in his own cashier. Everyone stays; the ones who cannot
-   * receive this destination carry the reason and cannot be picked.
-   */
+  // Wallet destinations list only members who can hold that wallet. Other
+  // refusals (such as self-send) remain visible with their existing reason.
   const blockFor = useCallback(
     (m: Member) =>
       cashierRecipientBlock({
@@ -1092,7 +1085,9 @@ export default function WalletCashierModal({
   const eligible = useMemo(() => {
     const q = search.trim().toLowerCase();
 
-    const destinationMembers = members;
+    const destinationMembers = AGENT_ONLY.includes(destination)
+      ? members.filter((m) => canHoldAgentWallet(m.role))
+      : members;
 
     if (q.length < 2) {
       let recent = destinationMembers
@@ -1131,7 +1126,7 @@ export default function WalletCashierModal({
         )
         .slice(0, 60)
     );
-  }, [members, search, recentIds, blockFor]);
+  }, [members, search, recentIds, blockFor, destination]);
 
   // Changing destination can strand a recipient who cannot hold the new wallet,
   // and a viewer who picked themselves on a cashier that then narrows to one the
@@ -1866,9 +1861,6 @@ export default function WalletCashierModal({
                    and only while its ten minute window is open. One row per send,
                    one tap, and the row disappears when the clock runs out. */
                 <>
-                  <div className="cbc-blurb">
-                    {destinationBlurb(walletType, destination, 'claim')}
-                  </div>
                   {unconfirmed === 'undo' && (
                     <div className="cbc-warn" role="alert" ref={revealOnMount}>
                       That Claim Back Got No Answer And May Have Gone Through. Tapping It Again
@@ -1931,7 +1923,7 @@ export default function WalletCashierModal({
                 <>
                   {/* Destination (send) or source (claim) */}
                   <div className="cbc-field" hidden={bankTransfer && Boolean(recipient)}>
-                    <label className="cbc-label">
+                    <label className="cbc-label cbc-destination-label">
                       {tab === 'claim' ? 'Claim From' : 'Send Into'}
                     </label>
                     <div className="cbc-seg">
@@ -1945,9 +1937,6 @@ export default function WalletCashierModal({
                           {destinationLabel(key)}
                         </button>
                       ))}
-                    </div>
-                    <div className="cbc-blurb">
-                      {destinationBlurb(spendWallet, destination, tab)}
                     </div>
                   </div>
 
@@ -2028,7 +2017,7 @@ export default function WalletCashierModal({
                     </label>
                     <input
                       id="cbc-search"
-                      className="cbc-input"
+                      className="cbc-input cbc-search"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder={

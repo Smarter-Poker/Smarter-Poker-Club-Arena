@@ -10,6 +10,8 @@
  * they may pay (fn_agent_wallet_send). The client shows everything the server
  * returned, finds a member by anything the row prints, and marks - never
  * deletes - the one row that cannot be a recipient: the viewer's own.
+ * October 18 update: Agent/Promo destination lists exclude player-only members;
+ * the general directory retains discoverability.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -155,12 +157,13 @@ describe('every member is discoverable in the cashier', () => {
     ).toBeNull();
   });
 
-  it('no cashier surface filters a member out of its list to avoid a refusal', () => {
+  it('wallet destinations narrow the modal roster while the general directory stays discoverable', () => {
     // Both surfaces, one rule. These two literals are the exact filters that
     // made a member vanish; neither may come back.
     const modal = read('src/components/wallet/WalletCashierModal.tsx');
     expect(modal).toContain('cashierRecipientBlock({');
-    expect(modal).toContain('const destinationMembers = members;');
+    // Owner update 2026-10-18: player-only members never appear in Agent/Promo wallets.
+    expect(modal).toContain('members.filter((m) => canHoldAgentWallet(m.role))');
     expect(modal).not.toContain('!(excludeSelf && m.user_id === user?.id)');
     expect(modal).not.toContain('needsAgent ? canHoldAgentWallet(m.role) : true');
     // Listed, and refused at the one place a recipient is chosen.

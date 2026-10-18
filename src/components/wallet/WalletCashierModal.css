@@ -432,10 +432,20 @@
 }
 
 .cbc-seg {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1cqw 4cqw;
-  justify-content: center;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 1cqw;
+}
+
+.cbc-seg button {
+  white-space: nowrap;
+  font-size: 2.8cqw;
+  letter-spacing: 0.04em;
+}
+
+.cbc-destination-label {
+  text-align: center;
 }
 
 .cbc-chips {
@@ -870,4 +880,15 @@
   font-size: 3cqw;
   letter-spacing: 0.06em;
   color: #45adff !important;
+}
+
+/* A complete engraved search boundary, with the same blue ink as its label. */
+.cbc-input.cbc-search {
+  padding: 2.4cqw 3cqw;
+  border: 1px solid #45adff !important;
+}
+
+.cbc-input.cbc-search:focus-visible {
+  outline: 2px solid #45adff;
+  outline-offset: 2px;
 }

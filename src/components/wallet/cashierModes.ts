@@ -134,49 +134,6 @@ export function canUseCashier(walletType: CashierWalletType, role: unknown): boo
 }
 
 /**
- * What each destination MEANS, per cashier. The promo wallet's blurbs are
- * Dan's words nearly verbatim: to a player it is just as good as cash; to an
- * agent it stays promotional money.
- */
-export function destinationBlurb(
-  walletType: CashierWalletType,
-  destination: CashierDestination,
-  tab: CashierTab = 'send'
-): string {
-  if (tab === 'claim') {
-    if (walletType === 'agent_wallet') {
-      return 'Undo A Send You Made In The Last Ten Minutes. After That The Player Must Request A Cash Out.';
-    }
-    switch (destination) {
-      case 'agent_wallet':
-        return 'Pull Chips From An Agent Float Back Into The Club Bank.';
-      case 'promo_wallet':
-        return 'Pull Unspent Promo Chips Back Into The Club Bank.';
-      default:
-        return 'Pull Chips From A Member Wallet Back Into The Club Bank.';
-    }
-  }
-  if (walletType === 'promo_wallet') {
-    return destination === 'player_wallet'
-      ? 'Just As Good As Cash. Spendable In Any Cash Game Or Tournament.'
-      : 'Lands In Their Promo Wallet, Held Apart From Their Working Float.';
-  }
-  if (walletType === 'agent_wallet') {
-    return destination === 'player_wallet'
-      ? 'Straight Out Of Your Agent Wallet Into Their Playing Balance.'
-      : 'Funds A Downline Agent Float So They Can Carry Their Own Players.';
-  }
-  switch (destination) {
-    case 'agent_wallet':
-      return 'The Float An Agent Carries For Their Own Players. This Is The Funding Route.';
-    case 'promo_wallet':
-      return 'Promotional Chips An Agent Hands Out. Held Apart From Their Working Float.';
-    default:
-      return 'Straight To A Member. The Wallet Buy Ins Come Out Of.';
-  }
-}
-
-/**
  * A claim always confirms once — taking chips OUT of someone's wallet is
  * never routine. A send confirms only at or above the share-of-bank
  * threshold the caller computes.

@@ -93,7 +93,8 @@ it('uses manual trusted-default authority and maintained pinned SSH without runt
   expect(source).toContain('MAX_BYTES = 4 * 1024 * 1024');
   expect(source).toContain('time.monotonic() + 25');
   expect(source).toContain("health.get('releaseSha') != expected");
-  expect(source).toContain('before != after');
+  expect(source).toContain("before[key] != after[key] for key in ('containerId', 'imageId')");
+  expect(source).toContain('runtime_stable = before == after');
   expect(source).not.toMatch(
     /os\.environ|\.env|docker.*restart|systemctl|print\(raw|print\(error|print\(line/
   );
@@ -121,7 +122,16 @@ it('binds atomic creator event names to the actual producer contexts', () => {
     });
   }
 });
-it.each(['stable', 'health-mismatch', 'label-mismatch', 'instance-change', 'malformed-health'])(
+it.each([
+  'stable',
+  'standby',
+  'down',
+  'health-mismatch',
+  'label-mismatch',
+  'container-change',
+  'instance-change',
+  'malformed-health',
+])(
   'runs actual Python health/container/main admission for %s without networking or raw output',
   (mode) => {
     const fixture = `
@@ -135,11 +145,17 @@ class Response:
   global health_reads
   health_reads+=1
   if mode=='malformed-health': return b'private-token invalid-health'
-  return json.dumps({'running':True,'liveness':'ok','releaseSha': 'b'*40 if mode=='health-mismatch' else expected,'instanceId': '2-bbbbbbbb' if mode=='instance-change' and health_reads>1 else '1-aaaaaaaa'}).encode()
-def urlopen(*args,**kwargs): return Response()
+  return json.dumps({'running':True,'liveness':'standby' if mode=='standby' else 'ok','releaseSha': 'b'*40 if mode=='health-mismatch' else expected,'instanceId': '2-bbbbbbbb' if mode=='instance-change' and health_reads>1 else '1-aaaaaaaa'}).encode()
+def urlopen(*args,**kwargs):
+ if mode=='down': raise OSError('private-token unavailable')
+ return Response()
 def command(args):
  reads.append(args)
- if args[1]=='container': return 'b'*40 if mode=='label-mismatch' else expected
+ if args[1]=='container':
+  if args[4]=='{{json .State}}': return json.dumps({'OOMKilled':True,'ExitCode':137,'Env':'private-token'})
+  if args[4]=='{{.RestartCount}}': return '2'
+  return ('e'*64 if mode=='container-change' and health_reads>0 else 'c'*64)+' sha256:'+'d'*64+' '+('b'*40 if mode=='label-mismatch' else expected)
+ if args[1]=='events': return json.dumps({'Action':'oom','time':123,'Actor':{'Attributes':{'name':'club-arena-engine','token':'private-token'}}})
  return '2026-10-13T21:02:03Z [TournamentRecurring.spin_atomic_creation_failed] Error: statement timeout SQLSTATE=57014 private-token private-player-id'
 g['urllib'].request.urlopen=urlopen; g['bounded_command']=command
 out=io.StringIO(); err=io.StringIO()
@@ -155,10 +171,20 @@ print(json.dumps({'status':status,'stdout':out.getvalue(),'stderr':err.getvalue(
     expect(result.stdout + result.stderr).not.toMatch(
       /private-token|private-player-id|invalid-health|Traceback/
     );
-    if (mode === 'stable') {
+    if (['stable', 'standby', 'down', 'instance-change', 'malformed-health'].includes(mode)) {
       expect(result.status).toBe(0);
       expect(result.stderr).toBe('');
-      expect(result.healthReads).toBe(2);
+      expect(result.healthReads).toBe(mode === 'down' ? 0 : 2);
+      expect(JSON.parse(result.stdout).runtimeStable).toBe(mode !== 'instance-change');
+      expect(JSON.parse(result.stdout).identityBefore.health).toBe(
+        mode === 'down'
+          ? 'unavailable'
+          : mode === 'malformed-health'
+            ? 'unreadable'
+            : mode === 'standby'
+              ? 'standby'
+              : 'ok'
+      );
       expect(result.logReads).toBe(1);
       expect(JSON.parse(result.stdout).coverage).toMatchObject({
         semantics: 'bounded-tail',
@@ -170,8 +196,14 @@ print(json.dumps({'status':status,'stdout':out.getvalue(),'stderr':err.getvalue(
         healthyRefillProven: false,
       });
       expect(JSON.parse(result.stdout)).toMatchObject({
+        restarts: {
+          oomKilled: true,
+          exitCode: 137,
+          restartCount: 2,
+          events: [{ action: 'oom', unixTime: 123 }],
+        },
         engineSha: 'a'.repeat(40),
-        instanceId: '1-aaaaaaaa',
+        instanceId: ['down', 'malformed-health'].includes(mode) ? null : '1-aaaaaaaa',
         rawLogsExported: false,
         readOnly: true,
         events: { spin_atomic_creation_failed: { count: 1 } },
@@ -184,7 +216,7 @@ print(json.dumps({'status':status,'stdout':out.getvalue(),'stderr':err.getvalue(
         status: 'diagnostic_refused',
         rawLogsExported: false,
       });
-      expect(result.logReads).toBe(mode === 'instance-change' ? 1 : 0);
+      expect(result.logReads).toBe(mode === 'container-change' ? 1 : 0);
     }
   }
 );
@@ -322,4 +354,70 @@ it('does not borrow unrelated, unknown, stale or excessive continuation classifi
     "  code: '22023'",
   ]);
   expect(missing.spin_atomic_creation_failed.sqlstates).toEqual({});
+});
+
+it('exports only typed restart events and exact process categories with bounded source frames', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); raw=json.loads(sys.stdin.read())
+print(json.dumps({'restarts':m['sanitize_restart_evidence']({'OOMKilled':True,'ExitCode':137,'Error':'private-secret'},'12',raw['events']), 'signals':m['process_signals'](raw['logs'])}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    input: JSON.stringify({
+      events: [
+        {
+          Action: 'oom',
+          time: 123,
+          Actor: { Attributes: { name: 'club-arena-engine', secret: 'private-secret' } },
+        },
+        {
+          Action: 'die',
+          time: 124,
+          Actor: { Attributes: { name: 'club-arena-engine', exitCode: '137', signal: '9' } },
+        },
+        {
+          Action: 'kill',
+          time: 125,
+          Actor: { Attributes: { name: 'other-container', exitCode: '137' } },
+        },
+        {
+          Action: 'unknown-private',
+          time: 126,
+          Actor: { Attributes: { name: 'club-arena-engine' } },
+        },
+      ]
+        .map((x) => JSON.stringify(x))
+        .join('\n'),
+      logs: [
+        '2026-10-18T14:25:00Z [GameServer.Unhandled_rejection] Error: fetch failed private-secret',
+        '2026-10-18T14:25:00Z     at foo (/app/dist/services/leadership.js:123:4) private-secret',
+        '2026-10-18T14:25:04Z     ETIMEDOUT private-secret',
+        '2026-10-18T14:25:05Z [leadership] LOST LEADERSHIP private-player',
+        '2026-10-18T14:25:06Z [GameServer] FATAL (GameServer.Unhandled_rejection) private-secret',
+        '2026-10-18T14:25:07Z [Auth] out of memory private-secret',
+      ].join('\n'),
+    }),
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  const data = JSON.parse(ran.stdout);
+  expect(data.restarts).toEqual({
+    oomKilled: true,
+    exitCode: 137,
+    restartCount: 12,
+    events: [
+      { action: 'oom', unixTime: 123 },
+      { action: 'die', unixTime: 124, exitCode: 137, signal: 9 },
+    ],
+  });
+  expect(data.signals['GameServer.Unhandled_rejection']).toEqual({
+    count: 1,
+    lastTimestamp: '2026-10-18T14:25:00Z',
+    causes: { 'fetch failed': 1 },
+    frames: [{ path: 'services/leadership.js', line: 123 }],
+  });
+  expect(data.signals.leadership_lost.count).toBe(1);
+  expect(data.signals.fatal_rejection.count).toBe(1);
+  expect(JSON.stringify(data)).not.toMatch(/private|secret|Auth|ETIMEDOUT/);
 });

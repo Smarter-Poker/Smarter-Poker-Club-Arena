@@ -69,6 +69,8 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
     'scripts/dev/test-stats-club-scope-postgres.sh',
     'tests/fixtures/financial-admin-revenue/assertions.sql',
     'tests/fixtures/union-ops-financial-admin/source-binding.json',
+    'tests/fixtures/union-statement-availability/after.sql',
+    'scripts/dev/test-statement-availability-postgres.sh',
     'tests/fixtures/stats-operational-quality/bootstrap.sql',
     'tests/data-console-postgres-contracts-wired.test.ts',
   ])('routes executable contract input %s to the native server job', (path) => {

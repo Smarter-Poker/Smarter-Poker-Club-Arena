@@ -9,9 +9,10 @@ DO $patch$
 DECLARE d text:=pg_get_functiondef('public.ca_union_statement_board(uuid,date,integer)'::regprocedure);
 BEGIN
  IF position('payment_details_available' in d)>0 THEN RAISE EXCEPTION 'Statement availability already installed'; END IF;
+ IF md5(d)<>'da45725eb84688e0c135672e605d7a9b' THEN RAISE EXCEPTION 'Statement definition changed before availability patch'; END IF;
  IF position('COALESCE((i.breakdown->>''paid_total'')::numeric, 0)' in d)=0 THEN RAISE EXCEPTION 'Statement payment source anchor changed'; END IF;
  d:=replace(d,'           i.id                            AS invoice_id,',
- $new$           (i.id IS NULL OR i.status <> 'paid' OR coalesce(i.net_amount,0)=0 OR i.breakdown ? 'paid_total') AS payment_details_available,
+ $new$           (i.id IS NULL OR i.status <> 'paid' OR coalesce(i.net_amount,0)=0 OR i.breakdown->>'paid_total' IS NOT NULL) AS payment_details_available,
            i.id                            AS invoice_id,$new$);
  d:=replace(d,'''paid_total'', round(b.paid_total, 2),',
  '''payment_details_available'', b.payment_details_available, ''paid_total'', CASE WHEN b.payment_details_available THEN round(b.paid_total, 2) END,');

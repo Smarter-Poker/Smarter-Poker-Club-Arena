@@ -154,3 +154,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # The real certificate CHECK accepts the per-club quality key written by R4.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-statement-certificate-kind-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch), '--output', str(args.output.with_name('weekly-statement-certificate-kind'))], text=True))
+
+# Statement validation retains all original checks while reading indexed event owners.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-statement-indexed-quality-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("weekly-statement-indexed-quality.json"))], text=True))

@@ -3,7 +3,7 @@ CREATE SCHEMA auth; CREATE SCHEMA realtime;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('test.viewer',true),'')::uuid $$;
 CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql STABLE AS $$ SELECT 'authenticated'::text $$;
 CREATE TABLE realtime.messages(extension text,private boolean,topic text); ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
-CREATE FUNCTION realtime.topic() RETURNS text LANGUAGE sql AS $$ SELECT ''::text $$;
+CREATE FUNCTION realtime.topic() RETURNS text LANGUAGE sql AS $$ SELECT current_setting('realtime.topic',true) $$;
 CREATE TABLE public.signals(topic text,payload jsonb);
 CREATE FUNCTION realtime.send(payload jsonb,event text,topic text,private boolean) RETURNS void LANGUAGE sql AS $$ INSERT INTO public.signals VALUES(topic,payload) $$;
 CREATE TABLE club_members(user_id uuid,club_id uuid,role text,agent_id uuid,chip_balance numeric,promo_balance numeric,nickname text,notes text,display_name text,joined_at timestamptz,status text);

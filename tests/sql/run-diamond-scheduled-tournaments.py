@@ -38,6 +38,8 @@ MIGRATION = (ROOT / 'supabase/migrations'
              / '20261007000010_the_diamond_arena_spawns_the_midway_schedule.sql')
 FREEROLL_FEE_MIGRATION = (ROOT / 'supabase/migrations'
              / '20261017042014_diamond_freeroll_recovery_purchases_all_reach_the_prize_pool.sql')
+LATE_CLOCK_MIGRATION = (ROOT / 'supabase/migrations'
+             / '20261018185915_diamond_tournament_late_registration_uses_its_authored_clock.sql')
 # The concurrency scene refuses any database but this name on this port; the
 # port only names the socket file inside this run's own temporary directory.
 PORT = '55734'
@@ -222,16 +224,32 @@ def run_scene(args, current=False):
             authority_file.write_text(current_authorities_sql())
             files = LOAD[:-1] + [SQL / 'diamond-tournament-current-schema.sql', authority_file,
                 SQL / 'diamond-tournament-current-economics.sql', FREEROLL_FEE_MIGRATION,
-                SQL / 'diamond-tournament-current-cases.sql']
+                SQL / 'diamond-tournament-current-cases.sql',
+                SQL / 'diamond-tournament-late-clock-authority.sql',
+                SQL / 'diamond-tournament-late-clock-before.sql', LATE_CLOCK_MIGRATION,
+                SQL / 'diamond-tournament-late-clock-cases.sql']
         for f in files:
+            if current and f == LATE_CLOCK_MIGRATION:
+                preimage = subprocess.run([str(x) for x in psql + ['-d', DB, '-c', """DO $probe$ BEGIN
+                  IF (SELECT late_reg_mins FROM public.tournaments WHERE id=sched.id('late_legacy'))<>120 THEN
+                    RAISE EXCEPTION 'late_clock_preimage_wrong_minutes'; END IF;
+                END $probe$;"""]], capture_output=True, text=True, env=env, timeout=60)
+                if preimage.returncode == 0 or 'late_clock_preimage_wrong_minutes' not in preimage.stderr:
+                    raise SystemExit('late-clock preimage did not reproduce the wrong minutes')
+                print('PASS: twelve-level clock regression fails on the actual creator preimage', flush=True)
             r = run(psql + ['-d', DB, '-f', f])
             if f == MIGRATION:
                 print('PASS: migration %s applied verbatim, its own pins and post-image held'
                       % MIGRATION.name, flush=True)
             for line in (r.stdout + r.stderr).splitlines():
-                if 'PASS:' in line and (f.name.startswith('diamond-scheduled') or f.name == 'diamond-tournament-current-cases.sql'):
+                if 'PASS:' in line and (f.name.startswith('diamond-scheduled') or f.name.startswith('diamond-tournament-late-clock-') or f.name == 'diamond-tournament-current-cases.sql'):
                     print('PASS: ' + line.split('PASS:', 1)[1].strip(), flush=True)
         if current:
+            replay_clock = subprocess.run([str(x) for x in psql + ['-d', DB, '-f', LATE_CLOCK_MIGRATION]],
+                capture_output=True, text=True, env=env, timeout=60)
+            if replay_clock.returncode == 0 or 'diamond_late_clock_migration_already_installed' not in replay_clock.stderr:
+                raise SystemExit('late-clock migration replay was not refused')
+            print('PASS: late-clock migration replay refused', flush=True)
             replay = subprocess.run([str(x) for x in psql + ['-d', DB, '-f', FREEROLL_FEE_MIGRATION]],
                 capture_output=True, text=True, env=env, timeout=60)
             if replay.returncode == 0 or 'diamond_freeroll_fee_migration_already_installed' not in replay.stderr:

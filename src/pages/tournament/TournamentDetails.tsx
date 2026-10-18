@@ -1,7 +1,9 @@
 import {
   tournamentEntryWindow,
+  tournamentEntryWindowOpen,
   type TournamentEntryWindowRow,
 } from '../../utils/tournamentEntryWindow';
+import { serverNow } from '../../utils/serverClock';
 import {
   isSeatFirstTournamentFormat,
   isTournamentEntryUnavailable,
@@ -418,12 +420,14 @@ export default function TournamentDetails({
     };
 
     const tick = () => {
+      // Entry requires both configured bounds, just like the database and lobby.
+      if (!tournamentEntryWindowOpen(t, serverNow())) return stop();
       if (!lateRegLevels) {
         // Minutes window, measured from started_at — the same span the server
         // closes on.
         const startedMs = Date.parse(String(t?.started_at ?? ''));
         if (!Number.isFinite(startedMs)) return setLateRegCountdown('');
-        const minsLeft = Math.ceil((startedMs + lateRegMins * 60_000 - Date.now()) / 60_000);
+        const minsLeft = Math.ceil((startedMs + lateRegMins * 60_000 - serverNow()) / 60_000);
         if (minsLeft <= 0) return stop();
         setLateRegCountdown(`${minsLeft} min${minsLeft !== 1 ? 's' : ''} remaining`);
         return;

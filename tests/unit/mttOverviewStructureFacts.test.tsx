@@ -164,6 +164,27 @@ describe('live tournament tabs share the committed blind amounts', () => {
       await vi.advanceTimersByTimeAsync(119000);
     });
     expect(screen.getByText('Late Reg Closed')).toBeInTheDocument();
+    expect(screen.getByText('Late Reg').closest('.tl-stat')?.textContent).toBe('Late RegClosed');
+  });
+
+  it('closes the late-registration tile at the clock bound while levels remain', async () => {
+    const input = running({ index: 0, small_blind: 100, big_blind: 200, ante: 0 }, 0);
+    render(
+      <DetailOverviewTab
+        {...input}
+        tournament={{
+          ...input.tournament,
+          late_reg_levels: 12,
+          late_reg_mins: 1,
+          started_at: new Date(epoch).toISOString(),
+        }}
+      />
+    );
+    expect(screen.getByText('Late Reg').closest('.tl-stat')?.textContent).toBe('Late RegLv 12');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(screen.getByText('Late Reg').closest('.tl-stat')?.textContent).toBe('Late RegClosed');
   });
 
   const views = [

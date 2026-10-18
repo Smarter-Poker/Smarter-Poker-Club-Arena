@@ -1,0 +1,7 @@
+# Page Titles And Controls Stay Reachable
+
+Production verification run39136563565 found two Players Advanced-button failures and a Monthly Challenges heading outside the 320px viewport at200%text. The shared PageBar's unbounded middle auto column and nowrap title consumed the phone width, painted over the left-side controls, and escaped the page at enlarged text.
+
+The shared header keeps its title centered across the whole page and the approved help artwork at the right. Live controls and figures occupy their own row beneath a title. Titles wrap within equal help clearances. Console headers that supply their own title keep their live row beside help. No artwork, permission, data, accounting, or navigation contract changes.
+
+A real Chromium regression reproduced the exact title-intercepts-Advanced-click failure before the fix. The maintained CSS browser suite now checks actual clicks and independently measured title containment and centering at320,375,393,568,and1440px with100%and200%text. All19focused cases passed; the existing required CSS Beat workflow already executes this file. Real PageBar/React renders with global styles and fonts confirmed both mode switching and the help dialog; Monthly Challenges at320px/200%measured left16/right304 within viewport320, without page errors. Forty-one focused unit/source checks, the four copy gates, and the application TypeScript compiler passed. Protected checks, publication, and production verification remain separate delivery evidence.

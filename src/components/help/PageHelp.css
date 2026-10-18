@@ -16,7 +16,7 @@
 
 .ca-page-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 44px;
   align-items: center;
   gap: 0.6rem;
   min-height: 44px;
@@ -27,7 +27,8 @@
 
 .ca-page-bar__lead,
 .ca-page-bar__live {
-  grid-column: 1;
+  grid-column: 1 / -1;
+  grid-row: 2;
   justify-self: start;
   display: flex;
   flex-wrap: wrap;
@@ -37,8 +38,13 @@
 }
 
 .ca-page-bar__title {
-  grid-column: 2;
-  justify-self: center;
+  /* Center against the whole page, reserving the same help clearance on both
+     sides. Live controls have their own row, so long titles cannot cover them. */
+  grid-column: 1 / -1;
+  grid-row: 1;
+  justify-self: stretch;
+  min-width: 0;
+  padding-inline: calc(44px + 0.6rem);
   margin: 0;
   color: #e4e7ec;
   font:
@@ -48,16 +54,24 @@
   letter-spacing: 0.03em;
   text-transform: uppercase;
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* The page bar is the first thing on a page; the "?" holds the top right
    even when the live row wraps to a second line on a phone. */
 .ca-page-bar > .ca-page-help {
-  grid-column: 3;
+  grid-column: 2;
+  grid-row: 1;
   justify-self: end;
   margin-left: auto !important;
   align-self: center;
+}
+
+/* Console headers supply their own title. Keep their live row beside help. */
+.ca-page-bar:not(:has(> .ca-page-bar__title)) > .ca-page-bar__live {
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .ca-page-bar__status {

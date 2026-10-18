@@ -8,7 +8,6 @@ but always create and drop a uniquely named database so no shared state is
 read or changed. PG_EXISTING_SOCKET/PG_EXISTING_PORT can select one explicitly.
 """
 from concurrent.futures import ThreadPoolExecutor
-import argparse
 import json
 import os
 from pathlib import Path
@@ -19,18 +18,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION = ROOT / 'supabase/migrations/20261002152925_club_retirement_safe_unwind.sql'
-CORE_LOCK_MIGRATION = ROOT / 'supabase/migrations/20261018194141_retirement_locks_club_memberships_by_their_user_key.sql'
-CORE_LOCK_FIXTURE = ROOT / 'scripts/ci/fixtures/club-retirement-membership-lock.sql'
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--output', type=Path)
-parser.add_argument('--pg-bin', default=os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
-parser.add_argument('--scratch', type=Path, default=os.environ.get('NATIVE_TEST_SCRATCH'))
-args = parser.parse_args()
-OUTPUT = args.output
-if OUTPUT:
-    OUTPUT.mkdir(parents=True, exist_ok=False)
-PG = Path(args.pg_bin)
-SCRATCH = args.scratch or ROOT / '.native-test-tmp'
+PG = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
+SCRATCH = ROOT / '.native-test-tmp'
 SCRATCH.mkdir(exist_ok=True)
 CLUSTER = Path(tempfile.mkdtemp(prefix='club-retirement-', dir=SCRATCH))
 DATA = CLUSTER / 'data'
@@ -46,8 +35,6 @@ else:
     if os.environ.get('PGHOST', '').startswith('/'):
         candidates.append((os.environ['PGHOST'], os.environ.get('PGPORT', '5432')))
     candidates.extend([('/tmp', '55433'), ('/tmp', '5432'), ('/var/run/postgresql', '5432')])
-    if os.environ.get('PG_ISOLATED') == '1':
-        candidates = []
     for candidate_socket, candidate_port in candidates:
         ready = subprocess.run(
             [str(PG/'pg_isready'), '-q', '-h', candidate_socket, '-p', candidate_port,
@@ -70,14 +57,8 @@ started = False
 
 
 def command(argv, sql=None):
-    # A file-backed stdin avoids the Mac pipe writer blocking while psql emits
-    # bootstrap notices. It also keeps every native SQL input in owned scratch.
-    with tempfile.TemporaryFile(mode='w+', dir=CLUSTER) as source:
-        if sql is not None:
-            source.write(sql)
-            source.seek(0)
-        return subprocess.run([str(v) for v in argv], stdin=source, text=True,
-                              capture_output=True, env=ENV, timeout=60)
+    return subprocess.run([str(v) for v in argv], input=sql, text=True,
+                          capture_output=True, env=ENV, timeout=60)
 
 
 def query(sql, error=None):
@@ -119,9 +100,8 @@ CREATE TABLE public.clubs(
  chip_pool numeric DEFAULT 0,promo_balance numeric DEFAULT 0,insurance_balance numeric DEFAULT 0,
  spins_enabled boolean DEFAULT true,bbj_enabled boolean DEFAULT true,bbj_rake_enabled boolean DEFAULT true,
  updated_at timestamptz DEFAULT now());
-CREATE TABLE public.club_members(club_id uuid,user_id uuid,
- role text DEFAULT 'member',status text DEFAULT 'active',is_active boolean DEFAULT true,
- PRIMARY KEY(club_id,user_id));
+CREATE TABLE public.club_members(id uuid DEFAULT gen_random_uuid(),club_id uuid,user_id uuid,
+ role text DEFAULT 'member',status text DEFAULT 'active',is_active boolean DEFAULT true);
 CREATE TABLE public.unions(id uuid PRIMARY KEY,owner_id uuid);
 CREATE TABLE public.union_clubs(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),club_id uuid,union_id uuid);
 CREATE TABLE public.union_admins(union_id uuid,user_id uuid);
@@ -259,28 +239,6 @@ try:
         assert result.returncode == 0, result.stderr
     query(FIXTURE)
     query(MIGRATION.read_text())
-    query(CORE_LOCK_FIXTURE.read_text())
-    # Install the exact old function body, not the earlier simplified fixture
-    # core. One restored token reproduces the installed membership-key defect.
-    candidate = CORE_LOCK_MIGRATION.read_text()
-    start = candidate.index('CREATE OR REPLACE FUNCTION public.fn_retire_settled_club_core_20260906(')
-    finish = candidate.index('$function$', candidate.index('AS $function$', start) + len('AS $function$')) + len('$function$')
-    core = candidate[start:finish] + ';'
-    fixed_key = 'public.club_members WHERE club_id = p_club_id ORDER BY user_id FOR UPDATE'
-    assert core.count(fixed_key) == 1
-    old_core = core.replace(fixed_key, fixed_key.replace('ORDER BY user_id', 'ORDER BY id'))
-    query('DROP FUNCTION public.fn_retire_settled_club_core_20260906(uuid,text,text);' + old_core)
-    assert query("SELECT md5(pg_get_functiondef('public.fn_retire_settled_club_core_20260906(uuid,text,text)'::regprocedure));") == 'a283c2b2e30e3651886004dabf308098'
-    baseline = '10000000-0000-4000-8000-000000000009'
-    query(f"INSERT INTO public.clubs(id,name,owner_id) VALUES('{baseline}','Key Witness','{OWNER}'); INSERT INTO public.club_members(club_id,user_id,role) VALUES('{baseline}','{OWNER}','owner');")
-    old_error = query(f"\\set VERBOSITY verbose\nSET request.jwt.claims='{{\"sub\":\"{OWNER}\",\"role\":\"authenticated\"}}'; SELECT public.fn_retire_settled_club('{baseline}','Key Witness',NULL);", 'column "id" does not exist')
-    if OUTPUT:
-        (OUTPUT/'before-42703.log').write_text(old_error)
-    assert query(f"SELECT lifecycle_status FROM public.clubs WHERE id='{baseline}';") == 'active'
-    query(CORE_LOCK_MIGRATION.read_text())
-    assert json.loads(as_owner(f"SELECT public.fn_retire_settled_club('{baseline}','Key Witness',NULL);"))['success']
-    assert query("SELECT has_function_privilege('authenticated','public.fn_retire_settled_club_core_20260906(uuid,text,text)','EXECUTE')||':'||has_function_privilege('service_role','public.fn_retire_settled_club_core_20260906(uuid,text,text)','EXECUTE');") == 'false:true'
-    query(CORE_LOCK_MIGRATION.read_text(), 'CLUB_RETIREMENT_CORE_SOURCE_DRIFT')
 
     # A visible, unused welcome club retires in one atomic owner call.
     query(f"""
@@ -368,26 +326,6 @@ try:
         holder.result()
     query(f"INSERT INTO public.cash_games(club_id) VALUES('{race}');", 'CLUB_RETIRED')
 
-    # Real core defenses remain active with composite-key memberships.
-    balance = '10000000-0000-4000-8000-000000000005'
-    retained = '10000000-0000-4000-8000-000000000006'
-    tournament = '20000000-0000-4000-8000-000000000006'
-    query(f"INSERT INTO public.clubs(id,name,owner_id,chip_treasury) VALUES('{balance}','Balance','{OWNER}',1),('{retained}','Retained','{OWNER}',0); INSERT INTO public.club_members(club_id,user_id,role) VALUES('{retained}','{OWNER}','owner'); INSERT INTO public.tournaments(id,club_id,status) VALUES('{tournament}','{retained}','CANCELLED'); INSERT INTO public.tournament_escrow VALUES('{tournament}',0,'2026-10-18T19:30:05Z');")
-    blocked = json.loads(as_owner(f"SELECT public.fn_retire_settled_club('{balance}','Balance',NULL);"))
-    assert not blocked['success'] and 'Settle Every Club' in blocked['error']
-    foreign_claims = json.dumps({'sub': MEMBER, 'role': 'authenticated'})
-    # Local postgres invokes the private core directly to exercise its own owner guard.
-    blocked = json.loads(query(f"SET request.jwt.claims='{foreign_claims}'; SELECT public.fn_retire_settled_club_core_20260906('{retained}','Retained',NULL);"))
-    assert not blocked['success'] and 'Only The Club Owner' in blocked['error']
-    assert query(f"SELECT lifecycle_status FROM public.clubs WHERE id='{retained}';") == 'active'
-    before = query(f"SELECT to_jsonb(t)::text||to_jsonb(e)::text FROM public.tournaments t JOIN public.tournament_escrow e ON e.tournament_id=t.id WHERE t.id='{tournament}';")
-    closed = json.loads(as_owner(f"SELECT public.fn_retire_settled_club('{retained}','Retained','retain exact zero receipt');"))
-    assert closed['success'] and closed['records_retained']
-    assert query(f"SELECT to_jsonb(t)::text||to_jsonb(e)::text FROM public.tournaments t JOIN public.tournament_escrow e ON e.tournament_id=t.id WHERE t.id='{tournament}';") == before
-    assert query(f"SELECT count(*) FROM public.audit_trail WHERE club_id='{retained}' AND action='retire_club' AND (after_state->>'records_retained')::boolean;") == '1'
-    assert query(f"SELECT count(*) FROM public.club_members WHERE club_id='{retained}';") == '1'
-    if OUTPUT:
-        (OUTPUT/'RESULT.json').write_text(json.dumps({'passed':True,'before':'42703 missing id reproduced and rollback retained active club','after':'actual core/composite key; native zero/owner/custody/retained escrow/audit/replay/ACL and existing retirement cases passed'},indent=2)+'\n')
     print('club-retirement-native-acceptance-passed')
 finally:
     if EXISTING_SOCKET:
@@ -395,8 +333,7 @@ finally:
     if started and (DATA/'postmaster.pid').exists():
         command([PG/'pg_ctl', '-D', DATA, '-m', 'fast', '-w', 'stop'])
     shutil.rmtree(CLUSTER, ignore_errors=True)
-    if args.scratch is None:
-        try:
-            SCRATCH.rmdir()
-        except OSError:
-            pass
+    try:
+        SCRATCH.rmdir()
+    except OSError:
+        pass

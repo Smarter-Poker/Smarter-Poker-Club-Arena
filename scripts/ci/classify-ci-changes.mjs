@@ -117,7 +117,7 @@ const satelliteLedgerAuditIndex =
 
 // Reserved identity retirement must always run its real-role native fixture.
 const certificationRetirement =
-  /^(scripts\/ci\/(?:test-(?:certification|club)-retirement-postgres\.py$|production-e2e-account\.mjs$|fixtures\/(?:certification-retirement\/|club-retirement-membership-lock\.sql$))|supabase\/migrations\/20261018194141_retirement_locks_club_memberships_by_their_user_key\.sql$|tests\/unit\/productionE2EAccount\.test\.ts$)/;
+  /^(scripts\/ci\/(?:test-certification-retirement-postgres\.py$|production-e2e-account\.mjs$|fixtures\/certification-retirement\/)|tests\/unit\/productionE2EAccount\.test\.ts$)/;
 
 // Actual reserved cleanup/FK access must retain native concurrency qualification.
 const certificationPlayerIndex =

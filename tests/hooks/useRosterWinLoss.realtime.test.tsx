@@ -1,0 +1,150 @@
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import ClubRosterService, {
+  type RosterMember,
+  type WinLossFigure,
+  type WinLossPeriod,
+} from '../../src/services/ClubRosterService';
+import { useRosterWinLoss } from '../../src/hooks/useRosterWinLoss';
+
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+const member = (id = 'a', visible = true) =>
+  ({ user_id: id, can_view_financials: visible }) as RosterMember;
+const figure = (net: number): WinLossFigure => ({ cash: net, mtt: 0, net });
+const members = [member()];
+type Props = {
+  revision: number;
+  viewer: string;
+  period: WinLossPeriod;
+  rows: RosterMember[];
+  enabled: boolean;
+};
+const initial: Props = {
+  revision: 0,
+  viewer: 'first',
+  period: 'overall',
+  rows: members,
+  enabled: true,
+};
+const useFigures = (p: Props) =>
+  useRosterWinLoss('club', p.rows, p.period, p.enabled, p.revision, p.viewer);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+it('invalidates every cached period immediately on a source revision', async () => {
+  let value = 10;
+  const read = vi
+    .spyOn(ClubRosterService, 'getMembersWinLoss')
+    .mockImplementation(async () => new Map([['a', figure(value)]]));
+  const { result, rerender } = renderHook(useFigures, { initialProps: initial });
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(10));
+  rerender({ ...initial, period: 'today' });
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  await act(async () => {});
+  value = 20;
+  rerender({ ...initial, period: 'today', revision: 1 });
+  expect(result.current.get('a')?.net).toBe(10);
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(20));
+  rerender({ ...initial, revision: 1 });
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(20));
+  expect(read).toHaveBeenCalledTimes(4);
+});
+
+it('retains verified figures on transport failure and removes a successful denied row', async () => {
+  const read = vi
+    .spyOn(ClubRosterService, 'getMembersWinLoss')
+    .mockResolvedValue(new Map([['a', figure(10)]]));
+  const { result, rerender } = renderHook(useFigures, { initialProps: initial });
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(10));
+  read.mockRejectedValueOnce(new Error('temporary outage'));
+  rerender({ ...initial, revision: 1 });
+  await act(async () => {});
+  expect(result.current.get('a')?.net).toBe(10);
+  read.mockResolvedValueOnce(new Map());
+  rerender({ ...initial, revision: 2 });
+  await waitFor(() => expect(result.current.has('a')).toBe(false));
+});
+
+it('withdraws cached figures synchronously on viewer, row access and enabled changes', async () => {
+  const read = vi
+    .spyOn(ClubRosterService, 'getMembersWinLoss')
+    .mockResolvedValue(new Map([['a', figure(10)]]));
+  const { result, rerender } = renderHook(useFigures, { initialProps: initial });
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(10));
+  read.mockImplementation(() => new Promise(() => {}));
+  rerender({ ...initial, viewer: 'second' });
+  expect(result.current.size).toBe(0);
+  rerender({ ...initial, viewer: 'first', rows: [member('a', false)] });
+  expect(result.current.size).toBe(0);
+  rerender({ ...initial, enabled: false });
+  expect(result.current.size).toBe(0);
+});
+
+it('removes a revoked row from every cached period before the next RPC', async () => {
+  const read = vi
+    .spyOn(ClubRosterService, 'getMembersWinLoss')
+    .mockResolvedValue(new Map([['a', figure(10)]]));
+  const { result, rerender } = renderHook(useFigures, { initialProps: initial });
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(10));
+  rerender({ ...initial, period: 'today' });
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(10));
+  read.mockImplementation(() => new Promise(() => {}));
+  rerender({ ...initial, period: 'today', rows: [member('a', false)] });
+  expect(result.current.size).toBe(0);
+  rerender({ ...initial });
+  expect(result.current.size).toBe(0);
+});
+
+it('ignores a late previous-viewer answer after an A/B/A switch', async () => {
+  let finish!: (rows: Map<string, WinLossFigure>) => void;
+  const read = vi
+    .spyOn(ClubRosterService, 'getMembersWinLoss')
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    )
+    .mockResolvedValue(new Map([['a', figure(20)]]));
+  const { result, rerender } = renderHook(useFigures, { initialProps: initial });
+  await act(async () => {});
+  const oldSignal = read.mock.calls[0][3]!;
+  rerender({ ...initial, viewer: 'second' });
+  rerender({ ...initial });
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(20));
+  expect(oldSignal.aborted).toBe(true);
+  await act(async () => finish(new Map([['a', figure(999)]])));
+  expect(result.current.get('a')?.net).toBe(20);
+});
+
+it('retries aborted cached-row refreshes when a loaded page changes', async () => {
+  let finish!: (rows: Map<string, WinLossFigure>) => void;
+  const read = vi
+    .spyOn(ClubRosterService, 'getMembersWinLoss')
+    .mockResolvedValue(new Map([['a', figure(10)]]));
+  const { result, rerender } = renderHook(useFigures, { initialProps: initial });
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(10));
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  rerender({ ...initial, revision: 1 });
+  await act(async () => {});
+  const oldSignal = read.mock.calls[1][3]!;
+  read.mockResolvedValueOnce(
+    new Map([
+      ['a', figure(30)],
+      ['b', figure(40)],
+    ])
+  );
+  rerender({ ...initial, revision: 1, rows: [member('a'), member('b')] });
+  await waitFor(() => expect(result.current.get('a')?.net).toBe(30));
+  expect(read.mock.lastCall![1]).toEqual(['a', 'b']);
+  expect(oldSignal.aborted).toBe(true);
+  await act(async () => finish(new Map([['a', figure(999)]])));
+  expect(result.current.get('a')?.net).toBe(30);
+});

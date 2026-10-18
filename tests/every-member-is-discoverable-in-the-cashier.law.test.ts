@@ -10,6 +10,8 @@
  * they may pay (fn_agent_wallet_send). The client shows everything the server
  * returned, finds a member by anything the row prints, and marks - never
  * deletes - the one row that cannot be a recipient: the viewer's own.
+ * October 18 update: Agent/Promo destination lists exclude player-only members;
+ * the general directory retains discoverability.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

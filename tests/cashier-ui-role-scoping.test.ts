@@ -60,7 +60,6 @@ import {
   cashierTabs,
   cashierDestinations,
   canUseCashier,
-  destinationBlurb,
   // coercesToAgentWallet is exercised in agent-to-agent-credits-the-agent-wallet.test.ts,
   // which owns that rule; importing it here only to not use it is noise.
   cashierRefusesSelfSend,
@@ -330,11 +329,8 @@ describe('clause 6 — the ten minute window is presented honestly', () => {
     // button the server would refuse.
     expect(TRADE).toContain('Nothing Is Still Inside Its Ten Minute Window');
     expect(TRADE).toContain('Request A Cash Out');
-    // The modal's version of the same sentence is the claim blurb, which lives
-    // in cashierModes so it can be asserted rather than scraped.
-    expect(destinationBlurb('agent_wallet', 'player_wallet', 'claim')).toContain(
-      'The Player Must Request A Cash Out'
-    );
+    // October 18: wallet descriptions are removed; the actionable empty state keeps the window.
+    expect(MODAL).not.toContain('destinationBlurb');
     expect(MODAL).toContain('Only Sends Made In The Last Ten Minutes Can Be Undone');
   });
 

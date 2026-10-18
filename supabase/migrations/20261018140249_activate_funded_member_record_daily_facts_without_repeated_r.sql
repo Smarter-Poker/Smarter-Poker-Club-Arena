@@ -20,7 +20,10 @@ SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='8min';
 -- Bound memory to this one initializer. Hash aggregation avoids sorting all
 -- historical hands merely because the cutoff join underestimates its rows.
-SET LOCAL work_mem='64MB';
+-- Production has 16 GiB shared buffers / 48 GiB effective cache. The
+-- 7.6M-row rake hash spilled 8.3 GB with 64 MB; 512 MB (hash multiplier 2)
+-- bounds this one backend while fitting that hash and the small aggregates.
+SET LOCAL work_mem='512MB';
 SET LOCAL enable_sort=off;
 SELECT pg_advisory_xact_lock(hashtextextended('member_record_daily_initialization',0));
 DO $$ BEGIN
@@ -49,7 +52,7 @@ WITH buyins AS MATERIALIZED (
  LEFT JOIN funding k ON f.tournament_id IS NULL AND k.table_id=f.table_id AND k.account_entity_id=f.user_id
    AND f.played_at>=k.first_at
  LEFT JOIN LATERAL (
-   SELECT CASE WHEN k.uniform_club THEN k.clubs[1] ELSE
+   SELECT CASE WHEN k.table_id IS NULL THEN NULL WHEN k.uniform_club THEN k.clubs[1] ELSE
      (SELECT k.clubs[i] FROM generate_subscripts(k.starts,1) i
       WHERE f.played_at>=k.starts[i] ORDER BY i LIMIT 1)
    END funding_club_id

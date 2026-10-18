@@ -70,7 +70,7 @@ export class HorseLifecycleManager {
   private launchMaintenanceCycle(generation: number): void {
     if (!this.lifecycleIsCurrent(generation) || this.cycleRunning) return;
     this.cycleRunning = true;
-    const cycle = this.performMaintenanceCycle().finally(() => {
+    const cycle = this.performMaintenanceCycle(generation).finally(() => {
       this.cycleRunning = false;
     });
     void this.trackLifecycleJob(cycle).catch((error) =>
@@ -150,13 +150,18 @@ export class HorseLifecycleManager {
   // MAIN MAINTENANCE CYCLE
   // ─────────────────────────────────────────────────────────────────────────
 
-  private async performMaintenanceCycle(): Promise<void> {
+  private async performMaintenanceCycle(generation = this.lifecycleGeneration): Promise<void> {
+    // A cycle already past its timer admission remains owned until its current
+    // request settles, but may not launch the next page, horse or cashout after
+    // shutdown or the maintenance freeze. Never abort an accepted money write.
+    const canContinue = () => this.lifecycleIsCurrent(generation) && !isMaintenanceFrozen();
+    if (!canContinue()) return;
     try {
       await Promise.all([
-        this.cleanupFinishedTournaments(),
-        this.detectStuckHorses(),
-        this.cleanupStaleSNGs(),
-        this.cleanupStaleSeats(),
+        this.cleanupFinishedTournaments(canContinue),
+        this.detectStuckHorses(canContinue),
+        this.cleanupStaleSNGs(canContinue),
+        this.cleanupStaleSeats(canContinue),
       ]);
     } catch (err) {
       reportError(err, 'Lifecycle.Maintenance_cycle_error');
@@ -167,7 +172,8 @@ export class HorseLifecycleManager {
   // TOURNAMENT CLEANUP
   // ─────────────────────────────────────────────────────────────────────────
 
-  private async cleanupFinishedTournaments(): Promise<void> {
+  private async cleanupFinishedTournaments(canContinue: () => boolean): Promise<void> {
+    if (!canContinue()) return;
     try {
       /* ONLY WHAT JUST FINISHED (2026-09-09). This read every COMPLETED and
          CANCELLED tournament the platform has ever run - 143,769 of them -
@@ -186,6 +192,7 @@ export class HorseLifecycleManager {
         .gte('ended_at', endedSince)
         .order('ended_at', { ascending: false })
         .limit(1000);
+      if (!canContinue()) return;
       if (tErr) throw new Error(tErr.message);
 
       if (!tournaments || tournaments.length === 0) return;
@@ -193,12 +200,14 @@ export class HorseLifecycleManager {
       let horsesReset = 0;
 
       for (const tournament of tournaments) {
+        if (!canContinue()) return;
         try {
           const { data: players } = await supabase
             .from('tournament_players')
             .select('user_id')
             .eq('tournament_id', tournament.id);
 
+          if (!canContinue()) return;
           if (!players || players.length === 0) continue;
 
           /* CHUNKED, AND AN UNREADABLE FIELD IS NOT AN EMPTY ONE (2026-09-03).
@@ -212,16 +221,24 @@ export class HorseLifecycleManager {
              tournament_players rows accumulated for good. */
           const profileRead = await selectInChunks<{ id: string }>(
             players.map((p) => p.user_id),
-            (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
+            (batch) =>
+              canContinue()
+                ? supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true)
+                : Promise.resolve({
+                    data: null,
+                    error: { message: 'Lifecycle scan ownership withdrawn' },
+                  }),
             `HorseLifecycle.horsesInField(${String(tournament.id).slice(0, 8)})`
           );
+          if (!canContinue()) return;
           if (!profileRead.complete) continue; // try again next pass, do not half-clean
           const profiles = profileRead.rows;
 
           if (profiles.length === 0) continue;
 
           for (const profile of profiles) {
-            const reset = await this.evaluateHorseStatus(profile.id);
+            if (!canContinue()) return;
+            const reset = await this.evaluateHorseStatus(profile.id, canContinue);
             if (reset) {
               horsesReset++;
               await this.persistLifecycleLog(profile.id, 'tournament_reset', {
@@ -253,7 +270,8 @@ export class HorseLifecycleManager {
   // STUCK HORSE DETECTION
   // ─────────────────────────────────────────────────────────────────────────
 
-  private async detectStuckHorses(): Promise<void> {
+  private async detectStuckHorses(canContinue: () => boolean): Promise<void> {
+    if (!canContinue()) return;
     try {
       const thresholdTime = new Date(
         Date.now() - STUCK_HORSE_THRESHOLD_HOURS * 60 * 60 * 1000
@@ -277,11 +295,12 @@ export class HorseLifecycleManager {
           if (cursor) q = q.gt('id', cursor);
           return q;
         },
-        { label: 'HorseLifecycle.stuckHorses', maxRows: 50_000 }
+        { label: 'HorseLifecycle.stuckHorses', maxRows: 50_000, shouldContinue: canContinue }
       );
       // Under-reading here just means fewer horses are unstuck this pass, which
       // is harmless and self-correcting — but say so rather than treating a
       // partial read as "nothing is stuck".
+      if (!canContinue()) return;
       if (!stuckPage.complete) {
         console.warn('[HorseLifecycle] stuck-horse sweep read incompletely - retrying next pass');
         return;
@@ -293,6 +312,7 @@ export class HorseLifecycleManager {
       let forcedResets = 0;
 
       for (const horse of stuckHorses) {
+        if (!canContinue()) return;
         try {
           // Check if horse has active seat
           const { data: activeSeats } = await supabase
@@ -302,6 +322,7 @@ export class HorseLifecycleManager {
             .is('left_at', null)
             .limit(1);
 
+          if (!canContinue()) return;
           if (activeSeats && activeSeats.length > 0) continue; // Still has active seat
 
           // Check if in active tournament
@@ -312,6 +333,7 @@ export class HorseLifecycleManager {
             .in('status', ['registered', 'playing'])
             .limit(1);
 
+          if (!canContinue()) return;
           if (activeTournaments && activeTournaments.length > 0) continue; // Still in tournament
 
           // Calculate how long stuck
@@ -319,7 +341,7 @@ export class HorseLifecycleManager {
           const stuckSinceHours = stuckSinceMs / (60 * 60 * 1000);
 
           // Force reset
-          const reset = await this.forceResetHorse(horse.id);
+          const reset = await this.forceResetHorse(horse.id, canContinue);
           if (reset) {
             forcedResets++;
             await this.persistLifecycleLog(horse.id, 'stuck_horse_reset', {
@@ -371,7 +393,11 @@ export class HorseLifecycleManager {
   // HORSE RESET
   // ─────────────────────────────────────────────────────────────────────────
 
-  async evaluateHorseStatus(horseId: string): Promise<boolean> {
+  async evaluateHorseStatus(
+    horseId: string,
+    canContinue: () => boolean = () => !isMaintenanceFrozen()
+  ): Promise<boolean> {
+    if (!canContinue()) return false;
     try {
       // Check if horse has ANY active seats
       const { data: activeSeats } = await supabase
@@ -381,6 +407,8 @@ export class HorseLifecycleManager {
         .is('left_at', null)
         .limit(1);
 
+      if (!canContinue()) return false;
+
       // Check if in ANY active tournament
       const { data: activeTournaments } = await supabase
         .from('tournament_players')
@@ -389,6 +417,7 @@ export class HorseLifecycleManager {
         .in('status', ['registered', 'playing'])
         .limit(1);
 
+      if (!canContinue()) return false;
       const hasActiveGames =
         (activeSeats && activeSeats.length > 0) ||
         (activeTournaments && activeTournaments.length > 0);
@@ -422,7 +451,11 @@ export class HorseLifecycleManager {
   }
 
   // FORCE RESET function for genuinely stuck horses (used by detectStuckHorses)
-  async forceResetHorse(horseId: string): Promise<boolean> {
+  async forceResetHorse(
+    horseId: string,
+    canContinue: () => boolean = () => !isMaintenanceFrozen()
+  ): Promise<boolean> {
+    if (!canContinue()) return false;
     try {
       // Get all active seats for this horse WITH their stacks
       const { data: activeSeats } = await supabase
@@ -434,13 +467,21 @@ export class HorseLifecycleManager {
       // A force reset is a cash-session recovery only. A tournament manager
       // owns tournament life, chips and seat exits; a race that seats this
       // horse after the detector read must make this reset stand down.
+      if (!canContinue()) return false;
       if (activeSeats && activeSeats.length > 0) {
         const tableIds = Array.from(new Set(activeSeats.map((seat) => seat.table_id)));
         const tableRead = await selectInChunks<{ id: string; tournament_id: string | null }>(
           tableIds,
-          (batch) => supabase.from('tables').select('id, tournament_id').in('id', batch),
+          (batch) =>
+            canContinue()
+              ? supabase.from('tables').select('id, tournament_id').in('id', batch)
+              : Promise.resolve({
+                  data: null,
+                  error: { message: 'Lifecycle scan ownership withdrawn' },
+                }),
           `HorseLifecycle.forceResetTables(${horseId.slice(0, 8)})`
         );
+        if (!canContinue()) return false;
         if (
           !tableRead.complete ||
           tableRead.rows.length !== tableIds.length ||
@@ -449,12 +490,14 @@ export class HorseLifecycleManager {
           return false;
         }
         for (const seat of activeSeats) {
+          if (!canContinue()) return false;
           await atomicCashout(horseId, seat.table_id, seat.seat_number, {
             occupancyId: seat.occupancy_id,
           });
         }
       }
 
+      if (!canContinue()) return false;
       // Reset profile status
       const { error } = await supabase
         .from('profiles')
@@ -478,7 +521,8 @@ export class HorseLifecycleManager {
   // STALE SNG CLEANUP
   // ─────────────────────────────────────────────────────────────────────────
 
-  private async cleanupStaleSNGs(): Promise<void> {
+  private async cleanupStaleSNGs(canContinue: () => boolean): Promise<void> {
+    if (!canContinue()) return;
     try {
       const thresholdTime = new Date(
         Date.now() - STALE_SNG_THRESHOLD_HOURS * 60 * 60 * 1000
@@ -499,6 +543,7 @@ export class HorseLifecycleManager {
         .in('status', ['ANNOUNCED', 'REGISTERING'])
         .lt('created_at', thresholdTime);
 
+      if (!canContinue()) return;
       if (!staleSNGs || staleSNGs.length === 0) return;
 
       /**
@@ -531,7 +576,8 @@ export class HorseLifecycleManager {
   // STALE SEAT CLEANUP
   // ─────────────────────────────────────────────────────────────────────────
 
-  private async cleanupStaleSeats(): Promise<void> {
+  private async cleanupStaleSeats(canContinue: () => boolean): Promise<void> {
+    if (!canContinue()) return;
     try {
       const thresholdTime = new Date(
         Date.now() - STALE_SEAT_THRESHOLD_HOURS * 60 * 60 * 1000
@@ -561,11 +607,12 @@ export class HorseLifecycleManager {
           if (cursor) q = q.gt('id', cursor);
           return q;
         },
-        { label: 'HorseLifecycle.staleSeats', maxRows: 50_000 }
+        { label: 'HorseLifecycle.staleSeats', maxRows: 50_000, shouldContinue: canContinue }
       );
       // This sweep force-cashes-out seats. Acting on a partial read cannot
       // reap a seat it never saw (safe), but it also cannot be trusted to have
       // finished — and it runs every 4 hours, so skipping one pass is free.
+      if (!canContinue()) return;
       if (!stalePage.complete) {
         console.warn('[HorseLifecycle] stale-seat sweep read incompletely - retrying next pass');
         return;
@@ -586,9 +633,16 @@ export class HorseLifecycleManager {
         cluster_id: string | null;
       }>(
         staleTableIds,
-        (batch) => supabase.from('tables').select('id, tournament_id, cluster_id').in('id', batch),
+        (batch) =>
+          canContinue()
+            ? supabase.from('tables').select('id, tournament_id, cluster_id').in('id', batch)
+            : Promise.resolve({
+                data: null,
+                error: { message: 'Lifecycle scan ownership withdrawn' },
+              }),
         'HorseLifecycle.staleSeatTables'
       );
+      if (!canContinue()) return;
       if (!tableRead.complete) {
         console.warn('[HorseLifecycle] stale-seat table read incomplete - retrying next pass');
         return;
@@ -609,6 +663,7 @@ export class HorseLifecycleManager {
       const HAND_ACTIVITY_WINDOW_MS = 30 * 60 * 1000;
       const recentHandCutoff = new Date(Date.now() - HAND_ACTIVITY_WINDOW_MS).toISOString();
       for (const seat of staleSeats) {
+        if (!canContinue()) return;
         try {
           // Skip tournament seats entirely — never cash tournament chips to wallets here.
           const tableRow = tableById.get(seat.table_id);
@@ -630,6 +685,7 @@ export class HorseLifecycleManager {
             .gte('created_at', recentHandCutoff)
             .limit(1)
             .maybeSingle();
+          if (!canContinue()) return;
           if (recentHand) continue;
 
           /* FIX 208: Use direct atomicCashout instead of RPC.
@@ -652,6 +708,7 @@ export class HorseLifecycleManager {
               );
             },
           });
+          if (!canContinue()) return;
           if (!cashedOut) continue;
           cleaned++;
 
@@ -662,8 +719,9 @@ export class HorseLifecycleManager {
             .eq('id', seat.user_id)
             .maybeSingle(); // FIX 168
 
+          if (!canContinue()) return;
           if (profile?.is_horse) {
-            await this.evaluateHorseStatus(seat.user_id);
+            await this.evaluateHorseStatus(seat.user_id, canContinue);
             await this.persistLifecycleLog(seat.user_id, 'stale_seat_cleanup', {
               tableId: seat.table_id,
               seatNumber: seat.seat_number,

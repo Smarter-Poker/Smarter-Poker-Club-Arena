@@ -7,3 +7,14 @@ The owning discovery now subtracts its existing conservative field seating budge
 The same maintenance owner prepares v3 installments in the final90seconds. The database credits the entire scheduled freeze and floors its certified endpoint at the scheduled end. Database entry predicates and in-memory table pauses stay closed through that endpoint. Missed preparation retains the existing fail-closed rebase; no early release is possible. At actual release, future-booked opening levels receive a full first level, with independent tournament pauses and older clocks preserved.
 
 Regression: observed large-field/noon/:10/UTC preparation, actual adopted-break state machine and first-clock timers; disposable PostgreSQL uses exact installed functions in separate committed transactions, wrong-owner/adoption/replay/early-entry negatives, full clock credits and unchanged wallet/chair/registration/stack identities. The native qualification is in required accounting shard1; inputs select that job. No production fault injection or repair loop is introduced. Live serving/start/break evidence remains in the task checkpoint until obtained.
+
+The release transaction also stops treating a historical missed restart certificate
+as a live engine emergency. A healthy, dealing engine with
+`breaksSinceRestartCertified=1` previously requested an extra Deployment Recovery
+window; the actual transaction regression reproduces that before the fix and
+refuses it afterward for counts 1, 3 and 100. Genuine dead/stalled engines,
+wedge-sized quarantine, urgent trailers and real certificate deadlines retain
+their existing path, ownership checks, rate limit and complete cutover reserve.
+Historical read-only journal decoding retains its original evidence unchanged.
+This source finding does not identify the owner of the observed 18:23 recovery
+announcement; that attribution remains unproven.

@@ -155,12 +155,13 @@ describe('every member is discoverable in the cashier', () => {
     ).toBeNull();
   });
 
-  it('no cashier surface filters a member out of its list to avoid a refusal', () => {
+  it('wallet destinations narrow the modal roster while the general directory stays discoverable', () => {
     // Both surfaces, one rule. These two literals are the exact filters that
     // made a member vanish; neither may come back.
     const modal = read('src/components/wallet/WalletCashierModal.tsx');
     expect(modal).toContain('cashierRecipientBlock({');
-    expect(modal).toContain('const destinationMembers = members;');
+    // Owner update 2026-10-18: player-only members never appear in Agent/Promo wallets.
+    expect(modal).toContain('members.filter((m) => canHoldAgentWallet(m.role))');
     expect(modal).not.toContain('!(excludeSelf && m.user_id === user?.id)');
     expect(modal).not.toContain('needsAgent ? canHoldAgentWallet(m.role) : true');
     // Listed, and refused at the one place a recipient is chosen.

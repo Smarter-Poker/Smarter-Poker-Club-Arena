@@ -1,0 +1,9 @@
+# Complete the original Lightning attribution correction
+
+The root in PR #7340 is installed and the October 17 report now equals the chip ledger at 139252.78. Final readback found885 more original Lightning attributions totaling6.34, created at15:01–15:37 UTC before the source fix installed at15:37:39. No missing funding was created after installation. These current-day records were outside that migration's qualified14:00 cutoff.
+
+This finite follow-up changes only the exact885 unaccrued rows' original funding-club metadata. It derives ownership from the retained player, slot, pool session, cash session, epoch and actual hand-start witnesses. Exact count, amount, mapping hash, complete cohort, existing immutable-source trigger and sorted hand advisory locks remain mandatory. It refuses replay, source movement or accrued sources. No wallet, ledger, rate, paid receipt or schedule changes. The current day is not passed to the completed-day rollup owner.
+
+The retained one-call production rollback qualification changed all885 through the actual triggers in8293.165ms, preserved the completed October17 report at139252.78 and deliberately raised EXPECTED_ROLLBACK. Independent readback confirmed885 records/6.34 still unmodified and the completed report unchanged. Both existing per-player report caches match their authoritative sources for October17 and18. The original source regression remains enforced by the existing digest native PostgreSQL step; this does not add a repair job or change that business logic.
+
+The final candidate also refuses a frozen platform or installation after the current day closes, which would require a separately qualified completed-day report update. Its exact guarded rollback qualification passed in1782.860ms; independent readback again confirmed885 unchanged records/6.34 and the139252.78 completed report. Migration liveness and version uniqueness checks pass (23 tests).

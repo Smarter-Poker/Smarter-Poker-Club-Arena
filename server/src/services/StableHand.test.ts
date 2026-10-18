@@ -305,23 +305,28 @@ describe('T9/T10/T31 - one body, one club, one host', () => {
       })
     ).toBe('other_club');
   });
-  it('T10 refuses a DSS sit while the horse is active on Midway Union', () => {
+  it('T10 refuses a DSS sit while the horse is active on JAQK', () => {
     expect(
       evaluateSit({
         ...baseSit,
         activeClubId: JAQK_CLUB_ID,
         activeHostId: MIDWAY_UNION_ID,
         clubId: DSS_CLUB_ID,
-        tableHostId: DSS_CLUB_ID,
+        tableHostId: MIDWAY_UNION_ID,
       })
     ).toBe('other_club');
   });
-  it('T31 refuses a JAQK wallet on a DSS table outright', () => {
-    expect(sitIsLegalForHost(JAQK_CLUB_ID, DSS_CLUB_ID)).toBe(false);
-    expect(sitIsLegalForHost(DSS_CLUB_ID, MIDWAY_UNION_ID)).toBe(false);
+  /* Dan 2026-10-18: "ANYTIME A CLUB JOINS THE UNION THEY ONLY PLAY MIDWAY
+     UNION CASH GAMES, TOURNAMENTS, SPINS AND SIT N GO'S." Deep Stack Society
+     is in the union, so its wallet buys into the union's tables and it hosts
+     none of its own. Replaces the pre-2026-10-12 pin that DSS was its own host. */
+  it('T31 every union club plays the union floor, and only the union floor', () => {
     expect(sitIsLegalForHost(JAQK_CLUB_ID, MIDWAY_UNION_ID)).toBe(true);
     expect(sitIsLegalForHost(SHARK_CLUB_ID, MIDWAY_UNION_ID)).toBe(true);
-    expect(evaluateSit({ ...baseSit, clubId: JAQK_CLUB_ID, tableHostId: DSS_CLUB_ID })).toBe(
+    expect(sitIsLegalForHost(DSS_CLUB_ID, MIDWAY_UNION_ID)).toBe(true);
+    expect(sitIsLegalForHost(DSS_CLUB_ID, DSS_CLUB_ID)).toBe(false);
+    expect(sitIsLegalForHost(JAQK_CLUB_ID, DSS_CLUB_ID)).toBe(false);
+    expect(evaluateSit({ ...baseSit, clubId: DSS_CLUB_ID, tableHostId: DSS_CLUB_ID })).toBe(
       'other_host'
     );
   });

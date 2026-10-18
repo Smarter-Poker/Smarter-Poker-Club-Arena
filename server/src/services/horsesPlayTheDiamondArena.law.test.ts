@@ -29,7 +29,7 @@ import {
   isDiamondTableRow,
   wholeDiamondBuyIn,
 } from './HorseFleetFundingBoundary.js';
-import { DSS_CLUB_ID } from './StableHand.js';
+import { DSS_CLUB_ID, JAQK_CLUB_ID, SHARK_CLUB_ID } from './StableHand.js';
 import { classifyBuyInRefusal } from './HorseBuyInRefusal.js';
 import { exposureFor } from './HorseSitVerdict.js';
 
@@ -52,8 +52,11 @@ const DEALING = readFileSync('src/engine/ServerTableEngineDealing.ts', 'utf8');
 const ROTATOR = readFileSync('src/services/HorseSessionRotator.ts', 'utf8');
 
 describe('who plays the arena', () => {
-  it('is Deep Stack Society, as Dan named it', () => {
-    expect(DIAMOND_ARENA_HORSE_CLUBS).toEqual([DSS_CLUB_ID]);
+  it('is every horse club, as Dan named it', () => {
+    // Dan 2026-10-18: every horse club plays the Diamond Arena, not DSS alone.
+    expect([...DIAMOND_ARENA_HORSE_CLUBS].sort()).toEqual(
+      [JAQK_CLUB_ID, SHARK_CLUB_ID, DSS_CLUB_ID].sort()
+    );
   });
 });
 

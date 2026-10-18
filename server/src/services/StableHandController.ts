@@ -37,7 +37,6 @@ import {
   NIGHT_MIN_PLAYERS,
   nightTablesNeeded,
   MIDWAY_UNION_ID,
-  DSS_CLUB_ID,
   type ShapeBucket,
   type StakeBand,
   type YieldCandidate,
@@ -639,7 +638,8 @@ export function chicagoNow(d: Date = new Date()): {
   };
 }
 
-export const STABLE_HAND_HOSTS = [MIDWAY_UNION_ID, DSS_CLUB_ID];
+/* One host: every horse club is in Midway Union (2026-10-18). */
+export const STABLE_HAND_HOSTS = [MIDWAY_UNION_ID];
 export type { ShapeBucket };
 
 /* ══════════════════════════════════════════════════════════════════════════

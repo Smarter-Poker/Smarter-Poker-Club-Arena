@@ -54,7 +54,7 @@ import {
   type FloorSnapshot,
   type HostSnapshot,
 } from './StableHandController.js';
-import { MIDWAY_UNION_ID, DSS_CLUB_ID, WALLETS_FOR_HOST, killed } from './StableHand.js';
+import { WALLETS_FOR_HOST, killed } from './StableHand.js';
 
 /** Membership statuses that make somebody a member of a club. */
 const MEMBER_STATUSES = ['active', 'approved'];
@@ -206,7 +206,7 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
   const hosts: HostSnapshot[] = [];
   const unreadableHosts: string[] = [];
 
-  for (const hostId of [MIDWAY_UNION_ID, DSS_CLUB_ID]) {
+  for (const hostId of Object.keys(WALLETS_FOR_HOST)) {
     const n = await cachedEligibleBodies(hostId);
     if (n === null || n <= 0) {
       unreadableHosts.push(hostId);

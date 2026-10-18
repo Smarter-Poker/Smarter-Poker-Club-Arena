@@ -31,19 +31,27 @@ export const SHARK_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 export const DSS_CLUB_ID = '2a1132b9-5ba2-42e6-9f01-30a7fcffebe3';
 
 /** A host owns tables and is the unit of occupancy. */
-export type HostId = typeof MIDWAY_UNION_ID | typeof DSS_CLUB_ID;
+export type HostId = typeof MIDWAY_UNION_ID;
 
-/** Wallets legal for each host. Midway Union tables are bought into from a
- *  JAQK or Shark wallet; DSS tables from the DSS wallet. Measured live:
- *  396 DSS seats, 158 Shark, 155 JAQK, 0 Midway-Union-wallet. */
+/** Wallets legal for each host.
+ *
+ *  A CLUB IN THE UNION PLAYS ONLY THE UNION'S GAMES (Dan, 2026-10-18): "ANYTIME
+ *  A CLUB JOINS THE UNION THEY ONLY PLAY MIDWAY UNION CASH GAMES, TOURNAMENTS,
+ *  SPINS AND SIT N GO'S." Deep Stack Society joined Midway Union on 2026-10-12
+ *  and owns no tables of its own any more, but it was still listed here as its
+ *  own host - so its 416 horses could sit at no cash table on the union floor
+ *  and its card read 0 CASH. Its wallet now buys into the union's tables like
+ *  JAQK's and Shark's. This matches fn_assign_horse_stake_bands, whose host for
+ *  a member is `coalesce(clubs.union_id, clubs.id)`. A club that joins the
+ *  union later is added to this list, never given a host of its own. */
 export const WALLETS_FOR_HOST: Record<string, string[]> = {
-  [MIDWAY_UNION_ID]: [JAQK_CLUB_ID, SHARK_CLUB_ID],
-  [DSS_CLUB_ID]: [DSS_CLUB_ID],
+  [MIDWAY_UNION_ID]: [JAQK_CLUB_ID, SHARK_CLUB_ID, DSS_CLUB_ID],
 };
 
 export function hostForWallet(clubId: string): HostId | null {
-  if (clubId === JAQK_CLUB_ID || clubId === SHARK_CLUB_ID) return MIDWAY_UNION_ID;
-  if (clubId === DSS_CLUB_ID) return DSS_CLUB_ID;
+  if (clubId === JAQK_CLUB_ID || clubId === SHARK_CLUB_ID || clubId === DSS_CLUB_ID) {
+    return MIDWAY_UNION_ID;
+  }
   return null;
 }
 

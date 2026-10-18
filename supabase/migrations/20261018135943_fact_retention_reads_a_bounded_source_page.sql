@@ -30,10 +30,15 @@ BEGIN
   SELECT c.hand_id FROM smarter_private.horse_adaptive_disposal_certificates c
   WHERE c.hand_id>COALESCE(after_id,'00000000-0000-0000-0000-000000000000'::uuid)
   ORDER BY c.hand_id LIMIT scan_limit
+ ), receipts AS MATERIALIZED (
+  -- Read the same contiguous identity range once. A correlated lookup for
+  -- every certificate was still slow on the live cold indexes.
+  SELECT f.hand_id FROM smarter_private.horse_fact_card_disposals f
+  WHERE f.hand_id>COALESCE(after_id,'00000000-0000-0000-0000-000000000000'::uuid)
+    AND f.hand_id<=(SELECT p.hand_id FROM page p ORDER BY p.hand_id DESC LIMIT 1)
  ), pending AS MATERIALIZED (
-  SELECT p.hand_id FROM page p
-  WHERE NOT EXISTS(SELECT 1 FROM smarter_private.horse_fact_card_disposals f WHERE f.hand_id=p.hand_id OFFSET 0)
-  ORDER BY p.hand_id LIMIT lim
+  SELECT p.hand_id FROM page p LEFT JOIN receipts f ON f.hand_id=p.hand_id
+  WHERE f.hand_id IS NULL ORDER BY p.hand_id LIMIT lim
  )
  SELECT (SELECT array_agg(p.hand_id ORDER BY p.hand_id) FROM pending p),
         (SELECT p.hand_id FROM page p ORDER BY p.hand_id DESC LIMIT 1),

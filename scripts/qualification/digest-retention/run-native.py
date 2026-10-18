@@ -29,6 +29,7 @@ try:
  INSERT INTO smarter_private.horse_adaptive_disposal_certificates SELECT lpad(i::text,32,'0')::uuid,now()-interval '8 days' FROM generate_series(1,1000000)i;
  INSERT INTO smarter_private.horse_fact_card_disposals SELECT hand_id FROM smarter_private.horse_adaptive_disposal_certificates WHERE hand_id NOT IN(lpad('1',32,'0')::uuid,lpad('500000',32,'0')::uuid,lpad('1000000',32,'0')::uuid);
  INSERT INTO ca_hand_facts SELECT hand_id,ARRAY['As','Kd'],12.34 FROM smarter_private.horse_adaptive_disposal_certificates WHERE hand_id IN(lpad('1',32,'0')::uuid,lpad('500000',32,'0')::uuid,lpad('1000000',32,'0')::uuid);
+ INSERT INTO smarter_private.horse_fact_card_disposals VALUES('00000000-0000-0000-0000-00000000000a');
  ANALYZE smarter_private.horse_adaptive_disposal_certificates;ANALYZE smarter_private.horse_fact_card_disposals;''')
  sql((Path(__file__).parent/'before.sql').read_text())
  sql((root/'supabase/migrations/20261018135943_fact_retention_reads_a_bounded_source_page.sql').read_text())

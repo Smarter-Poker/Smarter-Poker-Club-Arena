@@ -262,7 +262,8 @@ function fakeBrowser(
   refused = false,
   respectCapabilities = false,
   broken = null,
-  refusalCode = 'STALE_ACTION'
+  refusalCode = 'STALE_ACTION',
+  refusalMessage = 'private fixture message'
 ) {
   let frame,
     respond,
@@ -329,7 +330,7 @@ function fakeBrowser(
           json: async () => ({
             success: !refused,
             code: refused ? refusalCode : undefined,
-            error: 'private fixture message',
+            error: refusalMessage,
           }),
           url: () => 'https://engine.smarter.poker/action',
           request: () => ({
@@ -614,4 +615,36 @@ test('an unrecognized refusal payload cannot leak into evidence or become a pass
   assert.equal(r.status, 'unknown');
   assert.equal(r.devices[0].actions[0].refusalCode, null);
   assert.doesNotMatch(JSON.stringify(r), /private token or card payload|private fixture message/);
+});
+
+test('known message-only native refusals receive a fixed classification without raw text', async () => {
+  const f = fixture(),
+    b = fakeBrowser(true, false, null, null, 'Already folded');
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.devices[0].actions[0].refusalCode, 'ALREADY_FOLDED');
+  assert.equal(r.devices[0].actions[0].refusalSource, 'known_message');
+  assert.doesNotMatch(JSON.stringify(r), /Already folded/);
+});
+test('even an uppercase card-like or arbitrary code is not trusted as a native code', async () => {
+  for (const code of ['AS_KH', 'ARBITRARY_PRIVATE_TOKEN']) {
+    const f = fixture(),
+      b = fakeBrowser(true, false, null, code);
+    const r = await witnessPlayer({
+      admin: f.admin,
+      createClient: () => f.client,
+      chromium: b.chromium,
+      url: 'https://example.invalid',
+      pin,
+    });
+    assert.equal(r.status, 'unknown');
+    assert.equal(r.devices[0].actions[0].refusalCode, null);
+    assert.doesNotMatch(JSON.stringify(r), new RegExp(code));
+  }
 });

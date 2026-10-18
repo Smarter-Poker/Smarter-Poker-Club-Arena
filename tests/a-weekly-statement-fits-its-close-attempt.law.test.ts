@@ -42,9 +42,23 @@ const pairs = (body: string) => {
 };
 
 const FIELDS = [
-  'id', 'hand_id', 'table_id', 'club_id', 'rake_amount', 'bbj_contribution', 'pot_size',
-  'num_players', 'created_at', 'player_contributions', 'global_hand_id', 'is_tournament',
-  'tournament_id', 'source', 'metadata', 'rake_method', 'returned_uncalled',
+  'id',
+  'hand_id',
+  'table_id',
+  'club_id',
+  'rake_amount',
+  'bbj_contribution',
+  'pot_size',
+  'num_players',
+  'created_at',
+  'player_contributions',
+  'global_hand_id',
+  'is_tournament',
+  'tournament_id',
+  'source',
+  'metadata',
+  'rake_method',
+  'returned_uncalled',
 ];
 
 describe('a weekly statement fits its close attempt', () => {
@@ -64,9 +78,13 @@ describe('a weekly statement fits its close attempt', () => {
       expect(sql).toContain(`IF md5(v_def) = '${post}' THEN RETURN; END IF;`);
       expect(sql).toContain(`IF md5(v_def) <> '${post}' THEN`);
     }
-    expect(sql.match(/IF pg_get_functiondef\(v_oid\) IS DISTINCT FROM v_def THEN/g)?.length).toBe(4);
+    expect(sql.match(/IF pg_get_functiondef\(v_oid\) IS DISTINCT FROM v_def THEN/g)?.length).toBe(
+      4
+    );
     expect(sql.match(/p\.proacl::text IS NOT DISTINCT FROM v_acl/g)?.length).toBe(4);
-    expect(sql).toContain('smarter_private.original_inventory_proof_sources_match() IS DISTINCT FROM true');
+    expect(sql).toContain(
+      'smarter_private.original_inventory_proof_sources_match() IS DISTINCT FROM true'
+    );
   });
 
   it('proves the tournament week by key, with the same tests and the same fingerprint', () => {
@@ -80,9 +98,13 @@ describe('a weekly statement fits its close attempt', () => {
     expect(after).toContain(
       'cs.tournament_id=s.tournament_id\n        AND (cs.club_id=p_club_id OR (scope_union IS NOT NULL AND cs.coordinator_union_id=scope_union)) OFFSET 0)'
     );
-    expect(after).toContain('cr.tournament_id=s.tournament_id\n        AND cr.refund_wallet_club_id=p_club_id OFFSET 0)');
+    expect(after).toContain(
+      'cr.tournament_id=s.tournament_id\n        AND cr.refund_wallet_club_id=p_club_id OFFSET 0)'
+    );
     expect(after).toContain('WHERE b0.tournament_id=c.tournament_id OFFSET 0) b ON true');
-    expect(after).toContain('WHERE s.tournament_id=ANY((SELECT array_agg(c.tournament_id) FROM candidates c)::uuid[])');
+    expect(after).toContain(
+      'WHERE s.tournament_id=ANY((SELECT array_agg(c.tournament_id) FROM candidates c)::uuid[])'
+    );
     // The four unknown-scope EXISTS keep their text and gain only OFFSET 0.
     for (const [o, n] of q.slice(5, 9)) {
       expect(n.replace(/ OFFSET 0/g, '')).toBe(o);
@@ -98,7 +120,9 @@ describe('a weekly statement fits its close attempt', () => {
     expect(check).toContain('public.fn_accounting_tournament_fee_fingerprint(r) IS DISTINCT FROM');
     expect(check).toContain(q[9][1].replace(' AS fp', ''));
     // The fingerprint function itself is not touched (an admission guard pins it).
-    expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION public\.fn_accounting_tournament_fee_fingerprint/);
+    expect(sql).not.toMatch(
+      /CREATE OR REPLACE FUNCTION public\.fn_accounting_tournament_fee_fingerprint/
+    );
   });
 
   it('fingerprints a statement by immutable source identity, under a new key', () => {
@@ -106,7 +130,7 @@ describe('a weekly statement fits its close attempt', () => {
     expect(s.length).toBe(3);
     expect(s[0][0]).toContain('s.rake_credit,s.contract)::text');
     expect(s[0][1]).toContain(
-      "md5(jsonb_build_array(s.source_type,s.source_id,s.rake_record_id,s.earned_at,s.rake_credit)::text),'' ORDER BY s.source_id,s.source_type COLLATE \"C\""
+      'md5(jsonb_build_array(s.source_type,s.source_id,s.rake_record_id,s.earned_at,s.rake_credit)::text),\'\' ORDER BY s.source_id,s.source_type COLLATE "C"'
     );
     expect(s[1]).toEqual([
       "'source_count',source_count,'source_fingerprint_v2',source_fingerprint,",
@@ -125,7 +149,9 @@ describe('a weekly statement fits its close attempt', () => {
     const c = pairs(block('cascade'));
     expect(c.length).toBe(2);
     const stage = c[1][1];
-    expect(c[1][0]).toBe('  -- The period is an accounting object, not a by-product of invoicing.\n');
+    expect(c[1][0]).toBe(
+      '  -- The period is an accounting object, not a by-product of invoicing.\n'
+    );
     expect(stage.endsWith(c[1][0])).toBe(true);
     expect(stage).toContain('  IF v_chunked THEN');
     expect(stage).toContain(
@@ -148,7 +174,9 @@ describe('a weekly statement fits its close attempt', () => {
     expect(stage).toContain("'stage', 'statement_evidence'");
     expect(stage.indexOf('EXIT;')).toBeGreaterThan(ret);
     // Nothing that settles, issues or pays is in the stage.
-    expect(stage).not.toMatch(/fn_mark_scope_accounting_settled|fn_issue_|fn_union_issue_|fn_credit|INSERT|UPDATE/);
+    expect(stage).not.toMatch(
+      /fn_mark_scope_accounting_settled|fn_issue_|fn_union_issue_|fn_credit|INSERT|UPDATE/
+    );
   });
 
   it('never treats a statement proof as a re-proof of the P&L report', () => {
@@ -159,5 +187,33 @@ describe('a weekly statement fits its close attempt', () => {
         "       AND c.certified_at>r.computed_at AND c.kind NOT LIKE 'club\\_statement\\_quality:%');",
       ],
     ]);
+  });
+
+  it('admits the produced key through the real certificate constraint and required native check', () => {
+    const fix = readFileSync(
+      'supabase/migrations/20261018142435_weekly_statement_quality_certificate_kind.sql',
+      'utf8'
+    );
+    expect(fix).toContain("'923b63b9f2735497f2fe408c519c1267'");
+    expect(fix).toContain("'be81406a7d1b6bb24d6330cd60b866a6'");
+    expect(fix).toContain(
+      '^club_statement_quality:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    );
+    for (const kind of [
+      'earned_plan',
+      'pnl_boundary',
+      'pnl_flows',
+      'pnl_touched',
+      'pnl_clubs',
+      'pnl_boundary_problem',
+      'pnl_flows_problem',
+      'pnl_touched_problem',
+      'pnl_clubs_problem',
+    ])
+      expect(fix).toContain(`'${kind}'::text`);
+    expect(fix).not.toMatch(/CREATE OR REPLACE FUNCTION|INSERT INTO|UPDATE public\./);
+    expect(readFileSync('scripts/ci/test_launch_reset_floor.py', 'utf8')).toContain(
+      "str(Path(__file__).resolve().parent / 'test-weekly-statement-certificate-kind-postgres.py')"
+    );
   });
 });

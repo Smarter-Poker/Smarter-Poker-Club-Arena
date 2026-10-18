@@ -1477,6 +1477,12 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           VIP_POINTS_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: bash scripts/dev/test-retired-vip-points-postgres.sh
+      - name: Digest Lightning Funding And Ticket Bounty Native PostgreSQL
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          DIGEST_NATIVE_WORK: ${{ runner.temp }}
+        run: python3 scripts/qualification/digest-financial-sources/run-native.py
       - name: Data console native PostgreSQL contracts
         if: matrix.shard == 2
         env:

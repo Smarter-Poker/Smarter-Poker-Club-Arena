@@ -53,38 +53,36 @@ export default function PageBar({
   const hasLive = Boolean(status) || metrics.length > 0 || Boolean(children);
   return (
     <header className={className ? `ca-page-bar ${className}` : 'ca-page-bar'}>
-      <div className="ca-page-bar__lead">
-        {Heading && (
-          <Heading className="ca-page-bar__title" id={titleId}>
-            {title}
-          </Heading>
-        )}
-        {hasLive && (
-          <div className="ca-page-bar__live">
-            {status && (
-              <span className="ca-page-bar__status" role="status" data-tone={statusTone}>
-                <span aria-hidden="true" />
-                {status}
-              </span>
-            )}
-            {metrics.length > 0 && (
-              <dl className="ca-page-bar__metrics" aria-label={`${title} Live Summary`}>
-                {metrics.map((metric) => (
-                  <div
-                    key={metric.label}
-                    className="ca-page-bar__metric"
-                    data-tone={metric.tone || 'default'}
-                  >
-                    <dt>{formatPopupText(metric.label)}</dt>
-                    <dd>{metric.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-            {children}
-          </div>
-        )}
-      </div>
+      {hasLive && (
+        <div className="ca-page-bar__live">
+          {status && (
+            <span className="ca-page-bar__status" role="status" data-tone={statusTone}>
+              <span aria-hidden="true" />
+              {status}
+            </span>
+          )}
+          {metrics.length > 0 && (
+            <dl className="ca-page-bar__metrics" aria-label={`${title} Live Summary`}>
+              {metrics.map((metric) => (
+                <div
+                  key={metric.label}
+                  className="ca-page-bar__metric"
+                  data-tone={metric.tone || 'default'}
+                >
+                  <dt>{formatPopupText(metric.label)}</dt>
+                  <dd>{metric.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {children}
+        </div>
+      )}
+      {Heading && (
+        <Heading className="ca-page-bar__title" id={titleId}>
+          {title}
+        </Heading>
+      )}
       <PageHelp title={title} summary={summary} steps={steps} />
     </header>
   );

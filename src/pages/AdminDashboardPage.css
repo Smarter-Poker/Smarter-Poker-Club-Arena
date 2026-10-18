@@ -28,8 +28,9 @@
 
 /* ── Header ── */
 .admin-page-header {
+  position: relative;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   margin-bottom: 16px;
 }
@@ -38,9 +39,12 @@
   font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.3px;
+  text-align: center;
 }
 
 .admin-header-actions {
+  position: absolute;
+  right: 0;
   display: flex;
   gap: 8px;
 }

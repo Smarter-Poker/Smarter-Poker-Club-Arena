@@ -158,3 +158,125 @@ the first with agreement data. Policy outcomes are populated.
 The shared clone (`~/Documents/club-arena`, mirror, never commit there) is still at 2026-10-16 07:42, so the LaunchAgent
 (04:30 and 16:30 local) still runs the pre-#7284 janitor. Every lead worktree is `git worktree lock`ed so it is skipped;
 lock any new worktree before leaving it.
+
+## 8. Codex Resumption 2026-10-18 13:43Z: Prior Selection Instructions Superseded
+
+The owner resumed Horse Brain in Codex chat 01a14f3e-ae69-7333-9f79-eb2ce71ffb93.
+Checkout: `/Volumes/SmarterWork/agent-work/horse-brain-resume-20261018-01a14f3e/repo`,
+branch `codex/horse-requalification-resume-20261018`, base `6afa6822c3e09942aa3daf6149e55ea33903a21f`.
+Evidence: `/Volumes/SmarterArchives/agent-evidence/horse-brain-resume-20261018-01a14f3e`.
+Scope remains the existing Horse Brain qualification, selection, release and natural proof; no new strategy phase.
+
+Current policy 2.9 read with canonical reader at 2026-10-18T13:41:25.330Z; manifest
+`a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b`.
+Canonical paths read: `/Users/smarter.poker/Documents/AGENTS.md`, `AGENT-OPERATING-LAW.md`,
+`AGENT-HARDENING-STANDARD.md`, `AGENT-REFERENCE-INDEX.md`; repository entrypoints,
+`PUBLISHING.md`, deploy-paths and the recovered round-3/4 handoffs also read.
+Portable policy check against canonical passed. Policy file SHA256 receipts:
+OWNER b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349;
+OPERATING a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5;
+HARDENING d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e;
+INDEX adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555.
+
+### Critical recovery finding
+
+PR #7323 merged `f56b42dd8bb290fb2f929d845067cd58b35e6ef1` at 2026-10-17T23:13:22Z.
+The owner explicitly chose "Ship now, requalify all" for the VPIP-floor call-down.
+It changed hashed `HorseLogic.ts` and set all P10/P11/P12 selections to null.
+Therefore no d9190c9e matrix or completion record can authorize a selection on the current source,
+including PLO6 run 38988218988 (244 shards, qualified on the old policy). PR #7331
+changed tooling only; its archived PLO6 evidence is retained historical evidence.
+
+Engine health and authenticated container inspection at 13:41-13:43Z both identify
+`da94e43740fa4940e7d1f6e4488264c2b6ffb58a`; eight workers ready, zero expired jobs,
+`poker_horse_decision_fallbacks_total 0`. Current main has no server difference from that release.
+The old unattended P13 windows at H=06,08,10 were voided by changed container StartedAt
+even though the SHA stayed da94e437. The old H=12 window cannot qualify the new policy
+because it was declared against S's digests. Preserve its records; do not relabel it.
+
+### Recovery actions and acceptance
+
+Retire only superseded d9190c9e Horse Brain strength runs owned by this resumed assignment;
+retain completed artifacts and inspect terminal remote outcomes. Stop the two inherited stale
+assembly/completion scripts before they write more internal-drive files or judge obsolete windows.
+Dispatch the same 17 locked matrices against protected serving source da94e437, prioritizing
+FLH, PLO4, PLO8, PLO5, PLO6 and Pineapple. No seed/contract/threshold changes.
+Fresh natural completion needs a declaration bound to current policy digests and unchanged identity;
+one guarded extract at a time, abort on unreadable health or oldest queued decision above 3000 ms.
+Selection requires positive strength, completion where applicable, matching digests, next generation,
+byte-identical shipped evidence, required checks, protected merge, certified activation and natural use.
+No old result is promoted and no restart is initiated to create evidence.
+
+### Production restart cause and source repair
+
+Docker inspection reported RestartCount 54 at 13:45Z, with no cgroup memory limit
+and OOMKilled false. At 13:43:51Z the log shows `reference_shape` from the
+live decision client, followed by GameServer.Uncaught_exception and fatal shutdown.
+At 13:44:31Z graceful ownership release timed out; the process exited 1 and
+Docker restarted it at 13:44:32Z. A zero fallback counter after reboot does not
+prove an error-free earlier interval. The narrow log extract is retained in evidence.
+
+Reproduced offline through real HorseLogic and live-client validation: a chart
+fold converted by the new VPIP-floor call-down is rejected as reference_shape.
+Two regressions failed before the repair; the focused 395-case run passed after it.
+`HorsePhase6Attribution.referenceReturnShape` now asks the existing bounded
+call-down owner whether a fold can become exactly the returned call, with a
+constant zero callback to test positive probability. It draws no RNG, repeats
+no chart/equity decision, and retains route, graph, snapshot and malformed-call
+refusals. Strategy, floor values and action probabilities are unchanged.
+The attribution module is an explicitly excluded diagnostic boundary in
+HorseReferenceDecisionSources; every P10-P13 policy digest remains unchanged.
+New-source strength work therefore remains applicable to the receipt repair.
+
+The two inherited stale scripts were stopped; their retained files and completed
+artifacts were preserved. Ten superseded d9190c9e runs are terminal cancelled.
+Seventeen new locked matrices were dispatched against da94e437 with no contract,
+seed or threshold changes. These are qualifications, not releases or admissions.
+
+| Phase | Variant    | Owning run  |
+| ----- | ---------- | ----------- |
+| 10    | plo4       | 39132884688 |
+| 11    | plo6       | 39132893655 |
+| 11    | plo5       | 39132890865 |
+| 11    | plo8       | 39132887881 |
+| 12    | short_deck | 39132902549 |
+| 12    | flo8       | 39132899869 |
+| 12    | pineapple  | 39132896867 |
+| 12    | flh        | 39132882188 |
+| 13    | short_deck | 39132934384 |
+| 13    | pineapple  | 39132931791 |
+| 13    | flh        | 39132929267 |
+| 13    | flo8       | 39132925719 |
+| 13    | plo6       | 39132922262 |
+| 13    | plo5       | 39132918721 |
+| 13    | nlh        | 39132915126 |
+| 13    | plo4       | 39132910448 |
+| 13    | plo8       | 39132906218 |
+
+Fresh completion declaration: `docs/evidence/phase12/declaration-completion-vpip-repair-2026-10-18.txt`.
+No window has been opened or certified. No pack is selected by this repair.
+Next generations: P10 PLO4 4; P11 PLO5/PLO8 4, PLO6 3; P12 FLH 5,
+Pineapple 2, Short Deck/FLO8 1; P13 1. Read retained generations before issuing.
+Source, checks, protected merge, installed release and natural proof remain distinct.
+
+### Exact-candidate local checks (2026-10-18)
+
+- Root `npm run typecheck`: passed. Server `npx tsc --noEmit`: passed.
+- Full server `npx vitest run`: 22,767 passed, 168 existing skips, one environment
+  failure: the long task TMPDIR exceeded PostgreSQL's Unix socket path limit in
+  RebuyFormatMoney.guard.test.ts. No source assertion failed. The same unchanged
+  failed test is rerun with short task-owned SSD TMPDIR
+  `/Volumes/SmarterWork/agent-work/hbr-01a14f3e-t` (server-socket-recheck.log).
+- All 17 P10-P13 policy digests were recomputed after the source repair and
+  match the pre-repair da94e437 values exactly. No strategy file was changed.
+- Production log evidence: `production-reference-shape-fatal.log`; red regressions:
+  `reference-red-server.log`; focused green: `reference-green.log`; full suite:
+  `server-full.log`; typechecks and socket recheck are beside them in the evidence root.
+- Superseded-run jobs were read through every page: all 154 jobs of the active
+  old P13 PLO4 run are terminal; the other nine cancelled pending runs had no jobs.
+- FLH run 39132882188 has begun its locked 42-shard league. Other new-source runs
+  remain in the provider's existing serial league queue. No release was dispatched
+  by a scheduler, inherited script or qualification job.
+
+Protected merge, owning stage/receiver, certified activation, exact public/local
+release identity and natural absence of the reproduced rejection remain pending.

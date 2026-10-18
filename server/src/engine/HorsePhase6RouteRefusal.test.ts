@@ -26,7 +26,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { _clearGtoCharts, setGtoCharts } from './GtoCharts.js';
 
 import {
   TOURNAMENT_ANTE_TYPES,
@@ -474,4 +475,94 @@ describe('Phase 6B mismatch refusal names its reason', () => {
     worker.emit('message', { type: 'STOPPED' });
     await stopping;
   });
+});
+
+describe('Phase 6 reference receipt includes the VPIP floor call-down', () => {
+  afterEach(() => _clearGtoCharts());
+
+  function floorCapture() {
+    const f = fixture(10, 3);
+    f.state.gameMode = 'cash';
+    f.state.format = 'cash';
+    delete f.state.tournament;
+    f.state.vpipFloor = 50;
+    f.state.ownVpip = { hands: 12, vpip: 40 };
+    f.hero.cards = [
+      { rank: '7', suit: 'hearts' },
+      { rank: '2', suit: 'clubs' },
+    ];
+    f.opts.v27GtoCharts = true;
+    setGtoCharts([
+      {
+        game_type: 'Cash',
+        hero_position: 'BTN',
+        stack_depth: 10,
+        villain_action: 'fold_to_hero',
+        hand_matrix: { AA: { push: 1, fold: 0 } },
+      },
+    ]);
+    const s = request(f);
+    seedFastRandom(901_791);
+    const decision = HorseLogic.decide(s.player, s.gameState, 'balanced', {}, f.opts);
+    expect(decision.tournamentPreflopAttribution).toMatchObject({
+      route: 'chart_open_jam',
+      referenceProposal: { action: 'call', amount: 100 },
+    });
+    return { s, decision };
+  }
+
+  it('accepts the real chart fold converted to a permitted floor call', () => {
+    const { s, decision } = floorCapture();
+    expect(horsePhase6AttributionMismatch(decision, s)).toBeNull();
+  });
+
+  it('the live client keeps the worker ready after the same real decision', async () => {
+    const { s, decision } = floorCapture();
+    const worker = new FakeWorker();
+    const client = new LiveHorseDecisionWorkerClient({ workerFactory: () => worker as never });
+    worker.emit('message', ready);
+    const pending = client.decideFast(s);
+    void pending.catch(() => undefined);
+    worker.emit('message', {
+      type: 'FAST_RESULT',
+      requestId: 1,
+      planBinding: horsePlanBatchBindingFromRequest({ ...s, requestId: 1 }),
+      planIssueDisposition: 'no_effects',
+      generation: s.generation,
+      fence: s.fence,
+      decision,
+      rngBefore: 11,
+      rngAfter: 22,
+      computeMs: 1,
+      governorScale: 1,
+      effects: [],
+    });
+    try {
+      await expect(pending).resolves.toMatchObject({ decision: { action: 'call' } });
+      expect(client.status().phase).toBe('ready');
+    } finally {
+      const stopping = client.stop();
+      worker.emit('message', { type: 'STOPPED' });
+      await stopping;
+    }
+  });
+
+  it.each(['no floor', 'target satisfied', 'wrong amount', 'too much stack', 'all in or fold'])(
+    'still refuses a call that the original chart cannot return: %s',
+    (boundary) => {
+      const { s, decision } = floorCapture();
+      if (boundary === 'no floor') s.gameState.vpipFloor = 0;
+      if (boundary === 'too much stack') s.player.stack = 600;
+      if (boundary === 'all in or fold') s.gameState.allInOrFold = true;
+      if (boundary === 'target satisfied') s.gameState.ownVpip = { hands: 12, vpip: 100 };
+      if (boundary === 'wrong amount') {
+        decision.tournamentPreflopAttribution = structuredClone(
+          decision.tournamentPreflopAttribution!
+        );
+        decision.tournamentPreflopAttribution.referenceProposal.amount = 99;
+        decision.policyGraph!.transitions[0].after.amount = 99;
+      }
+      expect(horsePhase6AttributionMismatch(decision, s)).toBe('reference_shape');
+    }
+  );
 });

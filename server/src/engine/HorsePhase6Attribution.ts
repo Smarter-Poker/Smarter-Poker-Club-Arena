@@ -1,8 +1,8 @@
-/** Private observational Phase6 receipt. No policy call, I/O, RNG or clock read.
+/** Private observational Phase6 receipt. No full decision, I/O, RNG or clock read.
  * Captures the lookup actually performed; does not certify causal influence. */
 import type { HorseDecision, SeatPlayer } from '../types.js';
 import { isDeepStrictEqual as samePhase6Provenance } from 'node:util';
-import type { HorseGameStateV2 } from './HorseLogic.js';
+import { vpipFloorCallDown, type HorseGameStateV2 } from './HorseLogic.js';
 import {
   horseTournamentProvenanceIsValid,
   horseTournamentProvenanceMatchesSnapshot,
@@ -538,6 +538,16 @@ function referenceReturnShape(r: HorsePhase6Attribution, snapshot: Phase6Snapsho
     { action, amount } = r.referenceProposal;
   const toCall = Math.max(0, s.currentBet - p.bet),
     call = Math.min(toCall, p.stack);
+  // The reference node applies the VPIP-floor call-down AFTER the named
+  // source route returns. Its call is therefore a valid reference proposal
+  // even when the chart itself only returns jam/check/fold. Ask that one
+  // bounded owner whether a fold could become exactly this call. A constant
+  // zero tests positive probability, without drawing RNG, replaying a chart
+  // or changing any strategy. All source-route and graph binding checks stay.
+  if (action === 'call') {
+    const floorCall = vpipFloorCallDown({ action: 'fold', thinkTime: 0 }, p, s, () => 0);
+    if (floorCall.action === 'call' && amount === floorCall.amount) return true;
+  }
   if (r.route === 'chart_open_jam')
     return (
       amount === null &&

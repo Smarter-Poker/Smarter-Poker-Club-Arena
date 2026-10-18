@@ -1,0 +1,60 @@
+Horse Brain natural completion declaration, 2026-10-18
+
+Declared before any governed journal is read. Policy source:
+da94e43740fa4940e7d1f6e4488264c2b6ffb58a, protected-main source carrying
+owner-approved VPIP-floor call-down (PR #7323). No d9190c9e record qualifies.
+
+The first window opens only AFTER the protected release containing the
+reference_shape receipt-validator repair from this declaration's commit is
+serving. Verify commit ancestry, matching policy digests, container StartedAt
+and sp.release.sha plus public /health releaseSha before opening.
+H is the first whole UTC hour at which this active agent records those reads
+from H:00:00 through H:01:59.999. Missed reads do not establish a window.
+
+P11 plo5/plo6/plo8 and P12 flh/pineapple/flo8/short_deck:
+[H:02:00.000Z, H:50:00.000Z).
+P13 nlh/plo4/plo5/plo6/plo8/flo8/flh/pineapple/short_deck:
+[H:02:00.000Z, (H+1):50:00.000Z).
+P10 has no natural completion admission record; accepted use still needs proof.
+
+Read identity after each phase window closes. Changed StartedAt, changed
+release SHA, unreadable identity, a different runtime cutover or changed
+policy digest voids that window. Do not infer stability from a matching SHA
+alone. Record every void and every outcome; no retrospective window choice.
+Trailing certification jobs for the same serving release do not void a window
+if they do not replace the container.
+
+Use the serving tree's existing phase11/12/13 completion extract and record
+owners. One extract at a time with nice 19 and ionice idle. Refuse extraction
+if health is unreadable, any decision worker is failed, or oldest queued
+decision age exceeds 3000 ms; abort and discard an in-progress partial extract
+on the same conditions. Never run extracts across a maintenance cutover.
+Do not lower gates, add holdout seeds, pool windows or mix policy digests.
+
+For each variant and street, record eligible, completed, workBudget,
+samplerBudgetExhausted, sampleUnavailable and governorReduced as its current
+completion definition requires. At least 127 eligible per street; 99% Wilson
+lower bound z=2.5758293035489 >= 0.95 for each street. P13 additionally uses
+its existing admitted-board-count rule. Insufficient data remains unjudged
+and carries to the next eligible predeclared window on unchanged policy;
+an adequately populated adverse result is retained, never remeasured away.
+This declaration creates no timer, watcher, scheduler or release automation.
+
+Policy digests, recomputed from the serving source's identical server tree:
+phase10 plo4 4c52572f92e4a54c098067cf88db5a52c04ad5f4c84d813b37726acd1092317d
+phase11 plo5 7bdf1c08a143539ab44c52b830b58b781253570d29ea7e3246e87c18dcab85a3
+phase11 plo6 93439b274dedf0f49665cf427aeda4e5f34c0f4ce492f566bad2fb493d5470cc
+phase11 plo8 659bbb47e2679843b1a6d6fd941f90b89f5da8a2710afa717df1d2fda1ffd479
+phase12 flh ff32377ea36cfd58fecf3aa724b9ff530920e74de05ff9abaa31befec9f7d343
+phase12 pineapple 018a3dad66dd4e32fcf7cfd3d52ce3aa3aa15ca72a3a436acc7002d42f7f29db
+phase12 flo8 c9fbba578388b9a854c726a1b9d5126259ef06031e849d961b16898776e90fa9
+phase12 short_deck 7183671fb126d9ba1d82cd33519186c8a00a8aeefe2af513a6cd131201eec4c4
+phase13 plo8 a87f8be15760dc22e864fcc1a4a8c509be0c1c1f8b5a12d95b5423cc595fea88
+phase13 plo4 4dcfcbe73c0a1314a6031a77f136eba0de09ac2ff7ab702cb1e1ec0ec33814b1
+phase13 nlh 4e90ee4fa108ea45821a6c532a364a4a832bf1d5344c871d2904857a217b0ef2
+phase13 plo5 41df7635ac675c9591d3b1df4861e27cb7a45cd67888a40227e4df2f6fefd9ec
+phase13 plo6 aa5767ad096f0f888ee8909263a3c3f1dc1057a57c953424e81745408d052cd0
+phase13 flo8 95a9e7d2ba7801884affbda770743206057778c1096fff3c3870011b912de9f9
+phase13 flh a90b4ca0ef864a1f3727d692ffcd29296a0d79c592bff3a9f40ec2ed45338ade
+phase13 pineapple 3303dd2563c75afc6b5b84c3095e3076e6dc6b740fd9da7d31b0d045685124e9
+phase13 short_deck 933befd017a1335dca4ff0cc7c569728ffe2ea153aad1e077640ca37f368535f

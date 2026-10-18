@@ -210,7 +210,7 @@ export function ShareInviteSheet({
           title="Share & Invite"
           titleId="share-invite-title"
           pill="Your Link"
-          pillInk="gold"
+          pillInk="blue"
           foot="foot"
           className="rfc__console"
         >
@@ -276,7 +276,7 @@ export function ShareInviteSheet({
           {canSeeClubStats ? (
             <div className="sis__club">
               {!showClubStats ? (
-                <button type="button" className="rfc-word sc-ink--gold" onClick={loadClubStats}>
+                <button type="button" className="rfc-word sc-ink--blue" onClick={loadClubStats}>
                   View Invite Stats
                 </button>
               ) : clubRows == null ? (
@@ -318,7 +318,7 @@ export function ShareInviteSheet({
           <div className="rfc__actions">
             <button
               type="button"
-              className="rfc-word sc-ink--gold"
+              className="rfc-word sc-ink--blue"
               onClick={handleShare}
               disabled={!link}
             >

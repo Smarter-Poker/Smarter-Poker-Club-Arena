@@ -55,3 +55,8 @@ echo 'DATA_CONSOLE_POSTGRES PASS Club Data Report'
 echo 'DATA_CONSOLE_POSTGRES RUN Member Record'
 bash "$repo/scripts/dev/test-member-record-live-postgres.sh"
 echo 'DATA_CONSOLE_POSTGRES PASS Member Record'
+
+# Exercise the maintained installer identity through a proxy-shaped session.
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
+  TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
+  python3 -B "$repo/scripts/ci/test-a-long-outside-snapshot-does-not-stall-the-tables.py"

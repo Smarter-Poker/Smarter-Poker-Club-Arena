@@ -30,6 +30,52 @@ const native = parse(
   readFileSync(join(root, '.github/workflows/component-fixture-native-smoke.yml'), 'utf8')
 );
 
+describe('Reserved template retirement qualification stays in required accounting', () => {
+  it.each([
+    'scripts/ci/production-e2e-account.mjs',
+    'scripts/ci/test-club-retirement-postgres.py',
+    'scripts/ci/fixtures/club-retirement-membership-lock.sql',
+    'supabase/migrations/20261018194141_retirement_locks_club_memberships_by_their_user_key.sql',
+  ])('selects the required native lane for %s', (path) => {
+    expect(classifyChangedPaths([path])).toMatchObject({ server: true, tests: true });
+  });
+  it('runs the real membership-key core after existing native cleanup in the same required entry', () => {
+    const steps = ci.jobs.accounting_postgres.steps.filter((step: { run?: string }) =>
+      step.run?.includes('scripts/ci/test-certification-retirement-postgres.py')
+    );
+    expect(steps).toHaveLength(1);
+    expect(steps[0].if).toBe('matrix.shard == 4');
+    expect(steps[0]['continue-on-error']).toBeUndefined();
+    const contract = execFileSync(
+      'python3',
+      [
+        '-c',
+        `import ast, pathlib
+p = pathlib.Path('scripts/ci/test-certification-retirement-postgres.py')
+tree = ast.parse(p.read_text())
+owner = next(node for node in tree.body if isinstance(node, ast.Try))
+followup = next(node for node in tree.body if isinstance(node, ast.If) and node.lineno > owner.end_lineno)
+assert ast.unparse(followup.test) == 'not args.original_only'
+call = next(node.value for node in followup.body if isinstance(node, ast.Expr))
+assert ast.unparse(call.func) == 'subprocess.run'
+assert ast.unparse(call.args[0].elts[0]) == 'sys.executable'
+assert any(isinstance(node, ast.Constant) and node.value == 'scripts/ci/test-club-retirement-postgres.py' for node in ast.walk(call))
+constants = [node.value for node in ast.walk(call) if isinstance(node, ast.Constant)]
+assert '--pg-bin' in constants and '--scratch' in constants
+opts = {item.arg: item.value for item in call.keywords}
+assert ast.literal_eval(opts['check']) is True
+assert 0 < ast.literal_eval(opts['timeout']) <= 300
+isolated = opts['env']
+assert isinstance(isolated, ast.Dict)
+assert any(isinstance(k, ast.Constant) and k.value == 'PG_ISOLATED' and isinstance(v, ast.Constant) and v.value == '1' for k,v in zip(isolated.keys,isolated.values))
+print('required retirement child is isolated, bounded and follows successful parent cleanup')`,
+      ],
+      { cwd: root, encoding: 'utf8' }
+    );
+    expect(contract).toContain('required retirement child is isolated');
+  });
+});
+
 describe('Player Command history qualification stays connected', () => {
   it.each([
     'scripts/ci/test-player-command-history.py',

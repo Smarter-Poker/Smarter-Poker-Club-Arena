@@ -586,7 +586,21 @@ describe('post-deploy production account', () => {
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1);
   });
 
-  it.each(['created', 'unknown', 'probe-refused', 'rollback-refused', 'recovered'])(
+  it.each([
+    'created',
+    'unknown',
+    'probe-refused',
+    'rollback-refused',
+    'recovered',
+    'schedule-refused',
+    'schedule-receipt-refused',
+    'schedule-readback-refused',
+    'schedule-fresh-claim',
+    'schedule-expired-claim',
+    'schedule-unknown',
+    'schedule-claims-persist',
+    'schedule-spawns-remain',
+  ])(
     'owns a standalone template request through %s without touching a player club',
     async (mode) => {
       const directory = mkdtempSync(join(tmpdir(), 'production-e2e-owned-template-'));
@@ -635,6 +649,8 @@ describe('post-deploy production account', () => {
           return { rows: [] };
         }),
       };
+      let schedulePreparations = 0;
+      const wait = vi.fn(async (_milliseconds: number) => undefined);
       const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
         const url = String(input);
         if (url.includes('/auth/v1/token')) return Response.json({ access_token: token });
@@ -653,7 +669,50 @@ describe('post-deploy production account', () => {
           if (mode === 'unknown') throw new Error('transport acknowledgement unknown');
           return Response.json(club);
         }
-        if (url.includes('/clubs?')) return Response.json([club]);
+        if (url.includes('/rpc/fn_ca_prepare_unused_welcome_certification_schedule_spawns')) {
+          schedulePreparations += 1;
+          expect(init?.method).toBe('POST');
+          expect(JSON.parse(String(init?.body))).toEqual({ p_club_id: clubId });
+          expect(existsSync(env.GITHUB_ENV)).toBe(false);
+          if (mode === 'schedule-unknown') throw new Error('schedule acknowledgement unknown');
+          if (mode === 'schedule-refused')
+            return Response.json(
+              { code: '55000', message: 'WELCOME_CERTIFICATION_SCHEDULE_FIXTURE_HAS_ACTIVITY' },
+              { status: 400 }
+            );
+          if (
+            mode === 'schedule-claims-persist' ||
+            ((mode === 'schedule-fresh-claim' || mode === 'schedule-expired-claim') &&
+              schedulePreparations === 1)
+          )
+            return Response.json(
+              { code: '55000', message: 'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED' },
+              { status: 400 }
+            );
+          return Response.json({
+            prepared: true,
+            club_id: mode === 'schedule-receipt-refused' ? USER_ID : clubId,
+            tournaments_removed: 3,
+            tables_removed: 0,
+          });
+        }
+        if (url.includes('/club_welcome_package_items?'))
+          return Response.json([{ entity_id: 'schedule-1' }]);
+        if (url.includes('/tournament_schedules?'))
+          return Response.json([
+            { id: 'schedule-1', club_id: clubId, active: mode === 'schedule-readback-refused' },
+          ]);
+        if (url.includes('/tournament_schedule_spawns?'))
+          return Response.json(mode === 'schedule-spawns-remain' ? [{ id: 1 }] : []);
+        if (url.includes('/clubs?'))
+          return Response.json([
+            {
+              ...club,
+              created_at: new Date(
+                Date.now() - (mode === 'schedule-expired-claim' ? 11 * 60_000 : 0)
+              ).toISOString(),
+            },
+          ]);
         if (url.includes('/club_members?')) return Response.json([member]);
         throw new Error('Unexpected request ' + url);
       });
@@ -661,6 +720,7 @@ describe('post-deploy production account', () => {
         environment: env,
         fetchImpl: fetchMock,
         databaseClientFactory: async () => client,
+        wait,
       });
       if (mode === 'unknown' || mode === 'probe-refused' || mode === 'rollback-refused') {
         await expect(operation).rejects.toThrow(
@@ -674,9 +734,52 @@ describe('post-deploy production account', () => {
         expect(JSON.parse(readFileSync(accountPath, 'utf8')).templateFixtureRequest.requestId).toBe(
           requestId
         );
+      } else if (
+        [
+          'schedule-refused',
+          'schedule-receipt-refused',
+          'schedule-readback-refused',
+          'schedule-expired-claim',
+          'schedule-unknown',
+          'schedule-claims-persist',
+          'schedule-spawns-remain',
+        ].includes(mode)
+      ) {
+        await expect(operation).rejects.toThrow(
+          mode === 'schedule-refused'
+            ? 'WELCOME_CERTIFICATION_SCHEDULE_FIXTURE_HAS_ACTIVITY'
+            : mode === 'schedule-expired-claim' || mode === 'schedule-claims-persist'
+              ? 'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED'
+              : mode === 'schedule-unknown'
+                ? 'schedule acknowledgement unknown'
+                : 'Template schedule'
+        );
+        expect(existsSync(env.GITHUB_ENV)).toBe(false);
+        expect(
+          JSON.parse(readFileSync(accountPath, 'utf8')).templateFixtureRequest.clubId
+        ).toBeUndefined();
+        expect(schedulePreparations).toBe(mode === 'schedule-claims-persist' ? 9 : 1);
+        if (mode === 'schedule-claims-persist')
+          expect(wait.mock.calls.map(([delay]) => delay)).toEqual([
+            2000, 4000, 8000, 16000, 30000, 60000, 120000, 90000,
+          ]);
+        else expect(wait).not.toHaveBeenCalled();
       } else {
         await expect(operation).resolves.toMatchObject(club);
         expect(readFileSync(env.GITHUB_ENV, 'utf8')).toBe(`E2E_TEMPLATE_CLUB_ID=${clubId}\n`);
+        expect(schedulePreparations).toBe(mode === 'schedule-fresh-claim' ? 2 : 1);
+        if (mode === 'schedule-fresh-claim') expect(wait).toHaveBeenCalledExactlyOnceWith(2000);
+        else expect(wait).not.toHaveBeenCalled();
+        expect(
+          fetchMock.mock.calls.some(([input]) =>
+            String(input).includes('/tournament_schedule_spawns?')
+          )
+        ).toBe(true);
+        // The schedule-only door owns the mutation; setup must not patch/delete
+        // cash games, templates, board tournaments, receipts or the club.
+        expect(
+          fetchMock.mock.calls.some(([, init]) => ['PATCH', 'DELETE'].includes(init?.method || ''))
+        ).toBe(false);
       }
       if (mode === 'recovered') {
         expect(operations).toEqual([]);
@@ -751,6 +854,18 @@ describe('post-deploy production account', () => {
       if (url.includes('/engine_maintenance_break')) return Response.json([]);
       if (url.includes('/rpc/fn_platform_frozen')) return Response.json(++frozenReads < 2);
       if (url.includes('/rpc/fn_create_club_atomic')) return Response.json(club);
+      if (url.includes('/rpc/fn_ca_prepare_unused_welcome_certification_schedule_spawns'))
+        return Response.json({
+          prepared: true,
+          club_id: clubId,
+          tournaments_removed: 0,
+          tables_removed: 0,
+        });
+      if (url.includes('/club_welcome_package_items?'))
+        return Response.json([{ entity_id: 'schedule-1' }]);
+      if (url.includes('/tournament_schedules?'))
+        return Response.json([{ id: 'schedule-1', club_id: clubId, active: false }]);
+      if (url.includes('/tournament_schedule_spawns?')) return Response.json([]);
       if (url.includes('/clubs?')) return Response.json([club]);
       if (url.includes('/club_members?'))
         return Response.json([{ role: 'owner', status: 'active', chip_balance: 0 }]);

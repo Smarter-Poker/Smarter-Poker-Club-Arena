@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -36,8 +37,13 @@ EMAIL = 'ca-customization-cert-postdeploy-native@example.invalid'
 CLUB = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
 
 def run(argv, sql=None, expect_error=None):
-    result = subprocess.run([str(v) for v in argv], input=sql, text=True,
-                            capture_output=True, env=env, timeout=60)
+    # File-backed SQL avoids Mac pipe writes blocking behind psql notices.
+    with tempfile.TemporaryFile(mode='w+', dir=cluster) as source:
+        if sql is not None:
+            source.write(sql)
+            source.seek(0)
+        result = subprocess.run([str(v) for v in argv], stdin=source, text=True,
+                                capture_output=True, env=env, timeout=60)
     if expect_error:
         assert result.returncode != 0 and expect_error in result.stderr, result
         return result.stderr
@@ -241,3 +247,13 @@ finally:
     if start_attempted and (data/'postmaster.pid').exists():
         run([pg/'pg_ctl', '-D', data, '-m', 'fast', '-w', 'stop'])
     shutil.rmtree(cluster)
+
+# Required accounting runs the actual retained-club core after this fixture has
+# completed and released its private postmaster. Historical-only mode stays
+# limited to its dated actor fixture.
+if not args.original_only:
+    subprocess.run(
+        [sys.executable, str(ROOT / 'scripts/ci/test-club-retirement-postgres.py'),
+         '--pg-bin', str(pg), '--scratch', args.scratch],
+        env={**env, 'PG_ISOLATED': '1'}, check=True, timeout=300,
+    )

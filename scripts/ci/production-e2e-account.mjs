@@ -584,6 +584,91 @@ export async function qualifyTemplateClubCreate({
   }
 }
 
+/** Stop only the reserved template's unused Daily schedule before a long
+ * certificate can reach its start time and create an immutable cancellation
+ * receipt. The installed door proves identity, package lineage and no activity;
+ * it leaves cash games, templates and the Spin/SNG board unchanged. */
+async function prepareUnusedTemplateSchedule({ configuration, clubId, fetchImpl, wait }) {
+  let prepared;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      prepared = await serviceRequest(
+        configuration,
+        '/rest/v1/rpc/fn_ca_prepare_unused_welcome_certification_schedule_spawns',
+        { method: 'POST', body: JSON.stringify({ p_club_id: clubId }) },
+        fetchImpl
+      );
+      break;
+    } catch (error) {
+      const delay = FRESH_SCHEDULE_CLAIM_RETRY_DELAYS_MS[attempt];
+      if (
+        error?.code !== '55000' ||
+        error?.body?.message !== 'WELCOME_CERTIFICATION_TOURNAMENT_LINEAGE_REFUSED' ||
+        delay === undefined
+      )
+        throw error;
+      // A newly seeded schedule can have a claim in flight. Only a proven
+      // recent fixture gets the same bounded seeding allowance as retirement.
+      const rows = await serviceRequest(
+        configuration,
+        `/rest/v1/clubs?id=eq.${encodeURIComponent(clubId)}&select=created_at&limit=1`,
+        {},
+        fetchImpl
+      );
+      const age =
+        Array.isArray(rows) && rows.length === 1
+          ? Date.now() - Date.parse(rows[0]?.created_at ?? '')
+          : NaN;
+      if (!Number.isFinite(age) || age < 0 || age >= FIXTURE_SEEDING_WINDOW_MS) throw error;
+      await wait(delay);
+    }
+  }
+  if (
+    prepared?.prepared !== true ||
+    prepared?.club_id !== clubId ||
+    !Number.isInteger(prepared?.tournaments_removed) ||
+    prepared.tournaments_removed < 0 ||
+    !Number.isInteger(prepared?.tables_removed) ||
+    prepared.tables_removed < 0
+  )
+    throw new Error('Template schedule preparation receipt did not match the owned fixture.');
+  const items = await serviceRequest(
+    configuration,
+    `/rest/v1/club_welcome_package_items?club_id=eq.${encodeURIComponent(clubId)}` +
+      '&retired_at=is.null&entity_kind=eq.tournament_schedule&select=entity_id&limit=2',
+    {},
+    fetchImpl
+  );
+  if (!Array.isArray(items) || items.length !== 1 || !items[0]?.entity_id)
+    throw new Error('Template schedule package lineage readback failed.');
+  const scheduleId = encodeURIComponent(items[0].entity_id);
+  const [schedules, spawns] = await Promise.all([
+    serviceRequest(
+      configuration,
+      `/rest/v1/tournament_schedules?id=eq.${scheduleId}&club_id=eq.${encodeURIComponent(clubId)}` +
+        '&select=id,club_id,active&limit=2',
+      {},
+      fetchImpl
+    ),
+    serviceRequest(
+      configuration,
+      `/rest/v1/tournament_schedule_spawns?schedule_id=eq.${scheduleId}&select=id&limit=1`,
+      {},
+      fetchImpl
+    ),
+  ]);
+  if (
+    !Array.isArray(schedules) ||
+    schedules.length !== 1 ||
+    schedules[0]?.id !== items[0].entity_id ||
+    schedules[0]?.club_id !== clubId ||
+    schedules[0]?.active !== false ||
+    !Array.isArray(spawns) ||
+    spawns.length !== 0
+  )
+    throw new Error('Template schedule is not proven inactive and free of spawned games.');
+}
+
 /** A template book must stay standalone. Provision one private, task-owned
  * Crest Cert through normal creation instead of adopting mutable player clubs. */
 export async function prepareProductionE2ETemplateFixture({
@@ -748,6 +833,7 @@ export async function prepareProductionE2ETemplateFixture({
     Number(owner[0].chip_balance) !== 0
   )
     throw new Error('Owned template club or zero-balance owner persistence proof failed.');
+  await prepareUnusedTemplateSchedule({ configuration, clubId: club.id, fetchImpl, wait });
   request.clubId = club.id;
   writeFileSync(path, JSON.stringify(account), { mode: 0o600 });
   if (environment.GITHUB_ENV)

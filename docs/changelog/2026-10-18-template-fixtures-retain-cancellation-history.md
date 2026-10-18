@@ -1,0 +1,7 @@
+# Template Fixtures Retain Cancellation History
+
+The hosted client suite passed all 550 cases, but its reserved template's Daily schedule reached a natural cancellation while the suite ran. Cancellation correctly created an immutable zero-value escrow receipt, so the destructive unused-fixture cleanup correctly refused it. Template provisioning now uses the existing guarded schedule-only preparation door before exposing the fixture. It verifies the exact owned receipt, inactive schedule and absence of spawned children; activity and unknown outcomes still refuse preparation. Cash templates, cash games and Spin/SNG board fixtures remain available to the existing checks.
+
+The existing retained-record club retirement path could preserve that receipt, but rollback qualification found its private core ordering `club_members` by a removed `id` column. The migration changes only that lock ordering to the canonical `user_id` key. Owner/name authorization, custody/obligation checks, audit records, escrow retention and private execution grants remain unchanged. It refuses unexpected installed source before replacement and registers the existing money authority before DDL.
+
+The schedule orchestration regression failed before the repair and the complete existing account unit file passed all 82 cases afterward. Native retirement qualification and exact-actor retained-record retirement are recorded in the task evidence; no retirement or account-cleanup success is inferred from this source change. The original destructive cleanup guard is preserved.

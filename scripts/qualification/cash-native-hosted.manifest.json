@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 37376,
-      "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+      "bytes": 37522,
+      "sha256": "fbfee6f316235f4134c3a708c639f6c8452a07310e95d77b8a85cfbf73b23645"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3465,6 +3465,17 @@
     "current": {
       "bytes": 37376,
       "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+    }
+  },
+  "retirementMembershipNativeRouting20261018": {
+    "reason": "Bind the existing required certification-retirement native entry to the actual composite-membership retained-club core regression. Only active classifier input identity changes; financial SQL pins, historical audits and qualification statuses remain unchanged. No financial certificate restamp.",
+    "previous": {
+      "bytes": 37376,
+      "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+    },
+    "current": {
+      "bytes": 37522,
+      "sha256": "fbfee6f316235f4134c3a708c639f6c8452a07310e95d77b8a85cfbf73b23645"
     }
   }
 }

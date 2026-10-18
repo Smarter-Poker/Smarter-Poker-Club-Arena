@@ -151,7 +151,7 @@ describe('the crash drill route', () => {
       }
     );
     expect(result.status, result.stdout + result.stderr).toBe(0);
-    expect(result.stderr).toContain('Ran 5 tests');
+    expect(result.stderr).toContain('Ran 8 tests');
   }, 620_000);
 
   it('witnesses leader, thaw and hand progression from the database', () => {

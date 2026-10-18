@@ -28,7 +28,7 @@ BEFORE_INSTANCE = '1-aaaaaaaa'
 AFTER_INSTANCE = '1-bbbbbbbb'
 
 DOCKER = r'''#!/usr/bin/env python3
-import json, os, sys
+import json, os, subprocess, sys
 state = json.load(open(os.environ['DRILL_TEST_STATE']))
 def alive(pid):
     try:
@@ -39,7 +39,8 @@ def alive(pid):
         stat = open(f'/proc/{pid}/stat').read().split()[2]
         return stat != 'Z'
     except OSError:
-        return False
+        result = subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)], capture_output=True, text=True)
+        return result.returncode == 0 and bool(result.stdout.strip()) and not result.stdout.strip().startswith('Z')
 args = sys.argv[1:]
 if args[:2] != ['container', 'inspect'] or args[2] != '-f':
     raise SystemExit(2)
@@ -63,7 +64,7 @@ print(facts[fmt])
 '''
 
 CURL = r'''#!/usr/bin/env python3
-import json, os, sys, time
+import json, os, subprocess, sys, time
 state_path = os.environ['DRILL_TEST_STATE']
 state = json.load(open(state_path))
 url = sys.argv[-1]
@@ -75,23 +76,29 @@ def alive(pid):
     try:
         return open(f'/proc/{pid}/stat').read().split()[2] != 'Z'
     except OSError:
-        return False
+        result = subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)], capture_output=True, text=True)
+        return result.returncode == 0 and bool(result.stdout.strip()) and not result.stdout.strip().startswith('Z')
 killed = not alive(state['pid'])
 now = int(time.time() * 1000)
 if killed and not state['restart']:
     raise SystemExit(7)
 reads = state.setdefault('reads_after_kill', 0)
+ends_at = state.setdefault('break_ends_at_ms', now + state['remaining_ms'])
 if killed:
     state['reads_after_kill'] = reads + 1
-    json.dump(state, open(state_path, 'w'))
-remaining = state['remaining_ms']
+json.dump(state, open(state_path, 'w'))
+remaining = ends_at - now
 maintenance = {
     'active': True, 'phase': 'counting_down', 'durableConfirmed': True,
     'readyForRestart': state['ready'], 'unparkedTables': 0 if state['ready'] else 3,
-    'remainingMs': remaining, 'breakEndsAt': now + remaining + state['clock_skew_ms'],
+    'remainingMs': remaining, 'breakEndsAt': ends_at + state['clock_skew_ms'],
     'reason': 'Scheduled Engine Maintenance',
 }
-if killed and reads >= state['leave_break_after']:
+if killed and reads < state['adopt_after_reads']:
+    maintenance = {'active': False, 'phase': 'idle'}
+elif killed:
+    maintenance['breakEndsAt'] += state['adopt_break_shift_ms']
+if killed and reads >= max(state['leave_break_after'], state['adopt_after_reads'] + 3):
     maintenance = {'active': False, 'phase': 'idle'}
 body = {
     'running': True, 'liveness': 'ok', 'releaseSha': state['serving_sha'],
@@ -144,7 +151,8 @@ def run_drill(*, desired=SHA, serving=SHA, label=SHA, image=IMAGE, policy='alway
               autoheal='running', restart=True, ready=True, remaining_ms=280_000,
               clock_skew_ms=0, after_instance=AFTER_INSTANCE, busy_unit='', pending='',
               leader_rc=0, post_rc=0, leave_break_after=3, admission_seconds=8,
-              restart_seconds=5, authorization='DA08 crash rehearsal approved by owner'):
+              restart_seconds=5, authorization='DA08 crash rehearsal approved by owner',
+              adopt_after_reads=0, adopt_break_shift_ms=0):
     with tempfile.TemporaryDirectory(prefix='crash-drill-') as temp:
         temp = Path(temp)
         stage, control, bin_dir, state_dir = temp / 'stage', temp / 'control', temp / 'bin', temp / 'state'
@@ -159,6 +167,40 @@ def run_drill(*, desired=SHA, serving=SHA, label=SHA, image=IMAGE, policy='alway
         write(bin_dir / 'curl', CURL)
         write(bin_dir / 'systemctl', SYSTEMCTL)
         write(bin_dir / 'id', '#!/usr/bin/env bash\necho 0\n')
+        # The production host has GNU tools. These fixture-local substitutes
+        # let the same real script run on macOS without changing its decisions.
+        if not shutil.which('date') or os.uname().sysname == 'Darwin':
+            write(bin_dir / 'date', '''#!/usr/bin/env python3
+import sys, time
+if sys.argv[1:] == ['+%s']: print(int(time.time()))
+elif sys.argv[1:] == ['+%s%3N']: print(int(time.time() * 1000))
+elif sys.argv[1:] == ['+%s%N']: print(time.time_ns())
+else: raise SystemExit(2)
+''')
+        if not shutil.which('timeout'):
+            write(bin_dir / 'timeout', '''#!/usr/bin/env python3
+import os, subprocess, sys
+args = sys.argv[1:]
+while args and args[0].startswith('--'): args.pop(0)
+seconds = float(args.pop(0).removesuffix('s'))
+try: raise SystemExit(subprocess.run(args, timeout=seconds, pass_fds=tuple(fd for fd in range(3, 10) if os.path.exists('/dev/fd/' + str(fd)))).returncode)
+except subprocess.TimeoutExpired: raise SystemExit(124)
+''')
+        if not shutil.which('flock'):
+            write(bin_dir / 'flock', '''#!/usr/bin/env python3
+import fcntl, sys, time
+args = sys.argv[1:]
+mode = args.pop(0)
+wait = float(args.pop(0)) if mode == '-w' else 0
+fd = int(args.pop(0))
+if mode == '-u': fcntl.flock(fd, fcntl.LOCK_UN); raise SystemExit(0)
+deadline = time.monotonic() + wait
+while True:
+    try: fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB); break
+    except BlockingIOError:
+        if time.monotonic() >= deadline: raise SystemExit(1)
+        time.sleep(0.01)
+''')
         env_file = temp / 'engine.env'
         env_file.write_text('SUPABASE_URL=https://example.invalid\n')
         engine = subprocess.Popen(['sleep', '600'])
@@ -170,6 +212,7 @@ def run_drill(*, desired=SHA, serving=SHA, label=SHA, image=IMAGE, policy='alway
             'policy': policy, 'autoheal': autoheal, 'ready': ready, 'remaining_ms': remaining_ms,
             'clock_skew_ms': clock_skew_ms, 'serving_sha': serving, 'after_instance': after_instance,
             'leave_break_after': leave_break_after,
+            'adopt_after_reads': adopt_after_reads, 'adopt_break_shift_ms': adopt_break_shift_ms,
         }))
         not_after = int(time.time()) + 900 + admission_seconds
         env = {
@@ -267,6 +310,27 @@ class CrashDrill(unittest.TestCase):
         result, killed, receipt, events = run_drill(post_rc=1)
         self.assertEqual(outcome(result), 'failed')
         self.assertEqual(receipt['result'], 'failed')
+
+    def test_leadership_before_delayed_break_adoption_is_not_a_false_failure(self):
+        result, killed, receipt, events = run_drill(adopt_after_reads=5)
+        self.assertEqual(outcome(result), 'passed', result.stdout + result.stderr)
+        self.assertTrue(killed)
+        self.assertEqual(receipt['result'], 'passed')
+        self.assertNotIn('supervisor', events)
+
+    def test_missing_break_adoption_exhausts_the_existing_budget_and_restores(self):
+        result, killed, receipt, events = run_drill(adopt_after_reads=1000)
+        self.assertEqual(outcome(result), 'failed')
+        self.assertTrue(killed)
+        self.assertEqual(receipt['result'], 'failed')
+        self.assertIn('supervisor force=1 exact=1 held=1', events)
+
+    def test_a_different_durable_break_does_not_certify_recovery(self):
+        result, killed, receipt, events = run_drill(adopt_break_shift_ms=60_000, leave_break_after=1000)
+        self.assertEqual(outcome(result), 'failed')
+        self.assertTrue(killed)
+        self.assertEqual(receipt['result'], 'failed')
+        self.assertIn('supervisor force=1 exact=1 held=1', events)
 
 
 if __name__ == '__main__':

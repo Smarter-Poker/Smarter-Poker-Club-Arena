@@ -453,16 +453,28 @@ timeout --signal=TERM --kill-after=1s "$(( LEADER_SECONDS + 2 ))s" "$DATABASE_PR
   || fail 'the recovered instance did not become the fresh database leader inside the break'
 
 PHASE=break_adopted
-BODY="$(health_json local)" || fail 'local /health is unreadable after recovery'
-ADOPTED="$(printf '%s' "$BODY" | python3 -c '
-import json, sys
+# Leadership is acquired before startup reaches maintenanceBreak.start().
+# Witness completed adoption, not merely a live process, within the SAME
+# recovery deadline and reserve already used for health and leadership.
+ADOPTED=false
+while [ "$(date +%s)" -lt "$HEALTH_DEADLINE" ]; do
+  if BODY="$(health_json local)" && [ "$(exact_identity "$BODY")" = "$AFTER_INSTANCE" ]; then
+    ADOPTED="$(printf '%s' "$BODY" | EXPECTED_BREAK_END_MS="$BREAK_ENDS_AT_MS" python3 -c '
+import json, os, sys
 d = json.load(sys.stdin); m = d.get("maintenance") or {}
-print("true" if m.get("active") is True and m.get("durableConfirmed") is True else "false")' 2>/dev/null)" \
-  || fail 'the recovered engine maintenance state is unreadable'
-NOW_EPOCH="$(date +%s)"
-if [ "$NOW_EPOCH" -lt "$BREAK_END_EPOCH" ] && [ "$ADOPTED" != true ]; then
-  fail 'the recovered engine did not adopt the durable break it was killed inside'
-fi
+ok = (m.get("active") is True and m.get("durableConfirmed") is True
+      and m.get("phase") == "counting_down"
+      and m.get("reason") == "Scheduled Engine Maintenance"
+      and type(m.get("breakEndsAt")) is int
+      and m["breakEndsAt"] == int(os.environ["EXPECTED_BREAK_END_MS"]))
+print("true" if ok else "false")' 2>/dev/null)" || ADOPTED=false
+    if [ "$ADOPTED" = true ] && [ "$(date +%s)" -lt "$HEALTH_DEADLINE" ]; then break; fi
+  fi
+  ADOPTED=false
+  sleep "$POLL_SECONDS"
+done
+[ "$ADOPTED" = true ] \
+  || fail 'the recovered engine did not adopt the original durable break within its recovery deadline'
 RECOVERED_AT_MS="$(date +%s%3N)"
 record recovered "$(python3 -c '
 import json, sys

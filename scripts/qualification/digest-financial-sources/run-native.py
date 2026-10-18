@@ -43,6 +43,12 @@ try:
  assert sql(call)=='','before: no physical host chair reproduces missing attribution'
  sql((repo/'supabase/migrations/20261018135018_lightning_rake_uses_original_pool_funding.sql').read_text())
  assert sql(call)==uid(2),'original funding club must win over host club'
+ sql("update lightning_hand set formed_at='2026-10-17 11:59:59.410Z';update lightning_pool_slot set opened_at='2026-10-17 11:59:59.418203Z';update lightning_pool_session set entered_at='2026-10-17 11:59:59.418203Z'")
+ assert sql(call)==uid(2),'engine logical formation can precede persisted funding-slot timestamps by milliseconds, actual hand start is authoritative'
+ sql("update lightning_pool_slot set opened_at='2026-10-17 12:00:01Z'")
+ assert sql(call)=='','a slot opened after actual hand start is refused'
+ sql("update lightning_pool_slot set opened_at='2026-10-17 11:59:59.418203Z'")
+
  sql("update cash_player_session set closed_at='2026-10-17 12:00:30Z'")
  assert sql(call)==uid(2),'completed session still proves original funding'
  sql('update lightning_pool_slot set cluster_epoch=2')

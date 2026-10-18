@@ -22,3 +22,5 @@ physical custody, and demonstrates a ticket-funded bounty's shadow converges
 to exact zero after its recorded payouts. Required accounting CI shard2 runs it.
 Historical unaccrued attribution correction and installed readback remain
 separate from these source changes.
+
+One additional live hand formed logically eight milliseconds before the database opened its referenced pool session/slot. Eligibility uses the persisted actual hand start, preserving the exact player/slot/session/epoch witness and rejecting later funding. Native qualification pins this observed timestamp order and refuses an actually later slot.

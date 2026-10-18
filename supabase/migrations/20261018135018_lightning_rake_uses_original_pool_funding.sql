@@ -9,7 +9,9 @@ BEGIN
  source:=pg_get_functiondef('public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)'::regprocedure);
  IF md5(source)<>'0327409fe4751720376893776b124c60' THEN
   RAISE EXCEPTION 'Lightning earning-club preimage changed'; END IF;
- patched:=replace(source,$anchor$ IF p_union_id IS NULL THEN$anchor$,$replacement$ -- A pooled Lightning hand is funded by its original pool/cash session,
+ patched:=replace(source,$anchor$ IF p_union_id IS NULL THEN$anchor$,$replacement$ -- Funding must exist by the persisted actual hand start. The logical formed_at
+ -- supplied by the engine can precede the transaction that opens its slot.
+ -- A pooled Lightning hand is funded by its original pool/cash session,
  -- not a physical chair at the synthetic host table. Anchor seats can be
  -- elsewhere or already gone by settlement; their session is retained.
  IF EXISTS(SELECT 1 FROM public.lightning_hand h
@@ -26,11 +28,11 @@ BEGIN
     AND ps.cluster_id=h.cluster_id AND ps.cluster_epoch=h.cluster_epoch
    JOIN public.cash_player_session cs ON cs.id=ps.cash_player_session_id AND cs.player_id=hp.player_id
    WHERE h.hand_history_id=p_hand_id AND h.host_table_id=p_table_id
-    AND h.formed_at<=started AND ps.entered_at<=h.formed_at AND sl.opened_at<=h.formed_at
-    AND cs.opened_at<=h.formed_at
-    AND (ps.exited_at IS NULL OR ps.exited_at>h.formed_at)
-    AND (sl.closed_at IS NULL OR sl.closed_at>h.formed_at)
-    AND (cs.closed_at IS NULL OR cs.closed_at>h.formed_at);
+    AND h.formed_at<=started AND ps.entered_at<=started AND sl.opened_at<=started
+    AND cs.opened_at<=started
+    AND (ps.exited_at IS NULL OR ps.exited_at>started)
+    AND (sl.closed_at IS NULL OR sl.closed_at>started)
+    AND (cs.closed_at IS NULL OR cs.closed_at>started);
   IF cardinality(clubs)=1 AND clubs[1] IS NOT NULL
    AND EXISTS(SELECT 1 FROM public.clubs c WHERE c.id=clubs[1]
     AND (c.is_union IS NOT TRUE OR (p_union_id IS NOT NULL AND (c.id=p_union_id OR c.union_id=p_union_id))))

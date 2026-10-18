@@ -414,7 +414,7 @@ export default function ClubFinancialsPage() {
           'Gross Rake',
           'Bad Beat Drop',
           'Net Rake',
-          'Pot Volume',
+          'Hosted Pot Volume',
           'Tournament Fees',
           'Rakeback Paid',
           'Agent Fees',
@@ -538,7 +538,7 @@ export default function ClubFinancialsPage() {
   const summaryRows: { label: string; value: string; ink: ConsoleInk; note?: string }[] = totals
     ? [
         { label: 'Raked Hands', value: count(totals.raked_hands), ink: 'silver' },
-        { label: 'Pot Volume', value: chips(totals.pot_volume), ink: 'silver' },
+        { label: 'Hosted Pot Volume', value: chips(totals.pot_volume), ink: 'silver' },
         {
           label: 'Net Rake',
           value: chips(totals.net_rake),

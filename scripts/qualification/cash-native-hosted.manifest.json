@@ -270,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 111125,
-      "sha256": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76"
+      "bytes": 113600,
+      "sha256": "4fe2c8a8ba80998a4b1baae951a894cb8cae216fd12e46181d8c08cadbc31f4e"
     }
   },
   "nativePgCron": {
@@ -3476,6 +3476,18 @@
     "current": {
       "bytes": 37522,
       "sha256": "fbfee6f316235f4134c3a708c639f6c8452a07310e95d77b8a85cfbf73b23645"
+    }
+  },
+  "retirementMembershipSourceContractBinding20261018": {
+    "reason": "Bind the reviewed required retirement enforcement source contract, including normal formatter output. Active source identity only; preserve financial SQL, historical pins and qualification statuses. No certificate restamp.",
+    "file": "tests/unit/fixtureNativeCi.test.ts",
+    "previous": {
+      "bytes": 111125,
+      "sha256": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76"
+    },
+    "current": {
+      "bytes": 113600,
+      "sha256": "4fe2c8a8ba80998a4b1baae951a894cb8cae216fd12e46181d8c08cadbc31f4e"
     }
   }
 }

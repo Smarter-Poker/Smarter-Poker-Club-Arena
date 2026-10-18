@@ -5669,6 +5669,22 @@ export abstract class ServerTableEngineBase {
    * it demands a closed row AND zero seated players, and moves no chip.
    */
   protected async passWhileDealingHalted(): Promise<void> {
+    // A restarted Lightning anchor reaches this gate before the ordinary
+    // waiting loop restores presence or starts its heartbeat tick. The halt
+    // stops ordinary deals, not the seated players' input devices. Without
+    // this local observation every restored seat stays unknown to matching.
+    // Adopt carried state before registering; never run continuity releases,
+    // sit-out eviction, seat moves or add-ons from this parked boundary.
+    if (!this.isTournamentTable() && !isMaintenanceFrozen()) {
+      if (!(await this.adoptMovedPresence())) return;
+      if (!this.lifecycleCanMutate()) return;
+      this.restoreSitOutsFromSeats();
+      for (const player of this.seatedPlayers) {
+        this.disconnectEngine.registerPlayer(this.tableId, player.user_id);
+        if (player.is_horse) this.disconnectEngine.heartbeat(this.tableId, player.user_id);
+      }
+      this.disconnectEngine.checkStaleHeartbeats(this.tableId);
+    }
     await this.completeQueuedLeavesWhileHalted();
     if (!this.lifecycleCanMutate()) return;
     await this.observeDealingHalt();

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ServerTableEngine } from './ServerTableEngine.js';
+import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 vi.mock('../services/supabase/client.js', () => ({
   supabase: { from: vi.fn(), rpc: vi.fn() },
@@ -41,6 +42,7 @@ beforeEach(() => {
   vi.setSystemTime(1_800_000_000_000);
 });
 afterEach(() => {
+  setMaintenanceFrozen(false);
   for (const engine of engines.splice(0)) {
     engine.disconnectEngine.dispose(TABLE);
     engine.preciseTimer.dispose();
@@ -49,6 +51,64 @@ afterEach(() => {
 });
 
 describe('a waiting table still asks who is there', () => {
+  it('a restarted Lightning anchor supplies presence while ordinary dealing stays halted', async () => {
+    const engine = waitingCashEngine();
+    engine.isCurrentEngine = () => true;
+    engine.tableInfo.cluster_id = 'private-lightning-cluster';
+    engine.dealingHaltLock = true;
+    engine.observeDealingHalt = vi.fn(async () => {});
+    engine.stopIfClusterTableClosed = vi.fn(async () => {});
+    expect(engine.lightningPresenceReport().players.map((p: any) => p.presence)).toEqual([
+      'unknown',
+      'unknown',
+    ]);
+
+    await engine.passWhileDealingHalted();
+    expect(engine.lightningPresenceReport().players.map((p: any) => p.presence)).toEqual([
+      'connected',
+      'connected',
+    ]);
+    vi.advanceTimersByTime(31_000);
+    await engine.passWhileDealingHalted();
+    expect(engine.lightningPresenceReport().players.map((p: any) => p.presence)).toEqual([
+      'disconnected',
+      'connected',
+    ]);
+    expect(engine.dealingHaltLock).toBe(true);
+    expect(engine.seatedPlayers.map((p: any) => p.stack)).toEqual([100, 100]);
+    expect(engine.chipContinuity.sweepPresence).not.toHaveBeenCalled();
+    expect(engine.releaseLeavesHeldByClock).not.toHaveBeenCalled();
+  });
+
+  it('a halted anchor preserves a voluntary sit-out and its original clock', async () => {
+    const engine = waitingCashEngine();
+    engine.isCurrentEngine = () => true;
+    engine.tableInfo.cluster_id = 'private-lightning-cluster';
+    engine.observeDealingHalt = vi.fn(async () => {});
+    engine.stopIfClusterTableClosed = vi.fn(async () => {});
+    const since = Date.now() - 240_000;
+    engine.seatedPlayers[1].is_sitting_out = true;
+    engine.seatedPlayers[1].sit_out_at = new Date(since).toISOString();
+    await engine.passWhileDealingHalted();
+    vi.advanceTimersByTime(60_000);
+    await engine.passWhileDealingHalted();
+    expect(engine.disconnectEngine.isSittingOut(TABLE, HORSE)).toBe(true);
+    expect(engine.disconnectEngine.getFsmState(TABLE, HORSE)?.sitOutSinceMs).toBe(since);
+    expect(engine.seatedPlayers).toHaveLength(2);
+  });
+
+  it('a halted anchor leaves presence untouched during the maintenance freeze', async () => {
+    const engine = waitingCashEngine();
+    engine.isCurrentEngine = () => true;
+    engine.observeDealingHalt = vi.fn(async () => {});
+    engine.stopIfClusterTableClosed = vi.fn(async () => {});
+    setMaintenanceFrozen(true);
+    await engine.passWhileDealingHalted();
+    expect(
+      engine.lightningPresenceReport().players.every((p: any) => p.presence === 'unknown')
+    ).toBe(true);
+  });
+
   it('concludes a silent human is gone, and the five-minute rule then finds them', async () => {
     const engine = waitingCashEngine();
     await engine.judgePresenceWhileWaiting();

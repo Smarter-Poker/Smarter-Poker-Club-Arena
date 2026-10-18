@@ -5,8 +5,8 @@ import { expect, type Locator, type Page, type TestInfo } from '@playwright/test
 // Wallets have a separate exact-cents contract below. Reject every unsuffixed
 // fractional non-wallet value, including 12.5 and 12.345.
 const RAW_CENTS = /(?:^|[^\d])[-+]?\d{1,3}(?:,\d{3})*\.\d+(?!\d|[KMB%])/;
-// Wallets retain US grouping and exactly two decimals below one million;
-// Diamonds retain whole counts. Only million/billion wallets are abbreviated.
+// Chip wallets retain US grouping and exactly two decimals at every magnitude.
+// Diamonds retain their separate whole-count and large-count contract.
 const EXACT_WALLET = /^-?(?:0|[1-9]\d{0,2}(?:,\d{3})*)\.\d{2}$/;
 const DIAMOND_WALLET = /^-?(?:0|[1-9]\d{0,2}(?:,\d{3})*)$/;
 const LARGE_WALLET = /^-?([1-9]\d*(?:\.[1-9])?)([MB])$/;
@@ -20,16 +20,16 @@ function isCashierWalletFigure(
   // never an unavailable read. Only the Agent Wallet dialog uses this state.
   if (kind === 'chips' && options.allowAbsentAgentFloat && value === 'No Agent Float Yet')
     return true;
+  if (kind === 'chips')
+    return EXACT_WALLET.test(value) && Number.isFinite(Number(value.replace(/,/g, '')));
   const large = LARGE_WALLET.exec(value);
   if (large) {
     const magnitude = Number(large[1]);
     return Number.isFinite(magnitude) && (large[2] === 'B' || magnitude < 1_000);
   }
-  const pattern = kind === 'diamonds' ? DIAMOND_WALLET : EXACT_WALLET;
-  if (!pattern.test(value)) return false;
+  if (!DIAMOND_WALLET.test(value)) return false;
   const magnitude = Math.abs(Number(value.replace(/,/g, '')));
-  // A sub-million chip amount can round to exactly 1,000,000.00.
-  return kind === 'chips' ? magnitude <= 1_000_000 : magnitude < 1_000_000;
+  return magnitude < 1_000_000;
 }
 
 export async function attachCashierScreenshot(

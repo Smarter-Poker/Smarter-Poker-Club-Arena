@@ -523,8 +523,8 @@ test.describe('Production Cashier Certification', () => {
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
     const console = page
       .locator('main [data-cashier-layout="directory"]')
-      .filter({ hasText: 'Club Arena Cashier' })
-      .first();
+      .filter({ has: page.getByRole('heading', { name: 'Cashier', exact: true }) });
+    await expect(console).toHaveCount(1);
     await expect(console).toBeVisible({ timeout: 60_000 });
     const agentWallet = page.getByRole('button', { name: /Agent Wallet/ }).first();
     // The painted console precedes authoritative role and wallet hydration.

@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 227470,
-      "sha256": "eb9b4bc61c5f3b193bb8615e2df622903bb3b6cee1f22c6609356f71051e91f2"
+      "bytes": 227764,
+      "sha256": "69ef015db5f4cd7497b82021ea28c18d7165f4cc1582f5745f8a982437d87728"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3391,5 +3391,16 @@
   },
   "diamondIntegratedMain20261017": {
     "reason": "Reviewed combined workflow preserves all protected main and Diamond qualifications. Refresh only integrated workflow source identity, preserving historical evidence and financial qualification status."
+  },
+  "digestNativeSourceIdentity20261018": {
+    "reason": "Add native Lightning funding and ticket bounty qualification to existing required Accounting2. Only current workflow source identity changes; preserve historical evidence, financial assertions and qualification verdicts. Not a runtime financial certificate.",
+    "previousWorkflow": {
+      "bytes": 227470,
+      "sha256": "eb9b4bc61c5f3b193bb8615e2df622903bb3b6cee1f22c6609356f71051e91f2"
+    },
+    "currentWorkflow": {
+      "bytes": 227764,
+      "sha256": "69ef015db5f4cd7497b82021ea28c18d7165f4cc1582f5745f8a982437d87728"
+    }
   }
 }

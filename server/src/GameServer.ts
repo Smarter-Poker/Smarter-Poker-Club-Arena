@@ -504,8 +504,9 @@ const LEASE_REAP_INTERVAL_MS = 60 * 60 * 1000;
  * starts, and so does this one now.
  *
  * The lead is the discovery lead, not a new state: `TournamentManager.start()`
- * does exactly what it always did, in the same order, one minute earlier — and
- * then HOLDS every table's dealing until the advertised `start_time` (the same
+ * does exactly what it always did, in the same order, with the field setup
+ * budget before the ready minute. It
+ * HOLDS every table's dealing until the advertised `start_time` (the same
  * `holdDealingUntil` deadline the spin wheel uses) and arms the level clock at
  * that instant rather than at seating. So the cards still fly at the time on
  * the tin; only the seating moved.

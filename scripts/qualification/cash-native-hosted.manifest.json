@@ -3441,6 +3441,7 @@
           "sha256": "79d86ee1493d729919b64dd519cc5c9b67d7047b7f79eb75c7e616d75158332e"
         }
       }
-    }
+    },
+    "connectedBindingChanges": {}
   }
 }

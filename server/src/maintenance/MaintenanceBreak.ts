@@ -247,7 +247,7 @@ export interface ResumeWavesProgress {
 }
 
 export interface MaintenanceBreakDeps {
-  /** Synchronous clock release before the first table wakes; no database work. */
+  /** Synchronous clock release before the first table wakes; no awaited I/O. */
   onReleased?: (freezeStartedAt: number) => void;
   /** Every live table engine, cash and tournament alike. */
   engines(): Iterable<[string, PausableTableEngine]>;

@@ -2588,6 +2588,7 @@ export abstract class TournamentManagerBase {
     this.lifecycleTimeouts.clear();
     this.lifecycleIntervals.clear();
     this.blindStartTimer = null;
+    this.bookedLevelAwaitingMaintenance = false;
     this.breakResumeRetryTimer = null;
     this.pendingBlindTransition = null;
   }

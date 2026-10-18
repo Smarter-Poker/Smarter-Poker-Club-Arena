@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { financialConsoleEnumCopy } from './helpers/financial-console-copy';
+import { readFinancialTouchControls } from './helpers/financial-touch-controls';
 import { readFileSync } from 'node:fs';
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import {
@@ -172,64 +173,8 @@ async function expectNoRawBackendCopy(root: Locator): Promise<void> {
 }
 
 async function expectTouchSafeControls(root: Locator): Promise<void> {
-  const undersized = await root
-    .locator(
-      'button:visible, a[href]:visible, summary:visible, input:visible, select:visible, textarea:visible, [role="button"]:visible, [role="tab"]:visible'
-    )
-    .evaluateAll((controls) => {
-      const number = (value: string): number => {
-        const parsed = Number.parseFloat(value);
-        return Number.isFinite(parsed) ? parsed : 0;
-      };
-      const pseudoSize = (control: Element, pseudo: '::before' | '::after') => {
-        const style = getComputedStyle(control, pseudo);
-        if (style.content === 'none' || style.display === 'none') return { width: 0, height: 0 };
-        const rect = control.getBoundingClientRect();
-        const left = number(style.left);
-        const right = number(style.right);
-        const top = number(style.top);
-        const bottom = number(style.bottom);
-        return {
-          width: Math.max(
-            number(style.width),
-            rect.width + Math.max(0, -left) + Math.max(0, -right)
-          ),
-          height: Math.max(
-            number(style.height),
-            rect.height + Math.max(0, -top) + Math.max(0, -bottom)
-          ),
-        };
-      };
-      return controls
-        .map((control) => {
-          const rect = control.getBoundingClientRect();
-          const before = pseudoSize(control, '::before');
-          const after = pseudoSize(control, '::after');
-          return {
-            label:
-              control.getAttribute('aria-label') ||
-              control.getAttribute('placeholder') ||
-              (control.textContent || '').trim().slice(0, 80),
-            width: Math.max(rect.width, before.width, after.width),
-            height: Math.max(rect.height, before.height, after.height),
-          };
-        })
-        .filter((control) => control.width < 44 || control.height < 44);
-    });
+  const { undersized, undersizedTextInputs } = await readFinancialTouchControls(root);
   expect(undersized).toEqual([]);
-
-  const undersizedTextInputs = await root
-    .locator(
-      'input:not([type="checkbox"]):not([type="radio"]):visible, select:visible, textarea:visible'
-    )
-    .evaluateAll((controls) =>
-      controls
-        .map((control) => ({
-          label: control.getAttribute('aria-label') || control.getAttribute('placeholder') || '',
-          fontSize: Number.parseFloat(getComputedStyle(control).fontSize),
-        }))
-        .filter((control) => control.fontSize < 16)
-    );
   expect(undersizedTextInputs).toEqual([]);
 }
 

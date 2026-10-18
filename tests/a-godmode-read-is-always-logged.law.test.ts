@@ -59,6 +59,13 @@ function latestDefinitionOf(fnName: string): string {
   return found;
 }
 
+function selectPoliciesOn(sql: string, table: string): string[] {
+  // A policy ends at its own statement boundary, even when a later trigger
+  // mentions a card table after an unrelated realtime policy.
+  const re = new RegExp(`CREATE POLICY[^;]*?ON public\\.${table}[^;]*?;`, 'gi');
+  return (sql.match(re) ?? []).filter((policy) => /FOR\s+SELECT/i.test(policy));
+}
+
 describe('a godmode read is always logged', () => {
   const readHand = latestDefinitionOf('fn_ca_operator_read_hand');
 
@@ -128,6 +135,18 @@ describe('a godmode read is always logged', () => {
     }
   });
 
+  it('scans each policy statement without absorbing later card-table triggers', () => {
+    const unrelated = 'CREATE POLICY record_changes ON realtime.messages FOR SELECT USING (true);';
+    const trigger =
+      'CREATE TRIGGER facts_changed AFTER INSERT ON public.ca_hand_facts EXECUTE FUNCTION changed();';
+    expect(selectPoliciesOn(`${unrelated} ${trigger}`, 'ca_hand_facts')).toEqual([]);
+    const wide = 'CREATE POLICY wide_cards ON public.ca_hand_facts FOR SELECT USING (true);';
+    expect(selectPoliciesOn(`${unrelated} ${trigger} ${wide}`, 'ca_hand_facts')).toEqual([wide]);
+    const own =
+      'CREATE POLICY own_cards ON public.table_hole_cards FOR SELECT USING (auth.uid() = user_id);';
+    expect(selectPoliciesOn(`${wide} ${own}`, 'table_hole_cards')).toEqual([own]);
+  });
+
   it('the card tables stay self-scoped, which is what makes the client reads safe', () => {
     /* THIS IS THE THING THAT WOULD HAVE TO BREAK. Client reads of
        `ca_hand_facts` deliberately name no user - `HandHistoryService`
@@ -146,9 +165,7 @@ describe('a godmode read is always logged', () => {
     for (const file of files) {
       const sql = readFileSync(join(MIGRATIONS, file), 'utf8');
       for (const table of ['ca_hand_facts', 'table_hole_cards']) {
-        const re = new RegExp(`CREATE POLICY[\\s\\S]*?ON public\\.${table}[\\s\\S]*?;`, 'gi');
-        for (const policy of sql.match(re) ?? []) {
-          if (!/FOR\s+SELECT/i.test(policy)) continue;
+        for (const policy of selectPoliciesOn(sql, table)) {
           /* Self-scoped, in either spelling the repo uses. */
           const selfScoped =
             /auth\.uid\(\)\s*\)?\s*=\s*user_id/i.test(policy) ||

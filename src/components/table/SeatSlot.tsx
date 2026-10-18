@@ -3620,12 +3620,14 @@ export const SeatSlot = memo(
                 geometric glyph plus a number, announced as "circled ring
                 operator twelve" — and the seat's own aria-label names seat,
                 player, status and stack but not the bounty, so the figure was
-                unavailable anywhere else. */}
+                unavailable anywhere else.
+
+            2026-10-18, Dan: "THE 'BOUNTY' SHOULD NOT BE ORANGE, AND SHOULD
+            JUST DISPLAY THE AMOUNT, IT SHOULDN'T HAVE A CHIP NEXT TO IT. JUST
+            THE NUMBER." The chip glyph is gone and the orange pill with it -
+            see `.seat__bounty` in SeatSlot.css. */}
         {bountyIsMystery && (
           <div className="seat__bounty" aria-label="Mystery Bounty">
-            <span className="seat__bounty-target" aria-hidden="true">
-              ◎
-            </span>
             <span className="seat__bounty-val" aria-hidden="true">
               ?
             </span>
@@ -3640,9 +3642,6 @@ export const SeatSlot = memo(
                 : bountyValue.toLocaleString('en-US', { maximumFractionDigits: 2 })
             } ${moneyWordAtUnit(bountyUnitCents ?? UNIT_CENTS_ASSET_NOT_READ)}`}
           >
-            <span className="seat__bounty-target" aria-hidden="true">
-              ◎
-            </span>
             <span className="seat__bounty-val" aria-hidden="true">
               {/* Two places when there ARE cents (2026-09-09): a 7.50 bounty
                   rendered "7.5" beside a 2-dp BBJ credit on the same seat.

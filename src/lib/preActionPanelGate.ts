@@ -103,3 +103,38 @@ export function isPreActionHonorable(
   if (preAction === 'call') return callDue <= armedCallCap;
   return false;
 }
+
+/**
+ * ═══ NO PRE-ACTIONS WHEN THERE IS NO DECISION COMING (Dan 2026-10-18) ═══
+ *
+ * Dan, verbatim: "WHEN YOU MAKE A BET OR RAISE AND ARE NOT 'FACING ANY
+ * ACTION' THE DEFAULT CHECK FOLD, CHECK, CALL ANY BUTTONS SHOULD NEVER
+ * APPEAR UNLESS YOU ARE FACING A DECISION."
+ *
+ * Screenshot: the hero had just raised to 600 preflop, the action had moved
+ * on, and the bar was offering Check/Fold, Check and Call Any - three
+ * buttons for a turn that was never going to come unless somebody raised.
+ *
+ * The rule: once the hero has answered THIS street (checked, called, bet or
+ * raised) and nothing is owed, the hero has no decision ahead of them, so
+ * the bar stays down. The moment someone bets or raises over the hero, the
+ * call price is above zero, the hero is facing a decision again, and the bar
+ * comes back offering Fold / Call / Call Any.
+ *
+ * A hero who has not acted yet this street still gets the bar - that
+ * includes the big blind, whose posted blind carries no action label, so
+ * the option to check or raise is still offered.
+ *
+ * `heroLastActionThisStreet` is `tableState.lastActions[heroSeat - 1]`,
+ * which the snapshot mapper derives from the CURRENT street only (folds
+ * excepted) and the optimistic apply writes the instant the hero acts.
+ */
+const ANSWERS_THE_STREET = new Set(['check', 'call', 'bet', 'raise']);
+
+export function heroAwaitsADecision(
+  heroLastActionThisStreet: string | null | undefined,
+  callDue: number
+): boolean {
+  if (callDue > 0) return true;
+  return !(heroLastActionThisStreet && ANSWERS_THE_STREET.has(heroLastActionThisStreet));
+}

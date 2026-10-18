@@ -48,6 +48,11 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
     ])
       expect(native).toContain(input);
     expect(native).toContain('Statement availability already installed');
+    expect(native).toContain(
+      '20261018171801_bomb_pot_reports_bound_their_hosted_club_scan_and_utc_calend.sql'
+    );
+    expect(native).toContain('bomb-before.sql');
+    expect(native).toContain('bomb-after.sql');
   });
 
   it('is one fail-closed accounting shard step using runner-owned scratch space', () => {

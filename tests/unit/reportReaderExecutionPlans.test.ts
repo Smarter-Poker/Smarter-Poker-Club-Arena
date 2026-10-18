@@ -6,26 +6,37 @@ const read = (path: string) => readFileSync(path, 'utf8');
 const migration = '20261018183243_report_reader_generic_plans_retain_bounded_bitmap_scans.sql';
 
 describe('qualified report execution settings', () => {
-  it('uses the qualified generic bitmap plan on the first call as well as warm backends', () => {
+  it('qualifies the indexed source, real producer, saturation and private read budgets', () => {
     const sql = read(
       'supabase/migrations/20261018195533_bomb_catchup_retains_its_qualified_generic_bitmap_plan.sql'
     );
-    expect(sql).toContain('SET plan_cache_mode=force_generic_plan');
     expect(sql).not.toMatch(/ALTER ROLE|ALTER DATABASE/);
-    expect(sql).toContain('CROSS JOIN LATERAL');
-    expect(sql).toContain('h.table_id=hosted.id');
-    expect(sql).toContain('OFFSET 0');
-    expect(sql).toContain('Bomb final report source changed');
+    for (const marker of [
+      'bomb_table_days AS MATERIALIZED',
+      'bomb_candidates AS MATERIALIZED',
+      'CROSS JOIN LATERAL',
+      'OFFSET 0',
+      'v_caught < 40',
+      "statement_timeout='30s'",
+      "interval '15 minutes'",
+    ])
+      expect(sql).toContain(marker);
+    expect(sql).toContain('pg_advisory_xact_lock');
     const runner = read('scripts/dev/test-statement-availability-postgres.sh');
     expect(runner).toContain(
       '20261018195533_bomb_catchup_retains_its_qualified_generic_bitmap_plan.sql'
     );
+    expect(runner).toContain('bomb-real-rollup-before.sql');
+    expect(runner).toContain('before transactionid');
+    expect(runner).toContain('after advisory');
     expect(runner).toContain('bomb-plan-cache-after.sql');
     expect(runner).toContain('cache-replay.log');
     const native = read('tests/fixtures/union-statement-availability/bomb-plan-cache-after.sql');
-    expect(native).toContain('18e6c2541c8d13062478fe22b4670147');
     expect(native).toContain('has_function_privilege');
     expect(native).toContain('cache setting escaped its call');
+    expect(native).toContain('Saturation must retain unsealed history');
+    expect(native).toContain('Real rollup producer lost closed or live hand values');
+    expect(native).toContain('Session timezone moved the UTC window');
   });
   it('body source resolution ignores settings-only migrations', () => {
     const source = latestDeclaring('ca_rake_snapshot');

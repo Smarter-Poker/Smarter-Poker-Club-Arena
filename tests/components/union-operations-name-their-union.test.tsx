@@ -501,6 +501,27 @@ describe('UnionOpsPanel cannot render or run without a union', () => {
     expect(document.body.style.overflow).toBe('scroll');
   });
 
+  it('accepts Escape on the first committed scheduled review', async () => {
+    let observedAtCommit = false;
+    render(
+      <Profiler
+        id="scheduled-review-immediate-escape"
+        onRender={() => {
+          if (!observedAtCommit && document.querySelector('[role="dialog"]')) {
+            observedAtCommit = true;
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+          }
+        }}
+      >
+        <UnionOpsPanel unionId={UNION_A} canRun />
+      </Profiler>
+    );
+    fireEvent.click(await screen.findByRole('tab', { name: 'Settlement' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review Scheduled Settlement' }));
+    await waitFor(() => expect(observedAtCommit).toBe(true));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   it('keeps an oversized mobile review reachable from the scroll origin', () => {
     const overlay = unionOpsCss.match(/\.union-ops-panel__overlay\s*\{([\s\S]*?)\}/)?.[1];
     const dialog = unionOpsCss.match(/\.union-ops-panel__dialog\s*\{([\s\S]*?)\}/)?.[1];

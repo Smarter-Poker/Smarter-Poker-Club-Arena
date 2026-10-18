@@ -5,6 +5,68 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const CSS = readFileSync(resolve(process.cwd(), 'src/pages/ClubMembersPage.css'), 'utf8');
+const PAGE_BAR_CSS = readFileSync(
+  resolve(process.cwd(), 'src/components/help/PageHelp.css'),
+  'utf8'
+);
+
+// The real PageBar prints controls before its title. Include its owning sheet:
+// roster-only fixtures cannot detect a title painted over the Advanced button.
+for (const width of [320, 375, 393, 568, 1440]) {
+  for (const textScale of [100, 200]) {
+    test(`page titles and live actions remain reachable at ${width}px and ${textScale}% text`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 812 });
+      await page.setContent(`
+        <style>${CSS}\n${PAGE_BAR_CSS}
+          *, *::before, *::after { box-sizing: border-box; }
+          html { font-size: ${textScale}%; }
+          body { margin: 0; background: #000; color: #fff; }
+          main { width: calc(100% - 32px); margin: auto; }
+        </style>
+        <main><header class="ca-page-bar members-page-bar">
+          <div class="ca-page-bar__live"><div class="members-mode-toggle">
+            <button type="button">Simple</button><button type="button">Advanced</button>
+          </div></div>
+          <h1 class="ca-page-bar__title">Player Management</h1>
+          <button type="button" class="ca-page-help" aria-label="Page Help">?</button>
+        </header></main>`);
+      const advanced = page.getByRole('button', { name: 'Advanced', exact: true });
+      await advanced.click({ timeout: 1500 });
+      await page.getByRole('button', { name: 'Page Help', exact: true }).click({ timeout: 1500 });
+      for (const title of ['Player Management', 'Monthly Challenges']) {
+        await page.locator('h1').evaluate((heading, text) => {
+          heading.textContent = text;
+        }, title);
+        const geometry = await page.locator('h1').evaluate((heading) => {
+          const box = heading.getBoundingClientRect();
+          const bar = heading.parentElement!.getBoundingClientRect();
+          return {
+            inside: box.left >= bar.left - 1 && box.right <= bar.right + 1,
+            readable: heading.scrollWidth <= heading.clientWidth + 1,
+            centerError: Math.abs((box.left + box.right - bar.left - bar.right) / 2),
+          };
+        });
+        expect(geometry.inside, `${title} escapes its page at enlarged text`).toBe(true);
+        expect(geometry.readable, `${title} clips its text`).toBe(true);
+        expect(geometry.centerError, `${title} is not centered`).toBeLessThanOrEqual(1);
+      }
+      await page.locator('h1').evaluate((heading) => heading.remove());
+      await advanced.click({ timeout: 1500 });
+      const [live, help] = await Promise.all([
+        page.locator('.ca-page-bar__live').boundingBox(),
+        page.getByRole('button', { name: 'Page Help', exact: true }).boundingBox(),
+      ]);
+      expect(live).not.toBeNull();
+      expect(help).not.toBeNull();
+      expect(
+        Math.abs(live!.y - help!.y),
+        'a titleless header adds an empty row'
+      ).toBeLessThanOrEqual(1);
+    });
+  }
+}
 
 for (const width of [375, 393]) {
   test(`Simple roster fields avoid phone zoom and fit at ${width}px`, async ({ page }) => {

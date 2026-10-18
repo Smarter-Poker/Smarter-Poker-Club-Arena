@@ -247,6 +247,8 @@ export interface ResumeWavesProgress {
 }
 
 export interface MaintenanceBreakDeps {
+  /** Synchronous clock release before the first table wakes; no awaited I/O. */
+  onReleased?: (freezeStartedAt: number) => void;
   /** Every live table engine, cash and tournament alike. */
   engines(): Iterable<[string, PausableTableEngine]>;
   /** Operator intent joins the existing hourly owner; no new scheduler. */
@@ -320,6 +322,8 @@ export class MaintenanceBreak {
   /** The countdown starts at :55, so the announcement lands at :53. */
   static readonly BREAK_START_MINUTE = 55;
   static readonly LAST_HAND_LEAD_MS = 2 * 60 * 1000;
+  /** Prepare clocks inside the final 90s; the certificate still holds play to :00. */
+  static readonly THAW_PREPARATION_LEAD_MS = 90_000;
   /**
    * The last-hand terminal settlement window closes this long before :55, so
    * no tournament payout is in flight when readyForRestart opens.
@@ -1449,7 +1453,9 @@ export class MaintenanceBreak {
 
   private armEndTimer(): void {
     if (this.endTimer) this.clearTimer(this.endTimer);
-    const remaining = Math.max(0, this.breakEndsAt - this.now());
+    const preparationLead =
+      this.deps.thaw && !this.releaseBoundaryOnly ? MaintenanceBreak.THAW_PREPARATION_LEAD_MS : 0;
+    const remaining = Math.max(0, this.breakEndsAt - preparationLead - this.now());
     const generation = this.lifecycleGeneration;
     this.endTimer = this.setTimer(() => {
       this.endTimer = null;
@@ -1514,7 +1520,11 @@ export class MaintenanceBreak {
           Object.freeze({
             announcedAt: durable.announcedAt,
             freezeStartedAt,
-            frozenSeconds: Math.max(1, (this.now() - freezeStartedAt) / 1000),
+            frozenSeconds: Math.max(
+              1,
+              (this.breakEndsAt - freezeStartedAt) / 1000,
+              (this.now() - freezeStartedAt) / 1000
+            ),
             ownershipToken: durable.ownershipToken,
           });
         this.thawRequest = request;
@@ -1527,6 +1537,9 @@ export class MaintenanceBreak {
           return;
         }
         assertMaintenanceThawRelease(request, release);
+        if (release.creditedThroughAt < this.breakEndsAt) {
+          throw new MaintenanceThawError('maintenance_thaw_release_before_scheduled_end', false);
+        }
         this.certifiedResumeAt = release.creditedThroughAt;
         this.broadcast('counting_down');
         await this.waitForCertifiedRelease(release.creditedThroughAt, generation);
@@ -1594,6 +1607,7 @@ export class MaintenanceBreak {
     this.ending = false;
     setMaintenanceFrozen(false);
 
+    this.deps.onReleased?.(reconnectFreezeStartedAt);
     const resumed = this.resumeEveryEngine(
       reconnectFreezeStartedAt > 0 ? reconnectFreezeStartedAt : undefined
     );

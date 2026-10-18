@@ -1130,6 +1130,7 @@ export abstract class TournamentManagerBase {
   protected preStartLeadMs: number = 0;
   /** One first-level wake, distinct from an already running level clock. */
   private blindStartTimer: ReturnType<typeof setTimeout> | null = null;
+  private bookedLevelAwaitingMaintenance = false;
   /**
    * ═════════════════════════════════════════════════════════════════════════
    *  THE SPIN REVEAL IS ANCHORED TO THE THIRD PAYMENT (2026-08-27)
@@ -2587,6 +2588,7 @@ export abstract class TournamentManagerBase {
     this.lifecycleTimeouts.clear();
     this.lifecycleIntervals.clear();
     this.blindStartTimer = null;
+    this.bookedLevelAwaitingMaintenance = false;
     this.breakResumeRetryTimer = null;
     this.pendingBlindTransition = null;
   }
@@ -9592,12 +9594,32 @@ export abstract class TournamentManagerBase {
         if (this.blindStartTimer !== timer) return;
         this.blindStartTimer = null;
         // The pause owner will arm the full first level when it releases play.
+        if (isMaintenanceFrozen()) {
+          this.bookedLevelAwaitingMaintenance = true;
+          return;
+        }
         if (this.isOnBreak()) return;
         this.startBlindTimer(blindStructure);
       },
       Math.max(0, notBeforeMs - Date.now())
     );
     this.blindStartTimer = timer;
+  }
+
+  /** A prepared field's first level begins with actual play, even after a late thaw. */
+  public startBookedLevelAfterMaintenance(freezeStartedAt: number): void {
+    const booked = Date.parse(String(this.tournamentCache?.started_at ?? ''));
+    if (
+      !this.running ||
+      this.currentLevel !== 0 ||
+      this.isOnBreak() ||
+      isMaintenanceFrozen() ||
+      !Number.isFinite(booked) ||
+      (!this.bookedLevelAwaitingMaintenance &&
+        (!(freezeStartedAt > 0) || !(booked >= freezeStartedAt)))
+    )
+      return;
+    this.startBlindTimer(this.tournamentCache?.blind_structure || []);
   }
 
   protected startBlindTimer(blindStructure: any[], remainingOverrideMs?: number): void {
@@ -9611,6 +9633,19 @@ export abstract class TournamentManagerBase {
       this.scheduleBlindClockStart(blindStructure, bookedStartMs);
       return;
     }
+    // A replacement may adopt only the future release certificate after the
+    // break row cleared. A NULL first anchor proves no level has been played;
+    // its first local arm waits for the same actual release event.
+    if (
+      isMaintenanceFrozen() &&
+      this.currentLevel === 0 &&
+      this.blindTimerStartedAt === 0 &&
+      !this.tournamentCache?.level_started_at
+    ) {
+      this.bookedLevelAwaitingMaintenance = true;
+      return;
+    }
+    this.bookedLevelAwaitingMaintenance = false;
     if (this.blindStartTimer) {
       this.clearLifecycleTimeout(this.blindStartTimer);
       this.blindStartTimer = null;

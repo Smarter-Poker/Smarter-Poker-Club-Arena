@@ -933,7 +933,8 @@ RECOVERY_DEFER_SECONDS=60
 RECOVERY_DEFERRED_TO=''
 BREAK_DEFERRED_TO=''
 RECOVERY_REFUSED_STUCK=0
-RECOVERY_UNCERTIFIED_BREAKS=1
+# A missed restart certificate is history, not evidence that a dealing engine
+# is dead, stalled or wedged. It must never authorize an extra platform break.
 # Calibrated on production, 2026-09-26: 209d1b45 dealt normally (liveness ok,
 # certificate opening at :55) with 16-27 managers quarantined after
 # tournament_lease_lost_stop_failed, and the first release to read 16 as
@@ -970,17 +971,15 @@ recovery_window_reason() {
   fi
   degraded="$(printf '%s' "$health" | python3 -c '
 import json, sys
-d = json.load(sys.stdin); m = d.get("maintenance") or {}
+d = json.load(sys.stdin)
 count = lambda v: v if isinstance(v, int) and not isinstance(v, bool) else 0
 signs = []
-if count(m.get("breaksSinceRestartCertified")) >= int(sys.argv[1]):
-    signs.append("breaksSinceRestartCertified=%d" % m["breaksSinceRestartCertified"])
 if d.get("liveness") == "dead": signs.append("liveness=dead")
 if d.get("wholeFleetStalled") is True: signs.append("wholeFleetStalled")
-if count(d.get("tournamentManagersQuarantined")) >= int(sys.argv[2]):
+if count(d.get("tournamentManagersQuarantined")) >= int(sys.argv[1]):
     signs.append("tournamentManagersQuarantined=%d" % d["tournamentManagersQuarantined"])
 print(",".join(signs))
-' "$RECOVERY_UNCERTIFIED_BREAKS" "$RECOVERY_QUARANTINED_MANAGERS" 2>/dev/null)" || degraded=''
+' "$RECOVERY_QUARANTINED_MANAGERS" 2>/dev/null)" || degraded=''
   if [ -n "$degraded" ]; then
     echo "engine-degraded $degraded"
     return 0

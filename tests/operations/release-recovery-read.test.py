@@ -363,7 +363,10 @@ class ReaderTests(unittest.TestCase):
         self.assertIn('INVOCATION_ID="${INVOCATION_ID:-}"', producer)
         self.assertIn('off-cycle recovery window reason: $reason', producer)
         self.assertIn('--control-sha "$CONTROL_SHA" --invocation-id "$INVOCATION_ID"', producer)
-        self.assertIn('RECOVERY_UNCERTIFIED_BREAKS=1', producer)
+        # Historical journal witnesses above retain their original signs; the
+        # current producer must not promote a missed certificate to an emergency.
+        reason = producer[producer.index('recovery_window_reason() {'):producer.index('newer_release_in_flight() {')]
+        self.assertNotIn('breaksSinceRestartCertified', reason)
         self.assertIn('RECOVERY_QUARANTINED_MANAGERS=100', producer)
         wrapper = (ROOT / 'server/scripts/engine-release-unit-wrapper.sh').read_text()
         self.assertIn('env ENGINE_CONTROL_DIR="$GENERATION"', wrapper)

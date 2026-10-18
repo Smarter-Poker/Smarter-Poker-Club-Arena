@@ -158,6 +158,9 @@ export function classifyChangedPaths(paths) {
   }
   const matches = (pattern) => paths.some((p) => pattern.test(p));
   const broad = matches(wide);
+  const onTimeMaintenance = matches(
+    /^scripts\/ci\/(?:test-on-time-maintenance-thaw\.py$|test-multi-day-stage-foundation\.py$|fixtures\/on-time-start\/)/
+  );
   // These maintained verification inputs execute in the existing CSS browser
   // job. A test-only correction must run its connected browser regressions.
   //
@@ -307,6 +310,7 @@ export function classifyChangedPaths(paths) {
   return {
     src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
     server:
+      onTimeMaintenance ||
       playerHistoryQualification ||
       broad ||
       committedEvidence ||
@@ -360,6 +364,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      onTimeMaintenance ||
       playerHistoryQualification ||
       bbjFixture ||
       chipStoreCoverage ||

@@ -302,7 +302,11 @@ import {
   leaseDiagnostics,
   TABLE_LEASE_PROOF_WINDOW_MS,
 } from './services/tableLease.js';
-import { launchSeatingBudgetMs, launchWouldCrossLastHand } from './tournament/launchBreakHold.js';
+import {
+  launchSeatingBudgetMs,
+  launchWouldCrossLastHand,
+  scheduledLaunchPreparationAt,
+} from './tournament/launchBreakHold.js';
 
 export { TournamentManager };
 
@@ -500,8 +504,9 @@ const LEASE_REAP_INTERVAL_MS = 60 * 60 * 1000;
  * starts, and so does this one now.
  *
  * The lead is the discovery lead, not a new state: `TournamentManager.start()`
- * does exactly what it always did, in the same order, one minute earlier — and
- * then HOLDS every table's dealing until the advertised `start_time` (the same
+ * does exactly what it always did, in the same order, with the field setup
+ * budget before the ready minute. It
+ * HOLDS every table's dealing until the advertised `start_time` (the same
  * `holdDealingUntil` deadline the spin wheel uses) and arms the level clock at
  * that instant rather than at seating. So the cards still fly at the time on
  * the tin; only the seating moved.
@@ -514,6 +519,12 @@ const LEASE_REAP_INTERVAL_MS = 60 * 60 * 1000;
  * and watches the same held felt for the same minute a human does.
  */
 const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
+const scheduledPreparationAt = (startAt: number, fieldCount: number): number =>
+  scheduledLaunchPreparationAt(startAt, fieldCount, TOURNAMENT_PRESEAT_LEAD_MS, {
+    startMinute: MaintenanceBreak.BREAK_START_MINUTE,
+    lastHandLeadMs: MaintenanceBreak.LAST_HAND_LEAD_MS,
+    durationMs: MaintenanceBreak.BREAK_DURATION_MS,
+  });
 /* How far ahead of the pre-seat lead the discovery pass reads a
    registration-first event's roster, so a row whose lead opens while a long
    pass is still walking is decided from its roster too. */
@@ -3798,6 +3809,15 @@ export class GameServer {
     // The v3 client retries the exact owner and freeze identity. A lost response
     // can recover its committed receipt. Completion schedules a future release;
     // MaintenanceBreak keeps the pause until that certified boundary.
+    onReleased: (freezeStartedAt) => {
+      for (const manager of this.tournamentEngines.values()) {
+        try {
+          manager.startBookedLevelAfterMaintenance(freezeStartedAt);
+        } catch (error) {
+          reportError(error, 'GameServer.booked_level_release_failed');
+        }
+      }
+    },
     thaw: bindToProcessRoot(async (request, signal) => {
       const release = await runMaintenanceThawV3(
         {
@@ -7769,7 +7789,12 @@ export class GameServer {
           (t) =>
             !isPersistedSeatFirst(t) &&
             (t.effective_max_players !== null ||
-              Date.parse(String(t.start_time)) - TOURNAMENT_PRESEAT_LEAD_MS <= rosterHorizon)
+              // A stale counter must not postpone the roster read that sets
+              // a large field's preparation budget. Read the next maintenance
+              // cycle independently of that hint; later bookings stay bounded.
+              Date.parse(String(t.start_time)) <= registeringReadAt + 60 * 60_000 ||
+              scheduledPreparationAt(Date.parse(String(t.start_time)), t.current_players) <=
+                rosterHorizon)
         );
         const rosterByTournament = await this.readEntrantRosterCounts(rosterRows);
 
@@ -7910,7 +7935,7 @@ export class GameServer {
             tournament.effective_max_players !== null &&
             fieldCount >= tournament.effective_max_players;
           /**
-           * ONE MINUTE EARLY, ON PURPOSE — see TOURNAMENT_PRESEAT_LEAD_MS.
+           * READY ONE MINUTE EARLY, WITH THE FIELD'S SETUP BUDGET.
            *
            * The comparison used to be `startTime <= now`, which meant the field
            * was seated after the advertised start rather than before it. The
@@ -7921,11 +7946,11 @@ export class GameServer {
            *
            * The min-players requirement is unchanged and is still evaluated
            * against the last complete board read. An event short of a field
-           * at T-60 is not started early; funding below can make it eligible
+           * when preparation opens is not started early; funding below can make it eligible
            * on a later read after that operation actually settles.
            */
           const timeReached =
-            startTime - TOURNAMENT_PRESEAT_LEAD_MS <= now && fieldCount >= minPlayers;
+            scheduledPreparationAt(startTime, fieldCount) <= now && fieldCount >= minPlayers;
 
           // SNG/Spin: only start when every seat has been bought and paid for.
           // MTT variants: start at scheduled time with minimum players.

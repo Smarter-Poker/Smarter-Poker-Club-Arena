@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 228031,
-      "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
+      "bytes": 228284,
+      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 37158,
-      "sha256": "32c1f6f91fea456e6884e9d4bd1f13008a428162ade9eea676535a24bee328c0"
+      "bytes": 37376,
+      "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3418,6 +3418,32 @@
       "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
     }
   },
+  "onTimeThawInputIdentity20261018": {
+    "reason": "Add isolated maintenance-thaw qualification in existing accounting shard1 and route its exact native inputs. Current input identity only; retained financial inputs, assertions and historical qualification states unchanged. No financial certificate restamp.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 228031,
+          "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
+        },
+        "current": {
+          "bytes": 228284,
+          "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+        }
+      },
+      "scripts/ci/classify-ci-changes.mjs": {
+        "previous": {
+          "bytes": 37129,
+          "sha256": "a1dafcc2ddd7bbdf2387fb20ca293f8d51e26014d1bddd5cbb3d4679d86b5417"
+        },
+        "current": {
+          "bytes": 37347,
+          "sha256": "79d86ee1493d729919b64dd519cc5c9b67d7047b7f79eb75c7e616d75158332e"
+        }
+      }
+    },
+    "connectedBindingChanges": {}
+  },
   "statementAvailabilityInputRouting20261018": {
     "reason": "Route statement-availability fixture-only changes to the existing required Data Console native job. Preserve every existing financial input, assertion, historical pin and qualification status. This source fingerprint refresh is not financial execution, installation or publication proof.",
     "file": "scripts/ci/classify-ci-changes.mjs",
@@ -3428,6 +3454,17 @@
     "current": {
       "bytes": 37158,
       "sha256": "32c1f6f91fea456e6884e9d4bd1f13008a428162ade9eea676535a24bee328c0"
+    }
+  },
+  "onTimeStatementRoutingMerge20261018": {
+    "reason": "Preserve protected-main statement-availability routing and on-time thaw routing together. Active input identity only; both audit histories, financial SQL, assertions and qualification states retained. No financial certificate restamp.",
+    "previous": {
+      "bytes": 37376,
+      "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+    },
+    "current": {
+      "bytes": 37376,
+      "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
     }
   }
 }

@@ -165,6 +165,23 @@ describe('a past-start event is started from its roster, not a stale counter', (
     expect(rosterReads[0].statuses).toEqual(['registered', 'playing']);
   });
 
+  it('prepares a large noon field from its roster even when the counter is one', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T16:39:10Z'));
+    const { server, rosterReads } = harness({
+      target: { current_players: 1, start_time: '2026-10-18T17:00:00Z' },
+      roster: 1000,
+    });
+    await server.discoverTournaments();
+    expect(rosterReads.length).toBeGreaterThan(0);
+    expect(server.ensureTournamentManagerAdmission).toHaveBeenCalledWith(
+      T,
+      'start',
+      expect.stringContaining('pre-seating 1000 players'),
+      1
+    );
+    expect(server.tournamentRecurring.topUpWithHorses).not.toHaveBeenCalled();
+  });
+
   it('still tops up an event whose roster is genuinely short, whatever the counter says', async () => {
     const { server } = harness({ target: { current_players: 9 }, roster: 2 });
     await server.discoverTournaments();

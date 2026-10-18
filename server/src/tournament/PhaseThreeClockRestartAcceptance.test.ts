@@ -152,8 +152,14 @@ function maintenance(store: MemoryStore, engines: Map<string, any>, thaw = async
       store.row = null; // Synthetic v3 transaction releases this owned row.
       return {
         ...request,
-        creditedThroughAt: Date.now(),
-        effectiveFrozenSeconds: (Date.now() - request.freezeStartedAt) / 1000,
+        creditedThroughAt: Math.max(
+          Date.now(),
+          request.freezeStartedAt + request.frozenSeconds * 1000
+        ),
+        effectiveFrozenSeconds: Math.max(
+          (Date.now() - request.freezeStartedAt) / 1000,
+          request.frozenSeconds
+        ),
       };
     },
     now: () => Date.now(),

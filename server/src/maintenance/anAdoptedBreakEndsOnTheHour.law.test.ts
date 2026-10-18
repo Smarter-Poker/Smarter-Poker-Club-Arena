@@ -39,9 +39,12 @@
  *      would park the entire platform for five minutes from any later boot.
  */
 
+import { isMaintenanceFrozen } from './freezeState.js';
+
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   MaintenanceBreak,
+  type MaintenanceBreakDeps,
   type MaintenanceBreakStore,
   type PersistedMaintenanceBreak,
 } from './MaintenanceBreak.js';
@@ -99,7 +102,7 @@ class FakeStore implements MaintenanceBreakStore {
   }
 }
 
-function build(engineCount = 3) {
+function build(engineCount = 3, extra: Partial<MaintenanceBreakDeps> = {}) {
   const engines = new Map<string, FakeEngine>();
   for (let i = 0; i < engineCount; i++) engines.set(`t${i}`, new FakeEngine());
   const store = new FakeStore();
@@ -109,6 +112,7 @@ function build(engineCount = 3) {
     emit: () => {},
     store,
     recordOutcome: async () => {},
+    ...extra,
   });
   return { mb, engines, store };
 }
@@ -128,6 +132,67 @@ function build(engineCount = 3) {
  * invariant that no adopted break may ever exceed a break's length.
  */
 const AT = (iso: string): number => new Date(iso).getTime();
+
+describe('the clocks are ready when the advertised break ends', () => {
+  it('prepares the certified thaw before the hour but keeps every table frozen until it', async () => {
+    vi.setSystemTime(AT('2026-10-18T16:57:00Z'));
+    const end = AT('2026-10-18T17:00:00Z');
+    const thaw = vi.fn(async (request) => ({
+      ...request,
+      creditedThroughAt: end,
+      effectiveFrozenSeconds: 300,
+    }));
+    const onReleased = vi.fn(() => {
+      expect(isMaintenanceFrozen()).toBe(false);
+      for (const engine of engines.values()) expect(engine.paused).toBe(true);
+    });
+    const { mb, store, engines } = build(3, { thaw, onReleased });
+    store.row = {
+      phase: 'counting_down',
+      announcedAt: AT('2026-10-18T16:53:00Z'),
+      breakStartedAt: AT('2026-10-18T16:55:00Z'),
+      breakEndsAt: end,
+      reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-restart',
+    };
+    await mb.start();
+    await vi.advanceTimersByTimeAsync(90_001);
+    expect(thaw).toHaveBeenCalledTimes(1);
+    expect(thaw.mock.calls[0][0].frozenSeconds).toBe(300);
+    for (const engine of engines.values()) expect(engine.paused).toBe(true);
+    await vi.advanceTimersByTimeAsync(end - Date.now() - 1);
+    for (const engine of engines.values()) expect(engine.paused).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    for (const engine of engines.values()) expect(engine.paused).toBe(false);
+    expect(onReleased).toHaveBeenCalledTimes(1);
+    expect(onReleased).toHaveBeenCalledWith(AT('2026-10-18T16:55:00Z'));
+    mb.stop();
+  });
+
+  it('refuses a certificate that would shorten the five-minute freeze', async () => {
+    vi.setSystemTime(AT('2026-10-18T16:57:00Z'));
+    const end = AT('2026-10-18T17:00:00Z');
+    const { mb, store, engines } = build(2, {
+      thaw: async (request) => ({
+        ...request,
+        creditedThroughAt: end - 1_000,
+        effectiveFrozenSeconds: 299,
+      }),
+    });
+    store.row = {
+      phase: 'counting_down',
+      announcedAt: AT('2026-10-18T16:53:00Z'),
+      breakStartedAt: AT('2026-10-18T16:55:00Z'),
+      breakEndsAt: end,
+      reason: 'Scheduled Engine Maintenance',
+      ownershipToken: 'owner-before-restart',
+    };
+    await mb.start();
+    await vi.advanceTimersByTimeAsync(180_000);
+    for (const engine of engines.values()) expect(engine.paused).toBe(true);
+    mb.stop();
+  });
+});
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());

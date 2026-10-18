@@ -340,3 +340,61 @@ describe('a level clock that runs through the maintenance freeze', () => {
     );
   });
 });
+
+describe('a booked first level belongs to actual maintenance release', () => {
+  it('holds the booked wake during a delayed thaw and starts a full level on release', async () => {
+    const { state, row } = fixture();
+    state.clearLifecycleTimeout(state.blindTimer);
+    state.blindTimer = null;
+    state.tournamentCache.started_at = '2026-09-10T12:03:00.000Z';
+    state.startBlindTimer(structure);
+    setMaintenanceFrozen(true);
+    await vi.advanceTimersByTimeAsync(3 * 60_000);
+    expect(state.blindTimer).toBeNull();
+    const oldAnchor = row.level_started_at;
+    state.startBookedLevelAfterMaintenance(Date.parse('2026-09-10T12:02:00Z'));
+    expect(row.level_started_at).toBe(oldAnchor);
+    setMaintenanceFrozen(false);
+    state.startBookedLevelAfterMaintenance(0); // replacement can retain only a release certificate
+    await Promise.resolve();
+    expect(state.blindTimerStartedAt).toBe(Date.parse('2026-09-10T12:04:00Z'));
+    expect(row.level_started_at).toBe('2026-09-10T12:04:00.000Z');
+    expect(state.currentLevel).toBe(0);
+  });
+  it('a replacement with no first-level anchor waits for the certificate-only release', async () => {
+    const { state, row } = fixture();
+    state.clearLifecycleTimeout(state.blindTimer);
+    state.blindTimer = null;
+    state.blindTimerStartedAt = 0;
+    state.tournamentCache.level_started_at = null;
+    state.tournamentCache.started_at = '2026-09-10T12:00:00Z';
+    row.level_started_at = null;
+    setMaintenanceFrozen(true);
+    state.startBlindTimer(structure);
+    expect(state.blindTimer).toBeNull();
+    await vi.advanceTimersByTimeAsync(55_000);
+    setMaintenanceFrozen(false);
+    state.startBookedLevelAfterMaintenance(0);
+    await Promise.resolve();
+    expect(row.level_started_at).toBe('2026-09-10T12:01:55.000Z');
+  });
+
+  it('does not reset a first level that was already playing before the freeze', () => {
+    const { state } = fixture();
+    state.tournamentCache.started_at = '2026-09-10T12:00:00Z';
+    const timer = state.blindTimer;
+    state.startBookedLevelAfterMaintenance(Date.parse('2026-09-10T12:02:00Z'));
+    expect(state.blindTimer).toBe(timer);
+  });
+  it('preserves an independent tournament pause and the future booked hold', () => {
+    const { state } = fixture();
+    state.tournamentCache.started_at = '2026-09-10T12:10:00Z';
+    const timer = state.blindTimer;
+    state.onBreak = true;
+    state.startBookedLevelAfterMaintenance(Date.parse('2026-09-10T12:00:00Z'));
+    expect(state.blindTimer).toBe(timer);
+    state.onBreak = false;
+    state.startBookedLevelAfterMaintenance(Date.parse('2026-09-10T12:00:00Z'));
+    expect(state.blindStartTimer).toBeTruthy();
+  });
+});

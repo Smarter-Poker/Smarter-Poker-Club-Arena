@@ -245,7 +245,6 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
 
     def test_a_degraded_engine_still_gets_its_window(self):
         for extra, maintenance, sign in [
-            ({}, {'breaksSinceRestartCertified': 1}, 'breaksSinceRestartCertified=1'),
             ({'liveness': 'dead'}, {}, 'liveness=dead'),
             ({'wholeFleetStalled': True}, {}, 'wholeFleetStalled'),
             ({'tournamentManagersQuarantined': 338}, {}, 'tournamentManagersQuarantined=338'),
@@ -256,6 +255,20 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
                 self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded',
                                           'REQUEST', 'UNLOCK'])
                 self.assertIn('reason: engine-degraded ' + sign, result.stdout)
+
+    def test_a_healthy_engine_with_missed_certificates_never_requests_an_extra_break(self):
+        # Reproduced 2026-10-18: healthy 6f8 reported one uncertified adopted
+        # break. Historical certification alone says nothing about live play.
+        for count in [1, 3, 100]:
+            with self.subTest(count=count):
+                result, events = invoke(health_extra={
+                    'liveness': 'ok', 'wholeFleetStalled': False,
+                    'tournamentManagersQuarantined': 0},
+                    maintenance_extra={'breaksSinceRestartCertified': count},
+                    calls=3, advance=120)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(events, [])
+                self.assertEqual(result.stdout, '')
 
     def test_healthy_signals_are_not_degradation(self):
         # 27 quarantined managers is what a normally dealing 209d1b45 carried on
@@ -315,7 +328,7 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
 
     def test_an_urgent_or_degraded_older_release_still_defers_to_the_newer_one(self):
         requests = [('901-1', NEWER, 'active', True)]
-        for options in ({'urgent': True}, {'maintenance_extra': {'breaksSinceRestartCertified': 3}}):
+        for options in ({'urgent': True}, {'health_extra': {'liveness': 'dead'}}):
             with self.subTest(options=options):
                 result, events = invoke(superseded=NEWER, requests=requests, **options)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -388,7 +401,7 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
                             {'stoppedCustodyStuckTables': True, 'breaksSinceRestartCertified': 1},
                             {'breaksSinceRestartCertified': 1}):
             with self.subTest(maintenance=maintenance):
-                result, events = invoke(maintenance_extra=maintenance)
+                result, events = invoke(health_extra={'liveness': 'dead'}, maintenance_extra=maintenance)
                 self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause engine-degraded',
                                           'REQUEST', 'UNLOCK'])
 

@@ -1,10 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { functionBody, latestDeclaring } from '../helpers/migrations';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 const migration = '20261018183243_report_reader_generic_plans_retain_bounded_bitmap_scans.sql';
 
 describe('qualified report execution settings', () => {
+  it('body source resolution ignores settings-only migrations', () => {
+    const source = latestDeclaring('ca_rake_snapshot');
+    expect(source.name).not.toBe(migration);
+    expect(functionBody(source.sql, 'ca_rake_snapshot')).toContain('breakdown_live');
+  });
   it('qualifies the exact migration and its replay refusal in the required native report path', () => {
     const runner = read('scripts/dev/test-statement-availability-postgres.sh');
     expect(runner).toContain(migration);

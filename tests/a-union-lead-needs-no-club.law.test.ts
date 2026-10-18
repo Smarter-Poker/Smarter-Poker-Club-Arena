@@ -1,4 +1,4 @@
-import { functionBody } from './helpers/migrations';
+import { functionBody, latestDeclaring } from './helpers/migrations';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -36,20 +36,11 @@ import { describe, expect, it } from 'vitest';
  */
 
 const ROOT = resolve(__dirname, '..');
-const MIGRATIONS = resolve(ROOT, 'supabase/migrations');
 const PANEL = resolve(ROOT, 'src/components/club/RakeSnapshotPanel.tsx');
 const APP = resolve(ROOT, 'src/App.tsx');
-const MIGRATION_SQL = readdirSync(MIGRATIONS)
-  .filter((file) => file.endsWith('.sql'))
-  .sort()
-  .map((file) => readFileSync(resolve(MIGRATIONS, file), 'utf8'));
-
 function latestDefining(fnName: string): string {
-  let found = '';
-  for (const sql of MIGRATION_SQL) {
-    if (sql.includes(`FUNCTION public.${fnName}(`)) found = sql;
-  }
-  return found;
+  // ALTER FUNCTION settings and grants do not declare a replacement body.
+  return latestDeclaring(fnName).sql;
 }
 
 function body(fnName: string): string {

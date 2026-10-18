@@ -2,11 +2,11 @@
 -- No balances, financial rows or hand facts are changed.
 BEGIN;
 SET LOCAL lock_timeout='2s';
-DROP TRIGGER member_record_profile ON public.profiles;
-CREATE TRIGGER member_record_profile AFTER UPDATE OF player_number,alias,username,display_name,first_name,last_name,full_name,arena_avatar_url,avatar_url,last_login,last_seen,is_online,status
+-- Replacement takes SHARE ROW EXCLUSIVE, allowing existing SELECT snapshots.
+-- DROP TRIGGER requires ACCESS EXCLUSIVE and was refused behind live readers.
+CREATE OR REPLACE TRIGGER member_record_profile AFTER UPDATE OF player_number,alias,username,display_name,first_name,last_name,full_name,arena_avatar_url,avatar_url,last_login,last_seen,is_online,status
 ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_row();
-DROP TRIGGER member_record_membership ON public.club_members;
-CREATE TRIGGER member_record_membership AFTER INSERT OR DELETE OR UPDATE OF user_id,club_id,role,agent_id,status,nickname,notes,display_name,joined_at
+CREATE OR REPLACE TRIGGER member_record_membership AFTER INSERT OR DELETE OR UPDATE OF user_id,club_id,role,agent_id,status,nickname,notes,display_name,joined_at
 ON public.club_members FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_row();
 -- A parent's player number is also displayed on its direct children's records.
 DO $patch$
@@ -66,13 +66,10 @@ BEGIN
  END LOOP;
  RETURN NULL;
 END $$;
-DROP TRIGGER member_record_transaction ON public.chip_transactions;
-CREATE TRIGGER member_record_transaction AFTER INSERT OR UPDATE OR DELETE ON public.chip_transactions
+CREATE OR REPLACE TRIGGER member_record_transaction AFTER INSERT OR UPDATE OR DELETE ON public.chip_transactions
 FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_transaction();
-DROP TRIGGER member_record_cash_fee ON public.ca_club_rake_daily_user;
-CREATE TRIGGER member_record_cash_fee AFTER INSERT OR UPDATE OR DELETE ON public.ca_club_rake_daily_user
+CREATE OR REPLACE TRIGGER member_record_cash_fee AFTER INSERT OR UPDATE OR DELETE ON public.ca_club_rake_daily_user
 FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_row();
-DROP TRIGGER member_record_tournament_fee ON public.ca_club_member_tournament_fee_daily;
-CREATE TRIGGER member_record_tournament_fee AFTER INSERT OR UPDATE OR DELETE ON public.ca_club_member_tournament_fee_daily
+CREATE OR REPLACE TRIGGER member_record_tournament_fee AFTER INSERT OR UPDATE OR DELETE ON public.ca_club_member_tournament_fee_daily
 FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_row();
 COMMIT;

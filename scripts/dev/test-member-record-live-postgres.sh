@@ -20,3 +20,8 @@ echo 'MEMBER_RECORD_POSTGRES PASS: regression, ranges, attribution, permissions,
 "${psql[@]}" -c 'CREATE DATABASE member_record_concurrency'
 "${psql[@]}" -d member_record_concurrency -f "$fixture/bootstrap.sql" -f "$fixture/readers.sql" -f "$fixture/before.sql" -f "$migration"
 python3 -B "$fixture/concurrency.py" "$pgbin/psql" "$work/socket" 57642 "$repo/supabase/migrations/20261018140249_activate_funded_member_record_daily_facts_without_repeated_r.sql"
+
+# Existing long SELECT snapshots must not prevent the metadata-only installation.
+"${psql[@]}" -c 'CREATE DATABASE member_record_context_locks'
+"${psql[@]}" -d member_record_context_locks -f "$fixture/bootstrap.sql" -f "$fixture/readers.sql" -f "$fixture/before.sql" -f "$migration" -f "$repo/supabase/migrations/20261018140249_activate_funded_member_record_daily_facts_without_repeated_r.sql" -f "$fixture/global-before.sql"
+python3 -B "$fixture/trigger-locks.py" "$pgbin/psql" "$work/socket" 57642 "$repo/supabase/migrations/20261018195412_member_record_all_field_source_events.sql"

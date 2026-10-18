@@ -241,3 +241,12 @@ finally:
     if start_attempted and (data/'postmaster.pid').exists():
         run([pg/'pg_ctl', '-D', data, '-m', 'fast', '-w', 'stop'])
     shutil.rmtree(cluster)
+
+# The retained-club route is also used when a reserved fixture has immutable
+# cancellation evidence. Exercise its actual current core and membership key.
+if not args.original_only and not args.baseline:
+    subprocess.run(
+        ['python3', str(ROOT/'tests/sql/run-club-retirement-member-lock.py')],
+        env={**os.environ, 'PG_BIN': str(pg), 'TMPDIR': args.scratch},
+        check=True, timeout=120,
+    )

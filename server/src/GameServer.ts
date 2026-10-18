@@ -7789,6 +7789,10 @@ export class GameServer {
           (t) =>
             !isPersistedSeatFirst(t) &&
             (t.effective_max_players !== null ||
+              // A stale counter must not postpone the roster read that sets
+              // a large field's preparation budget. Read the next maintenance
+              // cycle independently of that hint; later bookings stay bounded.
+              Date.parse(String(t.start_time)) <= registeringReadAt + 60 * 60_000 ||
               scheduledPreparationAt(Date.parse(String(t.start_time)), t.current_players) <=
                 rosterHorizon)
         );

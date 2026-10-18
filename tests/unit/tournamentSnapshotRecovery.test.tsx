@@ -252,6 +252,28 @@ afterEach(() => {
 
 describe('Tournament details snapshot recovery', () => {
   it.each(['002c2d27-9584-4e52-835a-bb2be148fc81', 'regular-club'])(
+    'keeps the footer caption compact while preserving late-entry context for %s',
+    async (clubId) => {
+      fixture.getTournament.mockResolvedValue(
+        tournament('a', { club_id: clubId, format_contract: 'mtt-v2', late_reg_levels: 29 })
+      );
+      render(<Page />);
+      await flush();
+      const footer = within(document.querySelector('.details-footer') as HTMLElement);
+      const action = footer.getByRole('button', { name: /Late Register/ });
+      expect(action.textContent).toBe('Late Register');
+      expect(action.getAttribute('aria-label')).toMatch(/levels remaining/);
+      expect(action.className).toBe(footer.getByRole('button', { name: 'Share' }).className);
+      fireEvent.click(action);
+      expect(fixture.register).toHaveBeenCalledTimes(1);
+      expect(fixture.register).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'a', club_id: clubId, buy_in_amount: 10, buy_in_fee: 1 }),
+        expect.any(Function)
+      );
+    }
+  );
+
+  it.each(['002c2d27-9584-4e52-835a-bb2be148fc81', 'regular-club'])(
     'retires both late-entry actions when the clock closes before the levels for %s',
     async (clubId) => {
       const started = Date.parse('2026-10-18T18:00:00Z');

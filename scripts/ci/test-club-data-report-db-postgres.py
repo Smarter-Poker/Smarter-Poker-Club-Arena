@@ -134,6 +134,10 @@ try:
             and "later seat moved historical rake" in before.stderr,
             "the old calculator fails both dated funding regressions")
     run(psql("live"), (ROOT / "supabase/migrations/20261018134944_club_rake_history_follows_the_funding_at_the_hand.sql").read_text())
+    require(q("live", "SELECT NOT has_function_privilege('anon', 'public.fn_ca_club_rake_daily_compute(timestamptz,timestamptz,uuid[])', 'EXECUTE') "
+                      "AND NOT has_function_privilege('authenticated', 'public.fn_ca_club_rake_daily_compute(timestamptz,timestamptz,uuid[])', 'EXECUTE') "
+                      "AND has_function_privilege('service_role', 'public.fn_ca_club_rake_daily_compute(timestamptz,timestamptz,uuid[])', 'EXECUTE')") == "t",
+            "the history calculator preserves operator-only execution")
     after = run(psql("live"), history)
     require("HISTORY SCENARIO PASSED" in after.stderr + after.stdout,
             "historical receipts and seats, decimal contributions, witness precedence and conservation")

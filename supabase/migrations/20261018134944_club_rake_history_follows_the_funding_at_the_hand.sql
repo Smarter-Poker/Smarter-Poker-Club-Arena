@@ -116,4 +116,7 @@ AS $function$
    GROUP BY p.club_id, p.day;
 $function$;
 
+REVOKE ALL ON FUNCTION public.fn_ca_club_rake_daily_compute(timestamptz, timestamptz, uuid[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_club_rake_daily_compute(timestamptz, timestamptz, uuid[]) TO service_role;
+
 COMMIT;

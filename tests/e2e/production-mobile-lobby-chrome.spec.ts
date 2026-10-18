@@ -315,8 +315,11 @@ test.describe('the mobile lobby chrome on production', () => {
     const kind = await doors.getAttribute('data-footer-doors');
     const baseFrame =
       kind === 'member' ? 'club-arena-footer-player-v1.webp' : 'club-arena-footer-v3.webp';
-    const artwork = nav.locator(`img[src$="/${baseFrame}"]`).locator('..');
+    // The responsive picture's absolutely positioned image does not size its
+    // inline parent. Measure the artwork wrapper that owns these exact doors.
+    const artwork = doors.locator('..');
     await expect(artwork).toHaveCount(1);
+    await expect(artwork.locator(`picture > img[src$="/${baseFrame}"]`)).toHaveCount(1);
     const frame = await artwork.boundingBox();
     expect(frame).not.toBeNull();
     expect(

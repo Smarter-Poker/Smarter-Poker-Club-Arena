@@ -36,6 +36,13 @@ const drill = read('server/scripts/engine-crash-drill.sh');
 const transaction = read('server/scripts/engine-release-transaction.sh');
 
 describe('the crash drill route', () => {
+  it('never restores retired workstation cutover instructions in its runbook', () => {
+    const runbook = read('docs/runbooks/maintenance-break-fire-drill.md');
+    expect(runbook).not.toContain('/root/cutover.sh');
+    expect(runbook).not.toContain('systemctl stop');
+    expect(runbook).toContain('owning transaction');
+  });
+
   it('runs only as the named default-branch repository event', () => {
     expect(workflow).toMatch(
       /^on:\n {2}repository_dispatch:\n {4}types: \[drill-club-arena-engine\]\n/m

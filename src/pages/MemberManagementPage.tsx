@@ -290,12 +290,7 @@ export default function MemberManagementPage() {
     enabled: !!resolvedClubId && !!user?.id,
     onPayload: (value) => {
       if (value?.new) walletUpdates.membership(value.new);
-      if (
-        value?.eventType !== 'UPDATE' ||
-        value?.new?.agent_id !== value?.old?.agent_id ||
-        value?.new?.role !== value?.old?.role ||
-        value?.new?.status !== value?.old?.status
-      )
+      if (value?.eventType !== 'UPDATE' || value?.new?.user_id === user?.id)
         recordRefreshRef.current();
     },
     onSubscriptionStatus: (status) => {

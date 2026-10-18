@@ -48,7 +48,7 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
   it.each([
     'scripts/ci/test-data-console-postgres-contracts.sh',
     'scripts/dev/test-member-record-live-postgres.sh',
-    'tests/fixtures/member-record-live/readers.sql',
+    'tests/fixtures/stats-club-scope/member-record-live/readers.sql',
     'scripts/dev/test-financial-admin-revenue-postgres.sh',
     'scripts/dev/test-union-ops-financial-admin-postgres.sh',
     'scripts/dev/test-stats-club-scope-postgres.sh',

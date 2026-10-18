@@ -43,3 +43,14 @@ END $$;
 TRUNCATE signals;
 UPDATE ca_hand_facts SET net=net;
 DO $$ BEGIN IF EXISTS(SELECT 1 FROM signals) THEN RAISE EXCEPTION 'Unchanged facts emitted signals'; END IF; END $$;
+
+SELECT set_config('test.cutoff',(now()+interval '1 hour')::text,false);
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM ca_member_record_daily_facts('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',NULL,NULL)) THEN RAISE EXCEPTION 'Pre-reset generation leaked'; END IF;
+END $$;
+INSERT INTO ca_hand_facts(hand_id,user_id,club_id,table_id,played_at,game_variant,net,rake_paid)
+VALUES('00000000-0000-0000-0000-000000000040','00000000-0000-0000-0000-000000000002',
+'00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000004',now()+interval '2 hours','nlh',5,1);
+DO $$ BEGIN
+ IF (SELECT sum(hands) FROM ca_member_record_daily_facts('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000002',NULL,NULL))<>1 THEN RAISE EXCEPTION 'New reset generation missing'; END IF;
+END $$;

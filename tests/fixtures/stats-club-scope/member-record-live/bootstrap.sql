@@ -22,7 +22,7 @@ CREATE INDEX ON ca_hand_facts(user_id,played_at);
 CREATE TABLE rake_attributions(hand_id uuid,player_id uuid,club_id uuid,PRIMARY KEY(hand_id,player_id));
 CREATE TABLE cash_participant_funding_receipts(id uuid,operation_kind text,table_id uuid,account_entity_id uuid,funding_club_id uuid,seat_joined_at timestamptz,recorded_at timestamptz);
 CREATE TABLE tournament_players(tournament_id uuid,user_id uuid,club_id uuid);
-CREATE FUNCTION fn_ca_launch_accounting_accepts(uuid,timestamptz) RETURNS boolean LANGUAGE sql AS $$ SELECT true $$;
+CREATE FUNCTION fn_ca_launch_accounting_accepts(uuid,timestamptz) RETURNS boolean LANGUAGE sql AS $$ SELECT nullif(current_setting('test.cutoff',true),'') IS NULL OR $2>=nullif(current_setting('test.cutoff',true),'')::timestamptz $$;
 CREATE FUNCTION fn_club_scope_ids(uuid) RETURNS uuid[] LANGUAGE sql AS $$ SELECT ARRAY[$1] $$;
 CREATE FUNCTION ca_club_roster_access(uuid,uuid) RETURNS text LANGUAGE sql AS $$ SELECT coalesce(nullif(current_setting('test.access',true),''),'staff') $$;
 CREATE FUNCTION fn_club_role_rank(text) RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;
@@ -33,4 +33,4 @@ CREATE FUNCTION ca_club_member_tournament_money(uuid,uuid,timestamptz,timestampt
 CREATE TABLE ca_club_rake_daily_user(user_id uuid,club_id uuid);
 CREATE TABLE ca_club_member_tournament_fee_daily(user_id uuid,club_id uuid);
 
-CREATE FUNCTION fn_ca_launch_accounting_cutoff(text,uuid) RETURNS timestamptz LANGUAGE sql AS $$ SELECT NULL::timestamptz $$;
+CREATE FUNCTION fn_ca_launch_accounting_cutoff(text,uuid) RETURNS timestamptz LANGUAGE sql AS $$ SELECT nullif(current_setting('test.cutoff',true),'')::timestamptz $$;

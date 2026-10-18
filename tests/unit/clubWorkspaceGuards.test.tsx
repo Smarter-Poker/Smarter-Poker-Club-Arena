@@ -6,6 +6,59 @@ import ClubMemberGuard from '../../src/components/auth/ClubMemberGuard';
 import type { ClubWorkspaceValue } from '../../src/contexts/ClubWorkspaceContext';
 
 let workspace: ClubWorkspaceValue;
+
+describe('Club Data and Report have distinct scopes', () => {
+  it.each(['agent', 'super_agent'])('%s can open the scoped Data screen', (role) => {
+    workspace = makeWorkspace({
+      clubRole: role,
+      isClubStaff: true,
+      canViewFinance: false,
+      canControlClub: false,
+    });
+    render(
+      <MemoryRouter initialEntries={['/clubs/club-1/data']}>
+        <ClubCapabilityGuard>
+          <div>Scoped Data</div>
+        </ClubCapabilityGuard>
+      </MemoryRouter>
+    );
+    expect(screen.getByText('Scoped Data')).toBeInTheDocument();
+  });
+  it.each(['agent', 'super_agent', 'player'])('%s cannot open the whole-club Report', (role) => {
+    workspace = makeWorkspace({
+      clubRole: role,
+      isClubStaff: role !== 'player',
+      canViewFinance: role === 'super_agent',
+      canControlClub: false,
+    });
+    render(
+      <MemoryRouter initialEntries={['/clubs/club-1/data/advanced']}>
+        <ClubCapabilityGuard>
+          <div>Whole Club Report</div>
+        </ClubCapabilityGuard>
+      </MemoryRouter>
+    );
+    expect(screen.queryByText('Whole Club Report')).toBeNull();
+    expect(screen.getByText(/This Tool Is Restricted/i)).toBeInTheDocument();
+  });
+  it('keeps the simple Data screen closed to players', () => {
+    workspace = makeWorkspace({
+      clubRole: 'player',
+      isClubStaff: false,
+      canViewFinance: false,
+      canControlClub: false,
+    });
+    render(
+      <MemoryRouter initialEntries={['/clubs/club-1/data']}>
+        <ClubCapabilityGuard>
+          <div>Scoped Data</div>
+        </ClubCapabilityGuard>
+      </MemoryRouter>
+    );
+    expect(screen.queryByText('Scoped Data')).toBeNull();
+    expect(screen.getByText(/This Tool Is Restricted/i)).toBeInTheDocument();
+  });
+});
 const arenaMocks = vi.hoisted(() => ({ access: vi.fn() }));
 vi.mock('../../src/services/ArenaContextService', () => ({ getArenaContext: arenaMocks.access }));
 vi.mock('../../src/lib/supabase', () => ({

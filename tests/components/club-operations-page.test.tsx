@@ -338,7 +338,7 @@ describe('the workspace is still permission aware', () => {
        agent advertised a page on which every panel refuses. */
     expect(screen.queryByText('Anti-Cheat')).toBeNull();
     expect(screen.queryByText('Settings')).toBeNull();
-    expect(screen.queryByText('Club Data')).toBeNull();
+    expect(screen.getByText('Club Data')).toBeTruthy();
     expect(screen.queryByText('Blacklist')).toBeNull();
   });
 });

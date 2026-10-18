@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
     userId: '11111111-1111-4111-8111-111111111111',
   } as Record<string, string>,
   viewerId: 'viewer-1',
+  viewerRole: 'owner',
   navigate: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   getMemberDetail: vi.fn(),
@@ -75,7 +76,7 @@ vi.mock('../../src/lib/supabase', () => ({
         maybeSingle: async () =>
           table === 'club_diamond_wallets'
             ? state.wallet()
-            : { data: { role: 'owner' }, error: null },
+            : { data: { role: state.viewerRole }, error: null },
       });
       return chain;
     },
@@ -194,6 +195,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 beforeEach(() => {
+  state.viewerRole = 'owner';
   state.memberChannel = null;
   state.walletChannel = null;
   state.wallet.mockResolvedValue({ data: { balance: 100 }, error: null });
@@ -553,4 +555,19 @@ it('coalesces source bursts and reads again after an event arrives during a read
   await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBe(before + 1));
   await act(async () => pending.resolve(memberDetail));
   await waitFor(() => expect(state.getMemberDetail.mock.calls.length).toBe(before + 2));
+});
+
+it('refreshes role options when the viewer authority changes on the mounted record', async () => {
+  state.getMemberDetail.mockResolvedValue({
+    ...memberDetail,
+    capabilities: { ...memberDetail.capabilities, can_manage_role: true },
+  });
+  state.getGrantableRoles.mockResolvedValue(['admin']);
+  render(<MemberManagementPage />);
+  await screen.findByRole('button', { name: /^Admin/ });
+  state.viewerRole = 'agent';
+  state.getGrantableRoles.mockResolvedValue(['sub_agent']);
+  await act(async () => state.recordChannel?.onPayload({}));
+  expect(await screen.findByRole('button', { name: /^Sub Agent/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^Admin/ })).not.toBeInTheDocument();
 });

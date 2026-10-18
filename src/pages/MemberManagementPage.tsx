@@ -157,6 +157,7 @@ export default function MemberManagementPage() {
   // "The Member Ledger Did Not Respond", which reads as an outage.
   const [notFound, setNotFound] = useState(false);
   const [myRole, setMyRole] = useState<ClubRole>('player');
+  const [myRoleLoaded, setMyRoleLoaded] = useState(false);
   const detailAbortRef = useRef<AbortController | null>(null);
   const [downlineShown, setDownlineShown] = useState(DOWNLINE_RENDER_CAP);
 
@@ -346,6 +347,7 @@ export default function MemberManagementPage() {
     setDetail(null);
     setDownline([]);
     setMyRole('player');
+    setMyRoleLoaded(false);
     setResolvedClubId(null);
     setNotFound(false);
   }, [clubId, userId, user?.id]);
@@ -443,7 +445,10 @@ export default function MemberManagementPage() {
             },
             { attempts: 1, timeoutMs: 8_000, signal: controller.signal }
           );
-          if (live()) setMyRole(normaliseRole(mine?.role));
+          if (live()) {
+            setMyRole(normaliseRole(mine?.role));
+            setMyRoleLoaded(true);
+          }
         }
       } catch (error) {
         if (live()) {
@@ -958,7 +963,7 @@ export default function MemberManagementPage() {
 
         {/* ── Role ─────────────────────────────────────────────────────────── */}
 
-        {detail!.capabilities.can_manage_role && identity!.home_club_id && (
+        {detail!.capabilities.can_manage_role && myRoleLoaded && identity!.home_club_id && (
           <RoleSection
             key={`roles:${identity!.home_club_id}:${identity!.user_id!}`}
             resolvedClubId={identity!.home_club_id}
@@ -1411,7 +1416,7 @@ function RoleSection({
     };
     // targetRole is a dependency because the answer changes once the role does:
     // after promoting a player to agent, "agent" must stop being on offer.
-  }, [resolvedClubId, targetUserId, targetRole, rolesLoadAttempt]);
+  }, [resolvedClubId, targetUserId, targetRole, myRole, rolesLoadAttempt]);
 
   const canManage = promotableRoles.length > 0 && targetRole !== 'owner';
 

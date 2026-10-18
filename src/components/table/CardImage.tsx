@@ -130,7 +130,7 @@ const RANK_MAP: Record<string, string> = {
  * and lower rank), so anything reaching this branch is genuinely unreadable
  * rather than just an unusual spelling.
  */
-export function getCardImagePath(card: Card, deckStyle: DeckStyle = '2color'): string | null {
+export function getCardImagePath(card: Card, deckStyle: DeckStyle = '4color'): string | null {
   const suitName = SUIT_MAP[card.suit];
   const rankName = RANK_MAP[card.rank];
 
@@ -333,7 +333,12 @@ export function CardImage({
             background: '#fff',
             borderRadius: 'inherit',
             fontWeight: 800,
-            color: SUIT_COLOR[card.suit] || '#000',
+            color:
+              effectiveDeckStyle === '2color'
+                ? SUIT_MAP[card.suit] === 'hearts' || SUIT_MAP[card.suit] === 'diamonds'
+                  ? SUIT_COLOR.h
+                  : SUIT_COLOR.s
+                : SUIT_COLOR[card.suit] || '#000',
           }}
         >
           <span style={{ fontSize: '0.7em', lineHeight: 1 }}>{card.rank}</span>

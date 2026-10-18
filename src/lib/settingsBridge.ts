@@ -73,7 +73,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 
   theme: PROFILE_PREFERENCE_DEFAULTS.theme,
   cardBack: 'classic_blue',
-  fourColorDeck: false,
+  fourColorDeck: true,
   animationSpeed: 'normal',
   showPotOdds: false,
   showTicker: true,

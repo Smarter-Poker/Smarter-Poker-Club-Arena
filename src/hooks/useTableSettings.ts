@@ -29,6 +29,8 @@ export interface TableUserSettings {
   animationSpeed: number; // 0.5, 1, 1.5, 2
   theme: string; // 'green', 'blue', 'red', 'purple', etc.
   fourColorDeck: boolean;
+  /** Distinguishes a deliberate local opt-out from the old persisted default. */
+  fourColorDeckExplicit?: boolean;
   showHUD: boolean;
   showPotOdds: boolean;
   showBetSizePresets: boolean;
@@ -73,7 +75,8 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   isHapticEnabled: true,
   animationSpeed: 1,
   theme: 'black',
-  fourColorDeck: false,
+  fourColorDeck: true,
+  fourColorDeckExplicit: false,
   showHUD: true,
   showPotOdds: false,
   showBetSizePresets: true,
@@ -336,6 +339,7 @@ function loadFromStorage(): TableUserSettings {
       // that is not a felt palette is not a preference this setting can hold;
       // FELT_THEMES above records what was found live and what it did.
       merged.theme = coerceFeltTheme(merged.theme);
+      if (merged.fourColorDeckExplicit !== true) merged.fourColorDeck = true;
       return merged;
     }
     return DEFAULT_SETTINGS;
@@ -443,7 +447,7 @@ function reconcileWithGates(loaded: TableUserSettings): TableUserSettings {
   return Object.keys(patch).length === 0 ? loaded : { ...loaded, ...patch };
 }
 
-function getSnapshot(): TableUserSettings {
+export function getSnapshot(): TableUserSettings {
   if (sharedSettings === null) {
     sharedSettings = reconcileWithGates(loadFromStorage());
     applySideEffects(sharedSettings);
@@ -505,7 +509,8 @@ function commit(update: (prev: TableUserSettings) => TableUserSettings): void {
   for (const listener of listeners) listener();
 }
 
-function subscribeToStore(listener: () => void): () => void {
+export function subscribeToStore(listener: () => void): () => void {
+  attachBusOnce();
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -528,9 +533,29 @@ const originIdRef = { current: `ts-${Math.random().toString(36).slice(2)}` };
  * handlers that each mutated their own copy. Now it wakes the single store.
  */
 let busAttached = false;
+let deckStorageListener: ((event: StorageEvent) => void) | null = null;
 function attachBusOnce(): void {
   if (busAttached) return;
   busAttached = true;
+  // Retain the storage-event fallback when BroadcastChannel is unavailable.
+  // Apply it at the owner, so explicit table props and implicit cards agree.
+  deckStorageListener = (event) => {
+    if (event.key !== null && event.key !== STORAGE_KEY) return;
+    const userId = useUserStore.getState().user?.id ?? null;
+    if (localSettingsOwner() !== userId) return;
+    const stored = loadFromStorage();
+    commit((prev) =>
+      prev.fourColorDeck === stored.fourColorDeck &&
+      prev.fourColorDeckExplicit === stored.fourColorDeckExplicit
+        ? prev
+        : {
+            ...prev,
+            fourColorDeck: stored.fourColorDeck,
+            fourColorDeckExplicit: stored.fourColorDeckExplicit,
+          }
+    );
+  };
+  if (typeof window !== 'undefined') window.addEventListener('storage', deckStorageListener);
   masterBus.subscribe('SETTINGS_CHANGED', (event) => {
     // Skip only OUR OWN echo (prevent a redundant commit).
     if (event.payload?.origin === originIdRef.current) return;
@@ -555,6 +580,7 @@ function attachBusOnce(): void {
         // deliberate as local ones — mark them explicit too, or the other
         // tab's loader would lift the user's own choice back to true.
         ...(setting === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+        ...(setting === 'fourColorDeck' ? { fourColorDeckExplicit: true } : {}),
       }));
     }
   });
@@ -750,6 +776,14 @@ async function hydrateFromServer(userId: string): Promise<void> {
     Array.isArray(row?.[TOUCHED_COLUMN]) ? (row[TOUCHED_COLUMN] as string[]) : []
   );
 
+  // An explicit browser opt-out belongs to its recorded account. A different
+  // account with no chosen deck gets the standard, not that person's OFF.
+  if (!mayAdoptLocal && !touched.has('four_color_deck') && !locallyTouched.has('fourColorDeck')) {
+    merged.fourColorDeck = DEFAULT_SETTINGS.fourColorDeck;
+    merged.fourColorDeckExplicit = false;
+    changed = true;
+  }
+
   for (const [key, column] of Object.entries(COLUMN_FOR_KEY) as Array<
     [keyof TableUserSettings, string]
   >) {
@@ -764,6 +798,10 @@ async function hydrateFromServer(userId: string): Promise<void> {
     if (touched.has(column)) {
       // PostgREST returns `numeric` as a string; see coerceToDefaultType.
       const adopted = coerceToDefaultType(key, serverValue);
+      if (key === 'fourColorDeck') {
+        merged.fourColorDeckExplicit = true;
+        changed = true;
+      }
       if (merged[key] !== adopted) {
         (merged as unknown as Record<string, unknown>)[key] = adopted;
         changed = true;
@@ -801,6 +839,9 @@ export function __resetTableSettingsStoreForTest(): void {
   hydratedUserId = null;
   locallyTouched.clear();
   busAttached = false;
+  if (deckStorageListener && typeof window !== 'undefined')
+    window.removeEventListener('storage', deckStorageListener);
+  deckStorageListener = null;
 }
 
 /**
@@ -838,6 +879,7 @@ export function setTableSetting<K extends keyof TableUserSettings>(
     // SHOWDOWN AUDIT 2026-08-25: a personal autoMuck toggle is the ONLY
     // thing that makes a stored false authoritative — see the loader.
     ...(key === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+    ...(key === 'fourColorDeck' ? { fourColorDeckExplicit: true } : {}),
   }));
   // Broadcast for cross-TAB sync. Within this tab the shared store above
   // has already updated every consumer, so a dropped message costs nothing.

@@ -141,6 +141,27 @@ try:
     after = run(psql("live"), history)
     require("HISTORY SCENARIO PASSED" in after.stderr + after.stdout,
             "historical receipts and seats, decimal contributions, witness precedence and conservation")
+    precision = (ROOT / "tests/fixtures/club-data-report-db/precision-scenario.sql").read_text()
+    before = run(psql("live"), precision, expect_fail="Precision regression:")
+    require("200.0000" in before.stderr and "200.009800" in before.stderr,
+            "old per-table rounding reproduces a one-cent headline difference")
+    q("live", "CREATE TABLE precision_facts_before AS SELECT md5(string_agg(to_jsonb(f)::text,',' ORDER BY club_id,stat_date,game_id,user_id)) hash FROM ca_club_data_fact f; "
+              "CREATE TABLE precision_fields_before AS SELECT md5(string_agg((to_jsonb(d)-'rake')::text,',' ORDER BY club_id,stat_date,table_id)) hash FROM club_table_daily d;")
+    precision_patch = (ROOT / "supabase/migrations/20261018210833_reporting_rake_retains_precision_until_the_final_total.sql").read_text()
+    run(psql("live"), "SET ROLE authenticated;\n" + precision_patch, expect_fail="ERROR")
+    run(psql("live"), precision_patch)
+    require(q("live", "SELECT round(sum(rake),2) FROM club_table_daily WHERE club_id='a0000000-0000-0000-0000-000000000099' AND stat_date=(now() AT TIME ZONE 'UTC')::date-1") == "200.01",
+            "installation corrects already-rounded derived history before another producer call")
+    require(q("live", "SELECT hash=(SELECT md5(string_agg(to_jsonb(f)::text,',' ORDER BY club_id,stat_date,game_id,user_id)) FROM ca_club_data_fact f) FROM precision_facts_before") == "t",
+            "precision correction preserves every ledger fact")
+    require(q("live", "SELECT hash=(SELECT md5(string_agg((to_jsonb(d)-'rake')::text,',' ORDER BY club_id,stat_date,table_id)) FROM club_table_daily d) FROM precision_fields_before") == "t",
+            "precision correction changes no other report field or live-day state")
+    after = run(psql("live"), precision)
+    require("PRECISION SCENARIO PASSED" in after.stderr, "the original producer retains exact contribution shares on repeated calls")
+    require(q("live", "SELECT NOT has_function_privilege('anon',oid,'EXECUTE') AND NOT has_function_privilege('authenticated',oid,'EXECUTE') AND has_function_privilege('service_role',oid,'EXECUTE') AND prosecdef AND proowner='postgres'::regrole AND proconfig=ARRAY['search_path=public'] AND md5(prosrc)='9b54cb00d59fa616522f049b67237def' FROM pg_proc WHERE oid='public.fn_ca_reporting_rollups_from_facts(date)'::regprocedure") == "t",
+            "precision producer retains its exact private authority and execution settings")
+    run(psql("live"), precision_patch, expect_fail="Reporting precision producer changed or already installed")
+    require(True,"precision migration replay is refused before a recount")
     print("PASS: the Club Data Report reads what the club played", flush=True)
 finally:
     if started:

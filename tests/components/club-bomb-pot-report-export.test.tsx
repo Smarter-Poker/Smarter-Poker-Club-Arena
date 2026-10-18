@@ -98,6 +98,30 @@ describe('ClubBombPotReportPage export refusal', () => {
     });
   });
 
+  it('keeps historical availability visible and carries it into each CSV record', async () => {
+    render(<ClubBombPotReportPage />);
+    const basis = screen.getByLabelText('Data Coverage');
+    expect(basis).toHaveTextContent('Older Unsaved Activity May Be Unavailable');
+    const exportButton = screen.getByRole('button', { name: 'Export CSV' });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    fireEvent.click(exportButton);
+    await waitFor(() => expect(state.downloadCsv).toHaveBeenCalledOnce());
+    const csv = String(state.downloadCsv.mock.calls[0]?.[1]);
+    expect(csv.split('\n')[0]).toMatch(/,data_basis$/);
+    expect(csv.split('\n')[1]).toContain(basis.textContent);
+  });
+
+  it('does not describe absent retained records as proof that no activity occurred', async () => {
+    state.rpc.mockResolvedValueOnce({ data: { ...bombReport(), rows: [] }, error: null });
+    render(<ClubBombPotReportPage />);
+    expect(
+      await screen.findByText('No Recorded Bomb Pots At This Club In The Last 30 Days.')
+    ).toBeVisible();
+    expect(screen.getByLabelText('Data Coverage')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+    expect(screen.queryByText(/No Bomb Pots Ran/)).toBeNull();
+  });
+
   it('tells the player when the browser refuses the CSV download', async () => {
     render(<ClubBombPotReportPage />);
 

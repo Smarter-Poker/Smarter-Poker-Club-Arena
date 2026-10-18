@@ -65,6 +65,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const BOMB_POT_REPORT_CONTRACT = 'fn_club_bomb_pot_report.v2';
+const BOMB_POT_DATA_BASIS =
+  'Totals Cover Saved Reports And Retained Hands. Older Unsaved Activity May Be Unavailable.';
 const UUID_TOKEN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function reportText(value: unknown, label: string, nullable = false): string | null {
@@ -362,7 +364,7 @@ export default function ClubBombPotReportPage() {
     const exportScope = scopeKey;
     const isCurrent = () => isMounted.current && activeScopeRef.current === exportScope;
     const header =
-      'table,trigger,boards,variant,hands,avg_players,avg_pot,total_pot,total_rake,total_antes,scoops,splits,unrecorded';
+      'table,trigger,boards,variant,hands,avg_players,avg_pot,total_pot,total_rake,total_antes,scoops,splits,unrecorded,data_basis';
     const body = rows.map((d) =>
       [
         d.table_name ?? 'Table Name Unavailable',
@@ -378,6 +380,7 @@ export default function ClubBombPotReportPage() {
         d.scoops,
         d.splits,
         d.unrecorded_hands,
+        BOMB_POT_DATA_BASIS,
       ]
         .map((v) => csvEscape(String(v)))
         .join(',')
@@ -492,6 +495,13 @@ export default function ClubBombPotReportPage() {
           ))}
         </div>
 
+        <p
+          className={`sc-copy sc-copy--center sc-ink--muted ${styles.notice}`}
+          aria-label="Data Coverage"
+        >
+          {BOMB_POT_DATA_BASIS}
+        </p>
+
         {loading && !rows ? (
           <p className={`sc-copy sc-copy--center ${styles.state}`} aria-busy="true">
             Loading Report...
@@ -509,8 +519,7 @@ export default function ClubBombPotReportPage() {
           </div>
         ) : !rows || rows.length === 0 ? (
           <p className={`sc-copy sc-copy--center ${styles.state}`}>
-            No Bomb Pots Ran At This Club In The Last {days} Days. Turn Them On From A Table
-            Settings Page To Start.
+            No Recorded Bomb Pots At This Club In The Last {days} Days.
           </p>
         ) : (
           <>

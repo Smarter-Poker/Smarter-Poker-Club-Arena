@@ -20,7 +20,11 @@ function newestDefinition(): { file: string; body: string } {
   for (const f of files) {
     const sql = readFileSync(join(DIR, f), 'utf8');
     const at = sql.search(new RegExp(`CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+public\\.${FN}\\s*\\(`, 'i'));
-    if (at >= 0) found = { file: f, body: sql.slice(at, at + 2000) };
+    if (at < 0) continue;
+    // The body runs to the function's own closing dollar-quote.
+    const open = sql.indexOf('$function$', at);
+    const close = open < 0 ? -1 : sql.indexOf('$function$', open + 1);
+    if (close > open) found = { file: f, body: sql.slice(at, close) };
   }
   if (!found) throw new Error(`${FN} is never defined`);
   return found;

@@ -134,6 +134,25 @@ describe('four colors are the standard and the cards follow the switch', () => {
     expect(panel.result.current.settings.fourColorDeck).toBe(true);
   });
 
+  it.each([null, { four_color_deck: true, settings_touched: [] }])(
+    "does not carry another account's local opt-out into a new account",
+    async (row) => {
+      account.user = { id: 'deck-test-user' };
+      account.row = row;
+      localStorage.setItem('ca_table_settings_owner', 'other-user');
+      localStorage.setItem(
+        STORAGE_KEYS.TABLE_SETTINGS,
+        JSON.stringify({ fourColorDeck: false, fourColorDeckExplicit: true })
+      );
+      const panel = renderHook(() => useTableSettings());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(panel.result.current.settings.fourColorDeck).toBe(true);
+      expect(panel.result.current.settings.fourColorDeckExplicit).toBe(false);
+    }
+  );
+
   it.each(['d', 'diamonds'] as const)(
     'keeps the chosen colors when both image formats fail for %s',
     (suit) => {

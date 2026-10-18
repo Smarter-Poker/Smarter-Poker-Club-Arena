@@ -11,3 +11,5 @@ Regression suite reproduced all five failures against the unchanged base, includ
 Real-time law: preference changes use the existing SETTINGS_CHANGED event and direct canonical store subscription; no gameplay snapshot diff or polling.
 
 The cross-tab storage fallback now also enters the canonical store, so a browser without BroadcastChannel updates both explicit table props and implicit cards. Account ownership prevents another account's cached choice from being adopted. Two additional regressions cover those cases.
+
+Account hydration also rejects a different account's local deck opt-out when the new account has no chosen deck. Both absent-row and default-row cases failed before the correction and pass afterward.

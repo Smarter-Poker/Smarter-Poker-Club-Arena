@@ -776,6 +776,14 @@ async function hydrateFromServer(userId: string): Promise<void> {
     Array.isArray(row?.[TOUCHED_COLUMN]) ? (row[TOUCHED_COLUMN] as string[]) : []
   );
 
+  // An explicit browser opt-out belongs to its recorded account. A different
+  // account with no chosen deck gets the standard, not that person's OFF.
+  if (!mayAdoptLocal && !touched.has('four_color_deck') && !locallyTouched.has('fourColorDeck')) {
+    merged.fourColorDeck = DEFAULT_SETTINGS.fourColorDeck;
+    merged.fourColorDeckExplicit = false;
+    changed = true;
+  }
+
   for (const [key, column] of Object.entries(COLUMN_FOR_KEY) as Array<
     [keyof TableUserSettings, string]
   >) {

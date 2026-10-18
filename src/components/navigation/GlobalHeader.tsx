@@ -393,6 +393,11 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
           />
         </picture>
 
+        {/* Shade only the existing frame pixels to match the footer's dark metal.
+            The controls and portrait render above this finish, unchanged. */}
+        <span className={`${styles.frameFinish} ${styles.outerFrameFinish}`} aria-hidden="true" />
+        <span className={`${styles.frameFinish} ${styles.leftFrameFinish}`} aria-hidden="true" />
+        <span className={`${styles.frameFinish} ${styles.rightFrameFinish}`} aria-hidden="true" />
         <div className={styles.headerControls}>
           <div className={styles.headerLeft}>
             <button

@@ -530,3 +530,96 @@
     top: 0;
   }
 }
+
+/* Owner 2026-10-18: the frame must match the darker footer. These stencils
+   shade the master's own metal, never the logo, icon faces or live portrait.
+   Keeping the original art below also preserves its alpha silhouette. */
+.frameFinish {
+  position: absolute;
+  top: env(safe-area-inset-top, 0px);
+  right: env(safe-area-inset-right, 0px);
+  left: env(safe-area-inset-left, 0px);
+  aspect-ratio: 1648 / 168;
+  pointer-events: none;
+  -webkit-backdrop-filter: brightness(0.45);
+  backdrop-filter: brightness(0.45);
+}
+.outerFrameFinish {
+  clip-path: polygon(
+    evenodd,
+    0 0,
+    100% 0,
+    100% 100%,
+    0 100%,
+    0 0,
+    1.46% 13.1%,
+    46% 13.1%,
+    46% 0,
+    58% 0,
+    58% 13.1%,
+    98.54% 13.1%,
+    98.54% 85.7%,
+    58% 85.7%,
+    58% 100%,
+    46% 100%,
+    46% 85.7%,
+    1.46% 85.7%,
+    1.46% 13.1%,
+    0 0
+  );
+}
+.leftFrameFinish {
+  clip-path: polygon(30.6% 13.1%, 32.4% 13.1%, 35.6% 85.7%, 33.6% 85.7%);
+}
+.rightFrameFinish {
+  clip-path: polygon(66.9% 13.1%, 68.3% 13.1%, 65% 85.7%, 63.4% 85.7%);
+}
+@media (max-width: 600px) {
+  .frameFinish {
+    aspect-ratio: 1435 / 168;
+  }
+  .outerFrameFinish {
+    clip-path: polygon(
+      evenodd,
+      0 0,
+      100% 0,
+      100% 100%,
+      0 100%,
+      0 0,
+      1.67% 13.1%,
+      46% 13.1%,
+      46% 0,
+      58% 0,
+      58% 13.1%,
+      98.33% 13.1%,
+      98.33% 85.7%,
+      58% 85.7%,
+      58% 100%,
+      46% 100%,
+      46% 85.7%,
+      1.67% 85.7%,
+      1.67% 13.1%,
+      0 0
+    );
+  }
+  .leftFrameFinish {
+    clip-path: polygon(33.87% 13.1%, 35.96% 13.1%, 39.16% 85.7%, 37.07% 85.7%);
+  }
+  .rightFrameFinish {
+    clip-path: polygon(64.1% 13.1%, 65.37% 13.1%, 61.6% 85.7%, 60.07% 85.7%);
+  }
+}
+@media (min-width: 901px) {
+  .frameFinish {
+    height: 96px;
+    aspect-ratio: auto;
+  }
+}
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .frameFinish {
+    top: max(env(safe-area-inset-top, 0px), 24px);
+  }
+}
+.header.inTab .frameFinish {
+  top: 0;
+}

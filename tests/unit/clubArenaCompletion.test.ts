@@ -43,6 +43,8 @@ describe('club workspace capability contract', () => {
     ['/clubs/club-1/agents', 'control'],
     ['/clubs/club-1/agent-dashboard', 'staff'],
     ['/clubs/club-1/finance', 'finance'],
+    ['/clubs/club-1/data', 'staff'],
+    ['/clubs/club-1/data/advanced', 'control'],
     ['/clubs/club-1/cashier', null],
     ['/clubs/club-1/insurance-report', 'finance'],
     ['/clubs/club-1/control', 'control'],

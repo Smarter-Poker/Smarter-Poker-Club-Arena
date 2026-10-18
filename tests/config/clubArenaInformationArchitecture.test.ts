@@ -253,7 +253,7 @@ describe('Club Arena information architecture', () => {
     const agentPaths = agentGroups.flatMap((group) => group.items.map((item) => item.path));
     expect(agentPaths).toContain('/clubs/shark-club/reports');
     expect(agentPaths).toContain('/clubs/shark-club/announcements');
-    expect(agentPaths).not.toContain('/clubs/shark-club/data');
+    expect(agentPaths).toContain('/clubs/shark-club/data');
     expect(agentPaths).not.toContain('/clubs/shark-club/settings');
   });
 

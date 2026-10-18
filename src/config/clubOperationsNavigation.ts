@@ -220,7 +220,8 @@ const DEFINITIONS: OperationDefinition[] = [
     description: 'Game Production, Player Results, And Union Invoices',
     suffix: 'data',
     group: 'finance',
-    access: 'finance',
+    // Agents read only their own downline; Postgres owns that scope.
+    access: 'staff',
     rail: true,
   },
   {
@@ -513,7 +514,6 @@ const OPERATION_SUFFIXES = new Set([
 
 const FINANCE_SUFFIXES = new Set([
   'finance',
-  'data',
   'financials',
   'settlement',
   'wheel-operations',
@@ -555,6 +555,9 @@ export function getRequiredClubOperationAccess(pathname: string): ClubOperationA
   const match = pathname.replace(/\/+$/, '').match(/^\/clubs\/[^/]+\/([^/]+)/);
   const suffix = match?.[1];
   if (!suffix || !OPERATION_SUFFIXES.has(suffix)) return null;
+  // The whole-club Report must never inherit the agent screen's permission.
+  if (suffix === 'data' && /^\/clubs\/[^/]+\/data\/advanced(?:\/|$)/.test(pathname))
+    return 'control';
   if (MEMBER_VISIBLE_SUFFIXES.has(suffix)) return null;
   if (CONTROL_SUFFIXES.has(suffix)) return 'control';
   if (FINANCE_SUFFIXES.has(suffix)) return 'finance';

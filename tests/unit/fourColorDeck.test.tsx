@@ -106,6 +106,20 @@ describe('four colors are the standard and the cards follow the switch', () => {
     expect(cards.container.querySelector('img')!.src).toContain('/4color/');
   });
 
+  it('hydrates a standalone card reader without a table or settings panel', async () => {
+    localStorage.setItem(
+      STORAGE_KEYS.TABLE_SETTINGS,
+      JSON.stringify({ fourColorDeck: false, fourColorDeckExplicit: true })
+    );
+    account.user = { id: 'deck-test-user' };
+    account.row = { four_color_deck: true, settings_touched: ['four_color_deck'] };
+    const cards = render(<CardImage card={{ rank: 'A', suit: 'd' }} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(cards.container.querySelector('img')!.src).toContain('/4color/');
+  });
+
   it('keeps table props and card readers together on a cross-tab storage fallback', () => {
     const panel = renderHook(() => useTableSettings());
     const reader = renderHook(() => useDeckStyle());

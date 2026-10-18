@@ -1,4 +1,4 @@
-import { functionBody } from './helpers/migrations';
+import { functionBody, latestDeclaring } from './helpers/migrations';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -36,40 +36,9 @@ import { describe, expect, it } from 'vitest';
 const MIGRATIONS = resolve(__dirname, '../supabase/migrations');
 const HELPERS = ['fn_ca_rake_by_agent', 'fn_ca_rake_by_club', 'fn_ca_rake_by_downline'];
 
-/**
- * 2026-09-04: memoised, and the whole tree read ONCE.
- *
- * This walked all 2,098 migration files (18 MB) for every call, and both
- * `latestDefining` and `body` call it - so a single `it.each` over three
- * helpers re-read the tree six times. It timed out at the 5-second default
- * under a full-suite run on 2026-09-04, which stops the publisher for
- * everyone (CLAUDE.md 5.8). Nothing about what is asserted changes; only how
- * many times the same bytes are read off disk.
- */
-const migrationSources = (() => {
-  let cache: string[] | null = null;
-  return (): string[] => {
-    if (!cache) {
-      cache = readdirSync(MIGRATIONS)
-        .filter((f) => f.endsWith('.sql'))
-        .sort()
-        .map((f) => readFileSync(resolve(MIGRATIONS, f), 'utf8'));
-    }
-    return cache;
-  };
-})();
-
-const definingCache = new Map<string, string>();
-
 function latestDefining(fnName: string): string {
-  const cached = definingCache.get(fnName);
-  if (cached !== undefined) return cached;
-  let found = '';
-  for (const sql of migrationSources()) {
-    if (sql.includes(`FUNCTION public.${fnName}(`)) found = sql;
-  }
-  definingCache.set(fnName, found);
-  return found;
+  // The shared cache reads once and excludes ALTER-only settings/grants.
+  return latestDeclaring(fnName).sql;
 }
 
 /** Just that function, not the file it lives in - these files hold several. */

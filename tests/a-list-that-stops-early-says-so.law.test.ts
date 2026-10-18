@@ -1,6 +1,6 @@
-import { functionBody } from './helpers/migrations';
+import { functionBody, latestDeclaring } from './helpers/migrations';
 import { describe, expect, it } from 'vitest';
-import { migrationCorpus, migrationsMentioning } from './helpers/migrationCorpus';
+import { migrationCorpus } from './helpers/migrationCorpus';
 
 /**
  * A LIST THAT STOPS EARLY SAYS SO (binding)
@@ -43,8 +43,7 @@ const HELPERS = ['fn_ca_rake_by_agent', 'fn_ca_rake_by_club', 'fn_ca_rake_by_dow
  * answer is identical, and the assertions below are untouched.
  */
 function latestDefining(fnName: string): string {
-  const defining = migrationsMentioning(`FUNCTION public.${fnName}(`);
-  return defining.length ? defining[defining.length - 1].sql : '';
+  return latestDeclaring(fnName).sql;
 }
 
 /**

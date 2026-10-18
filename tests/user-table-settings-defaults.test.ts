@@ -133,7 +133,7 @@ const TABLE_SETTINGS_COLUMN_DEFAULTS = {
   isHapticEnabled: true, // haptic_enabled
   animationSpeed: 1, // animation_speed
   theme: 'black', // color_theme
-  fourColorDeck: false, // four_color_deck
+  fourColorDeck: true, // four_color_deck
   showPotOdds: false, // show_pot_odds
   showBetSizePresets: true, // show_bet_size_presets
   showTicker: true, // show_ticker (pre-existing column)

@@ -29,6 +29,8 @@ export interface TableUserSettings {
   animationSpeed: number; // 0.5, 1, 1.5, 2
   theme: string; // 'green', 'blue', 'red', 'purple', etc.
   fourColorDeck: boolean;
+  /** Distinguishes a deliberate local opt-out from the old persisted default. */
+  fourColorDeckExplicit?: boolean;
   showHUD: boolean;
   showPotOdds: boolean;
   showBetSizePresets: boolean;
@@ -73,7 +75,8 @@ const DEFAULT_SETTINGS: TableUserSettings = {
   isHapticEnabled: true,
   animationSpeed: 1,
   theme: 'black',
-  fourColorDeck: false,
+  fourColorDeck: true,
+  fourColorDeckExplicit: false,
   showHUD: true,
   showPotOdds: false,
   showBetSizePresets: true,
@@ -336,6 +339,7 @@ function loadFromStorage(): TableUserSettings {
       // that is not a felt palette is not a preference this setting can hold;
       // FELT_THEMES above records what was found live and what it did.
       merged.theme = coerceFeltTheme(merged.theme);
+      if (merged.fourColorDeckExplicit !== true) merged.fourColorDeck = true;
       return merged;
     }
     return DEFAULT_SETTINGS;
@@ -443,7 +447,7 @@ function reconcileWithGates(loaded: TableUserSettings): TableUserSettings {
   return Object.keys(patch).length === 0 ? loaded : { ...loaded, ...patch };
 }
 
-function getSnapshot(): TableUserSettings {
+export function getSnapshot(): TableUserSettings {
   if (sharedSettings === null) {
     sharedSettings = reconcileWithGates(loadFromStorage());
     applySideEffects(sharedSettings);
@@ -505,7 +509,8 @@ function commit(update: (prev: TableUserSettings) => TableUserSettings): void {
   for (const listener of listeners) listener();
 }
 
-function subscribeToStore(listener: () => void): () => void {
+export function subscribeToStore(listener: () => void): () => void {
+  attachBusOnce();
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -555,6 +560,7 @@ function attachBusOnce(): void {
         // deliberate as local ones — mark them explicit too, or the other
         // tab's loader would lift the user's own choice back to true.
         ...(setting === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+        ...(setting === 'fourColorDeck' ? { fourColorDeckExplicit: true } : {}),
       }));
     }
   });
@@ -764,6 +770,10 @@ async function hydrateFromServer(userId: string): Promise<void> {
     if (touched.has(column)) {
       // PostgREST returns `numeric` as a string; see coerceToDefaultType.
       const adopted = coerceToDefaultType(key, serverValue);
+      if (key === 'fourColorDeck') {
+        merged.fourColorDeckExplicit = true;
+        changed = true;
+      }
       if (merged[key] !== adopted) {
         (merged as unknown as Record<string, unknown>)[key] = adopted;
         changed = true;
@@ -838,6 +848,7 @@ export function setTableSetting<K extends keyof TableUserSettings>(
     // SHOWDOWN AUDIT 2026-08-25: a personal autoMuck toggle is the ONLY
     // thing that makes a stored false authoritative — see the loader.
     ...(key === 'autoMuck' ? { autoMuckExplicit: true } : {}),
+    ...(key === 'fourColorDeck' ? { fourColorDeckExplicit: true } : {}),
   }));
   // Broadcast for cross-TAB sync. Within this tab the shared store above
   // has already updated every consumer, so a dropped message costs nothing.

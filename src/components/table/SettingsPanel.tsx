@@ -75,7 +75,7 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   hapticEnabled: true,
   showPotOdds: false,
   animationSpeed: 'normal',
-  fourColorDeck: false,
+  fourColorDeck: true,
   showStackInBB: false,
   showBetSizePresets: true,
   confirmAllIn: true,

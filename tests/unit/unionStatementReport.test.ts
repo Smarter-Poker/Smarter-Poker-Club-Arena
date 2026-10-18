@@ -24,6 +24,28 @@ const board = (clubs = [row()]) => ({
 });
 
 describe('recorded union statement report', () => {
+  it('retains invoice economics while legacy payment balances and pending counts remain unavailable', () => {
+    const report = mapUnionStatementReport(
+      'union-a',
+      board([
+        row({
+          status: 'paid',
+          payment_details_available: false,
+          paid_total: null,
+          outstanding: null,
+        }),
+      ]),
+      now
+    );
+    expect(report).toMatchObject({
+      totalRakeCollected: 1000,
+      netUnionRevenue: 100,
+      overdueAmount: null,
+      pendingSettlements: null,
+      clubBreakdowns: [{ status: 'unverified', outstanding: null }],
+    });
+  });
+
   it('uses historical snapshot amounts and never equates direction with payment', () => {
     const report = mapUnionStatementReport(
       'union-a',

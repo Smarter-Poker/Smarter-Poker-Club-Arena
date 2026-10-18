@@ -75,8 +75,12 @@ describe('the club commission outflows are measured without inventing a partitio
     expect(migration).toMatch(/FROM ca_club_rake_daily r/);
   });
 
-  it('prints each authoritative outflow without calling it a commission split', () => {
-    expect(CLUB_DASH).toMatch(/Agent Commissions Paid/);
+  it('prints accrued commissions and paid rakeback without inventing payment proof', () => {
+    expect(CLUB_DASH).toMatch(/Agent Commissions Accrued/);
+    expect(CLUB_DASH).not.toMatch(/Agent Commissions Paid/);
+    expect(
+      read('supabase/migrations/20260904220000_the_money_is_read_from_the_ledger.sql')
+    ).toContain('settled or not');
     expect(CLUB_DASH).toMatch(/Player Rakeback Paid/);
     expect(CLUB_DASH).not.toMatch(/Measured Commission Split|Commission Split|EMPTY_SPLIT/);
   });

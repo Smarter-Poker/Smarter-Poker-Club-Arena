@@ -1080,7 +1080,7 @@ export default function ClubDashboard() {
             },
             {
               title: 'Time Range',
-              body: 'Choose Today, This Week, This Month Or All Time For Top Players, Players, Revenue And Tournaments. The Metric Cards Always Read Today And This Week.',
+              body: 'Choose Today, This Week, This Month Or All Time For Hosted Table Players, Players, Revenue And Tournaments. The Metric Cards Always Read Today And This Week.',
               target: `.${styles.filterBar}`,
             },
           ]}
@@ -1299,7 +1299,12 @@ export default function ClubDashboard() {
                   gap: 8,
                 }}
               >
-                <h2 style={{ margin: 0 }}>Top Players</h2>
+                <h2
+                  style={{ margin: 0 }}
+                  title="Ranks Play At Tables Hosted By This Club. Shared Union Table Play Appears In Club Data And Player Records."
+                >
+                  Hosted Table Players
+                </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <select
                     value={sortBy}
@@ -1340,7 +1345,7 @@ export default function ClubDashboard() {
 
               <div className={styles.leaderboard}>
                 {rankedPlayers.length === 0 ? (
-                  <p className={styles.empty}>No Hands Played {titleCase(rangeLabel)}</p>
+                  <p className={styles.empty}>No Hosted Table Hands {titleCase(rangeLabel)}</p>
                 ) : (
                   rankedPlayers.slice(0, LEADERBOARD_VISIBLE).map((player) => (
                     <Link

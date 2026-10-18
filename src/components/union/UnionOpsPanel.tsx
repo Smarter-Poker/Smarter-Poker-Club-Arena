@@ -585,7 +585,9 @@ function SettlementConfirm({
 }) {
   const nothingOutstanding = preview.round1.already_executed && Number(preview.total_to_move) === 0;
   const dialogRef = useFocusTrap<HTMLDivElement>(true, '#union-settlement-context');
-  useEffect(() => {
+  // Escape must work as soon as the committed portal is observable, just like
+  // the scroll lock below. A passive effect leaves a first-keypress gap.
+  useLayoutEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onCancel();
     };

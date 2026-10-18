@@ -909,7 +909,7 @@ describe('useTableStudioCollections', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry Sync' }));
     await waitFor(() => expect(mocks.readCloud).toHaveBeenCalledTimes(2));
-    expect(screen.getByTestId('state')).toHaveTextContent('error');
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('error'));
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('favorites')).toHaveTextContent(
       'table:classic_green,cards:newer-authority'
@@ -926,14 +926,19 @@ describe('useTableStudioCollections', () => {
     mocks.rpc.mockResolvedValueOnce({ data: null, error: new Error('offline') });
     fireEvent.click(screen.getByRole('button', { name: 'Favorite' }));
     await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('error'));
-    mocks.readCloud.mockResolvedValueOnce({
-      data: { favorites: null, loadouts: [null, null, null], revision: 999 },
-      error: null,
-    });
+    const retryRead = deferred<{ data: unknown; error: null }>();
+    mocks.readCloud.mockReturnValueOnce(retryRead.promise);
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry Sync' }));
     await waitFor(() => expect(mocks.readCloud).toHaveBeenCalledTimes(2));
-    expect(screen.getByTestId('state')).toHaveTextContent('error');
+    expect(screen.getByTestId('state')).toHaveTextContent('loading');
+    await act(async () => {
+      retryRead.resolve({
+        data: { favorites: null, loadouts: [null, null, null], revision: 999 },
+        error: null,
+      });
+    });
+    await waitFor(() => expect(screen.getByTestId('state')).toHaveTextContent('error'));
     expect(mocks.rpc).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('favorites')).toHaveTextContent('table:classic_green,cards:known');
 

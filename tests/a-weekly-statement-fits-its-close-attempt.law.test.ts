@@ -217,3 +217,19 @@ describe('a weekly statement fits its close attempt', () => {
     );
   });
 });
+
+describe('indexed statement quality remains enforced', () => {
+  it('runs the complete indexed-quality native qualification in the existing required parent', () => {
+    const parent = readFileSync('scripts/ci/test_launch_reset_floor.py', 'utf8');
+    const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
+    expect(parent).toContain('test-weekly-statement-indexed-quality-postgres.py');
+    expect(workflow).toContain('python3 -B scripts/ci/test_launch_reset_floor.py');
+    const native = readFileSync(
+      'scripts/ci/test-weekly-statement-indexed-quality-postgres.py',
+      'utf8'
+    );
+    expect(native).toContain('authentic_positive_for_query_5000_all_fields_equal');
+    expect(native).toContain('installer_postcondition_failure_rolls_back_full_function');
+    expect(native).toContain('installer_real_competing_scheduler_lock_refused');
+  });
+});

@@ -351,3 +351,40 @@ test('Samantha uses her own prior-consent profile; no new consent is written', a
     assert.equal(report.status, 'unknown');
   }
 });
+
+function anchorReader(stack, patch = {}) {
+  return { from: (table) => {
+    const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data:
+      table === 'lightning_pool_session'
+        ? { id: ROOM, anchor_seat_id: HAND }
+        : { id: HAND, user_id: PLAYER, stack, left_at: null, is_sitting_out: false, leave_pending: false, ...patch }
+    }) };
+    return q;
+  } };
+}
+test('latency eligibility requires a positive live anchor without changing wallet/top-up eligibility', async () => {
+  const { validateLatencyPlayer } = await import('./lightning-pilot-latency-workload.mjs');
+  let baseChecks = 0;
+  await validateLatencyPlayer(anchorReader('0.01'), pin, async () => { baseChecks++; });
+  assert.equal(baseChecks, 1);
+  for (const [stack, patch] of [
+    ['0.00', {}], ['-1', {}], ['NaN', {}], ['Infinity', {}],
+    ['1.00', { left_at: '2026-10-18' }], ['1.00', { is_sitting_out: true }],
+    ['1.00', { leave_pending: true }], ['1.00', { user_id: ROOM }],
+  ]) await assert.rejects(validateLatencyPlayer(anchorReader(stack, patch), pin, async () => {}), /Playable Pilot Anchor Unavailable/);
+});
+test('zero-stack latency stops before opening a browser or creating a session', async () => {
+  const { validateLatencyPlayer } = await import('./lightning-pilot-latency-workload.mjs');
+  let sessions = 0;
+  const admin = anchorReader('0.00');
+  const result = await witnessLatencyWorkload({
+    admin, pin, url: 'https://supabase.invalid', timeoutMs: 30000,
+    validate: (a, p) => validateLatencyPlayer(a, p, async () => {}),
+    openSession: async () => { sessions++; throw Error('must not authenticate'); },
+  });
+  assert.equal(sessions, 0);
+  assert.equal(result.phase, 'preflight');
+  assert.equal(result.cause, 'player_anchor_not_playable');
+  assert.equal(result.cleanup, 'no_local_session_created');
+  assert.deepEqual(result.attempts, []);
+});

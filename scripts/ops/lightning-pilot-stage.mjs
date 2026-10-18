@@ -170,7 +170,9 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
   const signalId = Number(env.PILOT_SIGNAL_ID);
   if (
     stage === 'review' &&
-    (wanted.length !== 1 || !Number.isSafeInteger(signalId) || signalId < 1 || signalId > 8)
+    (wanted.length !== 1 ||
+      !Number.isSafeInteger(signalId) ||
+      !((signalId >= 1 && signalId <= 8) || signalId === 50))
   )
     throw new Error('Review Requires One Target And One Investigated Pilot Finding');
   const report = {
@@ -279,8 +281,23 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
         Number.isFinite(Date.parse(signal?.evidence?.latest_window_end)) &&
         Date.parse(signal.evidence.latest_window_end) <= Date.parse('2026-10-15T20:55:08.098Z') &&
         signal.evidence.correlation_method == null;
+      // Independently recomputed: the original 25 paired moments give .733988;
+      // all 28 retained paired moments give .202620. Preserve the original
+      // high finding and evidence. This records reviewed, never exonerated.
+      const madnessMeasured =
+        signalId === 50 &&
+        game.id === '681eb9e8-e9fd-4026-8ec6-64075b911d33' &&
+        signal?.player_a === '194e5206-bd4d-4ea5-ba2d-142c8bf8a258' &&
+        signal?.player_b === '4ffcc7ec-15a1-4c80-8309-e893ef9db022' &&
+        signal?.evidence?.latest_window_end === '2026-10-18T22:02:00+00:00' &&
+        signal.evidence.correlation_method === 'pooled_paired_hand_moments' &&
+        signal.evidence.correlation_hands === 25 &&
+        signal.evidence.latency_corr === 0.734 &&
+        signal.evidence.hands_together === 45 &&
+        signal.evidence.fast_follows === 1 &&
+        signal.evidence.windows === 44;
       if (
-        !(measured || legacy) ||
+        !(measured || madnessMeasured || legacy) ||
         detail?.ok !== true ||
         detail.cluster_id !== game.id ||
         matches.length !== 1 ||

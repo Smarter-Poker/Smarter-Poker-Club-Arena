@@ -149,6 +149,34 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
     vi.restoreAllMocks();
   });
 
+  it('excludes player-only members from Agent and Promo destinations, including search', async () => {
+    fixture.roster = [
+      {
+        user_id: 'p1',
+        role: 'player',
+        name: 'Player Casey',
+        player_number: '42',
+        chip_balance: 12,
+      },
+      { user_id: 'a1', role: 'agent', name: 'Agent Casey', player_number: '43', chip_balance: 20 },
+    ];
+    render(<WalletCashierModal {...base} walletType="club_bank" />);
+    await flush();
+    const search = screen.getByRole('textbox', { name: 'Search Recipients' });
+    expect(screen.queryByText('Player Casey')).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: 'Casey' } });
+    expect(screen.getByText('Agent Casey')).toBeInTheDocument();
+    expect(screen.queryByText('Player Casey')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Promo Wallet', exact: true }));
+    expect(screen.queryByText('Player Casey')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Player Wallet', exact: true }));
+    expect(screen.getByText('Player Casey')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Agent Wallet', exact: true }));
+    expect(screen.queryByText('Player Casey')).not.toBeInTheDocument();
+    expect(screen.queryByText(/The Float An Agent Carries/)).not.toBeInTheDocument();
+    expect(fixture.rpc.mock.calls.some(([name]) => /_send$/.test(name))).toBe(false);
+  });
+
   it('keeps the Club Bank ledger accessible beside the Send Out transfer form', async () => {
     fixture.roster = [
       {

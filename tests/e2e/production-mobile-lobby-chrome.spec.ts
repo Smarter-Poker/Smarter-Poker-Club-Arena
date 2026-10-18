@@ -265,6 +265,13 @@ test.describe('the mobile lobby chrome on production', () => {
     /* Scroll far enough that an unstuck row would leave the screen. */
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(600);
+    // Down-scroll intentionally tucks the filters away. Reveal them through
+    // the player's upward scroll before measuring their sticky alignment.
+    await page.evaluate(() => window.scrollBy(0, -64));
+    await expect(page.locator('.club-lobby-command-top')).toHaveAttribute(
+      'data-filters-hidden',
+      'false'
+    );
     const m = await page.evaluate(() => {
       const row = document.querySelector('.lobby-sortbar')!.getBoundingClientRect();
       const deck = document

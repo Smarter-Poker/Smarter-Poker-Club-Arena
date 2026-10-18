@@ -293,11 +293,19 @@ describe('Item 5 - the bounty badge is centered above the action box', () => {
     expect(actionTop - bountyTop).toBeGreaterThanOrEqual(30);
   });
 
-  it('has dimension rather than a flat fill', () => {
+  /* Superseded 2026-10-18. This used to pin the orange 3D pill ("has
+     dimension rather than a flat fill"). Dan, verbatim: "THE 'BOUNTY' SHOULD
+     NOT BE ORANGE, AND SHOULD JUST DISPLAY THE AMOUNT, IT SHOULDN'T HAVE A
+     CHIP NEXT TO IT. JUST THE NUMBER." The pin moves to the new look. */
+  it('is just the number: no pill, no orange, no chip glyph', () => {
     const start = css.indexOf('.seat__bounty {');
     const block = css.slice(start, css.indexOf('}', start));
-    expect(block).toMatch(/inset 0 1px 0/); // top highlight
-    expect(block).toMatch(/linear-gradient/);
+    expect(block).not.toMatch(/linear-gradient/);
+    expect(block).not.toMatch(/#f97316|#fbbf24|#dc2626|249,\s*115,\s*22/i);
+    expect(block).toMatch(/background:\s*none/);
+    expect(css).not.toContain('.seat__bounty-target');
+    const seat = read('src/components/table/SeatSlot.tsx');
+    expect(seat).not.toContain('seat__bounty-target');
   });
 });
 

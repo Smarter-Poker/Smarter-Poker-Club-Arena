@@ -224,6 +224,7 @@ import { useSeatedProfileSync, type SeatedProfileChange } from '../hooks/useSeat
 import { createSeatIdentityOverrides } from '../lib/seatIdentityOverrides';
 import { bettingStructureFor } from '../lib/bettingStructure';
 import {
+  heroAwaitsADecision,
   isPreActionHonorable,
   PRE_ACTION_EXEC_GRACE_MS,
   PRE_ACTION_GAP_BRIDGE_MS,
@@ -6828,6 +6829,15 @@ function LiveTablePage({
     0,
     (tableState.currentBet || 0) -
       (tableState.heroSeat > 0 ? tableState.lastBetAmounts?.[tableState.heroSeat - 1] || 0 : 0)
+  );
+  /* Dan 2026-10-18: "WHEN YOU MAKE A BET OR RAISE AND ARE NOT 'FACING ANY
+     ACTION' THE ... BUTTONS SHOULD NEVER APPEAR UNLESS YOU ARE FACING A
+     DECISION." False once the hero has answered this street and owes
+     nothing; true again the moment somebody bets or raises over them. The
+     PreActionBar gate and `data-hero-action` both read this one value. */
+  const heroFacesADecision = heroAwaitsADecision(
+    tableState.heroSeat > 0 ? tableState.lastActions?.[tableState.heroSeat - 1] : null,
+    preActionCallDue
   );
   const awaitingPreActionExec =
     isHeroTurnContext &&
@@ -22288,6 +22298,16 @@ function LiveTablePage({
     // values below are exactly what it is built from.
   }, [preAction, preActionCallDue]);
 
+  /* Dan 2026-10-18: a pre-action armed for a decision that is no longer
+     coming is spent. Once the hero has answered the street and owes nothing
+     the bar is down, so nothing on screen could show it armed - clear it
+     rather than leave an invisible arm for a later bet to inherit. Not while
+     the engine is mid-beat executing it (suppressPanelForPreAction). */
+  useEffect(() => {
+    if (preAction === null) return;
+    if (!heroFacesADecision && !suppressPanelForPreAction) setPreAction(null);
+  }, [preAction, heroFacesADecision, suppressPanelForPreAction]);
+
   /**
    * ═══ ONE SLOT, ONE CONTROL (2026-08-27) ═══
    *
@@ -24367,6 +24387,7 @@ function LiveTablePage({
            1px for the beat, so the bottom chrome blinked out and back on
            every executed pre-action (2026-09-08 sweep). */
         suppressPanelForPreAction) &&
+      (heroFacesADecision || suppressPanelForPreAction) &&
       heroIsActionable
     ) {
       return 'waiting';
@@ -24380,6 +24401,7 @@ function LiveTablePage({
     tableState.players,
     dealInFlight,
     suppressPanelForPreAction,
+    heroFacesADecision,
     getPlayerAtSeat,
   ]);
 
@@ -27854,6 +27876,9 @@ function LiveTablePage({
                  stays up, pressed button and all, through the beat, instead
                  of an empty strip between "armed" and "unarmed". */
               (tableState.currentPlayerSeat !== tableState.heroSeat || suppressPanelForPreAction) &&
+              /* Dan 2026-10-18: never while the hero has already answered
+                 this street and owes nothing - no decision is coming. */
+              (heroFacesADecision || suppressPanelForPreAction) &&
               /* Dan 2026-04-17: after hero folds, hide PreActionBar — the
                  "weird lingering bar" bug. Folded hero has no pre-turn action. */
               getPlayerAtSeat(tableState.heroSeat)?.status !== 'folded' &&

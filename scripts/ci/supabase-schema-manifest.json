@@ -378,6 +378,7 @@
     "club_creation_requests",
     "club_daily_stats",
     "club_diamond_wallets",
+    "club_display_member_boost",
     "club_entry_daily_metrics",
     "club_entry_events",
     "club_entry_feature_flags",

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fixture = vi.hoisted(() => ({
   user: { id: 'viewer' },
   realOverview: false,
+  register: vi.fn(),
   health: vi.fn(),
   getTournament: vi.fn(),
   reportError: vi.fn(),
@@ -65,7 +66,7 @@ vi.mock('../../src/components/tournament/TournamentDealReview', () => ({ default
 
 vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: fixture.user }) }));
 vi.mock('../../src/hooks/useTournamentRegistration', () => ({
-  useTournamentRegistration: () => ({ register: vi.fn(), isRegistering: false }),
+  useTournamentRegistration: () => ({ register: fixture.register, isRegistering: false }),
   isLateStatus: (status: string) => ['RUNNING', 'LATE_REG'].includes(status),
 }));
 vi.mock('../../src/context/InTabLobbyContext', () => ({ useAppNavigate: () => fixture.navigate }));
@@ -236,6 +237,7 @@ beforeEach(() => {
   fixture.getTournament.mockReset().mockImplementation(async (id) => tournament(id));
   fixture.reportError.mockClear();
   fixture.navigate.mockClear();
+  fixture.register.mockReset();
   Object.defineProperty(document, 'hidden', { configurable: true, value: false });
 });
 afterEach(() => {
@@ -244,6 +246,44 @@ afterEach(() => {
 });
 
 describe('Tournament details snapshot recovery', () => {
+  it.each(['002c2d27-9584-4e52-835a-bb2be148fc81', 'regular-club'])(
+    'header registration preserves the exact club and price for %s',
+    async (clubId) => {
+      fixture.getTournament.mockResolvedValue(
+        tournament('a', { status: 'REGISTERING', format_contract: 'mtt-v2', club_id: clubId })
+      );
+      render(<Page />);
+      await flush();
+      fireEvent.click(screen.getByRole('button', { name: 'Register', exact: true }));
+      expect(fixture.register).toHaveBeenCalledTimes(1);
+      expect(fixture.register).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'a',
+          club_id: clubId,
+          buy_in_amount: 10,
+          buy_in_fee: 1,
+          status: 'REGISTERING',
+        }),
+        expect.any(Function)
+      );
+    }
+  );
+
+  it.each([false, true])(
+    'keeps one Register action in the header for embedded=%s',
+    async (embedded) => {
+      fixture.getTournament.mockResolvedValue(
+        tournament('a', { status: 'REGISTERING', format_contract: 'mtt-v2' })
+      );
+      render(<Page embedded={embedded} />);
+      await flush();
+      const action = screen.getByRole('button', { name: 'Register', exact: true });
+      expect(action.closest('.details-header__actions')).not.toBeNull();
+      expect(action.closest('.details-footer')).toBeNull();
+      expect(screen.getAllByRole('button', { name: 'Register', exact: true })).toHaveLength(1);
+    }
+  );
+
   it.each([false, true])(
     'renders the actual break clock through row updates in the modal=%s caller',
     async (modal) => {

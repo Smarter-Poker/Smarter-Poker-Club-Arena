@@ -139,6 +139,17 @@ describe('the Diamond Arena footer route audit', () => {
     }
   });
 
+  it('keeps shared tournament routes on their explicit Diamond navigation', () => {
+    for (const path of ['/tournaments', '/tournaments/event-id']) {
+      expect(shouldShowDiamondFooterFor(path, '?club=diamond-arena', false)).toBe(true);
+      expect(shouldShowDiamondFooterFor(path, '?club=shark-club', false)).toBe(false);
+      expect(shouldShowDiamondFooterFor(path, '', false)).toBe(false);
+    }
+    expect(
+      shouldShowDiamondFooterFor('/tournaments/event-id/operations', '?club=diamond-arena', false)
+    ).toBe(false);
+  });
+
   it('follows the two global doors only while they are scoped to the arena', () => {
     expect(shouldShowDiamondFooterFor('/hand-history', '?arena=diamond', false)).toBe(true);
     expect(shouldShowDiamondFooterFor('/hand-history', '', false)).toBe(false);

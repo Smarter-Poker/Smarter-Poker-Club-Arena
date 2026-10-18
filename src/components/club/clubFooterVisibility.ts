@@ -101,7 +101,9 @@ export function shouldShowDiamondFooterFor(
   if (path === '/hand-history') {
     return isDiamondHandHistoryScope(path, search);
   }
-  if (path === '/stats') return isDiamondArenaClubKey(readClubContextParam(search));
+  // Event details are shared routes; their explicit arena context owns the footer.
+  if (path === '/stats' || /^\/tournaments(?:\/[^/]+)?$/.test(path))
+    return isDiamondArenaClubKey(readClubContextParam(search));
   return false;
 }
 

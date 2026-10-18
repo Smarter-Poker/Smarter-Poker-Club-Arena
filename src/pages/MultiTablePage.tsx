@@ -4011,18 +4011,6 @@ export default function MultiTablePage() {
   );
 
   /**
-   * The tab's back affordance: ONE level, not all the way out (round 2).
-   *
-   * This used to blank `lobbyTournamentId` outright, so a player who went
-   * Main -> Satellite and pressed back landed in the club schedule rather than
-   * on the Main, with no way to the Main except finding it again. Browser Back
-   * could not help either: an in-tab drill-in pushes no history entry.
-   */
-  const popLobbyTournamentTab = useCallback((tabId: string) => {
-    setTables((prev) => prev.map((t) => (t.id === tabId ? popLobbyTournament(t) : t)));
-  }, []);
-
-  /**
    * ─── TAKE SEAT (Dan 2026-08-20) ─────────────────────────────────────────
    * "when you are already sitting at a table but hit the + button to add
    *  another game and you are inside the lobby, there needs to be a 'take
@@ -4163,10 +4151,6 @@ export default function MultiTablePage() {
     const selectedClub = table.lobbyClubId === undefined ? homeClubId : table.lobbyClubId;
     const stack = table.lobbyTournamentStack ?? [];
     const top = stack[stack.length - 1];
-    /* The back pill says where it actually goes. At depth 1 that is the club
-       lobby; deeper, it is the event you drilled in FROM, and calling that
-       "Lobby" was a lie that cost the player the page they wanted. */
-    const backLabel = stack.length > 1 ? '← Back' : '← Lobby';
     /* No provider here any more — the whole container is inside one now (see
        the top-level return). A second, identical provider nested inside the
        first only invites the two to drift apart later. */
@@ -4199,15 +4183,6 @@ export default function MultiTablePage() {
           >
             <GlobalHeader inTab={inTabLobbyNav} />
             {renderTakeSeatBar()}
-            <button
-              className="multi-table-page__lobby-back"
-              onClick={() => popLobbyTournamentTab(table.id)}
-              aria-label={
-                stack.length > 1 ? 'Back To The Previous Tournament' : 'Back To The Lobby'
-              }
-            >
-              {backLabel}
-            </button>
             {/* `key` on the id so switching events REMOUNTS the details page.
                 Without it React reuses the instance and TournamentDetails'
                 load effect (keyed on the id) races its own previous fetch —
@@ -4217,6 +4192,7 @@ export default function MultiTablePage() {
             <TournamentDetails
               key={top.tournamentId}
               tournamentIdOverride={top.tournamentId}
+              inLobbyTab
               searchOverride={top.search}
             />
           </div>

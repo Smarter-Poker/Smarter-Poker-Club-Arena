@@ -31,6 +31,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
+import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
 import { reportError } from '../utils/errorReporter';
 import { compactChips } from '../utils/format';
 import { enumToTitleCase } from '../utils/titleCase';
@@ -139,9 +140,17 @@ export default function PlayerStatisticsPage() {
    */
   const [knownVariants, setKnownVariants] = useState<string[]>([]);
   const statsAbortRef = useRef<AbortController | null>(null);
+  const scopeKey = `${clubId ?? ''}:${userId ?? ''}:${user?.id ?? ''}`;
+  const [resolvedScope, setResolvedScope] = useState<{ key: string; uuid: string } | null>(null);
+  const resolvedClubId = resolvedScope?.key === scopeKey ? resolvedScope.uuid : null;
+  const readingRef = useRef(false);
+  const queuedRefreshRef = useRef(false);
+  const refreshRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     setStats(null);
+    setResolvedScope(null);
+    queuedRefreshRef.current = false;
     setKnownVariants([]);
     setVariant(null);
     setNotFound(false);
@@ -151,7 +160,8 @@ export default function PlayerStatisticsPage() {
     async (
       activeVariant: string | null,
       activeRange: MemberRange,
-      getIsMounted?: () => boolean
+      getIsMounted?: () => boolean,
+      background = false
     ) => {
       statsAbortRef.current?.abort();
       const controller = new AbortController();
@@ -164,12 +174,14 @@ export default function PlayerStatisticsPage() {
         }
         return;
       }
+      readingRef.current = true;
+      queuedRefreshRef.current = false;
       const live = () =>
         !controller.signal.aborted &&
         (getIsMounted ? getIsMounted() : true) &&
         isMountedRef.current;
 
-      if (live()) {
+      if (live() && !background) {
         setLoading(true);
         setLoadFailed(false);
       }
@@ -198,6 +210,7 @@ export default function PlayerStatisticsPage() {
           throw e;
         }
         if (!live()) return;
+        setResolvedScope({ key: scopeKey, uuid: resolved });
 
         const result = await ClubRosterService.getMemberStatistics(
           resolved,
@@ -208,8 +221,10 @@ export default function PlayerStatisticsPage() {
         );
         if (!live()) return;
         setStats(result);
+        setLoadFailed(false);
         setNotFound(!result.authorized && result.reason === 'not_member');
-        if (result.variants.length > 0) {
+        if (!result.authorized) setKnownVariants([]);
+        if (result.authorized && result.variants.length > 0) {
           setKnownVariants((prev) => {
             const merged = new Set([...prev, ...result.variants]);
             return Array.from(merged).sort();
@@ -222,10 +237,17 @@ export default function PlayerStatisticsPage() {
           toast.error('Failed To Load Player Statistics');
         }
       } finally {
-        if (live()) setLoading(false);
+        if (live() && !background) setLoading(false);
+        if (statsAbortRef.current === controller) {
+          readingRef.current = false;
+          if (live() && queuedRefreshRef.current) {
+            queuedRefreshRef.current = false;
+            refreshRef.current();
+          }
+        }
       }
     },
-    [clubId, userId, user?.id, isMountedRef, toast]
+    [clubId, userId, user?.id, isMountedRef, toast, scopeKey]
   );
 
   useEffect(() => {
@@ -236,6 +258,80 @@ export default function PlayerStatisticsPage() {
       statsAbortRef.current?.abort();
     };
   }, [load, variant, range, reloadKey]);
+
+  // One current read plus one queued reconciliation: event bursts cannot keep
+  // aborting the RPC, and current filters/drafts remain owned by the controls.
+  refreshRef.current = () => {
+    if (!isMountedRef.current || !clubId || !userId || !user?.id) return;
+    if (rangeMode !== 'custom') {
+      const current = lastDaysRange(RANGE_DAYS[rangeMode]);
+      if (current.from !== range.from || current.to !== range.to) {
+        setRange(current);
+        return;
+      }
+    }
+    if (readingRef.current) {
+      queuedRefreshRef.current = true;
+      return;
+    }
+    void load(variant, range, undefined, true);
+  };
+
+  const sameMemberAndViewer = user?.id?.toLowerCase() === userId?.toLowerCase();
+  const recordTopic =
+    resolvedClubId && userId && isUUID(userId)
+      ? `member-record:${resolvedClubId}:${userId.toLowerCase()}`
+      : null;
+  useMasterBusBroadcastChannel({
+    channelName: recordTopic,
+    event: 'record_changed',
+    private: true,
+    enabled: !!recordTopic && !!user?.id,
+    onPayload: () => refreshRef.current(),
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') refreshRef.current();
+    },
+    onSubscriptionError: () => refreshRef.current(),
+  });
+  // A viewer's own role/removal can withdraw access before the target changes.
+  useMasterBusBroadcastChannel({
+    channelName:
+      resolvedClubId && user?.id && !sameMemberAndViewer
+        ? `member-record:${resolvedClubId}:${user.id.toLowerCase()}`
+        : null,
+    event: 'record_changed',
+    private: true,
+    enabled: !!resolvedClubId && !!user?.id && !sameMemberAndViewer,
+    onPayload: () => refreshRef.current(),
+    onSubscriptionStatus: (status) => {
+      if (status === 'SUBSCRIBED') refreshRef.current();
+    },
+    onSubscriptionError: () => refreshRef.current(),
+  });
+
+  useEffect(() => {
+    const refresh = () => refreshRef.current();
+    const visible = () => {
+      if (!document.hidden) refresh();
+    };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, []);
+
+  // Relative windows advance on the UTC calendar boundary, even on idle pages.
+  useEffect(() => {
+    if (rangeMode === 'custom') return;
+    const now = new Date();
+    const nextDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+    const timer = window.setTimeout(() => refreshRef.current(), nextDay - now.getTime() + 25);
+    return () => window.clearTimeout(timer);
+  }, [rangeMode, range.from, range.to]);
 
   /* ── Range ──────────────────────────────────────────────────────────────── */
 

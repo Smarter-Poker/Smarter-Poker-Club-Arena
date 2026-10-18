@@ -132,6 +132,40 @@ export function renderHand(payload, poolSessionId) {
   }
 }
 
+// Only maintained native codes or exact, known message classifications leave
+// the response boundary. A future arbitrary code/message stays unknown.
+const NATIVE_REFUSAL_CODES = new Set([
+  'STALE_HAND',
+  'STALE_ACTION',
+  'ACTION_CONTEXT_REQUIRED',
+  'NO_ACTIVE_HAND',
+  'LIGHTNING_FOLD_DISABLED',
+  'FOLD_WATCH_DISABLED',
+]);
+const NATIVE_REFUSAL_MESSAGES = Object.freeze({
+  'Authentication required': 'AUTH_REQUIRED',
+  'Invalid action key': 'INVALID_ACTION_KEY',
+  'Invalid action context': 'INVALID_ACTION_CONTEXT',
+  'Rate limited - wait before submitting another action': 'RATE_LIMITED',
+  'Table engine not found': 'TABLE_ENGINE_NOT_FOUND',
+  'Invalid request body': 'INVALID_REQUEST_BODY',
+  'No active hand': 'NO_ACTIVE_HAND',
+  'Player not found at this table': 'PLAYER_NOT_FOUND',
+  'You have left this hand': 'LEFT_HAND',
+  'Already folded': 'ALREADY_FOLDED',
+  'Fold is not available': 'FOLD_UNAVAILABLE',
+  'Action already being processed - try again': 'ACTION_IN_PROGRESS',
+  'Not your turn': 'NOT_YOUR_TURN',
+});
+function refusalEvidence(answer) {
+  if (answer?.success === true) return { refusalCode: null, refusalSource: null };
+  if (NATIVE_REFUSAL_CODES.has(answer?.code))
+    return { refusalCode: answer.code, refusalSource: 'native_code' };
+  if (typeof answer?.error === 'string' && Object.hasOwn(NATIVE_REFUSAL_MESSAGES, answer.error))
+    return { refusalCode: NATIVE_REFUSAL_MESSAGES[answer.error], refusalSource: 'known_message' };
+  return { refusalCode: null, refusalSource: null };
+}
+
 export const CONSENT_PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
 export const CONSENT_PLAYERS = Object.freeze([
   CONSENT_PLAYER,
@@ -352,6 +386,7 @@ export async function witnessPlayer({
         if (!latestHand) throw new Error('Actual Browser Render Unobserved');
         row.render = 'observed';
         const before = latestHand;
+        const requestedAt = new Date().toISOString();
         report.subphase = 'fold_request';
         report.cause = 'fold_ack_unverified';
         const responsePromise = page.waitForResponse(
@@ -374,7 +409,14 @@ export async function witnessPlayer({
         const answer = await bounded(response.json(), remaining());
         const action = {
           kind,
-          accepted: response.ok() && answer.success === true,
+          accepted: response.ok() && answer?.success === true,
+          httpStatus: response.status(),
+          // Native codes and UUIDs are safe evidence; raw errors and frames are not.
+          ...refusalEvidence(answer),
+          requestHandId: before,
+          replyHandId: latestHand,
+          requestedAt,
+          repliedAt: new Date().toISOString(),
           nextHand: 'unknown',
         };
         row.actions.push(action);

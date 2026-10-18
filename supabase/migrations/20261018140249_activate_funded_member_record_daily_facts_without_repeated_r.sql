@@ -107,4 +107,11 @@ $replacement$  ), roll AS MATERIALIZED (
   END LOOP;
 END $patch$;
 
+-- Mounts that joined while initialization ran must observe the atomic reader
+-- cutover without waiting for another hand, a focus change or a manual reload.
+DO $activate$ DECLARE member_id uuid; BEGIN
+ FOR member_id IN SELECT DISTINCT user_id FROM public.member_record_daily_facts LOOP
+   PERFORM public.fn_publish_member_record_user(member_id);
+ END LOOP;
+END $activate$;
 COMMIT;

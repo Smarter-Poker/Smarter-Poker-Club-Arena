@@ -513,3 +513,50 @@ test('measured review refuses changed evidence, another pair, another cluster an
     assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
   }
 });
+
+const madnessSignal = {
+  ...measuredSignal,
+  id: 50,
+  player_a: '194e5206-bd4d-4ea5-ba2d-142c8bf8a258',
+  player_b: '4ffcc7ec-15a1-4c80-8309-e893ef9db022',
+  evidence: {
+    latest_window_end: '2026-10-18T22:02:00+00:00',
+    correlation_method: 'pooled_paired_hand_moments',
+    correlation_hands: 25,
+    latency_corr: 0.734,
+    hands_together: 45,
+    fast_follows: 1,
+    windows: 44,
+  },
+};
+const madnessMeasuredGame = {
+  ...game9,
+  id: '681eb9e8-e9fd-4026-8ec6-64075b911d33',
+  cluster_mode: 'paused',
+  lightning_enabled: true,
+};
+test('only the independently investigated Madness finding can be recorded reviewed', async () => {
+  const f = fakeClients({ signals: [madnessSignal], games: [madnessMeasuredGame] });
+  await runPilotStage(
+    { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'madness', PILOT_SIGNAL_ID: '50' },
+    f.factory
+  );
+  const writes = f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].args.p_status, 'reviewed');
+  assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_control').length, 0);
+});
+test('Madness review refuses a changed finding and keeps every other ID closed', async () => {
+  for (const signal of [
+    { ...madnessSignal, id: 49 },
+    { ...madnessSignal, player_b: OP },
+    { ...madnessSignal, evidence: { ...madnessSignal.evidence, correlation_hands: 26 } },
+    { ...madnessSignal, evidence: { ...madnessSignal.evidence, latest_window_end: '2026-10-18T22:20:00+00:00' } },
+  ]) {
+    const f = fakeClients({ signals: [signal], games: [madnessMeasuredGame] });
+    await assert.rejects(runPilotStage(
+      { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'madness', PILOT_SIGNAL_ID: String(signal.id) }, f.factory
+    ));
+    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
+  }
+});

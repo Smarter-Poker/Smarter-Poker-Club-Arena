@@ -91,7 +91,12 @@ describe('the production cashier canary derives the batch verdict from the print
       page.indexOf('function CashierWalletRow(') + 900
     );
     expect(row).toContain('aria-label={label}');
-    expect(row.match(/<strong/g)?.length).toBe(1);
+    expect(row.match(/<CashierFrameBalance/g)?.length).toBe(1);
+    const balance = readFileSync(
+      resolve(root, 'src/components/wallet/CashierFrameBalance.tsx'),
+      'utf8'
+    );
+    expect(balance.match(/<strong/g)?.length).toBe(1);
     expect(row).toContain("balance === null ? '-' : formatWalletChips(balance)");
   });
 });

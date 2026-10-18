@@ -19,6 +19,10 @@ const state = vi.hoisted(() => ({
   rpc: vi.fn(),
   roster: vi.fn(),
   wallet: vi.fn(),
+  broadcasts: new Map<
+    string,
+    { onPayload: (value: unknown) => void; onSubscriptionStatus?: (status: string) => void }
+  >(),
   memberChannel: null as null | { onPayload: (value: unknown) => void },
   walletChannel: null as null | { onPayload: (value: unknown) => void },
 }));
@@ -35,8 +39,13 @@ vi.mock('../../src/hooks/useMasterBusChannel', () => ({
   },
 }));
 vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
-  useMasterBusBroadcastChannel: (options: { onPayload: (value: unknown) => void }) => {
+  useMasterBusBroadcastChannel: (options: {
+    channelName?: string | null;
+    onPayload: (value: unknown) => void;
+    onSubscriptionStatus?: (status: string) => void;
+  }) => {
     state.walletChannel = options;
+    if (options.channelName) state.broadcasts.set(options.channelName, options);
   },
 }));
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -162,6 +171,8 @@ const statistics = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  state.broadcasts.clear();
+  state.viewerId = 'viewer-1';
   state.params = { clubId: 'shark-club', userId: '11111111-1111-4111-8111-111111111111' };
   state.getMemberDetail.mockImplementation(async (_club, _user, range) => ({
     ...memberDetail,
@@ -176,7 +187,10 @@ beforeEach(() => {
     is_overall: range.from === null && range.to === null,
   }));
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 it.each(['record', 'statistics'] as const)(
   '%s keeps custom drafts out of its RPC and identifies the actual displayed scope until Confirm succeeds',
@@ -271,4 +285,160 @@ it('keeps definitions available for an authorized empty range without showing fa
   await screen.findByText('No Hands In This Range');
   expect(screen.getByLabelText('Performance Metric Definitions')).toBeInTheDocument();
   expect(screen.queryByText('3-Bet Per Hand')).not.toBeInTheDocument();
+});
+
+const statisticsTopic =
+  'member-record:22222222-2222-4222-8222-222222222222:11111111-1111-4111-8111-111111111111';
+it('updates performance from the private member-record event without changing filters', async () => {
+  render(<PlayerStatisticsPage />);
+  await waitFor(() => expect(state.getMemberStatistics).toHaveBeenCalledTimes(1));
+  const initialRange = state.getMemberStatistics.mock.calls[0][3];
+  state.getMemberStatistics.mockResolvedValueOnce({ ...statistics, ...initialRange, hands: 137 });
+  await waitFor(() => expect(state.broadcasts.has(statisticsTopic)).toBe(true));
+  act(() => state.broadcasts.get(statisticsTopic)!.onPayload({ user_id: state.params.userId }));
+  await waitFor(() => expect(state.getMemberStatistics).toHaveBeenCalledTimes(2));
+  expect(state.getMemberStatistics.mock.calls[1][3]).toEqual(initialRange);
+  expect(await screen.findByText('137')).toBeInTheDocument();
+});
+
+it('coalesces performance bursts without aborting the active read or applying custom drafts', async () => {
+  render(<PlayerStatisticsPage />);
+  await waitFor(() => expect(state.getMemberStatistics).toHaveBeenCalledTimes(1));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Game' }), { target: { value: 'plo' } });
+  await waitFor(() => expect(state.getMemberStatistics).toHaveBeenCalledTimes(2));
+  const committedRange = state.getMemberStatistics.mock.calls[1][3];
+  fireEvent.click(screen.getByRole('button', { name: 'Custom', exact: true }));
+  fireEvent.change(screen.getByLabelText('From', { exact: true }), {
+    target: { value: '2026-01-01' },
+  });
+  fireEvent.change(screen.getByLabelText('To', { exact: true }), {
+    target: { value: '2026-01-02' },
+  });
+  let finish!: (value: typeof statistics) => void;
+  state.getMemberStatistics.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  state.getMemberStatistics.mockResolvedValueOnce({
+    ...statistics,
+    ...committedRange,
+    variant: 'plo',
+    hands: 143,
+  });
+  act(() => state.broadcasts.get(statisticsTopic)!.onPayload({}));
+  await waitFor(() => expect(state.getMemberStatistics).toHaveBeenCalledTimes(3));
+  const signal = state.getMemberStatistics.mock.calls[2][4] as AbortSignal;
+  act(() => {
+    for (let n = 0; n < 20; n++) state.broadcasts.get(statisticsTopic)!.onPayload({});
+  });
+  expect(signal.aborted).toBe(false);
+  expect(state.getMemberStatistics).toHaveBeenCalledTimes(3);
+  expect(screen.getByText('100')).toBeInTheDocument();
+  await act(async () => finish({ ...statistics, ...committedRange, variant: 'plo', hands: 131 }));
+  await screen.findByText('143');
+  expect(state.getMemberStatistics).toHaveBeenCalledTimes(4);
+  expect(state.getMemberStatistics.mock.calls[3].slice(2, 4)).toEqual(['plo', committedRange]);
+  expect(screen.getByRole('combobox', { name: 'Game' })).toHaveValue('plo');
+  expect(screen.getByLabelText('From', { exact: true })).toHaveValue('2026-01-01');
+  expect(screen.getByLabelText('To', { exact: true })).toHaveValue('2026-01-02');
+});
+
+it('reconciles performance after rejoin and focus, retaining verified values on an outage', async () => {
+  render(<PlayerStatisticsPage />);
+  await screen.findByText('100');
+  state.getMemberStatistics.mockRejectedValueOnce(new Error('Temporary outage'));
+  act(() => state.broadcasts.get(statisticsTopic)!.onSubscriptionStatus?.('SUBSCRIBED'));
+  await screen.findByRole('alert');
+  expect(screen.getByText('100')).toBeInTheDocument();
+  state.getMemberStatistics.mockResolvedValueOnce({ ...statistics, hands: 144 });
+  act(() => window.dispatchEvent(new Event('focus')));
+  await screen.findByText('144');
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+it('withdraws performance after the viewer record reports a permission change', async () => {
+  render(<PlayerStatisticsPage />);
+  await screen.findByText('100');
+  state.getMemberStatistics.mockResolvedValueOnce({
+    ...statistics,
+    authorized: false,
+    reason: 'restricted',
+    variants: [],
+  });
+  const viewerTopic = 'member-record:22222222-2222-4222-8222-222222222222:viewer-1';
+  act(() => state.broadcasts.get(viewerTopic)!.onPayload({}));
+  await screen.findByText('Statistics Restricted');
+  expect(screen.getByRole('combobox', { name: 'Game' }).querySelectorAll('option')).toHaveLength(1);
+  expect(screen.queryByText('100')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Performance Metric Definitions')).not.toBeInTheDocument();
+});
+
+it('ignores the old performance read when the viewer changes during a queued refresh', async () => {
+  const view = render(<PlayerStatisticsPage />);
+  await screen.findByText('100');
+  let finish!: (value: typeof statistics) => void;
+  state.getMemberStatistics.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  act(() => state.broadcasts.get(statisticsTopic)!.onPayload({}));
+  await waitFor(() => expect(state.getMemberStatistics).toHaveBeenCalledTimes(2));
+  const oldSignal = state.getMemberStatistics.mock.calls[1][4] as AbortSignal;
+  act(() => state.broadcasts.get(statisticsTopic)!.onPayload({}));
+  state.getMemberStatistics.mockResolvedValueOnce({
+    ...statistics,
+    authorized: false,
+    reason: 'restricted',
+  });
+  state.viewerId = 'viewer-2';
+  view.rerender(<PlayerStatisticsPage />);
+  await screen.findByText('Statistics Restricted');
+  expect(oldSignal.aborted).toBe(true);
+  await act(async () => finish({ ...statistics, hands: 999 }));
+  expect(screen.queryByText('999')).not.toBeInTheDocument();
+  expect(state.getMemberStatistics).toHaveBeenCalledTimes(3);
+});
+
+it('advances relative performance dates at the UTC boundary without polling', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-18T23:59:59.900Z'));
+  render(<PlayerStatisticsPage />);
+  await act(async () => {});
+  expect(state.getMemberStatistics.mock.calls[0][3].to).toBe('2026-10-18');
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(130);
+  });
+  expect(state.getMemberStatistics.mock.lastCall![3].to).toBe('2026-10-19');
+  expect(state.getMemberStatistics).toHaveBeenCalledTimes(2);
+});
+
+it('advances a visible seven-day member ledger at the UTC boundary without another event', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-18T23:59:59.900Z'));
+  render(<MemberManagementPage />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }));
+  await act(async () => {});
+  expect(state.getMemberDetail.mock.lastCall![2]).toEqual({
+    from: '2026-10-12',
+    to: '2026-10-18',
+  });
+  const beforeMidnight = state.getMemberDetail.mock.calls.length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(130);
+  });
+  expect(state.getMemberDetail.mock.lastCall![2]).toEqual({
+    from: '2026-10-13',
+    to: '2026-10-19',
+  });
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(beforeMidnight + 1);
+  fireEvent.click(screen.getByRole('button', { name: 'Select', exact: true }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(86_400_000);
+  });
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(beforeMidnight + 1);
 });

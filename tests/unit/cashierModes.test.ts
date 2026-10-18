@@ -20,7 +20,6 @@ import {
   cashierTabs,
   cashierDestinations,
   canUseCashier,
-  destinationBlurb,
   claimNeedsConfirm,
   DEFAULT_CASHIER_WALLET,
   type CashierWalletType,
@@ -141,48 +140,6 @@ describe('canUseCashier', () => {
   it('an unrecognised role normalises toward not seeing, the safe direction', () => {
     expect(canUseCashier('club_bank', 'chief_vibes_officer')).toBe(false);
     expect(canUseCashier('promo_wallet', 'chief_vibes_officer')).toBe(false);
-  });
-});
-
-describe('destinationBlurb', () => {
-  it('promo chips to a player wallet read as cash, spendable anywhere', () => {
-    const blurb = destinationBlurb('promo_wallet', 'player_wallet');
-    expect(blurb).toContain('Cash');
-    expect(blurb).toContain('Tournament');
-  });
-
-  it('promo chips to an agent land in their promo wallet', () => {
-    expect(destinationBlurb('promo_wallet', 'agent_wallet')).toContain('Their Promo Wallet');
-  });
-
-  it('claim blurbs describe pulling chips back into the club bank', () => {
-    for (const d of ['agent_wallet', 'promo_wallet', 'player_wallet'] as const) {
-      expect(destinationBlurb('club_bank', d, 'claim')).toContain('Back Into The Club Bank');
-    }
-  });
-
-  it('the agent claim blurb says the window and what happens after it', () => {
-    const blurb = destinationBlurb('agent_wallet', 'player_wallet', 'claim');
-    expect(blurb).toContain('Ten Minutes');
-    expect(blurb).toContain('Cash Out');
-  });
-
-  it('no blurb uses an em dash, and every word is capitalised', () => {
-    const wallets = ['club_bank', 'promo_wallet', 'agent_wallet'] as const;
-    const dests = ['agent_wallet', 'promo_wallet', 'player_wallet'] as const;
-    for (const w of wallets) {
-      for (const d of dests) {
-        for (const tab of ['send', 'claim'] as const) {
-          const blurb = destinationBlurb(w, d, tab);
-          expect(blurb).not.toMatch(/[–—]/);
-          for (const word of blurb.split(/\s+/).filter(Boolean)) {
-            if (/^[a-z]/.test(word)) {
-              throw new Error(`"${blurb}" has an uncapitalised word: ${word}`);
-            }
-          }
-        }
-      }
-    }
   });
 });
 

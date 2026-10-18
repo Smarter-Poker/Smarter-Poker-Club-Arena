@@ -9,6 +9,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
+from pathlib import Path
 
 CONTAINER = 'club-arena-engine'
 MAX_BYTES = 4 * 1024 * 1024
@@ -228,7 +229,9 @@ PROCESS_CONTEXTS = ('GameServer.Uncaught_exception', 'GameServer.Unhandled_rejec
 PROCESS_CAUSES = ('F06_ABANDONED_CARDS_WITHOUT_SNAPSHOT', 'F06_ABANDONED_ROSTER_CHANGED',
     'F06_ABANDONED_HAND_HAS_A_RETAINED_SUBMISSION', 'F06_ABANDONED_PARK_CHANGED',
     'worker execution deadline', 'worker exited', 'out of memory', 'heap out of memory',
-    'statement timeout', 'deadlock detected', 'fetch failed', 'ECONNRESET', 'ETIMEDOUT')
+    'statement timeout', 'deadlock detected', 'fetch failed', 'ECONNRESET', 'ETIMEDOUT',
+    'execution deadline after dispatch', 'live horse decision worker exited with code',
+    'live horse decision worker READY timed out', 'Cannot read properties of undefined')
 
 
 PROCESS_FRAMES = {'index.js', 'GameServer.js', 'services/leadership.js',
@@ -284,6 +287,188 @@ def process_signals(raw):
     return result
 
 
+def merge_signals(target, addition):
+    for key, value in addition.items():
+        entry = target.setdefault(key, {'count': 0, 'lastTimestamp': None, 'causes': {}, 'frames': []})
+        entry['count'] += value['count']
+        if value['lastTimestamp'] and (entry['lastTimestamp'] is None or value['lastTimestamp'] > entry['lastTimestamp']):
+            entry['lastTimestamp'] = value['lastTimestamp']
+        for cause, count in value['causes'].items():
+            entry['causes'][cause] = entry['causes'].get(cause, 0) + count
+        for frame in value['frames']:
+            if frame not in entry['frames'] and len(entry['frames']) < 8:
+                entry['frames'].append(frame)
+
+
+def process_history(args=None, max_bytes=256 * 1024 * 1024, seconds=20):
+    # Stream the retained history instead of truncating it at the newest 10k
+    # noisy gameplay lines. Keep only one bounded error block in memory. Raw
+    # lines are never returned, persisted or printed, even on read failure.
+    args = args or ['docker', 'logs', '--since', '2h', '--timestamps', CONTAINER]
+    process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ)
+    deadline = time.monotonic() + seconds
+    signals = {}
+    block = []
+    pending = b''
+    dropping = False
+    total = 0
+    records = 0
+    oldest = None
+    newest = None
+    outcome = 'complete'
+    markers = ('[GameServer.', '[GameServer] FATAL', '[GameServer] Received shutdown',
+               '[GameServer] graceful shutdown', '[GameServer] GameServer.shutdown_failed', '[leadership]', '[Leadership.',
+               '[Tournament.abandoned_generation_refused]', 'FATAL ERROR:')
+
+    def record(raw):
+        nonlocal records, block, oldest, newest
+        records += 1
+        if len(raw) > 4096:
+            if block:
+                merge_signals(signals, process_signals('\n'.join(block)))
+                block = []
+            return
+        line = raw.decode('utf-8', errors='replace')
+        stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s', line)
+        if stamp:
+            try:
+                datetime.datetime.fromisoformat(stamp.group(1) + '+00:00')
+                oldest = min(oldest, stamp.group(1)) if oldest else stamp.group(1)
+                newest = max(newest, stamp.group(1)) if newest else stamp.group(1)
+            except ValueError:
+                pass
+        if any(marker in line for marker in markers):
+            if block:
+                merge_signals(signals, process_signals('\n'.join(block)))
+            block = [line]
+        elif block:
+            block.append(line)
+            if len(block) >= 13:
+                merge_signals(signals, process_signals('\n'.join(block)))
+                block = []
+
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                outcome = 'time_bound'
+                break
+            if not selector.select(min(0.2, remaining)):
+                continue
+            chunk = process.stdout.read1(65536)
+            if not chunk:
+                if pending and not dropping:
+                    record(pending)
+                if process.wait(timeout=2) != 0:
+                    outcome = 'command_failed'
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                outcome = 'size_bound'
+                break
+            parts = (pending + chunk).split(b'\n')
+            pending = parts.pop()
+            for line in parts:
+                if dropping:
+                    dropping = False
+                    continue
+                record(line)
+            if len(pending) > 4096:
+                pending = b''
+                dropping = True
+        if block:
+            merge_signals(signals, process_signals('\n'.join(block)))
+        return {'signals': signals, 'coverage': {'status': outcome,
+                'bytesRead': total, 'recordsRead': records,
+                'oldestTimestamp': oldest + 'Z' if oldest else None,
+                'newestTimestamp': newest + 'Z' if newest else None,
+                'fullTwoHourCoverageProven': False}}
+    finally:
+        selector.close()
+        process.stdout.close()
+        if process.poll() is None:
+            process.kill()  # Only our read child; never the engine.
+            process.wait(timeout=2)
+
+
+def archived_process_history(directory='/var/log/club-arena-engine'):
+    # The sole engine run-spec saves its outgoing logs here before a sealed
+    # replacement. Read at most two recent regular archives; no arbitrary path,
+    # shell expansion, environment file or runtime mutation is admitted.
+    archives = []
+    pattern = re.compile(r'engine-\d{8}T\d{6}Z-started\d{8}T\d{6}-([0-9a-f]{12})-([0-9a-f]{8})\.log\.gz')
+    try:
+        candidates = []
+        for path in Path(directory).glob('engine-*.log.gz'):
+            match = pattern.fullmatch(path.name)
+            if not match or path.is_symlink() or not path.is_file():
+                continue
+            stamp = path.stat().st_mtime
+            if 0 <= time.time() - stamp <= 2 * 60 * 60:
+                candidates.append((stamp, path, match.group(1), match.group(2)))
+        for _, path, container_prefix, image_prefix in sorted(candidates, reverse=True)[:2]:
+            result = process_history(['gzip', '-cd', str(path)], seconds=10)
+            archives.append({'imageIdPrefix': image_prefix, 'containerIdPrefix': container_prefix, **result})
+        return {'status': 'observed', 'archives': archives, 'fullTwoHourCoverageProven': False}
+    except Exception:
+        return {'status': 'unavailable', 'archives': archives, 'fullTwoHourCoverageProven': False}
+
+
+def kernel_oom_signals(raw, container_prefixes):
+    events = []
+    context_id = None
+    context_time = None
+    for line in raw.splitlines():
+        if len(line) > 4096:
+            continue
+        stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T[0-9:.,+-]+)\s', line)
+        if not stamp:
+            continue
+        try:
+            instant = datetime.datetime.fromisoformat(stamp.group(1).replace(',', '.'))
+            if instant.tzinfo is None:
+                continue
+        except ValueError:
+            continue
+        container = re.search(r'(?:docker-|/docker/)([0-9a-f]{64})(?:\.scope|[/,\s])', line)
+        if container:
+            context_id = container.group(1)[:12]
+            context_time = instant
+        if not re.search(r'(?:Out of memory|Memory cgroup out of memory|oom-kill|Killed process)', line, re.IGNORECASE):
+            continue
+        pid = re.search(r'Killed process ([0-9]{1,10}) \(node\)', line)
+        if not pid:
+            continue
+        same_context = context_time is not None and 0 <= (instant - context_time).total_seconds() <= 2
+        prefix = context_id if same_context and context_id in container_prefixes else None
+        events.append({'timestamp': instant.astimezone(datetime.timezone.utc).isoformat(),
+                       'nodePid': int(pid.group(1)), 'engineContainerMatched': prefix is not None,
+                       'containerIdPrefix': prefix})
+        if len(events) >= 128:
+            break
+    return {'events': events, 'fullHistoryProven': False}
+
+
+def autoheal_signals(raw, container_id):
+    result = {}
+    for line in raw.splitlines():
+        if len(line) > 4096 or not (CONTAINER in line or container_id[:12] in line):
+            continue
+        stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s', line)
+        if not stamp:
+            continue
+        for key, expression in [('unhealthy', r'\bunhealthy\b'),
+                                ('restart', r'\brestart(?:ing|ed)?\b'),
+                                ('restart_failed', r'\b(?:failed|error)\b')]:
+            if re.search(expression, line, re.IGNORECASE):
+                entry = result.setdefault(key, {'count': 0, 'lastTimestamp': None})
+                entry['count'] += 1
+                entry['lastTimestamp'] = stamp.group(1) + 'Z'
+    return result
+
+
 def restart_evidence():
     # Explicit state fields only: never serialize Config.Env or arbitrary labels.
     raw = bounded_command(['docker', 'container', 'inspect', '-f',
@@ -330,11 +515,24 @@ def main(expected):
     raw = bounded_command(['docker', 'logs', '--since', '45m', '--tail', '10000', '--timestamps', CONTAINER])
     events = summarize(raw)
     restarts = restart_evidence()
+    history = process_history()
+    archives = archived_process_history()
+    try:
+        kernel_raw = bounded_command(['dmesg', '--time-format', 'iso'])
+        prefixes = {before['containerId'][:12]} | {a['containerIdPrefix'] for a in archives['archives']}
+        kernel = {'status': 'observed', **kernel_oom_signals(kernel_raw, prefixes)}
+    except Exception:
+        kernel = {'status': 'unavailable', 'events': [], 'fullHistoryProven': False}
+    try:
+        autoheal_raw = bounded_command(['docker', 'logs', '--since', '2h', '--tail', '2000', '--timestamps', 'sp-autoheal'])
+        autoheal = {'status': 'observed', 'signals': autoheal_signals(autoheal_raw, before['containerId'])}
+    except Exception:
+        autoheal = {'status': 'unavailable', 'signals': {}}
     after = identity(expected)
     if any(before[key] != after[key] for key in ('containerId', 'imageId')):
         raise RuntimeError('engine_changed_during_read')
     runtime_stable = before == after
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):

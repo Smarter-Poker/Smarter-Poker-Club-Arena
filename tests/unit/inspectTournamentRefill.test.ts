@@ -158,9 +158,11 @@ def command(args):
  if args[1]=='events': return json.dumps({'Action':'oom','time':123,'Actor':{'Attributes':{'name':'club-arena-engine','token':'private-token'}}})
  return '2026-10-13T21:02:03Z [TournamentRecurring.spin_atomic_creation_failed] Error: statement timeout SQLSTATE=57014 private-token private-player-id'
 g['urllib'].request.urlopen=urlopen; g['bounded_command']=command
+g['process_history']=lambda: {'signals':{},'coverage':{'status':'complete','fullTwoHourCoverageProven':False}}
+g['archived_process_history']=lambda: {'status':'observed','archives':[],'fullTwoHourCoverageProven':False}
 out=io.StringIO(); err=io.StringIO()
 with contextlib.redirect_stdout(out),contextlib.redirect_stderr(err): status=m['cli'](['diagnostic',expected])
-print(json.dumps({'status':status,'stdout':out.getvalue(),'stderr':err.getvalue(),'logReads':sum(args[1]=='logs' for args in reads),'healthReads':health_reads}))
+print(json.dumps({'status':status,'stdout':out.getvalue(),'stderr':err.getvalue(),'logReads':sum(args[1]=='logs' and args[-1]=='club-arena-engine' for args in reads),'healthReads':health_reads}))
 `;
     const ran = spawnSync('python3', ['-B', '-c', fixture, script, mode], {
       encoding: 'utf8',
@@ -420,4 +422,136 @@ print(json.dumps({'restarts':m['sanitize_restart_evidence']({'OOMKilled':True,'E
   expect(data.signals.leadership_lost.count).toBe(1);
   expect(data.signals.fatal_rejection.count).toBe(1);
   expect(JSON.stringify(data)).not.toMatch(/private|secret|Auth|ETIMEDOUT/);
+});
+
+it('streams retained process errors beyond the noisy newest tail with bounded memory and honest coverage', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); mode=sys.argv[2]
+if mode=='complete':
+ producer="print('2026-10-18T14:25:00Z [GameServer.Unhandled_rejection] Error: fetch failed private-secret'); print('2026-10-18T14:25:00Z     at f (/app/dist/services/leadership.js:123:4)'); [print('2026-10-18T14:50:00Z ordinary private-player private-secret') for _ in range(20000)]"
+elif mode=='size': producer="print('x'*20000)"
+else: producer="import time; print('private-secret',flush=True); time.sleep(30)"
+r=m['process_history']([sys.executable,'-c',producer], max_bytes=1024 if mode=='size' else 2000000,seconds=0.05 if mode=='time' else 5)
+print(json.dumps(r))
+`;
+  for (const mode of ['complete', 'size', 'time']) {
+    const ran = spawnSync('python3', ['-B', '-c', fixture, script, mode], {
+      encoding: 'utf8',
+      timeout: 7000,
+    });
+    expect(ran.status, ran.stderr).toBe(0);
+    const data = JSON.parse(ran.stdout);
+    expect(data.coverage.status).toBe(mode === 'complete' ? 'complete' : mode + '_bound');
+    expect(data.coverage.fullTwoHourCoverageProven).toBe(false);
+    if (mode === 'complete') {
+      expect(data.coverage.recordsRead).toBe(20002);
+      expect(data.signals['GameServer.Unhandled_rejection']).toMatchObject({
+        count: 1,
+        causes: { 'fetch failed': 1 },
+        frames: [{ path: 'services/leadership.js', line: 123 }],
+      });
+      expect(data.coverage.oldestTimestamp).toBe('2026-10-18T14:25:00Z');
+      expect(data.coverage.newestTimestamp).toBe('2026-10-18T14:50:00Z');
+    }
+    expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|Traceback/);
+  }
+});
+
+it('classifies only engine autoheal actions without returning container names or raw text', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); print(json.dumps(m['autoheal_signals'](json.loads(sys.stdin.read()),'c'*64)))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    encoding: 'utf8',
+    timeout: 5000,
+    input: JSON.stringify(
+      [
+        '2026-10-18T14:25:00Z Container club-arena-engine is unhealthy Restarting container private-secret',
+        '2026-10-18T14:25:01Z Container cccccccccccc restart failed private-secret',
+        '2026-10-18T14:25:02Z Container other unhealthy restarting private-secret',
+      ].join('\n')
+    ),
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  expect(JSON.parse(ran.stdout)).toEqual({
+    unhealthy: { count: 1, lastTimestamp: '2026-10-18T14:25:00Z' },
+    restart: { count: 2, lastTimestamp: '2026-10-18T14:25:01Z' },
+    restart_failed: { count: 1, lastTimestamp: '2026-10-18T14:25:01Z' },
+  });
+  expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|club-arena|cccccc/);
+});
+
+it('reads only two recent regular engine archives after a container replacement', () => {
+  const fixture = `
+import json,runpy,sys
+from pathlib import Path
+m=runpy.run_path(sys.argv[1]); g=m['archived_process_history'].__globals__; calls=[]
+class Item:
+ def __init__(self,name,age,symlink=False): self.name=name; self.age=age; self.link=symlink
+ def is_symlink(self): return self.link
+ def is_file(self): return True
+ def stat(self): return type('Stat',(),{'st_mtime':g['time'].time()-self.age})()
+ def __str__(self): return '/var/log/club-arena-engine/'+self.name
+class Directory:
+ def __init__(self,root): assert root=='/var/log/club-arena-engine'
+ def glob(self,pattern):
+  return [Item('engine-20261018T145500Z-started20261018T140000-aaaaaaaaaaaa-12345678.log.gz',10),Item('engine-20261018T135500Z-started20261018T130000-bbbbbbbbbbbb-87654321.log.gz',100),Item('engine-20261018T125500Z-started20261018T120000-cccccccccccc-12345678.log.gz',200),Item('private-secret.log.gz',0),Item('engine-20261018T115500Z-started20261018T110000-dddddddddddd-12345678.log.gz',10000),Item('engine-20261018T145501Z-started20261018T140000-eeeeeeeeeeee-12345678.log.gz',0,True)]
+def history(args,**kwargs):
+ calls.append(args)
+ return {'signals':{},'coverage':{'status':'complete','fullTwoHourCoverageProven':False}}
+g['Path']=Directory;g['process_history']=history
+r=m['archived_process_history']();print(json.dumps({'result':r,'readCount':len(calls),'gzipOnly':all(a[:2]==['gzip','-cd'] for a in calls)}))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  const data = JSON.parse(ran.stdout);
+  expect(data.readCount).toBe(2);
+  expect(data.gzipOnly).toBe(true);
+  expect(data.result.archives.map((x: any) => x.imageIdPrefix)).toEqual(['12345678', '87654321']);
+  expect(data.result.fullTwoHourCoverageProven).toBe(false);
+  expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|engine-2026|var\/log/);
+});
+
+it('reports kernel node OOM witnesses with explicit selected-container attribution only', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); print(json.dumps(m['kernel_oom_signals'](json.loads(sys.stdin.read()),{'a'*12})))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    encoding: 'utf8',
+    timeout: 5000,
+    input: JSON.stringify(
+      [
+        '2026-10-18T14:25:00,000000+00:00 oom-kill:task_memcg=/system.slice/docker-' +
+          'a'.repeat(64) +
+          '.scope private-secret',
+        '2026-10-18T14:25:00,010000+00:00 Memory cgroup out of memory: Killed process 1234 (node) private-secret',
+        '2026-10-18T14:26:00,000000+00:00 Out of memory: Killed process 5678 (node) private-secret',
+        '2026-10-18T14:26:00,000000+00:00 Out of memory: Killed process 7777 (other-private) private-secret',
+      ].join('\n')
+    ),
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  const data = JSON.parse(ran.stdout);
+  expect(data.events).toEqual([
+    {
+      timestamp: '2026-10-18T14:25:00.010000+00:00',
+      nodePid: 1234,
+      engineContainerMatched: true,
+      containerIdPrefix: 'a'.repeat(12),
+    },
+    {
+      timestamp: '2026-10-18T14:26:00+00:00',
+      nodePid: 5678,
+      engineContainerMatched: false,
+      containerIdPrefix: null,
+    },
+  ]);
+  expect(data.fullHistoryProven).toBe(false);
+  expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|other/);
 });

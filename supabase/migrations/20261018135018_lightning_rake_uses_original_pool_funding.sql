@@ -1,6 +1,7 @@
 -- Lightning rake uses its retained original funding session.
 -- October 17 discrepancy: 58.21 in 7,346 null-club attribution rows.
 -- No balance, rate, credit amount, physical-table custody or sealed source changes.
+-- @live-proof: md5(pg_get_functiondef('public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)'::regprocedure)) = '552fe80a7fb04e1c76088a4c9de26eb5'
 BEGIN;
 SET LOCAL lock_timeout='3s';
 DO $migration$

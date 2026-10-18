@@ -63,6 +63,7 @@ try:
  assert json.loads(sql(after_aggregate))['not_completed']==0
  sql("INSERT INTO stripe_webhook_events SELECT '2026-10-16 08:00Z',s FROM unnest(ARRAY['completed','failed','error','dead_letter','processing',NULL])s")
  assert json.loads(sql(after_aggregate))['not_completed']==5
+ print(sql("SELECT json_build_object('fact_retention',md5(pg_get_functiondef('fn_prune_ca_hand_facts(integer)'::regprocedure)),'daily_metrics',md5(pg_get_functiondef('fn_sp_daily_metrics_compute(date)'::regprocedure)))"))
  print('PASS: native Stripe aggregate reproduces two false alarms before; done/completed succeed after; failed/error/dead_letter/processing/null remain visible')
  print('PASS: one million historical receipts, bounded six passes, three sparse pending hands compacted, totals unchanged, cursor wraps, freeze and failure preserve cursor')
  print(json.dumps(results))

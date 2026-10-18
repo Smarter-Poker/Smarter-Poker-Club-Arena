@@ -1,6 +1,7 @@
 -- Successful webhook completion is recorded as done by complete_stripe_webhook_event.
 -- Both Oct16 payment problems were done receipts, not failed payments.
 -- Preserve legacy completed receipts and retain pending, unknown and failed states.
+-- @live-proof: md5(pg_get_functiondef('public.fn_sp_daily_metrics_compute(date)'::regprocedure)) = '578cb5d7c2f80139eefa395a59cbd3d0'
 BEGIN;
 SET LOCAL lock_timeout='3s';
 DO $migration$

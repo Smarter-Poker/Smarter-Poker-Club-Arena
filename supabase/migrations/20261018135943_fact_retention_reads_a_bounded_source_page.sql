@@ -5,6 +5,7 @@
 -- A private cursor walks original certificate identity, bounds the page BEFORE
 -- testing receipts, and wraps so an ineligible/locked hand is visited again.
 -- The original compactor owns age/custody/refusal and player totals unchanged.
+-- @live-proof: md5(pg_get_functiondef('public.fn_prune_ca_hand_facts(integer)'::regprocedure)) = 'a5300a24f3afe4c078d011f0980bf0cd'
 BEGIN;
 SET LOCAL lock_timeout='3s';
 CREATE TABLE smarter_private.horse_fact_card_prune_cursor(

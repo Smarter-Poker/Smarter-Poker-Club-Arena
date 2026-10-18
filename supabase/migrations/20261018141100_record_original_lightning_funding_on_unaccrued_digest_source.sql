@@ -7,6 +7,7 @@
 -- One-call self-aborting production qualification returned Oct17 rollup
 -- 139194.57 ->139252.78,67 players; Oct18 completed-day cache unchanged.
 -- Readback confirmed all updates rolled back. Root PR7340 must be installed.
+-- @live-proof: NOT EXISTS (SELECT 1 FROM public.rake_attributions WHERE club_id IS NULL AND created_at >= '2026-10-17 00:00Z' AND created_at < '2026-10-18 14:00Z') AND (SELECT sum(rake_amount) FROM public.club_rake_daily_user WHERE day='2026-10-17')=139252.78
 BEGIN;
 SET LOCAL lock_timeout='3s';
 DO $root$ BEGIN

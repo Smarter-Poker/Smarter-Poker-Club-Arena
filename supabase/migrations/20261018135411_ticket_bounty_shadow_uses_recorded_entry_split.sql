@@ -2,6 +2,7 @@
 -- Two tickets into Saturday Mystery each carried entry_bounty=8; the maintained
 -- escrow correctly recorded16 while this read-only shadow assigned it to prizes.
 -- No wallet, payout, rate, maintained escrow or settled history is changed.
+-- @live-proof: md5(pg_get_functiondef('public.fn_ca_tournament_escrow_chips(uuid)'::regprocedure)) = '255a830f5ecb4c6c1e7518fe33c4090c'
 BEGIN;
 SET LOCAL lock_timeout='3s';
 DO $migration$

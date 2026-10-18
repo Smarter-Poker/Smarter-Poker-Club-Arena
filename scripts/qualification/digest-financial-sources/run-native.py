@@ -90,6 +90,7 @@ try:
  sql(f"""INSERT INTO wallet_transactions VALUES ('{uid(20)}','credit','prize',20),('{uid(20)}','credit','bounty',16);
  INSERT INTO tournament_rake_settlements VALUES ('{uid(20)}',4,now());""")
  assert sql(f"SELECT prize_balance||','||bounty_balance||','||fee_balance FROM fn_ca_tournament_escrow_chips('{uid(20)}')")=='0.00,0.00,0.00'
+ print(sql("SELECT json_build_object('cash_earning_club',md5(pg_get_functiondef('fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)'::regprocedure)),'ticket_shadow',md5(pg_get_functiondef('fn_ca_tournament_escrow_chips(uuid)'::regprocedure)))"))
  print('PASS: original Lightning funding and custody refusals; ticket bounty before28/8 after20/16, terminal escrow exact zero')
 finally:
  if started:run('pg_ctl',['-D',str(scratch/'data'),'-m','immediate','-w','stop'])

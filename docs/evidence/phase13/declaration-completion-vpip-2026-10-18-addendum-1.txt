@@ -1,0 +1,71 @@
+Prospective Horse Brain completion window addendum, 2026-10-18
+
+Parent declaration:
+docs/evidence/phase12/declaration-completion-vpip-repair-2026-10-18.txt
+SHA256 bf721339a53cb849de6b022c2b98dc04bb7c44fa9eb507533da98d598731441d.
+This addendum is declared before the first governed window opens and before
+any of its governed journal records are read. No completion window under the
+parent declaration has been opened or judged. The earlier 15:15-15:30 UTC
+repair witness is behavioral evidence only and cannot become completion data.
+
+Purpose: use a prospective interval between the existing hourly maintenance
+breaks. Independent engine deliveries retain their normal route; this
+declaration creates no release hold. A two-hour interval is not an admission
+requirement in the existing completion authorities. This changes only the
+prospective collection bounds, not the sample, confidence, completion or
+board-count gates, and it makes no qualification or selection.
+
+The first candidate H is 2026-10-18T17:00:00.000Z. It opens only if the active
+agent records the required identity and matching policy-digest reads in
+[H:00:00.000Z, H:02:00.000Z). Missing the reads skips the hour; it does not
+establish a window retrospectively. The same prospective rule applies at
+each later whole UTC hour while the agent is actively doing this assignment.
+No watcher, cron, scheduler, unattended chain or release action is created.
+
+For P11 plo5/plo6/plo8, P12 flh/pineapple/flo8/short_deck, and P13
+nlh/plo4/plo5/plo6/plo8/flo8/flh/pineapple/short_deck, the window is:
+[H:02:00.000Z, H:50:00.000Z).
+Thus the first candidate is 17:02-17:50 UTC (12:02-12:50 America/Chicago).
+P10 still has no completion admission record of its own.
+
+Before opening, prove the serving protected-main release contains the
+reference_shape repair from PR #7337 and that all relevant policy digests
+equal da94e43740fa4940e7d1f6e4488264c2b6ffb58a. Read public /health plus
+container ID, StartedAt and sp.release.sha. After the window closes read them
+again. A changed release, StartedAt or container during that window, an
+unreadable identity, or a policy-digest mismatch voids it. A zero restart
+counter alone cannot prove identity. Record every opening, skip and void.
+
+A window closed with matching end identity is immutable historical evidence.
+A later protected replacement does not change which release made its records.
+An extraction binds that closed window's release; the process currently
+serving during the extraction must stay unchanged and healthy throughout the
+read. Never extract across an actual maintenance cutover. Wait for the
+current maintenance to finish before starting an extraction. Do not delay
+another task's release to preserve a measurement or an extraction.
+
+Use the committed phase11/12/13 extract and completion-record owners. One
+extract at a time, nice 19 and ionice idle. Refuse or abort if health is
+unreadable, a decision worker fails, or oldestQueuedDecisionAgeMs exceeds
+3000 ms. An aborted partial is retained as aborted and never counted.
+Keep each variant's full record and the reader's named exclusion/integrity
+summary. Do not pool hours, variants, releases or policy digests.
+
+The existing gates are unchanged: at least 127 eligible per street and a
+99% Wilson lower bound (z=2.5758293035489) of at least 0.95 for each street.
+The existing P13 authority additionally admits only board counts whose own
+cells clear its floor. Unpopulated or failing board counts are not certified
+by a passing aggregate. No authority, threshold, pack, seed or contract changes.
+
+Every sufficiently populated adverse result is retained and blocks promotion
+of the affected domain; it cannot be measured away in a later hour. A void or
+insufficient-data result remains explicitly unjudged. A later eligible hour
+may supply its own new, independently complete record for an unjudged domain,
+never a pooled or selected subset of earlier windows. Adequately populated
+adverse cells in an earlier record remain visible and binding.
+
+Strength and completion are separate. A pack can be selected only after its
+entire locked strength qualification passes and its applicable completion
+admission passes on the same policy digest. Selection, protected merge,
+publishing, exact installed identity and natural usable/applied receipts
+remain separate required proofs. Nothing in this addendum activates a pack.

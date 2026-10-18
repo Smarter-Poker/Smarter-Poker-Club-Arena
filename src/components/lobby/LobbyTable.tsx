@@ -1,3 +1,4 @@
+import { useSharedSecondTick } from './useSharedSecondTick';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  * LOBBY TABLE — dense, line-based game browser (Club Arena Lobby V2)
@@ -147,28 +148,6 @@ interface ColumnDef {
  * the same tick: one timer, all clocks in step. The interval starts with
  * the first subscriber and dies with the last.
  */
-const tickSubscribers = new Set<() => void>();
-let tickInterval: ReturnType<typeof setInterval> | null = null;
-function useSharedSecondTick(active = true): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    const cb = () => setNow(Date.now());
-    tickSubscribers.add(cb);
-    if (tickInterval == null)
-      tickInterval = setInterval(() => {
-        tickSubscribers.forEach((f) => f());
-      }, 1000);
-    return () => {
-      tickSubscribers.delete(cb);
-      if (tickSubscribers.size === 0 && tickInterval != null) {
-        clearInterval(tickInterval);
-        tickInterval = null;
-      }
-    };
-  }, [active]);
-  return now;
-}
 
 /**
  * Second line of an MTT title (Dan 2026-08-23): Guarantee, the scheduled

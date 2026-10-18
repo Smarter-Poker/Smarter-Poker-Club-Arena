@@ -1,3 +1,4 @@
+import { setVisiblePokerTable } from '../lib/visiblePokerTable';
 import { arenaDisplayText } from '../lib/arenaDisplay/text';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -1878,6 +1879,12 @@ export default function MultiTablePage() {
 
   // ─── Derived state ───────────────────────────────────────────────────
   const activeTableId = tables[activeIndex]?.id || '';
+  const visiblePokerTableId =
+    !hidden && tables[activeIndex] && isTableTab(tables[activeIndex]) ? activeTableId : null;
+  useLayoutEffect(() => {
+    setVisiblePokerTable(visiblePokerTableId);
+    return () => setVisiblePokerTable(null);
+  }, [visiblePokerTableId]);
   /* THE LOBBY BUTTON (Dan 2026-09-05): "THE LOBBY RECTANGLE, NEEDS TO MOVE TO
      ... WHERE THE '4 SQUARE' BOX IS IN THE ACTION PILL AREA. AND SAY 'LOBBY'
      ON IT. (4 SQUARE BUTTON SHOULD BE TO THE LEFT OF IT)." Only a table that
@@ -4063,7 +4070,7 @@ export default function MultiTablePage() {
           <span className="multi-table-page__take-seat-label">
             {isUrgent ? 'Your Turn' : liveCount > 1 ? `${liveCount} Games Running` : 'Game Running'}
           </span>
-          <span className="multi-table-page__take-seat-name">{target.name}</span>
+          <span className="multi-table-page__take-seat-name">{formatGameTitle(target.name)}</span>
         </div>
         <button
           type="button"

@@ -1,3 +1,4 @@
+import { useSatelliteDestination } from '../lobby/game-cards/useTournamentCardText';
 import {
   tournamentEntryWindow,
   type TournamentEntryWindowRow,
@@ -91,6 +92,8 @@ interface Tournament extends TournamentEntryWindowRow {
   lateRegMins?: number;
   isRebuy?: boolean;
   guaranteedPrize?: number;
+  satellite_target_id?: string | null;
+  satellite_target?: string | null;
   isBounty?: boolean;
   isPko?: boolean;
   isMysteryBounty?: boolean;
@@ -723,6 +726,13 @@ function TournamentLobbyCardInner({
     };
   }
 
+  const destination = useSatelliteDestination(
+    tournament.satellite_target_id || tournament.satellite_target
+  );
+  const guarantee =
+    (tournament.guaranteedPrize ?? 0) > 0
+      ? `${compactChips(tournament.guaranteedPrize!)} Guaranteed`
+      : undefined;
   const Section = unframed ? ClubPageSection : SpadeConsole;
   return (
     <Section
@@ -732,10 +742,8 @@ function TournamentLobbyCardInner({
       /* The recorded format names the card; a format nobody has recorded is
          plainly a Tournament, never a guess. */
       eyebrow={formatKnown ? getTypeLabel(displayType) : 'Tournament'}
-      /* The name, and only the name. Prefixing the guarantee pushed the title
-         past the header well and truncated it ("5K GTD SUNDAY DEEPSTAC"); the
-         guarantee already prints, in gold, on the PRIZE POOL row below. */
       title={formatGameTitle(tournament.name)}
+      subtitle={[guarantee, destination].filter(Boolean).join(' · ') || undefined}
       pill={pill}
       pillInk={pillInk}
       onClick={() => navigate(`/tournaments/${tournament.id}`)}

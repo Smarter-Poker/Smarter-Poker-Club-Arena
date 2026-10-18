@@ -4,6 +4,7 @@ import {
   cashTemplateLabel,
   cashTitleLines,
   levelSpeedLabel,
+  mttTitleLine,
   spinPayoutLabel,
   spinPrizeLabel,
   stackDepthLabel,
@@ -159,12 +160,20 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
   const heading =
     entry.kind === 'cash'
       ? cashCardTitle(entry)
-      : { title: entry.name, subtitle: entry.clubLabel || entry.variantLabel };
+      : {
+          title: family === 'mtt' ? mttTitleLine(entry) : entry.name,
+          subtitle: entry.clubLabel || entry.variantLabel,
+        };
 
   return {
     id: entry.id,
     family,
-    title: heading.title,
+    title:
+      entry.kind !== 'cash' &&
+      Number(entry.guaranteeValue) > 0 &&
+      !/\b(?:GTD|Guaranteed)\b/i.test(heading.title)
+        ? `${heading.title} · ${compactChips(entry.guaranteeValue!)} Guaranteed`
+        : heading.title,
     subtitle: heading.subtitle,
     styleNote: (entry.kind === 'cash' ? cashTemplateNote(entry.game?.template) : null) || undefined,
     gameType: entry.gameLabel,

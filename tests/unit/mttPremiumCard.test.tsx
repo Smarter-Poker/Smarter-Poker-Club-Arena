@@ -146,12 +146,11 @@ describe('cash-style tournament card', () => {
     paint();
     expect(measured).toHaveBeenCalled();
   });
-  it('shows live tournament facts, status and variant together', () => {
+  it('shows live tournament facts and countdown without the rules rail', () => {
     render(<MttPremiumCard data={data} actions={{ primaryLabel: 'Register' }} />);
     for (const value of [
       'Sunday Deep Stack',
-      'Registering · Starting In 10:00',
-      'NLH',
+      'Starting In 10:00',
       'Oct 11, 12:00 PM',
       '200',
       '20,000 GTD',

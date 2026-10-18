@@ -966,6 +966,7 @@ export default function TournamentLobbyPage() {
                       diamond_spin_ceiling: tournament.diamond_spin_ceiling,
                       isRebuy: tournament.isRebuy,
                       guaranteedPrize: tournament.guaranteedPrize,
+                      satellite_target_id: tournament.satellite_target_id,
                       isBounty: tournament.isBounty,
                       isPko: tournament.isPko,
                       isMysteryBounty: tournament.isMysteryBounty,

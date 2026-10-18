@@ -4,7 +4,7 @@ Blinding-off warnings now use the multi-table container's visible poker table an
 
 Tournament card headers include positive guarantees and the variant. Premium and fallback MTT skins use the existing phase projection and one shared second tick for actual start and late-registration deadlines. The condensed rule/featured rail is removed; Details retains the full rules. Satellite destinations resolve the linked tournament name with concurrent request deduplication, cancellation on navigation and explicit loading/unavailable states. The separate tournament-list card includes guarantees and destinations in its header too.
 
-The Game Running notification prints its table name through the existing acronym formatter, preserving NLH in uppercase.
+The return-to-seat notification preserves NLH in uppercase for cash tables. Tournament targets say Tournament Running and show the actual event title plus the total buy-in including fee, rather than changing blind levels. The existing bounded metadata batch supplies both name and price; both move paths retain them. Urgent turns remain prioritized, and unavailable metadata is explicit.
 
 Verification: original source fails eight of the nine initial focused regression cases; repaired source passes. Real-font fixture renders inspected at 375, 393 and 1440 pixels, with no document overflow. The live satellite link was independently read as Funday Mystery Satellite 10 -> Sunday Funday Mystery. Full prechecks and publication evidence are retained in the task checkpoint.
 

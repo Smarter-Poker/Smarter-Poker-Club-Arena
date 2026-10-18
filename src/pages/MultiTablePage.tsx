@@ -58,7 +58,7 @@ import { formatGameTitle } from '../utils/formatGameTitle';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
 import { gameCode, gameCodeFromName, isTournamentGameCode } from '../utils/gameCode';
-import { readTournamentBuyIns } from '../lib/tournamentTabLabel';
+import { readTournamentTabInfo, tournamentTabBuyInLabel } from '../lib/tournamentTabLabel';
 import { reportError } from '../utils/errorReporter';
 import { stakesLabel } from '../lib/bettingStructure';
 import { swipeTargetIndex } from '../utils/swipeTarget';
@@ -217,6 +217,7 @@ interface TableInstance {
    * Undefined means not known yet.
    */
   tournamentBuyIn?: number;
+  tournamentName?: string;
   /** TablePage's `seatCanAddFunds` answer; the tab bar drops its Top Up items
    *  on `false`. Reported, never derived here: this page cannot see the arena. */
   canAddFunds?: boolean;
@@ -1458,6 +1459,7 @@ export default function MultiTablePage() {
                         /* One tournament, one price: it moves with the chair
                            here exactly as it does on the socket path. */
                         tournamentBuyIn: t.tournamentBuyIn,
+                        tournamentName: t.tournamentName,
                       }
                     : t
                 )
@@ -3496,6 +3498,7 @@ export default function MultiTablePage() {
                with the chair. Without this the tab would drop to a bare code
                until the buy-in was read again. */
             tournamentBuyIn: current.tournamentBuyIn,
+            tournamentName: current.tournamentName,
             /* Only a TOURNAMENT move is something done to the player without
                their asking; the table page reads this to say so on the felt. */
             ...(tabIsTournament(current) ? { arrivedByMoveAt: Date.now() } : {}),
@@ -3529,9 +3532,8 @@ export default function MultiTablePage() {
    * before its TablePage has loaded a tournament row (a deep link, the seat
    * rebuild, an engine auto-seat). So the container asks for itself: one
    * bounded read per table id, for tournament tabs that do not know their
-   * price yet. A price never changes after the event is created, so this is
-   * asked once and kept; a table page that reports `tournamentBuyIn` first
-   * simply makes the read unnecessary.
+   * price or event name yet. Both are read together and kept with the seat,
+   * including when the table page reports its price before the event name.
    *
    * NOT A POLL AND NOT A RETRY LOOP. Each id is asked for exactly once per
    * mount. A failed read leaves the tab on its bare code ("MTT"), which is the
@@ -3543,7 +3545,7 @@ export default function MultiTablePage() {
       .filter(
         (t) =>
           isTableTab(t) &&
-          t.tournamentBuyIn === undefined &&
+          (t.tournamentBuyIn === undefined || t.tournamentName === undefined) &&
           (t.isTournament === true || isTournamentGameCode(t.gameCode)) &&
           !buyInAskedRef.current.has(t.id)
       )
@@ -3553,14 +3555,19 @@ export default function MultiTablePage() {
     /* Deliberately not cancelled on re-run: `tables` changes many times a
        hand, and cancelling would throw away the one answer this asks for.
        updateTableInfo ignores an id that is no longer a tab. */
-    readTournamentBuyIns(need)
+    readTournamentTabInfo(need)
       .then((totals) => {
-        for (const [tableId, total] of totals) {
-          updateTableInfo(tableId, { tournamentBuyIn: total });
+        for (const tableId of need) {
+          const info = totals.get(tableId);
+          updateTableInfo(tableId, {
+            tournamentName: info?.name || '',
+            ...(info ? { tournamentBuyIn: info.buyIn } : {}),
+          });
         }
       })
       .catch((err: unknown) => {
         reportError(err, 'MultiTablePage.tournament_buy_in_read_failed');
+        for (const tableId of need) updateTableInfo(tableId, { tournamentName: '' });
       });
   }, [tables, updateTableInfo]);
 
@@ -4062,15 +4069,40 @@ export default function MultiTablePage() {
   const renderTakeSeatBar = () => {
     if (!takeSeatTarget) return null;
     const { target, isUrgent, seconds, liveCount } = takeSeatTarget;
+    const tournament = tabIsTournament(target);
+    const buyIn = tournamentTabBuyInLabel(target.tournamentBuyIn);
     return (
       <div
         className={`multi-table-page__take-seat${isUrgent ? ' multi-table-page__take-seat--urgent' : ''}`}
       >
         <div className="multi-table-page__take-seat-info">
           <span className="multi-table-page__take-seat-label">
-            {isUrgent ? 'Your Turn' : liveCount > 1 ? `${liveCount} Games Running` : 'Game Running'}
+            {tournament
+              ? isUrgent
+                ? 'Your Turn · Tournament Running'
+                : 'Tournament Running'
+              : isUrgent
+                ? 'Your Turn'
+                : liveCount > 1
+                  ? `${liveCount} Games Running`
+                  : 'Game Running'}
           </span>
-          <span className="multi-table-page__take-seat-name">{formatGameTitle(target.name)}</span>
+          {tournament ? (
+            <div className="multi-table-page__take-seat-event">
+              <span className="multi-table-page__take-seat-name">
+                {target.tournamentName
+                  ? formatGameTitle(target.tournamentName)
+                  : target.tournamentName === undefined
+                    ? 'Loading Tournament'
+                    : 'Tournament Details Unavailable'}
+              </span>
+              <span className="multi-table-page__take-seat-buy-in">
+                {buyIn ? `Buy-In ${buyIn}` : 'Buy-In Unavailable'}
+              </span>
+            </div>
+          ) : (
+            <span className="multi-table-page__take-seat-name">{formatGameTitle(target.name)}</span>
+          )}
         </div>
         <button
           type="button"

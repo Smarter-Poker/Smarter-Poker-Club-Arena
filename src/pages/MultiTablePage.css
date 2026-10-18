@@ -1415,3 +1415,23 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   font-size: 3.7cqw;
   line-height: 1.5;
 }
+
+/* Keep the event and its entry price readable beside the return control. */
+.multi-table-page__take-seat-event {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  min-width: 0;
+}
+.multi-table-page__take-seat-event .multi-table-page__take-seat-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.multi-table-page__take-seat-buy-in {
+  font-family: 'Roboto Condensed', Inter, system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #e4e7ec;
+  white-space: nowrap;
+}

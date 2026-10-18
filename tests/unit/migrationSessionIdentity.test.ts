@@ -13,6 +13,14 @@ describe('migration identity belongs to the owning transaction', () => {
     expect(result).toContain(`$history$${original}$history$`);
     expect(result.match(/SET LOCAL application_name/g)).toHaveLength(1);
   });
+  it('copies the installer root imports into both isolated native fixtures', () => {
+    for (const path of [
+      'scripts/ci/test_launch_reset_installer.py',
+      'scripts/ci/fixtures/launch-reset/maintenance-thaw-repair/qualify.py',
+    ]) {
+      expect(readFileSync(path, 'utf8')).toContain("original.decode('utf-8')):copy_module(dep)");
+    }
+  });
   it('refuses to send an unbound transaction', () => {
     expect(() => bindMigrationSession('SELECT 1;')).toThrow(/BEGIN/);
   });

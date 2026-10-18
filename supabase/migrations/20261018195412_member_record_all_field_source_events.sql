@@ -48,6 +48,9 @@ CREATE TRIGGER member_record_agent AFTER INSERT OR DELETE OR UPDATE OF user_id,c
 FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_row();
 INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note) VALUES
 ('agents','member_record_agent','Private record invalidation of agent wallet/status; no money writes.');
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note) VALUES
+('club_members','member_record_membership','Private record and upline invalidation including joined date and removals; no money writes.')
+ON CONFLICT DO NOTHING;
 -- Totals read all current transactions, so corrections/removals must invalidate too.
 CREATE OR REPLACE FUNCTION public.fn_publish_member_record_transaction() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$

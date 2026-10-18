@@ -210,11 +210,18 @@ describe('the Report tables are written by the club the money moved through', ()
   it('the club rake totals read the after-the-hand witness before any guess', () => {
     const b = squash(latest('fn_ca_club_rake_daily_compute'));
     const ra = b.indexOf('SELECT ra.club_id FROM rake_attributions ra');
-    const seat = b.indexOf('public.fn_ca_cash_seat_club(b.table_id, c.uid)');
+    const receipt = b.indexOf(
+      'SELECT x.funding_club_id FROM public.cash_participant_funding_receipts x'
+    );
+    const seat = b.indexOf('SELECT ts.club_id FROM public.table_seats ts');
     const guess = b.indexOf('ORDER BY cm.joined_at ASC');
     expect(ra).toBeGreaterThan(-1);
-    expect(seat).toBeGreaterThan(ra);
+    expect(receipt).toBeGreaterThan(ra);
+    expect(seat).toBeGreaterThan(receipt);
     expect(guess).toBeGreaterThan(seat);
+    expect(b).toContain('x.seat_joined_at <= b.created_at');
+    expect(b).toContain('ts.joined_at <= b.created_at');
+    expect(b).not.toContain('fn_ca_cash_seat_club(');
   });
 
   it('every rebuild of a covered day is a rebuild from the facts', () => {

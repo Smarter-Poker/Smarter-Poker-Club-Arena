@@ -2870,7 +2870,21 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           if (this.f06CurrentPermit) {
             if (!Number.isSafeInteger(snap.handNumber) || snap.handNumber < 0)
               throw new Error('f06_hand_number_precision');
-            await this.finishF06AcceptedHand(String(snap.handNumber), v_handHistoryId);
+            try {
+              await this.finishF06AcceptedHand(String(snap.handNumber), v_handHistoryId);
+            } catch (error) {
+              // The completed-envelope transaction also accepts the exact F06
+              // permit (f06_accept_hand). Losing local custody after its reply
+              // cannot turn that committed receipt back into pending money.
+              // A healthy owner, another error, or another hand still refuses.
+              if (
+                !(error instanceof Error && error.message === 'f06_owner_changed') ||
+                this.lifecycleCanMutate() ||
+                outcome.hand_id !== v_handHistoryId ||
+                outcome.hand_number !== snap.handNumber
+              )
+                throw error;
+            }
           }
           resolvedAddOnCount =
             typeof outcome.pending_addons === 'number' && Number.isFinite(outcome.pending_addons)

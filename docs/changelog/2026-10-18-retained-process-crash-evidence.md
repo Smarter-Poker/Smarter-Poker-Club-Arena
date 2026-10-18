@@ -1,0 +1,7 @@
+# Read retained process failure evidence beyond the gameplay tail
+
+Manual diagnostic39137829109 proved58restarts of the selected container, but its10000newest log lines covered only75seconds. Docker returned no retained termination events. Current OOMKilled=false cannot explain historical exits.
+
+The same explicitly invoked diagnostic now streams retained engine logs from the requested two-hour interval under256MiB/20second limits, retaining only one13line error block at a time. It aggregates fixed process categories and known source frames, with byte/record/time coverage and explicit size/time/command failure outcomes. A finished read never claims the full two hours survived rotation. After a sealed container replacement, at most two recent regular outgoing-log archives saved by the existing run-spec are read under separate10second bounds, with their declared image-ID prefixes and explicit partial coverage. Existing autoheal logs are read once, bounded, and only fixed action categories concerning the selected engine are exported. No raw/private text is exported, no monitoring schedule is added and no process is restarted.
+
+Regression uses a real isolated child producer: an older failure remains visible behind20000noisy newer records; size/time bounds terminate only that read child; private strings never appear in results. This is evidence collection needed to diagnose the active incident, not a claim of restart prevention.

@@ -940,11 +940,11 @@ export default function UnionStatementsPage() {
                         ) : (
                           [
                             ['Rake Generated', c.rake_generated],
-                            ['Club Rakeback (90%)', c.rakeback_due],
-                            ['Union Fee Kept (10%)', c.union_fee_kept],
+                            ['Club Rakeback', c.rakeback_due],
+                            ['Union Fee Kept', c.union_fee_kept],
                             ['Player Win/Loss', c.players_won],
                             ['ECO Adjustment', c.eco_amount],
-                            ['Payments Received', c.presettled],
+                            ['Recorded Presettlements', c.presettled],
                           ].map(([label, value]) => (
                             <div className={styles.breakdownLine} key={String(label)}>
                               <span>{String(label)}</span>

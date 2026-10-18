@@ -8,6 +8,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import urllib.error
 
 CONTAINER = 'club-arena-engine'
 MAX_BYTES = 4 * 1024 * 1024
@@ -167,19 +168,159 @@ def bounded_command(args):
 
 
 def identity(expected):
-    request = urllib.request.Request('http://127.0.0.1:8080/health', headers={'Cache-Control': 'no-cache, no-store'})
-    with urllib.request.urlopen(request, timeout=10) as response:
-        body = response.read(65537)
-    if len(body) > 65536:
-        raise RuntimeError('health_size_bound')
-    health = json.loads(body)
-    instance = health.get('instanceId')
-    if health.get('releaseSha') != expected or health.get('running') is not True or health.get('liveness') != 'ok' or not isinstance(instance, str) or not re.fullmatch(r'[1-9][0-9]*-[0-9a-f]{8}', instance):
-        raise RuntimeError('health_identity_refused')
-    label = bounded_command(['docker', 'container', 'inspect', '-f', '{{index .Config.Labels "sp.release.sha"}}', CONTAINER]).strip()
-    if label != expected:
+    # Docker's immutable selection is available even while Node is down. Never
+    # make healthy service a prerequisite for diagnosing why service is down.
+    raw = bounded_command(['docker', 'container', 'inspect', '-f',
+        '{{.Id}} {{.Image}} {{index .Config.Labels "sp.release.sha"}}', CONTAINER]).strip()
+    fields = raw.split()
+    if (len(fields) != 3 or not re.fullmatch(r'[0-9a-f]{64}', fields[0])
+            or not re.fullmatch(r'sha256:[0-9a-f]{64}', fields[1]) or fields[2] != expected):
         raise RuntimeError('container_identity_refused')
-    return instance
+    result = {'containerId': fields[0], 'imageId': fields[1], 'health': 'unavailable',
+              'instanceId': None}
+    request = urllib.request.Request('http://127.0.0.1:8080/health', headers={'Cache-Control': 'no-cache, no-store'})
+    try:
+        try:
+            response = urllib.request.urlopen(request, timeout=10)
+        except urllib.error.HTTPError as error:
+            # /health deliberately answers 503 on standby and degraded states.
+            if error.code != 503:
+                return result
+            response = error
+        with response:
+            body = response.read(65537)
+        if len(body) > 65536:
+            raise RuntimeError('health_size_bound')
+        health = json.loads(body)
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return result
+    except (ValueError, TypeError):
+        result['health'] = 'unreadable'
+        return result
+    if not isinstance(health, dict):
+        result['health'] = 'unreadable'
+        return result
+    if health.get('releaseSha') != expected:
+        raise RuntimeError('health_identity_refused')
+    instance = health.get('instanceId')
+    if not isinstance(instance, str) or not re.fullmatch(r'[1-9][0-9]*-[0-9a-f]{8}', instance):
+        raise RuntimeError('health_identity_refused')
+    result['instanceId'] = instance
+    result['health'] = health.get('liveness') if health.get('liveness') in ('ok', 'standby', 'dead') else 'degraded'
+    return result
+
+
+PROCESS_SIGNALS = {
+    'fatal_uncaught': '[GameServer] FATAL (GameServer.Uncaught_exception)',
+    'fatal_rejection': '[GameServer] FATAL (GameServer.Unhandled_rejection)',
+    'fatal_boot': '[GameServer] FATAL (GameServer.Fatal_error)',
+    'shutdown_requested': '[GameServer] Received shutdown signal',
+    'shutdown_deadline': '[GameServer] graceful shutdown exceeded',
+    'shutdown_failed': '[GameServer] GameServer.shutdown_failed',
+    'leadership_lost': '[leadership] LOST LEADERSHIP',
+    'standby_promoted': 'but booted as a standby, so it has',
+    'v8_heap_exhausted': 'FATAL ERROR: Reached heap limit',
+    'v8_ineffective_gc': 'FATAL ERROR: Ineffective mark-compacts near heap limit',
+}
+PROCESS_CONTEXTS = ('GameServer.Uncaught_exception', 'GameServer.Unhandled_rejection',
+    'GameServer.Fatal_error', 'GameServer.shutdown_deadline', 'GameServer.shutdown_failed',
+    'Leadership.lost', 'Leadership.shutdown_failed', 'Tournament.abandoned_generation_refused')
+PROCESS_CAUSES = ('F06_ABANDONED_CARDS_WITHOUT_SNAPSHOT', 'F06_ABANDONED_ROSTER_CHANGED',
+    'F06_ABANDONED_HAND_HAS_A_RETAINED_SUBMISSION', 'F06_ABANDONED_PARK_CHANGED',
+    'worker execution deadline', 'worker exited', 'out of memory', 'heap out of memory',
+    'statement timeout', 'deadlock detected', 'fetch failed', 'ECONNRESET', 'ETIMEDOUT')
+
+
+PROCESS_FRAMES = {'index.js', 'GameServer.js', 'services/leadership.js',
+    'engine/horseDecision/client.js', 'engine/LiveHorseDecisionWorkerHealth.js',
+    'engine/EquityWorkerPool.js', 'services/supabase/client.js'}
+
+
+def process_signals(raw):
+    result = {}
+    active = None
+    remaining = 0
+    for line in raw.splitlines():
+        if len(line) > 4096:
+            active = None
+            continue
+        stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d{1,9})?Z\s', line)
+        if not stamp:
+            active = None
+            continue
+        try:
+            instant = datetime.datetime.fromisoformat(stamp.group(1) + '+00:00')
+        except ValueError:
+            active = None
+            continue
+        payload = line[stamp.end():]
+        keys = [key for key, literal in PROCESS_SIGNALS.items() if literal in payload]
+        keys += [key for key in PROCESS_CONTEXTS if payload.startswith('[' + key + ']')]
+        if keys:
+            active = (keys, instant)
+            remaining = 12
+            for key in keys:
+                entry = result.setdefault(key, {'count': 0, 'lastTimestamp': None, 'causes': {}, 'frames': []})
+                entry['count'] += 1
+                entry['lastTimestamp'] = stamp.group(1) + 'Z'
+        elif (not active or remaining <= 0 or not payload.startswith((' ', '\t'))
+              or not 0 <= (instant - active[1]).total_seconds() <= 2):
+            active = None
+        else:
+            remaining -= 1
+        if active:
+            for key in active[0]:
+                for path, number in re.findall(r'/app/dist/([A-Za-z0-9_./-]+\.js):(\d{1,7}):\d{1,5}', payload):
+                    if path not in PROCESS_FRAMES:
+                        continue
+                    frame = {'path': path, 'line': int(number)}
+                    frames = result[key]['frames']
+                    if frame not in frames and len(frames) < 8:
+                        frames.append(frame)
+                for cause in PROCESS_CAUSES:
+                    if re.search(r'(?<![A-Za-z0-9_])' + re.escape(cause) + r'(?![A-Za-z0-9_])', payload):
+                        counts = result[key]['causes']
+                        counts[cause] = counts.get(cause, 0) + 1
+    return result
+
+
+def restart_evidence():
+    # Explicit state fields only: never serialize Config.Env or arbitrary labels.
+    raw = bounded_command(['docker', 'container', 'inspect', '-f',
+        '{{json .State}}', CONTAINER])
+    state = json.loads(raw)
+    restarts = bounded_command(['docker', 'container', 'inspect', '-f',
+        '{{.RestartCount}}', CONTAINER]).strip()
+    events = bounded_command(['docker', 'events', '--since', '24h', '--until',
+        datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        '--filter', 'type=container', '--filter', 'container=' + CONTAINER, '--format', '{{json .}}'])
+    return sanitize_restart_evidence(state, restarts, events)
+
+
+def sanitize_restart_evidence(state, restarts, raw_events):
+    if not isinstance(state, dict) or not re.fullmatch(r'[0-9]{1,9}', restarts):
+        raise RuntimeError('container_state_refused')
+    result = {'oomKilled': state.get('OOMKilled') is True,
+              'exitCode': state.get('ExitCode') if type(state.get('ExitCode')) is int else None,
+              'restartCount': int(restarts), 'events': []}
+    for line in raw_events.splitlines():
+        event = json.loads(line)
+        attrs = event.get('Actor', {}).get('Attributes', {})
+        if attrs.get('name') != CONTAINER:
+            continue
+        action = event.get('Action')
+        if action not in ('oom', 'die', 'restart', 'start', 'stop', 'kill'):
+            continue
+        stamp = event.get('time')
+        if type(stamp) is not int:
+            continue
+        item = {'action': action, 'unixTime': stamp}
+        for key in ('exitCode', 'signal'):
+            value = attrs.get(key)
+            if isinstance(value, str) and re.fullmatch(r'[0-9]{1,3}', value):
+                item[key] = int(value)
+        result['events'].append(item)
+    return result
 
 
 def main(expected):
@@ -188,10 +329,12 @@ def main(expected):
     before = identity(expected)
     raw = bounded_command(['docker', 'logs', '--since', '45m', '--tail', '10000', '--timestamps', CONTAINER])
     events = summarize(raw)
+    restarts = restart_evidence()
     after = identity(expected)
-    if before != after:
+    if any(before[key] != after[key] for key in ('containerId', 'imageId')):
         raise RuntimeError('engine_changed_during_read')
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    runtime_stable = before == after
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):

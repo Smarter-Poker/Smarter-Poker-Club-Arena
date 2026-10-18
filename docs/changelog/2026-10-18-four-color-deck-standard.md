@@ -13,3 +13,5 @@ Real-time law: preference changes use the existing SETTINGS_CHANGED event and di
 The cross-tab storage fallback now also enters the canonical store, so a browser without BroadcastChannel updates both explicit table props and implicit cards. Account ownership prevents another account's cached choice from being adopted. Two additional regressions cover those cases.
 
 Account hydration also rejects a different account's local deck opt-out when the new account has no chosen deck. Both absent-row and default-row cases failed before the correction and pass afterward.
+
+The migration declares a machine-readable live proof for the actual four-color column default, so the maintained production audit can verify installation. The existing migration-liveness law and native PostgreSQL proof query pass.

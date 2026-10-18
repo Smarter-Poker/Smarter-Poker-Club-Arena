@@ -26,7 +26,10 @@ import sharp from 'sharp';
 const ROOT = process.cwd();
 const css = readFileSync(join(ROOT, 'src/components/navigation/GlobalHeader.module.css'), 'utf8');
 const art = readFileSync(
-  join(ROOT, 'public/images/global-header/global-header-desktop.png')
+  join(ROOT, 'public/images/global-header/global-header-desktop-black-v2.png')
+).toString('base64');
+const mobileArt = readFileSync(
+  join(ROOT, 'public/images/global-header/global-header-mobile-v1.png')
 ).toString('base64');
 // 1x1 pure red PNG. The artwork has no pure red anywhere near the ornament.
 const PHOTO =
@@ -48,7 +51,8 @@ const html = `
   </head>
   <body>
   <header class="header" data-artwork="approved-global-header">
-    <img class="desktopArtwork" alt="" width="1648" height="168" src="data:image/png;base64,${art}" />
+    <picture><source media="(max-width: 600px)" srcset="data:image/png;base64,${mobileArt}" width="1435" height="168" /><img class="desktopArtwork" alt="" width="1648" height="168" src="data:image/png;base64,${art}" /></picture>
+    <span class="frameFinish outerFrameFinish" aria-hidden="true"></span><span class="frameFinish leftFrameFinish" aria-hidden="true"></span><span class="frameFinish rightFrameFinish" aria-hidden="true"></span>
     <div class="headerControls">
       <div class="headerRight">
         <button class="artButton profileBtn" aria-label="My Profile">
@@ -105,6 +109,19 @@ test.describe('Club Arena header portrait frame', () => {
       const shot = await page.screenshot({
         clip: { x: 0, y: 0, width, height: Math.ceil(geo.art.h) + 1 },
       });
+      // Compare the rails with this same artwork without the portrait mask.
+      // The October black finish deliberately no longer has bright silver rails.
+      await page.locator('.headerControls').evaluate((node: HTMLElement) => {
+        node.style.visibility = 'hidden';
+      });
+      const bare = await sharp(
+        await page.screenshot({ clip: { x: 0, y: 0, width, height: Math.ceil(geo.art.h) + 1 } })
+      )
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      await page.locator('.headerControls').evaluate((node: HTMLElement) => {
+        node.style.visibility = '';
+      });
       const decoded = await sharp(shot).raw().toBuffer({ resolveWithObject: true });
       const pixels = {
         data: decoded.data,
@@ -114,16 +131,17 @@ test.describe('Club Arena header portrait frame', () => {
         dpr: decoded.info.width / width,
       };
 
-      const at = (x: number, y: number) => {
+      const at = (x: number, y: number, data = pixels.data) => {
         const xi = Math.min(pixels.width - 1, Math.max(0, Math.round(x)));
         const yi = Math.min(pixels.height - 1, Math.max(0, Math.round(y)));
         const i = (yi * pixels.width + xi) * pixels.channels;
-        return [pixels.data[i], pixels.data[i + 1], pixels.data[i + 2]] as const;
+        return [data[i], data[i + 1], data[i + 2]] as const;
       };
       const dpr = pixels.dpr;
-      const sx = geo.art.w / PLANE.w;
+      const plane = width <= 600 ? { ...PLANE, w: 1435, cx: 976.75 } : PLANE;
+      const sx = geo.art.w / plane.w;
       const sy = geo.art.h / PLANE.h; // 96/168 on the compressed desktop band
-      const cx = (geo.art.x + PLANE.cx * sx) * dpr;
+      const cx = (geo.art.x + plane.cx * sx) * dpr;
       const cy = (geo.art.y + PLANE.cy * sy) * dpr;
 
       // 1. The ring and its glow are black. Green or blue here = ornament.
@@ -158,14 +176,74 @@ test.describe('Club Arena header portrait frame', () => {
       expect(bottom[0], `${width}px: the bottom of the photo is cut off`).toBeGreaterThan(150);
 
       // 4. The silver rails straight above and below the ornament are intact.
-      let above = 0;
-      let below = 0;
       for (let r = RAIL_RANGE.from; r <= RAIL_RANGE.to; r++) {
-        above = Math.max(above, ...at(cx, cy - r * sy * dpr));
-        below = Math.max(below, ...at(cx, cy + r * sy * dpr));
+        for (const direction of [-1, 1]) {
+          const y = cy + direction * r * sy * dpr;
+          const actual = at(cx, y);
+          const expected = at(cx, y, bare.data);
+          expect(actual, `${width}px: the portrait mask must not alter either rail`).toEqual(
+            expected
+          );
+        }
       }
-      expect(above, `${width}px: the mask has swallowed the upper rail`).toBeGreaterThan(90);
-      expect(below, `${width}px: the mask has swallowed the lower rail`).toBeGreaterThan(90);
     }
   });
+});
+
+test('the footer-dark finish changes metal while preserving controls, logo and blue shines', async ({
+  page,
+}) => {
+  for (const width of [393, 1680]) {
+    await page.setViewportSize({ width, height: 300 });
+    await page.setContent(html);
+    await page.waitForFunction(() => [...document.images].every((image) => image.complete));
+    const finished = await sharp(await page.screenshot())
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    await page.locator('.frameFinish').evaluateAll((nodes) =>
+      nodes.forEach((node) => {
+        (node as HTMLElement).style.display = 'none';
+      })
+    );
+    const original = await sharp(await page.screenshot())
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const planeWidth = width <= 600 ? 1435 : 1648;
+    const planeHeight = width <= 600 ? (width * 168) / 1435 : 96;
+    const sx = width / planeWidth;
+    const sy = planeHeight / 168;
+    const regions =
+      width <= 600
+        ? [
+            [24, 24, 450, 116],
+            [590, 40, 250, 90],
+            [955, 30, 456, 110],
+          ]
+        : [
+            [24, 24, 480, 116],
+            [586, 24, 459, 116],
+            [1124, 24, 500, 116],
+          ];
+    regions.push([planeWidth * 0.47, 0, planeWidth * 0.1, 20]);
+    for (const [x, y, w, h] of regions) {
+      for (let row = Math.ceil(y * sy); row < Math.floor((y + h) * sy); row++) {
+        const start = (row * width + Math.ceil(x * sx)) * finished.info.channels;
+        const end = (row * width + Math.floor((x + w) * sx)) * finished.info.channels;
+        expect(
+          finished.data.subarray(start, end).equals(original.data.subarray(start, end)),
+          `${width}px: protected interior changed`
+        ).toBe(true);
+      }
+    }
+    let before = 0,
+      after = 0;
+    for (let row = Math.ceil(2 * sy); row < Math.floor(20 * sy); row++) {
+      for (let col = Math.ceil(100 * sx); col < Math.floor(450 * sx); col++) {
+        const i = (row * width + col) * finished.info.channels;
+        before += original.data[i] + original.data[i + 1] + original.data[i + 2];
+        after += finished.data[i] + finished.data[i + 1] + finished.data[i + 2];
+      }
+    }
+    expect(after, `${width}px: the frame must visibly darken`).toBeLessThan(before * 0.7);
+  }
 });

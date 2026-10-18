@@ -39,6 +39,15 @@ interface AccountResolvedClub {
 }
 
 const APPROVED_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-v3.webp`;
+const PHONE_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-mobile-v1.webp`;
+// Native columns retained from the member frame. Only empty gaps are omitted.
+const MEMBER_PHONE_SLICES = [
+  [0, 377],
+  [473, 274],
+  [843, 244],
+  [1183, 234],
+  [1514, 352],
+] as const;
 const APPROVED_PLAYER_FOOTER_ART = `${import.meta.env.BASE_URL}images/club-footer/club-arena-footer-player-v1.webp`;
 
 function useResolvedClubId(explicit?: string, routeClubId?: string | null): string | null {
@@ -200,16 +209,53 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
       }}
     >
       <div className={styles.viewport}>
-        <div className={styles.artwork}>
-          <img
-            className={styles.artworkImage}
-            src={footerArt}
-            alt=""
-            width="1916"
-            height="256"
-            decoding="async"
-            draggable={false}
-          />
+        <div className={`${styles.artwork}${canSeeData ? '' : ` ${styles.memberArtwork}`}`}>
+          <picture>
+            {canSeeData && (
+              <source
+                media="(max-width: 600px)"
+                srcSet={PHONE_FOOTER_ART}
+                width="1531"
+                height="256"
+              />
+            )}
+            <img
+              className={styles.artworkImage}
+              src={footerArt}
+              alt=""
+              width="1916"
+              height="256"
+              decoding="async"
+              draggable={false}
+            />
+          </picture>
+          {!canSeeData && (
+            <div className={styles.memberMobileArtwork} aria-hidden="true">
+              {MEMBER_PHONE_SLICES.map(([start, width], index) => {
+                const left = MEMBER_PHONE_SLICES.slice(0, index).reduce(
+                  (sum, [, size]) => sum + size,
+                  0
+                );
+                return (
+                  <span
+                    key={start}
+                    className={styles.memberMobileSlice}
+                    style={{ left: `${(left / 1481) * 100}%`, width: `${(width / 1481) * 100}%` }}
+                  >
+                    <img
+                      src={APPROVED_PLAYER_FOOTER_ART}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        left: `${(-(start + 25) / width) * 100}%`,
+                        width: `${(1916 / width) * 100}%`,
+                      }}
+                    />
+                  </span>
+                );
+              })}
+            </div>
+          )}
           <div className={styles.diamondArtwork} aria-hidden="true">
             <img
               src={`${import.meta.env.BASE_URL}images/club-footer/diamond-spins-footer-art.png`}

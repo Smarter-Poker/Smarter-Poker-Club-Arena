@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -40,7 +41,18 @@ describe('Phase 6 Club Entry visual and performance contracts', () => {
   it('keeps the approved global Smarter.Poker identity raster lossless and unobstructed', () => {
     const header = read('src/components/navigation/GlobalHeader.tsx');
     expect(header).toContain('global-header-desktop-black-v2.png');
-    expect(header).not.toContain('srcSet=');
+    // The owner-requested phone composition is a distinct, pinned master.
+    // Reject arbitrary responsive substitutions while allowing this exact art.
+    expect(header.match(/srcSet=/g)).toHaveLength(1);
+    expect(header).toContain('media="(max-width: 600px)"');
+    expect(header).toContain('srcSet={`${APPROVED_HEADER_ASSET}global-header-mobile-v1.png`}');
+    const phone = readFileSync(
+      resolve(root, 'public/images/global-header/global-header-mobile-v1.png')
+    );
+    expect(createHash('sha256').update(phone).digest('hex')).toBe(
+      'e8b06cd528488a934fe1da2faf5278663e7e523bab2a07d49de8073afff7a13b'
+    );
+    expect(phone.length).toBeLessThanOrEqual(400 * 1024);
     expect(header).not.toContain('vault-iris-emblem-v1');
     const approved = resolve(
       root,

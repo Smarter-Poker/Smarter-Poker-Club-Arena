@@ -401,6 +401,76 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE PHONE HEADER (Dan 2026-10-17: "ON MOBILE THE HEADERS AND FOOTERS ARE TOO
+   SMALL")
+   ---------------------------------------------------------------------------
+   One row on every width still, and every control is the approved art at its
+   own scale. What changes below 601px is the plane: the <picture> serves
+   global-header-mobile-v1.png (1435 x 168), derived from the 1648 x 168 black
+   master by rebuilding the wordmark plate narrower around a 0.62-scale
+   Smarter.Poker (455 interior columns become 294) and trimming seven gaps
+   that measured as straight runs on the art (menu/Back 10, inside Back 6,
+   inside Hub 6, Profile/Wallet 6, Wallet/VIP 8, VIP/Messages 8,
+   Messages/Bell 8). 213 columns come out, so at the same width the row is
+   1648/1435 = 1.148x taller: 46px at 393px instead of 40px.
+
+   Every hit region below is its desktop region carried through that same
+   column map and divided by 1435, so a button still covers exactly the art it
+   covered before. The profile mask is the portrait law on the new plane: the
+   ornament centre moves from x 1159.75 to 976.75 (y and every radius are
+   untouched, because no column within 62 units of it was cut on the left and
+   the Profile/Wallet trim starts beyond its glow), so the r 56 disc is
+   left (976.75 - 56) / 1435 = 64.164%, width 112 / 1435 = 7.805%, and its
+   top stays 14.58%. tests/the-header-portrait-frame-is-a-hairline.law.test.ts
+   resolves it on this plane. */
+@media (max-width: 600px) {
+  .desktopArtwork,
+  .headerControls {
+    aspect-ratio: 1435 / 168;
+  }
+
+  .hamburgerBtn {
+    left: 1.952%;
+    width: 7.342%;
+  }
+
+  .backBtn {
+    left: 8.641%;
+    width: 13.213%;
+  }
+
+  .hubBtn {
+    left: 20.82%;
+    width: 14.397%;
+  }
+
+  .profileBtn {
+    left: 64.164%;
+    width: 7.805%;
+  }
+
+  .walletBtn {
+    left: 71.313%;
+    width: 7.178%;
+  }
+
+  .vipBtn {
+    left: 78.328%;
+    width: 6.76%;
+  }
+
+  .messengerBtn {
+    left: 85.037%;
+    width: 6.949%;
+  }
+
+  .notificationsBtn {
+    left: 91.715%;
+    width: 6.563%;
+  }
+}
+
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .header {
     padding-top: max(env(safe-area-inset-top, 0px), 24px);
@@ -459,4 +529,97 @@
   .header.inTab .headerControls {
     top: 0;
   }
+}
+
+/* Owner 2026-10-18: the frame must match the darker footer. These stencils
+   shade the master's own metal, never the logo, icon faces or live portrait.
+   Keeping the original art below also preserves its alpha silhouette. */
+.frameFinish {
+  position: absolute;
+  top: env(safe-area-inset-top, 0px);
+  right: env(safe-area-inset-right, 0px);
+  left: env(safe-area-inset-left, 0px);
+  aspect-ratio: 1648 / 168;
+  pointer-events: none;
+  -webkit-backdrop-filter: brightness(0.45);
+  backdrop-filter: brightness(0.45);
+}
+.outerFrameFinish {
+  clip-path: polygon(
+    evenodd,
+    0 0,
+    100% 0,
+    100% 100%,
+    0 100%,
+    0 0,
+    1.46% 13.1%,
+    46% 13.1%,
+    46% 0,
+    58% 0,
+    58% 13.1%,
+    98.54% 13.1%,
+    98.54% 85.7%,
+    58% 85.7%,
+    58% 100%,
+    46% 100%,
+    46% 85.7%,
+    1.46% 85.7%,
+    1.46% 13.1%,
+    0 0
+  );
+}
+.leftFrameFinish {
+  clip-path: polygon(30.6% 13.1%, 32.4% 13.1%, 35.6% 85.7%, 33.6% 85.7%);
+}
+.rightFrameFinish {
+  clip-path: polygon(66.9% 13.1%, 68.3% 13.1%, 65% 85.7%, 63.4% 85.7%);
+}
+@media (max-width: 600px) {
+  .frameFinish {
+    aspect-ratio: 1435 / 168;
+  }
+  .outerFrameFinish {
+    clip-path: polygon(
+      evenodd,
+      0 0,
+      100% 0,
+      100% 100%,
+      0 100%,
+      0 0,
+      1.67% 13.1%,
+      46% 13.1%,
+      46% 0,
+      58% 0,
+      58% 13.1%,
+      98.33% 13.1%,
+      98.33% 85.7%,
+      58% 85.7%,
+      58% 100%,
+      46% 100%,
+      46% 85.7%,
+      1.67% 85.7%,
+      1.67% 13.1%,
+      0 0
+    );
+  }
+  .leftFrameFinish {
+    clip-path: polygon(33.87% 13.1%, 35.96% 13.1%, 39.16% 85.7%, 37.07% 85.7%);
+  }
+  .rightFrameFinish {
+    clip-path: polygon(64.1% 13.1%, 65.37% 13.1%, 61.6% 85.7%, 60.07% 85.7%);
+  }
+}
+@media (min-width: 901px) {
+  .frameFinish {
+    height: 96px;
+    aspect-ratio: auto;
+  }
+}
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .frameFinish {
+    top: max(env(safe-area-inset-top, 0px), 24px);
+  }
+}
+.header.inTab .frameFinish {
+  top: 0;
 }

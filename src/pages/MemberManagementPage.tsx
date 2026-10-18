@@ -524,6 +524,16 @@ export default function MemberManagementPage() {
     };
   }, [loadDetail, range, rangeMode]);
 
+  // A visible idle ledger still advances with the UTC calendar. Custom drafts
+  // remain explicit; this one-shot boundary is cancelled when scope changes.
+  useEffect(() => {
+    if (rangeMode !== 'week') return;
+    const now = new Date();
+    const nextDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+    const timer = window.setTimeout(() => recordRefreshRef.current(), nextDay - now.getTime() + 25);
+    return () => window.clearTimeout(timer);
+  }, [rangeMode, range.from, range.to, clubId, userId, user?.id]);
+
   /* ── Range ──────────────────────────────────────────────────────────────── */
 
   const chooseRange = useCallback((mode: RangeMode) => {

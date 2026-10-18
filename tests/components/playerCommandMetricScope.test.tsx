@@ -415,3 +415,30 @@ it('advances relative performance dates at the UTC boundary without polling', as
   expect(state.getMemberStatistics.mock.lastCall![3].to).toBe('2026-10-19');
   expect(state.getMemberStatistics).toHaveBeenCalledTimes(2);
 });
+
+it('advances a visible seven-day member ledger at the UTC boundary without another event', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-10-18T23:59:59.900Z'));
+  render(<MemberManagementPage />);
+  await act(async () => {});
+  fireEvent.click(screen.getByRole('button', { name: '7 Days', exact: true }));
+  await act(async () => {});
+  expect(state.getMemberDetail.mock.lastCall![2]).toEqual({
+    from: '2026-10-12',
+    to: '2026-10-18',
+  });
+  const beforeMidnight = state.getMemberDetail.mock.calls.length;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(130);
+  });
+  expect(state.getMemberDetail.mock.lastCall![2]).toEqual({
+    from: '2026-10-13',
+    to: '2026-10-19',
+  });
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(beforeMidnight + 1);
+  fireEvent.click(screen.getByRole('button', { name: 'Select', exact: true }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(86_400_000);
+  });
+  expect(state.getMemberDetail).toHaveBeenCalledTimes(beforeMidnight + 1);
+});

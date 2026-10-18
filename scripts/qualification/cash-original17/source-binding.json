@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 227470,
-      "sha256": "eb9b4bc61c5f3b193bb8615e2df622903bb3b6cee1f22c6609356f71051e91f2"
+      "bytes": 227864,
+      "sha256": "d54145118753e31f5c55c513b8d2f7478a491960dfeeee71b5de6bb7e03e4576"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -371,5 +371,6 @@
   },
   "diamondIntegratedMain20261017": {
     "reason": "Reviewed combined workflow preserves all protected main and Diamond qualifications. Refresh only integrated workflow source identity, preserving historical evidence and financial qualification status."
-  }
+  },
+  "_digest_retention_ci_note": "Only current CI bytes updated to add native bounded-retention qualification. Historical evidence, financial assertions and verdicts unchanged."
 }

@@ -182,16 +182,56 @@ def identity(expected):
     return instance
 
 
+def restart_evidence():
+    # Explicit state fields only: never serialize Config.Env or arbitrary labels.
+    raw = bounded_command(['docker', 'container', 'inspect', '-f',
+        '{{json .State}}', CONTAINER])
+    state = json.loads(raw)
+    restarts = bounded_command(['docker', 'container', 'inspect', '-f',
+        '{{.RestartCount}}', CONTAINER]).strip()
+    events = bounded_command(['docker', 'events', '--since', '24h', '--until',
+        datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        '--filter', 'type=container', '--format', '{{json .}}'])
+    return sanitize_restart_evidence(state, restarts, events)
+
+
+def sanitize_restart_evidence(state, restarts, raw_events):
+    if not isinstance(state, dict) or not re.fullmatch(r'[0-9]{1,9}', restarts):
+        raise RuntimeError('container_state_refused')
+    result = {'oomKilled': state.get('OOMKilled') is True,
+              'exitCode': state.get('ExitCode') if type(state.get('ExitCode')) is int else None,
+              'restartCount': int(restarts), 'events': []}
+    for line in raw_events.splitlines():
+        event = json.loads(line)
+        attrs = event.get('Actor', {}).get('Attributes', {})
+        if attrs.get('name') != CONTAINER:
+            continue
+        action = event.get('Action')
+        if action not in ('oom', 'die', 'restart', 'start', 'stop', 'kill'):
+            continue
+        stamp = event.get('time')
+        if type(stamp) is not int:
+            continue
+        item = {'action': action, 'unixTime': stamp}
+        for key in ('exitCode', 'signal'):
+            value = attrs.get(key)
+            if isinstance(value, str) and re.fullmatch(r'[0-9]{1,3}', value):
+                item[key] = int(value)
+        result['events'].append(item)
+    return result
+
+
 def main(expected):
     if not re.fullmatch(r'[0-9a-f]{40}', expected):
         raise RuntimeError('expected_sha_refused')
     before = identity(expected)
     raw = bounded_command(['docker', 'logs', '--since', '45m', '--tail', '10000', '--timestamps', CONTAINER])
     events = summarize(raw)
+    restarts = restart_evidence()
     after = identity(expected)
     if before != after:
         raise RuntimeError('engine_changed_during_read')
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):

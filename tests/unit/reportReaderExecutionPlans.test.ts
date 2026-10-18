@@ -6,6 +6,22 @@ const read = (path: string) => readFileSync(path, 'utf8');
 const migration = '20261018183243_report_reader_generic_plans_retain_bounded_bitmap_scans.sql';
 
 describe('qualified report execution settings', () => {
+  it('retains exact ledger precision in the original producer and qualifies historical correction', () => {
+    const sql = read(
+      'supabase/migrations/20261018210833_reporting_rake_retains_precision_until_the_final_total.sql'
+    );
+    expect(sql).toContain('SUM(f.fee), COALESCE(MAX(h.hands), 0)');
+    expect(sql).toContain('UPDATE public.club_table_daily d SET rake=f.rake');
+    expect(sql).not.toMatch(/ALTER ROLE|ALTER DATABASE/);
+    const native = read('scripts/ci/test-club-data-report-db-postgres.py');
+    expect(native).toContain(
+      '20261018210833_reporting_rake_retains_precision_until_the_final_total.sql'
+    );
+    expect(native).toContain('precision-scenario.sql');
+    expect(native).toContain('precision correction preserves every ledger fact');
+    expect(native).toContain('precision migration replay is refused before a recount');
+  });
+
   it('qualifies the indexed source, real producer, saturation and private read budgets', () => {
     const sql = read(
       'supabase/migrations/20261018195533_bomb_catchup_retains_its_qualified_generic_bitmap_plan.sql'

@@ -86,20 +86,21 @@ describe('an existing member is never shown the invitation', () => {
   });
 });
 
-describe('the page wears the black-glass and gold treatment', () => {
+describe('the page wears the black-glass and brand-blue treatment', () => {
   /**
    * Dan sent three reference cards on 2026-08-28 with "CUSTOM SWAP, CUSTOM MAKE
    * AND DESIGN THEM, BUT THEY SHOULD LOOK AND FEEL LIKE THIS". They supersede
    * the Facebook palette he had asked for an hour earlier, which this beat used
    * to pin (`--fb-blue: #1877f2`, `--fb-bg: #f9fafb`). The look is the Club
    * Arena house one: black glass in a brushed-steel frame, blue neon down the
-   * long edges, gold Cinzel display type.
+   * long edges, silver and blue Cinzel display type.
    */
-  it('declares the gold / neon / steel palette', () => {
-    for (const token of ['--iv-gold:', '--iv-neon:', '--iv-steel:', '--iv-ink:']) {
+  it('declares the brand-blue / neon / steel palette', () => {
+    for (const token of ['--iv-accent:', '--iv-neon:', '--iv-steel:', '--iv-ink:']) {
       expect(CSS, `${token} went missing`).toContain(token);
     }
     expect(CSS, 'Cinzel is the display face in the reference').toMatch(/Cinzel/);
+    expect(CSS).not.toMatch(/#ffd700|#f7e7a3|#ffa500|255, 215, 0|212, 175, 55/i);
   });
 
   /**

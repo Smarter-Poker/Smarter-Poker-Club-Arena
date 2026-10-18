@@ -883,12 +883,12 @@
 }
 
 /* A complete engraved search boundary, with the same blue ink as its label. */
-.cbc-input.cbc-search {
+.cbc-panel .cbc-input.cbc-search {
   padding: 2.4cqw 3cqw;
   border: 1px solid #45adff !important;
 }
 
-.cbc-input.cbc-search:focus-visible {
+.cbc-panel .cbc-input.cbc-search:focus-visible {
   outline: 2px solid #45adff;
   outline-offset: 2px;
 }

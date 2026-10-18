@@ -243,13 +243,6 @@ export function promoBalanceLabel(source: PromoSource): string {
   return source === 'club_pot' ? 'Club Promo Wallet Balance' : 'Your Promo Float';
 }
 
-/** The sentence under the source switch, in the viewer's terms. */
-export function promoSourceBlurb(source: PromoSource): string {
-  return source === 'club_pot'
-    ? 'The Club Promo Wallet. Funded By The Union Promo Wallet And The Jackpot Promo Slice. Spent By Club Staff.'
-    : 'Your Own Promo Float. Promo Chips Sent To You As An Agent, To Hand Out To Your Players.';
-}
-
 /**
  * THE TEN MINUTE COUNTDOWN IS THE SERVER'S, NOT THE PHONE'S.
  *

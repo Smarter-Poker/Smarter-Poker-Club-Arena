@@ -45,7 +45,9 @@ describe('the Simple Cashier header', () => {
 
   it("prints the viewer's own club balance inside Request Cash Out", () => {
     expect(page).toContain('aria-describedby="cashier-cashout-balance"');
-    expect(page).toMatch(/id="cashier-cashout-balance"[\s\S]{0,200}\$\{fmt\(myBalance\)\} Chips/);
+    expect(page).toMatch(
+      /id="cashier-cashout-balance"[\s\S]{0,200}\$\{formatWalletChips\(myBalance\)\} Chips/
+    );
   });
 
   it('centres the dock selection line in its frame', () => {

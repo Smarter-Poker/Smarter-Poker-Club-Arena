@@ -2227,3 +2227,30 @@
   outline: 1px solid var(--ink-blue);
   outline-offset: -2px;
 }
+
+/* Exact balances fit the face instead of abbreviating or crossing the rim. */
+.console .frameBalance {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
+}
+.console .frameBalance strong {
+  display: inline-block;
+  color: var(--ink-blue);
+  font:
+    800 calc(6.4cqw * var(--fit, 1))/1.1 'Roboto Condensed',
+    Inter,
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-shadow: var(--ink-blue-glow);
+}
+.console .playerCardBalance .frameBalance strong {
+  font-size: calc(4.5cqw * var(--fit, 1));
+}
+.console .playerCardBalance > span:first-child,
+.console .walletRowLabel {
+  flex: 0 1 45%;
+  min-width: 0;
+}

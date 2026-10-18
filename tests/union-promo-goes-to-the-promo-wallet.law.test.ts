@@ -206,7 +206,7 @@ describe('the club Promo Wallet cashier stands at the right account', () => {
     expect(promoSendRpc('own_float')).toBe('fn_promo_wallet_send');
     expect(promoLedgerScope('club_pot')).toBe('club');
     expect(promoLedgerScope('own_float')).toBe('agent');
-    expect(cashier).toContain('supabase.rpc(promoSendRpc(promoSource)');
+    expect(cashier).toContain('supabase.rpc(promoSendRpc(spendPromoSource)');
   });
 
   it('the club pot may fund the owner own float; the own float still refuses a self-send', () => {

@@ -114,7 +114,7 @@ describe('ChipTransferModal reads the Club Bank through fn_club_money_panel', ()
     );
     render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
     await waitFor(() => expect(screen.getByText('Your Club Bank:')).toBeTruthy());
-    await waitFor(() => expect(balance()).toBe('1.2M'));
+    await waitFor(() => expect(balance()).toBe('1,234,567.00'));
     expect(h.rpc).toHaveBeenCalledWith('fn_club_money_panel', { p_club_id: CLUB });
     expect(
       h.selects.filter((s) => s.table === 'clubs' && /chip_treasury|promo_balance|\*/.test(s.arg))

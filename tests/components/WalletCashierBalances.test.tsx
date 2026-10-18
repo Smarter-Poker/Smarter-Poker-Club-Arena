@@ -192,6 +192,56 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
     expect(screen.getByRole('button', { name: /Export/i })).toBeInTheDocument();
   });
 
+  it('switches bank funding without losing the draft or its bank ledger', async () => {
+    fixture.bank = 79345678.12;
+    fixture.agent = 6000;
+    fixture.pot = 1250000.5;
+    fixture.roster = [
+      {
+        user_id: '33333333-3333-4333-8333-333333333333',
+        role: 'agent',
+        name: 'Recipient',
+        player_number: '42',
+        chip_balance: 6000,
+      },
+    ];
+    render(
+      <WalletCashierModal
+        {...base}
+        walletType="club_bank"
+        initialRecipientId="33333333-3333-4333-8333-333333333333"
+      />
+    );
+    await flush();
+    const input = screen.getByRole('textbox', { name: 'Chips To Send' });
+    fireEvent.change(input, { target: { value: '100' } });
+    const funding = screen.getByRole('region', { name: 'From The Club Bank' });
+    const source = within(funding).getByRole('combobox', { name: 'Send From' });
+    expect(source.parentElement).toBe(funding);
+    expect(funding).toHaveTextContent('79,345,678.12');
+    fireEvent.change(source, { target: { value: 'agent_wallet' } });
+    await flush();
+    expect(input).toHaveValue('100');
+    expect(screen.getByRole('region', { name: 'Selected Player' })).toHaveTextContent('Recipient');
+    expect(screen.getByRole('region', { name: 'From Your Agent Wallet' })).toHaveTextContent(
+      '6,000.00'
+    );
+    expect(screen.getByRole('tab', { name: 'Transaction Ledger' })).toBeInTheDocument();
+    // A draft source switch never submits a money command.
+    expect(fixture.rpc.mock.calls.some(([name]) => /_send$/.test(name))).toBe(false);
+    fireEvent.change(input, { target: { value: '6001' } });
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled();
+    fireEvent.change(source, { target: { value: 'promo_wallet' } });
+    await flush();
+    expect(input).toHaveValue('6,001');
+    expect(screen.getByRole('region', { name: 'From The Club Promo Wallet' })).toHaveTextContent(
+      '1,250,000.50'
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Transaction Ledger' }));
+    await flush();
+    expect(screen.getByText('Preserved Ledger Entry')).toBeInTheDocument();
+  });
+
   it('keeps the working balance until explicit refresh', async () => {
     render(<WalletCashierModal {...base} walletType="club_bank" />);
     await flush();

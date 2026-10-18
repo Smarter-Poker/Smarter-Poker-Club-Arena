@@ -364,7 +364,9 @@ describe('the cashier never offers a recipient the server will refuse', () => {
        still refuses a self-send. The modal passes the source it stands at. */
     expect(cashierRefusesSelfSend('promo_wallet', 'club_pot')).toBe(false);
     expect(cashierRefusesSelfSend('promo_wallet', 'own_float')).toBe(true);
-    expect(MODAL).toContain('const excludeSelf = cashierRefusesSelfSend(walletType, promoSource)');
+    expect(MODAL).toContain(
+      'const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource)'
+    );
   });
 
   it('a selected recipient who becomes ineligible is cleared, not left hidden', () => {
@@ -395,7 +397,7 @@ describe('the cashier tells the truth when it cannot read a balance', () => {
   it('an unread bank does not project an after figure', () => {
     // `bank ?? 0` printed "The Wallet Would Hold -500.00 Afterwards" directly
     // under a header already showing "..." for the same number.
-    expect(MODAL).toContain('amt > 0 && !overCap && bank !== null');
+    expect(MODAL).toContain('amt > 0 && !overCap && spendBalance !== null');
     expect(MODAL).not.toContain('fmtWallet((bank ?? 0) - amt)');
     expect(MODAL).not.toContain('fmtWallet((bank ?? 0) + amt)');
   });

@@ -38,6 +38,7 @@ const state = vi.hoisted(() => ({
   frozen: false,
   agentWallet: 500,
   myRole: 'owner',
+  myBalance: 250,
   roster: [] as Array<Record<string, unknown>>,
   chipRequests: [] as Array<Record<string, unknown>>,
   recentMoves: [] as Array<Record<string, unknown>>,
@@ -210,6 +211,7 @@ beforeEach(() => {
   state.resolveClub = null;
   state.agentWallet = 500;
   state.myRole = 'owner';
+  state.myBalance = 250;
   state.roster = [player(0, 75)];
   state.chipRequests = [];
   state.recentMoves = [];
@@ -241,7 +243,7 @@ beforeEach(() => {
     });
     builder.maybeSingle = vi.fn(async () =>
       table === 'club_members'
-        ? { data: { role: state.myRole, chip_balance: 250 }, error: null }
+        ? { data: { role: state.myRole, chip_balance: state.myBalance }, error: null }
         : table === 'agents'
           ? {
               data: { agent_wallet_balance: state.agentWallet, promo_wallet_balance: 300 },
@@ -256,7 +258,7 @@ beforeEach(() => {
           data: [CLUB_A, CLUB_B].map((clubId, index) => ({
             club_id: clubId,
             role: 'owner',
-            chip_balance: 250,
+            chip_balance: state.myBalance,
             clubs: {
               name: index === 0 ? 'Alpha Club' : 'Bravo Club',
               club_id: 100 + index,
@@ -1901,12 +1903,14 @@ it.each(['player', 'agent'])(
   'Simple Cashier opens the amount-based cashout sheet for a %s',
   async (role) => {
     state.myRole = role;
+    state.myBalance = 6000;
     mountCashier();
     const entry = await screen.findByRole('button', { name: 'Request Cash Out' });
+    await waitFor(() => expect(entry).toHaveTextContent('6,000.00 Chips'));
     fireEvent.click(entry);
     const sheet = await screen.findByRole('dialog', { name: 'Request Cashout' });
     expect(within(sheet).getByText('Available Balance')).toBeInTheDocument();
-    expect(within(sheet).getByText('250.00 Chips')).toBeInTheDocument();
+    expect(within(sheet).getByText('6,000.00 Chips')).toBeInTheDocument();
     expect(within(sheet).getByRole('textbox', { name: /Amount/i })).toBeInTheDocument();
     expect(
       within(sheet).getByText(/Chips Will Be Locked Until Your Agent Approves/i)

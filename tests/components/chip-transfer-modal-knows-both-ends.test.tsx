@@ -290,7 +290,7 @@ describe('the sender role', () => {
 describe('the bank-role sender balance comes from the money panel (launch audit 2026-10-09)', () => {
   it('reads club_treasury through fn_club_money_panel and never from the clubs table', async () => {
     render(<ChipTransferModal isOpen onClose={() => {}} clubId={CLUB} recipientId={AGENT} />);
-    await waitFor(() => expect(screen.getByText('1M')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('1,000,000.00')).toBeTruthy());
     expect(rpcMock.mock.calls.some((c) => c[0] === 'fn_club_money_panel')).toBe(true);
     const clubSelects = fromMock.mock.calls.filter((c) => c[0] === 'clubs');
     expect(clubSelects.length).toBeGreaterThan(0);

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -341,7 +341,11 @@ describe('D-04: the holder figure follows the roster after a claim', () => {
     fireEvent.click(screen.getByText('Player Wallet', { selector: '.cbc-seg button' }));
     const player = await screen.findByText('Fish Finder');
     fireEvent.click(player);
-    await waitFor(() => expect(screen.getByText(/Holds 1,000\.00 In That Wallet/)).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: 'Selected Player' })).getByText('1,000.00')
+      ).toBeTruthy()
+    );
 
     fireEvent.change(screen.getByLabelText('Chips To Claim Back'), { target: { value: '500' } });
     await settle();
@@ -349,7 +353,11 @@ describe('D-04: the holder figure follows the roster after a claim', () => {
     await settle();
     fireEvent.click(screen.getByText('Yes, Claim It', { selector: '.sc-plate__text' }));
     await waitFor(() => expect(claimed).toBe(true));
-    await waitFor(() => expect(screen.getByText(/Holds 500\.00 In That Wallet/)).toBeTruthy());
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: 'Selected Player' })).getByText('500.00')
+      ).toBeTruthy()
+    );
   });
 });
 

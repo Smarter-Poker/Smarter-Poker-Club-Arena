@@ -127,6 +127,7 @@ import { SpadeConsole } from '../console/SpadeConsole';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
 import ChipMintModal from './ChipMintModal';
 import './WalletCashierModal.css';
+import { CashierFrameBalance } from './CashierFrameBalance';
 import transferStyles from '../../pages/CashierTradePage.module.css';
 import { downloadBlob } from '../../utils/downloadCsv';
 import { statementCsvCell } from '../../utils/cashierStatementCsv';
@@ -256,7 +257,7 @@ interface WalletCashierModalProps {
   initialDestination?: CashierDestination | null;
 }
 
-/** Wallet balances retain cents and separators below one million (Dan 2026-10-16).
+/** Wallet balances always retain cents and separators (Dan 2026-10-18).
  * Unknown and unreadable balances remain distinct from a verified zero.
  * Transactions and ledger aggregates use compactChips at their render sites. */
 const fmtWallet = (n?: number | null) =>
@@ -364,6 +365,11 @@ export default function WalletCashierModal({
   const [credit, setCredit] = useState<number | null>(null);
 
   const [tab, setTab] = useState<Tab>('send');
+  // Funding belongs to the draft, independently of the bank's ledger and claim tab.
+  const [bankSendSource, setBankSendSource] = useState<CashierWalletType>('club_bank');
+  const [fundingBalance, setFundingBalance] = useState<number | null>(null);
+  const [fundingCredit, setFundingCredit] = useState(0);
+  const spendWallet = walletType === 'club_bank' && tab === 'send' ? bankSendSource : walletType;
   const [destination, setDestination] = useState<DestinationWallet>('agent_wallet');
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
@@ -480,7 +486,15 @@ export default function WalletCashierModal({
   const claimOpIdsRef = useRef<Map<string, string>>(new Map());
   const reverseOpIdsRef = useRef<Map<string, string>>(new Map());
   /** Beats the double tap that lands before `sending` has re-rendered. */
-  const actionViewKey = JSON.stringify([isOpen, clubId, user?.id, walletType, role]);
+  const spendPromoSource = walletType === 'club_bank' ? 'club_pot' : promoSource;
+  const actionViewKey = JSON.stringify([
+    isOpen,
+    clubId,
+    user?.id,
+    walletType,
+    role,
+    bankSendSource,
+  ]);
   const actionView = useRef({ key: actionViewKey });
   if (actionView.current.key !== actionViewKey) actionView.current = { key: actionViewKey };
   const exportViewKey = JSON.stringify([actionViewKey, tab, promoSource, typeFilter]);
@@ -499,8 +513,45 @@ export default function WalletCashierModal({
   const tabs = cashierTabs(walletType);
   // Every send honors the selected wallet. Eligibility is explained on each
   // roster row; the transaction validates it again before moving chips.
-  const destinations = cashierDestinations(walletType);
+  const destinations = cashierDestinations(spendWallet);
+  const shownDestination =
+    spendWallet === 'promo_wallet' && destination === 'agent_wallet' ? 'promo_wallet' : destination;
+  const destinationLabel = (key: DestinationWallet) =>
+    DESTINATION_LABELS[
+      spendWallet === 'promo_wallet' && key === 'agent_wallet' ? 'promo_wallet' : key
+    ];
   const agentClaimTab = walletType === 'agent_wallet' && tab === 'claim';
+
+  const loadFunding = useVisibleRead({
+    manualOnly: true,
+    scopeKey: `${clubId}:${user?.id}:${spendWallet}`,
+    enabled:
+      isOpen &&
+      allowed &&
+      walletType === 'club_bank' &&
+      tab === 'send' &&
+      spendWallet !== 'club_bank' &&
+      Boolean(clubId && user?.id),
+    read: (signal) => readCashierBalances(clubId, user!.id, spendWallet, signal),
+    onReset: () => {
+      setFundingBalance(null);
+      setFundingCredit(0);
+    },
+    onData: (snapshot) => {
+      setFundingBalance(spendWallet === 'promo_wallet' ? snapshot.promoPot : snapshot.bank);
+      setFundingCredit(snapshot.credit);
+    },
+    onError: (error) => {
+      setFundingBalance(null);
+      setFundingCredit(0);
+      reportError(error, 'WalletCashierModal.loadFunding');
+    },
+  });
+  useEffect(() => {
+    if (!destinations.includes(destination)) setDestination(destinations[0]);
+    // The destination list is derived only from the selected source.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spendWallet, destination]);
 
   const balanceScopeRef = useRef(0);
   /* The member the cashier was opened for (initialRecipientId). Cleared on use
@@ -774,6 +825,7 @@ export default function WalletCashierModal({
   useEffect(() => {
     if (!isOpen || !user?.id) return;
     setTab('send');
+    setBankSendSource('club_bank');
     setSendError(null);
     setSendReceipt(null);
     setPromoSource(promoSourceFor(role));
@@ -917,7 +969,7 @@ export default function WalletCashierModal({
       setHolderHeld(null);
       return;
     }
-    if (destination === 'player_wallet') {
+    if (shownDestination === 'player_wallet') {
       setHolderHeld(recipient.chip_balance ?? null);
       return;
     }
@@ -941,7 +993,7 @@ export default function WalletCashierModal({
         return;
       }
       setHolderHeld(
-        destination === 'promo_wallet'
+        shownDestination === 'promo_wallet'
           ? data?.promo_wallet_balance !== undefined && data?.promo_wallet_balance !== null
             ? Number(data?.promo_wallet_balance)
             : null
@@ -953,7 +1005,7 @@ export default function WalletCashierModal({
     return () => {
       cancelled = true;
     };
-  }, [tab, destination, recipient, clubUuid, isMounted, holderNonce, walletType]);
+  }, [tab, shownDestination, recipient, clubUuid, isMounted, holderNonce, walletType]);
 
   // A send that lands, a claim, a reversal, or a mint changes the bank and the
   // recipient. Refetch rather than patching state by hand — a hand-patched
@@ -961,6 +1013,7 @@ export default function WalletCashierModal({
   // cashier exists to end.
   const refresh = useCallback(() => {
     loadClub();
+    loadFunding();
     if (!clubUuid) return;
     loadMembers(clubUuid);
     if (walletType === 'agent_wallet') loadReversible(clubUuid);
@@ -973,6 +1026,7 @@ export default function WalletCashierModal({
     }
   }, [
     loadClub,
+    loadFunding,
     loadMembers,
     loadLedger,
     loadPromoLedger,
@@ -1000,7 +1054,7 @@ export default function WalletCashierModal({
    * normal way an owner gets a float at all. Removing themselves from that list
    * would break the funding route the whole hierarchy hangs off.
    */
-  const excludeSelf = cashierRefusesSelfSend(walletType, promoSource);
+  const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource);
 
   /**
    * ONE RULE FOR EVERY CASHIER SURFACE (Dan 2026-09-04 round 2, see
@@ -1021,7 +1075,7 @@ export default function WalletCashierModal({
         destinationIsPlayerWallet: destination === 'player_wallet',
         memberHoldsPlayerWallet: holdsPlayerWallet(m.role),
       }),
-    [user?.id, excludeSelf, destination, walletType]
+    [user?.id, excludeSelf, destination]
   );
 
   /* THE PRESET RECIPIENT (presetRecipientRef), applied once when the roster
@@ -1094,15 +1148,26 @@ export default function WalletCashierModal({
   const amt = Number(amount) || 0;
   /* What an agent wallet send may draw past the float: the credit line still
      open (audit C2-1). Nothing else in this cashier lends. */
-  const creditLine = walletType === 'agent_wallet' && tab === 'send' ? (credit ?? 0) : 0;
+  const spendBalance =
+    walletType === 'club_bank' && tab === 'send' && spendWallet !== 'club_bank'
+      ? fundingBalance
+      : bank;
+  const creditLine =
+    spendWallet === 'agent_wallet' && tab === 'send'
+      ? walletType === 'club_bank'
+        ? fundingCredit
+        : (credit ?? 0)
+      : 0;
   /** The part of this send that the credit line would cover, if any. */
-  const creditDraw = bank !== null && creditLine > 0 && amt > bank ? amt - bank : 0;
+  const creditDraw =
+    spendBalance !== null && creditLine > 0 && amt > spendBalance ? amt - spendBalance : 0;
   // A send is capped by the wallet being SPENT (the bank, or the caller's own
   // float plus any credit line still open). A claim is capped by the wallet
   // being CLAIMED FROM. The two caps are different accounts, and mixing them up
   // is how a claim gets refused for "insufficient bank" while the bank is the
   // thing being paid.
-  const cap = tab === 'claim' ? holderHeld : bank === null ? null : bank + creditLine;
+  const cap =
+    tab === 'claim' ? holderHeld : spendBalance === null ? null : spendBalance + creditLine;
   const overCap = cap !== null && amt > cap;
   /* WHOLE CHIPS ONLY. `amt > 0` accepted 0.4, which the RPC took verbatim
      while the success toast (which formats with fmtWhole) reported "Sent 0
@@ -1123,14 +1188,15 @@ export default function WalletCashierModal({
   const needsConfirm =
     tab === 'claim'
       ? claimNeedsConfirm(amt)
-      : creditDraw > 0 || (bank !== null && bank > 0 && amt >= bank * CONFIRM_SHARE_OF_BANK);
+      : creditDraw > 0 ||
+        (spendBalance !== null && spendBalance > 0 && amt >= spendBalance * CONFIRM_SHARE_OF_BANK);
   /** The account a send spends, by name, for the sentences that quote it (audit C2-14). */
   const spentAccount =
-    walletType === 'club_bank'
+    spendWallet === 'club_bank'
       ? 'The Club Bank'
-      : walletType === 'agent_wallet'
+      : spendWallet === 'agent_wallet'
         ? 'Your Agent Wallet'
-        : promoSource === 'club_pot'
+        : spendPromoSource === 'club_pot'
           ? 'The Club Promo Wallet'
           : 'Your Promo Float';
 
@@ -1145,7 +1211,7 @@ export default function WalletCashierModal({
     opIdRef.current = newOpId();
     setConfirming(false);
     setSendError(null);
-  }, [recipient?.user_id, amount, destination, tab, reason]);
+  }, [recipient?.user_id, amount, destination, tab, reason, spendWallet]);
 
   const doSend = async () => {
     if (!canSend || !clubUuid || !recipient || busyRef.current) return;
@@ -1158,9 +1224,9 @@ export default function WalletCashierModal({
       const action =
         tab === 'claim'
           ? 'fn_club_bank_claim_back'
-          : walletType === 'promo_wallet'
-            ? promoSendRpc(promoSource)
-            : walletType === 'agent_wallet'
+          : spendWallet === 'promo_wallet'
+            ? promoSendRpc(spendPromoSource)
+            : spendWallet === 'agent_wallet'
               ? 'fn_agent_wallet_send'
               : 'fn_club_bank_send';
       const operation = await reserveCashierWalletOperation(user?.id || '', clubUuid, action, {
@@ -1191,13 +1257,13 @@ export default function WalletCashierModal({
         });
         if (error) throw error;
         res = Array.isArray(data) ? data[0] : data;
-      } else if (walletType === 'promo_wallet') {
+      } else if (spendWallet === 'promo_wallet') {
         // Dan 2026-08-24: the promo wallet sends to a player wallet (as cash)
         // or to another agent's promo wallet. One RPC, one ledger row, keyed.
         // 2026-09-05: WHICH promo wallet is the source switch's decision -
         // fn_club_promo_wallet_send spends the club pot, fn_promo_wallet_send
         // the caller's own float. Same arguments, same receipt shape.
-        const { data, error } = await supabase.rpc(promoSendRpc(promoSource), {
+        const { data, error } = await supabase.rpc(promoSendRpc(spendPromoSource), {
           p_club_id: clubUuid,
           p_to_user_id: recipient.user_id,
           p_amount: amt,
@@ -1207,7 +1273,7 @@ export default function WalletCashierModal({
         });
         if (error) throw error;
         res = Array.isArray(data) ? data[0] : data;
-      } else if (walletType === 'agent_wallet') {
+      } else if (spendWallet === 'agent_wallet') {
         /* THE AGENT WALLET IS AN ACCOUNT NOW. This used to call
            ChipFlowService.agentToPlayer, which capped the send against
            agents.agent_wallet_balance and then debited an entirely different
@@ -1244,7 +1310,7 @@ export default function WalletCashierModal({
 
       clearCashierWalletOperation(operation);
       if (!isMounted.current || actionView.current !== owningView) return;
-      const destLabel = DESTINATION_LABELS[destination] || 'Wallet';
+      const destLabel = destinationLabel(destination) || 'Wallet';
       toast?.success?.(
         tab === 'claim'
           ? res.replayed
@@ -1823,7 +1889,7 @@ export default function WalletCashierModal({
                       <div key={row.transaction_id} className="cbc-tx">
                         <div className="cbc-tx-top">
                           <span className="cbc-tx-type">{titleCase(row.to_name)}</span>
-                          <span className="cbc-tx-amount">{compactChips(row.remaining)}</span>
+                          <span className="cbc-tx-amount">{fmtWallet(row.remaining)}</span>
                         </div>
                         <div className="cbc-tx-mid">
                           <span>Into {enumToTitleCase(row.destination)}</span>
@@ -1876,12 +1942,12 @@ export default function WalletCashierModal({
                           className={destination === key ? 'cbc-seg-on' : ''}
                           onClick={() => setDestination(key)}
                         >
-                          {DESTINATION_LABELS[key]}
+                          {destinationLabel(key)}
                         </button>
                       ))}
                     </div>
                     <div className="cbc-blurb">
-                      {destinationBlurb(walletType, destination, tab)}
+                      {destinationBlurb(spendWallet, destination, tab)}
                     </div>
                   </div>
 
@@ -1913,7 +1979,7 @@ export default function WalletCashierModal({
                           </span>
                         </span>
                         <span className={transferStyles.playerCardBalance}>
-                          <span>{DESTINATION_LABELS[destination]}</span>
+                          <span>{destinationLabel(destination)}</span>
                           <svg
                             className={transferStyles.entityChevron}
                             viewBox="0 0 12 8"
@@ -1926,7 +1992,7 @@ export default function WalletCashierModal({
                               strokeWidth="2"
                             />
                           </svg>
-                          <strong>{fmtWallet(holderHeld)}</strong>
+                          <CashierFrameBalance text={fmtWallet(holderHeld)} />
                         </span>
                       </span>
                       <select
@@ -1940,7 +2006,7 @@ export default function WalletCashierModal({
                       >
                         {destinations.map((key) => (
                           <option key={key} value={key}>
-                            {DESTINATION_LABELS[key]}
+                            {destinationLabel(key)}
                           </option>
                         ))}
                       </select>
@@ -2052,7 +2118,7 @@ export default function WalletCashierModal({
                   {bankTransfer && (
                     <section
                       className={transferStyles.walletRow}
-                      aria-label={tab === 'claim' ? 'Into The Club Bank' : 'From The Club Bank'}
+                      aria-label={tab === 'claim' ? 'Into The Club Bank' : `From ${spentAccount}`}
                     >
                       <span className={transferStyles.walletRowSlot} aria-hidden="true">
                         <img
@@ -2062,12 +2128,46 @@ export default function WalletCashierModal({
                       </span>
                       <span className={transferStyles.walletRowPlate}>
                         <span className={transferStyles.walletRowLabel}>
-                          {tab === 'claim' ? 'Into The Club Bank' : 'From The Club Bank'}
+                          {tab === 'claim' ? 'Into The Club Bank' : `From ${spentAccount}`}
                         </span>
-                        <strong className={transferStyles.walletRowValue}>
-                          {bank === null ? 'Unavailable' : fmtWallet(bank)}
-                        </strong>
+                        <svg
+                          className={transferStyles.entityChevron}
+                          viewBox="0 0 12 8"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M1 1.5 6 6.5 11 1.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          />
+                        </svg>
+                        <CashierFrameBalance
+                          text={spendBalance === null ? 'Unavailable' : fmtWallet(spendBalance)}
+                        />
                       </span>
+                      <select
+                        className={transferStyles.walletSelect}
+                        aria-label={tab === 'claim' ? 'Claim Into' : 'Send From'}
+                        value={tab === 'claim' ? 'club_bank' : bankSendSource}
+                        disabled={inFlight || Boolean(unconfirmed)}
+                        onChange={(event) => {
+                          if (tab !== 'send' || busyRef.current || unconfirmed) return;
+                          setFundingBalance(null);
+                          setFundingCredit(0);
+                          setBankSendSource(event.target.value as CashierWalletType);
+                          setSendError(null);
+                          setSendReceipt(null);
+                        }}
+                      >
+                        <option value="club_bank">Club Bank</option>
+                        {tab === 'send' && canUseCashier('agent_wallet', viewerRole) && (
+                          <option value="agent_wallet">Your Agent Wallet</option>
+                        )}
+                        {tab === 'send' && canUseCashier('promo_wallet', viewerRole) && (
+                          <option value="promo_wallet">The Club Promo Wallet</option>
+                        )}
+                      </select>
                     </section>
                   )}
                   {/* Amount */}
@@ -2103,7 +2203,7 @@ export default function WalletCashierModal({
                     {bankTransfer && (
                       <div className={transferStyles.modalTotal}>Total: {fmtWhole(amt)}</div>
                     )}
-                    {tab === 'claim' && recipient && (
+                    {tab === 'claim' && recipient && !bankTransfer && (
                       <div className="cbc-blurb">
                         {holderHeld === null
                           ? 'Reading That Wallet...'
@@ -2116,13 +2216,13 @@ export default function WalletCashierModal({
                         directly beneath a header already showing "..." for the
                         same number. The send is refused anyway (canSend requires
                         cap !== null); the sentence just has to stop lying. */}
-                    {amt > 0 && !overCap && bank !== null && (
+                    {amt > 0 && !overCap && spendBalance !== null && (
                       <div className="cbc-blurb">
                         {tab === 'claim'
-                          ? `Claiming ${fmtWhole(amt)}. The Club Bank Would Hold ${fmtWallet(bank + amt)} Afterwards.`
+                          ? `Claiming ${fmtWhole(amt)}. The Club Bank Would Hold ${fmtWallet(spendBalance + amt)} Afterwards.`
                           : creditDraw > 0
                             ? `Sending ${fmtWhole(amt)}. ${fmtExact(creditDraw)} Of It Is Drawn From Your Credit Line.`
-                            : `Sending ${fmtWhole(amt)}. The Wallet Would Hold ${fmtWallet(bank - amt)} Afterwards.`}
+                            : `Sending ${fmtWhole(amt)}. The Wallet Would Hold ${fmtWallet(spendBalance - amt)} Afterwards.`}
                       </div>
                     )}
                     {overCap && (
@@ -2187,7 +2287,7 @@ export default function WalletCashierModal({
                         ? `Claim ${fmtWhole(amt)} Chips From ${titleCase(recipient.name)} Back Into The Club Bank?`
                         : creditDraw > 0
                           ? `Send ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)}? ${fmtExact(creditDraw)} Of Them Are Drawn From Your Credit Line.`
-                          : `That Is ${((amt / (bank || 1)) * 100).toFixed(1)} Percent Of ${spentAccount}. Send ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)}?`}
+                          : `That Is ${((amt / (spendBalance || 1)) * 100).toFixed(1)} Percent Of ${spentAccount}. Send ${fmtWhole(amt)} Chips To ${titleCase(recipient.name)}?`}
                     </div>
                   )}
 

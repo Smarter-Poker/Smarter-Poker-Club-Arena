@@ -8,8 +8,12 @@ describe('Wallet Amounts', () => {
     [1250.5, '1,250.50'],
     [999999.99, '999,999.99'],
     [-1000.5, '-1,000.50'],
-    [1000000, '1M'],
-    [1250000, '1.2M'],
+    [6000, '6,000.00'],
+    [1000000, '1,000,000.00'],
+    [1250000, '1,250,000.00'],
+    [79345678.12, '79,345,678.12'],
+    [1000000000, '1,000,000,000.00'],
+    [-1250000.5, '-1,250,000.50'],
   ])('prints %s as %s', (value, text) => expect(formatWalletChips(Number(value))).toBe(text));
   it('keeps unknown distinct from zero', () => {
     expect(formatWalletChips(NaN)).toBe('-');

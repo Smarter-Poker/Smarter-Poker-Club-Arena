@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/member-roster-funded-live-20261018; promised by 20261018230227; production installation must be verified independently.",
+  "functions": ["ca_club_roster_can_subscribe", "fn_publish_club_roster"]
+}

@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/member-record-global-events-20261018; promised by 20261018195412; installation must be read back independently.",
+  "functions": ["fn_publish_member_record_context"]
+}

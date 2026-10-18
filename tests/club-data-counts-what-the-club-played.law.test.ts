@@ -22,13 +22,10 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { functionBody } from './helpers/migrations';
-import { migrationsMentioning } from './helpers/migrationCorpus';
+import { functionBody, latestDeclaring } from './helpers/migrations';
 
 function latest(fnName: string): string {
-  const hits = migrationsMentioning(`FUNCTION public.${fnName}(`);
-  if (hits.length === 0) throw new Error(`${fnName} is not defined by any migration`);
-  return functionBody(hits[hits.length - 1].sql, fnName)
+  return functionBody(latestDeclaring(fnName).sql, fnName)
     .split('\n')
     .filter((l) => !l.trimStart().startsWith('--'))
     .join('\n');

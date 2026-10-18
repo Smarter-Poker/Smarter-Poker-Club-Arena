@@ -54,6 +54,13 @@ describe('qualified report execution settings', () => {
     expect(native).toContain('Real rollup producer lost closed or live hand values');
     expect(native).toContain('Session timezone moved the UTC window');
   });
+  it('body source resolution ignores guarded precision patches that grant the producer', () => {
+    const source = latestDeclaring('fn_ca_reporting_rollups_from_facts');
+    expect(source.name).not.toContain('20261018210833');
+    expect(functionBody(source.sql, 'fn_ca_reporting_rollups_from_facts')).toContain(
+      'FROM public.ca_club_data_fact f'
+    );
+  });
   it('body source resolution ignores settings-only migrations', () => {
     const source = latestDeclaring('ca_rake_snapshot');
     expect(source.name).not.toBe(migration);

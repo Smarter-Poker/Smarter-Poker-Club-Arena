@@ -1408,6 +1408,12 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Fact retention reads a bounded page and preserves totals
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          DIGEST_NATIVE_WORK: ${{ runner.temp }}
+        run: python3 -B scripts/qualification/digest-retention/run-native.py
       - name: Native recovery export preserves credentials and refuses incomplete artifacts
         if: matrix.shard == 1
         env:

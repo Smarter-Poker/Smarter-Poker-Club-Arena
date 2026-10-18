@@ -1,0 +1,5 @@
+# Bound the original fact-card retention pass
+
+The hourly `prune-ca-hand-facts` job timed out while sorting almost eight million certificates and hashing their disposal receipts before LIMIT 250. Its original transaction now pages at most the existing requested 200000 certificate identities before indexed receipt probes. A private, locked cursor advances atomically with compaction and wraps. An ineligible or locked hand stays intact and is visited on the next traversal. Ordinary arrivals remain compacted in their original retention transaction.
+
+The existing compactor, eight-day policy, custody checks, player totals, permissions and business schedule are unchanged. No foreign key to a hot table and no new scheduled work. Native PostgreSQL qualification uses one million certificates, sparse pending hands, multiple pages, wraparound, freeze and transaction failure. It verifies bounds and unchanged totals; its compactor fixture is a selection test, not a claim of full live compactor execution. Existing required Accounting shard 2 executes it.

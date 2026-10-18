@@ -10,7 +10,7 @@ on:
         description: 'One explicit private-pilot stage, recovery control, legacy signal review or access proof'
         required: true
         type: choice
-        options: [report, shadow, form, drain, off, control, review, access]
+        options: [report, shadow, form, drain, 'off', control, review, access]
       accept_outsider_terms:
         description: 'Explicit owner-authorized normal TOS and Privacy acceptance for the designated outsider only; access stage only'
         required: false

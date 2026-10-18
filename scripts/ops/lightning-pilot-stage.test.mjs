@@ -11,6 +11,15 @@ import {
 import { PILOT } from './prepare-lightning-private-pilot.mjs';
 
 const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
+
+test('the workflow keeps off as a string choice under GitHub YAML boolean parsing', () => {
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/lightning-pilot-stage.yml', import.meta.url),
+    'utf8'
+  );
+  assert.match(workflow, /options:\s*\[[^\]]*['"]off['"][^\]]*\]/);
+});
+
 const OP = '3f0a8f8e-5d2b-4c1e-9a7b-2f6d1c0e4b11';
 const game6 = {
   id: 'babb43f1-368e-406f-a97a-a0d5013648b2',

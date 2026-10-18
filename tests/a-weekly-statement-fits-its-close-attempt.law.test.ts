@@ -231,5 +231,12 @@ describe('indexed statement quality remains enforced', () => {
     expect(native).toContain('authentic_positive_for_query_5000_all_fields_equal');
     expect(native).toContain('installer_postcondition_failure_rolls_back_full_function');
     expect(native).toContain('installer_real_competing_scheduler_lock_refused');
+    expect(parent).toContain('--followup-candidate');
+    expect(parent).toContain(
+      '20261018185054_weekly_statement_quality_reads_source_and_batch_keysets_in_b.sql'
+    );
+    expect(native).toContain('installer_rake_pk_required_for_exact_semijoin');
+    expect(native).toContain('installer_exact_indexed_prerequisite_required');
+    expect(native).toContain('cached_sparse_then_dense_actual_whole_function');
   });
 });

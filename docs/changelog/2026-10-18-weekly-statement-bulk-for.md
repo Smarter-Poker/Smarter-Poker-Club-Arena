@@ -1,0 +1,5 @@
+# Weekly Statement Quality Reads Its Original Keysets In Bulk
+
+The indexed per-event implementation exceeded 240 seconds in the original week's actual quality function, despite a faster literal aggregate measurement. The failed transaction rolled back without a certificate or financial change. The authoritative FOR query now gathers original rake IDs, source credits and batch rows once through their indexed keysets. All 23 fields, date/scope selection, NULL and multiplicity rules, fingerprints, source/refund refusals and the entire validation loop are preserved. A validated rake primary key proves the source-credit semijoin is exact.
+
+Before delivery, the proposed query completed the actual typed-parameter FOR consumer on all 183,871 original events in 112.548079 seconds, under the unchanged 180-second limit. It serialized every field and forced rollback; this does not claim READY. Native whole-function, exact installer and cached-input qualification runs alongside the original 40 cases in the existing required Accounting 1 parent. No payment, source40/generation, permission, proof lifetime, budget or schedule changes.

@@ -5,3 +5,5 @@ A union's weekly club statements fit job 272's close attempts: the tournament we
 The certificate table admits that exact canonical per-club UUID key alongside its nine original kinds. Required native PostgreSQL qualification exercises the real CHECK, writer and reader, including refusal before the correction.
 
 The full quality query reads original indexed event owners despite underestimated intermediate cardinality. Its complete before/after responses, all 23 query fields for 5,000 positive events, refusals, private ACL and atomic installer replay/postcondition safeguards run in the existing required native parent.
+
+The bulk-source/batch-keyset successor is also unconditional in that same parent. It preserves the original qualification and adds exact prior-installation and rake-PK admission, whole-function/all-field equivalence and cached sparse/dense inputs. Production qualification must consume the actual parameterized FOR readset within the maintained budget; a faster literal aggregate is not a READY certificate.

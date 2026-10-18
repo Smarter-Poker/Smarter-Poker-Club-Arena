@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../../../lib/supabase';
 import { reportError } from '../../../utils/errorReporter';
 import { titleCase } from '../../../utils/titleCase';
 import { mttPhaseText, type LobbyTournamentRow } from '../lobbyEntries';
@@ -13,6 +12,9 @@ function targetName(id: string): Promise<string | null> {
   const pending = pendingTargets.get(id);
   if (pending) return pending;
   const request = (async () => {
+    // Cash and ordinary tournament cards are render-only. Initialize the
+    // database client only when a satellite actually needs its target name.
+    const { supabase } = await import('../../../lib/supabase');
     const { data, error } = await supabase
       .from('tournaments')
       .select('name')

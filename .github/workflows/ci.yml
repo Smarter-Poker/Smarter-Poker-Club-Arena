@@ -1408,6 +1408,12 @@ jobs:
           sudo apt-get "${pg_ci_apt[@]}" update
           printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
           sudo apt-get "${pg_ci_apt[@]}" install -y --no-install-recommends postgresql-17 postgresql-17-cron ${pg_ci_build_packages[@]+"${pg_ci_build_packages[@]}"}
+      - name: Digest database sources stay qualified
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          DIGEST_NATIVE_WORK: ${{ runner.temp }}
+        run: python3 -B scripts/qualification/digest-retention/run-native.py
       - name: Native recovery export preserves credentials and refuses incomplete artifacts
         if: matrix.shard == 1
         env:
@@ -1477,6 +1483,12 @@ jobs:
           PG17_BINDIR: /usr/lib/postgresql/17/bin
           VIP_POINTS_PG_SCRATCH_PARENT: ${{ runner.temp }}
         run: bash scripts/dev/test-retired-vip-points-postgres.sh
+      - name: Digest Lightning Funding And Ticket Bounty Native PostgreSQL
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          DIGEST_NATIVE_WORK: ${{ runner.temp }}
+        run: python3 scripts/qualification/digest-financial-sources/run-native.py
       - name: Data console native PostgreSQL contracts
         if: matrix.shard == 2
         env:

@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 227470,
-      "sha256": "eb9b4bc61c5f3b193bb8615e2df622903bb3b6cee1f22c6609356f71051e91f2"
+      "bytes": 228031,
+      "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -99,5 +99,31 @@
   },
   "diamondIntegratedMain20261017": {
     "reason": "Reviewed combined workflow preserves all protected main and Diamond qualifications. Refresh only integrated workflow source identity, preserving historical evidence and financial qualification status."
+  },
+  "digestNativeSourceIdentity20261018": {
+    "reason": "Add native Lightning funding and ticket bounty qualification to existing required Accounting2. Only current workflow source identity changes; preserve historical evidence, financial assertions and qualification verdicts. Not a runtime financial certificate.",
+    "previousWorkflow": {
+      "bytes": 227470,
+      "sha256": "eb9b4bc61c5f3b193bb8615e2df622903bb3b6cee1f22c6609356f71051e91f2"
+    },
+    "currentWorkflow": {
+      "bytes": 227764,
+      "sha256": "69ef015db5f4cd7497b82021ea28c18d7165f4cc1582f5745f8a982437d87728"
+    }
+  },
+  "_digest_retention_ci_note": "Only current CI bytes updated to add native bounded-retention qualification. Historical evidence, financial assertions and verdicts unchanged.",
+  "digestIntegratedWorkflow20261018": {
+    "reason": "Integrate both maintained native digest qualifications into existing required Accounting2. Preserve all historical pins, evidence, financial assertions and verdicts.",
+    "currentWorkflow": {
+      "bytes": 228158,
+      "sha256": "8ed6dd446e8bc81b3c86d1d4b0dd0d9722aab1f123b77d1ae991b050b505ccdf"
+    }
+  },
+  "digestDiagnosticSplit20261018": {
+    "reason": "Keep only both native database qualifications here; independent incident owner qualifies read-only host diagnostics. Preserve all historical fingerprints and financial verdicts.",
+    "currentWorkflow": {
+      "bytes": 228031,
+      "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
+    }
   }
 }

@@ -1,0 +1,5 @@
+{
+  "_owner": "codex/digest-database-20261018",
+  "_comment": "Exact installed-body substitutions: Lightning earnings retain original pool funding; ticket-funded bounty appears in the read-only chip escrow shadow. No balances or paid receipts are changed.",
+  "functions": ["fn_cash_earning_club", "fn_ca_tournament_escrow_chips"]
+}

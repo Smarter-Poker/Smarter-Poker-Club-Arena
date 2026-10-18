@@ -468,7 +468,9 @@ async function mountWarmTournaments({
   await act(async () => h.clubReads[0].resolve({ data: club, error: null }));
   expect(h.tournamentReads).toHaveLength(1);
   await act(async () => h.tournamentReads[0].resolve({ data: [row], error: null }));
-  expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+  expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed').length).toBeGreaterThan(
+    0
+  );
   return { view, club, row };
 }
 
@@ -525,7 +527,7 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
       sessionStorage.removeItem(UNION_CACHE_KEY);
     }
     await finishTournamentReload(club, { data: [], error: null });
-    expect(screen.queryAllByText('Known Tournament')).toHaveLength(0);
+    expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed')).toHaveLength(0);
   });
 
   it.each([
@@ -534,7 +536,9 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
   ])('preserves warm cards after $label', async ({ result }) => {
     const { club } = await mountWarmTournaments();
     await finishTournamentReload(club, result);
-    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed').length).toBeGreaterThan(
+      0
+    );
   });
 
   it('preserves cards while scope is unresolved, then clears them after scope recovers', async () => {
@@ -542,10 +546,12 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
     sessionStorage.removeItem(UNION_CACHE_KEY);
     h.unionLookup = { data: null, error: QUERY_FAILURE };
     await finishTournamentReload(club, { data: [], error: null });
-    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed').length).toBeGreaterThan(
+      0
+    );
     h.unionLookup = { data: { union_id: 'union-a' }, error: null };
     await finishTournamentReload(club, { data: [], error: null });
-    expect(screen.queryAllByText('Known Tournament')).toHaveLength(0);
+    expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed')).toHaveLength(0);
   });
 
   it('preserves cards when the scope fallback comes only from cache', async () => {
@@ -553,13 +559,17 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
     expect(sessionStorage.getItem(UNION_CACHE_KEY)).toBe('union-a');
     h.unionLookup = { data: null, error: QUERY_FAILURE };
     await finishTournamentReload(club, { data: [], error: null });
-    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed').length).toBeGreaterThan(
+      0
+    );
   });
 
   it('does not classify a union house with no membership row as standalone', async () => {
     const { club } = await mountWarmTournaments({ isUnion: true });
     await finishTournamentReload(club, { data: [], error: null });
-    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed').length).toBeGreaterThan(
+      0
+    );
   });
 
   it('preserves cards when the union cache cannot be read', async () => {
@@ -582,7 +592,9 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
     try {
       await finishTournamentReload(club, { data: [], error: null });
       expect(cacheRead).toHaveBeenCalledWith(UNION_CACHE_KEY);
-      expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
+      expect(
+        screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed').length
+      ).toBeGreaterThan(0);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -599,15 +611,21 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
       onTournamentChange({ eventType: 'INSERT', new: inserted });
       read.resolve({ data: [], error: null });
     });
-    expect(screen.queryAllByText('Known Tournament').length).toBeGreaterThan(0);
-    expect(screen.queryAllByText('New Tournament').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed').length).toBeGreaterThan(
+      0
+    );
+    expect(screen.queryAllByText('New Tournament (MTT) · 100 Guaranteed').length).toBeGreaterThan(
+      0
+    );
     expect(h.clubReads).toHaveLength(3);
     expect(h.tournamentReads).toHaveLength(2);
     await act(async () => h.clubReads[2].resolve({ data: club, error: null }));
     expect(h.tournamentReads).toHaveLength(3);
     await act(async () => h.tournamentReads[2].resolve({ data: [inserted], error: null }));
-    expect(screen.queryAllByText('Known Tournament')).toHaveLength(0);
-    expect(screen.queryAllByText('New Tournament').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed')).toHaveLength(0);
+    expect(screen.queryAllByText('New Tournament (MTT) · 100 Guaranteed').length).toBeGreaterThan(
+      0
+    );
     expect(h.clubReads).toHaveLength(3);
   });
 
@@ -624,7 +642,7 @@ describe('the mounted lobby reconciles warm tournament inventory', () => {
       });
       read.resolve({ data: [], error: null });
     });
-    expect(screen.queryAllByText('Known Tournament')).toHaveLength(0);
+    expect(screen.queryAllByText('Known Tournament (MTT) · 100 Guaranteed')).toHaveLength(0);
     expect(h.clubReads).toHaveLength(2);
     expect(h.tournamentReads).toHaveLength(2);
   });

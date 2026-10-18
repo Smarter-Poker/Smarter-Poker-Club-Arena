@@ -1,0 +1,7 @@
+# Bulk Statement Quality Followup
+
+The before body is the exact installed `446549add594a547005b78935e0895bf` function. The after body replaces only its FOR query with the retained source/batch keyset query. Prefix and post-FOR loop are byte identical. The common native runner reuses the original accessed-column schema, real installer-authority definitions, semantic fixtures and all original cases. Its default original 40-case qualification remains unchanged and still runs first in the required Accounting 1 parent.
+
+The explicit followup mode exercises the new guarded migration, exact prior installation, actor/freeze/source/PK/replay/real competing lock/atomic postcondition refusal, full response and 23-field parity for 5,000 positive and cancelled events, and repeated sparse then dense calls in the same backend. All authority metadata is retained. Controlled external net-plan, source-terms and mixed-cutover helpers remain fixture boundaries; no producer or production-money qualification is claimed.
+
+Production read-only evidence before submission uses the exact typed parameters and a PL/pgSQL FOR cursor consuming every field: 183,871 rows, 155,206,578 serialized bytes in 112.548079 seconds, within the existing 180-second budget. Its forced exception is a measurement, not a READY result. Actual installed whole-function readiness and completed settlement remain separate acceptance gates.

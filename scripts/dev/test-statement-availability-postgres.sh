@@ -35,4 +35,7 @@ grep -q 'Statement availability already installed' "$work/replay.log"
 "${psql[@]}" -f "$repo/tests/fixtures/union-statement-availability/bomb-bootstrap.sql" -f "$repo/tests/fixtures/union-statement-availability/bomb-readers-before.sql" -f "$repo/tests/fixtures/union-statement-availability/bomb-before.sql" -f "$repo/supabase/migrations/20261018171801_bomb_pot_reports_bound_their_hosted_club_scan_and_utc_calend.sql" -f "$repo/tests/fixtures/union-statement-availability/bomb-after.sql"
 if "${psql[@]}" -f "$repo/supabase/migrations/20261018171801_bomb_pot_reports_bound_their_hosted_club_scan_and_utc_calend.sql" >"$work/bomb-replay.log" 2>&1; then echo 'Bomb patch replay allowed' >&2; exit 1; fi
 grep -q 'Bomb report source changed' "$work/bomb-replay.log"
+"${psql[@]}" -f "$repo/tests/fixtures/union-statement-availability/rake-snapshot-before.sql" -f "$repo/supabase/migrations/20261018183243_report_reader_generic_plans_retain_bounded_bitmap_scans.sql" -f "$repo/tests/fixtures/union-statement-availability/reader-settings-after.sql"
+if "${psql[@]}" -f "$repo/supabase/migrations/20261018183243_report_reader_generic_plans_retain_bounded_bitmap_scans.sql" >"$work/settings-replay.log" 2>&1; then echo 'Reader settings replay allowed' >&2; exit 1; fi
+grep -q 'Report reader source or settings changed' "$work/settings-replay.log"
 echo 'Statement availability PostgreSQL17 fail-before/pass-after, source preservation, authorization and replay refusal passed.'

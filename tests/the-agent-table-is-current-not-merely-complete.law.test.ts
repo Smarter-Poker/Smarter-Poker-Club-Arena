@@ -1,4 +1,4 @@
-import { functionBody } from './helpers/migrations';
+import { functionBody, latestDeclaring } from './helpers/migrations';
 import { migrationsMentioning as corpusMentioning } from './helpers/migrationCorpus';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -76,8 +76,8 @@ function migrationsMentioning(needle: string): string[] {
 
 /** The newest definition wins at deploy time, so it is the one under test. */
 function latestDefining(fnName: string): string {
-  const hits = corpusMentioning(`FUNCTION public.${fnName}(`);
-  return hits.length > 0 ? hits[hits.length - 1].sql : '';
+  // A later ALTER FUNCTION may tune execution without replacing the body.
+  return latestDeclaring(fnName).sql;
 }
 
 /** The body of the newest definition, comments stripped. */

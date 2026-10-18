@@ -1,0 +1,9 @@
+# Report Readers Keep Qualified Execution Settings
+
+The final authenticated check still timed out in JAQK's bomb-pot catchup. PostgreSQL's error context identifies the catchup SELECT. Its exact generic prepared plan measured8080ms while walking17494 hosted table identifiers; disabling ordinary index scans for that function selected a bitmap plan measuring142ms with identical empty source days. A proposed join rewrite measured13899ms and was rejected. The existing global oldest-bomb lookup measured0.13ms and is retained.
+
+A separate real union14-day request exhausted the default8s budget in fn_ca_rake_window. The wrapper computes a breakdown, current and previous periods, series and freshness. An isolated synthetic union-admin database measurement of the full request completed in4652ms with4MB sort memory and4224ms with64MB; these are warm-cache database timings, not a replacement for HTTP proof. The report receives the established bounded20s aggregate request budget and64MB local sort memory. Role-wide defaults are unchanged.
+
+The migration changes execution settings only. Exact definition guards reject drift/replay, both function bodies remain byte-identical, and existing ACLs, SECURITY DEFINER and search_path remain pinned. Native qualification checks those bodies, caller permissions, bounded settings, setting restoration after catchup and replay refusal in the existing required union-reporting path. No financial/source rows or schedules are changed. Actual HTTP and rendered success remain post-installation requirements.
+
+Four legacy body-source selectors matched any `FUNCTION` mention, including ALTER FUNCTION settings. They now use the existing latestDeclaring helper; their authorization and live-versus-complete assertions remain unchanged. A regression confirms settings-only migrations cannot displace the latest body declaration. All250 assertions across the17 directly connected reader test files pass.

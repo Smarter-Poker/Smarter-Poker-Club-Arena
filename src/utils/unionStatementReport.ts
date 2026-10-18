@@ -1,4 +1,11 @@
-export type StatementStatus = 'missing' | 'cancelled' | 'pending' | 'paid' | 'overdue' | 'disputed';
+export type StatementStatus =
+  | 'missing'
+  | 'cancelled'
+  | 'pending'
+  | 'paid'
+  | 'overdue'
+  | 'disputed'
+  | 'unverified';
 
 export interface ClubSettlementBreakdown {
   clubId: string;
@@ -24,8 +31,8 @@ export interface UnionSettlement {
   totalAgentCommissions: null;
   totalPlayerRakeback: null;
   netUnionRevenue: number | null;
-  overdueAmount: number;
-  pendingSettlements: number;
+  overdueAmount: number | null;
+  pendingSettlements: number | null;
   clubBreakdowns: ClubSettlementBreakdown[];
 }
 
@@ -100,7 +107,13 @@ export function mapUnionStatementReport(
     if (row.snapshot_complete !== true)
       throw new Error('Issued statement accounting snapshot is incomplete');
     const amount = cents(row.amount);
-    const paid = cents(row.paid_total);
+    const unavailable = row.payment_details_available === false;
+    if (
+      unavailable &&
+      (row.status !== 'paid' || row.paid_total !== null || row.outstanding !== null || amount === 0)
+    )
+      throw new Error('Statement payment availability is inconsistent');
+    const paid = unavailable ? 0 : cents(row.paid_total);
     if (paid < 0) throw new Error('Statement paid total cannot be negative');
     const remaining = Math.max(Math.abs(amount) - paid, 0);
     const cancelled = row.status === 'cancelled';
@@ -113,15 +126,17 @@ export function mapUnionStatementReport(
     }
     const due = row.due_at == null ? null : Date.parse(String(row.due_at));
     if (due !== null && !Number.isFinite(due)) throw new Error('Invalid statement due date');
-    const status: StatementStatus = cancelled
-      ? 'cancelled'
-      : row.status === 'disputed'
-        ? 'disputed'
-        : row.status === 'paid' && remaining === 0
-          ? 'paid'
-          : remaining > 0 && due !== null && due < now
-            ? 'overdue'
-            : 'pending';
+    const status: StatementStatus = unavailable
+      ? 'unverified'
+      : cancelled
+        ? 'cancelled'
+        : row.status === 'disputed'
+          ? 'disputed'
+          : row.status === 'paid' && remaining === 0
+            ? 'paid'
+            : remaining > 0 && due !== null && due < now
+              ? 'overdue'
+              : 'pending';
     return {
       ...base,
       invoiceId: String(row.invoice_id),
@@ -130,7 +145,7 @@ export function mapUnionStatementReport(
       unionShare: shareAmount / 100,
       netToClub: clubAmount / 100,
       wireDirection: amount > 0 ? 'PAY_TO_UNION' : amount < 0 ? 'COLLECT_FROM_UNION' : null,
-      outstanding: cancelled ? 0 : remaining / 100,
+      outstanding: unavailable ? null : cancelled ? 0 : remaining / 100,
     };
   });
   const issued = clubs.filter((c) => c.status !== 'missing' && c.status !== 'cancelled').length;
@@ -152,11 +167,12 @@ export function mapUnionStatementReport(
     totalRakeCollected: issued ? sumCents(rake) : null,
     totalUnionTax: issued ? sumCents(share) : null,
     netUnionRevenue: issued ? sumCents(share) : null,
-    overdueAmount: sumCents(
-      clubs.filter((c) => c.status === 'overdue').map((c) => cents(c.outstanding))
-    ),
-    pendingSettlements: clubs.filter((c) => ['pending', 'overdue', 'disputed'].includes(c.status))
-      .length,
+    overdueAmount: clubs.some((c) => c.status === 'unverified')
+      ? null
+      : sumCents(clubs.filter((c) => c.status === 'overdue').map((c) => cents(c.outstanding))),
+    pendingSettlements: clubs.some((c) => c.status === 'unverified')
+      ? null
+      : clubs.filter((c) => ['pending', 'overdue', 'disputed'].includes(c.status)).length,
     totalAgentCommissions: null,
     totalPlayerRakeback: null,
     clubBreakdowns: clubs,

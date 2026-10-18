@@ -76,3 +76,6 @@ psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$socket" -p "$port" -U postgres
 python3 "$repo/tests/fixtures/union-ops-financial-admin/transaction-owned-commission-concurrency.py" "$pgbin/psql" "$socket" "$port"
 
 echo 'Union Ops Financial Admin PostgreSQL 17 fixture passed.'
+
+# The statement board shares this directly triggered union reporting qualification.
+bash "$repo/scripts/dev/test-statement-availability-postgres.sh"

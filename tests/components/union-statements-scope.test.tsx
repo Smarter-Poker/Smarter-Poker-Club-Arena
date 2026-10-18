@@ -209,6 +209,35 @@ beforeEach(() => {
 });
 
 describe('Union Statements request identity', () => {
+  it('renders explicit legacy payment uncertainty without hiding valid invoices or inventing zero', async () => {
+    const value: any = statementBoard('union-a', 'Midway Union', 'Legacy Club');
+    Object.assign(value.clubs[0], {
+      status: 'paid',
+      payment_details_available: false,
+      paid_total: null,
+      outstanding: null,
+    });
+    Object.assign(value.totals, {
+      paid: 1,
+      payment_details_available: false,
+      collected: null,
+      outstanding: null,
+    });
+    testState.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === 'ca_union_insurance_pnl' ? insurance() : { data: value, error: null }
+      )
+    );
+    render(<UnionStatementsPage />);
+    expect(await screen.findByText('Legacy Club')).toBeVisible();
+    expect(screen.getByText('Paid Record Only')).toBeVisible();
+    expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Legacy Club Statement Details' }));
+    expect(screen.getByText(/Historical Payment Details Are Unavailable/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeDisabled();
+    expect(screen.queryByText('Could Not Load Statements.')).toBeNull();
+  });
+
   it('ignores a delayed board from the previous union route', async () => {
     const alpha = deferred<{ data: ReturnType<typeof statementBoard>; error: null }>();
     const beta = deferred<{ data: ReturnType<typeof statementBoard>; error: null }>();

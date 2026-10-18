@@ -35,6 +35,21 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
     );
   });
 
+  it('qualifies historical statement payment availability in the same union reporting job', () => {
+    expect(read('scripts/dev/test-union-ops-financial-admin-postgres.sh')).toContain(
+      'bash "$repo/scripts/dev/test-statement-availability-postgres.sh"'
+    );
+    const native = read('scripts/dev/test-statement-availability-postgres.sh');
+    for (const input of [
+      '20260907212347_union_statement_reports_identify_missing_accounting_snapshots.sql',
+      '20261018170308_union_statements_distinguish_missing_legacy_payment_details.sql',
+      'union-statement-availability/before.sql',
+      'union-statement-availability/after.sql',
+    ])
+      expect(native).toContain(input);
+    expect(native).toContain('Statement availability already installed');
+  });
+
   it('is one fail-closed accounting shard step using runner-owned scratch space', () => {
     expect(packageJson.scripts?.['test:data:postgres']).toBe(
       'bash scripts/ci/test-data-console-postgres-contracts.sh'

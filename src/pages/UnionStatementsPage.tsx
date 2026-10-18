@@ -120,7 +120,8 @@ function parseStatementIssueReceipt(
 }
 
 function money(n: number | null | undefined): string {
-  const value = Number(n ?? 0);
+  if (n === null || n === undefined) return 'Unavailable';
+  const value = Number(n);
   if (Number.isFinite(value) && value !== 0 && Math.abs(value) < 1) {
     return value < 0 ? 'Under 1 Owed' : 'Under 1';
   }
@@ -141,6 +142,7 @@ function boardToCsv(rows: BoardClub[]): string {
     'direction',
     'delivered',
     'due_at',
+    'payment_details_available',
     'paid_total',
     'outstanding',
     'rake_generated',
@@ -159,6 +161,7 @@ function boardToCsv(rows: BoardClub[]): string {
       r.direction,
       r.message_sent,
       r.due_at,
+      r.payment_details_available,
       r.paid_total,
       r.outstanding,
       r.rake_generated,
@@ -826,7 +829,7 @@ export default function UnionStatementsPage() {
                 {compactInt(totals.issued)} Of {compactInt(totals.clubs)} Issued
               </span>
               <span>{compactInt(totals.delivered)} Delivered</span>
-              <span>{compactInt(totals.paid)} Paid</span>
+              <span>{compactInt(totals.paid)} Marked Paid</span>
               <span>{money(totals.collected)} Collected</span>
               <span>{money(totals.rake_generated)} Rake</span>
               {totals.missing > 0 && (
@@ -894,11 +897,13 @@ export default function UnionStatementsPage() {
                         <div className={styles.clubName}>{titleCase(c.club_name)}</div>
                         <div className={styles.clubMeta}>
                           <span className={`${styles.pill} ${pillClass}`}>
-                            {c.status === 'missing'
-                              ? 'No Statement'
-                              : c.overdue
-                                ? 'Overdue'
-                                : titleCase(c.status)}
+                            {c.payment_details_available === false
+                              ? 'Paid Record Only'
+                              : c.status === 'missing'
+                                ? 'No Statement'
+                                : c.overdue
+                                  ? 'Overdue'
+                                  : titleCase(c.status)}
                           </span>
                           {c.status !== 'missing' && (
                             <span
@@ -947,7 +952,13 @@ export default function UnionStatementsPage() {
                             </div>
                           ))
                         )}
-                        {c.paid_total > 0 && c.status !== 'paid' && (
+                        {c.payment_details_available === false && (
+                          <div className={styles.state}>
+                            Historical Payment Details Are Unavailable. The Recorded Paid Status
+                            Does Not Verify A Payment Amount Or Remaining Balance.
+                          </div>
+                        )}
+                        {c.paid_total !== null && c.paid_total > 0 && c.status !== 'paid' && (
                           <div className={styles.breakdownLine}>
                             <span>Part Paid</span>
                             <span>
@@ -1009,7 +1020,9 @@ export default function UnionStatementsPage() {
                               onClick={() => {
                                 void setPaid(c.invoice_id as string, c.status !== 'paid');
                               }}
-                              disabled={settlingId === c.invoice_id}
+                              disabled={
+                                settlingId === c.invoice_id || c.payment_details_available === false
+                              }
                             >
                               {settlingId === c.invoice_id
                                 ? 'Saving...'

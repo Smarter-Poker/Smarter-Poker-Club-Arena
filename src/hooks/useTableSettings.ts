@@ -899,6 +899,14 @@ export function setTableSetting<K extends keyof TableUserSettings>(
   }
 }
 
+/** Card-only routes must hydrate the same account choice as table controls. */
+export function useTableSettingsAccountSync(): void {
+  const userId = useUserStore((state) => state.user?.id ?? null);
+  useEffect(() => {
+    syncToUser(userId);
+  }, [userId]);
+}
+
 export function useTableSettings() {
   attachBusOnce();
   const settings = useSyncExternalStore(subscribeToStore, getSnapshot, getSnapshot);
@@ -907,10 +915,7 @@ export function useTableSettings() {
      `syncToUser` is a no-op unless the id actually changed, so this costs one
      comparison per render even with six tables mounted — and the hydrate itself
      happens once per user, not once per table. */
-  const userId = useUserStore((state) => state.user?.id ?? null);
-  useEffect(() => {
-    syncToUser(userId);
-  }, [userId]);
+  useTableSettingsAccountSync();
 
   // Update a single setting by key
   const updateSetting = useCallback(setTableSetting, []);

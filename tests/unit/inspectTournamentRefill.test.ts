@@ -139,11 +139,7 @@ class Response:
 def urlopen(*args,**kwargs): return Response()
 def command(args):
  reads.append(args)
- if args[1]=='container':
-  if args[4]=='{{json .State}}': return json.dumps({'OOMKilled':True,'ExitCode':137,'Env':'private-token'})
-  if args[4]=='{{.RestartCount}}': return '2'
-  return 'b'*40 if mode=='label-mismatch' else expected
- if args[1]=='events': return json.dumps({'Action':'oom','time':123,'Actor':{'Attributes':{'name':'club-arena-engine','token':'private-token'}}})
+ if args[1]=='container': return 'b'*40 if mode=='label-mismatch' else expected
  return '2026-10-13T21:02:03Z [TournamentRecurring.spin_atomic_creation_failed] Error: statement timeout SQLSTATE=57014 private-token private-player-id'
 g['urllib'].request.urlopen=urlopen; g['bounded_command']=command
 out=io.StringIO(); err=io.StringIO()
@@ -174,12 +170,6 @@ print(json.dumps({'status':status,'stdout':out.getvalue(),'stderr':err.getvalue(
         healthyRefillProven: false,
       });
       expect(JSON.parse(result.stdout)).toMatchObject({
-        restarts: {
-          oomKilled: true,
-          exitCode: 137,
-          restartCount: 2,
-          events: [{ action: 'oom', unixTime: 123 }],
-        },
         engineSha: 'a'.repeat(40),
         instanceId: '1-aaaaaaaa',
         rawLogsExported: false,

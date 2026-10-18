@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 228158,
-      "sha256": "8ed6dd446e8bc81b3c86d1d4b0dd0d9722aab1f123b77d1ae991b050b505ccdf"
+      "bytes": 228031,
+      "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -165,6 +165,13 @@
     "currentWorkflow": {
       "bytes": 228158,
       "sha256": "8ed6dd446e8bc81b3c86d1d4b0dd0d9722aab1f123b77d1ae991b050b505ccdf"
+    }
+  },
+  "digestDiagnosticSplit20261018": {
+    "reason": "Keep only both native database qualifications here; independent incident owner qualifies read-only host diagnostics. Preserve all historical fingerprints and financial verdicts.",
+    "currentWorkflow": {
+      "bytes": 228031,
+      "sha256": "4c529a24c7b78a44db61a4bf4cd00911ba26814f7554540f67b7924962ca2185"
     }
   }
 }

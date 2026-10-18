@@ -21,3 +21,15 @@ loop). This matches `fn_assign_horse_stake_bands`, whose host for a member is
 already `coalesce(clubs.union_id, clubs.id)`. Occupancy caps are per host and
 scale from the live body count, so they follow on their own. T10 and T31 in
 `StableHand.test.ts` were rewritten in the same commit to pin the new rule.
+
+## Every horse plays both arenas
+
+Dan, verbatim: "ALL HORSES SHOULD BE PLAYING IN BOTH THE CLUB ARENA'S AND
+DIAMOND ARENA. THEY SHOULD BE ABLE AND ALLOWED TO PLAY IN BOTH ARENA'S AT THE
+SAME TIME."
+
+`DIAMOND_ARENA_HORSE_CLUBS` was Deep Stack Society alone (2026-10-06). It is
+now Club JAQK, Shark Club and Deep Stack Society, so all 1,000 horses can take
+Diamond Arena cash seats and are entered in its scheduled events, paying from
+their own Diamonds (every horse holds about 110,000). Playing both at once
+already worked: an arena seat never counts as the horse's club or host.

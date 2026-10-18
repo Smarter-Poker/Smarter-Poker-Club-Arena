@@ -1,6 +1,6 @@
 import { parseTableArenaIdentity } from '../domain/ArenaContext.js';
 import { hasDiamondCashClusterShape } from '../domain/DiamondCashBoundary.js';
-import { DSS_CLUB_ID } from './StableHand.js';
+import { DSS_CLUB_ID, JAQK_CLUB_ID, SHARK_CLUB_ID } from './StableHand.js';
 
 /** Treasury-funded fleet seats belong only to authoritative chip arenas. */
 export function isChipFleetTable(table: {
@@ -44,10 +44,21 @@ export function isChipFleetTable(table: {
  * the-arena-switches); this file never touches the switch.
  */
 
-/** The clubs whose horses play the Diamond Arena. Dan 2026-10-06: Deep Stack
- *  Society. A horse qualifies through a membership in one of these, and its
- *  Diamonds - not that club's chips - are what it plays with. */
-export const DIAMOND_ARENA_HORSE_CLUBS: readonly string[] = [DSS_CLUB_ID];
+/** The clubs whose horses play the Diamond Arena. A horse qualifies through a
+ *  membership in one of these, and its Diamonds - not that club's chips - are
+ *  what it plays with.
+ *
+ *  EVERY HORSE PLAYS BOTH ARENAS (Dan, 2026-10-18): "ALL HORSES SHOULD BE
+ *  PLAYING IN BOTH THE CLUB ARENA'S AND DIAMOND ARENA. THEY SHOULD BE ABLE AND
+ *  ALLOWED TO PLAY IN BOTH ARENA'S AT THE SAME TIME." This was Deep Stack
+ *  Society alone (2026-10-06); it is now every horse club. An arena seat never
+ *  counts as the horse's club or host (HorseFleetManager, WHERE EACH HORSE
+ *  ALREADY IS), so the two arenas are played at the same time. */
+export const DIAMOND_ARENA_HORSE_CLUBS: readonly string[] = [
+  JAQK_CLUB_ID,
+  SHARK_CLUB_ID,
+  DSS_CLUB_ID,
+];
 
 /** The arena's club id, but only while its cash games are OPEN. Fails closed:
  *  an error, a missing row, a missing club id or a switch that is anything but

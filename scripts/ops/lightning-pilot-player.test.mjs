@@ -8,6 +8,7 @@ import {
   witnessPlayer,
   acceptPlayerTerms,
   CONSENT_PLAYERS,
+  PLAYER_DEVICES,
 } from './lightning-pilot-player.mjs';
 import { readFileSync } from 'node:fs';
 
@@ -257,11 +258,15 @@ test('fixtures match maintained SQL, UI sender and HTTP producer contracts', () 
   );
 });
 
-function fakeBrowser(refused = false) {
+function fakeBrowser(refused = false, respectCapabilities = false, broken = null) {
   let frame,
     respond,
-    serial = 1;
+    serial = 1,
+    width = 375,
+    mountedWidth = 375,
+    openSocket;
   const calls = [];
+  const actionDevices = [];
   const emit = () =>
     frame({
       payload: JSON.stringify({
@@ -275,25 +280,44 @@ function fakeBrowser(refused = false) {
     locator: () => ({ getAttribute: async () => 'accepted' }),
     on: (type, fn) => {
       assert.equal(type, 'websocket');
-      fn({
-        on: (event, cb) => {
-          assert.equal(event, 'framesent');
-          frame = cb;
-        },
-      });
+      openSocket = () =>
+        fn({
+          on: (event, cb) => {
+            assert.equal(event, 'framesent');
+            frame = cb;
+          },
+        });
     },
     goto: async (url) => {
       calls.push(url);
+      mountedWidth = width;
+      openSocket();
       emit();
     },
-    setViewportSize: async () => emit(),
-    evaluate: async () => ({ clientWidth: 375, scrollWidth: 375 }),
+    reload: async () => {
+      calls.push('reload');
+      mountedWidth = width;
+      if (broken !== 'stale_socket') openSocket();
+      emit();
+    },
+    setViewportSize: async (viewport) => {
+      width = viewport.width;
+      emit();
+    },
+    evaluate: async () => ({ clientWidth: width, scrollWidth: width }),
     getByTestId: (selector) => ({
-      waitFor: async () => {},
+      waitFor: async () => {
+        if (
+          selector === 'lightning-fold-watch' &&
+          (broken === 'desktop_watch' || (respectCapabilities && mountedWidth <= 820))
+        )
+          throw new Error('Fold And Watch Is Not Offered On A Handheld');
+      },
       click: async (options) => {
         if (options.trial) return;
         const kind = selector === 'lightning-fold' ? 'fast_fold' : 'fold_watch';
         calls.push(kind);
+        actionDevices.push({ kind, mountedWidth });
         const response = {
           ok: () => !refused,
           json: async () => ({ success: !refused }),
@@ -321,9 +345,9 @@ function fakeBrowser(refused = false) {
       newContext: async () => ({ addInitScript: async () => {}, newPage: async () => page }),
     }),
   };
-  return { chromium, calls };
+  return { chromium, calls, actionDevices };
 }
-test('finite browser witness traverses six normal UI actions and actual next-render observations', async () => {
+test('finite browser witness traverses supported UI actions and actual next-render observations', async () => {
   const f = fixture(),
     b = fakeBrowser();
   const r = await witnessPlayer({
@@ -339,9 +363,9 @@ test('finite browser witness traverses six normal UI actions and actual next-ren
   assert.equal(
     r.devices.flatMap((d) => d.actions).filter((a) => a.accepted && a.nextHand === 'observed')
       .length,
-    6
+    4
   );
-  assert.equal(b.calls.filter((v) => ['fast_fold', 'fold_watch'].includes(v)).length, 6);
+  assert.equal(b.calls.filter((v) => ['fast_fold', 'fold_watch'].includes(v)).length, 4);
   assert.deepEqual(f.calls, [{ scope: 'local' }]);
 });
 test('a horse/action race refuses honestly, stops further action and cleans its local session', async () => {
@@ -458,4 +482,90 @@ test('expired historical ban does not exclude an otherwise verified existing hor
       .id,
     pin.playerId
   );
+});
+
+test('device witness mounts each capability class and tests only its supported controls', async () => {
+  const f = fixture(),
+    b = fakeBrowser(false, true);
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  assert.equal(r.status, 'observed');
+  assert.deepEqual(
+    r.devices.map((d) => [d.device, d.render, d.layout, d.actions.map((a) => a.kind)]),
+    [
+      ['phone', 'observed', 'fits', ['fast_fold']],
+      ['tablet', 'observed', 'fits', ['fast_fold']],
+      ['desktop', 'observed', 'fits', ['fast_fold', 'fold_watch']],
+    ]
+  );
+  assert.deepEqual(
+    b.actionDevices.filter((a) => a.kind === 'fold_watch'),
+    [{ kind: 'fold_watch', mountedWidth: 1440 }]
+  );
+  assert.equal(b.calls.filter((v) => v === 'reload').length, 2);
+  assert.ok(
+    r.devices.flatMap((d) => d.actions).every((a) => a.accepted && a.nextHand === 'observed')
+  );
+  assert.deepEqual(f.calls, [{ scope: 'local' }]);
+});
+
+test('witness device expectations agree with the maintained capability and mount contracts', () => {
+  const capabilities = readFileSync(
+    new URL('../../src/lightning/lightningCapabilities.ts', import.meta.url),
+    'utf8'
+  );
+  assert.match(capabilities, /const HANDHELD[\s\S]*?fold_and_watch: false/);
+  assert.match(capabilities, /desktop: Object.freeze\(\{[\s\S]*?fold_and_watch: true/);
+  assert.match(capabilities, /LIGHTNING_HANDHELD_MAX_WIDTH = 820/);
+  assert.deepEqual(
+    PLAYER_DEVICES.map((d) => [d.width, d.foldWatch]),
+    [
+      [375, false],
+      [768, false],
+      [1440, true],
+    ]
+  );
+  const page = readFileSync(new URL('../../src/pages/TablePage.tsx', import.meta.url), 'utf8');
+  assert.match(
+    page,
+    /const lightningCaps = useMemo\([\s\S]*?readLightningPlatformSignals\(\)\)\),\s*\[\]/
+  );
+});
+
+test('late frames from the previous document cannot certify another viewport', async () => {
+  const f = fixture(),
+    b = fakeBrowser(false, true, 'stale_socket');
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.devices[1].render, 'unknown');
+  assert.equal(r.cause, 'viewport_render_unobserved');
+  assert.equal(b.actionDevices.length, 1);
+  assert.deepEqual(f.calls, [{ scope: 'local' }]);
+});
+test('missing desktop Fold and Watch remains an unqualified failure', async () => {
+  const f = fixture(),
+    b = fakeBrowser(false, true, 'desktop_watch');
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.devices.length, 3);
+  assert.equal(r.cause, 'fold_control_unavailable');
+  assert.equal(b.actionDevices.length, 3);
+  assert.deepEqual(f.calls, [{ scope: 'local' }]);
 });

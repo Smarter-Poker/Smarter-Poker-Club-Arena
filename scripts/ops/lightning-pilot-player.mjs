@@ -13,9 +13,9 @@ const must = (r) => {
   return r.data;
 };
 export const PLAYER_DEVICES = Object.freeze([
-  { name: 'phone', width: 375, height: 812 },
-  { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1440, height: 900 },
+  { name: 'phone', width: 375, height: 812, foldWatch: false },
+  { name: 'tablet', width: 768, height: 1024, foldWatch: false },
+  { name: 'desktop', width: 1440, height: 900, foldWatch: true },
 ]);
 
 export function assertPlayerPin(pin) {
@@ -260,7 +260,8 @@ export async function witnessPlayer({
   };
   try {
     browser = await chromium.launch({ headless: true, timeout: remaining() });
-    // One document/socket throughout: viewport changes never leave or rejoin the pool.
+    // Keep the same authenticated browser and existing pool. Mount each viewport
+    // afresh: TablePage reads platform capabilities once, when it mounts.
     const context = await bounded(
       browser.newContext({ viewport: { width: 375, height: 812 } }),
       remaining()
@@ -274,12 +275,15 @@ export async function witnessPlayer({
     );
     const page = await bounded(context.newPage(), remaining());
     let latestHand = null;
-    page.on('websocket', (ws) =>
+    let navigationGeneration = 0;
+    page.on('websocket', (ws) => {
+      const generation = navigationGeneration;
       ws.on('framesent', ({ payload }) => {
+        if (generation !== navigationGeneration) return;
         const hand = renderHand(payload, pin.poolSessionId);
         if (hand) latestHand = hand;
-      })
-    );
+      });
+    });
     report.subphase = 'navigation';
     report.cause = 'navigation_unverified';
     await page.goto(`https://smarter.poker/hub/club-arena/table/${pin.poolSessionId}`, {
@@ -292,18 +296,27 @@ export async function witnessPlayer({
       acceptPlayerTerms(page, session, pin, url, acceptTerms, remaining),
       remaining()
     );
-    for (const device of PLAYER_DEVICES) {
-      const baseline = latestHand;
+    for (const [deviceIndex, device] of PLAYER_DEVICES.entries()) {
+      await bounded(validatePlayer(admin, pin), remaining());
       await bounded(
         page.setViewportSize({ width: device.width, height: device.height }),
         remaining()
       );
+      if (deviceIndex > 0) {
+        // Ordinary reload reconnects the same room, with no join or buy-in.
+        // Only a socket created by this document may prove its rendered hand.
+        report.subphase = 'device_navigation';
+        report.cause = 'device_navigation_unverified';
+        navigationGeneration += 1;
+        latestHand = null;
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: remaining() });
+        await bounded(acceptPlayerTerms(page, session, pin, url, false, remaining), remaining());
+      }
       const row = { device: device.name, render: 'unknown', layout: 'unknown', actions: [] };
       report.devices.push(row);
       report.subphase = 'viewport_render';
       report.cause = 'viewport_render_unobserved';
-      while ((!latestHand || latestHand === baseline) && remaining() > 0)
-        await page.waitForTimeout(Math.min(100, remaining()));
+      while (!latestHand && remaining() > 0) await page.waitForTimeout(Math.min(100, remaining()));
       row.render = 'observed';
       const layout = await bounded(
         page.evaluate(() => ({
@@ -323,10 +336,10 @@ export async function witnessPlayer({
         throw new Error('Viewport Overflow');
       }
 
-      for (const [kind, selector] of [
-        ['fast_fold', 'lightning-fold'],
-        ['fold_watch', 'lightning-fold-watch'],
-      ]) {
+      // The maintained capability map offers Fold & Watch on desktop only.
+      const actions = [['fast_fold', 'lightning-fold']];
+      if (device.foldWatch) actions.push(['fold_watch', 'lightning-fold-watch']);
+      for (const [kind, selector] of actions) {
         report.subphase = 'player_preflight';
         report.cause = 'player_scope_unverified';
         await bounded(validatePlayer(admin, pin), remaining());

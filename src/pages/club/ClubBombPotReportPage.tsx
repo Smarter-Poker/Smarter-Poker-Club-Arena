@@ -119,7 +119,7 @@ export function parseClubBombPotReport(
     !Number.isFinite(endMs) ||
     new Date(startMs).toISOString().slice(0, 10) !== windowStart ||
     new Date(endMs).toISOString().slice(0, 10) !== windowEnd ||
-    (endMs - startMs) / 86_400_000 !== expectedDays ||
+    (endMs - startMs) / 86_400_000 !== expectedDays - 1 ||
     typeof value.generated_at !== 'string' ||
     !Number.isFinite(Date.parse(value.generated_at)) ||
     !Array.isArray(value.rows)

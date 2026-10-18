@@ -63,7 +63,7 @@ function bombReport(tableName: string | null = 'Shark Table One') {
     club_id: '11111111-1111-4111-8111-111111111111',
     requested_days: 30,
     window_days: 30,
-    window_start: '2026-09-04',
+    window_start: '2026-09-05',
     window_end: '2026-10-04',
     generated_at: '2026-10-04T12:00:00.000Z',
     rows: [

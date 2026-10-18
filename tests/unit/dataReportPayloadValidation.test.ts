@@ -85,13 +85,28 @@ describe('Club Data report payload validation', () => {
       club_id: CLUB_ID,
       requested_days: 7,
       window_days: 7,
-      window_start: '2026-09-30',
+      window_start: '2026-10-01',
       window_end: '2026-10-07',
       generated_at: '2026-10-07T12:00:00.000Z',
       rows: [bombRow],
     };
     expect(parseClubBombPotReport(envelope, CLUB_ID, 7)).toEqual([bombRow]);
     expect(parseClubBombPotReport({ ...envelope, rows: [] }, CLUB_ID, 7)).toEqual([]);
+    expect(() =>
+      parseClubBombPotReport({ ...envelope, window_start: '2026-09-30' }, CLUB_ID, 7)
+    ).toThrow('window receipt is invalid');
+    expect(
+      parseClubBombPotReport(
+        {
+          ...envelope,
+          requested_days: 1,
+          window_days: 1,
+          window_start: '2026-10-07',
+        },
+        CLUB_ID,
+        1
+      )
+    ).toEqual([bombRow]);
     expect(() => parseClubBombPotReport([bombRow], CLUB_ID, 7)).toThrow('response is invalid');
     expect(() =>
       parseClubBombPotReport({ ...envelope, club_id: bombRow.table_id }, CLUB_ID, 7)

@@ -70,6 +70,7 @@ import {
 
 import { batchRequest, applyFinalTablePages } from './final-table-cleanup-batches.mjs';
 import { withSettlementLane } from './settlement-lane.mjs';
+import { bindMigrationSession } from './migration-session-identity.mjs';
 import { accountingAdmissionSQL } from './accounting-migration-admission.mjs';
 import {
   validateThawRepair,
@@ -534,19 +535,21 @@ const atomicSQL = transactionBody.replace(/COMMIT\s*;\s*$/i, () => historyStatem
 if (atomicSQL === transactionBody)
   refused('atomic migration history could not bind the final COMMIT');
 let admittedSQL;
+let transactionSQL;
 try {
   admittedSQL = MAINTENANCE_THAW_REPAIR
     ? thawRepairSQL(atomicSQL)
     : accountingAdmissionSQL(file, sql, atomicSQL);
+  transactionSQL = bindMigrationSession(SETTLEMENT_LANE ? atomicSQL : admittedSQL);
 } catch (e) {
   await client.end().catch(() => {});
   refused(e.message);
 }
 const started = Date.now();
 try {
-  // With no preamble this is the whole file, exactly as before.
-  if (SETTLEMENT_LANE) await withSettlementLane(client, () => client.query(atomicSQL));
-  else await client.query(admittedSQL);
+  // Send one owning transaction; history retains the exact source bytes.
+  if (SETTLEMENT_LANE) await withSettlementLane(client, () => client.query(transactionSQL));
+  else await client.query(transactionSQL);
 } catch (e) {
   await client.end().catch(() => {});
   const definiteRefusal =

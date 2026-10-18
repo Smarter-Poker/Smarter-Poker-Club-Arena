@@ -70,6 +70,8 @@ export class LightningMetrics {
   readonly handsTotal: Counter;
   readonly foldsTotal: Counter;
   readonly formedTotal: Counter;
+  // One player can play in multiple Clusters. An idle/fold leg belongs to
+  // that exact Cluster; another room must never overwrite or consume it.
   private readonly idle = new Map<
     string,
     { at: number; foldAt: number; kind: LightningIdleKind; clusterId: string | null }
@@ -148,15 +150,16 @@ export class LightningMetrics {
     playerId: string,
     atMs: number,
     kind: LightningIdleKind,
-    clusterId?: string | null,
+    clusterId: string | null,
     foldAtMs?: number | null
   ): void {
-    this.idle.delete(playerId);
+    const key = JSON.stringify([clusterId ?? null, playerId]);
+    this.idle.delete(key);
     const foldAt =
       typeof foldAtMs === 'number' && Number.isFinite(foldAtMs) && foldAtMs <= atMs
         ? foldAtMs
         : atMs;
-    this.idle.set(playerId, { at: atMs, foldAt, kind, clusterId: clusterId ?? null });
+    this.idle.set(key, { at: atMs, foldAt, kind, clusterId: clusterId ?? null });
     if (clusterId && this.tap) this.tap.idle(clusterId, playerId, atMs);
     if (this.idle.size > IDLE_MEMORY_MAX) {
       for (const [id, v] of this.idle) {
@@ -167,20 +170,22 @@ export class LightningMetrics {
   }
 
   /** The matcher formed a hand holding these players. */
-  noteMatched(playerIds: readonly string[], atMs: number, clusterId?: string | null): void {
+  noteMatched(playerIds: readonly string[], atMs: number, clusterId: string | null): void {
     this.formedTotal.inc(1);
     for (const id of playerIds) {
-      const v = this.idle.get(id);
+      const key = JSON.stringify([clusterId ?? null, id]);
+      const v = this.idle.get(key);
       if (v && atMs - v.at < IDLE_MEMORY_MS)
         this.observeLatency('idle_pool_to_match', atMs - v.at, clusterId ?? v.clusterId);
     }
   }
 
   /** The players' next hand was dealt: close each fold-to-next-hand leg. */
-  noteDealt(playerIds: readonly string[], atMs: number, clusterId?: string | null): void {
+  noteDealt(playerIds: readonly string[], atMs: number, clusterId: string | null): void {
     for (const id of playerIds) {
-      const v = this.idle.get(id);
-      this.idle.delete(id);
+      const key = JSON.stringify([clusterId ?? null, id]);
+      const v = this.idle.get(key);
+      this.idle.delete(key);
       if (!v || atMs - v.at >= IDLE_MEMORY_MS || v.kind === 'hand_end') continue;
       const segment: LightningLatencySegment =
         v.kind === 'fold_watch'
@@ -204,6 +209,7 @@ export class LightningMetrics {
 
   /** A worker stopped: its last numbers stop counting. */
   forgetCluster(clusterId: string): void {
+    for (const [key, value] of this.idle) if (value.clusterId === clusterId) this.idle.delete(key);
     if (this.lastByCluster.delete(clusterId)) this.publish();
   }
 

@@ -106,6 +106,34 @@ describe('four colors are the standard and the cards follow the switch', () => {
     expect(cards.container.querySelector('img')!.src).toContain('/4color/');
   });
 
+  it('keeps table props and card readers together on a cross-tab storage fallback', () => {
+    const panel = renderHook(() => useTableSettings());
+    const reader = renderHook(() => useDeckStyle());
+    act(() => {
+      localStorage.setItem(
+        STORAGE_KEYS.TABLE_SETTINGS,
+        JSON.stringify({ fourColorDeck: false, fourColorDeckExplicit: true })
+      );
+      window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEYS.TABLE_SETTINGS }));
+    });
+    expect(panel.result.current.settings.fourColorDeck).toBe(false);
+    expect(reader.result.current).toBe('2color');
+  });
+
+  it('refuses a storage fallback owned by another signed-in account', () => {
+    account.user = { id: 'deck-test-user' };
+    const panel = renderHook(() => useTableSettings());
+    act(() => {
+      localStorage.setItem('ca_table_settings_owner', 'other-user');
+      localStorage.setItem(
+        STORAGE_KEYS.TABLE_SETTINGS,
+        JSON.stringify({ fourColorDeck: false, fourColorDeckExplicit: true })
+      );
+      window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEYS.TABLE_SETTINGS }));
+    });
+    expect(panel.result.current.settings.fourColorDeck).toBe(true);
+  });
+
   it('keeps the chosen colors when both image formats fail', () => {
     const cards = render(<CardImage card={{ rank: 'A', suit: 'd' }} deckStyle="2color" />);
     const image = cards.container.querySelector('img')!;

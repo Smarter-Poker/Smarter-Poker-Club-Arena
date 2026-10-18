@@ -533,9 +533,29 @@ const originIdRef = { current: `ts-${Math.random().toString(36).slice(2)}` };
  * handlers that each mutated their own copy. Now it wakes the single store.
  */
 let busAttached = false;
+let deckStorageListener: ((event: StorageEvent) => void) | null = null;
 function attachBusOnce(): void {
   if (busAttached) return;
   busAttached = true;
+  // Retain the storage-event fallback when BroadcastChannel is unavailable.
+  // Apply it at the owner, so explicit table props and implicit cards agree.
+  deckStorageListener = (event) => {
+    if (event.key !== null && event.key !== STORAGE_KEY) return;
+    const userId = useUserStore.getState().user?.id ?? null;
+    if (localSettingsOwner() !== userId) return;
+    const stored = loadFromStorage();
+    commit((prev) =>
+      prev.fourColorDeck === stored.fourColorDeck &&
+      prev.fourColorDeckExplicit === stored.fourColorDeckExplicit
+        ? prev
+        : {
+            ...prev,
+            fourColorDeck: stored.fourColorDeck,
+            fourColorDeckExplicit: stored.fourColorDeckExplicit,
+          }
+    );
+  };
+  if (typeof window !== 'undefined') window.addEventListener('storage', deckStorageListener);
   masterBus.subscribe('SETTINGS_CHANGED', (event) => {
     // Skip only OUR OWN echo (prevent a redundant commit).
     if (event.payload?.origin === originIdRef.current) return;
@@ -811,6 +831,9 @@ export function __resetTableSettingsStoreForTest(): void {
   hydratedUserId = null;
   locallyTouched.clear();
   busAttached = false;
+  if (deckStorageListener && typeof window !== 'undefined')
+    window.removeEventListener('storage', deckStorageListener);
+  deckStorageListener = null;
 }
 
 /**

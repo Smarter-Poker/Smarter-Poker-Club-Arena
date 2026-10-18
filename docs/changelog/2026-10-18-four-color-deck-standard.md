@@ -9,3 +9,5 @@ Verified source and connected controls: SettingsPanel -> TablePage updateSetting
 Regression suite reproduced all five failures against the unchanged base, including ON at the switch with a still-two-color card after account hydration. All five pass after the fix. Focused settings/card tests: 85 passed. Local PostgreSQL 17 fixture verified new rows and legacy untouched rows ON, chosen OFF preserved, chosen ON preserved, and harmless replay. Compiler and required hook/provider/publication results are tracked in CHECKPOINT-four-color-deck.md.
 
 Real-time law: preference changes use the existing SETTINGS_CHANGED event and direct canonical store subscription; no gameplay snapshot diff or polling.
+
+The cross-tab storage fallback now also enters the canonical store, so a browser without BroadcastChannel updates both explicit table props and implicit cards. Account ownership prevents another account's cached choice from being adopted. Two additional regressions cover those cases.

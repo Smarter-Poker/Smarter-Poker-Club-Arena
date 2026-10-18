@@ -148,3 +148,40 @@ describe('global Club Arena footer mounting and clearance', () => {
     expect(css).not.toContain('background: #000');
   });
 });
+
+describe('phone chrome keeps its larger native artwork and role-specific doors', () => {
+  it('selects the phone header and footer on the same breakpoint as their layout', () => {
+    const header = readFileSync(join(ROOT, 'src/components/navigation/GlobalHeader.tsx'), 'utf8');
+    const footer = readFileSync(join(ROOT, 'src/components/club/ClubBottomNav.tsx'), 'utf8');
+    const headerCss = readFileSync(
+      join(ROOT, 'src/components/navigation/GlobalHeader.module.css'),
+      'utf8'
+    );
+    const footerCss = readFileSync(
+      join(ROOT, 'src/components/club/ClubBottomNav.module.css'),
+      'utf8'
+    );
+    const runtime = readFileSync(join(ROOT, 'src/styles/club-engine.css'), 'utf8');
+    expect(header).toContain('global-header-mobile-v1.png');
+    expect(header).toContain('media="(max-width: 600px)"');
+    expect(footer).toContain('club-arena-footer-mobile-v1.webp');
+    expect(footer).toContain('media="(max-width: 600px)"');
+    expect(headerCss).toMatch(/@media \(max-width: 600px\)[\s\S]*?aspect-ratio: 1435 \/ 168/);
+    expect(footerCss).toMatch(/@media \(max-width: 600px\)[\s\S]*?aspect-ratio: 1481 \/ 230/);
+    expect(runtime).toMatch(
+      /@media \(max-width: 600px\)[\s\S]*?--bottom-nav-height: clamp\(44px, 15.53vw, 132px\)/
+    );
+    expect((393 * 168) / 1435).toBeGreaterThanOrEqual(46);
+    expect((393 * 230) / 1481).toBeGreaterThan(61);
+  });
+
+  it('keeps the newer five-door member artwork instead of exposing the operator Data door', () => {
+    const footer = readFileSync(join(ROOT, 'src/components/club/ClubBottomNav.tsx'), 'utf8');
+    const css = readFileSync(join(ROOT, 'src/components/club/ClubBottomNav.module.css'), 'utf8');
+    expect(footer).toContain('canSeeData &&');
+    expect(footer).toContain('!canSeeData &&');
+    expect(footer).toContain('src={APPROVED_PLAYER_FOOTER_ART}');
+    expect(css).toContain('grid-template-columns: 377fr 274fr 244fr 234fr 352fr');
+    expect(css).toMatch(/\.memberArtwork \.diamondArtwork\s*\{[^}]*display: block/);
+  });
+});

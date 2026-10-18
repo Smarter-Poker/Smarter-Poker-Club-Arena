@@ -367,16 +367,31 @@ export default function GlobalHeader({ inTab = null }: { inTab?: InTabLobbyNav |
         {/* The black frame finish follows the club footer (Dan 2026-10-15).
             Interior pixels, controls, center logo and blue shines are preserved
             from global-header-desktop.png; only the rails and divider finish change. */}
-        <img
-          src={`${APPROVED_HEADER_ASSET}global-header-desktop-black-v2.png`}
-          alt=""
-          width={1648}
-          height={168}
-          className={styles.desktopArtwork}
-          aria-hidden="true"
-          fetchPriority="high"
-          decoding="sync"
-        />
+        {/* Dan 2026-10-17: "ON MOBILE THE HEADERS AND FOOTERS ARE TOO SMALL."
+            Phones get global-header-mobile-v1.png, cut from this same art: the
+            wordmark plate rebuilt narrower around a smaller Smarter.Poker and
+            seven measured gap trims, every control at native scale. That frees
+            213 of 1648 columns, so the row is 16% taller at the same width.
+            The hit regions move with it in the phone block of
+            GlobalHeader.module.css; same breakpoint. */}
+        <picture>
+          <source
+            media="(max-width: 600px)"
+            srcSet={`${APPROVED_HEADER_ASSET}global-header-mobile-v1.png`}
+            width={1435}
+            height={168}
+          />
+          <img
+            src={`${APPROVED_HEADER_ASSET}global-header-desktop-black-v2.png`}
+            alt=""
+            width={1648}
+            height={168}
+            className={styles.desktopArtwork}
+            aria-hidden="true"
+            fetchPriority="high"
+            decoding="sync"
+          />
+        </picture>
 
         <div className={styles.headerControls}>
           <div className={styles.headerLeft}>

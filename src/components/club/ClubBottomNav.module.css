@@ -246,3 +246,85 @@
     opacity: 0.55;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE PHONE FOOTER (Dan 2026-10-17: "ON MOBILE THE HEADERS AND FOOTERS ARE
+   TOO SMALL")
+   ---------------------------------------------------------------------------
+   Below 601px the <picture> serves club-arena-footer-mobile-v1.webp: the
+   master above with the Diamond Spins cell composited in exactly where the
+   overlay paints it, and one 77px quilt period removed from each of the five
+   gaps between the cells. A whole period keeps the quilting continuous, so
+   nothing is stretched or redrawn; the frame is 1481x230 inside a 1531x256
+   canvas with the same 25/14/12px gutters.
+   Every number below is the same measurement as the desktop rule it overrides,
+   on that frame:
+     overscan  width 1531/1481 = 103.376%   left -25/1481 = -1.688%
+     cells     boundaries at the middle of each shortened gap,
+               357 / 557 / 771 / 987 / 1169 of 1481
+     glint     the diamond's sparkle is left of the first cut, so it keeps its
+               209px: 209/1481 = 14.11%, 22.4/1481 = 1.51% wide
+   The diamond overlay is in the art here, so the overlay is not painted twice
+   ("NOTHING CAN BE COPY PASTED OR OVERLAPPED"). The page reserve is the same
+   15.53vw in club-engine.css. */
+@media (max-width: 600px) {
+  .artwork {
+    width: min(100%, calc(var(--bottom-nav-height, 44px) * 1481 / 230));
+    aspect-ratio: 1481 / 230;
+  }
+
+  .artworkImage {
+    left: -1.688%;
+    width: 103.376%;
+  }
+
+  .navItems {
+    grid-template-columns: 24.1fr 13.5fr 14.5fr 14.6fr 12.3fr 21fr;
+  }
+
+  .diamondArtwork {
+    display: none;
+  }
+
+  .diamondGlint {
+    left: 14.11%;
+    width: 1.51%;
+  }
+}
+
+/* Member phones retain five doors and their approved art. The slices remove
+   empty gaps at native scale, matching the operator phone frame's 1481px plane. */
+.memberMobileArtwork {
+  display: none;
+}
+@media (max-width: 600px) {
+  .memberArtwork .artworkImage {
+    display: none;
+  }
+  .memberMobileArtwork {
+    display: block;
+    position: absolute;
+    inset: 0;
+  }
+  .memberMobileSlice {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    overflow: hidden;
+  }
+  .memberMobileSlice > img {
+    position: absolute;
+    top: -6.087%;
+    height: 111.3043%;
+    max-width: none;
+    pointer-events: none;
+  }
+  .navItemsFive {
+    grid-template-columns: 377fr 274fr 244fr 234fr 352fr;
+  }
+  .memberArtwork .diamondArtwork {
+    display: block;
+    width: 125.996%;
+    right: auto;
+  }
+}

@@ -65,6 +65,8 @@ export const SATELLITE_COLUMNS = [
   'status',
   'tournament_type',
   'game_type',
+  'satellite_target_id',
+  'satellite_target',
   /* NOT `buy_in`. There is no such column: the price is stored split, as
      `buy_in_amount` (the prize contribution) plus `buy_in_fee` (the rake), and
      what a player pays is the SUM. See src/utils/buyIn.ts. */
@@ -137,6 +139,9 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
   const structureFacts = describeStoredMttStructure(sat.blind_structure, sat.starting_chips);
 
   return {
+    satellite_target_id:
+      typeof sat.satellite_target_id === 'string' ? sat.satellite_target_id : null,
+    satellite_target: typeof sat.satellite_target === 'string' ? sat.satellite_target : null,
     id: String(sat.id),
     name: String(sat.name || 'Satellite'),
     type,

@@ -1,3 +1,4 @@
+import { useTournamentCardText } from './useTournamentCardText';
 import { memo, type CSSProperties, type ReactNode } from 'react';
 import { resolveArenaGameCardTemplate } from './arenaGameCardRegistry';
 import type {
@@ -224,7 +225,7 @@ function LiveValue({
 }
 
 function MttMachine({ data, actions }: ArenaGameCardProps) {
-  const visibleRules = data.rules.slice(0, 2);
+  const { phase, destination } = useTournamentCardText(data);
   const displayTitle = constrainedTitle(data.title, TOURNAMENT_CARD_TITLE_LIMIT);
   return (
     <div className="agc-machine agc-machine--mtt">
@@ -236,28 +237,13 @@ function MttMachine({ data, actions }: ArenaGameCardProps) {
         <div className="agc-mtt-meta">
           {data.guarantee && <strong data-zone="guarantee">{data.guarantee}</strong>}
           {data.guarantee && <i aria-hidden="true" />}
-          <span data-zone="startsIn">{data.startsIn || data.statusLabel}</span>
+          <span data-zone="startsIn">{phase}</span>
         </div>
-        <div className="agc-mtt-badge-rail">
-          {data.featured && (
-            <span className="agc-badge agc-badge--gold">
-              <b aria-hidden="true">★</b> Featured
-            </span>
-          )}
-          {data.registeredByViewer && (
-            <span className="agc-badge agc-badge--green">
-              <b aria-hidden="true">✓</b> Registered
-            </span>
-          )}
-          {visibleRules.map((rule) => (
-            <ArenaGameRuleBadge key={rule.key} rule={rule} />
-          ))}
-          {data.rules.length > visibleRules.length && (
-            <span className="agc-rule agc-rule--more">
-              +{data.rules.length - visibleRules.length} Rules
-            </span>
-          )}
-        </div>
+        {destination && (
+          <div className="agc-mtt-badge-rail" data-zone="satelliteDestination">
+            {destination}
+          </div>
+        )}
       </header>
       {/* These six bays are hand-rolled rather than LiveValue because the MTT
           machine paints its own grid areas - but the EMPTY-VALUE decision is

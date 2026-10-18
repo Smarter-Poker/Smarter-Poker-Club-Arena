@@ -58,10 +58,10 @@ export function tournamentTabBuyInLabel(total: number | null | undefined): strin
  * Two reads for the whole set, never one per tab. A tournament's price does not
  * change after it is created, so this is asked once per table and kept.
  */
-export async function readTournamentBuyIns(
+export async function readTournamentTabInfo(
   tableIds: ReadonlyArray<string>
-): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
+): Promise<Map<string, { name: string; buyIn: number }>> {
+  const out = new Map<string, { name: string; buyIn: number }>();
   const ids = Array.from(new Set((tableIds || []).filter(Boolean)));
   if (ids.length === 0) return out;
 
@@ -83,22 +83,34 @@ export async function readTournamentBuyIns(
 
   const { data: tours, error: tourErr } = await supabase
     .from('tournaments')
-    .select('id, buy_in_amount, buy_in_fee')
+    .select('id, name, buy_in_amount, buy_in_fee')
     .in('id', tournamentIds);
   if (tourErr) throw tourErr;
   if (!tours) return out;
 
-  const totalOf = new Map<string, number>();
+  const totalOf = new Map<string, { name: string; buyIn: number }>();
   for (const t of tours as Array<{
     id: string;
+    name: string | null;
     buy_in_amount: number | string | null;
     buy_in_fee: number | string | null;
   }>) {
-    totalOf.set(String(t.id), totalBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0));
+    totalOf.set(String(t.id), {
+      name: t.name?.trim() || '',
+      buyIn: totalBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0),
+    });
   }
   for (const [tableId, tournamentId] of tournamentOf) {
     const total = totalOf.get(tournamentId);
     if (total !== undefined) out.set(tableId, total);
   }
   return out;
+}
+
+/** Existing pill callers retain the numeric price contract. */
+export async function readTournamentBuyIns(
+  tableIds: ReadonlyArray<string>
+): Promise<Map<string, number>> {
+  const info = await readTournamentTabInfo(tableIds);
+  return new Map(Array.from(info, ([id, tournament]) => [id, tournament.buyIn]));
 }

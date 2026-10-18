@@ -1,0 +1,4 @@
+{
+  "_owner": "TournamentAutoSeat is mounted at the app root and must know the actual visible poker table before rendering a warning. This 24-line React external store shares only a nullable table ID and subscribers with the lazy MultiTablePage; it prevents lobby/Hub tabs borrowing table URLs from receiving the popup and adds no new dependency.",
+  "modules": ["src/lib/visiblePokerTable.ts"]
+}

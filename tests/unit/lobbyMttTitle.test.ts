@@ -298,7 +298,12 @@ describe('the lobby stylesheet and table (shipped invariants)', () => {
     expect(TSX).toContain('useSharedSecondTick');
     // Call sites only (type annotations like ReturnType<typeof setInterval>
     // don't count): the shared tick plus LiveCountdown's coarse minute one.
-    expect(TSX.match(/= setInterval\(/g)!.length).toBeLessThanOrEqual(2);
+    const tick = readFileSync(
+      resolve(__dirname, '../../src/components/lobby/useSharedSecondTick.ts'),
+      'utf8'
+    );
+    expect(tick.match(/= setInterval\(/g)!.length).toBe(1);
+    expect(TSX.match(/= setInterval\(/g) ?? []).toHaveLength(0);
   });
   it("the ALL tab's cost column is titled just Stakes", () => {
     expect(TSX).not.toContain("'Stakes / Buy-In'");

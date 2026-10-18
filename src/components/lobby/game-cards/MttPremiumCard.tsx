@@ -1,3 +1,4 @@
+import { useTournamentCardText } from './useTournamentCardText';
 import type { ArenaGameCardActions, ArenaGameCardData } from './arenaGameCardTypes';
 import { zoneText } from './arenaGameCardTypes';
 import { useFitText } from './useFitText';
@@ -21,6 +22,7 @@ export function MttPremiumCard({
   data: ArenaGameCardData;
   actions: ArenaGameCardActions;
 }) {
+  const { phase, destination } = useTournamentCardText(data);
   const cardRef = useRef<HTMLDivElement>(null);
   const [fitReady, setFitReady] = useState(false);
   useLayoutEffect(() => {
@@ -85,23 +87,14 @@ export function MttPremiumCard({
         <div className="agc-mtt-premium__status" data-zone="status">
           <Fitted
             enabled={fitReady}
-            text={[data.statusLabel, data.startsIn].filter(Boolean).join(' · ')}
+            text={[data.registeredByViewer ? 'Registered' : '', phase].filter(Boolean).join(' · ')}
           />
         </div>
-        <div className="agc-mtt-premium__rules" data-zone="rules">
-          <Fitted
-            enabled={fitReady}
-            text={[
-              data.gameType,
-              data.featured ? 'Featured' : '',
-              data.registeredByViewer ? 'Registered' : '',
-              ...data.rules.slice(0, 2).map((rule) => rule.label),
-              data.rules.length > 2 ? `+${data.rules.length - 2} Rules` : '',
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          />
-        </div>
+        {destination && (
+          <div className="agc-mtt-premium__destination" data-zone="satelliteDestination">
+            <Fitted enabled={fitReady} text={destination} />
+          </div>
+        )}
       </header>
       {metrics.map(([zone, label, value], index) => (
         <div

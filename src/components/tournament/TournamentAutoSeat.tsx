@@ -1,3 +1,5 @@
+import { formatGameTitle } from '../../utils/formatGameTitle';
+import { useVisiblePokerTable } from '../../lib/visiblePokerTable';
 import { warmTable } from '../../services/tableWarmup';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -29,7 +31,7 @@ import { warmTable } from '../../services/tableWarmup';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -110,7 +112,7 @@ function writeWarned(s: Set<string>) {
  * table, or a rename - falls through to a single line rather than inventing one.
  */
 function renderTwoLineTitle(raw: string): ReactNode {
-  const name = (raw || '').trim();
+  const name = formatGameTitle(raw).trim();
   const cut = name.lastIndexOf(' - ');
   if (cut <= 0) return name;
   const event = name.slice(0, cut).trim();
@@ -127,6 +129,10 @@ function renderTwoLineTitle(raw: string): ReactNode {
 export default function TournamentAutoSeat() {
   const { user } = useAuthUser();
   const navigate = useNavigate();
+  const location = useLocation();
+  const activePokerTableId = useVisiblePokerTable();
+  const routeTableId = matchPath('/table/:tableId', location.pathname)?.params.tableId;
+  const visibleTableId = routeTableId === activePokerTableId ? activePokerTableId : null;
   const seenRef = useRef<Set<string>>(readSeen());
   const warnedRef = useRef<Set<string>>(readWarned());
   const [blocked, setBlocked] = useState<{ tableId: string; name: string } | null>(null);
@@ -136,6 +142,7 @@ export default function TournamentAutoSeat() {
     name: string;
     chips: number;
   } | null>(null);
+  const checkEpochRef = useRef(0);
   const pendingRef = useRef<Map<string, string>>(new Map()); // tableId -> tournament name
 
   // MultiTablePage answers with this when the player is already at the cap.
@@ -149,6 +156,7 @@ export default function TournamentAutoSeat() {
 
   const check = useCallback(async () => {
     if (!user?.id || document.visibilityState !== 'visible') return;
+    const epoch = ++checkEpochRef.current;
     try {
       /**
        * One query serves both jobs. The auto-seat half only cares about FRESH
@@ -166,8 +174,10 @@ export default function TournamentAutoSeat() {
         .eq('user_id', user.id)
         .is('left_at', null)
         .limit(12);
+      if (epoch !== checkEpochRef.current) return;
       if (error) throw error;
 
+      let visibleSeatAway = false;
       const freshFloor = Date.now() - FRESH_MS;
 
       for (const row of data || []) {
@@ -198,7 +208,8 @@ export default function TournamentAutoSeat() {
          * player who sits down and wanders off again is told again.
          */
         const away = Boolean(row.is_sitting_out) || Boolean(row.is_away);
-        if (away) {
+        if (away && tableId === visibleTableId) {
+          visibleSeatAway = true;
           if (!warnedRef.current.has(tableId)) {
             warnedRef.current.add(tableId);
             writeWarned(warnedRef.current);
@@ -217,7 +228,7 @@ export default function TournamentAutoSeat() {
             // somebody being blinded off is by definition not looking at the
             // app. This banner is only the half for when they are.
           }
-        } else if (warnedRef.current.has(tableId)) {
+        } else if (!away && warnedRef.current.has(tableId)) {
           warnedRef.current.delete(tableId);
           writeWarned(warnedRef.current);
           setBlindingOff((prev) => (prev?.tableId === tableId ? null : prev));
@@ -237,10 +248,11 @@ export default function TournamentAutoSeat() {
         warmTable(tableId);
         masterBus.emit('TABLE_SEATED', { tableId, seat: 0 });
       }
+      if (!visibleSeatAway) setBlindingOff(null);
     } catch (e) {
       reportError(e, 'TournamentAutoSeat.check');
     }
-  }, [user?.id]);
+  }, [user?.id, visibleTableId]);
 
   useEffect(() => {
     if (!user?.id) return undefined;
@@ -275,6 +287,7 @@ export default function TournamentAutoSeat() {
     }
     document.addEventListener('visibilitychange', onVis);
     return () => {
+      checkEpochRef.current += 1;
       stopPoll();
       document.removeEventListener('visibilitychange', onVis);
     };
@@ -284,7 +297,7 @@ export default function TournamentAutoSeat() {
    * Blinding off takes precedence over the cap popup: one is "your tournament
    * started", the other is "your chips are leaving right now."
    */
-  if (blindingOff) {
+  if (blindingOff && blindingOff.tableId === visibleTableId) {
     return (
       <div className="tas-overlay" role="dialog" aria-label="You Are Being Blinded Off">
         <div className="tas-panel tas-panel--urgent">

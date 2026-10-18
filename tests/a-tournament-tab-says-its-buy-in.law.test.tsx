@@ -31,10 +31,22 @@ import { TableTabBar, type TabInfo } from '../src/components/table/TableTabBar';
 import {
   TOURNAMENT_TAB_LABEL_MAX_GLYPHS,
   tournamentTabBuyInLabel,
+  readTournamentTabInfo,
 } from '../src/lib/tournamentTabLabel';
 import { isTournamentGameCode } from '../src/utils/gameCode';
 import { FREE_BUY_LABEL } from '../src/utils/freeBuy';
 import { sliceCssRule, sliceStatement } from './helpers/sourceWindow';
+
+const metadata = vi.hoisted(() => ({ read: vi.fn() }));
+vi.mock('../src/lib/supabase', () => ({
+  supabase: {
+    from: (table: string) => ({
+      select: (columns: string) => ({
+        in: (key: string, ids: string[]) => metadata.read(table, columns, key, ids),
+      }),
+    }),
+  },
+}));
 
 vi.mock('../src/core/MasterBus', () => ({
   masterBus: { emit: vi.fn(), subscribe: vi.fn(() => () => {}) },
@@ -218,7 +230,7 @@ describe('the buy-in travels from the tournament row to the pill', () => {
       multi.indexOf('const buyInAskedRef = useRef'),
       multi.indexOf('// P1-2 FIX: hand each child a STABLE callback')
     );
-    expect(lookup).toContain('readTournamentBuyIns(need)');
+    expect(lookup).toContain('readTournamentTabInfo(need)');
     expect(lookup).not.toMatch(/setInterval|setTimeout/);
   });
 
@@ -233,5 +245,59 @@ describe('the buy-in travels from the tournament row to the pill', () => {
     const repointed = insertPath.slice(insertPath.indexOf('t.id === oldTab.id'));
     expect(repointed).toContain('arrivedByMoveAt: Date.now(),');
     expect(repointed).toContain('tournamentBuyIn: t.tournamentBuyIn,');
+  });
+});
+
+describe('return banner tournament identity', () => {
+  const multi = read('src/pages/MultiTablePage.tsx');
+  it('reads event names and total entry prices in the same bounded batch', async () => {
+    metadata.read
+      .mockResolvedValueOnce({
+        data: [
+          { id: 'table-1', tournament_id: 'event' },
+          { id: 'table-2', tournament_id: 'event' },
+        ],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{ id: 'event', name: 'Sunday 200 Deep Stack', buy_in_amount: 200, buy_in_fee: 20 }],
+        error: null,
+      });
+    const result = await readTournamentTabInfo(['table-1', 'table-2', 'table-1']);
+    expect(result.get('table-1')).toEqual({ name: 'Sunday 200 Deep Stack', buyIn: 220 });
+    expect(result.get('table-2')).toEqual(result.get('table-1'));
+    expect(metadata.read).toHaveBeenNthCalledWith(1, 'tables', 'id, tournament_id', 'id', [
+      'table-1',
+      'table-2',
+    ]);
+    expect(metadata.read).toHaveBeenNthCalledWith(
+      2,
+      'tournaments',
+      'id, name, buy_in_amount, buy_in_fee',
+      'id',
+      ['event']
+    );
+    metadata.read.mockClear();
+  });
+
+  it('preserves unreadable results as failures, never invented event information', async () => {
+    metadata.read.mockResolvedValueOnce({ data: null, error: new Error('Permission Denied') });
+    await expect(readTournamentTabInfo(['table-1'])).rejects.toThrow('Permission Denied');
+    metadata.read.mockClear();
+  });
+
+  it('uses tournament identity on the banner, including urgent turns and both move paths', () => {
+    const banner = multi.slice(
+      multi.indexOf('const renderTakeSeatBar'),
+      multi.indexOf('const tableCrashFallback')
+    );
+    expect(banner).toContain('const tournament = tabIsTournament(target)');
+    expect(banner).toContain('Your Turn · Tournament Running');
+    expect(banner).toContain('formatGameTitle(target.tournamentName)');
+    expect(banner).toContain('Buy-In ${buyIn}');
+    expect(banner).toContain('Tournament Details Unavailable');
+    expect(banner).toContain('formatGameTitle(target.name)');
+    expect(multi).toContain('tournamentName: t.tournamentName,');
+    expect(multi).toContain('tournamentName: current.tournamentName,');
   });
 });

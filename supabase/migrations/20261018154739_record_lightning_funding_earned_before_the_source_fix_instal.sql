@@ -16,6 +16,8 @@ SET LOCAL TimeZone='UTC';
 DO $probe$
 DECLARE ids uuid[]; clubs uuid[]; cnt integer; amt numeric; fingerprint text; hand uuid; changed integer; rows integer; before_rollup numeric; after_rollup numeric; began timestamptz:=clock_timestamp();
 BEGIN
+ IF clock_timestamp()>='2026-10-19 00:00Z'::timestamptz THEN RAISE EXCEPTION 'current-day correction needs completed-day requalification';END IF;
+ IF public.fn_platform_frozen() IS DISTINCT FROM false THEN RAISE EXCEPTION 'platform frozen';END IF;
  IF md5(pg_get_functiondef('public.fn_cash_earning_club(uuid,uuid,uuid,uuid,uuid)'::regprocedure))<>'552fe80a7fb04e1c76088a4c9de26eb5' THEN RAISE EXCEPTION 'original funding source changed'; END IF;
  PERFORM set_config('lock_timeout','3s',true);
  PERFORM set_config('statement_timeout','50s',true);

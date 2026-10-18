@@ -926,7 +926,7 @@
 .ca-page-bar.club-settings-heading {
   width: min(100%, 1120px);
   margin: 0 auto;
-  padding: 24px 20px 0;
+  padding: 0 20px;
 }
 /* The club's own name, its identity, leads the page bar. */
 .club-settings-name {

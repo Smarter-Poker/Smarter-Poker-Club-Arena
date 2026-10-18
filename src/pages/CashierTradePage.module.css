@@ -136,6 +136,10 @@
   touch-action: manipulation;
 }
 
+.console :global(.ca-page-help) {
+  margin-left: auto !important;
+}
+
 .console :where(button:not(:global(.sc-plate)):active) {
   transform: none;
   filter: brightness(1.25);

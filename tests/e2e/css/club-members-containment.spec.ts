@@ -66,7 +66,7 @@ for (const width of [1449, 375, 393]) {
         .application-shell { width: calc(100% - ${width > 720 ? 97 : 32}px); margin: auto; }
       </style>
       <main class="application-shell"><section class="club-members-page">
-        <header class="ca-page-bar members-page-bar"><h1 class="sr-only">Player Management</h1><div class="ca-page-bar__live"><div class="members-mode-toggle"><button>Simple</button><button>Advanced</button></div></div><button class="ca-page-help" aria-label="Page Help"></button></header>
+        <header class="ca-page-bar members-page-bar"><h1 class="ca-page-bar__title">Player Management</h1><div class="ca-page-bar__live"><div class="members-mode-toggle"><button>Simple</button><button>Advanced</button></div></div><button class="ca-page-help" aria-label="Page Help"></button></header>
         <section class="members-console">
           <div class="members-console__heading"><h2>Find A Player</h2></div>
           <label class="members-search"><span>Search Players</span>
@@ -193,7 +193,7 @@ for (const width of [375, 393]) {
           .bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; height: 72px; background: #111; z-index: 50; }
         </style>
         <main class="application-shell"><section class="club-members-page">
-          <header class="ca-page-bar members-page-bar"><h1 class="sr-only">Player Management</h1><div class="ca-page-bar__live"><div class="members-mode-toggle"><button>Simple</button><button>Advanced</button></div></div><button class="ca-page-help" aria-label="Page Help"></button></header>
+          <header class="ca-page-bar members-page-bar"><h1 class="ca-page-bar__title">Player Management</h1><div class="ca-page-bar__live"><div class="members-mode-toggle"><button>Simple</button><button>Advanced</button></div></div><button class="ca-page-help" aria-label="Page Help"></button></header>
           <section class="members-console">
             <div class="members-console__heading"><h2>Find A Player</h2></div>
             <label class="members-search"><span>Search The Roster</span>

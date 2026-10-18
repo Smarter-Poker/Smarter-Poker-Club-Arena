@@ -28,7 +28,7 @@
 .ca-notif > .ca-page-bar {
   max-width: 680px;
   margin: 0 auto;
-  padding: 0.5rem 0.5rem 0;
+  padding: 0 0.5rem;
 }
 
 .ca-notif__bar {

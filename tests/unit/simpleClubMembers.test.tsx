@@ -188,7 +188,7 @@ it('defaults to a compact directory and restores the full workspace in Advanced'
   expect(screen.getByRole('button', { name: 'Simple' })).toHaveAttribute('aria-pressed', 'true');
   // No page hero in either mode (Dan 2026-10-17); Advanced adds the live totals to the page bar.
   expect(screen.getByRole('heading', { level: 1, name: 'Player Management' })).toHaveClass(
-    'sr-only'
+    'ca-page-bar__title'
   );
   expect(screen.queryByText('Player Command')).not.toBeInTheDocument();
   expect(screen.queryByText('Total Members')).not.toBeInTheDocument();

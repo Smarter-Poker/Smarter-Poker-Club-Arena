@@ -44,8 +44,8 @@ describe('pages carry a question mark, not a hero (Dan 2026-10-17)', () => {
   const bar = read('src/components/help/PageBar.tsx');
   const help = read('src/components/help/PageHelp.tsx');
 
-  it('hides the page title and puts the "?" in the bar', () => {
-    expect(bar).toMatch(/<Heading className="sr-only"/);
+  it('renders the page title and puts the "?" in the bar', () => {
+    expect(bar).toMatch(/<Heading className="ca-page-bar__title"/);
     expect(bar).toContain('<PageHelp title={title} summary={summary} steps={steps} />');
     expect(bar).not.toMatch(/\beyebrow\??:/);
   });

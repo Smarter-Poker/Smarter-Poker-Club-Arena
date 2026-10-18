@@ -11,7 +11,11 @@ describe('qualified report execution settings', () => {
       'supabase/migrations/20261018195533_bomb_catchup_retains_its_qualified_generic_bitmap_plan.sql'
     );
     expect(sql).toContain('SET plan_cache_mode=force_generic_plan');
-    expect(sql).not.toMatch(/CREATE OR REPLACE FUNCTION|ALTER ROLE|ALTER DATABASE/);
+    expect(sql).not.toMatch(/ALTER ROLE|ALTER DATABASE/);
+    expect(sql).toContain('CROSS JOIN LATERAL');
+    expect(sql).toContain('h.table_id=hosted.id');
+    expect(sql).toContain('OFFSET 0');
+    expect(sql).toContain('Bomb final report source changed');
     const runner = read('scripts/dev/test-statement-availability-postgres.sh');
     expect(runner).toContain(
       '20261018195533_bomb_catchup_retains_its_qualified_generic_bitmap_plan.sql'

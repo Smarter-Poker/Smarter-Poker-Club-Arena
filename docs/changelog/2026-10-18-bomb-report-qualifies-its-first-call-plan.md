@@ -1,5 +1,7 @@
-# Bomb reports retain the qualified plan from the first call
+# Bomb reports retain qualified hosted scan plans
 
-JAQK still timed out after the bitmap setting: its custom plan selected the table/hand-number index and took 9184ms. The same parameterized generic plan uses the table/created-at index and took 142ms. The catchup function now selects the qualified generic plan on its first invocation, preserving its exact SQL body, private grants, archive and rollup producer.
+JAQK still timed out on a fresh database backend. Catchup's custom bitmap plan selected the table/hand-number index and took 9184ms; its generic table/created-at plan took 142ms. Keep that plan function-local from the first call, preserving the exact catchup body and private grants.
 
-The existing required PostgreSQL report qualification checks the unchanged body, function-local settings and restoration, private caller authority and replay refusal. Actual authenticated report reads remain required after guarded installation. No engine or client change is needed.
+The final result query independently timed out at 20 seconds. Its hosted-table relation now uses correlated reads with the actual table/date bounds, retaining that relation with OFFSET 0 and excluding future UTC dates. The exact JAQK 30-day SELECT completed in 228ms with identical empty results. Financial calculations, role checks, rollup producer and sealed archives remain intact.
+
+The existing required PostgreSQL report path checks fail-before/pass-after, exact source/settings/owner/ACLs, restoration and replay refusal. Nonempty fixtures verify current hand pot/rake, UTC future exclusion, club isolation and archived totals. Actual authenticated JAQK/SHARK 7/30-day pages remain required after guarded installation. No engine or client release is needed.

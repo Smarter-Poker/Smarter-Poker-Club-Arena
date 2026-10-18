@@ -1,0 +1,7 @@
+# Keep Centered Page Titles And Phone Controls Reachable
+
+Production run 39136563565 passed all five Cashier cases and both lobby cold-return/restoration cases, but found a shared header regression after PR #7335. At 375px, Player Management's controls extended out of their zero-width grid track underneath the centered heading, which intercepted Advanced clicks. At 320px and 200 percent text, Monthly Challenges' unbreakable intrinsic title width pushed the heading beyond the viewport.
+
+On narrow screens the existing PageBar now reserves equal 44px side tracks, bounds and wraps its centered title, keeps Page Help in the upper right, and puts live controls on a full-width second row. Desktop placement and headers without a title retain their layout. No art, routes, financial behavior, preference persistence, assertions or timeouts change.
+
+Validation: a browser fixture rendering the real PageBar, PageHelp, Players control styles and production fonts reproduces both failures before the correction. Afterward Advanced receives an ordinary click at 375px, the heading fits at 320px/200 percent text, and the heading remains centered with separate help at 393px. The 1280px layout is unchanged. Existing PageHelp tests pass (5 cases); the maintained production Players, Daily Missions reflow, Cashier and lobby certificates remain unchanged and provide hosted regression coverage. Full production verification remains required after publication.

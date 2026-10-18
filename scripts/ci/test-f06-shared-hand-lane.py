@@ -20,7 +20,7 @@ out.mkdir(parents=True, exist_ok=False)
 pg = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))
 env = {k: v for k, v in os.environ.items() if not k.startswith('PG')}
 env['LC_ALL'] = 'C'
-cluster = Path(tempfile.mkdtemp(prefix='f06-shared-hand-', dir='/tmp'))
+cluster = Path(tempfile.mkdtemp(prefix='f06-shared-hand-', dir=os.environ.get('TMPDIR', '/tmp')))
 socket = cluster / 'socket'
 socket.mkdir(mode=0o700)
 cmd = [str(pg / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose',
@@ -91,6 +91,9 @@ try:
     r = command([pg / 'pg_ctl', '-D', cluster / 'data', '-l', cluster / 'server.log', '-w', 'start'])
     require(r.returncode == 0, r.stderr)
     run('fixture', (ROOT / 'scripts/ci/probes/f06-shared-hand-lane/fixture.sql').read_text())
+    addon = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/abandoned-addon/qualify.py'))
+    addon['qualify'](ROOT, out, cmd, command, run, probe, require, results)
+    require(results.get('abandonedAddon', {}).get('passed') is True, 'Purchased add-on recovery did not qualify')
     index = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/snapshot_index_qualification.py'))
     index['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('snapshotIndex', {}).get('passed') is True, 'Snapshot access-path qualification did not complete')

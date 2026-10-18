@@ -70,3 +70,34 @@ it('refused postcommit never invokes permit completion', async () => {
   ).rejects.toThrow('pending');
   expect(called).toBe(false);
 });
+
+it('a fenced predecessor accepts only its exact completed database envelope', async () => {
+  const self = {
+    f06CurrentPermit: {},
+    lifecycleCanMutate: () => false,
+    finishF06AcceptedHand: async () => {
+      throw new Error('f06_owner_changed');
+    },
+  };
+  const completed = { ok: true, hand_id: 'hand-id', hand_number: 41 };
+  await expect(
+    run.call(self, async () => completed, { handNumber: 41 }, 'hand-id')
+  ).resolves.toEqual({ resolvedAddOnCount: undefined, obligationsApplied: true });
+  for (const receipt of [
+    { ...completed, hand_id: 'other-hand' },
+    { ...completed, hand_number: 42 },
+    { ok: true },
+  ]) {
+    await expect(
+      run.call(self, async () => receipt, { handNumber: 41 }, 'hand-id')
+    ).rejects.toThrow('f06_owner_changed');
+  }
+  await expect(
+    run.call(
+      { ...self, lifecycleCanMutate: () => true },
+      async () => completed,
+      { handNumber: 41 },
+      'hand-id'
+    )
+  ).rejects.toThrow('f06_owner_changed');
+});

@@ -196,6 +196,19 @@ function commitThenLoseTheLease(state: { leaseAlive: boolean }) {
 }
 
 describe('a predecessor may still finish its own envelope', () => {
+  it('does not retry completed obligations when its F06 owner expires after the receipt', async () => {
+    const { engine, players, state } = committingTable();
+    commitThenLoseTheLease(state);
+    engine.f06CurrentPermit = {};
+    engine.finishF06AcceptedHand = vi.fn().mockRejectedValue(new Error('f06_owner_changed'));
+    mocks.obligations.mockResolvedValue({ ok: true, hand_id: handId, hand_number: 4212 });
+    await engine.postHandTasks(players, 1);
+    expect(mocks.obligations).toHaveBeenCalledTimes(1);
+    expect(envelopeAlerts()).toHaveLength(0);
+    expect(engine.announceEnvelopeResolvedAddOns).not.toHaveBeenCalled();
+    expect(mocks.leaves).not.toHaveBeenCalled();
+  });
+
   it('attempts the envelope at least once even though its dealer proof has lapsed', async () => {
     const { engine, players, state } = committingTable();
     commitThenLoseTheLease(state);

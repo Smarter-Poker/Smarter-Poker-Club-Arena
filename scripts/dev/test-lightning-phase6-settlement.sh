@@ -1463,6 +1463,11 @@ ASSERT
 # ===========================================================================
 # THE RUN.
 # ===========================================================================
+followup=(-f "$fixture/fix-reapply.sql")
+if [ -n "${LIGHTNING_P6S_FOLLOWUP_SQL:-}" ]; then
+  test -f "$LIGHTNING_P6S_FOLLOWUP_SQL"
+  followup+=(-f "$LIGHTNING_P6S_FOLLOWUP_SQL")
+fi
 set +e
 "${PSQL[@]}" \
   -f "$base_fixture" -f "$pop_fixture" -f "$p5_fixture" \
@@ -1486,7 +1491,7 @@ set +e
   -f "$fixture/fix-own-proofs.sql" \
   -f "$fixture/fix-precapture.sql" \
   -f "$fix" \
-  -f "$fixture/fix-reapply.sql" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
+  "${followup[@]}" 2>&1 | grep -v -E '^psql:.*: (NOTICE|WARNING):' | tee "$fixture/psql.out"
 status=${PIPESTATUS[0]}
 set -e
 if [ "$status" != 0 ]; then
@@ -1499,5 +1504,9 @@ oks=$(grep -c -E '^  ok  [0-9]{2} ' "$fixture/psql.out" || true)
 if [ "$oks" != 22 ]; then
   echo "FAIL: $oks of the 22 sections reported, so this run proved less than this file claims"
   exit 1
+fi
+if [ -z "${LIGHTNING_P6S_FOLLOWUP_SQL:-}" ]; then
+  PG_BIN="$pgbin" LIGHTNING_ZERO_PAYER_SOCKET="$fixture/socket" LIGHTNING_ZERO_PAYER_PORT="$port" \
+    python3 "$root/scripts/ci/test-lightning-zero-payer-settlement.py"
 fi
 echo "PASS: Lightning Phase 6 settlement and its remediation, 22 sections: every predecessor proof holds but the five superseded (the setting-reading guard and the no-definer, no-browser family rule), whose intent holds as containment; a dealing hand binds the allocator's number and the front table once; a six-player hand with humans and horses anchored at the front table and a feeder settles exact deltas through the unchanged physical door onto each anchor, writing hand_history, hand_atomic_commits with its envelope and the provenance receipt at the front table, and the post-commit processor pays its rake, drop and playthrough; a retry is the stored receipt; a stale lease, an abandoned instance and six other refusals move nothing; a conservation violation freezes the Cluster with its evidence; a fast-folding horse is legal at once, is dealt its stack less its committed chips, and ends exact whichever hand settles first, while fold and watch waits for the settlement and the anchor refuses a cashout until both are settled; the forged setting is refused and only this transaction's marker for this seat moves a stack; my_session answers only the caller; service_role alone may call the doors; every @live-proof holds and the file is re-appliable; after the remediation (20261001201216) a freeze freezes from lightning, pending_off and draining with its real from_mode and never reports a dead or unfrozen Cluster frozen, a frozen Cluster settles nothing and its dealing hands abandon with every stack as it was, the session names its anchor table, seat and occupancy, the matcher forms nothing for pineapple or a Cluster with no front table, leave_pending goes through mid-hand while the departure waits for the settlement and then exits the pool, every earlier proof evaluates as before and the remediation is re-appliable"

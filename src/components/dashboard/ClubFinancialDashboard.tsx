@@ -330,7 +330,7 @@ export const ClubFinancialDashboard = ({
             </dd>
           </div>
           <div className="cfd__fact">
-            <dt className="sc-label sc-ink--blue">Agent Commissions Paid</dt>
+            <dt className="sc-label sc-ink--blue">Agent Commissions Accrued</dt>
             <dd className="sc-ink--silver">{compactChips(totals.agent_commissions)}</dd>
           </div>
           <div className="cfd__fact">

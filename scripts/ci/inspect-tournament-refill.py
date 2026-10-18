@@ -398,7 +398,7 @@ def archived_process_history(directory='/var/log/club-arena-engine'):
     # replacement. Read at most two recent regular archives; no arbitrary path,
     # shell expansion, environment file or runtime mutation is admitted.
     archives = []
-    pattern = re.compile(r'engine-\d{8}T\d{6}Z-started\d{8}T\d{6}-[0-9a-f]{12}-([0-9a-f]{8})\.log\.gz')
+    pattern = re.compile(r'engine-\d{8}T\d{6}Z-started\d{8}T\d{6}-([0-9a-f]{12})-([0-9a-f]{8})\.log\.gz')
     try:
         candidates = []
         for path in Path(directory).glob('engine-*.log.gz'):
@@ -407,13 +407,48 @@ def archived_process_history(directory='/var/log/club-arena-engine'):
                 continue
             stamp = path.stat().st_mtime
             if 0 <= time.time() - stamp <= 2 * 60 * 60:
-                candidates.append((stamp, path, match.group(1)))
-        for _, path, image_prefix in sorted(candidates, reverse=True)[:2]:
+                candidates.append((stamp, path, match.group(1), match.group(2)))
+        for _, path, container_prefix, image_prefix in sorted(candidates, reverse=True)[:2]:
             result = process_history(['gzip', '-cd', str(path)], seconds=10)
-            archives.append({'imageIdPrefix': image_prefix, **result})
+            archives.append({'imageIdPrefix': image_prefix, 'containerIdPrefix': container_prefix, **result})
         return {'status': 'observed', 'archives': archives, 'fullTwoHourCoverageProven': False}
     except Exception:
         return {'status': 'unavailable', 'archives': archives, 'fullTwoHourCoverageProven': False}
+
+
+def kernel_oom_signals(raw, container_prefixes):
+    events = []
+    context_id = None
+    context_time = None
+    for line in raw.splitlines():
+        if len(line) > 4096:
+            continue
+        stamp = re.match(r'^(\d{4}-\d{2}-\d{2}T[0-9:.,+-]+)\s', line)
+        if not stamp:
+            continue
+        try:
+            instant = datetime.datetime.fromisoformat(stamp.group(1).replace(',', '.'))
+            if instant.tzinfo is None:
+                continue
+        except ValueError:
+            continue
+        container = re.search(r'(?:docker-|/docker/)([0-9a-f]{64})(?:\.scope|[/,\s])', line)
+        if container:
+            context_id = container.group(1)[:12]
+            context_time = instant
+        if not re.search(r'(?:Out of memory|Memory cgroup out of memory|oom-kill|Killed process)', line, re.IGNORECASE):
+            continue
+        pid = re.search(r'Killed process ([0-9]{1,10}) \(node\)', line)
+        if not pid:
+            continue
+        same_context = context_time is not None and 0 <= (instant - context_time).total_seconds() <= 2
+        prefix = context_id if same_context and context_id in container_prefixes else None
+        events.append({'timestamp': instant.astimezone(datetime.timezone.utc).isoformat(),
+                       'nodePid': int(pid.group(1)), 'engineContainerMatched': prefix is not None,
+                       'containerIdPrefix': prefix})
+        if len(events) >= 128:
+            break
+    return {'events': events, 'fullHistoryProven': False}
 
 
 def autoheal_signals(raw, container_id):
@@ -483,6 +518,12 @@ def main(expected):
     history = process_history()
     archives = archived_process_history()
     try:
+        kernel_raw = bounded_command(['dmesg', '--time-format', 'iso'])
+        prefixes = {before['containerId'][:12]} | {a['containerIdPrefix'] for a in archives['archives']}
+        kernel = {'status': 'observed', **kernel_oom_signals(kernel_raw, prefixes)}
+    except Exception:
+        kernel = {'status': 'unavailable', 'events': [], 'fullHistoryProven': False}
+    try:
         autoheal_raw = bounded_command(['docker', 'logs', '--since', '2h', '--tail', '2000', '--timestamps', 'sp-autoheal'])
         autoheal = {'status': 'observed', 'signals': autoheal_signals(autoheal_raw, before['containerId'])}
     except Exception:
@@ -491,7 +532,7 @@ def main(expected):
     if any(before[key] != after[key] for key in ('containerId', 'imageId')):
         raise RuntimeError('engine_changed_during_read')
     runtime_stable = before == after
-    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'processHistory': history, 'archivedProcessHistory': archives, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
+    print(json.dumps({'schemaVersion': 1, 'observedAt': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'engineSha': expected, 'instanceId': before['instanceId'], 'identityBefore': before, 'identityAfter': after, 'runtimeStable': runtime_stable, 'windowMinutes': 45, 'tailLimit': 10000, 'events': events, 'restarts': restarts, 'processSignals': process_signals(raw), 'processHistory': history, 'archivedProcessHistory': archives, 'kernelOom': kernel, 'autoheal': autoheal, 'coverage': read_metadata(raw), 'rawLogsExported': False, 'readOnly': True}, sort_keys=True))
 
 
 def cli(argv):

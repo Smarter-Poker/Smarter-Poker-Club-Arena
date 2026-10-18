@@ -516,3 +516,42 @@ r=m['archived_process_history']();print(json.dumps({'result':r,'readCount':len(c
   expect(data.result.fullTwoHourCoverageProven).toBe(false);
   expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|engine-2026|var\/log/);
 });
+
+it('reports kernel node OOM witnesses with explicit selected-container attribution only', () => {
+  const fixture = `
+import json,runpy,sys
+m=runpy.run_path(sys.argv[1]); print(json.dumps(m['kernel_oom_signals'](json.loads(sys.stdin.read()),{'a'*12})))
+`;
+  const ran = spawnSync('python3', ['-B', '-c', fixture, script], {
+    encoding: 'utf8',
+    timeout: 5000,
+    input: JSON.stringify(
+      [
+        '2026-10-18T14:25:00,000000+00:00 oom-kill:task_memcg=/system.slice/docker-' +
+          'a'.repeat(64) +
+          '.scope private-secret',
+        '2026-10-18T14:25:00,010000+00:00 Memory cgroup out of memory: Killed process 1234 (node) private-secret',
+        '2026-10-18T14:26:00,000000+00:00 Out of memory: Killed process 5678 (node) private-secret',
+        '2026-10-18T14:26:00,000000+00:00 Out of memory: Killed process 7777 (other-private) private-secret',
+      ].join('\n')
+    ),
+  });
+  expect(ran.status, ran.stderr).toBe(0);
+  const data = JSON.parse(ran.stdout);
+  expect(data.events).toEqual([
+    {
+      timestamp: '2026-10-18T14:25:00.010000+00:00',
+      nodePid: 1234,
+      engineContainerMatched: true,
+      containerIdPrefix: 'a'.repeat(12),
+    },
+    {
+      timestamp: '2026-10-18T14:26:00+00:00',
+      nodePid: 5678,
+      engineContainerMatched: false,
+      containerIdPrefix: null,
+    },
+  ]);
+  expect(data.fullHistoryProven).toBe(false);
+  expect(ran.stdout + ran.stderr).not.toMatch(/private|secret|other/);
+});

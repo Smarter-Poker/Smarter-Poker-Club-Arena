@@ -7,3 +7,5 @@ Tournament card headers include positive guarantees and the variant. Premium and
 The Game Running notification prints its table name through the existing acronym formatter, preserving NLH in uppercase.
 
 Verification: original source fails eight of the nine initial focused regression cases; repaired source passes. Real-font fixture renders inspected at 375, 393 and 1440 pixels, with no document overflow. The live satellite link was independently read as Funday Mystery Satellite 10 -> Sunday Funday Mystery. Full prechecks and publication evidence are retained in the task checkpoint.
+
+The small visible-table store intentionally belongs in the initial bundle because the app-wide TournamentAutoSeat consumer must gate its first warning before paint. Its branch-owned entry manifest records that choice; hosted measurement was 153 KB gzip for the entry chunk and 298 KB for all initial files, within the existing 320 KB initial budget. No budget or check was weakened.

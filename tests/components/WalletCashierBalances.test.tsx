@@ -177,6 +177,13 @@ describe('the open cashier reads the balances that changed elsewhere', () => {
     expect(fixture.rpc.mock.calls.some(([name]) => /_send$/.test(name))).toBe(false);
   });
 
+  it('omits the promo source explanation while retaining the account label', async () => {
+    render(<WalletCashierModal {...base} walletType="promo_wallet" />);
+    await flush();
+    expect(screen.getByText('Club Promo Wallet Balance')).toBeInTheDocument();
+    expect(screen.queryByText(/Funded By|Your Own Promo Float/)).not.toBeInTheDocument();
+  });
+
   it('keeps the Club Bank ledger accessible beside the Send Out transfer form', async () => {
     fixture.roster = [
       {

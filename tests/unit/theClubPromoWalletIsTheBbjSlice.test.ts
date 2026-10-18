@@ -66,8 +66,10 @@ describe('the club Promo Wallet row reads the club account', () => {
     );
   });
 
-  it('a stepping balance is labelled as such, so it cannot read as unfunded', () => {
-    expect(WALLET).toMatch(/25% BBJ Slice · Swept Every 5 Min/);
+  it('wallet rows omit explanatory funding descriptions per the October 18 owner update', () => {
+    expect(WALLET).not.toMatch(
+      /25% BBJ Slice · Swept Every 5 Min|Funded By The Union Promo Wallet/
+    );
   });
 });
 

@@ -1103,18 +1103,6 @@ export default function DynamicWallet({
       label: 'Promo Wallet',
       icon: 'promo',
       value: animPromo,
-      // The BBJ promo slice accrues inside the pool and is swept across every
-      // few minutes, so a club's promo balance steps rather than streams.
-      // Saying so stops it reading as "not being funded" - which is exactly
-      // how it read while the row was showing the wrong account entirely.
-      // A club inside a union banks its BBJ slice in the UNION wallet; its own
-      // pot is what the union promo wallet pays into (Dan 2026-09-05). Only a
-      // standalone club's pot is fed by the sweep.
-      hint: clubPromoIsClubMoney
-        ? isClubInUnion
-          ? 'Funded By The Union Promo Wallet'
-          : '25% BBJ Slice · Swept Every 5 Min'
-        : undefined,
       onOpen: onOpenPromoWallet,
     },
     club_bank: {
@@ -1134,7 +1122,6 @@ export default function DynamicWallet({
       icon: 'treasury',
       value: animSpins,
       known: spins.state !== null,
-      hint: 'Funds This Club’s Spin Multipliers',
       onOpen: () => onOpenClubSpins?.(spins.balance || 0),
     },
     rake_treasury: {
@@ -1145,7 +1132,6 @@ export default function DynamicWallet({
       // A standalone club keeps its own rake. `null` from the panel means the
       // account is not applicable or not readable — "-" beats a made-up zero.
       known: data.clubRakeTreasury !== null,
-      hint: 'This Club Keeps Its Own Rake',
       onOpen: () => onOpenClubRake?.(data.clubRakeTreasury || 0),
     },
     backup_bbj: {
@@ -1153,7 +1139,6 @@ export default function DynamicWallet({
       label: 'BBJ Backup Wallet',
       icon: 'reserve',
       value: animBackupBBJ,
-      hint: 'Next Jackpot Seed',
       onOpen: () => onOpenUnionBackupBBJ?.(data.backupBBJ || 0),
     },
   };
@@ -1166,7 +1151,7 @@ export default function DynamicWallet({
       icon: 'bank',
       value: animUnionBank,
       known: unionFiguresKnown,
-      hint: unionFiguresKnown ? 'Send Or Pull Chips From Clubs & Members' : 'Union Admins Only',
+      hint: unionFiguresKnown ? undefined : 'Union Admins Only',
       onOpen: () => onOpenUnionBank?.(data.unionBank || 0),
     },
     {
@@ -1186,7 +1171,6 @@ export default function DynamicWallet({
       icon: 'reserve',
       value: animBackupBBJ,
       known: unionFiguresKnown,
-      hint: 'Next Jackpot Seed',
       onOpen: () => onOpenUnionBackupBBJ?.(data.backupBBJ || 0),
     },
     {
@@ -1195,10 +1179,6 @@ export default function DynamicWallet({
       icon: 'promo',
       value: animPromo,
       known: unionFiguresKnown,
-      // The 25% promo slice accrues inside the BBJ pool and is swept across
-      // to this wallet every ~5 minutes, so it steps rather than streams.
-      // Saying so stops it reading as "not being funded".
-      hint: unionFiguresKnown ? '25% BBJ Slice · Swept Every 5 Min' : undefined,
       onOpen: () => onOpenUnionPromo?.(data.unionPromo || 0),
     },
     {
@@ -1553,10 +1533,7 @@ export default function DynamicWallet({
             <span className="dw__row-icon" aria-hidden="true">
               <WalletIcon name="reserve" />
             </span>
-            <span className="dw__row-label">
-              Backup BBJ
-              <span className="dw__row-hint">Reserve · Reseeds Main After A Hit</span>
-            </span>
+            <span className="dw__row-label">Backup BBJ</span>
             <span className="dw__row-value">
               {data.backupBBJ === 0 || figuresUnknown ? '-' : formatBalance(animBackupBBJ)}
             </span>

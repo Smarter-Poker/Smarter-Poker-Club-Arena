@@ -115,7 +115,6 @@ import {
   promoSendRpc,
   promoLedgerScope,
   promoBalanceLabel,
-  promoSourceBlurb,
   type CashierTab,
   type CashierDestination,
   type CashierWalletType,
@@ -1819,9 +1818,6 @@ export default function WalletCashierModal({
                   </button>
                 </div>
               )}
-            {walletType === 'promo_wallet' && (
-              <div className="cbc-note">{promoSourceBlurb(promoSource)}</div>
-            )}
 
             {clubUuid === null && !clubLoading && (
               <div className="cbc-note cbc-note--bad">

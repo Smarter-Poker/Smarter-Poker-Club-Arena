@@ -86,13 +86,13 @@ changelogs.
 
 **3. Whether a release could have used the break at all.** This is the failure that looks like a shut gate and is not.
 
-`engine-release-transaction.sh` needs `MIN_BREAK_REMAINING_MS` of break left before it will mutate anything: 150 seconds of candidate proof plus 135 seconds of rollback reserve, 285 seconds in total. A break's countdown is `MaintenanceBreak.BREAK_DURATION_MS`, five minutes. Tables do not write their park snapshots until the countdown begins. So the room the whole fleet has to park in is
+The September 18 failure used the original `MIN_BREAK_REMAINING_MS` admission: 150 seconds of candidate proof plus 135 seconds of rollback reserve, 285 seconds in total. A break's countdown is `MaintenanceBreak.BREAK_DURATION_MS`, five minutes. Tables did not write their park snapshots until the countdown began. That left the fleet
 
 ```
 countdown - MIN_BREAK_REMAINING_MS = 300000 - 285000 = 15000 ms
 ```
 
-and a fleet of about 1,200 tables takes roughly thirty seconds. The transaction therefore refuses on every break, logging `the durable table break has NNNNNms remaining, below the 285000ms candidate-and-recovery budget`. Measured on 2026-09-18: the countdown opened at 298,411 ms and it refused fifteen seconds later with fifteen tables still unparked.
+and a fleet of about 1,200 tables took roughly thirty seconds. The transaction refused that admission, logging `the durable table break has NNNNNms remaining, below the 285000ms candidate-and-recovery budget`. Measured on 2026-09-18: the countdown opened at 298,411 ms and it refused fifteen seconds later with fifteen tables still unparked. This is historical diagnosis, not the current admission algorithm: the maintained transaction now prepares before the locked certificate and uses its qualified admission rungs while retaining the proof and rollback reserves. Read the exact owning transaction and refusal rather than substituting a smaller workstation threshold.
 
 Worse, a transaction that cannot use a window still announces one, and an announcement parks every table on the platform for the whole window. Three transactions whose targets were behind `origin/main` cycled announcements and took 25 of the 33 minutes from 03:53 to 04:26, with hands per minute going 706 to 0 and back, twice. Their repeated pauses also cleared park checkpoints, so the unparked count never settled: **the attempts were manufacturing the condition that refused them.** Stopping the three units dropped unparked from 33 to zero within thirty seconds.
 
@@ -102,23 +102,18 @@ So when the gate looks permanently shut, check for this before believing it:
 # Release transactions that are waiting, and what they are waiting for
 systemctl list-units --all --plain 'club-arena-engine-release-v1@*' | grep activating
 journalctl --since -20min -o cat | grep -oE '\[engine-release-transaction\].*' | tail
-# Targets behind main refuse forever and should be stopped
+# Read the exact target named by this owning transaction
 journalctl -u club-arena-engine-release-v1@<run>.service -o cat | grep -oE 'target [0-9a-f]{40}'
 ```
 
-A unit whose target is behind `origin/main` will never install and every announcement it makes is a fleet-wide outage for nothing. `systemctl stop` on it is safe: `Restart=on-failure` with `RestartPreventExitStatus=1` means a refusal does not restart, and nothing else re-arms a release. The announced window then expires on its own and play resumes.
+A later documentation or client commit on `origin/main` does not make the selected engine component stale. Compare the exact target, sealed desired/high-water state, durable result and any actual superseding engine release. A transport timeout is an unknown acknowledgement: reattach to the same owning transaction through its maintained observer before any new request. Do not stop another release or mutate its seal to free the lane. A refusal is diagnosed and corrected through the existing protected release route.
 
 **4. Only then, the engine log.** `docker logs --since 20m club-arena-engine | grep -iE 'parked|maintenance'`. The engine names the first five tables at each countdown.
 
-## Installing a release when the gate is the only thing in the way
+## Continuing when admission refuses
 
-`/root/cutover.sh` on engine-01 runs exactly the sequence the transaction runs, through the same release seal, so the audit trail, the desired-release pointer and the supervisor all stay consistent. It proves the break directly rather than reading the certificate: active, counting down, durable, at least 200,000 ms remaining, and no hand dealt in the last 45 seconds. It aborts before mutating anything if any of that is untrue.
+The owning transaction is the only release authority. Preserve its locked certificate, persisted deadline and full proof/rollback reserve. There is no workstation cutover fallback and no reduced admission threshold.
 
-It takes `RUN_ID`, `RUN_URL`, `ACTOR` and `REASON` from the environment and every one of them is recorded. Use the run that actually built the image, with a distinct attempt suffix, so the seal's audit names a real build:
+Read the serving identity and durable result first. If the candidate was published but proof is missing, recover that proof without restarting a healthy engine. If admission or a prerequisite failed, fix and qualify the cause, then continue through `stage-engine-release.yml` and `auto-deploy-hetzner.yml`; a controlled drill uses its named repository event above or the [rollback drill route](engine-rollback-drill.md). Preserve the original operation identity whenever its outcome is unknown.
 
-```bash
-RUN_ID=<run>-2 RUN_URL=https://github.com/.../actions/runs/<run> \
-ACTOR=<who> REASON='<why the automatic path could not>' bash /root/cutover.sh
-```
-
-It is not a substitute for the release path. It is what to do when the release path cannot certify itself, and each use should be followed by fixing the reason it could not.
+An admission refusal never authorizes bypassing the certificate, shortening a reserve, extending a freeze or restarting active games. The current owner policy and `PUBLISHING.md` govern recovery.

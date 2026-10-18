@@ -1,15 +1,24 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { classifyChangedPaths } from '../../scripts/ci/classify-ci-changes.mjs';
 
 const read = (path: string) => readFileSync(new URL('../../' + path, import.meta.url), 'utf8');
 const sql = read(
   'supabase/migrations/20261018152437_a_documented_addon_does_not_strand_an_abandoned_misdeal.sql'
 );
-const prior = read('scripts/ci/probes/abandoned-addon/preimage.sql');
+const prior = read('scripts/ci/probes/f06-shared-hand-lane/abandoned-addon/preimage.sql');
 const md5 = (s: string) => createHash('md5').update(s).digest('hex');
 
 describe('a purchased add-on preserves event-owned abandoned-hand recovery', () => {
+  it.each(['qualify.py', 'fixture.sql', 'preimage.sql'])(
+    'qualifies changed native input %s',
+    (name) => {
+      expect(
+        classifyChangedPaths(['scripts/ci/probes/f06-shared-hand-lane/abandoned-addon/' + name])
+      ).toMatchObject({ server: true, tests: true });
+    }
+  );
   it('changes exactly one reviewed clause of the installed full function', () => {
     const before = prior.split('$function$')[1];
     const oldClause = sql.split('$old$')[1];
@@ -44,7 +53,7 @@ describe('a purchased add-on preserves event-owned abandoned-hand recovery', () 
       "addon['qualify'](ROOT, out, cmd, command, run, probe, require, results)"
     );
     expect(gate).toContain("require(results.get('abandonedAddon', {}).get('passed') is True");
-    const fixture = read('scripts/ci/probes/abandoned-addon/qualify.py');
+    const fixture = read('scripts/ci/probes/f06-shared-hand-lane/abandoned-addon/qualify.py');
     expect(fixture).toContain("error='F06_ABANDONED_CARDS_WITHOUT_SNAPSHOT'");
     expect(fixture).toContain("probe('addon-exact-purchase-passes', success, '1')");
     expect(fixture).toContain("run('addon-player-state-after', money) == before");

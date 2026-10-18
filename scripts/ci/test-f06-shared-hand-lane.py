@@ -91,7 +91,7 @@ try:
     r = command([pg / 'pg_ctl', '-D', cluster / 'data', '-l', cluster / 'server.log', '-w', 'start'])
     require(r.returncode == 0, r.stderr)
     run('fixture', (ROOT / 'scripts/ci/probes/f06-shared-hand-lane/fixture.sql').read_text())
-    addon = runpy.run_path(str(ROOT / 'scripts/ci/probes/abandoned-addon/qualify.py'))
+    addon = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/abandoned-addon/qualify.py'))
     addon['qualify'](ROOT, out, cmd, command, run, probe, require, results)
     require(results.get('abandonedAddon', {}).get('passed') is True, 'Purchased add-on recovery did not qualify')
     index = runpy.run_path(str(ROOT / 'scripts/ci/probes/f06-shared-hand-lane/snapshot_index_qualification.py'))

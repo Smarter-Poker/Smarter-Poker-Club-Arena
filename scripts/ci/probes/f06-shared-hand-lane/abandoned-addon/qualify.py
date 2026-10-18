@@ -9,7 +9,7 @@ import tempfile
 
 
 def qualify(root, out, cmd, command, run, probe, require, results):
-    here = root / 'scripts/ci/probes/abandoned-addon'
+    here = root / 'scripts/ci/probes/f06-shared-hand-lane/abandoned-addon'
     migration = root / 'supabase/migrations/20261018152437_a_documented_addon_does_not_strand_an_abandoned_misdeal.sql'
     inputs = list(here.glob('*')) + [migration]
     results['abandonedAddonInputs'] = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -56,7 +56,7 @@ def qualify(root, out, cmd, command, run, probe, require, results):
 
 
 if __name__ == '__main__':
-    root = Path(__file__).resolve().parents[4]
+    root = Path(__file__).resolve().parents[5]
     out = Path(os.environ['ADDON_EVIDENCE']).resolve()
     out.mkdir(parents=True, exist_ok=False)
     pg = Path(os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin'))

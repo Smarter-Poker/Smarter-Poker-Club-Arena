@@ -128,6 +128,15 @@ try:
     p = run(psql("live"), SCENARIO2.read_text().replace("@PORT@", str(PORT)))
     require("REPORT SCENARIO PASSED" in p.stderr + p.stdout,
             "report scenario: live writers, rebuild from facts, club rake, Report access, player lists")
+    history = (ROOT / "tests/fixtures/club-data-report-db/history-scenario.sql").read_text()
+    before = run(psql("live"), history, expect_fail="history regression:")
+    require("later receipt moved historical rake" in before.stderr
+            and "later seat moved historical rake" in before.stderr,
+            "the old calculator fails both dated funding regressions")
+    run(psql("live"), (ROOT / "supabase/migrations/20261018134944_club_rake_history_follows_the_funding_at_the_hand.sql").read_text())
+    after = run(psql("live"), history)
+    require("HISTORY SCENARIO PASSED" in after.stderr + after.stdout,
+            "historical receipts and seats, decimal contributions, witness precedence and conservation")
     print("PASS: the Club Data Report reads what the club played", flush=True)
 finally:
     if started:

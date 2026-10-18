@@ -31,3 +31,24 @@ trap cleanup EXIT
 "$pgbin/pg_ctl" -D "$data" -o "-h '' -k '$socket' -p $port" -w start >/dev/null
 psql=("$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$socket" -p "$port" -U fixture_admin -d postgres)
 "${psql[@]}" -f "$fixture/bootstrap.sql" -f "$migration" -f "$fixture/assertions.sql"
+"${psql[@]}" -f "$fixture/funded-bootstrap.sql"
+# Use the actual maintained resolver dependency, not a mock attribution rule.
+python3 - "$repo" "$work/funded-resolver.sql" <<'PY'
+from pathlib import Path
+import sys
+source=(Path(sys.argv[1])/'supabase/migrations/20261018135655_member_records_follow_funded_hand_clubs_and_live_source_chan.sql').read_text()
+start=source.index('CREATE FUNCTION public.fn_member_record_fact_club(')
+end=source.index('CREATE FUNCTION public.fn_member_record_daily_insert()',start)
+Path(sys.argv[2]).write_text(source[start:end])
+PY
+"${psql[@]}" -f "$work/funded-resolver.sql" -f "$fixture/funded-before.sql" \
+ -f "$repo/supabase/migrations/20261018163053_player_stats_follow_the_funded_club.sql" \
+ -f "$fixture/funded-after.sql"
+if [[ -n "${STATS_FUNDED_EXPORT:-}" ]]; then
+ "${psql[@]}" -Atc "SELECT pg_get_functiondef('public.ca_player_stats_overview_v2_by_club(uuid,integer,text,text,uuid)'::regprocedure)" >"$STATS_FUNDED_EXPORT"
+fi
+if "${psql[@]}" -f "$repo/supabase/migrations/20261018163053_player_stats_follow_the_funded_club.sql" >"$work/replay.log" 2>&1; then
+ echo 'Funded Stats migration replay unexpectedly succeeded' >&2; exit 1
+fi
+grep -q 'Funded Stats patch already present' "$work/replay.log"
+echo 'PASS: funded Stats migration replay refused'

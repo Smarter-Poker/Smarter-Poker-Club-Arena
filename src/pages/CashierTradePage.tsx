@@ -102,6 +102,7 @@ import {
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import { CashierFrameBalance } from '../components/wallet/CashierFrameBalance';
 import DiamondWalletTransfer from '../components/wallet/DiamondWalletTransfer';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
 import {
@@ -262,7 +263,7 @@ type InvoiceRow = ClubWeeklyStatement;
 type TabKey = 'trade' | 'record' | 'leaderboard' | 'request' | 'tickets';
 
 /* Transaction amounts and aggregates retain the console reading. Wallet
-   balances use formatWalletChips explicitly: exact cents below one million. */
+   balances use formatWalletChips explicitly: exact cents at every magnitude. */
 const fmt = compactChips;
 
 /**
@@ -326,11 +327,13 @@ function CashierPlayerCard({
               <path d="M1 1.5 6 6.5 11 1.5" fill="none" stroke="currentColor" strokeWidth="2" />
             </svg>
           )}
-          <strong>
-            {walletBalance === null
-              ? 'Unavailable'
-              : formatWalletChips(walletBalance ?? row.chipBalance)}
-          </strong>
+          <CashierFrameBalance
+            text={
+              walletBalance === null
+                ? 'Unavailable'
+                : formatWalletChips(walletBalance ?? row.chipBalance)
+            }
+          />
         </span>
       </span>
       {walletControl}
@@ -363,9 +366,7 @@ function CashierWalletRow({
             <path d="M1 1.5 6 6.5 11 1.5" fill="none" stroke="currentColor" strokeWidth="2" />
           </svg>
         )}
-        <strong className={styles.walletRowValue}>
-          {balance === null ? '-' : formatWalletChips(balance)}
-        </strong>
+        <CashierFrameBalance text={balance === null ? '-' : formatWalletChips(balance)} />
       </span>
       {children}
     </section>
@@ -3453,7 +3454,9 @@ function CashierTradeWorkspace() {
               >
                 <span className={styles.cashoutLabel}>Request Cash Out</span>
                 <span id="cashier-cashout-balance" className={styles.cashoutBalance}>
-                  {loading || isHydrating ? 'Loading Balance' : `${fmt(myBalance)} Chips`}
+                  {loading || isHydrating
+                    ? 'Loading Balance'
+                    : `${formatWalletChips(myBalance)} Chips`}
                 </span>
               </button>
             )}
@@ -3759,7 +3762,7 @@ function CashierTradeWorkspace() {
                 </div>
                 <div className={styles.stripCell}>
                   <span className={styles.stripLabel}>Downline Holdings</span>
-                  <span className={styles.stripValue}>{fmt(agencyBalance)}</span>
+                  <span className={styles.stripValue}>{formatWalletChips(agencyBalance)}</span>
                 </div>
                 {/* THE ACCOUNT THIS PAGE SPENDS (Dan 2026-08-25).
                 Send Out debits agents.agent_wallet_balance for every role, so
@@ -3860,7 +3863,8 @@ function CashierTradeWorkspace() {
                   balance strip, which now shows the account this page spends;
                   it is the number that decides whether a claim is worth making,
                   so it stays beside the filter that isolates those players. */}
-                  Assigned To Me ({mineCount.toLocaleString()} &middot; {fmt(mineTotal)})
+                  Assigned To Me ({mineCount.toLocaleString()} &middot;{' '}
+                  {formatWalletChips(mineTotal)})
                 </label>
                 <label className={styles.groupToggle}>
                   <input
@@ -4121,7 +4125,7 @@ function CashierTradeWorkspace() {
                   <div className={styles.selBar} role="status">
                     <span>
                       {selected.size > 0
-                        ? `${selected.size.toLocaleString()} Selected \u00b7 ${fmt(pickedHeld)} Held`
+                        ? `${selected.size.toLocaleString()} Selected \u00b7 ${formatWalletChips(pickedHeld)} Held`
                         : 'Tap A Player To Select'}
                     </span>
                     {selected.size > 0 ? (
@@ -5384,7 +5388,9 @@ function CashierTradeWorkspace() {
                                   &middot; {mm}:{ss} Left
                                 </span>
                               </div>
-                              <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
+                              <span className={styles.rowBalance}>
+                                {formatWalletChips(row.remaining)}
+                              </span>
                               <button
                                 className={`${styles.reqBtn} ${styles.reqBtnGo}`}
                                 disabled={!isOnline || claimingId !== null}

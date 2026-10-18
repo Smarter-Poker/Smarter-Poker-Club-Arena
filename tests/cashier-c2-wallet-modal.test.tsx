@@ -509,3 +509,31 @@ describe('The Main Bank Never Fails Silently', () => {
     expect(sends('fn_club_bank_send')[0].args.p_destination).toBe('agent_wallet');
   });
 });
+
+describe('Club Bank funding follows the selected account', () => {
+  it.each([
+    ['agent_wallet', 'fn_agent_wallet_send'],
+    ['promo_wallet', 'fn_club_promo_wallet_send'],
+  ])('uses %s for the spend and keeps the bank ledger', async (source, rpc) => {
+    fx.agentRow = { agent_wallet_balance: 1000, promo_wallet_balance: 80, is_prepaid: true };
+    fx.club.promo_balance = 6000;
+    fx.members = [{ data: [{ ...kingfish, role: 'agent' }], error: null }];
+    openCashier({ walletType: 'club_bank' });
+    await pick(/Kingfish/);
+    typeAmount('5');
+    const sourceSelect = screen.getByRole('combobox', { name: 'Send From' });
+    fireEvent.change(sourceSelect, { target: { value: source } });
+    await waitFor(() => expect(plate('Confirm')).toBeEnabled());
+    expect(screen.getByRole('textbox', { name: 'Chips To Send' })).toHaveValue('5');
+    expect(screen.getByRole('tab', { name: 'Transaction Ledger' })).toBeInTheDocument();
+    const face = screen.getByRole('region', { name: 'Selected Player' });
+    if (source === 'promo_wallet') {
+      expect(face).toHaveTextContent('Promo Wallet');
+      expect(face).toHaveTextContent('80.00');
+    }
+    fireEvent.click(plate('Confirm'));
+    await waitFor(() => expect(sends(rpc)).toHaveLength(1));
+    expect(sends(rpc)[0].args).toMatchObject({ p_amount: 5, p_destination: 'agent_wallet' });
+    expect(sends('fn_club_bank_send')).toHaveLength(0);
+  });
+});

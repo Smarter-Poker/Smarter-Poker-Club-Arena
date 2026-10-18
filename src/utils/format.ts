@@ -506,11 +506,10 @@ export const feeFigure = (value: number | null | undefined): string => {
     : compactChips(value);
 };
 
-/** Wallets retain cents and separators below one million (Dan, 2026-10-16). */
+/** Wallet balances always show separators and exactly two decimals (Dan, 2026-10-18). */
 export const formatWalletChips = (amount: number | null | undefined): string => {
   if (amount == null || !Number.isFinite(Number(amount))) return '-';
   const value = Number(amount);
-  if (Math.abs(value) >= 1_000_000) return compactChips(value);
   return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 

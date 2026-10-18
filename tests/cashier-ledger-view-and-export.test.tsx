@@ -270,6 +270,7 @@ describe('a pending money command retains the confirmed form', () => {
     expect(amount).toBeDisabled();
     expect(screen.getByRole('textbox', { name: 'Reason' })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: 'Send Into' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Send From' })).toBeDisabled();
     for (const tab of screen.getAllByRole('tab')) expect(tab).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Mint Chips Into The Club Bank' })).toBeDisabled();
     await act(async () => pending.resolve({ data: { success: true }, error: null }));
@@ -403,7 +404,7 @@ describe('wallet balances and ledger movements retain separate formats', () => {
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Claim Back' }));
     await screen.findByText('Sent 2.5K, 1.2K Already Claimed Back');
-    expect(document.querySelector('.cbc-tx-amount')).toHaveTextContent('1.2K');
+    expect(document.querySelector('.cbc-tx-amount')).toHaveTextContent('1,250.50');
     expect(screen.getByRole('button', { name: 'Claim Back 1,251 Chips' })).toBeInTheDocument();
     expect(fx.calls.some((c) => /send|claim_back|reverse/.test(c.fn))).toBe(false);
   });

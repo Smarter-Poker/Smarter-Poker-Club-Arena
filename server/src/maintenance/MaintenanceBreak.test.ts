@@ -9,10 +9,14 @@
 
 import type { MaintenanceThawRequest } from './maintenanceThawV3.js';
 function releaseFor(request: Readonly<MaintenanceThawRequest>) {
+  const creditedThroughAt = Math.max(
+    Date.now(),
+    request.freezeStartedAt + request.frozenSeconds * 1000
+  );
   return {
     ...request,
-    creditedThroughAt: Date.now(),
-    effectiveFrozenSeconds: (Date.now() - request.freezeStartedAt) / 1000,
+    creditedThroughAt,
+    effectiveFrozenSeconds: (creditedThroughAt - request.freezeStartedAt) / 1000,
   };
 }
 
@@ -1958,7 +1962,10 @@ describe('the maintenance owner cannot outlive shutdown', () => {
     timers.shift()!.fn();
     await Promise.resolve();
     await Promise.resolve();
-    const endTimer = timers.find((timer) => timer.ms === MaintenanceBreak.BREAK_DURATION_MS);
+    const endTimer = timers.find(
+      (timer) =>
+        timer.ms === MaintenanceBreak.BREAK_DURATION_MS - MaintenanceBreak.THAW_PREPARATION_LEAD_MS
+    );
     expect(endTimer).toBeDefined();
     endTimer!.fn();
     expect(thawStarted).toBe(true);

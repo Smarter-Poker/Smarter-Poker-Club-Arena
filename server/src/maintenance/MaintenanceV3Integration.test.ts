@@ -76,7 +76,10 @@ function harness(tableCount = 1) {
       throw new Error('v3 must own deletion');
     }),
   };
-  function receipt(args: Readonly<MaintenanceThawRpcArgs>, at = Date.now()) {
+  function receipt(
+    args: Readonly<MaintenanceThawRpcArgs>,
+    at = Math.max(Date.now(), Date.parse(args.p_freeze_started) + args.p_frozen_seconds * 1000)
+  ) {
     return {
       ok: true,
       complete: true,

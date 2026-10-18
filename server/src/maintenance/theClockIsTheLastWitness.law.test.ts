@@ -139,8 +139,11 @@ function build(engineCount = 3) {
       store.row = null; // The synthetic v3 RPC commits the owned deletion.
       return {
         ...request,
-        creditedThroughAt: Date.now(),
-        effectiveFrozenSeconds: (Date.now() - request.freezeStartedAt) / 1000,
+        creditedThroughAt: Math.max(
+          Date.now(),
+          request.freezeStartedAt + request.frozenSeconds * 1000
+        ),
+        effectiveFrozenSeconds: request.frozenSeconds,
       };
     },
     recordOutcome: async () => {},

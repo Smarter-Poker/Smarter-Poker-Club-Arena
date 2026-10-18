@@ -23,3 +23,26 @@ export function launchSeatingBudgetMs(fieldCount: number): number {
 export function launchWouldCrossLastHand(fieldCount: number, msUntilLastHand: number): boolean {
   return Number.isFinite(msUntilLastHand) && msUntilLastHand < launchSeatingBudgetMs(fieldCount);
 }
+
+/** Latest setup admission that leaves the promised seated minute intact. */
+export function scheduledLaunchPreparationAt(
+  startAt: number,
+  fieldCount: number,
+  seatedLeadMs: number,
+  maintenance: { startMinute: number; lastHandLeadMs: number; durationMs: number }
+): number {
+  const hourMs = 60 * 60_000;
+  const budget = launchSeatingBudgetMs(fieldCount);
+  let readyAt = startAt - seatedLeadMs;
+  let freezeStartsAt = Math.floor(startAt / hourMs) * hourMs + maintenance.startMinute * 60_000;
+  if (freezeStartsAt > startAt) freezeStartsAt -= hourMs;
+  const lastHandAt = freezeStartsAt - maintenance.lastHandLeadMs;
+  const freezeEndsAt = freezeStartsAt + maintenance.durationMs;
+  if (readyAt >= lastHandAt && readyAt - budget < freezeEndsAt) {
+    // Entry doors close at last-hand, not at countdown. Keep the same
+    // seated minute ahead of that door too, so a five-second discovery pass
+    // cannot turn the exact budget boundary into a refused half-launch.
+    readyAt = lastHandAt - seatedLeadMs;
+  }
+  return readyAt - budget;
+}

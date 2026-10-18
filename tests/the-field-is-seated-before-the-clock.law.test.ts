@@ -68,7 +68,10 @@ describe('ITEM 2 — the field is seated a minute before the event starts', () =
 
   it('the timed start gate fires at start_time MINUS the lead, not at start_time', () => {
     const gate = code(GAME_SERVER).match(/const timeReached\s*=[\s\S]{0,220}?;/)?.[0] ?? '';
-    expect(gate).toContain('TOURNAMENT_PRESEAT_LEAD_MS');
+    expect(gate).toContain('scheduledPreparationAt(startTime, fieldCount)');
+    expect(code(GAME_SERVER)).toContain(
+      'scheduledLaunchPreparationAt(startAt, fieldCount, TOURNAMENT_PRESEAT_LEAD_MS'
+    );
     // The bare `startTime <= now` this replaced is the bug: it seated the field
     // AFTER the advertised start, which is the 130-second hole above.
     expect(gate).not.toMatch(/startTime\s*<=\s*now/);

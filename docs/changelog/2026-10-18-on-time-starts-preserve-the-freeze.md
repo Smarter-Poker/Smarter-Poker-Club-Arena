@@ -1,0 +1,9 @@
+# Prepare the field and the certified thaw before the advertised start
+
+Production October 18: a 483-player 16:45 UTC event completed serial atomic seating at16:46:08.716; the two noon Central fields waited for the 17:00:55 maintenance certificate and then seated until17:01:52/17:03:01. The fixed one-minute discovery lead did not include setup time, and the thaw started its existing work at the promised release instant.
+
+The owning discovery now subtracts its existing conservative field seating budget from the ready minute, moving preparation before the :53 entry closure when necessary. Existing minimum field, paid-seat, atomic seating, launch receipt, restart recovery and immutable advertised dealing hold remain authoritative. It never seats through maintenance.
+
+The same maintenance owner prepares v3 installments in the final90seconds. The database credits the entire scheduled freeze and floors its certified endpoint at the scheduled end. Database entry predicates and in-memory table pauses stay closed through that endpoint. Missed preparation retains the existing fail-closed rebase; no early release is possible. At actual release, future-booked opening levels receive a full first level, with independent tournament pauses and older clocks preserved.
+
+Regression: observed large-field/noon/:10/UTC preparation, actual adopted-break state machine and first-clock timers; disposable PostgreSQL uses exact installed functions in separate committed transactions, wrong-owner/adoption/replay/early-entry negatives, full clock credits and unchanged wallet/chair/registration/stack identities. The native qualification is in required accounting shard1; inputs select that job. No production fault injection or repair loop is introduced. Live serving/start/break evidence remains in the task checkpoint until obtained.

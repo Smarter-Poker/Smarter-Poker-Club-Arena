@@ -1,0 +1,56 @@
+[
+  {
+    "signature": "fn_active_maintenance_release_boundary()",
+    "body_md5": "3d9e02539fdcc6aca9a8a3769ed32521",
+    "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "proconfig": ["search_path=public, auth, pg_temp"]
+  },
+  {
+    "signature": "fn_credit_maintenance_thaw_targets(timestamp with time zone,numeric)",
+    "body_md5": "07ae34db3c2a65da3593ff2bcce93c78",
+    "acl": "{postgres=X/postgres}",
+    "proconfig": ["search_path=public, pg_temp"]
+  },
+  {
+    "signature": "fn_entry_purchases_frozen()",
+    "body_md5": "a29498531e4b7d3889532e80fafc8d57",
+    "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "proconfig": ["search_path=public, pg_temp"]
+  },
+  {
+    "signature": "fn_platform_frozen()",
+    "body_md5": "112b1265824ee082b8adc67ea367d826",
+    "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+    "proconfig": ["search_path=public, pg_temp"]
+  },
+  {
+    "signature": "fn_refuse_new_entries_while_frozen()",
+    "body_md5": "e8c94fe07905dee54ecbccde538ce7f0",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "proconfig": ["search_path=public, pg_temp"]
+  },
+  {
+    "signature": "fn_snapshot_maintenance_thaw_targets(timestamp with time zone,numeric)",
+    "body_md5": "492ccb7dd2eab1034a73d4e1f997041f",
+    "acl": "{postgres=X/postgres}",
+    "proconfig": ["search_path=public, pg_temp"]
+  },
+  {
+    "signature": "fn_thaw_platform_checkpointed(timestamp with time zone,numeric,text)",
+    "body_md5": "05801f790fe39cb04a02dc55ee35f1f3",
+    "acl": "{postgres=X/postgres}",
+    "proconfig": ["search_path=public, pg_temp"]
+  },
+  {
+    "signature": "fn_thaw_platform(timestamp with time zone,timestamp with time zone,numeric,uuid,text)",
+    "body_md5": "d352182bd881a074848061a9c5820cc6",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "proconfig": ["search_path=public, pg_temp", "statement_timeout=35s", "lock_timeout=32s"]
+  },
+  {
+    "signature": "fn_thaw_reconnect_states(jsonb,numeric,numeric)",
+    "body_md5": "0b5ef6cd1c6ba4e9331714f7c9053bd2",
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "proconfig": ["search_path=public, pg_temp"]
+  }
+]

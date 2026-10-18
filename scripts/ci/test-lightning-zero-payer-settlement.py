@@ -109,9 +109,21 @@ END $reapply$;
 with tempfile.TemporaryDirectory(prefix='lp6-zero-') as work:
     followup = pathlib.Path(work) / 'followup.sql'
     followup.write_text(setup)
-    env = dict(os.environ, LIGHTNING_P6S_FOLLOWUP_SQL=str(followup))
-    result = subprocess.run(['bash', str(ROOT / 'scripts/dev/test-lightning-phase6-settlement.sh')],
-                            env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+    socket = os.environ.get('LIGHTNING_ZERO_PAYER_SOCKET')
+    if socket:
+        # The required Phase 6 accounting step owns this already-qualified
+        # disposable database. Keep the regression in that same native chain.
+        pg = pathlib.Path(os.environ['PG_BIN'])
+        command = [str(pg / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1',
+                   '-h', socket, '-p', os.environ['LIGHTNING_ZERO_PAYER_PORT'],
+                   '-d', 'postgres', '-f', str(followup)]
+        env = os.environ.copy()
+    else:
+        # Explicit standalone invocation uses the very same owner and chain.
+        command = ['bash', str(ROOT / 'scripts/dev/test-lightning-phase6-settlement.sh')]
+        env = dict(os.environ, LIGHTNING_P6S_FOLLOWUP_SQL=str(followup))
+    result = subprocess.run(command, env=env, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, timeout=180)
     print(result.stdout)
     if result.returncode or 'PASS: Madness zero-payer real settlement' not in result.stdout:
         raise SystemExit(result.returncode or 1)

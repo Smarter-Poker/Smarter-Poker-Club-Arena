@@ -32,7 +32,7 @@ BEGIN
      PERFORM public.fn_publish_member_record_user(u);
    END LOOP;
  ELSE
-   IF ROW(NEW.status,NEW.club_id) IS NOT DISTINCT FROM ROW(OLD.status,OLD.club_id) THEN RETURN NULL; END IF;
+   IF ROW(NEW.status,NEW.club_id,NEW.name,NEW.stakes,NEW.tournament_id,NEW.is_deleted) IS NOT DISTINCT FROM ROW(OLD.status,OLD.club_id,OLD.name,OLD.stakes,OLD.tournament_id,OLD.is_deleted) THEN RETURN NULL; END IF;
    FOR u IN SELECT DISTINCT user_id FROM public.table_seats WHERE table_id=NEW.id AND left_at IS NULL LOOP
      PERFORM public.fn_publish_member_record_user(u);
    END LOOP;
@@ -42,7 +42,7 @@ END $$;
 REVOKE ALL ON FUNCTION public.fn_publish_member_record_context() FROM PUBLIC,anon,authenticated,service_role;
 CREATE TRIGGER member_record_club AFTER UPDATE OF name ON public.clubs
 FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_context();
-CREATE TRIGGER member_record_table AFTER UPDATE OF status,club_id ON public.tables
+CREATE TRIGGER member_record_table AFTER UPDATE OF status,club_id,name,stakes,tournament_id,is_deleted ON public.tables
 FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_context();
 CREATE TRIGGER member_record_agent AFTER INSERT OR DELETE OR UPDATE OF user_id,club_id,status,agent_wallet_balance,promo_wallet_balance ON public.agents
 FOR EACH ROW EXECUTE FUNCTION public.fn_publish_member_record_row();

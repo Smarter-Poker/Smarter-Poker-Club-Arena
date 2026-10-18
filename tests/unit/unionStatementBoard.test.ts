@@ -95,6 +95,16 @@ describe('parseUnionStatementBoard', () => {
     expect(() => parseUnionStatementBoard(value, 'union-a', '2026-09-14')).toThrow(/availability/);
   });
 
+  it('continues to refuse a paid modern invoice whose explicit payment detail contradicts its balance', () => {
+    const value: any = board();
+    value.clubs[0].status = 'paid';
+    value.clubs[0].payment_details_available = true;
+    value.totals.paid = 1;
+    expect(() => parseUnionStatementBoard(value, 'union-a', '2026-09-14')).toThrow(
+      'Paid statement still has an outstanding balance'
+    );
+  });
+
   it('binds a current absolute invoice amount to its persisted union-owes direction', () => {
     const value = board();
     value.clubs[0].direction = 'union owes club';

@@ -289,7 +289,7 @@ test.describe('the mobile lobby chrome on production', () => {
     await openLobby(page);
     /* Two landmarks share this name on a club lobby: the arena boundary's
        "Choose Arena" nav inside the page, and the footer. The footer is the
-       one that carries the six controls. */
+       one that carries the role-scoped controls. */
     const nav = page
       .getByRole('navigation', { name: 'Poker Arena' })
       .filter({ has: page.locator('[data-footer-control]') });
@@ -300,8 +300,15 @@ test.describe('the mobile lobby chrome on production', () => {
     await page.waitForTimeout(300);
 
     const edge = await bottomEdge(page);
-    // The Diamond Spins overlay is a second image; measure the approved base frame.
-    const artwork = nav.locator('img[src$="/club-arena-footer-v3.webp"]').locator('..');
+    // Members and operators have different approved base frames. The Diamond
+    // Spins overlay is a second image; never measure that overlay instead.
+    const doors = nav.locator('[data-footer-doors]');
+    await expect(doors).toHaveCount(1);
+    await expect(doors).toHaveAttribute('data-footer-doors', /^(member|operator)$/);
+    const kind = await doors.getAttribute('data-footer-doors');
+    const baseFrame =
+      kind === 'member' ? 'club-arena-footer-player-v1.webp' : 'club-arena-footer-v3.webp';
+    const artwork = nav.locator(`img[src$="/${baseFrame}"]`).locator('..');
     await expect(artwork).toHaveCount(1);
     const frame = await artwork.boundingBox();
     expect(frame).not.toBeNull();

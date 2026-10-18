@@ -60,6 +60,35 @@
   align-self: center;
 }
 
+/* Narrow headers reserve equal help-sized sides so the title stays centered.
+   Live controls need their own row: a zero-width side track lets them spill
+   under the heading and lose pointer access. Text zoom must wrap the title. */
+@media (max-width: 640px) {
+  .ca-page-bar:has(> .ca-page-bar__title) {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    column-gap: 0;
+  }
+
+  .ca-page-bar__title {
+    grid-row: 1;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .ca-page-bar > .ca-page-help {
+    grid-row: 1;
+    align-self: start;
+  }
+
+  .ca-page-bar:has(> .ca-page-bar__title) > .ca-page-bar__live {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+  }
+}
+
 .ca-page-bar__status {
   display: inline-flex;
   align-items: center;

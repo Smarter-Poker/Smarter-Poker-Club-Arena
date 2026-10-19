@@ -472,8 +472,7 @@ BEGIN
   RETURN COALESCE(v_now_unlocked, false) AND NOT COALESCE(v_was_unlocked, false);
 END $function$;
 
-REVOKE ALL ON FUNCTION public.fn_achievement_record_progress(uuid, text, numeric, numeric) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_achievement_record_progress(uuid, text, numeric, numeric) FROM anon;
+REVOKE ALL ON FUNCTION public.fn_achievement_record_progress(uuid, text, numeric, numeric) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_achievement_record_progress(uuid, text, numeric, numeric)
   TO authenticated, service_role;
 

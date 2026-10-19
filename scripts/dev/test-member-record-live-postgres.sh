@@ -15,6 +15,7 @@ migration="$repo/supabase/migrations/20261018135655_member_records_follow_funded
 "${psql[@]}" -f "$fixture/bootstrap.sql" -f "$fixture/readers.sql" -f "$fixture/before.sql" -f "$migration" -f "$repo/supabase/migrations/20261018140249_activate_funded_member_record_daily_facts_without_repeated_r.sql" -f "$fixture/authorization-before.sql" -f "$repo/supabase/migrations/20261018183507_member_record_private_joins_authorize_the_provider_probe.sql" -f "$fixture/authorization-after.sql" -f "$fixture/after.sql"
 if "${psql[@]}" -f "$migration" > "$work/replay.log" 2>&1; then echo 'Replay unexpectedly accepted'; exit 1; fi
 "${psql[@]}" -f "$fixture/global-before.sql" -f "$repo/supabase/migrations/20261018195412_member_record_all_field_source_events.sql" -f "$fixture/global-after.sql"
+"${psql[@]}" -f "$fixture/roster-before.sql" -f "$repo/supabase/migrations/20261018230227_member_roster_funded_counts_and_private_source_events.sql" -f "$fixture/roster-after.sql"
 echo 'MEMBER_RECORD_POSTGRES PASS: regression, ranges, attribution, permissions, live signals, replay refusal'
 
 "${psql[@]}" -c 'CREATE DATABASE member_record_concurrency'

@@ -19,6 +19,33 @@ const LEGS = [
   'normal_fold_to_next_hand',
   'fold_watch_to_next_hand',
 ];
+export async function validateLatencyPlayer(admin, pin, validate = validatePlayer) {
+  await validate(admin, pin);
+  const pool = await admin
+    .from('lightning_pool_session')
+    .select('id,anchor_seat_id')
+    .eq('id', pin.poolSessionId)
+    .maybeSingle();
+  if (pool.error || pool.data?.id !== pin.poolSessionId || !pool.data.anchor_seat_id)
+    throw new Error('Playable Pilot Anchor Unavailable');
+  const seat = await admin
+    .from('table_seats')
+    .select('id,user_id,stack,left_at,is_sitting_out,leave_pending')
+    .eq('id', pool.data.anchor_seat_id)
+    .maybeSingle();
+  const row = seat.data;
+  if (
+    seat.error ||
+    row?.id !== pool.data.anchor_seat_id ||
+    row.user_id !== pin.playerId ||
+    row.left_at !== null ||
+    row.is_sitting_out === true ||
+    row.leave_pending === true ||
+    !Number.isFinite(Number(row.stack)) ||
+    !(Number(row.stack) > 0)
+  )
+    throw new Error('Playable Pilot Anchor Unavailable');
+}
 export function latencyAttemptPlan(maxAttempts = 120) {
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 120)
     throw new Error('Bounded Workload Required');
@@ -149,7 +176,7 @@ export async function witnessLatencyWorkload({
   timeoutMs = 240000,
   maxAttempts = 120,
   openSession = openPlayerSession,
-  validate = validatePlayer,
+  validate = validateLatencyPlayer,
 }) {
   const report = {
     status: 'unknown',
@@ -323,8 +350,11 @@ export async function witnessLatencyWorkload({
       );
     }
     report.phase = 'attempt_bound_reached';
-  } catch {
-    report.cause = 'bounded_partial_or_observation_unavailable';
+  } catch (error) {
+    report.cause =
+      error?.message === 'Playable Pilot Anchor Unavailable'
+        ? 'player_anchor_not_playable'
+        : 'bounded_partial_or_observation_unavailable';
   } finally {
     cleaning = true;
     const cleanupBudget = () => Math.max(1, end - Date.now());

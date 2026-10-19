@@ -24,7 +24,7 @@ on:
         options:
           [pause, resume, disable_joins, enable_joins, freeze, unfreeze, rollback_matcher_version]
       signal_id:
-        description: 'One investigated finding ID (1 to 8), stage=review only; select its one target and give the evidence note as reason'
+        description: 'One investigated finding ID (1 to 8 or 50), stage=review only; select its one target and give the evidence note as reason'
         required: false
         type: string
       operation_id:

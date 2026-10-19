@@ -50,10 +50,13 @@ vi.mock('../../src/utils/strictClubIdResolver', () => ({
 vi.mock('../../src/services/ClubRosterService', () => ({
   default: { getRosterPage: f.page, getSummary: f.summary, getMembersWinLoss: f.winLoss },
 }));
-import ClubMembersPage from '../../src/pages/ClubMembersPage';
+import ClubMembersPage, { liveRosterRefreshPolicy } from '../../src/pages/ClubMembersPage';
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // These cases pin read ownership and coalescing, not the live-refresh
+  // interval, so they keep the bare 1200ms debounce. The interval has its own case.
+  liveRosterRefreshPolicy.minIntervalMs = 0;
   f.broadcasts.clear();
   f.aborts = 0;
   f.searches = [];
@@ -91,6 +94,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  liveRosterRefreshPolicy.minIntervalMs = 30_000;
 });
 
 it('lets a healthy current page finish before consuming a coalesced structural invalidation', async () => {
@@ -556,4 +560,66 @@ it('reconciles roster and summary after focus, private rejoin and an idle UTC bo
   });
   expect(f.page).toHaveBeenCalledTimes(initialReads + 3);
   expect(f.summary).toHaveBeenCalledTimes(initialReads + 3);
+});
+
+it('waits the live refresh interval after a roster read instead of re-reading on every live signal', async () => {
+  liveRosterRefreshPolicy.minIntervalMs = 30_000;
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  expect(f.searches).toEqual(['']);
+  const record = f.broadcasts.get('club-roster:00000000-0000-0000-0000-000000000043');
+  expect(record).toBeTruthy();
+  // The private channel joining and a burst of live record signals right after
+  // the page opened do not re-read the roster a second later.
+  act(() => {
+    record!.onSubscriptionStatus?.('SUBSCRIBED');
+    record!.onPayload({});
+    record!.onPayload({});
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1300);
+  });
+  act(() => {
+    record!.onPayload({});
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(20_000);
+  });
+  expect(f.searches).toEqual(['']);
+  expect(f.aborts).toBe(0);
+  // One coalesced reconciliation once the interval since the last read has passed.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(9_000);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  expect(f.searches).toEqual(['', '']);
+  // Continuous signals afterwards are again held for the interval, not ~1.2s.
+  act(() => {
+    record!.onPayload({});
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5_000);
+  });
+  expect(f.searches).toEqual(['', '']);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(25_000);
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  expect(f.searches).toEqual(['', '', '']);
+  expect(f.aborts).toBe(0);
 });

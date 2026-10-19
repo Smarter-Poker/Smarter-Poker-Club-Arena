@@ -116,28 +116,17 @@ Not changed in this phase, on purpose. What is known:
   release, or remove it from `shared_preload_libraries`. Both are Supabase
   project settings, not migrations.
 
-## 6. Fix-first: an accounting qualification that expired at 07:00 UTC today
+## 6. Two CI qualifications that expired at 07:00 UTC today
 
 From 2026-10-19 07:00 UTC, every pull request that ran the accounting job
-failed `original-retirement-boundary` with `exactsevenactualheldsource_refused`.
-Branches seen failing: this one, `fix/rakeback-week-closes-in-los-angeles-*`
-and `feat/horse-diamond-spins-door`. Main last passed at 04:45 UTC. This
-blocked the required Server Engine check for everyone.
+failed. This blocked the required Server Engine check for every branch.
 
-Cause: a test time bomb, not a product defect. The seven discharges the test
-performs are stamped `discharged_at = transaction_timestamp()`, the moment the
-test runs. `actual-b9-current-seven-report-native.sql`, and the replay case in
-`original-seven-discharge/test-discharge.py`, counted discharges only inside the
-literal week `2026-10-12 07:00Z` to `2026-10-19 07:00Z`, and read the closing
-receivable at that literal end. Once real time passed 07:00Z on the 19th, the
-discharges landed after the window: 0 found, 7 expected.
-
-Fix: the report's closing boundary is now the end of the Los Angeles week that
-contains the run, and never earlier than the original `2026-10-19 07:00Z`
-(`native_report_window.closing_at`). The opening boundary and every expected
-amount are unchanged. Before 07:00Z today this evaluates to exactly the old
-literal, so the assertions mean what they meant when the qualification was
-reviewed. Reproduced locally on PostgreSQL 17 before the change, and
-`run-native.py` passed after it. Both files' sha256 pins in
-`original-retirement-boundary/source-binding.json` are updated, and
-`scripts/ci/verify-source-bindings.py` passes.
+- `original-retirement-boundary` (`exactsevenactualheldsource_refused`): its
+  discharges are stamped with the run's own time, and the report counted them
+  only inside a literal week ending `2026-10-19 07:00Z`. This branch carried a
+  fix, but #7432 landed an equivalent fix on main first, so this branch takes
+  main's version of those files unchanged.
+- The archived Spin recognition period (`ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED`)
+  is designed to expire weekly and be renewed from a read-only production
+  capture. This branch renews it for 2026-10-19 to 2026-10-26, following #6734.
+  See `docs/changelog/2026-10-19-first-archived-spin-recognition-period-rollover.md`.

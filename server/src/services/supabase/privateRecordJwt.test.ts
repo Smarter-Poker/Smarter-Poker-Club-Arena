@@ -13,7 +13,9 @@ describe('private record ACL uses the viewer JWT through the owned Data API clie
       expect(
         await privateRecordTopicAllowed(
           'viewer-only-unit-token',
-          `${family}:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222`
+          family === 'member-record'
+            ? 'member-record:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222'
+            : 'club-roster:11111111-1111-1111-1111-111111111111'
         )
       ).toBe(true);
       const [url, options] = fetcher.mock.calls[0] as unknown as [string, RequestInit];

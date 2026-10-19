@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 228531,
-      "sha256": "064f1b895db05f3cb6bebd78ed704e9940518a620395bc86e367667617a1abc8"
+      "bytes": 228856,
+      "sha256": "9c408d152b8a273e07e417491ef4ef2c2f987ff5384fe8c3f7d078561979ad40"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -427,6 +427,21 @@
     "current": {
       "bytes": 228531,
       "sha256": "064f1b895db05f3cb6bebd78ed704e9940518a620395bc86e367667617a1abc8"
+    }
+  },
+  "tournamentWritersLaneInputIdentity20261019": {
+    "reason": "Add the isolated tournament table writer lane qualification (scripts/dev/test-tournament-table-writers-wait-for-their-lane.py) to existing required accounting shard 1. Current workflow input identity only; all financial source, assertions and prior qualification statuses retained. No financial certificate restamp.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 228531,
+          "sha256": "064f1b895db05f3cb6bebd78ed704e9940518a620395bc86e367667617a1abc8"
+        },
+        "current": {
+          "bytes": 228856,
+          "sha256": "9c408d152b8a273e07e417491ef4ef2c2f987ff5384fe8c3f7d078561979ad40"
+        }
+      }
     }
   }
 }

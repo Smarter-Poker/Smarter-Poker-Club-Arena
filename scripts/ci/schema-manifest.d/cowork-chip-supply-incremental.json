@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/the-chip-supply-snapshot-stops-rescanning-the-ledger",
+  "tables": [],
+  "functions": [
+    "fn_snapshot_chip_supply"
+  ],
+  "columns": {}
+}

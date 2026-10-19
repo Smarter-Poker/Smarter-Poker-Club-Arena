@@ -735,48 +735,6 @@ export const LeaderboardService = {
   },
 
   /**
-   * Update player stats after a completed hand.
-   * NOTE (2026-08-19): winnings/losses are now accumulated server-side (DB
-   * trigger + engine contribution RPC). This client-side call remains only
-   * for the profiles.total_hands_played counter and POY tracking.
-   */
-  async updateHandStats(
-    result: HandResultForStats & { clubId?: string; clubName?: string }
-  ): Promise<void> {
-    const { error } = await retryAsync(
-      () =>
-        supabase.rpc('update_player_hand_stats', {
-          p_user_id: result.userId,
-          p_profit: result.profit,
-          p_is_voluntary: result.isVoluntary,
-          p_is_preflop_raise: result.isPreflopRaise,
-          p_went_to_showdown: result.wentToShowdown,
-          p_won_at_showdown: result.wonAtShowdown,
-        }),
-      3
-    );
-
-    if (error) {
-      reportError(error, 'LeaderboardService.updateHandStats_error');
-    }
-
-    // Track for POY batched submission (cash games)
-    if (result.clubId) {
-      try {
-        const { POYService } = await import('./POYService');
-        POYService.trackHandResult({
-          userId: result.userId,
-          clubId: result.clubId,
-          clubName: result.clubName,
-          profit: result.profit,
-        });
-      } catch {
-        // Silent fail for POY tracking
-      }
-    }
-  },
-
-  /**
    * Get user's rank on a specific club leaderboard.
    */
   async getUserRank(

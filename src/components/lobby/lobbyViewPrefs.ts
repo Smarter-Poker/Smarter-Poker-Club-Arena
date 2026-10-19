@@ -299,14 +299,12 @@ export function pushRemoteViewPrefs(
     }
   };
   const previous = pendingViewWrites.get(key);
-  let settled!: Promise<void>;
-  const pending = (previous ? previous.then(write) : write()).then((ok) => {
+  const pending: Promise<void> = (previous ? previous.then(write) : write()).then((ok) => {
     // Only the newest queued choice may declare this account+club synced.
-    if (ok && pendingViewWrites.get(key) === settled) {
+    if (ok && pendingViewWrites.get(key) === pending) {
       markUnsynced(unsyncedViewKey(userId, clubId), false);
     }
   });
-  settled = pending;
   pendingViewWrites.set(key, pending);
   void pending.then(() => {
     if (pendingViewWrites.get(key) === pending) pendingViewWrites.delete(key);

@@ -313,24 +313,8 @@ class TableService {
     if (!result.deferred) {
       masterBus.emit('BALANCE_UPDATED', { source: 'table_leave_cashout', userId });
     }
-    // Activity is presentation history. Failure here cannot negate an already
-    // committed cashout or authorize a second financial mutation.
-    const confirmedAmount = result.deferred ? null : result.chipsReturned;
-    try {
-      const { error } = await supabase.from('table_activity').insert({
-        table_id: tableId,
-        user_id: userId,
-        action: 'leave',
-        chips_cashed_out: confirmedAmount,
-        metadata: {
-          chips_cashed_out: confirmedAmount,
-          cashout_pending: result.deferred === true,
-        },
-      });
-      if (error) reportError(error, 'TableService.leaveActivity');
-    } catch (error) {
-      reportError(error, 'TableService.leaveActivity');
-    }
+    // No table_activity row is written from here (2026-10-19): the browser
+    // holds no INSERT on that table, so the write failed on every leave.
     return result;
   }
 

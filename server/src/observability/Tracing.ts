@@ -3,7 +3,15 @@
  *  TRACING — Lightweight Span / Timer API (per-hand, per-action, per-RPC)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * FOUNDATION MODULE — self-contained, no engine dependencies, NOT yet wired.
+ * FOUNDATION MODULE: self-contained, no engine dependencies of its own.
+ *
+ * WIRED (verified against server/src 2026-10-19). observability/
+ * engineInstruments.ts constructs the engine's one `engineTracer` from this
+ * module, with poker_hand_duration_ms as its duration histogram and an
+ * InMemorySpanExporter attached only when ENGINE_METRICS=on.
+ * ServerTableEngineDealing.dealHand() starts a hand span with startHandSpan()
+ * under the same flag, and the hand-completion paths in
+ * ServerTableEngineSettlement and ServerTableEngineBase end it.
  *
  * Provides a minimal, OpenTelemetry-shaped span model without pulling the full
  * OTel SDK. Spans carry name, timing, attributes, status, events and a parent
@@ -17,10 +25,10 @@
  * `Histogram` (from Metrics.ts) so a single instrumentation call feeds both
  * traces and latency percentiles.
  *
- * ── WIRING (follow-up) ──
- *   - Wrap ServerTableEngine.processAction() body in an action span.
- *   - Wrap HandController hand lifecycle in a hand span (parent of action spans).
- *   - Wrap router.ts dispatch in an rpc span.
+ * ── WIRING STATUS ──
+ *   - Hand span: wired (above).
+ *   - Action span (startActionSpan) and rpc span (startRpcSpan): defined and
+ *     unit-tested here, not yet called by the engine.
  * ────────────────────────
  */
 

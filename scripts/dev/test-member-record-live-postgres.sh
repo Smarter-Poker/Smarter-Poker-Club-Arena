@@ -31,6 +31,11 @@ fi
 if ! grep -q 'Member signal source preimage changed' "$work/dedup-replay.log"; then
   cat "$work/dedup-replay.log"; exit 1
 fi
+"${psql[@]}" -f "$repo/supabase/migrations/20261019152515_private_record_notifies_the_existing_engine_transport.sql" -f "$fixture/notify-after.sql" > "$work/notify-after.log" 2>&1
+cat "$work/notify-after.log"
+if [ "$(grep -c 'Asynchronous notification.*ca_private_record_changes' "$work/notify-after.log")" -ne 5 ] || grep -q '72000000-' "$work/notify-after.log"; then echo 'Committed notification coverage or rollback mismatch'; exit 1; fi
+if "${psql[@]}" -f "$repo/supabase/migrations/20261019152515_private_record_notifies_the_existing_engine_transport.sql" > "$work/notify-replay.log" 2>&1; then echo 'Notify migration replay unexpectedly accepted'; exit 1; fi
+if ! grep -q 'Private record transport preimage changed' "$work/notify-replay.log"; then cat "$work/notify-replay.log"; exit 1; fi
 echo 'MEMBER_RECORD_POSTGRES PASS: regression, ranges, attribution, permissions, live signals, replay refusal'
 
 "${psql[@]}" -c 'CREATE DATABASE member_record_concurrency'

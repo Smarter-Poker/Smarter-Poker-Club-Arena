@@ -424,21 +424,21 @@ BEGIN
 END $backfill$;
 
 -- Named to sort after on_auth_user_created*, so the profile row exists first.
-DROP TRIGGER IF EXISTS on_auth_user_email_confirmed_referral ON auth.users;
+-- No DROP TRIGGER IF EXISTS: the preflight already proved none exists, and a
+-- DROP takes ACCESS EXCLUSIVE on auth.users, which would stall every sign-in
+-- until COMMIT. CREATE TRIGGER takes SHARE ROW EXCLUSIVE, which readers pass.
 CREATE TRIGGER on_auth_user_email_confirmed_referral
     AFTER UPDATE OF email_confirmed_at ON auth.users
     FOR EACH ROW
     WHEN (OLD.email_confirmed_at IS NULL AND NEW.email_confirmed_at IS NOT NULL)
     EXECUTE FUNCTION public.tr_auth_user_confirmed_settles_referral();
 
-DROP TRIGGER IF EXISTS on_auth_user_inserted_confirmed_referral ON auth.users;
 CREATE TRIGGER on_auth_user_inserted_confirmed_referral
     AFTER INSERT ON auth.users
     FOR EACH ROW
     WHEN (NEW.email_confirmed_at IS NOT NULL)
     EXECUTE FUNCTION public.tr_auth_user_confirmed_settles_referral();
 
-DROP TRIGGER IF EXISTS on_referral_recorded_settles_referral ON public.referrals;
 CREATE TRIGGER on_referral_recorded_settles_referral
     AFTER INSERT ON public.referrals
     FOR EACH ROW

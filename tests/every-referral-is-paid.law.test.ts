@@ -65,6 +65,11 @@ describe('every referral is recorded and paid when the new player confirms', () 
     );
   });
 
+  it('never takes ACCESS EXCLUSIVE on auth.users: no DROP TRIGGER outside the rollback notes', () => {
+    const body = sql.slice(sql.indexOf('\nBEGIN;\n'));
+    expect(body).not.toMatch(/^DROP TRIGGER/m);
+  });
+
   it('can never fail a sign-up or an invite claim: each trigger settles in its own savepoint', () => {
     const auth = sql.slice(
       sql.indexOf('tr_auth_user_confirmed_settles_referral()\nRETURNS trigger')

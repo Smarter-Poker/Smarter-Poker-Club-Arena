@@ -8,6 +8,7 @@ import {
   readAdmissionPool,
   entryDoorInPage,
   joinRefusalCode,
+  uiFailureClass,
   ENTRY_DOORS,
   ENTRY_LAYERS,
 } from './lightning-pilot-admission.mjs';
@@ -53,6 +54,8 @@ function fixture({
   // What the settled entry offers; an answered layer reveals the next one.
   doors = [{ door: 'join_lightning', layer: 'clear' }],
   joinRefusal = null,
+  // A layer control whose tap fails, and the error it fails with.
+  layerFailure = null,
 } = {}) {
   const actions = [],
     cleanup = [],
@@ -69,6 +72,7 @@ function fixture({
     waitFor: async () => {},
     getByRole: (role, opts) => ({
       click: async () => {
+        if (layerFailure?.control === opts.name) throw layerFailure.error;
         actions.push(`${name}:${opts.name}`);
         if ((opts.name === 'Enter Poker Arena' || opts.name === 'Not Now') && doors.length > 1)
           doors.shift();
@@ -705,4 +709,61 @@ test('the in-page door reader returns fixed classes and names the layer over the
     delete globalThis.location;
     delete globalThis.document;
   }
+});
+
+test('a layer answer that fails keeps the door, the layer, the step and only a fixed failure class', async () => {
+  // Run 39306906465 stopped inside the entry door in ~10 s with no door evidence.
+  const error = new Error(
+    `locator.click: Timeout 10000ms exceeded.\n<div class="x">${SECRET}</div> intercepts pointer events`
+  );
+  error.name = 'TimeoutError';
+  const f = fixture({
+    doors: [
+      { door: 'join_lightning', layer: 'device_welcome' },
+      { door: 'join_lightning', layer: 'clear' },
+    ],
+    layerFailure: { control: 'I Understand And Agree To These Terms', error },
+  });
+  const r = await witnessAdmission(f.args);
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.phase, 'entry_door');
+  assert.equal(r.join.entry.door, 'join_lightning');
+  assert.equal(r.join.entry.layer, 'device_welcome');
+  assert.equal(r.join.entry.profileGate, 'complete');
+  assert.equal(r.join.entry.answered.device_welcome, 'pending');
+  assert.equal(r.join.entry.answerStep, 'welcome_agree');
+  assert.equal(r.join.entry.failure, 'timeout_intercepted');
+  assert.deepEqual(f.actions, []);
+  assert.equal(r.cleanup, 'local_session_and_browser_closed');
+  assert.doesNotMatch(JSON.stringify(r), new RegExp(SECRET));
+});
+
+test('Playwright failures reduce to fixed classes', () => {
+  const t = (message, name = 'TimeoutError') => Object.assign(new Error(message), { name });
+  assert.equal(
+    uiFailureClass(t('Timeout 5ms exceeded. x intercepts pointer events')),
+    'timeout_intercepted'
+  );
+  assert.equal(
+    uiFailureClass(t('Timeout 5ms exceeded. element is outside of the viewport')),
+    'timeout_outside_viewport'
+  );
+  assert.equal(
+    uiFailureClass(t('Timeout 5ms exceeded. element is not visible')),
+    'timeout_not_visible'
+  );
+  assert.equal(uiFailureClass(t('Timeout 5ms exceeded. waiting for locator')), 'timeout');
+  assert.equal(
+    uiFailureClass(t('strict mode violation: resolved to 2 elements', 'Error')),
+    'strict_mode_violation'
+  );
+  assert.equal(
+    uiFailureClass(
+      t('Execution context was destroyed, most likely because of a navigation', 'Error')
+    ),
+    'navigated'
+  );
+  assert.equal(uiFailureClass(t('Device Welcome Unverified', 'Error')), 'welcome_unverified');
+  assert.equal(uiFailureClass(t(SECRET, 'Error')), 'other');
+  assert.equal(uiFailureClass(null), 'other');
 });

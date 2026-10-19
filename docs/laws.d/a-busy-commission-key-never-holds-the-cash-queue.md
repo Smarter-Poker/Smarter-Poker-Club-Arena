@@ -1,0 +1,3 @@
+# tests/a-busy-commission-key-never-holds-the-cash-queue.law.test.ts
+
+A busy club commission key never holds the cash accrual queue: the cash batch and the refusal retry skip a busy key instead of ending their key walk at it (still taking keys only in club order, above every key held, within one 1 s budget per call), and the retry reads a window of due refusals and runs up to its limit of those whose keys it holds, so a head of sources waiting on one busy key can no longer stop every source behind it (2026-10-19 17:00, migration 20261019171753, proved natively in docs/evidence/cash-queue-head-2026-10-19).

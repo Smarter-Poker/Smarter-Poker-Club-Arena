@@ -21,7 +21,9 @@ groups:
       # Superseded by EngineScrapeDown in engine-freeze-rules.yml; kept here
       # (corrected) so the SLO rules that reference this job still resolve.
       - alert: EngineDown
-        expr: up{job="engine_game_server"} == 0
+        expr: |
+          up{job="engine_game_server"} == 0
+          unless on(job, instance) max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 1m
         labels:
           severity: critical
@@ -29,9 +31,9 @@ groups:
         annotations:
           summary: 'Poker engine unreachable on {{ $labels.instance }}'
           description: |
-            pm2-metrics has been unreachable for >1 minute. This means either
-            the pm2 process is dead, the node is down, or the metrics module
-            crashed. Player-facing impact: active tables cannot tick.
+            The engine /metrics scrape has failed for >1 minute outside an
+            announced maintenance break. Check process health and the scrape
+            path before concluding that tables have stopped dealing.
           runbook: 'docs/runbooks/engine-down.md'
 
       - alert: EngineHandsPerSecDropped

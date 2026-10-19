@@ -209,13 +209,13 @@ const history = (id: string, two: number, three: number) => [
   ...Array.from({ length: two }, () => ({ table_id: id, rit_boards: [[]] })),
   ...Array.from({ length: three }, () => ({ table_id: id, rit_boards: [[], []] })),
 ];
-it('requires both recent run counts on the same eligible cash table', () => {
-  expect(() =>
+it('uses one-format history to rank an eligible subject without inventing coverage', () => {
+  expect(
     selectNaturalMultiRunSubject(
       [subject('two'), subject('three')],
-      [...history('two', 20, 0), ...history('three', 0, 20)]
-    )
-  ).toThrow(/both two-run and three-run/);
+      [...history('two', 20, 0), ...history('three', 0, 4)]
+    ).id
+  ).toBe('two');
   expect(
     selectNaturalMultiRunSubject(
       [subject('two'), subject('both')],
@@ -223,18 +223,37 @@ it('requires both recent run counts on the same eligible cash table', () => {
     ).id
   ).toBe('both');
 });
-it('refuses missing history, malformed boards and ineligible or undiscovered subjects', () => {
+it('ranks eligible tables by population and id when recent history is missing or unusable', () => {
+  const tables = [subject('z', 5), subject('a', 5), subject('smaller', 4)];
   for (const rows of [[], [{ table_id: 'cash', rit_boards: null }], history('other', 3, 3)]) {
-    expect(() => selectNaturalMultiRunSubject([subject('cash')], rows as any)).toThrow(
-      /both two-run and three-run/
+    expect(selectNaturalMultiRunSubject(tables, rows as any).id).toBe('a');
+  }
+});
+it('never admits an ineligible or undiscovered table even when it has the best history', () => {
+  const ineligible = { ...subject('tournament', 9), game_type: 'tournament' };
+  expect(
+    selectNaturalMultiRunSubject(
+      [ineligible, subject('cash')],
+      [...history('tournament', 20, 20), ...history('other', 30, 30)]
+    ).id
+  ).toBe('cash');
+  expect(() => selectNaturalMultiRunSubject([ineligible], history('tournament', 3, 3))).toThrow(
+    /one eligible cash table/
+  );
+  expect(() => selectNaturalMultiRunSubject([], history('other', 3, 3))).toThrow(
+    /one eligible cash table/
+  );
+});
+it('does not choose a fixed mandatory run count for a proof that needs both formats', () => {
+  for (const run_it_mode of ['mandatory_twice', 'mandatory_three', 'MANDATORY_THREE']) {
+    const fixed = { ...subject('fixed', 9), run_it_mode };
+    expect(
+      selectNaturalMultiRunSubject([fixed, subject('choice')], history('fixed', 20, 20)).id
+    ).toBe('choice');
+    expect(() => selectNaturalMultiRunSubject([fixed], history('fixed', 20, 20))).toThrow(
+      /one eligible cash table/
     );
   }
-  expect(() =>
-    selectNaturalMultiRunSubject(
-      [{ ...subject('cash'), game_type: 'tournament' }],
-      history('cash', 3, 3)
-    )
-  ).toThrow(/both two-run and three-run/);
 });
 it('ranks balanced history before total, population and stable table id', () => {
   const candidates = [subject('unbalanced', 9), subject('balanced', 2)];

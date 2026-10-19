@@ -7,6 +7,10 @@
 
 import React, { useState, useEffect } from 'react';
 import styles from './AchievementBadge.module.css';
+import { mediaUrl } from '../../utils/mediaBase';
+
+/** The platform's diamond mark (the same art the wallet and menu use). */
+const DIAMOND_ICON = mediaUrl('images/diamond-icon.webp');
 
 interface AchievementBadgeProps {
   icon: string;
@@ -16,6 +20,8 @@ interface AchievementBadgeProps {
   unlocked?: boolean;
   rarity?: 'common' | 'rare' | 'epic' | 'legendary';
   unlockedAt?: string;
+  /** Diamonds the server pays once on the unlock (2026-10-19). */
+  diamondReward?: number;
   onClick?: () => void;
 }
 
@@ -34,6 +40,7 @@ export default function AchievementBadge({
   unlocked = false,
   rarity = 'common',
   unlockedAt,
+  diamondReward = 0,
   onClick,
 }: AchievementBadgeProps) {
   const [mounted, setMounted] = useState(false);
@@ -92,6 +99,12 @@ export default function AchievementBadge({
           <span className={styles.rarityBadge}>{rarity}</span>
         </div>
         <p className={styles.description}>{description}</p>
+        {diamondReward > 0 && (
+          <span className={styles.reward}>
+            <img className={styles.rewardIcon} src={DIAMOND_ICON} alt="" aria-hidden="true" />
+            {diamondReward.toLocaleString()} Diamonds
+          </span>
+        )}
         {unlocked && unlockedAt && (
           <span className={styles.unlockedDate}>Unlocked {formatDate(unlockedAt)}</span>
         )}

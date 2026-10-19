@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
- * The unassigned agent row in Club Data is dimmed with `opacity` on the whole
- * row. Opacity scales every colour inside it, so the dimmest text in the row
+ * The unassigned agent row in Club Data carries `opacity` on the whole row
+ * (#7468 set it to 1). Opacity scales every colour inside it, so the dimmest text in the row
  * sets the floor. At 0.7 the role and count text (#9aa5b3 on black) measured
  * 4.38:1 and the cost (#ffd700 on its gold chip) 4.36:1, and the production
  * axe check in tests/e2e/club-data-deep.spec.ts failed whenever a club had
@@ -42,9 +42,9 @@ const ratio = (fg: number[], bg: number[], alpha: number) => {
 describe('the muted unassigned rake row keeps WCAG AA contrast', () => {
   const alpha = Number(value('.rowMuted', 'opacity'));
 
-  it('dims, but not below the floor its dimmest text allows', () => {
+  it('never dims below the floor its dimmest text allows', () => {
     expect(alpha).toBeGreaterThan(0);
-    expect(alpha).toBeLessThan(1);
+    expect(alpha).toBeLessThanOrEqual(1);
     for (const selector of ['.rowEm', '.rowCount']) {
       expect(ratio(hex(value(selector, 'color')), [0, 0, 0], alpha)).toBeGreaterThanOrEqual(4.5);
     }

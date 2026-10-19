@@ -484,14 +484,14 @@
     'fee fee network';
 }
 
-/* The unassigned row is dimmed, never below WCAG AA. Opacity scales every
-   colour in the row, so it is bounded by the dimmest pair inside it: the
-   #9aa5b3 role and count text on black, and the #ffd700 cost on its gold
-   chip. At 0.7 they measured 4.38:1 and 4.36:1 (post-deploy job 118153814498,
-   2026-10-19, axe color-contrast on Club Data); at 0.85 they are 6.17:1 and
-   5.44:1. tests/unit/rakeSnapshotMutedRowContrast.test.ts pins the bound. */
+/* The unassigned row never drops below WCAG AA. Opacity scales every colour
+   in the row, so it is bounded by the dimmest pair inside it: the #9aa5b3
+   role and count text on black, and the #ffd700 cost on its gold chip. At
+   0.7 they measured 4.38:1 and 4.36:1 (post-deploy job 118153814498,
+   2026-10-19, axe color-contrast on Club Data); #7468 restored full opacity.
+   tests/unit/rakeSnapshotMutedRowContrast.test.ts pins the bound. */
 .rowMuted {
-  opacity: 0.85;
+  opacity: 1;
 }
 
 .rowName {

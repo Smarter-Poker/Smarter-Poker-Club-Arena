@@ -17,6 +17,20 @@ if "${psql[@]}" -f "$migration" > "$work/replay.log" 2>&1; then echo 'Replay une
 "${psql[@]}" -f "$fixture/global-before.sql" -f "$repo/supabase/migrations/20261018195412_member_record_all_field_source_events.sql" -f "$fixture/global-after.sql"
 "${psql[@]}" -f "$fixture/roster-before.sql" -f "$repo/supabase/migrations/20261018230227_member_roster_funded_counts_and_private_source_events.sql" -f "$fixture/roster-after.sql"
 "${psql[@]}" -f "$fixture/mtt-money-before.sql" -f "$repo/supabase/migrations/20261019095423_member_record_mtt_reads_tournament_money.sql" -f "$fixture/mtt-money-after.sql"
+"${psql[@]}" -f "$fixture/dedup-before.sql"
+if "${psql[@]}" -f "$fixture/dedup-after.sql" > "$work/dedup-before-failure.log" 2>&1; then
+  echo 'Dedup regression unexpectedly passed before the fix'; exit 1
+fi
+if ! grep -q 'Member topic transaction dedup failed' "$work/dedup-before-failure.log"; then
+  cat "$work/dedup-before-failure.log"; exit 1
+fi
+"${psql[@]}" -f "$repo/supabase/migrations/20261019151807_member_record_private_signals_deduplicate_per_transaction.sql" -f "$fixture/dedup-after.sql"
+if "${psql[@]}" -f "$repo/supabase/migrations/20261019151807_member_record_private_signals_deduplicate_per_transaction.sql" > "$work/dedup-replay.log" 2>&1; then
+  echo 'Dedup migration replay unexpectedly accepted'; exit 1
+fi
+if ! grep -q 'Member signal source preimage changed' "$work/dedup-replay.log"; then
+  cat "$work/dedup-replay.log"; exit 1
+fi
 echo 'MEMBER_RECORD_POSTGRES PASS: regression, ranges, attribution, permissions, live signals, replay refusal'
 
 "${psql[@]}" -c 'CREATE DATABASE member_record_concurrency'

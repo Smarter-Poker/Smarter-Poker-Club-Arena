@@ -161,3 +161,9 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # The real parameterized FOR successor remains enforced, alongside the original
 # indexed-owner qualification above. It may not replace or skip that history.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-statement-indexed-quality-postgres.py"), "--followup-candidate", str(Path(__file__).resolve().parents[2] / "supabase/migrations/20261018185054_weekly_statement_quality_reads_source_and_batch_keysets_in_b.sql"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("weekly-statement-bulk-quality.json"))], text=True))
+
+# Revenue statements distinguish terminal payouts from successive funding transfers.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-revenue-digest-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
+
+# The satellite owner proof keeps all rows but seeks its exact tournament/player.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-satellite-funding-user-index-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("satellite-funding-user-index.json"))], text=True))

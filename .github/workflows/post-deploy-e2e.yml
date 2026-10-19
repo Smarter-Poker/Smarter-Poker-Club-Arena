@@ -966,6 +966,26 @@ jobs:
       # they land on /auth or find no live fixture. `always()` so this reports
       # on a red run too - a run can be BOTH failed and dishonest, and the
       # second fact is the one nobody was being told.
+      # Keep this small, scoped receipt even when all browser assertions pass.
+      - name: Name every skipped mobile check and its exact reason
+        if: always() && steps.live.outputs.ready == 'true'
+        run: >-
+          node scripts/ci/report-mobile-e2e-skips.mjs
+          e2e-report/mobile-skips.json
+          e2e-report/first-run-iphone.json
+          e2e-report/cashier.json
+          e2e-report/lobby.json
+          e2e-report/sweep.json
+
+      - name: Retain named mobile skips on every outcome
+        if: always() && steps.live.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-mobile-skips
+          path: e2e-report/mobile-skips.json
+          if-no-files-found: error
+          retention-days: 14
+
       # NAME THE FAILED TEST WHERE THE API CAN READ IT (2026-10-04). A red run
       # used to say only "Process completed with exit code 1" to anyone reading
       # check-run annotations; the failing test and its error lived in the job

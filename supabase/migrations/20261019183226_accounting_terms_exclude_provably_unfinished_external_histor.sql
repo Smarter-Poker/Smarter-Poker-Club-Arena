@@ -1,3 +1,4 @@
+-- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_accounting_terms_at(text,text,timestamptz)'::regprocedure))='3752cf9b57688dab0bf32acd2b43e3a3' AND md5(pg_get_functiondef('public.fn_accounting_agent_terms_at(uuid,uuid,timestamptz)'::regprocedure))='727b249d33b322b1fc85b4c3437e37de' AND EXISTS(SELECT 1 FROM pg_index i WHERE i.indexrelid=to_regclass('public.accounting_agreement_history_transaction_time') AND i.indisvalid AND i.indisready AND i.indislive))
 -- An observed row inside an external multi-row transaction was never a
 -- separately committed agreement. A later observed row in that same transaction
 -- proves it could not have committed at the earning instant. Keep the preceding

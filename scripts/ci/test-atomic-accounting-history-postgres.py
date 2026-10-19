@@ -57,7 +57,7 @@ try:
  sql("SELECT fn_accounting_terms_at('agents','x',now()+interval '1 day')",'invalid_accounting_terms_request')
  assert sql("SELECT has_function_privilege('authenticated','fn_accounting_terms_at(text,text,timestamptz)','EXECUTE')")=='f'
  sql(candidate,'atomic_accounting_history_preimage_changed')
- print(json.dumps({'qualification':'passed','actual_historical_earning_contract':True,'before_intermediate_hierarchy_failure':True,'after_exact_tiers':[.02,.03],'residual':.01,'history_unchanged':True,'completed_suspension_preserved':True,'new_identity_excluded':True,'own_transaction_preserved':True,'unknown_and_invalid_requests_refused':True,'private_acl':True,'replay_refused':True,'production_payment':False}))
+ print(json.dumps({'qualification':'passed','actual_historical_earning_contract':True,'before_intermediate_hierarchy_failure':True,'after_exact_tiers':[.02,.03],'residual':.01,'history_unchanged':True,'completed_suspension_preserved':True,'new_identity_excluded':True,'own_transaction_preserved':True,'unknown_and_invalid_requests_refused':True,'private_acl':True,'replay_refused':True,'production_payment':False,'postimages':{p['signature']:sql("SELECT md5(pg_get_functiondef('"+p['signature']+"'::regprocedure))") for p in preimages if not p['signature'].startswith('fn_accounting_earning_contract')}}))
 finally:
  if started:run([a.pg_bin/'pg_ctl','-D',data,'-m','immediate','-w','stop'])
  shutil.rmtree(base)

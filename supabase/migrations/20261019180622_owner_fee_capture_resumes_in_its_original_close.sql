@@ -837,4 +837,9 @@ BEGIN
 END;
 $function$
 ;
+-- CREATE OR REPLACE preserves these measured private/operator ACLs.
+REVOKE ALL ON FUNCTION public.fn_accounting_tournament_fee_net_plan(uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_accounting_tournament_week_quality(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_tournament_rake(uuid,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_settle_tournament_rake(uuid,text) TO service_role;
 COMMIT;

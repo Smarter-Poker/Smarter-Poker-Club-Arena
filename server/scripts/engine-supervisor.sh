@@ -186,6 +186,7 @@ print(instance)
 
 prove_exact_desired_recovery() {
   local local_instance public_instance state image_id release_label autoheal_label role_label restart_policy
+  local poll_remaining poll_pause
   while recovery_remaining >/dev/null; do
     state="$(bounded_recovery_command 5 docker container inspect \
       -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
@@ -217,7 +218,20 @@ prove_exact_desired_recovery() {
         fi
       fi
     fi
-    bounded_recovery_command 5 sleep 5 || break
+    # THE POLL IS A SLEEP, NOT A RACE AGAINST ITS OWN TIMEOUT (2026-10-19).
+    # This was a five-second sleep inside a five-second bounded command, i.e.
+    # `timeout 5s sleep 5`. timeout's clock starts before sleep's does, so it
+    # fires first and returns 124 every time (measured on engine-01: 3 of 3).
+    # The loop therefore gave up after ONE probe: a desired engine that was
+    # not healthy at the first look was declared failed five seconds after it
+    # started (11:57:07 -> 11:57:12 and 12:57:57 -> 12:58:02 UTC on
+    # 2026-10-19), while it went live a second or a minute later. The pause
+    # is bounded by the deadline arithmetic itself, so it needs no timeout.
+    poll_remaining="$(recovery_remaining)" || break
+    poll_pause=$((poll_remaining - 1))
+    [ "$poll_pause" -le 5 ] || poll_pause=5
+    [ "$poll_pause" -gt 0 ] || break
+    sleep "$poll_pause"
   done
   log "FATAL: exact desired release $DESIRED_SHA did not become live and exact locally and publicly before the recovery deadline"
   return 1

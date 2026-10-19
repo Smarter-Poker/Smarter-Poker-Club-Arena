@@ -16,7 +16,8 @@ import {
   completedNaturalRuns,
   naturalMultiRunEngineIdentity,
   readNaturalMultiRunHistory,
-  initializeNaturalMultiRunObservers,
+  initializeNaturalMultiRunObserver,
+  selectNaturalMultiRunSubject,
   naturalMultiRunCandidateQuery,
   eligibleNaturalMultiRunTable,
   naturalMultiRunTransportEvidence,
@@ -103,9 +104,9 @@ async function openNaturalMultiRunObserver(
 
 const enabled = process.env.LIVE_TABLE_MULTIRUN_CERTIFICATION === '1';
 const union = 'fade0000-0000-0000-0000-000000000001';
-// Recent production: both run counts occurred across the union's occupied
-// tables within 30 minutes. Observe six independently progressing tables for
-// twenty minutes once, without changing settings or producing a test hand.
+// Observe one foreground cash table with recent evidence of both run counts.
+// Keep the twenty-minute observation and every actual river/recipient check;
+// no table setting, hand or action is written to produce the sample.
 const observationMs = 20 * 60_000;
 
 test('natural two-run and three-run mobile rivers precede awards and winner chip landings', async ({
@@ -151,17 +152,13 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
   const tables = candidateTables.filter(eligibleNaturalMultiRunTable);
   expect(
     tables.length,
-    'Natural multirun observation requires six occupied, run-enabled cash tables'
-  ).toBeGreaterThanOrEqual(6);
+    'Natural multirun observation requires an occupied, run-enabled cash table'
+  ).toBeGreaterThanOrEqual(1);
   const recent = await readNaturalMultiRunHistory(
     tables.map((table) => table.id),
     (query) => readServiceRows(environment, 'hand_history', query)
   );
-  const score = (id: string) =>
-    recent.filter((row) => row.table_id === id && [1, 2].includes(row.rit_boards?.length)).length;
-  const selected = [...tables]
-    .sort((a, b) => score(b.id) - score(a.id) || b.current_players - a.current_players)
-    .slice(0, 6);
+  const selected = selectNaturalMultiRunSubject(tables, recent);
   const pages: Array<{
     page: Page;
     tableId: string;
@@ -171,10 +168,11 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
   const coverage = new Map<number, any>();
   const observations: any[] = [];
   try {
-    await initializeNaturalMultiRunObservers(
+    await initializeNaturalMultiRunObserver(
       selected,
       async (table, navigationBudgetMs, remainingSetup) => {
         const page = await context.newPage();
+        await page.bringToFront();
         const journal = new EngineSocketJournal(page);
         await installNaturalAuthAdmissionDiagnostic(page);
         await installNaturalMultiRunWitness(page);

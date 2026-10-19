@@ -425,13 +425,41 @@ export interface HorsePhase11AuthoritySelection {
  * natural completion is read; a renewal is the next generation. Every earlier
  * generation stays committed with its evidence (retained for refusal in
  * HorsePreviousSelections.test-support.ts as RETIRED_2026_10_17_*).
+ *
+ * October 19: PLO8 generation 4. The locked P11 PLO8 matrix requalified the
+ * exact VPIP-floor source da94e437 (run 39132887881, every shard complete):
+ * cash after rake against the horse population +7.82 [+6.82, +8.82] bb/100
+ * over 1,116,288 pairs, qualified with no reasons, at policy digest
+ * 659bbb47.... The prospective natural completion window on release 6e3ab4f3
+ * (same digest; 2026-10-18 23:02 to 23:50Z under
+ * docs/evidence/phase13/declaration-completion-vpip-2026-10-18-addendum-1.txt)
+ * completed every eligible decision on every street (river 666 of 666, lowest
+ * Wilson bound 0.9901). Cash only. PLO5 and PLO6 stay null until their own
+ * matrices finish.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
 > = Object.freeze({
   plo5: null,
   plo6: null,
-  plo8: null,
+  plo8: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo8',
+    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+    packVersion: 'plo8-split-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
+    domain: 'plo8-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/da94e437/phase11-qualification-2026-10-19-plo8.json',
+    qualificationSha256: '4d7530d0ee7438d2f114cd031c99f9afe1119e00478c3c4d793e2a5d2fc7b502',
+    completionPath: 'docs/evidence/phase11/da94e437/phase11-completion-2026-10-18-plo8.json',
+    completionSha256: 'dfb058688e44a25710420d07ab706599794e3ee3b06ff10e2ce3efcf407fa1c9',
+    approvalGeneration: 4,
+    issuedAt: '2026-10-19T05:15:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
 });
 
 const HEX40 = /^[0-9a-f]{40}$/;

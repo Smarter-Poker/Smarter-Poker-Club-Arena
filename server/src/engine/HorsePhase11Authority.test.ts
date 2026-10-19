@@ -113,19 +113,49 @@ function expectedKey(identity: Record<string, unknown>): string {
 describe('P11.3 the VPIP floor call-down (2026-10-17) requires a fresh qualification of every pack', () => {
   const selected = HORSE_PHASE11_VARIANTS.filter((v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null);
 
-  it('nothing is selected; PLO8 and PLO5 generation 3 (d9190c9e) are refused by policy digest, and every retained generation 1 and 2 by contract', () => {
+  it('only PLO8 generation 4 (da94e437) is selected; PLO8 and PLO5 generation 3 (d9190c9e) are refused by policy digest, and every retained generation 1 and 2 by contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     expect(Object.keys(RETIRED_2026_10_17_PHASE11_SELECTIONS).sort()).toEqual(['plo5', 'plo8']);
+    // 2026-10-19: PLO8 generation 4 requalified the VPIP-floor source and is
+    // admitted from its shipped evidence; PLO5 and PLO6 stay unselected.
+    const live = PHASE11_PROTECTED_RELEASE_SELECTIONS.plo8!;
+    expect(live).toMatchObject({
+      schema: 'horse-qualified-authority-selection-v1',
+      phase: 'phase11',
+      variant: 'plo8',
+      sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+      packVersion: OMAHA_VARIANT_PACKS.plo8.version,
+      contractDigest: PHASE11_RUNNING_CONTRACT_DIGEST,
+      approvalGeneration: 4,
+      expiresAt: null,
+      withdrawn: null,
+    });
+    expect(live.approvalGeneration).toBeGreaterThan(
+      RETIRED_2026_10_17_PHASE11_SELECTIONS.plo8!.approvalGeneration
+    );
+    const liveRelease = admitHorsePhase11ReleaseAuthority('plo8');
+    expect(liveRelease.status).toBe('admitted');
+    expect(selectedHorsePhase11Authority('plo8', liveRelease)).not.toBeNull();
+    for (const [path, digest] of [
+      [live.qualificationPath, live.qualificationSha256],
+      [live.completionPath!, live.completionSha256!],
+    ])
+      for (const root of ['../../../', '../../release-evidence/']) {
+        const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
+        expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
+      }
     for (const variant of HORSE_PHASE11_VARIANTS) {
-      expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
-      expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
-        status: 'refused',
-        reason: 'unselected',
-        transient: false,
-      });
+      if (variant !== 'plo8') {
+        expect(PHASE11_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
+        expect(admitHorsePhase11ReleaseAuthority(variant), variant).toEqual({
+          status: 'refused',
+          reason: 'unselected',
+          transient: false,
+        });
+      }
       const generation3 = RETIRED_2026_10_17_PHASE11_SELECTIONS[variant];
       if (generation3) {
         expect(Object.isFrozen(generation3)).toBe(true);

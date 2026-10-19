@@ -32,6 +32,12 @@
 import { supabase } from './supabase.js';
 import { recordObservationalHorseStudy } from './HorseTunerObservationalAudit.js';
 import {
+  admittedDialMoves,
+  applyLeagueGatedNudge,
+  leagueGatedApplyEnabled,
+  readAdmittedTunerClasses,
+} from './HorseTunerLeagueGate.js';
+import {
   completeHorseTunerStudy,
   prepareHorseTunerStudy,
   readRecordedHorseTunes,
@@ -1067,6 +1073,16 @@ export async function runSelfTune(
     const cohort = await prepareHorseTunerStudy(date, stats.size, eligibleHorses);
     if (!shouldContinue()) return { studied: stats.size, tuned: 0 };
     if (cohort.status !== 'prepared') throw new Error('Tuner study roster is unconfirmed');
+    // LEAGUE-GATED NUDGES (Dan 2026-10-19): off unless the engine sets
+    // HORSE_TUNER_LEAGUE_GATED_APPLY=1, and then only the dial directions the
+    // league has proven. Unknown admission (null) applies nothing.
+    const admitted = leagueGatedApplyEnabled() ? await readAdmittedTunerClasses() : null;
+    if (leagueGatedApplyEnabled())
+      console.log(
+        `[HorseSelfTuner] league-gated apply on; admitted classes: ${
+          admitted === null ? 'UNKNOWN (applying none)' : [...admitted].join(', ') || 'none'
+        }`
+      );
     for (const horseId of cohort.horseIds) {
       if (!shouldContinue()) return { studied: stats.size, tuned };
       // This horse already committed its one daily update. Never recompute a
@@ -1223,6 +1239,40 @@ export async function runSelfTune(
             `atomic tuner write ${written.status}${written.status === 'unavailable' ? ': ' + written.reason : ''}`
           );
         if (written.changed && !written.replayed) tuned++;
+        const expectedProfile = expectedProfiles.get(horseId);
+        if (
+          admitted &&
+          admitted.size > 0 &&
+          expectedProfile &&
+          typeof expectedProfile === 'object' &&
+          !Array.isArray(expectedProfile)
+        ) {
+          const moves = admittedDialMoves(
+            {
+              tightness: prevMods.tightness ?? 1,
+              aggression: prevMods.aggression ?? 1,
+              bluffFreq: prevMods.bluffFreq ?? 1,
+            },
+            { tightness: mods.tightness, aggression: mods.aggression, bluffFreq: mods.bluffFreq },
+            admitted
+          );
+          if (moves) {
+            const nudged = await applyLeagueGatedNudge({
+              horseId,
+              runDate: date,
+              expectedProfile: expectedProfile as Record<string, unknown>,
+              mods: moves.mods,
+            });
+            if (nudged.status === 'applied' && !nudged.replayed) tuned++;
+            else if (nudged.status !== 'applied')
+              reportError(
+                new Error(
+                  `league-gated nudge ${nudged.status}${nudged.status === 'unavailable' ? ': ' + nudged.reason : ''}`
+                ),
+                'HorseSelfTuner.league_nudge'
+              );
+          }
+        }
       } catch (err) {
         unfinished++;
         reportError(err, 'HorseSelfTuner.write');

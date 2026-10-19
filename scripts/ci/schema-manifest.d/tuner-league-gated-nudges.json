@@ -1,0 +1,16 @@
+{
+  "_owner": "claude/tuner-league-gated-nudges-20261019",
+  "tables": ["horse_tuner_league_nudges"],
+  "columns": {
+    "horse_tuner_league_nudges": [
+      "horse_id",
+      "run_date",
+      "request_hash",
+      "mods_before",
+      "mods_after",
+      "admitted_classes",
+      "created_at"
+    ]
+  },
+  "functions": ["fn_horse_tuner_admitted_classes", "fn_apply_league_gated_horse_tuner_nudge"]
+}

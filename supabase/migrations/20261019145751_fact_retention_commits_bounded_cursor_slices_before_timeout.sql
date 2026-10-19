@@ -50,4 +50,6 @@ BEGIN
  RETURN jsonb_build_object('deleted',0,'compacted',n,'cutoff',now()-make_interval(days=>COALESCE(days,8)),
   'retention_days',days,'scanned',scanned,'more',NOT exhausted);
 END $function$;
+REVOKE ALL ON FUNCTION public.fn_prune_ca_hand_facts(integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_prune_ca_hand_facts(integer) TO service_role;
 COMMIT;

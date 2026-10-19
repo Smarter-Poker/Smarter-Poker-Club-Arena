@@ -1,0 +1,5 @@
+# Explicit billing endpoint dependency observation
+
+Before removing the production read replica, verify whether the running engine uses its hostname or the replica load balancer. The existing Production Integrity Audit gains one explicitly selected repository-dispatch job. Its fixed reader selects only SUPABASE_URL, DATABASE_URL and ENGINE_PG_LISTEN_URL in the immutable running container and returns configured status, hostname and port. It never exports credentials, paths, query strings, a complete environment or environment files.
+
+The reader requires an exact release/image selection, pinned SSH identity and matching container/public/host identities before and after. It refuses missing transport, malformed URLs, process changes and unexpected response fields. Unset fields remain explicit unknown configuration. The scheduled audit cannot select this job. It has no database, release, restart or billing mutation authority. Focused local real-Node parsing and refusal tests also run before the explicit hosted read.

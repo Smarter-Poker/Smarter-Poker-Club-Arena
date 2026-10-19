@@ -68,6 +68,7 @@ import {
   boardClearMs,
 } from '../config/handCompletionSpec.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
+import { lightningBustIdentity } from '../lightning/LightningBustIdentity.js';
 import { nextHandGap } from './nextHandGapRecorder.js';
 import { jitteredBackoffMs } from '../services/horseEntryRefusalBackoff.js';
 import { currentTournamentDataAuthority } from '../services/supabase/dataActorContext.js';
@@ -4146,15 +4147,64 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     }
   }
 
-  protected async recoverBustedSeatedHorses(): Promise<void> {
-    if (this.tableInfo?.arena?.asset === 'diamonds') return;
-    if (isMaintenanceFrozen()) return;
+  /**
+   * The parked anchor's half of the idle recovery below (2026-10-19). See
+   * `recoverBustedHorsesWhileHalted` on the base for why a halted Cluster
+   * table owes it. The decision, the stop-loss, the amount, the treasury door
+   * and the exit door are all the shared routine's; the only thing a parked
+   * anchor supplies is the bust's identity, because its own `handCount` never
+   * moves (LightningBustIdentity). Step-budgeted exactly like the idle call,
+   * so one hung read cannot stall a parked pass.
+   */
+  protected override async recoverBustedHorsesWhileHalted(): Promise<void> {
+    if (this.isTournamentTable() || isMaintenanceFrozen()) return;
+    const clusterId = this.tableInfo?.cluster_id ? String(this.tableInfo.cluster_id) : '';
+    let changed = false;
+    try {
+      changed = await this.withStepBudget(
+        'recover_busted_horses_halted',
+        ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
+        this.recoverBustedSeatedHorses({
+          bustHandNumber: async (horse) => {
+            if (!clusterId) return this.handCount;
+            const identity = await lightningBustIdentity(clusterId, horse.user_id);
+            if (identity.status === 'lightning') return identity.handNumber;
+            if (identity.status === 'none') return this.handCount;
+            return null;
+          },
+        })
+      );
+    } catch (err) {
+      // A budget overrun or a thrown read: the table stays parked and the
+      // next pass asks again. Never a reason to leave the halt gate.
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.halted_horse_bust_recovery');
+      return;
+    }
+    // A rebought anchor rejoins the pool and a released one leaves it: the
+    // matcher is told now, not on its next timer.
+    if (changed) this.wakeClusterGame('horse_bust_recovered');
+  }
+
+  protected async recoverBustedSeatedHorses(
+    opts: {
+      /**
+       * The hand that busted this horse, keying its one treasury funding
+       * operation. Default: this table's `handCount`, right wherever this
+       * table deals. Null means the identity could not be read: nothing is
+       * funded or released for that horse on this pass.
+       */
+      bustHandNumber?: (horse: SeatedPlayer) => Promise<number | null>;
+    } = {}
+  ): Promise<boolean> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return false;
+    if (isMaintenanceFrozen()) return false;
     const bustHorses = this.seatedPlayers.filter((p) => p.is_horse && p.stack <= 0);
-    if (bustHorses.length === 0) return;
+    if (bustHorses.length === 0) return false;
+    let changed = false;
 
     const now = Date.now();
     for (const horse of bustHorses) {
-      if (isMaintenanceFrozen()) return;
+      if (isMaintenanceFrozen()) return changed;
       const lastAttempt = this.bustRecoveryLastAttempt.get(horse.user_id) || 0;
       if (now - lastAttempt < 30000) continue;
       this.bustRecoveryLastAttempt.set(horse.user_id, now);
@@ -4172,6 +4222,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            a human's does. Timing is part of the treatment (Dan 2026-08-27). */
         const released = await this.releaseBustedSeat(horse, 'busted_stop_loss');
         if (!released) continue;
+        changed = true;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
@@ -4192,21 +4243,32 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
         rebuysTaken: currentRebuys,
       });
-      if (isMaintenanceFrozen()) return;
-      const funding =
+      if (isMaintenanceFrozen()) return changed;
+      // One bust is one funding key. An identity that could not be read funds
+      // nothing and releases nothing; the next pass (30s throttle) asks again.
+      const bustHand =
         rebuyAmount > 0
+          ? opts.bustHandNumber
+            ? await opts.bustHandNumber(horse)
+            : this.handCount
+          : null;
+      if (isMaintenanceFrozen()) return changed;
+      if (rebuyAmount > 0 && bustHand === null) continue;
+      const funding =
+        rebuyAmount > 0 && bustHand !== null
           ? await autoRebuyHorse(
               this.tableId,
               horse.user_id,
               rebuyAmount,
               this.tableInfo?.club_id || '',
-              this.handCount
+              bustHand
             )
           : { status: 'declined' as const };
       // An unreadable response may follow a committed transfer. Preserve the seat.
-      if (funding.status === 'unknown') return;
+      if (funding.status === 'unknown') return changed;
       if (funding.status === 'funded') {
         horse.stack = funding.stack;
+        changed = true;
         this.horseRebuys.set(horse.user_id, currentRebuys + 1);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
@@ -4215,6 +4277,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       } else {
         const released = await this.releaseBustedSeat(horse, 'busted_unfunded');
         if (!released) continue;
+        changed = true;
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
@@ -4222,5 +4285,6 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       }
     }
+    return changed;
   }
 }

@@ -303,7 +303,6 @@ export default function ClubDashboard() {
     getLocalStorage('ca_dashboard_sort', 'profit')
   );
   const [visiblePlayers, setVisiblePlayers] = useState<Set<string>>(new Set());
-  const [isRecalculating, setIsRecalculating] = useState(false);
   // null until the membership read answers. 'player' was the placeholder
   // before, which is also a real role, so "not known yet" and "a plain
   // member" were the same value.
@@ -499,31 +498,6 @@ export default function ClubDashboard() {
       unsubs.forEach((unsub) => unsub());
     };
   }, [clubId, resolvedClubId]);
-
-  const handleRecalculateLevel = async () => {
-    if (!resolvedClubId || isRecalculating) return;
-    const actionScope = scopeRef.current;
-    const isCurrent = () => mountedRef.current && actionScope === scopeRef.current;
-    setIsRecalculating(true);
-    try {
-      const { data: resData, error } = await supabase.rpc('recompute_club_levels', {
-        p_club_id: resolvedClubId,
-      });
-      if (!isCurrent()) return;
-      if (error) throw error;
-      if (resData && resData.success === false) {
-        throw new Error(resData.error || 'Failed to recalculate level.');
-      }
-      toast.success('Club Level Recalculated Successfully!');
-      void latestDashboardLoadRef.current(true);
-    } catch (err: any) {
-      if (!isCurrent()) return;
-      reportError(err, 'ClubDashboard.Recalculate_error');
-      toast.error(err.message || 'Failed to recalculate level.');
-    } finally {
-      if (isCurrent()) setIsRecalculating(false);
-    }
-  };
 
   /**
    * @param silent Background refresh (realtime/bus/tab-focus) rather than a
@@ -931,7 +905,6 @@ export default function ClubDashboard() {
     setRecentTables([]);
     setTablesMeta(null);
     setUserRole(null);
-    setIsRecalculating(false);
     setLastUpdated(null);
     setNotAMember(false);
     setLoadError(false);
@@ -1136,21 +1109,10 @@ export default function ClubDashboard() {
           <Link to={`/clubs/${clubId}/settings`} className={styles.actionBtn}>
             Settings
           </Link>
-          {isClubStaff(userRole) && (
-            <button
-              onClick={handleRecalculateLevel}
-              className={styles.actionBtn}
-              style={{
-                backgroundColor: 'var(--accent-blue)',
-                color: 'white',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-              disabled={isRecalculating}
-            >
-              {isRecalculating ? 'Processing...' : 'Recalculate Level'}
-            </button>
-          )}
+          {/* No "Recalculate Level" button (2026-10-19): it called
+              recompute_club_levels, which only the service role may run, so it
+              failed for every owner. A club's level is recomputed in the
+              database on every rake and membership change. */}
         </div>
       </header>
 

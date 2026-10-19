@@ -71,7 +71,9 @@ describe('useWalletStore', () => {
     expect(typeof state.loadDiamonds).toBe('function');
     expect(typeof state.loadTransactions).toBe('function');
     expect(typeof state.refreshAll).toBe('function');
-    expect(typeof state.lockForBuyIn).toBe('function');
+    // lockForBuyIn is gone (2026-10-19): no caller, and its RPC is not
+    // executable by a player. Buy-ins are debited by the engine.
+    expect(state).not.toHaveProperty('lockForBuyIn');
     // AUDIT M17: unlockFromTable is deliberately gone — see WalletService.
     expect((state as unknown as Record<string, unknown>).unlockFromTable).toBeUndefined();
     expect(state).not.toHaveProperty('internalTransfer');

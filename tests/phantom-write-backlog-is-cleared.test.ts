@@ -25,7 +25,6 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
-import { sliceStatement } from './helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
@@ -37,13 +36,6 @@ const read = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
  * Strip comments first, exactly as every source-grep gate in this repo does.
  */
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
-
-/** The object literal passed to one `.insert(` or `.update(` call. */
-const writeTo = (src: string, table: string): string => {
-  const at = code(src).indexOf(`from('${table}')`);
-  if (at < 0) throw new Error(`no write to ${table}`);
-  return sliceStatement(code(src), `from('${table}')`);
-};
 
 describe('the backlog is empty and may only ever shrink', () => {
   const allow = JSON.parse(read('scripts/ci/supabase-invariants.allowlist.json'));
@@ -84,11 +76,11 @@ describe('every dead write now names a column that exists', () => {
     expect(src).not.toMatch(/\.from\('hand_actions'\)/);
   });
 
-  it('leaving a table is recorded with action and metadata', () => {
+  it('leaving a table writes no table_activity row from the browser', () => {
+    // The browser holds no INSERT on table_activity, so the leave row this
+    // pinned failed on every leave. It is gone (2026-10-19).
     const src = read('src/services/TableService.ts');
-    expect(src).toContain("action: 'leave'");
-    expect(src).toContain('chips_cashed_out: confirmedAmount');
-    expect(src).toContain('cashout_pending: result.deferred === true');
+    expect(src).not.toMatch(/from\('table_activity'\)\s*\.insert/);
     expect(src).not.toContain('chips_cashed_out: chipsToReturn');
     expect(src).not.toMatch(/activity_type:\s*'leave'/);
   });
@@ -105,18 +97,14 @@ describe('every dead write now names a column that exists', () => {
     expect(src).not.toContain('target_user_id:');
   });
 
-  it('a referral is recorded with referee_id and its NOT NULL code', () => {
+  it('the browser records no referral at all', () => {
+    // processReferral, the browser writer this pinned, had no caller and paid
+    // through the retired add_to_promo_wallet. It is gone (2026-10-19): a
+    // referral is recorded and paid by fn_settle_signup_referral in the
+    // database, and fn_club_invite_claim records the invite-link case.
     const src = read('src/services/PromotionService.ts');
-    const insert = writeTo(src, 'referrals');
-    expect(insert).toContain('referee_id: referredUserId');
-    expect(insert).toContain('referral_code_used: referrerCode');
-    expect(insert).not.toContain('referred_id:');
-    // promotion_id and bonus_amount are not columns on `referrals` at all. The
-    // amount is not lost: WalletService.logTransaction wrote it just above.
-    // Scoped to this insert on purpose - promotion_claims really does carry a
-    // bonus_amount, and a file-wide grep would forbid the correct write too.
-    expect(insert).not.toContain('bonus_amount:');
-    expect(insert).not.toContain('promotion_id:');
+    expect(src).not.toMatch(/from\('referrals'\)\s*\.insert/);
+    expect(src).not.toMatch(/async processReferral\(/);
   });
 
   it('the tutorial reset no longer writes a column nothing reads', () => {

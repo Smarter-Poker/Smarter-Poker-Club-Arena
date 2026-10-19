@@ -231,7 +231,9 @@ describe('Players tab large-roster performance and cache integrity', () => {
     expect(PAGE_CODE).toContain('abortRef.current?.abort()');
     expect(PAGE_CODE).toContain('controller.signal.aborted');
     expect(PAGE_CODE).toContain('refreshTimerRef.current');
-    expect(PAGE_CODE).toContain('}, 1200)');
+    expect(PAGE_CODE).toContain('const LIVE_REFRESH_DEBOUNCE_MS = 1200;');
+    expect(PAGE_CODE).toContain('liveRosterRefreshPolicy.minIntervalMs - sinceLastRead');
+    expect(PAGE_CODE).toContain('}, delay);');
   });
 
   it('resets the render window when search, filter or sort context changes', () => {

@@ -153,9 +153,10 @@ describe('PromotionService', () => {
       expect(promo).toBeNull();
     });
 
-    it('should return 0 bonus when no active promotions exist', async () => {
-      const bonus = await promotionService.applyDepositBonus('user-1', 100);
-      expect(bonus).toBe(0);
+    it('has no browser deposit-bonus or referral payout (both doors are retired)', () => {
+      const svc = promotionService as unknown as Record<string, unknown>;
+      expect(svc.applyDepositBonus).toBeUndefined();
+      expect(svc.processReferral).toBeUndefined();
     });
 
     it('should return empty array for user with no claims', async () => {

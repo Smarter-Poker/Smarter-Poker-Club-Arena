@@ -200,16 +200,19 @@ FROM generate_series(1,3) i;
     migration = NEW.read_text()
     run('guarded-install', migration)
     # The release contract (scripts/verification-harness/cashier-release-contract.sql)
-    # accepts exactly the installed predecessor and this replacement; certify that
-    # the replacement it names is the definition this migration really installs.
+    # names this migration's definition: as its replacement while it awaited
+    # installation, and as the installed hash once a later qualified
+    # replacement (20261019093951) took that slot. Certify it is the definition
+    # this migration really installs.
     installed = run('installed-definition',
         "SELECT md5(pg_get_functiondef('fn_cashier_conservation_report(uuid)'::regprocedure));")
     results['installed_definition_md5'] = installed
     contract = (ROOT / 'scripts/verification-harness/cashier-release-contract.sql').read_text()
     entry = contract[contract.index("'signature', 'public.fn_cashier_conservation_report(uuid)'"):]
     entry = entry[:entry.index('    )')]
-    assert f"'hash', 'f3728357280a30789ff8d7bb30140eae'" in entry, entry
-    assert f"'replacement_hash', '{installed}'" in entry, (installed, entry)
+    assert (f"'hash', '{installed}'" in entry
+            or (f"'hash', 'f3728357280a30789ff8d7bb30140eae'" in entry
+                and f"'replacement_hash', '{installed}'" in entry)), (installed, entry)
     results['cases'].append({'name': 'release-contract-names-the-installed-definition', 'passed': True})
     run('replay-refused', migration, refused='55000')
     equivalent('nothing-sealed-reads-the-whole-journal')
@@ -350,3 +353,11 @@ finally:
     (out / 'result.json').write_text(json.dumps(results, indent=2) + '\n')
     shutil.rmtree(cluster)
 print(json.dumps(results))
+
+# Keep the bank-entity regression (20261019093951, issue #7321) in this
+# required Cashier native lane: it installs this migration's definition as its
+# exact production predecessor and qualifies the bank read built on it.
+subprocess.run([
+    sys.executable, str(ROOT / 'scripts/ci/test-cashier-conservation-bank-entity-postgres.py'),
+    '--output', str(out / 'bank-entity'),
+], env={**os.environ, 'PG_BIN': str(pg)}, check=True)

@@ -1,0 +1,9 @@
+# Weekly source counts use exact window keys
+
+The latest standalone weekly calculation cannot finish its source-evidence count. A safely rolled-back original preparation reached `fn_rakeback_split_counts` and exhausted its 90-second statement budget. The helper joins three large base tables to a materialized record CTE. The planner treats those joins as broad scans even when the requested club has no records in the window; the measured generic plan cost was 29,745,437.
+
+The same three joins now use `rake_record_id = ANY(array_agg(window_record.id))`. Window records have unique primary keys, so these are exactly the same membership tests, including empty and NULL-key behavior. Every evidence, incomplete and drifted-source predicate, earning cutoff, ghost predicate and scope test stays intact. The corresponding read-only production query completed in 3.372 seconds with 1,885 shared blocks read; its generic estimated cost dropped to 2,389,909. This is query qualification, not proof of an installed helper or completed settlement.
+
+Native PostgreSQL 17 runs the actual captured original and changed functions. Sixteen independent fault/boundary cases run with forced generic and custom plans and produce identical expected results: missing attribution/source/batch, blocked batch, wrong hand/contract/scope/amount, unexpected tournament, extra and NULL-key source, empty window and time boundaries. Function owner, ACL, volatility and search path remain identical. Exact preimage and replay refusal protect installation. The existing required accounting parent invokes the regression unconditionally.
+
+The cutoff and ghost helpers are identity/false controls in the isolated fixture; their unchanged source predicates are retained, not re-qualified by this access-path fixture. Full weekly calculation, source coverage and settlement receipts remain required after installation.

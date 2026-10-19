@@ -170,3 +170,5 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # The satellite owner proof keeps all rows but seeks its exact tournament/player.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-satellite-funding-user-index-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("satellite-funding-user-index.json"))], text=True))
+# The original bounded weekly source counts use exact record-key membership.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-source-count-keysets-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

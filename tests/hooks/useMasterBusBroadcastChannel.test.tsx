@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  identitySubscribe: vi.fn(),
+  identityListener: undefined as undefined | ((event: any) => void),
   privateRecord: vi.fn(),
   privateListener: undefined as undefined | ((message: any) => void),
   setAuth: vi.fn(),
@@ -43,6 +45,7 @@ vi.mock('../../src/lib/subscribeRealtime', () => ({
 
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
+    subscribe: mocks.identitySubscribe,
     getOrCreateChannel: mocks.getOrCreateChannel,
     registerChannelFactory: mocks.registerChannelFactory,
     removeChannelFactory: mocks.removeChannelFactory,
@@ -57,6 +60,11 @@ import { useMasterBusBroadcastChannel } from '../../src/hooks/useMasterBusBroadc
 describe('useMasterBusBroadcastChannel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.identityListener = undefined;
+    mocks.identitySubscribe.mockImplementation((_event, listener) => {
+      mocks.identityListener = listener;
+      return vi.fn();
+    });
     mocks.privateListener = undefined;
     mocks.privateRecord.mockImplementation((_topic, listener) => {
       mocks.privateListener = listener;
@@ -115,6 +123,33 @@ describe('useMasterBusBroadcastChannel', () => {
     status.mockClear();
     act(() => mocks.subscriptionCallbacks.at(-1)?.('SUBSCRIBED'));
     expect(status).not.toHaveBeenCalled();
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
+    expect(status).toHaveBeenCalledWith('SUBSCRIBED');
+  });
+
+  it('rebinds rapid A/B/A identities on the same mounted topic and refuses retired callbacks', async () => {
+    const payload = vi.fn();
+    const status = vi.fn();
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName: 'club-roster:11111111-1111-1111-1111-111111111111',
+        event: 'record_changed',
+        onPayload: payload,
+        onSubscriptionStatus: status,
+      })
+    );
+    const retired = mocks.privateListener;
+    expect(mocks.privateRecord).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      mocks.identityListener?.({ payload: { isAuthenticated: true, userId: 'B' } });
+      mocks.identityListener?.({ payload: { isAuthenticated: true, userId: 'A' } });
+      retired?.({ type: 'PRIVATE_RECORD_CHANGED' });
+      retired?.({ type: 'PRIVATE_RECORD_STATUS', ready: true });
+      await Promise.resolve();
+    });
+    expect(payload).not.toHaveBeenCalled();
+    expect(status).not.toHaveBeenCalled();
+    expect(mocks.privateRecord).toHaveBeenCalledTimes(2);
     act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
     expect(status).toHaveBeenCalledWith('SUBSCRIBED');
   });

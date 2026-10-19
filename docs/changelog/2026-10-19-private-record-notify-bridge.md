@@ -17,9 +17,14 @@ Each socket owns its topic intent. Admission and every queued delivery evaluate
 the exact existing private topic ACL through the original socket JWT, plus the
 existing session-revocation guard. No club-channel membership cache substitutes
 for the member-record/downline or roster/union ACL. Delayed joins, leaves,
-reconnects and sibling tabs retain independent intent; invalidations contain no
+reconnects and sibling tabs retain independent intent; the canonical
+AUTH_STATE_CHANGED boundary rebinds even rapid A/B/A changes before React
+renders and refuses retired callbacks; invalidations contain no
 balances, notes, roles or statistics. Existing authoritative page readers still
-supply all data.
+supply all data. Repeated empty invalidations coalesce while the topic
+frame awaits authorization/delivery, retaining one trailing invalidation for
+commits during that interval. Every actually delivered frame still rechecks ACL;
+no authorization verdict is cached.
 
 The targeted hook retains its existing paid subscription until an authorized
 engine topic acknowledgment confirms both the source and listener. Listener or

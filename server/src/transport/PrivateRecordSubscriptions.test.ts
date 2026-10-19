@@ -41,6 +41,27 @@ describe('private record socket ownership', () => {
     expect(a.frames).toHaveLength(2);
     expect(a.allow).toHaveBeenCalledTimes(4);
   });
+  it('coalesces a burst while ACL is pending and preserves one trailing invalidation', async () => {
+    const a = fixture();
+    await a.owner.join(topic, () => true);
+    await flush();
+    let release!: (allowed: boolean) => void;
+    a.allow.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          release = resolve;
+        })
+    );
+    a.owner.notify(topic);
+    for (let i = 0; i < 100; i++) a.owner.notify(topic);
+    await flush();
+    expect(a.frames).toHaveLength(1);
+    release(true);
+    await flush();
+    expect(a.frames.filter((frame) => frame.type === 'PRIVATE_RECORD_CHANGED')).toHaveLength(2);
+    expect(a.allow).toHaveBeenCalledTimes(4);
+  });
+
   it('never delivers a queued old generation after leave or rejoin', async () => {
     const a = fixture();
     let release!: (value: boolean) => void;

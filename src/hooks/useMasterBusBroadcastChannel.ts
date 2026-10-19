@@ -65,21 +65,42 @@ export function useMasterBusBroadcastChannel({
     )
       return;
     let alive = true;
-    const remove = engineChannelClient.onPrivateRecord(channelName, (message) => {
-      if (!alive) return;
-      if (message.type === 'PRIVATE_RECORD_STATUS') {
-        setEngineReady(message.ready === true);
-        if (message.ready === true) {
-          engineWasReady.current = true;
-          statusCallbackRef.current?.('SUBSCRIBED');
-        } else if (engineWasReady.current) {
-          // A paid fallback connection is not proof its producer is still on.
-          errorCallbackRef.current?.('CHANNEL_ERROR');
-        }
-      } else callbackRef.current({ payload: {} });
+    let generation = 0;
+    let remove = () => {};
+    const bind = () => {
+      remove();
+      const scope = ++generation;
+      remove = engineChannelClient.onPrivateRecord(channelName, (message) => {
+        if (!alive || scope !== generation) return;
+        if (message.type === 'PRIVATE_RECORD_STATUS') {
+          setEngineReady(message.ready === true);
+          if (message.ready === true) {
+            engineWasReady.current = true;
+            statusCallbackRef.current?.('SUBSCRIBED');
+          } else if (engineWasReady.current) {
+            // A paid fallback connection is not proof its producer is still on.
+            errorCallbackRef.current?.('CHANNEL_ERROR');
+          }
+        } else callbackRef.current({ payload: {} });
+      });
+    };
+    const stopIdentity = masterBus.subscribe('AUTH_STATE_CHANGED', (change) => {
+      const scope = ++generation;
+      remove();
+      setEngineReady(false);
+      engineWasReady.current = false;
+      // The canonical identity boundary synchronously retires the old socket's
+      // intent. Rebind after that boundary, even A/B/A before React renders.
+      if (change.payload.isAuthenticated)
+        queueMicrotask(() => {
+          if (alive && scope === generation) bind();
+        });
     });
+    bind();
     return () => {
       alive = false;
+      generation++;
+      stopIdentity();
       remove();
     };
   }, [channelName, event, enabled, privateChannel, restartKey]);

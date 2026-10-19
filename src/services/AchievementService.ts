@@ -6,7 +6,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { retryAsync } from '../utils/retryAsync';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
@@ -395,9 +394,8 @@ class AchievementServiceClass {
    *
    * `fn_achievement_record_progress` does the whole thing in one statement:
    * progress only rises, the unlock is set once and never cleared, and it
-   * returns true ONLY on the call that flipped it — so `awardRewards`, which
-   * moves real chips through `add_to_promo_wallet`, fires exactly once even
-   * with several tabs open.
+   * returns true ONLY on the call that flipped it, so the unlock is decided
+   * exactly once even with several tabs open.
    */
   async incrementProgress(
     userId: string,
@@ -471,10 +469,14 @@ class AchievementServiceClass {
       return { unlocked: false };
     }
 
-    if (justUnlocked === true) {
-      await this.awardRewards(userId, achievement);
-      return { unlocked: true, achievement };
-    }
+    // NO REWARD IS PAID FROM HERE (2026-10-19). This called
+    // add_to_promo_wallet, which the browser cannot execute and which has
+    // refused every caller since 2026-09-03 (the phantom promo pool is
+    // retired: an achievement reward needs a funded source first). It also
+    // inserted its own notification, which the browser cannot write either;
+    // trg_notify_achievement_unlocked already raises that notification in the
+    // database the moment the unlock lands.
+    if (justUnlocked === true) return { unlocked: true, achievement };
     return { unlocked: false };
   }
 
@@ -514,40 +516,6 @@ class AchievementServiceClass {
     const achievement = this.getById(achievementId);
     if (!achievement) return;
     await this._record(userId, achievement, Math.min(progress, achievement.requirement));
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Rewards
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  private async awardRewards(userId: string, achievement: Achievement): Promise<void> {
-    // Award chips
-    if (achievement.chipReward && achievement.chipReward > 0) {
-      const { error: rewardErr } = await retryAsync(
-        () =>
-          // Round 19: drop p_description (not a prod param).
-          supabase.rpc('add_to_promo_wallet', {
-            p_user_id: userId,
-            p_amount: achievement.chipReward,
-          }),
-        3
-      );
-      if (rewardErr)
-        reportError(rewardErr, 'AchievementService.awardRewards', {
-          userId: userId.slice(0, 8),
-          achievementName: achievement.name,
-        });
-    }
-
-    // Create notification
-    const { error: notifErr } = await supabase.from('notifications').insert({
-      user_id: userId,
-      type: 'achievement',
-      title: ` Achievement Unlocked!`,
-      message: `You earned "${achievement.name}"!`,
-      data: { achievement_id: achievement.id },
-    });
-    if (notifErr) reportError(notifErr, 'AchievementService.Notification_insert_failed');
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

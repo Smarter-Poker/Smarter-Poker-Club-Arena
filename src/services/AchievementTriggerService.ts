@@ -132,7 +132,8 @@ class AchievementTriggerServiceClass {
         milestoneName: ach.name,
         description: ach.description,
         icon: ach.icon,
-        ...(ach.chipReward ? { reward: { chips: ach.chipReward } } : {}),
+        // No chip reward is announced: none is paid (no funded source since
+        // the promo pool was retired on 2026-09-03).
       });
       /* THE PUSH IS RAISED SERVER-SIDE NOW (2026-08-30, issue #1498).
        *

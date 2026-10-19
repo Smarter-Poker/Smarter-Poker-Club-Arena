@@ -122,11 +122,6 @@ const REGISTER = {
     kind: 'IDENTIFICATION',
     why: 'Sets has_human, which sp_prune_hand_history reads to spare human hands from the 7 day purge. Retention is a STORAGE policy, and the law explicitly leaves that knob to Dan rather than to an agent: hand_history is 3.6 GB over 1.57M hands and grows ~221k hands a day.',
   },
-  'server/src/services/supabase/handFacts.ts': {
-    allowed: 1,
-    kind: 'EQUAL OUTCOME',
-    why: "Fact rows are written for humans everywhere, and for horses at NIT tables - so the VPIP rule and the evidence it is judged on cover the same seats (fixed 2026-08-27; before that the rule could not bite a horse at all). Not switched on for horses platform-wide because that is ~1.3M rows a day, which is the same storage decision as retention and is Dan's to make.",
-  },
   'server/src/engine/ServerTableEngineRunout.ts': {
     allowed: 3,
     kind: 'IDENTIFICATION',

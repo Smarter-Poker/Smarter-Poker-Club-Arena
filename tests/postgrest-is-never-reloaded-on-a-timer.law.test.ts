@@ -67,57 +67,104 @@ const ROOT_FIX = '20260831142242_fix_pgrst002_schema_cache_timeout.sql';
 const FORWARD_GUARD_FROM = '20260922141524';
 const MIN_AUTHENTICATOR_TIMEOUT_MS = 2 * 60 * 1000;
 
-const read = (file: string): string => readFileSync(join(MIGRATIONS, file), 'utf8');
+/*
+ * ONE SCAN PER MIGRATION (2026-10-19). Both whole-directory cases used to read
+ * every file again and blank it character by character, twice per file in the
+ * first (3,183 files, 52 MB) and five times per file in the second (1,076
+ * files, 22 MB). Measured on a 2-core box: 3.66 s and 4.23 s, 73% and 85% of
+ * vitest's 5 s budget, so an ordinary slow CI runner would have failed this law
+ * as "Test timed out" without it ever reaching an assertion (CLAUDE.md 10.86
+ * rule 4). Each file is now read once and blanked in ONE pass that yields both
+ * copies, and both are kept for the rest of this file. Every case still scans
+ * the same files with the same detectors; only the repeated work is gone.
+ */
+const fileText = new Map<string, string>();
+const read = (file: string): string => {
+  let text = fileText.get(file);
+  if (text === undefined) {
+    text = readFileSync(join(MIGRATIONS, file), 'utf8');
+    fileText.set(file, text);
+  }
+  return text;
+};
+
+/** The two blanked copies of one SQL text, at the same offsets. */
+interface Blanked {
+  /** comments AND single-quoted literals blanked: where statements are located */
+  code: string;
+  /** comments blanked, literals kept: where their values are read */
+  values: string;
+}
+
+const SQL_TOKEN = /--|\/\*|'/g;
+/** `text` with every character but a newline turned into a space. */
+const toSpaces = (text: string): string =>
+  text.includes('\n')
+    ? text
+        .split('\n')
+        .map((line) => ' '.repeat(line.length))
+        .join('\n')
+    : ' '.repeat(text.length);
 
 /**
- * Blank SQL comments always, and single-quoted literals when `literals` is
- * true. Offsets and newlines are preserved, so an index found in one copy is
+ * Blank SQL comments in both copies, and single-quoted literals in `code`
+ * only. Offsets and newlines are preserved, so an index found in one copy is
  * valid in the other. Dollar quotes are transparent: a function body is code.
+ * A '' inside a literal is an escaped quote; an unclosed comment or literal
+ * runs to the end of the text.
  */
-const blankSql = (sql: string, literals: boolean): string => {
-  const out = sql.split('');
+const blankOnce = (sql: string): Blanked => {
   const n = sql.length;
-  const blank = (from: number, to: number): void => {
-    for (let k = from; k < to && k < n; k++) {
-      if (out[k] !== '\n') out[k] = ' ';
-    }
-  };
-  let i = 0;
-  while (i < n) {
-    if (sql.startsWith('--', i)) {
-      const nl = sql.indexOf('\n', i);
-      const to = nl < 0 ? n : nl;
-      blank(i, to);
-      i = to;
-      continue;
-    }
-    if (sql.startsWith('/*', i)) {
-      const close = sql.indexOf('*/', i + 2);
-      const to = close < 0 ? n : close + 2;
-      blank(i, to);
-      i = to;
-      continue;
-    }
-    if (sql[i] === "'") {
-      let j = i + 1;
-      while (j < n) {
-        if (sql[j] === "'" && sql[j + 1] === "'") {
-          j += 2;
+  const code: string[] = [];
+  const values: string[] = [];
+  const token = new RegExp(SQL_TOKEN.source, 'g');
+  let done = 0;
+  for (;;) {
+    token.lastIndex = done;
+    const m = token.exec(sql);
+    if (!m) break;
+    const at = m.index;
+    let to = n;
+    if (m[0] === '--') {
+      const nl = sql.indexOf('\n', at);
+      if (nl >= 0) to = nl;
+    } else if (m[0] === '/*') {
+      const close = sql.indexOf('*/', at + 2);
+      if (close >= 0) to = close + 2;
+    } else {
+      for (let j = at + 1; ; ) {
+        const q = sql.indexOf("'", j);
+        if (q < 0) break;
+        if (sql[q + 1] === "'") {
+          j = q + 2;
           continue;
         }
-        if (sql[j] === "'") {
-          j++;
-          break;
-        }
-        j++;
+        to = q + 1;
+        break;
       }
-      if (literals) blank(i, j);
-      i = j;
-      continue;
     }
-    i++;
+    const before = sql.substring(done, at);
+    const span = sql.substring(at, to);
+    const blank = toSpaces(span);
+    code.push(before, blank);
+    values.push(before, m[0] === "'" ? span : blank);
+    done = to;
   }
-  return out.join('');
+  const rest = sql.substring(done);
+  code.push(rest);
+  values.push(rest);
+  return { code: code.join(''), values: values.join('') };
+};
+
+const blankedText = new Map<string, Blanked>();
+/** Both blanked copies of `sql`, computed once per distinct text. */
+const blankSql = (sql: string): Blanked => {
+  let both = blankedText.get(sql);
+  if (both === undefined) {
+    both = blankOnce(sql);
+    blankedText.set(sql, both);
+  }
+  return both;
 };
 
 /** A statement_timeout value as Postgres reads it, in milliseconds. */
@@ -141,8 +188,7 @@ const AUTHENTICATOR_SETTING =
 
 /** Every statement in `sql` that would leave authenticator under two minutes. */
 const timeoutOffendersIn = (sql: string): string[] => {
-  const code = blankSql(sql, true);
-  const values = blankSql(sql, false);
+  const { code, values } = blankSql(sql);
   const found: string[] = [];
   for (const m of code.matchAll(AUTHENTICATOR_SETTING)) {
     const verb = m[1].toUpperCase();
@@ -166,8 +212,7 @@ const timeoutOffendersIn = (sql: string): string[] => {
 
 /** Functions this SQL declares whose body sends a PostgREST reload. */
 const notifyingFunctionsIn = (sql: string): string[] => {
-  const code = blankSql(sql, true);
-  const values = blankSql(sql, false);
+  const { code, values } = blankSql(sql);
   const names: string[] = [];
   for (const m of code.matchAll(
     /\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:"?public"?\.)?"?([a-z0-9_]+)"?\s*\(/gi
@@ -185,8 +230,7 @@ const notifyingFunctionsIn = (sql: string): string[] => {
 
 /** The full text of every cron.schedule(...) call, literals included. */
 const cronCallsIn = (sql: string): string[] => {
-  const code = blankSql(sql, true);
-  const values = blankSql(sql, false);
+  const { code, values } = blankSql(sql);
   const calls: string[] = [];
   for (const m of code.matchAll(/\bcron\s*\.\s*schedule\s*\(/gi)) {
     const open = (m.index ?? 0) + m[0].length - 1;
@@ -220,7 +264,7 @@ const timerOffendersIn = (sql: string, notifying: ReadonlySet<string>): string[]
   }
   if (
     /\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:"?public"?\.)?"?fn_ca_pgrst_reload_if_stale\b/i.test(
-      blankSql(sql, true)
+      blankSql(sql).code
     )
   ) {
     found.push('declares fn_ca_pgrst_reload_if_stale again');
@@ -231,8 +275,7 @@ const timerOffendersIn = (sql: string, notifying: ReadonlySet<string>): string[]
 describe('PostgREST is never reloaded on a timer', () => {
   describe('the root fix stays', () => {
     it('the 5min authenticator timeout is declared in code, not only in prose', () => {
-      const code = blankSql(read(ROOT_FIX), true);
-      const values = blankSql(read(ROOT_FIX), false);
+      const { code, values } = blankSql(read(ROOT_FIX));
       const m = /\bALTER\s+ROLE\s+authenticator\s+SET\s+statement_timeout\b/i.exec(code);
       expect(m).not.toBeNull();
       const after = values.substring((m?.index ?? 0) + (m?.[0].length ?? 0));

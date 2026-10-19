@@ -100,11 +100,22 @@
 --
 -- PINNED LIVE md5(pg_get_functiondef(oid)), read 2026-10-19, and AFTER:
 --   fn_credit_agent_commissions_batch  d4572f3e1efd9c85a0025cc2906c6fae -> 33e0be86d6a2a88f18be4ec4e058cadd
---   fn_retry_cash_accounting_sources   3788581d5e8f1953663b8929b4688d0a -> e9b28c51e08c1754a475658f9720db40
+--   fn_retry_cash_accounting_sources   3788581d5e8f1953663b8929b4688d0a -> 0a5daa862601baaf365972ac6b577e6a
+--                                  or 0ab1bf9282426f348c034785513724e0 -> 0a5daa862601baaf365972ac6b577e6a
+--
+-- EITHER INSTALL ORDER WITH 20261019102410 (PR #7427). That migration replaces
+-- fn_retry_cash_accounting_sources from the same preimage (3788581d) with one
+-- change: the due sources are taken fewest refusals first (ORDER BY
+-- attempts, next_attempt_at, rake_record_id). This migration accepts either
+-- installed text and installs ONE body that keeps that order and adds the
+-- club-ordered keys, so neither change undoes the other and the postimage is
+-- the same whichever is installed first (refresh-horizon.py proves both).
+-- 20261019102410's own guard requires the 3788581d preimage, so if this one is
+-- installed first, that one must be re-pinned to this postimage.
 --   fn_union_rake_basis_refresh        c88e99cda4f091c9e48b0f6b173651a4 -> 9fdc0af3d23759ab843ce122ecaefb03
 --
 -- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = '33e0be86d6a2a88f18be4ec4e058cadd' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_credit_agent_commissions_batch')
--- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = 'e9b28c51e08c1754a475658f9720db40' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_retry_cash_accounting_sources')
+-- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = '0a5daa862601baaf365972ac6b577e6a' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_retry_cash_accounting_sources')
 -- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = '9fdc0af3d23759ab843ce122ecaefb03' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_union_rake_basis_refresh')
 
 BEGIN;
@@ -116,7 +127,7 @@ DECLARE
   s record; v_sig regprocedure; v_meta text; v_after text;
 BEGIN
   FOR s IN SELECT * FROM (VALUES
-    ('fn_credit_agent_commissions_batch(jsonb)', 'd4572f3e1efd9c85a0025cc2906c6fae', '33e0be86d6a2a88f18be4ec4e058cadd',
+    ('fn_credit_agent_commissions_batch(jsonb)', ARRAY['d4572f3e1efd9c85a0025cc2906c6fae'], '33e0be86d6a2a88f18be4ec4e058cadd',
 $batch$CREATE OR REPLACE FUNCTION public.fn_credit_agent_commissions_batch(p_items jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -205,7 +216,7 @@ BEGIN
   'deferred',v_deferred);
 END $function$
 $batch$),
-    ('fn_retry_cash_accounting_sources(integer)', '3788581d5e8f1953663b8929b4688d0a', 'e9b28c51e08c1754a475658f9720db40',
+    ('fn_retry_cash_accounting_sources(integer)', ARRAY['3788581d5e8f1953663b8929b4688d0a', '0ab1bf9282426f348c034785513724e0'], '0a5daa862601baaf365972ac6b577e6a',
 $retry$CREATE OR REPLACE FUNCTION public.fn_retry_cash_accounting_sources(p_limit integer DEFAULT 50)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -225,10 +236,13 @@ BEGIN
  -- at most 1 s while holding only lower keys; a key not granted ends the walk.
  -- A source whose clubs are not all held is not run: its blocked work row is
  -- left exactly as it is (no receipt, no attempt), it is returned in
- -- 'deferred', and it is the oldest due source again next cycle.
+ -- 'deferred', and it is among the first due sources again next cycle.
+ -- THE FEWEST REFUSALS GO FIRST (20261019102410). Oldest-due-first let a
+ -- burst of sources still waiting on missing evidence hold every slot of
+ -- every cycle while a source refused once by a lock waited a day behind it.
  v_due:=ARRAY(SELECT s.rake_record_id FROM public.accounting_cash_source_work s
   WHERE s.status='blocked' AND s.next_attempt_at<=clock_timestamp()
-  ORDER BY s.next_attempt_at,s.rake_record_id LIMIT p_limit);
+  ORDER BY s.attempts,s.next_attempt_at,s.rake_record_id LIMIT p_limit);
  v_need:=ARRAY(SELECT DISTINCT a.club_id FROM public.rake_attributions a
   WHERE a.rake_record_id=ANY(v_due) AND a.club_id IS NOT NULL ORDER BY a.club_id);
  FOREACH v_gate IN ARRAY v_need LOOP
@@ -264,11 +278,11 @@ BEGIN
   'first_error',first_error,'receipts',receipts,'deferred',v_deferred);
 END $function$
 $retry$)
-  ) AS x(signature, before_md5, after_md5, new_def)
+  ) AS x(signature, before_md5s, after_md5, new_def)
   LOOP
     v_sig := ('public.' || s.signature)::regprocedure;
-    IF md5(pg_get_functiondef(v_sig)) <> s.before_md5 THEN
-      RAISE EXCEPTION '% is not the pinned text (md5 %)', s.signature, md5(pg_get_functiondef(v_sig));
+    IF md5(pg_get_functiondef(v_sig)) <> ALL (s.before_md5s) THEN
+      RAISE EXCEPTION '% is not a pinned text (md5 %)', s.signature, md5(pg_get_functiondef(v_sig));
     END IF;
     SELECT concat_ws('|', pg_get_userbyid(p.proowner), p.proacl::text, p.proconfig::text, p.provolatile, p.prosecdef)
       INTO v_meta FROM pg_proc p WHERE p.oid = v_sig;

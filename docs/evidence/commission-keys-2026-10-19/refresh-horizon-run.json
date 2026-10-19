@@ -1,5 +1,5 @@
 {
-  "started": "2026-10-19T10:24:11Z",
+  "started": "2026-10-19T11:22:20Z",
   "postgres": "PostgreSQL 17.11 (Ubuntu 17.11-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit",
   "functions_pinned_and_verified": 26,
   "production_md5": {
@@ -32,7 +32,7 @@
   "after_md5": {
     "fn_union_rake_basis_refresh": "9fdc0af3d23759ab843ce122ecaefb03",
     "fn_credit_agent_commissions_batch": "33e0be86d6a2a88f18be4ec4e058cadd",
-    "fn_retry_cash_accounting_sources": "e9b28c51e08c1754a475658f9720db40"
+    "fn_retry_cash_accounting_sources": "0a5daa862601baaf365972ac6b577e6a"
   },
   "after": {
     "refused_source_in_window": {
@@ -62,6 +62,16 @@
       "unaccrued_from_min": 0.0
     }
   },
+  "pr7427_first_md5": {
+    "fn_union_rake_basis_refresh": "c88e99cda4f091c9e48b0f6b173651a4",
+    "fn_credit_agent_commissions_batch": "d4572f3e1efd9c85a0025cc2906c6fae",
+    "fn_retry_cash_accounting_sources": "0ab1bf9282426f348c034785513724e0"
+  },
+  "after_pr7427_md5": {
+    "fn_union_rake_basis_refresh": "9fdc0af3d23759ab843ce122ecaefb03",
+    "fn_credit_agent_commissions_batch": "33e0be86d6a2a88f18be4ec4e058cadd",
+    "fn_retry_cash_accounting_sources": "0a5daa862601baaf365972ac6b577e6a"
+  },
   "passed": true,
-  "finished": "2026-10-19T10:24:15Z"
+  "finished": "2026-10-19T11:22:22Z"
 }

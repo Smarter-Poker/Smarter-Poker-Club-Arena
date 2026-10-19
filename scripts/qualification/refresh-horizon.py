@@ -22,7 +22,8 @@ Fixture (one union, a window that opened two hours ago, the settler cursor 50 mi
   r30 banked +30 min, accrued      x15 banked +15 min, refused, ANOTHER union
   old banked before the window, refused
 The migration is executed WHOLE (its file, one BEGIN/COMMIT, every pin) over production's three
-bodies: the cash batch and retry brought to their live md5s by the 20261001 blocks, and the refresh.
+bodies, and again over the same state with PR #7427's retry body (20261019102410, installed first)
+where it must land on the identical three postimages: the cash batch and retry brought to their live md5s by the 20261001 blocks, and the refresh.
 BEFORE reads through the cursor and is refused; AFTER reads through +20 min and succeeds. When the
 retry accrues r20, AFTER reads through the cursor again. A union with nothing refused reads exactly
 as before.
@@ -38,6 +39,7 @@ cd.PORT = '55493'  # its own port: never the chip-deadlocks run's
 MIGRATION = ROOT / ('supabase/migrations/'
                     '20261019094914_commission_keys_in_club_order_refresh_reads_accrued.sql')
 LIVE_MD5 = 'c88e99cda4f091c9e48b0f6b173651a4'
+PR7427_RETRY_MD5 = '0ab1bf9282426f348c034785513724e0'
 SIG = 'public.fn_union_rake_basis_refresh(uuid,timestamptz,timestamptz)'
 
 EXTRA = """
@@ -72,7 +74,7 @@ def load_live(cl):
 
 
 PRODUCTION = {'fn_credit_agent_commissions_batch': ('d4572f3e1efd9c85a0025cc2906c6fae', '33e0be86d6a2a88f18be4ec4e058cadd'),
-              'fn_retry_cash_accounting_sources': ('3788581d5e8f1953663b8929b4688d0a', 'e9b28c51e08c1754a475658f9720db40'),
+              'fn_retry_cash_accounting_sources': ('3788581d5e8f1953663b8929b4688d0a', '0a5daa862601baaf365972ac6b577e6a'),
               'fn_union_rake_basis_refresh': (LIVE_MD5, '9fdc0af3d23759ab843ce122ecaefb03')}
 
 
@@ -178,10 +180,24 @@ def main():
         report['before'] = scenario(cl, 'before')
         report['after_md5'] = apply_whole_migration(cl)
         report['after'] = scenario(cl, 'after')
+        # THE OTHER INSTALL ORDER: 20261019102410 (PR #7427) first. Its retry body (attempts-first
+        # queue, md5 0ab1bf92...) is loaded over the same production state, then this migration is
+        # executed whole again. It must accept that preimage and land on the SAME three postimages.
+        cd.build(cl)
+        for path in (cd.MIGRATION, cd.REVERT, cd.KEYS_FIX):
+            cd.apply_migration(cl, path)
+        cl.psql(cd.DB, '-f', str(HERE / 'retry-after-20261019102410.sql'))
+        cl.q(EXTRA)
+        load_live(cl)
+        report['pr7427_first_md5'] = md5s(cl)
+        if report['pr7427_first_md5']['fn_retry_cash_accounting_sources'] != PR7427_RETRY_MD5:
+            raise SystemExit('REFUSED: the PR #7427 retry fixture is not its postimage: %s' % report['pr7427_first_md5'])
+        report['after_pr7427_md5'] = apply_whole_migration(cl)
     finally:
         cl.stop()
     b, f = report['before'], report['after']
     ok = (report['after_md5'] == {k: v[1] for k, v in PRODUCTION.items()}
+          and report['after_pr7427_md5'] == report['after_md5']
           and b['refused_source_in_window'] == {'refused': 'ERROR:  union_cash_sources_do_not_match_bank:1'}
           and f['refused_source_in_window'] == {'success': True, 'skipped': False, 'through_min': 20.0,
                                                 'accrued_through_min': 50.0, 'unaccrued_from_min': 20.0}
@@ -197,7 +213,7 @@ def main():
                                                       'accrued_through_min': 50.0, 'unaccrued_from_min': 0.0})
     report['passed'] = ok
     report['finished'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-    print(json.dumps({k: report[k] for k in ('before', 'after', 'after_md5', 'passed')}, indent=2))
+    print(json.dumps({k: report[k] for k in ('before', 'after', 'after_md5', 'after_pr7427_md5', 'passed')}, indent=2))
     print('REFRESH HORIZON: %s' % ('reads only what is accrued' if ok else 'NOT AS CLAIMED'))
     if a.out:
         pathlib.Path(a.out).write_text(json.dumps(report, indent=2) + '\n')

@@ -38,3 +38,14 @@ Not added: no repair job, sweep, backfill or compensating write.
 ## Deploy order
 
 **The engine ships first, then the migration is installed.** Today's engine treats a batch receipt with fewer receipts than items as incomplete and holds its cursor. If the migration went first, every deferral would halt a settler page (nothing lost, but cash accrual would stall) until the new engine was live. The new engine accepts both the old receipt (no `deferred`) and the new one.
+
+## Either install order with PR #7427 (20261019102410)
+
+#7427 also replaces `fn_retry_cash_accounting_sources` from the same installed text (md5 `3788581d`). It takes due sources fewest refusals first (`ORDER BY attempts, next_attempt_at, rake_record_id`), and its postimage md5 is `0ab1bf92`.
+
+This migration accepts either text and installs one body. That body keeps #7427's fewest-refusals-first selection and adds the club-ordered keys and deferral. The postimage is `0a5daa86` whichever is installed first. `refresh-horizon.py` runs the whole file over both preimages and gets identical postimages (`after_md5` and `after_pr7427_md5` in the evidence). #7427's own guard requires `3788581d`, so if this migration is installed first, #7427 has to be re-pinned to `0a5daa86`.
+
+#7427 also makes `fn_process_cash_accounting_source` retry a deadlocked item's own subtransaction, up to 3 times. That does not change the reasoning here:
+
+- After this migration, an item never waits for a commission key. Every key it needs is already held by the call that runs it, so a commission-key deadlock can no longer involve a cash item, and #7427's retry no longer meets one.
+- The retry still covers any other lock cycle. Because the keys belong to the call, not the item, rolling back the item's subtransaction does not release them. In such a cycle the retried item still holds its keys and can meet the same cycle again, up to #7427's three attempts, and then it is refused durably as today. The batch already held all of its keys whenever every key was free (which is nearly always) since `20261001000000`, so this is no new exposure.

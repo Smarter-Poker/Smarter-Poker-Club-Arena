@@ -51,7 +51,7 @@ const PINS: Array<[string, string, string]> = [
   [
     'fn_retry_cash_accounting_sources',
     '3788581d5e8f1953663b8929b4688d0a',
-    'e9b28c51e08c1754a475658f9720db40',
+    '0a5daa862601baaf365972ac6b577e6a',
   ],
   [
     'fn_union_rake_basis_refresh',
@@ -68,7 +68,15 @@ describe('commission keys are taken in club order', () => {
         `-- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = '${after}' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = '${fn}')`
       );
     }
-    expect(SUBS).toContain('IF md5(pg_get_functiondef(v_sig)) <> s.before_md5 THEN');
+    expect(SUBS).toContain('IF md5(pg_get_functiondef(v_sig)) <> ALL (s.before_md5s) THEN');
+    // Either install order with 20261019102410 (PR #7427): its retry postimage is
+    // accepted too, and the one body installed keeps its fewest-refusals-first queue.
+    expect(SUBS).toContain(
+      "ARRAY['3788581d5e8f1953663b8929b4688d0a', '0ab1bf9282426f348c034785513724e0'], '0a5daa862601baaf365972ac6b577e6a',"
+    );
+    expect(RETRY).toContain(
+      'ORDER BY s.attempts,s.next_attempt_at,s.rake_record_id LIMIT p_limit);'
+    );
     expect(SUBS).toContain('IF md5(v_after) <> s.after_md5 THEN');
     expect(REFRESH).toContain("IF md5(v_def) <> 'c88e99cda4f091c9e48b0f6b173651a4' THEN");
     expect(REFRESH).toContain("IF md5(v_new) <> '9fdc0af3d23759ab843ce122ecaefb03' THEN");
@@ -160,6 +168,10 @@ describe('commission keys are taken in club order', () => {
     );
     expect(busy.find((r: { state: string }) => r.state === 'after').deadlocks).toBeGreaterThan(0);
     expect(busy.find((r: { state: string }) => r.state === 'sorted').deadlocks).toBe(0);
+    expect(horizon.after_pr7427_md5).toEqual(horizon.after_md5);
+    expect(horizon.pr7427_first_md5.fn_retry_cash_accounting_sources).toBe(
+      '0ab1bf9282426f348c034785513724e0'
+    );
     expect(horizon.after_md5).toEqual(Object.fromEntries(PINS.map(([fn, , after]) => [fn, after])));
   });
 });

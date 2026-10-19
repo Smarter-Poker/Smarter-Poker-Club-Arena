@@ -1,0 +1,16 @@
+{
+  "captured": "2026-10-19 ~15:45 UTC, read-only (pg_get_functiondef), project kuklfnapbkmacvwxktbh",
+  "functions": {
+    "fn_ca_lock_mtt_admission_contract()": "10644d522bb50245f76942ecce735cbc",
+    "fn_ca_lock_settlement_lane_global()": "7c759bb7a639c3124de2607bdbf12577",
+    "fn_ca_lock_settlement_lane_for_finish(uuid)": "1626c6807e525783fa0fae2f1d03d978",
+    "fn_ca_lock_settlement_lane_for_satellite_finish(uuid)": "0aaaac620ce2f34f2cd9523c4323a12e",
+    "fn_ca_share_settlement_lane_for_table(uuid)": "409b14ee72ce888d3b26524c52d49a68",
+    "fn_ca_replay_terminal_receipts(integer,integer)": "1d5d067c97c46776fb6c1fc5e02f0b7c",
+    "apply_rakeback_player_stats(uuid,uuid,uuid,integer,numeric)": "1519023c9ec579568a347b6088c898ec",
+    "fn_sync_profile_total_hands()": "886d9aae3d1fbd18a98d172ebe13758e",
+    "fn_process_cash_accounting_source(uuid)": "460e4b0a936b41246548cb0a9efc9f7f",
+    "fn_credit_agent_commissions_batch(jsonb)": "33e0be86d6a2a88f18be4ec4e058cadd",
+    "fn_project_hand_side_effects_after_post_commit_20260908(uuid)": "ef3cb3725ca3a1566e0e1254830a9a63"
+  }
+}

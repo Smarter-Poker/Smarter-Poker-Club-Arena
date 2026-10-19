@@ -34,3 +34,12 @@ invokes this test through its existing weekly qualification parent.
 
 Installation, production rollback qualification, explicit original accrual
 restart and weekly payment verification remain separate evidence.
+
+Hosted qualification exposed the calendar fixture extracting `CREATE VIEW`
+from a quoted dynamic statement. The migration now states the complete source
+view explicitly after checking the exact original definition hash. The calendar
+fixture loads its actual admission-table and effective-view dependencies before
+that same source view; all nine existing money-door, overlap, cutoff and access
+assertions pass. The focused unpaid-contract proof uses the complete original
+view, with typed empty tournament prerequisites, and retains all seven function
+postimages and exact original permissions.

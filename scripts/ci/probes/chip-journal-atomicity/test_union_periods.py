@@ -15,10 +15,13 @@ def _verify_union_periods(run,database):
  here=Path(__file__).resolve().parent
  definitions={}
  views={}
+ admission_table=None
  for path in sorted((here.parents[3]/"supabase/migrations").glob("*.sql")):
   if path.name<"20260908044150":continue
   source=path.read_text()
-  for match in re.finditer(r"CREATE(?: OR REPLACE)? VIEW public\.accounting_payable_earning_sources\b.*?;",source,re.I|re.S):views["accounting_payable_earning_sources"]=match.group(0)
+  for name in ['accounting_effective_cash_rake_sources','accounting_payable_earning_sources']:
+   for match in re.finditer(r"CREATE(?: OR REPLACE)? VIEW public\."+name+r"\b.*?;",source,re.I|re.S):views[name]=match.group(0)
+  for match in re.finditer(r"CREATE TABLE public\.accounting_cash_atomic_contract_admissions\s*\(.*?\n\);",source,re.I|re.S):admission_table=match.group(0)
   for name in ["fn_union_weekly_rakeback_close","fn_caller_is_engine","fn_accounting_union_earned_plan","fn_ca_launch_accounting_cutoff","fn_ca_launch_accounting_start","fn_ca_launch_accounting_accepts","fn_ca_launch_accounting_waived","fn_ca_launch_accounting_club_cutoffs"]:
    for match in re.finditer(r"CREATE(?: OR REPLACE)? FUNCTION public\."+name+r"\s*\(",source,re.I):
     tail=source[match.start():];body=re.search(r"\bAS\s+(\$[A-Za-z0-9_]*\$)",tail,re.I)
@@ -47,7 +50,13 @@ def _verify_union_periods(run,database):
   table=re.search(r"CREATE TABLE public\.ca_launch_accounting_boundaries\s*\(.*?\n\);",candidate.read_text(),re.S)
   if table is None:raise RuntimeError("Original launch boundary table declaration missing")
   ddl+="\n"+table.group(0)
- ddl+="\n"+"\n".join(definitions.values())+"\n"+"\n".join(views.values())
+ # The latest payable view now admits immutable atomic-history resolutions.
+ # Load its actual static relation dependencies before that same actual view;
+ # an older view or an EXECUTE string is not its financial source contract.
+ if 'accounting_effective_cash_rake_sources' in views.get('accounting_payable_earning_sources',''):
+  if admission_table is None or 'accounting_effective_cash_rake_sources'not in views:raise RuntimeError('Atomic earning view dependencies missing')
+  ddl+='\n'+admission_table+'\n'+views['accounting_effective_cash_rake_sources']
+ ddl+="\n"+"\n".join(definitions.values())+"\n"+views['accounting_payable_earning_sources']
  # This isolated empty journal begins before the fixture calendar. No historical
  # week is falsely certified, and the real earned-source owner proves the empty basis.
  setup=f"INSERT INTO unions(id,name,slug,owner_id) VALUES({U},'Calendar Fixture','calendar-fixture','30000000-0000-4000-8000-000000000002'); INSERT INTO union_wallets(union_id,chip_balance,rake_wallet) VALUES({U},1000,1000); INSERT INTO accounting_cash_accrual_cutover(singleton,starts_at) VALUES(true,'2026-08-01 00:00Z');"

@@ -48,10 +48,9 @@ try:
   sql('REVOKE ALL ON FUNCTION '+r['signature']+' FROM PUBLIC,anon,authenticated,service_role')
   if not r['signature'].startswith(('fn_accrue_cash_hand_commissions','fn_prepare_accounting_week')):sql('GRANT EXECUTE ON FUNCTION '+r['signature']+' TO service_role')
  original_acl={r['signature']:sql("SELECT proacl::text FROM pg_proc WHERE oid='"+r['signature']+"'::regprocedure")for r in pre}
- # Tournament arm is a typed empty prerequisite; cash arm is the actual
- # retained view definition. Tournament payouts are not qualified here.
- cash=deps['views'].split('UNION ALL')[0]
- sql('CREATE FUNCTION fn_ca_launch_accounting_club_cutoffs() RETURNS TABLE(club_id uuid,cutoff_at timestamptz) LANGUAGE sql AS $$SELECT NULL::uuid,NULL::timestamptz WHERE false$$;CREATE VIEW accounting_payable_earning_sources AS '+cash)
+ # The complete original source view is retained. Its tournament arm has
+ # typed empty prerequisites; no tournament payout is claimed by this test.
+ sql('CREATE TABLE accounting_tournament_fee_sources(id uuid,rake_record_id uuid,tournament_id uuid,player_id uuid,club_id uuid,union_id uuid,coordinator_union_id uuid,charged_at timestamptz,rake_credit numeric,contract jsonb);CREATE TABLE accounting_tournament_recognized_sources(source_id uuid,tournament_id uuid,recognized_at timestamptz,disposition text,rake_credit numeric);CREATE TABLE accounting_tournament_fee_recognitions(tournament_id uuid,recognized_at timestamptz,status text,union_id uuid);CREATE FUNCTION fn_ca_launch_accounting_club_cutoffs() RETURNS TABLE(club_id uuid,cutoff_at timestamptz) LANGUAGE sql AS $$SELECT NULL::uuid,NULL::timestamptz WHERE false$$;CREATE VIEW accounting_payable_earning_sources AS '+deps['views'])
  sql('CREATE TRIGGER immutable_source BEFORE UPDATE OR DELETE ON accounting_cash_rake_sources FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_history_immutable();CREATE TRIGGER commission_guard BEFORE INSERT ON agent_commissions FOR EACH ROW EXECUTE FUNCTION fn_accounting_cash_commission_source_guard();CREATE TRIGGER immutable_commission BEFORE UPDATE OR DELETE ON agent_commissions FOR EACH ROW EXECUTE FUNCTION fn_ca_journal_append_only();')
  # Keep the actual seven still-existing original tier identities; the old
  # retired payees remain absent, exactly as the current production read.

@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261019092248: never installed; its backfill accepted exactly three referees and aborts now that a fourth (ChaseOryan45) has confirmed. The replacement settles every confirmed referral found at run time and completes the pending one.
 -- ═══════════════════════════════════════════════════════════════════════
 -- 20261017223126_a_referral_is_recorded_and_paid_when_the_new_player_confirms.sql
 -- ═══════════════════════════════════════════════════════════════════════

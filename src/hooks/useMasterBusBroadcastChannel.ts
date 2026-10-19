@@ -1,3 +1,4 @@
+import { engineChannelClient } from '../services/EngineStateClient';
 /**
  * Private Supabase Broadcast subscription owned by the MasterBus registry.
  *
@@ -8,7 +9,7 @@
  */
 
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { masterBus } from '../core/MasterBus';
 import { supabase } from '../lib/supabase';
 import { subscribeRealtime } from '../lib/subscribeRealtime';
@@ -36,6 +37,8 @@ export function useMasterBusBroadcastChannel({
   onSubscriptionError,
   onSubscriptionStatus,
 }: UseMasterBusBroadcastChannelOptions): void {
+  const [engineReady, setEngineReady] = useState(false);
+  const engineWasReady = useRef(false);
   const callbackRef = useRef(onPayload);
   const errorCallbackRef = useRef(onSubscriptionError);
   const statusCallbackRef = useRef(onSubscriptionStatus);
@@ -51,7 +54,38 @@ export function useMasterBusBroadcastChannel({
   }, [onSubscriptionStatus]);
 
   useEffect(() => {
-    if (!enabled || !channelName) return;
+    setEngineReady(false);
+    engineWasReady.current = false;
+    if (
+      !enabled ||
+      !channelName ||
+      event !== 'record_changed' ||
+      !privateChannel ||
+      !/^(?:member-record:[0-9a-f-]{36}:[0-9a-f-]{36}|club-roster:[0-9a-f-]{36})$/.test(channelName)
+    )
+      return;
+    let alive = true;
+    const remove = engineChannelClient.onPrivateRecord(channelName, (message) => {
+      if (!alive) return;
+      if (message.type === 'PRIVATE_RECORD_STATUS') {
+        setEngineReady(message.ready === true);
+        if (message.ready === true) {
+          engineWasReady.current = true;
+          statusCallbackRef.current?.('SUBSCRIBED');
+        } else if (engineWasReady.current) {
+          // A paid fallback connection is not proof its producer is still on.
+          errorCallbackRef.current?.('CHANNEL_ERROR');
+        }
+      } else callbackRef.current({ payload: {} });
+    });
+    return () => {
+      alive = false;
+      remove();
+    };
+  }, [channelName, event, enabled, privateChannel, restartKey]);
+
+  useEffect(() => {
+    if (!enabled || !channelName || engineReady) return;
     let alive = true;
     // MasterBus may replace a dead channel while its previous Supabase
     // subscription is still delivering a late CLOSED/error callback. Reserve
@@ -98,7 +132,8 @@ export function useMasterBusBroadcastChannel({
           if (status === 'SUBSCRIBED') disarmAuthRetry?.();
           if (status === 'CHANNEL_ERROR') armAuthRetry();
           try {
-            statusCallbackRef.current?.(status);
+            if (status !== 'SUBSCRIBED' || !engineWasReady.current)
+              statusCallbackRef.current?.(status);
           } catch (callbackError) {
             reportError(callbackError, 'useMasterBusBroadcastChannel.onSubscriptionStatus_threw');
           }
@@ -152,7 +187,7 @@ export function useMasterBusBroadcastChannel({
       masterBus.removeChannelFactory(channelName);
       if (acquiredChannel) masterBus.removeRegisteredChannel(channelName, acquiredChannel);
     };
-  }, [channelName, enabled, event, privateChannel, restartKey]);
+  }, [channelName, enabled, event, privateChannel, restartKey, engineReady]);
 }
 
 export default useMasterBusBroadcastChannel;

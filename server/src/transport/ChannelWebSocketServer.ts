@@ -1,3 +1,6 @@
+import { PrivateRecordSubscriptions } from './PrivateRecordSubscriptions.js';
+import { PrivateRecordListener } from '../services/supabase/privateRecordListener.js';
+import { privateRecordTopicAllowed } from '../services/supabase/client.js';
 import { reportError } from '../services/errorReporter.js';
 import { AuthorizedPrivateSend } from './AuthorizedPrivateSend.js';
 import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
@@ -118,6 +121,7 @@ interface PendingHandReplay {
 
 interface ConnectionState {
   sessionRead?: Promise<boolean>;
+  privateRecords?: PrivateRecordSubscriptions;
   handReplays: Map<string, PendingHandReplay>;
   clubJoins: Map<string, PendingClubJoin>;
   userId: string;
@@ -139,6 +143,8 @@ interface ConnectionState {
 
 // Inbound message discriminated union
 type InboundMessage =
+  | { type: 'JOIN_PRIVATE_RECORD'; topic: string }
+  | { type: 'LEAVE_PRIVATE_RECORD'; topic: string }
   | { type: 'JOIN_CLUB'; clubId: string }
   | { type: 'LEAVE_CLUB'; clubId: string }
   | {
@@ -176,6 +182,14 @@ async function verifyToken(token: string): Promise<TokenVerdict> {
 // ─── ChannelWebSocketServer ───────────────────────────────────────────────────
 
 export class ChannelWebSocketServer {
+  private readonly recordListener = new PrivateRecordListener(
+    (topic) => {
+      for (const conn of this.connections.values()) conn.privateRecords?.notify(topic);
+    },
+    (ready) => {
+      for (const conn of this.connections.values()) conn.privateRecords?.readiness(ready);
+    }
+  );
   /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
   public async revokePlayerSessions(userId: string, isCurrent = () => true): Promise<void> {
     for (const [ws, connection] of Array.from(this.connections)) {
@@ -325,6 +339,7 @@ export class ChannelWebSocketServer {
    */
   async close(): Promise<void> {
     this.closing = true;
+    await this.recordListener.stop();
     for (const conn of this.connections.values()) this.cancelHandReplays(conn);
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
@@ -376,6 +391,22 @@ export class ChannelWebSocketServer {
       nextReauthAt: staggeredReauthAt(REAUTH_INTERVAL_MS),
     };
     this.connections.set(ws, conn);
+    conn.privateRecords = new PrivateRecordSubscriptions({
+      current: () =>
+        !this.closing && this.connections.get(ws) === conn && ws.readyState === WebSocket.OPEN,
+      authorize: async (topic) =>
+        (await this.sessionCanReceive(conn)) &&
+        (await privateRecordTopicAllowed(conn.token, topic)),
+      send: (data, complete) => ws.send(data, complete),
+      buffered: () => ws.bufferedAmount,
+      retire: () => {
+        ws.close(CLOSE_RATE_LIMITED, 'private record backpressure');
+        this.onClose(ws);
+      },
+      error: () => {
+        ws.close(1011, 'private record authorization unavailable');
+      },
+    });
     const privateSend = new AuthorizedPrivateSend({
       current: () =>
         !this.closing && this.connections.get(ws) === conn && ws.readyState === WebSocket.OPEN,
@@ -579,6 +610,18 @@ export class ChannelWebSocketServer {
     const { userId } = conn;
 
     switch (msg.type) {
+      case 'JOIN_PRIVATE_RECORD':
+        this.recordListener.start();
+        if (typeof msg.topic === 'string')
+          void conn.privateRecords
+            ?.join(msg.topic, () => this.recordListener.ready)
+            .catch(() => {
+              /* Unknown ACL leaves Supabase fallback authoritative. */
+            });
+        return;
+      case 'LEAVE_PRIVATE_RECORD':
+        if (typeof msg.topic === 'string') conn.privateRecords?.leave(msg.topic);
+        return;
       case 'CHANNEL_PONG':
       case 'PONG':
         return; // liveness already stamped above
@@ -884,6 +927,7 @@ export class ChannelWebSocketServer {
     for (const clubId of conn.clubJoins.keys()) this.cancelClubJoin(conn, clubId);
     // Pass the closing socket so ChannelHub can ignore this teardown if the user
     // has already reconnected on a newer socket (reconnect race).
+    conn.privateRecords?.clear();
     channelHub.removeConnection(conn.userId, ws);
     this.connections.delete(ws);
   }
@@ -891,6 +935,7 @@ export class ChannelWebSocketServer {
   // ─── Heartbeat ─────────────────────────────────────────────────────────────
 
   private heartbeatSweep(): void {
+    this.recordListener.probe();
     const now = Date.now();
     /* Trust has to be renewed here too (audit, 2026-09-06). The SHARED sweep,
        handed this server's own connection map - the table sockets got this in

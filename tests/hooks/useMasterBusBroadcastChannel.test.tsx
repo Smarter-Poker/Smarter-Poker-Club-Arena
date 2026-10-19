@@ -2,6 +2,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  privateRecord: vi.fn(),
+  privateListener: undefined as undefined | ((message: any) => void),
   setAuth: vi.fn(),
   onAuthStateChange: vi.fn(),
   unsubscribeAuth: vi.fn(),
@@ -15,6 +17,10 @@ const mocks = vi.hoisted(() => ({
   subscribe: vi.fn(),
   subscriptionCallbacks: [] as Array<(status: string, err?: Error) => void>,
   payloadCallbacks: [] as Array<(payload: unknown) => void>,
+}));
+
+vi.mock('../../src/services/EngineStateClient', () => ({
+  engineChannelClient: { onPrivateRecord: mocks.privateRecord },
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
@@ -51,6 +57,11 @@ import { useMasterBusBroadcastChannel } from '../../src/hooks/useMasterBusBroadc
 describe('useMasterBusBroadcastChannel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.privateListener = undefined;
+    mocks.privateRecord.mockImplementation((_topic, listener) => {
+      mocks.privateListener = listener;
+      return vi.fn();
+    });
     mocks.setAuth.mockResolvedValue(undefined);
     mocks.subscriptionCallbacks.length = 0;
     mocks.payloadCallbacks.length = 0;
@@ -77,6 +88,36 @@ describe('useMasterBusBroadcastChannel', () => {
   const authEvent = (event: string) => {
     for (const listener of [...mocks.authListeners]) listener(event);
   };
+
+  it('keeps paid fallback until an authorized ready acknowledgment and restores it on loss', async () => {
+    const status = vi.fn();
+    const payload = vi.fn();
+    const degraded = vi.fn();
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName:
+          'member-record:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222',
+        event: 'record_changed',
+        onPayload: payload,
+        onSubscriptionError: degraded,
+        onSubscriptionStatus: status,
+      })
+    );
+    await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(1));
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
+    await waitFor(() => expect(mocks.removeRegisteredChannel).toHaveBeenCalled());
+    expect(status).toHaveBeenCalledWith('SUBSCRIBED');
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_CHANGED' }));
+    expect(payload).toHaveBeenCalledWith({ payload: {} });
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: false }));
+    await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(2));
+    expect(degraded).toHaveBeenCalledWith('CHANNEL_ERROR');
+    status.mockClear();
+    act(() => mocks.subscriptionCallbacks.at(-1)?.('SUBSCRIBED'));
+    expect(status).not.toHaveBeenCalled();
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
+    expect(status).toHaveBeenCalledWith('SUBSCRIBED');
+  });
 
   it('authenticates Realtime before joining a private channel', async () => {
     let releaseAuth: (() => void) | undefined;

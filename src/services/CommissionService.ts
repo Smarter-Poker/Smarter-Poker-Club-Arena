@@ -265,30 +265,6 @@ export const CommissionService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Generate commission payouts for a settlement period
-   */
-  async generatePeriodPayouts(periodId: string): Promise<CommissionPayout[]> {
-    const { data, error } = await retryAsync(async () => {
-      const result = await supabase.rpc('generate_period_commissions', {
-        p_period_id: periodId,
-      });
-      return result;
-    }, 2);
-
-    if (error) throw error;
-    // RPC returns snake_case table rows over agents + agent_commissions
-    return (data || []).map((p: any) => ({
-      agentId: p.agent_id,
-      periodId: p.period_id,
-      grossRake: p.gross_rake || 0,
-      commissionEarned: p.commission_earned || 0,
-      paidToDownlines: p.paid_to_downlines || 0,
-      netPayout: p.net_payout || 0,
-      status: p.status || 'pending',
-    }));
-  },
-
-  /**
    * Approve commission payout.
    *
    * RETIRED (sweep #3, 2026-07-23). The `commission_payouts` approval table was

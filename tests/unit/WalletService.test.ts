@@ -169,20 +169,10 @@ describe('WalletService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('lockForBuyIn', () => {
-    it('should call atomic_deduct_wallet_and_log RPC', async () => {
-      mockRpc.mockResolvedValueOnce({ data: true, error: null });
-
-      await WalletService.lockForBuyIn('user1', 'table-123', 500);
-
-      expect(mockRpc).toHaveBeenCalledWith('atomic_deduct_wallet_and_log', {
-        p_user_id: 'user1',
-        p_amount: 500,
-        p_category: 'buyin',
-        p_description: 'Cash game buy-in at table',
-        p_table_id: 'table-123',
-        p_hand_id: null,
-        p_related_entity_id: null,
-      });
+    it('is gone: the browser cannot execute atomic_deduct_wallet_and_log', () => {
+      // Buy-ins are debited by the engine's seat path; this wrapper had no
+      // caller and failed with 42501 for every player (removed 2026-10-19).
+      expect((WalletService as unknown as Record<string, unknown>).lockForBuyIn).toBeUndefined();
     });
   });
 
@@ -251,11 +241,10 @@ describe('WalletService', () => {
       // failing at runtime on a money path.
       const forbidden = ['atomic_credit_wallet_and_log', 'fn_idempotent_credit_wallet'];
 
-      mockRpc.mockResolvedValue({ data: true, error: null });
-      await WalletService.lockForBuyIn('user1', 'table-123', 500).catch(() => undefined);
-
-      for (const [name] of mockRpc.mock.calls) {
-        expect(forbidden).not.toContain(name);
+      const { readFileSync } = await import('node:fs');
+      const source = readFileSync('src/services/WalletService.ts', 'utf8');
+      for (const name of forbidden) {
+        expect(source).not.toContain(`'${name}'`);
       }
     });
   });

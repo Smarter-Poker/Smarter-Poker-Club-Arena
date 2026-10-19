@@ -80,16 +80,9 @@ describe('TableService wired to the occupancy receipt contract', () => {
       chipsReturned: 125,
     });
     expect(mocks.leave).toHaveBeenCalledWith(table, 2, occupancy);
-    expect(mocks.activity).toHaveBeenCalledWith(expect.objectContaining({ chips_cashed_out: 125 }));
-    expect(mocks.rpc).not.toHaveBeenCalled();
-  });
-  it('retains confirmed success if activity presentation logging fails', async () => {
-    mocks.activity.mockRejectedValue(new Error('activity unavailable'));
-    expect(await tableService.leaveTable(table, 2, user)).toEqual({
-      success: true,
-      occupancyId: occupancy,
-      chipsReturned: 125,
-    });
+    // The browser holds no INSERT on table_activity, so no activity row is
+    // attempted from here (2026-10-19).
+    expect(mocks.activity).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it('does not fabricate an immediate cashout for an acknowledged pending leave', async () => {
@@ -100,12 +93,7 @@ describe('TableService wired to the occupancy receipt contract', () => {
       chipsReturned: 0,
       deferred: true,
     });
-    expect(mocks.activity).toHaveBeenCalledWith(
-      expect.objectContaining({
-        chips_cashed_out: null,
-        metadata: { chips_cashed_out: null, cashout_pending: true },
-      })
-    );
+    expect(mocks.activity).not.toHaveBeenCalled();
     expect(mocks.emit).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });

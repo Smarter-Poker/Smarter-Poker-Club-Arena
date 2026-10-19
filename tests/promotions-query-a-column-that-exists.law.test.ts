@@ -44,18 +44,14 @@ describe('PromotionService filters on real columns', () => {
     ).not.toMatch(/\.eq\(\s*'is_active'/);
   });
 
-  it('filters on status instead', () => {
-    // Both bonus paths, plus the listing path that was always right.
-    const statusFilters = SERVICE.match(/\.eq\(\s*'status',\s*'active'\s*\)/g) ?? [];
-    expect(statusFilters.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('checks the error on both bonus lookups', () => {
-    // The discarded error is what turned a broken query into "no promotion
-    // exists". A promotion that cannot be READ is not a promotion that is
-    // absent.
-    expect(SERVICE).toMatch(/deposit_bonus_lookup_failed/);
-    expect(SERVICE).toMatch(/referral_promo_lookup_failed/);
+  it('carries no browser deposit-bonus or referral payout (2026-10-19)', () => {
+    // applyDepositBonus and processReferral had no caller and paid through
+    // add_to_promo_wallet, which refuses every caller (the promo pool is
+    // retired) and which a player cannot execute anyway. Referrals are paid
+    // by fn_settle_signup_referral in the database.
+    expect(SERVICE).not.toMatch(/async applyDepositBonus\(/);
+    expect(SERVICE).not.toMatch(/async processReferral\(/);
+    expect(SERVICE).not.toMatch(/rpc\(\s*'add_to_promo_wallet'/);
   });
 });
 

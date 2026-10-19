@@ -254,57 +254,10 @@ export default function AuthPage() {
       if (authError) throw authError;
 
       if (data.user?.id) {
-        // ═══════════════════════════════════════════════════════════════════
-        // DUPLICATE PREVENTION: Check if a profile with same email exists
-        // ═══════════════════════════════════════════════════════════════════
-        const { data: emailMatch, error: emailCheckError } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, email')
-          .ilike('email', email.trim())
-          .maybeSingle();
-
-        if (emailMatch && !emailCheckError) {
-          // Duplicate prevention: existing profile found for this email, linking to new auth ID
-
-          // Update existing profile's last login
-          const { error: linkError } = await supabase
-            .from('profiles')
-            .update({
-              last_login: new Date().toISOString(),
-              last_active: new Date().toISOString(),
-            })
-            .eq('id', emailMatch.id);
-          if (linkError) {
-            console.warn('[AUTH] Profile link update failed (non-critical):', linkError.message);
-          }
-
-          // Account successfully linked!
-        } else {
-          // Create new profile in database
-          const { error: profileError } = await supabase.from('profiles').upsert({
-            id: data.user.id,
-            username: username.trim(),
-            display_name: username.trim(),
-            tier: 'Newcomer', // DB uses `tier`, not `vip_level`
-            diamonds: 0,
-            created_at: new Date().toISOString(),
-            last_login: new Date().toISOString(),
-            last_active: new Date().toISOString(),
-            // No is_online here: presence is written only by the heartbeat
-            // (src/lib/presenceHeartbeat.ts), which stamps last_seen with it.
-          });
-
-          if (profileError) {
-            // PGRST116 = no rows (ok on upsert), 23505 = unique violation (username taken)
-            if (profileError.code === '23505') {
-              throw new Error('Username Is Already Taken. Please Choose A Different One.');
-            }
-            console.warn(
-              '[AUTH] Profile creation failed (non-critical, may already exist):',
-              profileError.code
-            );
-          }
-        }
+        // The profile row is created by the handle_new_user trigger on
+        // auth.users. The browser block that used to sit here could not run:
+        // it read profiles.email (not readable by players) and then upserted
+        // diamonds (not writable by players), so it failed on every sign-up.
 
         // ═══════════════════════════════════════════════════════════════════
         // Ensure public.users entry exists (required for club_members FK)

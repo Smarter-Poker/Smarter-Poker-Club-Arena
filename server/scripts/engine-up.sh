@@ -343,7 +343,7 @@ fi
 # stays because THIS FILE IS THE RUN-SPEC (design note 4): the deploy and the
 # host supervisor must start the container identically, and this is the one
 # place both of them read.
-docker run -d \
+STARTED_CONTAINER_ID="$(docker run -d \
   --name "$CONTAINER" \
   --restart "$RESTART_POLICY" \
   --health-interval="$HEALTH_INTERVAL" \
@@ -363,9 +363,14 @@ docker run -d \
   --mount "type=bind,source=$ALERT_JOURNAL_HOST_DIR,target=$ALERT_JOURNAL_CONTAINER_DIR" \
   --env "HORSE_DECISION_JOURNAL_DIR=$HORSE_JOURNAL_CONTAINER_DIR" \
   --mount "type=bind,source=$HORSE_JOURNAL_HOST_DIR,target=$HORSE_JOURNAL_CONTAINER_DIR" \
-  "$AUTHORIZED_IMAGE_ID"
+  "$AUTHORIZED_IMAGE_ID")"
+printf '%s\n' "$STARTED_CONTAINER_ID"
 
-log "started $(docker inspect -f '{{.Id}}' "$CONTAINER" | cut -c1-12) from $AUTHORIZED_IMAGE_ID (restart=$RESTART_POLICY)"
+# Docker already returned the newly created container's ID. A second daemon
+# read solely for this log can stall after startup and exhaust the caller's
+# cutover budget. The release owner independently inspects and proves identity
+# immediately after this launch returns; keep that proof in its original owner.
+log "started ${STARTED_CONTAINER_ID:0:12} from $AUTHORIZED_IMAGE_ID (restart=$RESTART_POLICY)"
 if [ -n "$OUTGOING_CONTAINER" ]; then
   log "saving the outgoing log of $OUTGOING_CONTAINER in the background"
   retire_outgoing_in_background "$OUTGOING_CONTAINER"

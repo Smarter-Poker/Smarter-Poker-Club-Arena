@@ -52,7 +52,7 @@ describe('engine-up starts the replacement before it saves the outgoing log', ()
     expect(retire).toBeGreaterThan(run);
   });
 
-  it('returns with the replacement running while the dump is still in progress, then keeps the log', () => {
+  it('returns from the Docker start receipt even when a subsequent inspection stalls, then keeps the log', () => {
     const sandbox = mkdtempSync(join(tmpdir(), 'engine-up-outgoing-'));
     try {
       const bin = join(sandbox, 'bin');
@@ -86,7 +86,7 @@ case "$1" in
   stop) rm -f "$running"; exit 0 ;;
   update|rm) exit 0 ;;
   rename) : > '${state}/renamed'; exit 0 ;;
-  run) : > "$running"; printf '%s\\n' 'f00dfeedf00dfeedf00d'; exit 0 ;;
+  run) : > "$running"; printf '%s\\n' '${'f00dfeed'.repeat(8)}'; exit 0 ;;
   logs)
     sleep 2
     printf '%s\\n' "2026-10-19T17:55:13Z [GameServer] the log of $3"
@@ -103,7 +103,7 @@ case "$1" in
   inspect)
     case "$3" in
       '{{.Id}}')
-        if [ "$4" = club-arena-engine ] && [ -e "$running" ]; then printf '%s\\n' 'f00dfeedf00dfeedf00d'
+        if [ "$4" = club-arena-engine ] && [ -e "$running" ]; then sleep 3; printf '%s\\n' '${'f00dfeed'.repeat(8)}'
         elif [ "$4" = '${leftover}' ]; then printf '%s\\n' 'fedcba987654beef'
         else printf '%s\\n' '${outgoingId}cafe'; fi ;;
       '{{.State.Status}}') printf '%s\\n' exited ;;
@@ -152,9 +152,6 @@ exit 0
       expect(result.stdout).toContain(
         `saving the outgoing log of club-arena-engine-outgoing-${outgoingId} in the background`
       );
-      // Two dumps of two seconds each are still running: engine-up did not wait.
-      expect(elapsed, output).toBeLessThan(2000);
-
       const order = readFileSync(calls, 'utf8').trim().split('\n');
       const at = (prefix: string) => order.findIndex((line) => line.startsWith(prefix));
       expect(at('stop -t 45 club-arena-engine')).toBeGreaterThan(-1);
@@ -169,6 +166,9 @@ exit 0
       );
       // The serving name is never removed after the replacement starts.
       expect(order.slice(at('run -d')).some((line) => line === 'rm club-arena-engine')).toBe(false);
+      expect(
+        order.slice(at('run -d')).some((line) => line === 'inspect -f {{.Id}} club-arena-engine')
+      ).toBe(false);
 
       const deadline = Date.now() + 12_000;
       const saved = () =>
@@ -193,6 +193,10 @@ exit 0
       expect(readFileSync(join(state, 'logger.out'), 'utf8')).toContain(
         'saved the outgoing log to'
       );
+      // Two dumps of two seconds each were still running when launch returned.
+      // Assert after the background fixture has retired so a failing timing
+      // assertion cannot race its cleanup and hide the actual regression.
+      expect(elapsed, output).toBeLessThan(2000);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

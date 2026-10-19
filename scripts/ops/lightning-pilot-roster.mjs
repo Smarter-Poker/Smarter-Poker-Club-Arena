@@ -10,102 +10,82 @@ import { isDeepStrictEqual } from 'node:util';
 import { assertCurrentPilotTarget } from './lightning-pilot-targets.mjs';
 import { assertPilotClub, PILOT } from './prepare-lightning-private-pilot.mjs';
 export const ROSTER_CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d';
-export const ROSTER_OPERATION = 'lightning-action-madness-roster-amended-20261017';
+export const ROSTER_OPERATION = 'lightning-action-latency-roster-20261019';
 export const ROSTER_MANIFEST_SHA256 =
-  'd86d1becf8bca8c0f05d29309a18f10133b9f18eed72e57e7b1a2b3fffeda049';
+  'abc1de189b40d5b7b5ce4e053b331ef74047a5368bc5732d63ac222b58a2557b';
 export const ROSTER_PAIRS = Object.freeze(
   [
     {
-      outgoing: '01bd8786-371e-4ba2-85d6-baab469bba07',
-      incoming: '2db815f9-4302-40c8-b2e3-4bb992e1cff2',
-    },
-    {
-      outgoing: '02c8d806-24c7-40bd-b5b5-30cf96811e3e',
-      incoming: '30064fc2-f1cd-45b3-90d0-c83416a420d3',
-    },
-    {
-      outgoing: '032b7ef6-ef40-4eb7-9a44-21605be733c8',
-      incoming: '39c25042-f5b7-4f48-9ac0-e8e2560937c4',
-    },
-    {
       outgoing: '03951af5-7cf1-4164-aaf0-571b647d98d5',
-      incoming: '39ce9f37-11f8-4f84-a192-b4312a93ba31',
-    },
-    {
-      outgoing: '04910a99-8757-4581-8c84-12ba8a454a75',
-      incoming: '58bf72d7-7815-46f1-8fb0-91b2bf565a3a',
-    },
-    {
-      outgoing: '05835920-da9b-4739-8fa2-2901b844d11d',
-      incoming: '5e65716f-140b-44d9-8e9a-2aacf8b50d8d',
-    },
-    {
-      outgoing: '05a38e8e-ce5f-44fb-82de-782369bf9fab',
-      incoming: '5ff11777-a6c2-41cd-b2b0-56c3576e73ae',
-    },
-    {
-      outgoing: '060c946d-db8d-4d27-b1ec-a203435764f1',
-      incoming: '685612fb-e4cb-4265-af14-e6132539bad1',
-    },
-    {
-      outgoing: '06f16138-70cd-49e5-89b3-aec698118b81',
-      incoming: '6be16e8f-d589-48d8-b7bc-61fe0ceca3b2',
+      incoming: '00bc0957-1913-4beb-a4d1-acab94950690',
     },
     {
       outgoing: '07534039-d056-45bb-adcd-1415ed6a8a08',
-      incoming: '8037b1c0-ddb7-46c1-a068-f11080d7771c',
-    },
-    {
-      outgoing: '085524dc-e663-4dad-abc5-8442450cc9f1',
-      incoming: '8bdb54a1-d614-4932-84fa-795dd4728828',
+      incoming: '36786473-723c-4104-b39d-eec5bbdeb763',
     },
     {
       outgoing: '0860d731-0d86-409a-8384-41a17b99a1f4',
-      incoming: '948bf927-81cb-46d8-b033-08d5f8b35bf0',
-    },
-    {
-      outgoing: '096d7521-f924-461e-8c3d-5386a7770170',
-      incoming: '9585521c-a98d-4880-a915-c7248289a162',
-    },
-    {
-      outgoing: '09dd202d-115b-49ae-afa8-cb528c7b8f72',
-      incoming: 'a45c237c-495f-4696-8fc1-b73f8a39fe62',
+      incoming: '3f26288c-4923-447a-9f0d-d5d208ab8f8d',
     },
     {
       outgoing: '09faf9f3-ed77-4582-9242-c464cb88fa93',
-      incoming: 'e23ec3e7-72c2-4e2d-85e7-8b902cc6fe33',
-    },
-    {
-      outgoing: '0a1e9f3a-87c2-4a4b-b386-3b88de4ed054',
-      incoming: '6516567b-4394-404e-8170-e2a21dae7b48',
-    },
-    {
-      outgoing: '0a558bc1-50c5-4201-b6ca-c7a1e7de1c22',
-      incoming: '67d92504-ee81-4d7f-99ca-f79c752cb265',
-    },
-    {
-      outgoing: '0a714eff-ef23-4928-b2a7-addecc97b467',
-      incoming: 'c97784d9-45ce-488f-ad17-130d569e16be',
+      incoming: '46394a29-9ca4-4280-952e-e201f4ff9517',
     },
     {
       outgoing: '0a9625c9-f679-4d98-9ebe-d8bb005c45b6',
-      incoming: 'f1e78390-98b7-48dd-82b9-a5aadbe95c51',
+      incoming: '775f4778-ceda-44bb-a26b-7c4194c8c0c1',
     },
     {
       outgoing: '0b1a64c2-8970-4f89-a396-9863e3aa2ccc',
-      incoming: '2af500e1-1665-4468-84d1-e346e64fcb68',
+      incoming: '8384a11c-8930-4b0d-a1c9-748f03569a78',
     },
     {
-      outgoing: '0bea449d-73af-4654-bf19-61db087d7d45',
-      incoming: '6e53238e-0b78-4a67-b7a2-eed9e8e7d9b3',
+      outgoing: '10d08b4f-f6da-41ea-a66c-e97a0d4930e0',
+      incoming: '852b2be0-4983-4507-a687-fc12f241960d',
     },
     {
-      outgoing: '0c7ad36f-7ad2-4faa-963f-69ee2f9f5062',
-      incoming: 'c73bc8f4-5cb7-462f-8405-7b4716b35d5d',
+      outgoing: '171038e5-f50e-4bdd-988f-621a7ce9479c',
+      incoming: '9eb2a231-a42f-4162-8818-3f14ebc19385',
     },
     {
-      outgoing: '0f14f372-0c43-47ff-9257-1324a7e94488',
-      incoming: '4381b30d-631e-4146-a2de-2f01dd1a36e9',
+      outgoing: '19de9af5-6576-4ebb-92c6-1fe53599f782',
+      incoming: 'a45c237c-495f-4696-8fc1-b73f8a39fe62',
+    },
+    {
+      outgoing: '204a6a80-8b83-4cff-98ed-e89f4da7c4dc',
+      incoming: 'a51e2ad3-69aa-4bbc-a82c-06a6581572bf',
+    },
+    {
+      outgoing: '227ba92c-9b8c-4705-ba76-181f1f697638',
+      incoming: 'aab5a8fc-f3a8-4f7f-b5fc-5c2e61553caf',
+    },
+    {
+      outgoing: '22f02ebc-4757-4e06-99e6-f7e4a95720b4',
+      incoming: 'ac254a0e-a02b-49be-993d-e89a5803a653',
+    },
+    {
+      outgoing: '285055c6-96a7-4a60-9033-51f83f49dbcb',
+      incoming: 'ad0c8518-f9e3-4341-a1db-dccf83145838',
+    },
+    {
+      outgoing: '2958f800-0cca-43a8-8486-08e524434199',
+      incoming: 'bdaa78a6-95e2-4456-9bce-cdb6cd505f4e',
+    },
+    {
+      outgoing: '4ce9fa05-703f-40e4-a14e-40cffc3ba305',
+      incoming: 'd2ce100a-152e-4b0e-8903-2296a9cb7cbe',
+    },
+    {
+      outgoing: '4ffcc7ec-15a1-4c80-8309-e893ef9db022',
+      incoming: 'd311fcf5-37da-49a7-b925-63f316a80355',
+    },
+    {
+      outgoing: '6162b471-d011-41f7-ad89-9a8d856c9ffb',
+      incoming: 'fb5fe9fe-2fe9-4970-b152-f08871ffec61',
+    },
+    {
+      outgoing: '697d34f5-fe65-422a-b624-5a4957ef4196',
+      incoming: 'fb7c947d-79ce-4706-8c33-bb4f39359c59',
     },
   ].map(Object.freeze)
 );
@@ -343,7 +323,7 @@ export async function prepareRoster({ adapter, sourceRunId, operationId, now = (
     incomingEligibility.push({ userId: incoming, ...verified?.eligibility });
   }
   // Gross send budget must be available without relying on speculative returns.
-  if (initial.treasury < 460000) fail('INSUFFICIENT_GROSS_TREASURY');
+  if (initial.treasury < 360000) fail('INSUFFICIENT_GROSS_TREASURY');
   const baseline = {
     version: 1,
     operation: ROSTER_OPERATION,
@@ -438,6 +418,7 @@ export async function executeRoster({
     await save();
     await read();
     for (const { incoming } of ROSTER_PAIRS) await adapter.validateIncoming(incoming);
+    await adapter.assertAssignmentReleased();
     // All departures precede admissions; no bookings or other clubs are edited.
     for (const { outgoing } of ROSTER_PAIRS) {
       const raw = await read(outgoing);
@@ -497,7 +478,7 @@ export async function executeRoster({
         (id) => adapter.fund(incoming, id),
         async (r) => {
           const atomic = rosterFundingReadback(r);
-          if (report.grossFundingCents + 20000 > 460000) fail('FUND_RECEIPT_INVALID');
+          if (report.grossFundingCents + 20000 > 360000) fail('FUND_RECEIPT_INVALID');
           expected.members.find((m) => m.user_id === incoming).chip_balance += 20000;
           expected.treasury -= 20000;
           report.grossFundingCents += 20000;
@@ -507,7 +488,7 @@ export async function executeRoster({
         }
       );
     }
-    if (expected.members.length !== 73 || report.grossFundingCents !== 460000)
+    if (expected.members.length !== 73 || report.grossFundingCents !== 360000)
       fail('FINAL_ROSTER_INCOMPLETE');
     await read();
     report.status = 'verified';
@@ -701,6 +682,16 @@ export function createRosterAdapter({
   }
   return {
     validateIncoming,
+    async assertAssignmentReleased() {
+      await assertOwner();
+      const status = data(
+        await owner.rpc('fn_lightning_pilot_assignment_status'),
+        'PILOT_ASSIGNMENT'
+      );
+      if (status.club_id !== ROSTER_CLUB || typeof status.active !== 'boolean')
+        fail('PILOT_ASSIGNMENT_UNVERIFIED');
+      if (status.active) fail('PILOT_ASSIGNMENT_STILL_ACTIVE');
+    },
     async snapshot(hazardsFor) {
       const [club, members, games] = await Promise.all([
         admin

@@ -23,7 +23,12 @@
  */
 import { supabase } from '../services/supabase/client.js';
 import type { TableConnectionAccess } from '../services/TableConnectionAccess.js';
-import type { LightningDevicePlatform, PresenceTableReport } from './LightningPresence.js';
+import {
+  LightningPresence,
+  type LightningDevicePlatform,
+  type PresenceSource,
+  type PresenceTableReport,
+} from './LightningPresence.js';
 import type { LightningPresenceReport } from './LightningPresenceReporter.js';
 import { isUuid } from './LightningRpc.js';
 import { LightningSeatProxy } from './LightningSeatProxy.js';
@@ -104,6 +109,18 @@ export interface LightningRegistryDeps {
    * reports nothing; the boot wiring passes the real reporter.
    */
   presenceReport?: LightningPresenceReport | null;
+  /**
+   * The ANCHOR engines' presence reports (never the rooms'). A room's last
+   * socket closing is an absence only if no anchor engine here still reports
+   * the player CONNECTED: a horse's input device is its anchor engine's
+   * heartbeat, so a browser that opened a horse's room and closed again
+   * leaves a player who is still there (run 39315415767: the witness closed at
+   * 20:05:12, the room reported a disconnect at 20:05:14 and the reaper exited
+   * a heartbeating horse at 20:08:17). The same rule as matching and the boot
+   * pass: connected anywhere wins, unknown is never proof of presence. Null
+   * (the default) keeps the room as the only witness.
+   */
+  anchorPresence?: PresenceSource | null;
   /** Engine clock (injected for tests). */
   now?: () => number;
   /** LIGHTNING PHASE 12: where hand_to_first_render goes (the process metrics otherwise). */
@@ -184,6 +201,7 @@ export class LightningRegistry {
   ) => Promise<{ playerId: string; clusterId: string } | null>;
   private closeRoom: ((roomId: string, reason: string) => void) | null;
   private readonly presenceReport: LightningPresenceReport | null;
+  private readonly anchorPresence: LightningPresence | null;
   private sweeping: Promise<number> | null = null;
   private readonly clusterMode: (clusterId: string) => Promise<string | null>;
   /** userId -> handId -> the decision owed there (Lightning Phase 8). */
@@ -204,6 +222,7 @@ export class LightningRegistry {
     this.clusterMode = deps.clusterMode ?? lightningClusterMode;
     this.closeRoom = deps.closeRoom ?? null;
     this.presenceReport = deps.presenceReport ?? null;
+    this.anchorPresence = deps.anchorPresence ? new LightningPresence(deps.anchorPresence) : null;
     this.clock = deps.now ?? Date.now;
     this.metrics = deps.metrics ?? lightningMetrics;
   }
@@ -421,10 +440,23 @@ export class LightningRegistry {
     info.sockets = Math.max(0, info.sockets - 1);
     if (info.sockets === 0) {
       this.hostByRoom.get(roomId)?.notePresence(userId, false);
-      // LAST socket gone: the transition the DB reaper's clock starts on.
-      if (had > 0 && info.clusterId) this.reportPresence('disconnected', info.clusterId, userId);
+      // LAST socket gone: the transition the DB reaper's clock starts on -
+      // unless an anchor engine still has the player connected.
+      if (had > 0 && info.clusterId && !this.connectedAtAnchor(info.clusterId, userId))
+        this.reportPresence('disconnected', info.clusterId, userId);
     }
     this.pruneRoom(roomId);
+  }
+
+  /** An anchor engine here reports this player CONNECTED in this Cluster. */
+  private connectedAtAnchor(clusterId: string, userId: string): boolean {
+    if (!this.anchorPresence) return false;
+    try {
+      return this.anchorPresence.snapshot(clusterId).connected.includes(userId);
+    } catch {
+      // A presence read that fails vouches for nobody: the room's absence stands.
+      return false;
+    }
   }
 
   private reportPresence(

@@ -41,6 +41,8 @@ const ready = () => ({
 class Refused extends Error {}
 class Committed extends Error {}
 class Unknown extends Error {}
+// Shutdown's not-sent refusal (2026-10-19) is a refusal subclass, as in production.
+class NotSent extends Refused {}
 
 function setup() {
   const rpc = vi.fn().mockImplementation(async (name: string) => ({
@@ -83,6 +85,7 @@ function setup() {
     'TerminalSettlementRefusedError',
     'TerminalSettlementCommittedError',
     'TerminalSettlementOutcomeUnknownError',
+    'TerminalSettlementNotSentError',
     'reportError',
     'raiseFinancialAlert',
     'TournamentManagerEliminations',
@@ -96,6 +99,7 @@ function setup() {
     Refused,
     Committed,
     Unknown,
+    NotSent,
     vi.fn(),
     vi.fn(),
     {

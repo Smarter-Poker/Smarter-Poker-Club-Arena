@@ -39,6 +39,20 @@ export class TerminalSettlementRefusedError extends Error {
   }
 }
 
+/**
+ * The engine began shutting down before this request reached the database, so
+ * nothing was sent for it after that point, and every attempt that WAS sent was
+ * answered by the database with a rollback. Nothing committed. It is a proven
+ * refusal: callers release their finish guard exactly as for any refusal, and
+ * the next engine asks again. See closeTerminalFinishLanes.
+ */
+export class TerminalSettlementNotSentError extends TerminalSettlementRefusedError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TerminalSettlementNotSentError';
+  }
+}
+
 export class TerminalSettlementOutcomeUnknownError extends Error {
   constructor(message: string) {
     super(message);
@@ -135,10 +149,73 @@ export function noteTerminalFinishClub(tournamentId: string, clubId: unknown): v
  */
 const terminalFinishLaneTails = new Map<string, Promise<void>>();
 
+/**
+ * A SHUTDOWN NEVER WAITS FOR A CLUB'S WHOLE FINISH QUEUE (2026-10-19).
+ *
+ * The lane above serializes every finish of one club in this process, and a
+ * manager's stop() first joins its in-flight elimination sweep, which is the
+ * finish waiting in that lane. From 15:43 to 21:42 UTC on 2026-10-19 the
+ * refused finishes of 992 decided events of ONE club (fade0000-...-0001, the
+ * direct-owner fee incident) filled it: every scheduler slot held a finish
+ * queued behind the others, each refused finish held the club's F lock for
+ * seconds, and each of its five attempts went back to the tail. Graceful
+ * shutdown then waited for that queue to drain, passed its 40-second deadline
+ * and exited without releasing its leases, and the release at every break from
+ * 16:55 to 20:55 ran out of cutover time and rolled back.
+ *
+ * So shutdown closes the lanes. A request still waiting for its turn is never
+ * sent; nothing was sent for it, so nothing can commit, and it is refused with
+ * TerminalSettlementNotSentError. A request already in the database is never
+ * abandoned: it finishes and its answer is read exactly as before. Shutdown
+ * therefore waits for at most the one finish each club has in flight, however
+ * many decided events the board holds.
+ */
+let terminalFinishLanesClosed = false;
+let terminalFinishLanesClosedSignal: Promise<void> | null = null;
+let signalTerminalFinishLanesClosed: (() => void) | null = null;
+
+function terminalFinishLanesClosure(): Promise<void> {
+  if (!terminalFinishLanesClosedSignal) {
+    terminalFinishLanesClosedSignal = new Promise<void>((resolve) => {
+      signalTerminalFinishLanesClosed = resolve;
+    });
+  }
+  return terminalFinishLanesClosedSignal;
+}
+
+/** Called synchronously by GameServer.stop(), before its first await. */
+export function closeTerminalFinishLanes(): void {
+  if (terminalFinishLanesClosed) return;
+  terminalFinishLanesClosed = true;
+  terminalFinishLanesClosure();
+  signalTerminalFinishLanesClosed?.();
+}
+
+/** Called by GameServer.start(): a server that is starting sends its finishes. */
+export function openTerminalFinishLanes(): void {
+  if (!terminalFinishLanesClosed) return;
+  terminalFinishLanesClosed = false;
+  terminalFinishLanesClosedSignal = null;
+  signalTerminalFinishLanesClosed = null;
+}
+
+export function terminalFinishLanesAreClosed(): boolean {
+  return terminalFinishLanesClosed;
+}
+
+const LANE_CLOSED = Symbol('terminal-finish-lane-closed');
+
+function notSentForShutdown(): TerminalSettlementNotSentError {
+  return new TerminalSettlementNotSentError(
+    'terminal settlement was not sent: the engine is shutting down'
+  );
+}
+
 export async function withTerminalFinishLane<T>(
   clubId: string | null | undefined,
   run: () => Promise<T>
 ): Promise<T> {
+  if (terminalFinishLanesClosed) throw notSentForShutdown();
   if (!clubId) return run();
   const ahead = terminalFinishLaneTails.get(clubId) ?? Promise.resolve();
   let release!: () => void;
@@ -148,9 +225,17 @@ export async function withTerminalFinishLane<T>(
   const tail = ahead.then(() => turn);
   terminalFinishLaneTails.set(clubId, tail);
   try {
-    await ahead;
+    // Wait for the turn OR the shutdown, whichever comes first. A request that
+    // has not been sent when the lanes close is never sent.
+    const turnOrClosed = await Promise.race([
+      ahead.then(() => null),
+      terminalFinishLanesClosure().then(() => LANE_CLOSED),
+    ]);
+    if (turnOrClosed === LANE_CLOSED || terminalFinishLanesClosed) throw notSentForShutdown();
     return await run();
   } finally {
+    // Our own turn is released at once; the requests behind us observe the
+    // same closure and are refused without being sent.
     release();
     if (terminalFinishLaneTails.get(clubId) === tail) terminalFinishLaneTails.delete(clubId);
   }
@@ -493,8 +578,15 @@ export async function requestTournamentTerminalReceipt(
   let unprovenAttempts = 0;
   // The resolver's own failure, when the database stated it (a SQLSTATE).
   let resolverRolledBack = false;
+  // Shutdown closed the finish lanes before this request's next attempt was
+  // sent. Attempts already sent keep their exact accounting below.
+  let stoppedBeforeSending = false;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    if (terminalFinishLanesClosed) {
+      stoppedBeforeSending = true;
+      break;
+    }
     if (legacyDeal) {
       let inactive = false;
       try {
@@ -524,12 +616,14 @@ export async function requestTournamentTerminalReceipt(
       }
     }
     try {
-      attemptedWrites++;
-      const { data, error } = await withTerminalFinishLane(clubId, async () =>
-        proposalRequest
+      // Counted only once the attempt is actually sent: a request refused by
+      // a closed lane never reached the database and cannot have committed.
+      const { data, error } = await withTerminalFinishLane(clubId, async () => {
+        attemptedWrites++;
+        return proposalRequest
           ? await terminalAuthority.rpc('fn_complete_tournament_terminal_proposal', proposalRequest)
-          : await terminalAuthority.rpc('fn_complete_tournament_terminal', request)
-      );
+          : await terminalAuthority.rpc('fn_complete_tournament_terminal', request);
+      });
       if (!error) {
         const receipt = await verifyTerminalReceipt(
           data,
@@ -556,11 +650,33 @@ export async function requestTournamentTerminalReceipt(
       }
     } catch (error) {
       if (error instanceof TerminalSettlementDisagreementError) throw error;
+      if (error instanceof TerminalSettlementNotSentError) {
+        stoppedBeforeSending = true;
+        break;
+      }
       unprovenAttempts++;
       lastFailure = errorMessage(error);
     }
 
+    if (terminalFinishLanesClosed) {
+      stoppedBeforeSending = true;
+      break;
+    }
     if (attempt < attempts) await wait(200 * 2 ** (attempt - 1));
+  }
+
+  // Shutdown stopped this request before its next attempt. When every attempt
+  // that was sent is one the database itself answered with a rollback (or none
+  // was sent at all), nothing committed: refuse without the resolver, so a
+  // shutdown never queues behind the terminal lock to ask about attempts that
+  // cannot have committed. An attempt whose outcome the database did NOT state
+  // still goes to the resolver below, exactly as before.
+  if (stoppedBeforeSending && unprovenAttempts === 0) {
+    throw new TerminalSettlementNotSentError(
+      attemptedWrites === 0
+        ? 'terminal settlement was not sent: the engine is shutting down'
+        : `${lastFailure}; the engine is shutting down after ${attemptedWrites} attempt(s), each rolled back by the database, so none committed`
+    );
   }
 
   // A plain MVCC status read cannot distinguish a rollback from a terminal

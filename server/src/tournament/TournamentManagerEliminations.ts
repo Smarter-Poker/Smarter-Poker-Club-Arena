@@ -44,6 +44,7 @@ import {
   readCommittedTournamentTerminalReceipt,
   requestTournamentTerminalReceipt,
   TerminalSettlementDisagreementError,
+  TerminalSettlementNotSentError,
   TerminalSettlementOutcomeUnknownError,
   TerminalSettlementRefusedError,
 } from './terminalSettlementRpc.js';
@@ -5219,6 +5220,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           err instanceof TerminalSettlementCommittedError
             ? err.receipt
             : this.committedFinalTableDealReceipt;
+        if (!committedReceipt && err instanceof TerminalSettlementNotSentError) {
+          // Shutdown closed the finish lanes before this deal reached the
+          // database: nothing was sent, nothing committed. The players' deal
+          // review stays exactly as it is for the next engine, which asks again.
+          this.finalTableDealHandled = false;
+          this.tournamentFinished = false;
+          return false;
+        }
         const outcomeUnknown = err instanceof TerminalSettlementOutcomeUnknownError;
         const provenRefusal = err instanceof TerminalSettlementRefusedError;
         if (committedReceipt) {
@@ -5430,6 +5439,14 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           err instanceof TerminalSettlementCommittedError
             ? err.receipt
             : this.committedFinalTableDealReceipt;
+        if (!committedReceipt && err instanceof TerminalSettlementNotSentError) {
+          // Shutdown closed the finish lanes before this deal reached the
+          // database: nothing was sent, nothing committed. The players' deal
+          // review stays exactly as it is for the next engine, which asks again.
+          this.finalTableDealHandled = false;
+          this.tournamentFinished = false;
+          return false;
+        }
         const outcomeUnknown = err instanceof TerminalSettlementOutcomeUnknownError;
         const provenRefusal = err instanceof TerminalSettlementRefusedError;
         if (committedReceipt) {
@@ -5797,6 +5814,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         return;
       }
       const provenRefusal = settlementErr instanceof TerminalSettlementRefusedError;
+      if (settlementErr instanceof TerminalSettlementNotSentError) {
+        // Shutdown closed the finish lanes before this finish reached the
+        // database: nothing committed, so it is neither a refusal to count nor
+        // an alert to raise. The next engine finishes the event.
+        releaseFinishGuard();
+        return;
+      }
       const outcomeUnknown =
         settlementErr instanceof TerminalSettlementOutcomeUnknownError || !provenRefusal;
       const alertIsNew = this.noteFinishRefusal(provenRefusal, settlementErr);

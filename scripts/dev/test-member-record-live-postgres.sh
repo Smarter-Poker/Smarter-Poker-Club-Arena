@@ -16,7 +16,8 @@ migration="$repo/supabase/migrations/20261018135655_member_records_follow_funded
 if "${psql[@]}" -f "$migration" > "$work/replay.log" 2>&1; then echo 'Replay unexpectedly accepted'; exit 1; fi
 "${psql[@]}" -f "$fixture/global-before.sql" -f "$repo/supabase/migrations/20261018195412_member_record_all_field_source_events.sql" -f "$fixture/global-after.sql"
 "${psql[@]}" -f "$fixture/roster-before.sql" -f "$repo/supabase/migrations/20261018230227_member_roster_funded_counts_and_private_source_events.sql" -f "$fixture/roster-after.sql"
-"${psql[@]}" -f "$fixture/mtt-money-before.sql" -f "$repo/supabase/migrations/20261019095423_member_record_mtt_reads_tournament_money.sql" -f "$fixture/mtt-money-after.sql"
+"${psql[@]}" -f "$fixture/mtt-money-before.sql" -f "$repo/supabase/migrations/20261019095423_member_record_mtt_reads_tournament_money.sql" -f "$fixture/mtt-money-after.sql" -f "$repo/supabase/migrations/20261019021553_member_statistics_fees_read_fee_ledger.sql" -f "$fixture/mtt-money-baseline.sql" -f "$repo/supabase/migrations/20261019143456_member_statistics_net_reads_tournament_money.sql" -f "$fixture/mtt-money-stats-after.sql"
+if "${psql[@]}" -f "$repo/supabase/migrations/20261019143456_member_statistics_net_reads_tournament_money.sql" > "$work/mtt-replay.log" 2>&1; then echo 'Statistics net replay unexpectedly accepted'; exit 1; fi
 echo 'MEMBER_RECORD_POSTGRES PASS: regression, ranges, attribution, permissions, live signals, replay refusal'
 
 "${psql[@]}" -c 'CREATE DATABASE member_record_concurrency'

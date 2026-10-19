@@ -130,7 +130,38 @@ export async function processHandPostCommitObligations(
     // made every caller that serialised it with String(err) record
     // "[object Object]" - see describeError. Carry the detail in a real Error
     // so the type the callers are annotated for is the type they receive.
-    if (error) throw new Error(`post-commit obligations RPC failed: ${describeError(error)}`);
+    if (error) {
+      // A transport deadline can lose the reply after the transaction committed.
+      // Reconcile that unknown outcome from the immutable original receipt;
+      // never replay a write or accept a different hand's completion.
+      try {
+        const { data: receipt, error: readError } = await supabase
+          .from('hand_atomic_commits')
+          .select(
+            'hand_id,hand_number,post_commit_completed_at,post_commit_request_hash,post_commit_payload_hash,post_commit_result'
+          )
+          .eq('hand_id', id)
+          .maybeSingle();
+        const result = receipt?.post_commit_result;
+        if (
+          !readError &&
+          receipt?.hand_id === id &&
+          typeof receipt.post_commit_completed_at === 'string' &&
+          Number.isFinite(Date.parse(receipt.post_commit_completed_at)) &&
+          /^[0-9a-f]{64}$/.test(receipt.post_commit_request_hash ?? '') &&
+          /^[0-9a-f]{64}$/.test(receipt.post_commit_payload_hash ?? '') &&
+          Number.isSafeInteger(receipt.hand_number) &&
+          result?.ok === true &&
+          result.hand_id === id &&
+          result.hand_number === receipt.hand_number
+        ) {
+          return { ...result, already_completed: true };
+        }
+      } catch {
+        /* An unreadable receipt leaves the original outcome unknown. */
+      }
+      throw new Error(`post-commit obligations RPC failed: ${describeError(error)}`);
+    }
     return (data ?? {}) as HandPostCommitResult;
   };
   const initial = await apply(handId);

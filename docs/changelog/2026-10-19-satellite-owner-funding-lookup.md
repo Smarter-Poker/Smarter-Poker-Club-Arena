@@ -1,0 +1,7 @@
+# Satellite owner proof seeks its tournament and player
+
+The latest-week PNL report timed out in the existing satellite owner proof while revalidating original closed-player inventory. A bounded production EXPLAIN of its funding lookup read 24 heap pages and filtered 23 other users to return one receipt (120.548 ms). The existing tournament/registration/time index cannot seek the user filter.
+
+A nonunique two-UUID index on tournament_participant_funding_receipts(tournament_id,user_id) supplies that exact lookup. It includes all records and adds no financial predicate, payload, rate, deadline, receipt or function change. The existing concurrent-preamble installer owns the online build and exact VALID/READY/LIVE, key/order/type/opclass/owner/shape readback. No hot-table SHARE-lock build or index-drop retry loop is introduced.
+
+The isolated PG17 fixture executes the actual concurrent statement through the maintained parser. Complete rows and duplicate/NULL/empty/multiple-key results remain identical, as do table security, functions and monetary rows. Lookup blocks fall from 2865 to 12 in the 20,008-row fixture. Wrong key/predicate, missing index and invalid/unready/nonlive/unique flags are refused by the exact candidate guard. Existing bank-correlation tests remain unchanged. The new fixture runs through the existing required accounting qualification parent. Production installation and the full PNL outcome remain separate obligations.

@@ -19,6 +19,7 @@ const mockIncrementProgress = vi.fn().mockResolvedValue({ unlocked: false, achie
 const mockCheckWins = vi.fn().mockResolvedValue([]);
 const mockCheckSpecialHand = vi.fn().mockResolvedValue(null);
 const mockCheckHandsPlayed = vi.fn().mockResolvedValue([]);
+const mockRecordLogin = vi.fn().mockResolvedValue({ counted: false, streak: 0, unlocked: [] });
 
 vi.mock('../../src/lib/supabase', () => {
   const buildChain = (): any => {
@@ -51,6 +52,7 @@ vi.mock('../../src/services/AchievementService', () => ({
     checkWins: (...args: any[]) => mockCheckWins(...args),
     checkSpecialHand: (...args: any[]) => mockCheckSpecialHand(...args),
     checkHandsPlayed: (...args: any[]) => mockCheckHandsPlayed(...args),
+    recordLogin: (...args: any[]) => mockRecordLogin(...args),
   },
   ACHIEVEMENTS: [],
 }));
@@ -72,6 +74,7 @@ describe('AchievementTriggerService', () => {
     mockCheckWins.mockResolvedValue([]);
     mockCheckSpecialHand.mockResolvedValue(null);
     mockCheckHandsPlayed.mockResolvedValue([]);
+    mockRecordLogin.mockResolvedValue({ counted: false, streak: 0, unlocked: [] });
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -92,7 +95,7 @@ describe('AchievementTriggerService', () => {
     it('should return triggered achievements when unlocked', async () => {
       mockIncrementProgress.mockResolvedValue({
         unlocked: true,
-        achievement: { id: 'hands_100', name: 'Card Shark', chipReward: 500 },
+        achievement: { id: 'hands_100', name: 'Card Shark', diamondReward: 500 },
       });
 
       const result = await achievementTriggerService.onHandComplete('user-1', {
@@ -146,10 +149,14 @@ describe('AchievementTriggerService', () => {
       expect(mockCheckSpecialHand).not.toHaveBeenCalled();
     });
 
-    it('should accumulate chips from multiple achievements', async () => {
+    // REPLACED 2026-10-19. This summed `chipReward` off whatever the browser
+    // had just unlocked. Nothing a browser reports pays anything now: rewards
+    // are diamonds the SERVER credits on an unlock it proves itself, so a
+    // browser-reported unlock counts no diamonds whatever its catalog says.
+    it('credits no diamonds for a browser-reported unlock', async () => {
       mockCheckWins.mockResolvedValue([
-        { name: 'Win Streak', chipReward: 100 },
-        { name: 'Win Master', chipReward: 250 },
+        { id: 'wins_10', name: 'Win Streak', diamondReward: 100 },
+        { id: 'wins_100', name: 'Win Master', diamondReward: 250 },
       ]);
 
       const result = await achievementTriggerService.onHandComplete('user-1', {
@@ -158,7 +165,8 @@ describe('AchievementTriggerService', () => {
         showdown: true,
       });
 
-      expect(result.chipsAwarded).toBeGreaterThanOrEqual(350);
+      expect(result.triggeredAchievements).toHaveLength(2);
+      expect(result.diamondsAwarded).toBe(0);
     });
   });
 
@@ -251,6 +259,20 @@ describe('AchievementTriggerService', () => {
       expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'streak_7');
       expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'streak_30');
       expect(mockIncrementProgress).not.toHaveBeenCalledWith('user-1', 'streak_100');
+    });
+
+    it('asks the server to count the day, and credits what the server reports paying', async () => {
+      mockRecordLogin.mockResolvedValue({
+        counted: true,
+        streak: 30,
+        unlocked: [
+          { achievement: { id: 'streak_30', name: 'Monthly Grinder' }, diamondsAwarded: 100 },
+        ],
+      });
+      const result = await achievementTriggerService.onLogin('user-1');
+      expect(mockRecordLogin).toHaveBeenCalledTimes(1);
+      expect(result.diamondsAwarded).toBe(100);
+      expect(result.triggeredAchievements.map((a) => a.id)).toEqual(['streak_30']);
     });
   });
 });

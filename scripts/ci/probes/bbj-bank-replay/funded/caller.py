@@ -47,6 +47,8 @@ IDENTITY_TESTS = {
     'test_shallow_pr_checkout_retains_authoritative_parent_identity',
     'test_timing_producer_is_single_read_exclusive_and_receipt_is_bound',
     'test_timing_api_failure_is_redacted_without_retry',
+    'test_timing_transport_diagnostics_are_allowlisted_without_retry_or_receipt',
+    'test_timing_identity_diagnostic_contains_only_fixed_field_names',
 }
 
 

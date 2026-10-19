@@ -164,3 +164,9 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Earning history never exposes a provably unfinished external transaction.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-atomic-accounting-history-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Revenue statements distinguish terminal payouts from successive funding transfers.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-revenue-digest-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
+
+# The satellite owner proof keeps all rows but seeks its exact tournament/player.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-satellite-funding-user-index-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch), "--output", str(args.output.with_name("satellite-funding-user-index.json"))], text=True))

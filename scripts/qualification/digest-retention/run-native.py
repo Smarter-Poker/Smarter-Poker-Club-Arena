@@ -92,6 +92,8 @@ try:
  print('PASS: native Stripe aggregate reproduces two false alarms before; done/completed succeed after; failed/error/dead_letter/processing/null remain visible')
  print('PASS: one million historical receipts, bounded six passes, three sparse pending hands compacted, totals unchanged, cursor wraps, freeze and failure preserve cursor')
  print(json.dumps(results))
+ import runpy
+ runpy.run_path(str(Path(__file__).parent/'lightning-roots.py'))['qualify'](root,pg,port,sql)
 finally:
  if started:run('pg_ctl',['-D',str(scratch/'data'),'-m','immediate','-w','stop'])
  shutil.rmtree(scratch)

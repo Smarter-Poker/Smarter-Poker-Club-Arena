@@ -104,7 +104,7 @@ async function openNaturalMultiRunObserver(
 
 const enabled = process.env.LIVE_TABLE_MULTIRUN_CERTIFICATION === '1';
 const union = 'fade0000-0000-0000-0000-000000000001';
-// Observe one foreground cash table with recent evidence of both run counts.
+// Rank eligible cash tables by recent history; observe one foreground subject.
 // Keep the twenty-minute observation and every actual river/recipient check;
 // no table setting, hand or action is written to produce the sample.
 const observationMs = 20 * 60_000;

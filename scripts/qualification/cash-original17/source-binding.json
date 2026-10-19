@@ -2,8 +2,8 @@
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 228284,
-      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+      "bytes": 228531,
+      "sha256": "064f1b895db05f3cb6bebd78ed704e9940518a620395bc86e367667617a1abc8"
     },
     "scripts/ci/satellite_qualifier_fixture.py": {
       "bytes": 18466,
@@ -411,6 +411,22 @@
           "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
         }
       }
+    }
+  },
+  "ownerDirectSeventyQualification20261019": {
+    "reason": "Add the isolated native owner direct 70 percent player-deal proof to existing required Accounting2. Only reviewed current workflow source identity changes; retain all financial inputs, assertions, historical pins and qualification verdicts. This fingerprint refresh is not a financial execution certificate.",
+    "previous": [
+      {
+        "section": "files",
+        "previous": {
+          "bytes": 228284,
+          "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+        }
+      }
+    ],
+    "current": {
+      "bytes": 228531,
+      "sha256": "064f1b895db05f3cb6bebd78ed704e9940518a620395bc86e367667617a1abc8"
     }
   }
 }

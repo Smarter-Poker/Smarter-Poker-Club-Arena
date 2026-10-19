@@ -297,7 +297,8 @@ describe('LAW: a profile shows strangers only what the table needs', () => {
       'src/pages/ProfilePage.tsx',
       'src/pages/SettingsPage.tsx',
       'src/services/DiamondService.ts',
-      'src/services/AchievementTriggerService.ts',
+      // AchievementTriggerService no longer reads the streak at all
+      // (2026-10-19): fn_achievement_record_login counts the day server-side.
       'src/stores/useUserStore.ts',
       'src/hooks/useProfileAccountSync.ts',
     ]) {

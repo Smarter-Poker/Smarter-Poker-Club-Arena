@@ -84,11 +84,31 @@ export interface NaturalMultiRunHistoryRow {
   rit_boards: unknown[];
 }
 
+/** Raw dispatch JSON preserves numeric-vs-string authority before opening fixtures. */
+export function naturalMultiRunRequiredRuns(
+  targetJSON?: string,
+  mobileJSON?: string,
+  engineJSON?: string
+): Array<2 | 3> {
+  let target: unknown;
+  try {
+    target = targetJSON === undefined ? null : JSON.parse(targetJSON);
+  } catch {
+    throw new Error('Invalid natural multirun target JSON');
+  }
+  if (target === null) return [2, 3];
+  if (target !== 3 || mobileJSON !== 'true' || engineJSON !== 'null')
+    throw new Error('Natural multirun target requires numeric 3, mobile true and no engine pin');
+  return [3];
+}
+
 /** Bounded recent history predicts opportunity; actual live evidence certifies both run counts. */
 export function selectNaturalMultiRunSubject(
   tables: NaturalMultiRunCandidate[],
-  recent: NaturalMultiRunHistoryRow[]
+  recent: NaturalMultiRunHistoryRow[],
+  requiredRuns: Array<2 | 3> = [2, 3]
 ): NaturalMultiRunCandidate {
+  const targetThree = requiredRuns.length === 1 && requiredRuns[0] === 3;
   const counts = new Map<string, [number, number]>();
   for (const row of recent) {
     if (!Array.isArray(row.rit_boards) || ![1, 2].includes(row.rit_boards.length)) continue;
@@ -98,12 +118,12 @@ export function selectNaturalMultiRunSubject(
   }
   const ranked = tables
     .filter((table) => {
-      // A mandatory count cannot supply both formats without changing live configuration.
+      // Exclude a mandatory count that cannot supply the requested live coverage.
       const mode = String(table.run_it_mode || '').toLowerCase();
       return (
         eligibleNaturalMultiRunTable(table) &&
         mode !== 'mandatory_twice' &&
-        mode !== 'mandatory_three'
+        (targetThree || mode !== 'mandatory_three')
       );
     })
     .map((table) => {
@@ -112,6 +132,7 @@ export function selectNaturalMultiRunSubject(
     });
   ranked.sort(
     (a, b) =>
+      (targetThree ? (counts.get(b.table.id)?.[1] ?? 0) - (counts.get(a.table.id)?.[1] ?? 0) : 0) ||
       b.balanced - a.balanced ||
       b.total - a.total ||
       b.table.current_players - a.table.current_players ||

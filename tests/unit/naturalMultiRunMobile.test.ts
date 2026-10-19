@@ -9,6 +9,7 @@ import {
   naturalMultiRunCandidateQuery,
   eligibleNaturalMultiRunTable,
   naturalMultiRunTransportEvidence,
+  naturalMultiRunRequiredRuns,
 } from '../e2e/support/naturalMultiRunMobile';
 
 const packet = { hand: 41, runs: 3, at: 100, recipients: ['winner'] };
@@ -564,4 +565,35 @@ it('requires explicit landed phase before using departed geometry, never a flyin
   expect(witness().read().violations).toEqual([
     '41: Payout Disappeared Before Reaching Its Recipient',
   ]);
+});
+
+it.each([undefined, 'null'])('keeps default BOTH natural coverage for target %s', (target) => {
+  expect(naturalMultiRunRequiredRuns(target, 'true', 'null')).toEqual([2, 3]);
+});
+it('admits only explicit numeric three for a client observation', () => {
+  expect(naturalMultiRunRequiredRuns('3', 'true', 'null')).toEqual([3]);
+});
+it.each(['"3"', '2', 'true', '[]', '{}', '[3]', 'false', '""', 'invalid'])(
+  'refuses malformed or unsupported target %s',
+  (target) => {
+    expect(() => naturalMultiRunRequiredRuns(target, 'true', 'null')).toThrow(/target/);
+  }
+);
+it.each([
+  ['false', 'null'],
+  ['"true"', 'null'],
+  ['true', '"' + engineSha + '"'],
+])('refuses targeted mode without literal mobile true and absent engine pin', (mobile, engine) => {
+  expect(() => naturalMultiRunRequiredRuns('3', mobile, engine)).toThrow(/target/);
+});
+it('targets three-run history and permits mandatory three while refusing mandatory twice', () => {
+  const tables = [
+    { ...subject('two', 9), run_it_mode: 'mandatory_twice' },
+    { ...subject('three', 4), run_it_mode: 'mandatory_three' },
+    subject('choice', 6),
+  ];
+  const rows = [...history('two', 20, 20), ...history('three', 0, 3), ...history('choice', 10, 1)];
+  expect(selectNaturalMultiRunSubject(tables, rows, [3]).id).toBe('three');
+  expect(() => selectNaturalMultiRunSubject([tables[0]], rows, [3])).toThrow(/eligible/);
+  expect(selectNaturalMultiRunSubject(tables, rows).id).toBe('choice');
 });

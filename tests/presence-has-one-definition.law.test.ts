@@ -268,7 +268,9 @@ describe('LAW: a person in the arena has the same heartbeat a horse has', () => 
 
   it('nothing in src writes profiles.is_online directly', () => {
     const writes = calls(['update', 'upsert', 'insert']);
-    expect(writes.length).toBeGreaterThan(100);
+    // A floor proving the scanner still sees the app's writes. Lowered from
+    // 100 on 2026-10-19 when dead browser writers with no callers were deleted.
+    expect(writes.length).toBeGreaterThan(90);
     const offending = writes
       .filter((w) => IS_ONLINE.test(withoutComments(w.text)))
       .map((w) => w.where);

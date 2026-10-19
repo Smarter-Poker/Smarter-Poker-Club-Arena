@@ -169,6 +169,10 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # refuses paid books and admits the exact unpaid atomic-history liabilities.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-unpaid-atomic-cash-contracts-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 
+# A single weekly player entitlement preserves every historical payer through
+# native R3 payments, documents, retired reserves and interruption/replay.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-historical-rakeback-payers-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
 # Revenue statements distinguish terminal payouts from successive funding transfers.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-revenue-digest-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
 

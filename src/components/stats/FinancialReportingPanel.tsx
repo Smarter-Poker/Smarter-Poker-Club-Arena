@@ -7,7 +7,6 @@ import './FinancialReportingPanel.css';
 import { titleCase } from '../../utils/titleCase';
 import { reportError } from '../../utils/errorReporter';
 import { SpadeConsole } from '../console/SpadeConsole';
-import { compactChips } from '../../utils/format';
 
 interface Props {
   userId: string;
@@ -20,7 +19,13 @@ interface Props {
 }
 const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const money = (v: unknown, asset: string) =>
-  `${compactChips(n(v))} ${asset === 'diamonds' ? 'Diamonds' : 'Chips'}`;
+  `${n(v).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${asset === 'diamonds' ? 'Diamonds' : 'Chips'}`;
+const receiptDate = (v: unknown, timezone: string) => {
+  const value = String(v ?? '');
+  return new Date(value).toLocaleDateString(undefined, {
+    timeZone: /^\d{4}-\d{2}-\d{2}$/.test(value) ? 'UTC' : timezone,
+  });
+};
 const rows = (v: unknown): any[] => (Array.isArray(v) ? v : []);
 const label = (v: unknown) =>
   titleCase(
@@ -190,7 +195,7 @@ export default function FinancialReportingPanel(p: Props) {
                         {r.type === 'debit' ? '-' : '+'}
                         {money(r.amount, p.asset)}
                       </strong>
-                      <time>{new Date(r.created_at).toLocaleDateString()}</time>
+                      <time>{receiptDate(r.created_at, p.timezone)}</time>
                     </summary>
                     <dl>
                       <div>
@@ -224,7 +229,7 @@ export default function FinancialReportingPanel(p: Props) {
                     <summary>
                       <span>Period {label(r.status)}</span>
                       <strong>{money(r.amount, p.asset)}</strong>
-                      <time>{new Date(r.period_end).toLocaleDateString()}</time>
+                      <time>{receiptDate(r.period_end, p.timezone)}</time>
                     </summary>
                     <dl>
                       <div>
@@ -245,7 +250,7 @@ export default function FinancialReportingPanel(p: Props) {
                     <summary>
                       <span>Payout {label(r.status)}</span>
                       <strong>{money(r.payout_amount, p.asset)}</strong>
-                      <time>{new Date(r.paid_at ?? r.created_at).toLocaleDateString()}</time>
+                      <time>{receiptDate(r.paid_at ?? r.created_at, p.timezone)}</time>
                     </summary>
                     <dl>
                       <div>
@@ -253,8 +258,21 @@ export default function FinancialReportingPanel(p: Props) {
                         <dd>{r.id}</dd>
                       </div>
                       <div>
-                        <dt>Wallet Receipt</dt>
-                        <dd>{r.wallet_transaction_id ?? 'Not Issued'}</dd>
+                        <dt>
+                          {rows(r.wallet_transactions).length > 1
+                            ? 'Wallet Receipts'
+                            : 'Wallet Receipt'}
+                        </dt>
+                        <dd>
+                          {rows(r.wallet_transactions).length > 0
+                            ? rows(r.wallet_transactions)
+                                .map(
+                                  (part) =>
+                                    `${part.wallet_transaction_id} (${money(part.amount, p.asset)})`
+                                )
+                                .join('; ')
+                            : (r.wallet_transaction_id ?? 'Not Issued')}
+                        </dd>
                       </div>
                       {r.failure_reason && (
                         <div>

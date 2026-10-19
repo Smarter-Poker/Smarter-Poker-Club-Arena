@@ -2756,6 +2756,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Original tournament close resumes exact owner fee capture
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: node scripts/qualification/owner-fee-close/native.mjs "${{ runner.temp }}/owner-fee-close"
+
       - name: Hand index writers retain canonical order and exact coverage
         id: hand_index_writer_order
         if: matrix.shard == 4

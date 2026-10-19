@@ -1,0 +1,10 @@
+[
+  {
+    "signature": "fn_accounting_tournament_fee_fingerprint(rake_records)",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_fee_fingerprint(p_row rake_records)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO 'public'\nAS $function$\n -- Versioned economic fields are stable across unrelated schema additions.\n -- Tuple terminal markers are not economic source edits.\n SELECT md5(jsonb_object_agg(field,to_jsonb(p_row)->field ORDER BY field)::text)\n FROM unnest(ARRAY['id','hand_id','table_id','club_id','rake_amount','bbj_contribution','pot_size','num_players',\n  'created_at','player_contributions','global_hand_id','is_tournament','tournament_id','source','metadata',\n  'rake_method','returned_uncalled']::text[])field\n$function$\n"
+  },
+  {
+    "signature": "fn_accounting_tournament_fee_receipt_immutable()",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_accounting_tournament_fee_receipt_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$BEGIN\n RAISE EXCEPTION 'accounting_tournament_fee_receipt_is_immutable' USING ERRCODE='55000';\nEND$function$\n"
+  }
+]

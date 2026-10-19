@@ -15,9 +15,10 @@ export class PrivateRecordListener {
   private cancelProbe: (() => void) | null = null;
   private probeTimer: ReturnType<typeof setTimeout> | null = null;
   ready = false;
+  phase: 'connecting' | 'unavailable' = 'connecting';
   constructor(
     private changed: (topic: string) => void,
-    private readiness: (ready: boolean) => void,
+    private readiness: (ready: boolean, phase: 'connecting' | 'unavailable') => void,
     private resolve = resolveEngineListenConnectionString,
     private open = (connection: string) =>
       defaultOpenSession(connection, `club-arena-engine-private-record-listener:${process.pid}`),
@@ -63,10 +64,15 @@ export class PrivateRecordListener {
       }
       this.attempt = 0;
       this.ready = true;
-      this.readiness(true); // Existing readers refresh once after every reconnect.
+      this.phase = 'connecting';
+      this.readiness(true, 'connecting'); // Existing readers refresh once after every reconnect.
     } catch {
       if (this.client) this.lost(this.client);
-      else this.schedule();
+      else {
+        this.phase = 'unavailable';
+        this.readiness(false, this.phase);
+        this.schedule();
+      }
     }
   }
   /** Existing channel heartbeat owns this liveness probe, never a row/data poll. */
@@ -92,7 +98,8 @@ export class PrivateRecordListener {
     if (this.client !== client) return;
     this.client = null;
     this.ready = false;
-    this.readiness(false);
+    this.phase = 'unavailable';
+    this.readiness(false, this.phase);
     client.removeAllListeners();
     client.on('error', () => undefined);
     void client.end().catch(() => undefined);

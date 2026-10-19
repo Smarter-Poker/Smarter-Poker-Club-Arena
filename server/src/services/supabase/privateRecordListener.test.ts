@@ -1,8 +1,12 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./handOutboxListener.js', () => ({ defaultOpenSession: vi.fn() }));
-vi.mock('../leaseHeartbeatSession.js', () => ({ resolveEngineListenConnectionString: vi.fn() }));
-vi.mock('./privateRecordTransportReady.js', () => ({ privateRecordTransportReady: vi.fn() }));
+vi.mock('../leaseHeartbeatSession.js', () => ({
+  resolveEngineListenConnectionString: vi.fn(),
+}));
+vi.mock('./privateRecordTransportReady.js', () => ({
+  privateRecordTransportReady: vi.fn(),
+}));
 import { PrivateRecordListener, PRIVATE_RECORD_CHANNEL } from './privateRecordListener.js';
 class Fake extends EventEmitter {
   queries: string[] = [];
@@ -33,24 +37,29 @@ describe('private record LISTEN lifecycle', () => {
       },
       async () => true
     );
+    expect(listener.phase).toBe('connecting');
     listener.start();
     await flush();
     expect(clients[0].queries).toEqual([`LISTEN ${PRIVATE_RECORD_CHANNEL}`]);
-    expect(ready).toHaveBeenLastCalledWith(true);
+    expect(ready).toHaveBeenLastCalledWith(true, 'connecting');
     const topic = 'club-roster:11111111-1111-1111-1111-111111111111';
     clients[0].emit('notification', {
       channel: PRIVATE_RECORD_CHANNEL,
       payload: JSON.stringify({ topic, event: 'record_changed' }),
     });
-    clients[0].emit('notification', { channel: PRIVATE_RECORD_CHANNEL, payload: 'not JSON' });
+    clients[0].emit('notification', {
+      channel: PRIVATE_RECORD_CHANNEL,
+      payload: 'not JSON',
+    });
     expect(changed).toHaveBeenCalledTimes(1);
     expect(changed).toHaveBeenCalledWith(topic);
     clients[0].emit('end');
-    expect(ready).toHaveBeenLastCalledWith(false);
+    expect(ready).toHaveBeenLastCalledWith(false, 'unavailable');
     await vi.advanceTimersByTimeAsync(1000);
     await flush();
     expect(clients).toHaveLength(2);
-    expect(ready).toHaveBeenLastCalledWith(true);
+    expect(listener.phase).toBe('connecting');
+    expect(ready).toHaveBeenLastCalledWith(true, 'connecting');
     await listener.stop();
   });
   it('bounds a blackholed socket probe on the existing heartbeat and cleans it on stop', async () => {
@@ -72,7 +81,7 @@ describe('private record LISTEN lifecycle', () => {
     expect(client.query).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(8000);
     await flush();
-    expect(ready).toHaveBeenLastCalledWith(false);
+    expect(ready).toHaveBeenLastCalledWith(false, 'unavailable');
     await listener.stop();
     await vi.runAllTimersAsync();
     expect(vi.getTimerCount()).toBe(0);
@@ -91,8 +100,30 @@ describe('private record LISTEN lifecycle', () => {
     listener.start();
     await flush();
     expect(listener.ready).toBe(false);
-    expect(ready).not.toHaveBeenCalledWith(true);
+    expect(ready.mock.calls.some(([value]) => value === true)).toBe(false);
+    expect(ready).toHaveBeenLastCalledWith(false, 'unavailable');
+    expect(listener.phase).toBe('unavailable');
     await listener.stop();
     await vi.runAllTimersAsync();
+  });
+  it('reports unavailable when the first credential resolution fails without a socket', async () => {
+    vi.useFakeTimers();
+    const ready = vi.fn();
+    const open = vi.fn();
+    const listener = new PrivateRecordListener(
+      vi.fn(),
+      ready,
+      async () => '',
+      open,
+      async () => true
+    );
+    listener.start();
+    await flush();
+    expect(open).not.toHaveBeenCalled();
+    expect(listener.ready).toBe(false);
+    expect(listener.phase).toBe('unavailable');
+    expect(ready).toHaveBeenLastCalledWith(false, 'unavailable');
+    await listener.stop();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -29,7 +29,7 @@ no authorization verdict is cached.
 The targeted hook retains its existing paid subscription until an authorized
 engine topic acknowledgment confirms both the source and listener. Listener or
 socket loss restores the compatibility subscription and marks the reader degraded.
-After engine admission, a Supabase SUBSCRIBED acknowledgment alone never marks
+Before or after engine admission, a Supabase SUBSCRIBED acknowledgment alone never marks
 the reader fresh: the paid source may have been explicitly switched off.
 Only an authorized engine-ready resync clears that transport degradation. Listener/socket reconnect causes one initial
 reader refresh, covering missed notifications without a new polling loop.
@@ -60,3 +60,23 @@ applicable. TypeScript checked for both client and server. Production proof is
 owned by root and remains pending until publication.
 
 Real-time law: triggered by `PRIVATE_RECORD_CHANGED` discrete WS event, no snapshot diff.
+
+## Cold-start readiness correction
+
+Before this correction, the targeted hook accepted the paid fallback's SUBSCRIBED
+status before the engine's first READY, and the roster could label its initial
+HTTP snapshot live. Both exact private topic families now require their own
+engine READY. Initial connection reports CONNECTING without an error toast; an
+additive optional listener phase separates normal startup from actual source,
+credential or socket failure. Other paid Broadcast events and wallet signals keep
+their existing behavior. The roster keeps real offline/stale/degraded states ahead
+of ordinary initial connection and requires record readiness before showing live.
+The listener resets its phase on recovery. Account boundaries synchronously
+retire old callbacks and require the new topic READY.
+
+The original hook failed both cold-topic regressions; the original roster failed
+the initial-successful-HTTP regression by reporting live. Focused repaired hook,
+private-client and roster cases pass, including unrelated wallet/public/event
+boundaries. Listener/topic tests cover initial credential failure, source refusal,
+recovery and cleanup. Both TypeScript checks and ordinary submission hooks remain
+required for the final candidate. This adds no timer, database change or polling.

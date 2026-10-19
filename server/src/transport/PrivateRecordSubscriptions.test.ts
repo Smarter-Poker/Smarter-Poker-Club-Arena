@@ -82,8 +82,12 @@ describe('private record socket ownership', () => {
     const a = fixture();
     await a.owner.join(topic, () => false);
     await flush();
+    expect(a.frames[0].phase).toBe('connecting');
+    a.owner.readiness(false, 'unavailable');
+    await flush();
+    expect(a.frames.at(-1).phase).toBe('unavailable');
     a.owner.readiness(true);
     await flush();
-    expect(a.frames.map((x) => x.ready)).toEqual([false, true]);
+    expect(a.frames.map((x) => x.ready)).toEqual([false, false, true]);
   });
 });

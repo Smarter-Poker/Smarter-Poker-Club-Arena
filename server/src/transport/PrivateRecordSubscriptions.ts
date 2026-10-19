@@ -21,7 +21,11 @@ export class PrivateRecordSubscriptions {
       error: (error: unknown) => void;
     }
   ) {}
-  async join(topic: string, ready: () => boolean): Promise<void> {
+  async join(
+    topic: string,
+    ready: () => boolean,
+    phase: () => 'connecting' | 'unavailable' = () => 'connecting'
+  ): Promise<void> {
     if (!PRIVATE_RECORD_TOPIC.test(topic) || (!this.topics.has(topic) && this.topics.size >= 64))
       return;
     this.leave(topic);
@@ -43,7 +47,14 @@ export class PrivateRecordSubscriptions {
       if (this.topics.get(topic) === pipe) this.topics.delete(topic);
       return;
     }
-    pipe.enqueue(JSON.stringify({ type: 'PRIVATE_RECORD_STATUS', topic, ready: ready() }));
+    pipe.enqueue(
+      JSON.stringify({
+        type: 'PRIVATE_RECORD_STATUS',
+        topic,
+        ready: ready(),
+        phase: phase(),
+      })
+    );
   }
   leave(topic: string): void {
     this.topics.delete(topic);
@@ -75,9 +86,9 @@ export class PrivateRecordSubscriptions {
       if (state.dirty) this.flushInvalidation(topic, state);
     });
   }
-  readiness(ready: boolean): void {
+  readiness(ready: boolean, phase: 'connecting' | 'unavailable' = 'unavailable'): void {
     for (const [topic, pipe] of this.topics) {
-      pipe.enqueue(JSON.stringify({ type: 'PRIVATE_RECORD_STATUS', topic, ready }));
+      pipe.enqueue(JSON.stringify({ type: 'PRIVATE_RECORD_STATUS', topic, ready, phase }));
     }
   }
 }

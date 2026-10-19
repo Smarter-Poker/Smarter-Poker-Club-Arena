@@ -39,6 +39,11 @@ export function useMasterBusBroadcastChannel({
 }: UseMasterBusBroadcastChannelOptions): void {
   const [engineReady, setEngineReady] = useState(false);
   const engineWasReady = useRef(false);
+  const engineRecord =
+    event === 'record_changed' &&
+    privateChannel &&
+    !!channelName &&
+    /^(?:member-record:[0-9a-f-]{36}:[0-9a-f-]{36}|club-roster:[0-9a-f-]{36})$/.test(channelName);
   const callbackRef = useRef(onPayload);
   const errorCallbackRef = useRef(onSubscriptionError);
   const statusCallbackRef = useRef(onSubscriptionStatus);
@@ -56,39 +61,56 @@ export function useMasterBusBroadcastChannel({
   useEffect(() => {
     setEngineReady(false);
     engineWasReady.current = false;
-    if (
-      !enabled ||
-      !channelName ||
-      event !== 'record_changed' ||
-      !privateChannel ||
-      !/^(?:member-record:[0-9a-f-]{36}:[0-9a-f-]{36}|club-roster:[0-9a-f-]{36})$/.test(channelName)
-    )
-      return;
+    if (!enabled || !channelName || !engineRecord) return;
     let alive = true;
     let generation = 0;
+    let degraded = false;
     let remove = () => {};
     const bind = () => {
       remove();
       const scope = ++generation;
+      degraded = false;
+      statusCallbackRef.current?.('CONNECTING');
+      const markUnavailable = () => {
+        if (!alive || scope !== generation || degraded) return;
+        degraded = true;
+        errorCallbackRef.current?.('CHANNEL_ERROR');
+      };
       remove = engineChannelClient.onPrivateRecord(channelName, (message) => {
         if (!alive || scope !== generation) return;
         if (message.type === 'PRIVATE_RECORD_STATUS') {
           setEngineReady(message.ready === true);
           if (message.ready === true) {
+            degraded = false;
             engineWasReady.current = true;
             statusCallbackRef.current?.('SUBSCRIBED');
-          } else if (engineWasReady.current) {
-            // A paid fallback connection is not proof its producer is still on.
-            errorCallbackRef.current?.('CHANNEL_ERROR');
+          } else {
+            const status = engineChannelClient.getStatus();
+            // Initial socket/listener startup and identity idle are normal.
+            // Explicit listener failure or actual transport loss is unavailable.
+            if (
+              engineWasReady.current ||
+              message.phase === 'unavailable' ||
+              ['reconnecting', 'failed', 'auth_failed', 'access_refused'].includes(status)
+            )
+              markUnavailable();
           }
         } else callbackRef.current({ payload: {} });
       });
+      // Joining an already failed/reconnecting singleton need not change status.
+      if (
+        ['reconnecting', 'failed', 'auth_failed', 'access_refused'].includes(
+          engineChannelClient.getStatus()
+        )
+      )
+        markUnavailable();
     };
     const stopIdentity = masterBus.subscribe('AUTH_STATE_CHANGED', (change) => {
       const scope = ++generation;
       remove();
       setEngineReady(false);
       engineWasReady.current = false;
+      statusCallbackRef.current?.('CONNECTING');
       // The canonical identity boundary synchronously retires the old socket's
       // intent. Rebind after that boundary, even A/B/A before React renders.
       if (change.payload.isAuthenticated)
@@ -103,7 +125,7 @@ export function useMasterBusBroadcastChannel({
       stopIdentity();
       remove();
     };
-  }, [channelName, event, enabled, privateChannel, restartKey]);
+  }, [channelName, event, enabled, privateChannel, restartKey, engineRecord]);
 
   useEffect(() => {
     if (!enabled || !channelName || engineReady) return;
@@ -130,7 +152,9 @@ export function useMasterBusBroadcastChannel({
       admission = new AbortController();
       const signal = admission.signal;
       if (!alive || generation !== subscriptionGeneration) return;
-      const channel = masterBus.getOrCreateChannel(channelName, { private: privateChannel });
+      const channel = masterBus.getOrCreateChannel(channelName, {
+        private: privateChannel,
+      });
       acquiredChannel = channel;
       const state = (channel as any)?.state;
       if (state && state !== 'closed' && state !== 'errored') {
@@ -153,8 +177,7 @@ export function useMasterBusBroadcastChannel({
           if (status === 'SUBSCRIBED') disarmAuthRetry?.();
           if (status === 'CHANNEL_ERROR') armAuthRetry();
           try {
-            if (status !== 'SUBSCRIBED' || !engineWasReady.current)
-              statusCallbackRef.current?.(status);
+            if (status !== 'SUBSCRIBED' || !engineRecord) statusCallbackRef.current?.(status);
           } catch (callbackError) {
             reportError(callbackError, 'useMasterBusBroadcastChannel.onSubscriptionStatus_threw');
           }
@@ -208,7 +231,7 @@ export function useMasterBusBroadcastChannel({
       masterBus.removeChannelFactory(channelName);
       if (acquiredChannel) masterBus.removeRegisteredChannel(channelName, acquiredChannel);
     };
-  }, [channelName, enabled, event, privateChannel, restartKey, engineReady]);
+  }, [channelName, enabled, event, privateChannel, restartKey, engineReady, engineRecord]);
 }
 
 export default useMasterBusBroadcastChannel;

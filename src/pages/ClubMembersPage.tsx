@@ -280,6 +280,7 @@ export default function ClubMembersPage() {
   const [recordRevision, setRecordRevision] = useState(0);
   const [recordRetry, setRecordRetry] = useState(0);
   const recordDegradedRef = useRef(false);
+  const [recordConnecting, setRecordConnecting] = useState(true);
   const recordBindingRef = useRef({ scope: '', generation: 0 });
   const recordScope = `${routeClub}:${user?.id}:${recordRetry}`;
   if (recordBindingRef.current.scope !== recordScope) {
@@ -893,11 +894,17 @@ export default function ClubMembersPage() {
     enabled: !!resolvedClubId && !!user?.id,
     onPayload: () => scheduleStructuralRefresh(),
     onSubscriptionStatus: (status) => {
+      if (status === 'CONNECTING') {
+        setRecordConnecting(true);
+        return;
+      }
       if (status !== 'SUBSCRIBED') return;
+      setRecordConnecting(false);
       recordDegradedRef.current = false;
       scheduleStructuralRefresh();
     },
     onSubscriptionError: () => {
+      setRecordConnecting(false);
       recordDegradedRef.current = true;
       setDataFreshness('stale');
     },
@@ -1500,11 +1507,13 @@ export default function ClubMembersPage() {
       ? 'stale'
       : recordDegradedRef.current || realtimeConnection === 'degraded'
         ? 'reconnecting'
-        : dataFreshness === 'loading'
+        : recordConnecting
           ? 'connecting'
-          : realtimeConnection === 'connecting'
+          : dataFreshness === 'loading'
             ? 'connecting'
-            : 'live';
+            : realtimeConnection === 'connecting'
+              ? 'connecting'
+              : 'live';
 
   return (
     <div

@@ -1844,6 +1844,8 @@ export interface PrivateRecordMessage {
   type: 'PRIVATE_RECORD_CHANGED' | 'PRIVATE_RECORD_STATUS';
   topic: string;
   ready?: boolean;
+  /** Additive: initial LISTEN startup differs from a failed transport. */
+  phase?: 'connecting' | 'unavailable';
 }
 export type ChannelServerMessage =
   | PrivateRecordMessage

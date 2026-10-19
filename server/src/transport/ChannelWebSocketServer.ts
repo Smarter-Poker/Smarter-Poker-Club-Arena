@@ -186,8 +186,8 @@ export class ChannelWebSocketServer {
     (topic) => {
       for (const conn of this.connections.values()) conn.privateRecords?.notify(topic);
     },
-    (ready) => {
-      for (const conn of this.connections.values()) conn.privateRecords?.readiness(ready);
+    (ready, phase) => {
+      for (const conn of this.connections.values()) conn.privateRecords?.readiness(ready, phase);
     }
   );
   /** Close only the target's definitively revoked sessions; active hands retain normal disconnect handling. */
@@ -614,7 +614,11 @@ export class ChannelWebSocketServer {
         this.recordListener.start();
         if (typeof msg.topic === 'string')
           void conn.privateRecords
-            ?.join(msg.topic, () => this.recordListener.ready)
+            ?.join(
+              msg.topic,
+              () => this.recordListener.ready,
+              () => this.recordListener.phase
+            )
             .catch(() => {
               /* Unknown ACL leaves Supabase fallback authoritative. */
             });

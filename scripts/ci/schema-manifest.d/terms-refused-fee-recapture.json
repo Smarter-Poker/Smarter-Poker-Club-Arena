@@ -1,0 +1,9 @@
+{
+  "_owner": "fix/legacy-fee-recapture-20261019",
+  "_comment": "Migration 20261019211349: a terms-refused tournament fee is recaptured at its own close; the receipt table and its two functions.",
+  "functions": [
+    "fn_accounting_terms_recapture_valid",
+    "fn_accounting_recapture_terms_refused_tournament_fee"
+  ],
+  "tables": ["accounting_tournament_fee_terms_recaptures"]
+}

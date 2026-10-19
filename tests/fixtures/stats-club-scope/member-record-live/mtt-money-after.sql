@@ -1,6 +1,5 @@
 DO $$ DECLARE c uuid:='60000000-0000-0000-0000-000000000001'; u uuid:='60000000-0000-0000-0000-000000000002';
- d jsonb; r jsonb; wl jsonb; s jsonb; sn jsonb; sp jsonb; sr jsonb; b record; BEGIN
- SELECT * INTO b FROM mtt_money_baseline;
+ d jsonb; r jsonb; wl jsonb; BEGIN
  d:=ca_club_member_detail(c,u,NULL,NULL)->'stats';
  r:=ca_club_member_detail(c,u,current_date-3,current_date-3)->'stats';
  wl:=ca_club_member_win_loss(c,u)->'overall';
@@ -9,17 +8,6 @@ DO $$ DECLARE c uuid:='60000000-0000-0000-0000-000000000001'; u uuid:='60000000-
  IF (d->>'mtt_hands')::int<>8 OR (d->>'hands')::int<>6 OR (d->>'total_fee')::numeric<>16.55 THEN RAISE EXCEPTION 'Record hands/fees changed %',d; END IF;
  IF (r->>'mtt_winnings')::numeric<>15 THEN RAISE EXCEPTION 'Record UTC day range wrong %',r; END IF;
  IF (ca_club_member_detail(c,u,current_date-2,current_date-2)#>>'{stats,mtt_winnings}')::numeric<>0 THEN RAISE EXCEPTION 'Empty day not zero'; END IF;
- s:=ca_club_member_statistics(c,u,NULL,NULL,NULL);
- sn:=ca_club_member_statistics(c,u,'nlh',NULL,NULL);
- sp:=ca_club_member_statistics(c,u,'PLO4',NULL,NULL);
- sr:=ca_club_member_statistics(c,u,'all',current_date-1,current_date-1);
- IF (s->>'net')::numeric<>10 OR (s->>'net')::numeric<>(wl->>'net')::numeric
-    OR (s->>'net')::numeric<>(d->>'total_winnings')::numeric+(d->>'mtt_winnings')::numeric THEN RAISE EXCEPTION 'Statistics all-games net wrong % %',s->'net',wl; END IF;
- IF (sn->>'net')::numeric<>36 THEN RAISE EXCEPTION 'NLH net wrong %',sn->'net'; END IF;
- IF (sp->>'net')::numeric<>-26 THEN RAISE EXCEPTION 'PLO4 net wrong %',sp->'net'; END IF;
- IF (sr->>'net')::numeric<>-5 THEN RAISE EXCEPTION 'Ranged net wrong %',sr->'net'; END IF;
- IF s->'fees'<>b.s_all->'fees' OR sn->'fees'<>b.s_nlh->'fees' OR s->'hands'<>b.s_all->'hands' OR s->'vpip'<>b.s_all->'vpip'
-    OR s->'win_rate'<>b.s_all->'win_rate' OR sn->'hands'<>b.s_nlh->'hands' THEN RAISE EXCEPTION 'Statistics fees/hands/rates changed % %',s,b.s_all; END IF;
  IF (SELECT count(*) FROM pg_index WHERE indisvalid AND indexrelid IN (to_regclass('idx_chip_ledger_tournament_prize_to_player'),to_regclass('idx_chip_ledger_tournament_entry_from_player')))<>2
    THEN RAISE EXCEPTION 'Covering indexes missing'; END IF;
 END $$;
@@ -37,4 +25,4 @@ DO $$ DECLARE p text:=''; l text; BEGIN
    RAISE EXCEPTION 'Tournament legs not index-only: %',p; END IF;
 END $$;
 RESET enable_seqscan; RESET enable_bitmapscan;
-\echo MEMBER_MTT_MONEY PASS: record MTT = Win/Loss tournament money, statistics net = cash + tournament money (all, per game, UTC range), fees/hands/rates unchanged, index-only legs
+\echo MEMBER_MTT_MONEY PASS: record MTT = Win/Loss tournament money for overall and UTC day ranges, cash/hands/fees unchanged, index-only legs

@@ -122,9 +122,12 @@ class Session:
             time.sleep(.02)
 
     def finish(self, end):
+        # Write, close and drain by hand: Python 3.12's communicate() flushes
+        # a stdin this method has already closed and raises ValueError.
         self.p.stdin.write(end + ';\n')
         self.p.stdin.close()
-        o, e = self.p.communicate(timeout=20)
+        self.p.wait(timeout=20)
+        o, e = self.p.stdout.read(), self.p.stderr.read()
         require(self.p.returncode == 0, self.app + ' failed: ' + e)
         return o + e
 

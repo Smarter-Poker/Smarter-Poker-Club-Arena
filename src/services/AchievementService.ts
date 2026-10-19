@@ -30,7 +30,20 @@ export interface Achievement {
   category: AchievementCategory;
   rarity: AchievementRarity;
   requirement: number;
-  chipReward?: number;
+  /**
+   * Diamonds paid once, on the unlock, by the SERVER (Dan 2026-10-19: "Pay
+   * achievement rewards as diamonds through award_diamonds_v2", from now on
+   * only). The amounts live in training_achievement_definitions; these copies
+   * are for display and must match it (tests pin both).
+   */
+  diamondReward?: number;
+  /**
+   * Proved by the server from its own records - the engine's hand record for
+   * a Royal Flush, the server-counted login streak - never by this browser.
+   * Only these can carry a reward; fn_achievement_record_progress writes
+   * nothing for them, so this client does not send them.
+   */
+  serverProved?: boolean;
   hidden?: boolean;
 }
 
@@ -57,7 +70,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'hands',
     rarity: 'common',
     requirement: 100,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'hands_1000',
@@ -67,7 +80,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'hands',
     rarity: 'rare',
     requirement: 1000,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'hands_10000',
@@ -77,7 +90,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'hands',
     rarity: 'epic',
     requirement: 10000,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'hands_100000',
@@ -87,7 +100,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'hands',
     rarity: 'legendary',
     requirement: 100000,
-    chipReward: 0,
+    diamondReward: 0,
   },
 
   // Wins
@@ -99,7 +112,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'wins',
     rarity: 'common',
     requirement: 10,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'wins_100',
@@ -109,7 +122,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'wins',
     rarity: 'rare',
     requirement: 100,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'wins_1000',
@@ -119,7 +132,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'wins',
     rarity: 'epic',
     requirement: 1000,
-    chipReward: 0,
+    diamondReward: 0,
   },
 
   // Social
@@ -131,7 +144,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'social',
     rarity: 'common',
     requirement: 5,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'friends_25',
@@ -141,7 +154,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'social',
     rarity: 'rare',
     requirement: 25,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'clubs_3',
@@ -151,7 +164,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'social',
     rarity: 'common',
     requirement: 3,
-    chipReward: 0,
+    diamondReward: 0,
   },
 
   // Financial
@@ -163,7 +176,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'financial',
     rarity: 'rare',
     requirement: 1000,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'profit_10000',
@@ -173,7 +186,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'financial',
     rarity: 'epic',
     requirement: 10000,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'biggest_pot_500',
@@ -183,7 +196,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'financial',
     rarity: 'rare',
     requirement: 500,
-    chipReward: 0,
+    diamondReward: 0,
   },
 
   // Tournament
@@ -195,7 +208,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'tournament',
     rarity: 'epic',
     requirement: 1,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'tourney_top3_10',
@@ -205,7 +218,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'tournament',
     rarity: 'rare',
     requirement: 10,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'tourney_played_50',
@@ -215,7 +228,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'tournament',
     rarity: 'rare',
     requirement: 50,
-    chipReward: 0,
+    diamondReward: 0,
   },
 
   // Special
@@ -227,7 +240,8 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'legendary',
     requirement: 1,
-    chipReward: 500,
+    diamondReward: 500,
+    serverProved: true,
   },
   {
     id: 'straight_flush',
@@ -237,7 +251,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'epic',
     requirement: 1,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'quads',
@@ -247,7 +261,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'rare',
     requirement: 1,
-    chipReward: 0,
+    diamondReward: 0,
   },
   {
     id: 'bad_beat',
@@ -257,7 +271,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'epic',
     requirement: 1,
-    chipReward: 0,
+    diamondReward: 0,
     hidden: true,
   },
 
@@ -270,7 +284,8 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'common',
     requirement: 7,
-    chipReward: 0,
+    diamondReward: 0,
+    serverProved: true,
   },
   {
     id: 'streak_30',
@@ -280,7 +295,8 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'rare',
     requirement: 30,
-    chipReward: 100,
+    diamondReward: 100,
+    serverProved: true,
   },
   {
     id: 'streak_100',
@@ -290,7 +306,8 @@ export const ACHIEVEMENTS: Achievement[] = [
     category: 'special',
     rarity: 'legendary',
     requirement: 100,
-    chipReward: 500,
+    diamondReward: 500,
+    serverProved: true,
   },
 ];
 
@@ -405,7 +422,9 @@ class AchievementServiceClass {
     if (this._dbWriteDisabled) return { unlocked: false };
 
     const achievement = this.getById(achievementId);
-    if (!achievement) return { unlocked: false };
+    // A server-proved achievement takes nothing from a browser (the RPC
+    // writes nothing for it), so it is not sent.
+    if (!achievement || achievement.serverProved) return { unlocked: false };
 
     // The read is only to know what to add to. It is NOT the write, so a
     // stale answer here cannot corrupt anything: the RPC clamps with
@@ -471,11 +490,13 @@ class AchievementServiceClass {
 
     // NO REWARD IS PAID FROM HERE (2026-10-19). This called
     // add_to_promo_wallet, which the browser cannot execute and which has
-    // refused every caller since 2026-09-03 (the phantom promo pool is
-    // retired: an achievement reward needs a funded source first). It also
-    // inserted its own notification, which the browser cannot write either;
-    // trg_notify_achievement_unlocked already raises that notification in the
-    // database the moment the unlock lands.
+    // refused every caller since 2026-09-03. Rewards are DIAMONDS now, paid by
+    // the server through award_diamonds_v2 on the unlock it proves itself
+    // (fn_achievement_unlock_server, migration 20261019155445); nothing this
+    // RPC records can carry one. p_target is still sent for the deployed
+    // signature and the server ignores it: the target is its definition's.
+    // trg_notify_achievement_unlocked raises the notification in the database
+    // the moment an unlock lands.
     if (justUnlocked === true) return { unlocked: true, achievement };
     return { unlocked: false };
   }
@@ -495,7 +516,7 @@ class AchievementServiceClass {
   ): Promise<{ unlocked: boolean; achievement?: Achievement }> {
     if (this._dbWriteDisabled) return { unlocked: false };
     const achievement = this.getById(achievementId);
-    if (!achievement) return { unlocked: false };
+    if (!achievement || achievement.serverProved) return { unlocked: false };
     return this._record(userId, achievement, Math.min(progress, achievement.requirement));
   }
 
@@ -514,8 +535,47 @@ class AchievementServiceClass {
   async setProgress(userId: string, achievementId: string, progress: number): Promise<void> {
     if (this._dbWriteDisabled) return;
     const achievement = this.getById(achievementId);
-    if (!achievement) return;
+    if (!achievement || achievement.serverProved) return;
     await this._record(userId, achievement, Math.min(progress, achievement.requirement));
+  }
+
+  /**
+   * Count today's login on the SERVER and record the login-streak
+   * achievements (2026-10-19). The day, the streak and the unlock are all the
+   * server's: fn_achievement_record_login counts the UTC day, maintains
+   * profiles.login_streak itself (browsers no longer hold UPDATE on it) and
+   * pays streak_30 / streak_100 their diamonds once through award_diamonds_v2.
+   * What comes back is what was actually credited, for the celebration.
+   */
+  async recordLogin(): Promise<{
+    counted: boolean;
+    streak: number;
+    unlocked: Array<{ achievement: Achievement; diamondsAwarded: number }>;
+  }> {
+    const { data, error } = await supabase.rpc('fn_achievement_record_login');
+    if (error) throw error;
+    const result = (data ?? {}) as {
+      counted?: unknown;
+      streak?: unknown;
+      unlocked?: Array<{ achievement_id?: unknown; diamonds_awarded?: unknown }>;
+    };
+    const unlocked: Array<{ achievement: Achievement; diamondsAwarded: number }> = [];
+    for (const row of Array.isArray(result.unlocked) ? result.unlocked : []) {
+      const achievement =
+        typeof row?.achievement_id === 'string' ? this.getById(row.achievement_id) : undefined;
+      if (!achievement) continue;
+      const diamonds = Number(row.diamonds_awarded);
+      unlocked.push({
+        achievement,
+        diamondsAwarded: Number.isFinite(diamonds) && diamonds > 0 ? Math.floor(diamonds) : 0,
+      });
+    }
+    const streak = Number(result.streak);
+    return {
+      counted: result.counted === true,
+      streak: Number.isFinite(streak) && streak >= 0 ? streak : 0,
+      unlocked,
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

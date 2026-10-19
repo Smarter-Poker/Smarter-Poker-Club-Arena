@@ -69,6 +69,20 @@
   margin-top: 4px;
 }
 
+/* An achievement's diamonds: the platform diamond mark, sized to the line. */
+.milestone-toast__reward:has(.milestone-toast__diamond) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.milestone-toast__diamond {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 /* Auto-dismiss progress bar */
 .milestone-toast__progress {
   position: absolute;

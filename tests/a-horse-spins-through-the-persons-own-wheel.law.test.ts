@@ -9,7 +9,7 @@
  * horse has no session, so the wheel sat behind a door only a browser could
  * open.
  *
- * public.fn_horse_diamond_spins (migration 20261019020459) is the horse's
+ * public.fn_horse_diamond_spins (migration 20261019023857) is the horse's
  * input device (CLAUDE.md 10.5). This law pins the four things that make it
  * an input device and not a second wheel:
  *
@@ -31,7 +31,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(__dirname, '..');
 const FILE =
-  'supabase/migrations/20261019020459_horses_spin_diamond_spins_through_the_engine_door.sql';
+  'supabase/migrations/20261019023857_horses_spin_diamond_spins_through_the_engine_door.sql';
 const SQL = fs.readFileSync(path.join(ROOT, FILE), 'utf8');
 /** Comments out, so a sentence in the header can never satisfy an assertion. */
 const CODE = SQL.replace(/--[^\n]*/g, '');

@@ -1,6 +1,8 @@
--- 20261019020459_horses_spin_diamond_spins_through_the_engine_door
+-- 20261019023857_horses_spin_diamond_spins_through_the_engine_door
 --
--- Reserved by scripts/reserve-migration-version.sh on 2026-10-19 02:04:59 UTC.
+-- Reserved as 20261019020459 by scripts/reserve-migration-version.sh; installed
+-- 2026-10-19 02:38:57 UTC through the Supabase MCP, which recorded it as
+-- 20261019023857, so the file carries the recorded version.
 --
 -- OWNER REQUEST (Dan, 2026-10-18): every horse plays the Club Arena and the
 -- Diamond Arena; "a horse with no chips left grinds the Diamond Arena and uses

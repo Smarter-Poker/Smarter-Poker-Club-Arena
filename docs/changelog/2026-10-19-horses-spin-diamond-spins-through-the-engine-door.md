@@ -15,7 +15,7 @@ no session, so the wheel sat behind a door only a browser could open.
 
 ## What changed
 
-Migration `20261019020459_horses_spin_diamond_spins_through_the_engine_door`
+Migration `20261019023857_horses_spin_diamond_spins_through_the_engine_door`
 adds `public.fn_horse_diamond_spins(p_horse_id, p_action, p_args)`:
 
 - **Engine only.** `fn_caller_is_engine()` in its own body; `EXECUTE` is
@@ -59,6 +59,17 @@ Horse `93ecbb64-e602-47f1-a314-056504d6b3be` at Club JAQK (Midway Union host):
 
 Read afterwards: the horse still held 113,415 Diamonds, with no spin, award or
 seed commit in the last two hours.
+
+## Installed and checked live
+
+Installed 2026-10-19 02:38:57 UTC (recorded as version `20261019023857`; the
+file was renamed to match). Read back: the function exists, is SECURITY
+DEFINER, is not executable by `anon` or `authenticated`, and is executable by
+`service_role`. Then one rolled-back call through the installed door: a person
+refused, a browser caller refused 42501, and a paid 100-Diamond spin for the
+horse took 100 Diamonds and landed Donkey Cross, funded by the player, on the
+wheel-v4 table; afterwards `auth.uid()` was NULL and the engine identity
+restored. Nothing committed.
 
 ## Pinned by
 

@@ -95,6 +95,15 @@ INSERT INTO accounting_payable_earning_sources SELECT 'cash',gen_random_uuid(),g
     assert.equal(rows[0].allocations[0].rate, 0.7, `${original.proname} agrees`);
   }
   sql(`TRUNCATE rakeback_periods,accounting_rakeback_period_calculations;
+UPDATE agents SET status='suspended';
+UPDATE accounting_agreement_history SET after_terms=jsonb_set(after_terms,'{player_rakeback_pct}','0.3') WHERE id=1;
+UPDATE accounting_payable_earning_sources SET contract=fn_accounting_earning_contract('${club}','${player}',123.45,NULL,'2026-10-19T16:00:00Z');`);
+  assert.equal(JSON.parse(sql(`SELECT fn_rakeback_split_check(${args})`)).players, 1, 'owner reassignment retains its observed pre-rate-edit agreement');
+  assert.equal(JSON.parse(sql(`SELECT fn_rakeback_split_write(${args})`)).written, 1);
+  const reassigned = JSON.parse(sql("SELECT jsonb_build_object('rate',display_rate,'payer',payer_kind,'amount',rakeback_amount) FROM accounting_rakeback_period_calculations ORDER BY id DESC LIMIT 1"));
+  assert.deepEqual(reassigned, {rate: 0.3, payer: 'club', amount: 37.04});
+  sql(`TRUNCATE rakeback_periods,accounting_rakeback_period_calculations;
+UPDATE accounting_agreement_history SET after_terms=jsonb_set(after_terms,'{player_rakeback_pct}','0.7') WHERE id=1;
 UPDATE accounting_agreement_history SET after_terms=jsonb_set(after_terms,'{agent_id}',to_jsonb('${agent}'::text)) WHERE id=1;
 INSERT INTO accounting_agreement_history VALUES(2,'agents','agent-fixture','2026-10-19T16:00:00Z',jsonb_build_object('id','55555555-5555-4555-8555-555555555555','club_id','${club}','user_id','${agent}','role','agent','status','active','commission_rate',0.2,'player_rakeback_rate',0.1),'${club}','${agent}');
 UPDATE accounting_payable_earning_sources SET contract=jsonb_build_object('membership',jsonb_build_object('history_id',1,'terms',(SELECT after_terms FROM accounting_agreement_history WHERE id=1)),'tiers',jsonb_build_array(jsonb_build_object('user_id','${agent}','depth',1,'rate',0.2,'agreement',jsonb_build_object('history_id',2,'terms',(SELECT after_terms FROM accounting_agreement_history WHERE id=2)))));`);

@@ -97,6 +97,33 @@ try{
  assert.equal(sql(`SELECT count(*) FROM accounting_tournament_fee_sources WHERE rake_record_id='${id(107)}'`),'0');
  sql(`UPDATE clubs SET owner_id='${owner}' WHERE id='${club}';`);
  refuse(migration,'OWNER_FEE_MIGRATION_ALREADY_INSTALLED');
+
+ // Real satellite funding belongs to the source event, never a wallet debit.
+ const satellite=id(900);
+ const satelliteFixture=n=>fixture(n)
+  .replace(`'player_wallet','${id(600+n)}','prize_liability','${event}'`,`'prize_liability','${satellite}','prize_liability','${event}'`)
+  .replace(`'tournament_buyin','${event}','posted'`,`'tournament_buyin','${satellite}','posted'`)
+  .replace('charge_category,registration_id)', 'charge_category,registration_id,source_satellite_id)')
+  .replace(`'wallet_charge','tournament_buyin','${id(200+n)}'`,`'satellite_seat','satellite_seat','${id(200+n)}','${satellite}'`)
+  .replace("'fn_register_for_tournament',jsonb_build_object('kind','tournament_entry_fee'",`'fn_award_satellite_seat',jsonb_build_object('satellite_id','${satellite}','kind','satellite_seat_entry_fee'`);
+ sql(satelliteFixture(8));
+ refuse(`SELECT fn_accounting_qualify_owner_direct_fee('${id(108)}');`,'tournament_fee_charge_evidence_mismatch');
+ const satelliteCorrection=readFileSync(path.join(root,'supabase/migrations/20261019215515_owner_fee_close_preserves_satellite_funding_lineage.sql'),'utf8');
+ sql(satelliteCorrection);
+ const satelliteBefore=sql(`SELECT to_jsonb(b) FROM accounting_tournament_fee_batches b WHERE rake_record_id='${id(108)}'`);
+ sql(`SELECT fn_accounting_qualify_owner_direct_fee('${id(108)}');`);
+ assert.equal(sql(`SELECT to_jsonb(b) FROM accounting_tournament_fee_batches b WHERE rake_record_id='${id(108)}'`),satelliteBefore);
+ assert.equal(sql(`SELECT fn_accounting_owner_direct_fee_proof_valid('${id(108)}')`),'t');
+ assert.equal(JSON.parse(sql(`SELECT fn_accounting_qualify_owner_direct_fee('${id(108)}')`)).replayed,true);
+ sql(satelliteFixture(9)+`UPDATE chip_ledger SET tournament_id='${id(901)}' WHERE id='${id(409)}';`);
+ refuse(`SELECT fn_accounting_qualify_owner_direct_fee('${id(109)}');`,'tournament_fee_charge_evidence_mismatch');
+ sql(satelliteFixture(10)+`UPDATE chip_ledger SET to_entity_id='${id(901)}' WHERE id='${id(410)}';`);
+ refuse(`SELECT fn_accounting_qualify_owner_direct_fee('${id(110)}');`,'tournament_fee_satellite_evidence_mismatch');
+ sql(fixture(11)+`UPDATE chip_ledger SET tournament_id='${satellite}' WHERE id='${id(411)}';`);
+ refuse(`SELECT fn_accounting_qualify_owner_direct_fee('${id(111)}');`,'tournament_fee_charge_evidence_mismatch');
+ refuse(satelliteCorrection,'OWNER_FEE_SATELLITE_PREIMAGE_REQUIRED');
+ console.log('PASS: actual source-owned satellite ledger fails before and passes after; wrong source/destination and ordinary-event mismatch refused; immutable batch and duplicate replay retained.');
+
  const signatures=['fn_accounting_qualify_owner_direct_fee(uuid)','fn_accounting_owner_direct_fee_proof_valid(uuid)','fn_settle_tournament_rake(uuid,text)','fn_accounting_tournament_fee_net_plan(uuid)','fn_accounting_tournament_week_quality(uuid,timestamp with time zone,timestamp with time zone)'];
  console.log('POSTIMAGES '+JSON.stringify(JSON.parse(sql(`SELECT jsonb_object_agg(sig,md5(pg_get_functiondef(sig::regprocedure))) FROM unnest(ARRAY[${signatures.map(x=>"'"+x+"'").join(',')}]) sig`))));
  console.log('PASS: real PG17 baseline failure, original producer dependency, exact charge validation, immutable batches/proofs, canonical net plan, duplicate/concurrent requests, authorization, rollback of terminal refusal, replay refusal.');

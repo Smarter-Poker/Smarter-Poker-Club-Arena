@@ -1,0 +1,7 @@
+# Original owner fee close preserves satellite funding lineage
+
+PR #7472 resumed 992 affected original tournament closes and 63,061.20 of cash prizes through the engine authority. Final full-cohort verification exposed a remaining source-specific defect: Union Mystery Bounty (PLO5) held its 800.00 prize pool because the new original-close helper required every funding ledger tournament_id to name the destination event. A satellite award correctly books its movement against the source satellite and names the destination in to_entity_id.
+
+The helper now requires the source satellite for satellite funding and the charged event for every ordinary entry. Exact immutable manifest, entitlement, registration, posted ledger, amount, timestamps, source/destination liability, historical earning terms, atomicity and duplicate protections are unchanged. It changes no financial record and introduces no job. The existing original close completes payment after qualification.
+
+The existing required native PostgreSQL 17 fixture reproduces the satellite failure against the installed preimage, then passes the corrected source. It refuses wrong-source and wrong-destination satellite journals and ordinary entries naming another event; immutable batches, replay, authorization, concurrency and terminal rollback tests remain enforced. Local native qualification passes. Protected checks, merge, exact installation and the remaining original close still require live evidence.

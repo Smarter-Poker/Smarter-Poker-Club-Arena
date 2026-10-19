@@ -157,7 +157,35 @@ function createBoundedServiceClient(timeoutMs: number, actorToken?: string): Sup
               );
               // Preserve caller headers, then stamp the immutable actor last.
               new Headers(init.headers).forEach((value, name) => headers.set(name, value));
-              const authoritativeHeaders = dataActorHeaders(headers);
+              // The DB guard rejects server actor markers paired with a viewer JWT.
+              let authoritativeHeaders: Headers;
+              if (actorToken) {
+                const url = new URL(
+                  typeof Request !== 'undefined' && attemptInput instanceof Request
+                    ? attemptInput.url
+                    : String(attemptInput)
+                );
+                if (
+                  url.origin !== new URL(SUPABASE_URL).origin ||
+                  ![
+                    '/rest/v1/rpc/ca_member_record_can_subscribe',
+                    '/rest/v1/rpc/ca_club_roster_can_subscribe',
+                  ].includes(url.pathname) ||
+                  (init.method || 'GET').toUpperCase() !== 'POST'
+                )
+                  throw new Error('private_record_acl_request_boundary');
+                authoritativeHeaders = new Headers(headers);
+                for (const name of [
+                  'x-smarter-data-actor',
+                  'x-smarter-data-protocol',
+                  'x-smarter-tournament-id',
+                  'x-smarter-tournament-lease-generation',
+                ])
+                  authoritativeHeaders.delete(name);
+                authoritativeHeaders.set('Authorization', `Bearer ${actorToken}`);
+              } else {
+                authoritativeHeaders = dataActorHeaders(headers);
+              }
               const response = await fetch(attemptInput, {
                 ...init,
                 headers: authoritativeHeaders,

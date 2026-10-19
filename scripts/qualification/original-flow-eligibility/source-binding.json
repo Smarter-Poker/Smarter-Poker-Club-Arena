@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 228284,
-      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+      "bytes": 228549,
+      "sha256": "ad2d7dd6995080a8fe69ec58b9c019dc8e6ea794607614c54a486c209ed7bbdc"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -190,6 +190,17 @@
           "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
         }
       }
+    }
+  },
+  "ownerFeeCloseQualification20261019": {
+    "reason": "Add the isolated original-close owner-fee capture regression to existing accounting shard4. Only current workflow source identity changes; retain original financial inputs, assertions and historical qualification records.",
+    "previousWorkflow": {
+      "bytes": 228284,
+      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+    },
+    "currentWorkflow": {
+      "bytes": 228549,
+      "sha256": "ad2d7dd6995080a8fe69ec58b9c019dc8e6ea794607614c54a486c209ed7bbdc"
     }
   }
 }

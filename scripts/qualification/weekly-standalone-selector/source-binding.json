@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 228284,
-      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+      "bytes": 228549,
+      "sha256": "ad2d7dd6995080a8fe69ec58b9c019dc8e6ea794607614c54a486c209ed7bbdc"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -187,6 +187,17 @@
           "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
         }
       }
+    }
+  },
+  "ownerFeeCloseQualification20261019": {
+    "reason": "Add the isolated original-close owner-fee capture regression to existing accounting shard4. Only current workflow source identity changes; retain original financial inputs, assertions and historical qualification records.",
+    "previousWorkflow": {
+      "bytes": 228284,
+      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+    },
+    "currentWorkflow": {
+      "bytes": 228549,
+      "sha256": "ad2d7dd6995080a8fe69ec58b9c019dc8e6ea794607614c54a486c209ed7bbdc"
     }
   }
 }

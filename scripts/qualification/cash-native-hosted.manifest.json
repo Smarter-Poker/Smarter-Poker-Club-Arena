@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 228284,
-      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+      "bytes": 228549,
+      "sha256": "ad2d7dd6995080a8fe69ec58b9c019dc8e6ea794607614c54a486c209ed7bbdc"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3465,6 +3465,17 @@
     "current": {
       "bytes": 37376,
       "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+    }
+  },
+  "ownerFeeCloseQualification20261019": {
+    "reason": "Add the isolated original-close owner-fee capture regression to existing accounting shard4. Only current workflow source identity changes; retain original financial inputs, assertions and historical qualification records.",
+    "previousWorkflow": {
+      "bytes": 228284,
+      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+    },
+    "currentWorkflow": {
+      "bytes": 228549,
+      "sha256": "ad2d7dd6995080a8fe69ec58b9c019dc8e6ea794607614c54a486c209ed7bbdc"
     }
   }
 }

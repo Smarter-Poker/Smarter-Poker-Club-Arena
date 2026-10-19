@@ -95,6 +95,148 @@ export function assertStageReadiness(stage, readiness) {
     );
 }
 
+const ACTION_CLUSTER = '56d5d6f0-23e9-41b0-b407-852aa1026c2a';
+const pairing = (playerA, playerB, readTo, counts) =>
+  Object.freeze({
+    clusterId: ACTION_CLUSTER,
+    pattern: 'PAIRING_CONCENTRATION',
+    source: 'scan',
+    playerA,
+    playerB,
+    readTo,
+    evidence: Object.freeze({
+      latest_window_end: '2026-10-19T00:00:00+00:00',
+      expectation: 'co_presence',
+      hands_in_window: 4412,
+      hands_together: counts.together,
+      hands_a: counts.a,
+      hands_b: counts.b,
+      expected_together: counts.expected,
+      concentration_ratio: counts.ratio,
+    }),
+  });
+
+/**
+ * Further independently investigated Action findings (2026-10-19). Each is
+ * pinned to its exact cluster, pattern, source, pair and retained evidence, and
+ * is read back up to `readTo` (just after it was detected) so the operator view's
+ * newest-first page of 100 still holds it. Review records `reviewed` with the
+ * evidence note; it never deletes evidence, clears a finding or exonerates.
+ *
+ * PAIRING_CONCENTRATION 12, 14, 38, 41, 49, 69, 77, 110: their expectation
+ * ('co_presence') sized the pool from open pool sessions, including busted and
+ * unplayable anchors (fixed in migration 20261019174213). Recomputed on the same
+ * window (2026-10-18 to 2026-10-19) from who was actually dealt, in ten-minute
+ * strata, they measure 0.828, 0.888, 0.950, 1.010, 0.904, 0.982, 0.896 and 1.032
+ * against the unchanged 2.0 floor.
+ *
+ * TIMING_CORRELATION 51 and 141: their original pooled paired-hand moments are
+ * reproduced exactly (0.717440 over 23 paired hands in 28 windows; 0.780395 over
+ * 34 in 46). All retained paired moments give 0.272259 (51 paired hands, 65
+ * windows, through 2026-10-19 10:05Z) and 0.244103 (137 paired hands, 160
+ * windows, through 12:21Z).
+ */
+export const INVESTIGATED_FINDINGS = Object.freeze({
+  12: pairing(
+    '22f02ebc-4757-4e06-99e6-f7e4a95720b4',
+    '84385ab0-d3ea-44c1-8e93-6fa6b1d25457',
+    '2026-10-18T00:00:01Z',
+    { together: 36, a: 107, b: 187, expected: 7.08, ratio: 5.081 }
+  ),
+  14: pairing(
+    '22f02ebc-4757-4e06-99e6-f7e4a95720b4',
+    '24d7c0ff-1b60-453c-8095-836594f30125',
+    '2026-10-18T00:00:01Z',
+    { together: 43, a: 107, b: 84, expected: 7.27, ratio: 5.914 }
+  ),
+  38: pairing(
+    '06f16138-70cd-49e5-89b3-aec698118b81',
+    '24d7c0ff-1b60-453c-8095-836594f30125',
+    '2026-10-18T00:00:01Z',
+    { together: 42, a: 349, b: 84, expected: 7.16, ratio: 5.87 }
+  ),
+  41: pairing(
+    '06f16138-70cd-49e5-89b3-aec698118b81',
+    '22f02ebc-4757-4e06-99e6-f7e4a95720b4',
+    '2026-10-18T00:00:01Z',
+    { together: 60, a: 349, b: 107, expected: 8.37, ratio: 7.172 }
+  ),
+  49: pairing(
+    '24d7c0ff-1b60-453c-8095-836594f30125',
+    '84385ab0-d3ea-44c1-8e93-6fa6b1d25457',
+    '2026-10-18T00:00:01Z',
+    { together: 35, a: 84, b: 187, expected: 6.53, ratio: 5.36 }
+  ),
+  69: pairing(
+    '1110a1ed-fcf2-423b-9d9a-bc615a16cbd5',
+    '82861181-5a96-4e7b-bfa4-b75ca2bd145f',
+    '2026-10-19T00:00:01Z',
+    { together: 139, a: 723, b: 426, expected: 39.33, ratio: 3.534 }
+  ),
+  77: pairing(
+    '2610f833-88cd-4a55-b255-75b75070b5da',
+    '8e5a0e02-7832-416d-970f-f6f74e181dcb',
+    '2026-10-19T00:00:01Z',
+    { together: 163, a: 815, b: 481, expected: 36.12, ratio: 4.513 }
+  ),
+  110: pairing(
+    '02c8d806-24c7-40bd-b5b5-30cf96811e3e',
+    '8e5a0e02-7832-416d-970f-f6f74e181dcb',
+    '2026-10-19T00:00:01Z',
+    { together: 133, a: 794, b: 481, expected: 37.93, ratio: 3.507 }
+  ),
+  51: Object.freeze({
+    clusterId: ACTION_CLUSTER,
+    pattern: 'TIMING_CORRELATION',
+    source: 'engine',
+    playerA: '6162b471-d011-41f7-ad89-9a8d856c9ffb',
+    playerB: 'a23ca5c9-b748-482f-9b59-9db35f7aa996',
+    readTo: '2026-10-18T21:44:01Z',
+    evidence: Object.freeze({
+      latest_window_end: '2026-10-18T21:50:00+00:00',
+      correlation_method: 'pooled_paired_hand_moments',
+      correlation_hands: 23,
+      latency_corr: 0.7174,
+      hands_together: 24,
+      fast_follows: 1,
+      windows: 28,
+    }),
+  }),
+  141: Object.freeze({
+    clusterId: ACTION_CLUSTER,
+    pattern: 'TIMING_CORRELATION',
+    source: 'engine',
+    playerA: '0fdb265e-7a56-4ecf-8410-eecd49923e42',
+    playerB: '7d1b678f-cea8-41fc-873e-2ec47ea5c318',
+    readTo: '2026-10-19T07:40:01Z',
+    evidence: Object.freeze({
+      latest_window_end: '2026-10-19T08:16:00+00:00',
+      correlation_method: 'pooled_paired_hand_moments',
+      correlation_hands: 34,
+      latency_corr: 0.7804,
+      hands_together: 50,
+      fast_follows: 3,
+      windows: 46,
+    }),
+  }),
+});
+
+/** The investigated finding the readback must match exactly, or null. */
+export function investigatedFinding(signalId, clusterId, signal) {
+  const f = Object.hasOwn(INVESTIGATED_FINDINGS, signalId) ? INVESTIGATED_FINDINGS[signalId] : null;
+  if (
+    !f ||
+    clusterId !== f.clusterId ||
+    signal?.pattern_type !== f.pattern ||
+    signal?.source !== f.source ||
+    signal?.player_a !== f.playerA ||
+    signal?.player_b !== f.playerB
+  )
+    return null;
+  for (const [k, v] of Object.entries(f.evidence)) if (signal.evidence?.[k] !== v) return null;
+  return f;
+}
+
 /** The game must be one of the named private pilot targets in the pilot club. */
 export function assertStageTarget(game, clubId) {
   const target = PILOT_TARGETS.find((t) => t.gameName === game?.name);
@@ -172,7 +314,11 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
     stage === 'review' &&
     (wanted.length !== 1 ||
       !Number.isSafeInteger(signalId) ||
-      !((signalId >= 1 && signalId <= 8) || signalId === 50))
+      !(
+        (signalId >= 1 && signalId <= 8) ||
+        signalId === 50 ||
+        Object.hasOwn(INVESTIGATED_FINDINGS, signalId)
+      ))
   )
     throw new Error('Review Requires One Target And One Investigated Pilot Finding');
   const report = {
@@ -251,7 +397,9 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
         await player.rpc('fn_lightning_operator_cluster', {
           p_cluster_id: game.id,
           p_from: '2026-10-15T20:00:00Z',
-          p_to: new Date().toISOString(),
+          // The view pages the newest 100 findings; an investigated finding is
+          // read up to just after its own detection so it stays on that page.
+          p_to: INVESTIGATED_FINDINGS[signalId]?.readTo ?? new Date().toISOString(),
         }),
         'Signal Evidence'
       );
@@ -296,13 +444,14 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
         signal.evidence.hands_together === 45 &&
         signal.evidence.fast_follows === 1 &&
         signal.evidence.windows === 44;
+      const investigated = investigatedFinding(signalId, game.id, signal);
       if (
-        !(measured || madnessMeasured || legacy) ||
+        !(measured || madnessMeasured || legacy || investigated) ||
         detail?.ok !== true ||
         detail.cluster_id !== game.id ||
         matches.length !== 1 ||
-        signal.pattern_type !== 'TIMING_CORRELATION' ||
-        signal.source !== 'engine' ||
+        signal.pattern_type !== (investigated?.pattern ?? 'TIMING_CORRELATION') ||
+        signal.source !== (investigated?.source ?? 'engine') ||
         signal.severity !== 'high' ||
         !['open', 'reviewed'].includes(signal.status) ||
         (signal.status === 'reviewed' && signal.notes !== note)

@@ -2,6 +2,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import {
+  INVESTIGATED_FINDINGS,
   STAGE_ACTIONS,
   assertStageReadiness,
   assertStageTarget,
@@ -551,12 +552,97 @@ test('Madness review refuses a changed finding and keeps every other ID closed',
     { ...madnessSignal, id: 49 },
     { ...madnessSignal, player_b: OP },
     { ...madnessSignal, evidence: { ...madnessSignal.evidence, correlation_hands: 26 } },
-    { ...madnessSignal, evidence: { ...madnessSignal.evidence, latest_window_end: '2026-10-18T22:20:00+00:00' } },
+    {
+      ...madnessSignal,
+      evidence: { ...madnessSignal.evidence, latest_window_end: '2026-10-18T22:20:00+00:00' },
+    },
   ]) {
     const f = fakeClients({ signals: [signal], games: [madnessMeasuredGame] });
-    await assert.rejects(runPilotStage(
-      { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'madness', PILOT_SIGNAL_ID: String(signal.id) }, f.factory
-    ));
+    await assert.rejects(
+      runPilotStage(
+        {
+          ...env,
+          PILOT_STAGE: 'review',
+          PILOT_TARGETS: 'madness',
+          PILOT_SIGNAL_ID: String(signal.id),
+        },
+        f.factory
+      )
+    );
+    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
+  }
+});
+
+const investigatedSignal = (id) => {
+  const f = INVESTIGATED_FINDINGS[id];
+  return {
+    id,
+    pattern_type: f.pattern,
+    source: f.source,
+    severity: 'high',
+    status: 'open',
+    player_a: f.playerA,
+    player_b: f.playerB,
+    evidence: { ...f.evidence, latest_score: 80 },
+  };
+};
+test('each investigated Action finding is recorded reviewed from its exact evidence, read on its own page', async () => {
+  assert.deepEqual(
+    Object.keys(INVESTIGATED_FINDINGS)
+      .map(Number)
+      .sort((a, b) => a - b),
+    [12, 14, 38, 41, 49, 51, 69, 77, 110, 141]
+  );
+  for (const id of Object.keys(INVESTIGATED_FINDINGS)) {
+    const f = fakeClients({ signals: [investigatedSignal(Number(id))], games: [measuredGame] });
+    await runPilotStage(
+      { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: id },
+      f.factory
+    );
+    const read = f.calls.filter((c) => c.name === 'fn_lightning_operator_cluster');
+    assert.equal(read.length, 1);
+    assert.equal(read[0].args.p_to, INVESTIGATED_FINDINGS[id].readTo);
+    const writes = f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review');
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].args.p_signal_id, Number(id));
+    assert.equal(writes[0].args.p_status, 'reviewed');
+    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_control').length, 0);
+  }
+});
+test('investigated review refuses changed evidence, another pair, pattern or cluster and other IDs', async () => {
+  const p = investigatedSignal(41);
+  const t = investigatedSignal(141);
+  for (const [signal, game, id] of [
+    [{ ...p, evidence: { ...p.evidence, expectation: 'dealt_presence_10m' } }, measuredGame, '41'],
+    [{ ...p, evidence: { ...p.evidence, concentration_ratio: 7.2 } }, measuredGame, '41'],
+    [{ ...p, evidence: { ...p.evidence, hands_together: 61 } }, measuredGame, '41'],
+    [{ ...p, player_a: p.player_b, player_b: p.player_a }, measuredGame, '41'],
+    [{ ...p, pattern_type: 'CHIP_FLOW' }, measuredGame, '41'],
+    [{ ...p, source: 'engine' }, measuredGame, '41'],
+    [{ ...p, severity: 'medium' }, measuredGame, '41'],
+    [p, madnessMeasuredGame, '41'],
+    [{ ...p, id: 13 }, measuredGame, '13'],
+    [{ ...t, evidence: { ...t.evidence, latency_corr: 0.79 } }, measuredGame, '141'],
+    [{ ...t, evidence: { ...t.evidence, correlation_hands: 35 } }, measuredGame, '141'],
+    [
+      { ...t, evidence: { ...t.evidence, latest_window_end: '2026-10-19T08:30:00+00:00' } },
+      measuredGame,
+      '141',
+    ],
+    [{ ...t, status: 'reviewed', notes: 'someone else' }, measuredGame, '141'],
+  ]) {
+    const f = fakeClients({ signals: [signal], games: [game] });
+    await assert.rejects(
+      runPilotStage(
+        {
+          ...env,
+          PILOT_STAGE: 'review',
+          PILOT_TARGETS: game === madnessMeasuredGame ? 'madness' : 'action',
+          PILOT_SIGNAL_ID: id,
+        },
+        f.factory
+      )
+    );
     assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
   }
 });

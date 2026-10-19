@@ -1,0 +1,24 @@
+# October 18 digest issues: source repair and live proof
+
+Owner: this chat. Scope: all three attention categories from the supplied October 18 digest, including the eight named alert types, two unshipped attempts, and overdue retention incident. Identify current causes, reuse proven containing fixes, implement outstanding causes, test, protected merge, install/publish, verify. No new recurring repair mechanisms, real-chip probes, competing release operations, or unrelated product changes.
+
+Checkout: /Volumes/SmarterWork/agent-work/digest-issues-20261019-01a154a6/ca
+Branch: fix/digest-operational-issues-20261019; base 9f67fae28c748b75ea4182e7325050e1c03b78ea. Existing root CHECKPOINT.md belongs to global chrome and is preserved.
+
+Canonical policy reader emitted 2026-10-19T14:53:04.399Z, version 2.9, manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b. Owner b9478d0331314413d8e12c41210b63479cdcabc1f86ed3fdcb3251efa36e6349; operating a8bc3c04dce3354ebdd51a89c0b7d715af3344edcc794d33f6b3ad64506961d5; hardening d5fc451ce5caf6d6b5e64597a13883e1246581678fe53c962339d0a66136993e; index adce89c3f838f2f373cd504a00329d53906404d1dd42a647f672af6c16f95555. Full canonical references, MAC-STORAGE, repository AGENTS/CLAUDE/AGENT-PLAYBOOK/PUBLISHING/deploy-paths and existing checkpoint read. GitHub configured authenticated and Supabase execute_sql works. SSD disk7s4 mounted, initially10GiB free; tree costs ~3GiB, now7.2GiB. All new files remain on SSD.
+
+Evidence: sp_daily_digest_runs day2026-10-18 records eight types: post_commit_obligations_pending1032; EngineRestartedOutsideTheBreak44; SLOEngineAvailability26; Tournament.table_admission_failing24; financial_alerts:Tournament.table_admission_failing16; three lightning source/echo types2 each. Deploy detail attempted15/shipped13/superseded4; event258503. Current drift49c04e6e-294c-4332-b8cb-d67b8c2300be is prune-ca-hand-facts timeouts. A newer governance warning36f84062-cd60-46db-9a8e-e4f2d8c98a71 concerns closed-week ECO.
+
+Current engine41296ff3db09bca76bdc684d7e8d7ddc7f9a770d, active334 tables,109 tournaments, settlement ok, no blocked settlement/stalled table; normal :53 last-hand phase observed. Postcommit source latest2026-10-18T13:27Z, all631 records over48h resolved. Source fix163df2ea6 (#7338) retains exact completed envelopes after local custody expires; verify serving inclusion and native test.
+
+Unshipped runs39164820766 targetcae701b and39159884736 target5c9ae82 both stood down before mutation because sealed descendant6e3ab4f already contained them. Workflow classifier records superseded but run remains failure. Inspect durable metrics/digest counting before modifying.
+
+Retention function installed hash a5300a24f3afe4c078d011f0980bf0cd from20261018135943; bounded200k certificate+receipt range still timed out09:17 today, latest14:17 succeeded112.5s near120s limit; earlier successful52s. Need query-plan-based correction, no timeout-only fix.
+
+Current tournament admission alert258610 references167a5770-e9ce-4509-925d-8ed64a7cf069/table596f82eb-199b-459a-af5c-e0d9f30c8ec1,32 attempts/10min, last refusal null. Health at14:54 has zero never-started tournament tables; verify row and terminal condition. Lightning latest warning ack_to_idle over500ms three windows, resolved by14:41; all12 records48h resolved. Still requires cause/latency evidence rather than blanket closure.
+
+Remaining: exact failing gates/count semantics, retention plan, tournament state, monitoring payload and source; source fixes/regressions; required checks/integration; installed/live affected proof. No fixes claimed yet.
+
+15:00UTC: live250-certificate read-only EXPLAIN ANALYZE101.366ms (171 shared reads); current200000 plan materializes both range and receipts. Implemented existing retention transaction's250-identity source slices with10s between-slice work budget, same scan/compaction ceilings and cursor atomicity. New migration20261019145751 reserved by maintained generator. Native million-row qualification passed, six traversals0.28–0.45s; slow original compactor commits250 identities and more=true after10s. Freeze/compactor failure preserve cursor, totals37.02. App TypeScript compilation passed. Before-regression run and relevant source laws underway; no live installation yet.
+
+Earlier deployment failures are distinct: cae701b first attempt failed final DB-proof maintenance budget and recovered prior desired; retry stood down for6e3ab4f. 4beb1f first failed exact invocation receipt verification; next attempt independently proved exact SHA shipped01:58UTC. Do not relabel the original failures as shipped or weaken certificates to erase history. Monitoring restart/availability last resolved14:53UTC Oct18, with no newer inbox events. Tournament table596f82eb currently running(updated14:53UTC), but alert unresolved. Need hand progress and cause evidence.

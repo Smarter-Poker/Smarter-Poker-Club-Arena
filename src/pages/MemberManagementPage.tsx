@@ -868,14 +868,15 @@ export default function MemberManagementPage() {
                 12, 2026 (Monday Midnight Pacific) Onward, Within The Displayed Range.
               </p>
               <p>
-                Total Winnings Is The Cash Net Result; MTT Winnings Is The Tournament-Hand Net
-                Result. These Are Signed Hand Results, Not Gross Prizes Or Wallet Balances.
+                Total Winnings Is The Cash Net Result, Signed Hand Results Not Wallet Balances. MTT
+                Winnings Is Tournament Money: Prizes Paid Minus Buy-Ins In The Displayed UTC Window,
+                Matching The Win/Loss Card. Tournament Stack Chips Are Not Counted.
               </p>
               <p>
                 Claimed Back Counts Incoming Rakeback And Commission Transactions. Sent Out Counts
                 Outgoing Transfer, Send And Distribution Transactions In The Displayed UTC Window.
               </p>
-              <p>Fees, Net Results And Transaction Totals Use Club Chips.</p>
+              <p>Fees, Winnings And Transaction Totals Are Club Chip Wallet Amounts.</p>
               <p>
                 Overall Means All Currently Recorded Activity. Older Activity May No Longer Be
                 Retained. Wallets And Downline Counts Are Current, Not Date-Filtered.

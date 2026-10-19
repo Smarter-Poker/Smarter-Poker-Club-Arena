@@ -752,7 +752,7 @@ test.describe('Production Shark Club Players', () => {
 
     const activityGuide = page.locator('[aria-label="Activity Metric Definitions"]');
     await activityGuide.locator('summary').click();
-    await expect(activityGuide).toContainText('Signed Hand Results, Not Gross Prizes');
+    await expect(activityGuide).toContainText('MTT Winnings Is Tournament Money');
 
     const credentialArt = page.locator('.mm-credential__art');
     await expect(credentialArt).toBeVisible();

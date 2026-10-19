@@ -67,42 +67,54 @@ export function eligibleNaturalMultiRunTable(table: NaturalMultiRunCandidate): b
   );
 }
 
-/** At most two cold starts share one deadline; all six remain open for observation. */
-export async function initializeNaturalMultiRunObservers<T>(
-  tables: T[],
+/** One foreground observer consumes the original cumulative setup allocation. */
+export async function initializeNaturalMultiRunObserver<T>(
+  table: T,
   initialize: (table: T, navigationBudgetMs: number, remainingSetup: () => number) => Promise<void>,
   setupStartedAt: number,
   now = Date.now
 ): Promise<void> {
-  if (tables.length !== 6) throw new Error('Natural multirun proof requires all six observers');
   const remainingSetup = () => remainingInitialTableReadinessMs(setupStartedAt, 120_000, now());
-  let next = 0;
-  let failed = false;
-  let failure: unknown;
-  const startNext = async () => {
-    while (!failed && next < tables.length) {
-      const table = tables[next++];
-      try {
-        // Every active start consumes the same original allocation. The
-        // ordinary baseline retains its separate connection-latency law.
-        await initialize(table, remainingSetup(), remainingSetup);
-        remainingSetup();
-      } catch (error) {
-        if (!failed) {
-          failed = true;
-          failure = error;
-        }
-      }
-    }
-  };
-  // Both workers settle before the caller can close their pages on failure.
-  await Promise.all([startNext(), startNext()]);
-  if (failed) throw failure;
+  await initialize(table, remainingSetup(), remainingSetup);
+  remainingSetup();
 }
 
 export interface NaturalMultiRunHistoryRow {
   table_id: string;
   rit_boards: unknown[];
+}
+
+/** History is supplied by the bounded recent read below, never a global scan. */
+export function selectNaturalMultiRunSubject(
+  tables: NaturalMultiRunCandidate[],
+  recent: NaturalMultiRunHistoryRow[]
+): NaturalMultiRunCandidate {
+  const counts = new Map<string, [number, number]>();
+  for (const row of recent) {
+    if (!Array.isArray(row.rit_boards) || ![1, 2].includes(row.rit_boards.length)) continue;
+    const count = counts.get(row.table_id) ?? [0, 0];
+    count[row.rit_boards.length - 1]++;
+    counts.set(row.table_id, count);
+  }
+  const ranked = tables.filter(eligibleNaturalMultiRunTable).flatMap((table) => {
+    const [two, three] = counts.get(table.id) ?? [0, 0];
+    return two > 0 && three > 0
+      ? [{ table, balanced: Math.min(two, three), total: two + three }]
+      : [];
+  });
+  ranked.sort(
+    (a, b) =>
+      b.balanced - a.balanced ||
+      b.total - a.total ||
+      b.table.current_players - a.table.current_players ||
+      (a.table.id < b.table.id ? -1 : a.table.id > b.table.id ? 1 : 0)
+  );
+  const selected = ranked[0]?.table;
+  if (!selected)
+    throw new Error(
+      'Natural multirun observation requires one eligible cash table with both two-run and three-run recent history'
+    );
+  return selected;
 }
 
 /** Use the existing (table_id, created_at, id) index, never global history. */

@@ -104,3 +104,9 @@ Include the identical already-qualified accounting timing diagnostic correction 
 The hosted timing request passed, then the original funded caller refused its exact test inventory because the two new diagnostic tests had not been registered there. Register both literal test names in IDENTITY_TESTS. Preserve exact set/count matching and every financial admission guard; do not infer the inventory dynamically or omit a test. The direct maintained caller reproduces the refusal before this correction; selected funded cases did not execute on that refused invocation.
 
 After registration, direct identity_regressions execution in each candidate ran exactly 35 expected tests with zero failures, errors or skips. This qualifies the maintained caller inventory boundary; it does not claim selected funded cases or production qualification.
+
+## Current-main integration
+
+Resolve the shared native qualification script by retaining main's extended member-statistics fee/tournament-money and replay checks, followed by this task's dedup and committed-notification/replay checks. The automatically merged roster retains main's financial formatting/error states and this task's engine-READY freshness state. No protected-main change is discarded.
+
+Integrated-main qualification passed: the complete native PostgreSQL member-record suite (including both statistics and dedup/committed-notification checks), 48 focused roster/transport cases, and both TypeScript compilers. The first fixture startup used a socket path too long for the local server; a uniquely owned short external scratch parent completed and was removed. Production was not involved.

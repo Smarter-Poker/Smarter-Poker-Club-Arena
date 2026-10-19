@@ -252,3 +252,28 @@ it('withdraws the old card immediately when the member changes', async () => {
   expect(screen.queryByText('+70')).not.toBeInTheDocument();
   expect(screen.getByText('Loading Win And Loss...')).toBeInTheDocument();
 });
+
+it('keeps loaded figures with a stale note when a background refresh fails', async () => {
+  const spy = vi.spyOn(ClubRosterService, 'getMemberWinLoss').mockResolvedValue(record);
+  const view = render(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={0} />);
+  await screen.findByText('+70');
+  spy.mockRejectedValueOnce(new Error('timed out'));
+  view.rerender(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={1} />);
+  expect(
+    await screen.findByText('Could Not Refresh Win And Loss. Showing The Previous Successful Read.')
+  ).toBeInTheDocument();
+  expect(screen.getByText('+70')).toBeInTheDocument();
+  expect(screen.queryByText('Win And Loss Could Not Be Loaded.')).not.toBeInTheDocument();
+  spy.mockResolvedValueOnce({ ...record, today: figure(90, 0) });
+  view.rerender(<MemberWinLossCard clubId="club-1" userId="player-1" refreshKey={2} />);
+  expect(await screen.findByText('+90')).toBeInTheDocument();
+  expect(
+    screen.queryByText('Could Not Refresh Win And Loss. Showing The Previous Successful Read.')
+  ).not.toBeInTheDocument();
+});
+
+it('shows Unavailable on a Players row whose win / loss read failed', () => {
+  const page = read('src/pages/ClubMembersPage.tsx');
+  expect(page).toContain('winLossUnavailable={winLoss.unavailable.has(member.user_id)}');
+  expect(page).toContain("return unavailable ? 'Unavailable' : '...';");
+});

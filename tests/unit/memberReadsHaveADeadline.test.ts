@@ -93,6 +93,28 @@ describe('real PostgREST member reads have one request deadline', () => {
   });
 });
 
+describe('win / loss reads own a deadline like every other roster read', () => {
+  it.each([
+    ['record', () => ClubRosterService.getMemberWinLoss('club', 'player')],
+    ['roster', () => ClubRosterService.getMembersWinLoss('club', ['player'], 'overall')],
+  ] as const)('bounds a stalled %s win / loss read and retries once', async (_name, call) => {
+    state.fetch.mockImplementation(() => new Promise(() => {}));
+    const pending = call();
+    const rejected = expect(pending).rejects.toBeInstanceOf(RosterReadTimeoutError);
+    await vi.advanceTimersByTimeAsync(40_000);
+    await rejected;
+    expect(state.fetch).toHaveBeenCalledTimes(2);
+    expect(state.fetch.mock.calls.every((args) => args[1].signal.aborted)).toBe(true);
+  });
+  it('does not retry a permission denial', async () => {
+    state.fetch.mockResolvedValue(
+      new Response(JSON.stringify({ code: '42501', message: 'denied' }), { status: 403 })
+    );
+    await expect(ClubRosterService.getMemberWinLoss('club', 'player')).rejects.toThrow('denied');
+    expect(state.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('audited member operations never retry an unknown acknowledgement', () => {
   it.each([
     () => ClubRosterService.exportRoster('club', {}),

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url';
-import { cleanupProductionE2EAccount } from './production-e2e-account.mjs';
+import { cleanupProductionE2EAccount, STALE_ACCOUNT_AGE_MS } from './production-e2e-account.mjs';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
 // One explicitly selected, already-owned fixture. This creates no accounts
@@ -9,6 +9,7 @@ export async function retireReservedCertificationAccount({
   environment = process.env,
   fetchImpl = fetch,
   cleanup = cleanupProductionE2EAccount,
+  now = Date.now,
 } = {}) {
   const id = environment.RESERVED_CERTIFICATION_ACCOUNT_ID;
   const email = environment.RESERVED_CERTIFICATION_ACCOUNT_EMAIL;
@@ -80,6 +81,31 @@ export async function retireReservedCertificationAccount({
     }
     // A successful retirement removes its creation receipt. Already-retired
     // Auth delegates only the maintained terminal account readback below.
+  }
+  // A LIVE CERTIFICATE STILL OWNS A YOUNG IDENTITY (2026-10-19). Client
+  // browser verification 118134919713 created its identity at 15:14:07 and
+  // was mid-sweep when an out-of-band cleanup soft-deleted it at 15:44:06 and
+  // retired the template club it owned a minute earlier. The remaining forty
+  // minutes of the sweep then failed 65 checks on a signed-out, clubless
+  // account - none of them a production defect. The creating job removes its
+  // own identity in its always() cleanup; any other caller is recovering an
+  // interrupted run, and a run cannot still be executing once its identity is
+  // older than the longest job that may own it (STALE_ACCOUNT_AGE_MS). An
+  // unreadable creation time is "could not tell" and refuses too. Identities
+  // Auth already retired skip this: their readback changes nothing.
+  if (!user.deleted_at) {
+    const createdAt = Date.parse(user.created_at || '');
+    if (!Number.isFinite(createdAt)) {
+      throw new Error(
+        'Cannot Tell When The Selected Reserved Identity Was Created; A Running Certificate May Own It.'
+      );
+    }
+    if (now() - createdAt < STALE_ACCOUNT_AGE_MS) {
+      throw new Error(
+        'The Selected Reserved Identity Is Younger Than The Longest Certificate That May Own It; ' +
+          `Retire It After ${new Date(createdAt + STALE_ACCOUNT_AGE_MS).toISOString()}.`
+      );
+    }
   }
   const retired = await cleanup({ environment, fetchImpl, record });
   if (retired !== true) throw new Error('The Selected Reserved Identity Was Not Retired.');

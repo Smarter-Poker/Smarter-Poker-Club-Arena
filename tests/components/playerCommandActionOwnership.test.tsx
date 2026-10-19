@@ -362,7 +362,7 @@ it('wallet events update the displayed member without replacing a dirty note or 
       },
     })
   );
-  expect(screen.getByText('777')).toBeInTheDocument();
+  expect(screen.getByText('777.00')).toBeInTheDocument();
   expect(name).toHaveValue('Keep This Draft');
   expect(state.updateMemberNotes).not.toHaveBeenCalled();
   expect(state.getMemberDetail).toHaveBeenCalledTimes(1);
@@ -526,7 +526,7 @@ it('updates every record section on a source event while preserving an unsaved n
   expect(await screen.findByText('Updated Shark')).toBeInTheDocument();
   expect(screen.getByText('Last Active')).toBeInTheDocument();
   expect(screen.getByText('321')).toBeInTheDocument();
-  expect(screen.getByText('-44.00')).toBeInTheDocument();
+  expect(screen.getByText('-44')).toBeInTheDocument();
   expect(screen.getByDisplayValue('Unsaved Local Name')).toBeInTheDocument();
 });
 

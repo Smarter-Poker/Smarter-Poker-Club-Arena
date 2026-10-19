@@ -22,6 +22,166 @@ const rpcPath = (request, name) => {
     return false;
   }
 };
+/* What the normal entry door actually offers, in fixed classes only. The
+ * Lightning entry lives inside the app shell, so a fresh device meets the
+ * shell's first-run layers (the device welcome, then the soft asks) over it
+ * before the door can be tapped. The table route has no shell, which is why
+ * the existing-pool witnesses never met them. Labels and layer identities are
+ * an allowlist: no text, URL or token from the page leaves this function. */
+export const ENTRY_DOORS = Object.freeze({
+  'Join Lightning': 'join_lightning',
+  'Join Game': 'join_game',
+  'Joining...': 'joining',
+  'View Game': 'view_game',
+  'Try Again': 'entry_unavailable',
+});
+export const ENTRY_LAYERS = Object.freeze([
+  ['[aria-labelledby="club-arena-welcome-title"]', 'device_welcome'],
+  ['[aria-labelledby="complete-profile-title"]', 'profile_gate'],
+  ['[aria-labelledby="age-gate-title"]', 'age_gate'],
+  ['[aria-labelledby="dbs-title"]', 'daily_bonus'],
+  ['[aria-labelledby="ca-consent-title"]', 'analytics_question'],
+  ['[aria-label="Enable Notifications"]', 'notifications_question'],
+]);
+/* Soft asks a player may put off. Not Now never claims, grants or pays. */
+const NOT_NOW_LAYERS = Object.freeze([
+  'daily_bonus',
+  'analytics_question',
+  'notifications_question',
+]);
+const PROFILE_GATES = Object.freeze(['pending', 'complete', 'incomplete', 'unavailable']);
+/** Runs in the page. Self-contained: Playwright serializes it. */
+export function entryDoorInPage({ clusterId, doors, layers }) {
+  const path = location.pathname;
+  const route =
+    path === `/hub/club-arena/lightning/${clusterId}`
+      ? 'entry'
+      : path.startsWith('/hub/club-arena/table/')
+        ? 'table'
+        : 'other';
+  const gate =
+    document
+      .querySelector('[data-profile-gate-status]')
+      ?.getAttribute('data-profile-gate-status') ?? null;
+  const entry = document.querySelector('[data-testid="lightning-entry"]');
+  const out = { route, profileGate: gate, settled: false, door: 'none', layer: 'none' };
+  if (route !== 'entry' || !entry || entry.getAttribute('aria-busy') === 'true') return out;
+  out.settled = true;
+  if (entry.querySelector('[data-testid="lightning-entry-join-closed"]')) {
+    out.door = 'joins_closed';
+    return out;
+  }
+  let button = null;
+  for (const candidate of entry.querySelectorAll('button')) {
+    const door = doors[(candidate.textContent ?? '').trim()];
+    if (door) {
+      out.door = door;
+      button = candidate;
+      break;
+    }
+  }
+  if (!button) return out;
+  button.scrollIntoView({ block: 'center', inline: 'center' });
+  const r = button.getBoundingClientRect();
+  const top =
+    r.width > 0 && r.height > 0
+      ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      : null;
+  if (!top) out.layer = 'unknown';
+  else if (top === button || button.contains(top)) out.layer = 'clear';
+  else {
+    out.layer = 'other';
+    for (const [selector, name] of layers)
+      if (top.closest(selector) || top.querySelector(selector)) {
+        out.layer = name;
+        break;
+      }
+  }
+  return out;
+}
+/** One normal answer to the one layer over the door: the device welcome is
+ * acknowledged (this browser's storage only; the context is discarded), a
+ * soft ask is put off with Not Now. Anything else is reported, never touched. */
+export async function answerEntryLayer(page, layer, remaining) {
+  const ms = () => Math.min(10000, remaining());
+  if (layer === 'device_welcome') {
+    const dialog = page.locator('[role="dialog"][aria-labelledby="club-arena-welcome-title"]');
+    await dialog.waitFor({ state: 'visible', timeout: ms() });
+    const agree = dialog.getByRole('checkbox', {
+      name: 'I Understand And Agree To These Terms',
+      exact: true,
+    });
+    await agree.click({ timeout: ms() });
+    if ((await agree.getAttribute('aria-checked', { timeout: ms() })) !== 'true')
+      throw new Error('Device Welcome Unverified');
+    await dialog
+      .getByRole('button', { name: 'Enter Poker Arena', exact: true })
+      .click({ timeout: ms() });
+    await dialog.waitFor({ state: 'hidden', timeout: ms() });
+    return 'acknowledged_on_this_device';
+  }
+  if (NOT_NOW_LAYERS.includes(layer)) {
+    const selector = ENTRY_LAYERS.find(([, name]) => name === layer)[0];
+    const sheet = page.locator(selector).first();
+    await sheet.getByRole('button', { name: 'Not Now', exact: true }).click({ timeout: ms() });
+    await sheet.waitFor({ state: 'hidden', timeout: ms() });
+    return 'put_off';
+  }
+  throw new Error('Entry Layer Not Answerable');
+}
+/** Waits, bounded, for the settled entry to offer an unobstructed door. Each
+ * known layer is answered at most once; the result is the last observation. */
+export async function settleEntryDoor(
+  page,
+  clusterId,
+  remaining,
+  { stableMs = 1000, settleMs = 45000 } = {}
+) {
+  const until = Date.now() + Math.min(settleMs, remaining());
+  const answered = {};
+  let clearSince = null;
+  let seen;
+  while (true) {
+    seen = await page.evaluate(entryDoorInPage, {
+      clusterId,
+      doors: ENTRY_DOORS,
+      layers: ENTRY_LAYERS,
+    });
+    if (!PROFILE_GATES.includes(seen.profileGate)) seen.profileGate = 'unknown';
+    const layer = seen.layer;
+    if (
+      seen.door === 'join_lightning' &&
+      (layer === 'device_welcome' || NOT_NOW_LAYERS.includes(layer)) &&
+      !answered[layer]
+    ) {
+      answered[layer] = 'pending';
+      answered[layer] = await answerEntryLayer(page, layer, remaining);
+      clearSince = null;
+      continue;
+    }
+    if (seen.profileGate === 'complete' && seen.door === 'join_lightning' && layer === 'clear') {
+      clearSince ??= Date.now();
+      if (Date.now() - clearSince >= stableMs) break;
+    } else clearSince = null;
+    if (Date.now() >= until) break;
+    await page.waitForTimeout(Math.min(250, remaining()));
+  }
+  return {
+    route: seen.route,
+    profileGate: seen.profileGate,
+    door: seen.door,
+    layer: seen.layer,
+    answered,
+  };
+}
+const CODE = /^([A-Z][A-Z0-9_]{2,63})(?::|$)/;
+/** A refused join is named by its native leading code only, never its text. */
+export function joinRefusalCode(body) {
+  const message = typeof body?.message === 'string' ? body.message : null;
+  const reason = typeof body?.reason === 'string' ? body.reason : null;
+  const hit = (message && CODE.exec(message)) || (reason && CODE.exec(reason));
+  return hit ? hit[1] : null;
+}
 export function admissionReceiptMatches(p, reply) {
   const r = reply?.request;
   return (
@@ -139,6 +299,8 @@ export async function witnessAdmission({
   withAdmittedSession,
   validateScope = scope,
   readOwnPool = readAdmissionPool,
+  entryStableMs = 1000,
+  entrySettleMs = 45000,
 }) {
   const report = {
     status: 'unknown',
@@ -180,6 +342,12 @@ export async function witnessAdmission({
       pin.clubId !== CLUB ||
       !UUID.test(pin.clusterId) ||
       typeof acceptTerms !== 'boolean' ||
+      !Number.isInteger(entryStableMs) ||
+      entryStableMs < 0 ||
+      entryStableMs > 5000 ||
+      !Number.isInteger(entrySettleMs) ||
+      entrySettleMs < 0 ||
+      entrySettleMs > 60000 ||
       !Number.isInteger(timeoutMs) ||
       timeoutMs < 30000 ||
       timeoutMs > 240000
@@ -263,6 +431,22 @@ export async function witnessAdmission({
       report.pool = await bound(readOwnPool(admin, pin));
       if (report.pool) report.status = 'read_only_resume';
       else {
+        report.phase = 'entry_door';
+        report.join.entry = await bound(
+          settleEntryDoor(page, pin.clusterId, remaining, {
+            stableMs: entryStableMs,
+            settleMs: entrySettleMs,
+          })
+        );
+        if (
+          report.join.entry.door !== 'join_lightning' ||
+          report.join.entry.layer !== 'clear' ||
+          report.join.entry.profileGate !== 'complete'
+        ) {
+          // Nothing was tapped: the door was not offered, or something sat over it.
+          report.join.outcome = 'not_offered';
+          throw new Error('Join Lightning Not Offered');
+        }
         report.phase = 'join';
         const entry = page.getByTestId('lightning-entry');
         const joining = page
@@ -271,13 +455,19 @@ export async function witnessAdmission({
           })
           .catch(() => null);
         report.join.outcome = 'unknown';
-        await bound(
+        // One bounded tap: an obstructed control must not spend the whole budget.
+        report.join.tap = await bound(
           entry
             .getByRole('button', { name: 'Join Lightning', exact: true })
-            .click({ timeout: remaining() })
-        ).catch(() => null);
+            .click({ timeout: Math.min(15000, remaining()) })
+        ).then(
+          () => 'sent',
+          () => 'not_completed'
+        );
         const response = await bound(joining);
         const joined = response ? await bound(response.json()).catch(() => null) : null;
+        report.join.reply = !response ? 'not_observed' : response.ok() ? 'ok' : 'refused';
+        if (response && !response.ok()) report.join.refusal = joinRefusalCode(joined);
         if (
           joined?.ok !== true ||
           !['seat', 'seated'].includes(joined.action) ||
@@ -288,7 +478,7 @@ export async function witnessAdmission({
           report.pool = await bound(readOwnPool(admin, pin));
           throw new Error('Join Unknown Or Waitlisted');
         }
-        report.join = { outcome: joined.action, tableId: joined.table_id };
+        report.join = { ...report.join, outcome: joined.action, tableId: joined.table_id };
         // Ordinary horse input may have purchased a seat while join was in flight.
         // A seated reply never authorizes a second buy-in.
         report.pool = await bound(readOwnPool(admin, pin));

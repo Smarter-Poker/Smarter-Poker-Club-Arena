@@ -18,6 +18,7 @@ interface ClubArenaNavigationContext {
   isPlatformStaff?: boolean;
   canManageGames?: boolean;
   canCustomizeWelcome?: boolean;
+  welcomeSetupRequired?: boolean;
   /**
    * fn_can_i_operate_the_union_network said yes for this account
    * (see useCanOperateUnionNetwork). Fails closed: absent an explicit yes the
@@ -95,6 +96,7 @@ export function getClubArenaNavigation({
   isPlatformStaff = false,
   canManageGames = false,
   canCustomizeWelcome = false,
+  welcomeSetupRequired = false,
   canOperateUnionNetwork = false,
 }: ClubArenaNavigationContext): ClubArenaNavGroup[] {
   const clubPath = (suffix = '') => (clubId ? `/clubs/${clubId}${suffix}` : '/');
@@ -164,6 +166,18 @@ export function getClubArenaNavigation({
           description: 'Open Smarter.Poker Messenger',
           external: true,
         },
+        ...(canCustomizeWelcome ||
+        ['owner', 'co_owner', 'admin', 'super_agent', 'agent', 'sub_agent'].includes(clubRole || '')
+          ? [
+              {
+                label: 'Custom Messages',
+                path: clubId ? clubPath('/welcome-message') : '/welcome-messages',
+                description: welcomeSetupRequired
+                  ? 'Finish Setting Up Your Custom Messages'
+                  : 'Edit Your Automatic Welcome Messages',
+              },
+            ]
+          : []),
         {
           label: 'Friends',
           path: '/friends',
@@ -227,22 +241,6 @@ export function getClubArenaNavigation({
       ],
     },
   ];
-
-  if (
-    canCustomizeWelcome ||
-    ['owner', 'co_owner', 'super_agent', 'agent', 'sub_agent'].includes(clubRole || '')
-  ) {
-    groups.push({
-      label: 'Club Messaging',
-      items: [
-        {
-          label: 'Custom Welcome Message',
-          path: clubId ? clubPath('/welcome-message') : '/welcome-messages',
-          description: 'Your Automatic Message To New Downline Players',
-        },
-      ],
-    });
-  }
 
   if (clubId) {
     const { isClubStaff, canViewFinance, canControlClub } = getClubNavigationCapabilities(

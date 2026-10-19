@@ -20,6 +20,16 @@ export type HorsePublicTournamentStage =
         | 'context_read_failed'
         | 'invalid_public_context'
         | 'hand_level_mismatch';
+      /** Which validity check failed when reason is invalid_public_context. */
+      detail?:
+        | 'format'
+        | 'age'
+        | 'counts'
+        | 'players_left'
+        | 'capacity'
+        | 'flags'
+        | 'mystery_stage'
+        | 'schema_version';
     }>
   | Readonly<{
       version: 1;
@@ -59,8 +69,14 @@ export function captureHorsePublicTournamentStage(
   read?: HorsePublicTournamentReader
 ): HorsePublicTournamentStage {
   const unavailable = (
-    reason: Extract<HorsePublicTournamentStage, { status: 'unavailable' }>['reason']
-  ): HorsePublicTournamentStage => Object.freeze({ version: 1, status: 'unavailable', reason });
+    reason: Extract<HorsePublicTournamentStage, { status: 'unavailable' }>['reason'],
+    detail?: Extract<HorsePublicTournamentStage, { status: 'unavailable' }>['detail']
+  ): HorsePublicTournamentStage =>
+    Object.freeze(
+      detail
+        ? { version: 1 as const, status: 'unavailable' as const, reason, detail }
+        : { version: 1 as const, status: 'unavailable' as const, reason }
+    );
   if (!config.isTournament) return Object.freeze({ version: 1, status: 'not_applicable' });
   if (!read) return unavailable('context_missing');
   let s: ReturnType<HorsePublicTournamentReader>;
@@ -84,21 +100,24 @@ export function captureHorsePublicTournamentStage(
     return unavailable('context_incomplete');
   const c = s.context;
   const count = (v: number) => Number.isSafeInteger(v) && v >= 0;
+  // The first failing check is NAMED (2026-10-19): 29% of sampled tournament
+  // hands read invalid_public_context and the single reason could not say
+  // which of these eight checks was refusing them.
+  const invalid = (
+    detail: NonNullable<Extract<HorsePublicTournamentStage, { status: 'unavailable' }>['detail']>
+  ) => unavailable('invalid_public_context', detail);
+  if (c.schemaVersion !== 1) return invalid('schema_version');
+  if (!['mtt', 'sng', 'spin', 'hu_sng'].includes(c.format)) return invalid('format');
+  if (s.ageMs === null || !Number.isFinite(s.ageMs) || s.ageMs < 0 || s.ageMs > 60_000)
+    return invalid('age');
+  if (![c.entrants, c.playersLeft, c.spotsPaid, c.currentLevel, c.satelliteSeats].every(count))
+    return invalid('counts');
+  if (c.playersLeft < 2) return invalid('players_left');
+  if (c.entrants < c.playersLeft || c.spotsPaid > c.entrants || c.currentLevel < 1)
+    return invalid('counts');
+  if (!Number.isInteger(c.seatsPerTable) || c.seatsPerTable < 2 || c.seatsPerTable > 10)
+    return invalid('capacity');
   if (
-    c.schemaVersion !== 1 ||
-    !['mtt', 'sng', 'spin', 'hu_sng'].includes(c.format) ||
-    s.ageMs === null ||
-    !Number.isFinite(s.ageMs) ||
-    s.ageMs < 0 ||
-    s.ageMs > 60_000 ||
-    ![c.entrants, c.playersLeft, c.spotsPaid, c.currentLevel, c.satelliteSeats].every(count) ||
-    c.playersLeft < 2 ||
-    c.entrants < c.playersLeft ||
-    c.spotsPaid > c.entrants ||
-    c.currentLevel < 1 ||
-    !Number.isInteger(c.seatsPerTable) ||
-    c.seatsPerTable < 2 ||
-    c.seatsPerTable > 10 ||
     ![
       c.inMoney,
       c.nearBubble,
@@ -114,10 +133,11 @@ export function captureHorsePublicTournamentStage(
       c.isBounty,
       c.isMysteryBounty,
       c.satellite,
-    ].every((v) => typeof v === 'boolean') ||
-    !['none', 'pending', 'active', 'complete'].includes(c.mysteryBountyStage)
+    ].every((v) => typeof v === 'boolean')
   )
-    return unavailable('invalid_public_context');
+    return invalid('flags');
+  if (!['none', 'pending', 'active', 'complete'].includes(c.mysteryBountyStage))
+    return invalid('mystery_stage');
   // A newer cached level cannot relabel a hand still using the prior blinds.
   if (
     c.currentSmallBlind !== config.smallBlind ||

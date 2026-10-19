@@ -436,11 +436,36 @@ export interface HorsePhase11AuthoritySelection {
  * completed every eligible decision on every street (river 666 of 666, lowest
  * Wilson bound 0.9901). Cash only. PLO5 and PLO6 stay null until their own
  * matrices finish.
+ *
+ * October 19: PLO5 generation 4. The locked P11 PLO5 matrix requalified the
+ * exact VPIP-floor source da94e437 (run 39132890865, every shard complete):
+ * cash after rake against the horse population +5.34 [+4.21, +6.46] bb/100
+ * over 2,379,456 pairs, qualified with no reasons, at policy digest
+ * 7bdf1c08.... The same prospective completion window on release 6e3ab4f3
+ * completed every eligible PLO5 decision on every street (river 1,237 of
+ * 1,237, lowest Wilson bound 0.9947). Cash only. PLO6 stays null.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
 > = Object.freeze({
-  plo5: null,
+  plo5: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo5',
+    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+    packVersion: 'plo5-high-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
+    domain: 'plo5-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/da94e437/phase11-qualification-2026-10-19-plo5.json',
+    qualificationSha256: 'ddd51c436feff9833c7a62f4e52858ba890a51a01068285f6ebe5fbe7e0b2dd0',
+    completionPath: 'docs/evidence/phase11/da94e437/phase11-completion-2026-10-18-plo5.json',
+    completionSha256: 'f3a67c8bba9c6d915a4e4e946cddcb9a3a3fdfbf2f1f3bdd8e71d63064ed346b',
+    approvalGeneration: 4,
+    issuedAt: '2026-10-19T14:58:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   plo6: null,
   plo8: Object.freeze({
     schema: 'horse-qualified-authority-selection-v1',

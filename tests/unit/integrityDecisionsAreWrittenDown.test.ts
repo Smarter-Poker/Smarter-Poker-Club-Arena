@@ -161,7 +161,10 @@ describe('the surfaces around them stopped promising what they cannot do', () =>
   });
 
   it('excludes a person from the roster rather than a uuid typed by hand', () => {
-    expect(BLACKLIST).toContain("supabase.rpc('ca_club_members'");
+    // Identity-only picker (2026-10-19): the full roster reader carries
+    // balances this page never shows.
+    expect(BLACKLIST).toContain("supabase.rpc('ca_club_member_search'");
+    expect(BLACKLIST).not.toContain("supabase.rpc('ca_club_members'");
     expect(BLACKLIST).not.toContain('placeholder="Player UUID"');
   });
 

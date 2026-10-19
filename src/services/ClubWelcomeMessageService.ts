@@ -9,10 +9,14 @@ export interface ClubWelcomeSettings {
   content: string;
   enabled: boolean;
   revision: number;
+  owner_content?: string;
+  owner_enabled?: boolean;
+  owner_revision?: number;
 }
 export const WELCOME_STAFF_ROLES: ReadonlySet<string> = new Set([
   'owner',
   'co_owner',
+  'admin',
   'super_agent',
   'agent',
   'sub_agent',
@@ -54,7 +58,12 @@ export async function readClubWelcomeSettings(
         typeof row.content !== 'string' ||
         typeof row.enabled !== 'boolean' ||
         !Number.isSafeInteger(row.revision) ||
-        row.revision < 0
+        row.revision < 0 ||
+        (row.role === 'owner' &&
+          (typeof row.owner_content !== 'string' ||
+            typeof row.owner_enabled !== 'boolean' ||
+            !Number.isSafeInteger(row.owner_revision) ||
+            Number(row.owner_revision) < 0))
     )
   ) {
     throw new Error('Welcome Message Settings Could Not Be Verified');
@@ -66,6 +75,7 @@ export async function saveClubWelcomeSettings(
   currentActor: () => string | null,
   input: {
     clubId: string;
+    messageKind?: 'downline' | 'club_owner';
     content: string;
     enabled: boolean;
     revision: number;
@@ -81,4 +91,22 @@ export async function saveClubWelcomeSettings(
   )
     throw new Error('Welcome Message Save Could Not Be Confirmed');
   return receipt;
+}
+
+export type ClubWelcomeKind = 'downline' | 'club_owner';
+export function clubWelcomeTemplate(row: ClubWelcomeSettings, kind: ClubWelcomeKind) {
+  return kind === 'club_owner'
+    ? {
+        content: row.owner_content || '',
+        enabled: row.owner_enabled === true,
+        revision: row.owner_revision || 0,
+      }
+    : { content: row.content, enabled: row.enabled, revision: row.revision };
+}
+export function clubWelcomeSetupMissing(row: ClubWelcomeSettings): boolean {
+  return (
+    !row.enabled ||
+    !row.content.trim() ||
+    (row.role === 'owner' && (!row.owner_enabled || !row.owner_content?.trim()))
+  );
 }

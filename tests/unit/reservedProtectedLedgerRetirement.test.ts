@@ -14,6 +14,8 @@ const after = read(
 );
 const id = '00000000-0000-4000-8000-000000000095';
 const email = 'ca-customization-cert-postdeploy-owned@example.invalid';
+// An identity older than the longest certificate that may own it (112 minutes).
+const finished = '2026-10-19T12:00:00.000Z';
 
 describe('reserved protected ledger actors reach supported Auth retirement', () => {
   it('qualifies immutable source, authority and protected triggers before installation', () => {
@@ -102,7 +104,9 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
       SUPABASE_URL: 'https://isolated.invalid',
       SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test',
     };
-    const fetchImpl = vi.fn().mockResolvedValue({ status: 200, json: async () => ({ id, email }) });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue({ status: 200, json: async () => ({ id, email, created_at: finished }) });
     const cleanup = vi.fn().mockResolvedValue(true);
     await expect(
       retireReservedCertificationAccount({ environment, fetchImpl, cleanup })
@@ -140,7 +144,10 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
     };
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce({ status: 200, json: async () => ({ id, email }) })
+      .mockResolvedValueOnce({
+        status: 200,
+        json: async () => ({ id, email, created_at: finished }),
+      })
       .mockResolvedValueOnce({
         status: 200,
         json: async () => [{ user_id: id, request_id: requestId, club_id: clubId }],
@@ -271,6 +278,31 @@ describe('reserved protected ledger actors reach supported Auth retirement', () 
       })
     ).rejects.toThrow('Configured Database Access');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['created half an hour ago, while its sweep is still running', '2026-10-19T15:14:07.500Z'],
+    ['with no readable creation time', undefined],
+  ])('refuses an identity a running certificate may still own: %s', async (_label, createdAt) => {
+    // Client browser verification 118134919713 lost its identity at 15:44:06,
+    // thirty minutes into a run that may own it for up to 112.
+    const cleanup = vi.fn();
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue({ status: 200, json: async () => ({ id, email, created_at: createdAt }) });
+    await expect(
+      retireReservedCertificationAccount({
+        environment: {
+          RESERVED_CERTIFICATION_ACCOUNT_ID: id,
+          RESERVED_CERTIFICATION_ACCOUNT_EMAIL: email,
+          SUPABASE_URL: 'https://isolated.invalid',
+          SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_test',
+        },
+        fetchImpl,
+        cleanup,
+        now: () => Date.parse('2026-10-19T15:44:06.000Z'),
+      })
+    ).rejects.toThrow(/Running Certificate May Own It|Longest Certificate That May Own It/);
     expect(cleanup).not.toHaveBeenCalled();
   });
 });

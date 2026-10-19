@@ -1,0 +1,7 @@
+# Custom Messages And Club Welcomes
+
+Custom Messages is directly below Messages in the hamburger menu for active club staff. Incomplete settings produce a setup nudge and a persistent setup description there. Owners have independent Downline Welcome and Club Welcome templates, with independent revisions and save receipts. The first welcome comes from the assigned agent, or the owner when no active agent is assigned. The owner club welcome is due ten minutes after the first send, with current membership and personal blocks rechecked by the World Hub delivery transaction. Saving applies prospectively, without a historical member blast.
+
+The World Hub migration and API are a compatibility prerequisite before publishing this client. Staff Notice Board group membership is controlled by committed membership/agent/ownership changes; it does not grant payout Notice Board mutation permissions. No engine deployment is required. See the existing World Hub `.agent/audits/2026-10-15-club-messenger-welcome.md` checkpoint for installation, protected delivery, publication and live receipts.
+
+Local qualification: full Arena production build, TypeScript, copy gates, 114 directly connected UI contracts and a rendered actual editor/service test with isolated HTTP (independent owner slots, save/reload, 320/393/1280 geometry). The final protected source and live proof are recorded separately in that checkpoint.

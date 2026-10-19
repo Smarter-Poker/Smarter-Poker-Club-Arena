@@ -5,7 +5,11 @@ import ClubRosterService, {
   type WinLossFigure,
   type WinLossPeriod,
 } from '../../src/services/ClubRosterService';
-import { useRosterWinLoss } from '../../src/hooks/useRosterWinLoss';
+import {
+  useRosterWinLoss,
+  WIN_LOSS_RETRY_BASE_MS,
+  WIN_LOSS_RETRY_MAX_MS,
+} from '../../src/hooks/useRosterWinLoss';
 
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 const member = (id = 'a', visible = true) =>
@@ -147,4 +151,52 @@ it('retries aborted cached-row refreshes when a loaded page changes', async () =
   expect(oldSignal.aborted).toBe(true);
   await act(async () => finish(new Map([['a', figure(999)]])));
   expect(result.current.get('a')?.net).toBe(30);
+});
+
+it('marks a failed row Unavailable instead of loading for ever, then retries on a backoff', async () => {
+  vi.useFakeTimers();
+  try {
+    const read = vi
+      .spyOn(ClubRosterService, 'getMembersWinLoss')
+      .mockRejectedValueOnce(new Error('timed out'))
+      .mockResolvedValue(new Map([['a', figure(15)]]));
+    const { result } = renderHook(useFigures, { initialProps: initial });
+    await act(async () => {});
+    expect(result.current.has('a')).toBe(false);
+    expect(result.current.unavailable.has('a')).toBe(true);
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(WIN_LOSS_RETRY_BASE_MS * 1.3);
+    });
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(result.current.get('a')?.net).toBe(15);
+    expect(result.current.unavailable.has('a')).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('keeps a verified figure on a failed refresh and stops retrying once unmounted', async () => {
+  vi.useFakeTimers();
+  try {
+    const read = vi
+      .spyOn(ClubRosterService, 'getMembersWinLoss')
+      .mockResolvedValueOnce(new Map([['a', figure(10)]]))
+      .mockRejectedValue(new Error('timed out'));
+    const { result, rerender, unmount } = renderHook(useFigures, { initialProps: initial });
+    await act(async () => {});
+    expect(result.current.get('a')?.net).toBe(10);
+    rerender({ ...initial, revision: 1 });
+    await act(async () => {});
+    expect(result.current.get('a')?.net).toBe(10);
+    expect(result.current.unavailable.has('a')).toBe(true);
+    const calls = read.mock.calls.length;
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(WIN_LOSS_RETRY_MAX_MS * 2);
+    });
+    expect(read).toHaveBeenCalledTimes(calls);
+  } finally {
+    vi.useRealTimers();
+  }
 });

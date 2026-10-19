@@ -787,6 +787,13 @@ export function detectLeaks(row: {
         if ((overpair || onePairHit) && !v24Owns && commit === 'river') {
           flag('one_pair_river_stackoff');
         }
+        // 2026-10-19: the same shape committed on the TURN. The 2026-10-18
+        // audit left 16,832 big losses untagged and a repeated one among them
+        // was one pair (KK on 9-2-4-Q-J, QQ/QK on J-8-3-K) going in on the
+        // turn against a large raise. MEASUREMENT ONLY, like its river twin.
+        if ((overpair || onePairHit) && !v24Owns && commit === 'turn') {
+          flag('one_pair_turn_stackoff');
+        }
       } else if (ns.cat === CAT_ONE_PAIR + 1 && boardPaired && r1 !== r2 && hits >= 1) {
         flag('board_paired_two_pair_stackoff');
       }

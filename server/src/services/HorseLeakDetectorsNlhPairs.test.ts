@@ -69,6 +69,16 @@ describe('one_pair_river_stackoff', () => {
     );
   });
 
+  it('the same stack going in on the turn is the turn tag, not the river tag', () => {
+    const t = hand('Ks Kc', 'Jh 4d Tc 2c 3h', { heroActions: TURN_JAM });
+    expect(t).toContain('one_pair_turn_stackoff');
+    expect(t).not.toContain('one_pair_river_stackoff');
+  });
+
+  it('a river jam is not tagged as a turn stackoff', () => {
+    expect(hand('Ks Kc', 'Jh 4d Tc 2c 3h')).not.toContain('one_pair_turn_stackoff');
+  });
+
   it('records the win side under the _won name', () => {
     expect(hand('Ks Kc', 'Jh 4d Tc 2c 3h', { netBB: 500 })).toContain(
       'one_pair_river_stackoff_won'

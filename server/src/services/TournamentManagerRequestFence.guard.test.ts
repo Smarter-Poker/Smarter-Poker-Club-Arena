@@ -135,7 +135,17 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     const attempt = client.slice(attemptStart, client.indexOf('const RETRYABLE =', attemptStart));
     expect(attemptStart).toBeGreaterThan(-1);
     expect(client).toContain("import { dataActorHeaders } from './dataActorContext.js'");
-    expect(attempt).toContain('const authoritativeHeaders = dataActorHeaders(headers)');
+    // Viewer-only private ACL reads are the sole unmarked path. Every ordinary
+    // service/manager request still stamps its authority inside each attempt.
+    expect(attempt).toMatch(
+      /}\s*else\s*{\s*authoritativeHeaders = dataActorHeaders\(headers\);\s*}/
+    );
+    expect(attempt).toContain('if (actorToken) {');
+    expect(attempt).toContain('url.origin !== new URL(SUPABASE_URL).origin');
+    expect(attempt).toContain("'/rest/v1/rpc/ca_member_record_can_subscribe'");
+    expect(attempt).toContain("'/rest/v1/rpc/ca_club_roster_can_subscribe'");
+    expect(attempt).toContain("(init.method || 'GET').toUpperCase() !== 'POST'");
+    expect(attempt).toContain("throw new Error('private_record_acl_request_boundary')");
     expect(attempt).toContain('headers: authoritativeHeaders');
     expect(actorContext).toContain('new AsyncLocalStorage<TournamentManagerActorContext>()');
     expect(actorContext).toContain('Promise.resolve(result as unknown as PromiseLike<unknown>)');

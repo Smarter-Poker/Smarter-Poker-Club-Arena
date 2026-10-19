@@ -1,0 +1,5 @@
+{
+  "_owner": "Targeted Supabase billing reduction; promised by 20261019152515. Default paid delivery remains enabled until explicit verified cutover.",
+  "tables": ["ca_private_record_transport_state"],
+  "functions": ["fn_dispatch_private_record_signal", "fn_private_record_transport_ready"]
+}

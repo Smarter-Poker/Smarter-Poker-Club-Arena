@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -120,7 +120,8 @@ describe('a verified club page stays mounted while its access is re-checked', ()
     render(app());
     expect(screen.getByText('skeleton')).toBeTruthy();
     expect(await screen.findByText('page')).toBeTruthy();
-    expect(mounts).toBe(1);
+    // DOM insertion can precede React's passive mount effect under hosted load.
+    await waitFor(() => expect(mounts).toBe(1));
   });
 
   it('keeps the page mounted through a bus re-check that confirms access', async () => {

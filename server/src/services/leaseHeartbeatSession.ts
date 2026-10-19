@@ -650,3 +650,9 @@ export async function _resetLeaseHeartbeatSessionsForTests(
   vaultStopped = false;
   vaultAbsent = false;
 }
+
+/** In-memory resolver for a separate LISTEN socket; never shares heartbeat I/O. */
+export async function resolveEngineListenConnectionString(): Promise<string> {
+  await resolveLeaseHeartbeatSessionUrl();
+  return configuredConnectionString();
+}

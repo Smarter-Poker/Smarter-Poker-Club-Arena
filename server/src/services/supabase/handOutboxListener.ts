@@ -75,10 +75,13 @@ export type HandOutboxListenerOptions = {
   random?: () => number;
 };
 
-function defaultOpenSession(connectionString: string): OutboxListenerClient {
+export function defaultOpenSession(
+  connectionString: string,
+  applicationName = `club-arena-engine-outbox-listener:${process.pid}`
+): OutboxListenerClient {
   return new pg.Client({
     connectionString,
-    application_name: `club-arena-engine-outbox-listener:${process.pid}`,
+    application_name: applicationName,
     keepAlive: true,
     connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
     ssl: enginePgSsl(),

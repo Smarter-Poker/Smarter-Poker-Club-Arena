@@ -11,9 +11,12 @@
  * row guards fn_guard_video_library_row_author and
  * fn_guard_video_library_publisher_config). It required `p.is_horse IS FALSE`,
  * so no horse could ever publish there. Removed in
- * 20261019093704_horses_can_publish_to_the_video_library: a horse is eligible
- * under exactly the rules a human is - the profile exists and is not a
- * content_authors row.
+ * 20261019093704_horses_can_publish_to_the_video_library. Read back on
+ * production, that still admitted ZERO horses: the rule's other clause,
+ * "not a content_authors row", is the horse persona roster under another name
+ * (all 1,000 horses have a row, no human does). Removed in
+ * 20261019124450_a_horse_persona_is_not_barred_from_the_video_library. The rule
+ * is now one rule for everybody: the profile exists.
  *
  * Reading is_horse as DATA stays legal (10.5): publish_horse_video_reel and
  * the post-contract trigger that tags a horse upload's origin_type identify
@@ -28,12 +31,12 @@ function current(fn: string): string {
 }
 
 describe('horses can publish to the video library (Dan, 2026-10-19)', () => {
-  it('the publisher eligibility rule does not read is_horse at all', () => {
+  it('the publisher eligibility rule reads neither is_horse nor the horse persona roster', () => {
     const body = current('fn_video_library_publisher_is_eligible');
     expect(body).not.toMatch(/is_horse/i);
+    expect(body).not.toMatch(/content_authors/i);
     expect(body).toContain('FROM public.profiles p');
     expect(body).toContain('WHERE p.id = p_profile_id');
-    expect(body).toContain('FROM public.content_authors ca');
   });
 
   it('the guards say what the rule is, which no longer mentions horses', () => {
@@ -43,8 +46,8 @@ describe('horses can publish to the video library (Dan, 2026-10-19)', () => {
     ]) {
       const body = current(fn);
       expect(body).toContain('NOT public.fn_video_library_publisher_is_eligible(');
-      expect(body).not.toMatch(/non-horse|is_horse/i);
-      expect(body).toContain('existing profile with no content_authors row');
+      expect(body).not.toMatch(/non-horse|is_horse|content_authors/i);
+      expect(body).toMatch(/must be (authored by )?an existing profile['\s,]/);
     }
   });
 });

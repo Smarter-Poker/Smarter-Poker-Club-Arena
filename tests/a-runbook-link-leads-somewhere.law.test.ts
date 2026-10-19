@@ -96,19 +96,32 @@ describe('a runbook link leads somewhere', () => {
     expect(readdirSync(MON).filter((n) => /\.ya?ml$/.test(n)).length).toBeGreaterThan(3);
   });
 
-  it('the drift check states what it did not fetch, rather than claiming every runbook resolves', () => {
-    // Asserted on what the script PRINTS, not on its source: the source also
-    // contains that phrase inside the comment explaining why it was wrong.
-    const out = execFileSync(
-      process.execPath,
-      [join(ROOT, 'scripts/ci/check-monitoring-drift.mjs')],
-      {
-        encoding: 'utf8',
-        cwd: ROOT,
-      }
-    );
-    expect(out).toMatch(/every repo-relative runbook resolves/);
-    expect(out).not.toMatch(/non-empty; every metric[^\n]*; every runbook resolves/);
-    expect(out).toMatch(/runbook URL\(s\) on \d+ rule\(s\) are http\(s\) and were NOT fetched/);
-  });
+  // EXPLICIT BUDGET (2026-10-19). This case spawns check-monitoring-drift.mjs,
+  // which matches every alert rule's metrics against the engine's producer
+  // source. Measured on a 2-core box: 1.7 s for the script alone, 2.2 s for
+  // this case inside vitest, 44% of the 5 s default. That is the script's own
+  // work, not repeated work in this file, so the case gets a budget about nine
+  // times the measurement rather than sharing the default ceiling
+  // (CLAUDE.md 10.86 rule 4).
+  it(
+    'the drift check states what it did not fetch, rather than claiming every runbook resolves',
+    {
+      timeout: 20_000,
+    },
+    () => {
+      // Asserted on what the script PRINTS, not on its source: the source also
+      // contains that phrase inside the comment explaining why it was wrong.
+      const out = execFileSync(
+        process.execPath,
+        [join(ROOT, 'scripts/ci/check-monitoring-drift.mjs')],
+        {
+          encoding: 'utf8',
+          cwd: ROOT,
+        }
+      );
+      expect(out).toMatch(/every repo-relative runbook resolves/);
+      expect(out).not.toMatch(/non-empty; every metric[^\n]*; every runbook resolves/);
+      expect(out).toMatch(/runbook URL\(s\) on \d+ rule\(s\) are http\(s\) and were NOT fetched/);
+    }
+  );
 });

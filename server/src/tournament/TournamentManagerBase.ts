@@ -5169,14 +5169,24 @@ export abstract class TournamentManagerBase {
   ): Promise<boolean> {
     if (!subject || !isPersistedUnlimitedMtt(subject)) return true;
     const attempted = new Set<string>();
+    // An entry that answered already_seated_or_missing can still match the
+    // read (registered, no table) - the door decides from its own locked
+    // view. Re-reading it would hand back the same first page, every id
+    // already attempted, and "nothing left" while later entrants still wait.
+    // So each page leaves out the entries that answered that way.
+    const answeredMissing: string[] = [];
     for (let page = 0; page < 10; page++) {
       if (!allowed()) return false;
-      const { data, error } = await supabase
+      let awaiting = supabase
         .from('tournament_players')
         .select('user_id')
         .eq('tournament_id', this.tournamentId)
         .eq('status', 'registered')
-        .is('table_id', null)
+        .is('table_id', null);
+      if (answeredMissing.length > 0) {
+        awaiting = awaiting.not('user_id', 'in', `(${answeredMissing.join(',')})`);
+      }
+      const { data, error } = await awaiting
         .order('registered_at', { ascending: true })
         .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
       if (!allowed()) return false;
@@ -5207,7 +5217,10 @@ export abstract class TournamentManagerBase {
           );
           continue;
         }
-        if (!seatError && result.reason === 'already_seated_or_missing') continue;
+        if (!seatError && result.reason === 'already_seated_or_missing') {
+          answeredMissing.push(userId);
+          continue;
+        }
         if (!seatError && result.reason === 'not_running') return true;
         if (!seatError && result.reason !== 'platform_frozen') {
           reportError(

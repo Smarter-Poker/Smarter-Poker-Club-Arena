@@ -30,7 +30,7 @@ import { cashAccountingBatchSize, resolveClientTimeoutMs } from './cashAccountin
 import { isMaintenanceFrozen, onMaintenanceThaw } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import {
-  readCashSourceBatch,
+  readCashSourceBatchOutcome,
   verifyCashSourceRefusal,
   type CashSourceReceipt,
 } from './cashSourceReceipts.js';
@@ -87,7 +87,7 @@ export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(resolveClientTimeoutMs(
  * a queue of 150 permanently-refused sources held 264,835 records hostage.
  * Same budget, same arithmetic, same reason.
  */
-const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs());
+export const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs());
 const PERIOD_USER_BATCH_SIZE = 2000;
 const DAEMON_KEY = 'rakeback_settler';
 
@@ -170,6 +170,26 @@ export const MAX_DRAIN_BATCHES = 3;
  * page has finished.
  */
 export const MAX_CASH_LANES = 4;
+
+/**
+ * A DEFERRED CASH SOURCE IS SUBMITTED AGAIN BEFORE THE CURSOR CAN PASS IT (2026-10-19).
+ *
+ * Migration 20261019094914 makes fn_credit_agent_commissions_batch take every club
+ * commission key its items need, in club order, before the first item - a busy key
+ * waited for at most 1 s while holding only lower keys - instead of letting an item
+ * take its key out of order inside the rollup trigger, which deadlocked against
+ * tournament finishes (40P01 2026-10-19 07:28:34; 31 first-attempt refusals that
+ * morning). An item whose keys a finish still holds is DEFERRED: it writes nothing
+ * and is named in the response. It is neither a refusal (no retry work exists for
+ * it) nor an acknowledgement, so the lane submits exactly the deferred sources again,
+ * up to CASH_DEFERRAL_RESUBMITS times, pausing CASH_DEFERRAL_PAUSE_MS between calls
+ * (a finish holds a club's key for about 1-6 s). If a source is still deferred after
+ * that, the page halts and the cursor stays where it is, exactly as for a failed call:
+ * the next cycle starts from the same page and the database deduplicates what was
+ * already accrued.
+ */
+export const CASH_DEFERRAL_RESUBMITS = 3;
+export const CASH_DEFERRAL_PAUSE_MS = 250;
 
 /**
  * Split a page's cash rows into at most `maxLanes` lanes by host club. Rows of
@@ -1783,15 +1803,25 @@ export class RakebackSettlerService {
     // source authority restores commissions, original player stats and the
     // existing weekly recomputation queue before acknowledging a retry.
     let retriedSources: CashSourceReceipt[];
+    let retryBatchFull = false;
     try {
       const { data, error } = await supabase.rpc('fn_retry_cash_accounting_sources', {
         p_limit: CASH_RETRY_LIMIT,
       });
       if (error) throw new Error('Cash source retry failed', { cause: error });
-      retriedSources = readCashSourceBatch(data);
-      if (retriedSources.length > CASH_RETRY_LIMIT)
+      const retried = readCashSourceBatchOutcome(data);
+      retriedSources = retried.receipts;
+      if (retried.receipts.length + retried.deferred.length > CASH_RETRY_LIMIT)
         throw new Error('Cash retry exceeded its requested source bound');
+      retryBatchFull = retried.receipts.length + retried.deferred.length === CASH_RETRY_LIMIT;
       await confirmCashSourceRefusals(retriedSources);
+      // A deferred retry keeps its blocked work row exactly as it was (no attempt is
+      // spent) and is the oldest due source again next cycle; it is not this cursor's.
+      if (retried.deferred.length > 0)
+        console.log(
+          `[RakebackSettler] ${retried.deferred.length} retried cash source(s) deferred: a commission key ` +
+            `was busy; they stay first in the retry queue`
+        );
     } catch (error) {
       reportError(error, 'RakebackSettler.source_retry_holds_cursor');
       return 'halted';
@@ -1878,7 +1908,15 @@ export class RakebackSettlerService {
       : null;
     // Ask again after every nonempty page, including short responses. The
     // bounded drain/catch-up loop stops only after an actually empty range.
-    const backlogMayRemain = sourceRows.length > 0;
+    //
+    // THE RETRY QUEUE IS BACKLOG TOO (2026-10-19). A cycle whose page was empty
+    // used to report 'idle' even when the retry had just returned a full batch,
+    // so the settler slept its 30-minute interval with the refusal queue still
+    // due: on 2026-10-19 ~700 due refusals were retried at 5 per inner run, two
+    // runs per half hour, and Midway receipts refused once by a lock waited
+    // behind them for most of a day. A full retry batch now keeps the same
+    // bounded drain (MAX_DRAIN_BATCHES, then the 60 s catch-up) running.
+    const backlogMayRemain = sourceRows.length > 0 || retryBatchFull;
 
     // Submit each positive cash record exactly once, even when its hand or
     // attribution is absent. The database alone decides whether its original
@@ -1897,13 +1935,31 @@ export class RakebackSettlerService {
             if (!row.id) throw new Error('Cash source has no durable record identity');
             return row.id;
           });
-          const { data, error } = await supabase.rpc('fn_credit_agent_commissions_batch', {
-            p_items: ids.map((id) => ({ source_type: 'cash_rake_record', source_id: id })),
-          });
-          if (error) throw new Error('Cash source batch failed', { cause: error });
-          const receipts = readCashSourceBatch(data, ids);
-          await confirmCashSourceRefusals(receipts);
-          sources.push(...receipts);
+          // Deferred sources are submitted again, in page order, before the page
+          // can be acknowledged (see CASH_DEFERRAL_RESUBMITS).
+          let pending = ids;
+          for (let submission = 0; ; submission++) {
+            const { data, error } = await supabase.rpc('fn_credit_agent_commissions_batch', {
+              p_items: pending.map((id) => ({ source_type: 'cash_rake_record', source_id: id })),
+            });
+            if (error) throw new Error('Cash source batch failed', { cause: error });
+            const { receipts, deferred } = readCashSourceBatchOutcome(data, pending);
+            await confirmCashSourceRefusals(receipts);
+            sources.push(...receipts);
+            if (deferred.length === 0) break;
+            if (submission >= CASH_DEFERRAL_RESUBMITS)
+              throw new Error(
+                `${deferred.length} cash source(s) still deferred for a busy commission key after ` +
+                  `${submission + 1} submissions; holding the cursor`
+              );
+            await new Promise((resolve) => setTimeout(resolve, CASH_DEFERRAL_PAUSE_MS));
+            // The freeze guards refuse money writes; never resubmit into the break.
+            if (isMaintenanceFrozen())
+              throw new Error(
+                'Maintenance freeze began while cash sources were deferred; holding the cursor'
+              );
+            pending = pending.filter((id) => deferred.includes(id));
+          }
         }
       };
       // allSettled, then rethrow: the page is not acknowledged until every

@@ -1018,10 +1018,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         // SPIN REVEAL HOLD (2026-08-21): the table may not deal while the
         // shared wheel is still running. Re-checked in short slices so a
-        // resume is responsive and the loop stays interruptible.
+        // resume is responsive and the loop stays interruptible. Each slice
+        // is liveness (2026-10-19): see waitOneDealHoldSlice.
         if (this.dealHoldUntilMs > Date.now()) {
-          this.setLoopPhase('spin_reveal_hold');
-          await this.sleep(Math.min(this.dealHoldUntilMs - Date.now(), 1000));
+          await this.waitOneDealHoldSlice();
           continue;
         }
 
@@ -1559,6 +1559,46 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
       }
     }
+  }
+
+  /**
+   * ONE SLICE OF A DEAL HOLD, AND THE SLICE IS LIVENESS (2026-10-19).
+   *
+   * A deal hold (`holdDealingUntil`) stops the table ON PURPOSE: the Spin
+   * reveal, the add-on break, a mystery-chest reveal, and - since #7367 - a
+   * prepared tournament launch, whose tables are seated minutes before the
+   * advertised start and held to that instant. The loop waits it out here in
+   * slices of at most one second.
+   *
+   * This wait used to be the one waiting branch of the loop that never called
+   * markProgress(); wait-for-players, the idle sweep and the settlement wait
+   * all do. While the hold stood that did not matter, because
+   * isPausedByDesign() reads `dealHoldUntilMs > Date.now()`. But the progress
+   * clock went on ageing underneath it, and the moment the hold expired the
+   * table stopped being paused and was judged on a clock that had last moved
+   * before the hold began. Every table of a prepared launch was condemned at
+   * its start instant: GameServer's 180 s sweep fenced them as
+   * `tournament_table_zombie:load_next_hand_inputs` / `refresh_blinds` with
+   * hand_count 0 - 85, 88 and 46 tables at 01:30, 03:30 and 05:30 UTC on
+   * 2026-10-19 - delaying every first deal and paging the kill-storm alert.
+   *
+   * So each slice that comes back proves the loop is alive and says so, the
+   * same way the settlement wait does. The stamp is written AFTER the awaited
+   * sleep, so it is earned by the loop returning, not by entering the branch;
+   * a loop wedged anywhere else never reaches it, and a table whose loop died
+   * under a hold still carries an aged clock when the hold expires.
+   *
+   * This exempts nothing new. While the hold stands the table is already
+   * paused by design; this only moves the start of the 180 s window from
+   * "when the hold began" to "when it ended". Every hold is a finite wall
+   * clock (launch start, booked start, spin `effectiveHold`, add-on break end,
+   * chest deadline), and once it passes the table is judged exactly as before.
+   */
+  protected async waitOneDealHoldSlice(): Promise<void> {
+    this.setLoopPhase('spin_reveal_hold');
+    await this.sleep(Math.max(0, Math.min(this.dealHoldUntilMs - Date.now(), 1000)));
+    if (!this.lifecycleCanMutate()) return;
+    this.markProgress();
   }
 
   /** Read fresh hand inputs only after the settlement and pause gates. */

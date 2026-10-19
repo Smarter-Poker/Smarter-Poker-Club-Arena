@@ -200,9 +200,12 @@ describe('round 8: silent under-reports and confident zeros now leave a trace', 
     expect(finalize).not.toContain("status: 'COMPLETED'");
   });
 
-  it('the balance and merge checks report a failed read behind their safe false', () => {
+  it('the balance check reports a failed read behind its safe false', () => {
     expect(sliceMethod(SRC, 'async checkBalanceNeeded(')).toContain('balance_check_read_failed');
-    expect(sliceMethod(SRC, 'async checkTableMerge(')).toContain('merge_check_read_failed');
+    // checkTableMerge/balanceTables are gone (2026-10-19): no caller, and the
+    // browser can neither run balance_tournament_tables nor close a table.
+    expect(SRC).not.toContain('async checkTableMerge(');
+    expect(SRC).not.toContain('async balanceTables(');
   });
 
   it('the SNG autostart nudge reports a failed freshness read', () => {

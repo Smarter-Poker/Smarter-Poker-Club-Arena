@@ -60,7 +60,7 @@ describe('cashier Phase 5 production certification contracts', () => {
     expect(canary).toContain("name = 'a_deleted_account_leaves_every_club_and_every_list'");
   });
 
-  it('pins only the qualified conservation preimage and sealed-day replacement', () => {
+  it('pins only the installed sealed-day conservation definition and its bank-entity replacement', () => {
     const canary = source('scripts/verification-harness/cashier-release-contract.sql');
     const entry = canary.match(
       /'signature', 'public\.fn_cashier_conservation_report\(uuid\)'([\s\S]*?)\n {4}\)/
@@ -68,7 +68,7 @@ describe('cashier Phase 5 production certification contracts', () => {
     expect(entry).not.toBeNull();
     expect(
       [...entry![1].matchAll(/'(?:replacement_)?hash', '([a-f0-9]{32})'/g)].map((match) => match[1])
-    ).toEqual(['f3728357280a30789ff8d7bb30140eae', '884cbcbfae7f556ef0d5972e7e9b24c9']);
+    ).toEqual(['884cbcbfae7f556ef0d5972e7e9b24c9', '8b13c8eee26460f44bbf977136635c5d']);
     // An unqualified third definition must still raise rather than certify.
     expect(canary).toContain(
       "IF v_actual_hash <> v_item ->> 'hash'\n       AND v_actual_hash <> coalesce(v_item ->> 'replacement_hash', '') THEN\n      RAISE EXCEPTION 'cashier function drift: % expected %, got %'"

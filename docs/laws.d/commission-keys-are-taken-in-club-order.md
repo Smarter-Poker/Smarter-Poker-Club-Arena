@@ -1,0 +1,3 @@
+# tests/commission-keys-are-taken-in-club-order.law.test.ts
+
+A cash commission batch and its retry take every club commission key they need in club order before their first item (a busy key waited for at most 1 s while holding only lower keys) and defer, never run, an item whose keys are not all held, so no item takes a key out of order against a tournament finish (40P01 2026-10-19 07:28:34); the settler resubmits a deferred source before its cursor may pass it; and the open-week union refresh reads only through the first refused source of its union, so it never claims an unaccrued source (migration 20261019094914, proved natively in docs/evidence/commission-keys-2026-10-19).

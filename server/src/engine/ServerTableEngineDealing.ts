@@ -4159,9 +4159,9 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected override async recoverBustedHorsesWhileHalted(): Promise<void> {
     if (this.isTournamentTable() || isMaintenanceFrozen()) return;
     const clusterId = this.tableInfo?.cluster_id ? String(this.tableInfo.cluster_id) : '';
-    let changed = false;
+    const before = this.bustRecoverySeatChanges;
     try {
-      changed = await this.withStepBudget(
+      await this.withStepBudget(
         'recover_busted_horses_halted',
         ServerTableEngineBase.DEAL_STEP_BUDGET_MS,
         this.recoverBustedSeatedHorses({
@@ -4182,29 +4182,35 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     }
     // A rebought anchor rejoins the pool and a released one leaves it: the
     // matcher is told now, not on its next timer.
-    if (changed) this.wakeClusterGame('horse_bust_recovered');
+    if (this.bustRecoverySeatChanges !== before) this.wakeClusterGame('horse_bust_recovered');
+  }
+
+  /** Seats this recovery rebought or released, ever (the parked pass's wake test). */
+  protected bustRecoverySeatChanges = 0;
+
+  private noteBustRecoverySeatChange(): void {
+    this.bustRecoverySeatChanges = (this.bustRecoverySeatChanges || 0) + 1;
   }
 
   protected async recoverBustedSeatedHorses(
-    opts: {
+    recovery: {
       /**
        * The hand that busted this horse, keying its one treasury funding
-       * operation. Default: this table's `handCount`, right wherever this
+       * operation. Absent: this table's `handCount`, right wherever this
        * table deals. Null means the identity could not be read: nothing is
        * funded or released for that horse on this pass.
        */
       bustHandNumber?: (horse: SeatedPlayer) => Promise<number | null>;
     } = {}
-  ): Promise<boolean> {
-    if (this.tableInfo?.arena?.asset === 'diamonds') return false;
-    if (isMaintenanceFrozen()) return false;
+  ): Promise<void> {
+    if (this.tableInfo?.arena?.asset === 'diamonds') return;
+    if (isMaintenanceFrozen()) return;
     const bustHorses = this.seatedPlayers.filter((p) => p.is_horse && p.stack <= 0);
-    if (bustHorses.length === 0) return false;
-    let changed = false;
+    if (bustHorses.length === 0) return;
 
     const now = Date.now();
     for (const horse of bustHorses) {
-      if (isMaintenanceFrozen()) return changed;
+      if (isMaintenanceFrozen()) return;
       const lastAttempt = this.bustRecoveryLastAttempt.get(horse.user_id) || 0;
       if (now - lastAttempt < 30000) continue;
       this.bustRecoveryLastAttempt.set(horse.user_id, now);
@@ -4222,7 +4228,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
            a human's does. Timing is part of the treatment (Dan 2026-08-27). */
         const released = await this.releaseBustedSeat(horse, 'busted_stop_loss');
         if (!released) continue;
-        changed = true;
+        this.noteBustRecoverySeatChange();
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
@@ -4243,19 +4249,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
         rebuysTaken: currentRebuys,
       });
-      if (isMaintenanceFrozen()) return changed;
+      if (isMaintenanceFrozen()) return;
       // One bust is one funding key. An identity that could not be read funds
       // nothing and releases nothing; the next pass (30s throttle) asks again.
-      const bustHand =
-        rebuyAmount > 0
-          ? opts.bustHandNumber
-            ? await opts.bustHandNumber(horse)
-            : this.handCount
-          : null;
-      if (isMaintenanceFrozen()) return changed;
-      if (rebuyAmount > 0 && bustHand === null) continue;
+      let bustHand = this.handCount;
+      if (rebuyAmount > 0 && recovery.bustHandNumber) {
+        const identified = await recovery.bustHandNumber(horse);
+        if (isMaintenanceFrozen()) return;
+        if (identified === null) continue;
+        bustHand = identified;
+      }
       const funding =
-        rebuyAmount > 0 && bustHand !== null
+        rebuyAmount > 0
           ? await autoRebuyHorse(
               this.tableId,
               horse.user_id,
@@ -4265,10 +4270,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             )
           : { status: 'declined' as const };
       // An unreadable response may follow a committed transfer. Preserve the seat.
-      if (funding.status === 'unknown') return changed;
+      if (funding.status === 'unknown') return;
       if (funding.status === 'funded') {
         horse.stack = funding.stack;
-        changed = true;
+        this.noteBustRecoverySeatChange();
         this.horseRebuys.set(horse.user_id, currentRebuys + 1);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
@@ -4277,7 +4282,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       } else {
         const released = await this.releaseBustedSeat(horse, 'busted_unfunded');
         if (!released) continue;
-        changed = true;
+        this.noteBustRecoverySeatChange();
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
@@ -4285,6 +4290,5 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         );
       }
     }
-    return changed;
   }
 }

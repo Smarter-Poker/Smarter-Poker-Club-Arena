@@ -92,3 +92,9 @@ ordinary else branch and the viewer origin/method/RPC refusal boundary explicitl
 while retaining its retry placement, outgoing-header, context and sole-client
 assertions. Existing runtime actor and viewer-JWT tests remain applicable. This
 correction changes the test contract only; no runtime or database bytes change.
+
+## Hosted cold-load effect assertion
+
+Required client shard 4 observed the page DOM before React had flushed its passive mount effect: the cold-load assertion read zero mounts while 9,870 other cases passed. Await the existing exact one-mount condition through Testing Library's bounded waitFor after finding the page. The skeleton, exact mount count, re-verification continuity and revocation assertions remain intact. This corrects test synchronization only; application/runtime and database bytes are unchanged.
+
+Include the identical already-qualified accounting timing diagnostic correction from the companion endpoint-reader PR in this shared CI candidate. Both deliveries depend on that helper, whose prior hosted refusals hid their transport cause. Exact original identity/deadline checks and single-read/no-retry behavior remain intact; only fixed field names or allowlisted HTTP/transport classifications can be reported. This avoids leaving this candidate on the already-demonstrated opaque failure path. No runtime or SQL change.

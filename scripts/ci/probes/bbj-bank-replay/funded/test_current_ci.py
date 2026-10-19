@@ -761,6 +761,58 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):run.read_job_timing(str(path))
             self.assertEqual(json.loads((run.output/'JOB-TIMING-SOURCE.json').read_text())['timing'],timing)
 
+    def test_timing_transport_diagnostics_are_allowlisted_without_retry_or_receipt(self):
+        import socket
+        import ssl
+        import urllib.error
+        from unittest.mock import MagicMock
+        private = 'modeled-token-only private response'
+        failures = [
+            (urllib.error.HTTPError('https://private.invalid/' + private, 403, private, {}, None), 'TIMING_HTTP_STATUS_403'),
+            (urllib.error.HTTPError('https://private.invalid', 503, private, {}, None), 'TIMING_HTTP_STATUS_503'),
+            (TimeoutError(private), 'TIMING_TIMEOUT_REFUSED'),
+            (urllib.error.URLError(socket.timeout(private)), 'TIMING_TIMEOUT_REFUSED'),
+            (urllib.error.URLError(ssl.SSLError(private)), 'TIMING_TLS_REFUSED'),
+            (urllib.error.URLError(ConnectionResetError(private)), 'TIMING_CONNECTION_REFUSED'),
+            (urllib.error.URLError(socket.gaierror(private)), 'TIMING_CONNECTION_REFUSED'),
+        ]
+        for failure, expected in failures:
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as directory, self.timing_producer_context(directory):
+                opener = MagicMock(); opener.open.side_effect = failure
+                path = Path(directory).resolve() / 'bbj-job-timing-123-1.json'
+                with patch.object(ci.urllib.request, 'build_opener', return_value=opener):
+                    with self.assertRaises(RuntimeError) as caught:
+                        ci.produce_job_timing(directory, path)
+                self.assertEqual(ci.timing_refusal_reason(caught.exception), expected)
+                self.assertNotIn(private, str(caught.exception))
+                self.assertEqual(opener.open.call_count, 1)
+                self.assertFalse(path.exists())
+        for raw in (b'private invalid JSON', b'\xff'):
+            with self.subTest(raw=raw), tempfile.TemporaryDirectory() as directory, self.timing_producer_context(directory):
+                response = MagicMock(status=200); response.read.return_value = raw
+                response.__enter__.return_value = response
+                opener = MagicMock(); opener.open.return_value = response
+                path = Path(directory).resolve() / 'bbj-job-timing-123-1.json'
+                with patch.object(ci.urllib.request, 'build_opener', return_value=opener):
+                    with self.assertRaises(RuntimeError) as caught:
+                        ci.produce_job_timing(directory, path)
+                self.assertEqual(ci.timing_refusal_reason(caught.exception), 'TIMING_DECODING_REFUSED')
+                self.assertNotIn('private', str(caught.exception))
+                self.assertEqual(opener.open.call_count, 1)
+                self.assertFalse(path.exists())
+        self.assertEqual(ci.timing_refusal_reason(ci.TimingRequestRefused('TIMING_HTTP_STATUS_private')), 'LOCAL_OPERATION_REFUSED')
+
+    def test_timing_identity_diagnostic_contains_only_fixed_field_names(self):
+        current = self.identity(); body = self.job_response()
+        body['jobs'][0].update(runner_name='private-value', labels=['private-label'])
+        with self.assertRaises(ci.TimingRequestRefused) as caught:
+            ci.timing_observation(current, body, 1000)
+        self.assertEqual(ci.timing_refusal_reason(caught.exception), 'JOB_IDENTITY_MISMATCH')
+        self.assertEqual(caught.exception.identity_mismatch_fields, ['runner_name', 'labels'])
+        self.assertNotIn('private', str(caught.exception))
+        self.assertEqual(ci.TimingRequestRefused('JOB_IDENTITY_MISMATCH', ['private-value', 'labels']).identity_mismatch_fields, ['labels'])
+        self.assertEqual(ci.TimingRequestRefused('TIMING_TIMEOUT_REFUSED', ['labels']).identity_mismatch_fields, [])
+
     def test_timing_api_failure_is_redacted_without_retry(self):
         from unittest.mock import MagicMock
         opener=MagicMock();opener.open.side_effect=OSError('modeled-token-only private response')
@@ -787,5 +839,6 @@ class CurrentAccountingIdentityTests(unittest.TestCase):
             path=Path(directory).resolve()/'bbj-job-timing-123-1.json'
             with self.assertRaises(RuntimeError) as observed:ci.produce_job_timing(directory,path)
             self.assertEqual(ci.timing_refusal_reason(observed.exception),'JOB_IDENTITY_MISMATCH')
+            self.assertEqual(observed.exception.identity_mismatch_fields, ['runner_name'])
             self.assertEqual(opener.open.call_count,1)
             self.assertFalse(path.exists())

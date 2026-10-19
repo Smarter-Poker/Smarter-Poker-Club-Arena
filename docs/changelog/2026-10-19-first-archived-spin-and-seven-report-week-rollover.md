@@ -19,6 +19,6 @@ This is the same weekly rollover as #6734 (2026-10-12) and #5524.
 
 ## Seven-report window
 
-The report's closing boundary now follows the current Los Angeles week instead of the fixed `2026-10-19 07:00Z`. These are the exact bytes from #7420 (Phase 1B), whose shard 3 passed with them. They are carried here because each of the two fixes is blocked by the other's failure.
+Fixed on main by #7432 (the report period follows the recorded discharge). The interim copy of #7420's bytes is dropped in favour of main's.
 
 No production write, DDL, migration, settlement operation, amount, function or engine behavior is part of this change.

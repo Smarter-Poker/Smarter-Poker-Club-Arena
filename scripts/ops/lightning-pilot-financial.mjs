@@ -426,7 +426,10 @@ export async function witnessFinancial({
       throw Error('restore_unknown');
     autoRestored = true;
   };
+  // The last normal step reached, recorded on failure (no message, no data).
+  let step = 'preflight';
   const menu = async () => {
+    step = 'table_menu';
     await page
       .getByRole('button', { name: 'Table Menu', exact: true })
       .click({ timeout: remaining() });
@@ -442,14 +445,19 @@ export async function witnessFinancial({
           fetch: (input, init = {}) =>
             fetch(input, {
               ...init,
-              signal: AbortSignal.timeout(Math.max(1, Math.min(15000, end - Date.now() - 20000))),
+              // Every step is already bounded by remaining(); the request's own
+              // ceiling must not also subtract the cleanup reserve, or the local
+              // sign-out in `finally` is sent with a 1ms abort and always fails.
+              signal: AbortSignal.timeout(Math.max(1, Math.min(15000, end - Date.now()))),
             }),
         },
       };
       return createClient(...args);
     };
+    step = 'authenticate';
     opening = openSession(admin, boundedClient, url, pin, remaining);
     auth = await bound(opening);
+    step = 'browser';
     browser = await chromium.launch({ headless: true, timeout: remaining() });
     const context = await bound(browser.newContext({ viewport: { width: 375, height: 812 } }));
     await bound(
@@ -469,6 +477,7 @@ export async function witnessFinancial({
           })
         )
       );
+    step = 'serving_before';
     report.servingBefore = await identities();
     if (
       servingStable(report.servingBefore, report.servingBefore) !== 'passed' ||
@@ -476,15 +485,19 @@ export async function witnessFinancial({
     )
       throw Error('serving_unknown');
     report.clientSha = report.servingBefore.publicClient.data.revision;
+    step = 'open_table';
     await page.goto(`https://smarter.poker/hub/club-arena/table/${pin.poolSessionId}`, {
       waitUntil: 'domcontentloaded',
       timeout: remaining(),
     });
+    step = 'player_terms';
     await bound(acceptPlayerTerms(page, auth.session, pin, url, false, remaining));
+    step = 'room_tools';
     await page
       .getByTestId('lightning-room-tools')
       .waitFor({ state: 'visible', timeout: remaining() });
     await bound(validatePlayer(admin, pin));
+    step = 'anchor';
     const anchor = await bound(anchorSeat(admin, pin));
     if (action === 'cash_out') {
       const prior = await bound(
@@ -552,16 +565,20 @@ export async function witnessFinancial({
         .click({ timeout: remaining() });
     } else if (action === 'top_up') {
       await menu();
+      step = 'top_up_item';
       await page
         .getByRole('menuitem', { name: 'Top Up', exact: true })
         .click({ timeout: remaining() });
+      step = 'addon_dialog';
       const dialog = page.getByRole('dialog', { name: 'Add-On Available', exact: true });
       await dialog.waitFor({ state: 'visible', timeout: remaining() });
+      step = 'addon_25';
       await dialog
         .getByRole('button', { name: '25%', exact: true })
         .click({ timeout: remaining() });
       const amount = Number(await dialog.getByLabel('Amount To Add', { exact: true }).inputValue());
       if (cents(amount) <= 0) throw Error('no_topup_headroom');
+      step = 'addon_submit';
       await dialog.getByRole('button', { name: /^Add [\d,.]+$/ }).click({ timeout: remaining() });
     } else {
       await menu();
@@ -575,6 +592,7 @@ export async function witnessFinancial({
       report.autoArmed = true;
     }
     report.cause = 'response_unknown';
+    step = 'response';
     const response = await bound(responsePromise);
     const intent = financialIntent(action, response.request().postDataJSON(), pin, anchor);
     report.intent = intent;
@@ -677,6 +695,11 @@ export async function witnessFinancial({
     report.cause = causes.includes(error?.message)
       ? error.message
       : 'normal_ui_or_readback_unknown';
+    // Which normal step it stopped at, and the error's class only: never its
+    // message (it can carry a URL, token or selector text).
+    report.failedStep = step;
+    report.failure =
+      typeof error?.name === 'string' && /^[A-Za-z]{1,40}$/.test(error.name) ? error.name : 'Error';
   } finally {
     if (restoreAuto && !autoRestored) {
       try {

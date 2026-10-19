@@ -22,7 +22,7 @@ BANK=C.load("archive_bank_observer",ROOT/"scripts/qualification/spin-first-archi
 
 
 PROBE='scripts/qualification/fixtures/archived-spin/first-production-rollback-probe.sql'
-PROBE_SHA = "4fe75521eef54d5209e09f9b5df9c818d6db0456cceea77a077b956acebf6fc4"
+PROBE_SHA = "013df8b99f34a3ea5dbded672d487c7cdcad1452cb0fc50092b47ad3879fb4a6"
 OPERATION='341f02a3-4655-420c-b43b-3930b6d9ad8f'
 
 

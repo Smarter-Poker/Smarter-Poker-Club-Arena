@@ -160,7 +160,7 @@ def run(args,e,sessions,deadline,R,A):
             "SELECT smarter_private.fn_smarter_data_api_pre_request();"))
     call=lambda operation:"SELECT public.fn_complete_first_archived_spin('"+operation+"','"+SOURCE+"');"
     begin(first)
-    first.no_errors(first.command("DO $$ BEGIN IF transaction_timestamp()<'2026-10-19T07:00:00Z'::timestamptz OR transaction_timestamp()>='2026-10-26T07:00:00Z'::timestamptz THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF; END $$;"))
+    first.no_errors(first.command("DO $$ BEGIN IF public.fn_union_week_start(transaction_timestamp()) IS NULL OR transaction_timestamp()<public.fn_union_week_start(transaction_timestamp()) OR transaction_timestamp()>=((public.fn_union_week_start(transaction_timestamp()) AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles' THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_UNBOUND'; END IF; END $$;"))
     raw=first.command(call(args.execution));first.no_errors(raw)
     notices=re.findall(r'NOTICE:  00000: (.*)',raw)
     require(notices==['pre-cutover fee 6d13847d-cbe2-473c-94e5-34dad1ce3efb left uncaptured: cash_commission_earning_club_not_observed (23514)'],

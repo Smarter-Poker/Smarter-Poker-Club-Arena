@@ -154,7 +154,7 @@ const SORT_LABEL: Record<RosterSort, string> = {
 
 type OptionalColumn = RosterColumn;
 type SummaryFreshness = 'loading' | 'fresh' | 'stale' | 'failed';
-type RosterLoadOptions = { forceSummary?: boolean };
+type RosterLoadOptions = { forceSummary?: boolean; preserveWindow?: boolean };
 type ExportOperation = {
   owner: object;
   state: 'preparing' | 'success' | 'empty' | 'error';
@@ -271,6 +271,17 @@ export default function ClubMembersPage() {
     'connecting'
   );
   const [realtimeRetries, setRealtimeRetries] = useState({ members: 0, wallet: 0, audit: 0 });
+  const [recordRevision, setRecordRevision] = useState(0);
+  const [recordRetry, setRecordRetry] = useState(0);
+  const recordDegradedRef = useRef(false);
+  const recordBindingRef = useRef({ scope: '', generation: 0 });
+  const recordScope = `${routeClub}:${user?.id}:${recordRetry}`;
+  if (recordBindingRef.current.scope !== recordScope) {
+    recordBindingRef.current = {
+      scope: recordScope,
+      generation: recordBindingRef.current.generation + 1,
+    };
+  }
   const failedRealtimeFeedsRef = useRef(new Set<'members' | 'wallet' | 'audit'>());
   const liveRealtimeFeedsRef = useRef(
     new Map<
@@ -540,6 +551,11 @@ export default function ClubMembersPage() {
     async (options: RosterLoadOptions = {}) => {
       if (!resolvedClubId || workspaceScope !== exportScopeKey || searchSettlingRef.current) return;
       const forceSummary = options.forceSummary === true || forceNextSummaryRef.current;
+      const preserveWindow = options.preserveWindow === true;
+      const retainedRows = preserveWindow
+        ? Math.max(PAGE_SIZE, membersRef.current.length)
+        : PAGE_SIZE;
+      const scope = exportScopeRef.current;
       forceNextSummaryRef.current = false;
       const epoch = ++requestEpochRef.current;
       abortRef.current?.abort();
@@ -550,11 +566,14 @@ export default function ClubMembersPage() {
       setLoading(true);
       setLoadError(false);
       setLoadSlow(false);
-      setSelected(new Set());
+      if (!preserveWindow) setSelected(new Set());
       setDataFreshness('loading');
       if (!summaryAvailableRef.current) setSummaryFreshness('loading');
 
-      const isCurrent = () => !controller.signal.aborted && epoch === requestEpochRef.current;
+      const isCurrent = () =>
+        !controller.signal.aborted &&
+        epoch === requestEpochRef.current &&
+        scope === exportScopeRef.current;
       const summaryKey = `${user?.id ?? 'anonymous'}:${resolvedClubId}`;
       const summaryRequest = summaryCoordinatorRef.current.read(
         summaryKey,
@@ -570,13 +589,40 @@ export default function ClubMembersPage() {
         { force: forceSummary }
       );
       const walletRevision = wallets.snapshot();
-      const pageRequest = ClubRosterService.getRosterPage(resolvedClubId, {
-        search: debouncedSearch,
-        filter,
-        sort: sortKey,
-        limit: PAGE_SIZE,
-        signal: controller.signal,
-      }).finally(() => {
+      const pageRequest = (async () => {
+        let page = await ClubRosterService.getRosterPage(resolvedClubId, {
+          search: debouncedSearch,
+          filter,
+          sort: sortKey,
+          limit: PAGE_SIZE,
+          signal: controller.signal,
+        });
+        const items = [...page.items];
+        const seen = new Set(items.map((row) => row.user_id));
+        // Reconcile exactly the loaded window, using fresh cursors so reordered
+        // rows cannot leave duplicates or holes across previously loaded pages.
+        while (isCurrent() && items.length < retainedRows && page.has_more && page.next_cursor) {
+          const cursor = page.next_cursor;
+          const next = await ClubRosterService.getRosterPage(resolvedClubId, {
+            search: debouncedSearch,
+            filter,
+            sort: sortKey,
+            limit: PAGE_SIZE,
+            cursor,
+            signal: controller.signal,
+          });
+          let added = 0;
+          for (const row of next.items)
+            if (!seen.has(row.user_id)) {
+              seen.add(row.user_id);
+              items.push(row);
+              added++;
+            }
+          page = next;
+          if (!added || JSON.stringify(next.next_cursor) === JSON.stringify(cursor)) break;
+        }
+        return { ...page, items };
+      })().finally(() => {
         if (activePageReadRef.current === controller) activePageReadRef.current = null;
         if (isCurrent()) {
           setLoading(false);
@@ -636,6 +682,13 @@ export default function ClubMembersPage() {
           const nextRows = wallets.reconcile(page.items, walletRevision);
           membersRef.current = nextRows;
           setMembers(nextRows);
+          setRecordRevision((revision) => revision + 1);
+          if (preserveWindow) {
+            const eligible = new Set(
+              nextRows.filter((row) => row.can_view_financials).map((row) => row.user_id)
+            );
+            setSelected((current) => new Set([...current].filter((id) => eligible.has(id))));
+          }
           directoryAvailableRef.current = true;
           setDirectoryAvailable(true);
           setCursor(page.next_cursor);
@@ -692,7 +745,7 @@ export default function ClubMembersPage() {
         forceNextSummaryRef.current &&
         !searchSettlingRef.current
       ) {
-        void latestLoadRef.current({ forceSummary: true });
+        void latestLoadRef.current({ forceSummary: true, preserveWindow: true });
       }
     },
     [debouncedSearch, exportScopeKey, filter, resolvedClubId, sortKey, user?.id, workspaceScope]
@@ -727,7 +780,17 @@ export default function ClubMembersPage() {
       setBrowserOnline(true);
       realtimeConnectionRef.current = 'connecting';
       setRealtimeConnection('connecting');
-      setResolutionAttempt((current) => current + 1);
+      setRecordRetry((retry) => retry + 1);
+      setRealtimeRetries((retry) => ({
+        members: retry.members + 1,
+        wallet: retry.wallet + 1,
+        audit: retry.audit + 1,
+      }));
+      if (activePageReadRef.current && !activePageReadRef.current.signal.aborted) {
+        forceNextSummaryRef.current = true;
+      } else {
+        void latestLoadRef.current({ forceSummary: true, preserveWindow: true });
+      }
     };
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
@@ -753,7 +816,7 @@ export default function ClubMembersPage() {
     )
       return;
     forceNextSummaryRef.current = false;
-    void latestLoadRef.current({ forceSummary: true });
+    void latestLoadRef.current({ forceSummary: true, preserveWindow: true });
   }, [debouncedSearch, searchQuery]);
 
   useEffect(() => {
@@ -770,10 +833,11 @@ export default function ClubMembersPage() {
     // claim a refresh started when its loader must return without one.
     if (!resolvedClubId || searchSettlingRef.current) return;
     setIsRefreshing(true);
-    await latestLoadRef.current({ forceSummary: true });
+    await latestLoadRef.current({ forceSummary: true, preserveWindow: true });
   }, [resolvedClubId]);
 
   const retryLiveSync = useCallback(() => {
+    if (recordDegradedRef.current) setRecordRetry((retry) => retry + 1);
     if (resolvedClubId) {
       // A roster read cannot repair a failed WebSocket join. Retry only the
       // bindings that reported failure; healthy channels retain their owner.
@@ -801,13 +865,56 @@ export default function ClubMembersPage() {
       // The pending query owns its next read. Starting the old search here
       // would be aborted as soon as its debounce commits. Carry the structural
       // summary invalidation into that same new query instead.
-      if (searchSettlingRef.current || activePageReadRef.current) {
+      if (searchSettlingRef.current || activePageReadRef.current || moreRef.current) {
         forceNextSummaryRef.current = true;
         return;
       }
-      void latestLoadRef.current({ forceSummary: true });
+      void latestLoadRef.current({ forceSummary: true, preserveWindow: true });
     }, 1200);
   }, [resolvedClubId]);
+
+  useMasterBusBroadcastChannel({
+    channelName: resolvedClubId ? `club-roster:${resolvedClubId}` : null,
+    restartKey: recordBindingRef.current.generation,
+    event: 'record_changed',
+    enabled: !!resolvedClubId && !!user?.id,
+    onPayload: () => scheduleStructuralRefresh(),
+    onSubscriptionStatus: (status) => {
+      if (status !== 'SUBSCRIBED') return;
+      recordDegradedRef.current = false;
+      scheduleStructuralRefresh();
+    },
+    onSubscriptionError: () => {
+      recordDegradedRef.current = true;
+      setDataFreshness('stale');
+    },
+  });
+
+  useEffect(() => {
+    if (!resolvedClubId) return;
+    const visible = () => {
+      if (document.visibilityState !== 'hidden') scheduleStructuralRefresh();
+    };
+    window.addEventListener('focus', visible);
+    document.addEventListener('visibilitychange', visible);
+    let timer: ReturnType<typeof setTimeout>;
+    const boundary = () => {
+      const now = new Date();
+      timer = setTimeout(
+        () => {
+          scheduleStructuralRefresh();
+          boundary();
+        },
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) - now.getTime() + 25
+      );
+    };
+    boundary();
+    return () => {
+      window.removeEventListener('focus', visible);
+      document.removeEventListener('visibilitychange', visible);
+      clearTimeout(timer);
+    };
+  }, [resolvedClubId, scheduleStructuralRefresh]);
 
   useEffect(
     () => () => {
@@ -1014,8 +1121,24 @@ export default function ClubMembersPage() {
     } finally {
       moreRef.current = false;
       setIsLoadingMore(false);
+      if (
+        forceNextSummaryRef.current &&
+        !controller.signal.aborted &&
+        epoch === requestEpochRef.current
+      ) {
+        scheduleStructuralRefresh();
+      }
     }
-  }, [cursor, debouncedSearch, filter, hasMore, resolvedClubId, sortKey, toast]);
+  }, [
+    cursor,
+    debouncedSearch,
+    filter,
+    hasMore,
+    resolvedClubId,
+    sortKey,
+    toast,
+    scheduleStructuralRefresh,
+  ]);
 
   const virtual = useVirtualScroll(members, {
     itemHeight: ROW_HEIGHT,
@@ -1128,7 +1251,14 @@ export default function ClubMembersPage() {
   // offered whenever any loaded row is financially visible, not only to
   // viewers with the club-wide financial view.
   const showWinLoss = canUseFinancialViews || members.some((m) => m.can_view_financials);
-  const winLoss = useRosterWinLoss(resolvedClubId, members, winLossPeriod, showWinLoss);
+  const winLoss = useRosterWinLoss(
+    resolvedClubId,
+    members,
+    winLossPeriod,
+    showWinLoss,
+    recordRevision,
+    user?.id
+  );
   const isAgent = AGENT_ROLES.includes(summary.viewer_role);
   const filters = useMemo(
     () =>
@@ -1355,7 +1485,7 @@ export default function ClubMembersPage() {
     ? 'offline'
     : dataFreshness === 'stale' || (dataFreshness === 'failed' && !notFound && !accessDenied)
       ? 'stale'
-      : realtimeConnection === 'degraded'
+      : recordDegradedRef.current || realtimeConnection === 'degraded'
         ? 'reconnecting'
         : dataFreshness === 'loading'
           ? 'connecting'

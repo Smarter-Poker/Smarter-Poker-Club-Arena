@@ -64,7 +64,7 @@
       "week_end": "2026-10-19T07:00:00+00:00",
       "week_start": "2026-10-12T07:00:00+00:00"
     },
-    "scope": "Current production recognition period after the owner-authorized fee capture; this proves the bounded routing scopes and absence of overlapping runs, not terminal settlement or payment. Outside these bounds requires authentic recapture.",
+    "scope": "Current production recognition period after the owner-authorized fee capture; this proves the bounded routing scopes and absence of overlapping runs, not terminal settlement or payment. Historical evidence only: the event settled in production on 2026-10-02, and the isolated rehearsal binds each transaction to the week the database derives for it, so no weekly recapture is required.",
     "query_sha256": "67f65046f981cdf2f377b5243349a21c900a1bde31b1c425c34ee73102e62301",
     "capture_path": "scripts/qualification/fixtures/archived-spin/first-recognition-capture.json"
   },

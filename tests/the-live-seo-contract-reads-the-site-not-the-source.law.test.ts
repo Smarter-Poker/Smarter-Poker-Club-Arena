@@ -17,6 +17,7 @@ import {
   markupOnly,
   ldTypes,
   parseSitemapLocs,
+  acceptServedBuild,
 } from '../scripts/ci/check-live-seo-contract.mjs';
 
 const ROOT = join(__dirname, '..');
@@ -104,5 +105,46 @@ describe('a quoted heading is not a heading (2026-09-18)', () => {
   it('inspectHead reports no heading when the only one is inside a script', () => {
     expect(inspectHead(scriptOnly).h1).toBe(false);
     expect(inspectHead('<h1>Help Center</h1>').h1).toBe(true);
+  });
+});
+
+describe('a later protected-main release is not a broken contract (2026-10-19)', () => {
+  // Runs 39307277919 and 39313288388 waited three minutes for a6af2a2425 while
+  // production already served its descendant fd6a602c2e, and went red without
+  // reading a page.
+  const expected = 'a'.repeat(40);
+  const later = 'b'.repeat(40);
+
+  it('accepts the expected release, and anything when no release is named', () => {
+    expect(acceptServedBuild(expected, expected, () => false)).toBe(expected);
+    expect(acceptServedBuild('', later, () => false)).toBe(later);
+  });
+
+  it('checks a proven forward protected-main release instead of waiting for a replaced one', () => {
+    const seen: string[][] = [];
+    expect(
+      acceptServedBuild(expected, later, (a, b) => {
+        seen.push([a, b]);
+        return true;
+      })
+    ).toBe(later);
+    expect(seen).toEqual([[expected, later]]);
+  });
+
+  it('keeps waiting on a rollback, an off-lineage commit or an unreadable SHA', () => {
+    expect(acceptServedBuild(expected, later, () => false)).toBeNull();
+    expect(acceptServedBuild(expected, 'not-a-sha', () => true)).toBeNull();
+    expect(acceptServedBuild(expected, undefined, () => true)).toBeNull();
+  });
+
+  it('gives the checker the commit graph it needs to prove lineage', () => {
+    const wf = readFileSync(join(ROOT, '.github/workflows/post-deploy-e2e.yml'), 'utf8');
+    const job = wf.indexOf('  seo-contract:');
+    const body = wf.slice(job, wf.indexOf('  production-e2e:', job));
+    expect(body).toContain('fetch-depth: 0');
+    expect(body).toContain('filter: blob:none');
+    const src = readFileSync(join(ROOT, 'scripts/ci/check-live-seo-contract.mjs'), 'utf8');
+    expect(src).toContain("'merge-base', '--is-ancestor', expected, served");
+    expect(src).toContain("'merge-base', '--is-ancestor', served, 'refs/remotes/origin/main'");
   });
 });

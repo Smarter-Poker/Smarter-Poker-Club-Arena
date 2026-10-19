@@ -274,7 +274,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.publication-gate.outputs.client_target_sha }}
-          fetch-depth: 1
+          # Full commit graph, no blobs: when a later protected-main release
+          # has replaced this client before the job starts, the checker proves
+          # the served commit descends from it (merge-base) instead of waiting
+          # three minutes for a release that is gone (2026-10-19).
+          fetch-depth: 0
+          filter: blob:none
       - name: Setup Node 20
         uses: actions/setup-node@v4
         with:

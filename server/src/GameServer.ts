@@ -3531,6 +3531,8 @@ export class GameServer {
   private readonly lightningPresenceReporter = new LightningPresenceReporter();
   readonly lightningRooms = new LightningRegistry({
     presenceReport: this.lightningPresenceReporter,
+    // A closed room is no absence while an anchor engine still sees the player.
+    anchorPresence: () => this.lightningAnchorPresenceReports(),
   });
   /** The one post-boot presence reconciliation pass (Phase 9 remediation). */
   private lightningPresenceReconcileTimer: ReturnType<typeof setTimeout> | null = null;
@@ -11827,6 +11829,13 @@ export class GameServer {
    * the players the matcher names at that table - never as present.
    */
   private *lightningPresenceReports(): Iterable<PresenceTableReport> {
+    yield* this.lightningAnchorPresenceReports();
+    // Players watching from their own Lightning room (pool_session_id).
+    yield* this.lightningRooms.presenceReports();
+  }
+
+  /** The anchor tables' engines only: what a room's own sockets cannot see. */
+  private *lightningAnchorPresenceReports(): Iterable<PresenceTableReport> {
     for (const engine of this.tableEngines.values()) {
       try {
         if (!engine.isRunning()) continue;
@@ -11835,8 +11844,6 @@ export class GameServer {
         reportError(err, 'GameServer.lightning_presence_report_failed');
       }
     }
-    // Players watching from their own Lightning room (pool_session_id).
-    yield* this.lightningRooms.presenceReports();
   }
 
   /**

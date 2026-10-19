@@ -198,6 +198,69 @@ describe('the registry reports transitions only', () => {
   });
 });
 
+describe('a closed room is no absence while the anchor still sees the player', () => {
+  // Run 39315415767 (2026-10-19): a witness browser opened a heartbeating
+  // horse's room and closed it at 20:05:12; the room reported a disconnect at
+  // 20:05:14 and the reaper exited the horse at 20:08:17 ('disconnect_expired')
+  // although its anchor engine still had it CONNECTED.
+  const anchorReport = (
+    presence: 'connected' | 'disconnected' | 'unknown',
+    clusterId = CLUSTER
+  ) => ({
+    tableId: uid(300),
+    clusterId,
+    players: [{ userId: P1, presence }],
+  });
+  async function registryWith(
+    anchorPresence: (() => Iterable<ReturnType<typeof anchorReport>>) | null
+  ) {
+    const report = { disconnected: vi.fn(), reconnected: vi.fn() };
+    const reg = new LightningRegistry({
+      viewAccess: async () => true,
+      roomOwner: async (room) => (room === ROOM ? { playerId: P1, clusterId: CLUSTER } : null),
+      presenceReport: report,
+      anchorPresence,
+    });
+    await reg.authorize(ROOM, P1);
+    reg.connect(ROOM, P1, 'desktop');
+    return { reg, report };
+  }
+
+  it('an anchor engine reporting the player CONNECTED keeps the last room socket from stamping a disconnect', async () => {
+    const { reg, report } = await registryWith(() => [anchorReport('connected')]);
+    reg.disconnect(ROOM, P1);
+    expect(reg.isConnected(P1, ROOM)).toBe(false);
+    expect(report.disconnected).not.toHaveBeenCalled();
+  });
+
+  it('a definite or unknown anchor absence, another Cluster, no anchor source or a failing source still report it', async () => {
+    for (const source of [
+      () => [anchorReport('disconnected')],
+      () => [anchorReport('unknown')],
+      () => [anchorReport('connected', uid(2))],
+      () => [],
+      () => {
+        throw new Error('presence read failed');
+      },
+      null,
+    ]) {
+      const { reg, report } = await registryWith(source);
+      reg.disconnect(ROOM, P1);
+      expect(report.disconnected.mock.calls).toEqual([[CLUSTER, P1]]);
+    }
+  });
+
+  it('the boot wiring gives the registry the anchor engines only, never the rooms themselves', () => {
+    const source = readFileSync(new URL('../GameServer.ts', import.meta.url), 'utf8');
+    expect(source).toMatch(/anchorPresence: \(\) => this\.lightningAnchorPresenceReports\(\)/);
+    const anchors = source.slice(
+      source.indexOf('private *lightningAnchorPresenceReports()'),
+      source.indexOf('private *lightningAnchorPresenceReports()') + 600
+    );
+    expect(anchors).not.toMatch(/lightningRooms\.presenceReports/);
+  });
+});
+
 describe('a hand whose players are gone (disconnect after hand start)', () => {
   it('runs the clock and the auto-action for a disconnected player and settles server-side', async () => {
     vi.useFakeTimers({

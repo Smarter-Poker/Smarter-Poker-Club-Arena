@@ -7,7 +7,8 @@ import { getTournamentEntryCapacity } from '../../utils/tournamentPresentation';
  * Data sources (all club-membership gated, see 20260819b/c/d migrations):
  *   ca_club_dashboard_stats  — metric cards + 14-day sparkline series
  *   ca_club_top_players      — leaderboard, real profit from stack deltas
- *   ca_club_members          — full searchable roster for the Players tab
+ *   ca_club_members          — full searchable roster for the Players tab;
+ *                              money and hands only on rows the viewer may see
  *   ca_club_activity         — activity feed synthesized from real events
  *
  * Profit note: figures come from post-hand stack deltas with session/rebuy
@@ -99,10 +100,14 @@ interface ClubMemberRow {
   role: string;
   status: string;
   joinedAt: string | null;
+  /* Balance, hands, Win/Loss and last active arrive NULL for a row the viewer
+     has no financial access to (ca_club_members, 2026-10-19): staff see every
+     row, an agent sees their own downline, a player sees identity only. NULL is
+     "not yours to see", never zero. */
   lastActive: string | null;
-  chipBalance: number;
-  handsPlayed: number;
-  profit: number;
+  chipBalance: number | null;
+  handsPlayed: number | null;
+  profit: number | null;
 }
 
 interface ClubTable {
@@ -760,9 +765,9 @@ export default function ClubDashboard() {
           status: m.status || 'active',
           joinedAt: m.joined_at,
           lastActive: m.last_active,
-          chipBalance: Number(m.chip_balance) || 0,
-          handsPlayed: Number(m.hands_played) || 0,
-          profit: Number(m.profit) || 0,
+          chipBalance: m.chip_balance == null ? null : Number(m.chip_balance) || 0,
+          handsPlayed: m.hands_played == null ? null : Number(m.hands_played) || 0,
+          profit: m.profit == null ? null : Number(m.profit) || 0,
         }));
         setMembers(rows);
         setMemberTotal(Number((data || [])[0]?.total_count) || 0);
@@ -964,9 +969,9 @@ export default function ClubDashboard() {
         m.isOnline,
         esc(m.joinedAt ?? ''),
         esc(m.lastActive ?? ''),
-        m.chipBalance,
-        m.handsPlayed,
-        m.profit,
+        m.chipBalance ?? '',
+        m.handsPlayed ?? '',
+        m.profit ?? '',
       ].join(',')
     );
     downloadClubCsv([header.join(','), ...rows].join('\n'), `members-page${memberPage + 1}`);
@@ -1486,7 +1491,7 @@ export default function ClubDashboard() {
                 style={selectStyle}
               >
                 <option value="hands">Most Hands</option>
-                <option value="profit">Most Profit</option>
+                <option value="profit">Top Win/Loss</option>
                 <option value="name">Name (A-Z)</option>
                 <option value="joined">Recently Joined</option>
                 <option value="last_active">Recently Active</option>
@@ -1575,16 +1580,26 @@ export default function ClubDashboard() {
                           </span>
                         )}
                       </span>
-                      <span className={styles.playerStats}>
-                        {formatInt(m.handsPlayed)} Hands {rangeLabel} {'•'} Balance{' '}
-                        {formatChips(m.chipBalance)}
-                      </span>
+                      {m.handsPlayed !== null && (
+                        <span className={styles.playerStats}>
+                          {formatInt(m.handsPlayed)} Hands {rangeLabel}
+                          {m.chipBalance !== null && (
+                            <>
+                              {' '}
+                              {'•'} Balance {formatChips(m.chipBalance)}
+                            </>
+                          )}
+                        </span>
+                      )}
                     </div>
-                    <span
-                      className={`${styles.profit} ${m.profit >= 0 ? styles.positive : styles.negative}`}
-                    >
-                      {formatSigned(m.profit)}
-                    </span>
+                    {m.profit !== null && (
+                      <span
+                        className={`${styles.profit} ${m.profit >= 0 ? styles.positive : styles.negative}`}
+                        title="Win/Loss: Cash Results Plus Tournament Prizes Minus Entries"
+                      >
+                        {formatSigned(m.profit)}
+                      </span>
+                    )}
                   </Link>
                 ))
               )}

@@ -493,9 +493,9 @@ export default function PlayerStatisticsPage() {
               Hands Dealt.
             </p>
             <p>
-              Net Sums Signed Hand Results; Fees Sum Rake Paid. Both Use Chip Units And Include Cash
-              And Tournament Hands For The Selected Game. These Are Not Wallet Balances Or
-              Tournament Prize Totals.
+              Net Is The Cash Hand Result Plus Tournament Money (Prizes Paid Minus Buy-Ins) For The
+              Selected Game, Matching The Win/Loss Card. Tournament Stack Chips Are Not Counted.
+              Fees Sum Rake Paid. Neither Is A Wallet Balance.
             </p>
           </details>
         )}

@@ -234,7 +234,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
           {summary && (
             <dl className="dlr-summary">
               <Stat
-                label={debounced ? 'Downline Rake (All Members)' : 'Downline Rake'}
+                label={debounced ? 'Downline Cash Rake (All Members)' : 'Downline Cash Rake'}
                 value={money(summary.rake_generated)}
                 accent
               />
@@ -252,7 +252,7 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                 value={count(summary.members)}
                 sub={`${count(summary.active)} Active`}
               />
-              <Stat label="Hands" value={count(summary.hands)} />
+              <Stat label="Raked Hands" value={count(summary.hands)} />
               {summary.top_earner?.username && (
                 <Stat
                   label="Top Earner"
@@ -288,8 +288,8 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
                   <tr>
                     <th>Member</th>
                     <th>Upline</th>
-                    <th className="dlr-number">Hands</th>
-                    <th className="dlr-number">Rake</th>
+                    <th className="dlr-number">Raked Hands</th>
+                    <th className="dlr-number">Cash Rake</th>
                     <th className="dlr-number">Their Downline</th>
                   </tr>
                 </thead>
@@ -345,7 +345,9 @@ export default function DownlineRakePanel({ roles }: { roles: AgentRoleRow[] }) 
             A Hand's Rake Is Attributed By Weighted Contribution - Each Player's Share Follows What
             They Put Into The Pot - The Same Rule The Weekly Payout Uses, So These Figures Match
             Your Statement. Older Hands Recorded Under The Equal Split Are Reported As They Were
-            Paid. Open An Agent To Read Their Downline.
+            Paid. Cash-Game Rake Only: Tournament Fees Are Not Included, So This Is Not The Roster's
+            Downline Fees Total. Raked Hands Counts Only Hands That Took Rake From The Player. Open
+            An Agent To Read Their Downline.
           </p>
         </>
       )}

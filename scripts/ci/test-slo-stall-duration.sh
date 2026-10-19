@@ -8,4 +8,4 @@ docker run --rm --network none --read-only \
   -v "$repo_root:/work:ro" --workdir /work/tests/monitoring \
   --entrypoint /bin/promtool \
   quay.io/prometheus/prometheus@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3 \
-  test rules slo-stall-duration.test.yml slo-engine-availability.test.yml
+  test rules slo-stall-duration.test.yml slo-engine-availability.test.yml engine-scrape-maintenance.test.yml

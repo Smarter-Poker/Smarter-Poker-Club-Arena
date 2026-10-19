@@ -6,6 +6,10 @@ import {
   ADMISSION_PLAYER,
   admissionReceiptMatches,
   readAdmissionPool,
+  entryDoorInPage,
+  joinRefusalCode,
+  ENTRY_DOORS,
+  ENTRY_LAYERS,
 } from './lightning-pilot-admission.mjs';
 const CLUB = 'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
   CLUSTER = 'babb43f1-368e-406f-a97a-a0d5013648b2';
@@ -46,11 +50,32 @@ function fixture({
   joinAction = 'seat',
   needsChair = false,
   joinedExistingPool = false,
+  // What the settled entry offers; an answered layer reveals the next one.
+  doors = [{ door: 'join_lightning', layer: 'clear' }],
+  joinRefusal = null,
 } = {}) {
   const actions = [],
     cleanup = [],
     rpc = [],
     events = new Map();
+  const observed = () => ({
+    route: 'entry',
+    profileGate: 'complete',
+    settled: true,
+    ...doors[0],
+  });
+  const layerDialog = (name) => ({
+    first: () => layerDialog(name),
+    waitFor: async () => {},
+    getByRole: (role, opts) => ({
+      click: async () => {
+        actions.push(`${name}:${opts.name}`);
+        if ((opts.name === 'Enter Poker Arena' || opts.name === 'Not Now') && doors.length > 1)
+          doors.shift();
+      },
+      getAttribute: async () => 'true',
+    }),
+  });
   const request = (name) => ({
     method: () => 'POST',
     url: () => `https://example.invalid/rest/v1/rpc/${name}`,
@@ -76,23 +101,37 @@ function fixture({
     waitForURL: async (predicate) =>
       assert.equal(predicate(new URL(`https://smarter.poker/hub/club-arena/table/${TABLE}`)), true),
     waitForFunction: async () => {},
+    waitForTimeout: async () => {},
+    evaluate: async (fn, arg) => {
+      assert.equal(fn, entryDoorInPage);
+      assert.equal(arg.clusterId, CLUSTER);
+      return observed();
+    },
     locator: (selector) =>
-      selector.includes(':visible')
-        ? {
-            first: () => ({
-              click: async () => {
-                actions.push('chair');
-                needsChair = false;
-              },
-            }),
-          }
-        : { getAttribute: async () => gate },
+      selector.includes('club-arena-welcome-title')
+        ? layerDialog('welcome')
+        : selector.includes('dbs-title')
+          ? layerDialog('daily_bonus')
+          : selector.includes(':visible')
+            ? {
+                first: () => ({
+                  click: async () => {
+                    actions.push('chair');
+                    needsChair = false;
+                  },
+                }),
+              }
+            : { getAttribute: async () => gate },
     getByTestId: (id) => {
       assert.equal(id, 'lightning-entry');
       return {
         getByRole: (_r, o) => ({
           click: async () => {
             assert.equal(o.name, 'Join Lightning');
+            // A tap on an obstructed door never reaches the button.
+            const now = doors[0];
+            if (now.door !== 'join_lightning' || now.layer !== 'clear')
+              throw new Error('intercepts pointer events');
             actions.push('join');
           },
         }),
@@ -107,9 +146,18 @@ function fixture({
     waitForResponse: async (predicate) => {
       const join = {
         request: () => request('fn_cash_game_join'),
-        json: async () => ({ ok: true, action: joinAction, table_id: TABLE }),
+        ok: () => !joinRefusal,
+        json: async () =>
+          joinRefusal
+            ? { code: 'P0001', message: joinRefusal }
+            : { ok: true, action: joinAction, table_id: TABLE },
       };
-      if (predicate(join)) return join;
+      if (predicate(join)) {
+        // The join reply exists only once the door was actually tapped.
+        await new Promise((resolve) => setImmediate(resolve));
+        if (!actions.includes('join')) throw new Error('Timeout');
+        return join;
+      }
       assert.equal(predicate(buyResponse), true);
       if (!reply) throw new Error(SECRET);
       return buyResponse;
@@ -155,6 +203,8 @@ function fixture({
     },
     url: 'https://example.invalid',
     pin,
+    entryStableMs: 0,
+    entrySettleMs: 0,
     validateScope: async () => 200,
     readOwnPool: async () => {
       return preexisting ||
@@ -536,4 +586,123 @@ test('Classic admission refuses before authentication even when the private game
   assert.equal(result.phase, 'scope');
   assert.deepEqual(f.actions, []);
   assert.deepEqual(f.cleanup, []);
+});
+
+test('the device welcome over a fresh entry is acknowledged once through its own controls, then one join and one buy-in', async () => {
+  // Runs 39160085181 and 39295960542: a fresh browser met the shell's first-run
+  // welcome over Join Lightning; the tap never landed and the run spent its
+  // whole budget reporting only "join unknown".
+  const f = fixture({
+    doors: [
+      { door: 'join_lightning', layer: 'device_welcome' },
+      { door: 'join_lightning', layer: 'clear' },
+    ],
+  });
+  const r = await witnessAdmission(f.args);
+  assert.equal(r.status, 'observed');
+  assert.deepEqual(f.actions, [
+    'welcome:I Understand And Agree To These Terms',
+    'welcome:Enter Poker Arena',
+    'join',
+    'buy',
+  ]);
+  assert.equal(r.join.entry.answered.device_welcome, 'acknowledged_on_this_device');
+  assert.equal(r.join.entry.layer, 'clear');
+  assert.equal(r.join.tap, 'sent');
+  assert.equal(r.join.reply, 'ok');
+  assert.equal(r.join.tableId, TABLE);
+});
+
+test('a daily bonus sheet over the door is put off with Not Now and never claimed', async () => {
+  const f = fixture({
+    doors: [
+      { door: 'join_lightning', layer: 'daily_bonus' },
+      { door: 'join_lightning', layer: 'clear' },
+    ],
+  });
+  const r = await witnessAdmission(f.args);
+  assert.equal(r.status, 'observed');
+  assert.deepEqual(f.actions, ['daily_bonus:Not Now', 'join', 'buy']);
+  assert.ok(!f.actions.some((a) => /Claim/.test(a)));
+});
+
+test('a door that is not offered, or is covered by anything else, is reported and never tapped', async () => {
+  for (const [door, layer] of [
+    ['view_game', 'none'],
+    ['join_game', 'clear'],
+    ['joins_closed', 'none'],
+    ['entry_unavailable', 'clear'],
+    ['join_lightning', 'profile_gate'],
+    ['join_lightning', 'age_gate'],
+    ['join_lightning', 'other'],
+  ]) {
+    const f = fixture({ doors: [{ door, layer }] });
+    const r = await witnessAdmission(f.args);
+    assert.equal(r.status, 'unknown');
+    assert.equal(r.phase, 'entry_door');
+    assert.equal(r.join.outcome, 'not_offered');
+    assert.equal(r.join.entry.door, door);
+    assert.equal(r.join.entry.layer, layer);
+    assert.deepEqual(f.actions, []);
+    assert.equal(r.buyIn.outcome, 'not_requested');
+    assert.equal(r.cleanup, 'local_session_and_browser_closed');
+  }
+  const g = fixture({ doors: [{ door: 'join_lightning', layer: 'device_welcome' }] });
+  const welcomeTwice = await witnessAdmission(g.args);
+  assert.equal(welcomeTwice.join.outcome, 'not_offered');
+  assert.equal(g.actions.filter((a) => a === 'welcome:Enter Poker Arena').length, 1);
+});
+
+test('a refused join keeps only its native leading code', async () => {
+  assert.equal(joinRefusalCode({ message: 'GAME_BARRED:240' }), 'GAME_BARRED');
+  assert.equal(joinRefusalCode({ message: 'INSUFFICIENT_CHIPS:4.00' }), 'INSUFFICIENT_CHIPS');
+  assert.equal(joinRefusalCode({ message: `free text ${SECRET}` }), null);
+  assert.equal(joinRefusalCode(null), null);
+  const f = fixture({ joinRefusal: `PRIVATE_MEMBERSHIP_REQUIRED: ${SECRET}` });
+  const r = await witnessAdmission(f.args);
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.join.reply, 'refused');
+  assert.equal(r.join.refusal, 'PRIVATE_MEMBERSHIP_REQUIRED');
+  assert.deepEqual(f.actions, ['join']);
+  assert.doesNotMatch(JSON.stringify(r), new RegExp(SECRET));
+});
+
+test('the in-page door reader returns fixed classes and names the layer over the button', () => {
+  const button = { textContent: ' Join Lightning ', contains: (n) => n === button };
+  button.scrollIntoView = () => {};
+  button.getBoundingClientRect = () => ({ left: 0, top: 0, width: 10, height: 10 });
+  const overlay = {
+    closest: () => null,
+    querySelector: (sel) => (sel === ENTRY_LAYERS[0][0] ? {} : null),
+  };
+  let top = button;
+  const entry = {
+    getAttribute: () => null,
+    querySelector: () => null,
+    querySelectorAll: () => [{ textContent: 'Return To Lobby' }, button],
+  };
+  globalThis.location = { pathname: `/hub/club-arena/lightning/${CLUSTER}` };
+  globalThis.document = {
+    querySelector: (sel) =>
+      sel === '[data-testid="lightning-entry"]' ? entry : { getAttribute: () => 'complete' },
+    elementFromPoint: () => top,
+  };
+  try {
+    const arg = { clusterId: CLUSTER, doors: ENTRY_DOORS, layers: ENTRY_LAYERS };
+    assert.deepEqual(entryDoorInPage(arg), {
+      route: 'entry',
+      profileGate: 'complete',
+      settled: true,
+      door: 'join_lightning',
+      layer: 'clear',
+    });
+    top = overlay;
+    assert.equal(entryDoorInPage(arg).layer, 'device_welcome');
+    globalThis.location = { pathname: `/hub/club-arena/table/${TABLE}` };
+    assert.equal(entryDoorInPage(arg).route, 'table');
+    assert.equal(entryDoorInPage(arg).settled, false);
+  } finally {
+    delete globalThis.location;
+    delete globalThis.document;
+  }
 });

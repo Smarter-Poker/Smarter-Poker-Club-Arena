@@ -160,14 +160,12 @@ export default function BlacklistManagerPage() {
         setSearchingMembers(true);
         try {
           const resolvedClubId = await resolveClubUUID(clubId);
-          const { data, error: searchError } = await supabase.rpc('ca_club_members', {
+          // Identity only (2026-10-19): this picker shows a name, so it asks
+          // for a name. The full roster reader carries balances it never shows.
+          const { data, error: searchError } = await supabase.rpc('ca_club_member_search', {
             p_club_id: resolvedClubId,
             p_search: term,
-            p_since: null,
             p_limit: 8,
-            p_offset: 0,
-            p_sort: 'name',
-            p_role: null,
           });
           if (seq !== searchSeq.current) return;
           if (searchError) throw searchError;

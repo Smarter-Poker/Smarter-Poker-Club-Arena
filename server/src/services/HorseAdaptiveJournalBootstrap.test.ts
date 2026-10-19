@@ -49,6 +49,7 @@ function actualBootstrap(leader: boolean, stop: () => Promise<void>) {
     'GtoAggregationDriver',
     'GtoAggregationDriverV31',
     'CommerceRenewalConsumer',
+    'HorseDiamondSpins',
   ]) {
     context['start' + name] = vi.fn();
     context['stop' + name] = async () => undefined;

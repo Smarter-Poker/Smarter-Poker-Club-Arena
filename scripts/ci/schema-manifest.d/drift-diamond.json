@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/diamond-mint-register-bypass",
+  "functions": [
+    "fn_ca_diamond_journal_is_transfer",
+    "fn_ca_diamond_transfer_names_its_counterparty"
+  ]
+}

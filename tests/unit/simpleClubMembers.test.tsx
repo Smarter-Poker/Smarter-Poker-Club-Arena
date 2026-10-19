@@ -21,6 +21,10 @@ const f = vi.hoisted(() => ({
     onSubscriptionStatus?: (status: string) => void;
     onSubscriptionError?: (status: string) => void;
   },
+  record: null as null | {
+    onSubscriptionError?: (status: string) => void;
+    onSubscriptionStatus?: (status: string) => void;
+  },
   wallet: null as null | {
     restartKey?: number;
     onSubscriptionError?: (status: string) => void;
@@ -45,8 +49,11 @@ vi.mock('../../src/hooks/useMasterBusChannel', () => ({
 }));
 // Private wallet delivery is covered by the dedicated wallet-update cases.
 vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
-  useMasterBusBroadcastChannel: (config: NonNullable<typeof f.wallet>) => {
-    f.wallet = config;
+  useMasterBusBroadcastChannel: (
+    config: NonNullable<typeof f.wallet> & { channelName?: string }
+  ) => {
+    if (config.channelName?.startsWith('club-roster:')) f.record = config;
+    else f.wallet = config;
   },
 }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => f.toast }));
@@ -57,7 +64,7 @@ vi.mock('../../src/utils/strictClubIdResolver', () => ({
 vi.mock('../../src/services/ClubRosterService', () => ({
   default: { getRosterPage: f.page, getSummary: f.summary },
 }));
-import ClubMembersPage from '../../src/pages/ClubMembersPage';
+import ClubMembersPage, { liveRosterRefreshPolicy } from '../../src/pages/ClubMembersPage';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -117,6 +124,7 @@ it.each([false, true])(
     act(() => {
       f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
       f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+      f.record?.onSubscriptionStatus?.('SUBSCRIBED');
       f.channel?.onSubscriptionError?.('TIMED_OUT');
     });
     fireEvent.click(screen.getByRole('button', { name: 'Retry Live Sync' }));
@@ -162,6 +170,7 @@ it('retires an audit failure when the viewer no longer has audit access', async 
   act(() => {
     f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
     f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.record?.onSubscriptionStatus?.('SUBSCRIBED');
     f.audit?.onSubscriptionError?.('TIMED_OUT');
   });
   expect(screen.getByRole('button', { name: 'Retry Live Sync' })).toBeInTheDocument();
@@ -342,7 +351,10 @@ it('requires every enabled roster feed to acknowledge before reporting connected
   expect(f.audit?.enabled).toBe(true);
   act(() => f.channel?.onSubscriptionStatus?.('SUBSCRIBED'));
   expect(status()).toHaveAttribute('data-connection-state', 'connecting');
-  act(() => f.wallet?.onSubscriptionStatus?.('SUBSCRIBED'));
+  act(() => {
+    f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.record?.onSubscriptionStatus?.('SUBSCRIBED');
+  });
   expect(status()).toHaveAttribute('data-connection-state', 'connecting');
   act(() => f.audit?.onSubscriptionStatus?.('SUBSCRIBED'));
   expect(status()).toHaveAttribute('data-connection-state', 'live');
@@ -375,6 +387,7 @@ it('requires a newly enabled audit feed even when existing member and wallet fee
   act(() => {
     f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
     f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.record?.onSubscriptionStatus?.('SUBSCRIBED');
   });
   expect(document.querySelector('.members-connection-status')).toHaveAttribute(
     'data-connection-state',
@@ -420,6 +433,7 @@ it('requires fresh acknowledgments after the roster account changes', async () =
   act(() => {
     f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
     f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.record?.onSubscriptionStatus?.('SUBSCRIBED');
   });
   expect(document.querySelector('.members-connection-status')).toHaveAttribute(
     'data-connection-state',
@@ -447,7 +461,10 @@ it('requires fresh acknowledgments after the roster account changes', async () =
       'data-connection-state',
       'connecting'
     );
-    act(() => f.wallet?.onSubscriptionStatus?.('SUBSCRIBED'));
+    act(() => {
+      f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+      f.record?.onSubscriptionStatus?.('SUBSCRIBED');
+    });
     expect(document.querySelector('.members-connection-status')).toHaveAttribute(
       'data-connection-state',
       'live'
@@ -455,4 +472,40 @@ it('requires fresh acknowledgments after the roster account changes', async () =
   } finally {
     f.actor.user.id = original;
   }
+});
+
+it('keeps a cold record feed connecting after verified HTTP reads and requires engine readiness', async () => {
+  render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+  await act(async () => {});
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(400);
+  });
+  // Capture the exact record signal separately from wallet delivery.
+  expect(f.record).toMatchObject({
+    channelName: 'club-roster:00000000-0000-0000-0000-000000000043',
+  });
+  act(() => {
+    f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.record?.onSubscriptionStatus?.('CONNECTING');
+  });
+  const status = () => document.querySelector('.members-connection-status');
+  expect(f.page).toHaveBeenCalled();
+  expect(status()).toHaveAttribute('data-connection-state', 'connecting');
+  act(() => f.record?.onSubscriptionError?.('CHANNEL_ERROR'));
+  expect(status()).not.toHaveAttribute('data-connection-state', 'live');
+  act(() => {
+    f.record?.onSubscriptionStatus?.('SUBSCRIBED');
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(liveRosterRefreshPolicy.minIntervalMs + 2000);
+  });
+  expect(status()).toHaveAttribute('data-connection-state', 'live');
+  expect(f.toast).not.toHaveBeenCalled();
 });

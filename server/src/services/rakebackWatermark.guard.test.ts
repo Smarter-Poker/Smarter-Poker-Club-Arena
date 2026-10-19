@@ -43,7 +43,12 @@ describe('the rakeback settlement watermark', () => {
     expect(settle.indexOf('readCashSourceBatchOutcome(data, pending)')).toBeLessThan(
       settle.indexOf('saveHighWaterMark(nextCursor)')
     );
-    expect(settle).toContain('if (submission >= CASH_DEFERRAL_RESUBMITS)');
+    // 2026-10-19 (20261019190103): only resubmissions in a row that settled
+    // nothing hold the page; a call that made progress resets the count.
+    expect(settle).toContain('if (fruitlessResubmissions >= CASH_DEFERRAL_RESUBMITS)');
+    expect(settle).toContain(
+      'submission > 0 && receipts.length === 0 ? fruitlessResubmissions + 1 : 0'
+    );
     expect(settle.indexOf('still deferred for a busy commission key')).toBeLessThan(
       settle.indexOf('saveHighWaterMark(nextCursor)')
     );

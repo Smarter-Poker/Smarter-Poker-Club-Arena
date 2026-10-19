@@ -1,0 +1,8 @@
+{
+  "_owner": "fix/owner-fee-capture-close-20261019, migration20261019180622. PROMISED source declarations only, NOT an installed/live observation. Install requires protected merge and exact PR7458 earning producer postimage; then verify migration history, private ACLs, every function hash and original terminal/payment behavior.",
+  "tables": ["accounting_owner_direct_fee_incident", "accounting_owner_direct_fee_proofs"],
+  "functions": [
+    "fn_accounting_qualify_owner_direct_fee",
+    "fn_accounting_owner_direct_fee_proof_valid"
+  ]
+}

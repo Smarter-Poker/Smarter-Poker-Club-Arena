@@ -1,5 +1,5 @@
 {
-  "captured": "2026-10-19 ~15:45 UTC, read-only (pg_get_functiondef), project kuklfnapbkmacvwxktbh",
+  "captured": "2026-10-19 ~15:45 UTC, read-only (pg_get_functiondef), project kuklfnapbkmacvwxktbh; fn_credit_agent_commissions_batch re-read ~19:40 UTC after 20261019171753",
   "functions": {
     "fn_ca_lock_mtt_admission_contract()": "10644d522bb50245f76942ecce735cbc",
     "fn_ca_lock_settlement_lane_global()": "7c759bb7a639c3124de2607bdbf12577",
@@ -10,7 +10,7 @@
     "apply_rakeback_player_stats(uuid,uuid,uuid,integer,numeric)": "1519023c9ec579568a347b6088c898ec",
     "fn_sync_profile_total_hands()": "886d9aae3d1fbd18a98d172ebe13758e",
     "fn_process_cash_accounting_source(uuid)": "460e4b0a936b41246548cb0a9efc9f7f",
-    "fn_credit_agent_commissions_batch(jsonb)": "33e0be86d6a2a88f18be4ec4e058cadd",
+    "fn_credit_agent_commissions_batch(jsonb)": "1ae9eb0e32f8169ce0cdd6b730c859a6",
     "fn_project_hand_side_effects_after_post_commit_20260908(uuid)": "ef3cb3725ca3a1566e0e1254830a9a63"
   }
 }

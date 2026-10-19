@@ -82,7 +82,7 @@ function fixture() {
     }),
     members: [
       row(PILOT.ownerId, { role: 'owner' }),
-      ...Array.from({ length: 49 }, (_, i) => row(`retained-${i}`)),
+      ...Array.from({ length: 54 }, (_, i) => row(`retained-${i}`)),
       ...ROSTER_PAIRS.map((p) => row(p.outgoing)),
     ],
   };
@@ -100,6 +100,7 @@ function fixture() {
         ...(id ? { hazards } : {}),
       }),
     validateIncoming: async (id) => assert.ok(ROSTER_PAIRS.some((p) => p.incoming === id)),
+    assertAssignmentReleased: async () => {},
     leave: async (id) => {
       calls.push(['leave', id]);
       const r = state.members.find((m) => m.user_id === id);
@@ -164,18 +165,30 @@ const execute = (f, baseline, extra = {}) =>
     admission: { firstInvocation: true, prepareRunId: '123', executeRunId: '124' },
     ...extra,
   });
-test('pinned prepare has no mutation; all23 normal door cycles conserve targeted gross and return', async () => {
+test('a roster replacement refuses an active or unreadable old assignment before any money or membership door', async () => {
+  for (const code of ['PILOT_ASSIGNMENT_STILL_ACTIVE', 'PILOT_ASSIGNMENT_UNVERIFIED']) {
+    const f = fixture(),
+      baseline = await prepare(f);
+    f.adapter.assertAssignmentReleased = async () => {
+      throw Error(code);
+    };
+    const result = await execute(f, baseline);
+    assert.equal(result.status, 'stopped');
+    assert.equal(f.calls.length, 0);
+  }
+});
+test('pinned prepare has no mutation; all18 normal door cycles conserve targeted gross and return', async () => {
   const f = fixture(),
     baseline = await prepare(f);
   assert.equal(f.calls.length, 0);
   const r = await execute(f, baseline);
   assert.equal(r.status, 'verified');
-  assert.equal(r.grossFundingCents, 460000);
-  assert.equal(r.returnedCents, 230000);
+  assert.equal(r.grossFundingCents, 360000);
+  assert.equal(r.returnedCents, 180000);
   assert.equal(f.state.members.length, 73);
-  assert.equal(f.calls.length, 92);
-  assert.equal(r.steps.filter((x) => x.status === 'verified').length, 92);
-  assert.equal(Number(f.state.club.chip_treasury), 7700);
+  assert.equal(f.calls.length, 72);
+  assert.equal(r.steps.filter((x) => x.status === 'verified').length, 72);
+  assert.equal(Number(f.state.club.chip_treasury), 8200);
   assert.equal(r.capacityQualification, 'not_asserted');
   for (const p of ROSTER_PAIRS) {
     assert.ok(!f.state.members.some((m) => m.user_id === p.outgoing));
@@ -307,6 +320,7 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
   let horseEmail = 'existing@horses.smarter.poker';
   let horseIdentity = id;
   let horseProfile = { id, is_horse: true, status: 'active', horse_profile: { lane: 'cash' } };
+  let assignmentStatus = { club_id: ROSTER_CLUB, active: false };
   const admin = {
     rpc: async (name) => ({
       data: name === 'fn_club_membership_cap' ? 10 : name === 'fn_concurrent_game_load' ? 1 : 2,
@@ -369,7 +383,7 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
                 target: id,
                 amount: 200,
                 effective_wallet: 'player_wallet',
-                reason: 'lightning-action-madness-roster-amended-20261017',
+                reason: 'lightning-action-latency-roster-20261019',
               },
               receipt: {
                 success: true,
@@ -437,6 +451,7 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
     auth: { getUser: async () => ({ data: { user: { id: PILOT.ownerId } } }) },
     rpc: async (name, args) => {
       calls.push(['owner', name, args]);
+      if (name === 'fn_lightning_pilot_assignment_status') return { data: assignmentStatus };
       return {
         data: {
           success: true,
@@ -457,7 +472,18 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
     url: 'https://example.invalid',
     now: () => Date.parse('2026-10-17T02:43:00Z'),
   });
-  // These actual domains belong to exact owner-approved existing horse IDs.
+  await adapter.assertAssignmentReleased();
+  for (const status of [
+    { club_id: ROSTER_CLUB, active: true },
+    { club_id: 'foreign', active: false },
+    { club_id: ROSTER_CLUB },
+    null,
+  ]) {
+    assignmentStatus = status;
+    await assert.rejects(adapter.assertAssignmentReleased());
+  }
+  assignmentStatus = { club_id: ROSTER_CLUB, active: false };
+  // A pinned existing horse identity may use any real email domain.
   for (const domain of [
     'horse.ai',
     'smarter.poker',
@@ -532,7 +558,7 @@ test('real adapters exercise installed row shapes, exact RPC arguments and durab
         p_to_user_id: id,
         p_amount: 200,
         p_destination: 'player_wallet',
-        p_reason: 'lightning-action-madness-roster-amended-20261017',
+        p_reason: 'lightning-action-latency-roster-20261019',
         p_op_id: op,
       },
     ]
@@ -561,7 +587,7 @@ test('freeze, commerce refusal and a human roster fail before any normal door', 
 test('prepared request manifest is pinned; stale baseline and durable funding proof failure refuse', async () => {
   const f = fixture(),
     b = await prepare(f);
-  assert.equal(b.requests.length, 23);
+  assert.equal(b.requests.length, 18);
   assert.equal(b.requests[0].fundRequestId, rosterRequestId('fund', ROSTER_PAIRS[0].incoming));
   await assert.rejects(execute(f, b, { now: () => 1801001 }), /BASELINE_EXPIRED/);
   f.adapter.verifyFunding = async () => {
@@ -717,11 +743,11 @@ test('new operation refuses changed incoming eligibility before departure and be
   let checks = 0;
   g.adapter.validateIncoming = async () => {
     checks++;
-    if (checks > 23) throw Error('INCOMING_ASLEEP');
+    if (checks > 18) throw Error('INCOMING_ASLEEP');
   };
   const later = await execute(g, b);
   assert.equal(later.status, 'stopped');
-  assert.equal(g.calls.length, 23);
+  assert.equal(g.calls.length, 18);
   assert.ok(g.calls.every((c) => c[0] === 'leave'));
 });
 
@@ -734,24 +760,16 @@ test('target binding rejects Classic, wrong snapshot and active replacement targ
     await assert.rejects(prepare(f));
     assert.equal(f.calls.length, 0);
   }
-  assert.equal(ROSTER_OPERATION, 'lightning-action-madness-roster-amended-20261017');
-  assert.equal(new Set(ROSTER_PAIRS.flatMap((p) => [p.incoming, p.outgoing])).size, 46);
-  assert.deepEqual(ROSTER_PAIRS[19], {
-    outgoing: '0b1a64c2-8970-4f89-a396-9863e3aa2ccc',
-    incoming: '2af500e1-1665-4468-84d1-e346e64fcb68',
+  assert.equal(ROSTER_OPERATION, 'lightning-action-latency-roster-20261019');
+  assert.equal(new Set(ROSTER_PAIRS.flatMap((p) => [p.incoming, p.outgoing])).size, 36);
+  assert.deepEqual(ROSTER_PAIRS[0], {
+    outgoing: '03951af5-7cf1-4164-aaf0-571b647d98d5',
+    incoming: '00bc0957-1913-4beb-a4d1-acab94950690',
   });
-  assert.deepEqual(ROSTER_PAIRS[22], {
-    outgoing: '0f14f372-0c43-47ff-9257-1324a7e94488',
-    incoming: '4381b30d-631e-4146-a2de-2f01dd1a36e9',
+  assert.deepEqual(ROSTER_PAIRS[17], {
+    outgoing: '697d34f5-fe65-422a-b624-5a4957ef4196',
+    incoming: 'fb7c947d-79ce-4706-8c33-bb4f39359c59',
   });
-  assert.equal(
-    ROSTER_PAIRS.some((p) =>
-      ['60e31431-564b-402e-a574-96db4b774e06', 'e573c327-dc89-4d87-81f0-efd0cb3c8020'].includes(
-        p.incoming
-      )
-    ),
-    false
-  );
 });
 
 test('atomic bank-send readback rejects corrupt recipient or bank debit without retry', async () => {
@@ -787,21 +805,21 @@ test('atomic funding proof survives subsequent natural wallet spend and retains 
   );
 });
 
-test('maintained approved manifest binds every pair and admission identity to the exact source and bytes', () => {
+test('maintained prepared manifest binds every pair and admission identity to the exact source and bytes', () => {
   const raw = readFileSync(
-    new URL('../../docs/lightning/POPULATION-ROSTER-MANIFEST-2026-10-17.json', import.meta.url)
+    new URL('../../docs/lightning/POPULATION-ROSTER-MANIFEST-2026-10-19.json', import.meta.url)
   );
   const manifest = JSON.parse(raw);
   assert.deepEqual(manifest.pairs, ROSTER_PAIRS);
-  assert.equal(manifest.admissionPlan.length, 23);
+  assert.equal(manifest.admissionPlan.length, 18);
   const admitted = manifest.admissionPlan.map((p) => p.playerId);
-  assert.equal(new Set(admitted).size, 23);
+  assert.equal(new Set(admitted).size, 18);
   assert.deepEqual([...admitted].sort(), ROSTER_PAIRS.map((p) => p.incoming).sort());
   assert.equal(manifest.operation, ROSTER_OPERATION);
   assert.equal(manifest.clubId, ROSTER_CLUB);
   assert.deepEqual([manifest.actionClusterId, manifest.madnessClusterId], ROSTER_CLUSTERS);
   assert.equal(manifest.fundingPerIncoming, 200);
-  assert.equal(manifest.grossFunding, 4600);
+  assert.equal(manifest.grossFunding, 3600);
   assert.equal(manifest.rules.preserve72HorseCount, true);
   assert.equal(createHash('sha256').update(raw).digest('hex'), ROSTER_MANIFEST_SHA256);
 });

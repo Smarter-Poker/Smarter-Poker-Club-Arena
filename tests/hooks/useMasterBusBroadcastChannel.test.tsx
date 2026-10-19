@@ -2,6 +2,11 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  identitySubscribe: vi.fn(),
+  identityListener: undefined as undefined | ((event: any) => void),
+  privateRecord: vi.fn(),
+  engineStatus: vi.fn(),
+  privateListener: undefined as undefined | ((message: any) => void),
   setAuth: vi.fn(),
   onAuthStateChange: vi.fn(),
   unsubscribeAuth: vi.fn(),
@@ -15,6 +20,13 @@ const mocks = vi.hoisted(() => ({
   subscribe: vi.fn(),
   subscriptionCallbacks: [] as Array<(status: string, err?: Error) => void>,
   payloadCallbacks: [] as Array<(payload: unknown) => void>,
+}));
+
+vi.mock('../../src/services/EngineStateClient', () => ({
+  engineChannelClient: {
+    onPrivateRecord: mocks.privateRecord,
+    getStatus: mocks.engineStatus,
+  },
 }));
 
 vi.mock('../../src/lib/supabase', () => ({
@@ -37,6 +49,7 @@ vi.mock('../../src/lib/subscribeRealtime', () => ({
 
 vi.mock('../../src/core/MasterBus', () => ({
   masterBus: {
+    subscribe: mocks.identitySubscribe,
     getOrCreateChannel: mocks.getOrCreateChannel,
     registerChannelFactory: mocks.registerChannelFactory,
     removeChannelFactory: mocks.removeChannelFactory,
@@ -44,13 +57,26 @@ vi.mock('../../src/core/MasterBus', () => ({
   },
 }));
 
-vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.reportError }));
+vi.mock('../../src/utils/errorReporter', () => ({
+  reportError: mocks.reportError,
+}));
 
 import { useMasterBusBroadcastChannel } from '../../src/hooks/useMasterBusBroadcastChannel';
 
 describe('useMasterBusBroadcastChannel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.identityListener = undefined;
+    mocks.identitySubscribe.mockImplementation((_event, listener) => {
+      mocks.identityListener = listener;
+      return vi.fn();
+    });
+    mocks.engineStatus.mockReturnValue('connecting');
+    mocks.privateListener = undefined;
+    mocks.privateRecord.mockImplementation((_topic, listener) => {
+      mocks.privateListener = listener;
+      return vi.fn();
+    });
     mocks.setAuth.mockResolvedValue(undefined);
     mocks.subscriptionCallbacks.length = 0;
     mocks.payloadCallbacks.length = 0;
@@ -70,13 +96,205 @@ describe('useMasterBusBroadcastChannel', () => {
     mocks.authListeners = [];
     mocks.onAuthStateChange.mockImplementation((listener: (event: string) => void) => {
       mocks.authListeners.push(listener);
-      return { data: { subscription: { unsubscribe: mocks.unsubscribeAuth } } };
+      return {
+        data: { subscription: { unsubscribe: mocks.unsubscribeAuth } },
+      };
     });
   });
 
   const authEvent = (event: string) => {
     for (const listener of [...mocks.authListeners]) listener(event);
   };
+
+  it('keeps paid fallback until an authorized ready acknowledgment and restores it on loss', async () => {
+    const status = vi.fn();
+    const payload = vi.fn();
+    const degraded = vi.fn();
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName:
+          'member-record:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222',
+        event: 'record_changed',
+        onPayload: payload,
+        onSubscriptionError: degraded,
+        onSubscriptionStatus: status,
+      })
+    );
+    await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(1));
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
+    await waitFor(() => expect(mocks.removeRegisteredChannel).toHaveBeenCalled());
+    expect(status).toHaveBeenCalledWith('SUBSCRIBED');
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_CHANGED' }));
+    expect(payload).toHaveBeenCalledWith({ payload: {} });
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: false }));
+    await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(2));
+    expect(degraded).toHaveBeenCalledWith('CHANNEL_ERROR');
+    status.mockClear();
+    act(() => mocks.subscriptionCallbacks.at(-1)?.('SUBSCRIBED'));
+    expect(status).not.toHaveBeenCalled();
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
+    expect(status).toHaveBeenCalledWith('SUBSCRIBED');
+  });
+
+  it('rebinds rapid A/B/A identities on the same mounted topic and refuses retired callbacks', async () => {
+    const payload = vi.fn();
+    const status = vi.fn();
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName: 'club-roster:11111111-1111-1111-1111-111111111111',
+        event: 'record_changed',
+        onPayload: payload,
+        onSubscriptionStatus: status,
+      })
+    );
+    status.mockClear();
+    const retired = mocks.privateListener;
+    expect(mocks.privateRecord).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      mocks.identityListener?.({
+        payload: { isAuthenticated: true, userId: 'B' },
+      });
+      mocks.identityListener?.({
+        payload: { isAuthenticated: true, userId: 'A' },
+      });
+      retired?.({ type: 'PRIVATE_RECORD_CHANGED' });
+      retired?.({ type: 'PRIVATE_RECORD_STATUS', ready: true });
+      await Promise.resolve();
+    });
+    expect(payload).not.toHaveBeenCalled();
+    expect(status.mock.calls.every(([value]) => value === 'CONNECTING')).toBe(true);
+    expect(mocks.privateRecord).toHaveBeenCalledTimes(2);
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
+    expect(status).toHaveBeenCalledWith('SUBSCRIBED');
+  });
+
+  it.each([
+    'club-roster:11111111-1111-1111-1111-111111111111',
+    'member-record:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222',
+  ])('never treats a cold paid fallback as engine readiness: %s', async (channelName) => {
+    const status = vi.fn();
+    const error = vi.fn();
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName,
+        event: 'record_changed',
+        onPayload: vi.fn(),
+        onSubscriptionStatus: status,
+        onSubscriptionError: error,
+      })
+    );
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    act(() =>
+      mocks.privateListener?.({
+        type: 'PRIVATE_RECORD_STATUS',
+        ready: false,
+      })
+    );
+    expect(error).not.toHaveBeenCalled(); // Ordinary connecting must not toast.
+    act(() => mocks.subscriptionCallbacks[0]('SUBSCRIBED'));
+    expect(status).not.toHaveBeenCalledWith('SUBSCRIBED');
+    mocks.engineStatus.mockReturnValue('connected');
+    act(() =>
+      mocks.privateListener?.({
+        type: 'PRIVATE_RECORD_STATUS',
+        ready: false,
+        phase: 'connecting',
+      })
+    );
+    expect(error).not.toHaveBeenCalled();
+    act(() =>
+      mocks.privateListener?.({
+        type: 'PRIVATE_RECORD_STATUS',
+        ready: false,
+        phase: 'unavailable',
+      })
+    );
+    expect(error).toHaveBeenCalledTimes(1);
+    mocks.engineStatus.mockReturnValue('reconnecting');
+    act(() => {
+      mocks.privateListener?.({
+        type: 'PRIVATE_RECORD_STATUS',
+        ready: false,
+      });
+      mocks.privateListener?.({
+        type: 'PRIVATE_RECORD_STATUS',
+        ready: false,
+      });
+    });
+    expect(error).toHaveBeenCalledTimes(1);
+    act(() => mocks.subscriptionCallbacks[0]('SUBSCRIBED'));
+    expect(status).not.toHaveBeenCalledWith('SUBSCRIBED');
+    mocks.engineStatus.mockReturnValue('connected');
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
+    expect(status).toHaveBeenCalledWith('SUBSCRIBED');
+    status.mockClear();
+    const retired = mocks.privateListener;
+    await act(async () => {
+      mocks.identityListener?.({
+        payload: { isAuthenticated: true, userId: 'B' },
+      });
+      await Promise.resolve();
+    });
+    act(() => retired?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
+    expect(status).not.toHaveBeenCalledWith('SUBSCRIBED');
+    act(() => mocks.subscriptionCallbacks.at(-1)?.('SUBSCRIBED'));
+    expect(status).not.toHaveBeenCalledWith('SUBSCRIBED');
+    act(() => mocks.privateListener?.({ type: 'PRIVATE_RECORD_STATUS', ready: true }));
+    expect(status).toHaveBeenCalledWith('SUBSCRIBED');
+  });
+
+  it('marks a previously failed engine unavailable before its first new status event', async () => {
+    mocks.engineStatus.mockReturnValue('failed');
+    const status = vi.fn();
+    const error = vi.fn();
+    renderHook(() =>
+      useMasterBusBroadcastChannel({
+        channelName: 'club-roster:11111111-1111-1111-1111-111111111111',
+        event: 'record_changed',
+        onPayload: vi.fn(),
+        onSubscriptionStatus: status,
+        onSubscriptionError: error,
+      })
+    );
+    await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+    expect(error).toHaveBeenCalledTimes(1);
+    act(() => mocks.subscriptionCallbacks[0]('SUBSCRIBED'));
+    expect(status).not.toHaveBeenCalledWith('SUBSCRIBED');
+  });
+
+  it.each([
+    {
+      channelName: 'club-roster-wallet:11111111-1111-1111-1111-111111111111',
+      event: 'wallet_changed',
+      private: true,
+    },
+    {
+      channelName: 'club-roster:11111111-1111-1111-1111-111111111111',
+      event: 'wallet_changed',
+      private: true,
+    },
+    {
+      channelName: 'club-roster:11111111-1111-1111-1111-111111111111',
+      event: 'record_changed',
+      private: false,
+    },
+  ])(
+    'preserves paid subscribed authority outside the exact two private feeds: %j',
+    async (configuration) => {
+      const status = vi.fn();
+      renderHook(() =>
+        useMasterBusBroadcastChannel({
+          ...configuration,
+          onPayload: vi.fn(),
+          onSubscriptionStatus: status,
+        })
+      );
+      await waitFor(() => expect(mocks.subscriptionCallbacks).toHaveLength(1));
+      act(() => mocks.subscriptionCallbacks[0]('SUBSCRIBED'));
+      expect(status).toHaveBeenCalledWith('SUBSCRIBED');
+      expect(mocks.privateRecord).not.toHaveBeenCalled();
+    }
+  );
 
   it('authenticates Realtime before joining a private channel', async () => {
     let releaseAuth: (() => void) | undefined;
@@ -100,7 +318,9 @@ describe('useMasterBusBroadcastChannel', () => {
     await act(async () => releaseAuth?.());
 
     await waitFor(() => expect(mocks.getOrCreateChannel).toHaveBeenCalledOnce());
-    expect(mocks.getOrCreateChannel).toHaveBeenCalledWith('private:user-1', { private: true });
+    expect(mocks.getOrCreateChannel).toHaveBeenCalledWith('private:user-1', {
+      private: true,
+    });
     expect(mocks.on).toHaveBeenCalledWith('broadcast', { event: 'changed' }, expect.any(Function));
   });
 
@@ -179,8 +399,16 @@ describe('useMasterBusBroadcastChannel', () => {
   });
 
   it('ignores stale status and payload callbacks after a channel replacement', async () => {
-    const firstChannel = { state: 'closed', on: mocks.on, subscribe: mocks.subscribe };
-    const replacementChannel = { state: 'closed', on: mocks.on, subscribe: mocks.subscribe };
+    const firstChannel = {
+      state: 'closed',
+      on: mocks.on,
+      subscribe: mocks.subscribe,
+    };
+    const replacementChannel = {
+      state: 'closed',
+      on: mocks.on,
+      subscribe: mocks.subscribe,
+    };
     mocks.getOrCreateChannel
       .mockReturnValueOnce(firstChannel)
       .mockReturnValueOnce(replacementChannel);
@@ -240,8 +468,16 @@ describe('useMasterBusBroadcastChannel', () => {
     mocks.setAuth.mockImplementation(
       () => new Promise<void>((resolve) => resolveAuth.push(resolve))
     );
-    const firstChannel = { state: 'closed', on: mocks.on, subscribe: mocks.subscribe };
-    const replacementChannel = { state: 'closed', on: mocks.on, subscribe: mocks.subscribe };
+    const firstChannel = {
+      state: 'closed',
+      on: mocks.on,
+      subscribe: mocks.subscribe,
+    };
+    const replacementChannel = {
+      state: 'closed',
+      on: mocks.on,
+      subscribe: mocks.subscribe,
+    };
     mocks.getOrCreateChannel
       .mockReturnValueOnce(firstChannel)
       .mockReturnValueOnce(replacementChannel);
@@ -266,7 +502,9 @@ describe('useMasterBusBroadcastChannel', () => {
     await act(async () => resolveAuth[0]?.());
 
     expect(mocks.getOrCreateChannel).toHaveBeenCalledTimes(2);
-    expect(mocks.getOrCreateChannel).toHaveBeenCalledWith('private:user-1', { private: true });
+    expect(mocks.getOrCreateChannel).toHaveBeenCalledWith('private:user-1', {
+      private: true,
+    });
     expect(mocks.subscriptionCallbacks).toHaveLength(1);
   });
 

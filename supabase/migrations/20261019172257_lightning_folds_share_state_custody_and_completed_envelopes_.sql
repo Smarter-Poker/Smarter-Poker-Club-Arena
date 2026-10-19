@@ -39,6 +39,6 @@ BEGIN
  EXECUTE src;
 END $patch$;
 
-COMMIT;
 -- @live-proof: (SELECT position('WHERE li.id = h.lightning_instance_id FOR SHARE;' IN pg_get_functiondef('public.fn_lightning_fast_fold(uuid,uuid,uuid,text,numeric)'::regprocedure))>0)
 -- @live-proof: (SELECT position('LightningHandHost.post_commit_obligations_pending' IN pg_get_functiondef('public.fn_resolve_settled_financial_alerts(boolean,integer)'::regprocedure))>0)
+COMMIT;

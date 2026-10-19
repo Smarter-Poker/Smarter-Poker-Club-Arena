@@ -175,6 +175,14 @@ export async function installNaturalMultiRunWitness(page: Page) {
     const hands: Record<string, any> = {};
     const flights = new Map<string, any>();
     const active = new Map<string, { chip: HTMLElement; id: string }>();
+    const targets = new Map<
+      string,
+      {
+        node: HTMLElement;
+        recipient: string | undefined;
+        rect: { x: number; y: number; width: number; height: number };
+      }
+    >();
     const violations = new Set<string>();
     const visibility = { visibleSamples: 0, hiddenSamples: 0 };
     let currentHand = 0;
@@ -189,16 +197,37 @@ export async function installNaturalMultiRunWitness(page: Page) {
           violations.add(`${key}: Run ${index + 1} Never Named Its Winner`);
       });
     };
-    const measure = (
-      chip: HTMLElement,
-      recipient: string | undefined,
-      table: Element | undefined
-    ) => {
+    const measure = (chip: HTMLElement, flight: any, table: Element | undefined, now: number) => {
       const seat = Array.from(
         (table ?? document).querySelectorAll<HTMLElement>('[data-player-id]')
-      ).find((node) => node.dataset.playerId === recipient);
-      const target = seat?.querySelector('.seat__info')?.getBoundingClientRect();
-      if (!target?.width) return null;
+      ).find((node) => node.dataset.playerId === flight.recipient);
+      let target;
+      if (seat) {
+        // A replacement or moving recipient is always measured afresh. A live
+        // hidden/unmeasurable node cannot borrow its earlier visible position.
+        const box = seat.querySelector('.seat__info')?.getBoundingClientRect();
+        if (!box?.width || !box.height) {
+          targets.delete(flight.id);
+          flight.targetProvenance = 'unavailable';
+          return null;
+        }
+        target = { x: box.x, y: box.y, width: box.width, height: box.height };
+        targets.set(flight.id, { node: seat, recipient: flight.recipient, rect: target });
+        flight.targetRect = target;
+        flight.targetObservedAt = now;
+        flight.targetProvenance = 'live-recipient';
+      } else {
+        const previous = targets.get(flight.id);
+        flight.targetProvenance = 'unavailable';
+        if (!previous || previous.recipient !== flight.recipient || previous.node.isConnected)
+          return null;
+        flight.recipientDepartedAt ??= now;
+        // Only an explicit landing can be verified against this same flight's
+        // actual recipient geometry recorded before its node disconnected.
+        if (chip.dataset.chipPhase !== 'landed') return null;
+        target = previous.rect;
+        flight.targetProvenance = 'departed-recipient';
+      }
       const rect = chip.getBoundingClientRect();
       return Math.hypot(
         rect.x + rect.width / 2 - target.x - target.width / 2,
@@ -245,18 +274,23 @@ export async function installNaturalMultiRunWitness(page: Page) {
         const id = chip.dataset.chipFlight;
         if (!id) continue;
         const flight = flights.get(id) ?? {
+          id,
           hand,
           recipient: chip.dataset.chipRecipient,
           landedAt: null,
           distance: null,
           lastDistance: null,
+          targetProvenance: 'unavailable',
+          targetRect: null,
+          targetObservedAt: null,
+          recipientDepartedAt: null,
         };
         flights.set(id, flight);
         active.set(id, { chip, id });
         if (flight.landedAt) continue;
-        const distance = measure(chip, flight.recipient, table);
-        if (distance === null) continue;
+        const distance = measure(chip, flight, table, now);
         flight.lastDistance = distance;
+        if (distance === null) continue;
         if (chip.dataset.chipPhase === 'landed') {
           flight.distance = distance;
           flight.landedAt = now;
@@ -268,6 +302,7 @@ export async function installNaturalMultiRunWitness(page: Page) {
       for (const [id, { chip }] of active) {
         if (chip.isConnected) continue;
         active.delete(id);
+        targets.delete(id);
         const flight = flights.get(id);
         if (!flight || flight.landedAt) continue;
         if (flight.lastDistance !== null && flight.lastDistance <= 2) {
@@ -295,6 +330,7 @@ export async function installNaturalMultiRunWitness(page: Page) {
       read: () => ({
         hands: Object.values(hands),
         flights: Array.from(flights.values()).filter((f) => f.landedAt),
+        unlandedFlights: Array.from(flights.values()).filter((f) => !f.landedAt),
         violations: [...violations],
         visibility: { ...visibility, state: document.visibilityState },
       }),

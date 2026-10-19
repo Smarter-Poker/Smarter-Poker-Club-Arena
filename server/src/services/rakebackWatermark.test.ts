@@ -149,6 +149,7 @@ vi.mock('./errorReporter.js', () => ({
   reportWarning: vi.fn(),
 }));
 
+import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
   RakebackSettlerService,
   FETCH_LIMIT,
@@ -156,6 +157,8 @@ import {
   CASH_DEFERRAL_RESUBMITS,
   CASH_RETRY_LIMIT,
   MAX_DRAIN_BATCHES,
+  haltedPageRetryDelayMs,
+  CASH_RETRY_DRAIN_BUDGET_MS,
 } from './RakebackSettlerService.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -974,6 +977,40 @@ describe('cash source receipts protect the durable cursor', () => {
       );
     });
 
+    it('keeps resubmitting while each call settles something (20261019190103)', async () => {
+      // The database defers the items a call has no time left for. Each call
+      // here settles only its first item and defers the rest - the shape of a
+      // chunk behind slow row locks - so it takes one call per item. Every
+      // resubmission made progress, so none of them counts toward the halt.
+      const dataset = Array.from({ length: CASH_DEFERRAL_RESUBMITS + 2 }, (_, i) => ({
+        ...creditedRow(),
+        id: uid(i + 1),
+        created_at: ts(201 + i),
+        hand_id: uid(10001 + i),
+      }));
+      setup({
+        dataset,
+        ledger: dataset.map((source, n) => ({
+          ...ledger[0],
+          id: uid(20000 + n),
+          rake_record_id: source.id,
+          hand_id: source.hand_id,
+        })),
+      });
+      mockRpc.mockImplementation(async (name, args) => {
+        if (name !== 'fn_credit_agent_commissions_batch') return success(name, args);
+        const items = args.p_items as Array<{ source_id: string }>;
+        return deferring(items.slice(1).map((it) => it.source_id))(name, args);
+      });
+      expect(await run()).toBe('more');
+      const ids = dataset.map((source) => source.id);
+      expect(batchCalls()).toEqual(ids.map((_, n) => ids.slice(n)));
+      expect(scenario.current.durableCursor).toEqual({
+        high_water_mark: dataset[dataset.length - 1].created_at,
+        high_water_mark_id: ids[ids.length - 1],
+      });
+    });
+
     it('never reads a deferral as an acknowledgement, even from a malformed answer', async () => {
       twoSources();
       mockRpc.mockImplementation(async (name, args) => {
@@ -1119,12 +1156,131 @@ describe('cash source receipts protect the durable cursor', () => {
     const receipts = rows.map((r) => sourceReceipt(r, { ledger: fullLedger }));
     setup({ dataset: [], ledger: fullLedger, retryReceipts: receipts });
     expect(CASH_RETRY_LIMIT).toBeGreaterThan(1);
-    expect(await run()).toBe('more');
+    // Every call comes back full; the run's drain budget ends it, and the
+    // queue may still hold more.
+    let clock = Date.now();
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 16_000));
+    try {
+      expect(await run()).toBe('more');
+    } finally {
+      now.mockRestore();
+    }
     expect(settlerUpserts()).toHaveLength(0);
     // One fewer than a full batch is the end of the due queue: 'idle' as before.
     mockRpc.mockClear();
     setup({ dataset: [], ledger: fullLedger, retryReceipts: receipts.slice(1) });
     expect(await run()).toBe('idle');
+  });
+
+  /*
+   * THE RETRY DRAINS WHAT IS DUE, NOT FIVE A RUN (2026-10-19). Live: 12,135
+   * Midway sources due after their cause was fixed, one retry call of
+   * CASH_RETRY_LIMIT per inner run, 20 retries in 30 minutes. A run now keeps
+   * calling while each call is full and settled something, within
+   * CASH_RETRY_DRAIN_BUDGET_MS.
+   */
+  describe('the retry drains a backlog inside one run', () => {
+    const backlog = (n: number) => {
+      const rows = Array.from({ length: n }, (_, i) => ({
+        ...row(1000 + i, 300 + i),
+        hand_id: uid(3000 + i),
+        player_contributions: { [uid(42)]: 10 },
+      }));
+      const fullLedger = rows.map((r, i) => ({
+        id: uid(5000 + i),
+        hand_id: r.hand_id,
+        player_id: uid(42),
+        club_id: uid(55),
+        rake_record_id: r.id,
+        weighted_rake_credit: 1,
+      }));
+      setup({ dataset: [], ledger: fullLedger });
+      return rows.map((r) => sourceReceipt(r, { ledger: fullLedger }));
+    };
+    /** The due queue, served CASH_RETRY_LIMIT at a time like the database. */
+    const serveQueue = (queue: Array<Record<string, unknown>>, deferAll = false) =>
+      mockRpc.mockImplementation(async (name, args) => {
+        if (name !== 'fn_retry_cash_accounting_sources') return success(name, args);
+        if (deferAll)
+          return {
+            data: {
+              ...batchReceipt([]),
+              deferred: queue.slice(0, args.p_limit).map((r) => r.rake_record_id),
+            },
+            error: null,
+          };
+        return { data: batchReceipt(queue.splice(0, args.p_limit)), error: null };
+      });
+    const retryCalls = () =>
+      mockRpc.mock.calls.filter(([name]) => name === 'fn_retry_cash_accounting_sources');
+
+    it('keeps calling while each call comes back full, and stops at the short one', async () => {
+      const queue = backlog(3 * CASH_RETRY_LIMIT + 2);
+      serveQueue(queue);
+      expect(await run()).toBe('idle');
+      expect(retryCalls()).toHaveLength(4);
+      expect(retryCalls().every(([, args]) => args.p_limit === CASH_RETRY_LIMIT)).toBe(true);
+      expect(queue).toHaveLength(0);
+    });
+
+    it('a full queue at the end of the budget is still backlog', async () => {
+      const queue = backlog(10 * CASH_RETRY_LIMIT);
+      serveQueue(queue);
+      let clock = Date.now();
+      const now = vi
+        .spyOn(Date, 'now')
+        .mockImplementation(() => (clock += CASH_RETRY_DRAIN_BUDGET_MS / 3));
+      try {
+        expect(await run()).toBe('more');
+      } finally {
+        now.mockRestore();
+      }
+      expect(retryCalls().length).toBeGreaterThan(1);
+      expect(retryCalls().length).toBeLessThan(10);
+      expect(queue.length).toBeGreaterThan(0);
+    });
+
+    it('a call that settled nothing - every source deferred - ends the drain', async () => {
+      const queue = backlog(4 * CASH_RETRY_LIMIT);
+      serveQueue(queue, true);
+      // Unchanged from the single call: with no new rake and nothing settled
+      // the run is idle, and the deferred sources stay first in their queue.
+      expect(await run()).toBe('idle');
+      expect(retryCalls()).toHaveLength(1);
+    });
+
+    it('a later call failing ends the drain without halting the run', async () => {
+      const queue = backlog(4 * CASH_RETRY_LIMIT);
+      let calls = 0;
+      mockRpc.mockImplementation(async (name, args) => {
+        if (name !== 'fn_retry_cash_accounting_sources') return success(name, args);
+        if (++calls === 3) return { data: null, error: { message: 'retry unavailable' } };
+        return { data: batchReceipt(queue.splice(0, args.p_limit)), error: null };
+      });
+      expect(await run()).toBe('more');
+      expect(retryCalls()).toHaveLength(3);
+      expect(mockReportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'RakebackSettler.source_retry_drain_ended'
+      );
+      expect(rakeFetches().length).toBeGreaterThan(0);
+    });
+
+    it('stops calling when the maintenance freeze begins', async () => {
+      const queue = backlog(4 * CASH_RETRY_LIMIT);
+      let calls = 0;
+      mockRpc.mockImplementation(async (name, args) => {
+        if (name !== 'fn_retry_cash_accounting_sources') return success(name, args);
+        if (++calls === 2) setMaintenanceFrozen(true);
+        return { data: batchReceipt(queue.splice(0, args.p_limit)), error: null };
+      });
+      try {
+        expect(await run()).toBe('more');
+      } finally {
+        setMaintenanceFrozen(false);
+      }
+      expect(retryCalls()).toHaveLength(2);
+    });
   });
   it('a retry RPC transport failure holds the cursor before fetching new source', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'retry unavailable' } });
@@ -1555,15 +1711,22 @@ describe('the catch-up re-arms while backlog remains', () => {
     expect(backlog).toEqual([true]);
   });
 
-  it('does not arm after a halt with no progress, so a persistent failure waits the interval', async () => {
-    expect((await drive(['halted'])).backlog).toEqual([false]);
+  /*
+   * A HALTED PAGE COMES BACK ON THE NEXT SHORT TICK (2026-10-19). Live: one
+   * 16.1 s batch call at 17:02 halted a first page, and because the cycle had
+   * made no progress the settler waited the full 30-minute interval (next
+   * activity 17:29:59). Every halt now re-arms the catch-up; halts in a row
+   * with no acknowledged page back off from 60 s, doubling, to the interval.
+   */
+  it('arms after a halt with no progress, so one slow call costs a minute, not the interval', async () => {
+    expect((await drive(['halted'])).backlog).toEqual([true]);
   });
 
   it('does not arm once the range is empty', async () => {
     expect((await drive(['more', 'idle'])).backlog).toEqual([false]);
   });
 
-  /** Several cycles on ONE settler: the retry allowance lives across cycles. */
+  /** Several cycles on ONE settler: the halt backoff lives across cycles. */
   const cycles = async (perCycle: string[][]) => {
     const settler = new RakebackSettlerService();
     const inner = vi.spyOn(settler as any, '_runSettlementInner');
@@ -1577,31 +1740,69 @@ describe('the catch-up re-arms while backlog remains', () => {
       'runTournamentChipConservation',
     ] as const)
       vi.spyOn(settler as any, method).mockResolvedValue(undefined);
-    const schedule = vi.spyOn(settler as any, 'scheduleCatchUp');
+    const armed: Array<number | null> = [];
+    vi.spyOn(settler as any, 'scheduleCatchUp').mockImplementation((backlog: unknown) => {
+      armed.push(
+        backlog ? haltedPageRetryDelayMs((settler as any).consecutiveStalls as number) : null
+      );
+    });
     for (let i = 0; i < perCycle.length; i++) await settler.runSettlement();
-    return schedule.mock.calls.map(([backlog]) => backlog);
+    return armed;
   };
+  const MIN = 60_000;
 
-  it('retries a first-page stall once, right after a productive cycle, then waits the interval', async () => {
-    expect(await cycles([['more', 'more', 'more'], ['halted'], ['halted']])).toEqual([
-      true,
-      true,
-      false,
+  it('retries a first-page stall in 60 s even with no productive cycle before it', async () => {
+    expect(await cycles([['halted']])).toEqual([MIN]);
+  });
+
+  it('backs off halts in a row, doubling, and never past the interval', async () => {
+    expect(await cycles(Array.from({ length: 8 }, () => ['halted']))).toEqual([
+      MIN,
+      2 * MIN,
+      4 * MIN,
+      8 * MIN,
+      16 * MIN,
+      30 * MIN,
+      30 * MIN,
+      30 * MIN,
     ]);
   });
 
-  it('a productive cycle that itself halted still earns the one retry', async () => {
-    expect(await cycles([['more', 'halted'], ['halted'], ['halted']])).toEqual([true, true, false]);
-  });
-
-  it('the allowance is restored only by a cycle that acknowledges a page', async () => {
+  it('an acknowledged page resets the backoff', async () => {
     expect(
-      await cycles([['more', 'more', 'more'], ['halted'], ['more', 'idle'], ['halted'], ['halted']])
-    ).toEqual([true, true, false, true, false]);
+      await cycles([['halted'], ['halted'], ['halted'], ['more', 'halted'], ['halted']])
+    ).toEqual([MIN, 2 * MIN, 4 * MIN, MIN, MIN]);
   });
 
-  it('an idle cycle spends nothing and earns nothing', async () => {
-    expect(await cycles([['idle'], ['halted']])).toEqual([false, false]);
+  it('an idle cycle resets the backoff and arms nothing', async () => {
+    expect(await cycles([['halted'], ['halted'], ['idle'], ['halted']])).toEqual([
+      MIN,
+      2 * MIN,
+      null,
+      MIN,
+    ]);
+  });
+
+  it('the drain cap arms the ordinary 60 s catch-up', async () => {
+    expect(await cycles([['halted'], ['halted'], Array(MAX_DRAIN_BATCHES).fill('more')])).toEqual([
+      MIN,
+      2 * MIN,
+      MIN,
+    ]);
+  });
+
+  it('the backoff is arithmetic on the stall count alone', () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 40].map(haltedPageRetryDelayMs)).toEqual([
+      MIN,
+      MIN,
+      2 * MIN,
+      4 * MIN,
+      8 * MIN,
+      16 * MIN,
+      30 * MIN,
+      30 * MIN,
+    ]);
+    expect(haltedPageRetryDelayMs(Number.NaN)).toBe(MIN);
   });
 });
 

@@ -18,6 +18,25 @@ if "${psql[@]}" -f "$migration" > "$work/replay.log" 2>&1; then echo 'Replay une
 "${psql[@]}" -f "$fixture/roster-before.sql" -f "$repo/supabase/migrations/20261018230227_member_roster_funded_counts_and_private_source_events.sql" -f "$fixture/roster-after.sql"
 "${psql[@]}" -f "$fixture/mtt-money-before.sql" -f "$repo/supabase/migrations/20261019095423_member_record_mtt_reads_tournament_money.sql" -f "$fixture/mtt-money-after.sql" -f "$repo/supabase/migrations/20261019021553_member_statistics_fees_read_fee_ledger.sql" -f "$fixture/mtt-money-baseline.sql" -f "$repo/supabase/migrations/20261019143456_member_statistics_net_reads_tournament_money.sql" -f "$fixture/mtt-money-stats-after.sql"
 if "${psql[@]}" -f "$repo/supabase/migrations/20261019143456_member_statistics_net_reads_tournament_money.sql" > "$work/mtt-replay.log" 2>&1; then echo 'Statistics net replay unexpectedly accepted'; exit 1; fi
+"${psql[@]}" -f "$fixture/dedup-before.sql"
+if "${psql[@]}" -f "$fixture/dedup-after.sql" > "$work/dedup-before-failure.log" 2>&1; then
+  echo 'Dedup regression unexpectedly passed before the fix'; exit 1
+fi
+if ! grep -q 'Member topic transaction dedup failed' "$work/dedup-before-failure.log"; then
+  cat "$work/dedup-before-failure.log"; exit 1
+fi
+"${psql[@]}" -f "$repo/supabase/migrations/20261019151807_member_record_private_signals_deduplicate_per_transaction.sql" -f "$fixture/dedup-after.sql"
+if "${psql[@]}" -f "$repo/supabase/migrations/20261019151807_member_record_private_signals_deduplicate_per_transaction.sql" > "$work/dedup-replay.log" 2>&1; then
+  echo 'Dedup migration replay unexpectedly accepted'; exit 1
+fi
+if ! grep -q 'Member signal source preimage changed' "$work/dedup-replay.log"; then
+  cat "$work/dedup-replay.log"; exit 1
+fi
+"${psql[@]}" -f "$repo/supabase/migrations/20261019152515_private_record_notifies_the_existing_engine_transport.sql" -f "$fixture/notify-after.sql" > "$work/notify-after.log" 2>&1
+cat "$work/notify-after.log"
+if [ "$(grep -c 'Asynchronous notification.*ca_private_record_changes' "$work/notify-after.log")" -ne 5 ] || grep -q '72000000-' "$work/notify-after.log"; then echo 'Committed notification coverage or rollback mismatch'; exit 1; fi
+if "${psql[@]}" -f "$repo/supabase/migrations/20261019152515_private_record_notifies_the_existing_engine_transport.sql" > "$work/notify-replay.log" 2>&1; then echo 'Notify migration replay unexpectedly accepted'; exit 1; fi
+if ! grep -q 'Private record transport preimage changed' "$work/notify-replay.log"; then cat "$work/notify-replay.log"; exit 1; fi
 echo 'MEMBER_RECORD_POSTGRES PASS: regression, ranges, attribution, permissions, live signals, replay refusal'
 
 "${psql[@]}" -c 'CREATE DATABASE member_record_concurrency'

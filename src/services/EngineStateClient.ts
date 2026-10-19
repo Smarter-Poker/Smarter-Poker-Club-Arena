@@ -1840,7 +1840,15 @@ export interface ChannelErrorMessage {
   message: string;
 }
 
+export interface PrivateRecordMessage {
+  type: 'PRIVATE_RECORD_CHANGED' | 'PRIVATE_RECORD_STATUS';
+  topic: string;
+  ready?: boolean;
+  /** Additive: initial LISTEN startup differs from a failed transport. */
+  phase?: 'connecting' | 'unavailable';
+}
 export type ChannelServerMessage =
+  | PrivateRecordMessage
   | ChannelPingMessage
   | ChannelChannelPingMessage
   | ClubPresenceUpdateMessage
@@ -1855,6 +1863,8 @@ export type ChannelServerMessage =
 // ─── Client → Server message types ───────────────────────────────────────────
 
 export type ChannelClientMessage =
+  | { type: 'JOIN_PRIVATE_RECORD'; topic: string }
+  | { type: 'LEAVE_PRIVATE_RECORD'; topic: string }
   | { type: 'JOIN_CLUB'; clubId: string }
   | { type: 'LEAVE_CLUB'; clubId: string }
   | {
@@ -1945,6 +1955,7 @@ export class EngineChannelClient {
   // send() records the net desired state below; every onopen replays it.
   // Stateful messages live only here while offline. Replaying both this state
   // and an old message queue duplicates JOINs and can trip the server rate cap.
+  private privateRecordListeners = new Map<string, Set<Listener<PrivateRecordMessage>>>();
   private desiredClubs = new Set<string>();
   private desiredTournaments = new Set<string>();
   private desiredLobby = false;
@@ -1954,6 +1965,9 @@ export class EngineChannelClient {
   /** @internal Track the net effect of a client → server message. */
   private recordDesiredState(msg: ChannelClientMessage): boolean {
     switch (msg.type) {
+      case 'JOIN_PRIVATE_RECORD':
+      case 'LEAVE_PRIVATE_RECORD':
+        return true;
       case 'JOIN_CLUB':
         this.desiredClubs.add(msg.clubId);
         return true;
@@ -1985,6 +1999,8 @@ export class EngineChannelClient {
   /** @internal Re-send the desired subscription state on a fresh socket. */
   private replayDesiredState(ws: WebSocket): void {
     const replay: ChannelClientMessage[] = [];
+    for (const topic of this.privateRecordListeners.keys())
+      replay.push({ type: 'JOIN_PRIVATE_RECORD', topic });
     for (const clubId of this.desiredClubs) replay.push({ type: 'JOIN_CLUB', clubId });
     for (const msg of this.lastPresence.values()) replay.push(msg);
     for (const tournamentId of this.desiredTournaments)
@@ -2184,6 +2200,7 @@ export class EngineChannelClient {
     this.sessionBlocked = !allowReconnect;
     this.disconnect();
     this.sendQueue = [];
+    this.privateRecordListeners.clear();
     this.desiredClubs.clear();
     this.desiredTournaments.clear();
     this.desiredLobby = false;
@@ -2227,6 +2244,24 @@ export class EngineChannelClient {
       // Auto-connect on first send
       void this.connect();
     }
+  }
+
+  /** Per-topic refcounts share this existing socket; reconnect replays intent. */
+  onPrivateRecord(topic: string, listener: Listener<PrivateRecordMessage>): () => void {
+    let listeners = this.privateRecordListeners.get(topic);
+    if (!listeners) {
+      listeners = new Set();
+      this.privateRecordListeners.set(topic, listeners);
+    }
+    listeners.add(listener);
+    this.send({ type: 'JOIN_PRIVATE_RECORD', topic });
+    return () => {
+      listeners!.delete(listener);
+      if (!listeners!.size && this.privateRecordListeners.get(topic) === listeners) {
+        this.privateRecordListeners.delete(topic);
+        this.send({ type: 'LEAVE_PRIVATE_RECORD', topic });
+      }
+    };
   }
 
   // ─── Listener registration ────────────────────────────────────────────────
@@ -2447,6 +2482,16 @@ export class EngineChannelClient {
 
   private handleMessage(msg: ChannelServerMessage): void {
     switch (msg.type) {
+      case 'PRIVATE_RECORD_CHANGED':
+      case 'PRIVATE_RECORD_STATUS':
+        for (const listener of this.privateRecordListeners.get(msg.topic) ?? []) {
+          try {
+            listener(msg);
+          } catch (err) {
+            console.error('[EngineChannelClient] private record callback failed', err);
+          }
+        }
+        return;
       case 'PING': {
         try {
           this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
@@ -2698,6 +2743,12 @@ export class EngineChannelClient {
   private setStatus(status: EngineConnectionStatus): void {
     if (this.status === status) return;
     this.status = status;
+    if (status !== 'connected') {
+      for (const [topic, listeners] of this.privateRecordListeners) {
+        for (const listener of listeners)
+          listener({ type: 'PRIVATE_RECORD_STATUS', topic, ready: false });
+      }
+    }
     this.opts.onStatus(status);
     for (const listener of this.statusListeners) {
       try {

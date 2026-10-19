@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/phase2b-tournament-lane-contention",
+  "_comment": "Migration 20261019151125: smarter_private.f06_wait_table_lane, the bounded waiting shared tournament lane four per-table writers take first. Installed through apply-merged-migration after merge.",
+  "functions": ["smarter_private.f06_wait_table_lane"]
+}

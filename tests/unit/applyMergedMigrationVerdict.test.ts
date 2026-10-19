@@ -93,49 +93,60 @@ describe('the summary names all four things it can be looking at', () => {
   });
 });
 
-describe('the original retirement migration uses the actual transaction envelope', () => {
-  it('reaches credential preflight with its proof comments inside COMMIT and refuses trailing proof bytes', () => {
-    const filename = '20261006182937_a_retirement_cannot_erase_the_original_tournament_hand.sql';
-    const sql = readFileSync(resolve('supabase/migrations', filename), 'utf8');
-    const proofs = sql.split('\n').filter((line) => line.startsWith('-- @live-proof:'));
-    expect(proofs).toHaveLength(5);
-    const withoutProofs = sql
-      .split('\n')
-      .filter((line) => !line.startsWith('-- @live-proof:'))
-      .join('\n');
-    const directory = mkdtempSync(
-      resolve(process.env.RUNNER_TEMP || process.cwd(), 'retirement-envelope-')
-    );
-    const applier = resolve('scripts/ci/apply-recorded-migration.mjs');
-    const env = { ...process.env };
-    delete env.DATABASE_URL;
-    // The real applier is executed unchanged. Only its clock is fixed outside
-    // the DDL window; no connection exists, so this cannot send database SQL.
-    const entry = `const OriginalDate = Date; globalThis.Date = class extends OriginalDate { constructor(...args) { if (args.length) super(...args); else super('2026-10-06T20:10:00Z'); } }; process.argv = [process.execPath, ${JSON.stringify(applier)}, '--migration', ${JSON.stringify(filename)}, '--dry-run']; await import(${JSON.stringify('file://' + applier)});`;
-    try {
-      mkdirSync(resolve(directory, 'supabase/migrations'), { recursive: true });
-      const run = (bytes: string) => {
-        writeFileSync(resolve(directory, 'supabase/migrations', filename), bytes);
-        return spawnSync(process.execPath, ['--input-type=module', '--eval', entry], {
-          cwd: directory,
-          env,
-          encoding: 'utf8',
-          timeout: 5000,
-        });
-      };
-      const refused = run(withoutProofs.trimEnd() + '\n\n' + proofs.join('\n') + '\n');
-      expect(refused.error).toBeUndefined();
-      expect(refused.status).toBe(1);
-      expect(refused.stderr).toContain('does not open with BEGIN; and close with COMMIT;');
-      const accepted = run(sql);
-      expect(accepted.error).toBeUndefined();
-      expect(accepted.status).toBe(3);
-      expect(accepted.stderr).toContain('UNKNOWN: DATABASE_URL is not set');
-      expect(accepted.stderr).not.toContain('REFUSED');
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
+describe('qualified migrations use the actual transaction envelope', () => {
+  it.each([
+    {
+      filename: '20261006182937_a_retirement_cannot_erase_the_original_tournament_hand.sql',
+      proofCount: 5,
+    },
+    {
+      filename: '20261019172257_lightning_folds_share_state_custody_and_completed_envelopes_.sql',
+      proofCount: 2,
+    },
+  ])(
+    '$filename reaches credential preflight and refuses trailing proof bytes',
+    ({ filename, proofCount }) => {
+      const sql = readFileSync(resolve('supabase/migrations', filename), 'utf8');
+      const proofs = sql.split('\n').filter((line) => line.startsWith('-- @live-proof:'));
+      expect(proofs).toHaveLength(proofCount);
+      const withoutProofs = sql
+        .split('\n')
+        .filter((line) => !line.startsWith('-- @live-proof:'))
+        .join('\n');
+      const directory = mkdtempSync(
+        resolve(process.env.RUNNER_TEMP || process.cwd(), 'retirement-envelope-')
+      );
+      const applier = resolve('scripts/ci/apply-recorded-migration.mjs');
+      const env = { ...process.env };
+      delete env.DATABASE_URL;
+      // The real applier is executed unchanged. Only its clock is fixed outside
+      // the DDL window; no connection exists, so this cannot send database SQL.
+      const entry = `const OriginalDate = Date; globalThis.Date = class extends OriginalDate { constructor(...args) { if (args.length) super(...args); else super('2026-10-06T20:10:00Z'); } }; process.argv = [process.execPath, ${JSON.stringify(applier)}, '--migration', ${JSON.stringify(filename)}, '--dry-run']; await import(${JSON.stringify('file://' + applier)});`;
+      try {
+        mkdirSync(resolve(directory, 'supabase/migrations'), { recursive: true });
+        const run = (bytes: string) => {
+          writeFileSync(resolve(directory, 'supabase/migrations', filename), bytes);
+          return spawnSync(process.execPath, ['--input-type=module', '--eval', entry], {
+            cwd: directory,
+            env,
+            encoding: 'utf8',
+            timeout: 5000,
+          });
+        };
+        const refused = run(withoutProofs.trimEnd() + '\n\n' + proofs.join('\n') + '\n');
+        expect(refused.error).toBeUndefined();
+        expect(refused.status).toBe(1);
+        expect(refused.stderr).toContain('does not open with BEGIN; and close with COMMIT;');
+        const accepted = run(sql);
+        expect(accepted.error).toBeUndefined();
+        expect(accepted.status).toBe(3);
+        expect(accepted.stderr).toContain('UNKNOWN: DATABASE_URL is not set');
+        expect(accepted.stderr).not.toContain('REFUSED');
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
     }
-  });
+  );
 });
 
 describe('the repository_dispatch door carries only a file name and dry_run', () => {

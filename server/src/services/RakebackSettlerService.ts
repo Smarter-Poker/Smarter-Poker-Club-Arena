@@ -45,6 +45,19 @@ const SETTLEMENT_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
  */
 const CATCH_UP_DELAY_MS = 60 * 1000; // 1 minute
 /**
+ * How soon a halted page is tried again, given how many cycles in a row have
+ * halted without acknowledging a page (2026-10-19). The first is retried on the
+ * ordinary 60 s catch-up; each further one in a row doubles the wait, up to the
+ * 30-minute interval and never past it. So one slow call costs a minute, not
+ * half an hour, and a database that keeps failing is asked about once per
+ * interval within six tries rather than in a loop.
+ */
+export function haltedPageRetryDelayMs(consecutiveStalls: number): number {
+  if (!Number.isFinite(consecutiveStalls) || consecutiveStalls <= 1) return CATCH_UP_DELAY_MS;
+  const doublings = Math.min(Math.floor(consecutiveStalls) - 1, 30);
+  return Math.min(SETTLEMENT_INTERVAL_MS, CATCH_UP_DELAY_MS * 2 ** doublings);
+}
+/**
  * How many per-player credits to hand the server in one batched call.
  *
  * MEASURED 2026-08-19: the settler was LOSING GROUND — over a 56-minute
@@ -88,6 +101,17 @@ export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(resolveClientTimeoutMs(
  * Same budget, same arithmetic, same reason.
  */
 export const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs());
+/**
+ * How long one inner run keeps retrying full batches of due refusals
+ * (2026-10-19). CASH_RETRY_LIMIT bounds each CALL (its commission keys, its
+ * time); this bounds how many calls one run makes, so the retry rate follows
+ * the backlog instead of being fixed at one call a run. Measured on production
+ * 2026-10-19 19:28-20:33: a retry call of 5 accrued sources spent about 0.2 s
+ * in the database, so 30 s is on the order of a hundred calls, 500 sources, a
+ * run; and a run still returns to the page within half a minute plus at most
+ * one call's own 8 s budget.
+ */
+export const CASH_RETRY_DRAIN_BUDGET_MS = 30_000;
 const PERIOD_USER_BATCH_SIZE = 2000;
 const DAEMON_KEY = 'rakeback_settler';
 
@@ -187,6 +211,13 @@ export const MAX_CASH_LANES = 4;
  * that, the page halts and the cursor stays where it is, exactly as for a failed call:
  * the next cycle starts from the same page and the database deduplicates what was
  * already accrued.
+ *
+ * Since 20261019190103 (2026-10-19) the database also defers the items a call has
+ * no time left for: one call spends at most 8 s, so it always answers inside the
+ * engine's 15 s client budget. Those deferrals come with progress - the call settled
+ * what came before them - so CASH_DEFERRAL_RESUBMITS counts resubmissions IN A ROW
+ * that settled nothing. A chunk behind slow row locks clears over several calls that
+ * each make progress; only a run of calls that settle nothing holds the cursor.
  */
 export const CASH_DEFERRAL_RESUBMITS = 3;
 export const CASH_DEFERRAL_PAUSE_MS = 250;
@@ -734,8 +765,12 @@ export class RakebackSettlerService {
    * whole period before any payer stage regardless.
    */
   private readonly openWeekIncomplete = new Map<string, number>();
-  /** Earned by a cycle that acknowledged a page; spent by one first-page retry. */
-  private stalledPageRetryAvailable = false;
+  /**
+   * Cycles in a row that halted without acknowledging a page. It sets how soon
+   * the halted page is tried again (haltedPageRetryDelayMs); a cycle that
+   * acknowledges a page, or finds nothing to do, sets it back to zero.
+   */
+  private consecutiveStalls = 0;
 
   private lifecycleIsCurrent(generation: number): boolean {
     return this.isRunning && this.lifecycleGeneration === generation;
@@ -909,7 +944,7 @@ export class RakebackSettlerService {
     this.catchUpHandle = setTimeout(() => {
       this.catchUpHandle = null;
       this.launchSettlement(generation, 'RakebackSettler.catch_up_run');
-    }, CATCH_UP_DELAY_MS);
+    }, haltedPageRetryDelayMs(this.consecutiveStalls));
     // Never hold the process open for a catch-up tick.
     (this.catchUpHandle as unknown as { unref?: () => void }).unref?.();
   }
@@ -1113,33 +1148,31 @@ export class RakebackSettlerService {
            * FIRST page (no progress) still waits the interval, so a persistent
            * failure never becomes a tight loop against the database.
            */
-          if (result === 'halted' && pagesAcknowledged > 0) {
+          /*
+           * A HALTED PAGE COMES BACK ON THE NEXT SHORT TICK (2026-10-19).
+           * A halt never means the work is done: the halted page, and
+           * everything behind it, is still owed. Until today only a halt after
+           * progress, or the one first-page halt right after a productive
+           * cycle, re-armed the 60 s catch-up; any other first-page halt waited
+           * the full 30-minute interval. Measured live 2026-10-19: one
+           * fn_credit_agent_commissions_batch call ran 16.1 s at 17:02 (two
+           * items waited 8 s each on a profiles row lock held by another
+           * transaction), the client gave up at 15 s, the cycle had made no
+           * progress before it, and the next settler activity was 17:29:59 -
+           * cash accrual stood still for half an hour behind one slow call.
+           * Every halt now re-arms the catch-up. A persistent failure still
+           * never becomes a tight loop: halts with no acknowledged page in
+           * between back off from 60 s, doubling, to the interval itself
+           * (haltedPageRetryDelayMs), and the first acknowledged page resets it.
+           */
+          if (result === 'halted') {
             backlogRemains = true;
+            if (pagesAcknowledged === 0) this.consecutiveStalls++;
+            else this.consecutiveStalls = 0;
             console.warn(
               `[RakebackSettler] drain halted after ${pagesAcknowledged} acknowledged source page(s) - ` +
-                `backlog remains; resuming in ${CATCH_UP_DELAY_MS / 1000}s instead of waiting the full interval`
-            );
-            break;
-          }
-          /*
-           * ONE RETRY AFTER A STALLED FIRST PAGE, AND ONLY ONE (2026-09-26).
-           * A page can halt with its work already durable: a credit chunk the
-           * client abandoned at DB_TIMEOUT_MS commits server-side, and the
-           * retry replays it in milliseconds and moves on. Measured live
-           * 09:12-09:14Z: a productive cycle (3 pages, 40 s each) was followed
-           * by a first-page 'Cash source batch failed' timeout, and the drain
-           * then idled for the full 30-minute interval. So the cycle right
-           * after a productive one earns ONE 60 s retry of a first-page halt.
-           * The allowance is spent by that retry and restored only by a cycle
-           * that acknowledges a page, so a persistent failure still falls back
-           * to the interval after a single extra attempt.
-           */
-          if (result === 'halted' && pagesAcknowledged === 0 && this.stalledPageRetryAvailable) {
-            this.stalledPageRetryAvailable = false;
-            backlogRemains = true;
-            console.warn(
-              `[RakebackSettler] drain halted on its first page right after a productive cycle - ` +
-                `one retry in ${CATCH_UP_DELAY_MS / 1000}s; a second stall waits the full interval`
+                `backlog remains; retrying the halted page in ` +
+                `${haltedPageRetryDelayMs(this.consecutiveStalls) / 1000}s`
             );
             break;
           }
@@ -1154,8 +1187,7 @@ export class RakebackSettlerService {
             break;
           }
         }
-        if (pagesAcknowledged > 0) this.stalledPageRetryAvailable = true;
-        else if (!backlogRemains) this.stalledPageRetryAvailable = false;
+        if (pagesAcknowledged > 0 || !backlogRemains) this.consecutiveStalls = 0;
         this.scheduleCatchUp(backlogRemains, generation);
         // One server coordinator owns the schedule, financial stages, invoices,
         // notices and retries. Its receipt is the completion authority.
@@ -1784,6 +1816,60 @@ export class RakebackSettlerService {
     }
   }
 
+  /**
+   * Retry due durable refusals for up to CASH_RETRY_DRAIN_BUDGET_MS, one small
+   * call after another, while each call comes back full and settled something.
+   *
+   * Stops at the first call that is short (the due queue is drained), that
+   * settled nothing (every source it chose was deferred for a busy key), when
+   * the budget is spent, when the maintenance freeze begins, or when the
+   * service is stopping. The first call failing throws, exactly as the single
+   * call did (the run halts and backs off). A later call failing ends the
+   * drain instead: every source an earlier call settled is already durable and
+   * acknowledged here, and the failed call's sources stay in their queue.
+   * `lastCallFull` says whether the queue may hold more (the #7439 backlog rule).
+   */
+  private async drainCashSourceRetries(): Promise<{
+    receipts: CashSourceReceipt[];
+    lastCallFull: boolean;
+  }> {
+    const receipts: CashSourceReceipt[] = [];
+    const deadline = Date.now() + CASH_RETRY_DRAIN_BUDGET_MS;
+    let deferredTotal = 0;
+    let lastCallFull = false;
+    for (let call = 0; ; call++) {
+      let retried: { receipts: CashSourceReceipt[]; deferred: string[] };
+      try {
+        const { data, error } = await supabase.rpc('fn_retry_cash_accounting_sources', {
+          p_limit: CASH_RETRY_LIMIT,
+        });
+        if (error) throw new Error('Cash source retry failed', { cause: error });
+        retried = readCashSourceBatchOutcome(data);
+        if (retried.receipts.length + retried.deferred.length > CASH_RETRY_LIMIT)
+          throw new Error('Cash retry exceeded its requested source bound');
+        await confirmCashSourceRefusals(retried.receipts);
+      } catch (error) {
+        if (call === 0) throw error;
+        reportError(error, 'RakebackSettler.source_retry_drain_ended');
+        lastCallFull = true;
+        break;
+      }
+      receipts.push(...retried.receipts);
+      deferredTotal += retried.deferred.length;
+      lastCallFull = retried.receipts.length + retried.deferred.length === CASH_RETRY_LIMIT;
+      if (!lastCallFull || retried.receipts.length === 0) break;
+      if (Date.now() >= deadline || isMaintenanceFrozen() || !this.acceptingSettlements) break;
+    }
+    // A deferred retry keeps its blocked work row exactly as it was (no attempt is
+    // spent) and is among the first due sources again; it is not this cursor's.
+    if (deferredTotal > 0)
+      console.log(
+        `[RakebackSettler] ${deferredTotal} retried cash source(s) deferred: a commission key ` +
+          `was busy or the call ran out of time; they stay first in the retry queue`
+      );
+    return { receipts, lastCallFull };
+  }
+
   private async _runSettlementInner(): Promise<CycleResult> {
     // On first run after (re)start, resume from the durable cursor so we do not
     // re-scan already-settled rake_records (which double-counts player_stats).
@@ -1802,26 +1888,22 @@ export class RakebackSettlerService {
     // Retry durable refusals independently of the global cursor. The same
     // source authority restores commissions, original player stats and the
     // existing weekly recomputation queue before acknowledging a retry.
+    //
+    // THE RETRY DRAINS WHAT IS DUE, NOT FIVE A RUN (2026-10-19). One call of
+    // CASH_RETRY_LIMIT per inner run retried 5 sources a run while 12,135
+    // Midway sources sat due after their cause was fixed: 20 retries in 30
+    // minutes, about 300 hours to drain. A run now keeps calling while each
+    // call comes back full and made progress, for up to
+    // CASH_RETRY_DRAIN_BUDGET_MS. Each call is still one small transaction of
+    // CASH_RETRY_LIMIT sources inside the database's own 8 s call budget, so
+    // every commission key is handed back between calls. See
+    // drainCashSourceRetries().
     let retriedSources: CashSourceReceipt[];
     let retryBatchFull = false;
     try {
-      const { data, error } = await supabase.rpc('fn_retry_cash_accounting_sources', {
-        p_limit: CASH_RETRY_LIMIT,
-      });
-      if (error) throw new Error('Cash source retry failed', { cause: error });
-      const retried = readCashSourceBatchOutcome(data);
-      retriedSources = retried.receipts;
-      if (retried.receipts.length + retried.deferred.length > CASH_RETRY_LIMIT)
-        throw new Error('Cash retry exceeded its requested source bound');
-      retryBatchFull = retried.receipts.length + retried.deferred.length === CASH_RETRY_LIMIT;
-      await confirmCashSourceRefusals(retriedSources);
-      // A deferred retry keeps its blocked work row exactly as it was (no attempt is
-      // spent) and is the oldest due source again next cycle; it is not this cursor's.
-      if (retried.deferred.length > 0)
-        console.log(
-          `[RakebackSettler] ${retried.deferred.length} retried cash source(s) deferred: a commission key ` +
-            `was busy; they stay first in the retry queue`
-        );
+      const drained = await this.drainCashSourceRetries();
+      retriedSources = drained.receipts;
+      retryBatchFull = drained.lastCallFull;
     } catch (error) {
       reportError(error, 'RakebackSettler.source_retry_holds_cursor');
       return 'halted';
@@ -1938,6 +2020,12 @@ export class RakebackSettlerService {
           // Deferred sources are submitted again, in page order, before the page
           // can be acknowledged (see CASH_DEFERRAL_RESUBMITS).
           let pending = ids;
+          // Resubmissions in a row that settled nothing. A call that settles
+          // anything resets it: since 20261019190103 the database also defers
+          // the items a call has no time left for, so a chunk behind slow row
+          // locks clears over several calls that each make progress, and only
+          // a run of calls that settle nothing holds the cursor.
+          let fruitlessResubmissions = 0;
           for (let submission = 0; ; submission++) {
             const { data, error } = await supabase.rpc('fn_credit_agent_commissions_batch', {
               p_items: pending.map((id) => ({ source_type: 'cash_rake_record', source_id: id })),
@@ -1947,7 +2035,9 @@ export class RakebackSettlerService {
             await confirmCashSourceRefusals(receipts);
             sources.push(...receipts);
             if (deferred.length === 0) break;
-            if (submission >= CASH_DEFERRAL_RESUBMITS)
+            fruitlessResubmissions =
+              submission > 0 && receipts.length === 0 ? fruitlessResubmissions + 1 : 0;
+            if (fruitlessResubmissions >= CASH_DEFERRAL_RESUBMITS)
               throw new Error(
                 `${deferred.length} cash source(s) still deferred for a busy commission key after ` +
                   `${submission + 1} submissions; holding the cursor`

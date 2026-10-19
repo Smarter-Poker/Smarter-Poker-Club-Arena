@@ -1,5 +1,5 @@
 -- Production text of every door these cases measure: md5(pg_get_functiondef(oid))
--- read-only on 2026-10-19 ~15:45 UTC, pinned in replay-locks-and-player-stats-keys.manifest.json; the runner refuses to
+-- read-only on 2026-10-19 ~15:45 UTC (the batch re-read ~19:40 UTC, after 20261019171753), pinned in replay-locks-and-player-stats-keys.manifest.json; the runner refuses to
 -- measure unless each loaded body still has that md5. Generated, not edited.
 
 CREATE OR REPLACE FUNCTION public.fn_ca_lock_mtt_admission_contract()
@@ -475,7 +475,7 @@ CREATE OR REPLACE FUNCTION public.fn_credit_agent_commissions_batch(p_items json
  SET statement_timeout TO '300s'
 AS $function$
 DECLARE it jsonb;r jsonb;receipts jsonb:='[]';record_id uuid;v_ok int:=0;v_failed int:=0;v_blocked int:=0;first_error text;v_gate uuid;
- v_n bigint;v_clubs uuid[];v_sets jsonb:='[]';v_need uuid[]:='{}';v_held uuid[]:='{}';v_deferred jsonb:='[]';v_lock_timeout text;
+ v_n bigint;v_clubs uuid[];v_sets jsonb:='[]';v_need uuid[]:='{}';v_held uuid[]:='{}';v_deferred jsonb:='[]';v_lock_timeout text;v_wait_until timestamptz;
 BEGIN
  IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'cash_source_not_authorised' USING ERRCODE='42501'; END IF;
  IF p_items IS NULL OR jsonb_typeof(p_items)<>'array' OR jsonb_array_length(p_items)>2000 THEN
@@ -489,8 +489,8 @@ BEGIN
  -- item, in page order, held a later club while waiting for an earlier one:
  -- 40P01 against a finish (2026-10-19 07:28:34). So the keys every item needs
  -- are taken here, in club order: a free key at once, a busy one waited for
- -- at most 1 s while holding only lower keys, which no finish waits for. A key
- -- not granted in that time ends the walk, and never fails the batch whole
+ -- within one 1 s budget while holding only lower keys, which no finish waits
+ -- for. A key not granted is skipped (below) and never fails the batch whole
  -- (2026-10-01 00:07:30). An item whose clubs are not all held is not run and
  -- not refused: it writes nothing and is returned in 'deferred', and the
  -- settler submits it again before its cursor may pass it.
@@ -509,18 +509,29 @@ BEGIN
   v_need:=v_need||v_clubs;
  END LOOP;
  v_need:=ARRAY(SELECT DISTINCT g FROM unnest(v_need) g ORDER BY g);
+ -- A BUSY KEY IS SKIPPED, NOT THE END OF THE WALK (2026-10-19, 20261019171753).
+ -- Ending the walk at the first busy key deferred every item behind it in club
+ -- order, including items that need none of the busy clubs: one busy Midway key
+ -- (the lowest uuids) deferred every Lightning item, every call. The walk now
+ -- goes on past a busy key. Keys are still only ever waited for in club order,
+ -- and only for a key above every key already held, so the gaps keep one total
+ -- order; the waits share one 1 s budget per call.
+ v_wait_until:=clock_timestamp()+interval '1 second';
  FOREACH v_gate IN ARRAY v_need LOOP
-  IF NOT pg_try_advisory_xact_lock(hashtextextended('agent-commission:'||v_gate::text,0)) THEN
+  IF pg_try_advisory_xact_lock(hashtextextended('agent-commission:'||v_gate::text,0)) THEN
+   v_held:=v_held||v_gate;
+  ELSIF clock_timestamp()<v_wait_until THEN
    BEGIN
     v_lock_timeout:=current_setting('lock_timeout');
-    PERFORM set_config('lock_timeout','1s',true);
+    PERFORM set_config('lock_timeout',
+     GREATEST(1,ceil(extract(epoch FROM v_wait_until-clock_timestamp())*1000))::bigint::text||'ms',true);
     PERFORM pg_advisory_xact_lock(hashtextextended('agent-commission:'||v_gate::text,0));
     PERFORM set_config('lock_timeout',v_lock_timeout,true);
+    v_held:=v_held||v_gate;
    EXCEPTION WHEN lock_not_available OR deadlock_detected THEN
-    EXIT;
+    NULL;
    END;
   END IF;
-  v_held:=v_held||v_gate;
  END LOOP;
  FOR it,v_n IN SELECT value,ordinality FROM jsonb_array_elements(p_items) WITH ORDINALITY LOOP
   v_clubs:=ARRAY(SELECT g::uuid FROM jsonb_array_elements_text(v_sets->(v_n::int-1)) g);

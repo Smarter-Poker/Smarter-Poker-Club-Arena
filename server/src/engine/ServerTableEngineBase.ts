@@ -5659,9 +5659,12 @@ export abstract class ServerTableEngineBase {
 
   /**
    * One pass of a table parked at a halt gate: finish any departure the
-   * player asked for, acknowledge the halt, and let an EMPTY table on a
-   * closed Cluster row end its engine. Nothing here deals, moves a seat the
-   * player did not ask to move, or touches a stack.
+   * player asked for, give a busted horse its input device, acknowledge the
+   * halt, and let an EMPTY table on a closed Cluster row end its engine.
+   * Nothing here deals or moves a seat the player did not ask to move. The
+   * one stack this pass may touch is a busted horse's own: its treasury
+   * rebuy or its exit, the decision a person at the same anchor makes with
+   * the top-up and Stop Playing buttons (see recoverBustedHorsesWhileHalted).
    *
    * `stopIfClusterTableClosed` belongs here because both halt branches
    * `continue` before the line that used to reach it, so a halted table that
@@ -5687,6 +5690,8 @@ export abstract class ServerTableEngineBase {
     }
     await this.completeQueuedLeavesWhileHalted();
     if (!this.lifecycleCanMutate()) return;
+    await this.recoverBustedHorsesWhileHalted();
+    if (!this.lifecycleCanMutate()) return;
     await this.observeDealingHalt();
     if (!this.lifecycleCanMutate()) return;
     await this.stopIfClusterTableClosed().catch((err) =>
@@ -5700,6 +5705,36 @@ export abstract class ServerTableEngineBase {
    */
   protected async completeQueuedLeavesWhileHalted(): Promise<void> {
     /* The quiet loop runs its own sweep above its gate; nothing to take here. */
+  }
+
+  /**
+   * ═════════════════════════════════════════════════════════════════════════
+   *  A LIGHTNING ANCHOR'S BUSTED HORSE IS STILL A HORSE (2026-10-19, 10.5)
+   * ═════════════════════════════════════════════════════════════════════════
+   *
+   * A Cluster's halt parks every anchor table for as long as the Cluster is
+   * Lightning, and the parked pass is the only loop such a table runs. At an
+   * ordinary cash table a busted horse is rebought from the club treasury or
+   * stood up - Settlement step 5, and `recoverBustedSeatedHorses` on every
+   * idle pass. Neither ever ran at a parked anchor, so a horse that busted in
+   * a Lightning hand sat in the pool on a zero stack for good: never dealt,
+   * never rebought, never released, still counted in the pool. Measured
+   * 2026-10-19 on the private Action pilot: 33 of 37 open pool sessions,
+   * every one a horse, none rebought, the oldest stuck since 21:21Z.
+   *
+   * A person at the same anchor has the top-up and Stop Playing buttons. A
+   * horse has no browser, so the engine is its input device (10.5, the one
+   * legitimate horse branch) and it makes the SAME decision the ordinary
+   * table makes for it: inside the temperament's stop-loss, a treasury rebuy;
+   * otherwise, or when the treasury cannot pay, the one busted-seat door out,
+   * whose departure exits the pool session (the anchor-seat trigger).
+   *
+   * ServerTableEngineDealing overrides this with that shared recovery, so it
+   * runs from both halt gates (the dealing loop's and the start-up wait
+   * loop's): they are one engine object. The base holds no horse recovery.
+   */
+  protected async recoverBustedHorsesWhileHalted(): Promise<void> {
+    /* ServerTableEngineDealing owns horse bust recovery; see its override. */
   }
 
   /**

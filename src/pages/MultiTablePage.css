@@ -887,6 +887,15 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
      Every size inside is cqw of the console, so the art and the type double
      with the width; a phone that cannot fit 680px gets doubled type below. */
   width: min(680px, calc(100vw - 24px));
+  /* THE SHEET NEVER RUNS OFF THE SCREEN (2026-10-19). It is fixed under the
+     tab bar and had no height limit, so five rows with full two-line names
+     (at the phone's doubled type) passed the bottom of a 393x852 phone, and
+     on a 375x667 phone the old one-line rows already did: the last rows and
+     "Browse Full Lobby" could not be reached. It scrolls inside the screen
+     instead, frame and all. */
+  max-height: calc(100dvh - 56px - env(safe-area-inset-top, 0px) - 12px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   /* metallic-popups.css names this class too - see the session ledger above
      for why every longhand is restated at !important. */
   padding: 0 !important;
@@ -923,10 +932,20 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    rim and a white wash - a frame inside a frame, five of them stacked. A row
    on the console is a rule cut into the glass; the row is still the button, so
    it keeps its full width and its hit target. */
+/* THE FULL TABLE NAME, AT EVERY WIDTH (2026-10-19). The phone layout below
+   gave the name its own line on 2026-10-17; the desktop sheet still sat it
+   beside its tag, stakes, seats and Join, which left it under half the row.
+   Rendered at 1280px with the longest live Midway Union names, every row cut
+   to "Short Deck ..." or "PLO 0.25/0....", so no row said whether it was
+   Action, Madness or Classic. The row now wraps at every width: the name
+   across the full row (and onto a second line if it needs one, never cut),
+   the reason beneath it, then stakes and seats with Join at the right. */
 .multi-table-page__quickjoin-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 3cqw;
+  row-gap: 1.2cqw;
   width: 100%;
   padding: 2.6cqw 1cqw;
   appearance: none;
@@ -952,6 +971,17 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   background-image: none !important;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%) !important;
   transform: none !important;
+}
+
+/* THE RULE SITS HALFWAY BETWEEN TWO ROWS (2026-10-19). The console body
+   spaces its children 3cqw apart (SpadeConsole.css `.sc__body`), and a row's
+   engraved rule is its own top border, so that space landed under every Join
+   and above every rule: 37px below a row's last line, 18px above the next
+   name, measured at 1280px. Taking the body's spacing back between two rows
+   leaves each row's own padding on both sides of its rule. The space before
+   "Browse Full Lobby" is not between two rows and is untouched. */
+.multi-table-page__quickjoin-row + .multi-table-page__quickjoin-row {
+  margin-top: -3cqw;
 }
 
 .multi-table-page__quickjoin-row:first-of-type,
@@ -981,21 +1011,28 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    The duplicate `display/align-items/gap` block that used to follow this one
    is gone with it; the rule was written out twice, verbatim. */
 .multi-table-page__quickjoin-name {
-  flex: 1;
+  flex: 1 1 100%;
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2cqw;
-  overflow: hidden;
+  row-gap: 0.6cqw;
   font-size: 2.9cqw;
   font-weight: 700;
 }
 
+/* A NAME IS NEVER CUT OFF (2026-10-19). The ellipsis kept one line at the
+   cost of the word that names the game; a 32-character live name lost
+   "Feeder" on a phone and "0.50/1 Madness Feeder" on the desktop. It wraps
+   onto a second line instead, which every row has room for. */
 .multi-table-page__quickjoin-label {
+  flex: 1 1 100%;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  /* Two balanced lines, never "Action Main" over a lone "4". */
+  text-wrap: balance;
 }
 
 /* WHY this row is where it is. Dan 2026-08-23 asked for Quick Join to lead
@@ -1049,6 +1086,7 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
    control inside a control. */
 .multi-table-page__quickjoin-cta {
   flex-shrink: 0;
+  margin-left: auto;
   font-size: 2.6cqw;
   font-weight: 800;
   letter-spacing: 0.14em;

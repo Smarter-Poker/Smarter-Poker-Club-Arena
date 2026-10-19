@@ -292,6 +292,10 @@ import {
   type StageResumeDue,
 } from './tournament/stageResumeSchedule.js';
 import { ENGINE_RELEASE_IDENTITY } from './releaseIdentity.js';
+import {
+  closeTerminalFinishLanes,
+  openTerminalFinishLanes,
+} from './tournament/terminalSettlementRpc.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -3945,6 +3949,7 @@ export class GameServer {
     this.running = true;
     this.leaderBootComplete = false;
     this.resetDealerPrerequisiteGate(generation);
+    openTerminalFinishLanes();
     const operation = this.performStart(generation);
     this.startOperation = operation;
     void operation
@@ -4453,6 +4458,11 @@ export class GameServer {
     this.leaderBootComplete = false;
     this.revokeDealerPrerequisites(stoppingGeneration);
     this.lifecycleGeneration += 1;
+    // Before the first await: no finish still queued in a club's finish lane
+    // is sent once shutdown has begun, so the manager stops below wait for at
+    // most the one finish each club has in the database, never for the whole
+    // queue of decided events (2026-10-19; see closeTerminalFinishLanes).
+    closeTerminalFinishLanes();
     console.log('[GameServer] Shutting down...');
 
     // Revoke every manager callback before the first shutdown await, but retain
@@ -4475,6 +4485,20 @@ export class GameServer {
     externalOwnership?: Promise<ExternalShutdownOwnershipResult>
   ): Promise<void> {
     const ownershipFailures: unknown[] = [];
+    /* EVERY SHUTDOWN STEP NAMES ITS OWN TIME (2026-10-19). On 2026-10-19 the
+       graceful shutdown passed its 40-second deadline at four breaks running
+       and the log said only that the deadline passed. Each step below now
+       prints how long it took, and any owned service stop that takes over a
+       second prints its name, so the next overrun names its step. */
+    const shutdownStartedAt = Date.now();
+    let shutdownStepStartedAt = shutdownStartedAt;
+    const markShutdownStep = (step: string): void => {
+      const now = Date.now();
+      console.log(
+        `[GameServer] shutdown step ${step} took ${now - shutdownStepStartedAt}ms (${now - shutdownStartedAt}ms since shutdown began)`
+      );
+      shutdownStepStartedAt = now;
+    };
     type OwnedStopResult =
       | { service: string; status: 'fulfilled' }
       | { service: string; status: 'rejected'; reason: unknown };
@@ -4482,13 +4506,26 @@ export class GameServer {
       service: string,
       stop: () => Promise<void> | void
     ): Promise<OwnedStopResult> => {
+      const stopStartedAt = Date.now();
+      const noteSlowStop = (): void => {
+        const elapsed = Date.now() - stopStartedAt;
+        if (elapsed >= 1_000) {
+          console.log(`[GameServer] shutdown service ${service} took ${elapsed}ms to stop`);
+        }
+      };
       try {
         // Attach both outcomes immediately. A stop rejection must remain part
         // of the ownership certificate without becoming an unhandled
         // rejection while another producer or boot generation is draining.
         return Promise.resolve(stop()).then<OwnedStopResult, OwnedStopResult>(
-          () => ({ service, status: 'fulfilled' }),
-          (reason) => ({ service, status: 'rejected', reason })
+          () => {
+            noteSlowStop();
+            return { service, status: 'fulfilled' };
+          },
+          (reason) => {
+            noteSlowStop();
+            return { service, status: 'rejected', reason };
+          }
         );
       } catch (reason) {
         return Promise.resolve({ service, status: 'rejected', reason });
@@ -4599,6 +4636,7 @@ export class GameServer {
         reportError(error, 'GameServer.start_failed_during_shutdown')
       );
     }
+    markShutdownStep('join-boot');
     // Async starters may have crossed their own final await immediately before
     // observing the generation fence. Stop their timers again after the joined
     // boot so no boot continuation can re-arm a source behind shutdown.
@@ -4620,10 +4658,12 @@ export class GameServer {
     // A starter may have reached its last synchronous start call immediately
     // before observing GameServer's generation fence. Re-fence after the boot
     // promise is joined, and require both stop rounds to settle successfully.
+    markShutdownStep('supporting-services');
     const producerStopResults = await Promise.all([
       ...firstProducerStops,
       ...beginOwnedProducerStops(),
     ]);
+    markShutdownStep('producer-services');
     for (const result of producerStopResults) {
       if (result.status !== 'rejected') continue;
       const error = new AggregateError(
@@ -4634,6 +4674,7 @@ export class GameServer {
       ownershipFailures.push(error);
     }
     const externalOwnershipResult = await externalOwnershipCompletion;
+    markShutdownStep('external-ownership-barrier');
     if (externalOwnershipResult.status === 'rejected') {
       ownershipFailures.push(externalOwnershipResult.reason);
     }
@@ -4686,7 +4727,9 @@ export class GameServer {
     // HTTP/WS admissions have their own registry because they need not begin
     // inside discovery. Only after both sets reach a fixed point can shutdown
     // prove that no lease or engine will appear behind its back.
+    markShutdownStep('realtime-channels');
     await this.drainOwnedLifecycleJobs();
+    markShutdownStep('discovery-and-admission-drain');
 
     // This should add nothing after the generation fence and fixed-point
     // drains. Keep the union defensive and fence it synchronously so a future
@@ -4757,12 +4800,14 @@ export class GameServer {
       // its far edge so teardown still owns the database fence it relies on.
       await this.renewOwnedEngineLeaseProofs();
     }
+    markShutdownStep(`between-hands-drain (${engines.length} table engine(s))`);
 
     /* No heartbeat may race the final fence or exact release. End and join the
        shutdown-only renewal owner, then drain any lease-loss retirement it
        launched before taking authority away from the parked tables. */
     await this.stopShutdownOwnershipLeaseRenewal();
     await this.drainOwnedLifecycleJobs();
+    markShutdownStep('final-lifecycle-drain');
     for (const [, manager] of tournamentManagers) manager.fenceForServerShutdown();
 
     // Stop every dealer and manager in parallel. Manager stop is invoked
@@ -4770,18 +4815,30 @@ export class GameServer {
     // successor. A cleanup error is tolerable only after the engine proves its
     // process scheduler ownership has already been released.
     const engineStops = engines.map((engine) => engine.stop());
-    const managerStops = tournamentManagers.map(([id, manager]) =>
-      this.stopTournamentManagerIfOwned(
+    const managerStopDurations: Array<[tournamentId: string, ms: number]> = [];
+    const managerStops = tournamentManagers.map(([id, manager]) => {
+      const managerStopStartedAt = Date.now();
+      return this.stopTournamentManagerIfOwned(
         id,
         manager,
         'GameServer.shutdown_manager_stop_failed',
         false
-      )
-    );
+      ).finally(() => managerStopDurations.push([id, Date.now() - managerStopStartedAt]));
+    });
     const [engineStopResults, managerStopResults] = await Promise.all([
       Promise.allSettled(engineStops),
       Promise.allSettled(managerStops),
     ]);
+    {
+      const slowest = managerStopDurations
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([id, ms]) => `${id.slice(0, 8)}=${ms}ms`)
+        .join(', ');
+      markShutdownStep(
+        `dealer-and-manager-stops (${engines.length} table engine(s), ${tournamentManagers.length} manager(s)${slowest ? `; slowest managers ${slowest}` : ''})`
+      );
+    }
     for (let index = 0; index < engines.length; index++) {
       const engine = engines[index];
       const tableId = engineTableIds[index];
@@ -4818,6 +4875,7 @@ export class GameServer {
     // is released to a successor process.
     const equityWorkerStop = await (startingEquityWorkerStop ??
       beginOwnedStop('EquityWorkerPool', stopEquityWorkerPool));
+    markShutdownStep('equity-worker-pool');
     if (equityWorkerStop.status === 'rejected') {
       const error = new AggregateError(
         [equityWorkerStop.reason],
@@ -4855,9 +4913,11 @@ export class GameServer {
       reportError(error, 'GameServer.horse_execution_telemetry_shutdown_failed');
       ownershipFailures.push(error);
     }
+    markShutdownStep('horse-workers-and-telemetry');
     await this.handOutboxListener.stop();
     this.handOutboxMetrics.stop();
     await stopHandProjectionWorker();
+    markShutdownStep('hand-outbox-and-projection');
 
     /**
      * Distributed ownership is released only after all code that can deal or
@@ -4905,6 +4965,7 @@ export class GameServer {
       distributedReleaseFailures.push(error);
       reportError(error, 'GameServer.shutdown_tournament_lease_release_unconfirmed');
     }
+    markShutdownStep('cash-and-tournament-lease-release');
     if (distributedReleaseFailures.length > 0) {
       const error = new AggregateError(
         distributedReleaseFailures,
@@ -4924,6 +4985,7 @@ export class GameServer {
     await releaseLeadership();
     // Renewal is over once the leases are released; close its sessions.
     await stopLeaseHeartbeatSessions();
+    markShutdownStep('leadership-release');
 
     // Phase 1.1 PR-5: no Supabase Realtime channels to clean up — engine
     // WebSocket server (EngineWebSocketServer.close()) handles its own
@@ -8478,6 +8540,11 @@ export class GameServer {
           this.completingFirstSeenAt = dwell.seenAt;
           const dueIds = new Set(dwell.due);
           for (const stuck of stuckTournaments || []) {
+            // Each recovery is several serial round trips. A pass over a large
+            // COMPLETING board must not hold shutdown's discovery drain open
+            // for the rest of the board: stop at the fence, as every other
+            // per-event loop in this pass does.
+            if (!this.directAdmissionIsCurrent(generation)) break;
             if (!dueIds.has(String(stuck.id))) continue;
             /* A MANAGER THAT NEVER CAME BACK (2026-09-06). See
                managerHasOverstayed. Past the grace the registered manager is

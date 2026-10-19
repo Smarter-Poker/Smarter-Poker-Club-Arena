@@ -87,7 +87,7 @@ export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(resolveClientTimeoutMs(
  * a queue of 150 permanently-refused sources held 264,835 records hostage.
  * Same budget, same arithmetic, same reason.
  */
-const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs());
+export const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs());
 const PERIOD_USER_BATCH_SIZE = 2000;
 const DAEMON_KEY = 'rakeback_settler';
 
@@ -1803,6 +1803,7 @@ export class RakebackSettlerService {
     // source authority restores commissions, original player stats and the
     // existing weekly recomputation queue before acknowledging a retry.
     let retriedSources: CashSourceReceipt[];
+    let retryBatchFull = false;
     try {
       const { data, error } = await supabase.rpc('fn_retry_cash_accounting_sources', {
         p_limit: CASH_RETRY_LIMIT,
@@ -1812,6 +1813,7 @@ export class RakebackSettlerService {
       retriedSources = retried.receipts;
       if (retried.receipts.length + retried.deferred.length > CASH_RETRY_LIMIT)
         throw new Error('Cash retry exceeded its requested source bound');
+      retryBatchFull = retried.receipts.length + retried.deferred.length === CASH_RETRY_LIMIT;
       await confirmCashSourceRefusals(retriedSources);
       // A deferred retry keeps its blocked work row exactly as it was (no attempt is
       // spent) and is the oldest due source again next cycle; it is not this cursor's.
@@ -1906,7 +1908,15 @@ export class RakebackSettlerService {
       : null;
     // Ask again after every nonempty page, including short responses. The
     // bounded drain/catch-up loop stops only after an actually empty range.
-    const backlogMayRemain = sourceRows.length > 0;
+    //
+    // THE RETRY QUEUE IS BACKLOG TOO (2026-10-19). A cycle whose page was empty
+    // used to report 'idle' even when the retry had just returned a full batch,
+    // so the settler slept its 30-minute interval with the refusal queue still
+    // due: on 2026-10-19 ~700 due refusals were retried at 5 per inner run, two
+    // runs per half hour, and Midway receipts refused once by a lock waited
+    // behind them for most of a day. A full retry batch now keeps the same
+    // bounded drain (MAX_DRAIN_BATCHES, then the 60 s catch-up) running.
+    const backlogMayRemain = sourceRows.length > 0 || retryBatchFull;
 
     // Submit each positive cash record exactly once, even when its hand or
     // attribution is absent. The database alone decides whether its original

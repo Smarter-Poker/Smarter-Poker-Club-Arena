@@ -330,3 +330,8 @@ print(json.dumps({'passed': sum(1 for c in results['checks'] if c['passed']),
                   'total': len(results['checks']),
                   'output': str(out / 'RESULTS.json'),
                   'owned_cluster_removed': results['owned_cluster_removed']}))
+
+# The rakeback week-close proof (migration 20261019092211) runs inside this
+# required accounting shard-1 step, so the workflow's pinned bytes stay
+# unchanged. It owns its own disposable cluster and fails this step if it fails.
+subprocess.run(['python3', '-B', str(ROOT / 'scripts/ci/test-rakeback-week-closes-in-los-angeles.py')], check=True)

@@ -8384,6 +8384,24 @@ export abstract class ServerTableEngineBase {
         });
       }
     });
+    /**
+     * THE CLOCK STARTS WHEN THE PARK ENDS, WHOEVER ENDED IT (2026-10-19).
+     *
+     * releasePauseGate() credits a parked table when an authority lifts the
+     * gate. The gate has a second exit that never went through it: the safety
+     * timeout above resolves the promise itself, and the loop came back
+     * carrying a clock that had last moved before the park began - a table
+     * told to stop for a five-minute break re-entered the loop reading five
+     * minutes stale, the same instant-condemnation shape as the deal hold
+     * (#7426) and the admin lock (waitOneAdminLockSlice).
+     *
+     * Stamped here, after the await, so it is earned by THIS loop returning
+     * from the gate - never by a resume reaching a table that was frozen
+     * somewhere else (the 2026-09-18 rule in releasePauseGate still holds:
+     * a loop that never awaited the gate never reaches this line). From here
+     * the table owes the 180 s clock exactly like any other.
+     */
+    if (this.lifecycleCanMutate()) this.markProgress();
   }
 
   /**

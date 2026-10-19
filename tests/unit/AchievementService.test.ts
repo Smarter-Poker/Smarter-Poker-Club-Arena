@@ -157,11 +157,80 @@ describe('AchievementService', () => {
       expect(achievementService.getById('nonexistent')).toBeUndefined();
     });
 
-    it('should find royal_flush with chipReward', () => {
+    it('should find royal_flush paying 500 diamonds, proved by the server', () => {
       const a = achievementService.getById('royal_flush');
       expect(a).toBeDefined();
-      expect(a!.chipReward).toBe(500);
+      expect(a!.diamondReward).toBe(500);
+      expect(a!.serverProved).toBe(true);
       expect(a!.rarity).toBe('legendary');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DIAMOND REWARDS (2026-10-19)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  describe('diamond rewards', () => {
+    it('pays exactly royal_flush 500, streak_30 100 and streak_100 500, and nothing in chips', () => {
+      const paying = ACHIEVEMENTS.filter((a) => (a.diamondReward ?? 0) > 0)
+        .map((a) => `${a.id}=${a.diamondReward}`)
+        .sort();
+      expect(paying).toEqual(['royal_flush=500', 'streak_100=500', 'streak_30=100']);
+      for (const a of ACHIEVEMENTS) expect(a).not.toHaveProperty('chipReward');
+    });
+
+    it('only a server-proved achievement carries a reward', () => {
+      for (const a of ACHIEVEMENTS) {
+        if ((a.diamondReward ?? 0) > 0) expect(a.serverProved, a.id).toBe(true);
+      }
+    });
+
+    it('never sends a server-proved achievement from the browser', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      for (const id of ['royal_flush', 'streak_7', 'streak_30', 'streak_100']) {
+        await expect(achievementService.incrementProgress('u1', id, 1)).resolves.toEqual({
+          unlocked: false,
+        });
+        await expect(achievementService.incrementProgressTo('u1', id, 999)).resolves.toEqual({
+          unlocked: false,
+        });
+        await achievementService.setProgress('u1', id, 999);
+      }
+      expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('reads the login result the server reports, crediting only what it says it paid', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: {
+          ok: true,
+          counted: true,
+          streak: 30,
+          unlocked: [
+            { achievement_id: 'streak_7', diamonds_awarded: 0 },
+            { achievement_id: 'streak_30', diamonds_awarded: 100 },
+            { achievement_id: 'not_an_achievement', diamonds_awarded: 9999 },
+          ],
+        },
+        error: null,
+      } as never);
+      const login = await achievementService.recordLogin();
+      expect(supabase.rpc).toHaveBeenCalledWith('fn_achievement_record_login');
+      expect(login.counted).toBe(true);
+      expect(login.streak).toBe(30);
+      expect(login.unlocked.map((u) => `${u.achievement.id}=${u.diamondsAwarded}`)).toEqual([
+        'streak_7=0',
+        'streak_30=100',
+      ]);
+    });
+
+    it('a refused login count throws rather than reading as zero', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      vi.mocked(supabase.rpc).mockResolvedValueOnce({
+        data: null,
+        error: { message: 'permission denied' },
+      } as never);
+      await expect(achievementService.recordLogin()).rejects.toBeTruthy();
     });
   });
 });

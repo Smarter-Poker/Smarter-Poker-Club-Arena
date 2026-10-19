@@ -31,3 +31,31 @@ behaviour changed. Regression: the device-welcome case fails before (the tap
 never lands and the run is unknown) and passes after; the not-offered,
 covered, soft-ask and refusal-code cases pass; the 132 witness operator tests
 pass.
+
+## The entry-door reading survives its own failure
+
+The first run with the reader (39306906465, 19:02Z) stopped inside the entry
+door phase about ten seconds in, and the report carried no door evidence: the
+reader returned its observation only on success, so a failure while answering
+a layer discarded everything it had seen. The reader now writes each
+observation into the report as it happens, names the last control it reached
+(welcome dialog, agree, agree read-back, enter, closed, or Not Now), and keeps
+the Playwright failure as a fixed class only (intercepted, outside viewport,
+not visible, not enabled, not stable, still shown, strict mode, navigated,
+closed, timeout or other). The agree read-back is bounded to three seconds
+instead of a single immediate read. Nothing was tapped beyond the welcome's
+own controls in that run: no join, hold, seat, pool or wallet change.
+
+## The normal buy-in sends a null club
+
+With the door reader in place, run 39312801627 (19:41Z) acknowledged the
+device welcome, joined (seat at table 2cb9fe85), and sent exactly one normal
+Buy Chips. Readback: one 4.00 buy-in (wallet 146.78 to 142.78), seat 2 with
+a live occupancy, pool session c5a84f27 and its cash session, and a completed
+receipt for request f56595fa. The witness nevertheless refused the intent: the
+table's normal buy-in sends `p_club_id: null` and lets the door derive the club
+from the table, which the product contract allows, while the witness demanded
+the pilot club UUID. It now accepts the pilot club or null; the club is still
+proven through the owned anchor seat, the table's cluster and the cash
+session, and the receipt must still echo the exact intent (a null in one and a
+club in the other stays unknown). No buy-in was repeated.

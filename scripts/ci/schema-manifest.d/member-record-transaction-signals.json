@@ -1,0 +1,4 @@
+{
+  "_owner": "Supabase billing reduction; promised by 20261019151807. Installation and actual reduced message rate require independent readback.",
+  "functions": ["fn_publish_member_record_topic"]
+}

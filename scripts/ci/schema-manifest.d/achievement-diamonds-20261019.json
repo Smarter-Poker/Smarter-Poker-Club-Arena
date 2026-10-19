@@ -1,0 +1,11 @@
+{
+  "_owner": "feat/achievement-diamonds-20261019",
+  "_comment": "Migration 20261019155445: achievements pay diamonds from server evidence. Installed after merge through Apply Merged Migration.",
+  "tables": [],
+  "functions": [
+    "fn_achievement_unlock_server",
+    "fn_achievement_record_login",
+    "tr_hand_history_royal_flush_achievement"
+  ],
+  "columns": { "training_achievement_definitions": ["evidence"] }
+}

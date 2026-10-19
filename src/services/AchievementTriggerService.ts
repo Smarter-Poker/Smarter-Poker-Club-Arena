@@ -9,7 +9,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { ownProfile } from '../lib/ownProfile';
 import { achievementService, type Achievement } from './AchievementService';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
@@ -19,7 +18,8 @@ import { reportError } from '../utils/errorReporter';
 // ════════════════════════════════════════════════════════════════════════════════════
 interface TriggerResult {
   triggeredAchievements: Achievement[];
-  chipsAwarded: number;
+  /** Diamonds the SERVER credited for these unlocks (never a client estimate). */
+  diamondsAwarded: number;
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════
@@ -58,7 +58,7 @@ class AchievementTriggerServiceClass {
   ): Promise<TriggerResult> {
     const result: TriggerResult = {
       triggeredAchievements: [],
-      chipsAwarded: 0,
+      diamondsAwarded: 0,
     };
 
     // 1. Increment hands played
@@ -75,7 +75,6 @@ class AchievementTriggerServiceClass {
     );
     for (const ach of handsPlayedAchievements) {
       result.triggeredAchievements.push(ach);
-      result.chipsAwarded += ach.chipReward || 0;
     }
 
     // 2. If won, check win achievements
@@ -83,7 +82,6 @@ class AchievementTriggerServiceClass {
       const winsResult = await achievementService.checkWins(userId, userProgress.totalWins + 1);
       for (const ach of winsResult) {
         result.triggeredAchievements.push(ach);
-        result.chipsAwarded += ach.chipReward || 0;
       }
     }
 
@@ -92,7 +90,6 @@ class AchievementTriggerServiceClass {
       const specialAch = await achievementService.checkSpecialHand(userId, handData.handRank);
       if (specialAch) {
         result.triggeredAchievements.push(specialAch);
-        result.chipsAwarded += specialAch.chipReward || 0;
       }
     }
 
@@ -116,46 +113,13 @@ class AchievementTriggerServiceClass {
     // way a player found out was a push notification on their phone or by going
     // to /achievements later. Every one of those components was built, mounted
     // and inert.
+    //
+    // Everything recorded from here is a badge the browser reports, and a
+    // badge pays nothing (2026-10-19: only server-proved achievements carry a
+    // reward - the Royal Flush is proved and paid from the engine's own hand
+    // record, and announced by the server's notification).
     for (const ach of result.triggeredAchievements) {
-      masterBus.emit('ACHIEVEMENT_UNLOCKED', {
-        userId,
-        achievementId: ach.id,
-        name: ach.name,
-        icon: ach.icon,
-        rarity: ach.rarity,
-        description: ach.description,
-      });
-      // MilestoneToast is the app-wide surface; it reads title/description/icon.
-      masterBus.emit('MILESTONE_UNLOCKED', {
-        milestoneId: ach.id,
-        userId,
-        milestoneName: ach.name,
-        description: ach.description,
-        icon: ach.icon,
-        // No chip reward is announced: none is paid (no funded source since
-        // the promo pool was retired on 2026-09-03).
-      });
-      /* THE PUSH IS RAISED SERVER-SIDE NOW (2026-08-30, issue #1498).
-       *
-       * This called pushNotificationService.notifyAchievement, which has
-       * delivered nothing since 2026-08-19, when OneSignal was removed from
-       * the platform. Issue #1498 lists EIGHT such flows; this is a NINTH it
-       * missed, because the call was split across lines and every
-       * `pushNotificationService\.(...)` grep used to build that list walked
-       * straight past it.
-       *
-       * It cannot simply be repointed at a working transport from here. The
-       * browser has no write access to `notifications` or `push_outbox` (RLS,
-       * service_role only), and granting it one would be the
-       * arbitrary-recipient spam vector World Hub closed on 2026-07-25.
-       *
-       * `trg_notify_achievement_unlocked` now fires on the NULL to non-NULL
-       * transition of `training_user_achievements.unlocked_at` — the trusted
-       * context that already performs the action. It covers every writer of
-       * that table rather than this one call site, so the next path that
-       * unlocks something cannot forget it, and push-dispatch applies the
-       * consent gate to what it enqueues. Nothing is needed here.
-       */
+      this.announce(userId, ach, 0);
     }
 
     // Daily Missions progress is recorded by the authoritative game server
@@ -186,7 +150,7 @@ class AchievementTriggerServiceClass {
   ): Promise<TriggerResult> {
     const result: TriggerResult = {
       triggeredAchievements: [],
-      chipsAwarded: 0,
+      diamondsAwarded: 0,
     };
 
     // Increment tournament play count
@@ -216,7 +180,7 @@ class AchievementTriggerServiceClass {
   async onFriendAdded(userId: string): Promise<TriggerResult> {
     const result: TriggerResult = {
       triggeredAchievements: [],
-      chipsAwarded: 0,
+      diamondsAwarded: 0,
     };
 
     const friendResult = await achievementService.incrementProgress(userId, 'friends_5');
@@ -234,89 +198,72 @@ class AchievementTriggerServiceClass {
   }
 
   /**
-   * Process login (for login streak achievements)
+   * Celebrate an unlock in-app. AchievementNotification, MilestoneToast
+   * (mounted app-wide in App.tsx) and FriendActivityFeed listen on the bus for
+   * ACHIEVEMENT_UNLOCKED / MILESTONE_UNLOCKED (2026-08-20: nothing emitted
+   * them, so unlocks happened invisibly). `diamonds` is what the server
+   * credited, never an estimate.
+   *
+   * THE PUSH IS RAISED SERVER-SIDE (2026-08-30, issue #1498):
+   * `trg_notify_achievement_unlocked` fires on the NULL to non-NULL transition
+   * of `training_user_achievements.unlocked_at` and now carries the diamonds
+   * paid. The browser has no write access to `notifications` or `push_outbox`,
+   * and push-dispatch applies the consent gate. Nothing is needed here.
    */
+  private announce(userId: string, ach: Achievement, diamonds: number): void {
+    masterBus.emit('ACHIEVEMENT_UNLOCKED', {
+      userId,
+      achievementId: ach.id,
+      name: ach.name,
+      icon: ach.icon,
+      rarity: ach.rarity,
+      description: ach.description,
+      ...(diamonds > 0 ? { diamondReward: diamonds } : {}),
+    });
+    // MilestoneToast is the app-wide surface; it reads title/description/icon.
+    masterBus.emit('MILESTONE_UNLOCKED', {
+      milestoneId: ach.id,
+      userId,
+      milestoneName: ach.name,
+      description: ach.description,
+      icon: ach.icon,
+      ...(diamonds > 0 ? { rewardDiamonds: diamonds } : {}),
+    });
+  }
+
   /**
    * ─────────────────────────────────────────────────────────────────────────
-   * LOGIN STREAKS — once a DAY, not once a PAGE LOAD
+   * LOGIN STREAKS — once a DAY, counted by the SERVER (2026-10-19)
    * ─────────────────────────────────────────────────────────────────────────
-   * This used to loop three streak ids and call `incrementProgress` on each,
-   * serially, EVERY time Supabase raised an auth event. Supabase raises one
-   * on INITIAL_SESSION, on SIGNED_IN and on TOKEN_REFRESHED, so a player
-   * reloading the page advanced "Log in 7 days in a row" seven times in an
-   * afternoon and collected its reward. `streak_30` pays 100 chips and
-   * `streak_100` pays 500, through `add_to_promo_wallet`. Production showed
-   * the tell plainly: 3 of 5 `streak_7` unlocks and 1 of 2 `streak_30`
-   * unlocks carried `unlocked_at` on the SAME DAY the row was created, which
-   * a consecutive-day achievement cannot legitimately do.
+   * Supabase raises an auth event on INITIAL_SESSION, SIGNED_IN and
+   * TOKEN_REFRESHED, so this runs many times a day. On 2026-08-29 it stopped
+   * counting page loads (a reload farmed "Log in 7 days in a row"), but the
+   * day was still decided here and written straight to
+   * profiles.login_streak / last_login_date by the browser - so the streak
+   * behind streak_30 (100 diamonds) and streak_100 (500) was a number the
+   * player could type.
    *
-   * The streak is now a real streak, computed once per UTC day from columns
-   * that already existed and that nothing had ever maintained:
-   *
-   *   profiles.last_login_date  the day we last counted   (all 1,023 stale)
-   *   profiles.login_streak     the run length            (0 on all 1,023)
-   *
-   * Same day  -> nothing happens at all, and that is the whole fix: one
-   *              SELECT and no writes, however many times the page reloads.
-   * Yesterday -> the run continues, streak + 1.
-   * Older     -> the run is broken, back to 1.
-   *
-   * The three achievements are then SET to the real streak rather than
-   * incremented, so they say what their description says. They are written in
-   * parallel — three independent rows, no ordering between them — where the
-   * old loop awaited each in turn.
+   * fn_achievement_record_login now does the whole thing on the server clock
+   * (UTC day): same day -> nothing; yesterday -> streak + 1; older -> 1. It
+   * maintains the two columns itself (browsers no longer hold UPDATE on
+   * them), records streak_7/30/100 at that streak, and pays the reward once
+   * through award_diamonds_v2. This only announces what it reports.
    */
   async onLogin(userId: string): Promise<TriggerResult> {
-    const result: TriggerResult = { triggeredAchievements: [], chipsAwarded: 0 };
+    const result: TriggerResult = { triggeredAchievements: [], diamondsAwarded: 0 };
 
-    const today = new Date().toISOString().slice(0, 10); // UTC calendar day
-
-    // The player's own streak day, which only its owner reads (ruling 25).
-    const { data: profile, error: readErr } = await ownProfile(userId)
-      .select('login_streak, last_login_date')
-      .maybeSingle();
-
-    if (readErr) {
-      reportError(readErr, 'AchievementTriggerService.onLogin.read');
+    let login: Awaited<ReturnType<typeof achievementService.recordLogin>>;
+    try {
+      login = await achievementService.recordLogin();
+    } catch (e) {
+      reportError(e, 'AchievementTriggerService.onLogin');
       return result;
     }
 
-    // Already counted today. Nothing to write, nothing to award.
-    if (profile?.last_login_date === today) return result;
-
-    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-    const continuing = profile?.last_login_date === yesterday;
-    const streak = continuing ? Number(profile?.login_streak || 0) + 1 : 1;
-
-    // Claim the day FIRST. If the achievement writes below fail, the worst
-    // outcome is a streak that did not advance — not a day counted twice.
-    const { error: writeErr } = await supabase
-      .from('profiles')
-      .update({ login_streak: streak, last_login_date: today })
-      .eq('id', userId);
-
-    if (writeErr) {
-      reportError(writeErr, 'AchievementTriggerService.onLogin.claimDay');
-      return result;
-    }
-
-    const streakIds = ['streak_7', 'streak_30', 'streak_100'];
-    const outcomes = await Promise.all(
-      streakIds.map(async (id) => {
-        try {
-          return await achievementService.incrementProgressTo(userId, id, streak);
-        } catch (e) {
-          reportError(e, 'AchievementTriggerService.onLogin');
-          return { unlocked: false } as { unlocked: boolean; achievement?: Achievement };
-        }
-      })
-    );
-
-    for (const outcome of outcomes) {
-      if (outcome.unlocked && outcome.achievement) {
-        result.triggeredAchievements.push(outcome.achievement);
-        result.chipsAwarded += outcome.achievement.chipReward || 0;
-      }
+    for (const { achievement, diamondsAwarded } of login.unlocked) {
+      result.triggeredAchievements.push(achievement);
+      result.diamondsAwarded += diamondsAwarded;
+      this.announce(userId, achievement, diamondsAwarded);
     }
 
     return result;

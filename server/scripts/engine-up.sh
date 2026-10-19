@@ -108,6 +108,38 @@ save_outgoing_log() {
   return 0
 }
 
+# THE OUTGOING LOG IS SAVED AFTER THE REPLACEMENT STARTS (2026-10-19).
+# The dump above used to run between `docker stop` and `docker run`, so every
+# second it took was a second of the five-minute break with no engine at all,
+# spent inside the release's 75-second cutover budget. Measured on engine-01
+# on 2026-10-19 it cost 8-10 s for a 6-9 MB log and 28 s for a 15 MB one; at
+# 16:55 UTC that 28 s is exactly what pushed the cutover past its budget and
+# aborted release 06b920c0, and at 17:55 release 41deda4d missed its final
+# database proof by about one second after spending 8 s here. The log is no
+# less kept: the stopped container is renamed out of the way (its restart
+# policy cleared so a daemon restart cannot revive it), the replacement starts
+# at once, and the rename is dumped and removed in the background. A dump
+# interrupted by anything is retried by the next engine-up, which retires every
+# leftover rename before it touches the serving container.
+OUTGOING_PREFIX="${CONTAINER:-club-arena-engine}-outgoing-"
+
+retire_outgoing_container() {
+  local c="$1"
+  save_outgoing_log "$c" || log "WARN: could not save the outgoing log of $c (continuing)"
+  docker rm "$c" >/dev/null 2>&1 || docker rm -f "$c" >/dev/null 2>&1 \
+    || log "WARN: could not remove the retired container $c"
+}
+
+retire_outgoing_in_background() {
+  # Detached from the caller's stdout and process group: a release proof that
+  # starts the moment the replacement is running must never wait on this.
+  [ "$#" -gt 0 ] || return 0
+  ( set +e
+    for c in "$@"; do retire_outgoing_container "$c"; done
+  ) </dev/null 2>&1 | logger -t engine-up-retire >/dev/null 2>&1 &
+  return 0
+}
+
 # Fail BEFORE touching the running container. A missing env file or image used
 # to be discovered only after the old container was already destroyed, which
 # turned a recoverable mistake into an outage.
@@ -256,6 +288,16 @@ log "replacing $CONTAINER with $AUTHORIZED_CLASS image $AUTHORIZED_IMAGE_ID ($AU
 # SIGTERM; killing it outright loses whatever was mid-flush. Docker's default
 # grace is 10s, which was already found to be too short — it SIGKILLed the
 # engine partway through the flush — hence -t 45.
+# Renames left by an interrupted earlier engine-up are stopped engines whose
+# log was never dumped. Retire them (in the background) before anything else.
+LEFTOVER_OUTGOING=()
+while IFS= read -r leftover; do
+  [ -n "$leftover" ] && LEFTOVER_OUTGOING+=("$leftover")
+done < <(docker container ls -a --filter "name=^/${OUTGOING_PREFIX}" \
+  --filter status=exited --filter status=created --format '{{.Names}}' 2>/dev/null || true)
+retire_outgoing_in_background ${LEFTOVER_OUTGOING[@]+"${LEFTOVER_OUTGOING[@]}"}
+
+OUTGOING_CONTAINER=''
 if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   log "stopping $CONTAINER (SIGTERM, 45s grace for snapshot flush)"
   docker stop -t 45 "$CONTAINER" >/dev/null 2>&1 || true
@@ -268,8 +310,21 @@ if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   # 5 x 50 MB) to disk, compressed, named by stop time + short id + image, and
   # keep fourteen days or 6 GB, whichever is hit first. Never fatal: a failed
   # dump must not stop the deploy.
-  save_outgoing_log "$CONTAINER" || log "WARN: could not save the outgoing log (continuing)"
-  docker rm "$CONTAINER" >/dev/null 2>&1 || docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  #
+  # 2026-10-19: the dump now runs after the replacement is started (see
+  # retire_outgoing_container). Only if the stopped container cannot be
+  # renamed out of the way is it dumped here, in line, as before.
+  outgoing_id="$(docker inspect -f '{{.Id}}' "$CONTAINER" 2>/dev/null | cut -c1-12 || true)"
+  outgoing_state="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
+  if [[ "$outgoing_id" =~ ^[0-9a-f]{12}$ ]] \
+    && { [ "$outgoing_state" = exited ] || [ "$outgoing_state" = created ]; } \
+    && docker update --restart no "$CONTAINER" >/dev/null 2>&1 \
+    && docker rename "$CONTAINER" "${OUTGOING_PREFIX}${outgoing_id}" >/dev/null 2>&1; then
+    OUTGOING_CONTAINER="${OUTGOING_PREFIX}${outgoing_id}"
+  else
+    save_outgoing_log "$CONTAINER" || log "WARN: could not save the outgoing log (continuing)"
+    docker rm "$CONTAINER" >/dev/null 2>&1 || docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  fi
 fi
 
 # 2026-08-23: OVERRIDE THE IMAGE'S HEALTHCHECK ADDRESS.
@@ -311,3 +366,7 @@ docker run -d \
   "$AUTHORIZED_IMAGE_ID"
 
 log "started $(docker inspect -f '{{.Id}}' "$CONTAINER" | cut -c1-12) from $AUTHORIZED_IMAGE_ID (restart=$RESTART_POLICY)"
+if [ -n "$OUTGOING_CONTAINER" ]; then
+  log "saving the outgoing log of $OUTGOING_CONTAINER in the background"
+  retire_outgoing_in_background "$OUTGOING_CONTAINER"
+fi

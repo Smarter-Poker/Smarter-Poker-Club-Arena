@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 228796,
-      "sha256": "e54667063daef903bf1310787775451fd59da2916b5e8e987bde7f412ae510e4"
+      "bytes": 229121,
+      "sha256": "760beab5dee5f159bb39c79ae884e49b3281e8225885cd07e3be745f0356ba8a"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -173,6 +173,28 @@
     "combinedWorkflow": {
       "bytes": 228796,
       "sha256": "e54667063daef903bf1310787775451fd59da2916b5e8e987bde7f412ae510e4"
+    }
+  },
+  "tournamentWritersLaneInputIdentity20261019": {
+    "reason": "Add the isolated tournament table writer lane qualification (scripts/dev/test-tournament-table-writers-wait-for-their-lane.py) to existing required accounting shard 1. Current workflow input identity only; all financial source, assertions and prior qualification statuses retained. No financial certificate restamp.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 228531,
+          "sha256": "064f1b895db05f3cb6bebd78ed704e9940518a620395bc86e367667617a1abc8"
+        },
+        "current": {
+          "bytes": 228856,
+          "sha256": "9c408d152b8a273e07e417491ef4ef2c2f987ff5384fe8c3f7d078561979ad40"
+        }
+      }
+    }
+  },
+  "ownerFeeCloseWriterLaneIntegration20261019": {
+    "reason": "Merge protected main tournament writer lane qualification while preserving producer 70 percent and original owner fee close qualifications, every prior evidence record and financial input. Only active workflow identity changes; no execution certificate restamp.",
+    "combinedWorkflow": {
+      "bytes": 229121,
+      "sha256": "760beab5dee5f159bb39c79ae884e49b3281e8225885cd07e3be745f0356ba8a"
     }
   }
 }

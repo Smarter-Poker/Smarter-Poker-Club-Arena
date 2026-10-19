@@ -1,129 +1,119 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  ACHIEVEMENTS — a login streak counts DAYS, not page loads
+ *  ACHIEVEMENTS — a login streak counts DAYS, and the SERVER counts them
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Pins the 2026-08-29 fix. `onLogin` ran on every Supabase auth event
- * (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED) and incremented three streak
- * achievements each time, so reloading the page advanced "Log in 7 days in a
- * row". `streak_30` pays 100 chips and `streak_100` pays 500 through
- * `add_to_promo_wallet`. Production carried the proof: 3 of 5 `streak_7`
- * unlocks and 1 of 2 `streak_30` unlocks were stamped `unlocked_at` on the
- * SAME day the row was created.
+ * 2026-08-29: `onLogin` ran on every Supabase auth event (INITIAL_SESSION,
+ * SIGNED_IN, TOKEN_REFRESHED) and incremented three streak achievements each
+ * time, so reloading the page advanced "Log in 7 days in a row". That was fixed
+ * by counting the UTC day - but the day was still decided in the browser and
+ * written straight to profiles.login_streak / last_login_date by it, so the
+ * streak behind streak_30 and streak_100 was a number the player could type.
  *
- * These tests describe the rule, not the implementation: a second visit on the
- * same UTC day must write nothing at all.
+ * 2026-10-19 those two pay DIAMONDS (100 and 500, through award_diamonds_v2),
+ * so the browser no longer touches the streak at all: fn_achievement_record_login
+ * counts the day on the server clock, keeps the columns itself (browser UPDATE
+ * on them is revoked), records the three achievements and pays once. These
+ * tests pin the browser's half: it never writes the profile, it asks the server
+ * exactly once per call, and it announces only what the server says it paid.
+ * The server's half (same day writes nothing, yesterday continues, older
+ * restarts at 1, pays once) is proved on native PostgreSQL by
+ * scripts/ci/test-achievement-diamonds-postgres.py.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const profileRow = { login_streak: 0, last_login_date: null as string | null };
-const updates: Array<Record<string, unknown>> = [];
-const recorded: Array<{ id: string; progress: number }> = [];
+const rpcCalls: string[] = [];
+const tableTouches: string[] = [];
+let loginAnswer: { data: unknown; error: unknown } = { data: null, error: null };
 
 vi.mock('../../src/lib/supabase', () => ({
   getAuthUser: vi.fn(),
   supabase: {
     from: (table: string) => {
-      if (table !== 'profiles') throw new Error('unexpected table ' + table);
-      return {
-        select: () => ({
-          eq: () => ({ maybeSingle: async () => ({ data: { ...profileRow }, error: null }) }),
-        }),
-        update: (patch: Record<string, unknown>) => {
-          updates.push(patch);
-          return { eq: async () => ({ error: null }) };
-        },
-      };
+      tableTouches.push(table);
+      throw new Error('the login path must not touch a table from the browser: ' + table);
     },
-    // The player's own streak day is read through the owner door (ruling 25):
-    // get_my_full_profile() filtered by id, then the columns.
-    rpc: (name: string) =>
-      name === 'get_my_full_profile'
-        ? {
-            eq: () => ({
-              select: () => ({
-                maybeSingle: async () => ({ data: { ...profileRow }, error: null }),
-              }),
-            }),
-          }
-        : Promise.resolve({ data: false, error: null }),
-  },
-}));
-
-vi.mock('../../src/services/AchievementService', () => ({
-  ACHIEVEMENTS: [],
-  achievementService: {
-    incrementProgressTo: async (_u: string, id: string, progress: number) => {
-      recorded.push({ id, progress });
-      return { unlocked: false };
+    rpc: (name: string) => {
+      rpcCalls.push(name);
+      return Promise.resolve(
+        name === 'fn_achievement_record_login' ? loginAnswer : { data: null, error: null }
+      );
     },
   },
 }));
 
-vi.mock('../../src/services/PushNotificationService', () => ({ pushNotificationService: {} }));
-vi.mock('../../src/services/DailyChallengeService', () => ({
-  dailyChallengeService: {},
-  handRankScore: () => 0,
-}));
+const emitted: Array<{ event: string; payload: Record<string, unknown> }> = [];
 vi.mock('../../src/core/MasterBus', () => ({
-  masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
+  masterBus: {
+    emit: (event: string, payload: Record<string, unknown>) => emitted.push({ event, payload }),
+    subscribe: vi.fn(() => vi.fn()),
+  },
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
 import { achievementTriggerService } from '../../src/services/AchievementTriggerService';
-
-const today = () => new Date().toISOString().slice(0, 10);
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+import { reportError } from '../../src/utils/errorReporter';
 
 beforeEach(() => {
-  updates.length = 0;
-  recorded.length = 0;
-  profileRow.login_streak = 0;
-  profileRow.last_login_date = null;
+  rpcCalls.length = 0;
+  tableTouches.length = 0;
+  emitted.length = 0;
+  vi.mocked(reportError).mockClear();
+  loginAnswer = { data: { ok: true, counted: false, streak: 3, unlocked: [] }, error: null };
 });
 
-describe('a login streak counts days, not page loads', () => {
-  it('writes NOTHING when the day has already been counted', async () => {
-    profileRow.last_login_date = today();
-    profileRow.login_streak = 3;
-
+describe('a login streak is counted by the server, not the browser', () => {
+  it('never writes the profile from the browser, however often it runs', async () => {
     await achievementTriggerService.onLogin('u1');
     await achievementTriggerService.onLogin('u1');
     await achievementTriggerService.onLogin('u1');
 
-    expect(updates).toHaveLength(0);
-    expect(recorded).toHaveLength(0);
+    expect(tableTouches).toEqual([]);
+    expect(rpcCalls).toEqual([
+      'fn_achievement_record_login',
+      'fn_achievement_record_login',
+      'fn_achievement_record_login',
+    ]);
   });
 
-  it('continues the run when the last count was yesterday', async () => {
-    profileRow.last_login_date = daysAgo(1);
-    profileRow.login_streak = 6;
-
-    await achievementTriggerService.onLogin('u1');
-
-    expect(updates[0]).toMatchObject({ login_streak: 7, last_login_date: today() });
-    expect(recorded.map((r) => r.progress)).toEqual([7, 7, 7]);
+  it('announces nothing when the server has already counted today', async () => {
+    const result = await achievementTriggerService.onLogin('u1');
+    expect(result.triggeredAchievements).toEqual([]);
+    expect(result.diamondsAwarded).toBe(0);
+    expect(emitted).toEqual([]);
   });
 
-  it('restarts at 1 when a day was missed', async () => {
-    profileRow.last_login_date = daysAgo(3);
-    profileRow.login_streak = 42;
+  it('announces exactly the unlocks the server reports, with the diamonds it credited', async () => {
+    loginAnswer = {
+      data: {
+        ok: true,
+        counted: true,
+        streak: 30,
+        unlocked: [
+          { achievement_id: 'streak_7', diamonds_awarded: 0 },
+          { achievement_id: 'streak_30', diamonds_awarded: 100 },
+        ],
+      },
+      error: null,
+    };
+    const result = await achievementTriggerService.onLogin('u1');
 
-    await achievementTriggerService.onLogin('u1');
-
-    expect(updates[0]).toMatchObject({ login_streak: 1 });
-    expect(recorded.every((r) => r.progress === 1)).toBe(true);
+    expect(result.triggeredAchievements.map((a) => a.id)).toEqual(['streak_7', 'streak_30']);
+    expect(result.diamondsAwarded).toBe(100);
+    const toasts = emitted.filter((e) => e.event === 'MILESTONE_UNLOCKED');
+    expect(toasts.map((t) => [t.payload.milestoneId, t.payload.rewardDiamonds])).toEqual([
+      ['streak_7', undefined],
+      ['streak_30', 100],
+    ]);
   });
 
-  it('starts at 1 for someone who has never been counted', async () => {
-    await achievementTriggerService.onLogin('u1');
-    expect(updates[0]).toMatchObject({ login_streak: 1, last_login_date: today() });
-  });
+  it('a refused count is reported and credits nothing (never read as a streak of zero)', async () => {
+    loginAnswer = { data: null, error: { message: 'permission denied' } };
+    const result = await achievementTriggerService.onLogin('u1');
 
-  it('writes the three streak achievements in one pass, not one at a time', async () => {
-    profileRow.last_login_date = daysAgo(1);
-    profileRow.login_streak = 1;
-    await achievementTriggerService.onLogin('u1');
-    expect(recorded.map((r) => r.id).sort()).toEqual(['streak_100', 'streak_30', 'streak_7']);
+    expect(result.diamondsAwarded).toBe(0);
+    expect(result.triggeredAchievements).toEqual([]);
+    expect(emitted).toEqual([]);
+    expect(reportError).toHaveBeenCalledTimes(1);
   });
 });

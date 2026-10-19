@@ -99,80 +99,125 @@ export function entryDoorInPage({ clusterId, doors, layers }) {
   }
   return out;
 }
+/** A Playwright failure in fixed classes only: the message (which can carry
+ * selectors, URLs or page text) is read here and never retained. */
+export function uiFailureClass(error) {
+  const m = typeof error?.message === 'string' ? error.message : '';
+  if (m === 'Device Welcome Unverified') return 'welcome_unverified';
+  if (m === 'Entry Layer Not Answerable') return 'layer_not_answerable';
+  if (/strict mode violation/i.test(m)) return 'strict_mode_violation';
+  if (/Execution context was destroyed|frame was detached|navigat/i.test(m)) return 'navigated';
+  if (/Target (page, context or browser )?(has been )?closed/i.test(m)) return 'closed';
+  if (error?.name === 'TimeoutError' || /Timeout \d+ms exceeded/.test(m)) {
+    if (/intercepts pointer events/.test(m)) return 'timeout_intercepted';
+    if (/outside of the viewport/.test(m)) return 'timeout_outside_viewport';
+    if (/element is not visible|to be visible/.test(m)) return 'timeout_not_visible';
+    if (/element is not enabled|element is disabled/.test(m)) return 'timeout_not_enabled';
+    if (/element is not stable/.test(m)) return 'timeout_not_stable';
+    if (/to be hidden/.test(m)) return 'timeout_still_shown';
+    return 'timeout';
+  }
+  if (m === 'Deadline') return 'deadline';
+  return 'other';
+}
 /** One normal answer to the one layer over the door: the device welcome is
  * acknowledged (this browser's storage only; the context is discarded), a
- * soft ask is put off with Not Now. Anything else is reported, never touched. */
-export async function answerEntryLayer(page, layer, remaining) {
+ * soft ask is put off with Not Now. Anything else is reported, never touched.
+ * `progress.step` names the last control reached, for the report. */
+export async function answerEntryLayer(page, layer, remaining, progress = {}) {
   const ms = () => Math.min(10000, remaining());
   if (layer === 'device_welcome') {
+    progress.step = 'welcome_dialog';
     const dialog = page.locator('[role="dialog"][aria-labelledby="club-arena-welcome-title"]');
     await dialog.waitFor({ state: 'visible', timeout: ms() });
     const agree = dialog.getByRole('checkbox', {
       name: 'I Understand And Agree To These Terms',
       exact: true,
     });
+    progress.step = 'welcome_agree';
     await agree.click({ timeout: ms() });
-    if ((await agree.getAttribute('aria-checked', { timeout: ms() })) !== 'true')
-      throw new Error('Device Welcome Unverified');
+    // React commits the tick after the tap; read it for a bounded moment.
+    progress.step = 'welcome_agree_read';
+    const until = Date.now() + Math.min(3000, remaining());
+    while ((await agree.getAttribute('aria-checked', { timeout: ms() })) !== 'true') {
+      if (Date.now() >= until) throw new Error('Device Welcome Unverified');
+      await page.waitForTimeout(100);
+    }
+    progress.step = 'welcome_enter';
     await dialog
       .getByRole('button', { name: 'Enter Poker Arena', exact: true })
       .click({ timeout: ms() });
+    progress.step = 'welcome_closed';
     await dialog.waitFor({ state: 'hidden', timeout: ms() });
     return 'acknowledged_on_this_device';
   }
   if (NOT_NOW_LAYERS.includes(layer)) {
     const selector = ENTRY_LAYERS.find(([, name]) => name === layer)[0];
     const sheet = page.locator(selector).first();
+    progress.step = 'not_now';
     await sheet.getByRole('button', { name: 'Not Now', exact: true }).click({ timeout: ms() });
+    progress.step = 'not_now_closed';
     await sheet.waitFor({ state: 'hidden', timeout: ms() });
     return 'put_off';
   }
   throw new Error('Entry Layer Not Answerable');
 }
 /** Waits, bounded, for the settled entry to offer an unobstructed door. Each
- * known layer is answered at most once; the result is the last observation. */
+ * known layer is answered at most once. `record` holds the latest observation
+ * as it happens, so a failure mid-way still reports what the page offered. */
 export async function settleEntryDoor(
   page,
   clusterId,
   remaining,
-  { stableMs = 1000, settleMs = 45000 } = {}
+  { stableMs = 1000, settleMs = 45000 } = {},
+  record = {}
 ) {
   const until = Date.now() + Math.min(settleMs, remaining());
-  const answered = {};
+  record.answered ??= {};
   let clearSince = null;
-  let seen;
-  while (true) {
-    seen = await page.evaluate(entryDoorInPage, {
-      clusterId,
-      doors: ENTRY_DOORS,
-      layers: ENTRY_LAYERS,
-    });
-    if (!PROFILE_GATES.includes(seen.profileGate)) seen.profileGate = 'unknown';
-    const layer = seen.layer;
-    if (
-      seen.door === 'join_lightning' &&
-      (layer === 'device_welcome' || NOT_NOW_LAYERS.includes(layer)) &&
-      !answered[layer]
-    ) {
-      answered[layer] = 'pending';
-      answered[layer] = await answerEntryLayer(page, layer, remaining);
-      clearSince = null;
-      continue;
+  try {
+    while (true) {
+      const seen = await page.evaluate(entryDoorInPage, {
+        clusterId,
+        doors: ENTRY_DOORS,
+        layers: ENTRY_LAYERS,
+      });
+      record.route = seen.route;
+      record.profileGate = PROFILE_GATES.includes(seen.profileGate) ? seen.profileGate : 'unknown';
+      record.door = seen.door;
+      record.layer = seen.layer;
+      const layer = seen.layer;
+      if (
+        seen.door === 'join_lightning' &&
+        (layer === 'device_welcome' || NOT_NOW_LAYERS.includes(layer)) &&
+        !record.answered[layer]
+      ) {
+        record.answered[layer] = 'pending';
+        const progress = {};
+        try {
+          record.answered[layer] = await answerEntryLayer(page, layer, remaining, progress);
+        } finally {
+          if (record.answered[layer] === 'pending') record.answerStep = progress.step ?? null;
+        }
+        clearSince = null;
+        continue;
+      }
+      if (
+        record.profileGate === 'complete' &&
+        seen.door === 'join_lightning' &&
+        layer === 'clear'
+      ) {
+        clearSince ??= Date.now();
+        if (Date.now() - clearSince >= stableMs) break;
+      } else clearSince = null;
+      if (Date.now() >= until) break;
+      await page.waitForTimeout(Math.min(250, remaining()));
     }
-    if (seen.profileGate === 'complete' && seen.door === 'join_lightning' && layer === 'clear') {
-      clearSince ??= Date.now();
-      if (Date.now() - clearSince >= stableMs) break;
-    } else clearSince = null;
-    if (Date.now() >= until) break;
-    await page.waitForTimeout(Math.min(250, remaining()));
+  } catch (error) {
+    record.failure = uiFailureClass(error);
+    throw error;
   }
-  return {
-    route: seen.route,
-    profileGate: seen.profileGate,
-    door: seen.door,
-    layer: seen.layer,
-    answered,
-  };
+  return record;
 }
 const CODE = /^([A-Z][A-Z0-9_]{2,63})(?::|$)/;
 /** A refused join is named by its native leading code only, never its text. */
@@ -432,11 +477,15 @@ export async function witnessAdmission({
       if (report.pool) report.status = 'read_only_resume';
       else {
         report.phase = 'entry_door';
-        report.join.entry = await bound(
-          settleEntryDoor(page, pin.clusterId, remaining, {
-            stableMs: entryStableMs,
-            settleMs: entrySettleMs,
-          })
+        report.join.entry = { door: 'unread', layer: 'unread' };
+        await bound(
+          settleEntryDoor(
+            page,
+            pin.clusterId,
+            remaining,
+            { stableMs: entryStableMs, settleMs: entrySettleMs },
+            report.join.entry
+          )
         );
         if (
           report.join.entry.door !== 'join_lightning' ||
@@ -564,7 +613,10 @@ export async function witnessAdmission({
             !payload ||
             payload.p_user_id !== pin.playerId ||
             payload.p_table_id !== joined.table_id ||
-            payload.p_club_id !== CLUB ||
+            // The normal table buy-in sends a null club and the door derives it
+            // from the table (run 39312801627: receipt club_id null). The club is
+            // proven independently through the owned anchor seat and cash session.
+            (payload.p_club_id !== CLUB && payload.p_club_id !== null) ||
             !UUID.test(payload.p_idempotency_key) ||
             !Number.isInteger(payload.p_seat_number) ||
             !finite(payload.p_amount) ||

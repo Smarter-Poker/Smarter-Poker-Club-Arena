@@ -102,13 +102,14 @@ function preserveResponseMetadata(buffered: Response, original: Response): Respo
   return buffered;
 }
 
-function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
+function createBoundedServiceClient(timeoutMs: number, actorToken?: string): SupabaseClient {
   const client = createClient(SUPABASE_URL, EFFECTIVE_SERVICE_ROLE_KEY, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
     },
     global: {
+      ...(actorToken ? { headers: { Authorization: `Bearer ${actorToken}` } } : {}),
       /**
        * Two layers here, both load-bearing:
        * 1. Per-attempt hard deadline (2026-08-15 freeze fix above) - a hung
@@ -156,7 +157,35 @@ function createBoundedServiceClient(timeoutMs: number): SupabaseClient {
               );
               // Preserve caller headers, then stamp the immutable actor last.
               new Headers(init.headers).forEach((value, name) => headers.set(name, value));
-              const authoritativeHeaders = dataActorHeaders(headers);
+              // The DB guard rejects server actor markers paired with a viewer JWT.
+              let authoritativeHeaders: Headers;
+              if (actorToken) {
+                const url = new URL(
+                  typeof Request !== 'undefined' && attemptInput instanceof Request
+                    ? attemptInput.url
+                    : String(attemptInput)
+                );
+                if (
+                  url.origin !== new URL(SUPABASE_URL).origin ||
+                  ![
+                    '/rest/v1/rpc/ca_member_record_can_subscribe',
+                    '/rest/v1/rpc/ca_club_roster_can_subscribe',
+                  ].includes(url.pathname) ||
+                  (init.method || 'GET').toUpperCase() !== 'POST'
+                )
+                  throw new Error('private_record_acl_request_boundary');
+                authoritativeHeaders = new Headers(headers);
+                for (const name of [
+                  'x-smarter-data-actor',
+                  'x-smarter-data-protocol',
+                  'x-smarter-tournament-id',
+                  'x-smarter-tournament-lease-generation',
+                ])
+                  authoritativeHeaders.delete(name);
+                authoritativeHeaders.set('Authorization', `Bearer ${actorToken}`);
+              } else {
+                authoritativeHeaders = dataActorHeaders(headers);
+              }
               const response = await fetch(attemptInput, {
                 ...init,
                 headers: authoritativeHeaders,
@@ -239,3 +268,14 @@ export { SEEDING_DB_TIMEOUT_MS };
 // deleted. The Supabase Realtime `hand-state:{tableId}` channel is no longer
 // the game-state transport — engine WebSocket at /ws/table/:tableId is the
 // sole path, served by TableStateHub in server/src/transport/.
+
+/** Fixed read-only private-topic ACL, evaluated with the socket JWT/auth.uid(). */
+export async function privateRecordTopicAllowed(token: string, topic: string): Promise<boolean> {
+  const fn = topic.startsWith('member-record:')
+    ? 'ca_member_record_can_subscribe'
+    : 'ca_club_roster_can_subscribe';
+  const actor = createBoundedServiceClient(DB_TIMEOUT_MS, token);
+  const { data, error } = await actor.rpc(fn, { topic });
+  if (error) throw error;
+  return data === true;
+}

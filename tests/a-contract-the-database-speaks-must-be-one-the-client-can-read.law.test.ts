@@ -371,6 +371,11 @@ describe('a contract the database speaks must be one the client can read', () =>
    * written, a whole-file parser claimed a Diamond Spins contract fact in
    * fourteen migrations and seven of those were another contract's.
    */
+  // This finite full-corpus scan reads every SQL migration, not one fixture.
+  // At 5,689 files / 67.3 MB, the normal 18-file pre-push selection measured
+  // 7.523 s under concurrent SSD I/O, beyond Vitest's unrelated 5 s default.
+  // Keep every assertion and every input; 15 s retains roughly one measured
+  // scan of headroom without changing the parser, selection or test outcome.
   it('every accusation against a merged migration is exact: its own remedy withdraws it', () => {
     const client = clientContract(readOrNull);
     const dir = path.join(ROOT, 'supabase', 'migrations');
@@ -403,7 +408,7 @@ describe('a contract the database speaks must be one the client can read', () =>
         'parser rather than contract drift. Scope the fact to the declaration that makes it, ' +
         'not to the file.'
     ).toEqual([]);
-  });
+  }, 15000);
 
   /**
    * AND THE RULE SAYS WHAT THIS LAW SAYS IT SAYS.

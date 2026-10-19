@@ -1,0 +1,62 @@
+name: Achievement diamonds (native PostgreSQL proof)
+
+# Dan 2026-10-19: "Pay achievement rewards as diamonds through award_diamonds_v2."
+# and "NO, ONLY FROM NOW ON". Migration 20261019155445 pays an achievement's
+# diamonds once, on an unlock the server proves itself (the engine's hand record
+# for a Royal Flush, the server-counted login streak), and stops the browser
+# deciding targets. scripts/ci/test-achievement-diamonds-postgres.py applies the
+# migration byte for byte to a throwaway native PostgreSQL 17 cluster holding
+# production's pre-image bodies (never production, as the unprivileged runner
+# user) and proves every rule.
+#
+# A dedicated workflow so a change to this proof never has to rewrite ci.yml.
+# No timer (CLAUDE.md 10.85): pull_request only, scoped to what the proof
+# reads. award_diamonds_v2 is read from the newest migration that defines it,
+# so any migration change re-runs it.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/**
+      - scripts/ci/test-achievement-diamonds-postgres.py
+      - scripts/ci/probes/bbj-bank-replay/funded/source/internal-ledger-native-fixture-0006/build/10-historical-schema.sql
+      - .github/workflows/achievement-diamonds-native-proof.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: achievement-diamonds-native-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  achievement-diamonds:
+    name: Achievement diamonds are paid once on a server-proved unlock (throwaway PostgreSQL 17)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Achievement diamonds are certified on native PostgreSQL
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-achievement-diamonds-postgres.py

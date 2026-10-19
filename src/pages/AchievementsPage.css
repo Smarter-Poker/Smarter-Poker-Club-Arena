@@ -465,6 +465,22 @@
   overflow-wrap: anywhere;
 }
 
+/* The diamonds an achievement pays (2026-10-19): the platform diamond mark
+   beside the amount, in the row's own ink. */
+.ach-reward,
+.unlock-reward {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ach-reward__icon {
+  width: 1em;
+  height: 1em;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .unlock-dismiss {
   appearance: none;
   flex: 0 0 44px;

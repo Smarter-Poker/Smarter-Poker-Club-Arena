@@ -273,16 +273,26 @@ function fakeBrowser(
     openSocket;
   const calls = [];
   const actionDevices = [];
-  const emit = () =>
+  let current = null;
+  const emit = () => {
+    current = `11111111-1111-4111-8111-${String(serial++).padStart(12, '0')}`;
     frame({
       payload: JSON.stringify({
         type: 'RENDER_ACK',
         tableId: pin.poolSessionId,
-        hand_id: `11111111-1111-4111-8111-${String(serial++).padStart(12, '0')}`,
+        hand_id: current,
       }),
     });
+  };
+  // The pool keeps dealing while the witness waits: each wait may paint the
+  // room's next hand. A bounded number of waits stands in for the deadline.
+  let waits = 0;
   const page = {
     waitForFunction: async () => {},
+    waitForTimeout: async () => {
+      if (++waits > 200) throw new Error('Player Witness Deadline');
+      if (frame) emit();
+    },
     locator: () => ({ getAttribute: async () => 'accepted' }),
     on: (type, fn) => {
       assert.equal(type, 'websocket');
@@ -356,7 +366,7 @@ function fakeBrowser(
       newContext: async () => ({ addInitScript: async () => {}, newPage: async () => page }),
     }),
   };
-  return { chromium, calls, actionDevices };
+  return { chromium, calls, actionDevices, currentHand: () => current };
 }
 test('finite browser witness traverses supported UI actions and actual next-render observations', async () => {
   const f = fixture(),
@@ -647,4 +657,28 @@ test('even an uppercase card-like or arbitrary code is not trusted as a native c
     assert.equal(r.devices[0].actions[0].refusalCode, null);
     assert.doesNotMatch(JSON.stringify(r), new RegExp(code));
   }
+});
+
+test('each tap waits for a hand painted after its preflight reads', async () => {
+  // Run 39315415767: the desktop fold was sent for a hand rendered before the
+  // preflight and reached the engine after that hand had ended (NO_ACTIVE_HAND).
+  const f = fixture(),
+    b = fakeBrowser();
+  const preflightHands = new Set();
+  const from = f.admin.from;
+  f.admin.from = (table) => {
+    if (table === 'lightning_pool_session' && b.currentHand()) preflightHands.add(b.currentHand());
+    return from(table);
+  };
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  assert.equal(r.status, 'observed');
+  const actions = r.devices.flatMap((d) => d.actions);
+  assert.equal(actions.length, 4);
+  for (const action of actions) assert.equal(preflightHands.has(action.requestHandId), false);
 });

@@ -13,7 +13,11 @@ const f = vi.hoisted(() => ({
   bus: null as null | ((payload: { clubId: string }) => void),
   broadcasts: new Map<
     string,
-    { onPayload: (payload: unknown) => void; onSubscriptionStatus?: (status: string) => void }
+    {
+      onPayload: (payload: unknown) => void;
+      onSubscriptionStatus?: (status: string) => void;
+      onSubscriptionError?: (status: string) => void;
+    }
   >(),
   winLoss: vi.fn(async () => new Map()),
   aborts: 0,
@@ -38,6 +42,7 @@ vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
     channelName?: string;
     onPayload: (payload: unknown) => void;
     onSubscriptionStatus?: (status: string) => void;
+    onSubscriptionError?: (status: string) => void;
   }) => {
     if (config.channelName) f.broadcasts.set(config.channelName, config);
   },
@@ -50,7 +55,7 @@ vi.mock('../../src/utils/strictClubIdResolver', () => ({
 vi.mock('../../src/services/ClubRosterService', () => ({
   default: { getRosterPage: f.page, getSummary: f.summary, getMembersWinLoss: f.winLoss },
 }));
-import ClubMembersPage from '../../src/pages/ClubMembersPage';
+import ClubMembersPage, { LIVE_RECORD_REFRESH_MS } from '../../src/pages/ClubMembersPage';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -481,7 +486,7 @@ it('reconciles private roster changes before TTL while retaining loaded pages an
   changed = true;
   act(() => f.broadcasts.get(rosterTopic)!.onPayload({ payload: {} }));
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(1200);
+    await vi.advanceTimersByTimeAsync(LIVE_RECORD_REFRESH_MS);
   });
   expect(f.page.mock.calls.length).toBe(reads + 2);
   expect(f.summary).toHaveBeenCalledTimes(summaries + 1);
@@ -519,6 +524,11 @@ it('coalesces private roster bursts behind one active read without aborting it',
   expect(f.page).toHaveBeenCalledTimes(1);
   expect(f.aborts).toBe(0);
   await act(async () => finish[0]());
+  // The owed record read waits out the live cadence instead of chaining.
+  expect(f.page).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(LIVE_RECORD_REFRESH_MS);
+  });
   expect(f.page).toHaveBeenCalledTimes(2);
   act(() => {
     for (let i = 0; i < 5; i++) f.broadcasts.get(rosterTopic)!.onPayload({ payload: {} });
@@ -529,6 +539,10 @@ it('coalesces private roster bursts behind one active read without aborting it',
   expect(f.page).toHaveBeenCalledTimes(2);
   expect(f.aborts).toBe(0);
   await act(async () => finish[1]());
+  expect(f.page).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(LIVE_RECORD_REFRESH_MS);
+  });
   expect(f.page).toHaveBeenCalledTimes(3);
   await act(async () => finish[2]());
   expect(f.aborts).toBe(0);
@@ -546,7 +560,11 @@ it('reconciles roster and summary after focus, private rejoin and an idle UTC bo
     await vi.advanceTimersByTimeAsync(1300);
   });
   expect(f.page).toHaveBeenCalledTimes(initialReads + 1);
-  act(() => f.broadcasts.get(rosterTopic)!.onSubscriptionStatus!('SUBSCRIBED'));
+  // A rejoin after a dropped private feed owes a prompt catch-up read.
+  act(() => {
+    f.broadcasts.get(rosterTopic)!.onSubscriptionError!('CHANNEL_ERROR');
+    f.broadcasts.get(rosterTopic)!.onSubscriptionStatus!('SUBSCRIBED');
+  });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1300);
   });
@@ -556,4 +574,62 @@ it('reconciles roster and summary after focus, private rejoin and an idle UTC bo
   });
   expect(f.page).toHaveBeenCalledTimes(initialReads + 3);
   expect(f.summary).toHaveBeenCalledTimes(initialReads + 3);
+});
+
+// Production, 2026-10-19: Shark Club's private roster topic signals on every
+// funded hand, seat, fee and wallet change, so a live club sends it about once
+// a second. The first join re-read the roster ~1.2s after the initial read, and
+// every burst re-read the whole loaded window ~1.2s later, so the page never
+// stopped reading and any navigation aborted a read in flight.
+it('does not re-read the roster on its first private join or on every live record burst', async () => {
+  const view = mountDirectory();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200);
+  });
+  expect(f.page).toHaveBeenCalledTimes(1);
+  expect(f.summary).toHaveBeenCalledTimes(1);
+  // The first join opens alongside the read that just finished.
+  act(() => f.broadcasts.get(rosterTopic)!.onSubscriptionStatus!('SUBSCRIBED'));
+  // A playing club: one signal every 400ms for four seconds.
+  for (let i = 0; i < 10; i++) {
+    act(() => f.broadcasts.get(rosterTopic)!.onPayload({ payload: {} }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+  }
+  expect(f.page).toHaveBeenCalledTimes(1);
+  expect(f.summary).toHaveBeenCalledTimes(1);
+  // The change is still owed: exactly one bounded re-read of window and totals.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(LIVE_RECORD_REFRESH_MS);
+  });
+  expect(f.page).toHaveBeenCalledTimes(2);
+  expect(f.summary).toHaveBeenCalledTimes(2);
+  // Leaving the page mid-stream cancels nothing.
+  act(() => f.broadcasts.get(rosterTopic)!.onPayload({ payload: {} }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1300);
+  });
+  view.unmount();
+  expect(f.aborts).toBe(0);
+  expect(f.page).toHaveBeenCalledTimes(2);
+});
+
+it('lets a newer roster read satisfy a pending live record change', async () => {
+  mountDirectory();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200);
+  });
+  act(() => f.broadcasts.get(rosterTopic)!.onPayload({ payload: {} }));
+  // A structural change re-reads promptly; that read also carries the record.
+  act(() => f.bus?.({ clubId: club }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2500);
+  });
+  expect(f.page).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(LIVE_RECORD_REFRESH_MS * 2);
+  });
+  expect(f.page).toHaveBeenCalledTimes(2);
+  expect(f.aborts).toBe(0);
 });

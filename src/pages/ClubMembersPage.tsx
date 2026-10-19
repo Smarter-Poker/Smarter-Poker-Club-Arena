@@ -114,6 +114,14 @@ const ADVANCED_TOUR: TutorialStep[] = [
   ...SHARED_TOUR_TAIL,
 ];
 const PAGE_SIZE = 80;
+/**
+ * The private roster topic signals on every funded hand, seat, fee and wallet
+ * change in the club, which in a playing club is about once a second. A record
+ * signal re-reads the whole loaded window and the totals, so it waits at least
+ * this long after the previous roster read. Structural changes (joins, roles,
+ * status) and a rejoin after a dropped feed still re-read promptly.
+ */
+export const LIVE_RECORD_REFRESH_MS = 15_000;
 const ROW_HEIGHT = ROSTER_ROW_HEIGHT;
 
 const FILTER_LABEL: Record<RosterFilter, string> = {
@@ -338,6 +346,11 @@ export default function ClubMembersPage() {
   const summaryAbortRef = useRef<AbortController | null>(null);
   const summaryCoordinatorRef = useRef(new RosterSummaryCoordinator<RosterSummary | null>());
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A live record change is owed one bounded re-read. Any roster read issued
+  // after the change carries it, so issuing one settles the debt.
+  const recordRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordRefreshOwedRef = useRef(false);
+  const lastRosterReadAtRef = useRef(0);
   const realtimeConnectionRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
   const latestLoadRef = useRef<(options?: RosterLoadOptions) => Promise<void>>(
     async () => undefined
@@ -434,6 +447,9 @@ export default function ClubMembersPage() {
     summaryAbortRef.current = null;
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = null;
+    if (recordRefreshTimerRef.current) clearTimeout(recordRefreshTimerRef.current);
+    recordRefreshTimerRef.current = null;
+    recordRefreshOwedRef.current = false;
     requestEpochRef.current += 1;
     setResolvedClubId(null);
     membersRef.current = [];
@@ -557,6 +573,10 @@ export default function ClubMembersPage() {
         : PAGE_SIZE;
       const scope = exportScopeRef.current;
       forceNextSummaryRef.current = false;
+      lastRosterReadAtRef.current = Date.now();
+      recordRefreshOwedRef.current = false;
+      if (recordRefreshTimerRef.current) clearTimeout(recordRefreshTimerRef.current);
+      recordRefreshTimerRef.current = null;
       const epoch = ++requestEpochRef.current;
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -762,6 +782,8 @@ export default function ClubMembersPage() {
       setRealtimeConnection('degraded');
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
       refreshTimerRef.current = null;
+      if (recordRefreshTimerRef.current) clearTimeout(recordRefreshTimerRef.current);
+      recordRefreshTimerRef.current = null;
       abortRef.current?.abort();
       moreAbortRef.current?.abort();
       summaryAbortRef.current?.abort();
@@ -873,16 +895,50 @@ export default function ClubMembersPage() {
     }, 1200);
   }, [resolvedClubId]);
 
+  // The private roster topic is a firehose in a playing club (every funded
+  // hand, seat, fee and wallet change signals it). Treating each burst as a
+  // structural change re-read the whole loaded window about every 1.5s for as
+  // long as the club played, flipped the live status and aria-busy each time,
+  // and left a read in flight under almost every click. Record changes owe one
+  // re-read, no sooner than LIVE_RECORD_REFRESH_MS after the previous roster
+  // read, and any newer read pays that debt.
+  const scheduleLiveRecordRefresh = useCallback(() => {
+    if (!resolvedClubId) return;
+    recordRefreshOwedRef.current = true;
+    const arm = () => {
+      if (recordRefreshTimerRef.current) return;
+      const wait = Math.max(
+        1200,
+        lastRosterReadAtRef.current + LIVE_RECORD_REFRESH_MS - Date.now()
+      );
+      recordRefreshTimerRef.current = setTimeout(() => {
+        recordRefreshTimerRef.current = null;
+        if (!recordRefreshOwedRef.current) return;
+        // A read in flight was issued before this change (issuing one clears
+        // the debt and this timer). Wait behind it instead of aborting it.
+        if (searchSettlingRef.current || activePageReadRef.current || moreRef.current) {
+          arm();
+          return;
+        }
+        void latestLoadRef.current({ forceSummary: true, preserveWindow: true });
+      }, wait);
+    };
+    arm();
+  }, [resolvedClubId]);
+
   useMasterBusBroadcastChannel({
     channelName: resolvedClubId ? `club-roster:${resolvedClubId}` : null,
     restartKey: recordBindingRef.current.generation,
     event: 'record_changed',
     enabled: !!resolvedClubId && !!user?.id,
-    onPayload: () => scheduleStructuralRefresh(),
+    onPayload: () => scheduleLiveRecordRefresh(),
     onSubscriptionStatus: (status) => {
       if (status !== 'SUBSCRIBED') return;
+      // Like the membership and audit lanes: the first join opens beside the
+      // initial read, so only a rejoin after a dropped feed owes a catch-up.
+      const recovered = recordDegradedRef.current;
       recordDegradedRef.current = false;
-      scheduleStructuralRefresh();
+      if (recovered) scheduleStructuralRefresh();
     },
     onSubscriptionError: () => {
       recordDegradedRef.current = true;
@@ -919,6 +975,7 @@ export default function ClubMembersPage() {
   useEffect(
     () => () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      if (recordRefreshTimerRef.current) clearTimeout(recordRefreshTimerRef.current);
       abortRef.current?.abort();
       moreAbortRef.current?.abort();
       summaryAbortRef.current?.abort();

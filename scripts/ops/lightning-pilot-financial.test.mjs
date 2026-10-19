@@ -558,3 +558,50 @@ test('selectors and receipts are pinned to maintained product producers', () => 
   assert.match(helper, /signOut\(\{\s*scope:\s*'local'/);
   assert.ok(!helper.includes("rpc('atomic_table"));
 });
+test('a normal step that never appears names that step and still cleans up', async () => {
+  const f = fixture('top_up');
+  const launch = f.args.chromium.launch;
+  f.args.chromium = {
+    launch: async (...a) => {
+      const browser = await launch(...a);
+      const newContext = browser.newContext;
+      browser.newContext = async () => {
+        const context = await newContext();
+        const newPage = context.newPage;
+        context.newPage = async () => {
+          const page = await newPage();
+          const getByRole = page.getByRole;
+          page.getByRole = (role, options) => {
+            const found = getByRole(role, options);
+            if (options?.name !== 'Top Up') return found;
+            return {
+              ...found,
+              click: async () => {
+                const e = Error('locator.click: Timeout exceeded SECRET_SELECTOR');
+                e.name = 'TimeoutError';
+                throw e;
+              },
+            };
+          };
+          return page;
+        };
+        return context;
+      };
+      return browser;
+    },
+  };
+  const r = await witnessFinancial(f.args);
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.cause, 'normal_ui_or_readback_unknown');
+  assert.equal(r.failedStep, 'top_up_item');
+  assert.equal(r.failure, 'TimeoutError');
+  assert.equal(r.intent, null);
+  assert.ok(f.actions.includes('local_signout'));
+  assert.ok(f.actions.includes('browser_close'));
+  assert.ok(!JSON.stringify(r).includes('SECRET'));
+});
+test('the session fetch ceiling does not spend the cleanup reserve', async () => {
+  const src = readFileSync(new URL('./lightning-pilot-financial.mjs', import.meta.url), 'utf8');
+  assert.match(src, /AbortSignal\.timeout\(Math\.max\(1, Math\.min\(15000, end - Date\.now\(\)\)\)\)/);
+  assert.doesNotMatch(src, /Math\.min\(15000, end - Date\.now\(\) - 20000\)/);
+});

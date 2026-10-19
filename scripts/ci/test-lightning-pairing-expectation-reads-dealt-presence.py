@@ -119,8 +119,13 @@ SCHEMA = """
 
 
 def psql(env, *args, ok=True):
+    # SQL given with -c is sent on standard input instead: the fixture's
+    # inserts exceed Linux's single-argument limit (MAX_ARG_STRLEN, 128 KiB).
+    stdin = None
+    if args and args[0] == '-c':
+        stdin, args = args[1], args[2:]
     r = subprocess.run([str(PG_BIN / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1', *args],
-                       env=env, capture_output=True, text=True, timeout=120)
+                       env=env, input=stdin, capture_output=True, text=True, timeout=120)
     if ok and r.returncode:
         raise AssertionError(r.stderr[-3000:])
     return r

@@ -15,6 +15,13 @@
 -- Supabase's schema-cache reload, which takes ~28s on this database, and ten
 -- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).
 
+-- Explicit read-only liveness proofs for the five dynamically replaced definitions.
+-- @live-proof: md5(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure))='015a5dc0ceba1ceb37faf74337a41034'
+-- @live-proof: md5(pg_get_functiondef('public.fn_player_rakeback_rate(uuid,uuid,numeric)'::regprocedure))='8147d264697502cc5c3b2ec772c7229b'
+-- @live-proof: md5(pg_get_functiondef('public.fn_rakeback_split_check(uuid,date,date,uuid[])'::regprocedure))='4ad97c5889886d9f51b4585e7600ca37'
+-- @live-proof: md5(pg_get_functiondef('public.fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure))='7c8849be5746c9f274d5685c55a458e0'
+-- @live-proof: md5(pg_get_functiondef('public.fn_accounting_earning_contract(uuid,uuid,numeric,uuid,timestamptz)'::regprocedure))='440c0bc501e1c2094b8d4c947533c08d'
+
 BEGIN;
 
 SET LOCAL lock_timeout='5s';

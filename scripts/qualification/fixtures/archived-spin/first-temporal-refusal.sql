@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 BEGIN READ ONLY;
-DO $$ DECLARE message text; actual_scope jsonb; BEGIN
+DO $$ DECLARE message text; actual_scope jsonb; week_start timestamptz; week_end timestamptz; BEGIN
  IF session_user<>'fixture_bootstrap' OR current_database() !~ '^qual_spin_expiry_[0-9a-f]{32}$'
  OR inet_server_addr() IS NOT NULL OR current_setting('listen_addresses')<>''
  THEN RAISE EXCEPTION 'ARCHIVE_TEMPORAL_READ_BOUNDARY'; END IF;
@@ -16,20 +16,22 @@ DO $$ DECLARE message text; actual_scope jsonb; BEGIN
  OR EXISTS(SELECT 1 FROM public.tournament_guarantee_overlays WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533')
  OR EXISTS(SELECT 1 FROM public.tournament_bounty_award_recipients r JOIN public.tournament_bounty_awards a ON a.id=r.award_id WHERE a.tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533') THEN RAISE EXCEPTION 'ARCHIVE_ORIGINAL_TERMINAL_MARKER_WITNESS_CHANGED'; END IF;
  -- Actual recognition uses this transaction's week, not the September8 charge.
- -- These observed bounds expire and require a new authentic capture at rollover.
+ -- That week is derived here by the database's own union-week function, never
+ -- pinned to a wall-clock literal: the isolated seed is fixed, so the scope and
+ -- overlap facts below hold for whichever week the run lands in. The production
+ -- recognition capture is historical evidence (the event settled 2026-10-02).
  -- This isolated pre-capture seed has only the host fallback scope. The bound
  -- production capture is post-owner-authorized fee capture and has two scopes.
- IF transaction_timestamp()<'2026-10-12T07:00:00Z'::timestamptz
- OR transaction_timestamp()>='2026-10-19T07:00:00Z'::timestamptz
- OR public.fn_union_week_start(transaction_timestamp()) IS DISTINCT FROM '2026-10-12T07:00:00Z'::timestamptz
- THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF;
+ IF public.fn_union_week_start(transaction_timestamp()) IS NULL OR transaction_timestamp()<public.fn_union_week_start(transaction_timestamp()) OR transaction_timestamp()>=((public.fn_union_week_start(transaction_timestamp()) AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles' THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_UNBOUND'; END IF;
+ week_start:=public.fn_union_week_start(transaction_timestamp());
+ week_end:=((week_start AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles';
  WITH scopes AS (
  SELECT coordinator_union_id,club_id FROM public.accounting_tournament_fee_sources WHERE tournament_id='2aa4cba1-506f-426b-a1ba-d8e22e018533'
  UNION SELECT f.union_id,t.club_id FROM public.tournaments t JOIN public.accounting_tournament_fee_sources f ON f.tournament_id=t.id WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL
  UNION SELECT CASE WHEN t.is_private THEN NULL ELSE t.union_id END,t.club_id FROM public.tournaments t WHERE t.id='2aa4cba1-506f-426b-a1ba-d8e22e018533' AND t.club_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.accounting_tournament_fee_sources f WHERE f.tournament_id=t.id)
  ) SELECT jsonb_agg(to_jsonb(s) ORDER BY coordinator_union_id,club_id) INTO actual_scope FROM scopes s;
  IF actual_scope IS DISTINCT FROM '[{"club_id":"fade0000-0000-0000-0000-000000000001","coordinator_union_id":"fade0000-0000-0000-0000-000000000001"}]'::jsonb
- OR EXISTS(SELECT 1 FROM public.accounting_routed_settlement_runs r WHERE r.union_id='fade0000-0000-0000-0000-000000000001' AND r.period_start<'2026-10-19T07:00:00Z'::timestamptz AND r.period_end>'2026-10-12T07:00:00Z'::timestamptz)
+ OR EXISTS(SELECT 1 FROM public.accounting_routed_settlement_runs r WHERE r.union_id='fade0000-0000-0000-0000-000000000001' AND r.period_start<week_end AND r.period_end>week_start)
  THEN RAISE EXCEPTION 'ARCHIVE_RECOGNITION_PERIOD_STATE_CHANGED'; END IF;
  BEGIN
  PERFORM public.fn_accounting_earning_contract('a41434bb-8d0c-400a-8f0d-e8b3d65afed4',

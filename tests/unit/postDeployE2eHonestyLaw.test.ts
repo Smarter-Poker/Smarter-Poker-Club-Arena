@@ -872,7 +872,7 @@ describe('explicit natural multirun certificate gates its own release verdict', 
       expect(readFileSync(output, 'utf8').includes('certified=true')).toBe(certified);
       if (!certified)
         expect(readFileSync(summary, 'utf8')).toContain(
-          'requested natural two/three-run mobile certificate did not pass'
+          'requested natural mobile multirun certificate did not pass'
         );
     } finally {
       rmSync(dir, { recursive: true, force: true });

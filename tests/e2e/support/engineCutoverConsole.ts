@@ -28,3 +28,17 @@ const ENGINE_CHANNEL_GATEWAY_REFUSAL =
 export function isEngineCutoverHandshake(consoleText: string): boolean {
   return ENGINE_CHANNEL_GATEWAY_REFUSAL.test(consoleText.trim());
 }
+
+/**
+ * The shell also observes GET /health independently of Cashier. Preserve its
+ * exact browser HTTP 503 as a separate engine diagnostic, without inferring a
+ * maintenance/cutover cause. Dedicated page reports attach these raw entries;
+ * engine certification still requires its own HTTP 200 and liveness proof.
+ * Other resource statuses, endpoints and application messages remain failures.
+ */
+export function isEngineHealthUnavailableDiagnostic(entry: { text: string; url: string }): boolean {
+  return (
+    entry.url === 'https://engine.smarter.poker/health' &&
+    entry.text === 'Failed to load resource: the server responded with a status of 503 ()'
+  );
+}

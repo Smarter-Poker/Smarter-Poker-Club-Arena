@@ -14,6 +14,7 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { isEngineHealthUnavailableDiagnostic } from './support/engineCutoverConsole';
 import { cashierTotalsObservation } from './support/cashierTotalsObservation';
 import { cashierStatementRouteMatches } from './support/cashierStatementRouteObservation';
 import {
@@ -242,8 +243,14 @@ test.describe('Cashier Statements - authenticated production route', () => {
 
     // (f) No error boundary and no console error of the app's own kind.
     await expect(page.getByText('Something went wrong', { exact: false })).toHaveCount(0);
+    const engineHealthDiagnostics = consoleErrors.filter(isEngineHealthUnavailableDiagnostic);
+    await testInfo.attach('cashier-statements-engine-health-diagnostics.json', {
+      body: JSON.stringify(engineHealthDiagnostics, null, 2),
+      contentType: 'application/json',
+    });
     const critical = consoleErrors.filter(
       (entry) =>
+        !isEngineHealthUnavailableDiagnostic(entry) &&
         !entry.text.includes('[cashier-telemetry]') &&
         !entry.text.includes('favicon') &&
         !entry.url.includes('favicon')

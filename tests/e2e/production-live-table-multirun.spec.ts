@@ -21,6 +21,7 @@ import {
   naturalMultiRunCandidateQuery,
   eligibleNaturalMultiRunTable,
   naturalMultiRunTransportEvidence,
+  naturalMultiRunRequiredRuns,
   type NaturalMultiRunCandidate,
   type NaturalRunPacket,
 } from './support/naturalMultiRunMobile';
@@ -103,18 +104,22 @@ async function openNaturalMultiRunObserver(
 }
 
 const enabled = process.env.LIVE_TABLE_MULTIRUN_CERTIFICATION === '1';
+const requestedRuns = naturalMultiRunRequiredRuns(
+  process.env.MOBILE_MULTIRUN_TARGET_JSON,
+  process.env.MOBILE_MULTIRUN_JSON,
+  process.env.ENGINE_TRIGGER_JSON
+);
+const proofName =
+  requestedRuns.length === 1
+    ? 'natural three-run only mobile rivers precede awards and winner chip landings'
+    : 'natural two-run and three-run mobile rivers precede awards and winner chip landings';
 const union = 'fade0000-0000-0000-0000-000000000001';
 // Rank eligible cash tables by recent history; observe one foreground subject.
 // Keep the twenty-minute observation and every actual river/recipient check;
 // no table setting, hand or action is written to produce the sample.
 const observationMs = 20 * 60_000;
 
-test('natural two-run and three-run mobile rivers precede awards and winner chip landings', async ({
-  context,
-  request,
-  baseURL,
-  browserName,
-}, testInfo) => {
+test(proofName, async ({ context, request, baseURL, browserName }, testInfo) => {
   expect(
     enabled,
     'Selected multirun spec requires explicit production certificate configuration'
@@ -127,11 +132,13 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
   expect(process.env.E2E_REQUIRE_AUTH).toBe('1');
   const expectedEngine = process.env.EXPECTED_ENGINE_SHA;
   expect(expectedEngine).toMatch(/^[0-9a-f]{40}$/);
-  const readIdentity = async () => {
+  const readIdentity = async (timeout?: number) => {
     const [client, origin, engine] = await Promise.all([
-      request.get(`https://smarter.poker/hub/club-arena/build-info.json?cb=${Date.now()}`),
-      request.get(`https://ca-static.smarter.poker/build-info.json?cb=${Date.now()}`),
-      request.get(`https://engine.smarter.poker/health?cb=${Date.now()}`),
+      request.get(`https://smarter.poker/hub/club-arena/build-info.json?cb=${Date.now()}`, {
+        timeout,
+      }),
+      request.get(`https://ca-static.smarter.poker/build-info.json?cb=${Date.now()}`, { timeout }),
+      request.get(`https://engine.smarter.poker/health?cb=${Date.now()}`, { timeout }),
     ]);
     expect(client.ok()).toBe(true);
     expect(origin.ok()).toBe(true);
@@ -158,7 +165,7 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
     tables.map((table) => table.id),
     (query) => readServiceRows(environment, 'hand_history', query)
   );
-  const selected = selectNaturalMultiRunSubject(tables, recent);
+  const selected = selectNaturalMultiRunSubject(tables, recent, requestedRuns);
   const pages: Array<{
     page: Page;
     tableId: string;
@@ -167,6 +174,9 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
   }> = [];
   const coverage = new Map<number, any>();
   const observations: any[] = [];
+  let originalFailure: unknown;
+  let after: { client: string; engine: string } | null = null;
+  let afterIdentityFailure: unknown;
   try {
     await initializeNaturalMultiRunObserver(
       selected,
@@ -221,7 +231,8 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
               []
             );
             for (const packet of completedNaturalRuns(item.packets, witness)) {
-              if (coverage.has(packet.runs)) continue;
+              if (!requestedRuns.includes(packet.runs as 2 | 3) || coverage.has(packet.runs))
+                continue;
               const name = `mobile-live-table-natural-${packet.runs}-runs`;
               const imagePath = testInfo.outputPath(`${name}.png`);
               await mkdir(dirname(imagePath), { recursive: true });
@@ -235,15 +246,24 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
         {
           timeout: Math.max(1, deadline - Date.now()),
           intervals: [250],
-          message:
-            'Natural mobile proof requires BOTH two-run and three-run hands; absent coverage is unverified',
+          message: `Natural mobile proof requires requested run counts ${requestedRuns.join(', ')}; absent coverage is unverified`,
         }
       )
-      .toEqual([2, 3]);
-    expect(await readIdentity(), 'The exact client and serving engine must stay unchanged').toEqual(
-      before
-    );
+      .toEqual(requestedRuns);
+  } catch (error) {
+    originalFailure = error;
+    throw error;
   } finally {
+    // Preserve the identity verdict even when one requested count was absent.
+    // A secondary read/mismatch cannot replace the original proof failure.
+    try {
+      after = await readIdentity(
+        Math.max(1, setupStartedAt + observationMs + 120_000 - Date.now())
+      );
+      expect(after, 'The exact client and serving engine must stay unchanged').toEqual(before);
+    } catch (error) {
+      afterIdentityFailure = error;
+    }
     const transport = pages.map(({ tableId, journal }) =>
       naturalMultiRunTransportEvidence(journal, tableId)
     );
@@ -274,6 +294,14 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
       JSON.stringify(
         {
           before,
+          after,
+          requestedRuns,
+          originalFailure:
+            originalFailure instanceof Error ? originalFailure.message : originalFailure,
+          afterIdentityFailure:
+            afterIdentityFailure instanceof Error
+              ? afterIdentityFailure.message
+              : afterIdentityFailure,
           observedAt: new Date().toISOString(),
           authAdmission,
           transport,
@@ -289,7 +317,8 @@ test('natural two-run and three-run mobile rivers precede awards and winner chip
       contentType: 'application/json',
     });
     console.log(
-      `NATURAL_MOBILE_MULTIRUN_COVERAGE ${JSON.stringify({ client: before.client, engine: before.engine, runs: [...coverage.keys()].sort() })}`
+      `NATURAL_MOBILE_MULTIRUN_COVERAGE ${JSON.stringify({ client: before.client, engine: before.engine, requestedRuns, runs: [...coverage.keys()].sort() })}`
     );
   }
+  if (afterIdentityFailure) throw afterIdentityFailure;
 });

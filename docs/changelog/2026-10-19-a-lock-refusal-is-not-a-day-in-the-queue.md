@@ -70,3 +70,17 @@ as-of read therefore sees an upline that is suspended and a downline not yet
 moved. The codebase has no documented exclusion or suspense path for this, so it
 is left refused, and the union's earned-rake check counts it for the week of
 2026-10-12..19 until someone decides how that 5.00 is attributed.
+
+## Follow-up: the retry queue is backlog too (engine)
+
+Read after the migration was installed (13:46 UTC): the queue order was right,
+but the settler only reached the retry when its own cycle ran, and a cycle
+whose page of new rake was empty reported `idle` even when the retry had just
+returned a full batch. So it slept its 30-minute interval with ~700 refusals
+still due (254 of them refused once, 216 ahead of the oldest Midway lock
+refusal), retrying 5 per inner run, about 10 per half hour.
+`RakebackSettlerService._runSettlementInner` now reports `more` when the retry
+returned a full batch (`CASH_RETRY_LIMIT`), so the same bounded drain
+(`MAX_DRAIN_BATCHES`, then the 60 s catch-up) keeps running until the due queue
+is shorter than one batch. Pinned in `server/src/services/rakebackWatermark.test.ts`
+("a full retry batch keeps the drain running even when there are no new rake rows").

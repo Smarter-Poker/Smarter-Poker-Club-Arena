@@ -85,12 +85,13 @@ class FirstArchivedCompletionTests(unittest.TestCase):
  def test_recognition_capture_is_bound_and_current(self):
   A,_,_=M.modules();files={p:(M.ROOT/p).read_bytes() for p in A.INPUTS};A.validate_recognition_capture(files)
   statepath=A.BASE+'first-temporal-state.json';rawpath=A.BASE+'first-recognition-capture.json'
-  for kind in ('hash','query','evidence','outside','overlap','scope','guard'):
+  for kind in ('hash','query','evidence','outside','overlap','scope','guard','pinned'):
    f=dict(files);s=json.loads(f[statepath]);r=json.loads(f[rawpath]);p=s['recognition_period']
    if kind=='hash':p['capture_sha256']='0'*64
    elif kind=='query':p['query']+=' '
    elif kind=='evidence':p['evidence']['observed_at']='2026-09-27T00:00:00+00:00'
-   elif kind=='guard':f[A.COMPLETION_SQL]=f[A.COMPLETION_SQL].replace(b'2026-10-26T07:00:00Z',b'2026-10-19T07:00:00Z')
+   elif kind=='guard':f[A.COMPLETION_SQL]=f[A.COMPLETION_SQL].replace(A.RECOGNITION_GUARD.encode(),b"IF transaction_timestamp()<'2026-10-19T07:00:00Z'::timestamptz OR transaction_timestamp()>='2026-10-26T07:00:00Z'::timestamptz THEN RAISE EXCEPTION ")
+   elif kind=='pinned':f[A.LOCKS]=f[A.LOCKS]+b"\n# IF transaction_timestamp()<'2026-10-26T07:00:00Z'::timestamptz\n"
    else:
     e=r['rows'][0]['evidence']
     if kind=='outside':e['observed_at']='2026-09-27T00:00:00+00:00'

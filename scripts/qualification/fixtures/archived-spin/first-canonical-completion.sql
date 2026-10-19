@@ -28,9 +28,7 @@ BEGIN
  IF current_setting('transaction_isolation') IS DISTINCT FROM 'read committed' THEN RAISE EXCEPTION 'PROBE_ISOLATION_CHANGED'; END IF;
  PERFORM set_config('lock_timeout','3s',true);
  PERFORM set_config('TimeZone','UTC',true);
- IF transaction_timestamp()<'2026-10-19T07:00:00Z'::timestamptz
- OR transaction_timestamp()>='2026-10-26T07:00:00Z'::timestamptz THEN
-  RAISE EXCEPTION 'PROBE_RECOGNITION_PERIOD_CAPTURE_EXPIRED'; END IF;
+ IF public.fn_union_week_start(transaction_timestamp()) IS NULL OR transaction_timestamp()<public.fn_union_week_start(transaction_timestamp()) OR transaction_timestamp()>=((public.fn_union_week_start(transaction_timestamp()) AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles' THEN RAISE EXCEPTION 'PROBE_RECOGNITION_PERIOD_UNBOUND'; END IF;
  IF public.fn_platform_frozen() IS DISTINCT FROM false THEN RAISE EXCEPTION 'PROBE_FROZEN'; END IF;
  IF EXISTS(SELECT 1 FROM public.tournament_terminal_settlements WHERE tournament_id=event)
  OR EXISTS(SELECT 1 FROM smarter_private.spin_archived_first_admission WHERE tournament_id=event)

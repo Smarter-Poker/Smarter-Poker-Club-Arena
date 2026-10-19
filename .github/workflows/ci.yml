@@ -1481,7 +1481,7 @@ jobs:
         if: matrix.shard == 2
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
-        run: node scripts/ci/probes/owner-direct-seventy-native.mjs "${{ runner.temp }}"
+        run: node scripts/dev/owner-direct-seventy-native.mjs "${{ runner.temp }}"
       - name: Retired VIP points cannot earn, spend, or mutate historical balances
         if: matrix.shard == 2
         env:

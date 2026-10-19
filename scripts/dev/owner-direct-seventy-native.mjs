@@ -4,7 +4,7 @@ import { readFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const root = fileURLToPath(new URL('../../../', import.meta.url));
+const root = fileURLToPath(new URL('../../', import.meta.url));
 const parent = process.argv[2];
 if (!parent) throw new Error('Pass a task-owned scratch directory');
 mkdirSync(parent, { recursive: true });
@@ -19,7 +19,7 @@ const agent = '22222222-2222-4222-8222-222222222222';
 const club = '33333333-3333-4333-8333-333333333333';
 const player = '44444444-4444-4444-8444-444444444444';
 const migration = 'supabase/migrations/20261019154457_owner_direct_player_deals_can_receive_seventy_percent.sql';
-const baseline = JSON.parse(readFileSync(path.join(root, 'scripts/ci/fixtures/owner-direct-seventy/preimage.json'), 'utf8'));
+const baseline = JSON.parse(readFileSync(path.join(root, 'scripts/dev/owner-direct-seventy/preimage.json'), 'utf8'));
 let running = false;
 try {
   run('initdb', ['-D', path.join(dir, 'data'), '-U', 'postgres', '-A', 'trust', '--no-locale', '--encoding=UTF8']);

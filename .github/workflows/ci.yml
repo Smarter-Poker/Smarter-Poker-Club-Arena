@@ -1477,6 +1477,11 @@ jobs:
           scripts/verification-harness/leaderboard-isolation-acl-bootstrap.test.mjs
           scripts/verification-harness/leaderboard-isolation-definition-bootstrap.test.mjs
           scripts/verification-harness/leaderboard-plain-schema-partition.test.mjs
+      - name: Owner direct seventy percent deals retain rate and club payer
+        if: matrix.shard == 2
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: node scripts/dev/owner-direct-seventy-native.mjs "${{ runner.temp }}"
       - name: Retired VIP points cannot earn, spend, or mutate historical balances
         if: matrix.shard == 2
         env:

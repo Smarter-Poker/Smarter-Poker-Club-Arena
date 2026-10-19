@@ -70,3 +70,39 @@ as-of read therefore sees an upline that is suspended and a downline not yet
 moved. The codebase has no documented exclusion or suspense path for this, so it
 is left refused, and the union's earned-rake check counts it for the week of
 2026-10-12..19 until someone decides how that 5.00 is attributed.
+
+## Follow-up: the retry queue is backlog too (engine)
+
+Read after the migration was installed (13:46 UTC): the queue order was right,
+but the settler only reached the retry when its own cycle ran, and a cycle
+whose page of new rake was empty reported `idle` even when the retry had just
+returned a full batch. So it slept its 30-minute interval with ~700 refusals
+still due (254 of them refused once, 216 ahead of the oldest Midway lock
+refusal), retrying 5 per inner run, about 10 per half hour.
+`RakebackSettlerService._runSettlementInner` now reports `more` when the retry
+returned a full batch (`CASH_RETRY_LIMIT`), so the same bounded drain
+(`MAX_DRAIN_BATCHES`, then the 60 s catch-up) keeps running until the due queue
+is shorter than one batch. Pinned in `server/src/services/rakebackWatermark.test.ts`
+("a full retry batch keeps the drain running even when there are no new rake rows").
+
+## Follow-up: the seal proves its build bucket by bucket (20261019151632)
+
+With all 4,520,200 rows written at 15:00 UTC, the publishing ticks of 15:05
+and 15:10 were both cancelled at job 272's 240 s statement timeout:
+`fn_union_pnl_inventory_seal_write_page` proved the build equal to the cache
+with one `EXCEPT ALL` of the whole cache against the whole build in both
+directions, and a read-only replay of exactly that query on production ran
+past 290 s. The 15:15 tick happened to finish in 175 s and published the
+checkpoint at 15:17:55 (rows hash `864e2008...`, equal to the original
+assembly), but next week's inventory is larger and would not.
+
+The proof is now taken bucket by bucket: each side is read once into
+per-(kind, source, first two hex digits of row_id) counts and hashes and the
+two bucket sets must be identical; the build's row buckets give the rows hash
+that must still equal the original assembly's head. The build-side hash pass
+measured 34.8 s on production. `scripts/dev/test-inventory-seal-committed-pages.py`
+installs the successor in every scenario and adds a cache that drifted after
+its rows were copied, which must be refused with
+`inventory_build_disagrees_with_assembled_source`. The local native run was not
+possible on the shared SSD (the harness refuses below 8 GiB free; 6.3 GiB);
+the required accounting shard runs it.

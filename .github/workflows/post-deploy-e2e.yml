@@ -146,7 +146,27 @@ jobs:
           } else {
           const inconclusive = (entry) =>
             entry?.conclusion === 'cancelled' || entry?.conclusion === 'skipped';
-          const superseded = jobs.length === 0 && payload.jobs.every(inconclusive);
+          // A CANCELLED PUBLISHER WHOSE ORIGIN DOOR NEVER OPENED (2026-10-19).
+          // The zero-job rule above misses the commoner shape: publish-needed
+          // and the client tests succeed, the run is cancelled while its
+          // read-only retain-runtime job is still verifying, and
+          // publish-to-origin is therefore skipped with no steps. Nothing
+          // reached the origin, exactly as with zero jobs, but this read threw
+          // "missing one of its release-verdict steps" and turned the
+          // certificate red (39283184506 on publisher 39275112750). A
+          // publish-to-origin that started (any step) may have moved the
+          // origin and still needs its proof; any failed or timed-out job is
+          // a real publisher fault and still throws below.
+          const neverOpened = (entry) =>
+            entry?.conclusion === 'skipped' ||
+            (entry?.conclusion === 'cancelled' && (entry.steps ?? []).length === 0);
+          const cancelledBeforeOrigin =
+            jobs.every(neverOpened) &&
+            retained.every(inconclusive) &&
+            payload.jobs.some((entry) => entry?.conclusion === 'cancelled') &&
+            payload.jobs.every((entry) => entry?.conclusion === 'success' || inconclusive(entry));
+          const superseded =
+            (jobs.length === 0 && payload.jobs.every(inconclusive)) || cancelledBeforeOrigin;
           if (superseded) {
             console.log(
               'The source publisher was superseded before it reached the origin; ' +
@@ -966,6 +986,26 @@ jobs:
       # they land on /auth or find no live fixture. `always()` so this reports
       # on a red run too - a run can be BOTH failed and dishonest, and the
       # second fact is the one nobody was being told.
+      # Keep this small, scoped receipt even when all browser assertions pass.
+      - name: Name every skipped mobile check and its exact reason
+        if: always() && steps.live.outputs.ready == 'true'
+        run: >-
+          node scripts/ci/report-mobile-e2e-skips.mjs
+          e2e-report/mobile-skips.json
+          e2e-report/first-run-iphone.json
+          e2e-report/cashier.json
+          e2e-report/lobby.json
+          e2e-report/sweep.json
+
+      - name: Retain named mobile skips on every outcome
+        if: always() && steps.live.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-mobile-skips
+          path: e2e-report/mobile-skips.json
+          if-no-files-found: error
+          retention-days: 14
+
       # NAME THE FAILED TEST WHERE THE API CAN READ IT (2026-10-04). A red run
       # used to say only "Process completed with exit code 1" to anyone reading
       # check-run annotations; the failing test and its error lived in the job

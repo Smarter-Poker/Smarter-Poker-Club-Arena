@@ -154,6 +154,7 @@ import {
   FETCH_LIMIT,
   CREDIT_BATCH_SIZE,
   CASH_DEFERRAL_RESUBMITS,
+  CASH_RETRY_LIMIT,
   MAX_DRAIN_BATCHES,
 } from './RakebackSettlerService.js';
 
@@ -1098,6 +1099,32 @@ describe('cash source receipts protect the durable cursor', () => {
       'fn_rakeback_settler_read_horizon',
       'fn_rakeback_recompute_periods',
     ]);
+  });
+  it('a full retry batch keeps the drain running even when there are no new rake rows', async () => {
+    // THE RETRY QUEUE IS BACKLOG TOO (2026-10-19): 'idle' here slept the
+    // 30-minute interval with the refusal queue still due.
+    const rows = Array.from({ length: CASH_RETRY_LIMIT }, (_, i) => ({
+      ...row(10 + i, 300 + i),
+      hand_id: uid(700 + i),
+      player_contributions: { [uid(42)]: 10 },
+    }));
+    const fullLedger = rows.map((r, i) => ({
+      id: uid(800 + i),
+      hand_id: r.hand_id,
+      player_id: uid(42),
+      club_id: uid(55),
+      rake_record_id: r.id,
+      weighted_rake_credit: 1,
+    }));
+    const receipts = rows.map((r) => sourceReceipt(r, { ledger: fullLedger }));
+    setup({ dataset: [], ledger: fullLedger, retryReceipts: receipts });
+    expect(CASH_RETRY_LIMIT).toBeGreaterThan(1);
+    expect(await run()).toBe('more');
+    expect(settlerUpserts()).toHaveLength(0);
+    // One fewer than a full batch is the end of the due queue: 'idle' as before.
+    mockRpc.mockClear();
+    setup({ dataset: [], ledger: fullLedger, retryReceipts: receipts.slice(1) });
+    expect(await run()).toBe('idle');
   });
   it('a retry RPC transport failure holds the cursor before fetching new source', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'retry unavailable' } });

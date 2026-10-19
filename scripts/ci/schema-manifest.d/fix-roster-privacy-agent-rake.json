@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/roster-privacy-agent-rake",
+  "_comment": "Identity-only member search for the Blacklist Manager picker, created by 20261019145553_club_members_reader_redacts_money.sql.",
+  "functions": ["ca_club_member_search"]
+}

@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 228609,
-      "sha256": "3f2e674268b1b2423095af692104a94676cd20ee80d7b2428b4ac46be213b083"
+      "bytes": 228856,
+      "sha256": "9c408d152b8a273e07e417491ef4ef2c2f987ff5384fe8c3f7d078561979ad40"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -189,17 +189,33 @@
       }
     }
   },
+  "ownerDirectSeventyQualification20261019": {
+    "reason": "Add the isolated native owner direct 70 percent player-deal proof to existing required Accounting2. Only reviewed current workflow source identity changes; retain all financial inputs, assertions, historical pins and qualification verdicts. This fingerprint refresh is not a financial execution certificate.",
+    "previous": [
+      {
+        "section": "files",
+        "previous": {
+          "bytes": 228284,
+          "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+        }
+      }
+    ],
+    "current": {
+      "bytes": 228531,
+      "sha256": "064f1b895db05f3cb6bebd78ed704e9940518a620395bc86e367667617a1abc8"
+    }
+  },
   "tournamentWritersLaneInputIdentity20261019": {
     "reason": "Add the isolated tournament table writer lane qualification (scripts/dev/test-tournament-table-writers-wait-for-their-lane.py) to existing required accounting shard 1. Current workflow input identity only; all financial source, assertions and prior qualification statuses retained. No financial certificate restamp.",
     "changes": {
       ".github/workflows/ci.yml": {
         "previous": {
-          "bytes": 228284,
-          "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+          "bytes": 228531,
+          "sha256": "064f1b895db05f3cb6bebd78ed704e9940518a620395bc86e367667617a1abc8"
         },
         "current": {
-          "bytes": 228609,
-          "sha256": "3f2e674268b1b2423095af692104a94676cd20ee80d7b2428b4ac46be213b083"
+          "bytes": 228856,
+          "sha256": "9c408d152b8a273e07e417491ef4ef2c2f987ff5384fe8c3f7d078561979ad40"
         }
       }
     }

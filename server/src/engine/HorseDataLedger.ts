@@ -1687,13 +1687,15 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'facing-bet defense verdicts and misses; opt-in (v32FacingDefense)',
     'V32'
   ),
+  // No floor: the V34 draw pass-through lives inside the V32 facing-bet block
+  // (HorseLogic gates it on opts.v32FacingDefense === true), and V32 is default
+  // OFF since 2026-10-16, so this receipt reads zero by design. A floor here
+  // raised a false critical data_unread every night (2026-10-18 audit).
   receipt(
     'v34_defend_draw_passthrough',
     'HorseLogic (V34)',
-    'solver draw call honored',
-    'V34',
-    'decide_nlh',
-    0.0002
+    'solver draw call honored; opt-in with v32FacingDefense',
+    'V34'
   ),
   receipt('v36_*', 'HorseLogic (V36)', 'bomb pot layers; bomb-pot volume', 'V36'),
   receipt(

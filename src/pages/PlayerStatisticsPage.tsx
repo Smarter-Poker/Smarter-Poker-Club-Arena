@@ -4,9 +4,15 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Dan 2026-08-23, requirement 7: "sortable by day, week, month or a custom
- * range". Day / Week / Month are the last 1, 7 and 30 days inclusive of today -
+ * range". Day / 7 Days / Month are the last 1, 7 and 30 days inclusive of today -
  * the same lastDaysRange() the Member Management page uses, so "7 Days" means the
- * same thing on both screens. Custom is two native date fields and a Confirm.
+ * same thing on both screens (it read "Week", which suggested a calendar week).
+ * Custom is two native date fields and a Confirm. Overall is all recorded
+ * activity, the record's default.
+ *
+ * THE RANGE ARRIVES WITH THE LINK. The record opens this page with its own
+ * window in the query string (utils/memberRangeLink); a missing or malformed
+ * one opens on Overall, as the record does.
  *
  * WHERE THE NUMBERS COME FROM. `ca_club_member_statistics`, through
  * services/ClubRosterService. VPIP, PFR, 3-Bet and C-Bet are computed in Postgres
@@ -33,11 +39,17 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
 import { reportError } from '../utils/errorReporter';
-import { compactChips } from '../utils/format';
+import { countFigure as count, feeFigure, winLossChips } from '../utils/format';
+import {
+  MEMBER_RANGE_DAYS as RANGE_DAYS,
+  readMemberRangeSearch,
+  type MemberRangeMode,
+} from '../utils/memberRangeLink';
 import { enumToTitleCase } from '../utils/titleCase';
 import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import ClubRosterService, {
+  RANGE_OVERALL,
   lastDaysRange,
   isoDate,
   type MemberRange,
@@ -67,20 +79,20 @@ const PERFORMANCE_TOUR: TutorialStep[] = [
    RANGE (requirement 7)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-type StatsRange = 'day' | 'week' | 'month' | 'custom';
+type StatsRange = MemberRangeMode;
 
 const RANGE_LABEL: Record<StatsRange, string> = {
+  overall: 'Overall',
   day: 'Day',
-  week: 'Week',
+  week: '7 Days',
   month: 'Month',
   custom: 'Custom',
 };
 
-const RANGE_DAYS: Record<Exclude<StatsRange, 'custom'>, number> = {
-  day: 1,
-  week: 7,
-  month: 30,
-};
+/** The relative windows: they advance with the UTC calendar. */
+function relativeDays(mode: StatsRange): number | null {
+  return mode === 'day' || mode === 'week' || mode === 'month' ? RANGE_DAYS[mode] : null;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    FORMATTING
@@ -92,10 +104,6 @@ function pct(value: number): string {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   })}%`;
-}
-
-function count(value: number): string {
-  return (value ?? 0).toLocaleString();
 }
 
 /** 'no_limit_holdem' is not a label. 'All Variants' is the null variant. */
@@ -127,10 +135,16 @@ export default function PlayerStatisticsPage() {
   const [reloadKey, setReloadKey] = useState(0);
 
   const [variant, setVariant] = useState<string | null>(null);
-  const [rangeMode, setRangeMode] = useState<StatsRange>('month');
-  const [customFrom, setCustomFrom] = useState<string>(() => isoDate(new Date()));
-  const [customTo, setCustomTo] = useState<string>(() => isoDate(new Date()));
-  const [range, setRange] = useState<MemberRange>(() => lastDaysRange(RANGE_DAYS.month));
+  // Opened from the record, the link carries the record's window.
+  const [initialRange] = useState(() => readMemberRangeSearch(searchParams));
+  const [rangeMode, setRangeMode] = useState<StatsRange>(initialRange.mode);
+  const [customFrom, setCustomFrom] = useState<string>(
+    () => initialRange.range.from ?? isoDate(new Date())
+  );
+  const [customTo, setCustomTo] = useState<string>(
+    () => initialRange.range.to ?? isoDate(new Date())
+  );
+  const [range, setRange] = useState<MemberRange>(initialRange.range);
 
   /**
    * The variant list only exists once a response has come back, and a response
@@ -234,7 +248,9 @@ export default function PlayerStatisticsPage() {
         if (live()) {
           reportError(error, 'PlayerStatisticsPage.load');
           setLoadFailed(true);
-          toast.error('Failed To Load Player Statistics');
+          // A background refresh that fails is named by the stale banner; a
+          // toast on every focus or live event would only repeat it.
+          if (!background) toast.error('Failed To Load Player Statistics');
         }
       } finally {
         if (live() && !background) setLoading(false);
@@ -263,8 +279,9 @@ export default function PlayerStatisticsPage() {
   // aborting the RPC, and current filters/drafts remain owned by the controls.
   refreshRef.current = () => {
     if (!isMountedRef.current || !clubId || !userId || !user?.id) return;
-    if (rangeMode !== 'custom') {
-      const current = lastDaysRange(RANGE_DAYS[rangeMode]);
+    const days = relativeDays(rangeMode);
+    if (days !== null) {
+      const current = lastDaysRange(days);
       if (current.from !== range.from || current.to !== range.to) {
         setRange(current);
         return;
@@ -326,7 +343,7 @@ export default function PlayerStatisticsPage() {
 
   // Relative windows advance on the UTC calendar boundary, even on idle pages.
   useEffect(() => {
-    if (rangeMode === 'custom') return;
+    if (relativeDays(rangeMode) === null) return;
     const now = new Date();
     const nextDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
     const timer = window.setTimeout(() => refreshRef.current(), nextDay - now.getTime() + 25);
@@ -337,7 +354,9 @@ export default function PlayerStatisticsPage() {
 
   const chooseRange = useCallback((mode: StatsRange) => {
     setRangeMode(mode);
-    if (mode !== 'custom') setRange(lastDaysRange(RANGE_DAYS[mode]));
+    if (mode === 'overall') setRange(RANGE_OVERALL);
+    const days = relativeDays(mode);
+    if (days !== null) setRange(lastDaysRange(days));
     // 'custom' waits for Confirm: a date field fires onChange while the year is
     // still half typed, and each fire would be a round trip.
   }, []);
@@ -474,9 +493,9 @@ export default function PlayerStatisticsPage() {
               Hands Dealt.
             </p>
             <p>
-              Net Sums Signed Hand Results; Fees Sum Rake Paid. Both Use Chip Units And Include Cash
-              And Tournament Hands For The Selected Game. These Are Not Wallet Balances Or
-              Tournament Prize Totals.
+              Net Is The Cash Hand Result Plus Tournament Money (Prizes Paid Minus Buy-Ins) For The
+              Selected Game, Matching The Win/Loss Card. Tournament Stack Chips Are Not Counted.
+              Fees Sum Rake Paid. Neither Is A Wallet Balance.
             </p>
           </details>
         )}
@@ -571,8 +590,8 @@ export default function PlayerStatisticsPage() {
 
           <section className="ps-card">
             <h2 className="ps-card__title">Club Result</h2>
-            <StatRow label="Net" value={compactChips(stats.net)} signed={stats.net} />
-            <StatRow label="Fees" value={compactChips(stats.fees)} />
+            <StatRow label="Net" value={winLossChips(stats.net)} signed={stats.net} />
+            <StatRow label="Fees" value={feeFigure(stats.fees)} />
           </section>
         </div>
       )}

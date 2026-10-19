@@ -4,7 +4,8 @@ import {
   naturalMultiRunEngineIdentity,
   installNaturalMultiRunWitness,
   readNaturalMultiRunHistory,
-  initializeNaturalMultiRunObservers,
+  initializeNaturalMultiRunObserver,
+  selectNaturalMultiRunSubject,
   naturalMultiRunCandidateQuery,
   eligibleNaturalMultiRunTable,
   naturalMultiRunTransportEvidence,
@@ -199,137 +200,108 @@ it('uses effective legacy RIT flags and does not mistake mode none for disabled'
   ).toBe(true);
 });
 
-it('allocates natural observer startup from one cumulative setup budget, including delayed document commits', async () => {
-  let now = 1_000;
-  const budgets: number[] = [];
-  await initializeNaturalMultiRunObservers(
-    [1, 2, 3, 4, 5, 6],
-    async (_table, navigationBudget, remainingSetup) => {
-      budgets.push(navigationBudget);
-      expect(navigationBudget).toBe(remainingSetup());
-      const beforeMedia = remainingSetup();
-      now += 13_000; // A slow HTML commit consumes setup, without a new per-page allowance.
-      expect(remainingSetup()).toBe(beforeMedia - 13_000);
-    },
-    1_000,
-    () => now
-  );
-  expect(now).toBe(79_000);
-  expect(budgets).toEqual([120_000, 107_000, 94_000, 81_000, 68_000, 55_000]);
+const subject = (id: string, current_players = 4) => ({
+  ...naturalCashCandidate,
+  id,
+  current_players,
 });
-
-it('starts at most two observers together and retains every selected observer exactly once', async () => {
-  const starts: number[] = [];
-  const ready: number[] = [];
-  const gates = Array.from({ length: 6 }, () => {
-    let resolve!: () => void;
-    const promise = new Promise<void>((done) => {
-      resolve = done;
-    });
-    return { promise, resolve };
-  });
-  let active = 0;
-  let peak = 0;
-  const operation = initializeNaturalMultiRunObservers(
-    [1, 2, 3, 4, 5, 6],
-    async (table, budget) => {
-      starts.push(table);
-      peak = Math.max(peak, ++active);
-      expect(budget).toBe(120_000);
-      try {
-        await gates[table - 1].promise;
-        ready.push(table);
-      } finally {
-        active--;
-      }
-    },
-    1_000,
-    () => 1_000
-  );
-  try {
-    expect(starts).toEqual([1, 2]);
-    gates[0].resolve();
-    await new Promise((done) => setTimeout(done, 0));
-    expect(starts).toEqual([1, 2, 3]);
-    expect(active).toBe(2);
-  } finally {
-    gates.forEach((gate) => gate.resolve());
-    await operation;
+const history = (id: string, two: number, three: number) => [
+  ...Array.from({ length: two }, () => ({ table_id: id, rit_boards: [[]] })),
+  ...Array.from({ length: three }, () => ({ table_id: id, rit_boards: [[], []] })),
+];
+it('uses one-format history to rank an eligible subject without inventing coverage', () => {
+  expect(
+    selectNaturalMultiRunSubject(
+      [subject('two'), subject('three')],
+      [...history('two', 20, 0), ...history('three', 0, 4)]
+    ).id
+  ).toBe('two');
+  expect(
+    selectNaturalMultiRunSubject(
+      [subject('two'), subject('both')],
+      [...history('two', 20, 0), ...history('both', 1, 1)]
+    ).id
+  ).toBe('both');
+});
+it('ranks eligible tables by population and id when recent history is missing or unusable', () => {
+  const tables = [subject('z', 5), subject('a', 5), subject('smaller', 4)];
+  for (const rows of [[], [{ table_id: 'cash', rit_boards: null }], history('other', 3, 3)]) {
+    expect(selectNaturalMultiRunSubject(tables, rows as any).id).toBe('a');
   }
-  expect(peak).toBe(2);
-  expect(starts).toEqual([1, 2, 3, 4, 5, 6]);
-  expect([...ready].sort()).toEqual([1, 2, 3, 4, 5, 6]);
 });
-
-it('refuses incomplete observer selection before starting any page', async () => {
-  const initialize = vi.fn();
-  await expect(
-    initializeNaturalMultiRunObservers([1, 2, 3, 4, 5], initialize, 1_000, () => 1_000)
-  ).rejects.toThrow(/all six observers/);
-  expect(initialize).not.toHaveBeenCalled();
+it('never admits an ineligible or undiscovered table even when it has the best history', () => {
+  const ineligible = { ...subject('tournament', 9), game_type: 'tournament' };
+  expect(
+    selectNaturalMultiRunSubject(
+      [ineligible, subject('cash')],
+      [...history('tournament', 20, 20), ...history('other', 30, 30)]
+    ).id
+  ).toBe('cash');
+  expect(() => selectNaturalMultiRunSubject([ineligible], history('tournament', 3, 3))).toThrow(
+    /one eligible cash table/
+  );
+  expect(() => selectNaturalMultiRunSubject([], history('other', 3, 3))).toThrow(
+    /one eligible cash table/
+  );
 });
-
-it('propagates actual readiness failure without starting replacement observers', async () => {
+it('does not choose a fixed mandatory run count for a proof that needs both formats', () => {
+  for (const run_it_mode of ['mandatory_twice', 'mandatory_three', 'MANDATORY_THREE']) {
+    const fixed = { ...subject('fixed', 9), run_it_mode };
+    expect(
+      selectNaturalMultiRunSubject([fixed, subject('choice')], history('fixed', 20, 20)).id
+    ).toBe('choice');
+    expect(() => selectNaturalMultiRunSubject([fixed], history('fixed', 20, 20))).toThrow(
+      /one eligible cash table/
+    );
+  }
+});
+it('ranks balanced history before total, population and stable table id', () => {
+  const candidates = [subject('unbalanced', 9), subject('balanced', 2)];
+  expect(
+    selectNaturalMultiRunSubject(candidates, [
+      ...history('unbalanced', 20, 1),
+      ...history('balanced', 2, 2),
+    ]).id
+  ).toBe('balanced');
+  expect(
+    selectNaturalMultiRunSubject(candidates, [
+      ...history('unbalanced', 3, 2),
+      ...history('balanced', 2, 2),
+    ]).id
+  ).toBe('unbalanced');
+  const tied = [subject('z', 4), subject('a', 4), subject('populated', 5)];
+  const rows = tied.flatMap((t) => history(t.id, 1, 1));
+  expect(selectNaturalMultiRunSubject(tied, rows).id).toBe('populated');
+  expect(selectNaturalMultiRunSubject(tied.slice(0, 2), rows).id).toBe('a');
+  expect(selectNaturalMultiRunSubject(tied.slice(0, 2).reverse(), rows).id).toBe('a');
+});
+it('uses one foreground subject and the original remaining setup allocation exactly once', async () => {
+  let now = 1_000;
+  const initialize = vi.fn(async (table, budget, remainingSetup) => {
+    expect(table).toBe('chosen');
+    expect(budget).toBe(120_000);
+    now += 13_000;
+    expect(remainingSetup()).toBe(107_000);
+  });
+  await initializeNaturalMultiRunObserver('chosen', initialize, 1_000, () => now);
+  expect(initialize).toHaveBeenCalledTimes(1);
+});
+it('propagates actual readiness failure without replacement or retry', async () => {
   const failure = new Error('authoritative snapshot unavailable');
   const initialize = vi.fn().mockRejectedValue(failure);
   await expect(
-    initializeNaturalMultiRunObservers([1, 2, 3, 4, 5, 6], initialize, 1_000, () => 1_000)
+    initializeNaturalMultiRunObserver('chosen', initialize, 1_000, () => 1_000)
   ).rejects.toBe(failure);
-  expect(initialize).toHaveBeenCalledTimes(2);
+  expect(initialize).toHaveBeenCalledTimes(1);
 });
-
-it('stops new starts on failure and awaits active admission before propagating the original error', async () => {
-  const failure = new Error('observer one refused');
-  let rejectFirst!: (reason: unknown) => void;
-  let finishSecond!: () => void;
-  const first = new Promise<void>((_resolve, reject) => {
-    rejectFirst = reject;
-  });
-  const second = new Promise<void>((resolve) => {
-    finishSecond = resolve;
-  });
-  const starts: number[] = [];
-  let settled = false;
-  const result = initializeNaturalMultiRunObservers(
-    [1, 2, 3, 4, 5, 6],
-    async (table) => {
-      starts.push(table);
-      await (table === 1 ? first : second);
-    },
-    1_000,
-    () => 1_000
-  ).then(
-    () => {
-      settled = true;
-      return undefined;
-    },
-    (error) => {
-      settled = true;
-      return error;
-    }
-  );
-  try {
-    expect(starts).toEqual([1, 2]);
-    rejectFirst(failure);
-    await new Promise((done) => setTimeout(done, 0));
-    expect(settled).toBe(false);
-    expect(starts).toEqual([1, 2]);
-  } finally {
-    rejectFirst(failure);
-    finishSecond();
-  }
-  expect(await result).toBe(failure);
-  expect(starts).toEqual([1, 2]);
-});
-
-it('shares the original 120-second setup ceiling rather than granting every observer a fresh setup', async () => {
+it('counts all startup work against the original 120-second setup ceiling', async () => {
   let now = 120_000;
   const initialize = vi.fn(async (_table, budget) => {
     expect(budget).toBe(1_000);
     now += 1_000;
   });
   await expect(
-    initializeNaturalMultiRunObservers([1, 2, 3, 4, 5, 6], initialize, 1_000, () => now)
+    initializeNaturalMultiRunObserver('chosen', initialize, 1_000, () => now)
   ).rejects.toThrow(/navigation deadline/);
   expect(initialize).toHaveBeenCalledTimes(1);
 });

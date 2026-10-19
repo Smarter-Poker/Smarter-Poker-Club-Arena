@@ -355,6 +355,23 @@ export interface MemberWinLoss {
   overall: WinLossFigure;
 }
 
+/**
+ * Win / loss reads own a deadline like every other roster read. Without one a
+ * stalled request left the Players list on "..." and the record card on
+ * "Loading Win And Loss..." for as long as the socket stayed open. Transient
+ * failures retry with the shared jittered backoff; access and validation
+ * errors return at once.
+ */
+const WIN_LOSS_READ = { timeoutMs: 15_000, attempts: 2 } as const;
+
+/** Keep the transport's code and status so the retry policy can classify it. */
+function winLossError(error: { message?: string; code?: string; status?: number }): Error {
+  return Object.assign(new Error(error.message || 'Could not load win and loss.'), {
+    code: error.code,
+    status: error.status,
+  });
+}
+
 function winLossFigure(value: unknown): WinLossFigure {
   const row = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
   return { cash: num(row.cash), mtt: num(row.mtt), net: num(row.net) };
@@ -487,15 +504,22 @@ export const ClubRosterService = {
     userId: string,
     signal?: AbortSignal
   ): Promise<MemberWinLoss | null> {
-    let request = supabase.rpc('ca_club_member_win_loss', {
-      p_club_id: clubId,
-      p_user_id: userId,
-    });
-    if (signal && typeof (request as any).abortSignal === 'function') {
-      request = (request as any).abortSignal(signal);
-    }
-    const { data, error } = await request;
-    if (error) throw new Error(error.message || 'Could not load win and loss.');
+    const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
+    const data = await runRosterReadWithRetry(
+      async (attemptSignal) => {
+        let request = supabase.rpc('ca_club_member_win_loss', {
+          p_club_id: clubId,
+          p_user_id: userId,
+        });
+        if (typeof (request as any).abortSignal === 'function') {
+          request = (request as any).abortSignal(attemptSignal);
+        }
+        const { data: rows, error } = await request;
+        if (error) throw winLossError(error);
+        return rows as unknown;
+      },
+      { ...WIN_LOSS_READ, signal }
+    );
     if (!data || typeof data !== 'object') return null;
     const row = data as Record<string, unknown>;
     return {
@@ -520,17 +544,25 @@ export const ClubRosterService = {
   ): Promise<Map<string, WinLossFigure>> {
     const out = new Map<string, WinLossFigure>();
     const ids = [...new Set(userIds.filter(Boolean))];
+    const { runRosterReadWithRetry } = await import('../utils/rosterReadReliability');
     for (let start = 0; start < ids.length; start += 100) {
-      let request = supabase.rpc('ca_club_members_win_loss', {
-        p_club_id: clubId,
-        p_user_ids: ids.slice(start, start + 100),
-        p_period: period,
-      });
-      if (signal && typeof (request as any).abortSignal === 'function') {
-        request = (request as any).abortSignal(signal);
-      }
-      const { data, error } = await request;
-      if (error) throw new Error(error.message || 'Could not load win and loss.');
+      const batch = ids.slice(start, start + 100);
+      const data = await runRosterReadWithRetry(
+        async (attemptSignal) => {
+          let request = supabase.rpc('ca_club_members_win_loss', {
+            p_club_id: clubId,
+            p_user_ids: batch,
+            p_period: period,
+          });
+          if (typeof (request as any).abortSignal === 'function') {
+            request = (request as any).abortSignal(attemptSignal);
+          }
+          const { data: rows, error } = await request;
+          if (error) throw winLossError(error);
+          return rows as unknown;
+        },
+        { ...WIN_LOSS_READ, signal }
+      );
       for (const row of (Array.isArray(data) ? data : []) as Array<Record<string, unknown>>) {
         if (typeof row.user_id === 'string') out.set(row.user_id, winLossFigure(row));
       }

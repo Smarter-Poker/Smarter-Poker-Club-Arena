@@ -31,7 +31,12 @@ import {
   type HorseLeagueCompute,
 } from './HorseLeagueComputeWorkerClient.js';
 import type { Card, SeatPlayer, HandStage, ActionRecord } from '../types.js';
-import { HorseLogic, type HorseDecideOpts, type HorseGameStateV2 } from '../engine/HorseLogic.js';
+import {
+  HorseLogic,
+  type HorseDecideOpts,
+  type HorseGameStateV2,
+  type HorseProfileMods,
+} from '../engine/HorseLogic.js';
 import { HorseMind, readScopeOf, type HorseMindSandbox } from '../engine/HorseMind.js';
 import {
   seedFastRandom,
@@ -137,6 +142,11 @@ export interface LeagueMatchup {
   pairs?: number;
   a: HorseDecideOpts;
   b: HorseDecideOpts;
+  /** 2026-10-19: per-arm profile dials (tightness, aggression, bluffFreq) for
+   *  the league-gated self-tuner. Default {} for both arms - every matchup
+   *  that does not set them plays exactly as before. */
+  modsA?: HorseProfileMods;
+  modsB?: HorseProfileMods;
   /** V12.3: RETIRED as an opt-in — EVERY matchup is now sandboxed. It was
    *  never safe to run a league hand against live HorseMind state: `mind:false`
    *  suppresses stats and pair writes but NOT barrel plans, so the four
@@ -190,6 +200,7 @@ interface Seat {
   player: SeatPlayer;
   contributed: number;
   opts: HorseDecideOpts;
+  mods: HorseProfileMods;
 }
 
 /**
@@ -214,7 +225,9 @@ export function playHand(
   /** V16: starting stack in big blinds (default 100). */
   stackBB: number = 100,
   /** Phase 4: exact cash/tournament utility family. */
-  gameContext: LeagueGameContext = CASH_LEAGUE_CONTEXT
+  gameContext: LeagueGameContext = CASH_LEAGUE_CONTEXT,
+  /** 2026-10-19: per-seat profile dials; absent = {} (the pre-existing path). */
+  modsOf?: (seatIdx: number) => HorseProfileMods
 ): number[] {
   const SEATS = numSeats;
   const START_STACK = stackBB * BB;
@@ -240,6 +253,7 @@ export function playHand(
       // must never write synthetic reads into the live opponent memory. With
       // one, the mind runs for real against the sandbox's isolated state.
       opts: sandbox ? { ...configOf(s) } : { ...configOf(s), mind: false },
+      mods: modsOf ? { ...modsOf(s) } : {},
       player: {
         seat: s + 1,
         user_id: `league-${s + 1}`,
@@ -343,8 +357,10 @@ export function playHand(
       } as HorseGameStateV2;
 
       const d = sandbox
-        ? HorseMind.runInSandbox(sandbox, () => HorseLogic.decide(p, gs, 'balanced', {}, seat.opts))
-        : HorseLogic.decide(p, gs, 'balanced', {}, seat.opts);
+        ? HorseMind.runInSandbox(sandbox, () =>
+            HorseLogic.decide(p, gs, 'balanced', seat.mods, seat.opts)
+          )
+        : HorseLogic.decide(p, gs, 'balanced', seat.mods, seat.opts);
       const toCall = Math.max(0, currentBet - p.bet);
 
       // Validate against the engine's own rules; downgrade an illegal action
@@ -683,6 +699,13 @@ export async function runMatchup(
     };
     const evenIsA = (s: number) => withEvidence(s % 2 === 0 ? matchup.a : matchup.b);
     const evenIsB = (s: number) => withEvidence(s % 2 === 0 ? matchup.b : matchup.a);
+    const hasMods = matchup.modsA !== undefined || matchup.modsB !== undefined;
+    const modsEvenIsA = hasMods
+      ? (s: number) => (s % 2 === 0 ? (matchup.modsA ?? {}) : (matchup.modsB ?? {}))
+      : undefined;
+    const modsEvenIsB = hasMods
+      ? (s: number) => (s % 2 === 0 ? (matchup.modsB ?? {}) : (matchup.modsA ?? {}))
+      : undefined;
 
     const net1 = playHand(
       handSeed,
@@ -693,7 +716,8 @@ export async function runMatchup(
       matchup.variant ?? 'nlh',
       SEATS,
       matchup.stackBB ?? 100,
-      matchup.context ?? CASH_LEAGUE_CONTEXT
+      matchup.context ?? CASH_LEAGUE_CONTEXT,
+      modsEvenIsA
     );
     const net2 = playHand(
       handSeed,
@@ -704,7 +728,8 @@ export async function runMatchup(
       matchup.variant ?? 'nlh',
       SEATS,
       matchup.stackBB ?? 100,
-      matchup.context ?? CASH_LEAGUE_CONTEXT
+      matchup.context ?? CASH_LEAGUE_CONTEXT,
+      modsEvenIsB
     );
 
     let aNet = 0;
@@ -774,6 +799,21 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // V15 BOATS (2026-09-28): default OFF. a turns it on, b is today's brain.
   // Ship it default ON only after this resolves significant positive.
   { name: 'plo5_v15_boats', variant: 'plo5', pairs: 6000, a: { v15Boats: true }, b: {} },
+  /*
+   * LEAGUE-GATED SELF-TUNER (Dan 2026-10-19: "League-gated nudges"). The
+   * nightly tuner proposes +/-0.02 moves on three dials. A move reaches a live
+   * horse only when the matching matchup below pools significant positive
+   * (runs >= 3, pooled bb/100 > 2 x pooled stderr over the last 30 days;
+   * fn_horse_tuner_admitted_classes) AND HORSE_TUNER_LEAGUE_GATED_APPLY=1.
+   * Arm a carries the dial moved 0.10 (five nights of steps) so the edge is
+   * measurable; arm b is today's brain.
+   */
+  { name: 'tuner_tightness_up', pairs: 6000, a: {}, b: {}, modsA: { tightness: 1.1 } },
+  { name: 'tuner_tightness_down', pairs: 6000, a: {}, b: {}, modsA: { tightness: 0.9 } },
+  { name: 'tuner_aggression_up', pairs: 6000, a: {}, b: {}, modsA: { aggression: 1.1 } },
+  { name: 'tuner_aggression_down', pairs: 6000, a: {}, b: {}, modsA: { aggression: 0.9 } },
+  { name: 'tuner_bluff_up', pairs: 6000, a: {}, b: {}, modsA: { bluffFreq: 1.1 } },
+  { name: 'tuner_bluff_down', pairs: 6000, a: {}, b: {}, modsA: { bluffFreq: 0.9 } },
   { name: 'plo8_hilo_layer', variant: 'plo8', pairs: 6000, a: {}, b: { v8HiLo: false } },
   { name: 'shortdeck_v8_layer', variant: 'short_deck', pairs: 6000, a: {}, b: { v8: false } },
   { name: 'nlh_40bb_preflop', stackBB: 40, pairs: 6000, a: {}, b: { v7Preflop: false } },

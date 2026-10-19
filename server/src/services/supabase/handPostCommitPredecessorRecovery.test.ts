@@ -28,6 +28,55 @@ function prepare(earlier = [{ hand_id: 'older-1' }, { hand_id: 'older-2' }]) {
 const ids = () => mocks.rpc.mock.calls.map((call) => call[1].p_hand_id);
 beforeEach(() => vi.resetAllMocks());
 
+describe('a lost reply preserves the exact completed envelope', () => {
+  function receipt(patch: Record<string, unknown> = {}) {
+    const row = {
+      hand_id: 'current',
+      hand_number: 103,
+      post_commit_completed_at: '2026-10-19T15:40:00Z',
+      post_commit_request_hash: 'a'.repeat(64),
+      post_commit_payload_hash: 'b'.repeat(64),
+      post_commit_result: { ok: true, hand_id: 'current', hand_number: 103 },
+      ...patch,
+    };
+    const query: any = {};
+    for (const method of ['select', 'eq']) query[method] = vi.fn().mockReturnValue(query);
+    query.maybeSingle = vi.fn().mockResolvedValue({ data: row, error: null });
+    mocks.from.mockReturnValue(query);
+    mocks.rpc.mockResolvedValue({ data: null, error: new Error('supabase_timeout') });
+    return query;
+  }
+  it('reads its durable success without replaying the write', async () => {
+    const query = receipt();
+    expect(await processHandPostCommitObligations('current')).toMatchObject({
+      ok: true,
+      hand_id: 'current',
+      hand_number: 103,
+      already_completed: true,
+    });
+    expect(query.eq).toHaveBeenCalledWith('hand_id', 'current');
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+  for (const patch of [
+    { post_commit_completed_at: null },
+    { post_commit_request_hash: 'bad' },
+    { post_commit_payload_hash: null },
+    { hand_id: 'another' },
+    { post_commit_result: { ok: true, hand_id: 'another', hand_number: 103 } },
+    { post_commit_result: { ok: false, hand_id: 'current', hand_number: 103 } },
+    { post_commit_result: { ok: true, hand_id: 'current', hand_number: 102 } },
+  ])
+    it(`refuses invalid receipt ${JSON.stringify(patch)}`, async () => {
+      receipt(patch);
+      await expect(processHandPostCommitObligations('current')).rejects.toThrow('supabase_timeout');
+    });
+  it('preserves the original unknown outcome when the receipt is unreadable', async () => {
+    const query = receipt();
+    query.maybeSingle.mockResolvedValue({ data: null, error: new Error('read failed') });
+    await expect(processHandPostCommitObligations('current')).rejects.toThrow('supabase_timeout');
+  });
+});
+
 describe('live settlement advances its own causal predecessors', () => {
   it('keeps the normal hand at one RPC and no extra reads', async () => {
     mocks.rpc.mockResolvedValue({ data: { ok: true, hand_id: 'current' }, error: null });

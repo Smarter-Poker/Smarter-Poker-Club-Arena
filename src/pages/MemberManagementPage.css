@@ -1516,3 +1516,68 @@
   font-family: 'Roboto Condensed', 'Arial Narrow', sans-serif;
   font-size: 0.74rem;
 }
+
+.mm-winloss__note--stale {
+  color: var(--ca-red);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   STALE RECORD - a background refresh failed; the record on screen is the
+   previous successful read. Player Statistics' .ps-stale, in this sheet.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.mm-stale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: min(1180px, calc(100% - 24px));
+  margin: 0 auto 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--ca-red);
+  background: #080d12;
+  box-shadow:
+    inset 3px 0 0 var(--ca-red),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.mm-stale__status {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ca-red);
+  font-family: Rajdhani, 'Arial Narrow', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.mm-stale__body {
+  margin: 0;
+  color: var(--ca-text-dim);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.mm-stale .mm-empty__retry {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+.mm-downline__note {
+  margin: 8px 0 0;
+  color: var(--ca-red);
+  font-size: 0.8rem;
+}
+
+.mm-downline__note .mm-downline__show-more {
+  margin-left: 8px;
+}
+
+@media (max-width: 430px) {
+  .mm-stale {
+    width: min(100% - 16px, 1180px);
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

@@ -52,6 +52,13 @@ def bootstrap_installed(install_bucketed=True):
   raw=(root/'supabase/migrations'/filename).read_text().replace("'","''")
   sql("INSERT INTO supabase_migrations.schema_migrations VALUES('"+version+"',ARRAY['"+raw+"']);")
  if install_bucketed:sql(files=[fx/'original-6762.sql'])
+# Successors installed over the candidate in every scenario that installs it:
+# 20261019151632 proves the build bucket by bucket instead of one EXCEPT ALL.
+SUCCESSORS=[root/'supabase/migrations/20261019151632_the_inventory_seal_proves_its_build_bucket_by_bucket.sql']
+def install_candidate(candidate):
+ sql(files=[candidate])
+ sql("CREATE SCHEMA IF NOT EXISTS auth; CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT NULL::uuid$$; CREATE OR REPLACE FUNCTION public.fn_ca_break_window_refuses_migrations(timestamptz) RETURNS text LANGUAGE sql AS $$SELECT NULL::text$$; CREATE OR REPLACE FUNCTION public.fn_active_maintenance_release_boundary() RETURNS timestamptz LANGUAGE sql AS $$SELECT NULL::timestamptz$$;")
+ for f in SUCCESSORS:sql(files=[f])
 def advance():
  storage_guard()
  return json.loads(sql("SELECT public.fn_union_pnl_inventory_seal_advance('2026-10-12 07:00Z',false);").stdout.strip())
@@ -109,7 +116,7 @@ try:
  drift=sql('BEGIN; ALTER TABLE public.union_pnl_inventory_checkpoint_rows DROP CONSTRAINT '+fk+';'+candidate.read_text(),ok=False)
  assert drift.returncode and 'inventory_original_deferred_header_constraints_required' in drift.stderr,drift.stderr
  assert sql("SELECT count(*) FROM pg_constraint WHERE conrelid='public.union_pnl_inventory_checkpoint_rows'::regclass AND contype='f' AND condeferrable AND condeferred;").stdout.strip()=='1'
- sql(files=[candidate])
+ install_candidate(candidate)
  definitions=json.loads(sql("SELECT jsonb_object_agg(proname,md5(pg_get_functiondef(oid))) FROM pg_proc WHERE proname IN ('fn_union_pnl_inventory_state','fn_union_pnl_inventory_layer_state','fn_union_pnl_inventory_seal_advance','fn_union_pnl_inventory_checkpoint_seal','fn_union_pnl_prove_opening_registrations','fn_union_pnl_inventory_checkpoint_due','fn_union_pnl_inventory_seal_in_progress','fn_union_pnl_inventory_build_population','fn_union_pnl_inventory_build_transition','fn_union_pnl_inventory_seal_write_page','fn_union_pnl_inventory_build_state','fn_union_pnl_inventory_snapshot_restore','fn_union_pnl_inventory_snapshot_save');").stdout)
  repeated=sql(files=[candidate],ok=False)
  assert repeated.returncode!=0
@@ -153,7 +160,7 @@ try:
  sql('CREATE DATABASE mismatch;')
  database='mismatch'
  bootstrap_installed()
- seed(30000);sql(files=[candidate]);assert advance()['status']=='sealing'
+ seed(30000);install_candidate(candidate);assert advance()['status']=='sealing'
  # Fault only the isolated disposable cache, ahead of the committed cursor.
  # A new durable page will copy the altered value; its independent original checksum must refuse publication.
  sql("UPDATE public.union_pnl_inventory_seal_snapshot SET o_after_row=jsonb_set(o_after_row,'{value}','77777777') WHERE o_kind='row' AND o_row_id=(SELECT max(o_row_id::text)::uuid FROM public.union_pnl_inventory_seal_snapshot WHERE o_kind='row');")
@@ -163,9 +170,24 @@ try:
  else:raise AssertionError('A corrupted source cache was incorrectly published')
  assert 'inventory_build_checksum_disagrees_with_original_source' in refused.stderr,refused.stderr
  assert sql("SELECT count(*) FROM public.union_pnl_inventory_published_rows WHERE boundary='2026-10-12 07:00Z';").stdout.strip()=='0'
+ # A cache changed AFTER its row was copied: the build still equals the original
+ # assembly, but the bucket proof must refuse publication (20261019151632).
+ sql('CREATE DATABASE cachedrift;');database='cachedrift'
+ bootstrap_installed()
+ seed(30000);install_candidate(candidate)
+ for i in range(20):
+  advance()
+  if int(sql("SELECT count(*) FROM public.union_pnl_inventory_seal_build_rows;").stdout.strip())==30000:break
+ else:raise AssertionError('cachedrift pages did not complete')
+ assert sql("SELECT count(*) FROM public.union_pnl_inventory_published_rows WHERE boundary='2026-10-12 07:00Z';").stdout.strip()=='0'
+ sql("UPDATE public.union_pnl_inventory_seal_snapshot SET o_after_row=jsonb_set(o_after_row,'{value}','66666666') WHERE o_kind='row' AND o_row_id=(SELECT min(o_row_id::text)::uuid FROM public.union_pnl_inventory_seal_snapshot WHERE o_kind='row');")
+ refused=sql("SELECT public.fn_union_pnl_inventory_seal_advance('2026-10-12 07:00Z',false);",ok=False)
+ assert refused.returncode and 'inventory_build_disagrees_with_assembled_source' in refused.stderr,refused.stderr
+ assert sql("SELECT count(*) FROM public.union_pnl_inventory_published_rows WHERE boundary='2026-10-12 07:00Z';").stdout.strip()=='0'
+ print('Bucket proof refuses a cache that drifted after its rows were copied',flush=True)
  sql('CREATE DATABASE concurrent;');database='concurrent'
  bootstrap_installed()
- seed(50000);sql(files=[candidate])
+ seed(50000);install_candidate(candidate)
  from concurrent.futures import ThreadPoolExecutor
  with ThreadPoolExecutor(max_workers=2) as pool:
   receipts=list(pool.map(lambda _:advance(),range(2)))
@@ -176,7 +198,7 @@ try:
  assert sql("SELECT count(*) FROM public.union_pnl_inventory_published_rows WHERE boundary='2026-10-12 07:00Z';").stdout.strip()=='50000'
  sql('CREATE DATABASE backlog;');database='backlog'
  bootstrap_installed()
- seed(35000);sql(files=[candidate])
+ seed(35000);install_candidate(candidate)
  assert advance()['status']=='sealing'
  retained=sql("SELECT last_kind,last_source,last_row,last_event FROM public.union_pnl_inventory_seal_builds WHERE boundary='2026-10-12 07:00Z';").stdout
  # A past empty boundary switches the single source cache while current build pages remain durable.
@@ -205,7 +227,7 @@ try:
  original_population_header=sql("SELECT row_count,issue_count,rows_md5,issues_md5,result_md5 FROM public.union_pnl_inventory_checkpoints WHERE boundary='2026-10-12 07:00Z';").stdout
  assert json.loads(sql("SELECT public.fn_union_pnl_inventory_population('2026-10-12 07:00Z','2026-10-12 07:00Z');").stdout)==original_population
  sql("DELETE FROM public.union_pnl_inventory_checkpoint_rows WHERE boundary='2026-10-12 07:00Z';DELETE FROM public.union_pnl_inventory_checkpoint_issues WHERE boundary='2026-10-12 07:00Z';DELETE FROM public.union_pnl_inventory_checkpoints WHERE boundary='2026-10-12 07:00Z';")
- sql(files=[candidate]);assert advance()['status']=='sealing'
+ install_candidate(candidate);assert advance()['status']=='sealing'
  # Complete only the private marker in a rolled-back transaction: private readback
  # must equal the original while ordinary consumers still see no unpublished rows.
  private_receipt=json.loads(sql("BEGIN;SELECT public.fn_union_pnl_inventory_snapshot_restore('2026-10-12 07:00Z','2026-10-05 07:00Z');SELECT public.fn_union_pnl_inventory_seal_write_page('2026-10-12 07:00Z','2026-10-05 07:00Z');SELECT jsonb_build_object('private',public.fn_union_pnl_inventory_build_population('2026-10-12 07:00Z','2026-10-12 07:00Z'),'public',public.fn_union_pnl_inventory_population('2026-10-12 07:00Z','2026-10-12 07:00Z'));ROLLBACK;").stdout.splitlines()[-1])
@@ -224,7 +246,7 @@ try:
   seed(2)
   sql(f"UPDATE public.union_pnl_inventory_checkpoint_rows SET after_row=jsonb_build_object('padding',repeat('x',{size}));")
   assert sql("SELECT bool_and(pg_column_size(after_row)<octet_length(after_row::text)/10) FROM public.union_pnl_inventory_checkpoint_rows;").stdout.strip()=='t'
-  sql(files=[candidate])
+  install_candidate(candidate)
   if oversized:
    for i in range(3):
     refused=sql("SELECT public.fn_union_pnl_inventory_seal_advance('2026-10-12 07:00Z',false);",ok=False)
@@ -240,7 +262,7 @@ try:
    else:raise AssertionError('Compressible rows did not complete')
    assert sql("SELECT count(*) FROM public.union_pnl_inventory_published_rows WHERE boundary='2026-10-12 07:00Z';").stdout.strip()=='2'
  database='postgres'
- result=dict(status='passed',rows=rows,installation_freeze_history_writer_fk_refusals=True,nonempty_population_parity=True,population_active_counts=expected_population_counts,population_issue_count=2,old_one_transaction_wal=old_wal,bounded_transactions_wal=wals,compressed_budget_verified=True,oversized_refused=True,backlog_truthful=True,concurrency_verified=True,checksum_refused=True,header_equivalent=True,crash_resumed=True,partial_hidden=True,replay_refused=True,definitions=definitions,storage=str(work))
+ result=dict(status='passed',rows=rows,installation_freeze_history_writer_fk_refusals=True,nonempty_population_parity=True,population_active_counts=expected_population_counts,population_issue_count=2,old_one_transaction_wal=old_wal,bounded_transactions_wal=wals,compressed_budget_verified=True,oversized_refused=True,backlog_truthful=True,concurrency_verified=True,checksum_refused=True,bucket_proof_refused_cache_drift=True,header_equivalent=True,crash_resumed=True,partial_hidden=True,replay_refused=True,definitions=definitions,storage=str(work))
  (work/'result.json').write_text(json.dumps(result,indent=2)+'\n')
  print(json.dumps(result,indent=2))
 finally:

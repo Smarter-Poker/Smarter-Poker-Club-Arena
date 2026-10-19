@@ -290,6 +290,38 @@ describe('financial read-only Playwright guard', () => {
     expect(() => guard.assertNoViolations()).not.toThrow();
   });
 
+  it('quarantines the global login achievement write while preserving mutation refusals', async () => {
+    const path = '/rest/v1/rpc/fn_achievement_record_login';
+    expect(FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS).not.toContain(path);
+    const harness = pageHarness();
+    const guard = await installFinancialReadOnlyGuard(harness.page, {
+      allowedRpcPaths: FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+      quarantinedPostPaths: FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS,
+    });
+    const login = routeHarness('POST', `https://project.supabase.co${path}?apikey=hidden`);
+    await harness.handler()(login.route, login.route.request());
+    expect(login.abort).toHaveBeenCalledWith('blockedbyclient');
+    expect(login.fallback).not.toHaveBeenCalled();
+    expect(guard.quarantinedShellWrites).toEqual([{ method: 'POST', path }]);
+    expect(guard.violations).toEqual([]);
+    expect(() => guard.assertNoViolations()).not.toThrow();
+
+    for (const [method, mutationPath] of [
+      ['PATCH', path],
+      ['POST', `${path}_extra`],
+    ]) {
+      const mutation = routeHarness(method, `https://project.supabase.co${mutationPath}`);
+      await harness.handler()(mutation.route, mutation.route.request());
+      expect(mutation.abort).toHaveBeenCalledWith('blockedbyclient');
+      expect(mutation.fallback).not.toHaveBeenCalled();
+      expect(guard.violations).toContainEqual({ method, path: mutationPath });
+    }
+    expect(() => guard.assertNoViolations()).toThrow(
+      'Financial read-only guard blocked 2 REST mutations'
+    );
+    await guard.dispose();
+  });
+
   it('aborts exact shell writes without forwarding or treating them as page violations', async () => {
     const harness = pageHarness();
     const guard = await installFinancialReadOnlyGuard(harness.page, {

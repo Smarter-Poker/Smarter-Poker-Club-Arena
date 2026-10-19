@@ -42,6 +42,10 @@ export const FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS = Object.freeze([
   '/rest/v1/bus_event_log',
   '/rest/v1/rpc/fn_update_presence',
   '/rest/v1/rpc/fn_report_client_errors',
+  // IdentityDNA's signed-in shell records the server-owned login streak and
+  // may award achievement diamonds. Abort it during read-only certification;
+  // it is a genuine write, never a reviewed Financial-page read.
+  '/rest/v1/rpc/fn_achievement_record_login',
 ] as const);
 
 /** Reviewed read-only RPCs mounted by the Financial Admin hub and its linked consoles. */

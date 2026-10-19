@@ -774,6 +774,23 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // V15 BOATS (2026-09-28): default OFF. a turns it on, b is today's brain.
   // Ship it default ON only after this resolves significant positive.
   { name: 'plo5_v15_boats', variant: 'plo5', pairs: 6000, a: { v15Boats: true }, b: {} },
+  // 2026-10-19: plo5 alone has pooled +0.06 +/- 0.05 bb/100 over 21 runs
+  // (252,000 hands) - unresolved - while the live underfull river raise-wars
+  // the 2026-10-18 audit read were PLO4 and PLO6 (plo_underfull_stackoff,
+  // plo_set_stackoff -47 bb/hand, plo_naked_trips_stackoff -75 bb/hand). Measure
+  // the same default-OFF flag where those hands are dealt, and deep, where a
+  // re-raise war is for a stack. Same rule: default ON only on a pooled
+  // significant positive.
+  { name: 'plo4_v15_boats', variant: 'plo4', pairs: 6000, a: { v15Boats: true }, b: {} },
+  { name: 'plo6_v15_boats', variant: 'plo6', pairs: 6000, a: { v15Boats: true }, b: {} },
+  {
+    name: 'plo4_v15_boats_deep',
+    variant: 'plo4',
+    stackBB: 250,
+    pairs: 6000,
+    a: { v15Boats: true },
+    b: {},
+  },
   { name: 'plo8_hilo_layer', variant: 'plo8', pairs: 6000, a: {}, b: { v8HiLo: false } },
   { name: 'shortdeck_v8_layer', variant: 'short_deck', pairs: 6000, a: {}, b: { v8: false } },
   { name: 'nlh_40bb_preflop', stackBB: 40, pairs: 6000, a: {}, b: { v7Preflop: false } },

@@ -42,6 +42,11 @@ export const FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS = Object.freeze([
   '/rest/v1/bus_event_log',
   '/rest/v1/rpc/fn_update_presence',
   '/rest/v1/rpc/fn_report_client_errors',
+  // The achievement login recorder (#7462) runs on every signed-in shell load
+  // and writes profiles.login_streak / last_login_date (VOLATILE, SECURITY
+  // DEFINER, pg_proc 2026-10-19). Never forwarded; unlisted, it refused the
+  // Financial Admin certificate (post-deploy job 118267557038).
+  '/rest/v1/rpc/fn_achievement_record_login',
 ] as const);
 
 /** Reviewed read-only RPCs mounted by the Financial Admin hub and its linked consoles. */

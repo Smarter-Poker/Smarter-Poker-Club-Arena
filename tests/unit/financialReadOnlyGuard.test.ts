@@ -311,4 +311,23 @@ describe('financial read-only Playwright guard', () => {
     ]);
     expect(() => guard.assertNoViolations()).not.toThrow();
   });
+
+  it('aborts the achievement login recorder the shell starts on every load (#7462)', async () => {
+    const harness = pageHarness();
+    const guard = await installFinancialReadOnlyGuard(harness.page, {
+      allowedRpcPaths: FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS,
+      quarantinedPostPaths: FINANCIAL_ADMIN_QUARANTINED_SHELL_POST_PATHS,
+    });
+    const login = routeHarness(
+      'POST',
+      'https://project.supabase.co/rest/v1/rpc/fn_achievement_record_login'
+    );
+
+    await harness.handler()(login.route, login.route.request());
+
+    expect(login.abort).toHaveBeenCalledWith('blockedbyclient');
+    expect(login.fallback).not.toHaveBeenCalled();
+    expect(guard.violations).toEqual([]);
+    expect(() => guard.assertNoViolations()).not.toThrow();
+  });
 });

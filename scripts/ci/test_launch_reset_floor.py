@@ -174,3 +174,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-source-count-keysets-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 # New chip clubs reconcile their zero-born wallets without fabricated baselines.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-new-club-conservation-origin-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Original satellite ownership verifies its exact ledger receipt and forty-source guard.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-satellite-ledger-identity-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))

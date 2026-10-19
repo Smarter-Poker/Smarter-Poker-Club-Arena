@@ -48,6 +48,10 @@ import {
 } from './services/HorseDataLedgerSync.js';
 import { startHorseLaneLoader, stopHorseLaneLoader } from './services/HorseLaneLoader.js';
 import {
+  startHorseDiamondSpins,
+  stopHorseDiamondSpins,
+} from './services/HorseDiamondSpinsDriver.js';
+import {
   startCommerceRenewalConsumer,
   stopCommerceRenewalConsumer,
 } from './services/CommerceRenewalConsumer.js';
@@ -300,6 +304,11 @@ async function startLeaderOwnedServices(): Promise<void> {
      STABLE_HAND_CONTROLLER=false to go back to planning only. */
   stableHandExecutor = new StableHandExecutor((tableId) => gameServer.getTableEngine(tableId));
   stableHandExecutor.start();
+  /* A HORSE WITH NO CHIPS SPINS ITS DIAMONDS INTO CHIPS (Dan 2026-10-18): the
+     horse's hand on the Diamond Spins wheel, through the engine-only door
+     fn_horse_diamond_spins that runs the person's own wheel and bonus games.
+     Silent during the freeze. HORSE_DIAMOND_SPINS=false turns it off. */
+  startHorseDiamondSpins();
 }
 
 /** Fence every leader-owned writer synchronously, then join its last mutation. */
@@ -317,6 +326,7 @@ function stopLeaderOwnedServices(): Promise<void> {
     ['HorseOverlayGuard', () => horseOverlayGuard?.stop()],
     ['HorseSessionRotator', () => horseSessionRotator?.stop()],
     ['StableHandExecutor', () => stableHandExecutor?.stop()],
+    ['HorseDiamondSpins', stopHorseDiamondSpins],
     ['HorseSelfTuner', stopHorseSelfTuner],
     ['HorseLeague', stopHorseLeague],
     ['HorseDailyAudit', stopHorseDailyAudit],

@@ -31,6 +31,8 @@
  *
  * USAGE  node scripts/ci/check-live-seo-contract.mjs [--sha <40 hex>] [--base https://smarter.poker/hub/club-arena]
  */
+import { execFileSync } from 'node:child_process';
+
 const args = process.argv.slice(2);
 const opt = (name, fallback) => {
   const i = args.indexOf(name);
@@ -125,13 +127,64 @@ export function parseSitemapLocs(xml) {
   return [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].trim());
 }
 
+/**
+ * A LATER PROTECTED-MAIN RELEASE IS NOT A BROKEN CONTRACT (2026-10-19).
+ *
+ * This job waits for the exact client its publisher selected. Merges land
+ * every few minutes, and during the 2026-10-19 GitHub Actions incident this
+ * job started 16-20 minutes after its gate, by which time a newer publisher
+ * had already replaced that client: runs 39307277919 and 39313288388 read
+ * `fd6a602c2e` for three minutes while waiting for `a6af2a2425`, and went red
+ * without reading a single page. The browser lanes already re-target onto a
+ * forward release (the `descendant` branch in post-deploy-e2e.yml). So does
+ * this: when production serves a commit that descends from the expected one
+ * and is on protected main, the contract is checked against what crawlers
+ * actually get now. A rollback, an off-lineage SHA, or a commit this checkout
+ * cannot resolve keeps waiting and then fails, as before.
+ */
+export function acceptServedBuild(expected, served, isForwardRelease) {
+  if (!expected || served === expected) return served;
+  const full = /^[0-9a-f]{40}$/;
+  if (!full.test(expected) || !full.test(String(served))) return null;
+  return isForwardRelease(expected, served) ? served : null;
+}
+
+function gitForwardRelease(expected, served) {
+  const git = (...gitArgs) => {
+    try {
+      execFileSync('git', gitArgs, { stdio: 'ignore', timeout: 60_000 });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  git(
+    'fetch',
+    '--no-tags',
+    '--filter=blob:none',
+    'origin',
+    '+refs/heads/main:refs/remotes/origin/main'
+  );
+  return (
+    git('cat-file', '-e', `${served}^{commit}`) &&
+    git('merge-base', '--is-ancestor', expected, served) &&
+    git('merge-base', '--is-ancestor', served, 'refs/remotes/origin/main')
+  );
+}
+
 async function waitForBuild(sha) {
   for (let i = 1; i <= 18; i += 1) {
     try {
       const { status, text } = await get(`${BASE}/build-info.json`);
       if (status === 200) {
         const info = JSON.parse(text);
-        if (!sha || info.ca_sha === sha) {
+        const accepted = acceptServedBuild(sha, info.ca_sha, gitForwardRelease);
+        if (accepted) {
+          if (sha && accepted !== sha)
+            notes.push(
+              `${sha} was superseded by forward protected-main release ${accepted}; ` +
+                'checking the contract production actually serves'
+            );
           notes.push(`build-info.json serves ${info.ca_sha} (run ${info.run_id})`);
           return info.ca_sha;
         }

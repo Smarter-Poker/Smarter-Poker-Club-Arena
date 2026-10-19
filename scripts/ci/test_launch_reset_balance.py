@@ -275,7 +275,14 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
     unsafe=prefix+f"BEGIN; UPDATE rakeback_periods SET {mutation} WHERE id='{period_id}'; SELECT fn_ca_launch_accounting_activate('{op}'); ROLLBACK;"
     refusal=run(q,unsafe,False)
     (OUT/('period-negative-'+str(["status='paid'","status='claiming'","paid_at=clock_timestamp()"].index(mutation) if mutation in ["status='paid'","status='claiming'","paid_at=clock_timestamp()"] else 3)+'.txt')).write_text(refusal)
-    expected='Legacy period payment requires a closed earning period' if mutation=="status='paid'" else 'launch_accounting_current_week_period_requires_qualification'
+    # fn_ca_legacy_period_maturity closes a period at UTC midnight after
+    # period_end, while the union week (and this fixture's current_week) is a
+    # Los Angeles week. For the seven hours between those two boundaries the
+    # maturity trigger admits the 'paid' write and activation refuses it as an
+    # unqualified current-week period instead. Both are refusals; name the one
+    # the clock actually selects rather than failing every PR each Sunday night.
+    matured=run(q,f"SELECT ((period_end+1)::timestamp AT TIME ZONE 'UTC'<=statement_timestamp())::text FROM rakeback_periods WHERE id='{period_id}';").splitlines()[-1]=='true'
+    expected='Legacy period payment requires a closed earning period' if mutation=="status='paid'" and not matured else 'launch_accounting_current_week_period_requires_qualification'
     assert expected in refusal,refusal
 
 

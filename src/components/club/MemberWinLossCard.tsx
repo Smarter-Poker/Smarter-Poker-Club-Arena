@@ -64,10 +64,12 @@ export default function MemberWinLossCard({
     scope: string;
     state: 'loading' | 'ready' | 'error' | 'hidden';
     data: MemberWinLoss | null;
+    /** A background refresh failed; `data` is the previous successful read. */
+    stale?: boolean;
   };
   const [result, setResult] = useState<Result>({ scope, state: 'loading', data: null });
   const current: Result = result.scope === scope ? result : { scope, state: 'loading', data: null };
-  const { data, state } = current;
+  const { data, state, stale } = current;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -87,7 +89,13 @@ export default function MemberWinLossCard({
       .catch((error) => {
         if (controller.signal.aborted) return;
         reportError(error, 'MemberWinLossCard.Load');
-        setResult({ scope, data: null, state: 'error' });
+        // A failed background refresh keeps the verified figures and says they
+        // are from the previous read; only a card with nothing to show errors.
+        setResult((previous) =>
+          previous.scope === scope && previous.state === 'ready' && previous.data
+            ? { ...previous, stale: true }
+            : { scope, data: null, state: 'error' }
+        );
       });
     return () => controller.abort();
   }, [clubId, userId, scope, refreshKey]);
@@ -116,6 +124,11 @@ export default function MemberWinLossCard({
           {WINDOWS.map((window) => (
             <WinLossRow key={window.key} label={window.label} figure={data[window.key]} />
           ))}
+          {stale && (
+            <p className="mm-winloss__note mm-winloss__note--stale" role="status">
+              Could Not Refresh Win And Loss. Showing The Previous Successful Read.
+            </p>
+          )}
           <p className="mm-winloss__note">Club Chips. Days Run Midnight To Midnight UTC.</p>
         </>
       )}

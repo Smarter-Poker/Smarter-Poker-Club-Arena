@@ -176,7 +176,7 @@ it('updates an authorized player wallet absolutely without starting another dire
   await ready();
   const calls = f.page.mock.calls.length;
   act(() => playerSignal(175));
-  expect(screen.getByText('175')).toBeInTheDocument();
+  expect(screen.getByText('175.00')).toBeInTheDocument();
   expect(f.page).toHaveBeenCalledTimes(calls);
 });
 it('rereads agent wallets from private signals and coalesces overlapping events', async () => {
@@ -196,11 +196,11 @@ it('rereads agent wallets from private signals and coalesces overlapping events'
     first.resolve(receipt);
   });
   expect(f.detail).toHaveBeenCalledTimes(2);
-  expect(screen.getByText('350')).toBeInTheDocument();
+  expect(screen.getByText('350.00')).toBeInTheDocument();
   await act(async () => {
     latest.resolve({ ...receipt, wallets: { ...receipt.wallets, agent_wallet: 450 } });
   });
-  expect(screen.getByText('450')).toBeInTheDocument();
+  expect(screen.getByText('450.00')).toBeInTheDocument();
   expect(f.page).toHaveBeenCalledTimes(calls);
 });
 it('keeps a newer wallet event when a previously started directory read answers', async () => {
@@ -221,7 +221,7 @@ it('keeps a newer wallet event when a previously started directory read answers'
   await act(async () => {
     f.export({ items: [row], next_cursor: null, has_more: false, filtered_total: 1 });
   });
-  expect(screen.getByText('175')).toBeInTheDocument();
+  expect(screen.getByText('175.00')).toBeInTheDocument();
 });
 it('rejects wallet answers after a search scope reset', async () => {
   const old = deferred();
@@ -235,7 +235,7 @@ it('rejects wallet answers after a search scope reset', async () => {
   await act(async () => {
     old.resolve(receipt);
   });
-  expect(screen.queryByText('350')).not.toBeInTheDocument();
+  expect(screen.queryByText('350.00')).not.toBeInTheDocument();
 });
 it('does not expose wallets for identity-only rows even if signals carry balances', async () => {
   f.page.mockResolvedValue({
@@ -251,7 +251,7 @@ it('does not expose wallets for identity-only rows even if signals carry balance
     signal();
   });
   expect(f.detail).not.toHaveBeenCalled();
-  expect(screen.queryByText('175')).not.toBeInTheDocument();
+  expect(screen.queryByText('175.00')).not.toBeInTheDocument();
 });
 it('preserves the last wallet on a failed authoritative read', async () => {
   f.detail.mockRejectedValue(new Error('Wallet Read Failed'));
@@ -260,7 +260,7 @@ it('preserves the last wallet on a failed authoritative read', async () => {
   await act(async () => {
     signal();
   });
-  expect(screen.getByText('200')).toBeInTheDocument();
+  expect(screen.getByText('200.00')).toBeInTheDocument();
   expect(f.report).toHaveBeenCalledWith(expect.any(Error), 'ClubMembersPage.walletRefresh');
 });
 
@@ -271,8 +271,8 @@ it('removes financial values when the authoritative read revokes financial acces
   await act(async () => {
     signal();
   });
-  expect(screen.queryByText('200')).not.toBeInTheDocument();
-  expect(screen.queryByText('100')).not.toBeInTheDocument();
+  expect(screen.queryByText('200.00')).not.toBeInTheDocument();
+  expect(screen.queryByText('100.00')).not.toBeInTheDocument();
 });
 it('rejects a previous viewer wallet response and its signal is aborted', async () => {
   const old = deferred();
@@ -288,7 +288,7 @@ it('rejects a previous viewer wallet response and its signal is aborted', async 
   await act(async () => {
     old.resolve(receipt);
   });
-  expect(screen.queryByText('350')).not.toBeInTheDocument();
+  expect(screen.queryByText('350.00')).not.toBeInTheDocument();
 });
 
 it('accepts a numeric WAL string and rejects empty balance data', async () => {
@@ -300,14 +300,14 @@ it('accepts a numeric WAL string and rejects empty balance data', async () => {
       new: { club_id: club, user_id: 'member-a', chip_balance: '275' },
     });
   });
-  expect(screen.getByText('275')).toBeInTheDocument();
+  expect(screen.getByText('275.00')).toBeInTheDocument();
   act(() => {
     f.memberSignal?.({
       eventType: 'UPDATE',
       new: { club_id: club, user_id: 'member-a', chip_balance: '' },
     });
   });
-  expect(screen.getByText('275')).toBeInTheDocument();
+  expect(screen.getByText('275.00')).toBeInTheDocument();
 });
 
 it('clears its request deadline when the wallet owner unmounts', async () => {
@@ -332,7 +332,7 @@ it('redacts the wallet when the service confirms a full null access denial', asy
   await act(async () => {
     signal();
   });
-  expect(screen.queryByText('200')).not.toBeInTheDocument();
-  expect(screen.queryByText('100')).not.toBeInTheDocument();
+  expect(screen.queryByText('200.00')).not.toBeInTheDocument();
+  expect(screen.queryByText('100.00')).not.toBeInTheDocument();
   expect(f.report).not.toHaveBeenCalled();
 });

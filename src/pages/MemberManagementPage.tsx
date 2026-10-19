@@ -61,6 +61,8 @@ import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { runWithRequestDeadline } from '../utils/requestDeadline';
 import { runRosterReadWithRetry } from '../utils/rosterReadReliability';
 import { toTitleCase } from '../utils/titleCase';
+import { countFigure as count, feeFigure, formatWalletChips, winLossChips } from '../utils/format';
+import { memberRangeSearch } from '../utils/memberRangeLink';
 import { isUUID } from '../utils/clubIdResolver';
 import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdResolver';
 import {
@@ -89,23 +91,11 @@ const MEMBER_CREDENTIAL_ART = `${import.meta.env.BASE_URL}images/club-members/me
    FORMATTING
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/** Counts. Never padStart, never a raw number in the DOM. */
-function count(value: number): string {
-  return (value ?? 0).toLocaleString();
-}
-
-/** Money and chips. Two decimals, always, so a column of them lines up. */
-function money(value: number): string {
-  return (value ?? 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
-/** Chips read as whole numbers unless they are not. */
-function chips(value: number): string {
-  return (value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
+/* Figures use the shared Player Management formatters (utils/format), so a fee,
+   a wallet or a win / loss reads the same here as on the Players list and in
+   Player Statistics: fees feeFigure (Dan, 2026-10-14), signed winnings
+   winLossChips (Dan 2026-10-16), wallets formatWalletChips (Dan, 2026-10-18),
+   counts countFigure. */
 
 function formatTimestamp(iso: string | null): string {
   if (!iso) return 'Never';
@@ -152,6 +142,13 @@ export default function MemberManagementPage() {
   const [downline, setDownline] = useState<DownlineMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  // A background refresh (live event, focus, back online) failed while a
+  // record was on screen. The record stays; a banner says it is the previous
+  // successful read. Only a read the viewer asked for blanks the page.
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  // The downline is its own read: its failure only touches its own section.
+  const [downlineFailed, setDownlineFailed] = useState(false);
+  const recordShownRef = useRef(false);
   // The club or the member does not exist. Distinct from a read that failed:
   // a mistyped slug used to reach the uuid RPC as 22P02 and be shown as
   // "The Member Ledger Did Not Respond", which reads as an outage.
@@ -316,7 +313,12 @@ export default function MemberManagementPage() {
   });
 
   useMasterBusBroadcastChannel({
-    channelName: resolvedClubId && userId ? `member-record:${resolvedClubId}:${userId}` : null,
+    // The topic policy compares lower-case ids; a pasted upper-case URL id
+    // was refused. Player Statistics lower-cases the same way.
+    channelName:
+      resolvedClubId && userId
+        ? `member-record:${resolvedClubId.toLowerCase()}:${userId.toLowerCase()}`
+        : null,
     event: 'record_changed',
     enabled: !!resolvedClubId && !!user?.id,
     onPayload: () => recordRefreshRef.current(),
@@ -350,6 +352,8 @@ export default function MemberManagementPage() {
     setMyRoleLoaded(false);
     setResolvedClubId(null);
     setNotFound(false);
+    setRefreshFailed(false);
+    setDownlineFailed(false);
   }, [clubId, userId, user?.id]);
 
   const loadDetail = useCallback(
@@ -370,8 +374,10 @@ export default function MemberManagementPage() {
         (getIsMounted ? getIsMounted() : true) &&
         isMountedRef.current;
 
-      if (live()) {
-        if (!background) setLoading(true);
+      // A background read leaves the error screen (or the record) in place
+      // until it has an answer, so a failed refresh cannot flicker the page.
+      if (live() && !background) {
+        setLoading(true);
         setLoadError(false);
       }
       try {
@@ -404,10 +410,23 @@ export default function MemberManagementPage() {
 
         const walletSnapshot = walletUpdatesRef.current.snapshot();
         const accessRevision = accessDenialRef.current.revision;
-        const [memberDetail, memberDownline] = await Promise.all([
-          ClubRosterService.getMemberDetail(resolved, userId, activeRange, controller.signal),
-          ClubRosterService.getDownline(resolved, userId, controller.signal),
-        ]);
+        // Both reads start together, but the downline settles on its own: a
+        // downline failure must not blank the member record above it.
+        const downlineRead = ClubRosterService.getDownline(
+          resolved,
+          userId,
+          controller.signal
+        ).then(
+          (rows) => ({ ok: true as const, rows }),
+          (error: unknown) => ({ ok: false as const, error })
+        );
+        const memberDetail = await ClubRosterService.getMemberDetail(
+          resolved,
+          userId,
+          activeRange,
+          controller.signal
+        );
+        const downlineResult = await downlineRead;
         if (!live()) return;
         detailOwnerRef.current = `${clubId ?? ''}:${userId ?? ''}:${user?.id ?? ''}`;
         const reconciledWallets = walletUpdatesRef.current.reconcile(
@@ -424,8 +443,20 @@ export default function MemberManagementPage() {
           currentDetail = applyAccessDenial(currentDetail, newerDenial.detail);
         }
         setDetail(currentDetail);
-        setDownline(currentDetail.capabilities.can_view_financials ? memberDownline : []);
-        if (!background) setDownlineShown(DOWNLINE_RENDER_CAP);
+        setLoadError(false);
+        setRefreshFailed(false);
+        if (!currentDetail.capabilities.can_view_financials) {
+          setDownline([]);
+          setDownlineFailed(false);
+        } else if (downlineResult.ok) {
+          setDownline(downlineResult.rows);
+          setDownlineFailed(false);
+          if (!background) setDownlineShown(DOWNLINE_RENDER_CAP);
+        } else {
+          // Keep any downline already shown; the section says it is stale.
+          reportError(downlineResult.error, 'MemberManagementPage.loadDownline');
+          setDownlineFailed(true);
+        }
         setRecordRevision((revision) => revision + 1);
 
         // Whoever is reading decides what this page lets them do. One row, and
@@ -457,8 +488,15 @@ export default function MemberManagementPage() {
             return;
           }
           reportError(error, 'MemberManagementPage.loadDetail');
-          setLoadError(true);
-          toast.error('Failed To Load This Member');
+          if (background && recordShownRef.current) {
+            // Keep the record on screen; the stale banner names the failure.
+            setRefreshFailed(true);
+          } else {
+            setLoadError(true);
+            // Only a read the viewer asked for toasts. A background retry that
+            // fails again must not toast on every focus or live event.
+            if (!background) toast.error('Failed To Load This Member');
+          }
         }
       } finally {
         if (live()) setLoading(false);
@@ -570,6 +608,7 @@ export default function MemberManagementPage() {
   const avatarLit = detail?.presence.is_seated === true || onlineNow;
 
   const shownDownline = downline.slice(0, downlineShown);
+  recordShownRef.current = !loadError && found;
 
   /* ── Render ─────────────────────────────────────────────────────────────── */
 
@@ -643,6 +682,24 @@ export default function MemberManagementPage() {
   return (
     <div className="member-mgmt-page">
       <PageHeader onBack={() => navigate(-1)} />
+
+      {refreshFailed && (
+        <div className="mm-stale" role="alert">
+          <div>
+            <span className="mm-stale__status">Member Connection Interrupted</span>
+            <p className="mm-stale__body">
+              Could Not Refresh This Member. The Record Below Is From The Previous Successful Read.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="mm-empty__retry"
+            onClick={() => recordRefreshRef.current()}
+          >
+            Try Again
+          </button>
+        </div>
+      )}
 
       {/* ── Identity ─────────────────────────────────────────────────────── */}
 
@@ -887,18 +944,18 @@ export default function MemberManagementPage() {
               labelled as the whole; mtt_hands was fetched and never drawn. */}
             <StatRow label="Cash Hands" value={count(stats.hands)} />
             <StatRow label="MTT Hands" value={count(stats.mtt_hands)} />
-            <StatRow label="Cash Fees" value={money(stats.total_fee)} />
-            <StatRow label="MTT Fees" value={money(stats.mtt_fee)} />
-            <StatRow label="Claimed Back" value={money(stats.claimed_back)} />
-            <StatRow label="Sent Out" value={money(stats.sent_out)} />
+            <StatRow label="Cash Fees" value={feeFigure(stats.total_fee)} />
+            <StatRow label="MTT Fees" value={feeFigure(stats.mtt_fee)} />
+            <StatRow label="Claimed Back" value={feeFigure(stats.claimed_back)} />
+            <StatRow label="Sent Out" value={feeFigure(stats.sent_out)} />
             <StatRow
               label="Total Winnings"
-              value={money(stats.total_winnings)}
+              value={winLossChips(stats.total_winnings)}
               signed={stats.total_winnings}
             />
             <StatRow
               label="MTT Winnings"
-              value={money(stats.mtt_winnings)}
+              value={winLossChips(stats.mtt_winnings)}
               signed={stats.mtt_winnings}
             />
           </section>
@@ -911,9 +968,9 @@ export default function MemberManagementPage() {
             <h2 className="mm-card__title">Wallets</h2>
             {/* chip_balance and player_wallet are the same club_members row
               read twice; two labels on one number read as two wallets. */}
-            <StatRow label="Player Wallet" value={chips(wallets.player_wallet)} />
-            <StatRow label="Agent Wallet" value={chips(wallets.agent_wallet)} />
-            <StatRow label="Promo Wallet" value={chips(wallets.promo_wallet)} />
+            <StatRow label="Player Wallet" value={formatWalletChips(wallets.player_wallet)} />
+            <StatRow label="Agent Wallet" value={formatWalletChips(wallets.agent_wallet)} />
+            <StatRow label="Promo Wallet" value={formatWalletChips(wallets.promo_wallet)} />
           </section>
         )}
 
@@ -924,6 +981,21 @@ export default function MemberManagementPage() {
             <h2 className="mm-card__title">Downline</h2>
             <StatRow label="Downlines Direct" value={count(counts.downline_direct)} />
             <StatRow label="Downlines Total" value={count(counts.downline_total)} />
+
+            {downlineFailed && (
+              <p className="mm-downline__note" role="status">
+                {downline.length > 0
+                  ? 'Could Not Refresh The Downline. Showing The Previous Successful Read.'
+                  : 'The Downline List Could Not Be Loaded.'}
+                <button
+                  type="button"
+                  className="mm-downline__show-more"
+                  onClick={() => recordRefreshRef.current()}
+                >
+                  Try Again
+                </button>
+              </p>
+            )}
 
             {shownDownline.length > 0 && (
               <div className="mm-downline">
@@ -946,7 +1018,7 @@ export default function MemberManagementPage() {
                       <span className="mm-downline__number">No. {d.player_number}</span>
                     )}
                     <span className="mm-downline__fees" title="Fees Generated">
-                      {money(d.total_fees)}
+                      {feeFigure(d.total_fees)}
                     </span>
                     <span className="mm-downline__open" aria-hidden="true">
                       ›
@@ -1020,7 +1092,11 @@ export default function MemberManagementPage() {
             <button
               type="button"
               className="mm-nav__row"
-              onClick={() => navigate(`/clubs/${clubId}/members/${identity!.user_id}/statistics`)}
+              onClick={() =>
+                navigate(
+                  `/clubs/${clubId}/members/${identity!.user_id}/statistics?${memberRangeSearch(rangeMode, range)}`
+                )
+              }
             >
               <span className="mm-nav__copy">
                 <span className="mm-nav__label">Player Statistics</span>

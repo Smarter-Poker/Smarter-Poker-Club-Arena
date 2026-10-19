@@ -148,11 +148,12 @@ describe('the statistics page', () => {
   });
 
   it('keeps production certification aligned with every real range control', () => {
+    expect(STATS).toContain("overall: 'Overall'");
     expect(STATS).toContain("day: 'Day'");
-    expect(STATS).toContain("week: 'Week'");
+    expect(STATS).toContain("week: '7 Days'");
     expect(STATS).toContain("month: 'Month'");
     expect(STATS).toContain("custom: 'Custom'");
-    expect(PRODUCTION_PLAYERS).toContain("['Day', 'Week', 'Month', 'Custom']");
+    expect(PRODUCTION_PLAYERS).toContain("['Overall', 'Day', '7 Days', 'Month', 'Custom']");
     expect(PRODUCTION_PLAYERS).not.toContain("['Overall', '7 Days', 'Custom']");
   });
 });
@@ -242,7 +243,9 @@ describe('the transfer modal (source pins beside the mount test)', () => {
   it('previews the wallet the chips land in', () => {
     // 2026-10-16: the preview reads every wallet the recipient holds through
     // the cashier balance read the Send Out screen uses, not the agents table.
-    expect(MODAL).toContain('const destinationLabel = SEND_DESTINATION_LABELS[previewDestination];');
+    expect(MODAL).toContain(
+      'const destinationLabel = SEND_DESTINATION_LABELS[previewDestination];'
+    );
     expect(MODAL).toContain('useRecipientWalletBalances(');
     expect(MODAL).toContain('recipientBalances?.[previewDestination]');
   });

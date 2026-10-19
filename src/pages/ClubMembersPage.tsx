@@ -28,7 +28,7 @@ import { ClubNotFoundError, resolveClubUUIDStrict } from '../utils/strictClubIdR
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { type RosterConnectionState } from '../utils/rosterReadReliability';
-import { feeFigure, winLossChips } from '../utils/format';
+import { countFigure, feeFigure, formatWalletChips, winLossChips } from '../utils/format';
 import { useRosterWinLoss } from '../hooks/useRosterWinLoss';
 import { titleCase } from '../utils/titleCase';
 import {
@@ -198,10 +198,18 @@ function readSort(value: string | null): RosterSort {
     : 'hierarchy';
 }
 
-function chips(value: number | null): string {
-  return value === null
-    ? 'Restricted'
-    : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+/* One formatter per kind of figure, shared with the record and Player
+   Statistics (utils/format): fees feeFigure, wallets formatWalletChips, signed
+   results winLossChips, counts countFigure. Null is a figure this viewer may
+   not see. */
+function walletFigure(value: number | null): string {
+  return value == null ? 'Restricted' : formatWalletChips(value);
+}
+
+/** Win / loss for one row: the figure, "Unavailable" after a failed read, or "...". */
+function winLossText(winLoss: WinLossFigure | undefined, unavailable: boolean): string {
+  if (winLoss) return winLossChips(winLoss.net);
+  return unavailable ? 'Unavailable' : '...';
 }
 
 function feeTitle(member: RosterMember): string | undefined {
@@ -1899,6 +1907,7 @@ export default function ClubMembersPage() {
                 onSelect={toggleSelected}
                 columns={columns}
                 winLoss={winLoss.get(member.user_id)}
+                winLossUnavailable={winLoss.unavailable.has(member.user_id)}
                 winLossLabel={WIN_LOSS_SHORT[winLossPeriod]}
               />
             ))}
@@ -1960,11 +1969,14 @@ export const MemberRow = memo(function MemberRow({
   columns,
   simpleMode = false,
   winLoss,
+  winLossUnavailable = false,
   winLossLabel = 'Win / Loss',
 }: {
   simpleMode?: boolean;
   /** The net for the chosen window; undefined while it loads. */
   winLoss?: WinLossFigure;
+  /** The last read for this row failed; it is being retried. */
+  winLossUnavailable?: boolean;
   winLossLabel?: string;
   member: RosterMember;
   position: number;
@@ -2064,7 +2076,7 @@ export const MemberRow = memo(function MemberRow({
                 </span>
               )}
               <span className={`member-simple-balance__winloss${winLossTone}`}>
-                {winLossLabel} {winLoss ? winLossChips(winLoss.net) : '...'}
+                {winLossLabel} {winLossText(winLoss, winLossUnavailable)}
               </span>
             </span>
           )}
@@ -2072,23 +2084,23 @@ export const MemberRow = memo(function MemberRow({
             <span className="member-metrics">
               <span className={`member-metric member-metric--winloss${winLossTone}`}>
                 <span className="member-metric__value">
-                  {winLoss ? winLossChips(winLoss.net) : '...'}
+                  {winLossText(winLoss, winLossUnavailable)}
                 </span>
                 <span className="member-metric__label">{winLossLabel}</span>
               </span>
               {columns.has('downlines') && (
-                <Metric label="Downlines" value={chips(member.downline_total)} />
+                <Metric label="Downlines" value={countFigure(member.downline_total)} />
               )}
               {columns.has('fees') && (
                 <>
-                  <Metric label="Indiv. Fees" value={chips(member.total_fees)} accent />
-                  <Metric label="Downline Fees" value={chips(member.downline_fees)} accent />
+                  <Metric label="Indiv. Fees" value={feeFigure(member.total_fees)} accent />
+                  <Metric label="Downline Fees" value={feeFigure(member.downline_fees)} accent />
                 </>
               )}
               {columns.has('wallets') && (
                 <>
-                  <Metric label="Agent Wallet" value={chips(member.agent_wallet)} />
-                  <Metric label="Player Wallet" value={chips(member.player_wallet)} />
+                  <Metric label="Agent Wallet" value={walletFigure(member.agent_wallet)} />
+                  <Metric label="Player Wallet" value={walletFigure(member.player_wallet)} />
                 </>
               )}
             </span>

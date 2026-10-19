@@ -408,12 +408,16 @@ it('advances relative performance dates at the UTC boundary without polling', as
   vi.setSystemTime(new Date('2026-10-18T23:59:59.900Z'));
   render(<PlayerStatisticsPage />);
   await act(async () => {});
-  expect(state.getMemberStatistics.mock.calls[0][3].to).toBe('2026-10-18');
+  // Opened without a carried range, Statistics shows Overall, as the record does.
+  expect(state.getMemberStatistics.mock.calls[0][3]).toEqual({ from: null, to: null });
+  fireEvent.click(screen.getByRole('button', { name: 'Month', exact: true }));
+  await act(async () => {});
+  expect(state.getMemberStatistics.mock.lastCall![3].to).toBe('2026-10-18');
   await act(async () => {
     await vi.advanceTimersByTimeAsync(130);
   });
   expect(state.getMemberStatistics.mock.lastCall![3].to).toBe('2026-10-19');
-  expect(state.getMemberStatistics).toHaveBeenCalledTimes(2);
+  expect(state.getMemberStatistics).toHaveBeenCalledTimes(3);
 });
 
 it('advances a visible seven-day member ledger at the UTC boundary without another event', async () => {

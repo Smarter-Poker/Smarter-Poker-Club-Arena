@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
     userId: '11111111-1111-4111-8111-111111111111',
   } as Record<string, string>,
   viewerId: 'viewer-1',
+  search: new URLSearchParams(),
   navigate: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   getMemberDetail: vi.fn(),
@@ -21,7 +22,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('react-router-dom', () => ({
   useParams: () => state.params,
-  useSearchParams: () => [new URLSearchParams(), vi.fn()],
+  useSearchParams: () => [state.search, vi.fn()],
   useNavigate: () => state.navigate,
 }));
 
@@ -157,6 +158,7 @@ beforeEach(() => {
     userId: '11111111-1111-4111-8111-111111111111',
   };
   state.viewerId = 'viewer-1';
+  state.search = new URLSearchParams();
   state.navigate.mockReset();
   state.toast.success.mockReset();
   state.toast.error.mockReset();
@@ -327,7 +329,7 @@ describe('Players detail surfaces', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /Player Statistics/i }));
     expect(state.navigate).toHaveBeenCalledWith(
-      '/clubs/shark-club/members/11111111-1111-4111-8111-111111111111/statistics'
+      '/clubs/shark-club/members/11111111-1111-4111-8111-111111111111/statistics?range=overall'
     );
   });
 
@@ -350,7 +352,8 @@ describe('Players detail surfaces', () => {
     expect(screen.getByRole('heading', { name: 'Club Result' })).toBeVisible();
     expect(document.querySelector('.ps-hero__art')).toBeNull();
     // Each figure prints once, on its card.
-    expect(screen.getAllByText('120')).toHaveLength(1);
+    // Net is a signed result (winLossChips), Fees a fee figure (feeFigure).
+    expect(screen.getAllByText('+120')).toHaveLength(1);
     expect(screen.getByText('18')).toBeVisible();
     expect(screen.queryByText('120.00')).not.toBeInTheDocument();
     expect(screen.queryByText('18.00')).not.toBeInTheDocument();
@@ -362,7 +365,7 @@ describe('Players detail surfaces', () => {
     expect(await screen.findByRole('heading', { name: 'Playing Style' })).toBeVisible();
     state.getMemberStatistics.mockRejectedValueOnce(new Error('range refresh failed'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Week' }));
+    fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
 
     const warning = await screen.findByRole('alert');
     expect(warning).toHaveTextContent('Statistics Connection Interrupted');
@@ -505,4 +508,141 @@ it('keeps a local draft and original note receipt through a failed range read an
   fireEvent.click(screen.getByRole('button', { name: 'Save Notes' }));
   await waitFor(() => expect(state.updateMemberNotes).toHaveBeenCalledTimes(2));
   expect(state.updateMemberNotes.mock.calls[1]).toEqual(original);
+});
+
+describe('the member record survives a failed background refresh', () => {
+  it('keeps the record on screen with a stale banner and no toast', async () => {
+    render(<MemberManagementPage />);
+    expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+    state.getMemberDetail.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent('Member Connection Interrupted');
+    expect(banner).toHaveTextContent('The Record Below Is From The Previous Successful Read.');
+    expect(screen.getByRole('heading', { name: 'River Shark' })).toBeVisible();
+    expect(screen.getByText('Cash Hands')).toBeVisible();
+    expect(screen.queryByText('The Member Ledger Did Not Respond')).not.toBeInTheDocument();
+    expect(state.toast.error).not.toHaveBeenCalled();
+
+    // A second failed background read still does not toast.
+    state.getMemberDetail.mockRejectedValueOnce(new Error('still offline'));
+    await act(async () => {
+      window.dispatchEvent(new Event('online'));
+    });
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(3));
+    expect(state.toast.error).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'River Shark' })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
+    await waitFor(() =>
+      expect(screen.queryByText('Member Connection Interrupted')).not.toBeInTheDocument()
+    );
+    expect(screen.getByRole('heading', { name: 'River Shark' })).toBeVisible();
+  });
+
+  it('confines a downline failure to the downline section', async () => {
+    state.getDownline.mockRejectedValue(new Error('downline down'));
+    render(<MemberManagementPage />);
+    expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+    expect(screen.getByText('Cash Hands')).toBeVisible();
+    expect(await screen.findByText('The Downline List Could Not Be Loaded.')).toBeVisible();
+    expect(screen.queryByText('The Member Ledger Did Not Respond')).not.toBeInTheDocument();
+    expect(state.toast.error).not.toHaveBeenCalled();
+  });
+
+  it('keeps a shown downline when only its refresh fails', async () => {
+    render(<MemberManagementPage />);
+    expect(await screen.findByText('Cyan Rail')).toBeVisible();
+    state.getDownline.mockRejectedValueOnce(new Error('downline down'));
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+    expect(
+      await screen.findByText(
+        'Could Not Refresh The Downline. Showing The Previous Successful Read.'
+      )
+    ).toBeVisible();
+    expect(screen.getByText('Cyan Rail')).toBeVisible();
+    expect(screen.queryByText('Member Connection Interrupted')).not.toBeInTheDocument();
+  });
+
+  it('subscribes to the lower-case record topic for an upper-case URL id', async () => {
+    const { useMasterBusBroadcastChannel } =
+      await import('../../src/hooks/useMasterBusBroadcastChannel');
+    vi.mocked(useMasterBusBroadcastChannel).mockClear();
+    state.params = { ...state.params, userId: state.params.userId.toUpperCase() };
+    render(<MemberManagementPage />);
+    expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+    const topics = vi
+      .mocked(useMasterBusBroadcastChannel)
+      .mock.calls.map(([options]) => options.channelName)
+      .filter((name): name is string => !!name && name.startsWith('member-record:'));
+    expect(topics).toContain(
+      'member-record:22222222-2222-4222-8222-222222222222:11111111-1111-4111-8111-111111111111'
+    );
+    expect(topics.every((name) => name === name.toLowerCase())).toBe(true);
+  });
+
+  it('formats record figures with the shared Player Management formatters', async () => {
+    render(<MemberManagementPage />);
+    expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+    // Wallets: formatWalletChips, exactly two decimals (Dan, 2026-10-18).
+    expect(screen.getAllByText('500.00').length).toBeGreaterThan(0);
+    expect(screen.getByText('25.00')).toBeVisible();
+    // Signed winnings: winLossChips (Dan 2026-10-16). Fees: feeFigure (Dan, 2026-10-14).
+    expect(screen.getByText('+120')).toBeVisible();
+    expect(screen.getByText('+40')).toBeVisible();
+    expect(screen.getByText('18')).toBeVisible();
+    expect(screen.queryByText('18.00')).not.toBeInTheDocument();
+  });
+});
+
+describe('the record opens Player Statistics on its own range', () => {
+  it('carries the record range in the statistics link', async () => {
+    render(<MemberManagementPage />);
+    expect(await screen.findByRole('heading', { name: 'River Shark' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+    await waitFor(() => expect(state.getMemberDetail).toHaveBeenCalledTimes(2));
+    await screen.findByRole('heading', { name: 'River Shark' });
+    fireEvent.click(screen.getByRole('button', { name: /Player Statistics/i }));
+    expect(state.navigate).toHaveBeenCalledWith(
+      '/clubs/shark-club/members/11111111-1111-4111-8111-111111111111/statistics?range=week'
+    );
+  });
+
+  it('opens on the carried 7 Days window', async () => {
+    state.search = new URLSearchParams('range=week');
+    render(<PlayerStatisticsPage />);
+    expect(await screen.findByRole('heading', { name: 'Playing Style' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '7 Days' })).toHaveAttribute('aria-pressed', 'true');
+    const range = state.getMemberStatistics.mock.calls[0][3];
+    expect(range.from).not.toBeNull();
+    expect(range.to).not.toBeNull();
+  });
+
+  it('opens on a carried custom window', async () => {
+    state.search = new URLSearchParams('range=custom&from=2026-09-01&to=2026-09-30');
+    render(<PlayerStatisticsPage />);
+    expect(await screen.findByRole('heading', { name: 'Playing Style' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'true');
+    expect(state.getMemberStatistics.mock.calls[0][3]).toEqual({
+      from: '2026-09-01',
+      to: '2026-09-30',
+    });
+  });
+
+  it.each([
+    '',
+    'range=fortnight',
+    'range=custom&from=2026-09-30&to=2026-09-01',
+    'range=custom&from=2026-02-30&to=2026-03-01',
+  ])('falls back to Overall for %j', async (query) => {
+    state.search = new URLSearchParams(query);
+    render(<PlayerStatisticsPage />);
+    expect(await screen.findByRole('heading', { name: 'Playing Style' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Overall' })).toHaveAttribute('aria-pressed', 'true');
+    expect(state.getMemberStatistics.mock.calls[0][3]).toEqual({ from: null, to: null });
+  });
 });

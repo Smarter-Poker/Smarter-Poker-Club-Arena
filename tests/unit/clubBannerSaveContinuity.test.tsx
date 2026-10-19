@@ -121,7 +121,10 @@ it('keeps a draft mounted after a real banner save while membership changes stil
     masterBus.emit('CLUB_UPDATED', { clubId });
     await vi.advanceTimersByTimeAsync(400);
   });
-  expect(screen.queryByLabelText('Unsaved Club Banner Note')).toBeNull();
+  // A re-check keeps the verified page mounted until its answer arrives
+  // (2026-10-19, tests/unit/aVerifiedClubPageStaysMountedWhileItsAccessIsRechecked.test.tsx);
+  // the revocation still lands the moment the answer says so.
+  expect(screen.getByLabelText('Unsaved Club Banner Note')).toBe(input);
   await act(async () => {
     resolveMembership({ data: null, error: null });
     await Promise.resolve();

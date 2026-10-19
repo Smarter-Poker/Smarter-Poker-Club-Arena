@@ -161,6 +161,21 @@ whichever test the next agent notices first.
   `pages-carry-a-question-mark-not-a-hero.law.test.ts`. Do not restore a
   hero to a page to satisfy an older contract.
 
+- **Must-move auto moves are allowed (ruled 2026-10-19, Dan):** "MUST-MOVE
+  AUTO MOVES ARE ALLOWED." In a must-move cash game (the format approved
+  2026-09-05), the engine's own seat moves for reasons `must_move`, `break`
+  and `balance` (`server/src/services/supabase/seatMoves.ts`) move a player
+  between that game's tables without a gesture, because that is the format
+  the player chose to join. This is a narrow, written exception to CLAUDE.md
+  10.6 #2 ("NEVER AUTO-CHANGE TABLES"), and it covers exactly those
+  engine-initiated moves inside a game the player joined. It does NOT permit
+  the client to change which table or tab the player is looking at:
+  `MultiTablePage` moving `activeIndex` without a user gesture stays
+  forbidden under every setting, and
+  `tests/no-auto-table-switch.law.test.ts` is unchanged. Do not "fix"
+  must-move, break or balance moves as a 10.6 violation, and do not cite this
+  ruling to add any client-side auto-switch.
+
 ## Registry
 
 **The registry is the directory `docs/laws.d/` - one file per law.** This

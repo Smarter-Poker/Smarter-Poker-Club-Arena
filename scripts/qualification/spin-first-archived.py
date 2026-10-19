@@ -71,9 +71,6 @@ def decode(raw):
     return json.loads(raw,object_pairs_hook=unique,parse_constant=nonfinite,parse_float=Decimal)
 
 
-RECOGNITION_GUARD=("IF public.fn_union_week_start(transaction_timestamp()) IS NULL OR transaction_timestamp()<public.fn_union_week_start(transaction_timestamp()) OR transaction_timestamp()>=((public.fn_union_week_start(transaction_timestamp()) AT TIME ZONE 'America/Los_Angeles')+interval '7 days') AT TIME ZONE 'America/Los_Angeles' THEN RAISE EXCEPTION ")
-RECOGNITION_CARRIERS=(BASE+'first-temporal-refusal.sql',BASE+'first-connected-probe.sql',BASE+'first-atomic-failures.sql',PRODUCTION_PROBE_SQL,COMPLETION_SQL,LOCKS,CONCURRENCY)
-
 def validate_recognition_capture(files):
     period=decode(files[BASE+'first-temporal-state.json'])['recognition_period']
     path=BASE+'first-recognition-capture.json'
@@ -96,16 +93,9 @@ def validate_recognition_capture(files):
         {'club_id':'a41434bb-8d0c-400a-8f0d-e8b3d65afed4','coordinator_union_id':'fade0000-0000-0000-0000-000000000001'},
         {'club_id':'fade0000-0000-0000-0000-000000000001','coordinator_union_id':'fade0000-0000-0000-0000-000000000001'},
     ], 'recognition scope differs')
-    # The capture is historical production evidence (the event settled
-    # 2026-10-02). Every carrier binds its transaction to the week the database
-    # derives for it; a wall-clock week literal is refused so the isolated
-    # rehearsal can never expire at a union-week rollover again.
-    for p in RECOGNITION_CARRIERS:
+    for p in (BASE+'first-temporal-refusal.sql',BASE+'first-connected-probe.sql',BASE+'first-atomic-failures.sql',PRODUCTION_PROBE_SQL,COMPLETION_SQL,LOCKS,CONCURRENCY):
         text=files[p].decode()
-        require(text.count(RECOGNITION_GUARD)==1, 'recognition source guard differs: '+p)
-        require(not re.search(r"transaction_timestamp\(\)\s*(?:<|>=?)\s*'[0-9]{4}-",text)
-                and start.strftime('%Y-%m-%dT%H:%M:%SZ') not in text and end.strftime('%Y-%m-%dT%H:%M:%SZ') not in text,
-                'recognition source pins a wall-clock week: '+p)
+        require(start.strftime('%Y-%m-%dT%H:%M:%SZ') in text and end.strftime('%Y-%m-%dT%H:%M:%SZ') in text, 'recognition source bounds differ: '+p)
 
 
 def validate_sources(files):

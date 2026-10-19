@@ -13,5 +13,4 @@ page mutation. Every other unreviewed mutation is still blocked.
 
 The same job's two Cashier failures were a separate, finished window. The
 client that calls the recorder was live from 20:09:06 to 20:13:11 UTC before
-its function answered: 38 calls returned 404, every call since has returned
-200, and both Cashier suites passed earlier on the same client.
+its function answered: 38 calls returned 404, every call since has returned 200.

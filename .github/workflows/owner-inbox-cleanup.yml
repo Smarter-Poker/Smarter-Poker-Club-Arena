@@ -1,0 +1,57 @@
+name: Owner inbox operational cleanup
+
+# supabase/migrations/20260928000622_owner_inbox_keeps_no_operational_original.sql
+# removes the operational originals already in the owner account's personal
+# inbox, each only after proving it preserved in its destination and receipt,
+# and keeps each removed row as it stood (Production Alerts board,
+# Smarter-Poker/Smarter-Poker-Club-Arena#5070, incident
+# owner-inbox-operational-rows). It runs only after store-only delivery
+# (20260927235053), so the proof builds production before store-only delivery
+# from that migration's fixture, installs the real store-only migration, and
+# then exercises the cleanup. Those files ship with store-only delivery's own
+# pull request (#5512), so this one is stacked on #5512's branch; a tree
+# without them makes the proof exit 2 naming #5512, which fails this job - it
+# is never skipped. No branches filter: it runs on a pull request into main
+# from the stacked branch as on one into #5512's branch.
+#
+# This runs the executable red-before/green-after proof, including every
+# refusal (among them each way the DELETE could reach rows outside the owner's
+# inbox) and the two-session races, against a throwaway PostgreSQL cluster -
+# never production. The probe creates that cluster with its own superuser
+# (supabase_admin), which its event-trigger hook and replication-mode writer
+# need. It adds no timer (CLAUDE.md 10.85): pull_request only,
+# scoped to the paths the proof reads. The runtime detector for a recurrence is
+# zz_owner_operational_original_reached_personal_inbox (20260927235053).
+on:
+  pull_request:
+    paths:
+      - supabase/migrations/20260928000622_owner_inbox_keeps_no_operational_original.sql
+      - supabase/migrations/20260927235053_owner_operational_notifications_are_delivered_to_the_operati.sql
+      - scripts/dev/probe-owner-inbox-cleanup.sh
+      - scripts/dev/fixtures/owner-inbox-cleanup/**
+      - scripts/dev/fixtures/owner-inbox-store-only/**
+      - scripts/ci/schema-manifest.d/owner-inbox-cleanup.json
+      - .github/workflows/owner-inbox-cleanup.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-inbox-cleanup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-proof:
+    name: Red before, green after, every refusal (throwaway PostgreSQL, never production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install a PostgreSQL server if the runner has none
+        run: |
+          if ! ls /usr/lib/postgresql/*/bin/initdb >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y postgresql-16
+          fi
+      - name: Run the executable red/green proof
+        run: bash scripts/dev/probe-owner-inbox-cleanup.sh

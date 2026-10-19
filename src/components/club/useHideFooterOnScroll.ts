@@ -93,6 +93,11 @@ function scrollTopOf(source: ScrollSource): number {
   return (source as Element).scrollTop || 0;
 }
 
+function contentHeightOf(source: ScrollSource): number {
+  if (isDocumentScroller(source)) return document.documentElement?.scrollHeight || 0;
+  return (source as Element).scrollHeight || 0;
+}
+
 function scrollLimitOf(source: ScrollSource): number {
   if (isDocumentScroller(source)) {
     const doc = document.documentElement;
@@ -106,6 +111,8 @@ interface Travel {
   last: number;
   anchor: number;
   direction: number;
+  /** The scroller's content height at the last read; 0 until first read. */
+  height: number;
 }
 
 export interface HideOnScroll {
@@ -161,8 +168,35 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
       }
 
       // The first real flick is travel too, not merely an anchor at its end.
-      const state = travel.get(source) ?? { last: 0, anchor: 0, direction: 0 };
+      const state = travel.get(source) ?? { last: 0, anchor: 0, direction: 0, height: 0 };
       travel.set(source, state);
+
+      /* THE PAGE MOVING IS NOT THE READER MOVING (2026-10-19). When content
+         ABOVE the viewport changes height - the live lobby re-rendering a card
+         as seats and counts refresh - the browser's scroll anchoring moves
+         scrollY by exactly that change so the reader's place stays put, and
+         fires a scroll event. A card that shrinks and is restored on the next
+         render is an up-then-down pair nobody made, and the down leg cleared
+         THRESHOLD: the footer and the lobby filters left while the player sat
+         still (post-deploy runs 39232506260 and 39245711984 caught the bar and
+         the filters hidden with scrollY unchanged). That is the same
+         "leaving when nobody travelled" Dan reported on 2026-09-05. A scroll
+         whose distance is the content's own change in height is the page
+         keeping its place, not travel: rebase on it and decide nothing, except
+         that the bottom still brings the bar back (a page that shrank under a
+         reader at its end is clamped up to the new end). */
+      const height = contentHeightOf(source);
+      const previous = state.height;
+      const moved = y - state.last;
+      const grew = height - previous;
+      state.height = height;
+      if (previous > 0 && grew !== 0 && moved !== 0 && Math.abs(moved - grew) <= 1) {
+        state.last = y;
+        state.anchor = y;
+        state.direction = 0;
+        if (y >= limit - 1) setHidden(false);
+        return;
+      }
 
       const direction = y > state.last ? 1 : y < state.last ? -1 : 0;
       if (direction !== 0 && direction !== state.direction) {

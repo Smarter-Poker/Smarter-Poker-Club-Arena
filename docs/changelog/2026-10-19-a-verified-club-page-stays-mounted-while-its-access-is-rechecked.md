@@ -33,6 +33,19 @@ roster, the cashier, every operations surface - was unmounted and mounted
 again for a check that almost always returned the same answer. A player lost
 the page's scroll, drafts and in-flight reads each time.
 
+What fired it on production: the E2E account is a member of three clubs, and
+during a Post-Deploy E2E run its `club_members` row in each of them was
+updated within five seconds (read from the rows: 11:39:45, 11:39:48 and
+11:39:50 UTC on 2026-10-19, during run 39245711984). `PostgresSyncHooks`
+emits CLUB_UPDATED the first time it sees each of those rows, and the
+workspace re-checked on every one of them, whichever club it named - so a page
+in one club was rebuilt twice by row updates in the other two.
+
+The banner-save regression (`tests/unit/clubBannerSaveContinuity.test.tsx`)
+had pinned the page being hidden while a CLUB_UPDATED re-check was pending.
+It now pins the page staying mounted during the re-check and the revocation
+landing when the answer arrives, which is the part that test exists for.
+
 ## The fix
 
 The workspace remembers which club and account it has verified as a member.

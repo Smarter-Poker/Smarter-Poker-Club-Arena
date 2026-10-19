@@ -11,6 +11,11 @@ const f = vi.hoisted(() => ({
   channel: null as null | { onPayload: (payload: unknown) => void },
   audit: null as null | { onPayload: (payload: unknown) => void },
   bus: null as null | ((payload: { clubId: string }) => void),
+  broadcasts: new Map<
+    string,
+    { onPayload: (payload: unknown) => void; onSubscriptionStatus?: (status: string) => void }
+  >(),
+  winLoss: vi.fn(async () => new Map()),
   aborts: 0,
   searches: [] as string[],
 }));
@@ -29,7 +34,13 @@ vi.mock('../../src/hooks/useMasterBusChannel', () => ({
 }));
 // Private wallet delivery is covered by the dedicated wallet-update cases.
 vi.mock('../../src/hooks/useMasterBusBroadcastChannel', () => ({
-  useMasterBusBroadcastChannel: vi.fn(),
+  useMasterBusBroadcastChannel: (config: {
+    channelName?: string;
+    onPayload: (payload: unknown) => void;
+    onSubscriptionStatus?: (status: string) => void;
+  }) => {
+    if (config.channelName) f.broadcasts.set(config.channelName, config);
+  },
 }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => f.toast }));
 vi.mock('../../src/utils/strictClubIdResolver', () => ({
@@ -37,12 +48,13 @@ vi.mock('../../src/utils/strictClubIdResolver', () => ({
   ClubNotFoundError: class extends Error {},
 }));
 vi.mock('../../src/services/ClubRosterService', () => ({
-  default: { getRosterPage: f.page, getSummary: f.summary },
+  default: { getRosterPage: f.page, getSummary: f.summary, getMembersWinLoss: f.winLoss },
 }));
 import ClubMembersPage from '../../src/pages/ClubMembersPage';
 
 beforeEach(() => {
   vi.useFakeTimers();
+  f.broadcasts.clear();
   f.aborts = 0;
   f.searches = [];
   f.page.mockReset();
@@ -397,4 +409,151 @@ it('refreshes off-page role changes from the authorized audit lane without react
     await vi.advanceTimersByTimeAsync(1300);
   });
   expect(f.searches).toEqual(['', '']);
+});
+
+const club = '00000000-0000-0000-0000-000000000043';
+const rosterTopic = `club-roster:${club}`;
+function mountDirectory() {
+  return render(
+    <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
+      <Routes>
+        <Route path="/clubs/:clubId/members" element={<ClubMembersPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+const row = (id: string, alias: string) => ({
+  user_id: id,
+  alias,
+  username: alias,
+  role: 'player',
+  role_rank: 1,
+  can_view_financials: true,
+  can_view_notes: true,
+  total_fees: 10,
+  downline_total: 0,
+  downline_fees: 0,
+  player_wallet: 20,
+  agent_wallet: 0,
+  is_online: false,
+  is_seated: false,
+  home_club_name: 'Shark',
+});
+
+it('reconciles private roster changes before TTL while retaining loaded pages and selection', async () => {
+  f.summary.mockResolvedValue({
+    viewer_role: 'owner',
+    capabilities: { can_export: true, can_view_financials: true },
+    counts: { total: 2, online: 0, seated: 0, agents: 0, admins: 0 },
+    page_size: 80,
+  });
+  let changed = false;
+  f.page.mockImplementation(async (_club, query) =>
+    query.cursor
+      ? {
+          items: [row('b', changed ? 'Changed Second' : 'Second')],
+          next_cursor: null,
+          has_more: false,
+          filtered_total: 2,
+        }
+      : {
+          items: [row('a', changed ? 'Changed First' : 'First')],
+          next_cursor: { next: 'b' },
+          has_more: true,
+          filtered_total: 2,
+        }
+  );
+  mountDirectory();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+  await act(async () => {});
+  expect(screen.getByRole('status', { name: 'Roster Operations' })).toHaveTextContent(
+    '2 Loaded Of 2'
+  );
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select First' }));
+  expect(screen.getByRole('status', { name: 'Roster Operations' })).toHaveTextContent(
+    '1 Loaded Players Selected'
+  );
+  const reads = f.page.mock.calls.length;
+  const summaries = f.summary.mock.calls.length;
+  changed = true;
+  act(() => f.broadcasts.get(rosterTopic)!.onPayload({ payload: {} }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1200);
+  });
+  expect(f.page.mock.calls.length).toBe(reads + 2);
+  expect(f.summary).toHaveBeenCalledTimes(summaries + 1);
+  expect(screen.getByRole('button', { name: /Open Changed Second/ })).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: 'Select Changed First' })).toBeChecked();
+  expect(screen.getByRole('status', { name: 'Roster Operations' })).toHaveTextContent(
+    '2 Loaded Of 2'
+  );
+});
+
+it('coalesces private roster bursts behind one active read without aborting it', async () => {
+  const finish: Array<() => void> = [];
+  f.page.mockImplementation(
+    (_club, query) =>
+      new Promise((resolve, reject) => {
+        const abort = () => {
+          f.aborts++;
+          reject(new DOMException('Aborted', 'AbortError'));
+        };
+        query.signal.addEventListener('abort', abort, { once: true });
+        finish.push(() => {
+          query.signal.removeEventListener('abort', abort);
+          resolve({ items: [], has_more: false, next_cursor: null, filtered_total: 0 });
+        });
+      })
+  );
+  mountDirectory();
+  await act(async () => {});
+  act(() => {
+    for (let i = 0; i < 5; i++) f.broadcasts.get(rosterTopic)!.onPayload({ payload: {} });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1200);
+  });
+  expect(f.page).toHaveBeenCalledTimes(1);
+  expect(f.aborts).toBe(0);
+  await act(async () => finish[0]());
+  expect(f.page).toHaveBeenCalledTimes(2);
+  act(() => {
+    for (let i = 0; i < 5; i++) f.broadcasts.get(rosterTopic)!.onPayload({ payload: {} });
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1200);
+  });
+  expect(f.page).toHaveBeenCalledTimes(2);
+  expect(f.aborts).toBe(0);
+  await act(async () => finish[1]());
+  expect(f.page).toHaveBeenCalledTimes(3);
+  await act(async () => finish[2]());
+  expect(f.aborts).toBe(0);
+});
+
+it('reconciles roster and summary after focus, private rejoin and an idle UTC boundary', async () => {
+  vi.setSystemTime(new Date('2026-10-18T23:59:50.000Z'));
+  mountDirectory();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(100);
+  });
+  const initialReads = f.page.mock.calls.length;
+  act(() => window.dispatchEvent(new Event('focus')));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1300);
+  });
+  expect(f.page).toHaveBeenCalledTimes(initialReads + 1);
+  act(() => f.broadcasts.get(rosterTopic)!.onSubscriptionStatus!('SUBSCRIBED'));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1300);
+  });
+  expect(f.page).toHaveBeenCalledTimes(initialReads + 2);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(8600);
+  });
+  expect(f.page).toHaveBeenCalledTimes(initialReads + 3);
+  expect(f.summary).toHaveBeenCalledTimes(initialReads + 3);
 });

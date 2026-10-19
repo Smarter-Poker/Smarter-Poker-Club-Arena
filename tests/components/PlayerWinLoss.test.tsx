@@ -164,7 +164,9 @@ describe('Players list: win / loss per row', () => {
     expect(page).toContain(
       'const showWinLoss = canUseFinancialViews || members.some((m) => m.can_view_financials);'
     );
-    expect(page).toContain('useRosterWinLoss(resolvedClubId, members, winLossPeriod, showWinLoss)');
+    expect(page).toMatch(
+      /useRosterWinLoss\(\s*resolvedClubId,\s*members,\s*winLossPeriod,\s*showWinLoss,\s*\w+,\s*user\?\.id,?\s*\)/
+    );
     expect(page).toMatch(
       /\{showWinLoss && \(\s*<label className="members-sort members-winloss-period">/
     );

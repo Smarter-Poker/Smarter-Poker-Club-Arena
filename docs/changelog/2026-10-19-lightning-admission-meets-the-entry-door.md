@@ -45,3 +45,17 @@ not visible, not enabled, not stable, still shown, strict mode, navigated,
 closed, timeout or other). The agree read-back is bounded to three seconds
 instead of a single immediate read. Nothing was tapped beyond the welcome's
 own controls in that run: no join, hold, seat, pool or wallet change.
+
+## The normal buy-in sends a null club
+
+With the door reader in place, run 39312801627 (19:41Z) acknowledged the
+device welcome, joined (seat at table 2cb9fe85), and sent exactly one normal
+Buy Chips. Readback: one 4.00 buy-in (wallet 146.78 to 142.78), seat 2 with
+a live occupancy, pool session c5a84f27 and its cash session, and a completed
+receipt for request f56595fa. The witness nevertheless refused the intent: the
+table's normal buy-in sends `p_club_id: null` and lets the door derive the club
+from the table, which the product contract allows, while the witness demanded
+the pilot club UUID. It now accepts the pilot club or null; the club is still
+proven through the owned anchor seat, the table's cluster and the cash
+session, and the receipt must still echo the exact intent (a null in one and a
+club in the other stays unknown). No buy-in was repeated.

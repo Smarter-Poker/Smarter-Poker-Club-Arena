@@ -525,69 +525,6 @@ export const WalletService = {
   // TABLE OPERATIONS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Lock chips for table buy-in
-   * Deducts from Player Wallet (wallets table) using atomic RPC
-   * Chip flow: Union → Club Bank → Agent Wallet → Player Wallet → Table Buy-in
-   *
-   * ── DORMANT, AND WOULD FAIL IF IT WERE NOT (verified 2026-08-25) ──────────
-   * The note below already says `atomic_deduct_wallet_and_log` is service-role
-   * only; the ACL confirms it (postgres + service_role, no `authenticated`), so
-   * the "RPC returns false if insufficient balance" path is unreachable from a
-   * browser — the call returns 42501 first and this throws "Buy-in failed:
-   * permission denied for function atomic_deduct_wallet_and_log".
-   *
-   * Nothing reaches it today: the only caller is `useWalletStore.buyIn`, and
-   * that store method has no UI call site left. Real buy-ins go through
-   * `atomic_table_buyin` on the engine, which is the correct owner. Left in
-   * place with the reason written down rather than deleted, because deleting it
-   * would also mean editing useWalletStore, which is outside this pass.
-   */
-  async lockForBuyIn(userId: string, tableId: string, amount: number): Promise<boolean> {
-    // VALIDATION: Prevent negative/zero/non-integer amounts before RPC call
-    if (!amount || amount <= 0 || !Number.isFinite(amount)) {
-      throw new Error('Buy-in amount must be a positive number');
-    }
-
-    // Atomically deduct from Player Wallet AND LOG using SECURITY DEFINER RPC.
-    // The RPC returns false if insufficient balance —- no separate pre-check needed.
-    // (Removing the pre-check eliminates a TOCTOU race condition where two concurrent
-    // buy-ins could both pass the SELECT check but one would fail the deduct.)
-    // NOTE (Audit M1): buy-in DEDUCTION is engine-owned — atomic_deduct_wallet_and_log
-    // is service-role only, so client-side idempotency belongs on the server buy-in
-    // path (atomic_table_buyin), not here. The cash-out CREDIT path (unlockFromTable)
-    // is the client-initiated money mover and is made idempotent below.
-    const { data: deductResult, error: deductError } = await retryAsync(async () => {
-      const res = await supabase.rpc('atomic_deduct_wallet_and_log', {
-        p_user_id: userId,
-        p_amount: amount,
-        p_category: 'buyin',
-        p_description: 'Cash game buy-in at table',
-        p_table_id: tableId,
-        p_hand_id: null,
-        p_related_entity_id: null,
-      });
-      return res;
-    });
-
-    if (deductError) {
-      reportError(deductError, 'WalletService.lockForBuyIn', { userId, tableId, amount });
-      throw new Error(`Buy-in failed: ${deductError.message}`);
-    }
-
-    if (deductResult === false) {
-      throw new Error('Insufficient chips in Player Wallet for buy-in');
-    }
-
-    // Emit bus event so CashierPage/PlayerWalletPage refresh balances
-    masterBus.emit('BALANCE_UPDATED', { source: 'buyin', userId, tableId });
-
-    console.debug(
-      `[WalletService] Buy-in: ${amount} chips deducted from Player Wallet for user ${userId} and logged`
-    );
-    return true;
-  },
-
   // AUDIT M17: `unlockFromTable` is deleted, not repaired.
   //
   // It was the client-initiated cash-out: it credited the PLAYER wallet with the

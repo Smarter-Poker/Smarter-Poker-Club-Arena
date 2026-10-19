@@ -256,53 +256,6 @@ export const ChipFlowService = {
   // BALANCE RESET (for re-initialization)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Reset a user's PLAYER wallet balance to 0 with audit trail.
-   * Used when re-initializing the funding chain.
-   */
-  async resetBalance(
-    userId: string,
-    reason: string = 'Balance reset for proper funding chain'
-  ): Promise<number> {
-    // Live pool (2026-08-27): the old table is frozen; deducting against a
-    // six-day-stale figure would have reset the wrong amount.
-    const { data: resetRows } = await supabase
-      .from('club_members')
-      .select('chip_balance')
-      .eq('user_id', userId);
-
-    const currentBalance = (resetRows || []).reduce(
-      (sum, r) => sum + (Number(r.chip_balance ?? 0) || 0),
-      0
-    );
-
-    if (currentBalance > 0) {
-      const { error: deductErr } = await retryAsync(
-        () =>
-          supabase.rpc('atomic_deduct_wallet_and_log', {
-            p_user_id: userId,
-            p_amount: currentBalance,
-            p_category: 'settlement',
-            p_description: reason,
-            p_table_id: null,
-            p_hand_id: null,
-            p_related_entity_id: null,
-          }),
-        3
-      );
-
-      if (deductErr) {
-        reportError(deductErr, 'ChipFlowService.resetBalance', { userId, currentBalance });
-        throw new Error(`Balance reset failed: ${deductErr.message}`);
-      }
-
-      // Emit bus event so UI reflects the zeroed balance
-      masterBus.emit('BALANCE_UPDATED', { source: 'balance_reset', userId });
-    }
-
-    return currentBalance;
-  },
-
   // ─────────────────────────────────────────────────────────────────────────────
   // LEDGER QUERIES
   // ─────────────────────────────────────────────────────────────────────────────

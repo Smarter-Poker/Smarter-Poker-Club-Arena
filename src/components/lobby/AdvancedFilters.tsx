@@ -290,7 +290,12 @@ export function pushRemoteFilters(clubId: string, store: FilterStore): void {
       const { error } = await supabase
         .from('user_lobby_filters')
         .upsert(
-          { user_id: userId, club_id: clubId, filters: store, updated_at: new Date().toISOString() },
+          {
+            user_id: userId,
+            club_id: clubId,
+            filters: store,
+            updated_at: new Date().toISOString(),
+          },
           { onConflict: 'user_id,club_id' }
         );
       if (error) {
@@ -308,13 +313,11 @@ export function pushRemoteFilters(clubId: string, store: FilterStore): void {
     }
   };
   const previous = pendingFilterWrites.get(key);
-  let settled!: Promise<void>;
-  const pending = (previous ? previous.then(write) : write()).then((ok) => {
-    if (ok && pendingFilterWrites.get(key) === settled) {
+  const pending: Promise<void> = (previous ? previous.then(write) : write()).then((ok) => {
+    if (ok && pendingFilterWrites.get(key) === pending) {
       markUnsynced(unsyncedKey(clubId, userId), false);
     }
   });
-  settled = pending;
   pendingFilterWrites.set(key, pending);
   void pending.then(() => {
     if (pendingFilterWrites.get(key) === pending) pendingFilterWrites.delete(key);

@@ -1,0 +1,18 @@
+{
+  "migration": "20261019171753_a_busy_commission_key_never_holds_the_cash_queue.sql",
+  "executed": "psql -f of the whole file (one BEGIN/COMMIT) on an isolated PostgreSQL 17.11 cluster built by chip-deadlocks.py with production's bodies (20261001 blocks, then 20261019094914)",
+  "before_md5": {
+    "fn_credit_agent_commissions_batch": "33e0be86d6a2a88f18be4ec4e058cadd",
+    "fn_retry_cash_accounting_sources": "0a5daa862601baaf365972ac6b577e6a"
+  },
+  "after_md5": {
+    "fn_credit_agent_commissions_batch": "1ae9eb0e32f8169ce0cdd6b730c859a6",
+    "fn_retry_cash_accounting_sources": "779590b67fc21e95504a9827f1289207"
+  },
+  "acl_after": {
+    "fn_credit_agent_commissions_batch": "{postgres=X/postgres,service_role=X/postgres}",
+    "fn_retry_cash_accounting_sources": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  "replay": "refused by the preimage guard (fn_credit_agent_commissions_batch(jsonb) is not the pinned text)",
+  "production_preimage_read": "2026-10-19 17:17 UTC, md5 33e0be86 / 0a5daa86 (read-only)"
+}

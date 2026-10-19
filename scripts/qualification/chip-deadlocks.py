@@ -48,6 +48,12 @@ KEYS_FIX = ROOT / 'supabase/migrations/20261001001000_a_cash_batch_never_waits_f
 SORTED_FIX = ROOT / ('supabase/migrations/'
                      '20261019094914_commission_keys_in_club_order_refresh_reads_accrued.sql')
 BUSY_KEY_CASES = ('batch-vs-finish-on-a-busy-key', 'retry-vs-finish-on-a-busy-key')
+# 20261019171753 skips a busy key instead of ending the walk at it, and the retry reads a window of
+# due sources: a head deferred for one busy key can no longer hold the whole queue (production
+# 2026-10-19 17:00: a Lightning source and four Midway sources at the head, Midway's keys the
+# lowest uuids). Its AFTER state is called 'skipping' here.
+SKIP_FIX = ROOT / 'supabase/migrations/20261019171753_a_busy_commission_key_never_holds_the_cash_queue.sql'
+STARVE_CASES = ('retry-queue-head-on-a-busy-key', 'batch-item-behind-a-busy-key')
 NOT_FIXED = ('finish-vs-raked-hand', 'finish-vs-two-raked-hands', 'pr5542-player-stats-across-hands')
 PR5542_ORDER_LINE = '     ORDER BY s.uid::uuid\n'
 
@@ -573,7 +579,7 @@ def case_batch_busy_key(cl, ctl, run, hold_past_wait=True):
         c.notes['finish_paused_holding_club_a'] = wait_until_waiting(ctl, F)
         t0 = time.time()
         tb = B.send('BEGIN; ' + batch_sql(I['rrB'], I['rrA']))
-        if run == 'sorted' and hold_past_wait:
+        if run in ('sorted', 'skipping') and hold_past_wait:
             c.notes['batch'] = outcome(B.wait(tb))
             c.notes['batch_seconds'] = round(time.time() - t0, 2)
             B.run('COMMIT;')
@@ -607,6 +613,9 @@ def case_retry_busy_key(cl, ctl, run):
     """The same pair through fn_retry_cash_accounting_sources: two refused sources, rrB due before rrA,
     retried while the finish holds club A."""
     I = seed_busy_key_pair(ctl, run, 'R')
+    # Only these two are due: refusals left by earlier cases are parked, because since 20261019171753
+    # the retry reads a window of due sources and would otherwise run those as well.
+    ctl.run("UPDATE public.accounting_cash_source_work SET next_attempt_at = 'infinity' WHERE status = 'blocked';")
     # The oldest due sources in the cluster, so a limit of 2 selects exactly these two, rrB first.
     seed_blocked_work(ctl, I['rrB'], '1990-01-01T00:00:00Z')
     seed_blocked_work(ctl, I['rrA'], '1990-01-01T00:00:01Z')
@@ -619,7 +628,7 @@ def case_retry_busy_key(cl, ctl, run):
         tf = F.send("BEGIN; SET LOCAL harness.pause_before = '%s'; %s" % (I['YB'], finish_sql(I['t'], I['A'])))
         c.notes['finish_paused_holding_club_a'] = wait_until_waiting(ctl, F)
         tb = B.send('BEGIN; SELECT fn_retry_cash_accounting_sources(2);')
-        if run == 'sorted':
+        if run in ('sorted', 'skipping'):
             c.notes['retry'] = outcome(B.wait(tb)); B.run('COMMIT;')
             c.notes['work_while_deferred'] = ctl.run(work)
             ctl.run('SELECT pg_advisory_unlock(%d);' % GATE)
@@ -633,6 +642,96 @@ def case_retry_busy_key(cl, ctl, run):
             c.notes['retry'] = outcome(B.wait(tb)); B.wait(tbc)
         c.notes['work'] = ctl.run(work)
         c.notes['commissions'] = commissions_written(ctl, I)
+        return c.result()
+
+
+def commission_key_sql(club):
+    return "SELECT pg_advisory_xact_lock(hashtextextended('agent-commission:%s',0));" % club
+
+
+def call_json(sess, sql):
+    """One SELECT returning a jsonb, read back as a dict."""
+    out = sess.run(sql)
+    return json.loads(out.splitlines()[-1])
+
+
+def case_retry_starvation(cl, ctl, run):
+    """Production 2026-10-19 17:00, in miniature. Two clubs M < L (Midway's keys are the lowest
+    uuids, Lightning's sorts after). The due refusals, fewest refusals then due time: L0, then M1..M4
+    (the head five), then L5..L7. A finish holds club M's key throughout. Three retry calls of
+    p_limit 5. Production's text ('sorted'): each call's walk ends at busy M, all five head sources
+    are deferred, the same five come back, and nothing - not L0, not L5..L7 - ever runs.
+    20261019171753 ('skipping'): the walk skips M, takes L, and the first call runs L0 and L5..L7.
+    Then the finish commits and one more call runs the M sources."""
+    names = ['XM', 'XL', 'aM', 'aL', 'tM', 'tL'] + ['p%d' % i for i in range(8)] + ['rr%d' % i for i in range(8)] + \
+        ['h%d' % i for i in range(8)]
+    I = ids(run, 'S', *names)
+    I.update(ordered(run, 'Sclubs', 'M', 'L'))
+    for club in ('M', 'L'):
+        seed_club(ctl, I[club])
+    seed_profiles(ctl, I['XM'], I['XL'], *[I['p%d' % i] for i in range(8)])
+    seed_agent(ctl, I['aM'], I['M'], I['XM'])
+    seed_agent(ctl, I['aL'], I['L'], I['XL'])
+    layout = [('L', 0), ('M', 1), ('M', 2), ('M', 3), ('M', 4), ('L', 5), ('L', 6), ('L', 7)]
+    # Only these eight are due: every other refusal left by earlier cases is parked for this case.
+    ctl.run("UPDATE public.accounting_cash_source_work SET next_attempt_at = 'infinity' WHERE status = 'blocked';")
+    for club, i in layout:
+        seed_cash_record(ctl, I['rr%d' % i], I['h%d' % i], I[club], I['t' + club], I['p%d' % i], 1.00,
+                         [tier(I['X' + club], I['a' + club], 0.30, 1)])
+        seed_blocked_work(ctl, I['rr%d' % i], '1980-01-01T00:00:%02dZ' % i)
+    # As a multiset (ordered by status), so a processed row's new due time cannot reorder it.
+    work = ("SELECT string_agg(status || ':' || attempts, ',' ORDER BY status, attempts) FROM public.accounting_cash_source_work "
+            "WHERE rake_record_id IN (%s);")
+    l_rows = work % ','.join("'%s'" % I['rr%d' % i] for _, i in layout if _ == 'L')
+    m_rows = work % ','.join("'%s'" % I['rr%d' % i] for _, i in layout if _ == 'M')
+    with Case(cl, ctl, run, 'retry-queue-head-on-a-busy-key', 'cash retry queue whose head waits on a busy lower club key, '
+              'free-keyed sources behind it') as c:
+        H, R = c.session('finish'), c.session('retry')
+        H.run('BEGIN; ' + commission_key_sql(I['M']))
+        calls = []
+        for _ in range(3):
+            j = call_json(R, 'SELECT fn_retry_cash_accounting_sources(5)::text;')
+            calls.append({'ok': j['ok'], 'blocked': j['blocked'], 'deferred': len(j.get('deferred') or [])})
+        c.notes['calls_while_m_busy'] = calls
+        c.notes['l_while_m_busy'] = ctl.run(l_rows)
+        c.notes['m_while_m_busy'] = ctl.run(m_rows)
+        H.run('COMMIT;')
+        j = call_json(R, 'SELECT fn_retry_cash_accounting_sources(5)::text;')
+        c.notes['call_after_release'] = {'ok': j['ok'], 'blocked': j['blocked'], 'deferred': len(j.get('deferred') or [])}
+        c.notes['l_after'] = ctl.run(l_rows)
+        c.notes['m_after'] = ctl.run(m_rows)
+        c.notes['commission_rows'] = {k: int(ctl.run("SELECT count(*) FROM public.agent_commissions WHERE user_id = '%s';" % I[k]))
+                                      for k in ('XM', 'XL')}
+        return c.result()
+
+
+def case_batch_skips_busy_key(cl, ctl, run):
+    """A page batch of two cash items, rrM (club M) then rrL (club L), while a finish holds club M's
+    key (M < L). Production's text: the walk ends at M and both are deferred, though rrL needs only
+    the free key L. 20261019171753: rrL runs, rrM alone is deferred; after the finish commits the
+    settler's resubmission runs rrM. Every commission is written once."""
+    I = ids(run, 'BS', 'XM', 'XL', 'aM', 'aL', 'pM', 'pL', 'rrM', 'rrL', 'hM', 'hL', 'tM', 'tL')
+    I.update(ordered(run, 'BSclubs', 'M', 'L'))
+    for club in ('M', 'L'):
+        seed_club(ctl, I[club])
+    seed_profiles(ctl, I['XM'], I['XL'], I['pM'], I['pL'])
+    seed_agent(ctl, I['aM'], I['M'], I['XM'])
+    seed_agent(ctl, I['aL'], I['L'], I['XL'])
+    seed_cash_record(ctl, I['rrM'], I['hM'], I['M'], I['tM'], I['pM'], 1.00, [tier(I['XM'], I['aM'], 0.30, 1)])
+    seed_cash_record(ctl, I['rrL'], I['hL'], I['L'], I['tL'], I['pL'], 1.00, [tier(I['XL'], I['aL'], 0.30, 1)])
+    with Case(cl, ctl, run, 'batch-item-behind-a-busy-key', 'cash batch (club M item, club L item) while a finish holds '
+              'club M') as c:
+        H, B = c.session('finish'), c.session('batch')
+        H.run('BEGIN; ' + commission_key_sql(I['M']))
+        j = call_json(B, batch_sql(I['rrM'], I['rrL']).replace(');', ')::text;'))
+        c.notes['batch'] = {'ok': j['ok'], 'blocked': j['blocked'], 'deferred': sorted(
+            'rrM' if d == I['rrM'] else 'rrL' for d in (j.get('deferred') or []))}
+        H.run('COMMIT;')
+        resubmit = [I[k] for k in ('rrM', 'rrL') if k in c.notes['batch']['deferred']]
+        j = call_json(B, batch_sql(*resubmit).replace(');', ')::text;'))
+        c.notes['resubmitted'] = {'ok': j['ok'], 'blocked': j['blocked'], 'deferred': len(j.get('deferred') or [])}
+        c.notes['commission_rows'] = {k: int(ctl.run("SELECT count(*) FROM public.agent_commissions WHERE user_id = '%s';" % I[k]))
+                                      for k in ('XM', 'XL')}
         return c.result()
 
 
@@ -657,10 +756,14 @@ def main():
         report['functions_pinned_and_verified'] = build(cl)
         report['projection2_statement_md5'] = projection2_functions(cl)
         ctl = Session(cl, 'ctl')
-        for state in ('before', 'after', 'sorted'):
+        for state in ('before', 'after', 'sorted', 'skipping'):
             if state == 'sorted':
                 ctl.close()
                 report['sorted_fix_subs_block_md5'] = apply_migration(cl, SORTED_FIX)
+                ctl = Session(cl, 'ctl')
+            if state == 'skipping':
+                ctl.close()
+                report['skip_fix_subs_block_md5'] = apply_migration(cl, SKIP_FIX)
                 ctl = Session(cl, 'ctl')
             if state == 'after':
                 ctl.close()
@@ -680,10 +783,11 @@ def main():
                 print('%-34s %-6s deadlocks=%d  %s' % (r['case'], state, r['deadlocks'],
                       {k: v for k, v in r.items() if k not in ('case', 'pair', 'state', 'deadlocks')}), flush=True)
             # The 2026-10-19 pair: production's text ('after') against 20261019094914 ('sorted').
-            if state in ('after', 'sorted'):
+            if state in ('after', 'sorted', 'skipping'):
                 busy = [case_batch_busy_key, case_retry_busy_key]
-                if state == 'sorted':
+                if state in ('sorted', 'skipping'):
                     busy.append(lambda cl, ctl, run: case_batch_busy_key(cl, ctl, run, hold_past_wait=False))
+                    busy += [case_batch_skips_busy_key, case_retry_starvation]
                 for case in busy:
                     r = case(cl, ctl, state)
                     report['results'].append(r)
@@ -692,7 +796,7 @@ def main():
             report['values'][state] = horse_mind_values(cl, state)
         ctl.close()
         report['values_equal'] = (report['values']['before'] == report['values']['after']
-                                  == report['values']['sorted'])
+                                  == report['values']['sorted'] == report['values']['skipping'])
         print('horse-mind values equal before/after:', report['values_equal'])
     finally:
         cl.stop()
@@ -701,9 +805,10 @@ def main():
     report['batch_while_a_key_is_held'] = held
     keys_ok = (held.get('before') == 'completed' and held.get('after-0000-0500', '').startswith('error: ERROR:  canceling statement due to lock timeout')
                and held.get('after', '').startswith('item refused and queued for retry')
-               and held.get('sorted', '').startswith('deferred until its commission keys are free: 1'))
+               and held.get('sorted', '').startswith('deferred until its commission keys are free: 1')
+               and held.get('skipping', '').startswith('deferred until its commission keys are free: 1'))
     print('batch while a finish holds its key:', held, 'OK' if keys_ok else 'NOT AS CLAIMED')
-    fixed = [r for r in report['results'] if r['state'] in ('after', 'sorted') and r['case'] not in NOT_FIXED
+    fixed = [r for r in report['results'] if r['state'] in ('after', 'sorted', 'skipping') and r['case'] not in NOT_FIXED
              and r['case'] != 'batch-while-a-finish-holds-a-key'
              and not (r['state'] == 'after' and r['case'] in BUSY_KEY_CASES)]
     by = {(r['case'], r['state']): r for r in report['results']}
@@ -728,11 +833,47 @@ def main():
         and by[('batch-waits-briefly-for-a-busy-key', 'sorted')]['batch'] == 'completed'
         and by[('batch-waits-briefly-for-a-busy-key', 'sorted')]['finish'] == 'completed')
     report['busy_key_ok'] = busy_ok
+    q = lambda case, state: by[(case, state)]
+    none = {'ok': 0, 'blocked': 0, 'deferred': 5}
+    skip_ok = (
+        # 2026-10-19 17:00 reproduced on production's text: a head waiting on busy M runs nothing,
+        # call after call, and nothing behind it (club L, free) is ever reached
+        q('retry-queue-head-on-a-busy-key', 'sorted')['calls_while_m_busy'] == [none, none, none]
+        and q('retry-queue-head-on-a-busy-key', 'sorted')['l_while_m_busy'] == 'blocked:1,blocked:1,blocked:1,blocked:1'
+        and q('retry-queue-head-on-a-busy-key', 'sorted')['call_after_release'] == {'ok': 5, 'blocked': 0, 'deferred': 0}
+        and q('retry-queue-head-on-a-busy-key', 'sorted')['l_after'] == 'accrued:2,blocked:1,blocked:1,blocked:1'
+        # 20261019171753: the first call runs every free-keyed source, the busy-keyed head waits untouched
+        and q('retry-queue-head-on-a-busy-key', 'skipping')['calls_while_m_busy'][0] == {'ok': 4, 'blocked': 0, 'deferred': 1}
+        and q('retry-queue-head-on-a-busy-key', 'skipping')['l_while_m_busy'] == 'accrued:2,accrued:2,accrued:2,accrued:2'
+        and q('retry-queue-head-on-a-busy-key', 'skipping')['m_while_m_busy'] == 'blocked:1,blocked:1,blocked:1,blocked:1'
+        and q('retry-queue-head-on-a-busy-key', 'skipping')['call_after_release'] == {'ok': 4, 'blocked': 0, 'deferred': 0}
+        and q('retry-queue-head-on-a-busy-key', 'skipping')['m_after'] == 'accrued:2,accrued:2,accrued:2,accrued:2'
+        and q('retry-queue-head-on-a-busy-key', 'skipping')['commission_rows'] == {'XM': 4, 'XL': 4}
+        # the batch: an item needing only a free key is no longer deferred for an unrelated busy one
+        and q('batch-item-behind-a-busy-key', 'sorted')['batch'] == {'ok': 0, 'blocked': 0, 'deferred': ['rrL', 'rrM']}
+        and q('batch-item-behind-a-busy-key', 'skipping')['batch'] == {'ok': 1, 'blocked': 0, 'deferred': ['rrM']}
+        and all(q('batch-item-behind-a-busy-key', st)['commission_rows'] == {'XM': 1, 'XL': 1}
+                and q('batch-item-behind-a-busy-key', st)['resubmitted']['deferred'] == 0 for st in ('sorted', 'skipping'))
+        # the 2026-10-19 deadlock pair stays fixed with the gaps, and every commission is written once
+        and all(q(k, 'skipping')['deadlocks'] == 0 and q(k, 'skipping')['commissions'] == once
+                for k in BUSY_KEY_CASES + ('batch-waits-briefly-for-a-busy-key',))
+        and q('batch-vs-finish-on-a-busy-key', 'skipping')['batch'] == 'deferred until its commission keys are free: 1'
+        and q('batch-vs-finish-on-a-busy-key', 'skipping')['written_while_deferred'] == {'XA': 0, 'XB': 1, 'YA': 0, 'YB': 0}
+        and q('batch-vs-finish-on-a-busy-key', 'skipping')['finish'] == 'completed'
+        and q('batch-vs-finish-on-a-busy-key', 'skipping')['resubmitted'] == 'completed'
+        and q('retry-vs-finish-on-a-busy-key', 'skipping')['retry'] == 'deferred until its commission keys are free: 1'
+        and q('retry-vs-finish-on-a-busy-key', 'skipping')['work_while_deferred'] == 'blocked:1,accrued:2'
+        and q('retry-vs-finish-on-a-busy-key', 'skipping')['retried_again'] == 'completed'
+        and q('retry-vs-finish-on-a-busy-key', 'skipping')['work'] == 'accrued:2,accrued:2'
+        and q('batch-waits-briefly-for-a-busy-key', 'skipping')['batch'] == 'completed')
+    report['skip_ok'] = skip_ok
+    print('2026-10-19 17:00 starvation (production text starves, 20261019171753 does not):',
+          'OK' if skip_ok else 'NOT AS CLAIMED')
     print('2026-10-19 busy-key pair (deadlocks on production text, not after 20261019094914):',
           'OK' if busy_ok else 'NOT AS CLAIMED')
     ok = (all(r['deadlocks'] == 0 for r in fixed)
           and all(r['deadlocks'] > 0 for r in report['results'] if r['state'] == 'before' and r['case'] != 'batch-while-a-finish-holds-a-key')
-          and report['values_equal'] and keys_ok and busy_ok)
+          and report['values_equal'] and keys_ok and busy_ok and skip_ok)
     print('CHIP DEADLOCKS: %s' % ('every fixed pair deadlocks before and not after' if ok else 'NOT AS CLAIMED'))
     report['passed'] = ok
     if a.out:

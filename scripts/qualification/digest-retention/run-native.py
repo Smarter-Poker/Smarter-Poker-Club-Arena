@@ -34,6 +34,11 @@ try:
  sql((Path(__file__).parent/'before.sql').read_text())
  sql((root/'supabase/migrations/20261018135943_fact_retention_reads_a_bounded_source_page.sql').read_text())
  sql((root/'supabase/migrations/20261019145751_fact_retention_commits_bounded_cursor_slices_before_timeout.sql').read_text())
+ assert sql("select has_function_privilege('authenticated','fn_prune_ca_hand_facts(integer)','EXECUTE')")=='f'
+ assert sql("select has_function_privilege('service_role','fn_prune_ca_hand_facts(integer)','EXECUTE')")=='t'
+ try:sql((root/'supabase/migrations/20261019145751_fact_retention_commits_bounded_cursor_slices_before_timeout.sql').read_text())
+ except RuntimeError as e:assert 'preimage changed' in str(e)
+ else:raise AssertionError('installed migration replay must refuse')
  results=[]
  for i in range(6):
   began=time.monotonic();d=json.loads(sql('select fn_prune_ca_hand_facts(200000)'));d['seconds']=round(time.monotonic()-began,3);results.append(d)
@@ -48,6 +53,16 @@ try:
  except RuntimeError as e:assert 'compactor-refused' in str(e)
  else:raise AssertionError('compactor failure must propagate')
  assert sql('select coalesce(last_hand_id::text,\'empty\') from smarter_private.horse_fact_card_prune_cursor')==before
+ # The real compactor returns fact ROWS, not hand count. Nine-player hands
+ # must still admit250 hand identities rather than stopping after28 hands.
+ sql("INSERT INTO smarter_private.horse_adaptive_disposal_certificates SELECT lpad(i::text,32,'0')::uuid,now()-interval '8 days' FROM generate_series(1000001,1000300)i; UPDATE smarter_private.horse_fact_card_prune_cursor SET last_hand_id=lpad('1000000',32,'0')::uuid")
+ sql("CREATE OR REPLACE FUNCTION smarter_private.compact_horse_fact_cards(uuid[]) RETURNS integer LANGUAGE plpgsql AS $$BEGIN RETURN COALESCE(cardinality($1),0)*9; END$$")
+ many=json.loads(sql('select fn_prune_ca_hand_facts(200000)'))
+ assert many['scanned']==250 and many['compacted']==2250 and many['more'] is True
+ tail=json.loads(sql('select fn_prune_ca_hand_facts(200000)'))
+ assert tail['scanned']==50 and tail['compacted']==450 and tail['more'] is False
+ sql("DELETE FROM smarter_private.horse_adaptive_disposal_certificates WHERE hand_id>lpad('1000000',32,'0')::uuid")
+ print('PASS:250 hand candidate ceiling is independent of2250 fact rows; final50 wrap normally')
  # A slow original compactor must yield a committed cursor slice, not roll
  # back a giant scan at the external statement timeout. This same probe fails
  # before the sliced implementation (scanned200000 instead of250).

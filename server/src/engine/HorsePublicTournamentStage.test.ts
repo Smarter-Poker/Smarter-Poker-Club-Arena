@@ -146,13 +146,31 @@ describe('accepted public tournament stage', () => {
     }
   );
 
+  it('names the failing check when the context is invalid', () => {
+    const h = fixture();
+    h.context.seatsPerTable = 11;
+    expect(capture(h.config, h.read)).toMatchObject({
+      reason: 'invalid_public_context',
+      detail: 'capacity',
+    });
+    h.context.seatsPerTable = 3;
+    h.context.playersLeft = 1;
+    expect(capture(h.config, h.read)).toMatchObject({
+      reason: 'invalid_public_context',
+      detail: 'players_left',
+    });
+  });
+
   it('rejects inconsistent ante type, invalid field counts and incomplete source flags', () => {
     const h = fixture();
     h.context.anteType = 'big_blind';
     expect(capture(h.config, h.read)).toMatchObject({ reason: 'hand_level_mismatch' });
     h.context.anteType = 'per_player';
     h.context.playersLeft = 61;
-    expect(capture(h.config, h.read)).toMatchObject({ reason: 'invalid_public_context' });
+    expect(capture(h.config, h.read)).toMatchObject({
+      reason: 'invalid_public_context',
+      detail: 'counts',
+    });
     h.context.playersLeft = 4;
     h.context.contextIssues = ['missing_field'];
     expect(capture(h.config, h.read)).toMatchObject({ reason: 'context_incomplete' });

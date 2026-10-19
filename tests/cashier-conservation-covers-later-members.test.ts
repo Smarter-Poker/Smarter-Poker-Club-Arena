@@ -17,27 +17,30 @@ const latest = readdirSync(dir)
   )
   .at(-1)!;
 const body = readFileSync(resolve(dir, latest), 'utf8');
+// Match complete CTE names: `cutoffs` must not match `report_cutoffs`.
+function cte(name: string): string {
+  const match = body.match(new RegExp(`\\b${name} AS MATERIALIZED \\([\\s\\S]*?\\n  \\),`));
+  if (!match) throw new Error(`Missing conservation CTE: ${name}`);
+  return match[0];
+}
 
 describe('cashier conservation report coverage', () => {
   it('plans cutoffs from the analyzed source without losing null or future cutoffs', () => {
-    const cutoffs = body.slice(
-      body.indexOf('cutoffs AS MATERIALIZED'),
-      body.indexOf('legs AS MATERIALIZED')
-    );
-    expect(cutoffs).toMatch(
+    const cutoffs = cte('cutoffs');
+    const reportCutoffs = cte('report_cutoffs');
+    expect(reportCutoffs).toMatch(
       /SELECT DISTINCT taken_at FROM public\.ca_chip_baseline WHERE club_id=p_club_id/
     );
-    expect(cutoffs).not.toMatch(/FROM baselines|taken_at\s*(?:IS NOT NULL|<=|<)/);
+    expect(reportCutoffs).toContain('UNION ALL SELECT taken_at FROM club_origin');
+    expect(cutoffs).toContain('SELECT taken_at FROM report_cutoffs');
+    expect(reportCutoffs + cutoffs).not.toMatch(/FROM baselines|taken_at\s*(?:IS NOT NULL|<=|<)/);
   });
 
   it('checks members who joined after the baseline from zero at the same cutoff', () => {
-    const baselines = body.slice(
-      body.indexOf('baselines AS MATERIALIZED'),
-      body.indexOf('cutoffs AS')
-    );
+    const baselines = cte('baselines');
     expect(baselines).toContain('UNION ALL');
     expect(baselines).toContain('SELECT m.user_id,0::numeric,f.taken_at');
     expect(baselines).toContain('m.joined_at>=f.taken_at');
-    expect(baselines).toMatch(/min\(taken_at\) AS taken_at FROM public\.ca_chip_baseline/);
+    expect(baselines).toMatch(/min\(taken_at\) AS taken_at FROM report_cutoffs/);
   });
 });

@@ -1,0 +1,11 @@
+# Satellite proof reads the exact original ledger identity
+
+The weekly original-inventory proof still exceeded its bounded read after installing the tournament/player funding index. Its satellite reader let the planner use a player's broad entry index to validate a specific immutable ledger ID. The retained production observation measured the original reader at 3091 ms; a read-only generic-plan comparison using the same predicates with an exact-ID subquery measured 1.373 ms and selected `chip_ledger_pkey`.
+
+The migration binds that original ledger identity before evaluating all existing receipt, amount, account, status, category and hash checks. It changes no monetary record, certificate, witness or payout. Its preimage guards require both actual installed reader and forty-source attestation definitions. It advances only the repaired reader's expected hash in that existing attestation and requires all forty sources still agree.
+
+Native PostgreSQL regression loads all forty actual source bodies for attestation, invokes the actual satellite owner before and after, covers direct seats, redeemed tickets, NULL/wrong targets and twelve independent refused receipt fields, verifies unchanged rows and metadata, checks primary-key access under generic planning, and refuses migration replay and unrelated source drift. Uninvoked source bodies are metadata prerequisites, not newly qualified financial paths. The existing required launch-reset parent invokes the regression unconditionally.
+
+The existing later-member conservation source test now matches complete CTE names. Its former substring search matched `cutoffs` inside `report_cutoffs`, inspecting unrelated blocks. The corrected checks retain the analyzed baseline source, NULL/future cutoff protection, zero-origin later-member rule, original cutoff reuse and new-club origin branch; existing native conservation regressions remain enforced.
+
+The conservation scaling source law also reads the actual dollar-quoted body delimiter and accepts SQL whitespace between the same required return type, language, stability and security attributes. PostgreSQL-formatted declarations must retain every attribute; line breaks do not change them. All source tests referring to the conservation report are run together after this correction.

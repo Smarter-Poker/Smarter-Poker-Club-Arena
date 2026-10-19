@@ -29,15 +29,24 @@ const read = (f: string) => readFileSync(resolve(dir, f), 'utf8');
 
 // The newest definition of the report is the one production runs.
 const latest = migrations
-  .filter((f) => read(f).includes('CREATE OR REPLACE FUNCTION public.fn_cashier_conservation_report'))
+  .filter((f) =>
+    read(f).includes('CREATE OR REPLACE FUNCTION public.fn_cashier_conservation_report')
+  )
   .at(-1)!;
 const migration = read(latest);
-const report = migration.slice(
-  migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_cashier_conservation_report'),
-  migration.indexOf('$conservation_report$;')
+const declaration = migration.slice(
+  migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_cashier_conservation_report')
 );
+const delimiter = declaration.match(/\bAS\s+(\$[a-zA-Z_][a-zA-Z_0-9]*\$|\$\$)/)?.[1];
+if (!delimiter) throw new Error('Missing conservation function body delimiter');
+const bodyStart = declaration.indexOf(delimiter) + delimiter.length;
+const bodyEnd = declaration.indexOf(`${delimiter};`, bodyStart);
+if (bodyEnd < bodyStart) throw new Error('Unterminated conservation function body');
+const report = declaration.slice(0, bodyEnd + delimiter.length + 1);
 const sealer = (() => {
-  const all = migrations.map(read).filter((s) => s.includes('FUNCTION public.fn_ca_chip_wallet_day_seal('));
+  const all = migrations
+    .map(read)
+    .filter((s) => s.includes('FUNCTION public.fn_ca_chip_wallet_day_seal('));
   const s = all.at(-1)!;
   return s.slice(s.indexOf('FUNCTION public.fn_ca_chip_wallet_day_seal('), s.indexOf('$seal$;'));
 })();
@@ -53,7 +62,10 @@ describe('the cashier conservation read does not grow with history', () => {
   it('reads the journal only through ranges bounded on BOTH sides', () => {
     // Every chip_ledger read in the legs of the report carries an upper bound,
     // so a sealed day can never be re-read raw.
-    const legs = report.slice(report.indexOf('legs AS MATERIALIZED'), report.indexOf('moves AS MATERIALIZED'));
+    const legs = report.slice(
+      report.indexOf('legs AS MATERIALIZED'),
+      report.indexOf('moves AS MATERIALIZED')
+    );
     expect(legs.match(/FROM public\.chip_ledger l/g)).toHaveLength(1);
     expect(legs).toContain('l.created_at>=r.lo AND l.created_at<r.hi');
     expect(legs).not.toMatch(/l\.created_at\s*>=\s*c\.taken_at/);
@@ -69,11 +81,13 @@ describe('the cashier conservation read does not grow with history', () => {
   });
 
   it('collapses sealed totals to one row per member before the join', () => {
-    expect(report).toMatch(/SELECT s\.taken_at, t\.user_id, sum\(t\.net\)[\s\S]*GROUP BY s\.taken_at, t\.user_id/);
+    expect(report).toMatch(
+      /SELECT s\.taken_at, t\.user_id, sum\(t\.net\)[\s\S]*GROUP BY s\.taken_at, t\.user_id/
+    );
   });
 
   it('keeps the report read-only and caller-scoped', () => {
-    expect(report).toMatch(/RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER/);
+    expect(report).toMatch(/RETURNS\s+jsonb\s+LANGUAGE\s+plpgsql\s+STABLE\s+SECURITY\s+DEFINER/);
     expect(report).toContain("RAISE EXCEPTION 'Active Club Finance Access Required'");
     expect(report).not.toMatch(/\b(INSERT|UPDATE|DELETE)\s+(INTO|FROM)?\s*public\./i);
   });
@@ -84,15 +98,19 @@ describe('the cashier conservation read does not grow with history', () => {
     expect(sealer).toContain('a.xact_start < v_end');
     expect(sealer).toContain('pg_prepared_xacts');
     expect(sealer).toContain('v_rows <> v_manifest_rows');
-    expect(sealer).toContain("(v_today - 1)::timestamp");
+    expect(sealer).toContain('(v_today - 1)::timestamp');
     // A changed manifest withdraws the seal; a re-count catches a late row.
     expect(sealer).toContain('WHERE s.manifest_sha256 IS DISTINCT FROM m.sha256');
     expect(sealer).toContain("s.checked_at < now() - interval '20 hours'");
   });
 
   it('writes only its own derived tables, never money', () => {
-    const writes = [...sealer.matchAll(/\b(?:INSERT INTO|UPDATE|DELETE FROM)\s+public\.(\w+)/g)].map((m) => m[1]);
-    expect(new Set(writes)).toEqual(new Set(['ca_chip_wallet_day_seals', 'ca_chip_wallet_day_totals']));
+    const writes = [
+      ...sealer.matchAll(/\b(?:INSERT INTO|UPDATE|DELETE FROM)\s+public\.(\w+)/g),
+    ].map((m) => m[1]);
+    expect(new Set(writes)).toEqual(
+      new Set(['ca_chip_wallet_day_seals', 'ca_chip_wallet_day_totals'])
+    );
     expect(sealer).not.toMatch(/is_horse/);
   });
 

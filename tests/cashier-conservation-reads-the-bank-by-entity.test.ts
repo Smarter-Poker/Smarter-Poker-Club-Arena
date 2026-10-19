@@ -29,14 +29,17 @@ const latest = readdirSync(dir)
   )
   .at(-1)!;
 const migration = read(latest);
-const report = migration.slice(
-  migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_cashier_conservation_report'),
-  migration.indexOf('$conservation_report$;')
+const definition = migration.slice(
+  migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_cashier_conservation_report')
 );
-const bank = report.slice(
-  report.indexOf('WITH bank AS MATERIALIZED'),
-  report.indexOf('baselines AS MATERIALIZED')
-);
+const tag = definition.match(/\bAS\s+(\$[A-Za-z0-9_]*\$)/)?.[1];
+if (!tag) throw new Error('The newest conservation function has no SQL body delimiter');
+const bodyEnd = definition.indexOf(`${tag};`, definition.indexOf(tag) + tag.length);
+if (bodyEnd < 0) throw new Error('The newest conservation function body is unterminated');
+const report = definition.slice(0, bodyEnd + tag.length + 1);
+const bankStart = report.search(/\bbank AS MATERIALIZED\s*\(/);
+if (bankStart < 0) throw new Error('The newest conservation function has no bank CTE');
+const bank = report.slice(bankStart, report.indexOf('baselines AS MATERIALIZED'));
 const legs = report.slice(
   report.indexOf('legs AS MATERIALIZED'),
   report.indexOf('moves AS MATERIALIZED')

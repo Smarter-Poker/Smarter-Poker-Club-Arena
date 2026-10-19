@@ -1,0 +1,9 @@
+{
+  "_owner": "union-full-audit-01a15550 - migration 20261019194126",
+  "_comment": "PROMISED, NOT INSTALLED. The maintained native PostgreSQL17 Phase6 parent qualifies these private original Lightning pool PNL functions and the deferred settlement trigger. Protected merge, exact installation and live readback remain required; this fragment is not production evidence.",
+  "functions": [
+    "fn_lightning_original_pnl_proof",
+    "fn_lightning_record_original_pnl",
+    "fn_lightning_original_pnl_at_settlement"
+  ]
+}

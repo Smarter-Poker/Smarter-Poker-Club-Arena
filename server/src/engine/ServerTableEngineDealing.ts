@@ -677,8 +677,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (this.tableFSM.state === 'running') {
             this.tableFSM.transition('paused');
           }
-          this.setLoopPhase(this.adminPauseLock ? 'admin_pause_lock' : 'maintenance_lock');
-          await this.sleep(3000);
+          await this.waitOneAdminLockSlice();
           continue;
         }
 
@@ -1597,6 +1596,34 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
   protected async waitOneDealHoldSlice(): Promise<void> {
     this.setLoopPhase('spin_reveal_hold');
     await this.sleep(Math.max(0, Math.min(this.dealHoldUntilMs - Date.now(), 1000)));
+    if (!this.lifecycleCanMutate()) return;
+    this.markProgress();
+  }
+
+  /**
+   * ONE SLICE OF AN ADMIN OR MAINTENANCE LOCK, AND THE SLICE IS LIVENESS
+   * TOO (2026-10-19).
+   *
+   * `adminPause()` and `setMaintenanceLock(true)` stop a table on purpose
+   * (POST /admin/pause, /admin/maintenance). They are POLLED owners: nothing
+   * releases a gate, the loop re-reads the flag every three seconds. This
+   * wait was the last polled branch of the loop that never stamped progress
+   * - the Cluster halt and the operator floor boundary both do - so the clock
+   * kept ageing for the whole lock. The moment an operator resumed a table
+   * paused for more than three minutes, `adminResume()` moved the FSM back to
+   * 'running', the table stopped reading as parked, and GameServer's 180 s
+   * sweep condemned it on a clock that had last moved before the pause:
+   * a healthy table rebuilt the instant it was allowed to deal, which is the
+   * same shape as the prepared-launch kills fixed by #7426.
+   *
+   * Stamped AFTER the awaited sleep, so it is earned by the loop returning
+   * while the engine may still mutate; a loop wedged anywhere else never
+   * reaches it. Once the lock lifts the table owes the 180 s clock from that
+   * instant, exactly as before.
+   */
+  protected async waitOneAdminLockSlice(): Promise<void> {
+    this.setLoopPhase(this.adminPauseLock ? 'admin_pause_lock' : 'maintenance_lock');
+    await this.sleep(3000);
     if (!this.lifecycleCanMutate()) return;
     this.markProgress();
   }

@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -139,6 +140,14 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
   const [usingCachedAccess, setUsingCachedAccess] = useState(false);
 
   const reload = useCallback(() => setRevision((value) => value + 1), []);
+  // The club and account whose access is currently verified as a member.
+  // A re-check of that same pair keeps the verified answer on screen until
+  // the new answer arrives: `loading` makes every guard unmount the page it
+  // protects, so flipping back to it for a background re-check tore down the
+  // roster, the cashier and every operations surface on each CLUB_UPDATED or
+  // auth-hydration event, and aborted whatever they were reading. A
+  // revocation still lands, because the new answer replaces the old one.
+  const verifiedAccessRef = useRef<string | null>(null);
 
   useEffect(() => {
     const onOnline = () => {
@@ -167,6 +176,7 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
       setStatus(nextStatus);
       setLoadedRouteClubId(routeClubId);
       setLoadedUserId(user?.id || null);
+      verifiedAccessRef.current = null;
     };
 
     const load = async (allowCacheFallback = true) => {
@@ -179,7 +189,8 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setStatus('loading');
+      const accessKey = `${routeClubId}\u0000${user.id}`;
+      if (verifiedAccessRef.current !== accessKey) setStatus('loading');
       setError(null);
       try {
         // This provider is mounted in the global shell. Keep the retry helper
@@ -246,6 +257,7 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
         setStatus(isActive ? 'ready' : 'denied');
         setLoadedRouteClubId(routeClubId);
         setLoadedUserId(user.id);
+        verifiedAccessRef.current = isActive ? accessKey : null;
         if (isActive) {
           writeClubWorkspaceCache({
             userId: user.id,
@@ -274,6 +286,7 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
             setStatus('ready');
             setLoadedRouteClubId(routeClubId);
             setLoadedUserId(user.id);
+            verifiedAccessRef.current = accessKey;
             return;
           }
           setClubUUID(null);
@@ -285,6 +298,7 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
           setStatus('error');
           setLoadedRouteClubId(routeClubId);
           setLoadedUserId(user.id);
+          verifiedAccessRef.current = null;
         }
       }
     };

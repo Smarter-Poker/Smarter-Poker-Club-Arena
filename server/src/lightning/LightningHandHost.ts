@@ -111,6 +111,7 @@ import {
   type ShowdownRecord,
   type WinnerRecord,
 } from '../engine/presentation/handEventFrames.js';
+import { buildDailyMissionHandEvents } from '../engine/dailyMissionEvents.js';
 import type {
   ActionRecord,
   ActionType,
@@ -1962,6 +1963,30 @@ export class LightningHandHost {
         holeCardsByUser[sd.userId] = sd.holeCards;
     }
     const btn = [...this.participants.values()].find((p) => p.position === 'btn');
+    const pots = state.pots.map((p, index) => ({
+      index,
+      amount: cents(p.amount),
+      eligible: p.eligiblePlayers,
+    }));
+    /* A LIGHTNING HAND IS A HAND (2026-10-19). This row used to carry
+       `daily_mission_events: null`, so not one fast-fold hand ever reached
+       Daily Missions or the Royal Flush achievement (both read this column):
+       25,485 hands in the 24 hours before the fix, every one of them. The
+       facts are built by the same function, from the same settled winners,
+       showdown, pots and per-pot awards, as a hand at a physical table, for
+       every participant dealt in - folded, fast-folded, horse or human
+       (CLAUDE.md 10.5). */
+    const participants = [...this.participants.values()];
+    const dailyMissionEvents = buildDailyMissionHandEvents({
+      dealtPlayerIds: this.participants.keys(),
+      roster: participants.map((p) => ({ userId: p.playerId, isHorse: p.isHorse })),
+      winners: this.winners,
+      showdownResults: this.showdown,
+      pots,
+      perPotAwards: this.perPotAwards as Parameters<
+        typeof buildDailyMissionHandEvents
+      >[0]['perPotAwards'],
+    });
     return {
       table_id: this.hostTableId,
       tournament_id: null,
@@ -1986,11 +2011,7 @@ export class LightningHandHost {
         ...(w.hand ? { hand: { name: w.hand.name, ranking: w.hand.ranking } } : {}),
       })),
       winners_by_board: null,
-      pots: state.pots.map((p, index) => ({
-        index,
-        amount: cents(p.amount),
-        eligible: p.eligiblePlayers,
-      })),
+      pots,
       // Never a hole card here: the record keeps names and stacks only.
       players: state.players.map((p) => ({
         userId: p.user_id,
@@ -2013,7 +2034,7 @@ export class LightningHandHost {
             hand_description: this.isMucked(r.userId) ? undefined : r.handDescription,
           }))
         : null,
-      daily_mission_events: null,
+      daily_mission_events: dailyMissionEvents.length > 0 ? dailyMissionEvents : null,
       // Weighted contributed rake: the uncalled amounts returned, by player.
       returned_uncalled: Object.fromEntries(
         state.players

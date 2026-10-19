@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
+import {
+  buildDailyMissionHandEvents,
+  handRecordsDailyMissionEvents,
+} from './dailyMissionEvents.js';
 
 describe('buildDailyMissionHandEvents', () => {
   it('emits exact facts for every dealt player, including horses, but not observers', () => {
@@ -193,5 +196,24 @@ describe('buildDailyMissionHandEvents', () => {
 
     expect(events[0].values.strong_hands).toEqual([7]);
     expect(events[1].values.strong_hands).toEqual([6]);
+  });
+});
+
+describe('handRecordsDailyMissionEvents', () => {
+  it('records on every chip hand and every Diamond tournament hand; only Diamond cash is refused', () => {
+    expect(handRecordsDailyMissionEvents({ arenaAsset: 'chips', isTournament: false })).toBe(true);
+    expect(handRecordsDailyMissionEvents({ arenaAsset: undefined, isTournament: false })).toBe(
+      true
+    );
+    expect(handRecordsDailyMissionEvents({ arenaAsset: 'chips', isTournament: true })).toBe(true);
+    // fn_ca_commit_hand_settlement judges a Diamond tournament hand as a chip
+    // tournament hand and accepts its mission facts.
+    expect(handRecordsDailyMissionEvents({ arenaAsset: 'diamonds', isTournament: true })).toBe(
+      true
+    );
+    // ...and refuses them on a Diamond cash table (tournament_id IS NULL).
+    expect(handRecordsDailyMissionEvents({ arenaAsset: 'diamonds', isTournament: false })).toBe(
+      false
+    );
   });
 });

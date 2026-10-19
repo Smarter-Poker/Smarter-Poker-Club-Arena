@@ -43,6 +43,24 @@ export function dailyMissionHandStrength(hand?: { name?: string; ranking?: numbe
   return Number.isSafeInteger(ranking) && ranking >= 1 && ranking <= 10 ? ranking : 0;
 }
 
+/**
+ * Whether a settled hand carries Daily Mission facts. One answer, for every
+ * player at the table, horse or human (CLAUDE.md 10.5): the only hands that
+ * carry none are Diamond CASH hands, because the accepted-hand door
+ * (fn_ca_commit_hand_settlement) refuses mission facts on a Diamond-club table
+ * whose tournament_id is null. A Diamond TOURNAMENT hand is judged exactly as
+ * a chip tournament hand is (Diamond Phase 8, 20260914024241), so it records
+ * them. Until 2026-10-19 the settlement asked only "is this a Diamond table",
+ * and every Diamond Arena tournament hand - 84,636 in the 24 hours before the
+ * fix - reached neither Daily Missions nor the Royal Flush achievement.
+ */
+export function handRecordsDailyMissionEvents(table: {
+  arenaAsset?: string | null;
+  isTournament: boolean;
+}): boolean {
+  return table.arenaAsset !== 'diamonds' || table.isTournament;
+}
+
 /** Build immutable mission facts from one settled hand for every dealt player, including horses. */
 export function buildDailyMissionHandEvents(input: {
   dealtPlayerIds: Iterable<string>;

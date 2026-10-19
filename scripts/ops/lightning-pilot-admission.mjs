@@ -613,7 +613,10 @@ export async function witnessAdmission({
             !payload ||
             payload.p_user_id !== pin.playerId ||
             payload.p_table_id !== joined.table_id ||
-            payload.p_club_id !== CLUB ||
+            // The normal table buy-in sends a null club and the door derives it
+            // from the table (run 39312801627: receipt club_id null). The club is
+            // proven independently through the owned anchor seat and cash session.
+            (payload.p_club_id !== CLUB && payload.p_club_id !== null) ||
             !UUID.test(payload.p_idempotency_key) ||
             !Number.isInteger(payload.p_seat_number) ||
             !finite(payload.p_amount) ||

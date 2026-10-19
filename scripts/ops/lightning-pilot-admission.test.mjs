@@ -56,6 +56,8 @@ function fixture({
   joinRefusal = null,
   // A layer control whose tap fails, and the error it fails with.
   layerFailure = null,
+  // The intent the normal buy-in actually sends.
+  buyPayload = payload,
 } = {}) {
   const actions = [],
     cleanup = [],
@@ -83,7 +85,7 @@ function fixture({
   const request = (name) => ({
     method: () => 'POST',
     url: () => `https://example.invalid/rest/v1/rpc/${name}`,
-    postDataJSON: () => payload,
+    postDataJSON: () => buyPayload,
   });
   const buyResponse = {
     request: () => request('atomic_table_buyin'),
@@ -766,4 +768,29 @@ test('Playwright failures reduce to fixed classes', () => {
   assert.equal(uiFailureClass(t('Device Welcome Unverified', 'Error')), 'welcome_unverified');
   assert.equal(uiFailureClass(t(SECRET, 'Error')), 'other');
   assert.equal(uiFailureClass(null), 'other');
+});
+
+test('the normal buy-in intent with a null club is the same exact intent when its receipt and owned anchor agree', async () => {
+  // Run 39312801627: welcome, join and one buy-in landed (wallet 146.78 to 142.78,
+  // pool c5a84f27), but the witness refused the actual intent for its null club.
+  const nullClub = { ...payload, p_club_id: null };
+  const f = fixture({
+    buyPayload: nullClub,
+    receiptValue: { status: 'confirmed', request: { ...receipt.request, club_id: null } },
+  });
+  const r = await witnessAdmission(f.args);
+  assert.equal(r.status, 'observed');
+  assert.equal(r.admissionOutcome, 'admitted');
+  assert.equal(r.buyIn.receipt, 'confirmed_exact_intent');
+  assert.deepEqual(f.actions, ['join', 'buy']);
+  // A different club, or a receipt that disagrees with the sent intent, stays unknown.
+  for (const options of [
+    { buyPayload: { ...payload, p_club_id: POOL } },
+    { buyPayload: nullClub },
+  ]) {
+    const g = fixture(options);
+    const u = await witnessAdmission(g.args);
+    assert.equal(u.status, 'unknown');
+    assert.deepEqual(g.actions, ['join', 'buy']);
+  }
 });

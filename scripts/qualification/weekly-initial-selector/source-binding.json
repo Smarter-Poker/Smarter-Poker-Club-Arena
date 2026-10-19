@@ -2,8 +2,8 @@
   "scope": "Exact original global weekly selector, real launch predicates/current source40 and guarded installation; no payments or production timing.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 228284,
-      "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+      "bytes": 228609,
+      "sha256": "3f2e674268b1b2423095af692104a94676cd20ee80d7b2428b4ac46be213b083"
     },
     "docs/changelog/2026-10-13-weekly-initial-selector-cutoff-cohort.md": {
       "bytes": 1252,
@@ -137,6 +137,21 @@
         "current": {
           "bytes": 228284,
           "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+        }
+      }
+    }
+  },
+  "tournamentWritersLaneInputIdentity20261019": {
+    "reason": "Add the isolated tournament table writer lane qualification (scripts/dev/test-tournament-table-writers-wait-for-their-lane.py) to existing required accounting shard 1. Current workflow input identity only; all financial source, assertions and prior qualification statuses retained. No financial certificate restamp.",
+    "changes": {
+      ".github/workflows/ci.yml": {
+        "previous": {
+          "bytes": 228284,
+          "sha256": "2b84d68c0cea0079bd1818085968614c8d7d3f8ac3f9dba92e945f05801b5744"
+        },
+        "current": {
+          "bytes": 228609,
+          "sha256": "3f2e674268b1b2423095af692104a94676cd20ee80d7b2428b4ac46be213b083"
         }
       }
     }

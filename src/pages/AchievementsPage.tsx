@@ -66,6 +66,10 @@ import { reportError } from '../utils/errorReporter';
 import { ErrorState } from '../components/common/EmptyState';
 import RewardsOverlayPortal from '../components/rewards/RewardsOverlayPortal';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { mediaUrl } from '../utils/mediaBase';
+
+/** The platform's diamond mark (the same art the wallet and menu use). */
+const DIAMOND_ICON = mediaUrl('images/diamond-icon.webp');
 
 type SortMode = 'default' | 'rarity' | 'progress' | 'recent';
 const RARITY_ORDER: Record<string, number> = { legendary: 0, epic: 1, rare: 2, common: 3 };
@@ -154,6 +158,10 @@ interface Achievement {
   unlocked: boolean;
   unlockedAt?: string;
   requirement: string;
+  /** Diamonds the server pays once on the unlock (catalog, 2026-10-19). */
+  diamondReward?: number;
+  /** Diamonds the server reported crediting for THIS unlock (its notification). */
+  diamondsAwarded?: number;
 }
 
 // Achievement display definitions — IDs MUST match AchievementService.ts exactly
@@ -405,6 +413,8 @@ export default function AchievementsPage() {
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingUnlocks = useRef(new Set<string>());
   const celebratedUnlocks = useRef(new Set<string>());
+  // What the server's unlock notification says it credited, by achievement.
+  const unlockDiamonds = useRef(new Map<string, number>());
 
   // Progress before an unlock produces no notification. Observe it only while
   // this page is visible; the low-write owner feed invalidates unlocks at once.
@@ -457,6 +467,7 @@ export default function AchievementsPage() {
           progress: pct,
           unlocked: Boolean(userProgress?.unlockedAt) || rawProgress >= requirement,
           unlockedAt: userProgress?.unlockedAt,
+          diamondReward: serviceAchievement?.diamondReward || 0,
         };
       });
 
@@ -479,7 +490,7 @@ export default function AchievementsPage() {
         pendingUnlocks.current.delete(id);
         if (celebratedUnlocks.current.has(id)) continue;
         celebratedUnlocks.current.add(id);
-        setNewUnlock(achievement);
+        setNewUnlock({ ...achievement, diamondsAwarded: unlockDiamonds.current.get(id) ?? 0 });
         if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
         unlockTimerRef.current = setTimeout(() => setNewUnlock(null), 5000);
       }
@@ -504,6 +515,7 @@ export default function AchievementsPage() {
       if (shareTimerRef.current) clearTimeout(shareTimerRef.current);
       pendingUnlocks.current.clear();
       celebratedUnlocks.current.clear();
+      unlockDiamonds.current.clear();
       if (unlockTimerRef.current) clearTimeout(unlockTimerRef.current);
     },
   });
@@ -521,6 +533,10 @@ export default function AchievementsPage() {
       const id = row.data?.achievement_id ?? row.metadata?.achievement_id;
       if (typeof id !== 'string' || !ACHIEVEMENTS.some((item) => item.id === id)) return;
       if (celebratedUnlocks.current.has(id)) return;
+      const credited = Number(row.data?.diamonds_awarded);
+      if (Number.isFinite(credited) && credited > 0) {
+        unlockDiamonds.current.set(id, Math.floor(credited));
+      }
       pendingUnlocks.current.add(id);
       loadAchievements();
     },
@@ -821,6 +837,7 @@ export default function AchievementsPage() {
                 unlocked={achievement.unlocked}
                 rarity={achievement.rarity}
                 unlockedAt={achievement.unlockedAt}
+                diamondReward={achievement.diamondReward}
               />
             </div>
           ))}
@@ -868,6 +885,23 @@ export default function AchievementsPage() {
                   {selectedAchievement.requirement}
                 </span>
               </div>
+
+              {(selectedAchievement.diamondReward ?? 0) > 0 && (
+                <div className="ach-row ach-row--flush">
+                  <span className="ach-row__label sc-label sc-ink--blue">Reward</span>
+                  <span
+                    className={`ach-row__value ach-reward ${selectedAchievement.unlocked ? 'sc-ink--green' : 'sc-ink--silver'}`}
+                  >
+                    <img
+                      className="ach-reward__icon"
+                      src={DIAMOND_ICON}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                    {(selectedAchievement.diamondReward ?? 0).toLocaleString()} Diamonds
+                  </span>
+                </div>
+              )}
 
               {!selectedAchievement.unlocked && selectedAchievement.progress > 0 && (
                 <p className="ach-detail__note sc-label sc-ink--blue">
@@ -936,6 +970,17 @@ export default function AchievementsPage() {
               <span className="unlock-text">
                 <span className="unlock-label sc-label sc-ink--gold">Achievement Unlocked!</span>
                 <span className="unlock-name sc-ink--silver">{newUnlock.name}</span>
+                {(newUnlock.diamondsAwarded ?? 0) > 0 && (
+                  <span className="unlock-reward sc-label sc-ink--white">
+                    <img
+                      className="ach-reward__icon"
+                      src={DIAMOND_ICON}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                    +{(newUnlock.diamondsAwarded ?? 0).toLocaleString()} Diamonds
+                  </span>
+                )}
               </span>
             </div>
             <button

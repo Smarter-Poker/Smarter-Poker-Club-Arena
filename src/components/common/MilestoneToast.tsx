@@ -11,6 +11,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './MilestoneToast.css';
 import { formatPopupText } from '../../utils/popupStyle';
+import { mediaUrl } from '../../utils/mediaBase';
+
+/** The platform's diamond mark (the same art the wallet and menu use). */
+const DIAMOND_ICON = mediaUrl('images/diamond-icon.webp');
 
 /**
  * BUNDLE PASS 2026-08-24: SoundService was a STATIC import here. This component
@@ -47,6 +51,8 @@ interface MilestoneNotification {
   description: string;
   icon: string;
   reward?: string;
+  /** Diamonds the server credited for this unlock (achievements, 2026-10-19). */
+  diamonds?: number;
 }
 
 export const MilestoneToast: React.FC = () => {
@@ -71,6 +77,10 @@ export const MilestoneToast: React.FC = () => {
       description: data.description || data.message || 'You Reached A New Milestone!',
       icon: data.icon || 'Trophy',
       reward: data.reward || data.rewardText,
+      diamonds:
+        Number.isFinite(Number(data.rewardDiamonds)) && Number(data.rewardDiamonds) > 0
+          ? Math.floor(Number(data.rewardDiamonds))
+          : undefined,
     };
 
     setNotifications((prev) => [...prev.slice(-4), notification]); // Max 5 at a time
@@ -113,8 +123,20 @@ export const MilestoneToast: React.FC = () => {
                 bus-supplied, so it is never pre-formatted. */}
             <div className="milestone-toast__title">{formatPopupText(n.title)}</div>
             <div className="milestone-toast__description">{formatPopupText(n.description)}</div>
-            {n.reward && (
-              <div className="milestone-toast__reward">Reward: {formatPopupText(n.reward)}</div>
+            {n.diamonds ? (
+              <div className="milestone-toast__reward">
+                <img
+                  className="milestone-toast__diamond"
+                  src={DIAMOND_ICON}
+                  alt=""
+                  aria-hidden="true"
+                />
+                {formatPopupText(`+${n.diamonds.toLocaleString()} Diamonds`)}
+              </div>
+            ) : (
+              n.reward && (
+                <div className="milestone-toast__reward">Reward: {formatPopupText(n.reward)}</div>
+              )
             )}
           </div>
           <div className="milestone-toast__progress" />

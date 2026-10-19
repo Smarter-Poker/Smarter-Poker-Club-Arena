@@ -201,6 +201,25 @@
   line-height: 1.4;
 }
 
+/* The diamonds an achievement pays (2026-10-19): the platform diamond mark
+   and the amount, in the badge's own white. */
+.reward {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: white;
+}
+
+.rewardIcon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .unlockedDate {
   display: block;
   margin-top: 8px;

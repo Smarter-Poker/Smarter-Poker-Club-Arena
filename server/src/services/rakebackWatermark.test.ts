@@ -156,6 +156,7 @@ import {
   CASH_DEFERRAL_RESUBMITS,
   CASH_RETRY_LIMIT,
   MAX_DRAIN_BATCHES,
+  haltedPageRetryDelayMs,
 } from './RakebackSettlerService.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -974,6 +975,40 @@ describe('cash source receipts protect the durable cursor', () => {
       );
     });
 
+    it('keeps resubmitting while each call settles something (20261019190103)', async () => {
+      // The database defers the items a call has no time left for. Each call
+      // here settles only its first item and defers the rest - the shape of a
+      // chunk behind slow row locks - so it takes one call per item. Every
+      // resubmission made progress, so none of them counts toward the halt.
+      const dataset = Array.from({ length: CASH_DEFERRAL_RESUBMITS + 2 }, (_, i) => ({
+        ...creditedRow(),
+        id: uid(i + 1),
+        created_at: ts(201 + i),
+        hand_id: uid(10001 + i),
+      }));
+      setup({
+        dataset,
+        ledger: dataset.map((source, n) => ({
+          ...ledger[0],
+          id: uid(20000 + n),
+          rake_record_id: source.id,
+          hand_id: source.hand_id,
+        })),
+      });
+      mockRpc.mockImplementation(async (name, args) => {
+        if (name !== 'fn_credit_agent_commissions_batch') return success(name, args);
+        const items = args.p_items as Array<{ source_id: string }>;
+        return deferring(items.slice(1).map((it) => it.source_id))(name, args);
+      });
+      expect(await run()).toBe('more');
+      const ids = dataset.map((source) => source.id);
+      expect(batchCalls()).toEqual(ids.map((_, n) => ids.slice(n)));
+      expect(scenario.current.durableCursor).toEqual({
+        high_water_mark: dataset[dataset.length - 1].created_at,
+        high_water_mark_id: ids[ids.length - 1],
+      });
+    });
+
     it('never reads a deferral as an acknowledgement, even from a malformed answer', async () => {
       twoSources();
       mockRpc.mockImplementation(async (name, args) => {
@@ -1555,15 +1590,22 @@ describe('the catch-up re-arms while backlog remains', () => {
     expect(backlog).toEqual([true]);
   });
 
-  it('does not arm after a halt with no progress, so a persistent failure waits the interval', async () => {
-    expect((await drive(['halted'])).backlog).toEqual([false]);
+  /*
+   * A HALTED PAGE COMES BACK ON THE NEXT SHORT TICK (2026-10-19). Live: one
+   * 16.1 s batch call at 17:02 halted a first page, and because the cycle had
+   * made no progress the settler waited the full 30-minute interval (next
+   * activity 17:29:59). Every halt now re-arms the catch-up; halts in a row
+   * with no acknowledged page back off from 60 s, doubling, to the interval.
+   */
+  it('arms after a halt with no progress, so one slow call costs a minute, not the interval', async () => {
+    expect((await drive(['halted'])).backlog).toEqual([true]);
   });
 
   it('does not arm once the range is empty', async () => {
     expect((await drive(['more', 'idle'])).backlog).toEqual([false]);
   });
 
-  /** Several cycles on ONE settler: the retry allowance lives across cycles. */
+  /** Several cycles on ONE settler: the halt backoff lives across cycles. */
   const cycles = async (perCycle: string[][]) => {
     const settler = new RakebackSettlerService();
     const inner = vi.spyOn(settler as any, '_runSettlementInner');
@@ -1577,31 +1619,69 @@ describe('the catch-up re-arms while backlog remains', () => {
       'runTournamentChipConservation',
     ] as const)
       vi.spyOn(settler as any, method).mockResolvedValue(undefined);
-    const schedule = vi.spyOn(settler as any, 'scheduleCatchUp');
+    const armed: Array<number | null> = [];
+    vi.spyOn(settler as any, 'scheduleCatchUp').mockImplementation((backlog: unknown) => {
+      armed.push(
+        backlog ? haltedPageRetryDelayMs((settler as any).consecutiveStalls as number) : null
+      );
+    });
     for (let i = 0; i < perCycle.length; i++) await settler.runSettlement();
-    return schedule.mock.calls.map(([backlog]) => backlog);
+    return armed;
   };
+  const MIN = 60_000;
 
-  it('retries a first-page stall once, right after a productive cycle, then waits the interval', async () => {
-    expect(await cycles([['more', 'more', 'more'], ['halted'], ['halted']])).toEqual([
-      true,
-      true,
-      false,
+  it('retries a first-page stall in 60 s even with no productive cycle before it', async () => {
+    expect(await cycles([['halted']])).toEqual([MIN]);
+  });
+
+  it('backs off halts in a row, doubling, and never past the interval', async () => {
+    expect(await cycles(Array.from({ length: 8 }, () => ['halted']))).toEqual([
+      MIN,
+      2 * MIN,
+      4 * MIN,
+      8 * MIN,
+      16 * MIN,
+      30 * MIN,
+      30 * MIN,
+      30 * MIN,
     ]);
   });
 
-  it('a productive cycle that itself halted still earns the one retry', async () => {
-    expect(await cycles([['more', 'halted'], ['halted'], ['halted']])).toEqual([true, true, false]);
-  });
-
-  it('the allowance is restored only by a cycle that acknowledges a page', async () => {
+  it('an acknowledged page resets the backoff', async () => {
     expect(
-      await cycles([['more', 'more', 'more'], ['halted'], ['more', 'idle'], ['halted'], ['halted']])
-    ).toEqual([true, true, false, true, false]);
+      await cycles([['halted'], ['halted'], ['halted'], ['more', 'halted'], ['halted']])
+    ).toEqual([MIN, 2 * MIN, 4 * MIN, MIN, MIN]);
   });
 
-  it('an idle cycle spends nothing and earns nothing', async () => {
-    expect(await cycles([['idle'], ['halted']])).toEqual([false, false]);
+  it('an idle cycle resets the backoff and arms nothing', async () => {
+    expect(await cycles([['halted'], ['halted'], ['idle'], ['halted']])).toEqual([
+      MIN,
+      2 * MIN,
+      null,
+      MIN,
+    ]);
+  });
+
+  it('the drain cap arms the ordinary 60 s catch-up', async () => {
+    expect(await cycles([['halted'], ['halted'], Array(MAX_DRAIN_BATCHES).fill('more')])).toEqual([
+      MIN,
+      2 * MIN,
+      MIN,
+    ]);
+  });
+
+  it('the backoff is arithmetic on the stall count alone', () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 40].map(haltedPageRetryDelayMs)).toEqual([
+      MIN,
+      MIN,
+      2 * MIN,
+      4 * MIN,
+      8 * MIN,
+      16 * MIN,
+      30 * MIN,
+      30 * MIN,
+    ]);
+    expect(haltedPageRetryDelayMs(Number.NaN)).toBe(MIN);
   });
 });
 

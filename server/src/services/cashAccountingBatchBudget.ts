@@ -143,3 +143,23 @@ export function cashAccountingBatchSize(
   const fits = Math.floor(budgetMs / perItemMs);
   return Math.max(MIN_BATCH, Math.min(MAX_BATCH, fits));
 }
+
+/**
+ * ONE CASH SOURCE CALL SPENDS AT MOST THIS LONG ON THE SERVER (2026-10-19).
+ *
+ * The batch size above bounds the WORK a call carries. It never bounded the
+ * WAITING. On 2026-10-19 at 17:02 one fn_credit_agent_commissions_batch call
+ * of five items ran 16.1 s: two items each waited the engine role's whole 8 s
+ * lock_timeout for a profiles row another transaction held (the agents foreign
+ * key check inside fn_post_accounting_commission_source). The client gave up
+ * at 15 s, the server committed anyway, and the page halted.
+ *
+ * Migration 20261019190103 gives fn_credit_agent_commissions_batch and
+ * fn_retry_cash_accounting_sources this budget, written there as
+ * `interval '8 seconds'`: an item starts only while time is left, waits for a
+ * lock at most 2 s or what remains, and every item the call has no time left
+ * for is deferred, not run. So a call answers inside the client's patience
+ * however the rows it touches are held. It must stay under
+ * BATCH_BUDGET_FRACTION of the client budget; the law test reads both.
+ */
+export const CASH_SOURCE_CALL_SERVER_BUDGET_MS = 8_000;

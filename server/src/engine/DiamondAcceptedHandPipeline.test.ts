@@ -126,6 +126,35 @@ afterEach(() => {
   mocks.rpc.mockReset();
 });
 
+describe('a Diamond tournament hand records its Daily Mission facts (2026-10-19)', () => {
+  it('builds the same mission facts a chip tournament hand carries; only Diamond cash sends none', async () => {
+    const dealt = () =>
+      new Map([
+        ['a', { seat: 1, cards: [] }],
+        ['b', { seat: 2, cards: [] }],
+      ]);
+    const tournament = engineAndPlayers();
+    tournament.engine.tableInfo = {
+      ...tournament.engine.tableInfo,
+      tournament_id: 'tournament-1',
+      game_type: 'tournament',
+    };
+    tournament.engine.currentHandHoleCards = dealt();
+    await tournament.engine.postHandTasks(tournament.players, 1);
+    expect(mocks.commit).toHaveBeenCalledTimes(1);
+    const events = mocks.commit.mock.calls[0][0].dailyMissionEvents;
+    expect(events.map((e: any) => e.user_id).sort()).toEqual(['a', 'b']);
+    expect(events.every((e: any) => e.amounts.hands_played === 1)).toBe(true);
+    expect(events.find((e: any) => e.user_id === 'b').amounts.hands_won).toBe(1);
+
+    const cash = engineAndPlayers();
+    cash.engine.currentHandHoleCards = dealt();
+    await cash.engine.postHandTasks(cash.players, 1);
+    expect(mocks.commit).toHaveBeenCalledTimes(2);
+    expect(mocks.commit.mock.calls[1][0].dailyMissionEvents).toEqual([]);
+  });
+});
+
 describe('the actual shared settlement pipeline accepts Diamond hands', () => {
   it('sends the exact lease, time banks and empty chip obligations then processes pending leave', async () => {
     const { engine, players } = engineAndPlayers();

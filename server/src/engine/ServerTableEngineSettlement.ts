@@ -60,7 +60,10 @@ import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import { buildTableTalkInput, speakAtTheFelt } from '../services/HorseTableTalk.js';
-import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
+import {
+  buildDailyMissionHandEvents,
+  handRecordsDailyMissionEvents,
+} from './dailyMissionEvents.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 import { checkTournamentWholeChips, describeFractionalSeats } from './tournamentWholeChips.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
@@ -2234,7 +2237,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               };
         });
 
-        const dailyMissionEvents = isDiamondCash
+        const dailyMissionEvents = !handRecordsDailyMissionEvents({
+          arenaAsset: tableInfo.arena?.asset,
+          isTournament: this.isTournamentTable(),
+        })
           ? []
           : buildDailyMissionHandEvents({
               dealtPlayerIds: snap.holeCards.keys(),

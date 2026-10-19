@@ -59,7 +59,7 @@ describe('a bagged horse is a bagged player', () => {
   it('a bagged horse still occupies its event when the fleet picks free horses', () => {
     const recurring = code(read('src/services/TournamentRecurringService.ts'));
     const load = recurring.slice(
-      recurring.indexOf('private async horseLoadMap()'),
+      recurring.indexOf('private async horseLoadMap('),
       recurring.indexOf('return buildHorseLoadMap(')
     );
     expect(load).toContain(".in('status', ['ANNOUNCED', 'REGISTERING', 'BAGGED'])");

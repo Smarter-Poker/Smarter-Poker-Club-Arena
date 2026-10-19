@@ -19,6 +19,7 @@ import {
   horseAtCapacity,
   HORSE_MAX_CONCURRENT_TABLES,
   REGISTRATION_LOAD_HORIZON_MS,
+  forwardLoadHorizonMs,
 } from './TournamentRecurringService.js';
 import { BOOKING_COUNTS_WITHIN_MS } from './HorseGameLoad.js';
 
@@ -197,5 +198,47 @@ describe('the double-count rule, which is the one that fails silently', () => {
     // Seat list carries it; the registration list correctly does not.
     const load = buildHorseLoadMap(['h1'], []);
     expect(load.get('h1')).toBe(1);
+  });
+});
+
+describe('a booking must be one the horse can honour (2026-10-19 fleet_over_cap)', () => {
+  const now = Date.parse('2026-10-19T12:00:00Z');
+  const H = REGISTRATION_LOAD_HORIZON_MS;
+
+  it('reads nothing extra for an event already inside the database window', () => {
+    expect(forwardLoadHorizonMs(new Date(now + H).toISOString(), now)).toBeNull();
+    expect(forwardLoadHorizonMs(new Date(now + 10 * 60_000).toISOString(), now)).toBeNull();
+  });
+
+  it('reads bookings out to the hour before a later event starts to count', () => {
+    const startsIn2h = new Date(now + 2 * H).toISOString();
+    expect(forwardLoadHorizonMs(startsIn2h, now)).toBe(3 * H);
+  });
+
+  it('declines an unknown or unparseable start rather than guessing', () => {
+    expect(forwardLoadHorizonMs(null, now)).toBeNull();
+    expect(forwardLoadHorizonMs('not a date', now)).toBeNull();
+  });
+
+  it('a horse with two tournament seats and two bookings is at the forward ceiling', () => {
+    // Two running tournaments plus two events starting before the new one's hour.
+    const forward = buildHorseLoadMap(
+      [
+        { user_id: 'h1', tournament_id: 't-running-1' },
+        { user_id: 'h1', tournament_id: 't-running-2' },
+      ],
+      [
+        { user_id: 'h1', tournament_id: 't-book-1' },
+        { user_id: 'h1', tournament_id: 't-book-2' },
+      ]
+    );
+    expect(horseAtCapacity(forward.get('h1') ?? 0)).toBe(true);
+  });
+
+  it('registerHorses consults the forward load and declines when it is unknown', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'TournamentRecurringService.ts'), 'utf8');
+    expect(src).toMatch(/forwardLoadHorizonMs\(/);
+    expect(src).toMatch(/this\.horseLoadMap\(forwardMs, true\)/);
+    expect(src).toMatch(/if \(!forward\) return 0;/);
   });
 });

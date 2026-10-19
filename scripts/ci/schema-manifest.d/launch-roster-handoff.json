@@ -1,0 +1,11 @@
+{
+  "_owner": "critical-failures-01a14f65: migration20261018230822 locked launch cohort and causal accepted-entry handoff",
+  "functions": [
+    "fn_begin_tournament_launch_before_lease_generation",
+    "fn_complete_tournament_launch_before_lease_generation",
+    "trg_tournament_launch_receipt_is_immutable"
+  ],
+  "columns": {
+    "tournament_launch_receipts": ["launch_player_ids"]
+  }
+}

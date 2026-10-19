@@ -271,11 +271,34 @@ with tempfile.TemporaryDirectory(prefix='fb-',dir=BASE) as folder:
    drift=prefix+f"BEGIN; UPDATE profiles SET status='active' WHERE id='{retired_horses[0]}'; SELECT fn_ca_launch_reset_execute('{op}','{digest}',{horse_wallets}); ROLLBACK;"
    assert 'LAUNCH_RESET_ROSTER_IDENTITY_CHANGED' in run(q,drift,False)
    period_id=period_ids[0][0]
-   for mutation in ["status='paid'", "status='claiming'", "paid_at=clock_timestamp()", "created_at=(SELECT captured_at+interval '1 second' FROM ca_launch_reset_operations WHERE operation_id='"+op+"')"]:
-    unsafe=prefix+f"BEGIN; UPDATE rakeback_periods SET {mutation} WHERE id='{period_id}'; SELECT fn_ca_launch_accounting_activate('{op}'); ROLLBACK;"
+   # The legacy maturity guard matures a period at the UTC midnight after
+   # period_end (read via statement_timestamp()), but current_week is the
+   # America/Los_Angeles week. From Monday 00:00 UTC until the Los Angeles week
+   # rolls over, the current-week period is already mature by the guard's own
+   # clock, so a paid update passes the guard and activation must refuse it
+   # instead. Evaluate the guard's predicate in the same client statement as
+   # the update: statement_timestamp() is then identical for both, so the
+   # expectation follows the clock the database actually reads, with no race.
+   def paid_attempt(target):
+    return prefix+f"BEGIN; DO $paid$ DECLARE v_window text; BEGIN SELECT CASE WHEN (period_end+1)::timestamp AT TIME ZONE 'UTC'>statement_timestamp() THEN 'open' ELSE 'mature' END INTO STRICT v_window FROM rakeback_periods WHERE id='{target}'; RAISE NOTICE 'legacy_guard_window=%',v_window; UPDATE rakeback_periods SET status='paid' WHERE id='{target}'; PERFORM fn_ca_launch_accounting_activate('{op}'); END $paid$; ROLLBACK;"
+   # (a) Deterministic on every run: a paid update on a period whose earning
+   # week is still open by any clock (next Los Angeles week) is refused by the
+   # legacy guard before activation is reached.
+   open_period='10000000-0000-0000-0000-0000000000a7'
+   open_refusal=run(q,paid_attempt(open_period).replace('BEGIN; DO',f"BEGIN; INSERT INTO rakeback_periods(id,user_id,club_id,period_start,period_end,rake_generated,rakeback_rate,rakeback_amount,status,created_at) VALUES('{open_period}','{period_ids[0][2]}','{period_ids[0][1]}',{current_week}+7,{current_week}+13,10,0.2,2,'pending',now()-interval '1 hour'); DO",1),False)
+   (OUT/'period-negative-open-week-paid.txt').write_text(open_refusal)
+   assert 'legacy_guard_window=open' in open_refusal and 'Legacy period payment requires a closed earning period' in open_refusal,open_refusal
+   for index,mutation in enumerate(["status='paid'", "status='claiming'", "paid_at=clock_timestamp()", "created_at=(SELECT captured_at+interval '1 second' FROM ca_launch_reset_operations WHERE operation_id='"+op+"')"]):
+    unsafe=paid_attempt(period_id) if mutation=="status='paid'" else prefix+f"BEGIN; UPDATE rakeback_periods SET {mutation} WHERE id='{period_id}'; SELECT fn_ca_launch_accounting_activate('{op}'); ROLLBACK;"
     refusal=run(q,unsafe,False)
-    (OUT/('period-negative-'+str(["status='paid'","status='claiming'","paid_at=clock_timestamp()"].index(mutation) if mutation in ["status='paid'","status='claiming'","paid_at=clock_timestamp()"] else 3)+'.txt')).write_text(refusal)
-    expected='Legacy period payment requires a closed earning period' if mutation=="status='paid'" else 'launch_accounting_current_week_period_requires_qualification'
+    (OUT/('period-negative-'+str(index)+'.txt')).write_text(refusal)
+    if mutation=="status='paid'":
+     window=re.search(r'legacy_guard_window=(open|mature)',refusal)
+     assert window,refusal
+     # (b) for a mature-by-UTC current-week period, or (a) while it is open.
+     expected='Legacy period payment requires a closed earning period' if window.group(1)=='open' else 'launch_accounting_current_week_period_requires_qualification'
+    else:
+     expected='launch_accounting_current_week_period_requires_qualification'
     assert expected in refusal,refusal
 
 

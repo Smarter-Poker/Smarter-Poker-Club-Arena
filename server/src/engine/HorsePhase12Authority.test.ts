@@ -130,7 +130,7 @@ describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualificati
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
   );
 
-  it('nothing is selected; FLH generations 2, 3 and 4 and Crazy Pineapple generation 1 are retained; each pack keeps its own contract digest, FLH the frozen v1', () => {
+  it('only FLH generation 5 is selected; FLH generations 2, 3 and 4 and Crazy Pineapple generation 1 are retained; each pack keeps its own contract digest, FLH the frozen v1', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
     // FLH's generation-1 selection measured policy digest a55db7fe..., which
@@ -140,8 +140,13 @@ describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualificati
     // The declared-work change (2026-10-16) moved it again; generation 4
     // requalified the declared-work source d9190c9e (2026-10-17), as did
     // Crazy Pineapple generation 1 under contract v2. The VPIP floor
-    // call-down (2026-10-17 evening) moved every digest again.
-    expect(selected).toEqual([]);
+    // call-down (2026-10-17 evening) moved every digest again. FLH generation 5
+    // requalified the VPIP-floor source da94e437 (2026-10-19); the other three
+    // packs stay unselected until their own matrices finish.
+    expect(selected).toEqual(['flh']);
+    expect(PHASE12_PROTECTED_RELEASE_SELECTIONS.flh!.approvalGeneration).toBeGreaterThan(
+      RETIRED_2026_10_17_PHASE12_SELECTIONS.flh!.approvalGeneration
+    );
     expect(RETIRED_2026_10_17_PHASE12_SELECTIONS.flh).toMatchObject({
       sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
       contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS.flh,
@@ -198,14 +203,13 @@ describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualificati
         variant,
         packVersion: REMAINING_VARIANT_PACKS[variant].version,
         contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS[variant],
-        sourceSha: 'd9190c9ef413abbb38c63128b3532df8f9b4756c',
-        approvalGeneration: variant === 'flh' ? 4 : 1,
+        sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+        approvalGeneration: variant === 'flh' ? 5 : 1,
         expiresAt: null,
         withdrawn: null,
       });
-      // 2026-10-17: FLH generation 4 and Crazy Pineapple generation 1
-      // measured the running policy digest, so the
-      // committed selection is admitted from its shipped evidence.
+      // 2026-10-19: FLH generation 5 measured the running policy digest, so
+      // the committed selection is admitted from its shipped evidence.
       expect(release.status, variant).toBe('admitted');
       expect(selectedHorsePhase12Authority(variant, release), variant).not.toBeNull();
       // An admitted pack is the candidate at cash tables and shadow in
@@ -288,8 +292,20 @@ describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualificati
           expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
         }
       }
-    for (const variant of HORSE_PHASE12_VARIANTS)
+    for (const variant of unselected)
       expect(PHASE12_PROTECTED_RELEASE_SELECTIONS[variant], variant).toBeNull();
+    // The one live generation ships the same bytes in the repository and in
+    // the image's release-evidence copy.
+    const live = PHASE12_PROTECTED_RELEASE_SELECTIONS.flh!;
+    expect(live.approvalGeneration).toBe(5);
+    for (const [path, digest] of [
+      [live.qualificationPath, live.qualificationSha256],
+      [live.completionPath!, live.completionSha256!],
+    ])
+      for (const root of ['../../../', '../../release-evidence/']) {
+        const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
+        expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
+      }
   });
 
   it('an unselected pack returns unselected before any evidence file is read', () => {
@@ -418,8 +434,9 @@ describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualificati
       if (parsed.schema === HORSE_PHASE12_COMPLETION_SCHEMA)
         expect(HORSE_PHASE12_VARIANTS as readonly string[], file).toContain(parsed.variant);
     }
-    // Nothing is selected, so no qualified:true file is on the running policy.
-    expect(qualifiedSelected).toEqual([]);
+    // Only FLH generation 5 is selected, so its qualification is the one
+    // qualified:true file on the running policy.
+    expect(qualifiedSelected).toEqual(['flh:da94e437/phase12-qualification-2026-10-19-flh.json']);
   });
 });
 

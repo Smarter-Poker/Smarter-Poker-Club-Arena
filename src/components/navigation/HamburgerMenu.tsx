@@ -64,7 +64,10 @@ import { signInUrl } from '../../lib/signIn';
 import { rewardToolMatchesSearch as matchesRewardToolSearch } from './rewardToolSearch';
 import { menuOffersCreateUnion } from './menuUnionDoor';
 import { useInTabLobbyActive, useInTabLobbyClubId } from '../club/inTabLobbySurface';
-import { readClubWelcomeSettings } from '../../services/ClubWelcomeMessageService';
+import {
+  readClubWelcomeSettings,
+  clubWelcomeSetupMissing,
+} from '../../services/ClubWelcomeMessageService';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
    MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
@@ -277,20 +280,35 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const canManageGamesInContext = gameAuthorityContext === gameAuthorityKey && canManageGames;
   const unionManageIdInContext = gameAuthorityContext === gameAuthorityKey ? unionManageId : null;
   const clubRole = workspace.clubRole;
+  const welcomeNudged = useRef(new Set<string>());
   const welcomeActor = useRef<string | null>(user?.id || null);
   welcomeActor.current = user?.id || null;
-  const [welcomeAccess, setWelcomeAccess] = useState<{ actorId: string; clubs: string[] } | null>(
-    null
-  );
+  const [welcomeAccess, setWelcomeAccess] = useState<{
+    actorId: string;
+    clubs: string[];
+    missing: string[];
+  } | null>(null);
   useEffect(() => {
     let live = true;
     const accountId = user?.id;
     setWelcomeAccess(null);
-    if (!isOpen || !accountId) return;
+    if (!accountId) return;
     void readClubWelcomeSettings(accountId, () => welcomeActor.current)
       .then((rows) => {
-        if (live && welcomeActor.current === accountId)
-          setWelcomeAccess({ actorId: accountId, clubs: rows.map((row) => row.club_id) });
+        if (live && welcomeActor.current === accountId) {
+          const missing = rows.filter(clubWelcomeSetupMissing).map((row) => row.club_id);
+          setWelcomeAccess({ actorId: accountId, clubs: rows.map((row) => row.club_id), missing });
+          const key = `${accountId}:${workspace.clubUUID || 'all'}`;
+          if (
+            (workspace.clubUUID ? missing.includes(workspace.clubUUID) : missing.length > 0) &&
+            !welcomeNudged.current.has(key)
+          ) {
+            welcomeNudged.current.add(key);
+            toast.info(
+              'Finish Setting Up Your Custom Messages. Open Custom Messages Below Messages.'
+            );
+          }
+        }
       })
       .catch((error) => {
         if (live && welcomeActor.current === accountId)
@@ -299,7 +317,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     return () => {
       live = false;
     };
-  }, [isOpen, user?.id, workspace.clubUUID]);
+  }, [isOpen, user?.id, workspace.clubUUID, clubRole]);
   const canCustomizeWelcome =
     welcomeAccess !== null &&
     welcomeAccess.actorId === user?.id &&
@@ -338,6 +356,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     isPlatformStaff: effectivePlatformStaff,
     canManageGames: canManageGamesInContext,
     canCustomizeWelcome,
+    welcomeSetupRequired:
+      welcomeAccess !== null &&
+      welcomeAccess.actorId === user?.id &&
+      (workspace.clubUUID
+        ? welcomeAccess.missing.includes(workspace.clubUUID)
+        : welcomeAccess.missing.length > 0),
     canOperateUnionNetwork,
   });
   const allNavigationItems = useMemo(

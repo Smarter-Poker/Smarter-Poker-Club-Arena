@@ -12,6 +12,8 @@ import {
   readClubWelcomeSettings,
   saveClubWelcomeSettings,
   type ClubWelcomeSettings,
+  type ClubWelcomeKind,
+  clubWelcomeTemplate,
 } from '../services/ClubWelcomeMessageService';
 import './ClubWelcomeMessagePage.css';
 
@@ -33,6 +35,7 @@ export default function ClubWelcomeMessagePage() {
   currentScope.current = scope;
   const [clubs, setClubs] = useState<ClubWelcomeSettings[]>([]);
   const [selectedId, setSelectedId] = useState('');
+  const [messageKind, setMessageKind] = useState<ClubWelcomeKind>('downline');
   const [content, setContent] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,6 +47,7 @@ export default function ClubWelcomeMessagePage() {
   useEffect(() => {
     let live = true;
     const accountId = user?.id;
+    setMessageKind('downline');
     setClubs([]);
     setSelectedId('');
     setContent('');
@@ -85,6 +89,7 @@ export default function ClubWelcomeMessagePage() {
   const chooseClub = (id: string) => {
     if (saving) return;
     const choice = clubs.find((row) => row.club_id === id);
+    setMessageKind('downline');
     setSelectedId(choice?.club_id || '');
     setContent(choice?.content || '');
     setEnabled(choice?.enabled || false);
@@ -96,7 +101,13 @@ export default function ClubWelcomeMessagePage() {
     if (!selected || !accountId || saving) return;
     const capturedScope = currentScope.current;
     const selectedClub = selected.club_id;
-    const input = { clubId: selectedClub, content, enabled, revision: selected.revision };
+    const input = {
+      clubId: selectedClub,
+      messageKind,
+      content,
+      enabled,
+      revision: clubWelcomeTemplate(selected, messageKind).revision,
+    };
     const signature = JSON.stringify(input);
     if (pending.current?.signature !== signature)
       pending.current = { signature, requestId: crypto.randomUUID() };
@@ -110,7 +121,18 @@ export default function ClubWelcomeMessagePage() {
       if (!mounted.current || currentScope.current !== capturedScope || actor.current !== accountId)
         return;
       setClubs((previous) =>
-        previous.map((row) => (row.club_id === selectedClub ? { ...row, ...receipt } : row))
+        previous.map((row) =>
+          row.club_id === selectedClub
+            ? messageKind === 'club_owner'
+              ? {
+                  ...row,
+                  owner_content: receipt.content,
+                  owner_enabled: receipt.enabled,
+                  owner_revision: receipt.revision,
+                }
+              : { ...row, ...receipt }
+            : row
+        )
       );
       setContent(receipt.content);
       setEnabled(receipt.enabled);
@@ -133,12 +155,12 @@ export default function ClubWelcomeMessagePage() {
       {/* Dan, 2026-10-17: the subtitle moved behind the painted "?". The club's
           name stays on the head. */}
       <PageBar
-        title="Custom Welcome Message"
+        title="Custom Messages"
         titleAs={false}
-        summary="Your Message To New Downline Players. It Is Sent Automatically When A Player Joins And Is Attached To Your Downline."
+        summary="Your Downline Welcome Is Sent First. The Club Owner Welcome Is Scheduled Ten Minutes Later. Owners Set Up Both Messages."
       />
       <SpadeConsole
-        title="Custom Welcome Message"
+        title="Custom Messages"
         eyebrow={selected ? titleCase(selected.club_name) : undefined}
         foot={selected && !loading ? 'plates' : 'foot'}
         plates={
@@ -210,10 +232,32 @@ export default function ClubWelcomeMessagePage() {
                       </select>
                     </label>
                   )}
+                  {selected.role === 'owner' && (
+                    <label>
+                      Message Purpose
+                      <select
+                        aria-label="Message Purpose"
+                        value={messageKind}
+                        disabled={saving}
+                        onChange={(event) => {
+                          const kind = event.target.value as ClubWelcomeKind;
+                          const template = clubWelcomeTemplate(selected, kind);
+                          setMessageKind(kind);
+                          setContent(template.content);
+                          setEnabled(template.enabled);
+                          setError('');
+                          pending.current = null;
+                        }}
+                      >
+                        <option value="downline">Downline Welcome</option>
+                        <option value="club_owner">Club Welcome (10 Minutes)</option>
+                      </select>
+                    </label>
+                  )}
                   <p>
-                    This Message Comes From Your Account After A Player Joins And Is Attached To
-                    Your Downline. Players Without An Assigned Agent Receive An Enabled Welcome
-                    Message From The Club Owner.
+                    {messageKind === 'club_owner'
+                      ? 'Welcome Each New Club Member From Your Owner Account Ten Minutes After Their First Welcome. Set Up And Enable Both Owner Messages.'
+                      : 'Your Welcome Is Sent First When A Player Joins Your Downline. Without An Assigned Agent, The Club Owner Sends This First Welcome.'}
                   </p>
                   <label className="club-welcome-enabled">
                     <input
@@ -239,8 +283,9 @@ export default function ClubWelcomeMessagePage() {
                     {content.length.toLocaleString()} / 2,000 Characters
                   </p>
                   <p>
-                    Saving Applies To Future Joins And New Downline Assignments. Existing Members
-                    Are Not Sent A Bulk Message. Personal Blocks Are Respected.
+                    Saving Applies To Future Joins And New Downline Assignments. Scheduled Welcomes
+                    Keep Their Original Text. Existing Members Are Not Sent A Bulk Message. Personal
+                    Blocks Are Respected.
                   </p>
                 </>
               )}

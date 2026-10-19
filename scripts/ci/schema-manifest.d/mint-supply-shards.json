@@ -1,0 +1,5 @@
+{
+  "_owner": "patch/p7-mint-supply-shards. NOT YET APPLIED when pushed (2026-10-03): migration 20261003220304_the_mint_register_keeps_its_supply_in_shards contains an upsert the MCP write gate holds for the owner, so it is applied with Apply Merged Migration after merge. Until then the credentialed CI run of check-migrations-applied correctly reports these names absent.",
+  "tables": ["ca_mint_supply_shards"],
+  "functions": ["fn_ca_mint_supply_shard_move", "fn_ca_mint_supply_shards_agree"]
+}

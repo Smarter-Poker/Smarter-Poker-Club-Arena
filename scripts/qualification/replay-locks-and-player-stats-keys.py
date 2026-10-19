@@ -23,6 +23,13 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
 MIGRATION = ROOT / 'supabase/migrations/20261019194410_replay_holds_no_lock_past_its_receipt_player_stats_key_order.sql'
+# 20261019214727 (a later task) bounds the batch's lock waits and its call on top of this text. Its batch
+# body is installed after this migration, exactly as its $subs$ row for this preimage does (preimage
+# md5, text, postimage md5), and the batch-vs-projection cases run a third time ('budgeted'). This
+# cluster has no fn_retry_cash_accounting_sources, so the file's retry row is not run here; the whole
+# file is qualified by chip-deadlocks.py.
+BUDGET = ROOT / 'supabase/migrations/20261019214727_a_cash_source_call_fits_the_engines_patience.sql'
+BUDGET_BATCH = ('9befae963f3b9cda25b357f60a9b53d7', '1c9d9ff9cfb2803f05223c703f61f09b')
 DB, PORT, GATE = 'replay_keys', '55493', 424243
 
 
@@ -306,11 +313,27 @@ B_CASES = [('batch-vs-projection-existing-rows', 'existing', False),
            ('batch-vs-projection-profiles-across-clubs', 'existing', True)]
 
 
+def install_budget_batch(cl):
+    body = re.search(r'\$batch\$(CREATE OR REPLACE FUNCTION.*?)\$batch\$', BUDGET.read_text(), re.S).group(1)
+    md5 = lambda: cl.q("SELECT md5(pg_get_functiondef('public.fn_credit_agent_commissions_batch(jsonb)'::regprocedure));")
+    if md5() != BUDGET_BATCH[0]:
+        raise SystemExit('the batch is not 20261019194410\'s postimage (%s): refusing' % md5())
+    tmp = HERE / ('zz-replay-locks-budget-%d.sql' % os.getpid())
+    tmp.write_text(body + ';\n')
+    try:
+        cl.psql(DB, '-f', str(tmp))
+    finally:
+        tmp.unlink()
+    if md5() != BUDGET_BATCH[1]:
+        raise SystemExit('the budgeted batch is not the qualified text (%s)' % md5())
+    return md5()
+
+
 def run_all(cl, state):
     out = [case_replay(cl, state)]
     for label, rows, other in B_CASES:
         out.append(case_batch_vs_projection(cl, state, label, rows, other))
-    if state == 'after':
+    if state in ('after', 'budgeted'):
         out.append(case_batch_defers_for_a_held_key(cl, state))
     return out
 
@@ -347,6 +370,9 @@ def main():
             'fn_ca_replay_terminal_receipts(integer,integer)', 'fn_credit_agent_commissions_batch(jsonb)',
             'fn_project_hand_side_effects_after_post_commit_20260908(uuid)')}
         report['results'] += run_all(cl, 'after')
+        if BUDGET.exists():
+            report['budgeted_batch'] = install_budget_batch(cl)
+            report['results'] += run_all(cl, 'budgeted')
     finally:
         cl.stop()
     by = {(r['case'], r['state']): r for r in report['results']}
@@ -374,6 +400,19 @@ def main():
     checks['a held player key defers the batch, writes nothing, and the resubmission accrues'] = (
         d['deadlocks'] == 0 and d['first']['ok'] == 0 and d['first']['failed'] == 0 and len(d['first']['deferred']) == 2
         and d['rows_written_while_held'] == 0 and d['resubmitted']['ok'] == 2 and d['resubmitted']['deferred'] == [])
+    if ('replay-vs-live-target', 'budgeted') in by:
+        for label, _, _ in B_CASES:
+            a = by[(label, 'budgeted')]
+            checks['%s: with 20261019214727\'s batch, still no deadlock, every value once' % label] = (
+                a['deadlocks'] == 0 and a['projection'] == 'ok' and a['projection_waited_for'] == ['batch']
+                and a['batch']['ok'] == 2 and a['batch']['failed'] == 0 and a['batch']['deferred'] == []
+                and a['item_attempts'] == [1, 1])
+        d = by[('batch-defers-for-a-held-player-key', 'budgeted')]
+        checks['with 20261019214727\'s batch, a held player key still defers the batch and the resubmission accrues'] = (
+            d['deadlocks'] == 0 and d['first']['ok'] == 0 and d['first']['failed'] == 0 and len(d['first']['deferred']) == 2
+            and d['rows_written_while_held'] == 0 and d['resubmitted']['ok'] == 2 and d['resubmitted']['deferred'] == [])
+        checks['with 20261019214727\'s batch, the replay is unchanged'] = (
+            by[('replay-vs-live-target', 'budgeted')]['replay'] == by[('replay-vs-live-target', 'after')]['replay'])
     report['checks'] = checks
     report['ok'] = all(checks.values())
     print(json.dumps(report['results'], indent=1))

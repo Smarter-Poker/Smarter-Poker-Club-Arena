@@ -15,7 +15,9 @@
  * slow call.
  *
  * Two root fixes, one per half:
- *   - Migration 20261019190103: each item waits at most 2 s for a lock, no item
+ *   - Migration 20261019214727 (it replaces 20261019190103, merged in #7485 and
+ *     refused at install because 20261019194410 had replaced the batch; it keeps
+ *     194410's player key walk): each item waits at most 2 s for a lock, no item
  *     starts after 8 s, an item the call has no time for is deferred (no
  *     receipt, no attempt), and the session lock_timeout is restored. 8 s sits
  *     inside BATCH_BUDGET_FRACTION of the client's 15 s.
@@ -49,6 +51,7 @@ if (!NAME) throw new Error('the cash source call budget migration is missing');
 const MIG = migrationText(NAME);
 const SUBS = sliceBetween(MIG, 'DO $subs$', 'END $subs$;');
 const BATCH = sliceBetween(MIG, '$batch$CREATE OR REPLACE FUNCTION', '$batch$)');
+const BATCH_ONLY = sliceBetween(MIG, '$batchonly$CREATE OR REPLACE FUNCTION', '$batchonly$)');
 const RETRY = sliceBetween(MIG, '$retry$CREATE OR REPLACE FUNCTION', '$retry$)');
 const ROOT = resolve(__dirname, '..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
@@ -57,29 +60,39 @@ const SETTLER = read('server/src/services/RakebackSettlerService.ts');
 const SETTLER_CODE = SETTLER.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const EVIDENCE = 'docs/evidence/settler-pacing-2026-10-19/';
 
+/** Installed in production (20261019194410's batch, 20261019171753's retry) -> this migration. */
 const PINS: Array<[string, string, string]> = [
   [
     'fn_credit_agent_commissions_batch',
-    '1ae9eb0e32f8169ce0cdd6b730c859a6',
-    'a581a0c9b52583014fd5bd89138b525d',
+    '9befae963f3b9cda25b357f60a9b53d7',
+    '1c9d9ff9cfb2803f05223c703f61f09b',
   ],
   [
     'fn_retry_cash_accounting_sources',
     '779590b67fc21e95504a9827f1289207',
-    '0e7fb9713fcacdbda70c846191940cae',
+    'df10ba64229df0c99918dad77f39aec7',
   ],
+];
+/** The other accepted batch preimage, 20261019171753's, lands on the budget alone. */
+const BATCH_171753: [string, string] = [
+  '1ae9eb0e32f8169ce0cdd6b730c859a6',
+  '6c9a388585158521f0ac36300d5124fd',
 ];
 
 describe('a cash source call fits the engine patience', () => {
-  it('replaces the texts of 20261019171753 only and lands on what the harness measured', () => {
+  it('replaces only the installed texts and lands on what the harness measured', () => {
+    expect(SUBS).toContain(`'${BATCH_171753[0]}', '${BATCH_171753[1]}',`);
     for (const [fn, before, after] of PINS) {
       expect(SUBS).toContain(`'${before}', '${after}',`);
       expect(MIG).toContain(
         `-- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = '${after}' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = '${fn}')`
       );
     }
-    expect(SUBS).toContain('IF md5(pg_get_functiondef(v_sig)) <> s.before_md5 THEN');
-    expect(SUBS).toContain('IF md5(v_after) <> s.after_md5 THEN');
+    // Exactly one accepted preimage per function must be installed, or nothing changes.
+    expect(SUBS).toContain(
+      'WHERE x.signature = v_one AND x.before_md5 = md5(pg_get_functiondef(v_sig))) <> 1 THEN'
+    );
+    expect(SUBS).toContain('IF v_after <> s.new_def OR md5(v_after) <> s.after_md5 THEN');
     expect(MIG.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(MIG.match(/^COMMIT;$/gm)).toHaveLength(1);
     expect(MIG).toContain("SET LOCAL lock_timeout = '5s';");
@@ -92,8 +105,19 @@ describe('a cash source call fits the engine patience', () => {
     ]);
   });
 
+  it("keeps 20261019194410's player key walk in the batch it builds on", () => {
+    expect(BATCH).toContain('IF NOT v_clubs<@v_held OR NOT v_users<@v_held_users THEN');
+    expect(BATCH).toContain(
+      "pg_try_advisory_xact_lock(hashtextextended('player-stats-user:'||v_user::text,0))"
+    );
+    expect(SUBS).toContain("20261019194410''s player key walk was lost");
+    const fresh = MIG.replace(/--[^\n]*/g, ' ');
+    expect(fresh).not.toMatch(/CREATE\s+(?:TEMP|TEMPORARY)?\s*TABLE/i);
+  });
+
   for (const [label, body] of [
     ['the batch', () => BATCH],
+    ['the batch on 20261019171753', () => BATCH_ONLY],
     ['the retry', () => RETRY],
   ] as const) {
     it(`${label} bounds the whole call, not only the key walk`, () => {
@@ -106,7 +130,8 @@ describe('a cash source call fits the engine patience', () => {
       );
       // Checked per item, after the key check and before any work.
       const check = b.indexOf('IF clock_timestamp()>=v_call_deadline THEN');
-      expect(check).toBeGreaterThan(b.indexOf('IF NOT v_clubs<@v_held THEN'));
+      expect(b.indexOf('IF NOT v_clubs<@v_held')).toBeGreaterThan(0);
+      expect(check).toBeGreaterThan(b.indexOf('IF NOT v_clubs<@v_held'));
       expect(check).toBeLessThan(b.indexOf('r:=public.fn_process_cash_accounting_source('));
       // An item's lock wait never reaches past the deadline, and never past 2 s.
       expect(b).toContain(
@@ -189,6 +214,9 @@ describe('a cash source call fits the engine patience', () => {
     const at = (c: string, state: string) =>
       run.results.find((r: { case: string; state: string }) => r.case === c && r.state === state);
     expect(at('batch-items-behind-held-rows', 'skipping').call_seconds).toBeGreaterThan(15);
+    expect(at('batch-items-behind-held-rows', 'keyed').call_seconds).toBeGreaterThan(15);
+    expect(run.either_order_ok).toBe(true);
+    expect(run.budget_on_171753_text.batch_inside).toBe(BATCH_171753[1]);
     expect(at('batch-items-behind-held-rows', 'budgeted').call_seconds).toBeLessThan(9.5);
     expect(at('batch-items-behind-held-rows', 'budgeted').lock_timeout_after).toBe('8s');
     const out = at('batch-runs-out-of-budget', 'budgeted');
@@ -199,5 +227,10 @@ describe('a cash source call fits the engine patience', () => {
     expect(whole.before_md5).toEqual(Object.fromEntries(PINS.map(([fn, before]) => [fn, before])));
     expect(whole.after_md5).toEqual(Object.fromEntries(PINS.map(([fn, , after]) => [fn, after])));
     expect(whole.replay).toMatch(/^refused: /);
+    const replayHarness = JSON.parse(
+      read(EVIDENCE + 'replay-locks-and-player-stats-keys-run.json')
+    );
+    expect(replayHarness.ok).toBe(true);
+    expect(replayHarness.budgeted_batch).toBe(PINS[0][2]);
   });
 });

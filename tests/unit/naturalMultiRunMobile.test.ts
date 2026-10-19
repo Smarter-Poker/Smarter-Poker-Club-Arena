@@ -385,7 +385,8 @@ const installMutationOnlyWitness = async () => {
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
     this: HTMLElement
   ) {
-    if (this.classList.contains('seat__info')) return new DOMRect(100, 100, 20, 20);
+    if (this.classList.contains('seat__info'))
+      return new DOMRect(Number(this.dataset.x ?? 100), 100, Number(this.dataset.width ?? 20), 20);
     if (this.dataset.chipFlight) return new DOMRect(Number(this.dataset.x ?? 0), 100, 20, 20);
     return new DOMRect(0, 0, 393, 852);
   });
@@ -462,4 +463,105 @@ it('counts a chip removed at its recipient as a landing and one removed elsewher
     expect.objectContaining({ recipient: 'winner', distance: 0, landedAt: expect.any(Number) }),
   ]);
   expect(read.violations).toEqual(['41: Payout Disappeared Before Reaching Its Recipient']);
+});
+
+const payoutSeat = (x = 100) =>
+  `<div data-player-id="winner"><div class="seat__info" data-x="${x}"></div></div>`;
+const payoutChip =
+  '<div data-chip-recipient="winner" data-chip-flight="departure-flight" data-chip-phase="flying" data-x="0"></div>';
+const setupDeparture = async (withSeat = true) => {
+  const witness = await installMutationOnlyWitness();
+  document.body.innerHTML = tableHtml(41, (withSeat ? payoutSeat() : '') + payoutChip);
+  await flushMutations();
+  return { witness, chip: document.querySelector<HTMLElement>('[data-chip-flight]')! };
+};
+const landChip = async (chip: HTMLElement, x: number) => {
+  chip.dataset.x = String(x);
+  chip.dataset.chipPhase = 'landed';
+  await flushMutations();
+};
+it('measures an explicit landing against the same flight recipient geometry observed before departure', async () => {
+  const { witness, chip } = await setupDeparture();
+  document.querySelector('[data-player-id]')!.remove();
+  await flushMutations();
+  await landChip(chip, 100);
+  chip.remove();
+  await flushMutations();
+  const read = witness().read();
+  expect(read.violations).toEqual([]);
+  expect(read.flights).toEqual([
+    expect.objectContaining({
+      id: 'departure-flight',
+      recipient: 'winner',
+      distance: 0,
+      targetProvenance: 'departed-recipient',
+      recipientDepartedAt: expect.any(Number),
+      targetRect: { x: 100, y: 100, width: 20, height: 20 },
+    }),
+  ]);
+});
+it('does not waive the 2px limit for a departed recipient', async () => {
+  const { witness, chip } = await setupDeparture();
+  document.querySelector('[data-player-id]')!.remove();
+  await flushMutations();
+  await landChip(chip, 103);
+  expect(witness().read().flights[0]).toMatchObject({
+    distance: 3,
+    targetProvenance: 'departed-recipient',
+  });
+  expect(witness().read().violations).toEqual(['41: Payout Missed Its Recipient']);
+});
+it('keeps unknown first targets unverified and retains failed flight diagnostics', async () => {
+  const { witness, chip } = await setupDeparture(false);
+  await landChip(chip, 100);
+  chip.remove();
+  await flushMutations();
+  const read = witness().read();
+  expect(read.flights).toEqual([]);
+  expect(read.violations).toEqual(['41: Payout Disappeared Before Reaching Its Recipient']);
+  expect(read.unlandedFlights).toEqual([
+    expect.objectContaining({
+      id: 'departure-flight',
+      lastDistance: null,
+      targetProvenance: 'unavailable',
+      recipientDepartedAt: null,
+    }),
+  ]);
+});
+it('does not reuse geometry when a connected recipient becomes unmeasurable', async () => {
+  const { witness, chip } = await setupDeparture();
+  const info = document.querySelector<HTMLElement>('.seat__info')!;
+  info.dataset.width = '0';
+  info.style.display = 'none';
+  await landChip(chip, 100);
+  chip.remove();
+  await flushMutations();
+  expect(witness().read().flights).toEqual([]);
+  expect(witness().read().violations).toEqual([
+    '41: Payout Disappeared Before Reaching Its Recipient',
+  ]);
+});
+it('uses fresh replacement-recipient geometry instead of a disconnected predecessor', async () => {
+  const { witness, chip } = await setupDeparture();
+  document.querySelector('[data-player-id]')!.remove();
+  document.querySelector('.table-page')!.insertAdjacentHTML('beforeend', payoutSeat(200));
+  await landChip(chip, 100);
+  expect(witness().read().flights[0]).toMatchObject({
+    distance: 100,
+    targetProvenance: 'live-recipient',
+  });
+  expect(witness().read().violations).toEqual(['41: Payout Missed Its Recipient']);
+});
+it('requires explicit landed phase before using departed geometry, never a flying removal', async () => {
+  const { witness, chip } = await setupDeparture();
+  document.querySelector('[data-player-id]')!.remove();
+  chip.dataset.x = '100';
+  chip.style.transform = 'translateX(100px)';
+  await flushMutations();
+  chip.remove();
+  await flushMutations();
+  expect(witness().read().flights).toEqual([]);
+  expect(witness().read().violations).toEqual([
+    '41: Payout Disappeared Before Reaching Its Recipient',
+  ]);
 });

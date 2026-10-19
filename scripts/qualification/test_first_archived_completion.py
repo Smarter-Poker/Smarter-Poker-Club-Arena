@@ -90,7 +90,7 @@ class FirstArchivedCompletionTests(unittest.TestCase):
    if kind=='hash':p['capture_sha256']='0'*64
    elif kind=='query':p['query']+=' '
    elif kind=='evidence':p['evidence']['observed_at']='2026-09-27T00:00:00+00:00'
-   elif kind=='guard':f[A.COMPLETION_SQL]=f[A.COMPLETION_SQL].replace(b'2026-10-19T07:00:00Z',b'2026-10-12T07:00:00Z')
+   elif kind=='guard':f[A.COMPLETION_SQL]=f[A.COMPLETION_SQL].replace(b'2026-10-26T07:00:00Z',b'2026-10-19T07:00:00Z')
    else:
     e=r['rows'][0]['evidence']
     if kind=='outside':e['observed_at']='2026-09-27T00:00:00+00:00'
@@ -99,4 +99,13 @@ class FirstArchivedCompletionTests(unittest.TestCase):
     f[rawpath]=json.dumps(r).encode();p['capture_sha256']=hashlib.sha256(f[rawpath]).hexdigest();p['evidence']=e
    f[statepath]=json.dumps(s).encode()
    with self.subTest(kind=kind),self.assertRaises(ValueError):A.validate_recognition_capture(f)
+ def test_expired_recognition_capture_is_named_before_any_cluster(self):
+  import datetime as D
+  A,_,_=M.modules();files={p:(M.ROOT/p).read_bytes() for p in A.INPUTS}
+  e=json.loads(files[A.BASE+'first-temporal-state.json'])['recognition_period']['evidence']
+  start,end=(D.datetime.fromisoformat(e[k]) for k in ('week_start','week_end'))
+  A.require_recognition_capture_current(files,start);A.require_recognition_capture_current(files,end-D.timedelta(microseconds=1))
+  for now in (end,start-D.timedelta(microseconds=1),end+D.timedelta(days=7),start.replace(tzinfo=None)):
+   with self.subTest(now=now.isoformat()),self.assertRaisesRegex(ValueError,'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED.*not a code regression.*Never widen'):
+    A.require_recognition_capture_current(files,now)
 if __name__=='__main__':unittest.main()

@@ -98,6 +98,22 @@ def validate_recognition_capture(files):
         require(start.strftime('%Y-%m-%dT%H:%M:%SZ') in text and end.strftime('%Y-%m-%dT%H:%M:%SZ') in text, 'recognition source bounds differ: '+p)
 
 
+def require_recognition_capture_current(files, now):
+    # The capture is authentic production evidence for ONE union week, and the
+    # SQL carriers refuse outside it by design. Say so before a cluster is
+    # built, in words, instead of as a P0001 inside a retained artifact. The
+    # cure is a new read-only capture, never a wider or clock-derived bound.
+    e=decode(files[BASE+'first-temporal-state.json'])['recognition_period']['evidence']
+    start,end=(datetime.fromisoformat(e[k]) for k in ('week_start','week_end'))
+    require(now.tzinfo is not None and start<=now<end,
+            'ARCHIVE_RECOGNITION_PERIOD_CAPTURE_EXPIRED: the authentic production recognition capture covers '
+            +e['week_start']+' .. '+e['week_end']+' and this run is at '+now.isoformat()
+            +'. This is the weekly union-week rollover the capture is built to refuse, not a code regression.'
+            ' Re-run the maintained read-only query (first-temporal-state.json recognition_period.query) against'
+            ' production and roll the window forward as docs/changelog/2026-10-19-first-archived-spin-recognition-period-rollover.md'
+            ' describes. Never widen, remove or clock-derive the bound.')
+
+
 def validate_sources(files):
     require(set(INPUTS) <= set(files), 'first archived source inventory incomplete')
     manifest = decode(files[MANIFEST])

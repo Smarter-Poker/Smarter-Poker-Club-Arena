@@ -25,8 +25,10 @@ to run unless the CI runner's wall clock fell inside one literal union week
 `validate_recognition_capture` required those literals in every carrier. So
 the required check was a time bomb that went off every Monday at 07:00 UTC.
 It was "fixed" by a fresh production capture and a one-week bump four weeks
-running (2026-09-28, 10-05, 10-12, and now again). That is the band-aid that
-CLAUDE.md 10.12 forbids.
+running (2026-09-28, 10-05, 10-12, and again today in #7420, which pinned
+`2026-10-19T07:00Z..2026-10-26T07:00Z` and would have expired the same way on
+2026-10-26). That is the band-aid that CLAUDE.md 10.12 forbids. This change is
+built on #7420's capture, which stays as the active historical record.
 
 The literal week no longer protects anything in production. The event
 (`2aa4cba1-506f-426b-a1ba-d8e22e018533`) settled in production on

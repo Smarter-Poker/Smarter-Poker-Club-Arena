@@ -40,7 +40,11 @@ describe('a cash batch is derived, not written down', () => {
   });
 
   it('checks the retry response against the same derived bound it asked for', () => {
-    // It used to ask for 50 and validate against a second, separate 50.
-    expect(settler).toMatch(/retriedSources\.length\s*>\s*CASH_RETRY_LIMIT/);
+    // It used to ask for 50 and validate against a second, separate 50. Since
+    // 2026-10-19 a retry can also DEFER a source whose commission key is busy, so
+    // the bound counts what it receipted and what it deferred.
+    expect(settler).toMatch(
+      /retried\.receipts\.length\s*\+\s*retried\.deferred\.length\s*>\s*CASH_RETRY_LIMIT/
+    );
   });
 });

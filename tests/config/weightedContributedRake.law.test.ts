@@ -63,9 +63,12 @@ describe('the canonical allocator exists and is the single JS source of shares',
     // Follow the maintained database call chain to the immutable allocations;
     // an arbitrary RPC name alone would not establish weighted provenance.
     expect(settler).toMatch(
-      /supabase\.rpc\('fn_credit_agent_commissions_batch',\s*\{\s*p_items: ids\.map\(\(id\) => \(\{ source_type: 'cash_rake_record', source_id: id \}\)\)/
+      /supabase\.rpc\('fn_credit_agent_commissions_batch',\s*\{\s*p_items: pending\.map\(\(id\) => \(\{ source_type: 'cash_rake_record', source_id: id \}\)\)/
     );
-    expect(settler).toMatch(/readCashSourceBatch\(data, ids\)/);
+    // 2026-10-19: `pending` is the page's ids, then only the sources a busy
+    // commission key deferred, until every one has a durable receipt.
+    expect(settler).toContain('let pending = ids;');
+    expect(settler).toMatch(/readCashSourceBatchOutcome\(data, pending\)/);
     expect(stripComments(read('server/src/services/cashSourceReceipts.ts'))).toContain(
       'r.receipt_version !== 3'
     );

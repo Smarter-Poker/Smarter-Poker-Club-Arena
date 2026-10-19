@@ -4,11 +4,22 @@ const transport = vi.hoisted(() => ({ read: vi.fn(), rpc: vi.fn() }));
 vi.mock('../services/supabase/client.js', () => ({
   supabase: {
     from(table: string) {
-      const q: any = {};
-      for (const name of ['select', 'eq', 'in', 'is', 'limit', 'order', 'maybeSingle'])
-        q[name] = () => q;
+      const q: any = { excluded: [] as string[], limitTo: null as number | null };
+      for (const name of ['select', 'eq', 'in', 'is', 'order', 'maybeSingle']) q[name] = () => q;
+      q.not = (column: string, op: string, list: string) => {
+        if (column === 'user_id' && op === 'in')
+          q.excluded = list
+            .replace(/^\(|\)$/g, '')
+            .split(',')
+            .filter(Boolean);
+        return q;
+      };
+      q.limit = (n: number) => {
+        q.limitTo = n;
+        return q;
+      };
       q.then = (resolve: (value: unknown) => unknown, reject: (error: unknown) => unknown) =>
-        Promise.resolve(transport.read(table)).then(resolve, reject);
+        Promise.resolve(transport.read(table, q)).then(resolve, reject);
       return q;
     },
     rpc: (name: string, args: unknown) => Promise.resolve(transport.rpc(name, args)),
@@ -165,22 +176,28 @@ describe('accepted entries awaiting chairs are seated through the database door'
     manager.tournamentCache = mtt(format);
     manager.requestUrgentEliminationSweepAfter = vi.fn();
     let remaining = [...rows];
-    transport.read.mockImplementation((table: string) => {
-      expect(table).toBe('tournament_players');
-      return { data: remaining, error: null };
-    });
+    transport.read.mockImplementation(
+      (table: string, q?: { excluded: string[]; limitTo: number | null }) => {
+        expect(table).toBe('tournament_players');
+        const visible = remaining.filter((row) => !(q?.excluded ?? []).includes(row.user_id));
+        return { data: q?.limitTo ? visible.slice(0, q.limitTo) : visible, error: null };
+      }
+    );
     const seated: string[] = [];
     const answer = { reason: 'ok' as string };
+    const missing = new Set<string>();
     transport.rpc.mockImplementation((name: string, args: any) => {
       expect(name).toBe('fn_seat_late_registrant');
       expect(args.p_tournament_id).toBe(tournamentId);
+      if (missing.has(args.p_user_id))
+        return { data: { ok: false, reason: 'already_seated_or_missing' }, error: null };
       if (answer.reason !== 'ok')
         return { data: { ok: false, reason: answer.reason }, error: null };
       seated.push(args.p_user_id);
       remaining = remaining.filter((row) => row.user_id !== args.p_user_id);
       return { data: { ok: true }, error: null };
     });
-    return { manager, seated, answer };
+    return { manager, seated, answer, missing };
   }
 
   it('seats every handed-off entry and reports nothing left', async () => {
@@ -199,6 +216,18 @@ describe('accepted entries awaiting chairs are seated through the database door'
     answer.reason = 'already_seated_or_missing';
     // The row still reads back once; the second page must not retry it forever.
     expect(await manager.seatAcceptedEntrantsAwaitingChairs('test', () => true)).toBe(true);
+  });
+  it('reads past a whole page that answered already seated or missing', async () => {
+    // A full first page (the sweep batch) still matches the read after every
+    // entry in it answered already_seated_or_missing. The next page must leave
+    // them out and reach the entrants behind them, not report nothing left.
+    const batch = TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE;
+    const rows = Array.from({ length: batch + 3 }, (_, i) => ({ user_id: id(300 + i) }));
+    const { manager, seated, missing } = seater(rows);
+    rows.slice(0, batch).forEach((row) => missing.add(row.user_id));
+    expect(await manager.seatAcceptedEntrantsAwaitingChairs('test', () => true)).toBe(true);
+    expect(seated).toEqual(rows.slice(batch).map((row) => row.user_id));
+    expect(manager.requestUrgentEliminationSweepAfter).not.toHaveBeenCalled();
   });
   it('never seats into a fixed-field format', async () => {
     const { manager, seated } = seater([{ user_id: id(201) }], 'sng-v1');

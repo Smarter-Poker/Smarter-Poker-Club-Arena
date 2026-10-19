@@ -11,13 +11,13 @@
  *   subscribeToTournament / unsubscribeFromTournament
  *   subscribeToLobby / unsubscribeFromLobby
  *   subscribeToHandReplay / unsubscribeFromHand
- *   broadcastClubEvent / broadcastTournamentEvent / streamHandReplay
+ *   broadcastClubEvent / broadcastTournamentEvent
  *   getClubPresence / getActiveSubscriptions / unsubscribeAll / getDiagnostics
  *
  * All Supabase channel() / subscribe() / unsubscribe() calls have been
  * removed. Zero Supabase Realtime connections are opened by this module.
  *
- * broadcastClubEvent / broadcastTournamentEvent / streamHandReplay are
+ * broadcastClubEvent / broadcastTournamentEvent are
  * server-side operations. They now POST to the engine HTTP API so only the
  * server (not individual browser clients) fans out events.
  *
@@ -412,32 +412,6 @@ class RealtimeChannelService {
     // No explicit LEAVE for hand replay — server stops streaming when done.
     record.unlisteners.forEach((fn) => fn());
     this.subscriptions.delete(channelName);
-  }
-
-  /**
-   * Stream hand events for replay.
-   * Server-side only — POSTs to engine HTTP API which drives the stream.
-   */
-  async streamHandReplay(
-    handId: string,
-    events: HandEvent[],
-    speedMs: number = 1000
-  ): Promise<void> {
-    try {
-      const res = await fetch(`${ENGINE_BASE_URL}/channels/hand/${handId}/replay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader() },
-        body: JSON.stringify({ events, speedMs }),
-      });
-      if (!res.ok) {
-        reportError(
-          new Error(`streamHandReplay HTTP ${res.status}`),
-          'RealtimeChannelService.streamHandReplay'
-        );
-      }
-    } catch (e) {
-      reportError(e, 'RealtimeChannelService.streamHandReplay');
-    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

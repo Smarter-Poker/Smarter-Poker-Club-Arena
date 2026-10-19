@@ -153,6 +153,7 @@ import {
   RakebackSettlerService,
   FETCH_LIMIT,
   CREDIT_BATCH_SIZE,
+  CASH_DEFERRAL_RESUBMITS,
   MAX_DRAIN_BATCHES,
 } from './RakebackSettlerService.js';
 
@@ -890,6 +891,117 @@ describe('cash source receipts protect the durable cursor', () => {
         args.p_items.map((item: { source_id: string }) => item.source_id)
       )
     ).toEqual(dataset.map((source) => source.id));
+  });
+  describe('a source deferred for a busy commission key (2026-10-19)', () => {
+    const twoSources = () => {
+      const dataset = [1, 2].map((n) => ({
+        ...creditedRow(),
+        id: uid(n),
+        created_at: ts(200 + n),
+        hand_id: uid(10000 + n),
+      }));
+      setup({
+        dataset,
+        ledger: dataset.map((source, n) => ({
+          ...ledger[0],
+          id: uid(20000 + n),
+          rake_record_id: source.id,
+          hand_id: source.hand_id,
+        })),
+      });
+      return dataset;
+    };
+    /** The batch's answer when the keys of `deferredIds` are still held by a finish. */
+    const deferring = (deferredIds: string[]) => (name: string, args: Record<string, any>) => {
+      if (name !== 'fn_credit_agent_commissions_batch') return success(name, args);
+      const run = (args.p_items as Array<{ source_id: string }>).filter(
+        (it) => !deferredIds.includes(it.source_id)
+      );
+      const answer = success(name, { p_items: run });
+      return {
+        ...answer,
+        data: {
+          ...answer.data,
+          deferred: deferredIds.filter((id) =>
+            (args.p_items as Array<{ source_id: string }>).some((it) => it.source_id === id)
+          ),
+        },
+      };
+    };
+    const batchCalls = () =>
+      mockRpc.mock.calls
+        .filter(([name]) => name === 'fn_credit_agent_commissions_batch')
+        .map(([, args]) => args.p_items.map((it: { source_id: string }) => it.source_id));
+
+    it('submits exactly the deferred source again and checkpoints only after it accrued', async () => {
+      twoSources();
+      let calls = 0;
+      mockRpc.mockImplementation(async (name, args) =>
+        name === 'fn_credit_agent_commissions_batch' && calls++ === 0
+          ? deferring([uid(1)])(name, args)
+          : success(name, args)
+      );
+      expect(await run()).toBe('more');
+      expect(batchCalls()).toEqual([[uid(1), uid(2)], [uid(1)]]);
+      expect(scenario.current.durableCursor).toEqual({
+        high_water_mark: ts(202),
+        high_water_mark_id: uid(2),
+      });
+      expect(settlerUpserts()).toHaveLength(1);
+    });
+
+    it('holds the cursor when a source is still deferred after every resubmission', async () => {
+      twoSources();
+      mockRpc.mockImplementation(async (name, args) => deferring([uid(2)])(name, args));
+      expect(await run()).toBe('halted');
+      expect(batchCalls()).toEqual([
+        [uid(1), uid(2)],
+        ...Array.from({ length: CASH_DEFERRAL_RESUBMITS }, () => [uid(2)]),
+      ]);
+      expect(scenario.current.durableCursor).toEqual({
+        high_water_mark: ts(100),
+        high_water_mark_id: uid(0),
+      });
+      expect(settlerUpserts()).toHaveLength(0);
+      expect(mockReportError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: `1 cash source(s) still deferred for a busy commission key after ${
+            CASH_DEFERRAL_RESUBMITS + 1
+          } submissions; holding the cursor`,
+        }),
+        'RakebackSettler.attribution_failures_hold_cursor'
+      );
+    });
+
+    it('never reads a deferral as an acknowledgement, even from a malformed answer', async () => {
+      twoSources();
+      mockRpc.mockImplementation(async (name, args) => {
+        const answer = deferring([uid(2)])(name, args);
+        // Claims a deferral for a source it was never sent.
+        return name === 'fn_credit_agent_commissions_batch'
+          ? { ...answer, data: { ...answer.data, deferred: [uid(99)] } }
+          : answer;
+      });
+      expect(await run()).toBe('halted');
+      expect(scenario.current.durableCursor).toEqual({
+        high_water_mark: ts(100),
+        high_water_mark_id: uid(0),
+      });
+    });
+
+    it('a deferred retry is left in its queue and does not hold the page', async () => {
+      mockRpc.mockImplementation(async (name, args) => {
+        const answer = success(name, args);
+        return name === 'fn_retry_cash_accounting_sources'
+          ? { ...answer, data: { ...answer.data, deferred: [uid(500)] } }
+          : answer;
+      });
+      expect(await run()).toBe('more');
+      expect(scenario.current.durableCursor).toEqual({
+        high_water_mark: ts(200),
+        high_water_mark_id: uid(1),
+      });
+    });
   });
   it.each(['error', 'throw'] as const)(
     'recovers the final credited period after checkpoint %s without waiting for a new source',

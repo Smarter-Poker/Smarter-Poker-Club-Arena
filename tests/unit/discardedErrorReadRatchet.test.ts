@@ -78,14 +78,14 @@ const BASELINE = new Map<string, number>([
   ['src/services/UnionService.ts', 9],
   ['src/pages/AdminDashboardPage.tsx', 6],
   ['src/services/ClubsService.ts', 5],
-  ['src/services/PromotionService.ts', 2],
+  ['src/services/PromotionService.ts', 1],
   ['src/services/CreditService.ts', 4],
   // 5 -> 4: the legacy optimistic table delete and its unchecked reload were
   // removed when all operator closes moved behind fn_close_managed_game.
   ['src/pages/ClubDetailPage.tsx', 4],
   ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 1],
-  ['src/services/ChipFlowService.ts', 4],
+  ['src/services/ChipFlowService.ts', 3],
   /* 4 -> 2 on 2026-09-11: removing the promo-rain control took two discarded
      reads with it (the owner probe and the rain handler's catch). The ratchet
      asked for this in the same commit, which is the point of it. */

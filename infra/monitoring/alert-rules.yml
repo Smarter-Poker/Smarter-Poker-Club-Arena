@@ -2488,24 +2488,30 @@ groups:
             an allocation cause nor imminent OOM; retain the separate critical alert.
           runbook: 'docs/runbooks/engine-memory.md'
 
-      # RE-MEASURED 2026-10-02. The 1.6 GiB line came from the 3.8 GiB host of
-      # September 13/14. The engine now runs horse decision workers on a 16 GiB
-      # host, and over the 48 h to 2026-10-02 18:00Z its hourly RSS maximum
-      # ranged 1.73-2.94 GiB with the main V8 heap flat at 0.47-0.93 GiB - no
-      # growth across restarts, yet the old line fired continuously. 4 GiB sits
-      # well above that steady band, so a firing means growth again.
+      # RE-MEASURED 2026-10-19 after the host resize. engine-01 went from a
+      # 30.6 GiB to a 61.3 GiB / 16-core host at ~17:00Z 2026-10-17, and the
+      # equity worker pool sizes itself from cores (availableParallelism() - 2,
+      # server/src/engine/equity/EquityWorkerPool.ts): 6 -> 14 workers. Over
+      # 2026-10-17 18:00Z - 2026-10-19 22:00Z (52 hourly windows) the engine's
+      # hourly RSS maximum was 4.85-6.82 GiB, typically 5.2-6.2 GiB, flat within
+      # each uptime, with ~52 GiB of the host still available. The 2026-10-02
+      # line (4 GiB, set for 1.7-2.9 GiB on the 16 GiB host) sat
+      # below every ordinary hour and fired continuously on nothing. 8 GiB sits
+      # 1.2 GiB above the 52 h peak, so a firing means growth again. Re-measure
+      # whenever the host or poker_equity_worker_pool_configured_workers changes.
       - alert: EngineProcessMemoryHigh
         expr: |
-          poker_engine_process_rss_bytes > 4294967296
+          poker_engine_process_rss_bytes > 8589934592
         for: 15m
         labels:
           severity: warning
           component: engine
         annotations:
-          summary: 'Engine process RSS {{ $value | humanize1024 }}B - above the 4 GiB process-memory warning'
+          summary: 'Engine process RSS {{ $value | humanize1024 }}B - above the 8 GiB process-memory warning'
           description: |
-            Engine process RSS has exceeded 4 GiB for fifteen minutes - above
-            the 1.7-2.9 GiB steady band measured on 2026-10-02.
+            Engine process RSS has exceeded 8 GiB for fifteen minutes - above
+            the 4.85-6.82 GiB hourly-maximum band measured 2026-10-17/19 on the
+            61 GiB, 14-equity-worker host.
             Compare whole-process RSS, main-isolate V8 usage, worker activity,
             external memory and threads. poker_engine_native_main_arena_bytes
             is current [heap] virtual extent, not RSS or allocation ownership.
@@ -2513,6 +2519,49 @@ groups:
             TLS attribution or a runtime memory limit. Use the existing
             on-host build gate to establish build headroom at the actual attempt.
           runbook: 'docs/runbooks/engine-memory.md'
+
+  # ── Lightning hands that end without settling (2026-10-19) ────────────────
+  # On 2026-10-18 19:29-22:20 UTC 1,611 Lightning (fast-fold) hands were
+  # abandoned with abandon_reason 'settlement_refused:physical_settlement_refused'
+  # (lightning_instance), about 65% of that Cluster's hands, and nothing paged:
+  # no rule read poker_lightning_hands_total. The engine counts every hand end
+  # by outcome (settled, abandoned, settlement_unknown, frozen;
+  # server/src/lightning/LightningMetrics.ts recordHand, called from
+  # LightningHandHost.abandon for every abandon reason).
+  #
+  # THE THRESHOLD, derived from Prometheus 2026-10-12 18:00Z - 2026-10-19 22:20Z
+  # in 10-minute windows (5-minute step): outside the incident the abandoned
+  # share was 0 in every window but two (max 1.5%, 3 of 210, 10-19 15:45Z);
+  # inside it, 12-68% in every window from 19:35Z to 22:30Z. 10% is roughly
+  # seven times the worst ordinary window and below every incident window.
+  # The 20-hand floor keeps a quiet pool's single abandoned hand from reading
+  # as a share. The counter resets on each engine restart; increase() handles
+  # resets, and a counter born mid-window under-counts, never over-counts.
+  - name: lightning-settlement
+    interval: 30s
+    rules:
+      - alert: LightningHandsAbandoned
+        expr: |
+          (
+            sum(increase(poker_lightning_hands_total{outcome="abandoned"}[10m]))
+              / sum(increase(poker_lightning_hands_total[10m]))
+          ) > 0.10
+          and on() sum(increase(poker_lightning_hands_total[10m])) >= 20
+        for: 5m
+        labels:
+          severity: critical
+          component: lightning
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of Lightning hands in 10 minutes ended abandoned instead of settled'
+          description: |
+            More than 10% of Lightning (fast-fold) hand ends in the last ten
+            minutes were abandoned, for five minutes running. An abandoned hand
+            is dealt and then never settled: players see a hand vanish. The
+            ordinary share is 0 (worst measured window 1.5%). Read the reason
+            per instance in lightning_instance.abandon_reason - the 2026-10-18
+            incident was settlement_refused:physical_settlement_refused - and
+            the engine log line "[LightningHost:<id>] abandoned: <reason>".
+          runbook: 'docs/runbooks/lightning-hands-abandoned.md'
 
   # ── Client errors (2026-10-03) ────────────────────────────────────────────
   # Players' browsers report errors to the first-party sink

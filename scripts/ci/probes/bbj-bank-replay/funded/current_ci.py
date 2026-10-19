@@ -6,6 +6,9 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import socket
+import ssl
+import urllib.error
 import time
 import uuid
 from datetime import datetime
@@ -132,16 +135,38 @@ TIMING_REFUSAL_CODES = {
 }
 
 
+TIMING_TRANSPORT_CODES = {
+    'TIMING_TRANSPORT_OR_DECODING_REFUSED', 'TIMING_TIMEOUT_REFUSED',
+    'TIMING_TLS_REFUSED', 'TIMING_CONNECTION_REFUSED', 'TIMING_DECODING_REFUSED',
+} | {'TIMING_HTTP_STATUS_' + str(status) for status in range(100, 600)}
+TIMING_IDENTITY_FIELDS = ('id', 'run_id', 'runner_name', 'head_sha', 'status',
+                          'conclusion', 'completed_at', 'labels')
+
+
 class TimingRequestRefused(RuntimeError):
-    def __init__(self, reason_code):
-        allowed = set(TIMING_REFUSAL_CODES.values()) | {'TIMING_TRANSPORT_OR_DECODING_REFUSED'}
+    def __init__(self, reason_code, identity_mismatch_fields=()):
+        allowed = set(TIMING_REFUSAL_CODES.values()) | TIMING_TRANSPORT_CODES
         self.reason_code = reason_code if reason_code in allowed else 'LOCAL_OPERATION_REFUSED'
+        self.identity_mismatch_fields = [field for field in TIMING_IDENTITY_FIELDS
+                                        if field in identity_mismatch_fields] if self.reason_code == 'JOB_IDENTITY_MISMATCH' else []
         super().__init__('Current job timing request refused; no retry')
 
 
 def timing_refusal_reason(error):
     if type(error) is TimingRequestRefused:
         return error.reason_code
+    if isinstance(error, urllib.error.HTTPError):
+        return ('TIMING_HTTP_STATUS_' + str(error.code)
+                if type(error.code) is int and 100 <= error.code < 600 else 'LOCAL_OPERATION_REFUSED')
+    transport = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(transport, TimeoutError):
+        return 'TIMING_TIMEOUT_REFUSED'
+    if isinstance(transport, ssl.SSLError):
+        return 'TIMING_TLS_REFUSED'
+    if isinstance(transport, (ConnectionError, socket.gaierror)):
+        return 'TIMING_CONNECTION_REFUSED'
+    if isinstance(error, (json.JSONDecodeError, UnicodeDecodeError)):
+        return 'TIMING_DECODING_REFUSED'
     if type(error) is RuntimeError:
         return TIMING_REFUSAL_CODES.get(str(error), 'LOCAL_OPERATION_REFUSED')
     return 'LOCAL_OPERATION_REFUSED'
@@ -171,13 +196,19 @@ def timing_observation(current, response, now):
     jobs = [job for job in response['jobs'] if type(job) is dict and job.get('name') == ACCOUNTING_JOB_NAME]
     require(len(jobs) == 1, 'Exactly one current accounting job required')
     job = jobs[0]
-    require(type(job.get('id')) is int and job['id'] > 0 and
-            str(job.get('run_id')) == current['run_id'] and
-            job.get('runner_name') == current['runner'] and
-            job.get('head_sha') in (current['commit'], current['source_commit']) and
-            job.get('status') == 'in_progress' and job.get('conclusion') is None and
-            job.get('completed_at') is None and job.get('labels') == ['ubuntu-latest'],
-            'Actual job does not match this hosted checkout/run/attempt/runner')
+    identity_checks = (
+        ('id', type(job.get('id')) is int and job['id'] > 0),
+        ('run_id', str(job.get('run_id')) == current['run_id']),
+        ('runner_name', job.get('runner_name') == current['runner']),
+        ('head_sha', job.get('head_sha') in (current['commit'], current['source_commit'])),
+        ('status', job.get('status') == 'in_progress'),
+        ('conclusion', job.get('conclusion') is None),
+        ('completed_at', job.get('completed_at') is None),
+        ('labels', job.get('labels') == ['ubuntu-latest']),
+    )
+    mismatches = [field for field, matches in identity_checks if not matches]
+    if mismatches:
+        raise TimingRequestRefused('JOB_IDENTITY_MISMATCH', mismatches)
     started = job.get('started_at')
     require(type(started) is str and started.endswith('Z'), 'Actual UTC job start required')
     try:
@@ -237,7 +268,8 @@ def produce_job_timing(repository, output):
         reason = timing_refusal_reason(error)
         if reason == 'LOCAL_OPERATION_REFUSED':
             reason = 'TIMING_TRANSPORT_OR_DECODING_REFUSED'
-        raise TimingRequestRefused(reason) from None
+        raise TimingRequestRefused(reason, error.identity_mismatch_fields
+                                   if type(error) is TimingRequestRefused else ()) from None
     finally:
         token = None
     write_exclusive(output,{'format':1,'identity':current,'request_url':timing_url(current),
@@ -459,5 +491,7 @@ if __name__ == '__main__':
     except BaseException as error:
         print(json.dumps({'status':'CURRENT_JOB_TIMING_REFUSED','error_type':type(error).__name__,
                           'reason_code':timing_refusal_reason(error),
+                          'identity_mismatch_fields':error.identity_mismatch_fields
+                          if type(error) is TimingRequestRefused else [],
                           'financial_execution':False,'automatic_retry':False}))
         sys.exit(1)

@@ -33,6 +33,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  scoped_billing_endpoints:
+    name: Explicit billing endpoint dependency observation
+    # Opt-in only. The existing scheduled audit never opens this transport.
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'audit-production-integrity' && github.event.client_payload.billing_endpoint_observation != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Qualify fixed endpoint admission and sanitization
+        run: python3 -B tests/operations/billing-endpoint-read.test.py
+      - name: Read only three endpoint hostnames from the unchanged engine container
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_HOST_KEY: ${{ secrets.HETZNER_HOST_KEY }}
+        run: python3 -B scripts/ci/read-scoped-billing-endpoints.py
+      - name: Retain only sanitized hostnames, ports and immutable identity
+        uses: actions/upload-artifact@v4
+        with:
+          name: billing-endpoint-observation-${{ github.run_id }}
+          path: artifacts/billing-endpoint-observation/observation.json
+          retention-days: 3
+          if-no-files-found: error
+
   scoped_release_recovery:
     name: Explicit existing release recovery evidence
     # One fixed read of an exact completed release; never selected by schedule.

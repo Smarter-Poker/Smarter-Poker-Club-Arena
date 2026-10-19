@@ -484,13 +484,42 @@ export interface HorsePhase12AuthoritySelection {
  * natural completion is read; a renewal is the next generation. Every earlier
  * generation stays committed with its evidence (retained for refusal in
  * HorsePreviousSelections.test-support.ts as RETIRED_2026_10_17_*).
+ *
+ * October 19: FLH generation 5. The locked FLH v1 matrix requalified the exact
+ * VPIP-floor source da94e437 (run 39132882188, 42 of 42 shards): cash after
+ * rake against the horse population +1.11 [+0.70, +1.52] bb/100 over 544,320
+ * pairs, qualified with no reasons, at policy digest ff32377e.... The
+ * prospective natural completion window on release 6e3ab4f3 (same digest;
+ * 2026-10-18 23:02 to 23:50Z under
+ * docs/evidence/phase13/declaration-completion-vpip-2026-10-18-addendum-1.txt)
+ * completed every eligible decision on every street (river 337 of 337, lowest
+ * Wilson bound 0.9807). Cash only: the tournament objective remains an
+ * unavailable dependency. Short Deck, Crazy Pineapple and FLO8 stay null until
+ * their own matrices finish on the same source.
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
 > = Object.freeze({
   short_deck: null,
   pineapple: null,
-  flh: null,
+  flh: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase12',
+    variant: 'flh',
+    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+    packVersion: 'fixed-limit-holdem-round3-v1',
+    contractVersion: 'remaining-variant-strength-contract-v1',
+    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
+    domain: 'flh-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase12/da94e437/phase12-qualification-2026-10-19-flh.json',
+    qualificationSha256: 'f73fc3a73d22d7d054896aa87bea4f12a61de26d4933d7e9ba8f51ee21105d27',
+    completionPath: 'docs/evidence/phase12/da94e437/phase12-completion-2026-10-18-flh.json',
+    completionSha256: 'ebcfe429ba70a20377f51716154ca908b556a9e9e0eb77630edec41be1ef589e',
+    approvalGeneration: 5,
+    issuedAt: '2026-10-19T00:25:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   flo8: null,
 });
 

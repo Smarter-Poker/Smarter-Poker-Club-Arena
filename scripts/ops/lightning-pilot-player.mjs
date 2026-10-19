@@ -376,7 +376,17 @@ export async function witnessPlayer({
       for (const [kind, selector] of actions) {
         report.subphase = 'player_preflight';
         report.cause = 'player_scope_unverified';
+        const renderedBeforePreflight = latestHand;
         await bounded(validatePlayer(admin, pin), remaining());
+        // Tap a hand painted after the preflight. Its six database reads take
+        // long enough for a fast Lightning hand to end (or the horse's own input
+        // to act) under a waiting tap: run 39315415767's desktop fold reached
+        // the engine after the rendered hand had ended and was refused with
+        // NO_ACTIVE_HAND. Waiting changes nothing; nothing is sent until then.
+        report.subphase = 'fresh_hand';
+        report.cause = 'fresh_hand_unobserved';
+        while (latestHand === renderedBeforePreflight && remaining() > 0)
+          await page.waitForTimeout(Math.min(25, remaining()));
         report.subphase = 'fold_control';
         report.cause = 'fold_control_unavailable';
         const button = page.getByTestId(selector);

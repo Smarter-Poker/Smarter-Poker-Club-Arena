@@ -1,0 +1,55 @@
+rule_files:
+  - ../../infra/monitoring/alert-rules.yml
+  - ../../infra/monitoring/engine-freeze-rules.yml
+evaluation_interval: 15s
+tests:
+  - name: labelled break survives scrape gap
+    interval: 15s
+    input_series:
+      - series: 'up{job="engine_game_server",instance="a",host="engine-01"}'
+        values: '1x4 0x12 1x12'
+      - series: 'poker_maintenance_break_active{job="engine_game_server",instance="a",host="engine-01",extra="producer"}'
+        values: '0x3 1 _x24'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname=~"EngineDown|EngineScrapeDown",alertstate="firing"}) or vector(0)'
+        eval_time: 3m
+        exp_samples:
+          - labels: '{}'
+            value: 0
+  - name: outage without maintenance metric pages
+    interval: 15s
+    input_series:
+      - series: 'up{job="engine_game_server",instance="a"}'
+        values: '0x40'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname=~"EngineDown|EngineScrapeDown",alertstate="firing"}) or vector(0)'
+        eval_time: 1m
+        exp_samples:
+          - labels: '{}'
+            value: 2
+  - name: outage outlasts break lookback
+    interval: 15s
+    input_series:
+      - series: 'up{job="engine_game_server",instance="a"}'
+        values: '0x40'
+      - series: 'poker_maintenance_break_active{job="engine_game_server",instance="a"}'
+        values: '1 _x40'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname=~"EngineDown|EngineScrapeDown",alertstate="firing"}) or vector(0)'
+        eval_time: 8m
+        exp_samples:
+          - labels: '{}'
+            value: 2
+  - name: another engine break cannot hide outage
+    interval: 15s
+    input_series:
+      - series: 'up{job="engine_game_server",instance="b"}'
+        values: '0x12'
+      - series: 'poker_maintenance_break_active{job="engine_game_server",instance="a"}'
+        values: '1x12'
+    promql_expr_test:
+      - expr: 'count(ALERTS{alertname=~"EngineDown|EngineScrapeDown",alertstate="firing"}) or vector(0)'
+        eval_time: 2m
+        exp_samples:
+          - labels: '{}'
+            value: 2

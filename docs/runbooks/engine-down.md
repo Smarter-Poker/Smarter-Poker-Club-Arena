@@ -26,15 +26,11 @@ out, so one of these is true:
 
 Player impact: no table can tick while the process is gone.
 
-**This rule has no maintenance-break guard.** The engine restarts inside the
-announced :55 break every hour (CLAUDE.md section 13) and is deliberately down
-for roughly two of those five minutes. `for: 1m` is shorter than that gap, so
-this rule can fire on a scheduled restart. `EngineScrapeDown` in
-`engine-freeze-rules.yml` asks the same question with the break guard
-(`unless max_over_time(poker_maintenance_break_active[6m]) == 1`) and is the
-rule to trust for a real outage. The rule's own comment says it is kept so the
-SLO rules that name this job still resolve. If `EngineDown` fires between :55
-and :01 UTC and `EngineScrapeDown` does not, it is the scheduled restart.
+Both `EngineDown` and `EngineScrapeDown` exclude scrapes while the matching
+engine reported a maintenance break in the last six minutes. They match
+`job, instance` explicitly: additional producer labels do not defeat the guard,
+and a break on another engine cannot hide this engine's outage. The lookback
+survives a missing metric during cutover; an outage that outlasts it still pages.
 
 ## First checks
 

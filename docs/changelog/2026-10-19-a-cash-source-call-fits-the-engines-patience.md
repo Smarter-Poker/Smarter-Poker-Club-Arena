@@ -1,4 +1,4 @@
-# 2026-10-19 - A cash source call fits the engine's patience, and a halted page comes back in a minute
+# 2026-10-19 - A cash source call fits the engine's patience, a halted page comes back in a minute, and the retry drains what is due
 
 ## What happened (read-only on production)
 
@@ -70,6 +70,52 @@ it, and the law test checks it against the migration text.
   clears over several calls. Only a run of calls that settle nothing holds the
   cursor.
 
+## The retry queue drains what is due
+
+**Measured read-only from 19:48 to 20:36 UTC.**
+
+- #7458's fix was installed at 19:07 and #7466 at 19:17. After that, 12,135
+  Midway sources were due in the refusal queue, blocked with
+  `accounting_terms_not_observed`. At 20:29 there were 12,106 due.
+- Every retry now accrues. Even so, only 20 retries landed in 30 minutes.
+- The receipts show the cause. Every settler inner run makes exactly one
+  `fn_retry_cash_accounting_sources(5)` call, and each call takes about 0.2 s
+  in the database.
+- Inner runs happen only while there is new rake to page through. That is 4 to
+  6 runs every 30 minutes: at 19:28, 19:30, 19:31, 19:32, 20:00 to 20:04,
+  20:28 to 20:33, and so on. The settler is idle in between.
+- The running engine is `1370116c`, which is before #7439. A run whose page is
+  empty therefore returns `idle` even when its retry was full. So once the
+  cursor catches up, the cycle ends and waits for the interval.
+- At 5 retries a run, that is about 40 an hour, roughly 300 hours for 12k. The
+  30-minute halt played no part in this: no cycle halted.
+
+**What changed.** `#7439` (merged, not yet released) keeps the drain cycle
+running while a retry comes back full. That still allows only 5 retries per
+inner run. The new `drainCashSourceRetries()` makes each inner run keep calling
+while three things hold:
+
+- each call comes back full;
+- each call settled something;
+- the run is still inside `CASH_RETRY_DRAIN_BUDGET_MS` (30 s).
+
+It stops early at the first short call, when every source in a call was
+deferred, when the maintenance freeze begins, or when the service is stopping.
+
+Each call is still one small transaction of `CASH_RETRY_LIMIT` (5) sources,
+inside the database's 8 s call budget. Commission keys are handed back between
+calls. If the first call fails, the run halts as before. If a later call fails,
+the drain ends without losing the earlier, already durable receipts.
+
+**Expected drain time for 12k.** At about 0.2 s of database time per call, plus
+the round trip, a run drains roughly 300 to 500 sources in its 30 s. A drain
+cycle is three runs and a 60 s catch-up, about 2.6 minutes. That works out to
+roughly 20,000 to 35,000 sources an hour, so the backlog clears in about 20 to
+35 minutes of settler time once this engine is released.
+
+The hourly freeze pauses the drain for its five minutes. The union's
+open-week basis can advance once the backlog has accrued.
+
 ## Is the 15 s / 30-minute design right?
 
 - **The 15 s client budget is right.** It is the only bound the engine can
@@ -95,6 +141,12 @@ The new `batch-items-behind-held-rows` case uses the engine role's 8 s
 | this migration, all five rows held | 8.01 s    | 4 blocked, 1 deferred           |
 
 - In the all-five case, the one deferred item settled on resubmission.
+- The `retry-backlog-drain` case seeds 400 due refusals over two clubs.
+  - One call per run, three runs (one cycle), accrues 15.
+  - The drain loop accrues the other 385 in one run of 78 calls. Its longest
+    call took 0.014 s.
+  - Afterwards every work row is `accrued`, with 400 commission rows, one per
+    source.
 - In both runs of this migration, `lock_timeout` was back at `8s` afterwards.
 - Every earlier case still passes, including the chip deadlocks, the busy-key
   pairs and the retry-queue starvation.
@@ -108,9 +160,12 @@ The evidence is in `docs/evidence/settler-pacing-2026-10-19/`.
 
 - 7 tests in "the catch-up re-arms while backlog remains", covering the
   first-page halt, the backoff ladder, the reset and the cap;
-- "keeps resubmitting while each call settles something".
+- "keeps resubmitting while each call settles something";
+- 4 tests in "the retry drains a backlog inside one run": it stops at the
+  short call, a full queue at the end of the budget is still backlog, a later
+  failure ends the drain without halting, and it stops when the freeze begins.
 
-All 8 failed against the previous settler and pass now.
+All 12 failed against the previous settler and pass now.
 
 ## Deploy order
 

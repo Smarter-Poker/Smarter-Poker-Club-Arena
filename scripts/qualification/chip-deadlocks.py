@@ -710,6 +710,79 @@ def case_retry_starvation(cl, ctl, run):
         return c.result()
 
 
+RETRY_DRAIN_BUDGET_S = 30.0   # CASH_RETRY_DRAIN_BUDGET_MS in RakebackSettlerService.ts
+RETRY_LIMIT = 5               # CASH_RETRY_LIMIT at the engine's 15 s client budget
+
+
+def case_retry_backlog_drain(cl, ctl, run, n=400):
+    """2026-10-19 19:48: 12,135 Midway sources due after their cause was fixed, retried five a run
+    (one fn_retry_cash_accounting_sources(5) per settler inner run): 40 an hour. Here N due refusals
+    over two clubs, each with its own agent, are drained the way each engine does it. 'one-call-a-run':
+    one call per inner run, three runs (one drain cycle). 'drain': the run calls again while a call
+    comes back full and settled something, within the 30 s run budget, exactly as
+    drainCashSourceRetries(). Every source must accrue exactly once and every call must stay inside
+    the 8 s server budget."""
+    names = ['XM', 'XL', 'aM', 'aL', 'tM', 'tL'] + ['p%d' % i for i in range(10)]
+    I = ids(run, 'RB', *names)
+    I.update(ordered(run, 'RBclubs', 'M', 'L'))
+    for club in ('M', 'L'):
+        seed_club(ctl, I[club])
+    seed_profiles(ctl, I['XM'], I['XL'], *[I['p%d' % i] for i in range(10)])
+    seed_agent(ctl, I['aM'], I['M'], I['XM'])
+    seed_agent(ctl, I['aL'], I['L'], I['XL'])
+    ctl.run("UPDATE public.accounting_cash_source_work SET next_attempt_at = 'infinity' WHERE status = 'blocked';")
+    rr = ids(run, 'RBrr', *['rr%d' % i for i in range(n)])
+    hh = ids(run, 'RBhh', *['h%d' % i for i in range(n)])
+    for i in range(n):
+        club = 'M' if i % 3 else 'L'
+        seed_cash_record(ctl, rr['rr%d' % i], hh['h%d' % i], I[club], I['t' + club], I['p%d' % (i % 10)], 1.00,
+                         [tier(I['X' + club], I['a' + club], 0.30, 1)])
+        seed_blocked_work(ctl, rr['rr%d' % i], '1980-01-01T00:00:00Z')
+    in_list = ','.join("'%s'" % v for v in rr.values())
+    status = ("SELECT string_agg(status || ':' || n, ',' ORDER BY status) FROM (SELECT status, count(*) n FROM "
+              "public.accounting_cash_source_work WHERE rake_record_id IN (%s) GROUP BY status) s;" % in_list)
+
+    def call(R):
+        t = time.time()
+        j = call_json(R, 'SELECT fn_retry_cash_accounting_sources(%d)::text;' % RETRY_LIMIT)
+        return j, time.time() - t
+
+    with Case(cl, ctl, run, 'retry-backlog-drain', '%d due cash refusals, retried the way the engine runs' % n) as c:
+        R = c.session('retry')
+        # The engine before: one call per inner run, three inner runs per drain cycle.
+        one = 0
+        for _ in range(3):
+            j, _s = call(R)
+            one += j['ok']
+        c.notes['one_call_a_run'] = {'runs': 3, 'accrued': one}
+        # The engine now: each run drains while calls come back full and settle something.
+        runs, calls, longest, accrued, t0 = [], 0, 0.0, 0, time.time()
+        while True:
+            deadline, run_calls, run_ok, full = time.time() + RETRY_DRAIN_BUDGET_S, 0, 0, False
+            while True:
+                j, secs = call(R)
+                run_calls += 1
+                longest = max(longest, secs)
+                run_ok += j['ok']
+                full = j['ok'] + j['blocked'] + len(j.get('deferred') or []) == RETRY_LIMIT
+                if not full or j['ok'] + j['blocked'] == 0 or time.time() >= deadline:
+                    break
+            runs.append({'calls': run_calls, 'accrued': run_ok})
+            calls += run_calls
+            accrued += run_ok
+            if not full or len(runs) >= 50:
+                break
+        elapsed = time.time() - t0
+        c.notes['drain'] = {'runs': runs, 'calls': calls, 'accrued': accrued, 'seconds': round(elapsed, 2),
+                            'longest_call_seconds': round(longest, 3),
+                            'sources_per_second': round(accrued / elapsed, 1) if elapsed else None}
+        c.notes['work_after'] = ctl.run(status)
+        c.notes['commission_rows'] = int(ctl.run(
+            "SELECT count(*) FROM public.agent_commissions WHERE user_id IN ('%s','%s');" % (I['XM'], I['XL'])))
+        c.notes['n'] = n
+        return c.result()
+
+
 def case_batch_skips_busy_key(cl, ctl, run):
     """A page batch of two cash items, rrM (club M) then rrL (club L), while a finish holds club M's
     key (M < L). Production's text: the walk ends at M and both are deferred, though rrL needs only
@@ -839,6 +912,7 @@ def main():
                     busy.append(case_items_behind_held_rows)
                 if state == 'budgeted':
                     busy.append(lambda cl, ctl, run: case_items_behind_held_rows(cl, ctl, run, held=5))
+                    busy.append(case_retry_backlog_drain)
                 for case in busy:
                     r = case(cl, ctl, state)
                     report['results'].append(r)
@@ -944,6 +1018,21 @@ def main():
         and q('batch-vs-finish-on-a-busy-key', 'budgeted')['batch'] == 'deferred until its commission keys are free: 1'
         and q('retry-vs-finish-on-a-busy-key', 'budgeted')['work'] == 'accrued:2,accrued:2')
     report['budget_ok'] = budget_ok
+    rb = q('retry-backlog-drain', 'budgeted')
+    drain_ok = (
+        # 2026-10-19 19:48: one call a run retries five a run, three a cycle
+        rb['one_call_a_run'] == {'runs': 3, 'accrued': 3 * RETRY_LIMIT}
+        # drainCashSourceRetries(): the rest of the backlog accrues, every source once, inside the run
+        # budget, every call inside the 8 s server budget, the last call short (the queue is empty)
+        and rb['drain']['accrued'] == rb['n'] - 3 * RETRY_LIMIT
+        and rb['work_after'] == 'accrued:%d' % rb['n']
+        and rb['commission_rows'] == rb['n']
+        and rb['drain']['longest_call_seconds'] < 8.0
+        and rb['deadlocks'] == 0)
+    report['drain_ok'] = drain_ok
+    print('2026-10-19 retry backlog (%d due: one call a run drains %d a cycle; the drain loop drains the rest, %s/s):'
+          % (rb['n'], rb['one_call_a_run']['accrued'], rb['drain']['sources_per_second']),
+          'OK' if drain_ok else 'NOT AS CLAIMED')
     print('2026-10-19 17:02 slow call (production text > 15 s, 20261019190103 < 9.5 s):',
           'OK' if budget_ok else 'NOT AS CLAIMED')
     print('2026-10-19 17:00 starvation (production text starves, 20261019171753 does not):',
@@ -952,7 +1041,7 @@ def main():
           'OK' if busy_ok else 'NOT AS CLAIMED')
     ok = (all(r['deadlocks'] == 0 for r in fixed)
           and all(r['deadlocks'] > 0 for r in report['results'] if r['state'] == 'before' and r['case'] != 'batch-while-a-finish-holds-a-key')
-          and report['values_equal'] and keys_ok and busy_ok and skip_ok and budget_ok)
+          and report['values_equal'] and keys_ok and busy_ok and skip_ok and budget_ok and drain_ok)
     print('CHIP DEADLOCKS: %s' % ('every fixed pair deadlocks before and not after' if ok else 'NOT AS CLAIMED'))
     report['passed'] = ok
     if a.out:

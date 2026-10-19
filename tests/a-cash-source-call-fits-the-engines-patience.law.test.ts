@@ -23,6 +23,10 @@
  *     with no acknowledged page back off 60 s, 120 s, ... up to the interval;
  *     an acknowledged page resets it. A deferral resubmission that settled
  *     something does not count toward the halt.
+ *   - RakebackSettlerService: the durable-refusal retry drains what is due.
+ *     One call of CASH_RETRY_LIMIT a run retried 12,135 due Midway sources at
+ *     about 40 an hour (19:48-20:20); a run now keeps calling while each call
+ *     is full and settled something, for up to CASH_RETRY_DRAIN_BUDGET_MS.
  *
  * Proved natively by scripts/qualification/chip-deadlocks.py (stage
  * 'budgeted'), evidence under docs/evidence/settler-pacing-2026-10-19.
@@ -145,6 +149,35 @@ describe('a cash source call fits the engine patience', () => {
       'submission > 0 && receipts.length === 0 ? fruitlessResubmissions + 1 : 0'
     );
     expect(SETTLER_CODE).toContain('if (fruitlessResubmissions >= CASH_DEFERRAL_RESUBMITS)');
+  });
+
+  it('the retry drains what is due, not one call a run', () => {
+    const drain = sliceBetween(
+      SETTLER_CODE,
+      'private async drainCashSourceRetries(): Promise<{',
+      'private async _runSettlementInner(): Promise<CycleResult> {'
+    );
+    expect(drain).toMatch(/p_limit:\s*CASH_RETRY_LIMIT\s*,/);
+    expect(drain).toContain('const deadline = Date.now() + CASH_RETRY_DRAIN_BUDGET_MS;');
+    expect(drain).toContain('if (!lastCallFull || retried.receipts.length === 0) break;');
+    expect(drain).toContain(
+      'if (Date.now() >= deadline || isMaintenanceFrozen() || !this.acceptingSettlements) break;'
+    );
+    expect(drain).toContain('if (call === 0) throw error;');
+    expect(SETTLER_CODE).toContain('const drained = await this.drainCashSourceRetries();');
+    expect(SETTLER_CODE).toContain('export const CASH_RETRY_DRAIN_BUDGET_MS = 30_000;');
+    expect(CHIP).toContain('RETRY_DRAIN_BUDGET_S = 30.0');
+    expect(CHIP).toContain('def case_retry_backlog_drain(');
+    const run = JSON.parse(read(EVIDENCE + 'chip-deadlocks-run.json'));
+    expect(run.drain_ok).toBe(true);
+    const rb = run.results.find(
+      (r: { case: string; state: string }) =>
+        r.case === 'retry-backlog-drain' && r.state === 'budgeted'
+    );
+    expect(rb.one_call_a_run.accrued).toBe(15);
+    expect(rb.drain.accrued).toBe(rb.n - 15);
+    expect(rb.work_after).toBe(`accrued:${rb.n}`);
+    expect(rb.drain.longest_call_seconds).toBeLessThan(8);
   });
 
   it('is proved natively: production text outlasts the client, this text does not', () => {

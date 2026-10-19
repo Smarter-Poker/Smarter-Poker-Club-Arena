@@ -101,6 +101,17 @@ export const CREDIT_BATCH_SIZE = cashAccountingBatchSize(resolveClientTimeoutMs(
  * Same budget, same arithmetic, same reason.
  */
 export const CASH_RETRY_LIMIT = cashAccountingBatchSize(resolveClientTimeoutMs());
+/**
+ * How long one inner run keeps retrying full batches of due refusals
+ * (2026-10-19). CASH_RETRY_LIMIT bounds each CALL (its commission keys, its
+ * time); this bounds how many calls one run makes, so the retry rate follows
+ * the backlog instead of being fixed at one call a run. Measured on production
+ * 2026-10-19 19:28-20:33: a retry call of 5 accrued sources spent about 0.2 s
+ * in the database, so 30 s is on the order of a hundred calls, 500 sources, a
+ * run; and a run still returns to the page within half a minute plus at most
+ * one call's own 8 s budget.
+ */
+export const CASH_RETRY_DRAIN_BUDGET_MS = 30_000;
 const PERIOD_USER_BATCH_SIZE = 2000;
 const DAEMON_KEY = 'rakeback_settler';
 
@@ -1805,6 +1816,60 @@ export class RakebackSettlerService {
     }
   }
 
+  /**
+   * Retry due durable refusals for up to CASH_RETRY_DRAIN_BUDGET_MS, one small
+   * call after another, while each call comes back full and settled something.
+   *
+   * Stops at the first call that is short (the due queue is drained), that
+   * settled nothing (every source it chose was deferred for a busy key), when
+   * the budget is spent, when the maintenance freeze begins, or when the
+   * service is stopping. The first call failing throws, exactly as the single
+   * call did (the run halts and backs off). A later call failing ends the
+   * drain instead: every source an earlier call settled is already durable and
+   * acknowledged here, and the failed call's sources stay in their queue.
+   * `lastCallFull` says whether the queue may hold more (the #7439 backlog rule).
+   */
+  private async drainCashSourceRetries(): Promise<{
+    receipts: CashSourceReceipt[];
+    lastCallFull: boolean;
+  }> {
+    const receipts: CashSourceReceipt[] = [];
+    const deadline = Date.now() + CASH_RETRY_DRAIN_BUDGET_MS;
+    let deferredTotal = 0;
+    let lastCallFull = false;
+    for (let call = 0; ; call++) {
+      let retried: { receipts: CashSourceReceipt[]; deferred: string[] };
+      try {
+        const { data, error } = await supabase.rpc('fn_retry_cash_accounting_sources', {
+          p_limit: CASH_RETRY_LIMIT,
+        });
+        if (error) throw new Error('Cash source retry failed', { cause: error });
+        retried = readCashSourceBatchOutcome(data);
+        if (retried.receipts.length + retried.deferred.length > CASH_RETRY_LIMIT)
+          throw new Error('Cash retry exceeded its requested source bound');
+        await confirmCashSourceRefusals(retried.receipts);
+      } catch (error) {
+        if (call === 0) throw error;
+        reportError(error, 'RakebackSettler.source_retry_drain_ended');
+        lastCallFull = true;
+        break;
+      }
+      receipts.push(...retried.receipts);
+      deferredTotal += retried.deferred.length;
+      lastCallFull = retried.receipts.length + retried.deferred.length === CASH_RETRY_LIMIT;
+      if (!lastCallFull || retried.receipts.length === 0) break;
+      if (Date.now() >= deadline || isMaintenanceFrozen() || !this.acceptingSettlements) break;
+    }
+    // A deferred retry keeps its blocked work row exactly as it was (no attempt is
+    // spent) and is among the first due sources again; it is not this cursor's.
+    if (deferredTotal > 0)
+      console.log(
+        `[RakebackSettler] ${deferredTotal} retried cash source(s) deferred: a commission key ` +
+          `was busy or the call ran out of time; they stay first in the retry queue`
+      );
+    return { receipts, lastCallFull };
+  }
+
   private async _runSettlementInner(): Promise<CycleResult> {
     // On first run after (re)start, resume from the durable cursor so we do not
     // re-scan already-settled rake_records (which double-counts player_stats).
@@ -1823,26 +1888,22 @@ export class RakebackSettlerService {
     // Retry durable refusals independently of the global cursor. The same
     // source authority restores commissions, original player stats and the
     // existing weekly recomputation queue before acknowledging a retry.
+    //
+    // THE RETRY DRAINS WHAT IS DUE, NOT FIVE A RUN (2026-10-19). One call of
+    // CASH_RETRY_LIMIT per inner run retried 5 sources a run while 12,135
+    // Midway sources sat due after their cause was fixed: 20 retries in 30
+    // minutes, about 300 hours to drain. A run now keeps calling while each
+    // call comes back full and made progress, for up to
+    // CASH_RETRY_DRAIN_BUDGET_MS. Each call is still one small transaction of
+    // CASH_RETRY_LIMIT sources inside the database's own 8 s call budget, so
+    // every commission key is handed back between calls. See
+    // drainCashSourceRetries().
     let retriedSources: CashSourceReceipt[];
     let retryBatchFull = false;
     try {
-      const { data, error } = await supabase.rpc('fn_retry_cash_accounting_sources', {
-        p_limit: CASH_RETRY_LIMIT,
-      });
-      if (error) throw new Error('Cash source retry failed', { cause: error });
-      const retried = readCashSourceBatchOutcome(data);
-      retriedSources = retried.receipts;
-      if (retried.receipts.length + retried.deferred.length > CASH_RETRY_LIMIT)
-        throw new Error('Cash retry exceeded its requested source bound');
-      retryBatchFull = retried.receipts.length + retried.deferred.length === CASH_RETRY_LIMIT;
-      await confirmCashSourceRefusals(retriedSources);
-      // A deferred retry keeps its blocked work row exactly as it was (no attempt is
-      // spent) and is the oldest due source again next cycle; it is not this cursor's.
-      if (retried.deferred.length > 0)
-        console.log(
-          `[RakebackSettler] ${retried.deferred.length} retried cash source(s) deferred: a commission key ` +
-            `was busy; they stay first in the retry queue`
-        );
+      const drained = await this.drainCashSourceRetries();
+      retriedSources = drained.receipts;
+      retryBatchFull = drained.lastCallFull;
     } catch (error) {
       reportError(error, 'RakebackSettler.source_retry_holds_cursor');
       return 'halted';

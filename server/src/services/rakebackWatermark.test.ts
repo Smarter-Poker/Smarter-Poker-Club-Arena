@@ -149,6 +149,7 @@ vi.mock('./errorReporter.js', () => ({
   reportWarning: vi.fn(),
 }));
 
+import { setMaintenanceFrozen } from '../maintenance/freezeState.js';
 import {
   RakebackSettlerService,
   FETCH_LIMIT,
@@ -157,6 +158,7 @@ import {
   CASH_RETRY_LIMIT,
   MAX_DRAIN_BATCHES,
   haltedPageRetryDelayMs,
+  CASH_RETRY_DRAIN_BUDGET_MS,
 } from './RakebackSettlerService.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -1154,12 +1156,131 @@ describe('cash source receipts protect the durable cursor', () => {
     const receipts = rows.map((r) => sourceReceipt(r, { ledger: fullLedger }));
     setup({ dataset: [], ledger: fullLedger, retryReceipts: receipts });
     expect(CASH_RETRY_LIMIT).toBeGreaterThan(1);
-    expect(await run()).toBe('more');
+    // Every call comes back full; the run's drain budget ends it, and the
+    // queue may still hold more.
+    let clock = Date.now();
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 16_000));
+    try {
+      expect(await run()).toBe('more');
+    } finally {
+      now.mockRestore();
+    }
     expect(settlerUpserts()).toHaveLength(0);
     // One fewer than a full batch is the end of the due queue: 'idle' as before.
     mockRpc.mockClear();
     setup({ dataset: [], ledger: fullLedger, retryReceipts: receipts.slice(1) });
     expect(await run()).toBe('idle');
+  });
+
+  /*
+   * THE RETRY DRAINS WHAT IS DUE, NOT FIVE A RUN (2026-10-19). Live: 12,135
+   * Midway sources due after their cause was fixed, one retry call of
+   * CASH_RETRY_LIMIT per inner run, 20 retries in 30 minutes. A run now keeps
+   * calling while each call is full and settled something, within
+   * CASH_RETRY_DRAIN_BUDGET_MS.
+   */
+  describe('the retry drains a backlog inside one run', () => {
+    const backlog = (n: number) => {
+      const rows = Array.from({ length: n }, (_, i) => ({
+        ...row(1000 + i, 300 + i),
+        hand_id: uid(3000 + i),
+        player_contributions: { [uid(42)]: 10 },
+      }));
+      const fullLedger = rows.map((r, i) => ({
+        id: uid(5000 + i),
+        hand_id: r.hand_id,
+        player_id: uid(42),
+        club_id: uid(55),
+        rake_record_id: r.id,
+        weighted_rake_credit: 1,
+      }));
+      setup({ dataset: [], ledger: fullLedger });
+      return rows.map((r) => sourceReceipt(r, { ledger: fullLedger }));
+    };
+    /** The due queue, served CASH_RETRY_LIMIT at a time like the database. */
+    const serveQueue = (queue: Array<Record<string, unknown>>, deferAll = false) =>
+      mockRpc.mockImplementation(async (name, args) => {
+        if (name !== 'fn_retry_cash_accounting_sources') return success(name, args);
+        if (deferAll)
+          return {
+            data: {
+              ...batchReceipt([]),
+              deferred: queue.slice(0, args.p_limit).map((r) => r.rake_record_id),
+            },
+            error: null,
+          };
+        return { data: batchReceipt(queue.splice(0, args.p_limit)), error: null };
+      });
+    const retryCalls = () =>
+      mockRpc.mock.calls.filter(([name]) => name === 'fn_retry_cash_accounting_sources');
+
+    it('keeps calling while each call comes back full, and stops at the short one', async () => {
+      const queue = backlog(3 * CASH_RETRY_LIMIT + 2);
+      serveQueue(queue);
+      expect(await run()).toBe('idle');
+      expect(retryCalls()).toHaveLength(4);
+      expect(retryCalls().every(([, args]) => args.p_limit === CASH_RETRY_LIMIT)).toBe(true);
+      expect(queue).toHaveLength(0);
+    });
+
+    it('a full queue at the end of the budget is still backlog', async () => {
+      const queue = backlog(10 * CASH_RETRY_LIMIT);
+      serveQueue(queue);
+      let clock = Date.now();
+      const now = vi
+        .spyOn(Date, 'now')
+        .mockImplementation(() => (clock += CASH_RETRY_DRAIN_BUDGET_MS / 3));
+      try {
+        expect(await run()).toBe('more');
+      } finally {
+        now.mockRestore();
+      }
+      expect(retryCalls().length).toBeGreaterThan(1);
+      expect(retryCalls().length).toBeLessThan(10);
+      expect(queue.length).toBeGreaterThan(0);
+    });
+
+    it('a call that settled nothing - every source deferred - ends the drain', async () => {
+      const queue = backlog(4 * CASH_RETRY_LIMIT);
+      serveQueue(queue, true);
+      // Unchanged from the single call: with no new rake and nothing settled
+      // the run is idle, and the deferred sources stay first in their queue.
+      expect(await run()).toBe('idle');
+      expect(retryCalls()).toHaveLength(1);
+    });
+
+    it('a later call failing ends the drain without halting the run', async () => {
+      const queue = backlog(4 * CASH_RETRY_LIMIT);
+      let calls = 0;
+      mockRpc.mockImplementation(async (name, args) => {
+        if (name !== 'fn_retry_cash_accounting_sources') return success(name, args);
+        if (++calls === 3) return { data: null, error: { message: 'retry unavailable' } };
+        return { data: batchReceipt(queue.splice(0, args.p_limit)), error: null };
+      });
+      expect(await run()).toBe('more');
+      expect(retryCalls()).toHaveLength(3);
+      expect(mockReportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        'RakebackSettler.source_retry_drain_ended'
+      );
+      expect(rakeFetches().length).toBeGreaterThan(0);
+    });
+
+    it('stops calling when the maintenance freeze begins', async () => {
+      const queue = backlog(4 * CASH_RETRY_LIMIT);
+      let calls = 0;
+      mockRpc.mockImplementation(async (name, args) => {
+        if (name !== 'fn_retry_cash_accounting_sources') return success(name, args);
+        if (++calls === 2) setMaintenanceFrozen(true);
+        return { data: batchReceipt(queue.splice(0, args.p_limit)), error: null };
+      });
+      try {
+        expect(await run()).toBe('more');
+      } finally {
+        setMaintenanceFrozen(false);
+      }
+      expect(retryCalls()).toHaveLength(2);
+    });
   });
   it('a retry RPC transport failure holds the cursor before fetching new source', async () => {
     mockRpc.mockResolvedValue({ data: null, error: { message: 'retry unavailable' } });

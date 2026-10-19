@@ -33,6 +33,7 @@ try:
  ANALYZE smarter_private.horse_adaptive_disposal_certificates;ANALYZE smarter_private.horse_fact_card_disposals;''')
  sql((Path(__file__).parent/'before.sql').read_text())
  sql((root/'supabase/migrations/20261018135943_fact_retention_reads_a_bounded_source_page.sql').read_text())
+ sql((root/'supabase/migrations/20261019145751_fact_retention_commits_bounded_cursor_slices_before_timeout.sql').read_text())
  results=[]
  for i in range(6):
   began=time.monotonic();d=json.loads(sql('select fn_prune_ca_hand_facts(200000)'));d['seconds']=round(time.monotonic()-began,3);results.append(d)
@@ -47,6 +48,15 @@ try:
  except RuntimeError as e:assert 'compactor-refused' in str(e)
  else:raise AssertionError('compactor failure must propagate')
  assert sql('select coalesce(last_hand_id::text,\'empty\') from smarter_private.horse_fact_card_prune_cursor')==before
+ # A slow original compactor must yield a committed cursor slice, not roll
+ # back a giant scan at the external statement timeout. This same probe fails
+ # before the sliced implementation (scanned200000 instead of250).
+ sql("CREATE OR REPLACE FUNCTION smarter_private.compact_horse_fact_cards(uuid[]) RETURNS integer LANGUAGE plpgsql AS $$BEGIN PERFORM pg_sleep(10.01); RETURN 0; END$$")
+ yielded=json.loads(sql('select fn_prune_ca_hand_facts(200000)'))
+ assert yielded['scanned']==250 and yielded['more'] is True
+ assert sql('select last_hand_id::text from smarter_private.horse_fact_card_prune_cursor')=='00000000-0000-0000-0000-000000000250'
+ assert sql('select sum(player_total) from ca_hand_facts')=='37.02'
+ print('PASS: slow slice yields after250 identities with committed cursor, more=true, totals unchanged')
  # Execute the exact Stripe aggregate extracted from the installed full body.
  sql("CREATE TABLE public.stripe_webhook_events(processed_at timestamptz,processing_status text)")
  before_metrics=(Path(__file__).parent/'metrics-before.sql').read_text()

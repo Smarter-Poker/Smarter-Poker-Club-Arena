@@ -182,7 +182,7 @@
     },
     "scripts/qualification/fixtures/archived-spin/first-temporal-state.json": {
       "bytes": 19054,
-      "sha256": "0c9d02104d2a909225d9c6ca4cc34e74cf8bdaf0bbf965007c1be40d2ec742e8"
+      "sha256": "a928d511ecd1a337e11731171a95eeed324afc6a3721dbd24fca8203dab70ae1"
     },
     "scripts/qualification/fixtures/archived-spin/first-temporal-refusal.sql": {
       "bytes": 4472,
@@ -233,8 +233,8 @@
       "sha256": "a1f868c99011cd2ff15d0a706d72877aee3fa113dd6f5a388503d92630c91901"
     },
     "scripts/qualification/fixtures/archived-spin/first-recognition-capture.json": {
-      "bytes": 906,
-      "sha256": "a36e3315809599399ab6bdc90b418601a03ea13d2577bae93038f426b9b2a99e"
+      "bytes": 898,
+      "sha256": "96d7b1cd34a7cb8cc5832f2bc9e0d0c70fa584175b6f75f9602c86ccd969ed8b"
     },
     "scripts/qualification/fixtures/archived-spin/first-fee-owner-current-capture.json": {
       "bytes": 37459,

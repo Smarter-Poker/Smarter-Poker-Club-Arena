@@ -80,3 +80,15 @@ private-client and roster cases pass, including unrelated wallet/public/event
 boundaries. Listener/topic tests cover initial credential failure, source refusal,
 recovery and cleanup. Both TypeScript checks and ordinary submission hooks remain
 required for the final candidate. This adds no timer, database change or polling.
+
+## Hosted actor-fence source contract
+
+Required server shard 4 failed its existing source guard because it pinned the old
+single `const authoritativeHeaders` declaration. The compatible viewer-JWT path
+requires a branch: only the two same-origin POST private-topic ACL reads omit
+server actor markers; ordinary service and tournament-manager requests still
+stamp immutable authority inside every fetch attempt. The guard now asserts that
+ordinary else branch and the viewer origin/method/RPC refusal boundary explicitly,
+while retaining its retry placement, outgoing-header, context and sole-client
+assertions. Existing runtime actor and viewer-JWT tests remain applicable. This
+correction changes the test contract only; no runtime or database bytes change.

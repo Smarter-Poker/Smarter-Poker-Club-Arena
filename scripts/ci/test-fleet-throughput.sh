@@ -14,4 +14,4 @@ docker run --rm --network none --read-only \
   --entrypoint /bin/promtool \
   quay.io/prometheus/prometheus@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3 \
   test rules fleet-throughput.test.yml break-does-not-silence-its-own-alarms.test.yml \
-    fleet-relative-throughput.test.yml
+    fleet-relative-throughput.test.yml lightning-abandoned-and-engine-memory.test.yml

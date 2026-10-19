@@ -57,3 +57,11 @@ also retains the pre-existing `useStatsPulse` polling path, which is a known
 real-time-law violation outside this receipt-rendering correction. Remediation
 belongs in that stats pulse producer/consumer path, replacing its polling
 with an authoritative discrete stats event; it is not claimed fixed here.
+
+The changed correctness guard declares its exact definition through the existing
+same-transaction guard registry; native qualification loads the actual registry
+owner and watchlist and proves both retained definitions and the new baseline.
+The page-evidence source contract still compares all predecessor verification
+and certificate bytes after undoing only the exact independently qualified
+agent-zero, direct-owner and historical-payer expressions. Planted changes to
+the payer threshold, owner identity, rate cap and coordinator remain refused.

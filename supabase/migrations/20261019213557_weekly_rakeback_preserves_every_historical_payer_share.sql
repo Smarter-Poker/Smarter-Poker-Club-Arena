@@ -1,4 +1,4 @@
--- @live-proof: (md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='fa489e420cf45112efe0b1e709fb4827' AND md5(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure))='715379f789f90ee224118581eac81353' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='0257fa521e81c9d889449b428fd1e72c' AND md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_window(uuid,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='972a500c104aa969b2358887dc1a9407' AND md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_plan(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='3a6e5c361831c329349e4cac35ef8c14' AND md5(pg_get_functiondef('public.fn_ca_rakeback_payout_leg_is_documented()'::regprocedure))='acd6934686f69e1647302357cfd99a3f' AND md5(pg_get_functiondef('public.fn_rakeback_split_check(uuid,date,date,uuid[])'::regprocedure))='681c6a50ca00031cc5826c8be9f8da7d' AND md5(pg_get_functiondef('public.fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure))='56dabde9e00f5283a882c5c74fb3e6c4' AND md5(pg_get_functiondef('public.ca_player_stats_financial_report(uuid,uuid,integer,text,text)'::regprocedure))='2576399c7ff0510ed6fab2a4d70e17fc' AND md5(pg_get_functiondef('public.fn_ca_settlement_correctness_check()'::regprocedure))='6b151d00df78c2857dcc05f9abd1ff8d' AND md5(pg_get_functiondef('smarter_private.rakeback_payer_plan(jsonb,numeric)'::regprocedure))='02296e698ad2377afa9dc4ee18315d68' AND md5(pg_get_functiondef('smarter_private.record_rakeback_payer_contracts()'::regprocedure))='82ca3dd2e58a1601f38749ac67105197' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261' AND md5(pg_get_functiondef('smarter_private.split_rakeback_payout_complete(uuid,bigint)'::regprocedure))='a0e0b8e893456565add9fa7494397711' AND EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='accounting_rakeback_payer_contracts_at_calculation' AND tgrelid='public.accounting_rakeback_period_calculations'::regclass AND tgenabled='O') AND NOT has_table_privilege('service_role','public.accounting_rakeback_payer_contracts','INSERT') AND has_function_privilege('authenticated','public.ca_player_stats_financial_report(uuid,uuid,integer,text,text)','EXECUTE'))
+-- @live-proof: (md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='fa489e420cf45112efe0b1e709fb4827' AND md5(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure))='715379f789f90ee224118581eac81353' AND md5(pg_get_functiondef('smarter_private.deleted_wallet_published_rakeback_reserve(uuid,uuid)'::regprocedure))='0257fa521e81c9d889449b428fd1e72c' AND md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_window(uuid,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='972a500c104aa969b2358887dc1a9407' AND md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_plan(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='3a6e5c361831c329349e4cac35ef8c14' AND md5(pg_get_functiondef('public.fn_ca_rakeback_payout_leg_is_documented()'::regprocedure))='acd6934686f69e1647302357cfd99a3f' AND md5(pg_get_functiondef('public.fn_rakeback_split_check(uuid,date,date,uuid[])'::regprocedure))='681c6a50ca00031cc5826c8be9f8da7d' AND md5(pg_get_functiondef('public.fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure))='56dabde9e00f5283a882c5c74fb3e6c4' AND md5(pg_get_functiondef('public.ca_player_stats_financial_report(uuid,uuid,integer,text,text)'::regprocedure))='2576399c7ff0510ed6fab2a4d70e17fc' AND md5(pg_get_functiondef('public.fn_ca_settlement_correctness_check()'::regprocedure))='6b151d00df78c2857dcc05f9abd1ff8d' AND md5(pg_get_functiondef('smarter_private.rakeback_payer_plan(jsonb,numeric)'::regprocedure))='02296e698ad2377afa9dc4ee18315d68' AND md5(pg_get_functiondef('smarter_private.record_rakeback_payer_contracts()'::regprocedure))='82ca3dd2e58a1601f38749ac67105197' AND md5(pg_get_functiondef('smarter_private.rakeback_certificate_payers(bigint)'::regprocedure))='89b7297462b6cd4ba6bf145c7d5fa261' AND md5(pg_get_functiondef('smarter_private.split_rakeback_payout_complete(uuid,bigint)'::regprocedure))='a0e0b8e893456565add9fa7494397711' AND EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='accounting_rakeback_payer_contracts_at_calculation' AND tgrelid='public.accounting_rakeback_period_calculations'::regclass AND tgenabled='O') AND NOT has_table_privilege('service_role','public.accounting_rakeback_payer_contracts','INSERT') AND has_function_privilege('authenticated','public.ca_player_stats_financial_report(uuid,uuid,integer,text,text)','EXECUTE') AND EXISTS(SELECT 1 FROM public.ca_guard_defs WHERE proname='fn_ca_settlement_correctness_check' AND def_hash='6b151d00df78c2857dcc05f9abd1ff8d' AND declared_ref='migration 20261019213557_weekly_rakeback_preserves_every_historical_payer_share'))
 -- 20261019213557_weekly_rakeback_preserves_every_historical_payer_share.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
@@ -13,6 +13,7 @@
 BEGIN;
 
 SET LOCAL lock_timeout='3s';
+SET LOCAL statement_timeout='30s';
 
 -- A player keeps one weekly period and the SAME cent-rounded entitlement.
 -- Historical payers fund their own source products inside that period's
@@ -184,6 +185,7 @@ EXCEPTION WHEN check_violation OR data_exception OR no_data_found THEN
  RETURN false;
 END $complete$;
 REVOKE ALL ON FUNCTION smarter_private.split_rakeback_payout_complete(uuid,bigint) FROM PUBLIC,anon,authenticated,service_role;
+
 
 
 
@@ -1856,4 +1858,15 @@ END $function$;
 
 
 REVOKE ALL ON FUNCTION fn_ca_settlement_correctness_check() FROM PUBLIC,anon,authenticated;
+DO $declaration$ DECLARE declared text;BEGIN
+ IF md5(pg_get_functiondef('public.fn_ca_declare_guard_redefinition(text,text)'::regprocedure))<>'3a3746dc6e0a5b7a1db97805588c0eb8'
+ THEN RAISE EXCEPTION 'historical_rakeback_guard_declaration_owner_changed';END IF;
+ declared:=public.fn_ca_declare_guard_redefinition('fn_ca_settlement_correctness_check',
+  'migration 20261019213557_weekly_rakeback_preserves_every_historical_payer_share');
+ IF declared<>'6b151d00df78c2857dcc05f9abd1ff8d' OR NOT EXISTS(SELECT 1 FROM public.ca_guard_defs
+  WHERE proname='fn_ca_settlement_correctness_check' AND def_hash=declared
+   AND declared_ref='migration 20261019213557_weekly_rakeback_preserves_every_historical_payer_share')
+ THEN RAISE EXCEPTION 'historical_rakeback_guard_declaration_not_recorded';END IF;
+END $declaration$;
+
 COMMIT;

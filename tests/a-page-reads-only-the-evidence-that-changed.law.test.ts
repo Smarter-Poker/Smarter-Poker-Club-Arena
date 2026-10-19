@@ -13,7 +13,7 @@
  *
  * What keeps that exact, pinned here against the body in force:
  *   1. the whole-period path is the predecessor's, byte for byte, and the
- *      certificate loop is untouched;
+ *      certificate loop permits only exact separately qualified rate/payer expressions;
  *   2. the page path adds the checkpoint AND the counts read since it, for all
  *      three counts, under the club-week lock, and its horizon never goes back;
  *   3. every predicate fn_cash_period_evidence_since applies is the
@@ -70,6 +70,38 @@ function predecessorBody(): string {
   return body.replace(AGREEMENT_BEFORE, AGREEMENT_AFTER);
 }
 
+// Qualified changes to the certificate loop, separate from its evidence reads:
+// 20261015163632 gives an agent's explicit zero its actual meaning;
+// 20261019154457 preserves the existing club-funded direct-owner 70% deal;
+// 20261019213557 retains each historical payer on one unchanged entitlement.
+// Undo ONLY these exact expressions for the predecessor comparison below.
+const QUALIFIED_CERTIFICATE_EXPRESSIONS: ReadonlyArray<readonly [string, string]> = [
+  [
+    "SELECT r.*,NULLIF(r.member->>'agent_id','')::uuid AS member_agent,",
+    "SELECT r.*,CASE WHEN ((r.member->>'player_rakeback_pct')::numeric=0.70 OR r.direct IS NULL) AND EXISTS(SELECT 1 FROM public.clubs owner_club WHERE owner_club.id=p_club_id AND owner_club.owner_id=NULLIF(r.member->>'agent_id','')::uuid) THEN NULL::uuid\n     ELSE NULLIF(r.member->>'agent_id','')::uuid END AS member_agent,",
+  ],
+  [
+    'CASE WHEN p.deal>0 THEN p.deal WHEN p.offer>0 THEN p.offer',
+    'CASE WHEN p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer',
+  ],
+  [
+    'CASE WHEN r.cap_rate>0 THEN least(r.base_rate,greatest(r.cap_rate-0.10,0)) ELSE r.base_rate END AS applied_rate',
+    'CASE WHEN r.member_agent IS NULL AND r.deal=0.70 THEN r.deal WHEN r.cap_rate>0 THEN least(r.base_rate,greatest(r.cap_rate-0.10,0)) ELSE r.base_rate END AS applied_rate',
+  ],
+  [
+    "IF player.payer_count<>1 THEN RAISE EXCEPTION 'multiple_historical_payers_require_split_period' USING ERRCODE='55000'; END IF;",
+    "IF player.payer_count<1 THEN RAISE EXCEPTION 'historical_rakeback_payer_required' USING ERRCODE='55000'; END IF;",
+  ],
+  [
+    'total_unrounded:=player.total_unrounded;allocations:=player.allocations;payer_user:=player.payer_user;coordinator_union:=player.coordinator_union;',
+    'total_unrounded:=player.total_unrounded;allocations:=player.allocations;payer_user:=CASE WHEN player.payer_count>1 THEN NULL ELSE player.payer_user END;coordinator_union:=player.coordinator_union;',
+  ],
+  [
+    "payer_kind:=CASE WHEN payer_user IS NULL THEN 'club' ELSE 'agent' END;",
+    "payer_kind:=CASE WHEN player.payer_count>1 THEN 'split' WHEN payer_user IS NULL THEN 'club' ELSE 'agent' END;",
+  ],
+];
+
 /** The whole-period segment of a calculator body. */
 function wholePeriodSegment(body: string): string {
   const a = body.indexOf(SEGMENT_START);
@@ -111,6 +143,14 @@ export function wholePeriodViolations(body: string, before: string): string[] {
     if (body.split(waiver).length !== 3 || body.split(waivedReuse).length !== 2)
       out.push('the launch waiver is not the exact two exclusions and unpaid-period reuse');
     body = body.replaceAll(waiver, '').replace(waivedReuse, '  IF FOUND THEN');
+  }
+  const historicalPayers = body.includes("'historical_rakeback_payer_required'");
+  for (const [original, qualified] of QUALIFIED_CERTIFICATE_EXPRESSIONS) {
+    if (body.includes(qualified) || historicalPayers) {
+      if (body.split(qualified).length !== 2 || body.includes(original))
+        out.push('the qualified certificate expression is missing, duplicated or mixed');
+      body = body.replace(qualified, original);
+    }
   }
   const segment = wholePeriodSegment(before);
   if (!segment) return ['the predecessor has no whole-period segment to compare'];
@@ -276,7 +316,7 @@ describe('a page recompute reads only the evidence that changed', () => {
     expect(latestDeclaring(HELPER).name <= name).toBe(true);
     expect(latestDeclaring(HELPER).name >= '20260927160709').toBe(true);
   });
-  it('keeps the whole-period verification and the certificate loop byte for byte', () => {
+  it('keeps every whole-period and certificate byte except exact qualified rate and payer expressions', () => {
     expect(wholePeriodViolations(body, before)).toEqual([]);
   });
   it('adds the checkpoint and what changed since it, under the lock, before the gate', () => {
@@ -389,6 +429,22 @@ describe('a page recompute reads only the evidence that changed', () => {
       ["SET status='pending',paid_at=NULL", "SET status='paid',paid_at=NULL"],
     ])
       expect(wholePeriodViolations(plant(body, from, to), before).length).toBeGreaterThan(0);
+  });
+  it('does not excuse a different payer threshold, owner rule, rate cap or coordinator', () => {
+    for (const [from, to] of [
+      [
+        "payer_kind:=CASE WHEN player.payer_count>1 THEN 'split'",
+        "payer_kind:=CASE WHEN player.payer_count>2 THEN 'split'",
+      ],
+      [
+        "owner_club.owner_id=NULLIF(r.member->>'agent_id','')::uuid",
+        "owner_club.owner_id<>NULLIF(r.member->>'agent_id','')::uuid",
+      ],
+      ['greatest(r.cap_rate-0.10,0)', 'greatest(r.cap_rate-0.20,0)'],
+      ['IF player.coordinator_count<>1 THEN', 'IF player.coordinator_count<1 THEN'],
+    ]) {
+      expect(wholePeriodViolations(plant(body, from, to), before).length).toBeGreaterThan(0);
+    }
   });
   it('refuses a changed whole-period path', () => {
     expect(

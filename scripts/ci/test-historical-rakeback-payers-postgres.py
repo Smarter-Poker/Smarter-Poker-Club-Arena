@@ -44,6 +44,10 @@ try:
   if 'service_role=X/'in(r['acl']or''):sql('GRANT EXECUTE ON FUNCTION '+r['signature']+' TO service_role')
   if 'authenticated=X/'in(r['acl']or''):sql('GRANT EXECUTE ON FUNCTION '+r['signature']+' TO authenticated')
  original_acl={r['signature']:sql("SELECT proacl::text FROM pg_proc WHERE oid='"+r['signature']+"'::regprocedure")for r in pre}
+ sql("CREATE TABLE ca_guard_def_history(id bigserial PRIMARY KEY,proname text NOT NULL,def_hash text NOT NULL,def_text text NOT NULL,captured_at timestamptz NOT NULL DEFAULT now(),UNIQUE(proname,def_hash));CREATE TABLE ca_guard_defs(proname text PRIMARY KEY,def_hash text NOT NULL,updated_at timestamptz NOT NULL DEFAULT now(),declared_ref text,declared_at timestamptz);")
+ for r in json.loads((root/'scripts/ci/fixtures/historical-rakeback-guard-declaration-preimages.json').read_text()):
+  sql(r['definition']);assert sql("SELECT md5(pg_get_functiondef('"+r['signature']+"'::regprocedure))")==r['md5']
+ sql("SELECT fn_ca_declare_guard_redefinition('fn_ca_settlement_correctness_check','qualified original fixture')")
  for r in json.loads((root/'scripts/ci/fixtures/unpaid-atomic-cash-contract-dependencies.json').read_text())['definitions']:
   if r['signature']=='fn_accounting_agreement_history_immutable()':sql(r['definition'])
  sql("CREATE CONSTRAINT TRIGGER zz_ca_rakeback_payout_leg_is_documented AFTER INSERT ON public.chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN(NEW.status='posted' AND NEW.category='rakeback' AND NEW.to_type='player_wallet') EXECUTE FUNCTION fn_ca_rakeback_payout_leg_is_documented();")
@@ -64,6 +68,8 @@ try:
  assert before['reason']=='multiple_historical_payers_require_split_period'
  candidate=next((root/'supabase/migrations').glob('20261019213557_*')).read_text();sql(candidate)
  assert sql('SELECT '+candidate.splitlines()[0].split(': ',1)[1])=='t'
+ assert sql("SELECT def_hash=md5(pg_get_functiondef('public.fn_ca_settlement_correctness_check()'::regprocedure)) AND declared_ref='migration 20261019213557_weekly_rakeback_preserves_every_historical_payer_share' FROM ca_guard_defs WHERE proname='fn_ca_settlement_correctness_check'")=='t'
+ assert sql("SELECT count(*)FROM ca_guard_def_history WHERE proname='fn_ca_settlement_correctness_check'")=='2'
  for sig,acl in original_acl.items():assert sql("SELECT proacl::text FROM pg_proc WHERE oid='"+sig+"'::regprocedure")==acl
  check=json.loads(sql("SELECT fn_rakeback_split_check(u(11),'2026-09-07','2026-09-13',NULL)"));assert check['players']==5
  sql("SELECT fn_rakeback_split_write(u(11),'2026-09-07','2026-09-13',NULL)")
@@ -171,7 +177,7 @@ try:
  for sig in ['smarter_private.rakeback_payer_plan(jsonb,numeric)','smarter_private.record_rakeback_payer_contracts()','smarter_private.rakeback_certificate_payers(bigint)','smarter_private.split_rakeback_payout_complete(uuid,bigint)']:
   postimages[sig]=sql("SELECT md5(pg_get_functiondef('"+sig+"'::regprocedure))")
  sql(candidate,'already exists')
- print(json.dumps({'qualification':'passed','players':5,'total':'0.16','original_mixed_refusal':True,'single_payer_retained':True,'zero_contributor_included':True,'direct_owner_seventy_percent':True,'recognized_cash_and_tournament_sources':True,'real_r3':True,'real_invoice_delivery':10,'deferred_leg_guard':True,'rollback':True,'cached_and_direct_sources':True,'concurrent_original_payments':True,'old_partial_document_refusal':True,'partial_payment_restart_once':True,'original_acl_retained':True,'private_contracts_and_transfers_immutable':True,'actual_C3_evidence_cohort':True,'full_player_report_and_owner_scope':True,'postimages':postimages}))
+ print(json.dumps({'qualification':'passed','players':5,'total':'0.16','original_mixed_refusal':True,'single_payer_retained':True,'zero_contributor_included':True,'direct_owner_seventy_percent':True,'recognized_cash_and_tournament_sources':True,'real_r3':True,'real_invoice_delivery':10,'deferred_leg_guard':True,'rollback':True,'cached_and_direct_sources':True,'concurrent_original_payments':True,'old_partial_document_refusal':True,'partial_payment_restart_once':True,'original_acl_retained':True,'private_contracts_and_transfers_immutable':True,'actual_C3_evidence_cohort':True,'actual_guard_declaration_and_history':True,'full_player_report_and_owner_scope':True,'postimages':postimages}))
 finally:
  if started:run([a.pg_bin/'pg_ctl','-D',base/'d','-m','immediate','-w','stop'])
  shutil.rmtree(base)

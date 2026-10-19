@@ -153,6 +153,12 @@ const SORT_LABEL: Record<RosterSort, string> = {
 };
 
 type OptionalColumn = RosterColumn;
+// Live record signals (horse play, chip and activity updates) arrive continuously
+// in an active club. A background reconciliation re-reads the whole loaded
+// window, so it waits until this long after the most recent roster read began.
+// Explicit refresh, reconnect and query changes still read immediately.
+export const liveRosterRefreshPolicy = { minIntervalMs: 30_000 };
+const LIVE_REFRESH_DEBOUNCE_MS = 1200;
 type SummaryFreshness = 'loading' | 'fresh' | 'stale' | 'failed';
 type RosterLoadOptions = { forceSummary?: boolean; preserveWindow?: boolean };
 type ExportOperation = {
@@ -338,6 +344,7 @@ export default function ClubMembersPage() {
   const summaryAbortRef = useRef<AbortController | null>(null);
   const summaryCoordinatorRef = useRef(new RosterSummaryCoordinator<RosterSummary | null>());
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRosterReadStartedAtRef = useRef(0);
   const realtimeConnectionRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
   const latestLoadRef = useRef<(options?: RosterLoadOptions) => Promise<void>>(
     async () => undefined
@@ -558,6 +565,7 @@ export default function ClubMembersPage() {
       const scope = exportScopeRef.current;
       forceNextSummaryRef.current = false;
       const epoch = ++requestEpochRef.current;
+      lastRosterReadStartedAtRef.current = Date.now();
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -860,6 +868,11 @@ export default function ClubMembersPage() {
 
   const scheduleStructuralRefresh = useCallback(() => {
     if (!resolvedClubId || refreshTimerRef.current) return;
+    const sinceLastRead = Date.now() - lastRosterReadStartedAtRef.current;
+    const delay = Math.max(
+      LIVE_REFRESH_DEBOUNCE_MS,
+      liveRosterRefreshPolicy.minIntervalMs - sinceLastRead
+    );
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
       // The pending query owns its next read. Starting the old search here
@@ -870,7 +883,7 @@ export default function ClubMembersPage() {
         return;
       }
       void latestLoadRef.current({ forceSummary: true, preserveWindow: true });
-    }, 1200);
+    }, delay);
   }, [resolvedClubId]);
 
   useMasterBusBroadcastChannel({

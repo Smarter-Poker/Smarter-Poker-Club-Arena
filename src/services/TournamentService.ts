@@ -2530,25 +2530,6 @@ class TournamentService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Balance tables in a multi-table tournament
-   */
-  async balanceTables(tournamentId: string): Promise<{ movesMade: number }> {
-    const { data, error } = await retryAsync(async () => {
-      const result = await supabase.rpc('balance_tournament_tables', {
-        p_tournament_id: tournamentId,
-      });
-      return result;
-    }, 2);
-
-    if (error) {
-      reportError(error, 'TournamentService.Table_balancing_error');
-      return { movesMade: 0 };
-    }
-
-    return { movesMade: data || 0 };
-  }
-
-  /**
    * Check if tables need balancing
    */
   async checkBalanceNeeded(tournamentId: string): Promise<boolean> {
@@ -2573,48 +2554,6 @@ class TournamentService {
 
     // Balance needed if difference is more than 1
     return max - min > 1;
-  }
-
-  /**
-   * Merge tables when player count drops
-   */
-  async checkTableMerge(tournamentId: string): Promise<{ tableMerged: boolean }> {
-    const { data: tables, error: mergeReadErr } = await supabase
-      .from('tables')
-      .select('id, current_players')
-      .eq('tournament_id', tournamentId)
-      .neq('status', 'closed')
-      .order('current_players', { ascending: true });
-
-    // ROUND 8 (2026-08-29): same shape as checkBalanceNeeded above.
-    if (mergeReadErr) {
-      reportError(mergeReadErr, 'TournamentService.merge_check_read_failed', { tournamentId });
-    }
-    if (!tables || tables.length < 2) return { tableMerged: false };
-
-    // Get total remaining players
-    const totalPlayers = tables.reduce((sum, t) => sum + t.current_players, 0);
-    const playersPerTable = 9;
-    const neededTables = Math.ceil(totalPlayers / playersPerTable);
-
-    if (tables.length > neededTables) {
-      // Break the smallest table — close it
-      const tableToBreak = tables[0];
-
-      // Balance will move players to other tables
-      await this.balanceTables(tournamentId);
-
-      // Close the broken table
-      const { error: closeErr } = await supabase
-        .from('tables')
-        .update({ status: 'closed' })
-        .eq('id', tableToBreak.id);
-      if (closeErr) reportError(closeErr, 'TournamentService.Failed_to_close_broken_table');
-
-      return { tableMerged: true };
-    }
-
-    return { tableMerged: false };
   }
 
   /**

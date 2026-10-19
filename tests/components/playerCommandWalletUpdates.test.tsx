@@ -58,7 +58,7 @@ vi.mock('../../src/services/ClubRosterService', () => ({
 }));
 vi.mock('../../src/lib/export', () => ({ exportToCSV: f.csv }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: f.report }));
-import ClubMembersPage from '../../src/pages/ClubMembersPage';
+import ClubMembersPage, { liveRosterRefreshPolicy } from '../../src/pages/ClubMembersPage';
 import { MemberAccessDeniedError } from '../../src/services/ClubRosterService';
 
 function Harness() {
@@ -123,6 +123,9 @@ async function ready() {
 }
 beforeEach(() => {
   vi.useFakeTimers();
+  // Wallet ordering cases use the bare 1200ms structural debounce; the live
+  // refresh interval is pinned in clubRosterReadOwnership.
+  liveRosterRefreshPolicy.minIntervalMs = 0;
   sessionStorage.clear();
   // Wallets are an opt-in column since fees lead Player Management
   // (2026-10-14); these cases are about wallet delivery, so opt in.
@@ -165,6 +168,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  liveRosterRefreshPolicy.minIntervalMs = 30_000;
 });
 
 it('updates an authorized player wallet absolutely without starting another directory read', async () => {

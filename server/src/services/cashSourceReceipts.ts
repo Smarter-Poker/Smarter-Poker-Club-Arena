@@ -24,10 +24,35 @@ export interface CashSourceReceipt {
   credits: CashSourceCredit[];
 }
 
+/**
+ * One cash source call's answer: the durable receipts it wrote, and the sources it
+ * DEFERRED (2026-10-19, migration 20261019094914).
+ *
+ * fn_credit_agent_commissions_batch and fn_retry_cash_accounting_sources take every
+ * club commission key their items need, in club order, before the first item. A key
+ * a tournament finish still holds after a bounded wait ends that walk, and an item
+ * whose keys are not all held is not run - it writes nothing (no receipt, no retry
+ * work) and is named in `deferred`. That is not a refusal and not an acknowledgement:
+ * a deferred source must be submitted again before the cursor may pass it. A
+ * response without `deferred` (the body before that migration) defers nothing.
+ */
+export interface CashSourceBatchOutcome {
+  receipts: CashSourceReceipt[];
+  deferred: string[];
+}
+
 /** A refused source is handled only after its durable refusal is read back.
- * It remains a failure count, never a successful commission or weekly close. */
-export function readCashSourceBatch(data: unknown, sourceIds?: string[]): CashSourceReceipt[] {
+ * It remains a failure count, never a successful commission or weekly close.
+ * Deferred sources are not acknowledged: a caller that cannot resubmit them must
+ * use readCashSourceBatch, which refuses any deferral. */
+export function readCashSourceBatchOutcome(
+  data: unknown,
+  sourceIds?: string[]
+): CashSourceBatchOutcome {
   const r = Array.isArray(data) && data.length === 1 ? data[0] : data;
+  const deferredRaw = object(r) ? (r.deferred ?? []) : null;
+  const deferred =
+    Array.isArray(deferredRaw) && deferredRaw.every(identity) ? (deferredRaw as string[]) : null;
   if (
     !object(r) ||
     r.receipt_version !== 3 ||
@@ -40,8 +65,12 @@ export function readCashSourceBatch(data: unknown, sourceIds?: string[]): CashSo
     !Array.isArray(r.receipts) ||
     r.ok + r.blocked !== r.receipts.length ||
     r.receipts.length > 2000 ||
+    deferred === null ||
+    new Set(deferred).size !== deferred.length ||
     (sourceIds &&
-      (new Set(sourceIds).size !== sourceIds.length || sourceIds.length !== r.receipts.length))
+      (new Set(sourceIds).size !== sourceIds.length ||
+        sourceIds.length !== r.receipts.length + deferred.length ||
+        deferred.some((id) => !sourceIds.includes(id))))
   ) {
     throw new Error('Missing or incomplete durable cash source batch receipt');
   }
@@ -55,6 +84,7 @@ export function readCashSourceBatch(data: unknown, sourceIds?: string[]): CashSo
       !identity(value.receipt_id) ||
       !identity(value.rake_record_id) ||
       seen.has(value.rake_record_id) ||
+      deferred.includes(value.rake_record_id) ||
       (sourceIds && !sourceIds.includes(value.rake_record_id)) ||
       !integer(value.attempt) ||
       value.attempt < 1 ||
@@ -98,6 +128,15 @@ export function readCashSourceBatch(data: unknown, sourceIds?: string[]): CashSo
     return value as unknown as CashSourceReceipt;
   });
   if (accrued !== r.ok) throw new Error('Cash source status and counts disagree');
+  return { receipts, deferred };
+}
+
+/** The receipts of a call whose caller does not resubmit: any deferral is refused,
+ * so a deferred source can never be read as handled. */
+export function readCashSourceBatch(data: unknown, sourceIds?: string[]): CashSourceReceipt[] {
+  const { receipts, deferred } = readCashSourceBatchOutcome(data, sourceIds);
+  if (deferred.length > 0)
+    throw new Error(`${deferred.length} cash source(s) deferred and not resubmitted`);
   return receipts;
 }
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { readCashSourceBatch, verifyCashSourceRefusal } from './cashSourceReceipts.js';
+import {
+  readCashSourceBatch,
+  readCashSourceBatchOutcome,
+  verifyCashSourceRefusal,
+} from './cashSourceReceipts.js';
 const uid = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const accrued = () => ({
   receipt_version: 3,
@@ -92,6 +96,47 @@ describe('durable cash source receipt contract', () => {
   });
   it('rejects unrecorded errors despite an otherwise complete response', () => {
     expect(() => readCashSourceBatch({ ...batch(blocked()), failed: 2 })).toThrow();
+  });
+  describe('a source deferred for a busy commission key (2026-10-19)', () => {
+    const deferredBatch = (deferred: unknown) => ({ ...batch(accrued()), deferred });
+    it('names the deferred source apart from the receipts, covering every submitted source', () => {
+      const out = readCashSourceBatchOutcome(deferredBatch([uid(9)]), [uid(2), uid(9)]);
+      expect(out.receipts.map((r) => r.rake_record_id)).toEqual([uid(2)]);
+      expect(out.deferred).toEqual([uid(9)]);
+    });
+    it('reads a response from before the change as deferring nothing', () => {
+      expect(readCashSourceBatchOutcome(batch(accrued()), [uid(2)]).deferred).toEqual([]);
+    });
+    it('accepts a call that deferred every source and wrote nothing', () => {
+      const out = readCashSourceBatchOutcome(
+        {
+          receipt_version: 3,
+          ok: 0,
+          failed: 0,
+          blocked: 0,
+          receipts: [],
+          deferred: [uid(7), uid(8)],
+        },
+        [uid(7), uid(8)]
+      );
+      expect(out).toEqual({ receipts: [], deferred: [uid(7), uid(8)] });
+    });
+    it.each([
+      ['a source that was never submitted', [uid(5)], [uid(2), uid(9)]],
+      ['a source deferred twice', [uid(9), uid(9)], [uid(2), uid(9), uid(9)]],
+      ['a source both deferred and receipted', [uid(2)], [uid(2)]],
+      ['a submitted source neither receipted nor deferred', [], [uid(2), uid(9)]],
+      ['a malformed identity', ['not-a-uuid'], [uid(2), 'not-a-uuid']],
+      ['a deferral that is not a list', uid(9), [uid(2), uid(9)]],
+    ])('rejects %s', (_label, deferred, ids) => {
+      expect(() => readCashSourceBatchOutcome(deferredBatch(deferred), ids as string[])).toThrow();
+    });
+    it('is never acknowledged by a reader that does not resubmit', () => {
+      expect(() => readCashSourceBatch(deferredBatch([uid(9)]), [uid(2), uid(9)])).toThrow(
+        /deferred and not resubmitted/
+      );
+      expect(() => readCashSourceBatch(deferredBatch([uid(9)]))).toThrow();
+    });
   });
   it('matches immutable refusal and live retry work', () => {
     const r = readCashSourceBatch(batch(blocked()))[0];

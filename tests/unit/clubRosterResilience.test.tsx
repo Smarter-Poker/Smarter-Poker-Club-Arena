@@ -273,7 +273,9 @@ describe('Player Command resilience wiring', () => {
 
   it('keeps retry ownership on the visible refresh control', () => {
     expect(PAGE).not.toContain('recoveryRequestKeyRef');
-    expect(PAGE).toContain('await latestLoadRef.current({ forceSummary: true })');
+    expect(PAGE).toContain(
+      'await latestLoadRef.current({ forceSummary: true, preserveWindow: true })'
+    );
     expect(PAGE).not.toContain('resetRecovery');
   });
 
@@ -327,13 +329,17 @@ describe('Player Command resilience wiring', () => {
   });
 
   it('waits for realtime recovery before reloading the authoritative roster', () => {
-    const channelError = PAGE.slice(
-      PAGE.indexOf('onSubscriptionError: () => {'),
-      PAGE.indexOf('    },', PAGE.indexOf('onSubscriptionError: () => {'))
+    const membershipChannel = PAGE.slice(PAGE.indexOf('`club-members-sync-${resolvedClubId}`'));
+    const channelError = membershipChannel.slice(
+      membershipChannel.indexOf('onSubscriptionError: () => {'),
+      membershipChannel.indexOf('    },', membershipChannel.indexOf('onSubscriptionError: () => {'))
     );
-    const channelRecovered = PAGE.slice(
-      PAGE.indexOf("if (status !== 'SUBSCRIBED') return;"),
-      PAGE.indexOf('    },', PAGE.indexOf("if (status !== 'SUBSCRIBED') return;"))
+    const channelRecovered = membershipChannel.slice(
+      membershipChannel.indexOf("if (status !== 'SUBSCRIBED') return;"),
+      membershipChannel.indexOf(
+        '    },',
+        membershipChannel.indexOf("if (status !== 'SUBSCRIBED') return;")
+      )
     );
     expect(channelError).not.toContain('scheduleConnectionRecovery');
     expect(channelError).not.toContain('latestLoadRef');

@@ -40,4 +40,32 @@ describe('Quick Join is twice its old size', () => {
     expect(rule('.multi-table-page__quickjoin-name', phone)).toContain('flex-wrap: wrap');
     expect(rule('.multi-table-page__quickjoin-label', phone)).toContain('flex: 1 1 100%');
   });
+
+  // 2026-10-19: rendered at 1280px with the longest live Midway Union names,
+  // every desktop row cut to "Short Deck ..." or "PLO 0.25/0....", and at 393px
+  // a 32-character name still lost its last word.
+  it('at every width the table name takes the full row and wraps instead of being cut off', () => {
+    expect(rule('.multi-table-page__quickjoin-row')).toContain('flex-wrap: wrap');
+    const name = rule('.multi-table-page__quickjoin-name');
+    expect(name).toContain('flex: 1 1 100%');
+    expect(name).toContain('flex-wrap: wrap');
+    expect(name).not.toContain('overflow: hidden');
+    const label = rule('.multi-table-page__quickjoin-label');
+    expect(label).toContain('flex: 1 1 100%');
+    expect(label).toContain('white-space: normal');
+    expect(label).not.toContain('text-overflow: ellipsis');
+    expect(label).not.toContain('nowrap');
+  });
+
+  it('the sheet stays inside the screen and scrolls, so the last row and Browse Full Lobby are reachable', () => {
+    const sheet = rule('.multi-table-page__quickjoin');
+    expect(sheet).toMatch(/max-height: calc\(100dvh - 56px/);
+    expect(sheet).toContain('overflow-y: auto');
+  });
+
+  it('a row rule sits halfway between two rows, not under the console spacing', () => {
+    expect(rule('.multi-table-page__quickjoin-row + .multi-table-page__quickjoin-row')).toContain(
+      'margin-top: -3cqw'
+    );
+  });
 });

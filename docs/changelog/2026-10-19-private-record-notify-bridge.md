@@ -98,3 +98,9 @@ correction changes the test contract only; no runtime or database bytes change.
 Required client shard 4 observed the page DOM before React had flushed its passive mount effect: the cold-load assertion read zero mounts while 9,870 other cases passed. Await the existing exact one-mount condition through Testing Library's bounded waitFor after finding the page. The skeleton, exact mount count, re-verification continuity and revocation assertions remain intact. This corrects test synchronization only; application/runtime and database bytes are unchanged.
 
 Include the identical already-qualified accounting timing diagnostic correction from the companion endpoint-reader PR in this shared CI candidate. Both deliveries depend on that helper, whose prior hosted refusals hid their transport cause. Exact original identity/deadline checks and single-read/no-retry behavior remain intact; only fixed field names or allowlisted HTTP/transport classifications can be reported. This avoids leaving this candidate on the already-demonstrated opaque failure path. No runtime or SQL change.
+
+## Exact caller regression inventory
+
+The hosted timing request passed, then the original funded caller refused its exact test inventory because the two new diagnostic tests had not been registered there. Register both literal test names in IDENTITY_TESTS. Preserve exact set/count matching and every financial admission guard; do not infer the inventory dynamically or omit a test. The direct maintained caller reproduces the refusal before this correction; selected funded cases did not execute on that refused invocation.
+
+After registration, direct identity_regressions execution in each candidate ran exactly 35 expected tests with zero failures, errors or skips. This qualifies the maintained caller inventory boundary; it does not claim selected funded cases or production qualification.

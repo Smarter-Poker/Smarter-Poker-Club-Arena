@@ -20,26 +20,36 @@ const club = '33333333-3333-4333-8333-333333333333';
 const player = '44444444-4444-4444-8444-444444444444';
 const migration = 'supabase/migrations/20261019154457_owner_direct_player_deals_can_receive_seventy_percent.sql';
 const baseline = JSON.parse(readFileSync(path.join(root, 'scripts/dev/owner-direct-seventy/preimage.json'), 'utf8'));
+const producerBaseline = JSON.parse(readFileSync(path.join(root, 'scripts/dev/owner-direct-seventy/producer-preimage.json'), 'utf8'));
 let running = false;
 try {
   run('initdb', ['-D', path.join(dir, 'data'), '-U', 'postgres', '-A', 'trust', '--no-locale', '--encoding=UTF8']);
   run('pg_ctl', ['-D', path.join(dir, 'data'), '-l', path.join(dir, 'postgres.log'), '-o', `-k ${socket} -p 55469 -c listen_addresses='' -c shared_buffers=16MB -c max_connections=10`, '-w', 'start']);
   running = true;
-  sql(`CREATE TABLE clubs(id uuid PRIMARY KEY,owner_id uuid);
+  sql(`CREATE TABLE clubs(id uuid PRIMARY KEY,owner_id uuid,is_union boolean DEFAULT false,union_id uuid);
 CREATE TABLE club_members(club_id uuid,user_id uuid,agent_id uuid,player_rakeback_pct numeric);
 CREATE TABLE agents(id uuid,user_id uuid,club_id uuid,status text,player_rakeback_rate numeric,commission_rate numeric);
-CREATE TABLE accounting_agreement_history(id bigint PRIMARY KEY,entity_type text,entity_key text,observed_at timestamptz,after_terms jsonb);
+CREATE TABLE accounting_agreement_history(id bigint PRIMARY KEY,entity_type text,entity_key text,observed_at timestamptz,after_terms jsonb,club_id uuid,subject_user_id uuid);
 CREATE TABLE accounting_payable_earning_sources(source_type text,source_id uuid,rake_record_id uuid,player_id uuid,club_id uuid,union_id uuid,coordinator_union_id uuid,earned_at timestamptz,rake_credit numeric,contract jsonb);
 CREATE TABLE accounting_tournament_fee_sources(id uuid,tournament_id uuid,charged_at timestamptz,contract jsonb);
 CREATE TABLE accounting_rakeback_period_evidence_checkpoints(id bigint);
 CREATE FUNCTION fn_accounting_tournament_source_terms_at(uuid,timestamptz,jsonb) RETURNS timestamptz LANGUAGE sql AS 'SELECT $2';
 CREATE TABLE rakeback_periods(id uuid DEFAULT gen_random_uuid() PRIMARY KEY,user_id uuid,club_id uuid,period_start date,period_end date,status text,paid_at timestamptz,deferred_reason text,deferred_at timestamptz,rake_generated numeric,total_rake_paid numeric,rakeback_rate numeric,rakeback_earned numeric,rakeback_amount numeric);
 CREATE TABLE accounting_rakeback_period_calculations(id bigint GENERATED ALWAYS AS IDENTITY,accounting_version int DEFAULT 2,period_id uuid,source_fingerprint text,club_id uuid,player_id uuid,coordinator_union_id uuid,period_start date,period_end date,rake_generated numeric,rakeback_amount numeric,display_rate numeric,payer_kind text,payer_user_id uuid,source_allocations jsonb);
-INSERT INTO clubs VALUES('${club}','${owner}');
+INSERT INTO clubs(id,owner_id) VALUES('${club}','${owner}');
 INSERT INTO club_members VALUES('${club}','${player}','${owner}',0.70);
 INSERT INTO agents VALUES(gen_random_uuid(),'${owner}','${club}','active',0.1,0.2);
 SET check_function_bodies=off;
-${baseline.map((row) => row.definition + ';').join('\n')}`);
+${baseline.concat(producerBaseline).map((row) => row.definition + ';').join('\n')}
+INSERT INTO accounting_agreement_history(id,entity_type,entity_key,observed_at,after_terms) VALUES(1,'club_members','${club}:${player}','2026-10-19T16:00:00Z',jsonb_build_object('club_id','${club}','user_id','${player}','agent_id','${owner}','role','player','status','active','is_active',true,'player_rakeback_pct',0.7));
+DO $before$ BEGIN
+ BEGIN PERFORM fn_accounting_earning_contract('${club}','${player}',123.45,NULL,'2026-10-19T16:00:00Z');
+ EXCEPTION WHEN SQLSTATE '55000' THEN
+  IF SQLERRM='accounting_terms_not_observed' THEN RETURN; END IF;
+  RAISE;
+ END;
+ RAISE EXCEPTION 'baseline producer unexpectedly accepted missing owner agent terms';
+END $before$;`);
   const rate = () => Number(sql(`SELECT fn_player_rakeback_rate('${player}','${club}',0)`));
   assert.equal(rate(), 0.1, 'baseline reproduces the incorrect cap');
   sql(readFileSync(path.join(root, migration), 'utf8'));
@@ -51,8 +61,11 @@ ${baseline.map((row) => row.definition + ';').join('\n')}`);
   sql(`UPDATE club_members SET agent_id='${owner}'; UPDATE agents SET user_id='${owner}'; UPDATE club_members SET player_rakeback_pct=0.3;`);
   assert.equal(rate(), 0.1, 'other negotiated rates retain their existing behavior');
   sql(`UPDATE club_members SET player_rakeback_pct=0.7;
-INSERT INTO accounting_agreement_history VALUES(1,'club_members','${club}:${player}','2026-10-19T16:00:00Z',jsonb_build_object('club_id','${club}','user_id','${player}','agent_id','${owner}','role','player','status','active','is_active',true,'player_rakeback_pct',0.7));
-INSERT INTO accounting_payable_earning_sources SELECT 'cash',gen_random_uuid(),gen_random_uuid(),'${player}','${club}',NULL,NULL,'2026-10-19T17:00:00Z',123.45,jsonb_build_object('membership',jsonb_build_object('history_id',1,'terms',after_terms),'tiers','[]'::jsonb) FROM accounting_agreement_history WHERE id=1;`);
+INSERT INTO accounting_payable_earning_sources SELECT 'cash',gen_random_uuid(),gen_random_uuid(),'${player}','${club}',NULL,NULL,'2026-10-19T17:00:00Z',123.45,fn_accounting_earning_contract('${club}','${player}',123.45,NULL,'2026-10-19T16:00:00Z');`);
+  const earning = JSON.parse(sql('SELECT contract FROM accounting_payable_earning_sources'));
+  assert.equal(earning.membership.terms.player_rakeback_pct, 0.7);
+  assert.equal(earning.club_residual, 123.45);
+  assert.deepEqual(earning.tiers, [], 'real producer records the club-funded source without a phantom agent');
   const args = `'${club}','2026-10-19','2026-10-19',NULL`;
   const check = JSON.parse(sql(`SELECT fn_rakeback_split_check(${args})`));
   assert.equal(check.players, 1);
@@ -83,7 +96,7 @@ INSERT INTO accounting_payable_earning_sources SELECT 'cash',gen_random_uuid(),g
   }
   sql(`TRUNCATE rakeback_periods,accounting_rakeback_period_calculations;
 UPDATE accounting_agreement_history SET after_terms=jsonb_set(after_terms,'{agent_id}',to_jsonb('${agent}'::text)) WHERE id=1;
-INSERT INTO accounting_agreement_history VALUES(2,'agents','agent-fixture','2026-10-19T16:00:00Z',jsonb_build_object('club_id','${club}','user_id','${agent}','status','active','commission_rate',0.2,'player_rakeback_rate',0.1));
+INSERT INTO accounting_agreement_history VALUES(2,'agents','agent-fixture','2026-10-19T16:00:00Z',jsonb_build_object('id','55555555-5555-4555-8555-555555555555','club_id','${club}','user_id','${agent}','role','agent','status','active','commission_rate',0.2,'player_rakeback_rate',0.1),'${club}','${agent}');
 UPDATE accounting_payable_earning_sources SET contract=jsonb_build_object('membership',jsonb_build_object('history_id',1,'terms',(SELECT after_terms FROM accounting_agreement_history WHERE id=1)),'tiers',jsonb_build_array(jsonb_build_object('user_id','${agent}','depth',1,'rate',0.2,'agreement',jsonb_build_object('history_id',2,'terms',(SELECT after_terms FROM accounting_agreement_history WHERE id=2)))));`);
   assert.equal(JSON.parse(sql(`SELECT fn_rakeback_split_check(${args})`)).players, 1);
   assert.equal(JSON.parse(sql(`SELECT fn_rakeback_split_write(${args})`)).written, 1);
@@ -91,9 +104,12 @@ UPDATE accounting_payable_earning_sources SET contract=jsonb_build_object('membe
   assert.equal(ordinary.rate, 0.1);
   assert.equal(ordinary.payer, 'agent');
   assert.equal(ordinary.user, agent);
+  const ordinaryEarning = JSON.parse(sql(`SELECT fn_accounting_earning_contract('${club}','${player}',123.45,NULL,'2026-10-19T16:00:00Z')`));
+  assert.equal(ordinaryEarning.tiers[0].user_id, agent);
+  assert.equal(ordinaryEarning.tiers[0].amount, 24.69, 'ordinary commission is retained');
   sql(`UPDATE accounting_payable_earning_sources SET contract=jsonb_set(contract,'{tiers}','[]');`);
   assert.equal(JSON.parse(sql(`SELECT fn_rakeback_split_check(${args})`)).reason, 'period_direct_agent_contract_invalid', 'ordinary missing agent evidence remains blocked');
-  console.log('PASS: baseline cap reproduced; helper, all three native pricing queries, split write, club and agent payers, rounding, replay and missing evidence verified');
+  console.log('PASS: baseline cap and earning refusal reproduced; real earning contract, helper, all three pricing queries, split write, club and agent payers, rounding, replay and missing evidence verified');
 } finally {
   if (running) run('pg_ctl', ['-D', path.join(dir, 'data'), '-m', 'immediate', '-w', 'stop']);
   rmSync(dir, { recursive: true, force: true });

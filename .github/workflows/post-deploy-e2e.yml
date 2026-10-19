@@ -146,7 +146,27 @@ jobs:
           } else {
           const inconclusive = (entry) =>
             entry?.conclusion === 'cancelled' || entry?.conclusion === 'skipped';
-          const superseded = jobs.length === 0 && payload.jobs.every(inconclusive);
+          // A CANCELLED PUBLISHER WHOSE ORIGIN DOOR NEVER OPENED (2026-10-19).
+          // The zero-job rule above misses the commoner shape: publish-needed
+          // and the client tests succeed, the run is cancelled while its
+          // read-only retain-runtime job is still verifying, and
+          // publish-to-origin is therefore skipped with no steps. Nothing
+          // reached the origin, exactly as with zero jobs, but this read threw
+          // "missing one of its release-verdict steps" and turned the
+          // certificate red (39283184506 on publisher 39275112750). A
+          // publish-to-origin that started (any step) may have moved the
+          // origin and still needs its proof; any failed or timed-out job is
+          // a real publisher fault and still throws below.
+          const neverOpened = (entry) =>
+            entry?.conclusion === 'skipped' ||
+            (entry?.conclusion === 'cancelled' && (entry.steps ?? []).length === 0);
+          const cancelledBeforeOrigin =
+            jobs.every(neverOpened) &&
+            retained.every(inconclusive) &&
+            payload.jobs.some((entry) => entry?.conclusion === 'cancelled') &&
+            payload.jobs.every((entry) => entry?.conclusion === 'success' || inconclusive(entry));
+          const superseded =
+            (jobs.length === 0 && payload.jobs.every(inconclusive)) || cancelledBeforeOrigin;
           if (superseded) {
             console.log(
               'The source publisher was superseded before it reached the origin; ' +

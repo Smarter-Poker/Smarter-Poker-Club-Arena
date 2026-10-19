@@ -506,6 +506,22 @@ export const feeFigure = (value: number | null | undefined): string => {
     : compactChips(value);
 };
 
+/**
+ * PLAYER MANAGEMENT FIGURES: one formatter per kind, on the Players list, the
+ * Player Record and Player Statistics alike, so one number never reads two
+ * ways between screens. The latest dated ruling for each kind wins:
+ *   fees and other unsigned ledger amounts  feeFigure       (Dan, 2026-10-14)
+ *   signed results: win / loss, net, winnings winLossChips  (Dan 2026-10-16)
+ *   wallet balances                          formatWalletChips (Dan, 2026-10-18)
+ *   counts                                    countFigure
+ *   rates                                     one decimal    (Dan 2026-09-13)
+ * The CSV export keeps exact values and does not use these.
+ */
+
+/** A count (hands, downlines): whole, with separators. Null means the viewer may not see it. */
+export const countFigure = (value: number | null | undefined): string =>
+  value == null ? 'Restricted' : (Number(value) || 0).toLocaleString();
+
 /** Wallet balances always show separators and exactly two decimals (Dan, 2026-10-18). */
 export const formatWalletChips = (amount: number | null | undefined): string => {
   if (amount == null || !Number.isFinite(Number(amount))) return '-';

@@ -108,7 +108,6 @@ interface WalletState {
   refreshAll: (userId: string) => Promise<void>;
 
   // Wallet operations
-  lockForBuyIn: (userId: string, amount: number, tableId: string) => Promise<boolean>;
   /**
    * `idempotencyKey` is minted by the CALLER once per intent and held across
    * a failed attempt, so a retry replays server-side instead of minting twice
@@ -389,57 +388,6 @@ export const useWalletStore = create<WalletState>()(
           get().loadDiamonds(userId),
           get().loadTransactions(userId),
         ]);
-      },
-
-      lockForBuyIn: async (userId: string, amount: number, tableId: string) => {
-        // Mutex: prevent concurrent wallet operations from racing
-        if (get()._operationInFlight) {
-          console.warn('[Store] Wallet operation already in flight, skipping lockForBuyIn');
-          return false;
-        }
-
-        const { balances } = get();
-        if (balances.PLAYER.available < amount) {
-          reportError(
-            new Error('[Store] Insufficient balance for buy-in'),
-            'useWalletStore.Insufficient_balance_for_buyin'
-          );
-          return false;
-        }
-
-        // Deep copy for safe rollback
-        const previousBalances = JSON.parse(JSON.stringify(balances));
-
-        // Optimistic update + acquire mutex
-        set({
-          _operationInFlight: true,
-          pendingBuyIn: amount,
-          pendingTableId: tableId,
-          balances: {
-            ...balances,
-            PLAYER: {
-              ...balances.PLAYER,
-              available: balances.PLAYER.available - amount,
-              locked: balances.PLAYER.locked + amount,
-            },
-          },
-        });
-
-        try {
-          await WalletService.lockForBuyIn(userId, tableId, amount);
-          set({ _operationInFlight: false });
-          return true;
-        } catch (error) {
-          // Revert on failure using deep-copied state + release mutex
-          set({
-            _operationInFlight: false,
-            pendingBuyIn: null,
-            pendingTableId: null,
-            balances: previousBalances,
-          });
-          reportError(error, 'useWalletStore.Lock_for_buyin_failed');
-          return false;
-        }
       },
 
       mintChips: async (clubId: string, chips: number, idempotencyKey: string) => {

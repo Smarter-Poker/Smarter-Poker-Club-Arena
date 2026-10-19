@@ -1,6 +1,9 @@
--- 20261019155432_replay_holds_no_lock_past_its_receipt_player_stats_key_order
+-- 20261019194410_replay_holds_no_lock_past_its_receipt_player_stats_key_order
 --
--- Version reserved by scripts/new-migration.mjs on 2026-10-19 15:54 UTC.
+-- Version reserved by scripts/new-migration.mjs on 2026-10-19 19:44 UTC. It replaces
+-- 20261019155432 (same slug), merged but never installed: its preimage guard
+-- refused it at 19:38 UTC because 20261019171753 had replaced the batch, and
+-- this version orders after that one.
 -- Owner approval 2026-10-19 10:35 Chicago: "fix the nightly 04:37 replay table
 -- freeze and the player_stats deadlocks, through merged migrations installed by
 -- the normal applier."
@@ -62,13 +65,15 @@
 --    player_stats (and profile) rows they will write, in player uuid order,
 --    before the first such row. A row is then only ever written by these two
 --    under its player's key, so neither can hold a row the other waits for.
---    The batch takes them after its club commission keys (20261019094914) and
---    before the first item, only for items whose club keys are all held, with
---    the same discipline: a free key at once, a busy one waited for at most
---    1 s holding only lower player keys, a key not granted ends the walk, and
---    an item whose players are not all held is deferred (writes nothing, is
---    returned in 'deferred', and the settler resubmits it before its cursor
---    may pass it), exactly as for a busy club key. The projection takes them
+--    The batch takes them after its club commission keys (20261019094914,
+--    20261019171753) and before the first item, only for items whose club keys
+--    are all held, with the club walk's discipline: a free key at once, a busy
+--    one waited for only while the same 1 s budget lasts, holding only lower
+--    player keys, a key not granted skipped, and an item whose players are not
+--    all held deferred (writes nothing, is returned in 'deferred', and the
+--    settler resubmits it before its cursor may pass it), exactly as for a
+--    busy club key. Built on the installed 20261019171753 text.
+--    The projection takes them
 --    at the start of Projection 2 (cash only), where it used to start taking
 --    the rows; it waits for a key at most as long as it used to wait for the
 --    row. Batches are about five hands (cashAccountingBatchBudget.ts), so a
@@ -92,11 +97,11 @@
 --
 -- PINNED LIVE md5(pg_get_functiondef(oid)), read 2026-10-19, and AFTER:
 --   fn_ca_replay_terminal_receipts                            1d5d067c97c46776fb6c1fc5e02f0b7c -> 3370c9e5aa0f5f551f011f9fd0023786
---   fn_credit_agent_commissions_batch                         33e0be86d6a2a88f18be4ec4e058cadd -> 037beff51de87bbaff09b39377044d7c
+--   fn_credit_agent_commissions_batch                         1ae9eb0e32f8169ce0cdd6b730c859a6 -> 9befae963f3b9cda25b357f60a9b53d7
 --   fn_project_hand_side_effects_after_post_commit_20260908   ef3cb3725ca3a1566e0e1254830a9a63 -> cee6c2257fcc49c6c6974e5fe8832107
 --
 -- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = '3370c9e5aa0f5f551f011f9fd0023786' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_ca_replay_terminal_receipts')
--- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = '037beff51de87bbaff09b39377044d7c' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_credit_agent_commissions_batch')
+-- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = '9befae963f3b9cda25b357f60a9b53d7' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_credit_agent_commissions_batch')
 -- @live-proof: (SELECT md5(pg_get_functiondef(p.oid)) = 'cee6c2257fcc49c6c6974e5fe8832107' FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'fn_project_hand_side_effects_after_post_commit_20260908')
 
 BEGIN;
@@ -210,7 +215,7 @@ BEGIN
 END;
 $function$
 $replay$),
-    ('fn_credit_agent_commissions_batch(jsonb)', '33e0be86d6a2a88f18be4ec4e058cadd', '037beff51de87bbaff09b39377044d7c',
+    ('fn_credit_agent_commissions_batch(jsonb)', '1ae9eb0e32f8169ce0cdd6b730c859a6', '9befae963f3b9cda25b357f60a9b53d7',
      'postgres|{postgres=X/postgres,service_role=X/postgres}|{search_path=public,statement_timeout=300s}|v|t',
 $batch$CREATE OR REPLACE FUNCTION public.fn_credit_agent_commissions_batch(p_items jsonb)
  RETURNS jsonb
@@ -220,7 +225,7 @@ $batch$CREATE OR REPLACE FUNCTION public.fn_credit_agent_commissions_batch(p_ite
  SET statement_timeout TO '300s'
 AS $function$
 DECLARE it jsonb;r jsonb;receipts jsonb:='[]';record_id uuid;v_ok int:=0;v_failed int:=0;v_blocked int:=0;first_error text;v_gate uuid;
- v_n bigint;v_clubs uuid[];v_sets jsonb:='[]';v_need uuid[]:='{}';v_held uuid[]:='{}';v_deferred jsonb:='[]';v_lock_timeout text;
+ v_n bigint;v_clubs uuid[];v_sets jsonb:='[]';v_need uuid[]:='{}';v_held uuid[]:='{}';v_deferred jsonb:='[]';v_lock_timeout text;v_wait_until timestamptz;
  v_users uuid[];v_usets jsonb:='[]';v_need_users uuid[]:='{}';v_held_users uuid[]:='{}';v_user uuid;
 BEGIN
  IF NOT public.fn_caller_is_engine() THEN RAISE EXCEPTION 'cash_source_not_authorised' USING ERRCODE='42501'; END IF;
@@ -235,8 +240,8 @@ BEGIN
  -- item, in page order, held a later club while waiting for an earlier one:
  -- 40P01 against a finish (2026-10-19 07:28:34). So the keys every item needs
  -- are taken here, in club order: a free key at once, a busy one waited for
- -- at most 1 s while holding only lower keys, which no finish waits for. A key
- -- not granted in that time ends the walk, and never fails the batch whole
+ -- within one 1 s budget while holding only lower keys, which no finish waits
+ -- for. A key not granted is skipped (below) and never fails the batch whole
  -- (2026-10-01 00:07:30). An item whose clubs are not all held is not run and
  -- not refused: it writes nothing and is returned in 'deferred', and the
  -- settler submits it again before its cursor may pass it.
@@ -264,35 +269,47 @@ BEGIN
   v_usets:=v_usets||jsonb_build_array(to_jsonb(v_users));
  END LOOP;
  v_need:=ARRAY(SELECT DISTINCT g FROM unnest(v_need) g ORDER BY g);
+ -- A BUSY KEY IS SKIPPED, NOT THE END OF THE WALK (2026-10-19, 20261019171753).
+ -- Ending the walk at the first busy key deferred every item behind it in club
+ -- order, including items that need none of the busy clubs: one busy Midway key
+ -- (the lowest uuids) deferred every Lightning item, every call. The walk now
+ -- goes on past a busy key. Keys are still only ever waited for in club order,
+ -- and only for a key above every key already held, so the gaps keep one total
+ -- order; the waits share one 1 s budget per call.
+ v_wait_until:=clock_timestamp()+interval '1 second';
  FOREACH v_gate IN ARRAY v_need LOOP
-  IF NOT pg_try_advisory_xact_lock(hashtextextended('agent-commission:'||v_gate::text,0)) THEN
+  IF pg_try_advisory_xact_lock(hashtextextended('agent-commission:'||v_gate::text,0)) THEN
+   v_held:=v_held||v_gate;
+  ELSIF clock_timestamp()<v_wait_until THEN
    BEGIN
     v_lock_timeout:=current_setting('lock_timeout');
-    PERFORM set_config('lock_timeout','1s',true);
+    PERFORM set_config('lock_timeout',
+     GREATEST(1,ceil(extract(epoch FROM v_wait_until-clock_timestamp())*1000))::bigint::text||'ms',true);
     PERFORM pg_advisory_xact_lock(hashtextextended('agent-commission:'||v_gate::text,0));
     PERFORM set_config('lock_timeout',v_lock_timeout,true);
+    v_held:=v_held||v_gate;
    EXCEPTION WHEN lock_not_available OR deadlock_detected THEN
-    EXIT;
+    NULL;
    END;
   END IF;
-  v_held:=v_held||v_gate;
  END LOOP;
  -- EVERY PLAYER KEY IN PLAYER ORDER, AFTER THE CLUB KEYS AND BEFORE THE FIRST
- -- ITEM (2026-10-19). Each item writes its contributors' player_stats rows
- -- (apply_rakeback_player_stats) and, through trg_sync_profile_total_hands,
- -- their profile rows, and this transaction keeps them to its end. Item by
- -- item that is page order: the hand of player b, then the hand of player a.
- -- The hand projection (fn_project_hand_side_effects_after_post_commit_20260908)
- -- writes the same rows for a hand's players in player order, a then b, so
- -- each held one and asked for the other: 79 of the 95 deadlocks in the six
- -- hours to 11:00 UTC on 2026-10-19. Both now take 'player-stats-user:<player>'
- -- for every player whose rows they write, in player order, before the first
- -- such row; a row is only ever written under its player's key, so neither
- -- can hold a row the other is waiting for. Only the items whose club keys are
- -- all held need theirs. A busy key is waited for at most 1 s holding only
- -- lower player keys (a projection holding a key waits for no lower one); a
- -- key not granted ends the walk, and an item whose players are not all held
- -- is deferred exactly as for a club key.
+ -- ITEM (2026-10-19, 20261019194410). Each item writes its contributors'
+ -- player_stats rows (apply_rakeback_player_stats) and, through
+ -- trg_sync_profile_total_hands, their profile rows, and this transaction keeps
+ -- them to its end. Item by item that is page order: the hand of player b, then
+ -- the hand of player a. The hand projection
+ -- (fn_project_hand_side_effects_after_post_commit_20260908) writes the same rows
+ -- for a hand's players in player order, a then b, so each held one and asked
+ -- for the other: 79 of the 95 deadlocks in the six hours to 11:00 UTC on
+ -- 2026-10-19. Both now take 'player-stats-user:<player>' for every player whose
+ -- rows they write, in player order, before the first such row; a row is only
+ -- ever written under its player's key, so neither can hold a row the other is
+ -- waiting for. Only the items whose club keys are all held need theirs. The
+ -- walk is the club walk's: a busy key is waited for only while the same 1 s
+ -- budget lasts, holding only lower player keys (a projection holding a key
+ -- waits for no lower one), and a key not granted is skipped; an item whose
+ -- players are not all held is deferred exactly as for a club key.
  FOR v_n IN 1..jsonb_array_length(p_items) LOOP
   IF ARRAY(SELECT g::uuid FROM jsonb_array_elements_text(v_sets->(v_n::int-1)) g)<@v_held THEN
    v_need_users:=v_need_users||ARRAY(SELECT g::uuid FROM jsonb_array_elements_text(v_usets->(v_n::int-1)) g);
@@ -300,17 +317,20 @@ BEGIN
  END LOOP;
  v_need_users:=ARRAY(SELECT DISTINCT g FROM unnest(v_need_users) g ORDER BY g);
  FOREACH v_user IN ARRAY v_need_users LOOP
-  IF NOT pg_try_advisory_xact_lock(hashtextextended('player-stats-user:'||v_user::text,0)) THEN
+  IF pg_try_advisory_xact_lock(hashtextextended('player-stats-user:'||v_user::text,0)) THEN
+   v_held_users:=v_held_users||v_user;
+  ELSIF clock_timestamp()<v_wait_until THEN
    BEGIN
     v_lock_timeout:=current_setting('lock_timeout');
-    PERFORM set_config('lock_timeout','1s',true);
+    PERFORM set_config('lock_timeout',
+     GREATEST(1,ceil(extract(epoch FROM v_wait_until-clock_timestamp())*1000))::bigint::text||'ms',true);
     PERFORM pg_advisory_xact_lock(hashtextextended('player-stats-user:'||v_user::text,0));
     PERFORM set_config('lock_timeout',v_lock_timeout,true);
+    v_held_users:=v_held_users||v_user;
    EXCEPTION WHEN lock_not_available OR deadlock_detected THEN
-    EXIT;
+    NULL;
    END;
   END IF;
-  v_held_users:=v_held_users||v_user;
  END LOOP;
  FOR it,v_n IN SELECT value,ordinality FROM jsonb_array_elements(p_items) WITH ORDINALITY LOOP
   v_clubs:=ARRAY(SELECT g::uuid FROM jsonb_array_elements_text(v_sets->(v_n::int-1)) g);

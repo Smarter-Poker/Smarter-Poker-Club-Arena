@@ -15,7 +15,7 @@
  *    transaction) deadlocked on player_stats/profile rows: 79 of 95 deadlocks
  *    in six hours.
  *
- * Migration 20261019155432 rolls every proved receipt's subtransaction back
+ * Migration 20261019194410 rolls every proved receipt's subtransaction back
  * (sentinel SQLSTATE CAR01: the receipts write nothing), and makes the batch
  * and the projection take 'player-stats-user:<player>' in player order before
  * the first row. Proved natively, before and after, by
@@ -51,8 +51,8 @@ const PINS: Array<[string, string, string]> = [
   ],
   [
     'fn_credit_agent_commissions_batch',
-    '33e0be86d6a2a88f18be4ec4e058cadd',
-    '037beff51de87bbaff09b39377044d7c',
+    '1ae9eb0e32f8169ce0cdd6b730c859a6',
+    '9befae963f3b9cda25b357f60a9b53d7',
   ],
   [
     'fn_project_hand_side_effects_after_post_commit_20260908',

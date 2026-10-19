@@ -5,7 +5,7 @@
     "docs/laws.d/an-original-inventory-gap-needs-its-financial-evidence.md": "3854819f49da8f1261ef82b3202808106a8f022c6460256997f855a8400fc7bb",
     "scripts/ci/schema-manifest.d/original-inventory-restoration.json": "3112ff264d2224f7c6bb68ee8265ca601e0261408c6bfca07479c4d3d56bee31",
     "scripts/qualification/original-retirement-boundary/README.md": "101bb1e1da4c3e09bcfd11601cb7d152b4776659e0c9cacf35810e056240eb42",
-    "scripts/qualification/original-retirement-boundary/actual-b9-current-seven-report-native.sql": "007c398e8625c56ed42748b3878374ae2bcef4f2af08ef3df6efef9d75d42531",
+    "scripts/qualification/original-retirement-boundary/actual-b9-current-seven-report-native.sql": "b58591a50e871544c73198568db6e218cb39d3360c2604c7fab2442852f7ca78",
     "scripts/qualification/original-retirement-boundary/actual-b9-pending-seven-report-native.sql": "49c544c81a9cceb1b3f16ac51f0b6cdc52511923cc00a2525a374a033d44f25c",
     "scripts/qualification/original-retirement-boundary/actual-maintenance-freeze-native.sql": "23e1d645751cb09547654de876744af46fda802051033063fca59375ee759311",
     "scripts/qualification/original-retirement-boundary/admitted-wrapper-proposal.sql": "f9bb82bce56f86156b95667c2ba1d33478fb7ed695115fa990d0ad4055ced8f9",
@@ -69,7 +69,7 @@
     "scripts/qualification/original-seven-discharge/monetary-function-pins.json": "ee285f556a3e247c7052f3122ec6ebabc7a0a2a4e09875e2b830c5a44892cbb2",
     "scripts/qualification/original-seven-discharge/original-seven.jsonb": "80b91a2a3b69d56e29374050c11dd7c2d8cec1f8b4e8a80566f2bf351054cad9",
     "scripts/qualification/original-seven-discharge/run-native.py": "4b42bf21c16f3d9e40fcff5acb915519ca67e1acd0930f4e5c9a33521b5d6a46",
-    "scripts/qualification/original-seven-discharge/test-discharge.py": "567c3e6cbd5d6405c372fd248ecdaa236fa00a7fbd92732dd48b32e2ff2eb233",
+    "scripts/qualification/original-seven-discharge/test-discharge.py": "e10965a31a0f394c62da668012348808d4610de87c434727646f2af29d9ca223",
     "supabase/migrations/20261012224150_original_retirement_evidence_certifies_finite_inventory_boun.sql": "c5f513be7637247fc709bd1ee2eab0fcf70f1da672676c987d6a9d0390191f39",
     "tests/an-original-inventory-gap-needs-its-financial-evidence.law.test.ts": "41d5ea3494ca813cf47c708433afa3aa804b825d643345d997f3029b6507faed"
   },

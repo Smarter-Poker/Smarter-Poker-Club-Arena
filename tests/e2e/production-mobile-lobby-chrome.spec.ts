@@ -303,8 +303,33 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(nav).toHaveCount(1);
     await expect(nav).toBeVisible();
     await expect(nav).toHaveCSS('position', 'fixed');
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(300);
+    /* Reach the END of the page and stay there. The live lobby refetches and
+       re-renders its game list as it scrolls (run 39232506260: 487 -> 485
+       games inside one second), so a single scrollTo can land on a bottom
+       that the next render moves. In between, useHideFooterOnScroll does
+       exactly what Dan asked for on 2026-09-04 - travelling down drops the
+       bar with translateY(100%) - and a frame measured then is the bar's own
+       height (61px) off the edge, not a floating footer. Re-scroll until the
+       page is at its true end, and require the bar to have come back there
+       (the 2026-09-05 "at the bottom it comes back" rule). A bar stuck hidden
+       at the end of the page still fails here. */
+    await expect
+      .poll(
+        () =>
+          nav.evaluate((bar) => {
+            const root = document.documentElement;
+            window.scrollTo(0, root.scrollHeight);
+            const atEnd = window.scrollY >= root.scrollHeight - window.innerHeight - 1;
+            return atEnd ? (bar.getAttribute('data-footer-hidden') ?? 'missing') : 'scrolling';
+          }),
+        {
+          message: 'the footer is back on screen at the end of the lobby',
+          timeout: 10_000,
+          intervals: [300, 300, 500, 1_000],
+        }
+      )
+      .toBe('false');
+    await expect(nav).toHaveAttribute('data-footer-hidden', 'false');
 
     const edge = await bottomEdge(page);
     // Members and operators have different approved base frames. The Diamond

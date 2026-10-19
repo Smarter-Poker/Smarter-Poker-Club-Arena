@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The 04:37 replay freeze and the player_stats deadlocks, reproduced on an isolated
-PostgreSQL 17 cluster, before and after 20261019155432.
+PostgreSQL 17 cluster, before and after 20261019194410.
 
     PG_BIN=/opt/homebrew/opt/postgresql@17/bin \
     python3 -B scripts/qualification/replay-locks-and-player-stats-keys.py \
@@ -22,7 +22,7 @@ import argparse, hashlib, json, os, pathlib, queue, re, shutil, subprocess, thre
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 PG_BIN = os.environ.get('PG_BIN', '/opt/homebrew/opt/postgresql@17/bin')
-MIGRATION = ROOT / 'supabase/migrations/20261019155432_replay_holds_no_lock_past_its_receipt_player_stats_key_order.sql'
+MIGRATION = ROOT / 'supabase/migrations/20261019194410_replay_holds_no_lock_past_its_receipt_player_stats_key_order.sql'
 DB, PORT, GATE = 'replay_keys', '55493', 424243
 
 

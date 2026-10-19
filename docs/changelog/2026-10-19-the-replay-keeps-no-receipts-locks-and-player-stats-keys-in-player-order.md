@@ -1,6 +1,6 @@
 # The nightly replay keeps no receipt's locks; player_stats writers take player keys in player order
 
-2026-10-19 - migration `20261019155432_replay_holds_no_lock_past_its_receipt_player_stats_key_order`.
+2026-10-19 - migration `20261019194410_replay_holds_no_lock_past_its_receipt_player_stats_key_order`.
 Owner approval 2026-10-19 10:35 Chicago.
 
 ## What players saw
@@ -35,8 +35,12 @@ Owner approval 2026-10-19 10:35 Chicago.
   outcome (replayed / refused / skipped_locked, failures, alerts raised and resolved) is the same.
 - The batch and the projection take `'player-stats-user:<player>'` for every player whose rows
   they write, in player uuid order, before the first such row. The batch takes them after its club
-  commission keys and before its first item with the same discipline as those (a busy key waited
-  for at most 1 s, otherwise the item is deferred and resubmitted by the settler).
+  commission keys and before its first item with the same discipline as those (20261019171753: a
+  busy key waited for only within the call's one 1 s budget, otherwise skipped and the items that
+  need it deferred and resubmitted by the settler).
+- First install attempt (19:38 UTC) was refused, correctly, by the preimage guard: the batch had
+  been replaced by 20261019171753 in the meantime. The migration was rebuilt on that installed text
+  and re-qualified before it was installed.
 - Not changed: the cron job, the settler, `fn_retry_cash_accounting_sources`,
   `fn_process_cash_accounting_source`, any value written, owner, grants or settings.
 

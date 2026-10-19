@@ -147,7 +147,14 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
 // the Smarter.Poker daily operations digest). Both run in the early Chicago
 // hours and gate themselves on local time inside the command; neither moves
 // money. Cron Health read 136 active on 2026-10-16T06:20Z.
-const ACTIVE_JOBS = 136;
+// 2026-10-19: 136 -> 137 active: ca-chip-wallet-day-seal (30 * * * *), scheduled
+// by 20261017184739 cashier_conservation_reads_sealed_wallet_days (recorded as
+// 20261017211312). It seals finished UTC days for the cashier conservation
+// report's read and writes only its own two derived tables, never a balance,
+// ledger row or payout; the report is exact without it. The argument is in that
+// migration's periodic-work header. Read live from fn_ca_cron_health('24 hours')
+// at 2026-10-19T09:29Z: exactly this one job added, none removed.
+const ACTIVE_JOBS = 137;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -191,8 +198,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('138 total is 136 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(138);
+  it('139 total is 137 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(139);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

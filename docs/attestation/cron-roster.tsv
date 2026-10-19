@@ -3,8 +3,8 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-10-16T06:20:39Z
-# active: 136
+# observed_at: 2026-10-19T09:29:10Z
+# active: 137
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -197,6 +197,7 @@ ca-bound-outside-snapshots-1m	* * * * *
 ca-break-scorecard	12 * * * *
 ca-burnin-gate-hourly	58 * * * *
 ca-cash-pot-conservation-hourly	34 */6 * * *
+ca-chip-wallet-day-seal	30 * * * *
 ca-collusion-daily	20 4 * * *
 ca-conservation-sweep-hourly	52 * * * *
 ca-crash-settle-abandoned-minute	* * * * *

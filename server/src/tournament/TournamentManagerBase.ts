@@ -247,6 +247,7 @@ interface TournamentLaunchBeginResult {
   status?: string;
   reason?: string;
   lease_generation?: string;
+  launch_player_ids?: unknown;
 }
 
 interface TournamentLaunchClaim {
@@ -254,6 +255,24 @@ interface TournamentLaunchClaim {
   launchId: string;
   startedAtIso: string;
   completed: boolean;
+  /**
+   * The entries the database captured, under the tournament row lock, when
+   * this launch receipt was first claimed. NULL means the receipt predates the
+   * capture (or the database has not been upgraded): the launch keeps the
+   * original exact full-roster proof.
+   */
+  launchPlayerIds: string[] | null;
+}
+
+const LAUNCH_COHORT_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Absent/NULL -> null (strict legacy proof). Anything malformed -> undefined. */
+export function readLaunchCohort(value: unknown): string[] | null | undefined {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) return undefined;
+  if (value.some((id) => typeof id !== 'string' || !LAUNCH_COHORT_UUID.test(id))) return undefined;
+  const ids = value.map((id) => String(id).toLowerCase());
+  return new Set(ids).size === ids.length ? ids : undefined;
 }
 
 interface TournamentLaunchCompleteResult {
@@ -5026,12 +5045,18 @@ export abstract class TournamentManagerBase {
         (requestedStartedAtIso === null ||
           this.launchTimestampMatches(result.started_at, requestedStartedAtIso) ||
           adoptsExistingReceipt);
+      const launchPlayerIds = readLaunchCohort(result.launch_player_ids);
+      if (exactReceipt && launchPlayerIds === undefined) {
+        lastFailure = 'the launch receipt carried a malformed entry cohort';
+        break;
+      }
       if (exactReceipt && result.completed === false) {
         return {
           formatContract: expectedFormat,
           launchId: returnedLaunchId,
           startedAtIso: new Date(returnedStartedAtMs).toISOString(),
           completed: false,
+          launchPlayerIds: launchPlayerIds ?? null,
         };
       }
       if (exactReceipt && result.completed === true && result.status === 'RUNNING') {
@@ -5040,6 +5065,7 @@ export abstract class TournamentManagerBase {
           launchId: returnedLaunchId,
           startedAtIso: new Date(returnedStartedAtMs).toISOString(),
           completed: true,
+          launchPlayerIds: launchPlayerIds ?? null,
         };
       }
 
@@ -5123,6 +5149,90 @@ export abstract class TournamentManagerBase {
   }
 
   /**
+   * Seat every accepted entry of a RUNNING unlimited MTT that holds no chair.
+   *
+   * Two honest states produce one: an entry that committed after the launch
+   * cohort was captured (completion hands it off with a late_registration
+   * wake), and a late entry for which every table was momentarily full. This
+   * method only NOMINATES rows; fn_seat_late_registrant locks the tournament,
+   * re-proves the entry is unseated, chooses or opens the table and writes the
+   * chair, stack and roster coordinates in one transaction. It is idempotent:
+   * an entry another path already seated answers already_seated_or_missing.
+   *
+   * Returns true when no seatable entry remains, false when work remains and
+   * a re-drive was requested (frozen platform, transport failure, refusal).
+   */
+  protected async seatAcceptedEntrantsAwaitingChairs(
+    source: string,
+    allowed: () => boolean = () => this.eliminationMutationAllowed(),
+    subject: any = this.tournamentCache
+  ): Promise<boolean> {
+    if (!subject || !isPersistedUnlimitedMtt(subject)) return true;
+    const attempted = new Set<string>();
+    for (let page = 0; page < 10; page++) {
+      if (!allowed()) return false;
+      const { data, error } = await supabase
+        .from('tournament_players')
+        .select('user_id')
+        .eq('tournament_id', this.tournamentId)
+        .eq('status', 'registered')
+        .is('table_id', null)
+        .order('registered_at', { ascending: true })
+        .limit(TournamentManagerBase.SWEEP_MUTATION_BATCH_SIZE);
+      if (!allowed()) return false;
+      if (error) {
+        reportError(error, 'Tournament.accepted_entry_seating_read_failed', {
+          tournamentId: this.tournamentId,
+          source,
+        });
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return false;
+      }
+      const userIds = (data ?? [])
+        .map((row: { user_id?: string | null }) => String(row.user_id ?? ''))
+        .filter((id) => id.length > 0 && !attempted.has(id));
+      if (userIds.length === 0) return true;
+      for (const userId of userIds) {
+        attempted.add(userId);
+        if (!allowed()) return false;
+        const { data: seat, error: seatError } = await supabase.rpc('fn_seat_late_registrant', {
+          p_tournament_id: this.tournamentId,
+          p_user_id: userId,
+        });
+        if (!allowed()) return false;
+        const result = (seat ?? {}) as { ok?: boolean; reason?: string };
+        if (!seatError && result.ok === true) {
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Accepted entry ${userId.slice(0, 8)} seated (${source})`
+          );
+          continue;
+        }
+        if (!seatError && result.reason === 'already_seated_or_missing') continue;
+        if (!seatError && result.reason === 'not_running') return true;
+        if (!seatError && result.reason !== 'platform_frozen') {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] accepted entry ${userId.slice(0, 8)} was not seated (${source}): ${result.reason ?? 'invalid contract'}`
+            ),
+            'Tournament.accepted_entry_seating_refused'
+          );
+        } else if (seatError) {
+          reportError(seatError, 'Tournament.accepted_entry_seating_failed', {
+            tournamentId: this.tournamentId,
+            userId,
+            source,
+          });
+        }
+        this.requestUrgentEliminationSweepAfter(TournamentManagerBase.BALANCE_REDRIVE_MS);
+        return false;
+      }
+    }
+    // A very large backlog: keep the wake and continue on the next pass.
+    this.requestUrgentEliminationSweepAfter(0);
+    return false;
+  }
+
+  /**
    * Read the launch back as one coherent, dealable field. Individual write
    * calls are intentionally idempotent, so a failed proof leaves the receipt
    * incomplete and the next start invocation repairs only what is missing.
@@ -5134,7 +5244,8 @@ export abstract class TournamentManagerBase {
     expectedPlayerIds: string[],
     fundingFieldSize: number,
     playedSpinRecovery: PlayedSpinLaunchRecoveryProof | null,
-    startedAtIso: string
+    startedAtIso: string,
+    launchPlayerIds: string[] | null
   ): Promise<boolean> {
     const refuse = (detail: string): false => {
       reportError(
@@ -5174,19 +5285,53 @@ export abstract class TournamentManagerBase {
 
     const { data: rosterRows, error: rosterErr } = await supabase
       .from('tournament_players')
-      .select('user_id, status, table_id, seat_number, chips')
+      .select('id, user_id, status, table_id, seat_number, chips')
       .eq('tournament_id', this.tournamentId)
       .in('status', ['registered', 'playing']);
     this.assertLifecycleCurrent(lifecycle);
     if (rosterErr) return refuse(`the active roster could not be read: ${rosterErr.message}`);
 
-    const roster = (rosterRows ?? []) as Array<{
+    const activeRoster = (rosterRows ?? []) as Array<{
+      id?: string | null;
       user_id?: string | null;
       status?: string | null;
       table_id?: string | null;
       seat_number?: number | null;
       chips?: number | null;
     }>;
+    if (new Set(activeRoster.map((row) => row.user_id)).size !== activeRoster.length) {
+      return refuse('the active roster contains a duplicate player');
+    }
+    let roster = activeRoster;
+    let hasLockedLaunchCohort = false;
+    if (isPersistedUnlimitedMtt(tournament) && launchPlayerIds !== null) {
+      // A timestamp cannot identify commit order: an entry transaction may
+      // begin before launch and commit after waiting on its tournament lock.
+      // Begin captured these entry identities under that same lock instead,
+      // and returned them with the receipt this launch owns.
+      hasLockedLaunchCohort = true;
+      {
+        const cohortIds = new Set<string>(launchPlayerIds);
+        const pending = activeRoster.filter(
+          (row) =>
+            row.id &&
+            !cohortIds.has(String(row.id).toLowerCase()) &&
+            row.status === 'registered' &&
+            row.user_id &&
+            row.table_id == null &&
+            row.seat_number == null &&
+            Number.isFinite(Number(row.chips)) &&
+            Number(row.chips) >= 0
+        );
+        const pendingIds = new Set(pending.map((row) => row.id));
+        const pendingUsers = new Set(pending.map((row) => row.user_id));
+        roster = activeRoster.filter((row) => !pendingIds.has(row.id));
+        expectedPlayerIds = expectedPlayerIds.filter((id) => !pendingUsers.has(id));
+        // Every playing entrant, including one admitted after the captured
+        // cohort, must still own its full funded floor and exact live chair.
+        fundingFieldSize = roster.length;
+      }
+    }
     if (roster.length < requiredField) {
       return refuse(`only ${roster.length} of ${requiredField} required players remain active`);
     }
@@ -5271,8 +5416,10 @@ export abstract class TournamentManagerBase {
     const provenPlayerIds = roster.map((row) => String(row.user_id)).sort();
     const expectedIds = [...expectedPlayerIds].sort();
     if (
-      provenPlayerIds.length !== expectedIds.length ||
-      provenPlayerIds.some((userId, index) => userId !== expectedIds[index])
+      hasLockedLaunchCohort
+        ? expectedIds.some((userId) => !provenPlayerIds.includes(userId))
+        : provenPlayerIds.length !== expectedIds.length ||
+          provenPlayerIds.some((userId, index) => userId !== expectedIds[index])
     ) {
       return refuse('the active roster changed after launch migration began');
     }
@@ -6612,7 +6759,8 @@ export abstract class TournamentManagerBase {
         expectedLaunchPlayerIds,
         playedSpinRecovery?.fundingFieldSize ?? expectedLaunchPlayerIds.length,
         playedSpinRecovery,
-        startedAtIso
+        startedAtIso,
+        launchClaim.launchPlayerIds
       );
       this.assertLifecycleCurrent(lifecycle);
       if (!launchSetupProven) {
@@ -6633,6 +6781,20 @@ export abstract class TournamentManagerBase {
 
       tournament.status = 'RUNNING';
       tournament.started_at = startedAtIso;
+
+      // An entry accepted after the launch cohort was captured holds a paid
+      // place and no chair. Completion handed it off with a durable
+      // late_registration wake; seat it now, before the advertised start, so
+      // it is dealt in with the field. A refusal here is not a launch failure:
+      // the retained wake re-drives the same seating from the sweep.
+      if (launchClaim.launchPlayerIds !== null) {
+        await this.seatAcceptedEntrantsAwaitingChairs(
+          'launch_completion',
+          () => this.lifecycleIsCurrent(lifecycle),
+          tournament
+        );
+        this.assertLifecycleCurrent(lifecycle);
+      }
 
       // The cache was captured while status was still REGISTERING. Keep the
       // committed lifecycle state aligned before any RUNNING-only manager

@@ -573,6 +573,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       ) {
         if (!(await this.reconcileTournamentEntryWindow('engine.manager_wake'))) return;
         if (sweepStopped()) return;
+        // The same wake carries entries accepted after a launch cohort was
+        // captured. Keep it pending until every one of them holds a chair.
+        if (
+          [...durableWakes.values()].some((reason) => reason === 'late_registration') &&
+          !(await this.seatAcceptedEntrantsAwaitingChairs('engine.manager_wake'))
+        ) {
+          return;
+        }
+        if (sweepStopped()) return;
       }
 
       recoveryStage: {

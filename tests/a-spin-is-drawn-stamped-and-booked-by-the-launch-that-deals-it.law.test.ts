@@ -270,7 +270,10 @@ describe('RUNNING is refused to a paid Spin that has not drawn and stamped', () 
 
   it('requires exactly one jackpot_draw equal to a positive multiplier on the row', () => {
     expect(LAUNCH).toMatch(
-      /IF\s+v_is_paid_spin\s+THEN\s+SELECT\s+count\(\*\),\s*min\(l\.multiplier\)\s+INTO\s+v_spin_ledger_count,\s*v_spin_ledger_multiplier\s+FROM\s+public\.spin_reserve_ledger\s+l\s+WHERE\s+l\.tournament_id\s*=\s*p_tournament_id\s+AND\s+l\.kind\s*=\s*'jackpot_draw'/
+      // Production's body (Diamond Phase 9, carried verbatim by 20261018230822)
+      // proves a Diamond Spin by its own draw receipt first; the chip Spin keeps
+      // this exact single jackpot_draw read in the ELSE branch.
+      /IF\s+v_is_paid_spin\s+THEN\s+(?:IF\s+public\.fn_poker_diamond_tournament\(p_tournament_id\)\s+THEN\s+SELECT[\s\S]*?public\.fn_poker_diamond_spin_draw_proof\(p_tournament_id,\s*p_launch_id\)[\s\S]*?ELSE\s+)?SELECT\s+count\(\*\),\s*min\(l\.multiplier\)\s+INTO\s+v_spin_ledger_count,\s*v_spin_ledger_multiplier\s+FROM\s+public\.spin_reserve_ledger\s+l\s+WHERE\s+l\.tournament_id\s*=\s*p_tournament_id\s+AND\s+l\.kind\s*=\s*'jackpot_draw'/
     );
     expect(LAUNCH).toMatch(
       /IF\s+v_spin_ledger_count\s*<>\s*1\s+OR\s+COALESCE\(v_spin_multiplier,\s*0\)\s*<=\s*0\s+OR\s+v_spin_ledger_multiplier\s+IS\s+DISTINCT\s+FROM\s+v_spin_multiplier\s+THEN\s+RETURN\s+jsonb_build_object\(\s*'ok',\s*false,\s*'reason',\s*'launch_spin_settlement_unproven'/

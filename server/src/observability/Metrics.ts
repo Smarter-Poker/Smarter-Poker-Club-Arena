@@ -3,9 +3,16 @@
  *  METRICS — Lightweight Metrics Registry (Counters / Gauges / Histograms)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * FOUNDATION MODULE — self-contained, no engine dependencies.
- * NOT yet wired into the live engine. See INSTRUMENTATION POINTS below for the
- * ~6 highest-value call sites to wire in follow-up work.
+ * FOUNDATION MODULE: self-contained, no engine dependencies of its own.
+ *
+ * WIRED (verified against server/src 2026-10-19). The live engine builds both
+ * of its process-wide registries from this module in
+ * observability/engineInstruments.ts: `metricsRegistry`
+ * (createDefaultRegistry(); appended to /metrics by handlers/health.ts only
+ * when ENGINE_METRICS=on) and `alwaysOnRegistry` (exposed by /metrics
+ * unconditionally; the only home for a counter an alert rule reads).
+ * cluster/ClusterMetrics.ts and lightning/LightningMetrics.ts register their
+ * instruments with the same MetricsRegistry class.
  *
  * Complements the existing `engine/EngineTelemetry.ts` (which tracks per-table
  * hand/eval timings + a Prometheus dump). This registry is the general-purpose
@@ -18,13 +25,16 @@
  *   - Deterministic, unit-testable percentile math (nearest-rank).
  *   - Injectable clock so tests never touch wall time.
  *
- * ── INSTRUMENTATION POINTS (wire these in a follow-up; do NOT edit engine here) ──
- *   1. ServerTableEngine.processAction()      → hands/actions counters + act latency timer start
- *   2. ServerTableEngine.broadcastState()     → observe act→broadcast latency histogram
- *   3. HandController.completeHand()           → poker_hands_total counter + hand duration
- *   4. router.ts / handlers.* RPC dispatch     → rpc_total + rpc_errors_total counters
- *   5. transport/EngineWebSocketServer (onclose/reconnect) → ws_reconnects_total counter
- *   6. index.ts bootstrap                      → EventLoopLagMonitor.start() (event-loop lag)
+ * ── INSTRUMENTATION POINTS (status as wired, via engineInstruments.ts) ──
+ *   1. ServerTableEngineTurns.handlePlayerAction()   -> poker_actions_total (wired)
+ *   2. ServerTableEngine.broadcastCurrentState()     -> poker_act_to_broadcast_latency_ms (wired)
+ *   3. ServerTableEngineDealing.dealHand()           -> poker_hands_total (wired); the hand
+ *      span feeds poker_hand_duration_ms, and is started only when ENGINE_METRICS=on
+ *   4. action RPC failure (ServerTableEngineTurns)   -> poker_rpc_errors_total (wired, on the
+ *      always-on registry); poker_rpc_total is registered but nothing increments it
+ *   5. ServerTableEngineBase PLAYER_RECONNECTED      -> poker_ws_reconnects_total (wired)
+ *   6. EventLoopLagMonitor                           -> NOT started anywhere, so
+ *      poker_event_loop_lag_ms stays empty
  * ─────────────────────────────────────────────────────────────────────────────
  */
 

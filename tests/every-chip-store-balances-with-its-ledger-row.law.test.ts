@@ -49,14 +49,59 @@ const FIXTURE_DIR = join(ROOT, 'tests', 'fixtures', 'ledger-invariant');
 const migrations = readdirSync(MIG_DIR)
   .filter((f) => f.endsWith('.sql'))
   .sort();
-const read = (f: string) => readFileSync(join(MIG_DIR, f), 'utf8');
+/*
+ * ONE READ AND ONE STRIP PER MIGRATION (2026-10-19). The cases below derive
+ * the stores from every migration, and each derivation used to strip the
+ * comments from all ~5,700 files (77 MB) again, while three cases re-read the
+ * whole directory from disk on top of the copy already held in `all`.
+ * Measured on a 2-core box: the slowest case took 2.69 s (54% of vitest's 5 s
+ * budget) and six more took 0.45-1.52 s. Each file is now read once and
+ * stripped once, and the stripped copy is reused; every case still reads every
+ * file it read before, through the same functions.
+ */
+const fileText = new Map<string, string>();
+const read = (f: string): string => {
+  let text = fileText.get(f);
+  if (text === undefined) {
+    text = readFileSync(join(MIG_DIR, f), 'utf8');
+    fileText.set(f, text);
+  }
+  return text;
+};
 
-const stripComments = (sql: string) =>
+const stripCommentsOnce = (sql: string) =>
   sql
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .split('\n')
     .map((l) => l.replace(/--.*$/, ''))
     .join('\n');
+
+const strippedText = new Map<string, string>();
+/** `sql` with its comments removed, computed once per distinct text. */
+const stripComments = (sql: string): string => {
+  let stripped = strippedText.get(sql);
+  if (stripped === undefined) {
+    stripped = stripCommentsOnce(sql);
+    strippedText.set(sql, stripped);
+  }
+  return stripped;
+};
+
+/**
+ * Memoise a derivation of ONE migration's text. The functions below fold these
+ * per-file results in migration order, exactly as they once scanned the files
+ * in that order, so a file is scanned once per derivation instead of once per
+ * call.
+ */
+const perText = <T>(derive: (sql: string) => T): ((sql: string) => T) => {
+  const memo = new Map<string, T>();
+  return (sql: string): T => {
+    if (memo.has(sql)) return memo.get(sql) as T;
+    const value = derive(sql);
+    memo.set(sql, value);
+    return value;
+  };
+};
 
 const STORES_SUFFIX = '_every_chip_store_balances_with_its_ledger_row.sql';
 const storesName = migrations.find((f) => f.endsWith(STORES_SUFFIX));
@@ -70,13 +115,42 @@ const installerName = migrations.find((f) =>
  * migration that re-creates a trigger with other arguments replaces it, as it
  * does on the database), across every migration in order.
  */
+/** Per function name: the body of its LAST definition in one migration, or null. */
+const bodiesIn = new Map<string, (sql: string) => string | null>();
+/** The LATEST definition of `fn` across the migrations, in order; '' when none. */
+function latestBody(sqlFiles: string[], fn: string): string {
+  let bodyIn = bodiesIn.get(fn);
+  if (bodyIn === undefined) {
+    bodyIn = perText((raw: string) => {
+      const sql = stripComments(raw);
+      const i = sql.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`);
+      return i >= 0 ? sql.slice(i, sql.indexOf('$function$;', i)) : null;
+    });
+    bodiesIn.set(fn, bodyIn);
+  }
+  let body = '';
+  for (const raw of sqlFiles) {
+    const found = bodyIn(raw);
+    if (found !== null) body = found;
+  }
+  return body;
+}
+
+const JOURNAL_TRIGGER =
+  /CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(\w+)\s+[^;]*?ON\s+public\.(\w+)\b[^;]*?EXECUTE\s+FUNCTION\s+public\.fn_ca_autoledger(?:_delete)?\s*\(([^)]*)\)/gi;
+/** The journal triggers one migration (re)defines, in the order it defines them. */
+const journalTriggersIn = perText((raw: string) =>
+  [...stripComments(raw).matchAll(JOURNAL_TRIGGER)].map((m) => ({
+    key: `${m[2]}:${m[1]}`,
+    table: m[2],
+    args: m[3],
+  }))
+);
 function journalledColumns(sqlFiles: string[]): Map<string, string> {
   const latest = new Map<string, { table: string; args: string }>();
-  const re =
-    /CREATE\s+(?:OR\s+REPLACE\s+)?TRIGGER\s+(\w+)\s+[^;]*?ON\s+public\.(\w+)\b[^;]*?EXECUTE\s+FUNCTION\s+public\.fn_ca_autoledger(?:_delete)?\s*\(([^)]*)\)/gi;
   for (const raw of sqlFiles) {
-    for (const m of stripComments(raw).matchAll(re)) {
-      latest.set(`${m[2]}:${m[1]}`, { table: m[2], args: m[3] });
+    for (const t of journalTriggersIn(raw)) {
+      latest.set(t.key, { table: t.table, args: t.args });
     }
   }
   const out = new Map<string, string>();
@@ -91,53 +165,53 @@ function journalledColumns(sqlFiles: string[]): Map<string, string> {
  * hand receipt name their columns in `UPDATE OF`; the store migration's
  * function counts, per table, the columns its branch for that table reads.
  */
-function talliedColumns(sqlFiles: string[]): Set<string> {
+const talliedColumnsIn = perText((raw: string): Set<string> => {
   const out = new Set<string>();
-  for (const raw of sqlFiles) {
-    const sql = stripComments(raw);
-    for (const m of sql.matchAll(
-      /CREATE TRIGGER zy_ca_tally_balance_move\s+AFTER INSERT OR UPDATE OF ([\w,\s]+?) OR DELETE\s+ON public\.(\w+)/gi
-    )) {
-      for (const c of m[1].split(',')) out.add(`${m[2]}.${c.trim()}`);
-    }
-    const fnStart = sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_tally_store_move()');
-    if (fnStart < 0) continue;
-    const fn = sql.slice(fnStart, sql.indexOf('$function$;', fnStart));
-    for (const t of sql.matchAll(
-      /CREATE TRIGGER zy_ca_tally_store_move\s+AFTER INSERT OR UPDATE(?: OF ([\w,\s]+?))? OR DELETE ON public\.(\w+)/gi
-    )) {
-      const table = t[2];
-      const branch = fn.match(
-        new RegExp(`WHEN '${table}' THEN([\\s\\S]*?)(?=\\n\\s+WHEN '|\\n\\s+ELSE\\n)`)
-      );
-      if (!branch) continue;
-      const listed = t[1] ? t[1].split(',').map((c) => c.trim()) : null;
-      for (const c of branch[1].matchAll(/->> '(\w+)'\)::numeric/g)) {
-        if (listed === null || listed.includes(c[1])) out.add(`${table}.${c[1]}`);
-      }
+  const sql = stripComments(raw);
+  for (const m of sql.matchAll(
+    /CREATE TRIGGER zy_ca_tally_balance_move\s+AFTER INSERT OR UPDATE OF ([\w,\s]+?) OR DELETE\s+ON public\.(\w+)/gi
+  )) {
+    for (const c of m[1].split(',')) out.add(`${m[2]}.${c.trim()}`);
+  }
+  const fnStart = sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_tally_store_move()');
+  if (fnStart < 0) return out;
+  const fn = sql.slice(fnStart, sql.indexOf('$function$;', fnStart));
+  for (const t of sql.matchAll(
+    /CREATE TRIGGER zy_ca_tally_store_move\s+AFTER INSERT OR UPDATE(?: OF ([\w,\s]+?))? OR DELETE ON public\.(\w+)/gi
+  )) {
+    const table = t[2];
+    const branch = fn.match(
+      new RegExp(`WHEN '${table}' THEN([\\s\\S]*?)(?=\\n\\s+WHEN '|\\n\\s+ELSE\\n)`)
+    );
+    if (!branch) continue;
+    const listed = t[1] ? t[1].split(',').map((c) => c.trim()) : null;
+    for (const c of branch[1].matchAll(/->> '(\w+)'\)::numeric/g)) {
+      if (listed === null || listed.includes(c[1])) out.add(`${table}.${c[1]}`);
     }
   }
+  return out;
+});
+function talliedColumns(sqlFiles: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const raw of sqlFiles) for (const c of talliedColumnsIn(raw)) out.add(c);
   return out;
 }
 
 /** Every ledger store ca_chip_store_coverage declares counted. */
+const countedLedgerStoresIn = perText((raw: string): string[] =>
+  /ca_chip_store_coverage/.test(raw)
+    ? [...stripComments(raw).matchAll(/\('(\w+)',\s*'counted'/g)].map((m) => m[1])
+    : []
+);
 function countedLedgerStores(sqlFiles: string[]): Set<string> {
   const out = new Set<string>();
-  for (const raw of sqlFiles) {
-    if (!/ca_chip_store_coverage/.test(raw)) continue;
-    for (const m of stripComments(raw).matchAll(/\('(\w+)',\s*'counted'/g)) out.add(m[1]);
-  }
+  for (const raw of sqlFiles) for (const store of countedLedgerStoresIn(raw)) out.add(store);
   return out;
 }
 
 /** The ledger types the LATEST fn_ca_ledger_tally_key resolves to an account. */
 function keyedLedgerTypes(sqlFiles: string[]): Set<string> {
-  let body = '';
-  for (const raw of sqlFiles) {
-    const sql = stripComments(raw);
-    const i = sql.lastIndexOf('CREATE OR REPLACE FUNCTION public.fn_ca_ledger_tally_key(');
-    if (i >= 0) body = sql.slice(i, sql.indexOf('$function$;', i));
-  }
+  const body = latestBody(sqlFiles, 'fn_ca_ledger_tally_key');
   const out = new Set<string>();
   for (const w of body.matchAll(/WHEN ((?:'\w+'(?:,\s*)?)+) THEN/g)) {
     for (const t of w[1].matchAll(/'(\w+)'/g)) out.add(t[1]);
@@ -440,16 +514,6 @@ describe('every chip store balances with its ledger row', () => {
  * goes red (the negative proof below plants exactly that).
  */
 const SUSPENSE_SUFFIX = '_no_balance_moves_against_settlement_suspense.sql';
-
-function latestBody(sqlFiles: string[], fn: string): string {
-  let body = '';
-  for (const raw of sqlFiles) {
-    const sql = stripComments(raw);
-    const i = sql.lastIndexOf(`CREATE OR REPLACE FUNCTION public.${fn}(`);
-    if (i >= 0) body = sql.slice(i, sql.indexOf('$function$;', i));
-  }
-  return body;
-}
 
 /** What is missing from the suspense rule in the latest bodies; [] when whole. */
 function suspenseRuleGaps(sqlFiles: string[]): string[] {

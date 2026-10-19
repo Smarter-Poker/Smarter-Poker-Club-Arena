@@ -76,7 +76,22 @@ describe('a lock refusal is not a day in the queue', () => {
       "pg_try_advisory_xact_lock(hashtextextended('union-pnl-inventory-checkpoint',0))"
     );
     expect(sql).toContain('public.fn_ca_break_window_refuses_migrations(now())');
-    expect(sql.replace(/--[^\n]*/g, ' ')).not.toMatch(/\bGRANT\b|\bREVOKE\b/i);
+    // The grants restate the installed ACL exactly and are proved after the replace.
+    expect(sql).toContain(
+      'REVOKE ALL ON FUNCTION public.fn_process_cash_accounting_source(uuid) FROM PUBLIC, anon, authenticated, service_role;'
+    );
+    for (const signature of [
+      'fn_retry_cash_accounting_sources(integer)',
+      'fn_union_pnl_inventory_seal_advance(timestamptz,boolean)',
+      'fn_union_settlement_cascade_due()',
+    ]) {
+      expect(sql).toContain(
+        `REVOKE ALL ON FUNCTION public.${signature} FROM PUBLIC, anon, authenticated;`
+      );
+      expect(sql).toContain(`GRANT EXECUTE ON FUNCTION public.${signature} TO service_role;`);
+    }
+    expect(sql).toContain("THEN RAISE EXCEPTION 'cash_retry_exact_grants_required';");
+    expect(sql.match(/\bGRANT EXECUTE\b/g)?.length).toBe(3);
   });
 
   it('a deadlocked cash source is retried inside its own subtransaction, at most three times', () => {

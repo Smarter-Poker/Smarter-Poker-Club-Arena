@@ -401,6 +401,16 @@ BEGIN
  RETURN public.fn_process_weekly_accounting(NULL);
 END $function$;
 
+-- The installed grants, restated: service_role is the engine; the cash
+-- source writer is reached only through the batch and the retry.
+REVOKE ALL ON FUNCTION public.fn_process_cash_accounting_source(uuid) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_retry_cash_accounting_sources(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_retry_cash_accounting_sources(integer) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_union_pnl_inventory_seal_advance(timestamptz,boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_union_pnl_inventory_seal_advance(timestamptz,boolean) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_union_settlement_cascade_due() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_union_settlement_cascade_due() TO service_role;
+
 DO $verify_cash_retry$
 BEGIN
  IF md5(pg_get_functiondef('public.fn_process_cash_accounting_source(uuid)'::regprocedure))<>'460e4b0a936b41246548cb0a9efc9f7f'
@@ -411,5 +421,10 @@ BEGIN
  THEN RAISE EXCEPTION 'cash_retry_exact_postimage_required:%','fn_union_pnl_inventory_seal_advance';END IF;
  IF md5(pg_get_functiondef('public.fn_union_settlement_cascade_due()'::regprocedure))<>'9b9b4ad4bd11c9456ddf1e63509b6780'
  THEN RAISE EXCEPTION 'cash_retry_exact_postimage_required:%','fn_union_settlement_cascade_due';END IF;
+ IF (SELECT proacl::text FROM pg_proc WHERE oid='public.fn_process_cash_accounting_source(uuid)'::regprocedure)<>'{postgres=X/postgres}'
+  OR (SELECT count(*) FROM pg_proc WHERE oid IN('public.fn_retry_cash_accounting_sources(integer)'::regprocedure,
+   'public.fn_union_pnl_inventory_seal_advance(timestamptz,boolean)'::regprocedure,'public.fn_union_settlement_cascade_due()'::regprocedure)
+   AND proacl::text='{postgres=X/postgres,service_role=X/postgres}')<>3
+ THEN RAISE EXCEPTION 'cash_retry_exact_grants_required';END IF;
 END $verify_cash_retry$;
 COMMIT;

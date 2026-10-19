@@ -44,6 +44,10 @@ try:
  for r in deps['definitions']:sql(r['definition'])
  pre=json.loads((fixtures/'unpaid-atomic-cash-contract-preimages.json').read_text())
  for r in pre:sql(r['definition']);assert sql("SELECT md5(pg_get_functiondef('"+r['signature']+"'::regprocedure))")==r['md5']
+ for r in pre:
+  sql('REVOKE ALL ON FUNCTION '+r['signature']+' FROM PUBLIC,anon,authenticated,service_role')
+  if not r['signature'].startswith(('fn_accrue_cash_hand_commissions','fn_prepare_accounting_week')):sql('GRANT EXECUTE ON FUNCTION '+r['signature']+' TO service_role')
+ original_acl={r['signature']:sql("SELECT proacl::text FROM pg_proc WHERE oid='"+r['signature']+"'::regprocedure")for r in pre}
  # Tournament arm is a typed empty prerequisite; cash arm is the actual
  # retained view definition. Tournament payouts are not qualified here.
  cash=deps['views'].split('UNION ALL')[0]
@@ -74,6 +78,7 @@ try:
  assert len(changed)==6,[(s['id'],[k for k in s['contract'] if s['contract'][k]!=canonical[(s['rake_record_id'],s['player_id'],s['club_id'])].get(k)])for s in changed]
  candidate=next((root/'supabase/migrations').glob('20261019211745_*')).read_text();sql(candidate)
  assert sql('SELECT '+candidate.splitlines()[0].split(': ',1)[1])=='t'
+ for sig,acl in original_acl.items():assert sql("SELECT proacl::text FROM pg_proc WHERE oid='"+sig+"'::regprocedure")==acl
  native_hashes={r['signature']:sql("SELECT md5(pg_get_functiondef('"+r['signature']+"'::regprocedure))") for r in pre}
  native_hashes['smarter_private.admit_cash_atomic_contracts(uuid,jsonb)']=sql("SELECT md5(pg_get_functiondef('smarter_private.admit_cash_atomic_contracts(uuid,jsonb)'::regprocedure))")
  def attempt(s,e=expected,abort=False,error=None):

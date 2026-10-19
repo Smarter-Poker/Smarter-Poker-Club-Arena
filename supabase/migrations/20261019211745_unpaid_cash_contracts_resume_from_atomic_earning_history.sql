@@ -866,4 +866,13 @@ DO $view$ DECLARE d text;BEGIN
  EXECUTE 'CREATE OR REPLACE VIEW public.accounting_payable_earning_sources AS '||replace(d,'FROM accounting_cash_rake_sources s','FROM public.accounting_effective_cash_rake_sources s');
 END $view$;
 
+-- CREATE OR REPLACE retains these private production ACLs. State the
+-- browser boundary explicitly for source qualification as well.
+REVOKE ALL ON FUNCTION public.fn_accounting_cash_commission_source_guard() FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.fn_accounting_union_earned_plan_sets(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.fn_accounting_union_earned_plan_window(uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.fn_accrue_cash_hand_commissions(uuid) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.fn_prepare_accounting_week(uuid,uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.fn_rakeback_recompute_split(uuid,date,date) FROM PUBLIC,anon,authenticated;
+
 COMMIT;

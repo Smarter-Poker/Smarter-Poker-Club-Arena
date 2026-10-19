@@ -1,0 +1,28 @@
+{
+  "migration": "20261019190103_a_cash_source_call_fits_the_engines_patience.sql",
+  "executed": "psql -f of the whole file (one BEGIN/COMMIT) on an isolated PostgreSQL 17.11 cluster built by chip-deadlocks.py with production bodies, then 20261019094914 and 20261019171753 applied",
+  "postgres": "PostgreSQL 17.11 (Ubuntu 17.11-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit",
+  "before_md5": {
+    "fn_credit_agent_commissions_batch": "1ae9eb0e32f8169ce0cdd6b730c859a6",
+    "fn_retry_cash_accounting_sources": "779590b67fc21e95504a9827f1289207"
+  },
+  "seconds": 0.02,
+  "after_md5": {
+    "fn_credit_agent_commissions_batch": "a581a0c9b52583014fd5bd89138b525d",
+    "fn_retry_cash_accounting_sources": "0e7fb9713fcacdbda70c846191940cae"
+  },
+  "acl_after": {
+    "fn_credit_agent_commissions_batch": "{postgres=X/postgres,service_role=X/postgres}",
+    "fn_retry_cash_accounting_sources": "{postgres=X/postgres,service_role=X/postgres}"
+  },
+  "config_after": {
+    "fn_credit_agent_commissions_batch": "{search_path=public,statement_timeout=300s}",
+    "fn_retry_cash_accounting_sources": "{search_path=public,statement_timeout=300s}"
+  },
+  "replay": "refused: psql:/var/tmp/qrun-pace/supabase/migrations/20261019190103_a_cash_source_call_fits_the_engines_patience.sql:326: ERROR:  fn_credit_agent_commissions_batch(jsonb) is not the pinned text (md5 a581a0c9b52583014fd5bd89138b525d)",
+  "after_replay_md5": {
+    "fn_credit_agent_commissions_batch": "a581a0c9b52583014fd5bd89138b525d",
+    "fn_retry_cash_accounting_sources": "0e7fb9713fcacdbda70c846191940cae"
+  },
+  "production_preimage_read": "2026-10-19 19:16:03 UTC (read-only): fn_credit_agent_commissions_batch 33e0be86d6a2a88f18be4ec4e058cadd, fn_retry_cash_accounting_sources 0a5daa862601baaf365972ac6b577e6a - 20261019171753 not yet installed; this migration refuses until it is"
+}

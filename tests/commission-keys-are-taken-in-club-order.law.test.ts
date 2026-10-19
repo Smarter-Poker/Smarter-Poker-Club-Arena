@@ -76,7 +76,15 @@ describe('commission keys are taken in club order', () => {
     expect(SUBS).toContain(
       "'postgres|{postgres=X/postgres,service_role=X/postgres}|{search_path=public,statement_timeout=300s}|v|t'"
     );
-    expect(MIG.replace(/--[^\n]*/g, ' ')).not.toMatch(/\bGRANT\b|\bREVOKE\b/i);
+    // The only grant statements restate the engine-only grants production holds.
+    const grants = MIG.replace(/--[^\n]*/g, ' ').match(/^(?:GRANT|REVOKE)[^\n]*$/gm);
+    expect(grants).toEqual([
+      'REVOKE ALL ON FUNCTION public.fn_credit_agent_commissions_batch(jsonb) FROM PUBLIC, anon, authenticated;',
+      'GRANT EXECUTE ON FUNCTION public.fn_credit_agent_commissions_batch(jsonb) TO service_role;',
+      'REVOKE ALL ON FUNCTION public.fn_retry_cash_accounting_sources(integer) FROM PUBLIC, anon, authenticated;',
+      'GRANT EXECUTE ON FUNCTION public.fn_retry_cash_accounting_sources(integer) TO service_role;',
+    ]);
+    expect(MIG).toContain("RAISE EXCEPTION 'the cash source grants moved';");
     // One transaction, bounded locks (CLAUDE.md section 2).
     expect(MIG.match(/^BEGIN;$/gm)).toHaveLength(1);
     expect(MIG.match(/^COMMIT;$/gm)).toHaveLength(1);

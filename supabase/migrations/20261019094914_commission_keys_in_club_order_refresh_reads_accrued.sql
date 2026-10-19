@@ -294,6 +294,24 @@ $retry$)
   RAISE NOTICE 'commission keys are taken in club order: two bodies changed';
 END $subs$;
 
+-- Both stay engine-only. These restate the grants production already holds
+-- (asserted above and again below), so the ACL does not move; GRANT and REVOKE
+-- do not reload PostgREST's schema cache.
+REVOKE ALL ON FUNCTION public.fn_credit_agent_commissions_batch(jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_credit_agent_commissions_batch(jsonb) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_retry_cash_accounting_sources(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_retry_cash_accounting_sources(integer) TO service_role;
+
+DO $grants$
+BEGIN
+  IF (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'public.fn_credit_agent_commissions_batch(jsonb)'::regprocedure)
+       IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}'
+     OR (SELECT p.proacl::text FROM pg_proc p WHERE p.oid = 'public.fn_retry_cash_accounting_sources(integer)'::regprocedure)
+       IS DISTINCT FROM '{postgres=X/postgres,service_role=X/postgres}' THEN
+    RAISE EXCEPTION 'the cash source grants moved';
+  END IF;
+END $grants$;
+
 DO $refresh$
 DECLARE
   v_sig regprocedure := 'public.fn_union_rake_basis_refresh(uuid,timestamptz,timestamptz)'::regprocedure;

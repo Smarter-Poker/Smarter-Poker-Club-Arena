@@ -84,7 +84,7 @@ export interface NaturalMultiRunHistoryRow {
   rit_boards: unknown[];
 }
 
-/** History is supplied by the bounded recent read below, never a global scan. */
+/** Bounded recent history predicts opportunity; actual live evidence certifies both run counts. */
 export function selectNaturalMultiRunSubject(
   tables: NaturalMultiRunCandidate[],
   recent: NaturalMultiRunHistoryRow[]
@@ -96,12 +96,20 @@ export function selectNaturalMultiRunSubject(
     count[row.rit_boards.length - 1]++;
     counts.set(row.table_id, count);
   }
-  const ranked = tables.filter(eligibleNaturalMultiRunTable).flatMap((table) => {
-    const [two, three] = counts.get(table.id) ?? [0, 0];
-    return two > 0 && three > 0
-      ? [{ table, balanced: Math.min(two, three), total: two + three }]
-      : [];
-  });
+  const ranked = tables
+    .filter((table) => {
+      // A mandatory count cannot supply both formats without changing live configuration.
+      const mode = String(table.run_it_mode || '').toLowerCase();
+      return (
+        eligibleNaturalMultiRunTable(table) &&
+        mode !== 'mandatory_twice' &&
+        mode !== 'mandatory_three'
+      );
+    })
+    .map((table) => {
+      const [two, three] = counts.get(table.id) ?? [0, 0];
+      return { table, balanced: Math.min(two, three), total: two + three };
+    });
   ranked.sort(
     (a, b) =>
       b.balanced - a.balanced ||
@@ -110,10 +118,7 @@ export function selectNaturalMultiRunSubject(
       (a.table.id < b.table.id ? -1 : a.table.id > b.table.id ? 1 : 0)
   );
   const selected = ranked[0]?.table;
-  if (!selected)
-    throw new Error(
-      'Natural multirun observation requires one eligible cash table with both two-run and three-run recent history'
-    );
+  if (!selected) throw new Error('Natural multirun observation requires one eligible cash table');
   return selected;
 }
 

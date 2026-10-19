@@ -1,0 +1,67 @@
+{
+  "started": "2026-10-19T10:12:05Z",
+  "postgres": "PostgreSQL 17.11 (Ubuntu 17.11-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit",
+  "functions_pinned_and_verified": 26,
+  "production_md5": {
+    "fn_union_rake_basis_refresh": "c88e99cda4f091c9e48b0f6b173651a4",
+    "fn_credit_agent_commissions_batch": "d4572f3e1efd9c85a0025cc2906c6fae",
+    "fn_retry_cash_accounting_sources": "3788581d5e8f1953663b8929b4688d0a"
+  },
+  "live_md5": "c88e99cda4f091c9e48b0f6b173651a4",
+  "before": {
+    "refused_source_in_window": {
+      "refused": "ERROR:  union_cash_sources_do_not_match_bank:1"
+    },
+    "windowed_horizon_min": null,
+    "union_with_nothing_refused": {
+      "success": true,
+      "skipped": false,
+      "through_min": 50.0,
+      "accrued_through_min": 50.0
+    },
+    "after_the_retry_accrues_it": {
+      "success": true,
+      "skipped": false,
+      "through_min": 50.0,
+      "accrued_through_min": 50.0
+    },
+    "refused_source_at_window_start": {
+      "refused": "ERROR:  union_cash_sources_do_not_match_bank:1"
+    }
+  },
+  "after_md5": {
+    "fn_union_rake_basis_refresh": "9fdc0af3d23759ab843ce122ecaefb03",
+    "fn_credit_agent_commissions_batch": "33e0be86d6a2a88f18be4ec4e058cadd",
+    "fn_retry_cash_accounting_sources": "e9b28c51e08c1754a475658f9720db40"
+  },
+  "after": {
+    "refused_source_in_window": {
+      "success": true,
+      "skipped": false,
+      "through_min": 20.0,
+      "accrued_through_min": 50.0,
+      "unaccrued_from_min": 20.0
+    },
+    "windowed_horizon_min": "20.000",
+    "union_with_nothing_refused": {
+      "success": true,
+      "skipped": false,
+      "through_min": 50.0,
+      "accrued_through_min": 50.0
+    },
+    "after_the_retry_accrues_it": {
+      "success": true,
+      "skipped": false,
+      "through_min": 50.0,
+      "accrued_through_min": 50.0
+    },
+    "refused_source_at_window_start": {
+      "success": false,
+      "error": "accrual_not_yet_in_window",
+      "accrued_through_min": 50.0,
+      "unaccrued_from_min": 0.0
+    }
+  },
+  "passed": true,
+  "finished": "2026-10-19T10:12:10Z"
+}

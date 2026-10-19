@@ -37,8 +37,14 @@ const code = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, ''
 describe('the rakeback settlement watermark', () => {
   it('accepts canonical source receipts before checkpointing the page', () => {
     const settle = sliceMethod(code, 'private async _runSettlementInner(');
-    expect(settle).toContain('readCashSourceBatch(data, ids)');
-    expect(settle.indexOf('readCashSourceBatch(data, ids)')).toBeLessThan(
+    // 2026-10-19: the receipts of every submission, deferred sources included, are
+    // read before the page can be checkpointed; a source still deferred halts it.
+    expect(settle).toContain('readCashSourceBatchOutcome(data, pending)');
+    expect(settle.indexOf('readCashSourceBatchOutcome(data, pending)')).toBeLessThan(
+      settle.indexOf('saveHighWaterMark(nextCursor)')
+    );
+    expect(settle).toContain('if (submission >= CASH_DEFERRAL_RESUBMITS)');
+    expect(settle.indexOf('still deferred for a busy commission key')).toBeLessThan(
       settle.indexOf('saveHighWaterMark(nextCursor)')
     );
     expect(settle).not.toContain('fn_apply_rakeback_player_stats_batch');

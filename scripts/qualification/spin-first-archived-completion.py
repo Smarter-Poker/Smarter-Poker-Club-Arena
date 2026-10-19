@@ -66,7 +66,7 @@ def validate(envelope,after):
  return {'candidate_only':True,'production_qualified':False,'completion_xid_observed_committed':True,'bank_transition':transition,'durable_nonbank_rowsets_exact':22,'fee_accounting_complete':False,'oldest_alert_complete':False,'sequence_rollback_claimed':False}
 
 SQL='scripts/qualification/fixtures/archived-spin/first-canonical-completion.sql'
-SQL_SHA='ad6aec0918307cbf494f36bb8ddeaaa58f968914677f0468bc233c625e062dcc'
+SQL_SHA='dabaebf77966985186c3672e411a4d51aa5e43cc5a136c9ff260209b992e7c4f'
 READBACK_SHA='a1f868c99011cd2ff15d0a706d72877aee3fa113dd6f5a388503d92630c91901'
 
 def encode(value):

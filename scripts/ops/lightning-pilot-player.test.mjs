@@ -136,6 +136,15 @@ function fixture(change = {}, userPatch = {}) {
       cluster_id: pin.clusterId,
       state: 'active',
       exited_at: null,
+      anchor_seat_id: '33333333-3333-4333-8333-333333333333',
+    },
+    table_seats: {
+      id: '33333333-3333-4333-8333-333333333333',
+      user_id: pin.playerId,
+      stack: 1,
+      left_at: null,
+      is_sitting_out: false,
+      leave_pending: false,
     },
     ...change,
   };
@@ -737,3 +746,42 @@ test('unavailable Fold & Watch retains bounded diagnostics and remains unknown',
   assert.equal(r.cleanup, 'local_session_closed');
   assert.equal(b.calls.includes('fold_watch'), false);
 });
+
+for (const patch of [
+  { leave_pending: true },
+  { is_sitting_out: true },
+  { stack: 0 },
+  { left_at: '2026-10-20T15:17:00Z' },
+]) {
+  test(`active pool with unplayable anchor stops before authentication ${JSON.stringify(patch)}`, async () => {
+    const f = fixture({
+      table_seats: {
+        id: '33333333-3333-4333-8333-333333333333',
+        user_id: pin.playerId,
+        stack: 1,
+        left_at: null,
+        is_sitting_out: false,
+        leave_pending: false,
+        ...patch,
+      },
+    });
+    let links = 0;
+    const oldLink = f.admin.auth.admin.generateLink;
+    f.admin.auth.admin.generateLink = async (...args) => {
+      links++;
+      return oldLink(...args);
+    };
+    await assert.rejects(
+      witnessPlayer({
+        admin: f.admin,
+        createClient: () => f.client,
+        chromium: fakeBrowser().chromium,
+        url: 'https://example.invalid',
+        pin,
+      }),
+      /Playable Pilot Anchor Unavailable/
+    );
+    assert.equal(links, 0);
+    assert.deepEqual(f.calls, []);
+  });
+}

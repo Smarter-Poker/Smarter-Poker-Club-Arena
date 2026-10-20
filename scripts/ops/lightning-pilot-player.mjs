@@ -68,6 +68,36 @@ export async function validatePlayer(admin, pin) {
   return target;
 }
 
+/** An active participation may already be sitting out or leaving its anchor. */
+export async function validatePlayablePlayer(admin, pin, validate = validatePlayer) {
+  const target = await validate(admin, pin);
+  const pool = await admin
+    .from('lightning_pool_session')
+    .select('id,anchor_seat_id')
+    .eq('id', pin.poolSessionId)
+    .maybeSingle();
+  if (pool.error || pool.data?.id !== pin.poolSessionId || !UUID.test(pool.data.anchor_seat_id))
+    throw new Error('Playable Pilot Anchor Unavailable');
+  const seat = await admin
+    .from('table_seats')
+    .select('id,user_id,stack,left_at,is_sitting_out,leave_pending')
+    .eq('id', pool.data.anchor_seat_id)
+    .maybeSingle();
+  const row = seat.data;
+  if (
+    seat.error ||
+    row?.id !== pool.data.anchor_seat_id ||
+    row.user_id !== pin.playerId ||
+    row.left_at !== null ||
+    row.is_sitting_out !== false ||
+    row.leave_pending !== false ||
+    !Number.isFinite(Number(row.stack)) ||
+    !(Number(row.stack) > 0)
+  )
+    throw new Error('Playable Pilot Anchor Unavailable');
+  return target;
+}
+
 export async function openPlayerSession(admin, createClient, url, pin, checkDeadline = () => {}) {
   checkDeadline();
   await validatePlayer(admin, pin);
@@ -313,6 +343,7 @@ export async function witnessPlayer({
       clearTimeout(timer);
     }
   };
+  await bounded(validatePlayablePlayer(admin, pin), remaining());
   const { client, session } = await bounded(
     openPlayerSession(admin, createClient, url, pin, remaining),
     remaining()
@@ -369,7 +400,7 @@ export async function witnessPlayer({
       remaining()
     );
     for (const [deviceIndex, device] of PLAYER_DEVICES.entries()) {
-      await bounded(validatePlayer(admin, pin), remaining());
+      await bounded(validatePlayablePlayer(admin, pin), remaining());
       await bounded(
         page.setViewportSize({ width: device.width, height: device.height }),
         remaining()
@@ -415,7 +446,7 @@ export async function witnessPlayer({
         report.subphase = 'player_preflight';
         report.cause = 'player_scope_unverified';
         const renderedBeforePreflight = latestHand;
-        await bounded(validatePlayer(admin, pin), remaining());
+        await bounded(validatePlayablePlayer(admin, pin), remaining());
         // Tap a hand painted after the preflight. Its six database reads take
         // long enough for a fast Lightning hand to end (or the horse's own input
         // to act) under a waiting tap: run 39315415767's desktop fold reached

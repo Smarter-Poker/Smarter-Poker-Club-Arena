@@ -6,6 +6,7 @@ import {
   assertPlayerPin,
   openPlayerSession,
   validatePlayer,
+  validatePlayablePlayer,
   acceptPlayerTerms,
   renderHand,
 } from './lightning-pilot-player.mjs';
@@ -20,32 +21,9 @@ const LEGS = [
   'fold_watch_to_next_hand',
 ];
 export async function validateLatencyPlayer(admin, pin, validate = validatePlayer) {
-  await validate(admin, pin);
-  const pool = await admin
-    .from('lightning_pool_session')
-    .select('id,anchor_seat_id')
-    .eq('id', pin.poolSessionId)
-    .maybeSingle();
-  if (pool.error || pool.data?.id !== pin.poolSessionId || !pool.data.anchor_seat_id)
-    throw new Error('Playable Pilot Anchor Unavailable');
-  const seat = await admin
-    .from('table_seats')
-    .select('id,user_id,stack,left_at,is_sitting_out,leave_pending')
-    .eq('id', pool.data.anchor_seat_id)
-    .maybeSingle();
-  const row = seat.data;
-  if (
-    seat.error ||
-    row?.id !== pool.data.anchor_seat_id ||
-    row.user_id !== pin.playerId ||
-    row.left_at !== null ||
-    row.is_sitting_out === true ||
-    row.leave_pending === true ||
-    !Number.isFinite(Number(row.stack)) ||
-    !(Number(row.stack) > 0)
-  )
-    throw new Error('Playable Pilot Anchor Unavailable');
+  return validatePlayablePlayer(admin, pin, validate);
 }
+
 export function latencyAttemptPlan(maxAttempts = 120) {
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 120)
     throw new Error('Bounded Workload Required');

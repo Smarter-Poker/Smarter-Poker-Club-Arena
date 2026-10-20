@@ -83,10 +83,9 @@ LEGACY_CHECKPOINT_BUDGET_SECONDS=40
 # above; what is left of the budget is the allowance for the entry.
 LEGACY_CHECKPOINT_WORK_MS=25000
 NON_BREAK_RECOVERY_MAX_SECONDS=300
-# CLAUDE.md 13: the engine restarts inside the announced break that opens at
-# :55 of every hour. This is the same minute every other surface reads, and
+# CLAUDE.md 13: routine activation starts at 04:00 America/Chicago. This is the same minute every other surface reads, and
 # tests/the-break-clocks-agree.law.test.ts pins them together.
-BREAK_START_MINUTE=55
+BREAK_START_MINUTE=0
 MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS) * 1000))
 LEGACY_MIN_BREAK_REMAINING_MS=$(((BREAK_CUTOVER_PROOF_SECONDS + BREAK_ROLLBACK_RESERVE_SECONDS + BREAK_DEADLINE_SLACK_SECONDS - LEGACY_CHECKPOINT_BUDGET_SECONDS) * 1000))
 # The engine's break is BREAK_DURATION_MS = 5 * 60 * 1000 in
@@ -431,14 +430,18 @@ release_engine_lock() {
 # the wrap-around reading it replaced said the next break was an hour away at
 # :56, which is inside the break this transaction is trying to use.
 seconds_to_next_break() {
-  local past break_at
-  past=$(( $(date -u +%s) % 3600 ))
-  break_at=$(( BREAK_START_MINUTE * 60 ))
-  if [ "$past" -ge "$break_at" ]; then
-    echo 0
-  else
-    echo $(( break_at - past ))
-  fi
+  python3 - <<'DAILY'
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+now = datetime.now(timezone.utc)
+local = now.astimezone(ZoneInfo('America/Chicago'))
+start = local.replace(hour=4, minute=0, second=0, microsecond=0)
+if start <= local < start + timedelta(minutes=5):
+    print(0)
+else:
+    if local >= start: start += timedelta(days=1)
+    print(max(0, int((start.astimezone(timezone.utc)-now).total_seconds())))
+DAILY
 }
 
 source_target_is_current() {
@@ -715,10 +718,20 @@ maintenance_certificate() {
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" RECOVERY_URGENT="${RECOVERY_URGENT:-0}" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
+# Protect mixed-version rollout too: an older engine still opens hourly breaks.
+# Routine releases may consume only the daily 04:00 Chicago certificate.
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+local=datetime.now(ZoneInfo("America/Chicago"))
+daily=(local.hour==4 and local.minute<5)
+emergency=(m.get("reason")=="Deployment Recovery" or os.environ.get("RECOVERY_URGENT")=="1")
+transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
+if not daily and not emergency and not transition: raise SystemExit(1)
 remaining=int(m.get("remainingMs") or 0)
 window=(d.get("running") is True and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True)
 if not window: raise SystemExit(1)
@@ -863,10 +876,21 @@ legacy_checkpoint_countdown() {
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$http_code" in 200|503) ;; *) return 1 ;; esac
-  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) python3 -c '
+  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) RECOVERY_URGENT="${RECOVERY_URGENT:-0}" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
+# Protect mixed-version rollout too: an older engine still opens hourly breaks.
+# Routine releases may consume only the daily 04:00 Chicago certificate.
+import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
+local=datetime.now(ZoneInfo("America/Chicago"))
+daily=(local.hour==4 and local.minute<5)
+emergency=(m.get("reason")=="Deployment Recovery" or os.environ.get("RECOVERY_URGENT")=="1")
+transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
+if not daily and not emergency and not transition: raise SystemExit(1)
+
 remaining=m.get("remainingMs"); ends=m.get("breakEndsAt")
 valid_number=lambda n: isinstance(n,(int,float)) and not isinstance(n,bool) and math.isfinite(n)
 if not (d.get("running") is True and m.get("active") is True and m.get("phase")=="counting_down" and m.get("durableConfirmed") is True and valid_number(remaining) and valid_number(ends)):
@@ -984,17 +1008,8 @@ print(",".join(signs))
     echo "engine-degraded $degraded"
     return 0
   fi
-  if [ "${CERTIFICATE_DEADLINE:-0}" -gt 0 ]; then
-    now="$(date +%s)"
-    past=$(( now % 3600 ))
-    next_break=$(( now - past + BREAK_START_MINUTE * 60 ))
-    [ "$past" -lt $(( BREAK_START_MINUTE * 60 )) ] || next_break=$(( next_break + 3600 ))
-    last_admission=$(( next_break + (BREAK_WINDOW_MS - BREAK_ADMISSION_MIN_BREAK_MS) / 1000 ))
-    if [ "$last_admission" -ge "$CERTIFICATE_DEADLINE" ]; then
-      echo "deadline the next scheduled admission ends at $last_admission, at or after the certificate deadline $CERTIFICATE_DEADLINE"
-      return 0
-    fi
-  fi
+  # A routine request's expiry is never an emergency. It waits for the next
+  # daily producer invocation rather than manufacturing a daytime freeze.
   return 0
 }
 
@@ -1069,16 +1084,15 @@ newer_release_awaiting_certificate() {
 }
 
 request_recovery_window() {
-  local health minute now stamp outcome reason cause_key newer stuck
+  local health minute now stamp outcome reason cause_key newer stuck cause_required
   local reserve_args
   [ "$RECOVERY_REQUESTED" = 0 ] || return 0
   # A drill is planned work: it waits for a scheduled break and never spends
   # the hour's one off-cycle window that a real emergency may need.
   [ -z "${DRILL_MODE:-}" ] || return 0
   now="$(date +%s)"
-  minute=$(( (now % 3600) / 60 ))
-  # Leave the normal announcement and its database buffer intact.
-  [ "$minute" -ge 3 ] && [ "$minute" -lt 45 ] || return 0
+  # The engine owner checks overlap with the actual daily announcement.
+  # Hourly tournament breaks do not restrict emergency global maintenance.
   [ "$now" -ge "$RECOVERY_NEXT_EVALUATION" ] || return 0
   health="$(curl -sS --max-time 5 http://127.0.0.1:8080/health 2>/dev/null)" || return 0
   printf '%s' "$health" | python3 -c '
@@ -1117,7 +1131,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   # releases for up to the whole lock wait and could end this one in `die`.
   # It waits for the scheduled break without touching the lock or the seal.
   case "${reason%% *}" in
-    urgent|engine-degraded|deadline) ;;
+    urgent|engine-degraded) ;;
     *) return 0 ;;
   esac
   cause_key="$RECOVERY_ADMISSION_MISSED:${reason%% *}"
@@ -1161,6 +1175,10 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     return 0
   fi
   [[ "$stamp" =~ ^[1-9][0-9]{12}$ ]] || die 'invalid recovery announcement timestamp'
+  cause_required="$(printf '%s' "$health" | python3 -c '
+import json,sys
+print(1 if (json.load(sys.stdin).get("maintenance") or {}).get("recoveryWindowCauseRequired") is True else 0)
+')" || return 0
   RECOVERY_REQUESTED=1
   echo "[engine-release-transaction] off-cycle recovery window reason: $reason"
   # The configured key stays inside the running engine container. The API is
@@ -1168,13 +1186,15 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   # A lost response is UNKNOWN; observe the certificate, never allocate a new
   # timestamp or send another announcement in this invocation.
   outcome="$(timeout --signal=TERM --kill-after=1s 20s docker exec -i "$CONTAINER" \
-    node - "$stamp" <<'NODE'
+    node - "$stamp" "${reason%% *}" "$cause_required" <<'NODE'
 const announcedAt=Number(process.argv[2]);
+const cause=process.argv[3];
+const causeRequired=process.argv[4]==="1";
 const key=process.env.INTERNAL_API_KEY;
 if (!key) process.exit(1);
 fetch('http://127.0.0.1:8080/internal/maintenance-recovery-window', {
   method:'POST', headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},
-  body:JSON.stringify({announcedAt}), signal:AbortSignal.timeout(15000)
+  body:JSON.stringify(causeRequired ? {announcedAt,cause} : {announcedAt}), signal:AbortSignal.timeout(15000)
 }).then(async r=>{
   const d=await r.json();
   if (!r.ok || !['accepted','active','pending','busy','expired','use_hourly','unavailable'].includes(d.status)) process.exit(1);
@@ -1784,6 +1804,7 @@ fi
 # the scheduled break, never admit a cutover.
 RECOVERY_WAIT_STARTED_EPOCH="$(date +%s)"
 RECOVERY_URGENT=0
+DAILY_TRANSITION=0
 if [ -z "${DRILL_MODE:-}" ] && URGENT_HIGH_WATER="$(timeout --signal=TERM --kill-after=1s 10s \
   "$RELEASE_SEAL" get high-water-sha 2>/dev/null)" \
   && [[ "$URGENT_HIGH_WATER" =~ ^[0-9a-f]{40}$ ]] \
@@ -1792,6 +1813,16 @@ if [ -z "${DRILL_MODE:-}" ] && URGENT_HIGH_WATER="$(timeout --signal=TERM --kill
   && grep -Fqx -- "$RECOVERY_URGENT_TRAILER" <<<"$URGENT_MESSAGES"; then
   RECOVERY_URGENT=1
   echo "[engine-release-transaction] a commit in $URGENT_HIGH_WATER..$SHA carries '$RECOVERY_URGENT_TRAILER'; this release may ask for an off-cycle window without waiting for evidence"
+fi
+
+# Owner-authorized initial installation, 2026-10-20: one final existing :55
+# window, only while the serving engine lacks the new daily schedule. This
+# marker cannot request recovery, and a daily engine closes it permanently.
+if [ -z "${DRILL_MODE:-}" ] && [ -n "${URGENT_HIGH_WATER:-}" ] \
+  && TRANSITION_MESSAGES="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
+    git -C "$REPO_DIR" log --format=%B "$URGENT_HIGH_WATER..$SHA" 2>/dev/null)" \
+  && grep -Fqx 'Engine-Release: daily-maintenance-transition' <<<"$TRANSITION_MESSAGES"; then
+  DAILY_TRANSITION=1
 fi
 
 # Built, fresh and about to wait at the certificate: say so for older targets.

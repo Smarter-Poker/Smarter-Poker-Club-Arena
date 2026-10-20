@@ -133,8 +133,8 @@ describe('the socket clocks agree, and clear any proxy idle timeout', () => {
 describe('the break minute is the same minute everywhere', () => {
   const engineMinute = Number(ENGINE.match(/BREAK_START_MINUTE = (\d+)/)![1]);
 
-  it('the engine parks at :55', () => {
-    expect(engineMinute).toBe(55);
+  it('routine maintenance parks at 04:00 Chicago', () => {
+    expect(engineMinute).toBe(0);
   });
 
   // Added 2026-09-12. The release transaction now decides whether a superseded
@@ -147,10 +147,12 @@ describe('the break minute is the same minute everywhere', () => {
     // It must read the clock, not a countdown handed to it by the engine: the
     // engine is down for about two of the five break minutes.
     expect(RELEASE_TRANSACTION).toMatch(/seconds_to_next_break\(\) \{/);
-    expect(RELEASE_TRANSACTION).toContain('past=$(( $(date -u +%s) % 3600 ))');
+    expect(RELEASE_TRANSACTION).toContain("ZoneInfo('America/Chicago')");
     // A break that is already open reads as zero away. The wrap-around this
     // replaced said "an hour" at :56, which is inside the break being used.
-    expect(RELEASE_TRANSACTION).toMatch(/if \[ "\$past" -ge "\$break_at" \]; then\s*\n\s*echo 0/);
+    expect(RELEASE_TRANSACTION).toContain(
+      'start = local.replace(hour=4, minute=0, second=0, microsecond=0)'
+    );
   });
 
   it('the event-owned deploy spans a cold build, a full-hour wait, and proof', () => {
@@ -312,7 +314,7 @@ describe('the database refuses migrations across the whole break window', () => 
   const breakMinute = Number(ENGINE.match(/BREAK_START_MINUTE = (\d+)/)![1]);
   const leadMinutes = Number(ENGINE.match(/LAST_HAND_LEAD_MS = (\d+) \* 60 \* 1000/)![1]);
   const breakMinutes = Number(ENGINE.match(/BREAK_DURATION_MS = (\d+) \* 60 \* 1000/)![1]);
-  const announceMinute = breakMinute - leadMinutes; // :53
+  const announceMinute = (breakMinute - leadMinutes + 60) % 60; // :53
   const thawMinute = (breakMinute + breakMinutes) % 60; // :00
 
   it('opens at :50 and closes at :03, in UTC', () => {
@@ -330,16 +332,21 @@ describe('the database refuses migrations across the whole break window', () => 
     // The guard reads the clock per DDL statement, not at COMMIT, and a
     // commit is followed by ~28 s of schema reload. Three minutes is that
     // slack, and the announcement's advisory lock is what it protects.
-    expect(announceMinute).toBe(53);
+    expect(announceMinute).toBe(58);
     expect(announceMinute - opens).toBeGreaterThanOrEqual(3);
   });
 
-  it('closes at least two minutes after the thaw, past the last resume wave', () => {
-    const waves = Number(ENGINE.match(/RESUME_WAVES = (\d+);/)![1]);
-    const gapMs = Number(ENGINE.match(/RESUME_WAVE_GAP_MS = (\d+);/)![1]);
-    expect(thawMinute).toBe(0);
-    expect(closes - thawMinute).toBeGreaterThanOrEqual(2);
-    expect((closes - thawMinute) * 60_000).toBeGreaterThan((waves - 1) * gapMs);
+  it('retains the conservative hourly DDL guard and protects the full actual daily freeze', () => {
+    // Existing DDL-only blackout does not freeze games. The durable predicate
+    // protects any actual daily/emergency window beyond :03 through v3 thaw.
+    expect(thawMinute).toBe(5);
+    expect(WINDOW_SQL).toContain('public.fn_entry_purchases_frozen()');
+    expect(WINDOW_SQL).toContain('apply after its durable release');
+    const entry = read(
+      'supabase/migrations/20260908042800_maintenance_announcement_and_entry_purchases_are_serialized.sql'
+    );
+    expect(entry).toContain("b.phase = 'counting_down'");
+    expect(entry).toContain('b.break_ends_at > clock_timestamp()');
   });
 
   it('is enforced by the database on both DDL events, not by a sentence', () => {

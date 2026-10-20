@@ -160,9 +160,9 @@ function build(engineCount = 3) {
 const AT = (iso: string): number => new Date(iso).getTime();
 
 /** The exact instant the replacement engine took leadership on 2026-09-08. */
-const CUTOVER = AT('2026-09-08T14:56:33.929Z');
+const CUTOVER = AT('2026-09-08T09:01:33.929Z');
 /** The hour its countdown was pointing at on every screen. */
-const HOUR = AT('2026-09-08T15:00:00.000Z');
+const HOUR = AT('2026-09-08T09:05:00.000Z');
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
@@ -267,7 +267,7 @@ describe('and never freezes anything it should not', () => {
   it('parks nothing outside [:53, :00), at any minute of the hour', async () => {
     for (let minute = 0; minute < 60; minute++) {
       for (const second of [0, 30, 59]) {
-        const boot = AT('2026-09-08T14:00:00.000Z') + minute * 60_000 + second * 1000;
+        const boot = AT('2026-09-08T08:05:00.000Z') + minute * 60_000 + second * 1000;
         vi.setSystemTime(boot);
         const { mb, engines } = build(2);
 
@@ -324,8 +324,8 @@ describe('and never freezes anything it should not', () => {
     const { mb, engines, store } = build();
     store.row = {
       phase: 'counting_down',
-      announcedAt: AT('2026-09-08T14:53:00.000Z'),
-      breakStartedAt: AT('2026-09-08T14:55:01.000Z'),
+      announcedAt: AT('2026-09-08T08:58:00.000Z'),
+      breakStartedAt: AT('2026-09-08T09:00:01.000Z'),
       breakEndsAt: adoptedEnd,
       reason: 'Scheduled Engine Maintenance',
       ownershipToken: 'owner-before-restart',

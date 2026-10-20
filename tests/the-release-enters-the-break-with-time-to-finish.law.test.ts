@@ -129,6 +129,7 @@ function admit(remainingMs: number, headroomMs: number) {
     [
       '-c',
       `set -euo pipefail
+RECOVERY_URGENT=1
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${countdown}
@@ -490,6 +491,7 @@ function certificate(remainingMs: number, minimum?: number) {
       phase: 'counting_down',
       durableConfirmed: true,
       readyForRestart: true,
+      reason: 'Deployment Recovery',
       unparkedTables: 0,
       remainingMs,
     },
@@ -499,6 +501,7 @@ function certificate(remainingMs: number, minimum?: number) {
     [
       '-c',
       `set -u
+RECOVERY_URGENT=1
 MIN_BREAK_REMAINING_MS=${ENTRY_MS}
 curl() { printf '%s\\n%s' "$PROBE_BODY" "200"; }
 ${certificateHelper}

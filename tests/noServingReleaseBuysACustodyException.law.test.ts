@@ -93,6 +93,7 @@ function run(certificateSource: string, reasons: Record<string, number>, release
     ...(releaseSha === undefined ? {} : { releaseSha }),
     handsInFlightTotal: 0,
     maintenance: {
+      reason: 'Deployment Recovery',
       active: true,
       phase: 'counting_down',
       durableConfirmed: true,

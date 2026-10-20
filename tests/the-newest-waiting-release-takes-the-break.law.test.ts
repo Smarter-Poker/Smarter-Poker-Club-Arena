@@ -369,6 +369,7 @@ const certificate = (maintenance: Record<string, unknown>, hands = 0) => {
     running: true,
     handsInFlightTotal: hands,
     maintenance: {
+      reason: 'Deployment Recovery',
       active: true,
       phase: 'counting_down',
       durableConfirmed: true,

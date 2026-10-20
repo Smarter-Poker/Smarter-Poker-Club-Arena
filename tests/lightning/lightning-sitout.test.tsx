@@ -114,12 +114,9 @@ describe('Lightning idle return and recovery', () => {
     rerender({ status: 'connected' });
     await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
   });
-  it('reconciles only the exact owner persisted event and preserves it through unrelated events', async () => {
+  it('renders the exact owner persisted event directly without polling or another database read', async () => {
     const pending = deferred();
-    const read = vi
-      .fn()
-      .mockResolvedValueOnce({ sittingOut: false, since: null })
-      .mockImplementationOnce(() => pending.promise);
+    const read = vi.fn(() => pending.promise);
     const event = {
       type: 'lightning_sitout_changed',
       pool_session_id: pool,
@@ -139,15 +136,22 @@ describe('Lightning idle return and recovery', () => {
         }),
       { initialProps: { nextEvent: null as Record<string, unknown> | null } }
     );
-    await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
     rerender({ nextEvent: { ...event, player_id: occupancy } });
-    expect(read).toHaveBeenCalledTimes(1);
+    expect(result.current.sittingOut).toBe(false);
+    rerender({ nextEvent: { ...event, pool_session_id: occupancy } });
+    expect(result.current.sittingOut).toBe(false);
+    rerender({ nextEvent: { ...event, sit_out_at: 'invalid' } });
+    expect(result.current.sittingOut).toBe(false);
     rerender({ nextEvent: event });
-    expect(read).toHaveBeenCalledTimes(2);
-    rerender({ nextEvent: { type: 'hand_started' } });
-    await act(async () => pending.resolve(paused));
     expect(result.current.sittingOut).toBe(true);
     expect(result.current.since).toBe(paused.since);
+    rerender({ nextEvent: { type: 'hand_started' } });
+    await act(async () => pending.resolve({ sittingOut: false, since: null }));
+    expect(result.current.sittingOut).toBe(true);
+    expect(read).toHaveBeenCalledTimes(1);
+    rerender({ nextEvent: { ...event, sitting_out: false, sit_out_at: null } });
+    expect(result.current.sittingOut).toBe(false);
+    expect(result.current.since).toBeNull();
   });
   it('a newer accepted pause or resume cannot be overwritten by an older bootstrap', async () => {
     const pending = deferred();

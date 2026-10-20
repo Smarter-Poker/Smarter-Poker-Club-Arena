@@ -23,9 +23,9 @@ retry, funding action or engine API is introduced. Existing freeze, one-hand,
 formation and financial guards stay authoritative. The accepted action result
 supplies immediate local presentation; bootstrap/reconnect reads are recovery.
 The named persisted `lightning_sitout_changed` event on the existing pool
-socket triggers one own-anchor reconciliation for cross-device transitions.
-Only matching pool/player events are accepted; unrelated hand events cannot
-cancel the pending read. Its containing server follow-up remains a live
+socket renders the persisted transition directly for cross-device changes.
+Only matching pool/player events with a UUID occupancy and valid persisted
+timestamp are accepted; older bootstrap reads cannot overwrite that event. Its containing server follow-up remains a live
 verification prerequisite. Successful action ACKs remain immediately usable.
 
 Verification: focused regressions cover exact own-anchor lookup, replaced

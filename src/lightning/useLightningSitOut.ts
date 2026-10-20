@@ -103,37 +103,37 @@ export function useLightningSitOut({
       current = false;
     };
   }, [key, pool, cluster, userId, connectionStatus, read, currentScope]);
-  // Only the owner's persisted, named transition requests reconciliation.
-  // Ordinary hand events cannot cancel this read or manufacture a hand seat.
+  // Render the original persisted transition directly from its named event.
+  // The existing authenticated pool socket is owner-only. Bootstrap/reconnect
+  // remains an exact anchor read, not the trigger for this visible transition.
   useEffect(() => {
     if (
       !key ||
       !pool ||
-      !cluster ||
       !userId ||
       event?.type !== 'lightning_sitout_changed' ||
       event.pool_session_id !== pool ||
       event.player_id !== userId ||
       typeof event.occupancy_id !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        event.occupancy_id
+      ) ||
       typeof event.sitting_out !== 'boolean'
     )
       return;
-    const epoch = ++generation.current;
-    void read(cluster, pool, userId)
-      .then((value) => {
-        if (
-          mounted.current &&
-          identity.current === key &&
-          scope.current === currentScope &&
-          generation.current === epoch
-        )
-          setState(value ? { key, scope: currentScope, value } : null);
-      })
-      .catch((error) => {
-        if (mounted.current && identity.current === key && generation.current === epoch)
-          reportError(error, 'TablePage.lightning_sitout_read_failed', { clusterId: cluster });
-      });
-  }, [event, key, pool, cluster, userId, read, currentScope]);
+    const since =
+      event.sitting_out && typeof event.sit_out_at === 'string'
+        ? Date.parse(event.sit_out_at)
+        : null;
+    if (
+      (event.sitting_out && (since === null || !Number.isFinite(since))) ||
+      (!event.sitting_out && event.sit_out_at !== null)
+    )
+      return;
+    if (!mounted.current || identity.current !== key || scope.current !== currentScope) return;
+    generation.current++;
+    setState({ key, scope: currentScope, value: { sittingOut: event.sitting_out, since } });
+  }, [event, key, pool, userId, currentScope]);
   const isCurrent = useCallback(
     (targetPool: string, targetUser: string) =>
       mounted.current &&

@@ -4,7 +4,7 @@
   "historical_catalog": "Original37 accepted provider schema from CI35267921827/native105361807361; no production user rows.",
   "scope": "Prospective complete original weeks. Native tests are separate from protected publication and production behavior.",
   "repository_files": {
-    "scripts/dev/test-union-weekly-basis.py": "3f151d0775837331fce21b2bbcba10da5f358ca192a9db00cb886cec1edfe2e3",
+    "scripts/dev/test-union-weekly-basis.py": "bec0ca77f49087a1406c9dc465a21f1fe8760cdc176c34adb5247b3b4d8d5295",
     "supabase/accounting/weekly-v3/components/20260914150848_union_pnl_evidence_is_distinct_from_posted_chip_payments.sql": "d09383d8ca6a76aa1d42d99bc4646979f4e2d1adedda16b0e66d450e38b2bcac",
     "supabase/accounting/weekly-v3/components/20260914153000_uncertified_union_pnl_blocks_close_and_squareup.sql": "3532e95c4b22e95121d02836607ffba0d8bca9315d94e5b36883d1037ef947a9",
     "supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql": "b19f682725f07217236da2a20b1bd53e2d3e804d1f8337a7660567deb25bfafd",
@@ -91,6 +91,13 @@
     "supabase/migrations/20260927155651_held_tournament_fees_are_recognized_on_the_owner_host_club_b.sql": "97c8e07642ccbfaf15b8b92eb86f908518eab0592b2e99d1bb23c43934a62c0f",
     "tests/fixtures/union-weekly-basis/page-evidence-regression.sql": "6c6cd0be50d0d2c7d76588c10815ebec418c5f7bf3faba7e155399ec5bc32885",
     "supabase/migrations/20260926140858_owner_authorized_legacy_discharge_of_the_deferred_rakeback_w.sql": "034b3ca5d166781f4fb6fedb18aa52ed414e47f34d043d1a6cfc22502304984c",
-    "tests/fixtures/owner-legacy-discharge/regression.sql": "19aacf1a33c87ad16b13669ef0df0d890366b615a7b6df44f21beefb40915503"
+    "tests/fixtures/owner-legacy-discharge/regression.sql": "19aacf1a33c87ad16b13669ef0df0d890366b615a7b6df44f21beefb40915503",
+    "scripts/ci/qualify-commission-club-legacy.py": "0625af694ca4a4c452fbf495e23e1e5e16ff9967b0da4cdcb802f671a513c47b",
+    "scripts/ci/fixtures/commission-club-history-preimages.json": "01da8ddb15727b8633502054e55728b12884876649827a3f1a527602eb20bb73",
+    "supabase/migrations/20261020163005_weekly_commission_journals_keep_their_original_club.sql": "cadf718948311b4c88cbacb3072abcd45863291ed1eae8180b56e233c0ab30a4"
+  },
+  "commission_club_history_20261020": {
+    "reason": "Connected actual owner-discharge before/after qualification plus original R2 journal and Cashier regression enforced in maintained parent. Historical bindings unchanged.",
+    "changed_active_inputs": ["scripts/dev/test-union-weekly-basis.py"]
   }
 }

@@ -185,3 +185,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original satellite ownership verifies its exact ledger receipt and forty-source guard.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-satellite-ledger-identity-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
+
+# Original cash freshness preserves earning scope plus late effective admissions.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-effective-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

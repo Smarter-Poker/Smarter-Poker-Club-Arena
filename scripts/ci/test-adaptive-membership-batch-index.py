@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify the exact concurrent membership index on disposable PostgreSQL17."""
+"""Qualify both exact retirement indexes on disposable PostgreSQL17."""
 import argparse,hashlib,json,os,shutil,subprocess,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
@@ -48,3 +48,6 @@ try:
 finally:
  if started:run([PG/'pg_ctl','-D',root/'d','-m','immediate','-w','stop'])
  shutil.rmtree(root)
+
+# The maintained CI entrypoint covers both retirement verification indexes.
+run([os.sys.executable,ROOT/'scripts/ci/test-adaptive-ledger-digest-probe.py','--scratch',a.scratch,'--output',a.output.with_name(a.output.stem+'-digest-probe'+a.output.suffix)])

@@ -224,7 +224,10 @@ try:
  run((root/'tests/fixtures/union-weekly-basis/page-evidence-regression.sql').read_text(),'page-evidence-regression')
  # Last: a deferred week below the floors is discharged once through the
  # weekly stages' leg shapes and document authority, and replays nothing.
- run((root/'tests/fixtures/owner-legacy-discharge/regression.sql').read_text(),'owner-legacy-discharge-regression')
+ spec=importlib.util.spec_from_file_location('commission_club_legacy',root/'scripts/ci/qualify-commission-club-legacy.py')
+ module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+ module.qualify(root,run)
+
 finally:
  if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(base/'data'),'-m','immediate','-w','stop'],check=True,capture_output=True,env=dict(os.environ,LC_ALL='C',LANG='C'))
  print('Evidence retained: '+str(base),flush=True)

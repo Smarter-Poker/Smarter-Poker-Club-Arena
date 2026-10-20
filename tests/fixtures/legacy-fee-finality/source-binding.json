@@ -3,7 +3,7 @@
     "scripts/ci/classify-ci-changes.mjs": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "072f5a7849f768e28a723a8369837d01f3550e4ea92db079e86d0bb7d482da3f",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
@@ -191,12 +191,16 @@
     },
     {
       "integration": "2026-09-27 cashier online-index qualification with current protected main94c3205",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Preserve both cashier routing and protected horse admission routing; financial SQL and all historical assertions unchanged. Nested hashes reflect this exact integrated metadata."
     },
     {
       "integration": "2026-09-27 scoped read native qualification with protected36bbcb23ad",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Preserve cashier, horse-admission, operator, presence and final-reader changes and all historical assertions. Bind actual merged classifier/workflow and nested metadata bytes."
     },
     {
@@ -215,7 +219,9 @@
     },
     {
       "integration": "2026-09-27 scoped reads with protected certification retirement 3be3efe7c2",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
@@ -227,7 +233,9 @@
     },
     {
       "integration": "2026-09-27 backed payout discovery with protected settlement attribution and catalog 6e32e04f2f",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
@@ -239,7 +247,9 @@
     },
     {
       "integration": "2026-09-27 backed payout discovery with protected BBJ indexes eb6e949396",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
@@ -263,7 +273,9 @@
     },
     {
       "integration": "2026-09-27 backed payout discovery with protected archived Spin 593f355b75",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
@@ -275,22 +287,30 @@
     },
     {
       "integration": "2026-09-27 BBJ contribution cover with protected main6e32e04f2f",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Preserve both native checks, all accounting assertions and both parent histories; bind exact integrated workflow, classifier and nested source maps."
     },
     {
       "integration": "2026-09-27 BBJ contribution cover with protected meter reads eb6e949396",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 BBJ contribution cover integration with protected13ebc7240c",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 backed payout discovery with protected native backend disposal a5b2b5f8",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
@@ -328,67 +348,93 @@
     },
     {
       "integration": "2026-09-27 Satellite audit indexes with protected meter reads eb6e949396",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 Satellite and settlement conservation lookup index integration",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 Conservation lookup integration with protected13ebc7240c",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 Certification player lookup with protected meter reads eb6e949396",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 Certification player lookup integration with protected13ebc7240c",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 Four qualified lookup indexes: cleanup-consolidation",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 Four qualified lookup indexes: current-main-integration",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 Four qualified lookup indexes: bbj-main-integration",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 backed payout discovery with protected5405 and current native routes5f613996",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 stranded-player reader with protected main 91fc1220",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 stranded-player reader with protected main 5f613996",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-27 backed payout discovery with protected stranded-player reader a1bfde62",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Retain both native qualification routes, every accounting assertion and both parents historical records; bind exact integrated workflow/classifier and nested metadata bytes."
     },
     {
       "integration": "2026-09-30 Diamond Phase 11 line 2 concurrency runner (agent/claude-diamond-phase-11/test/one-diamond-cannot-be-spent-twice)",
-      "changed_files": ["scripts/ci/classify-ci-changes.mjs"],
+      "changed_files": [
+        "scripts/ci/classify-ci-changes.mjs"
+      ],
       "why": "Route the Diamond concurrency runner's capture, manifest, tables and seed (tests/sql/diamond-concurrency-*) to the Diamond SQL acceptance lane of the required accounting job, beside the diamond-tournament-* files that lane already names: one alternation added to diamondSqlAcceptance. No route, native phase, fixture or assertion is removed or weakened."
     },
     {
@@ -607,7 +653,9 @@
     "protectedMain": "03957b2f2770685aff35a18c4d201bdc9ce5f7e3",
     "sourceParent": "1d34c60034dd8c048b4aa3a622b981b5262e473e",
     "reason": "Preserve both parents qualification histories and native routes; derive active pins from actual integrated source and nested metadata. No financial assertion changes.",
-    "updatedPins": ["scripts/ci/classify-ci-changes.mjs"]
+    "updatedPins": [
+      "scripts/ci/classify-ci-changes.mjs"
+    ]
   },
   "coverageProtectedMainSecondIntegration20260927": {
     "previousQualifiedHead": "474ef7e117dd2c8b6b053a0c937fad0401ea42e6",
@@ -978,12 +1026,26 @@
     "previous": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234",
     "current": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
   },
+  "commission_club_history_parent_20261020": {
+    "reason": "Existing full-parent entrypoint unconditionally executes original R2 exact-club journal native regression. Financial assertions and historical audit evidence unchanged.",
+    "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
+    "sha256": "ceb603e562a54088d35ddf67c4a48072a1a435a80b7c5084e4b02f9ff1992253"
+  },
   "ticketRefundPnlParent20261020": {
     "reason": "The reviewed parent diff appends the unconditional actual-component ticket-refund PNL qualification. Existing financial fixture assertions, financial source pins, historical audit records and qualification states are preserved. Update current parent and dependent binding identities only; this is not production certification.",
     "changes": {
       "scripts/dev/test-full-weekly-accounting-activation.sh": {
         "previous": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
         "current": "072f5a7849f768e28a723a8369837d01f3550e4ea92db079e86d0bb7d482da3f"
+      }
+    }
+  },
+  "commission_ticket_parent_integration_20261020": {
+    "reason": "Resolve protected C ticket-refund qualification and D commission-club-history qualification append conflicts by retaining both unconditional native calls. Preserve all decoded historical evidence and both prior explanation sections unchanged. Rebind only affected current parent/dependent fixture bytes after normal formatting; not production certification.",
+    "changes": {
+      "scripts/dev/test-full-weekly-accounting-activation.sh": {
+        "previous": "ceb603e562a54088d35ddf67c4a48072a1a435a80b7c5084e4b02f9ff1992253",
+        "current": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae"
       }
     }
   },
@@ -996,6 +1058,6 @@
         "current_sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
       }
     ],
-    "integration_reason": "Preserve concurrent protected ticket-refund PNL parent qualification and its audits; bind the combined current classifier and dependent files. No financial assertion or qualification status changes."
+    "integration_reason": "Preserve concurrent protected commission and ticket-refund qualification parents and all audit histories. Update combined current classifier/dependent identities only; no financial assertion or qualification status changes."
   }
 }

@@ -51,6 +51,26 @@ afterEach(() => {
 });
 
 describe('a waiting table still asks who is there', () => {
+  it('a parked Lightning anchor observes the original stay clock before releasing its held leave', async () => {
+    const engine = waitingCashEngine();
+    engine.isCurrentEngine = () => true;
+    engine.observeDealingHalt = vi.fn(async () => {});
+    engine.stopIfClusterTableClosed = vi.fn(async () => {});
+    engine.completeQueuedLeavesWhileHalted = vi.fn(async () => {
+      engine.leaveHeldByClock.set(HUMAN, 'original-occupancy');
+    });
+    engine.chipContinuity.sweepPresence = vi.fn(async (_players, active) => {
+      expect(active(HUMAN)).toBe(true);
+      expect(engine.leaveHeldByClock.get(HUMAN)).toBe('original-occupancy');
+    });
+    await engine.passWhileDealingHalted();
+    expect(engine.chipContinuity.sweepPresence).toHaveBeenCalledTimes(1);
+    expect(engine.releaseLeavesHeldByClock).toHaveBeenCalledTimes(1);
+    expect(engine.chipContinuity.sweepPresence.mock.invocationCallOrder[0]).toBeLessThan(
+      engine.releaseLeavesHeldByClock.mock.invocationCallOrder[0]
+    );
+  });
+
   it('a restarted Lightning anchor supplies presence while ordinary dealing stays halted', async () => {
     const engine = waitingCashEngine();
     engine.isCurrentEngine = () => true;
@@ -76,8 +96,8 @@ describe('a waiting table still asks who is there', () => {
     ]);
     expect(engine.dealingHaltLock).toBe(true);
     expect(engine.seatedPlayers.map((p: any) => p.stack)).toEqual([100, 100]);
-    expect(engine.chipContinuity.sweepPresence).not.toHaveBeenCalled();
-    expect(engine.releaseLeavesHeldByClock).not.toHaveBeenCalled();
+    expect(engine.chipContinuity.sweepPresence).toHaveBeenCalledTimes(2);
+    expect(engine.releaseLeavesHeldByClock).toHaveBeenCalledTimes(2);
   });
 
   it('a halted anchor preserves a voluntary sit-out and its original clock', async () => {

@@ -16,7 +16,16 @@ export function cycleEvent(payload, room, fromMs = 0) {
     const f = JSON.parse(String(payload));
     if (f.type !== 'EVENT' || f.tableId !== room || !f.payload) return null;
     const e = f.payload;
-    if (fromMs > 0 && (!Number.isFinite(e.timestamp) || e.timestamp < fromMs)) return null;
+    if (e.replayed === true) return null;
+    // Showdown's live producer has no payload timestamp. Retained events have
+    // a fresh send time too, so only a positive live event sequence permits
+    // envelope-time fallback. An explicit stale/invalid payload time never does.
+    const timestamp = Object.hasOwn(e, 'timestamp')
+      ? e.timestamp
+      : Number.isSafeInteger(f.seq) && f.seq > 0
+        ? f.ts
+        : null;
+    if (fromMs > 0 && (!Number.isFinite(timestamp) || timestamp < fromMs)) return null;
     if (!Number.isSafeInteger(e.hand_number) || e.hand_number <= 0) return null;
     if (e.type === 'player_action' && ['call', 'bet', 'raise', 'all_in'].includes(e.action))
       return { handNumber: e.hand_number, kind: 'betting' };
@@ -132,6 +141,9 @@ export async function witnessCycle({
     }
   };
   let client, session, browser;
+  const hands = new Map();
+  let bankActivated = false,
+    deadlineExtended = false;
   let cleaning = false;
   // Own the synthetic client as soon as it exists, including partial auth failures.
   const ownedCreateClient = (base, key, options = {}) => {
@@ -166,6 +178,10 @@ export async function witnessCycle({
     timebankExecution: 'not_observed',
     preactionExecution: 'not_observed',
     controlsQualified: false,
+    requests: { timebank: 0, preaction: 0 },
+    preactionRequestHandId: null,
+    timebankContextHandId: null,
+    observedHands: [],
     cycles: [],
     cleanup: 'pending',
   };
@@ -185,14 +201,35 @@ export async function witnessCycle({
       )
     );
     const page = await bound(context.newPage());
-    const hands = new Map();
     let rendered = false;
     let clock = {},
-      bankBefore = null,
-      bankActivated = false,
-      deadlineExtended = false;
+      bankBefore = null;
     let armedHandId = null,
       armedHandNumber = null;
+    page.on('request', (request) => {
+      try {
+        const endpoint = new URL(request.url());
+        if (request.method() !== 'POST' || endpoint.origin !== 'https://engine.smarter.poker')
+          return;
+        const body = request.postDataJSON();
+        if (body.tableId !== pin.poolSessionId) return;
+        if (endpoint.pathname === '/timebank') {
+          report.requests.timebank++;
+          report.timebankContextHandId = UUID.test(bankBefore?.hand_id) ? bankBefore.hand_id : null;
+        } else if (
+          endpoint.pathname === '/preaction' &&
+          body.action === 'auto_check' &&
+          UUID.test(body.handId)
+        ) {
+          report.requests.preaction++;
+          armedHandId = body.handId;
+          armedHandNumber = clock.hand_id === body.handId ? clock.hand_number : null;
+          report.preactionRequestHandId = body.handId;
+        }
+      } catch {
+        /* malformed requests provide no evidence */
+      }
+    });
     page.on('websocket', (ws) => {
       ws.on('framesent', ({ payload }) => {
         if (renderHand(payload, pin.poolSessionId)) rendered = true;
@@ -239,7 +276,12 @@ export async function witnessCycle({
     while (!rendered) await page.waitForTimeout(Math.min(100, remaining()));
     // Optional single clicks only while the maintained UI already offers them.
     for (const [key, requested, selector, path] of [
-      ['timebank', timebank, '.control-strip button[title="Time Bank"]', '/timebank'],
+      [
+        'timebank',
+        timebank,
+        '.control-strip button[title="Time Bank"], .control-strip button[title="Unlimited Lifetime VIP Time Banks"]',
+        '/timebank',
+      ],
       ['preaction', preaction, '.pre-action-btn.check', '/preaction'],
     ]) {
       if (!requested) continue;
@@ -377,6 +419,8 @@ export async function witnessCycle({
       }
     }
     report.controlsQualified =
+      report.requests.timebank === 1 &&
+      report.requests.preaction === 1 &&
       report.timebank === 'accepted' &&
       report.timebankExecution === 'activated_and_deadline_extended' &&
       report.preaction === 'armed' &&
@@ -388,6 +432,9 @@ export async function witnessCycle({
   } catch {
     report.status = 'unknown';
   } finally {
+    report.observedHands = [...hands.values()].map((hand) => ({ ...hand }));
+    report.timebankExecution =
+      bankActivated && deadlineExtended ? 'activated_and_deadline_extended' : 'not_observed';
     cleaning = true;
     if (browser)
       await bound(browser.close(), Math.max(1, Math.min(10000, deadline - Date.now()))).catch(
@@ -407,6 +454,7 @@ export async function witnessCycle({
         report.cause = 'local_cleanup_unverified';
       }
     } else report.cleanup = 'no_local_session_created';
+    if (report.status !== 'observed') report.controlsQualified = false;
   }
   return report;
 }

@@ -647,6 +647,13 @@ are welcome; moving `activeIndex` without a user gesture is forbidden, no
 matter what setting, however opt-in, is proposed to gate it. Enforced by
 `tests/no-auto-table-switch.law.test.ts`.
 
+Owner update, October 20, 2026: joining a cash-game waiting list authorizes
+the resulting live seat offer to open its assigned table and buy-in without
+another Join Game click. This completes that explicit admission request;
+it never purchases chips. Duplicate offers, thawed deadlines and expired
+holds must not move the view. Turn-clock and action-queue switching remain
+forbidden.
+
 ---
 
 ---

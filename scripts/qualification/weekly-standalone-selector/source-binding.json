@@ -70,8 +70,8 @@
       "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     ".github/workflows/ci.yml": {
-      "bytes": 229121,
-      "sha256": "760beab5dee5f159bb39c79ae884e49b3281e8225885cd07e3be745f0356ba8a"
+      "bytes": 229424,
+      "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
@@ -243,6 +243,17 @@
     "combinedWorkflow": {
       "bytes": 229121,
       "sha256": "760beab5dee5f159bb39c79ae884e49b3281e8225885cd07e3be745f0356ba8a"
+    }
+  },
+  "adaptiveMembershipBatchIndexCiInput20261020": {
+    "reason": "Add isolated PostgreSQL membership batch-covering index qualification to existing CI shard 4. Refresh only the active workflow source fingerprint; retain historical pins, financial inputs, assertions and qualification statuses. This refresh is not execution, installation or publication proof.",
+    "previous": {
+      "bytes": 229121,
+      "sha256": "760beab5dee5f159bb39c79ae884e49b3281e8225885cd07e3be745f0356ba8a"
+    },
+    "current": {
+      "bytes": 229424,
+      "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
     }
   }
 }

@@ -14,7 +14,8 @@ def main():
  root=Path(__file__).resolve().parents[2];out=a.evidence.resolve();out.mkdir(parents=True,exist_ok=False);a.socket_root.mkdir(parents=True,exist_ok=True)
  native=module(root/'scripts/ci/test-mtt-unlimited.py','rebuy_pg_owner');e=native.Execution(root,out,a.pg_bin.resolve(),out,120,socket_parent=a.socket_root)
  e.report['scope']='actual never-dealt rebuy read-helper; no financial owner certification or production mutations'
- inputs=[MIGRATION,Path(__file__).relative_to(root),*sorted(DATA.glob('*.sql'))];e.report['source_sha256']={str(f):hashlib.sha256((root/f).read_bytes()).hexdigest() for f in inputs}
+ diamond_migration=Path('supabase/migrations/20261020143955_never_dealt_diamond_rebuy_proves_original_custody.sql')
+ inputs=[MIGRATION,diamond_migration,Path(__file__).relative_to(root),*sorted(DATA.glob('*.sql'))];e.report['source_sha256']={str(f):hashlib.sha256((root/f).read_bytes()).hexdigest() for f in inputs}
  for sig in native.CANCELLATION_SIGNALS:signal.signal(sig,native.interrupted)
  try:
   e.start();db=e.database();e.sql(db,file=root/DATA/'readonly-catalog.sql',label='recorded-native-read-catalog')
@@ -24,6 +25,14 @@ def main():
   e.sql(db,file=root/MIGRATION,label='exact-qualified-native-read-owner')
   _,stdout,_=e.sql(db,file=root/DATA/'native-boundaries.sql',label='native-original-funding-generation-rollback-acl')
   if stdout.splitlines().count('NEVER_DEALT_REBUY_NATIVE_PASS')!=1:raise RuntimeError('native completion absent')
+  e.sql(db,file=root/DATA/'diamond-catalog.sql',label='diamond-recorded-catalog')
+  successor=(root/diamond_migration).read_text()
+  e.sql(db,query=successor.replace('COMMIT;','')+'\n'+(root/DATA/'native-boundaries.sql').read_text().replace('BEGIN;','SAVEPOINT boundary;').replace('ROLLBACK;','ROLLBACK TO boundary;')+'\nROLLBACK;',label='successor-chip-boundaries')
+  e.sql(db,file=root/DATA/'diamond-seed.sql',label='diamond-original-custody-generation')
+  e.sql(db,file=root/DATA/'before.sql',label='before-diamond-rebuy-refusal')
+  e.sql(db,file=root/diamond_migration,label='exact-diamond-custody-read-owner')
+  _,diamond_stdout,_=e.sql(db,file=root/DATA/'diamond-boundaries.sql',label='diamond-native-boundaries-duplicates-acl')
+  if diamond_stdout.splitlines().count('NEVER_DEALT_DIAMOND_NATIVE_PASS')!=1:raise RuntimeError('diamond completion absent')
   e.report.update(status='passed',passed=True,synthetic_only=True)
  finally:
   e.close();(out/'never-dealt-rebuy-report.json').write_text(json.dumps(e.report,indent=2)+'\n')

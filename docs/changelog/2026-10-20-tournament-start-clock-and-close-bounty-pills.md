@@ -1,0 +1,7 @@
+# Tournament start clock and close bounty pills
+
+Recovered the owner's unfinished tournament UI requests. No prior client PR was submitted. Waiting scheduled MTT tables now show Tournament Starts In on the felt, using the database start time and a once-per-second clock. Database clock offset corrects device skew. The read-only row observer updates rescheduled starts and covers pre-seated RUNNING events before their scheduled deal and removes the display on actual play/cancellation; a dealt hand removes it immediately. Spin and Heads Up fill deadlines are excluded. Zero means Starting Soon, never a negative time. Table identity and unmount guards prevent stale responses and timers leaking between tables.
+
+The bounty amount remains free of chip glyphs, but the owner's later explicit request restores a solid blue pill. It sits 30px closer to the avatar; a visible action tag temporarily reserves a separate lane so the two remain readable. Hero and villain share the close positioning at every viewport. The old no-fill test is updated in the same change.
+
+Verification: 124 focused tests pass, 20 shared visual/copy regressions pass, TypeScript app compilation clean, four UI text gates pass. Additional final hook/provider/publication evidence is retained in the owning external checkpoint. Engine late registration is a separate delivery: PR #7524, merged 16800a42bf145bed112525789ed77117d0fe4dac; staging 39442613100 and engine release 39442726703. No SQL migration or engine dependency for this client change.

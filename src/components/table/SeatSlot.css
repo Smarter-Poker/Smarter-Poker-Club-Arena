@@ -2880,28 +2880,19 @@
    BOUNTY BADGE
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-/* Dan 2026-08-25 (binding): the bounty used to be a flat 0.5rem sticker pinned
- * to the seat's top-right corner, where it collided with the position badge and
- * read as cheap. It now sits CENTERED at the very top of the seat, ABOVE the
- * action badge, with a reserved gap so the two can never overlap:
- *
- *   .seat__bounty  top: -58px .. -36px   (22px tall)
- *          gap     10px                  <- BOUNTY_ACTION_GAP, do not close it
- *   .seat__action  top: -26px .. -3px
- *
- * If you change .seat__action's `top` or padding, move this to match. */
+/* Dan 2026-10-20: a solid pill attached closely to each player's avatar.
+ * When an action label is present, reserve a separate lane above it. */
 .seat__bounty {
-  /* Dan 2026-10-18: "THE 'BOUNTY' SHOULD NOT BE ORANGE, AND SHOULD JUST
-   * DISPLAY THE AMOUNT, IT SHOULDN'T HAVE A CHIP NEXT TO IT. JUST THE NUMBER."
-   * No pill, no fill, no glow, no chip glyph - a plain white figure. The
-   * shadow is not decoration: it is what keeps a white number legible over
-   * the felt, the rail and an avatar's hair. Position is unchanged. */
   position: absolute;
-  top: -58px;
+  top: -28px;
   left: 50%;
   transform: translateX(-50%) translateZ(0);
-  padding: 0;
-  background: none;
+  padding: 3px 9px;
+  min-width: 36px;
+  min-height: 20px;
+  justify-content: center;
+  border-radius: 999px;
+  background: #1877f2;
   border: none;
   box-shadow: none;
   color: #ffffff;
@@ -2913,9 +2904,10 @@
   display: flex;
   align-items: center;
   pointer-events: none;
-  text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.95),
-    0 0 6px rgba(0, 0, 0, 0.8);
+}
+
+.seat:has(.seat__action) .seat__bounty {
+  top: -56px;
 }
 
 .seat__bounty-val {
@@ -2926,17 +2918,8 @@
   line-height: 1;
 }
 
-/* The hero seat is lifted toward the action bar and its plate is taller, so the
- * same offsets would push the bounty behind the felt edge. Tuck it in. */
-.seat-wrapper--hero .seat__bounty {
-  top: -54px;
-}
-
+/* Hero and villain use the same close attachment at every viewport. */
 @media (max-width: 480px) {
-  .seat__bounty {
-    top: -52px;
-    font-size: 0.64rem;
-  }
   .seat__bounty-val {
     font-size: 0.64rem;
   }

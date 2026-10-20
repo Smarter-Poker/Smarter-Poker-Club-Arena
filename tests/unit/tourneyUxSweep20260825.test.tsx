@@ -286,23 +286,22 @@ describe('Item 5 - the bounty badge is centered above the action box', () => {
   });
 
   it('sits ABOVE the action badge with clear air between them', () => {
-    const bountyTop = topOf('.seat__bounty');
+    const bountyTop = topOf('.seat:has(.seat__action) .seat__bounty');
     const actionTop = topOf('.seat__action');
     expect(bountyTop).toBeLessThan(actionTop);
     // The bounty pill is ~22px tall; anything under that would overlap.
     expect(actionTop - bountyTop).toBeGreaterThanOrEqual(30);
   });
 
-  /* Superseded 2026-10-18. This used to pin the orange 3D pill ("has
-     dimension rather than a flat fill"). Dan, verbatim: "THE 'BOUNTY' SHOULD
-     NOT BE ORANGE, AND SHOULD JUST DISPLAY THE AMOUNT, IT SHOULDN'T HAVE A
-     CHIP NEXT TO IT. JUST THE NUMBER." The pin moves to the new look. */
-  it('is just the number: no pill, no orange, no chip glyph', () => {
+  // Dan 2026-10-20: keep the amount alone, inside a close solid pill.
+  it('puts the amount in a solid blue pill close to the avatar, without a chip glyph', () => {
     const start = css.indexOf('.seat__bounty {');
     const block = css.slice(start, css.indexOf('}', start));
     expect(block).not.toMatch(/linear-gradient/);
     expect(block).not.toMatch(/#f97316|#fbbf24|#dc2626|249,\s*115,\s*22/i);
-    expect(block).toMatch(/background:\s*none/);
+    expect(block).toMatch(/background:\s*#1877f2/);
+    expect(block).toMatch(/border-radius:\s*999px/);
+    expect(topOf('.seat__bounty')).toBeGreaterThanOrEqual(-28);
     expect(css).not.toContain('.seat__bounty-target');
     const seat = read('src/components/table/SeatSlot.tsx');
     expect(seat).not.toContain('seat__bounty-target');

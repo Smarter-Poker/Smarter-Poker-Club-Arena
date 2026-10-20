@@ -3,7 +3,12 @@ import { GameServer } from '../GameServer.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
-beforeEach(() => vi.mocked(reportError).mockClear());
+beforeEach(() => {
+  vi.mocked(reportError).mockClear();
+  // Ten minutes before the target must be outside break-adjacent launch preparation.
+  // A wall-clock :52 fixture is already eligible for launch before the :53 door.
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-20T15:20:00Z'));
+});
 afterEach(() => vi.restoreAllMocks());
 const T = 'aaaaaaaa-1111-4111-8111-111111111111';
 function harness(ticketRows: unknown[] = [{ id: 'ticket', source_tournament_id: T }]) {

@@ -3624,7 +3624,8 @@ export const SeatSlot = memo(
 
             2026-10-18, Dan: "THE 'BOUNTY' SHOULD NOT BE ORANGE, AND SHOULD
             JUST DISPLAY THE AMOUNT, IT SHOULDN'T HAVE A CHIP NEXT TO IT. JUST
-            THE NUMBER." The chip glyph is gone and the orange pill with it -
+            THE NUMBER." The chip glyph stays gone. Dan 2026-10-20 asks
+            for the amount inside a solid pill closer to the avatar;
             see `.seat__bounty` in SeatSlot.css. */}
         {bountyIsMystery && (
           <div className="seat__bounty" aria-label="Mystery Bounty">

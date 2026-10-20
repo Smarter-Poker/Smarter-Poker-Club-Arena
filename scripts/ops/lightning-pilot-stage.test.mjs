@@ -602,6 +602,7 @@ test('each investigated Action finding is recorded reviewed from its exact evide
     const read = f.calls.filter((c) => c.name === 'fn_lightning_operator_cluster');
     assert.equal(read.length, 1);
     assert.equal(read[0].args.p_to, INVESTIGATED_FINDINGS[id].readTo);
+    assert.equal(read[0].args.p_from, INVESTIGATED_FINDINGS[id].readFrom ?? '2026-10-15T20:00:00Z');
     const writes = f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review');
     assert.equal(writes.length, 1);
     assert.equal(writes[0].args.p_signal_id, Number(id));
@@ -666,4 +667,17 @@ test('finding 158 review refuses drift in every measured field and either player
     );
     assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
   }
+});
+
+test('finding 158 reads only the bounded interval containing its persisted detection', async () => {
+  const f = fakeClients({ signals: [investigatedSignal(158)], games: [measuredGame] });
+  await runPilotStage(
+    { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: '158' },
+    f.factory
+  );
+  const read = f.calls.find((c) => c.name === 'fn_lightning_operator_cluster');
+  const detectedAt = Date.parse('2026-10-20T11:07:00.414595Z');
+  assert.ok(Date.parse(read.args.p_from) < detectedAt);
+  assert.ok(Date.parse(read.args.p_to) > detectedAt);
+  assert.equal(Date.parse(read.args.p_to) - Date.parse(read.args.p_from), 2000);
 });

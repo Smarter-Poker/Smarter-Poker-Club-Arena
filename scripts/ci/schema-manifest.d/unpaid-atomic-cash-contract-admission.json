@@ -1,0 +1,31 @@
+{
+  "_owner": "union-full-audit-01a15550 - migration 20261020145326",
+  "_comment": "PROMISED, NOT INSTALLED. Original unpaid hand accrual may admit exact atomic-history contracts with immutable receipts, closed-week refusal and existing native commission posting. Native weekly qualification parent enforces the real PostgreSQL test; this declaration is not production proof.",
+  "functions": ["smarter_private.admit_cash_atomic_contracts"],
+  "tables": [
+    "accounting_cash_atomic_contract_admissions",
+    "accounting_effective_cash_rake_sources"
+  ],
+  "columns": {
+    "accounting_cash_atomic_contract_admissions": [
+      "source_id",
+      "original_contract",
+      "admitted_contract",
+      "original_commissions",
+      "invalid_history_ids",
+      "admitted_at"
+    ],
+    "accounting_effective_cash_rake_sources": [
+      "id",
+      "rake_record_id",
+      "player_id",
+      "club_id",
+      "union_id",
+      "coordinator_union_id",
+      "earned_at",
+      "rake_credit",
+      "contract",
+      "recorded_at"
+    ]
+  }
+}

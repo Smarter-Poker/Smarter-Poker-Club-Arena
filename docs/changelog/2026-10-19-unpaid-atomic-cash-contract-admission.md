@@ -51,3 +51,10 @@ when calculator freshness detected the newer source. Boundary certificates,
 other weeks and other books remain intact. The native rollback and concurrent
 admission tests prove scoped invalidation, and duplicate requests preserve
 fresh proofs created after admission. No payment or historical source changes.
+
+The uninstalled migration was reallocated with the maintained allocator to
+20261020145326 after the installed October 20 earning-window optimization.
+It preserves that exact current hash-join configuration and recognition bounds
+while substituting effective cash contracts. The isolated native test verifies
+the combined window postimage 5fedbe9c2594648f8999d8a427aebcfc. This avoids both
+overwriting the newer fix and an impossible chronological migration preimage.

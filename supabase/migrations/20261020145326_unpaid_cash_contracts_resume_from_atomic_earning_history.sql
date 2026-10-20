@@ -1,5 +1,5 @@
--- @live-proof: (md5(pg_get_functiondef('fn_accounting_cash_commission_source_guard()'::regprocedure))='f6bb6de73cb43d54a42dbc31caab4a3b' AND md5(pg_get_functiondef('fn_accounting_union_earned_plan_sets(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='01abfa84da1dbe701503ad1da7585d0b' AND md5(pg_get_functiondef('fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='912dd5c0dd309f446de6fecd87b60cc0' AND md5(pg_get_functiondef('fn_accrue_cash_hand_commissions(uuid)'::regprocedure))='020617e6132d5df34b79b403b34f2062' AND md5(pg_get_functiondef('fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='fabde84baa4d2bee303531de45c65c06' AND md5(pg_get_functiondef('fn_rakeback_recompute_split(uuid,date,date)'::regprocedure))='cb4c66d535d0b0584ec2dad3d6f26c13' AND md5(pg_get_functiondef('smarter_private.admit_cash_atomic_contracts(uuid,jsonb)'::regprocedure))='c4c689544fb3781137b3809063b61f96' AND to_regclass('public.accounting_cash_atomic_contract_admissions') IS NOT NULL AND position('accounting_effective_cash_rake_sources' IN pg_get_viewdef('public.accounting_payable_earning_sources'::regclass,true))>0 AND NOT has_function_privilege('authenticated','smarter_private.admit_cash_atomic_contracts(uuid,jsonb)','EXECUTE'))
--- 20261019211745_unpaid_cash_contracts_resume_from_atomic_earning_history.sql
+-- @live-proof: (md5(pg_get_functiondef('fn_accounting_cash_commission_source_guard()'::regprocedure))='f6bb6de73cb43d54a42dbc31caab4a3b' AND md5(pg_get_functiondef('fn_accounting_union_earned_plan_sets(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='01abfa84da1dbe701503ad1da7585d0b' AND md5(pg_get_functiondef('fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='5fedbe9c2594648f8999d8a427aebcfc' AND md5(pg_get_functiondef('fn_accrue_cash_hand_commissions(uuid)'::regprocedure))='020617e6132d5df34b79b403b34f2062' AND md5(pg_get_functiondef('fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='fabde84baa4d2bee303531de45c65c06' AND md5(pg_get_functiondef('fn_rakeback_recompute_split(uuid,date,date)'::regprocedure))='cb4c66d535d0b0584ec2dad3d6f26c13' AND md5(pg_get_functiondef('smarter_private.admit_cash_atomic_contracts(uuid,jsonb)'::regprocedure))='c4c689544fb3781137b3809063b61f96' AND to_regclass('public.accounting_cash_atomic_contract_admissions') IS NOT NULL AND position('accounting_effective_cash_rake_sources' IN pg_get_viewdef('public.accounting_payable_earning_sources'::regclass,true))>0 AND NOT has_function_privilege('authenticated','smarter_private.admit_cash_atomic_contracts(uuid,jsonb)','EXECUTE'))
+-- 20261020145326_unpaid_cash_contracts_resume_from_atomic_earning_history.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.
@@ -337,13 +337,14 @@ END
 $function$;
 
 
-DO $owner$ BEGIN IF md5(pg_get_functiondef('fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))<>'102e5be492a144a705a2882d91675069' THEN RAISE EXCEPTION 'atomic_cash_admission_owner_preimage_changed: fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)'; END IF; END $owner$;
+DO $owner$ BEGIN IF md5(pg_get_functiondef('fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))<>'e51d7009c49519a43ffc23c223c2d7ef' THEN RAISE EXCEPTION 'atomic_cash_admission_owner_preimage_changed: fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)'; END IF; END $owner$;
 CREATE OR REPLACE FUNCTION public.fn_accounting_union_earned_plan_window(p_union_id uuid, p_start timestamp with time zone, p_end timestamp with time zone)
  RETURNS TABLE(value jsonb, cash_ids uuid[], cash_md5 bytea, fee_ids uuid[], fee_md5 bytea)
  LANGUAGE plpgsql
  STABLE
  SET search_path TO 'public'
  SET enable_indexscan TO 'off'
+ SET enable_nestloop TO 'off'
 AS $function$
 DECLARE
  res record;
@@ -368,6 +369,17 @@ BEGIN
   OR NOT EXISTS(SELECT 1 FROM public.accounting_cash_accrual_cutover WHERE singleton AND starts_at<=p_start) THEN
   RETURN;
  END IF;
+ -- THE WINDOW IS JOINED BY HASH, NEVER BY NESTED LOOP (20261020). The joins
+ -- below are equality joins of materialized CTEs, and the newest windows are
+ -- read before ANALYZE has seen their rows, so the planner estimates one row
+ -- per CTE and rescans one CTE once per row of another: 9,409 bank receipts
+ -- x 9,409 accrual groups and 37,172 sources x 9,409 receipts for Midway's
+ -- 2026-10-19 15:00 window, 105 s warm for one two-hour window (measured
+ -- read-only on production, 2026-10-20). enable_nestloop = off holds every
+ -- join to hash or merge: the same rows, 3.0 s. The recognition join of
+ -- tour_keys also states the window its equality already implies
+ -- (rs.recognized_at = r.recognized_at, rs in [p_start, p_end)), so it reads
+ -- the window's recognitions instead of all of them. Same result, row for row.
  BEGIN
   EXECUTE $q$
   WITH tw AS MATERIALIZED (
@@ -388,6 +400,7 @@ BEGIN
     JOIN public.accounting_tournament_fee_recognitions r ON r.tournament_id=rs.tournament_id
     WHERE rs.recognized_at>=$2 AND rs.recognized_at<$3 AND rs.disposition='earned'
      AND r.status='recognized' AND rs.recognized_at=r.recognized_at AND r.union_id=$1
+     AND r.recognized_at>=$2 AND r.recognized_at<$3
   ), raw AS (
    SELECT 'cash_rake_accrual'::text AS source_type,s.id AS source_id,s.rake_record_id,NULL::uuid AS tournament_id,s.player_id,s.club_id,
     s.union_id,s.coordinator_union_id,s.earned_at,s.rake_credit,s.contract,'cash'::text AS game_type,NULL::boolean AS terms_match

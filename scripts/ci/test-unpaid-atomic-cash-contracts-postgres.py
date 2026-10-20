@@ -76,7 +76,7 @@ try:
    changed.append(s)
    expected[s['id']]={'original_md5':sql("SELECT md5(contract::text)FROM accounting_cash_rake_sources WHERE id='"+s['id']+"'"),'admitted_md5':sql("SELECT md5(p::text)FROM jsonb_array_elements(fn_accounting_cash_commission_plan('"+s['rake_record_id']+"')->'players')p WHERE p->>'player_id'='"+s['player_id']+"' AND p->>'club_id'='"+s['club_id']+"'")}
  assert len(changed)==6,[(s['id'],[k for k in s['contract'] if s['contract'][k]!=canonical[(s['rake_record_id'],s['player_id'],s['club_id'])].get(k)])for s in changed]
- candidate=next((root/'supabase/migrations').glob('20261019211745_*')).read_text();sql(candidate)
+ candidate=next((root/'supabase/migrations').glob('20261020145326_*')).read_text();sql(candidate)
  assert sql('SELECT '+candidate.splitlines()[0].split(': ',1)[1])=='t', sql("SELECT md5(pg_get_functiondef('smarter_private.admit_cash_atomic_contracts(uuid,jsonb)'::regprocedure))")
  for sig,acl in original_acl.items():assert sql("SELECT proacl::text FROM pg_proc WHERE oid='"+sig+"'::regprocedure")==acl
  native_hashes={r['signature']:sql("SELECT md5(pg_get_functiondef('"+r['signature']+"'::regprocedure))") for r in pre}

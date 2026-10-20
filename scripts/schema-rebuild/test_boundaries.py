@@ -13,6 +13,12 @@ class Boundaries(unittest.TestCase):
   expected={'x':[{'acl':[{'grantor':'p','grantee':'a','privilege':'SELECT','grantable':False}]}]}
   self.assertEqual(v.compare(expected,expected),[])
   self.assertTrue(v.compare(expected,{'x':[{'acl':[]}]}))
+ def test_lock_memory_message_and_hint_are_allowlisted(self):
+  stderr='ERROR:  53200: out of shared memory\nHINT:  You might need to increase "max_locks_per_transaction".\nCONTEXT: private source'
+  result=v.failure_diagnostic(stderr,'baseline-restore',{},'psql')
+  self.assertEqual(result['message'],'out of shared memory');self.assertIn('max_locks_per_transaction',result['hint']);self.assertNotIn('private source',json.dumps(result))
+  result=v.failure_diagnostic('ERROR:  53200: sensitive unexpected value','baseline-restore',{},'psql')
+  self.assertNotIn('sensitive unexpected value',json.dumps(result))
  def test_bootstrap_failure_has_precise_nonsecret_context(self):
   result=v.failure_diagnostic('ERROR:  42501: permission denied to grant privileges as role "supabase_admin"\nDETAIL: discarded private detail','role-membership',{'role':'pg_monitor','member':'postgres','grantor':'supabase_admin'},'psql')
   self.assertEqual(result['sqlstate'],'42501');self.assertEqual(result['phase'],'role-membership')

@@ -29,16 +29,32 @@ def validate_parent(path):
  if sys.platform=='darwin' and not path.is_relative_to('/Volumes/SmarterWork/agent-work'):raise Refused('Mac scratch must be on external SSD')
  if len(str(path).encode())>76:raise Refused('Use shorter scratch path for native Unix socket')
  return path
+def derive_lock_budget(reference,max_connections=100):
+ relations=reference.get('relations') or []
+ explicit=len(relations)+sum(len(r.get('indexes') or []) for r in relations)
+ # A stored relation can additionally create a TOAST table and its index.
+ toast=2*sum(r.get('kind') in ('r','m') for r in relations)
+ named=sum(len(reference.get(k) or []) for k in ['routines','types','schemas','event_triggers','publications','defaults','extensions'])+sum(len(r.get(k) or []) for r in relations for k in ['constraints','triggers','policies','rules'])
+ # One tag per named object, implicit physical relation, and an additional
+ # explicit-relation/index allowance for dependency/catalog locks.
+ slots=explicit+toast+named+explicit
+ value=64
+ while value*max_connections<slots:value*=2
+ if value>16384:raise Refused('Captured schema exceeds bounded isolated lock budget')
+ return {'maxConnections':max_connections,'explicitRelationsAndIndexes':explicit,'sequencesIncludedInRelations':sum(r.get('kind')=='S' for r in relations),'implicitToastAllowance':toast,'namedObjectAllowance':named,'dependencyMargin':explicit,'minimumLockSlots':slots,'maxLocksPerTransaction':value}
 def failure_diagnostic(stderr,phase,context,command):
  header=re.search(r'(?:ERROR|FATAL):\s+([A-Z0-9]{5}):\s*([^\n]*)',stderr)
  message='PostgreSQL rejected the command; raw source and detail are omitted'
+ if header and header[1]=='53200' and header[2]=='out of shared memory':message='out of shared memory'
  if header and phase.startswith(('role-','database-','extension-')):
   # These commands contain only reviewed role/GUC/object identifiers, never
   # routine bodies or credentials. Retain identifiers already in safe context.
   allowed=set(str(x) for x in context.values());message=header[2]
   message=re.sub(r'"([^"\n]*)"',lambda m:'"'+m[1]+'"' if m[1] in allowed else '"[redacted]"',message)
   message=re.sub(r"'[^'\n]*'","'[redacted]'",message)[:240]
- return {'schemaRebuilt':False,'status':'failed','phase':phase,'context':context,'command':Path(str(command)).name,'sqlstate':header[1] if header else None,'message':message,'line':int(re.search(r':(\d+): (?:ERROR|FATAL):',stderr)[1]) if re.search(r':(\d+): (?:ERROR|FATAL):',stderr) else None,'rawDiagnostic':'ephemeral owned scratch only; never uploaded'}
+ result={'schemaRebuilt':False,'status':'failed','phase':phase,'context':context,'command':Path(str(command)).name,'sqlstate':header[1] if header else None,'message':message,'line':int(re.search(r':(\d+): (?:ERROR|FATAL):',stderr)[1]) if re.search(r':(\d+): (?:ERROR|FATAL):',stderr) else None,'rawDiagnostic':'ephemeral owned scratch only; never uploaded'}
+ if header and header[1]=='53200' and re.search(r'HINT:\s+You might need to increase "?max_locks_per_transaction"?\.',stderr):result['hint']='You might need to increase "max_locks_per_transaction".'
+ return result
 def bootstrap_roles(sql,contract,bootstrap):
  for role in contract['roles']:
   name=role['name']
@@ -86,7 +102,8 @@ def main():
   version=run([pg/'postgres','--version'])
   if not re.search(r'\b17\.',version):raise Refused('PostgreSQL17 required')
   run([pg/'initdb','-D',data,'-U',platform['bootstrap_role'],'--auth-local=trust','--auth-host=reject','--locale-provider=icu','--icu-locale='+platform['locale'],'--lc-collate='+platform['collate'],'--lc-ctype='+platform['ctype'],'-E',platform['encoding']])
-  with (data/'postgresql.conf').open('a') as f:f.write("\nlisten_addresses=''\nunix_socket_directories="+lit(socket)+"\nshared_buffers='32MB'\nshared_preload_libraries='pg_cron,pg_net,pg_stat_statements,supautils'\ncron.database_name='postgres'\ncron.launch_active_jobs=off\n")
+  expected=json.loads((BASE/'pokeriq-catalog-reference.json').read_text());lock_budget=derive_lock_budget(expected)
+  with (data/'postgresql.conf').open('a') as f:f.write("\nlisten_addresses=''\nunix_socket_directories="+lit(socket)+"\nshared_buffers='32MB'\nmax_connections="+str(lock_budget['maxConnections'])+"\nmax_locks_per_transaction="+str(lock_budget['maxLocksPerTransaction'])+"\nshared_preload_libraries='pg_cron,pg_net,pg_stat_statements,supautils'\ncron.database_name='postgres'\ncron.launch_active_jobs=off\n")
   runtime=json.loads((BASE/'pokeriq-extension-runtime.json').read_text())
   allowed={'supautils.privileged_extensions','supautils.privileged_extensions_superuser','supautils.privileged_role','supautils.superuser'}
   with (data/'postgresql.conf').open('a') as f:
@@ -97,6 +114,8 @@ def main():
   cmd=[pg/'psql','-X','-qAt','-h',socket,'-U','schema_restore_owner','-d','postgres','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose']
   run([pg/'psql','-X','-qAt','-h',socket,'-U',platform['bootstrap_role'],'-d','postgres','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'],'CREATE ROLE schema_restore_owner LOGIN SUPERUSER;',phase='role-create-local-supervisor',context={'role':'schema_restore_owner','bootstrap':platform['bootstrap_role']})
   def sql(s,phase='catalog-read',**context):return run(cmd,s,phase=phase,context=context)
+  actual_locks=json.loads(sql("SELECT jsonb_build_object('maxConnections',current_setting('max_connections')::int,'maxLocksPerTransaction',current_setting('max_locks_per_transaction')::int);",phase='isolated-lock-budget'))
+  if any(actual_locks[k]!=lock_budget[k] for k in actual_locks):raise Refused('Isolated lock settings differ from derived inventory budget')
   available=json.loads(sql("SELECT jsonb_agg(jsonb_build_object('name',name,'version',version)) FROM pg_available_extension_versions;"));have={(x['name'],x['version']) for x in available}
   missing=[(x['name'],x['version']) for x in contract['extensions'] if (x['name'],x['version']) not in have]
   if missing:raise Refused('Faithful extension runtime unavailable: '+json.dumps(missing))
@@ -138,8 +157,8 @@ def main():
   if {json.dumps(x,sort_keys=True) for x in actualmembers}!={json.dumps(x,sort_keys=True) for x in contract['memberships']}:raise Refused('Source role membership comparison differs')
   catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()));
   if any(x['count'] for x in catalog['unsupported_objects']):raise Refused('Catalog contains unsupported object families')
-  expected=json.loads((BASE/'pokeriq-catalog-reference.json').read_text());differences=compare(expected,catalog)
-  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
+  differences=compare(expected,catalog)
+  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
   output.write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt))
   if differences:raise Refused('Independent source catalog comparison differs')
  finally:

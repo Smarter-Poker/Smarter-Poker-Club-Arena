@@ -39,3 +39,12 @@ can break provider extension hooks. With the captured bootstrap principal, its
 initial owner/version/schema already match the source contract. Qualification
 now reads and retains that exact builtin, refuses any mismatch, and tests that
 its identity survives the check. No extension is stubbed or silently replaced.
+
+The full atomic restore reached constraint creation and exhausted PostgreSQL's
+default lock table. A bounded native fixture reproduces SQLSTATE 53200 and its
+`max_locks_per_transaction` hint, proves complete rollback, then succeeds with
+the inventory-derived isolated budget. The captured relation/index, possible
+TOAST, named-object and dependency allowances require 32,485 lock slots; with
+100 isolated connections the rounded budget is 512 locks per transaction.
+Qualification reads those settings back. Production configuration and the
+single-transaction restore are unchanged.

@@ -1,6 +1,8 @@
 \set ON_ERROR_STOP on
 SET client_min_messages=warning;
 CREATE ROLE service_role NOLOGIN;
+CREATE ROLE anon NOLOGIN;
+CREATE ROLE authenticated NOLOGIN;
 CREATE TABLE public.accounting_period_recompute_requests(id uuid,club_id uuid,period_start date,period_end date,status text,attempted_at timestamptz,last_requested_at timestamptz,last_result jsonb);
 CREATE TABLE public.accounting_cash_rake_sources(id uuid PRIMARY KEY,rake_record_id uuid,player_id uuid,club_id uuid,union_id uuid,coordinator_union_id uuid,earned_at timestamptz,rake_credit numeric,contract jsonb,recorded_at timestamptz);
 CREATE INDEX accounting_cash_rake_sources_club_recorded ON public.accounting_cash_rake_sources(club_id,recorded_at) INCLUDE(earned_at);

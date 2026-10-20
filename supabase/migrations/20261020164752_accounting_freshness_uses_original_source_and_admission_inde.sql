@@ -349,4 +349,7 @@ BEGIN
  OR md5(pg_get_functiondef('public.fn_rakeback_recompute_split(uuid,date,date)'::regprocedure)) IS DISTINCT FROM '2d8ab8647146824b837ee193b624834c'
  THEN RAISE EXCEPTION 'native_qualified_freshness_postimage_required';END IF;
 END $owner_freshness$;
+-- Restate the original owner-only entry point explicitly for branch-level ACL checks.
+-- The installer above requires this exact existing ACL before either replacement.
+REVOKE ALL ON FUNCTION public.fn_prepare_accounting_week(uuid,uuid,timestamptz,timestamptz) FROM PUBLIC,anon,authenticated;
 COMMIT;

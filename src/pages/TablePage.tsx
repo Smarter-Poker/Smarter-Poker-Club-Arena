@@ -4507,7 +4507,7 @@ function LiveTablePage({
   const [heroSitsOutPerRow, setHeroSitsOutPerRow] = useState(false);
   /** The hero's `table_seats.stack`, mirrored by the seat poll for the
    *  placeholder seat drawn while the hero is not in the hand's player list. */
-  const [heroRowStack, setHeroRowStack] = useState(0);
+  const [heroRowStack, setHeroRowStack] = useState<number | null>(null);
   /**
    * A 1 Hz clock, and ONLY while a cash sit-out deadline is actually running.
    *
@@ -4642,7 +4642,7 @@ function LiveTablePage({
     let active = true;
     const askedFor = tableId;
     const askedKey = sessionRestoreKey;
-    const heroStack = tableState.players[tableState.heroSeat - 1]?.stack ?? heroRowStack;
+    const heroStack = tableState.players[tableState.heroSeat - 1]?.stack ?? heroRowStack ?? 0;
     if (totalBuyInRef.current === 0 && heroStack > 0) totalBuyInRef.current = heroStack;
     // Existing placeholders are covered by totalAtAsk. Track only a seed
     // that arrives after this ask, so it cannot masquerade as a new buy-in.
@@ -22037,8 +22037,9 @@ function LiveTablePage({
            placeholder printed 0.00 over a seat holding 3,632. The row is the
            authority for what is in front of them between hands. */
         {
-          const rowStack = Number(heroRow?.stack ?? 0);
-          const next = Number.isFinite(rowStack) && rowStack > 0 ? rowStack : 0;
+          const rowStack = heroRow?.stack == null ? null : Number(heroRow.stack);
+          const next =
+            rowStack !== null && Number.isFinite(rowStack) && rowStack >= 0 ? rowStack : null;
           setHeroRowStack((prev) => (prev === next ? prev : next));
         }
         const stillSeated = new Set(rows.map((r) => String(r.user_id)).filter(Boolean));
@@ -26333,7 +26334,9 @@ function LiveTablePage({
                 id: userId,
                 name: username || 'You',
                 avatar: heroAvatarUrl || '',
-                stack: pendingSeatStackRef.current || heroRowStack || 0,
+                // A confirmed seat balance supersedes the original buy-in,
+                // including zero. The buy-in is only a pre-row placeholder.
+                stack: heroRowStack ?? pendingSeatStackRef.current ?? 0,
                 status: 'sitting_out',
                 isHero: true,
                 showCards: false,

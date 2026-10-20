@@ -152,6 +152,19 @@ describe('the tracker reports transitions and renders answers', () => {
     });
   });
 
+  it('refreshes a refused clock even when presence has not changed', async () => {
+    const evaluate = vi.fn(async (_table: string, _entries: any[]) => [
+      row({ user_id: 'a', stay_running: false }),
+    ]);
+    const t = make(evaluate);
+    await t.sweepPresence([{ user_id: 'a' }], () => true);
+    evaluate.mockClear();
+    t.noteRefusal('a', 300_000);
+    await t.sweepPresence([{ user_id: 'a' }], () => true);
+    expect(evaluate).toHaveBeenCalledTimes(1);
+    expect(evaluate.mock.calls[0][1]).toEqual([{ user_id: 'a', active: true }]);
+  });
+
   it('trusts a refusal from the door over its own mirror', async () => {
     const evaluate = vi.fn(async () => [
       row({

@@ -60,7 +60,7 @@ describe('cashier Phase 5 production certification contracts', () => {
     expect(canary).toContain("name = 'a_deleted_account_leaves_every_club_and_every_list'");
   });
 
-  it('pins only the installed sealed-day conservation definition and its bank-entity replacement', () => {
+  it('pins only the installed journal-origin conservation definition and its migration receipt', () => {
     const canary = source('scripts/verification-harness/cashier-release-contract.sql');
     const entry = canary.match(
       /'signature', 'public\.fn_cashier_conservation_report\(uuid\)'([\s\S]*?)\n {4}\)/
@@ -68,8 +68,18 @@ describe('cashier Phase 5 production certification contracts', () => {
     expect(entry).not.toBeNull();
     expect(
       [...entry![1].matchAll(/'(?:replacement_)?hash', '([a-f0-9]{32})'/g)].map((match) => match[1])
-    ).toEqual(['884cbcbfae7f556ef0d5972e7e9b24c9', '8b13c8eee26460f44bbf977136635c5d']);
-    // An unqualified third definition must still raise rather than certify.
+    ).toEqual(['617a6a58c41f8a1f204e3438d6ea2a4c']);
+    const origin = source(
+      'supabase/migrations/20261019185853_new_clubs_reconcile_player_wallets_from_their_journal_origin.sql'
+    );
+    expect(origin).toContain(
+      "md5(pg_get_functiondef('public.fn_cashier_conservation_report(uuid)'::regprocedure))='617a6a58c41f8a1f204e3438d6ea2a4c'"
+    );
+    expect(canary).toContain("version = '20261019185853'");
+    expect(canary).toContain(
+      "name = 'new_clubs_reconcile_player_wallets_from_their_journal_origin'"
+    );
+    // Retired predecessors and any unqualified definition still raise.
     expect(canary).toContain(
       "IF v_actual_hash <> v_item ->> 'hash'\n       AND v_actual_hash <> coalesce(v_item ->> 'replacement_hash', '') THEN\n      RAISE EXCEPTION 'cashier function drift: % expected %, got %'"
     );

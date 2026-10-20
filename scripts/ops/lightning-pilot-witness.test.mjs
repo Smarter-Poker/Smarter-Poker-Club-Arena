@@ -565,3 +565,30 @@ test('financial manual workflow retains ten inputs and replay batch while enforc
   assert.ok(workflow.includes('PILOT_BATCH: ${{ inputs.batch }}'));
   assert.ok(!/^      financial_action:/m.test(workflow));
 });
+
+test('manual paused top-up is an explicit choice and does not alter the existing financial modes', async () => {
+  const f = fixture();
+  let captured;
+  f.witnessFinancial = async (args) => {
+    captured = args;
+    return { status: 'observed', action: 'top_up', cleanup: 'local_session_and_browser_closed' };
+  };
+  const r = await runPilotWitness(
+    {
+      ...env,
+      PILOT_WITNESS_MODE: 'financial_top_up_sitout',
+      PILOT_PLAYER_ID: PLAYER,
+      PILOT_POOL_SESSION_ID: POOL,
+    },
+    f
+  );
+  assert.equal(r.status, 'observed');
+  assert.equal(captured.action, 'top_up');
+  assert.equal(captured.pauseForTopUp, true);
+  assert.equal(captured.timeoutMs, 240000);
+  const source = readFileSync(
+    new URL('../../.github/workflows/lightning-pilot-witness.yml', import.meta.url),
+    'utf8'
+  );
+  assert.ok(source.includes('financial_top_up_sitout,'));
+});

@@ -223,6 +223,13 @@ function fixture(
     restoreError = false,
     replyError,
     httpStatus = 200,
+    sitoutFlow = false,
+    pausePersistDelay = 0,
+    pendingRounds = 0,
+    newHandWhilePaused = false,
+    returnError = false,
+    returnReadError = false,
+    baselineDrift = 0,
   } = {}
 ) {
   const actions = [],
@@ -231,7 +238,11 @@ function fixture(
     c = cashout();
   let issued = false,
     auto = false,
-    resolveResponse;
+    resolveResponse,
+    paused = false,
+    pauseReads = 0,
+    handReads = 0,
+    returned = false;
   const target = PILOT_TARGETS[0];
   const game = {
     id: pin.clusterId,
@@ -288,7 +299,12 @@ function fixture(
                     : {}),
                 }
               : table === 'table_seats'
-                ? { ...anchor, ...(issued && action === 'cash_out' ? { left_at: stamp } : {}) }
+                ? {
+                    ...anchor,
+                    is_sitting_out: paused && pauseReads++ >= pausePersistDelay,
+                    leave_pending: false,
+                    ...(issued && action === 'cash_out' ? { left_at: stamp } : {}),
+                  }
                 : table === 'tables'
                   ? { id: anchor.table_id, cluster_id: pin.clusterId, club_id: pin.clubId }
                   : table === 'cash_participant_funding_receipts'
@@ -303,28 +319,58 @@ function fixture(
                           ? a.pending
                           : table === 'wallet_credit_idempotency'
                             ? c.credit
-                            : table === 'cash_player_session'
-                              ? {
-                                  ...c.cash,
-                                  scope_type: 'table',
-                                  scope_id: anchor.table_id,
-                                  closed_at: issued ? stamp : null,
-                                }
-                              : null;
+                            : table === 'lightning_pool_slot'
+                              ? [
+                                  {
+                                    id: id(44),
+                                    pool_session_id: pin.poolSessionId,
+                                    player_id: pin.playerId,
+                                    cluster_id: pin.clusterId,
+                                  },
+                                ]
+                              : table === 'lightning_hand_player'
+                                ? handReads < pendingRounds
+                                  ? [{ hand_id: id(45), hand: { settled_at: null } }]
+                                  : []
+                                : table === 'cash_player_session'
+                                  ? {
+                                      ...c.cash,
+                                      scope_type: 'table',
+                                      scope_id: anchor.table_id,
+                                      opened_at: stamp,
+                                      baseline:
+                                        3.9 +
+                                        (issued && !refused && action === 'top_up' ? 1 : 0) +
+                                        (returned ? baselineDrift : 0),
+                                      closed_at: issued && action === 'cash_out' ? stamp : null,
+                                    }
+                                  : null;
   const admin = {
     rpc: async (name) => {
+      if (name === 'fn_lightning_player_live_hand') {
+        handReads++;
+        return { data: handReads <= pendingRounds ? id(45) : null };
+      }
       assert.equal(name, 'fn_get_seat_cashout_receipt');
       return { data: issued ? c.receipt : null };
     },
     from(table) {
+      let head = false;
       const q = {
-        select() {
+        select(_columns, options) {
+          head = options?.head === true;
           return q;
         },
         eq() {
           return q;
         },
         gte() {
+          return q;
+        },
+        in() {
+          return q;
+        },
+        is() {
           return q;
         },
         limit() {
@@ -334,7 +380,13 @@ function fixture(
           return q;
         },
         then(resolve, reject) {
-          return Promise.resolve({ data: rows(table) }).then(resolve, reject);
+          const out =
+            returnReadError && returned && table === 'table_seats'
+              ? { error: { message: 'SECRET_READ_ERROR' } }
+              : head
+                ? { data: null, count: 100 + (newHandWhilePaused && handReads > 0 ? 1 : 0) }
+                : { data: rows(table) };
+          return Promise.resolve(out).then(resolve, reject);
         },
       };
       return q;
@@ -383,6 +435,22 @@ function fixture(
       json: async () => reply,
     });
   };
+  const triggerPause = (wanted) => {
+    const req = {
+      method: () => 'POST',
+      url: () => 'https://engine.smarter.poker/sitout',
+      postDataJSON: () => ({ tableId: pin.poolSessionId, sitOut: wanted }),
+    };
+    events.request?.(req);
+    if (!wanted) returned = true;
+    if (wanted || !returnError) paused = wanted;
+    resolveResponse({
+      request: () => req,
+      status: () => (returnError && !wanted ? 400 : 200),
+      ok: () => !(returnError && !wanted),
+      json: async () => ({ success: !(returnError && !wanted) }),
+    });
+  };
   const loc = (role, name, nested = false) => ({
     waitFor: async () => {},
     getAttribute: async () => gate,
@@ -393,6 +461,14 @@ function fixture(
     click: async () => {
       actions.push([role, String(name)]);
       if (name === 'Table Menu') return;
+      if (name === 'Sit Out') {
+        triggerPause(true);
+        return;
+      }
+      if (name === "I'm Back") {
+        triggerPause(false);
+        return;
+      }
       if (name === 'Top Up') {
         assert.equal(role, 'menuitem');
         return;
@@ -414,7 +490,13 @@ function fixture(
   });
   const page = {
     setDefaultTimeout() {},
-    on: (n, fn) => (events[n] = fn),
+    on: (n, fn) => {
+      const prior = events[n];
+      events[n] = (...a) => {
+        prior?.(...a);
+        fn(...a);
+      };
+    },
     goto: async () => {},
     waitForFunction: async () => {},
     locator: () => loc('gate', 'gate'),
@@ -422,6 +504,10 @@ function fixture(
     getByRole: (r, o) => loc(r, o.name),
     waitForResponse: () => new Promise((r) => (resolveResponse = r)),
     waitForTimeout: async () => {
+      if (sitoutFlow) {
+        actions.push('read_only_wait');
+        return;
+      }
       throw Error('Unexpected repeated observation');
     },
   };
@@ -463,6 +549,7 @@ function fixture(
       action,
       openSession,
       timeoutMs: 30000,
+      pauseForTopUp: sitoutFlow,
       fetchImpl: async (input) => ({
         ok: true,
         json: async () =>
@@ -664,4 +751,91 @@ test('refusal classification is pinned to maintained add-on producers', () => {
     'Insufficient wallet balance',
   ])
     assert.ok(seating.includes(`'${message}'`));
+});
+
+test('explicit paused manual top-up waits for persisted pause and every old hand, then returns once with funded baseline', async () => {
+  const f = fixture('top_up', { sitoutFlow: true, pausePersistDelay: 1, pendingRounds: 2 });
+  const r = await witnessFinancial(f.args);
+  assert.equal(r.status, 'observed', JSON.stringify(r));
+  assert.equal(r.cleanup, 'local_session_and_browser_closed');
+  assert.equal(r.sitout.persistedPause, true);
+  assert.equal(r.sitout.allOldHandsSettled, true);
+  assert.equal(r.sitout.noNewFormation, true);
+  assert.equal(r.sitout.returnVerified, true);
+  assert.equal(r.sitout.baselineBefore, 3.9);
+  assert.equal(r.sitout.baselineAfter, 4.9);
+  assert.equal(r.sitout.expectedBaselineAfter, 4.9);
+  assert.deepEqual(r.sitout.requests, { pause: 1, return: 1 });
+  assert.equal(r.matchingRequests, 1);
+  const firstWait = f.actions.indexOf('read_only_wait');
+  const topup = f.actions.findIndex((x) => Array.isArray(x) && x[1] === 'Top Up');
+  assert.ok(firstWait >= 0 && topup > firstWait);
+  assert.ok(!JSON.stringify(r).includes('SECRET'));
+});
+test('a new formation during persisted pause prevents the financial gesture and still returns once', async () => {
+  const f = fixture('top_up', { sitoutFlow: true, pendingRounds: 2, newHandWhilePaused: true });
+  const r = await witnessFinancial(f.args);
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.cause, 'sitout_formed_new_hand');
+  assert.equal(r.intent, null);
+  assert.deepEqual(r.sitout.requests, { pause: 1, return: 1 });
+  assert.equal(r.sitout.returnVerified, true);
+  assert.ok(!f.actions.some((x) => Array.isArray(x) && x[1] === 'Top Up'));
+});
+test('known add-on refusal returns once without baseline fiction or a second monetary request', async () => {
+  const f = fixture('top_up', {
+    sitoutFlow: true,
+    refused: true,
+    httpStatus: 400,
+    replyError: 'Your Chips Are In A Lightning Hand. Add Chips When It Finishes.',
+  });
+  const r = await witnessFinancial(f.args);
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.cause, 'addon_refused');
+  assert.equal(r.matchingRequests, 1);
+  assert.deepEqual(r.sitout.requests, { pause: 1, return: 1 });
+  assert.equal(r.sitout.returnVerified, true);
+  assert.equal(r.sitout.baselineAfter, 3.9);
+});
+test('return refusal or unreadable persistence stays unknown and never retries the return', async () => {
+  for (const options of [{ returnError: true }, { returnReadError: true }]) {
+    const f = fixture('top_up', { sitoutFlow: true, ...options });
+    const r = await witnessFinancial(f.args);
+    assert.equal(r.status, 'unknown');
+    assert.equal(r.cleanup, 'unknown');
+    assert.equal(r.sitout.returnVerified, false);
+    assert.deepEqual(r.sitout.requests, { pause: 1, return: 1 });
+    assert.equal(r.matchingRequests, 1);
+    assert.ok(f.actions.includes('local_signout'));
+    assert.ok(f.actions.includes('browser_close'));
+    assert.ok(!JSON.stringify(r).includes('SECRET'));
+  }
+});
+
+test('pause proof uses the actual hand relationship and additive cash baseline owner', () => {
+  const source = readFileSync(new URL('./lightning-pilot-financial.mjs', import.meta.url), 'utf8');
+  const custody = readFileSync(
+    new URL(
+      '../../supabase/migrations/20260917230925_cash_funding_retains_original_participant_custody.sql',
+      import.meta.url
+    ),
+    'utf8'
+  );
+  assert.match(source, /pauseInitial\.baselineCents \+ cents\(report\.proof\.applied\)/);
+  assert.match(custody, /fn_cash_session_add_baseline\(p_user_id, p_table_id, p_amount\)/);
+});
+
+test('unknown add-on acknowledgment or unexpected baseline remains unknown after one return', async () => {
+  for (const options of [{ unknown: true }, { baselineDrift: 1 }]) {
+    const f = fixture('top_up', { sitoutFlow: true, ...options });
+    const r = await witnessFinancial(f.args);
+    assert.equal(r.status, 'unknown');
+    assert.equal(r.cleanup, 'unknown');
+    assert.equal(r.sitout.returnObserved, true);
+    assert.equal(r.sitout.returnVerified, false);
+    assert.deepEqual(r.sitout.requests, { pause: 1, return: 1 });
+    assert.equal(r.matchingRequests, 1);
+    assert.equal(r.intent.opId, intent.opId);
+    assert.ok(!JSON.stringify(r).includes('SECRET'));
+  }
 });

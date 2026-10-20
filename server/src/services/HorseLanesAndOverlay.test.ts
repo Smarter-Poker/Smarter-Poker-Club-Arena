@@ -91,7 +91,10 @@ describe('overlay top-up target', () => {
     expect(t).toBe(40);
   });
 
-  it('an event that already covers its guarantee asks for nothing more', () => {
+  // The OVERLAY pass alone stops at the guarantee. Late registration does not
+  // (Dan 2026-10-19): lateRegistrationOutlivesTheGuarantee.law.test.ts pins
+  // that a covered event keeps taking late horse entries until its window shuts.
+  it('the overlay pass asks for nothing more once the guarantee is covered', () => {
     const t = topUpTargetFor(risk({ entries_needed: 34, current_players: 34, shortfall: 0 }));
     expect(t).toBe(34);
   });

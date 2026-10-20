@@ -17,6 +17,18 @@ class Boundaries(unittest.TestCase):
   routine=next(r for r in reference['routines'] if r['name']=='fn_deliver_accounting_invoice')
   routine['definition_md5']='0'*32
   with self.assertRaises(ValueError):forward.expected_catalog(reference)
+ def test_event_triggers_restore_as_captured_owners(self):
+  source=(v.BASE/'pokeriq-20261020.sql').read_text();reference=json.loads((v.BASE/'pokeriq-catalog-reference.json').read_text());contract=json.loads((v.BASE/'pokeriq-role-contract.json').read_text())
+  rendered=v.render_event_trigger_owners(source,reference,contract)
+  for trigger in reference['event_triggers']:
+   self.assertIn('SET ROLE '+v.q(trigger['owner'])+';\nCREATE EVENT TRIGGER '+trigger['name'],rendered)
+   self.assertIn('ALTER EVENT TRIGGER '+trigger['name']+' OWNER TO '+trigger['owner']+';',rendered)
+  with self.assertRaises(v.Refused):v.render_event_trigger_owners(source.replace('CREATE EVENT TRIGGER ab_ca_money_rpc_registered','CREATE EVENT TRIGGER unexpected',1),reference,contract)
+  reference['event_triggers'][0]['owner']='unrecognized_owner'
+  with self.assertRaises(v.Refused):v.render_event_trigger_owners(source,reference,contract)
+ def test_provider_error_firstline_is_retained_without_values_or_context(self):
+  result=v.failure_diagnostic('ERROR:  XX000: Superuser owned event trigger must execute a superuser owned function\nHINT: use role "sensitive" https://example.test/secret\nDETAIL: secret body\nCONTEXT: secret routine','baseline-restore',{},'psql')
+  self.assertIn('Superuser owned event trigger',result['message']);self.assertNotIn('sensitive',str(result));self.assertNotIn('example.test',str(result));self.assertNotIn('secret body',str(result))
  def test_required_private_real_scratch(self):
   with self.assertRaises(v.Refused):v.validate_parent('/does/not/exist')
  def test_catalog_detects_missing_routine_constraint_policy_and_acl(self):
@@ -33,7 +45,7 @@ class Boundaries(unittest.TestCase):
   result=v.failure_diagnostic(stderr,'baseline-restore',{},'psql')
   self.assertEqual(result['message'],'out of shared memory');self.assertIn('max_locks_per_transaction',result['hint']);self.assertNotIn('private source',json.dumps(result))
   result=v.failure_diagnostic('ERROR:  53200: sensitive unexpected value','baseline-restore',{},'psql')
-  self.assertNotIn('sensitive unexpected value',json.dumps(result))
+  self.assertIn('sensitive unexpected value',result['message'])
  def test_bootstrap_failure_has_precise_nonsecret_context(self):
   result=v.failure_diagnostic('ERROR:  42501: permission denied to grant privileges as role "supabase_admin"\nDETAIL: discarded private detail','role-membership',{'role':'pg_monitor','member':'postgres','grantor':'supabase_admin'},'psql')
   self.assertEqual(result['sqlstate'],'42501');self.assertEqual(result['phase'],'role-membership')

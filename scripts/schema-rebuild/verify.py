@@ -43,19 +43,33 @@ def derive_lock_budget(reference,max_connections=100):
  while value*max_connections<slots:value*=2
  if value>16384:raise Refused('Captured schema exceeds bounded isolated lock budget')
  return {'maxConnections':max_connections,'explicitRelationsAndIndexes':explicit,'sequencesIncludedInRelations':sum(r.get('kind')=='S' for r in relations),'implicitToastAllowance':toast,'namedObjectAllowance':named,'dependencyMargin':explicit,'minimumLockSlots':slots,'maxLocksPerTransaction':value}
+def safe_error_line(value,context):
+ allowed={str(x) for x in context.values()}|{'max_locks_per_transaction'}
+ value=re.sub(r'(?:https?|postgres(?:ql)?)://[^\s]+','[redacted-url]',value,flags=re.I)
+ value=re.sub(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+','[redacted-token]',value)
+ value=re.sub(r'(?<![A-Za-z0-9_])(?:sbp_|sb_secret_|sk_live_|sk_test_|ghp_|github_pat_)[A-Za-z0-9_]+','[redacted-token]',value)
+ value=re.sub(r'"([^"\n]*)"',lambda m:'"'+m[1]+'"' if m[1] in allowed else '"[redacted]"',value)
+ value=re.sub(r"'[^'\n]*'","'[redacted]'",value)
+ value=re.sub(r'(?<![A-Za-z0-9_])[A-Za-z0-9_/+=-]{32,}(?![A-Za-z0-9_])','[redacted-token]',value)
+ return value[:240]
 def failure_diagnostic(stderr,phase,context,command):
  header=re.search(r'(?:ERROR|FATAL):\s+([A-Z0-9]{5}):\s*([^\n]*)',stderr)
- message='PostgreSQL rejected the command; raw source and detail are omitted'
- if header and header[1]=='53200' and header[2]=='out of shared memory':message='out of shared memory'
- if header and phase.startswith(('role-','database-','extension-')):
-  # These commands contain only reviewed role/GUC/object identifiers, never
-  # routine bodies or credentials. Retain identifiers already in safe context.
-  allowed=set(str(x) for x in context.values());message=header[2]
-  message=re.sub(r'"([^"\n]*)"',lambda m:'"'+m[1]+'"' if m[1] in allowed else '"[redacted]"',message)
-  message=re.sub(r"'[^'\n]*'","'[redacted]'",message)[:240]
- result={'schemaRebuilt':False,'status':'failed','phase':phase,'context':context,'command':Path(str(command)).name,'sqlstate':header[1] if header else None,'message':message,'line':int(re.search(r':(\d+): (?:ERROR|FATAL):',stderr)[1]) if re.search(r':(\d+): (?:ERROR|FATAL):',stderr) else None,'rawDiagnostic':'ephemeral owned scratch only; never uploaded'}
- if header and header[1]=='53200' and re.search(r'HINT:\s+You might need to increase "?max_locks_per_transaction"?\.',stderr):result['hint']='You might need to increase "max_locks_per_transaction".'
+ result={'schemaRebuilt':False,'status':'failed','phase':phase,'context':context,'command':Path(str(command)).name,'sqlstate':header[1] if header else None,'message':safe_error_line(header[2],context) if header else 'PostgreSQL rejected the command; raw source and detail are omitted','line':int(re.search(r':(\d+): (?:ERROR|FATAL):',stderr)[1]) if re.search(r':(\d+): (?:ERROR|FATAL):',stderr) else None,'rawDiagnostic':'ephemeral owned scratch only; never uploaded'}
+ hint=re.search(r'^HINT:\s*([^\n]*)',stderr,re.M)
+ if hint:result['hint']=safe_error_line(hint[1],context)
  return result
+def render_event_trigger_owners(source,reference,contract):
+ owners={r['name'] for r in contract['roles']};routines={(r['schema']+'.'+r['name']+'()'):r for r in reference['routines'] if not r['args']}
+ for trigger in reference['event_triggers']:
+  name=trigger['name'];owner=trigger['owner'];function=trigger['function']
+  if owner not in owners or function not in routines or routines[function]['owner']!=owner:raise Refused('Captured event trigger owner/function contract differs: '+name)
+  identifier=q(name) if not re.fullmatch(r'[a-z_][a-z0-9_]*',name) else name
+  pattern=r'^CREATE EVENT TRIGGER '+re.escape(identifier)+r' ON '+re.escape(trigger['event'])+r'\n.*?;'
+  matches=list(re.finditer(pattern,source,re.M|re.S))
+  if len(matches)!=1 or not re.search(r'EXECUTE FUNCTION\s+'+re.escape(function)+r';$',matches[0][0]):raise Refused('Event trigger baseline anchor differs: '+name)
+  statement=matches[0][0];source=source[:matches[0].start()]+'SET ROLE '+q(owner)+';\n'+statement+'\nRESET ROLE;'+source[matches[0].end():]
+ if len(re.findall(r'^CREATE EVENT TRIGGER ',source,re.M))!=len(reference['event_triggers']):raise Refused('Uncaptured event trigger baseline statement')
+ return source
 def bootstrap_roles(sql,contract,bootstrap):
  for role in contract['roles']:
   name=role['name']
@@ -139,6 +153,8 @@ def main():
    replacement='SET ROLE '+q(extension['owner'])+';\nCREATE EXTENSION IF NOT EXISTS '+q(extension['name'])+' WITH SCHEMA '+q(extension['schema'])+' VERSION '+lit(extension['version'])+';\nRESET ROLE;'
    rendered,n=re.subn(pattern,lambda m:replacement,rendered,flags=re.M)
    if n!=1:raise Refused('Extension baseline anchor differs: '+extension['name'])
+  # Supautils requires trigger creator and callback owner authority to agree.
+  rendered=render_event_trigger_owners(rendered,expected,contract)
   # Fresh setup has no Supabase default grants before any object is created.
   sql("CREATE TABLE public.__no_default_probe(id int);DO $$ BEGIN IF has_table_privilege('anon','public.__no_default_probe','SELECT') OR has_table_privilege('authenticated','public.__no_default_probe','INSERT') OR has_table_privilege('service_role','public.__no_default_probe','SELECT') THEN RAISE EXCEPTION 'Unexpected default API privilege'; END IF; END $$;DROP TABLE public.__no_default_probe;")
   restore=work/'restore.sql';restore.write_text(rendered);os.chmod(restore,0o600)

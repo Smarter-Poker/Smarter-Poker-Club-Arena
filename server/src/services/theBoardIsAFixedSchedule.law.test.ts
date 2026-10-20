@@ -47,6 +47,7 @@ import {
   BOARD_DAY_CLOSES,
   NEW_BOARD_EVENTS_START,
   isFixedBoardConfig,
+  isRetiredMidwayBoardEvent,
   fixedBoardRowFor,
   planFixedBoardSync,
   type ExistingFixedBoardRow,
@@ -113,6 +114,7 @@ describe('every scheduled name builds the event the timer used to make', () => {
     for (const e of FIXED_BOARD) {
       const name = e.name;
       for (const sched of [midwaySchedule(name), arenaSchedule(name)]) {
+        if (isRetiredMidwayBoardEvent(sched.club_id, name)) continue;
         const row = fixedBoardRow(sched, { type: 'fixed_board', fixedBoard: name }, START);
         expect(row, name).not.toBeNull();
         expect(row!.name).toBe(name);
@@ -256,6 +258,7 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
   it('every hard-coded event builds a row in both clubs: no unknown template can ship', () => {
     for (const club of FIXED_BOARD_CLUBS) {
       for (const event of FIXED_BOARD) {
+        if (isRetiredMidwayBoardEvent(club.clubId, event.name)) continue;
         const sched = { id: 'x', club_id: club.clubId, union_id: club.unionId, name: event.name };
         expect(
           fixedBoardRow(sched, fixedBoardRowFor(club, event).config, START),
@@ -282,23 +285,27 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
     };
   };
 
-  it('an empty table gets all 52 rows', () => {
+  it('an empty table gets 51 rows after the Midway 11 AM removal', () => {
     const plan = planFixedBoardSync([]);
-    expect(plan.inserts).toHaveLength(52);
+    expect(plan.inserts).toHaveLength(51);
     expect(plan.updates).toEqual([]);
     expect(plan.deactivate).toEqual([]);
   });
 
   it('a table that already holds the board is left alone', () => {
     const existing = FIXED_BOARD_CLUBS.flatMap((c, ci) =>
-      FIXED_BOARD.map((e, ei) => asExisting(`${ci}-${ei}`, c, e))
+      FIXED_BOARD.filter((e) => !isRetiredMidwayBoardEvent(c.clubId, e.name)).map((e, ei) =>
+        asExisting(`${ci}-${ei}`, c, e)
+      )
     );
     expect(planFixedBoardSync(existing)).toEqual({ inserts: [], updates: [], deactivate: [] });
   });
 
   it('a row whose times differ from the code is rewritten to the code', () => {
     const existing = FIXED_BOARD_CLUBS.flatMap((c, ci) =>
-      FIXED_BOARD.map((e, ei) => asExisting(`${ci}-${ei}`, c, e))
+      FIXED_BOARD.filter((e) => !isRetiredMidwayBoardEvent(c.clubId, e.name)).map((e, ei) =>
+        asExisting(`${ci}-${ei}`, c, e)
+      )
     );
     existing[3] = { ...existing[3], start_times_utc: ['09:15'] };
     const plan = planFixedBoardSync(existing);
@@ -308,7 +315,9 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
 
   it('a fixed-board row the code no longer lists is retired, and a duplicate too', () => {
     const existing = FIXED_BOARD_CLUBS.flatMap((c, ci) =>
-      FIXED_BOARD.map((e, ei) => asExisting(`${ci}-${ei}`, c, e))
+      FIXED_BOARD.filter((e) => !isRetiredMidwayBoardEvent(c.clubId, e.name)).map((e, ei) =>
+        asExisting(`${ci}-${ei}`, c, e)
+      )
     );
     existing.push({ ...existing[0], id: 'dup' });
     existing.push({
@@ -317,6 +326,15 @@ describe('the board is hard coded in the engine, so it can never run ahead of it
       config: { type: 'fixed_board', fixedBoard: 'Retired Event (NLH)' },
     });
     expect(planFixedBoardSync(existing).deactivate.sort()).toEqual(['dup', 'gone']);
+  });
+
+  it('retires the removed Midway freeroll and preserves the Diamond Arena event', () => {
+    const event = FIXED_BOARD.find((e) => e.name === 'Coffee Break Freeroll (PLO4)')!;
+    const existing = FIXED_BOARD_CLUBS.map((c, i) => asExisting('freeroll-' + i, c, event));
+    const plan = planFixedBoardSync(existing);
+    expect(plan.deactivate).toContain('freeroll-0');
+    expect(plan.deactivate).not.toContain('freeroll-1');
+    expect(plan.inserts.some((r) => r.club_id === MIDWAY && r.name === event.name)).toBe(false);
   });
 
   it('the scheduler writes the board before it reads a schedule', () => {

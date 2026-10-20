@@ -76,6 +76,7 @@ import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.j
 import { localDateIn, zonedStartUtc } from './scheduleWallClock.js';
 import {
   FIXED_BOARD_RESYNC_MS,
+  isRetiredMidwayBoardEvent,
   planFixedBoardSync,
   type ExistingFixedBoardRow,
 } from '../config/fixedBoard.js';
@@ -739,6 +740,11 @@ export function fixedBoardRow(
 ): Record<string, unknown> | null {
   const name = typeof cfg.fixedBoard === 'string' ? cfg.fixedBoard.trim() : '';
   if (!name) return null;
+  if (
+    isRetiredMidwayBoardEvent(schedule.club_id, name) ||
+    isRetiredMidwayBoardEvent(schedule.union_id, name)
+  )
+    return null;
   const unionId = schedule.union_id ?? null;
   const freeBuy = fixedFreeBuyRow(name, startTime, {
     clubId: schedule.club_id,

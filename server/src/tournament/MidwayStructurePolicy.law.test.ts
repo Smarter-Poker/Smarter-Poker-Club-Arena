@@ -18,7 +18,7 @@ const start = new Date('2026-10-25T18:00:00Z');
 afterEach(() => vi.restoreAllMocks());
 
 describe('Midway standard structures through the actual scheduled creator', () => {
-  it.each(schedules)(
+  it.each(schedules.filter((s) => s.name !== 'Coffee Break Freeroll (PLO4)'))(
     '$name has a playable, conventional full structure',
     async ({ name, config }) => {
       const schedule = {
@@ -82,6 +82,21 @@ describe('Midway standard structures through the actual scheduled creator', () =
       expect(withMidwayStructure(row)).toEqual(row);
     }
   );
+
+  it('refuses the owner-removed Midway 11 AM freeroll', () => {
+    expect(
+      fixedBoardRow(
+        {
+          id: 'removed',
+          club_id: MIDWAY_UNION_ID,
+          union_id: MIDWAY_UNION_ID,
+          name: 'Coffee Break Freeroll (PLO4)',
+        },
+        { fixedBoard: 'Coffee Break Freeroll (PLO4)' },
+        start
+      )
+    ).toBeNull();
+  });
 
   it('reproduces the former floor(25 / 2) opening and repairs its owner', () => {
     const old = fixedFreeBuyRow('Morning Free Buy (NLH)', start, {

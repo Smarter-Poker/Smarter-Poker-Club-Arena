@@ -68,3 +68,5 @@ https://www.pokerstars.com/help/articles/trn-rebuy-addon/137378/.
 Delivery state and exact production evidence are recorded in the task checkpoint.
 
 The Mid-Morning Turbo (6-Max NLH) also publishes and creates six-seat tables, matching its advertised format.
+
+Owner follow-up removes the Midway 11 AM Coffee Break Freeroll. The board owner retires it, the creator refuses stale copies, and installation deactivates its schedule. Diamond Arena is unchanged. The revised Midway schedule has 144 definitions and 350 weekly starts.

@@ -58,8 +58,6 @@ def main():
   run([pg/'pg_ctl','-D',data,'-l',work/'server.log','-w','start']);started=True
   cmd=[pg/'psql','-X','-qAt','-h',socket,'-U','schema_restore_owner','-d','postgres','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose']
   def sql(s):return run(cmd,s)
-  actualplatform=json.loads(sql("SELECT jsonb_build_object('encoding',pg_encoding_to_char(encoding),'collate',datcollate,'ctype',datctype,'provider',datlocprovider,'locale',to_jsonb(d)->>'datlocale','collation_version',datcollversion,'icu_rules',to_jsonb(d)->>'daticurules') FROM pg_database d WHERE datname=current_database();"))
-  if actualplatform!=platform:raise Refused('Source database locale/collation runtime differs: '+json.dumps(actualplatform))
   available=json.loads(sql("SELECT jsonb_agg(jsonb_build_object('name',name,'version',version)) FROM pg_available_extension_versions;"));have={(x['name'],x['version']) for x in available}
   missing=[(x['name'],x['version']) for x in contract['extensions'] if (x['name'],x['version']) not in have]
   if missing:raise Refused('Faithful extension runtime unavailable: '+json.dumps(missing))
@@ -76,6 +74,9 @@ def main():
     sql('BEGIN;SELECT set_config('+lit(key)+','+lit(value)+',true);ALTER ROLE '+q(name)+' SET '+q(key)+' FROM CURRENT;COMMIT;')
   for member in contract['memberships']:
    sql('GRANT '+q(member['role'])+' TO '+q(member['member'])+' WITH ADMIN '+str(member['admin']).upper()+', INHERIT '+str(member['inherit']).upper()+', SET '+str(member['set']).upper()+' GRANTED BY '+q(member['grantor'])+';')
+  sql('ALTER DATABASE postgres OWNER TO '+q(platform['owner'])+';')
+  actualplatform=json.loads(sql("SELECT jsonb_build_object('owner',pg_get_userbyid(datdba),'encoding',pg_encoding_to_char(encoding),'collate',datcollate,'ctype',datctype,'provider',datlocprovider,'locale',to_jsonb(d)->>'datlocale','collation_version',datcollversion,'icu_rules',to_jsonb(d)->>'daticurules') FROM pg_database d WHERE datname=current_database();"))
+  if actualplatform!=platform:raise Refused('Source database locale/collation runtime differs: '+json.dumps(actualplatform))
   # Provider extensions are real installed versions, created under their exact
   # captured owner. This explicit baseline normalization changes no app DDL.
   builtin=next(x for x in contract['extensions'] if x['name']=='plpgsql')

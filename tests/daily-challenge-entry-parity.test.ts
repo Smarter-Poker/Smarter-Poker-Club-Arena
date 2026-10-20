@@ -137,11 +137,11 @@ describe('every Daily Challenges entry keeps the club and the shell paints the p
     expect(listener).toContain(
       'clubIdFromPath(location.pathname) ?? readClubContextParam(location.search)'
     );
-    // At a live table the toast only informs: it never navigates.
-    expect(listener).toContain('const AT_LIVE_TABLE = /^\\/table(?:\\/|$)/;');
-    expect(listener).toContain(
-      'openDailyChallengesRef.current = AT_LIVE_TABLE.test(location.pathname)'
-    );
+    // Owner update 2026-10-20: every attention alert is a door on an explicit tap,
+    // including at a live table. Draft protection still owns leaving a page.
+    expect(listener).not.toContain('AT_LIVE_TABLE');
+    expect(listener).toContain('openDailyChallengesRef.current = () => {');
+    expect(listener).toContain('if (!mayLeaveCurrentPage()) return;');
     expect(listener).toMatch(
       /toastRef\.current\.success\(\s*`Challenge Complete: \$\{completion\.name\}\.\$\{rewardCopy\}`,\s*undefined,\s*openDailyChallenges\s*\)/
     );

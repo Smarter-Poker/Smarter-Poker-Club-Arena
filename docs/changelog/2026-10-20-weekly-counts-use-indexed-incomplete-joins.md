@@ -1,0 +1,7 @@
+# Weekly incomplete evidence counts use their original source keys
+
+The original bounded count owner materialized the window source and batch sets, then joined those unindexed sets for each attribution. A production EXPLAIN showed nested CTE scans hidden behind an estimated single outer row; successful original calls took140–150seconds. No production inner-node timing was available, so that total is not attributed wholly to this join.
+
+Only the incomplete branch now seeks the existing unique source(record,player) and batch(record) indexes through parameterized LEFT joins. The record already belongs to the exact original window keyset; the source still uses the full-week club scope. Missing rows, NULLs, duplicate multiplicity, all contract comparisons, evidence and drift counts remain unchanged. No index, cache, money path, timeout or inventory generation is changed.
+
+The maintained native PG17 qualifier compares all22 fault/boundary cases under generic and custom plans, retains the prior16cases, refuses actual unique-source duplication, and verifies relaxed-fixture duplicate multiplicity. At1603window positions the actual isolated original query rescanned each1603-row CTE1603times, while the repaired query performed1603single-row indexed seeks for each table (171.306ms versus8.501ms in the first run; not a production speed guarantee). It also verifies exact old/new results, metadata/ACL preservation, installer rollback/freeze/metadata rejection and replay refusal. The existing required floor parent invokes it unconditionally.

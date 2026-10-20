@@ -133,6 +133,17 @@ export function recoveryJournal(page, rooms, remaining, playerId) {
 }
 /** One existing manual SPA route. No join control, scripted navigation or tab eviction. */
 async function openOtherPool(page, admin, pin, remaining, progress) {
+  progress.step = 'find_existing_pool_tab';
+  const existing = page.locator(`[data-tabid="${pin.poolSessionId}"]`);
+  const matches = await existing.count();
+  if (matches > 1) throw new Error('Manual Pool Tab Ambiguous');
+  if (matches === 1 && (await existing.isVisible())) {
+    progress.step = 'select_existing_pool_tab';
+    await existing.tap({ timeout: Math.min(5000, remaining()) });
+    if ((await existing.getAttribute('aria-current', { timeout: remaining() })) !== 'true')
+      throw new Error('Manual Selection');
+    return;
+  }
   progress.step = 'open_another_table';
   const add = page.getByRole('button', { name: 'Open Another Table', exact: true });
   if ((await add.count()) !== 1 || !(await add.isVisible())) {

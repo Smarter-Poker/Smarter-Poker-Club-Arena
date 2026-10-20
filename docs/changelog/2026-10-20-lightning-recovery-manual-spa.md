@@ -11,6 +11,9 @@ target cluster. The visible lobby row is bound by a read-only table identity
 lookup to the authorized club and cluster. The normal Lightning entry resolves
 the existing own pool. No join, buy-in, scripted navigation, tab eviction or cap
 override is added. Missing controls or an ambiguous row remain unknown.
+An already restored target pool is selected through its exact visible tab first,
+so a player at the real tab cap does not need a new lobby tab. Duplicate target
+tabs refuse; no existing game is closed to create capacity.
 
 Socket ownership follows actual SUBSCRIBE/SUBSCRIBED room identities. A socket
 can own a set of rooms; unsubscribe and close retire those bindings. Reconnect

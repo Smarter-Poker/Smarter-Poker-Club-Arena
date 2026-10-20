@@ -417,7 +417,12 @@ test('two distinct UUIDs resolving to the same target category refuse before pro
   assert.equal(authReads, 0);
 });
 
-function manualRecoveryFixture({ missingAdd = false, duplicateChosen = false } = {}) {
+function manualRecoveryFixture({
+  missingAdd = false,
+  duplicateChosen = false,
+  existingOther = false,
+  ambiguousTab = false,
+} = {}) {
   const events = new EventEmitter(),
     tabs = new Set(),
     calls = [];
@@ -443,7 +448,9 @@ function manualRecoveryFixture({ missingAdd = false, duplicateChosen = false } =
       selector === 'add' && missingAdd
         ? 0
         : selector.includes('data-tabid')
-          ? Number(tabs.has(selector.match(/"([^"]+)"/)[1]))
+          ? ambiguousTab && selector.includes(OTHER)
+            ? 2
+            : Number(tabs.has(selector.match(/"([^"]+)"/)[1]))
           : 1,
     isVisible: async () => true,
     waitFor: async () => {},
@@ -477,6 +484,10 @@ function manualRecoveryFixture({ missingAdd = false, duplicateChosen = false } =
       tabs.add(room);
       active = room;
       publish(room);
+      if (existingOther) {
+        tabs.add(OTHER);
+        publish(OTHER);
+      }
     },
     locator: loc,
     getByRole: (_role, options) => loc(options.name === 'Open Another Table' ? 'add' : 'menu'),
@@ -551,6 +562,22 @@ test('absent add control refuses without a second navigation, join or closing an
   assert.equal(f.calls.length, 1);
   assert.equal(report.navigation.at(-1).step, 'open_another_table_unavailable');
   assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
+});
+test('already restored target pool uses its normal tab even when add control is absent at capacity', async () => {
+  const f = manualRecoveryFixture({ existingOther: true, missingAdd: true });
+  const report = await witnessRecovery(f.args);
+  assert.equal(f.calls.length, 1);
+  assert.equal(report.touch.length, 4);
+  assert.equal(f.phaseReads(), 1);
+  assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
+});
+test('ambiguous target tab refuses before another menu or navigation gesture', async () => {
+  const f = manualRecoveryFixture({ existingOther: true, ambiguousTab: true });
+  const report = await witnessRecovery(f.args);
+  assert.equal(f.calls.length, 1);
+  assert.equal(report.touch.length, 0);
+  assert.equal(report.navigation.at(-1).step, 'find_existing_pool_tab');
+  assert.equal(report.status, 'unknown');
 });
 test('two simultaneous owners of chosen pool still refuse despite legitimate other pool socket', async () => {
   const f = manualRecoveryFixture({ duplicateChosen: true });

@@ -296,6 +296,7 @@ import {
   type ArenaIdentity,
 } from '../../server/src/domain/ArenaContext';
 import { useLightningSitOut } from '../lightning/useLightningSitOut';
+import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
@@ -8394,8 +8395,9 @@ function LiveTablePage({
   const handleAddChips = async (
     amount: number,
     opId?: string,
-    opts?: { source?: 'manual' | 'auto' }
+    opts?: { source?: 'manual' | 'auto'; isCurrent?: () => boolean }
   ): Promise<boolean> => {
+    if (opts?.isCurrent && !opts.isCurrent()) return false;
     /* A Diamond seat tops up too, through the same engine call. What differs is
        the door underneath it (fn_poker_diamond_top_up, whole units, the seat's
        own custody row) and the word for what moved. */
@@ -8440,7 +8442,9 @@ function LiveTablePage({
         }
         addOnTableId = anchor.anchorTableId;
       }
+      if (opts?.isCurrent && !opts.isCurrent()) return false;
       const res = await GameServerAPI.addChips(addOnTableId, amount, opId);
+      if (opts?.isCurrent && !opts.isCurrent()) return false;
       if (!res.success) {
         /* The AUTOMATIC top-up sizes itself from the stack it can see, and
            it cannot see a queued mid-hand add-on that already fills the seat
@@ -24280,7 +24284,24 @@ function LiveTablePage({
     // see heroPromptedToAct.
     !suppressPanelForPreAction;
 
-  // Guards the auto top-up against re-entry while a debit is still in flight.
+  // A Lightning idle room intentionally has no hand seat. Its normal opt-in
+  // top-up is triggered by the committed receipt, including after an early fold.
+  useLightningAutoTopUp({
+    room: lightningRoom,
+    userId,
+    enabled: isAutoRebuyEnabled,
+    balance: accountBalance,
+    event: engineLastEvent,
+    add: (amount, opId, isCurrent) =>
+      handleAddChipsRef.current(amount, opId, { source: 'auto', isCurrent }),
+    onAdded: (requested) => {
+      const result = lastAddChipsResultRef.current;
+      if (result && !result.queued && result.applied >= requested)
+        toast.success(`Auto Top Up: Added ${result.applied.toFixed(2)} Chips`);
+    },
+  });
+
+  // Guards the ordinary-table auto top-up against re-entry while a debit is still in flight.
   const autoTopUpInFlightRef = useRef(false);
   /* ONE IDEMPOTENCY KEY PER AUTO TOP-UP, REUSED ACROSS RETRIES (Realtime
      Phase 3 audit, 2026-09-05). Same shape as `bustRebuyKeyRef` above and as
@@ -24380,6 +24401,7 @@ function LiveTablePage({
       // authoritative, atomic debit, and it rejects anything over the table's
       // real cap without charging the wallet.
       if (
+        !lightningRoomRef.current &&
         isAutoRebuyEnabled &&
         /* A CASH SEAT WITH A FUNDED WRITER, WHICHEVER ASSET FUNDS IT
            (2026-09-12). This read `=== 'chips'`, so a Diamond cash seat could

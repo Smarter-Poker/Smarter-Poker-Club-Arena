@@ -2081,13 +2081,20 @@ export class LightningHandHost {
       if (out.ok) {
         this.state = 'complete';
         await this.drainPostCommit(out.value.handHistoryId);
-        this.emitAll({
-          type: 'hand_history_saved',
-          table_id: '',
-          hand_number: this.handNumber,
-          hand_id: out.value.handHistoryId,
-          timestamp: this.now(),
-        });
+        // This is the committed hand's receipt, including for a player freed
+        // by an earlier fold. Gameplay frames still go only to watching rooms.
+        const savedAt = this.now();
+        for (const participant of this.participants.values())
+          this.deps.hub.emitEvent(participant.poolSessionId, {
+            type: 'hand_history_saved',
+            table_id: participant.poolSessionId,
+            hand_number: this.handNumber,
+            hand_id: out.value.handHistoryId,
+            lightning_hand_id: this.handId,
+            pool_session_id: participant.poolSessionId,
+            player_id: participant.playerId,
+            timestamp: savedAt,
+          });
         this.metrics.recordHand('settled');
         // Captured before finish() clears who is watching: the jackpot is
         // every participant's, folded or not (the table share is the dealt-in).

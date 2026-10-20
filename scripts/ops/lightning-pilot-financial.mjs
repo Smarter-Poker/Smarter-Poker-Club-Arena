@@ -527,6 +527,13 @@ export async function witnessFinancial({
     cleanup: 'pending',
     scope: pauseForTopUp ? 'one_normal_ui_topup_with_sitout_and_return' : 'one_normal_ui_intent',
     intent: null,
+    cleanupStages: {
+      autoPreference: 'not_required',
+      autoStep: 'not_started',
+      autoOffGestures: 0,
+      browser: 'not_created',
+      localSession: 'not_created',
+    },
   };
   let auth,
     opening,
@@ -625,33 +632,41 @@ export async function witnessFinancial({
     )
       throw Error('sitout_return_unknown');
   };
+  const openMenu = async (left) => {
+    const button = page.getByRole('button', { name: 'Table Menu', exact: true });
+    const expanded = await bound(button.getAttribute('aria-expanded'), left());
+    if (!['true', 'false'].includes(expanded)) throw Error('restore_unknown');
+    if (expanded === 'false') await bound(button.click({ timeout: left() }), left());
+  };
   const restorePreference = async (ms) => {
-    await bound(
-      page.getByRole('button', { name: 'Table Menu', exact: true }).click({ timeout: ms }),
-      ms
-    );
+    const stop = Date.now() + ms;
+    const left = () => Math.max(1, stop - Date.now());
+    report.cleanupStages.autoStep = 'open_menu';
+    await openMenu(left);
     const toggle = page.getByRole('menuitem', { name: /^Auto Top Up(?: ON)?$/ });
-    if (!/\bON\b/.test(await bound(toggle.innerText(), ms))) throw Error('restore_unknown');
-    await bound(toggle.click({ timeout: ms }), ms);
-    await bound(
-      page.getByRole('button', { name: 'Table Menu', exact: true }).click({ timeout: ms }),
-      ms
-    );
-    if (
-      /\bON\b/.test(
-        await bound(page.getByRole('menuitem', { name: /^Auto Top Up(?: ON)?$/ }).innerText(), ms)
-      )
-    )
+    report.cleanupStages.autoStep = 'read_preference';
+    const initial = (await bound(toggle.innerText(), left())).trim();
+    if (!/^Auto Top Up(?:\s+ON)?$/.test(initial)) throw Error('restore_unknown');
+    if (/\bON\b/.test(initial)) {
+      if (report.cleanupStages.autoOffGestures !== 0) throw Error('restore_unknown');
+      report.cleanupStages.autoStep = 'toggle_off';
+      report.cleanupStages.autoOffGestures++;
+      await bound(toggle.click({ timeout: left() }), left());
+      report.cleanupStages.autoStep = 'reopen_menu';
+      await openMenu(left);
+    }
+    report.cleanupStages.autoStep = 'verify_off';
+    if ((await bound(toggle.innerText(), left())).trim() !== 'Auto Top Up')
       throw Error('restore_unknown');
     autoRestored = true;
+    report.cleanupStages.autoPreference = 'off_verified';
+    report.cleanupStages.autoStep = 'complete';
   };
   // The last normal step reached, recorded on failure (no message, no data).
   let step = 'preflight';
   const menu = async () => {
     step = 'table_menu';
-    await page
-      .getByRole('button', { name: 'Table Menu', exact: true })
-      .click({ timeout: remaining() });
+    await openMenu(remaining);
   };
   try {
     await bound(validatePlayer(admin, pin));
@@ -883,6 +898,7 @@ export async function witnessFinancial({
       // Restore through the same normal control even after unknown observation.
       restoreAuto = true;
       autoRestored = false;
+      report.cleanupStages.autoPreference = 'pending';
       await toggle.click({ timeout: remaining() });
       report.autoArmed = true;
     }
@@ -1025,6 +1041,7 @@ export async function witnessFinancial({
         await restorePreference(Math.max(1, end - Date.now() - 12000));
       } catch {
         autoRestored = false;
+        report.cleanupStages.autoPreference = 'unknown';
       }
     }
     if (restoreAuto) report.autoPreferenceRestored = autoRestored;
@@ -1035,12 +1052,15 @@ export async function witnessFinancial({
         auth = await bound(opening, Math.max(1, end - Date.now() - 10000));
       } catch {
         local = false;
+        report.cleanupStages.localSession = 'unknown';
       }
     if (browser)
       try {
         await bound(browser.close(), Math.max(1, end - Date.now() - 7000));
+        report.cleanupStages.browser = 'closed';
       } catch {
         closed = false;
+        report.cleanupStages.browser = 'unknown';
       }
     if (auth?.client)
       try {
@@ -1049,8 +1069,10 @@ export async function witnessFinancial({
           Math.max(1, end - Date.now())
         );
         if (out?.error) local = false;
+        report.cleanupStages.localSession = out?.error ? 'unknown' : 'closed';
       } catch {
         local = false;
+        report.cleanupStages.localSession = 'unknown';
       }
     report.cleanup =
       closed && local && autoRestored && pauseRestored

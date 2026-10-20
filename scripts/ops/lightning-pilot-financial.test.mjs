@@ -221,6 +221,8 @@ function fixture(
     gate = 'accepted',
     cleanupError = false,
     restoreError = false,
+    autoOffBeforeRestore = false,
+    menuInitiallyOpen = false,
     replyError,
     httpStatus = 200,
     sitoutFlow = false,
@@ -238,6 +240,7 @@ function fixture(
     c = cashout();
   let issued = false,
     auto = false,
+    menuOpen = menuInitiallyOpen,
     resolveResponse,
     paused = false,
     pauseReads = 0,
@@ -453,14 +456,18 @@ function fixture(
   };
   const loc = (role, name, nested = false) => ({
     waitFor: async () => {},
-    getAttribute: async () => gate,
+    getAttribute: async () => (name === 'Table Menu' ? String(menuOpen) : gate),
     inputValue: async () => '1',
     innerText: async () => `Auto Top Up${auto ? ' ON' : ''}`,
     getByRole: (r, o) => loc(r, o.name, true),
     getByLabel: () => loc('input', 'amount'),
     click: async () => {
       actions.push([role, String(name)]);
-      if (name === 'Table Menu') return;
+      if (name === 'Table Menu') {
+        menuOpen = !menuOpen;
+        return;
+      }
+      if (role === 'menuitem') assert.equal(menuOpen, true, 'normal menu must be open');
       if (name === 'Sit Out') {
         triggerPause(true);
         return;
@@ -478,6 +485,8 @@ function fixture(
         if (auto && restoreError) throw Error('SECRET_RESTORE');
         auto = !auto;
         if (auto) trigger();
+        menuOpen = false;
+        if (autoOffBeforeRestore) auto = false;
         return;
       }
       if (
@@ -627,8 +636,31 @@ test('auto preference restoration failure is not success, and scope refuses befo
     r = await witnessFinancial(f.args);
   assert.equal(r.cleanup, 'unknown');
   assert.equal(r.status, 'unknown');
+  assert.equal(r.cleanupStages.autoPreference, 'unknown');
+  assert.equal(r.cleanupStages.browser, 'closed');
+  assert.equal(r.cleanupStages.localSession, 'closed');
+  assert.equal(r.cleanupStages.autoOffGestures, 1);
+  assert.equal(r.cleanupStages.autoStep, 'read_preference');
   assert.ok(f.actions.includes('local_signout'));
   await assert.rejects(witnessFinancial({ ...f.args, pin: { ...pin, playerId: id(99) } }), /Scope/);
+});
+test('already-open normal menu is not toggled closed before the single intent', async () => {
+  const f = fixture('auto_top_up', { menuInitiallyOpen: true });
+  const r = await witnessFinancial(f.args);
+  assert.equal(r.status, 'observed');
+  assert.equal(r.matchingRequests, 1);
+  assert.equal(r.cleanupStages.autoOffGestures, 1);
+});
+test('already OFF preference is verified without a second toggle', async () => {
+  const f = fixture('auto_top_up', { autoOffBeforeRestore: true });
+  const r = await witnessFinancial(f.args);
+  assert.equal(r.autoPreferenceRestored, true);
+  assert.equal(r.cleanupStages.autoPreference, 'off_verified');
+  assert.equal(r.cleanupStages.autoOffGestures, 0);
+  assert.equal(
+    f.actions.filter((x) => Array.isArray(x) && String(x[1]).includes('Auto Top Up')).length,
+    1
+  );
 });
 test('selectors and receipts are pinned to maintained product producers', () => {
   const menu = readFileSync(

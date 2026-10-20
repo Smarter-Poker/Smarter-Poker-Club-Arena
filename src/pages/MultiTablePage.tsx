@@ -4629,11 +4629,32 @@ export default function MultiTablePage() {
     // Nothing but lobby tabs open: there is no /table URL to put back, and the
     // container would hide itself again the moment we redirected. Leave it.
     if (!returnTo) return;
+    /* The tab openTournamentTab is about to focus: the parked lobby tab, else
+       the one it appends. Read BEFORE the call, from the same snapshot it
+       reads, so the two cannot disagree. */
+    const existingLobby = open.findIndex(isLobbyTab);
+    const tournamentTabIdx = existingLobby !== -1 ? existingLobby : open.length;
     /* Carry the query across the recovery too (round 2). Arriving here from a
        "/tournaments/:id?watch=1" link that escaped the hook — the ticker, a
        deep link, anything outside the provider — must still watch, or the
        backstop would "rescue" the player by quietly discarding their intent. */
     if (!openTournamentTab({ tournamentId, search: location.search })) return;
+    /* THE BORROWED URL MUST NOT STEAL THE FOCUS BACK (Dan 2026-10-19).
+
+       Dan: "when you click on one of the tournaments inside the scroll at the
+       top, it should take you to the registration page for that tournament
+       when clicked. it currently silently fails."
+
+       It did not fail to open the page. openTournamentTab put the tournament's
+       registration page into the Lobby tab and focused it - and then the
+       navigate below changed the route from /tournaments/:id back to
+       /table/<returnTo>, the route effect saw a table it already holds and
+       focused THAT, one frame later. The page was sitting one tab over with
+       nothing pointing at it. This is exactly the borrowed-URL case
+       `pendingTabIndexRef` exists for (handleTabSelect, OPEN_LOBBY_TAB); this
+       backstop was the one caller that borrowed a URL without saying which
+       tab it meant. */
+    pendingTabIndexRef.current = tournamentTabIdx;
     navigate(`/table/${returnTo.id}${tableQuery(returnTo)}`, { replace: true });
   }, [location.pathname, location.search, openTournamentTab, navigate]);
 

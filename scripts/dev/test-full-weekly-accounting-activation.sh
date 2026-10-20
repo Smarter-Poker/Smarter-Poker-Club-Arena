@@ -479,3 +479,7 @@ python3 "$root/tests/fixtures/weekly-scheduler-timing/managed-cron-role-regressi
 
 # Connected prospective basis qualification uses the same original money owners.
 PG_BIN="$pgbin" python3 "$root/scripts/dev/test-union-weekly-basis.py"
+
+# The maintained original-flow consumer must prove noncash ticket refunds.
+PG_BIN="$pgbin" ACCOUNTING_FIXTURE_PARENT="$ACCOUNTING_FIXTURE_PARENT" \
+  python3 "$root/scripts/ci/test-ticket-refund-pnl-postgres.py"

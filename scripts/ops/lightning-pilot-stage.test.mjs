@@ -591,7 +591,7 @@ test('each investigated Action finding is recorded reviewed from its exact evide
     Object.keys(INVESTIGATED_FINDINGS)
       .map(Number)
       .sort((a, b) => a - b),
-    [12, 14, 38, 41, 49, 51, 69, 77, 110, 141]
+    [12, 14, 38, 41, 49, 51, 69, 77, 110, 141, 158]
   );
   for (const id of Object.keys(INVESTIGATED_FINDINGS)) {
     const f = fakeClients({ signals: [investigatedSignal(Number(id))], games: [measuredGame] });
@@ -640,6 +640,27 @@ test('investigated review refuses changed evidence, another pair, pattern or clu
           PILOT_TARGETS: game === madnessMeasuredGame ? 'madness' : 'action',
           PILOT_SIGNAL_ID: id,
         },
+        f.factory
+      )
+    );
+    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
+  }
+});
+
+test('finding 158 review refuses drift in every measured field and either player', async () => {
+  const original = investigatedSignal(158);
+  const changed = Object.entries(original.evidence)
+    .filter(([k]) => k !== 'latest_score')
+    .map(([k, v]) => ({
+      ...original,
+      evidence: { ...original.evidence, [k]: typeof v === 'number' ? v + 1 : `${v}:changed` },
+    }));
+  changed.push({ ...original, player_a: OP }, { ...original, player_b: OP });
+  for (const signal of changed) {
+    const f = fakeClients({ signals: [signal], games: [measuredGame] });
+    await assert.rejects(
+      runPilotStage(
+        { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: '158' },
         f.factory
       )
     );

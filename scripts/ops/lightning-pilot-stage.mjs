@@ -207,6 +207,26 @@ export const INVESTIGATED_FINDINGS = Object.freeze({
       windows: 28,
     }),
   }),
+  // Finding 158: original 27 paired hands reproduce r=0.7083577754.
+  // The next 113 give r=0.1317385340; all 140 give r=0.1958767140
+  // through 2026-10-20T14:31:00Z. Record reviewed, never cleared.
+  158: Object.freeze({
+    clusterId: ACTION_CLUSTER,
+    pattern: 'TIMING_CORRELATION',
+    source: 'engine',
+    playerA: '05835920-da9b-4739-8fa2-2901b844d11d',
+    playerB: '227ba92c-9b8c-4705-ba76-181f1f697638',
+    readTo: '2026-10-20T11:07:01Z',
+    evidence: Object.freeze({
+      latest_window_end: '2026-10-20T11:07:00+00:00',
+      correlation_method: 'pooled_paired_hand_moments',
+      correlation_hands: 27,
+      latency_corr: 0.7084,
+      hands_together: 34,
+      fast_follows: 3,
+      windows: 25,
+    }),
+  }),
   141: Object.freeze({
     clusterId: ACTION_CLUSTER,
     pattern: 'TIMING_CORRELATION',

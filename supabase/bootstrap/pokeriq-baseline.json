@@ -95,7 +95,7 @@
     }
   ],
   "sameExportedSnapshot": true,
-  "catalogSHA256": "75710de01a4fc8b57af16c4f4e9af2b7ecf672c8ff3d9d6992d34cafa1b35924",
+  "catalogSHA256": "08958d53e4d06dca53b8b3f883d313360b9a918fdf025b61fced743e22f43d83",
   "captureCompletedAt": "2026-10-20T20:33:00.853065+00:00",
   "captureTimingSource": "private capture receipt filesystem completion timestamp",
   "catalogQuerySHA256": "0befc233aa3699e9d8e3678c44a5b288c022ab61bfc52be91e7a342ee26d3639",
@@ -104,5 +104,8 @@
   "extensionRuntimeSHA256": "b5d8cb788aa92530b78920dfe4a47f5c8c69d2dd400e0c00f1311b780dd74bc3",
   "sourceRevisionArena": "18ee8e3102454a53bc06bd3267a77f13df4c5284",
   "pendingSchemaVersions": ["20261020182843", "20261020184651"],
-  "installedNewVersions": ["20261020174041", "20261020190723"]
+  "installedNewVersions": ["20261020174041", "20261020190723"],
+  "rawCapturedCatalogSHA256": "75710de01a4fc8b57af16c4f4e9af2b7ecf672c8ff3d9d6992d34cafa1b35924",
+  "catalogRepresentation": "Ordinary repository formatter indentation only; parsed JSON verified equal to raw same-snapshot capture.",
+  "catalogSemanticSHA256": "f3a6f3ee42c75729432fad1151886637109ab456394652e5f6d06b8dc7a675d0"
 }

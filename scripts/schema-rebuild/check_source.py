@@ -8,6 +8,8 @@ def main():
  if len(source)!=manifest['bytes'] or hashlib.sha256(source).hexdigest()!=manifest['schemaSHA256']:raise ValueError('Native baseline bytes differ from provenance')
  for name,expected in [('pokeriq-catalog-reference.json',manifest['catalogSHA256']),('source-history.json',manifest['sourceHistorySHA256']),('pokeriq-platform-contract.json',manifest['platformContractSHA256']),('pokeriq-extension-runtime.json',manifest['extensionRuntimeSHA256'])]:
   if hashlib.sha256((BASE/name).read_bytes()).hexdigest()!=expected:raise ValueError('Baseline evidence checksum differs: '+name)
+ semantic=hashlib.sha256(json.dumps(json.loads((BASE/'pokeriq-catalog-reference.json').read_text()),sort_keys=True,separators=(',',':')).encode()).hexdigest()
+ if semantic!=manifest['catalogSemanticSHA256']:raise ValueError('Published catalog differs semantically from independently captured source')
  if hashlib.sha256((BASE.parents[1]/'scripts/schema-rebuild/catalog.sql').read_bytes()).hexdigest()!=manifest['catalogQuerySHA256']:raise ValueError('Catalog comparison query differs from captured source contract')
  if not manifest['allSchemas'] or manifest['dataIncluded']:raise ValueError('Complete schema-only export required')
  patterns={

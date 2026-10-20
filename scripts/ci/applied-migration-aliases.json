@@ -67,6 +67,11 @@
       "file": "supabase/migrations/20261016042047_the_midway_board_and_the_diamond_arena_board_are_a_fixed_sch.sql",
       "by": "20261016182049",
       "reason": "The one-shot 25-template-per-club bootstrap is superseded by the engine-owned board and the installed ownership/time-zone migration20261016182049 (history name the_hard_coded_board_and_the_weekly_events_keep_chicago_time, body MD5 1382705956097acbfe1a41d82bb15200). Read-only 2026-10-17: serving engine9ccf3e423480a8738863e08a32b073aadea35186 has byte-identical fixedBoard.ts and syncFixedBoard implementation; production has26 distinct active templates in each club,52 rows, the ownership trigger exists (guard MD5 a3c21621b4ccda762d938a13b58d7db1), and zero active timed schedules lack their time zone. No source-version/name history or early fixedBoard installation SQL was found. The old source still asserts50; its immutable SHA256 is eb04461506dfa6b47ad6294755a600a3c7e23e8c4e80f611622f3c5ae901c99b. It must not be replayed against the evolved board. No schedules, prices, financial records or migration history are modified."
+    },
+    {
+      "file": "supabase/migrations/20261006154000_an_escrow_refund_and_a_cutover_entry_refund_are_proven.sql",
+      "by": "20261012224150",
+      "reason": "Installed on 2026-10-06 as version20261006154000 under an_escrow_refund_and_a_cutover_entry_refund_are_proven_returns (recorded SQL MD5 9e343f2876db3bb9b5b85ef02b64901d). Its original-flow function was replaced in full by installed20261012224150, retaining the escrow and wallet-charge branches. Later ticket evidence extends the entitlement list to satellite_seat, wallet_charge and tournament_ticket, making the old exact two-value live-proof false although the original behavior remains. Read-only catalog and maintained replacement source verified2026-10-20. The original exact-match patch must never be replayed against the evolved function; no migration bytes, history, financial functions or rows change."
     }
   ],
   "_superseded": "A merged migration that must never run, because a later file replaced it, is marked by a first line `-- SUPERSEDED BY <version>` or, when the file is byte-pinned and cannot be edited, by a row here. Either way the named version must have a file in this tree, or the mark is ignored."

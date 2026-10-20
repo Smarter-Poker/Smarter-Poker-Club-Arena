@@ -63,4 +63,15 @@ describe('a never-dealt Diamond rebuy proves its own original custody', () => {
     expect(matrix).toContain('smarter_private.f06_movement_never_dealt_prior(');
     expect(matrix).toContain('ROLLBACK;');
   });
+  it('runs PostgreSQL for runner-only and fixture-only edits', async () => {
+    const { classifyChangedPaths } = await import('../scripts/ci/classify-ci-changes.mjs');
+    for (const path of [
+      'scripts/ci/test-never-dealt-rebuy.py',
+      'scripts/ci/fixtures/never-dealt-rebuy/game-currency-matrix.sql',
+      'scripts/ci/fixtures/never-dealt-rebuy/next-boundary.sql',
+      'tests/never-dealt-diamond-rebuy.guard.test.ts',
+    ])
+      expect(classifyChangedPaths([path]).server).toBe(true);
+    expect(classifyChangedPaths(['docs/changelog/rebuy-proof.md']).server).toBe(false);
+  });
 });

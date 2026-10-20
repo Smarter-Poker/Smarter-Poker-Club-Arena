@@ -615,7 +615,7 @@ export const PHASE13_PROTECTED_RELEASE_SELECTIONS: Readonly<
     contractDigest: '0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8',
     domain: 'plo4-cash-joint-multiway-after-rake-horse-population',
     qualificationPath: 'docs/evidence/phase13/phase13-qualification-2026-10-20-plo4.json',
-    qualificationSha256: 'ff9fe649d700013e22e4e7f4ccfe763a9f11ffeaae3b143d2fdc02d7bd08516c',
+    qualificationSha256: '099eea8275df9642c244179c480e94453d8137716d033e3df86eb94ce0f91c00',
     completionPath: 'docs/evidence/phase13/da94e437/phase13-completion-2026-10-19-plo4.json',
     completionSha256: '34990e77cb3f59413b209b6d2864f19889e578af0f4e099fe3b17e0be32ccd2c',
     approvalGeneration: 1,

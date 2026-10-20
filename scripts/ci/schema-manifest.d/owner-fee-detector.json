@@ -1,0 +1,7 @@
+{
+  "_owner": "Daily fee detector original-close plan; source declarations only, not installed proof.",
+  "functions": [
+    "smarter_private.owner_direct_fee_capture_plan",
+    "smarter_private.owner_direct_fee_close_ready"
+  ]
+}

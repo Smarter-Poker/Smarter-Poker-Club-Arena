@@ -3,7 +3,7 @@
   "scope": "Native synthetic financial fixture, exact candidate and current observed stage dependencies; not production-scale or installation proof.",
   "repository_files": {
     "scripts/dev/test-union-weekly-basis.py": "bec0ca77f49087a1406c9dc465a21f1fe8760cdc176c34adb5247b3b4d8d5295",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "8300794ccd0340f58b998d8a0292d0de83ea971b0117ec275e507d6f927b4b22",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "5223e74ad4d09480d9975cc3887c9cf7e085cd6a6fd9d2621b8ce55bce306387",
     "tests/fixtures/union-weekly-basis/regression.sql": "44064e6ace5baff1fb489b4d7c513107367068a56fbd868118d8215781c1e75f",
     "tests/fixtures/union-weekly-basis/raked-regression.sql": "1d5bdfa1fdf03a78f206099522f329f1292586b5267a3c9bff7ff13becc2803d",
     "tests/fixtures/weekly-recompute-split/current-stage-dependencies.json": "86c80627a994577a2b654ade9f2829f8f94e778de83450d12212b2f74f1c6b54",
@@ -21,5 +21,11 @@
       "scripts/dev/test-union-weekly-basis.py",
       "tests/fixtures/union-weekly-basis/source-binding.json"
     ]
+  },
+  "commission_club_formatting_20261020": {
+    "reason": "Normal precommit Prettier formatted the reviewed new explanatory array only. Decoded source-binding history, financial sources and assertions are unchanged. Bind the actual formatted nested bytes.",
+    "path": "tests/fixtures/union-weekly-basis/source-binding.json",
+    "previous": "8300794ccd0340f58b998d8a0292d0de83ea971b0117ec275e507d6f927b4b22",
+    "current": "5223e74ad4d09480d9975cc3887c9cf7e085cd6a6fd9d2621b8ce55bce306387"
   }
 }

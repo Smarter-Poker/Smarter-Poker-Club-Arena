@@ -88,14 +88,10 @@ export class SeatSitOutPersistence {
         });
       });
     this.pending.set(key, current);
-    void current.then(
-      () => {
-        if (this.pending.get(key) === current) this.pending.delete(key);
-      },
-      () => {
-        if (this.pending.get(key) === current) this.pending.delete(key);
-      }
-    );
+    const cleanup = () => {
+      if (this.pending.get(key) === current) this.pending.delete(key);
+    };
+    void current.then(cleanup).catch(cleanup);
     return current;
   }
 }

@@ -36,3 +36,9 @@ non-active pools, while retaining the original seat flag write. The existing
 recovered-bank forced-fold regression still checks every exact seat predicate
 and heartbeat/explicit-return invariant; its database double now models the
 returned-row query and waits for the asynchronous persisted flag.
+
+Hosted qualification found two additional maintained structural contracts:
+the AFK persistence pin now follows the same exact writer into its helper and
+requires the Base callback wiring; promise cleanup uses the explicit outer
+`.catch()` form required by the unchanged rejection guard. Neither assertion
+was removed or weakened.

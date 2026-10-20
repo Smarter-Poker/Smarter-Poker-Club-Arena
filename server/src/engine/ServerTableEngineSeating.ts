@@ -1140,8 +1140,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    */
   public sitOut(
     userId: string,
-    sitOut: boolean
-  ): { success: boolean; error?: string; willFoldNextHand: boolean } {
+    sitOut: boolean,
+    proof?: { completedLightningOccupancyId?: string }
+  ): { success: boolean; error?: string; code?: string; willFoldNextHand: boolean } {
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) {
       return { success: false, error: 'Player not found at this table', willFoldNextHand: false };
@@ -1170,10 +1171,21 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * already committed, they are dealt in and blinded off whether they sit out
      * or not, and a late-registered entrant who has not yet been dealt a hand
      * has an obvious legitimate reason to sit out immediately. */
-    if (sitOut && !this.isTournamentTable() && !this.dealtInUserIds.has(userId)) {
+    const completedLightningHand =
+      this.dealingHaltLock &&
+      !!this.tableInfo?.cluster_id &&
+      !!player.occupancy_id &&
+      proof?.completedLightningOccupancyId === player.occupancy_id;
+    if (
+      sitOut &&
+      !this.isTournamentTable() &&
+      !this.dealtInUserIds.has(userId) &&
+      !completedLightningHand
+    ) {
       return {
         success: false,
         error: 'You Must Play At Least One Hand Before You Can Sit Out',
+        code: 'SITOUT_HAND_REQUIRED',
         willFoldNextHand: false,
       };
     }

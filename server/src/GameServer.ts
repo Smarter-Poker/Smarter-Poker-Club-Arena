@@ -12302,8 +12302,13 @@ export class GameServer {
   async lightningAnchorFor(
     roomId: string,
     userId: string,
-    opts?: { requireOpen?: boolean }
-  ): Promise<{ anchorTableId: string; seatNumber: number; occupancyId: string } | null> {
+    opts?: { requireOpen?: boolean; requireCompletedHand?: boolean }
+  ): Promise<{
+    anchorTableId: string;
+    seatNumber: number;
+    occupancyId: string;
+    completedHandOccupancyId?: string;
+  } | null> {
     if (this.tableEngines.has(roomId)) return null;
     try {
       return await lightningAnchorSeat(roomId, userId, opts);

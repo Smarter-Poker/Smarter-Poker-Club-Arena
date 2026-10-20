@@ -56,6 +56,20 @@ function addonResponse(status, reply) {
     code: reply?.success === true ? 'SUCCESS' : (codes.get(reply?.error) ?? 'UNCLASSIFIED'),
   };
 }
+export function sitoutResponse(status, reply) {
+  const codes = new Map([
+    ['You Must Play At Least One Hand Before You Can Sit Out', 'SITOUT_HAND_REQUIRED'],
+    ['Table engine not found', 'NOT_FOUND'],
+    ['Player not found at this table', 'NOT_SEATED'],
+    ['Authentication required', 'AUTH_REQUIRED'],
+    ['Scheduled maintenance is in progress', 'MAINTENANCE'],
+  ]);
+  return {
+    httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+    success: typeof reply?.success === 'boolean' ? reply.success : null,
+    code: reply?.success === true ? 'SUCCESS' : (codes.get(reply?.error) ?? 'UNCLASSIFIED'),
+  };
+}
 export function proveCashout({ pin, intent, receipt, credit, ledger, seat, cash, pool }) {
   const key = `cashout:occupancy:${intent.occupancyId}`;
   if (
@@ -581,6 +595,7 @@ export async function witnessFinancial({
     );
     const response = await bound(responsePromise, left());
     const reply = await bound(response.json(), left());
+    report.sitout.returnResponse = sitoutResponse(response.status(), reply);
     if (!response.ok() || reply?.success !== true) throw Error('sitout_return_unknown');
     const safeRefusal =
       report.addonResponse?.success === false &&
@@ -768,6 +783,7 @@ export async function witnessFinancial({
         .click({ timeout: remaining() });
       const response = await bound(pauseResponse);
       const out = await bound(response.json());
+      report.sitout.pauseResponse = sitoutResponse(response.status(), out);
       if (!response.ok() || out?.success !== true) throw Error('sitout_refused_or_unknown');
       let countAtPause;
       step = 'sitout_settlement';

@@ -477,6 +477,9 @@ END $f$;
 CREATE FUNCTION lc.op_fold() RETURNS void LANGUAGE plpgsql AS $f$
 DECLARE c uuid; x record; t0 timestamptz; r jsonb; r2 jsonb; v_type text; v_q numeric := random();
 BEGIN
+  -- Share the S2 fixture handoff fence through selection and its real RPC.
+  -- The exclusive gone-cohort handoff waits out any already-selected intent.
+  PERFORM pg_advisory_xact_lock_shared(12012, 2);
   IF NOT lc.live() THEN RETURN; END IF;
   c := lc.pick(); IF c IS NULL THEN RETURN; END IF;
   SELECT hp.hand_id, hp.player_id, hp.stack_before INTO x
@@ -616,6 +619,9 @@ END $f$;
 CREATE FUNCTION lc.op_presence() RETURNS void LANGUAGE plpgsql AS $f$
 DECLARE c uuid; v_d uuid[]; v_r uuid[]; t0 timestamptz; r jsonb;
 BEGIN
+  -- Share the S2 fixture handoff fence through selection and its real RPC.
+  -- The exclusive gone-cohort handoff waits out any already-selected intent.
+  PERFORM pg_advisory_xact_lock_shared(12012, 2);
   IF NOT lc.live() THEN RETURN; END IF;
   c := lc.pick(); IF c IS NULL THEN RETURN; END IF;
   SELECT array_agg(x.player_id) INTO v_d FROM (
@@ -1463,18 +1469,22 @@ if want S2; then
   sleep $(( T_STRESS / 2 ))
   # Twelve players leave for good mid-storm: reported gone through the real
   # door, held out of the flapping, their stamps backdated past the timeout.
-  Q "INSERT INTO lc.held SELECT ps.player_id FROM public.lightning_pool_session ps
-      WHERE ps.cluster_id IN (SELECT id FROM lc.cl WHERE scen = 'S2') AND ps.exited_at IS NULL ORDER BY random() LIMIT 12" >/dev/null
-  Q "DO \$\$ DECLARE i integer; BEGIN FOR i IN 1 .. 20 LOOP BEGIN
-       PERFORM public.fn_lightning_presence_report(c.id, ARRAY(SELECT player_id FROM lc.held), ARRAY[]::uuid[], clock_timestamp())
+  # One fixture transaction fences already-selected reconnect/fold intents.
+  # Shared actor locks keep the storm concurrent, but none can carry a stale
+  # pre-handoff player selection across this exclusive gone-cohort boundary.
+  Q "DO \$\$ DECLARE i integer; v_held integer; BEGIN
+       PERFORM pg_advisory_xact_lock(12012, 2);
+       FOR i IN 1 .. 20 LOOP BEGIN
+         INSERT INTO lc.held SELECT ps.player_id FROM public.lightning_pool_session ps
+          WHERE ps.cluster_id IN (SELECT id FROM lc.cl WHERE scen = 'S2') AND ps.exited_at IS NULL ORDER BY random() LIMIT 12;
+         GET DIAGNOSTICS v_held = ROW_COUNT;
+         IF v_held <> 12 THEN RAISE EXCEPTION 'FIXTURE: expected twelve held players, got %', v_held; END IF;
+         PERFORM public.fn_lightning_presence_report(c.id, ARRAY(SELECT player_id FROM lc.held), ARRAY[]::uuid[], clock_timestamp())
           FROM lc.cl c WHERE c.scen = 'S2';
-       RETURN; EXCEPTION WHEN deadlock_detected THEN PERFORM pg_sleep(0.05); END; END LOOP;
-       RAISE EXCEPTION 'FIXTURE: the held players could not be reported gone'; END \$\$" >/dev/null
-  Q "DO \$\$ DECLARE i integer; BEGIN FOR i IN 1 .. 20 LOOP BEGIN
-       UPDATE public.lightning_pool_session SET disconnected_at = clock_timestamp() - interval '1 hour'
-        WHERE cluster_id IN (SELECT id FROM lc.cl WHERE scen = 'S2') AND exited_at IS NULL AND player_id IN (SELECT player_id FROM lc.held);
-       RETURN; EXCEPTION WHEN deadlock_detected THEN PERFORM pg_sleep(0.05); END; END LOOP;
-       RAISE EXCEPTION 'FIXTURE: the held players could not be backdated'; END \$\$" >/dev/null
+         UPDATE public.lightning_pool_session SET disconnected_at = clock_timestamp() - interval '1 hour'
+          WHERE cluster_id IN (SELECT id FROM lc.cl WHERE scen = 'S2') AND exited_at IS NULL AND player_id IN (SELECT player_id FROM lc.held);
+         RETURN; EXCEPTION WHEN deadlock_detected THEN PERFORM pg_sleep(0.05); END; END LOOP;
+       RAISE EXCEPTION 'FIXTURE: the held players could not be reported gone and backdated'; END \$\$" >/dev/null
   Q "SELECT public.fn_cash_clusters_tick_all('{}'::jsonb) ->> 'disconnects_reaped'" >/dev/null
   wait $spid
   midstorm=$(Q "SELECT count(*) FROM public.lightning_pool_session WHERE cluster_id IN (SELECT id FROM lc.cl WHERE scen = 'S2') AND exit_reason = 'disconnect_expired'")

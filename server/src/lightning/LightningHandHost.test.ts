@@ -253,6 +253,40 @@ describe('cards reach only their owners (property)', () => {
 });
 
 describe('fast fold and fold & watch', () => {
+  it.each([false, undefined])(
+    'keeps original retry ownership when transport retryable is %s',
+    async (retryable) => {
+      const t = buildHost(formedHand(4, 2090), [200, 200, 200, 200]);
+      await t.host.start();
+      await flush();
+      const fold = vi.mocked(t.backend.fastFold);
+      fold.mockResolvedValue({
+        ok: false,
+        reason: 'original_outcome_unknown',
+        transport: true,
+        ...(retryable === false ? { retryable: false } : {}),
+      });
+      const state = t.host.peekState()!;
+      const current = state.players.find((player) => player.seat === state.currentPlayerSeat)!;
+      const waiting = state.players.find(
+        (player) =>
+          player.user_id !== current.user_id &&
+          state.currentBet - player.bet > 0 &&
+          !player.is_folded
+      )!;
+      expect(
+        t.host.handlePlayerAction(
+          waiting.user_id,
+          'fast_fold',
+          undefined,
+          `lightning-hand:${t.host.currentHandId}`
+        ).success
+      ).toBe(true);
+      await flush(40);
+      expect(fold).toHaveBeenCalledTimes(retryable === false ? 1 : 3);
+      expect(t.released).toEqual([]);
+    }
+  );
   it('a fast fold before the turn frees the player while the others finish the hand', async () => {
     const formed = formedHand(4, 2000);
     const stacks = [200, 200, 200, 200];

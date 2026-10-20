@@ -163,9 +163,10 @@ describe('Stage-A tournament-manager Data API request fence', () => {
      actor headers there, which is safe only because neither heartbeat
      function reads a request setting or auth.role(): both take their
      authority from the instance id and exact lease generation in their
-     arguments. So a raw session may exist in exactly two places, and the lease
-     one may run exactly those two functions and nothing that writes. */
-  it('lets only lease heartbeats and the outbox LISTEN bypass the Data API on a raw session', () => {
+     arguments. The lease session may run exactly those two functions. The separate
+     original-fold exception below reinstates the same actor fence in its fixed
+     private wrapper and preserves synchronous commit before acknowledgement. */
+  it('admits only the exact heartbeat, outbox and fenced original-fold raw sessions', () => {
     const src = join(process.cwd(), 'src');
     const rawSessions = runtimeTypescriptFiles(src)
       .filter((path) => /\bnew pg\.(?:Client|Pool)\s*\(/.test(readFileSync(path, 'utf8')))
@@ -173,6 +174,7 @@ describe('Stage-A tournament-manager Data API request fence', () => {
       .sort();
     expect(rawSessions).toEqual([
       'services/leaseHeartbeatSession.ts',
+      'services/lightningFoldSession.ts',
       'services/supabase/handOutboxListener.ts',
     ]);
 
@@ -193,6 +195,44 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     ]);
     expect(leaseSession).toContain(
       'SET statement_timeout = ${LEASE_HEARTBEAT_STATEMENT_TIMEOUT_MS}'
+    );
+  });
+
+  it('keeps the original-fold raw exception fixed, actor-fenced and durable before acknowledgement', () => {
+    const fold = readFileSync(
+      join(process.cwd(), 'src', 'services', 'lightningFoldSession.ts'),
+      'utf8'
+    );
+    expect(fold).toContain("supabase.rpc('fn_engine_lightning_fold_session_url')");
+    expect(fold).toContain(
+      "decodeURIComponent(url.username).split('.')[0] !== 'engine_lightning_fold'"
+    );
+    expect(fold).toContain('ssl: enginePgSsl()');
+    expect(fold).toContain('export const LIGHTNING_FOLD_POOL_MAX = 4');
+    expect(fold).toContain('export const LIGHTNING_FOLD_ACQUIRE_MS = 100');
+    expect(fold).toContain('SET LOCAL synchronous_commit = on');
+    expect(fold).not.toContain('synchronous_commit = off');
+    expect(fold).toContain(
+      'SELECT smarter_private.fn_engine_lightning_fast_fold($1::uuid,$2::uuid,$3::uuid,$4::text,$5::numeric,$6::jsonb) AS result'
+    );
+    expect(fold).toContain('const authority = currentTournamentDataAuthority();');
+    expect(fold).toContain(
+      'const actorHeaders = Object.fromEntries(dataActorHeaders().entries());'
+    );
+    expect(fold.indexOf('const actorHeaders =')).toBeLessThan(
+      fold.indexOf('const acquisition = selected.connect()')
+    );
+    expect(fold).toContain('JSON.stringify(actorHeaders)');
+    expect(fold).toContain('notifyTournamentManagerFenced(authority)');
+    expect(fold).toContain("await connection.query('COMMIT')");
+    expect(fold.indexOf("await connection.query('COMMIT')")).toBeLessThan(
+      fold.indexOf('return { data: result.rows[0]?.result')
+    );
+    expect(fold).toContain("code: 'LIGHTNING_FOLD_UNKNOWN'");
+    expect(fold).toMatch(/if \(!dispatched\)\s*\{\s*admissionRefused\+\+;\s*return null;\s*\}/);
+    expect(fold).toContain('client?.release(destroy)');
+    expect(fold).not.toMatch(
+      /export (?:async )?function (?:query|execute)|\.query\(args\.|\.query\(text/
     );
   });
 

@@ -210,7 +210,9 @@ describe('1. a Lightning room leaves and adds on through its anchor seat', () =>
 
   it('TablePage: an add-on from a Lightning room is addressed to the anchor table', () => {
     const addOn = sliceMethod(PAGE, 'const handleAddChips = async (');
-    expect(addOn).toContain('fetchLightningAnchorSeat(addOnRoom.clusterId)');
+    expect(addOn).toContain(
+      'fetchLightningAnchorSeat(addOnRoom.clusterId, addOnRoom.poolSessionId)'
+    );
     expect(addOn).toContain('GameServerAPI.addChips(addOnTableId, amount, opId)');
     expect(addOn).not.toContain('GameServerAPI.addChips(tableId,');
   });

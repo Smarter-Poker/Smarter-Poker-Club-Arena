@@ -126,6 +126,89 @@ def extract_mux_timings(raw):
             'absenceMeans': 'unknown; bounded retained logs may omit attempts'}
 
 
+def lightning_fold_timing_requested(value, window):
+    if value is None:
+        return False
+    if value is not True or window is None:
+        raise ValueError('Lightning timing requires an explicit completed window')
+    return True
+
+
+def extract_lightning_fold_timings(raw):
+    """Allowlisted original-request phases, never payloads or arbitrary errors."""
+    prefix = '[LightningFoldTiming] '
+    fields = {'version', 'requestId', 'totalMs', 'timerLateMs', 'outcome',
+              'attempts', 'attemptsOmitted', 'omitted'}
+    attempt_fields = {'startMs', 'headersMs', 'bodyMs', 'status',
+                      'providerRequestId', 'upstreamMs', 'outcome'}
+    records, invalid = [], 0
+
+    def number(value, maximum=900000):
+        return (type(value) in (int, float) and 0 <= value <= maximum
+                and (type(value) is int or math.isfinite(value)))
+
+    def count(value):
+        return type(value) is int and 0 <= value <= 9007199254740991
+
+    for line in raw.decode('utf-8', errors='replace').splitlines():
+        stamp = STAMP.match(line)
+        body = line[stamp.end():] if stamp else line
+        if not body.startswith(prefix):
+            continue
+        try:
+            if stamp is None or len(body) > 8192:
+                raise ValueError('Unbounded or undated timing')
+            source = json.loads(body[len(prefix):])
+            if not isinstance(source, dict) or not fields <= set(source):
+                raise ValueError('Missing timing fields')
+            record = {key: source[key] for key in fields}
+            if type(record['version']) is not int or record['version'] != 1:
+                raise ValueError('Unsupported timing version')
+            if not isinstance(record['requestId'], str) or not UUID.fullmatch(record['requestId']):
+                raise ValueError('Invalid request correlation')
+            if record['outcome'] not in ('fulfilled', 'rejected'):
+                raise ValueError('Invalid outcome')
+            if not number(record['totalMs']) or not number(record['timerLateMs']):
+                raise ValueError('Invalid duration')
+            if not count(record['attemptsOmitted']) or not count(record['omitted']):
+                raise ValueError('Invalid omission count')
+            if not isinstance(record['attempts'], list) or len(record['attempts']) > 6:
+                raise ValueError('Invalid attempts')
+            attempts = []
+            for source_attempt in record['attempts']:
+                if not isinstance(source_attempt, dict) or not attempt_fields <= set(source_attempt):
+                    raise ValueError('Missing attempt fields')
+                attempt = {key: source_attempt[key] for key in attempt_fields}
+                if attempt['outcome'] not in ('fulfilled', 'rejected', 'pending'):
+                    raise ValueError('Invalid attempt outcome')
+                if not number(attempt['startMs'], record['totalMs']):
+                    raise ValueError('Invalid start')
+                prior = attempt['startMs']
+                for key in ['headersMs', 'bodyMs']:
+                    value = attempt[key]
+                    if value is not None:
+                        if not number(value, record['totalMs']) or value < prior:
+                            raise ValueError('Invalid phase ordering')
+                        prior = value
+                status = attempt['status']
+                if status is not None and (type(status) is not int or not 100 <= status <= 599):
+                    raise ValueError('Invalid status')
+                correlation = attempt['providerRequestId']
+                if correlation is not None and (not isinstance(correlation, str) or not UUID.fullmatch(correlation)):
+                    raise ValueError('Invalid provider correlation')
+                if attempt['upstreamMs'] is not None and not number(attempt['upstreamMs']):
+                    raise ValueError('Invalid upstream duration')
+                attempts.append(attempt)
+            record['attempts'] = attempts
+            records.append({'timestamp': stamp.group(1), **record})
+        except (ValueError, TypeError):
+            invalid += 1
+    return {'records': records[-50:], 'matchingRecords': len(records),
+            'omittedRecords': max(0, len(records)-50), 'invalidRecords': invalid,
+            'attribution': 'opaque operation correlation only; no player or table attribution',
+            'absenceMeans': 'unknown; bounded retained logs and producer sampling may omit requests'}
+
+
 def selection(value):
     if not isinstance(value, list) or not 1 <= len(value) <= 2:
         raise ValueError('Invalid observation scope')
@@ -257,10 +340,11 @@ def main():
     if len(sys.argv) == 3 and sys.argv[1] == '--remote':
         request = json.loads(base64.b64decode(sys.argv[2], validate=True))
         if isinstance(request, list):
-            scopes, window, mux_timing = selection(request), None, False
-        elif isinstance(request, dict) and set(request) in ({'scopes', 'windowStart'}, {'scopes', 'windowStart', 'muxTiming'}):
+            scopes, window, mux_timing, fold_timing = selection(request), None, False, False
+        elif isinstance(request, dict) and {'scopes', 'windowStart'} <= set(request) <= {'scopes', 'windowStart', 'muxTiming', 'lightningFoldTiming'}:
             scopes, window = selection(request['scopes']), log_window(request['windowStart'])
             mux_timing = mux_timing_requested(request.get('muxTiming'), window)
+            fold_timing = lightning_fold_timing_requested(request.get('lightningFoldTiming'), window)
         else:
             raise ValueError('Invalid observation request')
         before = health('http://127.0.0.1:8080')
@@ -269,6 +353,8 @@ def main():
         if before != after:
             raise RuntimeError('Host engine changed during observation')
         extra = {'muxSubscriptionTimings': extract_mux_timings(raw)} if mux_timing else {}
+        if fold_timing:
+            extra['lightningFoldTimings'] = extract_lightning_fold_timings(raw)
         print(json.dumps({'schema': 'scoped-runtime-errors/v1', 'readOnly': True,
                           'window': window_description(window),
                           'hostEngineBefore': before, 'hostEngineAfter': after,
@@ -283,6 +369,7 @@ def main():
     scopes = selection(event.get('client_payload', {}).get('tournament_log_observation'))
     window = log_window(event.get('client_payload', {}).get('tournament_log_window_start'))
     mux_timing = mux_timing_requested(event.get('client_payload', {}).get('mux_subscription_timing'), window)
+    fold_timing = lightning_fold_timing_requested(event.get('client_payload', {}).get('lightningFoldTiming'), window)
     host = os.environ.get('HETZNER_HOST', '')
     key = os.environ.get('HETZNER_SSH_PRIVATE_KEY', '')
     pin = os.environ.get('HETZNER_HOST_KEY', '')
@@ -300,6 +387,8 @@ def main():
         request = {'scopes': scopes, 'windowStart': window['since'] if window else None}
         if mux_timing:
             request['muxTiming'] = True
+        if fold_timing:
+            request['lightningFoldTiming'] = True
         encoded = base64.b64encode(json.dumps(request).encode()).decode()
         # Only validated UUID scope and an exact recent fifteen-minute interval
         # enter the fixed reader. Host, account, container and command stay fixed.
@@ -317,6 +406,8 @@ def main():
             raise RuntimeError('Observation window differs')
         if ('muxSubscriptionTimings' in result) != mux_timing:
             raise RuntimeError('Anonymous timing observation differs')
+        if ('lightningFoldTimings' in result) != fold_timing:
+            raise RuntimeError('Lightning timing observation differs')
         after = health()
         if before != after or result.get('hostEngineBefore') != before or result.get('hostEngineAfter') != after:
             raise RuntimeError('Public and host engine identity changed or differ')

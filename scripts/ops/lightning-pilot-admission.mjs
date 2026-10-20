@@ -155,7 +155,13 @@ export async function answerEntryLayer(page, layer, remaining, progress = {}) {
     const selector = ENTRY_LAYERS.find(([, name]) => name === layer)[0];
     const sheet = page.locator(selector).first();
     progress.step = 'not_now';
-    await sheet.getByRole('button', { name: 'Not Now', exact: true }).click({ timeout: ms() });
+    // The Daily Bonus secondary plate prints Not Now but is named Close.
+    // Its header also has Close: bind the visible secondary label as well.
+    const dismiss =
+      layer === 'daily_bonus'
+        ? sheet.getByRole('button', { name: 'Close', exact: true }).filter({ hasText: 'Not Now' })
+        : sheet.getByRole('button', { name: 'Not Now', exact: true });
+    await dismiss.click({ timeout: ms() });
     progress.step = 'not_now_closed';
     await sheet.waitFor({ state: 'hidden', timeout: ms() });
     return 'put_off';

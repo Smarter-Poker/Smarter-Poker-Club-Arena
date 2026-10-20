@@ -33,6 +33,7 @@
  * name and picture a physical seat already shows.
  */
 import { supabase } from '../services/supabase/client.js';
+import { lightningFoldSessionCall } from '../services/lightningFoldSession.js';
 import { SEATED_PROFILE_SELECT } from '../services/supabase/tableAvatar.js';
 import { arenaPlayerName, type ArenaNameProfile } from '../services/supabase/arenaPlayerName.js';
 import { loadTable } from '../services/supabase/tables.js';
@@ -94,7 +95,7 @@ export interface LightningSettleArgs {
 /** What one call answered. `transport` means the outcome is UNKNOWN. */
 export type LightningCallOutcome<T> =
   | { ok: true; value: T }
-  | { ok: false; reason: string; transport?: boolean; frozen?: boolean };
+  | { ok: false; reason: string; transport?: boolean; frozen?: boolean; retryable?: boolean };
 
 export interface LightningHandBackend {
   beginDealing(
@@ -330,7 +331,7 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
     },
 
     async fastFold(handId, playerId, requestId, foldType, committed) {
-      const out = await okCall('fn_lightning_fast_fold', {
+      const args = {
         p_hand_id: handId,
         p_player_id: playerId,
         p_request_id: requestId,
@@ -338,7 +339,18 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
         // Always sent: without it the folder's whole stack stays held out of
         // the next hand until this one settles.
         p_committed: Math.round(committed * 100) / 100,
-      });
+      };
+      const direct = await lightningFoldSessionCall(args);
+      // Only null proves no original fold was dispatched on the dedicated lane.
+      if (direct !== null) {
+        if (direct.error)
+          return { ok: false, reason: direct.error.message, transport: true, retryable: false };
+        const row = obj(direct.data);
+        if (row?.ok === true) return { ok: true, value: null };
+        if (row?.frozen === true) return { ok: false, reason: refusal(direct.data), frozen: true };
+        return { ok: false, reason: refusal(direct.data) };
+      }
+      const out = await okCall('fn_lightning_fast_fold', args);
       return out.ok ? { ok: true, value: null } : out;
     },
 

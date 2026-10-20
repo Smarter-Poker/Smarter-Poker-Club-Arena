@@ -786,7 +786,12 @@ for f in $FILES; do
         case "$f" in *.test.ts|*.test.tsx|*.d.ts) ;; *) CHANGED_SRC="$CHANGED_SRC $f" ;; esac ;;
     esac
   fi
-  base=$(basename "$f")
+done
+# Evidence packs repeat names across hundreds of shard directories. A source
+# contract depends on the basename, so search each distinct name exactly once.
+# Keep deleted paths in this set: their consumers still need verification.
+CONTRACT_BASENAMES=$(printf '%s\n' $FILES | sed 's#.*/##' | sort -u)
+for base in $CONTRACT_BASENAMES; do
   for t in $(grep -rl --include='*.test.ts' --include='*.test.tsx' -F "$base" tests/ 2>/dev/null); do
     case " $CHANGED_TESTS " in *" $t "*) ;; *) CHANGED_TESTS="$CHANGED_TESTS $t" ;; esac
   done

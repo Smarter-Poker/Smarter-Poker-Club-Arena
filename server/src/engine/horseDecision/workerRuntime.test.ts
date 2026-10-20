@@ -150,6 +150,7 @@ import {
   admitHorsePhase13QualifiedAuthority,
   admitHorsePhase13ReleaseAuthority,
   horsePhase13ContinuationVersion,
+  PHASE13_PROTECTED_RELEASE_SELECTIONS,
   HORSE_PHASE13_VARIANTS,
 } from '../HorsePhase13Authority.js';
 import {
@@ -4781,7 +4782,9 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
       const r = request(format, variant, boards, street);
       const live = await decideThrough(r, (v) => admitHorsePhase13ReleaseAuthority(v), false, seed);
       const reference = await decideThrough(r, undefined, true, seed);
-      expect(live.h.decisionOpts[0].phase13Joint).toBe('shadow');
+      const selected = PHASE13_PROTECTED_RELEASE_SELECTIONS[variant] !== null;
+      const candidate = selected && format === 'cash';
+      expect(live.h.decisionOpts[0].phase13Joint).toBe(candidate ? 'candidate' : 'shadow');
       expect(act(live.decision)).toEqual(baseAction);
       expect(act(reference.decision)).toEqual(baseAction);
       expect(reference.decision.jointPolicy).toBeUndefined();
@@ -4789,34 +4792,54 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
       expect(receipt).toMatchObject({
         variant,
         version: JOINT_LIVE_DOMAIN.version,
-        mode: 'shadow',
+        mode: candidate ? 'candidate' : 'shadow',
         eligible: true,
         fired: true,
         changed: proposal[0] !== baseAction.action || proposal[1] !== baseAction.amount,
-        applied: false,
-        selection:
-          proposal[0] !== baseAction.action || proposal[1] !== baseAction.amount
-            ? 'shadow_change'
-            : 'none',
-        selectionRefusal: null,
-        authorityVerdict: null,
+        applied:
+          candidate && (proposal[0] !== baseAction.action || proposal[1] !== baseAction.amount),
         authority: {
-          state: 'unselected',
-          reason: 'unselected',
-          authorityKey: null,
+          state: selected ? 'usable' : 'unselected',
           continuationVersion: horsePhase13ContinuationVersion(variant),
         },
       });
+      if (!selected) {
+        expect(receipt.authority).toMatchObject({ reason: 'unselected', authorityKey: null });
+        expect(receipt.authorityVerdict).toBeNull();
+        expect(receipt.selectionRefusal).toBeNull();
+        expect(receipt.selection).toBe(
+          proposal[0] !== baseAction.action || proposal[1] !== baseAction.amount
+            ? 'shadow_change'
+            : 'none'
+        );
+      }
       expect([receipt.proposalAction, receipt.proposalAmount]).toEqual(proposal);
       expect(receipt.finalAction).toBe(live.decision.action);
       for (const v of HORSE_PHASE13_VARIANTS)
         expect(live.result.phase13Authority?.[v]).toMatchObject({
-          state: 'unselected',
+          state: PHASE13_PROTECTED_RELEASE_SELECTIONS[v] === null ? 'unselected' : 'usable',
           continuationVersion: horsePhase13ContinuationVersion(v),
         });
       expect(horseDecisionReceiptIsValid(structuredClone(live.decision), variant)).toBe(true);
     }
   );
+
+  it('the committed PLO8 selection reaches an applied natural worker path on two boards', async () => {
+    const r = changedCash(975, 'plo8');
+    const live = await decideThrough(
+      r,
+      (v) => admitHorsePhase13ReleaseAuthority(v),
+      false,
+      changedSeed('plo8')
+    );
+    expect(live.decision.jointPolicy).toMatchObject({
+      variant: 'plo8',
+      mode: 'candidate',
+      applied: true,
+      authority: { state: 'usable', approvalGeneration: 1 },
+    });
+    expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo8')).toBe(true);
+  });
 
   const refused = (overrides: {
     qualification?: Record<string, unknown>;

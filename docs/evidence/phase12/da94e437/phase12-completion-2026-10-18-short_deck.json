@@ -1,0 +1,50 @@
+{
+  "schema": "horse-phase12-completion-v1",
+  "definition": "horse-phase12-completion-definition-v1",
+  "variant": "short_deck",
+  "packVersion": "short-deck-round4-v1",
+  "releaseSha": "6e3ab4f3edd0be2115c37b1245beb896107ce672",
+  "policyDigestDefinition": "horse-phase12-policy-digest-v2",
+  "policyDigest": "7183671fb126d9ba1d82cd33519186c8a00a8aeefe2af513a6cd131201eec4c4",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-18T23:02:00.000Z",
+    "to": "2026-10-18T23:50:00.000Z",
+    "releaseUnchanged": true,
+    "source": "/Volumes/SmarterArchives/agent-evidence/horse-brain-resume-20261018-01a14f3e/completion-20261018T23; declaration_sha256=287f754747091fb28da86865c9c4d0bb3a73870c120605a7b34ecf4d05ac4796"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 2597,
+      "completed": 2597,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "flop": {
+      "eligible": 1301,
+      "completed": 1300,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 1,
+      "governorReduced": 0
+    },
+    "turn": {
+      "eligible": 972,
+      "completed": 971,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 1,
+      "governorReduced": 0
+    },
+    "river": {
+      "eligible": 713,
+      "completed": 713,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    }
+  }
+}

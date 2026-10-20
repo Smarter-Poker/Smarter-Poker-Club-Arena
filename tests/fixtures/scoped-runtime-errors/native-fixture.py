@@ -20,6 +20,93 @@ STAMP = '2026-09-27T00:00:00.123456789Z '
 
 
 class NativeLogReader(unittest.TestCase):
+    def fold_record(self, **changes):
+        return {**dict(version=1, requestId=EVENT, totalMs=450, timerLateMs=2,
+                       outcome='fulfilled', attempts=[dict(startMs=0, headersMs=400,
+                       bodyMs=440, status=200, providerRequestId=TABLE,
+                       upstreamMs=12, outcome='fulfilled')], attemptsOmitted=0, omitted=0), **changes}
+
+    def fold_line(self, record):
+        return STAMP+'[LightningFoldTiming] '+json.dumps(record)
+
+    def test_fold_timing_explicit_window_and_allowlisted_schema(self):
+        window = {'since': '2026-09-27T14:25:00Z', 'until': '2026-09-27T14:40:00Z'}
+        self.assertFalse(reader.lightning_fold_timing_requested(None, None))
+        self.assertTrue(reader.lightning_fold_timing_requested(True, window))
+        for flag, selected in [(True, None), (False, window), ('true', window), (1, window)]:
+            with self.assertRaises(ValueError):
+                reader.lightning_fold_timing_requested(flag, selected)
+        good = self.fold_record(password='PRIVATE_SECRET', playerId=TABLE)
+        good['attempts'][0]['headers'] = {'authorization': 'PRIVATE_SECRET'}
+        bad = [self.fold_record(requestId='PRIVATE_SECRET'), self.fold_record(totalMs=True),
+               self.fold_record(totalMs=float('nan')), self.fold_record(totalMs=900001),
+               self.fold_record(omitted=-1), self.fold_record(version=True),
+               self.fold_record(outcome='PRIVATE_SECRET'), self.fold_record(attempts=[{}]),
+               self.fold_record(attempts=self.fold_record()['attempts']*7)]
+        for key, value in [('status', True), ('status', 600), ('providerRequestId', 'PRIVATE_SECRET'),
+                           ('upstreamMs', -1), ('startMs', 451), ('bodyMs', 399)]:
+            record = self.fold_record()
+            record['attempts'][0][key] = value
+            bad.append(record)
+        lines = [self.fold_line(good)] + [self.fold_line(r) for r in bad]
+        lines += [self.fold_line(self.fold_record()).replace('[LightningFoldTiming] ', '[LightningFoldTimingExtra] ')]
+        result = reader.extract_lightning_fold_timings(('\n'.join(lines)).encode())
+        self.assertEqual(result['matchingRecords'], 1)
+        self.assertEqual(result['invalidRecords'], len(bad))
+        self.assertEqual(result['records'], [{'timestamp': STAMP.strip(), **self.fold_record()}])
+        self.assertNotIn('PRIVATE_SECRET', json.dumps(result))
+        self.assertNotIn('playerId', json.dumps(result))
+        self.assertNotIn('headers', json.dumps(result).replace('headersMs', ''))
+
+    def test_fold_timing_preserves_pending_transport_after_outer_boundary(self):
+        record = self.fold_record(outcome='rejected')
+        record['attempts'][0].update(headersMs=None, bodyMs=None, status=None,
+                                      providerRequestId=None, upstreamMs=None, outcome='pending')
+        result = reader.extract_lightning_fold_timings(self.fold_line(record).encode())
+        self.assertEqual(result['invalidRecords'], 0)
+        self.assertEqual(result['records'][0]['outcome'], 'rejected')
+        self.assertEqual(result['records'][0]['attempts'][0]['outcome'], 'pending')
+        record['outcome'] = 'pending'
+        result = reader.extract_lightning_fold_timings(self.fold_line(record).encode())
+        self.assertEqual(result['matchingRecords'], 0)
+        self.assertEqual(result['invalidRecords'], 1)
+
+    def test_fold_timing_retention_bounds_and_empty_unknown(self):
+        lines = [self.fold_line(self.fold_record(omitted=i)) for i in range(53)]
+        lines += [STAMP+'[LightningFoldTiming] {broken}',
+                  STAMP+'[LightningFoldTiming] '+('x'*8193),
+                  '[LightningFoldTiming] '+json.dumps(self.fold_record())]
+        result = reader.extract_lightning_fold_timings(('\n'.join(lines)).encode())
+        self.assertEqual(result['matchingRecords'], 53)
+        self.assertEqual(result['omittedRecords'], 3)
+        self.assertEqual(result['invalidRecords'], 3)
+        self.assertEqual(len(result['records']), 50)
+        self.assertEqual(result['records'][0]['omitted'], 3)
+        self.assertIn('unknown', reader.extract_lightning_fold_timings(b'')['absenceMeans'])
+
+    def test_fold_timing_remote_admission_preserves_scope_and_window(self):
+        import base64
+        import io
+        start = (datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        for flag, selected, accepted in [(True, start, True), (True, None, False),
+                                         ('true', start, False), (False, start, False)]:
+            request = {'scopes': SCOPES, 'windowStart': selected, 'lightningFoldTiming': flag}
+            encoded = base64.b64encode(json.dumps(request).encode()).decode()
+            output = io.StringIO()
+            identity = {'version': 'abcdef012345', 'instanceId': '1-fixture'}
+            with patch.object(sys, 'argv', ['reader', '--remote', encoded]), patch.object(reader, 'health', return_value=identity), patch.object(reader, 'capture', return_value=self.fold_line(self.fold_record()).encode()) as capture, patch.object(sys, 'stdout', output):
+                if accepted:
+                    reader.main()
+                    result = json.loads(output.getvalue())
+                    self.assertEqual(result['lightningFoldTimings']['matchingRecords'], 1)
+                    self.assertEqual(result['window'], reader.window_description(reader.log_window(start)))
+                    capture.assert_called_once_with(reader.log_command(reader.log_window(start)))
+                    self.assertEqual(result['hostEngineBefore'], result['hostEngineAfter'])
+                else:
+                    with self.assertRaises(ValueError):
+                        reader.main()
+                    capture.assert_not_called()
+
     def mux_record(self, **changes):
         return {**dict(attempt=7, startedAt=1790534274869, outcome='subscribed',
                       authorityReturnedAtMs=1200.5, ensureStartedAtMs=None,

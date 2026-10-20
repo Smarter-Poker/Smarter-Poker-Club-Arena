@@ -1,0 +1,10 @@
+{
+  "_owner": "fix/crash-maintenance-clock-01a159c7",
+  "_comment": "Recovered installed migration 20261020033541; never replay it on production.",
+  "functions": [
+    "fn_crash_flight_ms",
+    "fn_crash_decide",
+    "fn_crash_round_result",
+    "fn_crash_settle_decided"
+  ]
+}

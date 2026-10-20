@@ -128,16 +128,22 @@ vi.mock('../../src/components/crash/CrashCurve', () => ({
     onSettled,
     onTick,
     tickerCents,
+    pausedElapsedMs,
+    startedAtLocalMs,
   }: {
     onSettled: () => void;
     onTick?: (cents: number) => void;
     tickerCents?: number | null;
+    pausedElapsedMs?: number;
+    startedAtLocalMs?: number;
   }) => (
     <>
       <button onClick={onSettled}>Finish Flight</button>
       <button onClick={() => onTick?.(333)}>Tick 3.33x</button>
       <button onClick={() => onTick?.(444)}>Tick 4.44x</button>
       <output aria-label="Frozen Figure">{tickerCents ?? ''}</output>
+      <output aria-label="Paused Flight Time">{pausedElapsedMs ?? ''}</output>
+      <output aria-label="Flight Anchor">{startedAtLocalMs}</output>
     </>
   ),
 }));
@@ -806,6 +812,23 @@ describe('the Crash tick stops asking once the answer cannot change', () => {
   const breakSaid = () =>
     backend.toast.info.mock.calls.filter(([said]) => /Maintenance Break/.test(String(said))).length;
   const guardHolds = () => vi.mocked(useLiveBonusGuard).mock.calls.at(-1)?.[0];
+
+  it('holds the flight at the server elapsed time during maintenance and reanchors after thaw', async () => {
+    backend.crashSettle.mockResolvedValue({ ...frozenRound, elapsed_ms: 9000 });
+    await mountOpen();
+    expect(screen.getByLabelText('Paused Flight Time')).toHaveTextContent('9000');
+    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeDisabled();
+    await elapse(300_000);
+    expect(screen.getByLabelText('Paused Flight Time')).toHaveTextContent('9000');
+    backend.crashSettle.mockResolvedValue({ ...open, elapsed_ms: 9200, frozen: false });
+    await elapse(2200);
+    expect(screen.getByLabelText('Paused Flight Time')).toBeEmptyDOMElement();
+    expect(Number(screen.getByLabelText('Flight Anchor').textContent)).toBeCloseTo(
+      performance.now() - 9200,
+      -3
+    );
+    expect(screen.getByRole('button', { name: 'Book The Win' })).toBeEnabled();
+  });
 
   it('says the break once, asks far less often through it, and settles the round when it ends', async () => {
     backend.crashSettle.mockResolvedValue(frozenRound);

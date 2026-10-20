@@ -57,11 +57,44 @@
  * cash-versus-events personality and free money is neither. Eligibility is
  * "is this horse inside its activity window right now", the literal reading
  * of "if they are playing", plus the same four-table cap every path honours.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ * LATE REGISTRATION DOES NOT END AT THE GUARANTEE - Dan 2026-10-19, binding
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "just because the 'guarantee was met' doesn't mean horses shouldn't still
+ *  late register throughout the tournament..."
+ *
+ * The overlay pass above was the ONLY thing that ever entered a horse into a
+ * RUNNING event, and it stops by design the moment the guarantee is covered
+ * (fn_overlay_at_risk lists an event only while ceil(guarantee / buy-in) >
+ * current_players, and only for 30 minutes after its start). So once the
+ * guarantee was met, late registration went silent for the rest of the
+ * window. Measured on production 2026-10-20 03:2x UTC over the previous three
+ * days of Midway and Diamond Arena MTTs: every late entry arrived 0-30 minutes
+ * after the start (24 / 157 / 351 by ten-minute bucket, then nothing but two
+ * satellite qualifiers) although late registration runs 25-90 minutes; the 46
+ * paid events with no guarantee took ZERO late entries; and "Monday Mystery"
+ * (400 guaranteed, 400 in the pool, late registration open through level 9)
+ * had taken its last entry 27 minutes BEFORE its start and none after it.
+ *
+ * A real room keeps taking late entries until the window shuts, whatever the
+ * pool says. So the late-registration pass below runs for every RUNNING MTT
+ * whose late registration is open (fn_tournament_late_registration_open, the
+ * same answer both registration doors use), and never reads the guarantee.
+ * Its cadence is a realistic arrival curve: a per-event share of 25-40% of
+ * the starting field arrives across the window, a few per cycle, with a
+ * small deterministic wobble so the count does not step like a metronome.
+ * Every limit that was ever legitimate still holds, because every entry goes
+ * through topUpWithHorses and the horse door: the maintenance freeze, the
+ * fleet hold, the events/both lanes, the four-table cap, the horse's own
+ * wallet, the field cap, and late registration closing.
  */
 
 import { supabase } from './supabase/client.js';
 import { reportError } from './errorReporter.js';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
+import { horseHash } from './HorseBehavior.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 
 /** Midway Union — the union Club JAQK and Shark Club belong to. */
 export const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
@@ -267,7 +300,219 @@ export async function runOverlayGuardOnce(
   }
 }
 
-/** One full cycle: guaranteed events first, then freerolls. */
+/* ─── LATE REGISTRATION (Dan 2026-10-19) ─── see the header of this file. ─── */
+
+/** Share of the starting field that late-registers: 25% plus up to 15% more. */
+export const LATE_REG_SHARE_MIN = 0.25;
+export const LATE_REG_SHARE_SPREAD = 0.15;
+/** Even a small field sees a couple of late arrivals. */
+export const LATE_REG_MIN_ARRIVALS = 2;
+/** Most late entrants one event takes in one cycle: arrivals, not a burst. */
+export const LATE_REG_MAX_STEP = 4;
+/** How far back a RUNNING event is looked for. Longer than any late window. */
+const LATE_REG_LOOKBACK_MS = 12 * 60 * 60_000;
+
+export interface LateRegEvent {
+  tournament_id: string;
+  /** `tournaments.started_at` in ms. */
+  startedAtMs: number;
+  nowMs: number;
+  /** `tournaments.late_reg_mins`; 0 means no clock window. */
+  lateRegMins: number;
+  /** `tournaments.late_reg_levels` (or rebuy_levels); 0 means no level window. */
+  lateRegLevels: number;
+  currentLevel: number;
+  /** Entries registered at or before the start. */
+  entriesAtStart: number;
+  /** Entries registered after the start, by anybody, through any path. */
+  lateEntries: number;
+}
+
+/** Pure: this event's late-registration share, fixed per event id. */
+export function lateRegShareFor(tournamentId: string): number {
+  return (
+    LATE_REG_SHARE_MIN +
+    ((horseHash(`${tournamentId}:late-share`) % 1000) / 1000) * LATE_REG_SHARE_SPREAD
+  );
+}
+
+/**
+ * Pure: how far through its late-registration window the event is, 0..1, or
+ * null when no window is configured. Whichever deadline is nearer decides,
+ * as fn_tournament_late_registration_open closes on whichever passes first.
+ */
+export function lateRegProgress(ev: LateRegEvent): number | null {
+  const mins = Number(ev.lateRegMins) || 0;
+  const levels = Number(ev.lateRegLevels) || 0;
+  if (mins <= 0 && levels <= 0) return null;
+  let progress = 0;
+  if (mins > 0) {
+    if (!Number.isFinite(ev.startedAtMs) || !Number.isFinite(ev.nowMs)) return null;
+    progress = Math.max(progress, (ev.nowMs - ev.startedAtMs) / (mins * 60_000));
+  }
+  if (levels > 0) progress = Math.max(progress, (Number(ev.currentLevel) || 0) / levels);
+  return Math.min(1, Math.max(0, progress));
+}
+
+/**
+ * Pure: how many horses should late-register into this event THIS cycle.
+ *
+ * It takes no guarantee, prize pool or overlay input on purpose: whether the
+ * guarantee is met has no bearing on whether people keep arriving. The goal
+ * is a cumulative arrival curve across the window; entries that already
+ * arrived late (a human, the overlay pass, an earlier cycle) count toward it,
+ * so nothing is double-counted.
+ */
+export function lateRegArrivalsFor(ev: LateRegEvent): number {
+  const progress = lateRegProgress(ev);
+  if (progress === null || progress >= 1) return 0;
+  const atStart = Math.max(0, Math.floor(Number(ev.entriesAtStart) || 0));
+  const expected = Math.max(
+    LATE_REG_MIN_ARRIVALS,
+    Math.round(atStart * lateRegShareFor(ev.tournament_id))
+  );
+  // A few arrive in one cycle, none in the next: a deterministic -1/0/+1
+  // around the curve, keyed on the event and the cycle.
+  const cycle = Math.max(0, Math.floor((ev.nowMs - ev.startedAtMs) / CYCLE_MS));
+  const wobble = (horseHash(`${ev.tournament_id}:late-cycle:${cycle}`) % 3) - 1;
+  const goal = Math.min(expected, Math.max(0, Math.ceil(expected * progress) + wobble));
+  const late = Math.max(0, Math.floor(Number(ev.lateEntries) || 0));
+  return Math.max(0, Math.min(LATE_REG_MAX_STEP, goal - late));
+}
+
+interface LateRegRow {
+  id: string;
+  name: string;
+  status: string;
+  format_contract: string | null;
+  started_at: string | null;
+  current_level: number | null;
+  late_reg_levels: number | null;
+  rebuy_levels: number | null;
+  late_reg_mins: number | null;
+  buy_in_amount: number | string | null;
+  prize_pool_finalized: boolean | null;
+}
+
+/** One roster count: every entry, the live field, or entries after `afterIso`. */
+async function rosterCount(
+  tournamentId: string,
+  which: 'all' | 'live' | { afterIso: string }
+): Promise<number | null> {
+  const base = supabase
+    .from('tournament_players')
+    .select('id', { count: 'exact', head: true })
+    .eq('tournament_id', tournamentId);
+  const query =
+    which === 'all'
+      ? base
+      : which === 'live'
+        ? base.in('status', ['registered', 'playing'])
+        : base.gt('registered_at', which.afterIso);
+  const { count, error } = await query;
+  if (error || typeof count !== 'number') return null;
+  return count;
+}
+
+/**
+ * Keep horses late-registering into every RUNNING MTT of this host whose late
+ * registration is open, until it closes. Never reads the guarantee.
+ */
+export async function lateRegisterHorsesOnce(
+  unionId: string = MIDWAY_UNION_ID,
+  shouldContinue: () => boolean = () => true,
+  nowMs: number = Date.now()
+): Promise<number> {
+  let added = 0;
+  try {
+    if (!shouldContinue() || isMaintenanceFrozen()) return added;
+    const { data: clubs, error: clubErr } = await supabase
+      .from('clubs')
+      .select('id')
+      .or(`id.eq.${unionId},union_id.eq.${unionId}`);
+    if (clubErr) throw new Error(clubErr.message);
+    const clubIds = ((clubs ?? []) as Array<{ id?: string }>)
+      .map((c) => c.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    if (clubIds.length === 0 || !shouldContinue()) return added;
+
+    const { data: rows, error } = await supabase
+      .from('tournaments')
+      .select(
+        'id, name, status, format_contract, started_at, current_level, late_reg_levels, rebuy_levels, late_reg_mins, buy_in_amount, prize_pool_finalized'
+      )
+      .eq('status', 'RUNNING')
+      .eq('prize_pool_finalized', false)
+      .in('format_contract', ['mtt-v1', 'mtt-v2'])
+      .in('club_id', clubIds)
+      .gt('started_at', new Date(nowMs - LATE_REG_LOOKBACK_MS).toISOString())
+      .order('started_at', { ascending: true });
+    if (error) throw new Error(error.message);
+
+    for (const t of (rows ?? []) as LateRegRow[]) {
+      if (!shouldContinue() || isMaintenanceFrozen()) return added;
+      const startedAtMs = Date.parse(String(t.started_at ?? ''));
+      if (!Number.isFinite(startedAtMs)) continue;
+
+      // The doors' own answer: level window, clock window, field cap, pool.
+      const { data: open, error: openErr } = await supabase.rpc(
+        'fn_tournament_late_registration_open',
+        { p_tournament_id: t.id }
+      );
+      if (openErr || typeof open !== 'boolean') {
+        reportError(
+          new Error(
+            `[HorseOverlayGuard] late registration state unreadable for ${t.id.slice(0, 8)}`
+          ),
+          'HorseOverlayGuard.late_reg_open_unreadable'
+        );
+        continue;
+      }
+      if (!open) continue;
+
+      const startedIso = new Date(startedAtMs).toISOString();
+      const [late, live, total] = await Promise.all([
+        rosterCount(t.id, { afterIso: startedIso }),
+        rosterCount(t.id, 'live'),
+        rosterCount(t.id, 'all'),
+      ]);
+      // An unreadable roster is not an empty one: skip, never guess.
+      if (late === null || live === null || total === null) continue;
+
+      const want = lateRegArrivalsFor({
+        tournament_id: t.id,
+        startedAtMs,
+        nowMs,
+        lateRegMins: Number(t.late_reg_mins) || 0,
+        // Same precedence as fn_tournament_late_registration_open.
+        lateRegLevels: Number(t.late_reg_levels ?? t.rebuy_levels ?? 0) || 0,
+        currentLevel: Number(t.current_level) || 0,
+        entriesAtStart: total - late,
+        lateEntries: late,
+      });
+      if (want <= 0) continue;
+
+      // topUpWithHorses counts the live field (registered + playing), so the
+      // target is that field plus this cycle's arrivals.
+      const isFree = (Number(t.buy_in_amount) || 0) <= 0;
+      const n = await seeder.topUpWithHorses(t.id, live + want, { allLanes: isFree });
+      added += n;
+      if (!shouldContinue()) return added;
+      if (n > 0) {
+        console.log(
+          `[HorseOverlayGuard] late registration ${t.name}: +${n} horse(s) ` +
+            `(${late} late entries so far, level ${t.current_level ?? 0})`
+        );
+      }
+    }
+    return added;
+  } catch (err) {
+    reportError(err, 'HorseOverlayGuard.late_registration');
+    return added;
+  }
+}
+
+/** One full cycle: guaranteed events, then freerolls, then late registration. */
 export async function runEventFillCycle(
   unionId: string = MIDWAY_UNION_ID,
   shouldContinue: () => boolean = () => true
@@ -275,7 +520,9 @@ export async function runEventFillCycle(
   const guaranteed = await runOverlayGuardOnce(unionId, shouldContinue);
   if (!shouldContinue()) return guaranteed;
   const freerolls = await fillFreerollsOnce(unionId, shouldContinue);
-  return guaranteed + freerolls;
+  if (!shouldContinue()) return guaranteed + freerolls;
+  const late = await lateRegisterHorsesOnce(unionId, shouldContinue);
+  return guaranteed + freerolls + late;
 }
 
 function lifecycleIsCurrent(generation: number): boolean {
@@ -300,6 +547,11 @@ function launchOwnedCycle(context: string): void {
     for (const host of hosts) {
       if (!lifecycleIsCurrent(generation)) return;
       await fillFreerollsOnce(host, () => lifecycleIsCurrent(generation));
+    }
+    // Late registration keeps arriving whether or not the guarantee is met.
+    for (const host of hosts) {
+      if (!lifecycleIsCurrent(generation)) return;
+      await lateRegisterHorsesOnce(host, () => lifecycleIsCurrent(generation));
     }
   })()
     .catch((err: unknown) => reportError(err, context))
@@ -331,7 +583,7 @@ export function startHorseOverlayGuard(): HorseOverlayGuardHandle | null {
   }, BOOT_DELAY_MS);
   bootTimer.unref?.();
   console.log(
-    '[HorseOverlayGuard] started - guaranteed events topped to their guarantee and freerolls filled from every lane, every 2 minutes'
+    '[HorseOverlayGuard] started - guaranteed events topped to their guarantee, freerolls filled from every lane, and late registration kept arriving until it closes, every 2 minutes'
   );
   return guardHandle;
 }

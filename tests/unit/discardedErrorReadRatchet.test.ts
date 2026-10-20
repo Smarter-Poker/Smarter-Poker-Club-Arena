@@ -228,7 +228,7 @@ const BASELINE = new Map<string, number>([
   ['src/components/session/SessionSummaryHost.tsx', 1],
   ['src/components/navigation/NotificationDropdown.tsx', 1],
   ['src/components/navigation/HamburgerMenu.tsx', 1],
-  ['src/components/agent/AgentAssignmentPanel.tsx', 1],
+  ['src/components/agent/AgentAssignmentPanel.tsx', 0],
   ['src/components/admin/StatsExport.tsx', 1],
   ['src/components/admin/PlayerSearch.tsx', 1],
   ['src/components/admin/AuditLog.tsx', 1],

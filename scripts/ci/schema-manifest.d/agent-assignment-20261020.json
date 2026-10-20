@@ -1,0 +1,17 @@
+{
+  "_owner": "bank-downline-20261020",
+  "_comment": "Observed installed 2026-10-20T20:38:34Z through Supabase MCP, history version20261020203834, source reserved20261020203733, exact SQL MD5 6e50fc551b976bac9210eff38315855e. Function owner, search_path, ACLs and receipt RLS/privileges read back. This additive phase does not install the bank/data restrictions.",
+  "tables": ["club_assignment_operations"],
+  "functions": ["fn_can_manage_club_assignments", "fn_reassign_club_members"],
+  "columns": {
+    "club_assignment_operations": [
+      "id",
+      "club_id",
+      "actor_id",
+      "destination_user_id",
+      "source_user_id",
+      "member_user_ids",
+      "created_at"
+    ]
+  }
+}

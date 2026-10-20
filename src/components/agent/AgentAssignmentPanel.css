@@ -1,0 +1,32 @@
+.agent-assignment {
+  display: grid;
+  gap: 3cqw;
+  min-width: 0;
+}
+.agent-assignment label {
+  display: grid;
+  gap: 1cqw;
+}
+.agent-assignment select {
+  width: 100%;
+  max-width: 100%;
+  color: #e4e7ec;
+  background: #050607;
+  font: inherit;
+}
+.agent-assignment option {
+  white-space: normal;
+}
+.agent-assignment button {
+  border: 0;
+  background: transparent;
+  padding: 1cqw;
+  cursor: pointer;
+}
+.agent-assignment button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.agent-assignment button:focus-visible {
+  outline: 1px solid #45adff;
+}

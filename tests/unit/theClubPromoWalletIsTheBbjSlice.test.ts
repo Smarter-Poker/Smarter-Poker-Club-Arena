@@ -75,10 +75,10 @@ describe('the club Promo Wallet row reads the club account', () => {
 
 describe('the roles that hold the club promo account', () => {
   it('are the Club Bank roles, and no others', () => {
-    for (const role of ['owner', 'co_owner', 'admin', 'super_agent']) {
+    for (const role of ['owner', 'co_owner', 'admin']) {
       expect(canSeeClubBank(role), role).toBe(true);
     }
-    for (const role of ['agent', 'sub_agent', 'player', 'member']) {
+    for (const role of ['super_agent', 'agent', 'sub_agent', 'player', 'member']) {
       expect(canSeeClubBank(role), role).toBe(false);
     }
   });

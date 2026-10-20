@@ -12,11 +12,11 @@ describe('Wallet Recipient Search & Self Transfer Law', () => {
   });
 
   it('allows owners, co-owners, admins, and super-agents to see and spend from club bank', () => {
-    const bankRoles = ['owner', 'co_owner', 'admin', 'super_agent'];
+    const bankRoles = ['owner', 'co_owner', 'admin'];
     for (const r of bankRoles) {
       expect(canSeeClubBank(r)).toBe(true);
     }
-    for (const r of ['agent', 'sub_agent', 'player']) {
+    for (const r of ['super_agent', 'agent', 'sub_agent', 'player']) {
       expect(canSeeClubBank(r)).toBe(false);
     }
   });

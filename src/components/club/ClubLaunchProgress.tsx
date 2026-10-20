@@ -61,7 +61,7 @@ interface Props {
   clubId: string;
   viewerId: string;
   clubName: string;
-  openingBank: number;
+  openingBank: number | null;
   tasks: ClubLaunchTask[];
   /**
    * The lobby owns the skip state so that the checklist, the
@@ -411,11 +411,15 @@ export default function ClubLaunchProgress({
       <div className="club-launch__command-row">
         <div
           className="club-launch__bank"
-          aria-label={`${compactChips(openingBank)} Club Bank Chips`}
+          aria-label={
+            openingBank == null
+              ? 'Club Bank Balance Unavailable'
+              : `${compactChips(openingBank)} Club Bank Chips`
+          }
         >
           <span>Opening Club Bank</span>
-          <strong>{compactChips(openingBank)}</strong>
-          <small>Chips Ready</small>
+          <strong>{openingBank == null ? 'Unavailable' : compactChips(openingBank)}</strong>
+          <small>{openingBank == null ? 'Balance Not Verified' : 'Chips Ready'}</small>
         </div>
         <button
           type="button"

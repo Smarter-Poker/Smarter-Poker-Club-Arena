@@ -22,8 +22,8 @@ import {
 } from '../../src/components/wallet/walletRows';
 import { CLUB_ROLES } from '../../src/types/clubRoles';
 
-const BANK_ROLES = ['owner', 'co_owner', 'admin', 'super_agent'] as const;
-const NON_BANK_ROLES = ['agent', 'sub_agent', 'player'] as const;
+const BANK_ROLES = ['owner', 'co_owner', 'admin'] as const;
+const NON_BANK_ROLES = ['super_agent', 'agent', 'sub_agent', 'player'] as const;
 
 describe('who may see the Club Bank', () => {
   it('admits exactly owner, co_owner, admin and super_agent', () => {
@@ -53,7 +53,7 @@ describe('club wallet rows by role', () => {
   });
 
   it('sub agents and agents add an agent wallet and a promo wallet, never the bank', () => {
-    for (const r of ['sub_agent', 'agent'] as const) {
+    for (const r of ['super_agent', 'sub_agent', 'agent'] as const) {
       expect(clubWalletRows(r)).toEqual(['promo_wallet', 'agent_wallet', 'player_wallet']);
       // Standalone makes no difference: no bank means no rake treasury either.
       expect(clubWalletRows(r, { standalone: true })).toEqual([
@@ -69,7 +69,7 @@ describe('club wallet rows by role', () => {
      wallet; the three others keep it, because it is the wallet a seat is
      bought with. */
   it('the four bank roles add the Club Bank, in a union - and only the admin has no player wallet', () => {
-    for (const r of ['owner', 'co_owner', 'super_agent'] as const) {
+    for (const r of ['owner', 'co_owner'] as const) {
       expect(clubWalletRows(r, { standalone: false })).toEqual([
         'club_bank',
         'promo_wallet',
@@ -85,7 +85,7 @@ describe('club wallet rows by role', () => {
   });
 
   it('a STANDALONE club also shows its own Rake Treasury', () => {
-    for (const r of ['owner', 'co_owner', 'super_agent'] as const) {
+    for (const r of ['owner', 'co_owner'] as const) {
       expect(clubWalletRows(r, { standalone: true })).toEqual([
         'club_bank',
         'promo_wallet',
@@ -140,7 +140,7 @@ describe('compact lobby wallet rows by role', () => {
     expect(clubLobbyWalletRows('player')).toEqual(['player_wallet']);
   });
 
-  it.each(['agent', 'sub_agent'] as const)(
+  it.each(['super_agent', 'agent', 'sub_agent'] as const)(
     'shows %s the Agent and Player wallets beneath Diamonds',
     (role) => {
       expect(clubLobbyWalletRows(role)).toEqual(['agent_wallet', 'player_wallet']);
@@ -153,7 +153,7 @@ describe('compact lobby wallet rows by role', () => {
       expect(clubLobbyWalletRows(role)).toEqual(['club_bank', 'player_wallet']);
     }
   );
-  it.each(['admin', 'super_agent'] as const)(
+  it.each(['admin'] as const)(
     'shows %s the Club Bank and Agent Wallet beneath Diamonds',
     (role) => {
       expect(clubLobbyWalletRows(role)).toEqual(['club_bank', 'agent_wallet']);
@@ -203,7 +203,7 @@ describe('chip minting', () => {
   });
 
   it('excludes super_agent: standing at the bank is not authority to create money', () => {
-    expect(canSeeClubBank('super_agent')).toBe(true);
+    expect(canSeeClubBank('super_agent')).toBe(false);
     expect(canMintInClubBank('super_agent', { standalone: true })).toBe(false);
   });
 

@@ -44,6 +44,7 @@ INSERT INTO tournaments VALUES(${id},${quote(d.id)},${quote(kind === 'foreign' ?
 fixture += `INSERT INTO tournament_schedules VALUES('10f642b9-2ec8-4b05-93d4-a6e26b1e9218','fade0000-0000-0000-0000-000000000001',NULL,true,'{"fixedBoard":"Coffee Break Freeroll (PLO4)"}'::jsonb,'2000-01-01');
 INSERT INTO tournament_schedules VALUES('00000000-0000-4000-8000-000000000099','002c2d27-9584-4e52-835a-bb2be148fc81',NULL,true,'{"fixedBoard":"Coffee Break Freeroll (PLO4)"}'::jsonb,'2000-01-01');
 ALTER TABLE tournaments ADD COLUMN is_rebuy boolean DEFAULT false,ADD COLUMN is_reentry boolean DEFAULT false,ADD COLUMN rebuy_cost numeric,ADD COLUMN add_on_available boolean DEFAULT false,ADD COLUMN addon_cost numeric;
+ALTER TABLE tournaments ADD COLUMN short_description text;
 ALTER TABLE tournaments ADD COLUMN bounty_amount numeric DEFAULT 0,ADD COLUMN buy_in_amount numeric DEFAULT 0,ADD COLUMN buy_in_fee numeric DEFAULT 0;
 CREATE TABLE expected_contracts AS SELECT value AS definition FROM jsonb_array_elements(${quote(JSON.stringify(definitions))}::jsonb);
 CREATE TABLE originals AS SELECT * FROM tournaments;`;

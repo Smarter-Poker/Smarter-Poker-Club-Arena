@@ -16,7 +16,8 @@ Fixed knockout bounties round upward to multiples of five. Sunrise and Midnight
 are explicit owner exceptions: 5.50 total entry = 2 bounty + 3 prize contribution
 
 - 0.50 fee. PKO and mystery-bounty amounts are unchanged. Unfunded fixed bounty
-  promises are refused.
+  promises are refused. Fixed-bounty descriptions publish exact bounty, prize
+  contribution and fee instead of retaining an obsolete percentage.
 
 The qualified migration accepts the original snapshot or the previous normalized
 configuration, updates full published purchase terms and only future occurrences

@@ -98,7 +98,12 @@ export function withMidwayStructure<T extends Record<string, unknown>>(
   }
   return {
     ...row,
-    ...(fixedBounty ? { bounty_amount: roundedBounty } : {}),
+    ...(fixedBounty
+      ? {
+          bounty_amount: roundedBounty,
+          short_description: `Fixed Knockout Bounty: ${roundedBounty} Chips. Entry: ${netEntry - roundedBounty} Prize Pool + ${roundedBounty} Bounty + ${entryFee} Fee.`,
+        }
+      : {}),
     ...(smallBounty ? { buy_in_amount: netEntry, buy_in_fee: entryFee } : {}),
     starting_chips: stack,
     // Match the launcher's deck ceiling, never the tighter CASH seat policy.

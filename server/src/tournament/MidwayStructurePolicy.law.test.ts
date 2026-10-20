@@ -141,6 +141,7 @@ describe('Midway standard structures through the actual scheduled creator', () =
       club_id: MIDWAY_UNION_ID,
       tournament_type: 'MTT',
       name: 'Fixed Bounty',
+      short_description: '25% Of Each Entry Contribution Funds A Fixed Knockout Bounty.',
       buy_in_amount: 13.5,
       buy_in_fee: 1.5,
       starting_chips: 5000,
@@ -152,6 +153,9 @@ describe('Midway standard structures through the actual scheduled creator', () =
       bounty_amount: 7.5,
     };
     expect(withMidwayStructure(row).bounty_amount).toBe(10);
+    expect(withMidwayStructure(row).short_description).toBe(
+      'Fixed Knockout Bounty: 10 Chips. Entry: 3.5 Prize Pool + 10 Bounty + 1.5 Fee.'
+    );
     expect(withMidwayStructure({ ...row, bounty_amount: 10 }).bounty_amount).toBe(10);
     expect(withMidwayStructure({ ...row, is_pko: true }).bounty_amount).toBe(7.5);
     expect(withMidwayStructure({ ...row, is_mystery_bounty: true }).bounty_amount).toBe(7.5);

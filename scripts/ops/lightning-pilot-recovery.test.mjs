@@ -422,6 +422,7 @@ function manualRecoveryFixture({
   duplicateChosen = false,
   existingOther = false,
   ambiguousTab = false,
+  hiddenTab = false,
 } = {}) {
   const events = new EventEmitter(),
     tabs = new Set(),
@@ -452,7 +453,7 @@ function manualRecoveryFixture({
             ? 2
             : Number(tabs.has(selector.match(/"([^"]+)"/)[1]))
           : 1,
-    isVisible: async () => true,
+    isVisible: async () => !(hiddenTab && selector.includes(OTHER)),
     waitFor: async () => {},
     evaluateAll: async () => [table],
     getAttribute: async () => (selector.includes(active) ? 'true' : null),
@@ -578,6 +579,14 @@ test('ambiguous target tab refuses before another menu or navigation gesture', a
   assert.equal(report.touch.length, 0);
   assert.equal(report.navigation.at(-1).step, 'find_existing_pool_tab');
   assert.equal(report.status, 'unknown');
+});
+test('a hidden existing target tab refuses without opening another lobby or changing capacity', async () => {
+  const f = manualRecoveryFixture({ existingOther: true, hiddenTab: true });
+  const report = await witnessRecovery(f.args);
+  assert.equal(f.calls.length, 1);
+  assert.equal(report.touch.length, 0);
+  assert.equal(report.navigation.at(-1).step, 'existing_pool_tab_hidden');
+  assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
 });
 test('two simultaneous owners of chosen pool still refuse despite legitimate other pool socket', async () => {
   const f = manualRecoveryFixture({ duplicateChosen: true });

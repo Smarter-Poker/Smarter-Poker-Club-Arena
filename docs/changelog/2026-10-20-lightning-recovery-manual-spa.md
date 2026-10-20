@@ -13,7 +13,8 @@ the existing own pool. No join, buy-in, scripted navigation, tab eviction or cap
 override is added. Missing controls or an ambiguous row remain unknown.
 An already restored target pool is selected through its exact visible tab first,
 so a player at the real tab cap does not need a new lobby tab. Duplicate target
-tabs refuse; no existing game is closed to create capacity.
+or hidden target tabs refuse before opening a lobby; no existing game is closed
+to create capacity.
 
 Socket ownership follows actual SUBSCRIBE/SUBSCRIBED room identities. A socket
 can own a set of rooms; unsubscribe and close retire those bindings. Reconnect

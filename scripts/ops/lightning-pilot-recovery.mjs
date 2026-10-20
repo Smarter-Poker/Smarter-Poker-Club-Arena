@@ -137,7 +137,11 @@ async function openOtherPool(page, admin, pin, remaining, progress) {
   const existing = page.locator(`[data-tabid="${pin.poolSessionId}"]`);
   const matches = await existing.count();
   if (matches > 1) throw new Error('Manual Pool Tab Ambiguous');
-  if (matches === 1 && (await existing.isVisible())) {
+  if (matches === 1) {
+    if (!(await existing.isVisible())) {
+      progress.step = 'existing_pool_tab_hidden';
+      throw new Error('Manual Pool Tab Hidden');
+    }
     progress.step = 'select_existing_pool_tab';
     await existing.tap({ timeout: Math.min(5000, remaining()) });
     if ((await existing.getAttribute('aria-current', { timeout: remaining() })) !== 'true')

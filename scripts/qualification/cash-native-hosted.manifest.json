@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 37376,
-      "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+      "bytes": 37679,
+      "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3532,6 +3532,17 @@
     "current": {
       "bytes": 229424,
       "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
+    }
+  },
+  "neverDealtRebuyMatrixRouting20261020": {
+    "reason": "Select the existing required native PostgreSQL accounting qualification for never-dealt rebuy runner, fixture-directory and source-guard edits. Only current classifier source identity changes; financial inputs, historical pins and qualification status remain unchanged. Source identity is not execution or production proof.",
+    "previous": {
+      "bytes": 37376,
+      "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+    },
+    "current": {
+      "bytes": 37679,
+      "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
     }
   }
 }

@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/daily-diamond-resolution-01a159c4",
+  "functions": ["fn_ca_diamond_rule_transition_lock", "fn_ca_diamond_resolution_reaches_drift"]
+}

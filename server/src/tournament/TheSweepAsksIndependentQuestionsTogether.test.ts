@@ -152,7 +152,11 @@ function oneBustOfTwo(overrides: (request: Request) => Answer | undefined = () =
     if (request.table === 'rpc:fn_open_tournament_rebuy_decisions') {
       return { data: [{ user_id: bustedId, decision_open: false }] };
     }
-    if (request.table === 'wallet_transactions') return { count: 0 };
+    if (
+      request.table === 'wallet_transactions' ||
+      request.table === 'tournament_participant_funding_receipts'
+    )
+      return { count: 0 };
     throw new Error(`Unexpected request in bust-stage fixture: ${request.table}`);
   });
 }
@@ -312,31 +316,37 @@ describe('the chip-cap inputs travel together', () => {
     return manager;
   }
 
-  it('costs one round trip and raises every high-water mark', async () => {
-    const sent = transport((request) => {
-      if (request.table === 'tournament_players') return { count: 40 };
-      if (has(request, 'category', 'eq', 'rebuy')) return { count: 6 };
-      if (has(request, 'category', 'eq', 'addon')) return { count: 3 };
-      throw new Error(`Unexpected request: ${request.table}`);
-    });
-    const manager = capManager();
-    const startedAt = Date.now();
-    const refresh = manager.refreshChipCapInputs();
-    await vi.runAllTimersAsync();
-    await refresh;
+  it.each([2, 6])(
+    'costs one round trip and does not double-count %s funding receipts',
+    async (receiptCount) => {
+      const sent = transport((request) => {
+        if (request.table === 'tournament_players') return { count: 40 };
+        if (has(request, 'category', 'in')) return { count: 6 };
+        if (request.table === 'tournament_participant_funding_receipts')
+          return { count: has(request, 'operation', 'in') ? receiptCount : 2 };
+        if (has(request, 'category', 'eq', 'addon')) return { count: 3 };
+        throw new Error(`Unexpected request: ${request.table}`);
+      });
+      const manager = capManager();
+      const startedAt = Date.now();
+      const refresh = manager.refreshChipCapInputs();
+      await vi.runAllTimersAsync();
+      await refresh;
 
-    expect(Date.now() - startedAt).toBe(TRIP_MS);
-    expect(sent).toHaveLength(3);
-    expect(new Set(sent.map((r) => r.sentAt)).size).toBe(1);
-    expect(manager.entrantCountForChipCap).toBe(40);
-    expect(manager.rebuysGrantedForChipCap).toBe(6);
-    expect(manager.addonsGrantedForChipCap).toBe(3);
-  });
+      expect(Date.now() - startedAt).toBe(TRIP_MS);
+      expect(sent).toHaveLength(5);
+      expect(new Set(sent.map((r) => r.sentAt)).size).toBe(1);
+      expect(manager.entrantCountForChipCap).toBe(40);
+      expect(manager.rebuysGrantedForChipCap).toBe(6);
+      expect(manager.addonsGrantedForChipCap).toBe(3);
+    }
+  );
 
   it('keeps a mark whose read failed and never lowers one', async () => {
     transport((request) => {
       if (request.table === 'tournament_players') return { count: 10 };
-      if (has(request, 'category', 'eq', 'rebuy')) return { count: null, error: { message: 'x' } };
+      if (has(request, 'category', 'in') || has(request, 'operation', 'in'))
+        return { count: null, error: { message: 'x' } };
       return { count: 1 };
     });
     const manager = capManager();
@@ -353,4 +363,35 @@ describe('the chip-cap inputs travel together', () => {
     expect(manager.rebuysGrantedForChipCap).toBe(4);
     expect(manager.addonsGrantedForChipCap).toBe(1);
   });
+  it.each([0, 4])(
+    'counts Diamond rebuy grants and %s add-ons after a manager restart',
+    async (addons) => {
+      const sent = transport((request) => {
+        if (request.table === 'tournament_players') return { count: 523 };
+        if (request.table === 'wallet_transactions') return { count: 0 };
+        if (request.table === 'tournament_participant_funding_receipts')
+          return { count: has(request, 'operation', 'in') ? 244 : addons };
+        throw new Error(`Unexpected request: ${request.table}`);
+      });
+      const manager = capManager();
+      manager.tournamentCache = { starting_chips: 3000, rebuy_chips: 3000, addon_chips: 3000 };
+      const refresh = manager.refreshChipCapInputs();
+      await vi.runAllTimersAsync();
+      await refresh;
+      expect(manager.rebuysGrantedForChipCap).toBe(244);
+      expect(manager.addonsGrantedForChipCap).toBe(addons);
+      expect(manager.chipsInPlayEstimate()).toBe(2_301_000 + addons * 3000);
+      const funding = sent.filter((r) => r.table === 'tournament_participant_funding_receipts');
+      expect(funding).toHaveLength(2);
+      expect(funding.every((r) => has(r, 'tournament_id', 'eq', tournamentId))).toBe(true);
+      expect(
+        funding.some((r) =>
+          r.filters.some(
+            ([c, o, v]) =>
+              c === 'operation' && o === 'in' && JSON.stringify(v) === '["rebuy","reentry"]'
+          )
+        )
+      ).toBe(true);
+    }
+  );
 });

@@ -37,6 +37,92 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('a refused movement admission yields to its own unrecorded bust', () => {
+  function admission(error: any, rows: any[] | null, readError: any = null, loseOwner = false) {
+    const m = manager();
+    let current = true;
+    m.tableBreakRpc = () => ({
+      tableState: async () => ({ excluded: true, break_id: BREAK, lifecycle: '1' }),
+      reconcile: async () => parked(),
+    });
+    vi.spyOn(supabase, 'rpc').mockResolvedValue({ data: null, error } as never);
+    const query: any = {
+      select: vi.fn(() => query),
+      eq: vi.fn(() => query),
+      lte: vi.fn(() => query),
+      limit: vi.fn(async () => {
+        if (readError instanceof Error) throw readError;
+        if (loseOwner) current = false;
+        return { data: rows, error: readError };
+      }),
+    };
+    const read = vi.spyOn(supabase, 'from').mockReturnValue(query);
+    const engine = { start: vi.fn(), installF06MovementAdmission: vi.fn() };
+    m.eliminationSweepCursor.advanceTo(5);
+    return {
+      m,
+      read,
+      query,
+      engine,
+      run: () => m.startParkedMovementEngine(engine, SOURCE, '1', () => current),
+    };
+  }
+
+  it.each(['F06_MOVEMENT_ELIMINATION_UNPROVEN', 'F06_MOVEMENT_WHOLE_ROSTER_REQUIRED'])(
+    '%s preserves the refusal and gives the original elimination stage its turn',
+    async (message) => {
+      const f = admission({ code: '55000', message }, [{ user_id: id(6) }]);
+      await expect(f.run()).rejects.toThrow(message);
+      expect(f.read).toHaveBeenCalledWith('tournament_players');
+      expect(f.query.eq.mock.calls).toEqual([
+        ['tournament_id', id(1)],
+        ['table_id', SOURCE],
+        ['status', 'playing'],
+      ]);
+      expect(f.query.lte).toHaveBeenCalledWith('chips', 0);
+      expect(f.query.limit).toHaveBeenCalledWith(1);
+      expect(f.m.requestUrgentEliminationSweepAfter).toHaveBeenCalledWith(0);
+      expect(f.m.eliminationSweepNextStage).toBe(5);
+      f.m.eliminationSweepCursor.beginAdmission();
+      expect(f.m.eliminationSweepNextStage).toBe(0);
+      expect(f.engine.start).not.toHaveBeenCalled();
+      expect(f.engine.installF06MovementAdmission).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each([
+    { rows: [], error: null, lost: false },
+    { rows: null, error: { message: 'unreadable' }, lost: false },
+    { rows: null, error: new Error('read transport failed'), lost: false },
+    { rows: [{ user_id: id(6) }], error: null, lost: true },
+  ])('unknown or stale evidence cannot rewind the cursor: %j', async (scenario) => {
+    const f = admission(
+      { code: '55000', message: 'F06_MOVEMENT_WHOLE_ROSTER_REQUIRED' },
+      scenario.rows,
+      scenario.error,
+      scenario.lost
+    );
+    await expect(f.run()).rejects.toThrow();
+    f.m.eliminationSweepCursor.beginAdmission();
+    expect(f.m.eliminationSweepNextStage).toBe(5);
+    expect(f.m.requestUrgentEliminationSweepAfter).not.toHaveBeenCalled();
+    expect(f.engine.start).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { code: '57014', message: 'F06_MOVEMENT_WHOLE_ROSTER_REQUIRED' },
+    { code: '55000', message: 'F06_MOVEMENT_SEAT_CHANGED' },
+    { code: '55000', message: 'F06_MOVEMENT_ELIMINATION_UNPROVEN_OTHER' },
+  ])('other errors retain their refusal without inferring a bust: %j', async (error) => {
+    const f = admission(error, [{ user_id: id(6) }]);
+    await expect(f.run()).rejects.toThrow(error.message);
+    expect(f.read).not.toHaveBeenCalled();
+    f.m.eliminationSweepCursor.beginAdmission();
+    expect(f.m.eliminationSweepNextStage).toBe(5);
+    expect(f.m.requestUrgentEliminationSweepAfter).not.toHaveBeenCalled();
+  });
+});
+
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const SOURCE = id(3);
 const BREAK = id(2);
@@ -198,7 +284,10 @@ describe('a bust is not held behind a balance stage that spends every budget', (
     const { readFileSync } = await import('node:fs');
     const base = readFileSync(new URL('./TournamentManagerBase.ts', import.meta.url), 'utf8');
     const wake = base.slice(base.indexOf('protected wireEliminationWake'));
-    const zero = wake.slice(wake.indexOf('Number(player.stack) <= 0'), wake.indexOf('onPauseReady'));
+    const zero = wake.slice(
+      wake.indexOf('Number(player.stack) <= 0'),
+      wake.indexOf('onPauseReady')
+    );
     expect(zero.indexOf('this.bustAwaitsItsStage();')).toBeGreaterThan(0);
     expect(zero.indexOf('this.bustAwaitsItsStage();')).toBeLessThan(
       zero.indexOf('this.requestEliminationSweep();')
@@ -223,7 +312,10 @@ const registration = (user: number, chair: number, chips: number, status = 'play
 describe('the proposal counts the people the door counts', () => {
   it('agreement is no disagreement', () => {
     expect(
-      compareBreakSourceRoster([seat(4, 1), seat(5, 2)], [registration(4, 1, 100), registration(5, 2, 100.4)])
+      compareBreakSourceRoster(
+        [seat(4, 1), seat(5, 2)],
+        [registration(4, 1, 100), registration(5, 2, 100.4)]
+      )
     ).toBeNull();
   });
 
@@ -238,8 +330,18 @@ describe('the proposal counts the people the door counts', () => {
   });
 
   it.each([
-    ['registration_without_seat', [seat(4, 1)], [registration(4, 1, 100), registration(5, 2, 250)], 5],
-    ['registration_without_seat', [seat(4, 1)], [registration(4, 1, 100), registration(5, 2, 0, 'registered')], 5],
+    [
+      'registration_without_seat',
+      [seat(4, 1)],
+      [registration(4, 1, 100), registration(5, 2, 250)],
+      5,
+    ],
+    [
+      'registration_without_seat',
+      [seat(4, 1)],
+      [registration(4, 1, 100), registration(5, 2, 0, 'registered')],
+      5,
+    ],
     ['seat_without_registration', [seat(4, 1), seat(5, 2)], [registration(4, 1, 100)], 5],
     ['seat_registration_differ', [seat(4, 1)], [registration(4, 1, 99)], 4],
     ['seat_registration_differ', [seat(4, 1)], [registration(4, 2, 100)], 4],
@@ -302,11 +404,7 @@ function source(m: any, seats: any[], registrations: any[]) {
 describe('a break whose source still holds an unrecorded bust asks for the bust stage', () => {
   it('refuses before the door, names the busted player, and rewinds the sweep', async () => {
     const m = manager();
-    const tables = source(
-      m,
-      [seat(4, 1)],
-      [registration(4, 1, 100), registration(6, 2, 0)]
-    );
+    const tables = source(m, [seat(4, 1)], [registration(4, 1, 100), registration(6, 2, 0)]);
     m.eliminationSweepCursor.advanceTo(5);
     const rpc = vi.spyOn(supabase, 'rpc');
     vi.spyOn(console, 'warn').mockImplementation(() => {});

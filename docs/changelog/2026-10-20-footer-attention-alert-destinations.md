@@ -5,3 +5,5 @@ Custom-message setup reminders now open the scoped Custom Messages page and clos
 Shared actionable toasts support Enter and Space as well as pointer clicks; their dismiss control does not activate navigation. Existing timing, deduplication, approved artwork, and background tables remain intact.
 
 Regression protection covers destinations, cold BBJ navigation, draft refusal, keyboard activation, duplicate activation, and dismissal. The new regression fails against the previous source. Focused tests and both TypeScript checks pass locally; publication and live proof are tracked separately in the task checkpoint.
+
+The branch entry-module review records the dependency-free shared navigation guard, now used by app-root attention listeners. It synchronously protects unsaved drafts on alert clicks; no budget or bundle assertion is relaxed. Local Vite source bundling and the entry-module gate pass.

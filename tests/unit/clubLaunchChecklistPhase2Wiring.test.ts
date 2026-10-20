@@ -131,8 +131,8 @@ describe('opening checklist wiring', () => {
     expect(PAGE.indexOf('const launchSkips = useClubLaunchSkips(')).toBeLessThan(
       PAGE.indexOf('const openingChecklistEligible = hasNewClubOpeningChecklist(')
     );
-    expect(PAGE).toContain(
-      '{showOpeningWizard && isOwner && club && openingChecklistEligible && ('
+    expect(PAGE).toMatch(
+      /\{showOpeningWizard\s*&&\s*isOwner\s*&&\s*club\s*&&\s*openingChecklistEligible\s*&&\s*\(/
     );
   });
 

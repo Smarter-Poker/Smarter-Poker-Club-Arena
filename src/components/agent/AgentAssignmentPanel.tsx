@@ -227,7 +227,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
           >
             {assignable.map((m) => (
               <option key={m.user_id} value={m.user_id}>
-                {m.label} / {titleCase(m.role.replaceAll('_', ' '))} / {label(m.agent_id)}
+                {m.label} / {titleCase(m.role.replace(/_/g, ' '))} / {label(m.agent_id)}
               </option>
             ))}
           </select>
@@ -253,7 +253,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
               .filter((m) => !selected.includes(m.user_id) && m.user_id !== source)
               .map((m) => (
                 <option key={m.user_id} value={m.user_id}>
-                  {m.label} / {titleCase(m.role.replaceAll('_', ' '))}
+                  {m.label} / {titleCase(m.role.replace(/_/g, ' '))}
                 </option>
               ))}
           </select>

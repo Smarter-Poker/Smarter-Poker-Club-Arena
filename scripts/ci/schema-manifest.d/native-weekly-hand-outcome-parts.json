@@ -1,6 +1,6 @@
 {
   "_owner": "fix/native-weekly-hand-outcome-parts-20261020",
-  "_comment": "PROMISED, not yet observed: migration 20261020182843_native_weekly_hand_outcomes_advance_in_original_bounded_parts.sql declares these three private helpers. Production installation and exact catalog readback remain separate; this fragment does not certify either.",
+  "_comment": "PROMISED, not yet observed: migration 20261020182843_native_weekly_hand_outcomes_use_original_bounded_parts.sql declares these three private helpers. Production installation and exact catalog readback remain separate; this fragment does not certify either.",
   "functions": [
     "smarter_private.weekly_hand_parts_witness",
     "smarter_private.weekly_hand_parts_reduce",

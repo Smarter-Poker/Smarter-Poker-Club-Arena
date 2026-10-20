@@ -102,7 +102,7 @@ INSERT INTO union_pnl_cash_outcome_link_resolutions SELECT table_id,hand_number,
   for x in connected['functions']:
    if 'posthand_escrow_'not in x['sig']:q('SET check_function_bodies=off;'+x['definition']+';')
   q('SET check_function_bodies=off;'+pre['linked']+';')
-  migration="SET check_function_bodies=off;"+(R/'supabase/migrations/20261020182843_native_weekly_hand_outcomes_advance_in_original_bounded_parts.sql').read_text()
+  migration="SET check_function_bodies=off;"+(R/'supabase/migrations/20261020182843_native_weekly_hand_outcomes_use_original_bounded_parts.sql').read_text()
   assert q('SELECT smarter_private.original_inventory_proof_sources_match();')=='t'
   q('GRANT EXECUTE ON FUNCTION fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)TO anon;');q(migration,'weekly_hand_parts_original_authority_changed');q('REVOKE EXECUTE ON FUNCTION fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)FROM anon;');cases.append('installer_original_ACL_fault_refused')
   q(migration.replace('COMMIT;','ROLLBACK;'));assert h('fn_union_pnl_evidence_report(uuid,timestamptz,timestamptz)')=='7b465b7055e80234bd8c40ed5899f4dd';cases.append('installer_rollback_preserves_original_owners')

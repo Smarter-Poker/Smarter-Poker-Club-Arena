@@ -21,7 +21,9 @@ settlement chain reproduces the profitable but untouched clock before the
 candidate. Afterwards it verifies real front/feeder settlement, unchanged
 baseline and cash identity, profit/loss behavior, duplicate settlement,
 rollback on an invalid cash-session binding, private trigger ACL, and a
-voluntary pending departure serving its retained remainder. The existing
+voluntary pending departure serving its retained remainder. A cancelled leave
+with a retained historical request cannot override a genuine later sit-out;
+that boundary fails before its pending-flag guard and passes afterward. The existing
 native chain runs this regression in required accounting qualification.
 
 Compilation, exact-candidate hooks, hosted checks, protected integration,

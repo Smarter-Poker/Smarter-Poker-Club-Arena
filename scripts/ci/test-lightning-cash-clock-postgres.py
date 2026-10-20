@@ -144,6 +144,22 @@ DO $$DECLARE c record;r jsonb;sid uuid;BEGIN
  THEN RAISE EXCEPTION 'voluntary held leave stopped or reset its original clock: %',r; END IF;
 END $$;
 \echo 'PASS: voluntary pending departure serves its retained remainder; no baseline or timer reset'
+DO $$DECLARE c record;f jsonb;h uuid;r jsonb;spec jsonb;sid uuid;BEGIN
+ SELECT * INTO STRICT c FROM harness.cash_clock_case;
+ SELECT cash_player_session_id INTO sid FROM lightning_pool_session WHERE cluster_id=c.game AND player_id=c.ids[1] AND exited_at IS NULL;
+ -- A retained original request is not authority after the pending leave was
+ -- cancelled. A subsequent genuine sit-out must pause the same clock.
+ UPDATE table_seats ts SET is_sitting_out=false,leave_pending=false
+ FROM lightning_pool_session ps WHERE ps.anchor_seat_id=ts.id AND ps.cash_player_session_id=sid;
+ f:=harness.form(c.game,c.ids);h:=(f->>'hand_id')::uuid;PERFORM harness.deal((f->>'instance_id')::uuid);
+ UPDATE table_seats ts SET is_sitting_out=true
+ FROM lightning_pool_session ps WHERE ps.anchor_seat_id=ts.id AND ps.cash_player_session_id=sid;
+ spec:=jsonb_build_object(c.ids[1]::text,jsonb_build_object('d',1,'c',2),c.ids[2]::text,jsonb_build_object('d',-1,'c',2));
+ r:=harness.settle(h,gen_random_uuid(),harness.results(h,spec),0,0,'{}');
+ IF r->>'ok'<>'true' OR EXISTS(SELECT FROM cash_player_session WHERE id=sid AND stay_running)
+ THEN RAISE EXCEPTION 'cancelled leave overrode a genuine sit-out: %',r; END IF;
+END $$;
+\echo 'PASS: cancelled voluntary request cannot keep a genuine sit-out clock running'
 SELECT 'cash_clock_trigger_definition_md5='||md5(pg_get_functiondef('public.fn_lightning_cash_clock_at_settlement()'::regprocedure));
 """ + live_proofs + f"""
 DO $reapply$ BEGIN

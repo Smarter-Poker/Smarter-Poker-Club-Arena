@@ -55,10 +55,10 @@ BEGIN
                                AND NOT coalesce(ts.leave_pending, false))
           -- The ordinary engine serves a voluntary leave held by its clock:
           -- the engine's compulsory sit-out must not stop that countdown.
-          OR EXISTS (SELECT 1 FROM public.seat_departure_requests d
+          OR (coalesce(ts.leave_pending, false) AND EXISTS (SELECT 1 FROM public.seat_departure_requests d
                      WHERE d.occupancy_id = ts.occupancy_id
                        AND d.user_id = ts.user_id AND d.table_id = ts.table_id
-                       AND d.seat_number = ts.seat_number AND d.leave_mode = 'voluntary')
+                       AND d.seat_number = ts.seat_number AND d.leave_mode = 'voluntary'))
         )) ORDER BY hp.player_id) AS entries
     FROM public.lightning_hand_player hp
     JOIN public.lightning_pool_slot sl ON sl.id = hp.pool_slot_id AND sl.player_id = hp.player_id
@@ -94,7 +94,7 @@ FOR EACH ROW WHEN (OLD.settled_at IS NULL AND NEW.settled_at IS NOT NULL)
 EXECUTE FUNCTION public.fn_lightning_cash_clock_at_settlement();
 
 -- @live-proof: EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='public.lightning_hand'::regclass AND tgname='lightning_cash_clock_at_settlement' AND tgfoid='public.fn_lightning_cash_clock_at_settlement()'::regprocedure AND tgenabled='O' AND NOT tgdeferrable)
--- @live-proof: md5(pg_get_functiondef('public.fn_lightning_cash_clock_at_settlement()'::regprocedure))='16e0fbb39882da03bb41ca8325ed6314'
+-- @live-proof: md5(pg_get_functiondef('public.fn_lightning_cash_clock_at_settlement()'::regprocedure))='9e84b5c6f32b44ed7d8ccc546381f738'
 -- @live-proof: NOT has_function_privilege('anon','public.fn_lightning_cash_clock_at_settlement()','EXECUTE') AND NOT has_function_privilege('authenticated','public.fn_lightning_cash_clock_at_settlement()','EXECUTE') AND NOT has_function_privilege('service_role','public.fn_lightning_cash_clock_at_settlement()','EXECUTE')
 
 COMMIT;

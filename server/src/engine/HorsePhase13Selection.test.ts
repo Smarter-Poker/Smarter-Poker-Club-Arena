@@ -110,7 +110,9 @@ describe('P13.3 worker-owned Phase 13 mode', () => {
     const authority = selectedHorsePhase13Authority('plo4', admitted);
     expect(authority).toMatchObject({ approvalGeneration: 1, admittedBoardCounts: [1, 2] });
     for (const boardCount of [1, 2, 3]) {
-      const input = {
+      const input: Parameters<typeof horsePhase13AdmittedMode>[0] = {
+        callerMode: undefined,
+        asset: undefined,
         gameMode: 'cash',
         variant: 'plo4',
         packVariant: 'plo4',

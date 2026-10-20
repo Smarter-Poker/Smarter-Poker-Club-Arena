@@ -54,6 +54,7 @@ import {
   readDiamondSpawnAnswer,
 } from './diamondScheduledSpawn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
+import { withMidwayStructure } from '../tournament/midwayStructurePolicy.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import {
   TournamentRecurringService,
@@ -744,7 +745,7 @@ export function fixedBoardRow(
     unionId,
     label: schedule.name,
   });
-  if (freeBuy) return { ...freeBuy, schedule_id: schedule.id };
+  if (freeBuy) return withMidwayStructure({ ...freeBuy, schedule_id: schedule.id });
   const template = fixedBoardTemplate(name);
   if (!template) return null;
   const row = recurringMttRow(template.config, startTime, {
@@ -752,7 +753,7 @@ export function fixedBoardRow(
     unionId,
     xmtt: template.kind === 'union_mtt',
   });
-  return { ...row, schedule_id: schedule.id };
+  return withMidwayStructure({ ...row, schedule_id: schedule.id });
 }
 
 export class ScheduledTournamentService {
@@ -2312,7 +2313,7 @@ export class ScheduledTournamentService {
       row.table_size = 3;
     }
 
-    return row;
+    return withMidwayStructure(row);
   }
 
   /**
@@ -2650,7 +2651,7 @@ export class ScheduledTournamentService {
 
     const { data: created, error: insertErr } = await supabase
       .from('tournaments')
-      .insert(row)
+      .insert(withMidwayStructure(row))
       .select('id')
       .maybeSingle();
     if (insertErr || !created) {

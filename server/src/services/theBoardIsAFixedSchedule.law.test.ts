@@ -34,6 +34,7 @@ import {
 } from './TournamentRecurringService.js';
 import { FREE_BUY_SLOTS, freeBuyBoardName, freeBuySlotTime } from './FreeBuy.js';
 import { DIAMOND_FREEROLL_REBUY_DIAMONDS, diamondSpawnConfig } from './diamondScheduledSpawn.js';
+import { withMidwayStructure } from '../tournament/midwayStructurePolicy.js';
 import {
   FIXED_BOARD,
   FIXED_BOARD_CLUBS,
@@ -132,11 +133,12 @@ describe('every scheduled name builds the event the timer used to make', () => {
       unionId: MIDWAY,
       label: name,
     })!;
-    expect(row).toEqual({ ...board, schedule_id: sched.id });
+    expect(row).toEqual(withMidwayStructure({ ...board, schedule_id: sched.id }));
     expect(row.free_buy).toBe(true);
     expect(row.buy_in_amount).toBe(0);
     // Dan 2026-10-16: "DOUBLE ALL THE OTHER CURRENT GUARANTEES".
-    expect(row.guaranteed_prize).toBe(1000);
+    // Owner October 20: evening 8:30 PM Free Buy is 500.
+    expect(row.guaranteed_prize).toBe(500);
     // Dan 2026-10-16: "ALL REBUY ADD ON'S FOR MIDWAY UNION ARE 1 CHIP".
     expect(row.rebuy_cost).toBe(1);
     expect(row.addon_cost).toBe(1);
@@ -150,14 +152,16 @@ describe('every scheduled name builds the event the timer used to make', () => {
       START
     )!;
     const lobbyTemplate = fixedBoardTemplate('Night Owl Special (NLH)')!;
-    expect(lobby).toEqual({
-      ...recurringMttRow(lobbyTemplate.config, START, {
-        clubId: MIDWAY,
-        unionId: MIDWAY,
-        xmtt: false,
-      }),
-      schedule_id: '11111111-1111-1111-1111-111111111111',
-    });
+    expect(lobby).toEqual(
+      withMidwayStructure({
+        ...recurringMttRow(lobbyTemplate.config, START, {
+          clubId: MIDWAY,
+          unionId: MIDWAY,
+          xmtt: false,
+        }),
+        schedule_id: '11111111-1111-1111-1111-111111111111',
+      })
+    );
     expect(lobby.is_xmtt).toBeUndefined();
     expect(lobby.late_reg_levels).toBe(8);
 

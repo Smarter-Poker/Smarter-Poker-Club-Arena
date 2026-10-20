@@ -55,6 +55,9 @@ CHECKOUT_INPUTS.update({
  'storm_bridge':'scripts/qualification/fixtures/tournament-finish-storm/current-bridge.sql',
  'storm_preimages':'scripts/qualification/fixtures/tournament-finish-storm/preimages.sql',
  'storm_qualifier':'scripts/qualification/tournament-finish-storm-members.sql',
+ 'storm_historical':'scripts/qualification/tournament-finish-storm/historical.mjs',
+ 'storm_historical_ids':'scripts/qualification/fixtures/tournament-finish-storm/historical-ids.json',
+ 'storm_migration':'supabase/migrations/20261020145408_resolved_financial_alert_storms_close_with_their_exact_membe.sql',
  'storm_native':'scripts/qualification/tournament-finish-storm/native.mjs',
 })
 

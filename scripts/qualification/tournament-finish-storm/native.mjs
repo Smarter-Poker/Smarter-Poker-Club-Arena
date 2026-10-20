@@ -64,6 +64,7 @@ try{
  assert.equal(sql('SELECT count(*) FROM ca_incident_file_failures'),'0');
  console.log('PASS actual PG17 fail-before/pass-after, member boundaries and observed concurrent last-member lock/commit');
  const hashes=sql("SELECT proname,md5(pg_get_functiondef(oid)) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN('fn_ca_raise_drift_incident','fn_ca_alert_resolution_reaches_the_incident') ORDER BY proname");console.log(hashes);
+ execFileSync(process.execPath,[path.join(root,'scripts/qualification/tournament-finish-storm/historical.mjs'),parent],{stdio:'inherit',env:process.env});
 }finally{
  for(const p of clients)if(p.exitCode===null)p.kill('SIGKILL');
  if(running)run('pg_ctl',['-D',path.join(dir,'db'),'-m','immediate','-w','stop']);

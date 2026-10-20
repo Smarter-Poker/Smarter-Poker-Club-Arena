@@ -1,7 +1,7 @@
 -- Owner 2026-10-20: daily 04:00 Chicago global maintenance, hourly MTT breaks.
 -- Observation follows actual daily/emergency breaks, never invents 23 missing
 -- global freezes a day. Backward compatible with a serving hourly predecessor.
--- @live-proof: (SELECT position('fn_ca_maintenance_scorecard_end' in pg_get_functiondef('public.fn_ca_record_break_scorecard(timestamptz)'::regprocedure)) > 0)
+-- @live-proof: (SELECT position('America/Chicago' in pg_get_functiondef('public.fn_ca_record_break_scorecard(timestamptz)'::regprocedure)) > 0)
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '30s';
@@ -12,26 +12,6 @@ BEGIN
   END IF;
 END;
 $preimage$;
-CREATE OR REPLACE FUNCTION public.fn_ca_maintenance_scorecard_end(p_at timestamptz)
-RETURNS timestamptz LANGUAGE sql STABLE
-SET search_path = pg_catalog, pg_temp
-AS $daily$
-  SELECT COALESCE(
-    (SELECT b.break_started_at + interval '5 minutes'
-       FROM public.engine_maintenance_break_log b
-      WHERE b.break_ended_at IS NOT NULL
-        AND b.break_started_at + interval '5 minutes' <= p_at
-        AND b.break_started_at + interval '5 minutes' > p_at - interval '1 hour'
-      ORDER BY b.break_started_at DESC LIMIT 1),
-    (SELECT expected_end FROM (
-      SELECT (date_trunc('day', p_at AT TIME ZONE 'America/Chicago')
-               + interval '4 hours 5 minutes') AT TIME ZONE 'America/Chicago' AS expected_end
-    ) d WHERE expected_end <= p_at AND expected_end > p_at - interval '1 hour')
-  );
-$daily$;
-REVOKE ALL ON FUNCTION public.fn_ca_maintenance_scorecard_end(timestamptz) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_ca_maintenance_scorecard_end(timestamptz) TO service_role;
-
 CREATE OR REPLACE FUNCTION public.fn_ca_record_break_scorecard(
   p_end timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS ca_break_scorecards
@@ -40,8 +20,9 @@ CREATE OR REPLACE FUNCTION public.fn_ca_record_break_scorecard(
  SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
-  v_end   TIMESTAMPTZ := COALESCE(p_end, public.fn_ca_maintenance_scorecard_end(now()));
-  v_start TIMESTAMPTZ := v_end - interval '5 minutes';
+  v_end   TIMESTAMPTZ := p_end;
+  v_start TIMESTAMPTZ;
+  v_observed_at TIMESTAMPTZ := now();
   -- The window actually measured. Equal to [v_start, v_end) only when no
   -- break log row can be found.
   v_meas_start TIMESTAMPTZ;
@@ -68,7 +49,24 @@ DECLARE
   c_edge_tolerance_s CONSTANT NUMERIC := 30;
 BEGIN
   -- No global break was due: continuous cash play is healthy, not a failed thaw.
+  IF v_end IS NULL THEN
+  -- DAILY_OBSERVATION_SELECTION_BEGIN
+  SELECT COALESCE(
+    (SELECT b.break_started_at + interval '5 minutes'
+       FROM public.engine_maintenance_break_log b
+      WHERE b.break_ended_at IS NOT NULL
+        AND b.break_started_at + interval '5 minutes' <= v_observed_at
+        AND b.break_started_at + interval '5 minutes' > v_observed_at - interval '1 hour'
+      ORDER BY b.break_started_at DESC LIMIT 1),
+    (SELECT expected_end FROM (
+      SELECT (date_trunc('day', v_observed_at AT TIME ZONE 'America/Chicago')
+               + interval '4 hours 5 minutes') AT TIME ZONE 'America/Chicago' AS expected_end
+    ) d WHERE expected_end <= v_observed_at AND expected_end > v_observed_at - interval '1 hour')
+  ) INTO v_end;
+  -- DAILY_OBSERVATION_SELECTION_END
+  END IF;
   IF v_end IS NULL THEN RETURN NULL; END IF;
+  v_start := v_end - interval '5 minutes';
   -- THE BREAK THAT ACTUALLY RAN. Read first, because it defines the window
   -- everything else is measured over.
   SELECT break_started_at, break_ended_at, unparked_at_countdown, peak_unparked,
@@ -244,4 +242,7 @@ BEGIN
   END IF;
   RETURN v_row;
 END $function$;
+-- Preserve the installed service-only boundary explicitly in this definition.
+REVOKE ALL ON FUNCTION public.fn_ca_record_break_scorecard(timestamptz) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_record_break_scorecard(timestamptz) TO service_role;
 COMMIT;

@@ -52,20 +52,24 @@ CREATE FUNCTION fn_ca_break_scorecard_push(ca_break_scorecards) RETURNS void LAN
         assert sql("SELECT (fn_ca_record_break_scorecard()).verdict").stdout.strip() == 'fail'
         sql('TRUNCATE ca_break_scorecards;')
         sql(MIGRATION.read_text())
+        source = MIGRATION.read_text()
+        selection = source.split('-- DAILY_OBSERVATION_SELECTION_BEGIN')[1].split('-- DAILY_OBSERVATION_SELECTION_END')[0]
+        selection = selection.replace('v_observed_at', 'p_at').replace(' INTO v_end', '')
+        fixture_sql = 'CREATE FUNCTION pg_temp.expected_end(p_at timestamptz) RETURNS timestamptz LANGUAGE sql AS $select$' + selection + '$select$;'
         replay = sql(MIGRATION.read_text(), ok=False)
         assert replay.returncode != 0 and 'preimage changed' in replay.stderr
-        sql('''DO $test$ BEGIN
-  IF fn_ca_maintenance_scorecard_end('2026-10-20 17:12Z') IS NOT NULL THEN RAISE EXCEPTION 'ordinary hour invented a break'; END IF;
-  IF fn_ca_maintenance_scorecard_end('2026-10-20 09:12Z') <> '2026-10-20 09:05Z'::timestamptz THEN RAISE EXCEPTION 'CDT boundary'; END IF;
-  IF fn_ca_maintenance_scorecard_end('2026-11-01 10:12Z') <> '2026-11-01 10:05Z'::timestamptz THEN RAISE EXCEPTION 'CST boundary'; END IF;
-  IF fn_ca_maintenance_scorecard_end('2026-03-08 09:12Z') <> '2026-03-08 09:05Z'::timestamptz THEN RAISE EXCEPTION 'spring boundary'; END IF;
-  IF fn_ca_maintenance_scorecard_end('2026-10-20 09:04:59Z') IS NOT NULL THEN RAISE EXCEPTION 'premature observation'; END IF;
-  IF fn_ca_maintenance_scorecard_end('2026-10-20 10:05Z') IS NOT NULL THEN RAISE EXCEPTION 'expired expectation'; END IF;
+        sql(fixture_sql + '''DO $test$ BEGIN
+  IF pg_temp.expected_end('2026-10-20 17:12Z') IS NOT NULL THEN RAISE EXCEPTION 'ordinary hour invented a break'; END IF;
+  IF pg_temp.expected_end('2026-10-20 09:12Z') <> '2026-10-20 09:05Z'::timestamptz THEN RAISE EXCEPTION 'CDT boundary'; END IF;
+  IF pg_temp.expected_end('2026-11-01 10:12Z') <> '2026-11-01 10:05Z'::timestamptz THEN RAISE EXCEPTION 'CST boundary'; END IF;
+  IF pg_temp.expected_end('2026-03-08 09:12Z') <> '2026-03-08 09:05Z'::timestamptz THEN RAISE EXCEPTION 'spring boundary'; END IF;
+  IF pg_temp.expected_end('2026-10-20 09:04:59Z') IS NOT NULL THEN RAISE EXCEPTION 'premature observation'; END IF;
+  IF pg_temp.expected_end('2026-10-20 10:05Z') IS NOT NULL THEN RAISE EXCEPTION 'expired expectation'; END IF;
 END $test$;
 INSERT INTO engine_maintenance_break_log VALUES ('2026-10-20 17:25:30Z','2026-10-20 17:30:31Z',0,0,'2026-10-20 17:25:35Z',now());
 DO $test$ BEGIN
-  IF fn_ca_maintenance_scorecard_end('2026-10-20 18:12Z') <> '2026-10-20 17:30:30Z'::timestamptz THEN RAISE EXCEPTION 'emergency omitted'; END IF;
-  IF fn_ca_maintenance_scorecard_end('2026-10-20 18:31Z') IS NOT NULL THEN RAISE EXCEPTION 'old emergency replayed'; END IF;
+  IF pg_temp.expected_end('2026-10-20 18:12Z') <> '2026-10-20 17:30:30Z'::timestamptz THEN RAISE EXCEPTION 'emergency omitted'; END IF;
+  IF pg_temp.expected_end('2026-10-20 18:31Z') IS NOT NULL THEN RAISE EXCEPTION 'old emergency replayed'; END IF;
 END $test$;
 TRUNCATE engine_maintenance_break_log;
 ''')

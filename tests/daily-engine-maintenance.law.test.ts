@@ -73,8 +73,11 @@ describe('daily routine admission uses the existing protected receiver only', ()
     );
     expect(sql).toContain('IF v_end IS NULL THEN RETURN NULL; END IF;');
     expect(sql).toContain("IF v_verdict = 'fail' THEN");
+    expect(
+      readFileSync(join(root, 'scripts/ci/test-on-time-maintenance-thaw.py'), 'utf8')
+    ).toContain('scripts/ci/test-daily-maintenance-observation.py');
     expect(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8')).toContain(
-      'python3 -B scripts/ci/test-daily-maintenance-observation.py'
+      'python3 -B scripts/ci/test-on-time-maintenance-thaw.py'
     );
   });
 });

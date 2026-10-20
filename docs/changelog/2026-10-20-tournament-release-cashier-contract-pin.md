@@ -17,3 +17,5 @@ still searching for its old two-kind predicate after qualified migration
 predecessor superseded through the checker's maintained metadata route. Both
 production migration receipts and the successor's complete exact-hash/source
 proof were read back; no migration is replayed or installed by this change.
+
+The historical sealed-day and bank-entity native qualifiers retain their exact original postimages and every behavioral/refusal check. The journal-origin successor qualifier now binds its actual PostgreSQL postimage to the sole current production canary hash and exact migration history, preventing historical fixture checks from requiring retired production definitions.

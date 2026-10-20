@@ -199,21 +199,12 @@ FROM generate_series(1,3) i;
     run('before-reference', before.replace('fn_cashier_conservation_report', 'conservation_before'))
     migration = NEW.read_text()
     run('guarded-install', migration)
-    # The release contract (scripts/verification-harness/cashier-release-contract.sql)
-    # names this migration's definition: as its replacement while it awaited
-    # installation, and as the installed hash once a later qualified
-    # replacement (20261019093951) took that slot. Certify it is the definition
-    # this migration really installs.
+    # This historical migration has its own exact postimage. The current
+    # production canary belongs to the later journal-origin qualifier.
     installed = run('installed-definition',
-        "SELECT md5(pg_get_functiondef('fn_cashier_conservation_report(uuid)'::regprocedure));")
+        "SELECT md5(pg_get_functiondef('fn_cashier_conservation_report(uuid)'::regprocedure));",
+        '884cbcbfae7f556ef0d5972e7e9b24c9')
     results['installed_definition_md5'] = installed
-    contract = (ROOT / 'scripts/verification-harness/cashier-release-contract.sql').read_text()
-    entry = contract[contract.index("'signature', 'public.fn_cashier_conservation_report(uuid)'"):]
-    entry = entry[:entry.index('    )')]
-    assert (f"'hash', '{installed}'" in entry
-            or (f"'hash', 'f3728357280a30789ff8d7bb30140eae'" in entry
-                and f"'replacement_hash', '{installed}'" in entry)), (installed, entry)
-    results['cases'].append({'name': 'release-contract-names-the-installed-definition', 'passed': True})
     run('replay-refused', migration, refused='55000')
     equivalent('nothing-sealed-reads-the-whole-journal')
 

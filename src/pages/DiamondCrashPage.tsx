@@ -312,7 +312,8 @@ function DiamondCrashGame() {
    */
   const onTick = useCallback(
     (cents: number) => {
-      if (cashingRef.current || roundRef.current?.status !== 'open') return;
+      if (cashingRef.current || roundRef.current?.status !== 'open' || roundRef.current.frozen)
+        return;
       liveCentsRef.current = cents;
       if (readoutValueRef.current) readoutValueRef.current.textContent = multiplierLabel(cents);
       if (readoutWorthRef.current && roundRef.current)
@@ -489,6 +490,12 @@ function DiamondCrashGame() {
             finish(next);
             return;
           }
+          // The server excludes maintenance time. Re-anchor on every answer,
+          // and hold the scene at that elapsed time while the break is active.
+          roundRef.current = next;
+          setRound(next);
+          setStartedAtLocal(performance.now() - next.elapsed_ms);
+          liveCentsRef.current = next.multiplier_now_cents ?? liveCentsRef.current;
           // Nothing is decided while the platform is paused, so the page says
           // so once and then asks far less often until the break is over.
           if (next.frozen && !onBreak)
@@ -1017,6 +1024,7 @@ function DiamondCrashGame() {
     if (
       !current ||
       current.status !== 'open' ||
+      current.frozen ||
       phase !== 'open' ||
       busyRef.current ||
       liveCents < (current.cashout_floor_cents ?? DEFAULT_CASHOUT_OPENS_CENTS)
@@ -1330,16 +1338,16 @@ function DiamondCrashGame() {
             title={title}
             summary="Cash Out Before The Crash To Collect Your Chip Prize. An Auto Cash Out Target Is Saved With The Round And Remains Active If You Disconnect."
             steps={[
-          {
-            title: 'Your Numbers',
-            body: 'Your Entry, The Guaranteed Minimum And The Prize So Far, Updated As You Play.',
-            target: '[data-game-console] dl',
-          },
-          {
-            title: 'Play',
-            body: 'The Plates At The Foot Of The Game Start A Round And Book Your Win.',
-            target: '[data-game-actions]',
-          },
+              {
+                title: 'Your Numbers',
+                body: 'Your Entry, The Guaranteed Minimum And The Prize So Far, Updated As You Play.',
+                target: '[data-game-console] dl',
+              },
+              {
+                title: 'Play',
+                body: 'The Plates At The Foot Of The Game Start A Round And Book Your Win.',
+                target: '[data-game-actions]',
+              },
             ]}
           />
         }
@@ -1409,7 +1417,7 @@ function DiamondCrashGame() {
                   // last plate painted a colour of its own.
                   ink: 'gold',
                   onClick: handleCashOut,
-                  disabled: cashing || !cashoutOpen,
+                  disabled: cashing || !cashoutOpen || Boolean(round?.frozen),
                   // Pulses while the climb is live and cashable: the plate
                   // that stops the round and books the win (Dan 2026-10-12).
                   // GameConsole lights it only while it is pressable.
@@ -1443,6 +1451,7 @@ function DiamondCrashGame() {
               growthK={round?.growth_k ?? growthK}
               capCents={round?.cap_cents ?? capCents}
               startedAtLocalMs={startedAtLocal}
+              pausedElapsedMs={open && round?.frozen ? round.elapsed_ms : undefined}
               finalCents={finalCents}
               crashCents={settledRound?.outcome?.crash_cents ?? null}
               cashoutCents={settledRound?.outcome?.cashout_cents ?? null}

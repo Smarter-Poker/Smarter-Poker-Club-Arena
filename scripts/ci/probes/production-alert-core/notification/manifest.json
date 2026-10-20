@@ -215,6 +215,31 @@
       "path": "scripts/qualification/direct-operational-source-legacy-envelope.sql",
       "bytes": 7533,
       "sha256": "6f3de33e5f574d48f6d992885897a62ba446736cf55d25a86b852f4fc8d4f553"
+    },
+    "storm_component": {
+      "path": "supabase/components/tournament-finish-storm-members.sql",
+      "bytes": 16554,
+      "sha256": "94d51d39a1207b9d599d4090fe9b8bb0e3a2855bbf2770d5c71456551a9418dd"
+    },
+    "storm_preimages": {
+      "path": "scripts/qualification/fixtures/tournament-finish-storm/preimages.sql",
+      "bytes": 13241,
+      "sha256": "42bdcd4859e8323e56f392f10df24871cdbed9e60e5d75e8d06935d761fe711c"
+    },
+    "storm_qualifier": {
+      "path": "scripts/qualification/tournament-finish-storm-members.sql",
+      "bytes": 8515,
+      "sha256": "c46ba174d8557b3279e856e4c564809ae1f9152bf1b657b7ddd4e70d81a025fa"
+    },
+    "storm_native": {
+      "path": "scripts/qualification/tournament-finish-storm/native.mjs",
+      "bytes": 7659,
+      "sha256": "3085c864b1651742aebe91cd0c2436c32f08407e8390d073bfbe6cf1bed0904d"
+    },
+    "storm_bridge": {
+      "path": "scripts/qualification/fixtures/tournament-finish-storm/current-bridge.sql",
+      "bytes": 10372,
+      "sha256": "cde98cc3b71552ee3f98fa1abb09c63be8acf0f7d9360afbb7cc764cecb6f441"
     }
   },
   "sequenceContract": {

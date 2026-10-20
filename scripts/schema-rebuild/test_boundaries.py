@@ -13,6 +13,13 @@ class Boundaries(unittest.TestCase):
   expected={'x':[{'acl':[{'grantor':'p','grantee':'a','privilege':'SELECT','grantable':False}]}]}
   self.assertEqual(v.compare(expected,expected),[])
   self.assertTrue(v.compare(expected,{'x':[{'acl':[]}]}))
+ def test_bootstrap_failure_has_precise_nonsecret_context(self):
+  result=v.failure_diagnostic('ERROR:  42501: permission denied to grant privileges as role "supabase_admin"\nDETAIL: discarded private detail','role-membership',{'role':'pg_monitor','member':'postgres','grantor':'supabase_admin'},'psql')
+  self.assertEqual(result['sqlstate'],'42501');self.assertEqual(result['phase'],'role-membership')
+  self.assertEqual(result['context']['grantor'],'supabase_admin');self.assertIn('"supabase_admin"',result['message']);self.assertNotIn('private detail',json.dumps(result))
+ def test_baseline_error_keeps_line_without_exposing_source_literal(self):
+  result=v.failure_diagnostic('psql:/scratch/restore.sql:123: ERROR:  42601: syntax error at or near "sensitive_literal"\nCONTEXT: source body','baseline-restore',{'sourceFile':'baseline.sql'},'psql')
+  self.assertEqual(result['line'],123);self.assertEqual(result['sqlstate'],'42601');self.assertNotIn('sensitive_literal',json.dumps(result));self.assertNotIn('source body',json.dumps(result))
  def test_entrypoint_refuses_remote_settings_before_any_cluster(self):
   parent=Path(os.environ.get('SCHEMA_TEST_SCRATCH',os.environ.get('RUNNER_TEMP',v.ROOT.parent)))
   with tempfile.TemporaryDirectory(prefix='guard-',dir=parent) as temporary:

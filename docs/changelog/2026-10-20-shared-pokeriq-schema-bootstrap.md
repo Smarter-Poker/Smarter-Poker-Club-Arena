@@ -24,3 +24,12 @@ that actual workflow execution; focused fixtures are not a substitute.
 
 This is source and test tooling only. No production migration, application row,
 engine replacement or historical financial replay is part of this change.
+
+Actual image qualification exposed PostgreSQL17 grantor authority: a generic
+initdb superuser cannot stand in for the source bootstrap principal at role
+OID10. The source identifies that principal as `supabase_admin`. Bootstrap now
+retains this identity, uses a separate local supervisor, and preserves every
+captured membership grantor and option. The native regression reproduces the
+old 42501 and checks all 32 memberships plus 37 role capability/configuration
+contracts after repair. Failure receipts retain nonsecret phase/object context
+and SQLSTATE while omitting routine bodies and raw detail.

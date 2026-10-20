@@ -24,5 +24,6 @@ WRAPPER
 done
 "$tools/postgres" --version
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-catalog.py"
+PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-role-bootstrap.py"
 python3 "$root/scripts/schema-rebuild/verify.py" --scratch "$scratch" \
   --result "$results/result.json" --pg-bin "$tools"

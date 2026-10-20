@@ -191,3 +191,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original cash freshness preserves earning scope plus late effective admissions.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-effective-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Statement provenance remains on invoices, excluded by original delivery and private readers.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-statement-provenance-delivery-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))

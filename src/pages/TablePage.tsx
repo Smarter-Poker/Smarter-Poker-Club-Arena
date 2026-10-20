@@ -338,6 +338,8 @@ import {
   POT_ANCHOR_PCT,
   seatPodPx,
   fitSeatToViewport,
+  portraitTableTransform,
+  portraitBoardWidthOfFeltPct,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
@@ -25421,7 +25423,16 @@ function LiveTablePage({
         <div
           className="table-scaler"
           ref={tableScalerRef}
-          style={{ '--table-w': `${scalerSize.w}px` } as React.CSSProperties}
+          style={
+            {
+              '--table-w': `${scalerSize.w}px`,
+              '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
+              '--sp-table-taper':
+                seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
+                  ? portraitTableTransform(scalerSize)
+                  : 'none',
+            } as React.CSSProperties
+          }
         >
           {/* Table Felt */}
           <div className="table-felt">
@@ -26541,21 +26552,26 @@ function LiveTablePage({
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
-            const betOffset = betChipOffsetPx(pos, scalerSize, seatPod);
+            const markerSize = {
+              ...scalerSize,
+              railBets: seatViewportWidth <= 480 && scalerSize.h > scalerSize.w,
+            };
+            const betOffset = betChipOffsetPx(pos, markerSize, seatPod);
             const betOffsetX = betOffset.x;
             const betOffsetY = betOffset.y;
             // Bible V8 §1.16 — on collect, bet chips fly from their resting
             // spot the rest of the way toward the pot. Expressed as the
             // remainder to a common endpoint, so chips from every seat
             // converge on the same place however far out they started.
-            const collectOffset = chipCollectOffsetPx(pos, scalerSize, seatPod);
+            const collectOffset = chipCollectOffsetPx(pos, markerSize, seatPod);
             const collectDx = collectOffset.x;
             /* Dan 2026-08-28: the HERO's bet chips render 30px above their
                geometry rest point (SeatSlot.css `.seat--hero .seat__bet-chips`
                — the badge/chips swap), so their remaining flight to the pot is
                30px shorter. Without this term the collect animation overshoots
                the pot pill by exactly that lift. */
-            const collectDy = collectOffset.y + (pos.y >= 100 && pos.x === 50 ? 30 : 0);
+            const collectDy =
+              collectOffset.y + (!markerSize.railBets && pos.y >= 100 && pos.x === 50 ? 30 : 0);
 
             return (
               <div

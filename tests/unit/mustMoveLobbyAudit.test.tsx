@@ -846,7 +846,7 @@ describe('the corner and the lobby are on the realism chassis', () => {
     expect(trigger).toContain('cch-seat-change__face');
     expect(trigger).not.toContain('Hide Seat Change');
     expect(HUD).toMatch(
-      /\.cch-seat-change\.cch-seat-change--control \{[\s\S]*?width: var\(--sp-hud-tile-size, 66px\);[\s\S]*?height: var\(--sp-hud-tile-size, 66px\);/
+      /\.cch-seat-change\.cch-seat-change--control \{[\s\S]*?width: var\(--sp-hud-tile-size, 40px\);[\s\S]*?height: var\(--sp-hud-tile-size, 40px\);/
     );
     expect(HUD).toContain('.cch-seat-change--control:focus-visible');
   });

@@ -358,19 +358,17 @@ export function RabbitHunt({
             typeof (visibleVipRemaining ?? packRemaining) === 'number' && (
               <span className="rabbit-hunt__remaining">{visibleVipRemaining ?? packRemaining}</span>
             )}
-          {!isRevealing && (
+          {!isRevealing && !visibleIsLifetime && (
             <span
               className={`rabbit-hunt__cost ${visibleIsLifetime || (visibleIsVIP && visibleVipRemaining !== 0) ? 'rabbit-hunt__cost--free' : ''}`}
             >
               {/* A VIP whose monthly pool is spent pays like anyone else, so the
                   label has to stop saying FREE the moment it runs out. */}
-              {visibleIsLifetime
-                ? 'Unlimited'
-                : visibleIsVIP && visibleVipRemaining === 0
-                  ? `${cost}`
-                  : visibleIsVIP
-                    ? 'Free'
-                    : `${cost}`}
+              {visibleIsVIP && visibleVipRemaining === 0
+                ? `${cost}`
+                : visibleIsVIP
+                  ? 'Free'
+                  : `${cost}`}
             </span>
           )}
         </button>

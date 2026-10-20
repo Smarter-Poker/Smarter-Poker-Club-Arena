@@ -79,8 +79,8 @@ const TABLE_CSS = read('src/pages/TablePage.css');
 /** The one tile size. 44px from 2026-08-28; 66px since 2026-09-04 (Dan: "the
  *  previous hand, chat, time bank, and rabbit hunt buttons all need to be 50%
  *  larger"). Change it here and in TableHUD.css together. */
-const TILE = 66;
-const TILE_RADIUS = 18;
+const TILE = 40;
+const TILE_RADIUS = 10;
 
 /** The declaration block of the first rule whose selector is exactly `sel`. */
 const ruleBody = (css: string, sel: string) => {
@@ -244,7 +244,7 @@ describe('the bottom-left HUD slot', () => {
  */
 describe('every widget in the bottom-left HUD corner is the same tile', () => {
   it('the size is declared once, on .table-hud, as a token', () => {
-    expect(strip(HUD_CSS)).toMatch(new RegExp(`--sp-hud-tile-size:\\s*${TILE}px`));
+    expect(strip(HUD_CSS)).toMatch(/--sp-hud-tile-size:\s*var\(--sp-game-tool-size, 40px\)/);
     expect(strip(HUD_CSS)).toMatch(new RegExp(`--sp-hud-tile-radius:\\s*${TILE_RADIUS}px`));
   });
 
@@ -254,12 +254,12 @@ describe('every widget in the bottom-left HUD corner is the same tile', () => {
     // the literal. Dan 2026-08-28 asked for the four to be one size; this is
     // what keeps a token change from leaving the chat bubble behind.
     const btn = ruleBody(CHAT_CSS, '.chat-collapsed');
-    expect(btn).toMatch(new RegExp(`width:\\s*${TILE}px`));
-    expect(btn).toMatch(new RegExp(`height:\\s*${TILE}px`));
+    expect(btn).toMatch(/width:\s*var\(--sp-game-tool-size, 40px\)/);
+    expect(btn).toMatch(/height:\s*var\(--sp-game-tool-size, 40px\)/);
     expect(btn).toMatch(new RegExp(`border-radius:\\s*${TILE_RADIUS}px`));
     const img = ruleBody(CHAT_CSS, '.chat-collapsed__icon-img');
-    expect(img).toMatch(new RegExp(`width:\\s*${TILE}px`));
-    expect(img).toMatch(new RegExp(`height:\\s*${TILE}px`));
+    expect(img).toMatch(/width:\s*var\(--sp-game-tool-size, 40px\)/);
+    expect(img).toMatch(/height:\s*var\(--sp-game-tool-size, 40px\)/);
   });
 
   it('no breakpoint re-sizes a tile through a phantom token', () => {

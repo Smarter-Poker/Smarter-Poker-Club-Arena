@@ -233,13 +233,38 @@
     },
     "storm_native": {
       "path": "scripts/qualification/tournament-finish-storm/native.mjs",
-      "bytes": 7659,
-      "sha256": "3085c864b1651742aebe91cd0c2436c32f08407e8390d073bfbe6cf1bed0904d"
+      "bytes": 7814,
+      "sha256": "d8b032982a1c854c2ffdda220bcdfe94e0f207873ef04d3a83720695ce9be843"
     },
     "storm_bridge": {
       "path": "scripts/qualification/fixtures/tournament-finish-storm/current-bridge.sql",
       "bytes": 10372,
       "sha256": "cde98cc3b71552ee3f98fa1abb09c63be8acf0f7d9360afbb7cc764cecb6f441"
+    },
+    "storm_historical": {
+      "path": "scripts/qualification/tournament-finish-storm/historical.mjs",
+      "bytes": 5112,
+      "sha256": "b9c5cacef954e0b083ee9df0c24eab68146591b2f132fab033873875f75b1e9a"
+    },
+    "storm_historical_ids": {
+      "path": "scripts/qualification/fixtures/tournament-finish-storm/historical-ids.json",
+      "bytes": 40575,
+      "sha256": "a772aa5ffc12b634b8f8d4a4feb18ea375508399a3854f1190de031128e4b46a"
+    },
+    "storm_migration": {
+      "path": "supabase/migrations/20261020145408_resolved_financial_alert_storms_close_with_their_exact_membe.sql",
+      "bytes": 24594,
+      "sha256": "80ea09a91a125b3662d892a8152790c46224c50695cbd98b98c97a7af858a8bc"
+    },
+    "storm_historical_preimage": {
+      "path": "scripts/qualification/fixtures/tournament-finish-storm/historical-preimage.sql",
+      "bytes": 3374,
+      "sha256": "a9d94cb0137bfd6dfcd524e95b0a189c44d297b992d74c276c840986d63e65d5"
+    },
+    "storm_known_closure": {
+      "path": "scripts/qualification/fixtures/tournament-finish-storm/known-closure.json",
+      "bytes": 992,
+      "sha256": "f58ba17b5a84aaa52948eb9da2c2da6c6570e2b35b3c61c87121a35da2a12f65"
     }
   },
   "sequenceContract": {

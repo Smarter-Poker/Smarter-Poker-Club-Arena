@@ -28453,11 +28453,18 @@ function LiveTablePage({
             toast.error('Could Not Join The List. Please Try Again.');
             return;
           }
-          const position = await waitlistService.getPosition(tableId);
+          const queue = await waitlistService.getPosition(tableId);
           if (buyInScopeRef.current !== scope) return;
+          if (queue?.status === 'notified') {
+            toast.info('Your Seat Is Reserved. Confirm Your Buy-In To Join The Game.');
+            setShowWaitList(false);
+            autoBuyInFiredRef.current = false;
+            setAcceptedChair((count) => count + 1);
+            return;
+          }
           toast.info(
-            position && position > 0
-              ? `You Are Number ${position} On The Waiting List.`
+            queue && queue.position > 0
+              ? `You Are Number ${queue.position} On The Waiting List.`
               : 'You Have Joined The Waiting List. Your Seat Offer Will Appear When Ready.'
           );
           await loadWaitlist();

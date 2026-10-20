@@ -107,6 +107,13 @@ export interface FixedBoardEvent {
   horses: number;
 }
 
+/** Owner October 20: remove Midway's 11 AM freeroll. Other rooms keep their board. */
+export function isRetiredMidwayBoardEvent(clubId: string | null, name: string): boolean {
+  return (
+    clubId === 'fade0000-0000-0000-0000-000000000001' && name === 'Coffee Break Freeroll (PLO4)'
+  );
+}
+
 /**
  * A REAL ROOM'S DAY (Dan 2026-10-16, BINDING).
  *
@@ -454,6 +461,7 @@ export function planFixedBoardSync(
   const kept = new Set<string>();
   for (const club of clubs) {
     for (const event of board) {
+      if (isRetiredMidwayBoardEvent(club.clubId, event.name)) continue;
       const want = fixedBoardRowFor(club, event);
       const mine = existing.filter(
         (r) => r.club_id === club.clubId && r.config?.fixedBoard === event.name

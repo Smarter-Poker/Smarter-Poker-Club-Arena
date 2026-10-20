@@ -526,6 +526,7 @@ import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
+import { useCashSeatEntry } from '../components/table/useCashSeatEntry';
 import { MustMoveLobbyModal } from '../components/table/MustMoveLobbyModal';
 import { CashClusterHUD } from '../components/table/CashClusterHUD';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
@@ -20843,6 +20844,25 @@ function LiveTablePage({
     updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
   };
 
+  // A seat tap is explicit permission to follow this game's assigned entry.
+  // This does not change focus between already-running table tabs.
+  const goToCashEntryTable = (dest: string) => {
+    if (embeddedTableId) {
+      onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
+    } else {
+      navigate(`/table/${dest}?buyin=1`);
+    }
+  };
+  const enterCashSeat = useCashSeatEntry({
+    tableId,
+    userId,
+    gameId: tableState.clusterId,
+    openBuyIn: openCashBuyIn,
+    goToTable: goToCashEntryTable,
+    showWaitlist: () => setShowMustMoveLobby(true),
+    notify: (message) => toast.info(message),
+  });
+
   /* A TAP IS NEVER SPENT ON A CHECK (Dan 2026-10-14): "IT SHOULD JUST CHECK
      AUTOMATICALLY". A tap that lands before the table's funding is known used
      to answer with a popup and throw the tap away. It is remembered instead,
@@ -20989,12 +21009,12 @@ function LiveTablePage({
       void readBustBalance(userId, tableId).then((b) => {
         if (b !== null) setBalanceIfCurrent(revision, b);
         if (refuseIfShort(b)) return;
-        openCashBuyIn(seatNumber);
+        void enterCashSeat(seatNumber);
       });
       return;
     }
     if (refuseIfShort(accountBalance)) return;
-    openCashBuyIn(seatNumber);
+    void enterCashSeat(seatNumber);
   };
 
   /* Replay a tap that landed before the table's funding was known. */
@@ -21015,6 +21035,9 @@ function LiveTablePage({
      mount, and never on a tournament table (handleSeatClick refuses those). */
   const [acceptedChair, setAcceptedChair] = useState(0);
   const autoBuyInFiredRef = useRef(false);
+  useEffect(() => {
+    autoBuyInFiredRef.current = false;
+  }, [tableId, userId]);
   useEffect(() => {
     if (autoBuyInFiredRef.current) return;
     let wantsBuyIn = openBuyInOnArrival || acceptedChair > 0;
@@ -28421,6 +28444,31 @@ function LiveTablePage({
         showWaitList={showWaitList}
         waitListPlayers={waitListPlayers}
         onCloseWaitList={() => setShowWaitList(false)}
+        onJoinWaitList={async () => {
+          if (!tableId) return;
+          const scope = `${userId}:${tableId}`;
+          const entry = await waitlistService.joinWaitlist(tableId);
+          if (buyInScopeRef.current !== scope) return;
+          if (!entry) {
+            toast.error('Could Not Join The List. Please Try Again.');
+            return;
+          }
+          const queue = await waitlistService.getPosition(tableId);
+          if (buyInScopeRef.current !== scope) return;
+          if (queue?.status === 'notified') {
+            toast.info('Your Seat Is Reserved. Confirm Your Buy-In To Join The Game.');
+            setShowWaitList(false);
+            autoBuyInFiredRef.current = false;
+            setAcceptedChair((count) => count + 1);
+            return;
+          }
+          toast.info(
+            queue && queue.position > 0
+              ? `You Are Number ${queue.position} On The Waiting List.`
+              : 'You Have Joined The Waiting List. Your Seat Offer Will Appear When Ready.'
+          );
+          await loadWaitlist();
+        }}
         onWaitListError={(m) => toast?.error?.(m)}
         onTopUpAccount={() =>
           tableState.arenaAsset === 'diamonds'
@@ -28644,6 +28692,26 @@ function LiveTablePage({
               reportError(outcome.error, 'TablePage.atomic_table_buyin_returned_failure');
               const message =
                 cashBuyInRefusalText(outcome.error) ?? 'The Server Refused This Buy-In.';
+              if (
+                /^SEAT_RESERVED:/.test(
+                  String(
+                    typeof outcome.error === 'object' &&
+                      outcome.error !== null &&
+                      'message' in outcome.error
+                      ? outcome.error.message
+                      : outcome.error
+                  )
+                )
+              ) {
+                // The rejected receipt proves no purchase committed. Replace
+                // the dead-end sheet with the actionable game/table queue.
+                setPendingSeat(null);
+                setSelectedSeat(null);
+                setShowBuyInModal(false);
+                toast.info('This Seat Is Reserved. Join The List To Get Your Next Available Seat.');
+                handleOpenWaitlist();
+                return false;
+              }
               toast.error(message);
               if (cashBuyInSeatConflictText(outcome.error)) {
                 // A proven seat collision moved no chips. Release only this

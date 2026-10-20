@@ -142,6 +142,8 @@ policy_precheck_result() {
 trap policy_precheck_result EXIT
 node "$CA_TREE_TOP/docs/agent-policy/agent-policy.mjs" check
 node --test "$CA_TREE_TOP/docs/agent-policy/agent-policy.test.mjs"
+node --test "$CA_TREE_TOP/tests/explicit-table-access.test.mjs"
+node "$CA_TREE_TOP/scripts/ci/check-explicit-table-access.mjs"
 
 CLIENT_DEPENDENCY_MODE=$(node "$CA_TREE_TOP/scripts/local-dependency-policy.mjs" "$CA_TREE_TOP")
 SERVER_DEPENDENCY_MODE=local

@@ -480,6 +480,12 @@ python3 "$root/tests/fixtures/weekly-scheduler-timing/managed-cron-role-regressi
 # Connected prospective basis qualification uses the same original money owners.
 PG_BIN="$pgbin" python3 "$root/scripts/dev/test-union-weekly-basis.py"
 
+# Original R2 club journals and the connected legacy Cashier producer contract.
+python3 "$root/scripts/ci/test-commission-club-history-postgres.py" \
+  --candidate "$root/supabase/migrations/20261020163005_weekly_commission_journals_keep_their_original_club.sql" \
+  --pg-bin "$pgbin" --scratch-root "$ACCOUNTING_FIXTURE_PARENT" \
+  --output "$ACCOUNTING_TEST_OUTPUT_DIR/commission-club-history.json"
+
 # The maintained original-flow consumer must prove noncash ticket refunds.
 PG_BIN="$pgbin" ACCOUNTING_FIXTURE_PARENT="$ACCOUNTING_FIXTURE_PARENT" \
   python3 "$root/scripts/ci/test-ticket-refund-pnl-postgres.py"

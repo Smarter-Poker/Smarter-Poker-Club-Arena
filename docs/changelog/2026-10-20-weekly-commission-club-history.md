@@ -1,0 +1,17 @@
+# Weekly commission history retains its club
+
+Changed files: `supabase/migrations/20261020163005_weekly_commission_journals_keep_their_original_club.sql` (six original INSERT pointers), `src/pages/CashierPage.tsx:1304` (legacy journal merge input), `tests/cashier-history-recovery.test.tsx` (actual rendered regressions), the focused native/legacy qualification runners and existing parent source bindings.
+
+The original R2 main stage, its callable v3 fallback and owner-authorized legacy discharge each inserted PLAYER commission credits and parent debits without `related_entity_id`. Their same atomic transactions already wrote canonical `chip_ledger.club_id`. One retained shared-user example has JAQK credit 39,981.61 and SHARK credit 10,578.13 at the same timestamp; both NULL journals were eligible in either club Cashier.
+
+The prospective migration changes only those six INSERT club pointers, using the exact edge/leg club. It preserves money, routing, source contracts, idempotency keys, invoices, reserve handling, permissions and all historical financial rows. It validates all three original definitions and authorities before changing any, refuses freeze/override/scheduler contention/history replay/source-guard failure, and checks exact postimages atomically. No changed function is in the guard watchlist or sealed inventory source set; no inventory generation/cache invalidation is required.
+
+Cashier now uses its existing exact-club canonical ledger for the four exact original NULL PLAYER commission producer descriptions and directions. The filter runs before cross-source deduplication, so current-club canonical credits and parent debits remain visible. Other NULL commissions, global adjustments, scoped journals and global wallet history remain unchanged. Historical journals are retained.
+
+Validation: native PG17 executes complete main and v3 stages before/after; verifies five journals, canonical gross 510, treasury debit 230, retained own commissions 230, same-stage replay, deleted-wallet published reserve 90 and bank return 140, plus invoice-failure atomic rollback. Installer JWT/freeze/history/source-guard refusals preserve every preimage. The connected existing owner-discharge fixture executes the complete actual legacy function before and after in independent disposable database clones, with existing financial/document/refusal/replay assertions and exact canonical club matching for every commission journal. Inventory and receipt-shape controls in the focused fixture are unrelated prerequisite isolation, not full production inventory or Messenger proof.
+
+The actual rendered Cashier regression fails on the original component and passes after the repair for shared-user legacy credits/debits in both description variants while retaining generic/global history. TypeScript passed. Both focused regressions are enforced by the existing full weekly accounting parent; its source-binding changes update only active inputs and preserve historical audit records. Full-parent result and production installation/publication remain separately recorded in the task checkpoint.
+
+Function postimages: main `9c3930b7e02376d631bc6b4a3876a74b`; v3 `9684d9773ff663ffc85969af5eec43f4`; legacy `3024be85714699035ad0a81384177ffb`. Owner `postgres`, SECURITY DEFINER, search path `public`, and original ACLs are preserved.
+
+Verified: source reread and focused native/consumer checks passed. No production money operation, migration installation, commit or push was performed by the implementation agent.

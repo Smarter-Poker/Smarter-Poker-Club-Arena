@@ -18,7 +18,8 @@ const visit = (node: ts.Node) => {
     node.expression.getText(ast) === 'useEffect' &&
     node.getStart(ast) > declaration &&
     ts.isArrowFunction(node.arguments[0]) &&
-    ts.isBlock(node.arguments[0].body)
+    ts.isBlock(node.arguments[0].body) &&
+    node.arguments[0].body.getText(ast).includes('let wantsBuyIn = openBuyInOnArrival')
   ) {
     effect = node.arguments[0].body;
   }

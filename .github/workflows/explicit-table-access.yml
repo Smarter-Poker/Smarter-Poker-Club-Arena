@@ -1,0 +1,24 @@
+name: Explicit table access
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  explicit-access:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify explicit table declaration boundaries
+        env:
+          TABLE_ACCESS_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          node --test tests/explicit-table-access.test.mjs
+          node scripts/ci/check-explicit-table-access.mjs

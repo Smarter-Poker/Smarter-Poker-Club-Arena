@@ -132,8 +132,8 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P13.3 null proof: no Phase 13 authority is selected today', () => {
-  it('the committed release selections are all null for all nine variants and the running digest is the P13.2 contract digest', () => {
+describe('P13.3 protected PLO8 selection and unselected variant boundaries', () => {
+  it('only PLO8 is selected and admits precisely the proven board counts', () => {
     expect([...HORSE_PHASE13_VARIANTS].sort()).toEqual([...KNOWN_VARIANTS].sort());
     // The load-time literals are the joint owner's own values.
     expect([...HORSE_PHASE13_VARIANTS]).toEqual([...JOINT_VARIANTS]);
@@ -142,12 +142,21 @@ describe('P13.3 null proof: no Phase 13 authority is selected today', () => {
     expect(Object.keys(PHASE13_PROTECTED_RELEASE_SELECTIONS).sort()).toEqual(
       [...KNOWN_VARIANTS].sort()
     );
-    expect(Object.values(PHASE13_PROTECTED_RELEASE_SELECTIONS).every((s) => s === null)).toBe(true);
+    expect(
+      HORSE_PHASE13_VARIANTS.filter((v) => PHASE13_PROTECTED_RELEASE_SELECTIONS[v] !== null)
+    ).toEqual(['plo8']);
     expect(Object.isFrozen(PHASE13_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(PHASE13_RUNNING_CONTRACT_DIGEST).toBe(jointStrengthContractDigest());
     expect(PHASE13_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE13_VARIANTS) {
       const release = admitHorsePhase13ReleaseAuthority(variant);
+      if (variant === 'plo8') {
+        expect(release.status).toBe('admitted');
+        const authority = selectedHorsePhase13Authority(variant, release);
+        expect(authority?.admittedBoardCounts).toEqual([1, 2]);
+        expect(horsePhase13BoardCountAdmitted(authority, 3)).toBe(false);
+        continue;
+      }
       expect(release, variant).toEqual({
         status: 'refused',
         reason: 'unselected',
@@ -165,7 +174,9 @@ describe('P13.3 null proof: no Phase 13 authority is selected today', () => {
         throw Object.assign(new Error('read'), { code: 'EACCES' });
       },
     };
-    for (const variant of HORSE_PHASE13_VARIANTS) {
+    for (const variant of HORSE_PHASE13_VARIANTS.filter(
+      (v) => PHASE13_PROTECTED_RELEASE_SELECTIONS[v] === null
+    )) {
       expect(
         admitHorsePhase13ReleaseAuthority(variant, P13_TEST_NOW, undefined, tripwire),
         variant
@@ -197,7 +208,8 @@ describe('P13.3 null proof: no Phase 13 authority is selected today', () => {
     for (const variant of HORSE_PHASE13_VARIANTS) {
       const gate = liveHorsePhase13Authorities[variant];
       gate.refresh();
-      expect(gate.mainState(), variant).toBe('unselected');
+      expect(gate.mainState(), variant).toBe(variant === 'plo8' ? 'usable' : 'unselected');
+      if (variant === 'plo8') continue;
       const worker = new HorseQualifiedAuthorityHolder(
         `p133-null-${variant}`,
         horsePhase13ContinuationVersion(variant)
@@ -245,15 +257,21 @@ describe('P13.3 null proof: no Phase 13 authority is selected today', () => {
         const variant = parsed.variant as JointVariant;
         // (i) nothing is promoted for the variant this record measured.
         expect(HORSE_PHASE13_VARIANTS as readonly string[], file).toContain(variant);
-        expect(PHASE13_PROTECTED_RELEASE_SELECTIONS[variant] ?? null, file).toBeNull();
+        const selected = PHASE13_PROTECTED_RELEASE_SELECTIONS[variant];
+        if (selected?.qualificationPath === `docs/evidence/phase13/${file}`) {
+          expect(admitHorsePhase13ReleaseAuthority(variant).status).toBe('admitted');
+          continue;
+        }
         // (ii) it names the unmet requirement admission honours, verbatim.
         expect(Array.isArray(parsed.admissionAlsoRequires), file).toBe(true);
         expect((parsed.admissionAlsoRequires as unknown[]).length, file).toBeGreaterThan(0);
         expect(parsed.admissionAlsoRequires, file).toEqual(requires);
         // (iii) the running admission refuses it.
         const released = admitHorsePhase13ReleaseAuthority(variant);
-        expect(released, file).toMatchObject({ status: 'refused', reason: 'unselected' });
-        expect(selectedHorsePhase13Authority(variant, released), file).toBeNull();
+        if (PHASE13_PROTECTED_RELEASE_SELECTIONS[variant] === null) {
+          expect(released, file).toMatchObject({ status: 'refused', reason: 'unselected' });
+          expect(selectedHorsePhase13Authority(variant, released), file).toBeNull();
+        }
         const hypothetical = admitHorsePhase13QualifiedAuthority(
           variant,
           {
@@ -295,7 +313,8 @@ describe('P13.3 null proof: no Phase 13 authority is selected today', () => {
       if (parsed.schema === HORSE_PHASE13_COMPLETION_SCHEMA) {
         const variant = parsed.variant as JointVariant;
         expect(HORSE_PHASE13_VARIANTS as readonly string[], file).toContain(variant);
-        expect(PHASE13_PROTECTED_RELEASE_SELECTIONS[variant] ?? null, file).toBeNull();
+        if (variant !== 'plo8')
+          expect(PHASE13_PROTECTED_RELEASE_SELECTIONS[variant], file).toBeNull();
       }
     }
   });
@@ -1117,7 +1136,7 @@ describe('P13.3 one variant never admits another', () => {
           P13_TEST_CONTRACT_DIGEST
         )
       ).toMatchObject({ status: 'refused', reason: 'continuation_mismatch' });
-      expect(admitHorsePhase13ReleaseAuthority(other, P13_TEST_NOW)).toMatchObject({
+      expect(admitHorsePhase13ReleaseAuthority(other, P13_TEST_NOW, null)).toMatchObject({
         reason: 'unselected',
       });
     }

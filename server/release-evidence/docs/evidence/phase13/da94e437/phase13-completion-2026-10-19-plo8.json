@@ -1,0 +1,93 @@
+{
+  "schema": "horse-phase13-completion-v1",
+  "definition": "horse-phase13-completion-definition-v2",
+  "variant": "plo8",
+  "packVersion": "joint-multiway-round1-v4",
+  "releaseSha": "41296ff3db09bca76bdc684d7e8d7ddc7f9a770d",
+  "policyDigestDefinition": "horse-phase13-policy-digest-v2",
+  "policyDigest": "a87f8be15760dc22e864fcc1a4a8c509be0c1c1f8b5a12d95b5423cc595fea88",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-19T08:02:00.000Z",
+    "to": "2026-10-19T08:50:00.000Z",
+    "releaseUnchanged": true,
+    "source": "/Volumes/SmarterArchives/agent-evidence/horse-brain-resume-20261018-01a14f3e/completion-20261019T08; declaration_sha256=287f754747091fb28da86865c9c4d0bb3a73870c120605a7b34ecf4d05ac4796"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 1442,
+      "completed": 1442,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "flop": {
+      "eligible": 549,
+      "completed": 549,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "turn": {
+      "eligible": 380,
+      "completed": 380,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "river": {
+      "eligible": 246,
+      "completed": 246,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    }
+  },
+  "boardCounts": {
+    "1": {
+      "eligible": 2382,
+      "completed": 2382,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "2": {
+      "eligible": 235,
+      "completed": 235,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    },
+    "3": {
+      "eligible": 0,
+      "completed": 0,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0,
+      "responseBranchUnavailable": 0,
+      "analysisUnavailable": 0
+    }
+  },
+  "excluded": {
+    "diamond": 0
+  }
+}

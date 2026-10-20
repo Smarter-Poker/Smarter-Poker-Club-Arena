@@ -182,16 +182,16 @@
       "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
-      "bytes": 10378,
-      "sha256": "9f490c9970870e0e6b442e28bddc081768ba0927361aff4539e401eacc8327a3"
+      "bytes": 11454,
+      "sha256": "06be0b0bdf1eb8d5264eb7ae48b82a4d4da0c8336fd3b6f56d0697a0875f86bd"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
       "bytes": 30584,
       "sha256": "e290398eff87db843de3363988c4ee7e5cfa4b48720d57c325611d025a5d4618"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
-      "bytes": 30159,
-      "sha256": "6ae1a688bcdeea4cb59a29c89129ff10dc4b4d5746d303a7cf3ec4b0fc052c83"
+      "bytes": 30964,
+      "sha256": "7de5007d58f8746dd41d3936fcfcf6c27ef6256e84c11e64bec4856d358791db"
     },
     "scripts/ci/test_cash_native_pgcron.py": {
       "bytes": 3454,
@@ -3532,6 +3532,31 @@
     "current": {
       "bytes": 229424,
       "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
+    }
+  },
+  "tournamentFinishStormMemberBinding20261020": {
+    "reason": "Extend existing native alert core with exact original aggregate member resolution and its concurrent last-member regression. Only active alert qualification input identities change; financial SQL, assertions, historical evidence and qualification states remain unchanged. No execution certificate restamp.",
+    "changes": {
+      "scripts/ci/probes/production-alert-core/notification/manifest.json": {
+        "previous": {
+          "bytes": 10378,
+          "sha256": "9f490c9970870e0e6b442e28bddc081768ba0927361aff4539e401eacc8327a3"
+        },
+        "current": {
+          "bytes": 11454,
+          "sha256": "06be0b0bdf1eb8d5264eb7ae48b82a4d4da0c8336fd3b6f56d0697a0875f86bd"
+        }
+      },
+      "scripts/ci/test-production-alert-core-postgres.py": {
+        "previous": {
+          "bytes": 30159,
+          "sha256": "6ae1a688bcdeea4cb59a29c89129ff10dc4b4d5746d303a7cf3ec4b0fc052c83"
+        },
+        "current": {
+          "bytes": 30964,
+          "sha256": "7de5007d58f8746dd41d3936fcfcf6c27ef6256e84c11e64bec4856d358791db"
+        }
+      }
     }
   }
 }

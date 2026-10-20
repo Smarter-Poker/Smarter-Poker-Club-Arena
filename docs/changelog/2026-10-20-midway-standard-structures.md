@@ -66,3 +66,5 @@ References: https://www.pokerstars.com/poker/tournaments/types/ and
 https://www.pokerstars.com/help/articles/trn-rebuy-addon/137378/.
 
 Delivery state and exact production evidence are recorded in the task checkpoint.
+
+The Mid-Morning Turbo (6-Max NLH) also publishes and creates six-seat tables, matching its advertised format.

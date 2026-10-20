@@ -70,6 +70,7 @@ export function withMidwayStructure<T extends Record<string, unknown>>(row: T): 
     // Match the launcher's deck ceiling, never the tighter CASH seat policy.
     table_size: Math.min(
       10,
+      row.name === 'Mid-Morning Turbo (6-Max NLH)' ? 6 : 10,
       Math.max(2, Number(row.table_size) || 9),
       maxSeatsFor(String(row.game_type).toLowerCase())
     ),

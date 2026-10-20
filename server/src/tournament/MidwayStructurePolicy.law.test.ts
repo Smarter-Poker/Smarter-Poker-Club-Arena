@@ -35,6 +35,7 @@ describe('Midway standard structures through the actual scheduled creator', () =
       expect(row, name).not.toBeNull();
       const levels = row.blind_structure;
       expect(row.table_size).toBeLessThanOrEqual(maxSeatsFor(row.game_type));
+      if (name === 'Mid-Morning Turbo (6-Max NLH)') expect(row.table_size).toBe(6);
       expect(levels).toHaveLength(40);
       expect(levels[0]).toMatchObject({ smallBlind: 25, bigBlind: 25, ante: 0 });
       expect(levels[1]).toMatchObject({ smallBlind: 25, bigBlind: 50, ante: 0 });

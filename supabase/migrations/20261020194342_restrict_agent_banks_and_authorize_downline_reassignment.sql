@@ -1052,12 +1052,14 @@ REVOKE ALL ON FUNCTION public.fn_reassign_club_members(uuid,uuid[],uuid,uuid,uui
 GRANT EXECUTE ON FUNCTION public.fn_reassign_club_members(uuid,uuid[],uuid,uuid,uuid) TO authenticated,service_role;
 
 -- Existing callers now use exactly the same validated transaction.
+DO $$ BEGIN IF md5(pg_get_functiondef('fn_assign_player_to_agent(uuid,uuid,uuid)'::regprocedure)) <> '882408b533e45efcf04ca79d35b8b1d3' THEN RAISE EXCEPTION 'AGENT_BOUNDARY_SOURCE_CHANGED: fn_assign_player_to_agent'; END IF; END $$;
 CREATE OR REPLACE FUNCTION public.fn_assign_player_to_agent(p_player_user_id uuid,p_agent_user_id uuid,p_club_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 BEGIN
  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'not_authorised' USING ERRCODE='42501'; END IF;
  RETURN public.fn_reassign_club_members(p_club_id,ARRAY[p_player_user_id],p_agent_user_id,gen_random_uuid());
 END $$;
+DO $$ BEGIN IF md5(pg_get_functiondef('fn_assign_agent_to_super_agent(uuid,uuid,uuid)'::regprocedure)) <> 'd54418a6c36eb4dbe629abfd083d4fd5' THEN RAISE EXCEPTION 'AGENT_BOUNDARY_SOURCE_CHANGED: fn_assign_agent_to_super_agent'; END IF; END $$;
 CREATE OR REPLACE FUNCTION public.fn_assign_agent_to_super_agent(p_agent_user_id uuid,p_super_agent_user_id uuid,p_club_id uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
 BEGIN

@@ -1,0 +1,9 @@
+# Portrait Gameplay Proportions
+
+The phone table must retain the wide, long gameplay composition shown on desktop, with opponents at the rail edges and authored text/control proportions. The owner confirmed the reference uses Chrome on desktop and Safari on mobile.
+
+Portrait phones up to 480px now use the visible dynamic viewport height for the existing table budget. This intentionally replaces their earlier small-viewport policy: Safari can expose more visible space after retracting browser chrome while `svh` continues reserving that chrome. The rail also fills the phone width independently of the tablet's height-based roundness cap; the cap previously narrowed a 375x667 canvas to 332.6px. The shared table artwork and seat ring use the same enlarged canvas. Tablet and desktop geometry remain unchanged.
+
+The maximum action reserve and hero clearance remain declared in CSS and independent of table state, so spectating, sitting, folding, waiting and active action do not resize the table. A browser viewport change can resize portrait gameplay to its actual available area. No gameplay ResizeObserver or JavaScript sizing dependency was introduced. Safari text-size adjustment is fixed at 100% on the gameplay surface, preserving authored font and control metrics.
+
+Regression coverage includes both six- and nine-handed rings across 320, 375, 393, 430 and 480px phone widths, state stability, a modeled small-versus-visible Safari viewport difference, full-width short-phone coverage, top-seat clearance and existing hero-card layouts. The short-phone geometry baseline intentionally increases width and the cards/avatars derived from it; height and action-button height are unchanged. Both the width and Safari viewport regressions fail against the previous stylesheet. Retained evidence distinguishes actual WebKit fixture renders and modeled toolbar inputs from physical-iPhone observations and production verification.

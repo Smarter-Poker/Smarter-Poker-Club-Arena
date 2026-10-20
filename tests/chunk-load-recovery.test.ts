@@ -7,6 +7,61 @@ import {
 } from '../src/utils/lazyWithRetry';
 
 describe('stale deployment chunk recovery', () => {
+  it('never resolves a cancelled Vite preload into an undefined React lazy module', async () => {
+    vi.resetModules();
+    vi.doMock('react', () => ({ lazy: (load: () => Promise<unknown>) => load }));
+    const browser = new EventTarget();
+    const replace = vi.fn();
+    Object.assign(browser, {
+      location: { href: 'https://example.test/clubs/diamond-arena', replace },
+    });
+    vi.stubGlobal('window', browser);
+    vi.stubGlobal('navigator', {});
+    vi.stubGlobal('caches', undefined);
+    sessionStorage.clear();
+    const recovery = await import('../src/utils/lazyWithRetry');
+    const uninstall = recovery.installVitePreloadErrorRecovery();
+    // This is Vite's runtime contract: cancelling preloadError resolves the
+    // import to undefined rather than rejecting with its original error.
+    const load = recovery.lazyWithRetry(async () => {
+      const event = new Event('vite:preloadError', { cancelable: true }) as Event & {
+        payload?: unknown;
+      };
+      event.payload = new TypeError(
+        'Failed to fetch dynamically imported module: /assets/ClubHome.js'
+      );
+      browser.dispatchEvent(event);
+      if (!event.defaultPrevented) throw event.payload;
+      return undefined as never;
+    }) as unknown as () => Promise<unknown>;
+    let state = 'pending';
+    void load().then(
+      () => {
+        state = 'resolved';
+      },
+      () => {
+        state = 'rejected';
+      }
+    );
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(state).toBe('pending');
+    uninstall();
+  });
+
+  it.each([undefined, {}, { default: undefined }])(
+    'rejects an invalid module outside recovery: %s',
+    async (module) => {
+      vi.resetModules();
+      vi.doMock('react', () => ({ lazy: (load: () => Promise<unknown>) => load }));
+      const recovery = await import('../src/utils/lazyWithRetry');
+      const load = recovery.lazyWithRetry(
+        async () => module as never
+      ) as unknown as () => Promise<unknown>;
+      await expect(load()).rejects.toThrow('Lazy route module has no default export');
+    }
+  );
+
   it('does not rearm document reloads when another lazy module succeeds', async () => {
     const navigations = vi.fn();
     // Keep the browser's durable tab storage across fresh module/document

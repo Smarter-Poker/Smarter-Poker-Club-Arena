@@ -1,0 +1,3 @@
+CREATE TABLE public.poker_diamond_tournament_ledger(id bigint,tournament_id uuid,arena_id uuid,user_id uuid,custody_id uuid,kind text,amount bigint,prize_part bigint,bounty_part bigint,fee_part bigint,idempotency_key text,wallet_journal_id uuid,obligation_id uuid,registration_id uuid,request jsonb,created_at timestamptz);
+CREATE TABLE public.poker_diamond_movements(request_id uuid,custody_id uuid,user_id uuid,action text,amount bigint,source_account text,destination_account text,wallet_journal_id uuid,request jsonb,receipt jsonb,created_at timestamptz);
+CREATE TABLE public.poker_diamond_custody(id uuid,user_id uuid,arena_id uuid,purpose text,target_id uuid,state text);

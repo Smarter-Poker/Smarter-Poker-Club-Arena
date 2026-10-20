@@ -203,6 +203,7 @@ import {
 import { useEngineTableState } from '../hooks/useEngineTableState';
 import { useSeatMoveNavigation } from '../hooks/useSeatMoveNavigation';
 import TableConnectionBanner from '../components/table/TableConnectionBanner';
+import TournamentStartCountdown from '../components/table/TournamentStartCountdown';
 import { mapEngineSnapshot } from '../utils/mapEngineSnapshot';
 import {
   fixedLimitStreetBet,
@@ -25287,6 +25288,13 @@ function LiveTablePage({
             />
             <div className="table-rail">
               <div className="table-surface">
+                {tableState.tournamentId && (
+                  <TournamentStartCountdown
+                    key={tableState.tournamentId}
+                    tournamentId={tableState.tournamentId}
+                    hasLiveHand={(tableState.handNumber ?? 0) > 0}
+                  />
+                )}
                 {/* Hand Number — Dan 2026-08-15 (second revision): moved OFF
                     the upper-right corner and into the felt masthead as line 2,
                     centred under the date/club/game row. It renders inside

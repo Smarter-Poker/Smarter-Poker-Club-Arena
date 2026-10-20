@@ -139,3 +139,7 @@ finally:
     results['owned_cluster_removed'] = not cluster.exists()
     (out/'RESULTS.json').write_text(json.dumps(results, indent=2) + '\n')
 print(json.dumps({'passed':len(results['checks']), 'output':str(out/'RESULTS.json'), 'owned_cluster_removed':results['owned_cluster_removed']}))
+
+# The existing Diamond health qualification owns source-to-drift lifecycle too.
+# A source verdict is not delivered while its linked episode remains open.
+subprocess.run([os.environ.get('PYTHON', 'python3'), '-B', str(ROOT/'scripts/ci/test-diamond-resolution-drift.py')], check=True, env=os.environ.copy())

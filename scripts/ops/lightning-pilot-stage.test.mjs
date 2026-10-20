@@ -76,25 +76,12 @@ function fakeClients({
   const factory = () => {
     const admin = n++ === 0;
     const table = (name) => {
-      const filters = {};
       const q = {
         select: () => q,
-        eq: (key, value) => {
-          filters[key] = value;
-          return q;
-        },
-        maybeSingle: async () => {
-          if (name === 'lightning_integrity_signal') {
-            calls.push({ who: 'service', name: 'read_integrity_signal', args: { ...filters } });
-            const rows = signals
-              .map((s) => ({ cluster_id: filters.cluster_id, ...s }))
-              .filter((s) => s.id === filters.id && s.cluster_id === filters.cluster_id);
-            return rows.length > 1 ? { error: { code: 'PGRST116' } } : { data: rows[0] ?? null };
-          }
-          return {
-            data: club ?? { id: CLUB, owner_id: PILOT.ownerId, name: PILOT.name, is_public: false },
-          };
-        },
+        eq: () => q,
+        maybeSingle: async () => ({
+          data: club ?? { id: CLUB, owner_id: PILOT.ownerId, name: PILOT.name, is_public: false },
+        }),
         then: (res, rej) =>
           Promise.resolve({ data: name === 'cash_games' ? games : [] }).then(res, rej),
       };
@@ -599,7 +586,7 @@ const investigatedSignal = (id) => {
     evidence: { ...f.evidence, latest_score: 80 },
   };
 };
-test('each investigated Action finding is recorded reviewed from its exact scoped row', async () => {
+test('each investigated Action finding is recorded reviewed from its exact evidence, read on its own page', async () => {
   assert.deepEqual(
     Object.keys(INVESTIGATED_FINDINGS)
       .map(Number)
@@ -612,10 +599,10 @@ test('each investigated Action finding is recorded reviewed from its exact scope
       { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: id },
       f.factory
     );
-    const read = f.calls.filter((c) => c.name === 'read_integrity_signal');
+    const read = f.calls.filter((c) => c.name === 'fn_lightning_operator_cluster');
     assert.equal(read.length, 1);
-    assert.deepEqual(read[0].args, { id: Number(id), cluster_id: measuredGame.id });
-    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_cluster').length, 0);
+    assert.equal(read[0].args.p_to, INVESTIGATED_FINDINGS[id].readTo);
+    assert.equal(read[0].args.p_from, INVESTIGATED_FINDINGS[id].readFrom ?? '2026-10-15T20:00:00Z');
     const writes = f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review');
     assert.equal(writes.length, 1);
     assert.equal(writes[0].args.p_signal_id, Number(id));
@@ -682,17 +669,15 @@ test('finding 158 review refuses drift in every measured field and either player
   }
 });
 
-test('review refuses a missing, duplicate or foreign-cluster row without loading the dashboard', async () => {
-  const signal = investigatedSignal(158);
-  for (const signals of [[], [signal, signal], [{ ...signal, cluster_id: game9.id }]]) {
-    const f = fakeClients({ signals, games: [measuredGame] });
-    await assert.rejects(
-      runPilotStage(
-        { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: '158' },
-        f.factory
-      )
-    );
-    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
-    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_cluster').length, 0);
-  }
+test('finding 158 reads only the bounded interval containing its persisted detection', async () => {
+  const f = fakeClients({ signals: [investigatedSignal(158)], games: [measuredGame] });
+  await runPilotStage(
+    { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: '158' },
+    f.factory
+  );
+  const read = f.calls.find((c) => c.name === 'fn_lightning_operator_cluster');
+  const detectedAt = Date.parse('2026-10-20T11:07:00.414595Z');
+  assert.ok(Date.parse(read.args.p_from) < detectedAt);
+  assert.ok(Date.parse(read.args.p_to) > detectedAt);
+  assert.equal(Date.parse(read.args.p_to) - Date.parse(read.args.p_from), 2000);
 });

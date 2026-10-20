@@ -38,6 +38,24 @@ export function financialIntent(action, body, pin, anchor) {
     return null;
   return { anchorTableId: body.tableId, opId: body.opId, amount: cents(body.amount) / 100 };
 }
+// Match only complete maintained player messages. Never retain raw response text.
+function addonResponse(status, reply) {
+  const codes = new Map([
+    [
+      'Your Chips Are In A Lightning Hand. Add Chips When It Finishes.',
+      'LIGHTNING_HAND_IN_PROGRESS',
+    ],
+    ['Scheduled maintenance is in progress', 'MAINTENANCE'],
+    ['Already at the maximum buy-in for this table', 'MAX_BUY_IN'],
+    ['Player not seated', 'NOT_SEATED'],
+    ['Insufficient wallet balance', 'INSUFFICIENT_BALANCE'],
+  ]);
+  return {
+    httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+    success: typeof reply?.success === 'boolean' ? reply.success : null,
+    code: reply?.success === true ? 'SUCCESS' : (codes.get(reply?.error) ?? 'UNCLASSIFIED'),
+  };
+}
 export function proveCashout({ pin, intent, receipt, credit, ledger, seat, cash, pool }) {
   const key = `cashout:occupancy:${intent.occupancyId}`;
   if (
@@ -544,6 +562,7 @@ export async function witnessFinancial({
     page.on('request', (request) => {
       if (accepts(request)) {
         report.matchingRequests++;
+        report.requestAt ??= new Date().toISOString();
         report.intent ??= financialIntent(action, request.postDataJSON(), pin, anchor);
       }
     });
@@ -594,9 +613,14 @@ export async function witnessFinancial({
     report.cause = 'response_unknown';
     step = 'response';
     const response = await bound(responsePromise);
+    report.responseAt = new Date().toISOString();
     const intent = financialIntent(action, response.request().postDataJSON(), pin, anchor);
     report.intent = intent;
+    if (['top_up', 'auto_top_up'].includes(action))
+      report.addonResponse = addonResponse(response.status(), null);
     const reply = await bound(response.json());
+    if (['top_up', 'auto_top_up'].includes(action))
+      report.addonResponse = addonResponse(response.status(), reply);
     if (restoreAuto) await restorePreference(remaining());
     if (action === 'stop_playing') {
       const out = Array.isArray(reply) ? reply[0] : reply;

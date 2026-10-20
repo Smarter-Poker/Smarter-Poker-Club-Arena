@@ -229,6 +229,14 @@ export function lazyWithRetry<T extends ComponentType<any>>(
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
         const module = await importFn();
+        // Vite resolves a cancelled preloadError to undefined. Our listener
+        // cancels it only when document recovery owns the failure. Keep React
+        // suspended until navigation, instead of handing it an invalid module
+        // that crashes in React's lazy initializer on module.default.
+        if (module == null || module.default == null) {
+          if (recoveryStarted) return new Promise<never>(() => {});
+          throw new Error('Lazy route module has no default export');
+        }
         // Another lazy module succeeding does not prove the failed route
         // recovered. Preserve the tab's budget across document replacements.
         return module;

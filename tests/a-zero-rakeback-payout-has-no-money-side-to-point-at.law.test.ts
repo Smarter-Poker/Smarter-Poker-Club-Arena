@@ -18,13 +18,16 @@ const FILE = '20261003135041_a_zero_rakeback_payout_has_no_money_side_to_point_a
 const MIG = readFileSync(resolve(process.cwd(), 'supabase/migrations', FILE), 'utf8');
 
 function declaration(sql: string): string {
-  const start = sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_settlement_correctness_check(');
+  const start = sql.indexOf(
+    'CREATE OR REPLACE FUNCTION public.fn_ca_settlement_correctness_check('
+  );
   expect(start, 'the function is declared').toBeGreaterThan(-1);
   return sql.slice(start, sql.indexOf('$function$;', start)) + '$function$\n';
 }
 
 function newestFile(): string {
-  const re = /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?fn_ca_settlement_correctness_check\s*\(/i;
+  const re =
+    /CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?:public\.)?fn_ca_settlement_correctness_check\s*\(/i;
   let hit = '';
   for (const m of migrationCorpus()) if (re.test(m.sql)) hit = m.name;
   return hit;
@@ -52,14 +55,50 @@ describe('a zero rakeback payout has no money side to point at', () => {
   });
 
   it('keeps every other check of the function', () => {
-    for (const k of ['cross_club', 'rakeback-overattr:', 'rakeback-overpay:', 'rakeback-evidence:', 'ticket:', 'insurance-pair:', 'ticket-value:', 'fallback-regression:', 'settler-lag:'])
+    for (const k of [
+      'cross_club',
+      'rakeback-overattr:',
+      'rakeback-overpay:',
+      'rakeback-evidence:',
+      'ticket:',
+      'insurance-pair:',
+      'ticket-value:',
+      'fallback-regression:',
+      'settler-lag:',
+    ])
       expect(FN, k).toContain(k);
-    expect(MIG).toContain("SELECT public.fn_ca_declare_guard_redefinition('fn_ca_settlement_correctness_check', 'migration a_zero_rakeback_payout_has_no_money_side_to_point_at');");
+    expect(MIG).toContain(
+      "SELECT public.fn_ca_declare_guard_redefinition('fn_ca_settlement_correctness_check', 'migration a_zero_rakeback_payout_has_no_money_side_to_point_at');"
+    );
   });
 
-  it('is closed to browsers and is the newest declaration on disk', () => {
-    expect(MIG).toContain('REVOKE ALL ON FUNCTION public.fn_ca_settlement_correctness_check() FROM PUBLIC, anon, authenticated;');
-    expect(MIG).toContain('GRANT EXECUTE ON FUNCTION public.fn_ca_settlement_correctness_check() TO service_role;');
-    expect(newestFile()).toBe(FILE);
+  it('keeps the latest declaration closed to browsers and preserves both zero-money predicates', () => {
+    const newest = newestFile();
+    const latest = migrationCorpus().find((m) => m.name === newest);
+    expect(latest).toBeDefined();
+    expect(latest!.name >= FILE).toBe(true);
+    const current = declaration(latest!.sql);
+    expect(current).toContain(
+      'AND p.wallet_transaction_id IS NULL\n       AND p.payout_amount > 0'
+    );
+    expect(current).toContain('AND d.chip_transfer_id IS NULL\n       AND d.rakeback_amount > 0');
+    for (const marker of [
+      'cross_club',
+      'rakeback-overattr:',
+      'rakeback-overpay:',
+      'rakeback-evidence:',
+      'ticket:',
+      'insurance-pair:',
+      'ticket-value:',
+      'fallback-regression:',
+      'settler-lag:',
+    ])
+      expect(current, marker).toContain(marker);
+    expect(latest!.sql).toMatch(
+      /REVOKE ALL ON FUNCTION (?:public\.)?fn_ca_settlement_correctness_check\(\) FROM PUBLIC,\s*anon,\s*authenticated;/
+    );
+    expect(latest!.sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_ca_settlement_correctness_check\(\) TO service_role;/
+    );
   });
 });

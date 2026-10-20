@@ -107,6 +107,7 @@ describe('attention alert destinations', () => {
     );
     fireEvent.click(screen.getByText('Notify'));
     const alert = screen.getByRole('button', { name: 'Open Messages' });
+    expect(alert.querySelector('button, [role="button"]')).toBeNull();
     fireEvent.keyDown(alert, { key: ' ' });
     fireEvent.click(alert);
     expect(open).toHaveBeenCalledTimes(1);

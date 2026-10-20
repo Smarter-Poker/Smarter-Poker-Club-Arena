@@ -216,6 +216,7 @@ export const INVESTIGATED_FINDINGS = Object.freeze({
     source: 'engine',
     playerA: '05835920-da9b-4739-8fa2-2901b844d11d',
     playerB: '227ba92c-9b8c-4705-ba76-181f1f697638',
+    readFrom: '2026-10-20T11:06:59Z',
     readTo: '2026-10-20T11:07:01Z',
     evidence: Object.freeze({
       latest_window_end: '2026-10-20T11:07:00+00:00',
@@ -424,7 +425,7 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
       const detail = must(
         await player.rpc('fn_lightning_operator_cluster', {
           p_cluster_id: game.id,
-          p_from: '2026-10-15T20:00:00Z',
+          p_from: INVESTIGATED_FINDINGS[signalId]?.readFrom ?? '2026-10-15T20:00:00Z',
           // The view pages the newest 100 findings; an investigated finding is
           // read up to just after its own detection so it stays on that page.
           p_to: INVESTIGATED_FINDINGS[signalId]?.readTo ?? new Date().toISOString(),

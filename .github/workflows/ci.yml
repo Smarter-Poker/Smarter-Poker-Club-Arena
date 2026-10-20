@@ -1644,6 +1644,13 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-certification-player-index-postgres.py
 
+      - name: Adaptive membership batch ranges use their exact covering index
+        if: matrix.shard == 4
+        run: >-
+          python3 -B scripts/ci/test-adaptive-membership-batch-index.py
+          --scratch "$RUNNER_TEMP"
+          --output "$RUNNER_TEMP/adaptive-membership-batch-index.json"
+
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py

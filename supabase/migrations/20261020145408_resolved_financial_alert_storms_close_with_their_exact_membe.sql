@@ -339,11 +339,22 @@ DECLARE v_i public.ca_drift_incidents%ROWTYPE;v_n bigint;v_hash text;v_bad bigin
 BEGIN
  SELECT * INTO v_i FROM public.ca_drift_incidents
  WHERE id='d205bf24-b6ef-4969-9ec7-5e3c03b8b1ec' FOR UPDATE;
- IF NOT FOUND OR v_i.status<>'open' OR v_i.resolved_at IS NOT NULL
+ IF NOT FOUND
     OR v_i.source IS DISTINCT FROM 'financial_alerts:Tournament.atomic_finish_refused'
     OR v_i.dedupe_key IS DISTINCT FROM 'storm:financial_alerts:Tournament.atomic_finish_refused'
     OR v_i.occurrences<>966 OR v_i.last_seen_at IS DISTINCT FROM '2026-10-19T21:03:59.928348Z'::timestamptz
  THEN RAISE EXCEPTION 'HISTORICAL_STORM_STATE_CHANGED';END IF;
+ IF NOT (
+   (v_i.status='open' AND v_i.resolved_at IS NULL)
+   OR (v_i.status='resolved'
+     AND v_i.resolved_at IS NOT DISTINCT FROM '2026-10-20T15:10:51.090351Z'::timestamptz
+     AND v_i.resolved_by IS NOT DISTINCT FROM '2d1cd6c3-5700-4af9-a271-d4863fdab20d'::uuid
+     AND v_i.closure_basis IS NOT DISTINCT FROM 'verified_remeasured'
+     AND v_i.root_cause IS NOT DISTINCT FROM 'The storm aggregated original terminal-close refusals. Original owner-fee recovery migration 20261019180622 is installed, and every financial alert from both atomic finish refusal and finished-but-not-completed sources is now explicitly resolved. The aggregate retained the historical storm after its source findings resolved.'
+     AND v_i.correction_ref IS NOT DISTINCT FROM 'verified: original-close migration 20261019180622; zero unresolved findings across both terminal-close financial sources'
+     AND v_i.resolution IS NOT DISTINCT FROM 'Reviewed the resolved source records and their receipt-backed resolution notes. The newest atomic refusal completed with terminal receipt v1, closed zero escrow and 47 payout rows totaling 37100. This closes the historical storm summary only; underlying alerts and receipts remain. No payment or tournament operation was replayed.')
+ ) THEN RAISE EXCEPTION 'HISTORICAL_STORM_STATE_CHANGED';END IF;
+
  IF EXISTS(SELECT 1 FROM public.financial_alerts
    WHERE source='Tournament.atomic_finish_refused' AND NOT COALESCE(resolved,false))
  THEN RAISE EXCEPTION 'HISTORICAL_STORM_HAS_UNRESOLVED_ALERT';END IF;
@@ -365,6 +376,8 @@ BEGIN
  LEFT JOIN public.tournament_escrow es ON es.tournament_id=ids.id;
  IF v_n<>966 OR v_hash IS DISTINCT FROM 'b5a9452de4d603aee51225842c389b7f' OR v_bad<>0
  THEN RAISE EXCEPTION 'HISTORICAL_STORM_TERMINAL_PROOF_CHANGED: % % %',v_n,v_hash,v_bad;END IF;
+ -- The independently verified closure is preserved only after the same full proof.
+ IF v_i.status='resolved' THEN RETURN;END IF;
  UPDATE public.ca_drift_incidents SET status='resolved',closure_basis='verified_remeasured',
  resolved_at=GREATEST(now(),detected_at),resolved_by='2d1cd6c3-5700-4af9-a271-d4863fdab20d',
  root_cause='Direct-owner tournament earning terms caused original fee capture and terminal refusals. Their capped incident dropped member alert IDs, so resolved source alerts could not close the aggregate. The earning and original close source fixes are installed and all 966 exact tournament witnesses are completed.',

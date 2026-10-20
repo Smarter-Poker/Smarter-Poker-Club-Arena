@@ -156,6 +156,11 @@ export class ChipContinuityTracker {
 
   /** A refusal came back from the database with a remaining time: trust it over the mirror. */
   noteRefusal(userId: string, stayRemainingMs: number, nowMs = Date.now()): void {
+    // A Lightning settlement may have evaluated this same database clock
+    // since the anchor's last observation. A refusal is an actual transition:
+    // the next existing presence pass must adopt running/paused as well as
+    // the remaining number, even when the player's presence did not change.
+    this.lastActive.delete(userId);
     const row = this.rows.get(userId);
     if (!row) return;
     this.rows.set(userId, {

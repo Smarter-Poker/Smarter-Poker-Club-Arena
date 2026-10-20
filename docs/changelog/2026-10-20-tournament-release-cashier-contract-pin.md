@@ -11,11 +11,4 @@ cashier certification contracts, and the full corrected read-only contract on
 production. The native qualification verifies legacy equivalence, access and
 replay refusals, and the exact installed fingerprint.
 
-The required migration-agreement check also found the historical refund proof
-still searching for its old two-kind predicate after qualified migration
-`20261020155211` added fully evidenced original ticket refunds. Mark that
-predecessor superseded through the checker's maintained metadata route. Both
-production migration receipts and the successor's complete exact-hash/source
-proof were read back; no migration is replayed or installed by this change.
-
 The historical sealed-day and bank-entity native qualifiers retain their exact original postimages and every behavioral/refusal check. The journal-origin successor qualifier now binds its actual PostgreSQL postimage to the sole current production canary hash and exact migration history, preventing historical fixture checks from requiring retired production definitions.

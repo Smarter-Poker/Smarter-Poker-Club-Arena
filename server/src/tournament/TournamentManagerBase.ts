@@ -11004,7 +11004,8 @@ export abstract class TournamentManagerBase {
          is a boolean: one add-on each, taken whenever the player likes inside
          the window.
 
-         A normal event keeps the 60-second window it has always had. */
+         A paid event's offer lasts its configured break. The default remains
+         one minute; a five-minute break must not be truncated to 60 seconds. */
       const requestedStart = new Date().toISOString();
       const requestedStartMs = Date.parse(requestedStart);
       const fromStart = !!(this.tournamentCache as { addon_from_start?: boolean } | null)
@@ -11041,7 +11042,7 @@ export abstract class TournamentManagerBase {
       const windowAnchorMs = fromStart ? Math.max(advertisedStartMs, requestedStartMs) : NaN;
       const requestedEndMs = fromStart
         ? windowAnchorMs + lateRegMs + this.addOnBreakDurationMs()
-        : requestedStartMs + 60_000;
+        : requestedStartMs + this.addOnBreakDurationMs();
       if (!Number.isFinite(requestedEndMs) || requestedEndMs <= requestedStartMs) {
         throw new Error('the requested add-on window does not end after it starts');
       }

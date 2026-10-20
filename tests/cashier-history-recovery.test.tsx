@@ -144,6 +144,96 @@ describe('Cashier history recovery through the rendered page', () => {
     });
   });
 
+  it.each(['', ' (owner-authorized legacy week)'])(
+    'uses exact-club canonical R2 history for shared-user legacy NULL journals%s',
+    async (suffix) => {
+      start();
+      await showHistory();
+      await waitFor(() => expect(walletReads).toHaveLength(1));
+      const rows = [
+        {
+          ...transaction('wrong-club-credit'),
+          category: 'commission',
+          amount: 10578.13,
+          description: `Recorded weekly commission budget received${suffix}`,
+          related_entity_id: null,
+        },
+        {
+          ...transaction('wrong-club-debit'),
+          type: 'debit',
+          category: 'commission',
+          amount: 4368.52,
+          description: `Recorded weekly commission budget passed to child agent${suffix}`,
+          related_entity_id: null,
+        },
+        {
+          ...transaction('right-club-credit'),
+          category: 'commission',
+          amount: 39981.61,
+          description: `Recorded weekly commission budget received${suffix}`,
+          related_entity_id: null,
+        },
+        {
+          ...transaction('right-club-debit'),
+          type: 'debit',
+          category: 'commission',
+          amount: 14740.61,
+          description: `Recorded weekly commission budget passed to child agent${suffix}`,
+          related_entity_id: null,
+        },
+        { ...transaction('Generic Commission'), category: 'commission', related_entity_id: null },
+        { ...transaction('Global Adjustment'), related_entity_id: null },
+        {
+          ...transaction('Future Scoped Commission'),
+          category: 'commission',
+          related_entity_id: CLUB,
+        },
+        {
+          ...transaction('Agent Wallet History'),
+          wallet_type: 'AGENT',
+          category: 'commission',
+          related_entity_id: null,
+        },
+      ];
+      await act(async () => {
+        walletReads[0].resolve({ data: rows, error: null });
+        ledgerReads[0].resolve({
+          data: [
+            {
+              ...transaction('canonical-credit'),
+              description: 'Canonical Club Credit',
+              amount: 39981.61,
+              from_entity_id: CLUB,
+              to_entity_id: PLAYER,
+              category: 'commission',
+              club_id: CLUB,
+            },
+            {
+              ...transaction('canonical-debit'),
+              description: 'Canonical Club Debit',
+              amount: 14740.61,
+              from_entity_id: PLAYER,
+              to_entity_id: CLUB,
+              category: 'commission',
+              club_id: CLUB,
+            },
+          ],
+          error: null,
+        });
+      });
+      expect(await screen.findByText('Canonical Club Credit')).toBeInTheDocument();
+      expect(screen.getByText('Canonical Club Debit')).toBeInTheDocument();
+      expect(screen.queryByText(`Recorded Weekly Commission Budget Received${suffix}`)).toBeNull();
+      for (const label of [
+        'Generic Commission',
+        'Global Adjustment',
+        'Future Scoped Commission',
+        'Agent Wallet History',
+      ])
+        expect(screen.getByText(label)).toBeInTheDocument();
+    }
+  );
+
   it('keeps history stable on wake until the user refreshes', async () => {
     start();
     await showHistory();

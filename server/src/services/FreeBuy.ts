@@ -17,6 +17,7 @@
 
 import { DSS_CLUB_ID, MIDWAY_UNION_ID, shHash } from './StableHand.js';
 import { mttSpeedColumns, mttPayoutPercent } from '../tournament/mttStructurePolicy.js';
+import { MIDWAY_FREE_BUY_GUARANTEES } from '../tournament/midwayStructurePolicy.js';
 
 /* ------------------------------------------------------------------ */
 /* The two tiers                                                       */
@@ -708,6 +709,7 @@ export function freeBuyTournamentRow(opts: {
  * that is not what the code built.
  */
 export interface FreeBuyRowUnderAudit {
+  blind_structure?: unknown;
   name?: unknown;
   club_id?: unknown;
   union_id?: unknown;
@@ -776,9 +778,30 @@ export function auditFreeBuyRow(
   const publishedAtPreviousGuarantee =
     chicagoDayKey(startMs) < FREE_BUY_HALF_HOUR_BOARD_FROM &&
     Number(row.guaranteed_prize) === FREE_BUY_PREVIOUS_GUARANTEES[slot.tier];
-  const cfg = publishedAtPreviousGuarantee
+  let cfg = publishedAtPreviousGuarantee
     ? { ...FREE_BUY_TIERS[slot.tier], guarantee: FREE_BUY_PREVIOUS_GUARANTEES[slot.tier] }
     : FREE_BUY_TIERS[slot.tier];
+  // The owner standardized Midway's structures and reduced three guarantees
+  // on October 20. Already-registered events retain their original contract.
+  let revisedMidway = false;
+  try {
+    const ladder =
+      typeof row.blind_structure === 'string'
+        ? JSON.parse(row.blind_structure)
+        : row.blind_structure;
+    revisedMidway =
+      String(row.club_id) === MIDWAY_UNION_ID &&
+      Array.isArray(ladder) &&
+      ladder[0]?.smallBlind === 25 &&
+      ladder[0]?.bigBlind === 25;
+  } catch {
+    /* An unreadable ladder cannot claim the revised contract. */
+  }
+  if (revisedMidway)
+    cfg = {
+      ...cfg,
+      guarantee: MIDWAY_FREE_BUY_GUARANTEES[String(row.name)] ?? cfg.guarantee,
+    };
   const say = (ok: boolean, msg: string) => {
     if (!ok) problems.push(msg);
   };

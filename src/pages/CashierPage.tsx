@@ -1301,7 +1301,26 @@ function CashierContent() {
     }
 
     // Merge and deduplicate — chip_ledger entries get converted to transaction format
-    const wtData = (wtResult?.data || []) as any[];
+    // These original R2 producers atomically wrote an exact-club canonical
+    // chip ledger but left their PLAYER journal club NULL. Use that already
+    // club-filtered ledger for these legacy events, including parent debits.
+    // Generic commissions, global adjustments and global wallet history stay.
+    const wtData = ((wtResult?.data || []) as any[]).filter(
+      (tx) =>
+        !(
+          tx.related_entity_id == null &&
+          tx.wallet_type === 'PLAYER' &&
+          tx.category === 'commission' &&
+          ((tx.type === 'credit' &&
+            (tx.description === 'Recorded weekly commission budget received' ||
+              tx.description ===
+                'Recorded weekly commission budget received (owner-authorized legacy week)')) ||
+            (tx.type === 'debit' &&
+              (tx.description === 'Recorded weekly commission budget passed to child agent' ||
+                tx.description ===
+                  'Recorded weekly commission budget passed to child agent (owner-authorized legacy week)')))
+        )
+    );
     const clData = (clResult?.data || []).map((entry: any) => ({
       id: entry.id,
       user_id: user.id,

@@ -266,6 +266,113 @@ async function anchorSeat(admin, pin) {
     throw Error('anchor_unknown');
   return { ...seat, cash_player_session_id: pool.cash_player_session_id };
 }
+// Read-only state for one explicitly requested pause/top-up/return witness.
+async function financialPauseState(admin, pin, anchor) {
+  const seat = read(
+    await admin
+      .from('table_seats')
+      .select('id,table_id,user_id,occupancy_id,left_at,is_sitting_out,leave_pending')
+      .eq('id', anchor.id)
+      .maybeSingle()
+  );
+  const cash = read(
+    await admin
+      .from('cash_player_session')
+      .select(
+        'id,player_id,club_id,table_id,cluster_id,scope_type,scope_id,opened_at,baseline,closed_at'
+      )
+      .eq('id', anchor.cash_player_session_id)
+      .maybeSingle()
+  );
+  const pool = read(
+    await admin
+      .from('lightning_pool_session')
+      .select('id,cluster_id,player_id,anchor_seat_id,cash_player_session_id,state,exited_at')
+      .eq('id', pin.poolSessionId)
+      .maybeSingle()
+  );
+  if (
+    seat.id !== anchor.id ||
+    seat.table_id !== anchor.table_id ||
+    seat.user_id !== pin.playerId ||
+    seat.occupancy_id !== anchor.occupancy_id ||
+    seat.left_at !== null ||
+    seat.leave_pending !== false ||
+    typeof seat.is_sitting_out !== 'boolean' ||
+    cash.id !== anchor.cash_player_session_id ||
+    cash.player_id !== pin.playerId ||
+    cash.club_id !== pin.clubId ||
+    cash.table_id !== anchor.table_id ||
+    cash.cluster_id !== pin.clusterId ||
+    cash.scope_type !== 'table' ||
+    cash.scope_id !== anchor.table_id ||
+    cash.closed_at !== null ||
+    !Number.isFinite(Date.parse(cash.opened_at)) ||
+    pool.id !== pin.poolSessionId ||
+    pool.player_id !== pin.playerId ||
+    pool.cluster_id !== pin.clusterId ||
+    pool.anchor_seat_id !== anchor.id ||
+    pool.cash_player_session_id !== cash.id ||
+    pool.state !== 'active' ||
+    pool.exited_at !== null
+  )
+    throw Error('sitout_identity_unknown');
+  return {
+    sittingOut: seat.is_sitting_out,
+    baselineCents: cents(cash.baseline),
+    cashPlayerSessionId: cash.id,
+    openedAt: cash.opened_at,
+    occupancyId: seat.occupancy_id,
+  };
+}
+async function financialPauseHands(admin, pin) {
+  const slots = read(
+    await admin
+      .from('lightning_pool_slot')
+      .select('id,pool_session_id,player_id,cluster_id')
+      .eq('pool_session_id', pin.poolSessionId)
+      .limit(101)
+  );
+  if (
+    !Array.isArray(slots) ||
+    !slots.length ||
+    slots.length > 100 ||
+    slots.some(
+      (s) =>
+        !UUID.test(s.id) ||
+        s.pool_session_id !== pin.poolSessionId ||
+        s.player_id !== pin.playerId ||
+        s.cluster_id !== pin.clusterId
+    )
+  )
+    throw Error('sitout_identity_unknown');
+  const ids = slots.map((s) => s.id);
+  const count = await admin
+    .from('lightning_hand_player')
+    .select('hand_id', { count: 'exact', head: true })
+    .eq('player_id', pin.playerId)
+    .eq('cluster_id', pin.clusterId)
+    .in('pool_slot_id', ids);
+  if (count.error || !Number.isSafeInteger(count.count) || count.count < 0)
+    throw Error('read_unknown');
+  const pending = read(
+    await admin
+      .from('lightning_hand_player')
+      .select('hand_id,hand:lightning_hand!inner(settled_at)')
+      .eq('player_id', pin.playerId)
+      .eq('cluster_id', pin.clusterId)
+      .in('pool_slot_id', ids)
+      .is('hand.settled_at', null)
+      .limit(1)
+  );
+  const live = await admin.rpc('fn_lightning_player_live_hand', {
+    p_player_id: pin.playerId,
+    p_cluster_id: pin.clusterId,
+  });
+  if (live.error || (live.data !== null && !UUID.test(live.data)) || !Array.isArray(pending))
+    throw Error('read_unknown');
+  return { count: count.count, settled: pending.length === 0 && live.data === null };
+}
 async function cashoutReadback(admin, pin, intent, anchor) {
   // This maintained read-only definer is service-only; the browser writes via
   // the normal occupancy-bound HTTP door, never via this client.
@@ -378,9 +485,12 @@ export async function witnessFinancial({
   timeoutMs = 240000,
   openSession = openPlayerSession,
   fetchImpl = fetch,
+  pauseForTopUp = false,
 }) {
   assertPlayerPin(pin);
   if (
+    typeof pauseForTopUp !== 'boolean' ||
+    (pauseForTopUp && action !== 'top_up') ||
     !CONSENT_PLAYERS.includes(pin.playerId) ||
     !['top_up', 'cash_out', 'auto_top_up', 'stop_playing'].includes(action) ||
     !Number.isInteger(timeoutMs) ||
@@ -415,7 +525,7 @@ export async function witnessFinancial({
     status: 'unknown',
     cause: 'not_started',
     cleanup: 'pending',
-    scope: 'one_normal_ui_intent',
+    scope: pauseForTopUp ? 'one_normal_ui_topup_with_sitout_and_return' : 'one_normal_ui_intent',
     intent: null,
   };
   let auth,
@@ -423,7 +533,98 @@ export async function witnessFinancial({
     browser,
     page,
     restoreAuto = false,
-    autoRestored = true;
+    autoRestored = true,
+    pauseAttempted = false,
+    pauseRestored = true,
+    pauseInitial,
+    pauseAnchor;
+  const pauseRequests = { pause: 0, return: 0 };
+  const acceptsPause = (req, wanted) => {
+    try {
+      const body = req.postDataJSON();
+      const parsed = new URL(req.url());
+      return (
+        req.method() === 'POST' &&
+        parsed.origin === 'https://engine.smarter.poker' &&
+        parsed.pathname === '/sitout' &&
+        body?.tableId === pin.poolSessionId &&
+        body.sitOut === wanted
+      );
+    } catch {
+      return false;
+    }
+  };
+  const samePauseSession = (state) => {
+    if (
+      state.cashPlayerSessionId !== pauseInitial.cashPlayerSessionId ||
+      state.openedAt !== pauseInitial.openedAt ||
+      state.occupancyId !== pauseInitial.occupancyId
+    )
+      throw Error('sitout_identity_unknown');
+  };
+  const restorePausedSeat = async () => {
+    const left = () => Math.max(1, end - Date.now() - 12000);
+    const before = await bound(financialPauseState(admin, pin, pauseAnchor), left());
+    samePauseSession(before);
+    if (!before.sittingOut && pauseRequests.pause === 0) {
+      pauseRestored = true;
+      return;
+    }
+    // Exactly one normal return gesture, including after a refused/unknown add-on.
+    const responsePromise = page.waitForResponse((r) => acceptsPause(r.request(), false), {
+      timeout: left(),
+    });
+    responsePromise.catch(() => {});
+    await bound(
+      page.getByRole('button', { name: "I'm Back", exact: true }).click({ timeout: left() }),
+      left()
+    );
+    const response = await bound(responsePromise, left());
+    const reply = await bound(response.json(), left());
+    if (!response.ok() || reply?.success !== true) throw Error('sitout_return_unknown');
+    const safeRefusal =
+      report.addonResponse?.success === false &&
+      [
+        'LIGHTNING_HAND_IN_PROGRESS',
+        'MAINTENANCE',
+        'MAX_BUY_IN',
+        'NOT_SEATED',
+        'INSUFFICIENT_BALANCE',
+      ].includes(report.addonResponse.code);
+    const expected = report.proof
+      ? pauseInitial.baselineCents + cents(report.proof.applied)
+      : !report.intent || safeRefusal
+        ? pauseInitial.baselineCents
+        : null;
+    let after;
+    while (true) {
+      after = await bound(financialPauseState(admin, pin, pauseAnchor), left());
+      samePauseSession(after);
+      if (!after.sittingOut) break;
+      if (end - Date.now() <= 12200) throw Error('sitout_return_unknown');
+      await bound(page.waitForTimeout(200), left());
+    }
+    report.sitout.returnObserved = true;
+    report.sitout.baselineAfter = after.baselineCents / 100;
+    report.sitout.expectedBaselineAfter = expected === null ? null : expected / 100;
+    pauseRestored =
+      expected !== null &&
+      after.baselineCents === expected &&
+      pauseRequests.pause === 1 &&
+      pauseRequests.return === 1;
+    report.sitout.returnVerified = pauseRestored;
+    report.servingAfterReturn = await bound(
+      servingIdentities((input, init = {}) =>
+        fetchImpl(input, { ...init, signal: AbortSignal.timeout(Math.min(5000, left())) })
+      ),
+      left()
+    );
+    if (
+      servingStable(report.servingBefore, report.servingAfterReturn) !== 'passed' ||
+      report.servingAfterReturn.engine.data.fullRevisionEstablished !== true
+    )
+      throw Error('sitout_return_unknown');
+  };
   const restorePreference = async (ms) => {
     await bound(
       page.getByRole('button', { name: 'Table Menu', exact: true }).click({ timeout: ms }),
@@ -539,6 +740,69 @@ export async function witnessFinancial({
             .limit(1)
         )
       );
+    if (pauseForTopUp) {
+      pauseAnchor = anchor;
+      pauseInitial = await bound(financialPauseState(admin, pin, anchor));
+      if (pauseInitial.sittingOut) throw Error('sitout_initial_state_refused');
+      report.sitout = {
+        cashPlayerSessionId: pauseInitial.cashPlayerSessionId,
+        openedAt: pauseInitial.openedAt,
+        occupancyId: pauseInitial.occupancyId,
+        baselineBefore: pauseInitial.baselineCents / 100,
+        returnVerified: false,
+      };
+      page.on('request', (request) => {
+        if (acceptsPause(request, true)) pauseRequests.pause++;
+        if (acceptsPause(request, false)) pauseRequests.return++;
+      });
+      const pauseResponse = page.waitForResponse((r) => acceptsPause(r.request(), true), {
+        timeout: remaining(),
+      });
+      pauseResponse.catch(() => {});
+      await menu();
+      step = 'sitout_submit';
+      pauseAttempted = true;
+      pauseRestored = false;
+      await page
+        .getByRole('menuitem', { name: 'Sit Out', exact: true })
+        .click({ timeout: remaining() });
+      const response = await bound(pauseResponse);
+      const out = await bound(response.json());
+      if (!response.ok() || out?.success !== true) throw Error('sitout_refused_or_unknown');
+      let countAtPause;
+      step = 'sitout_settlement';
+      while (true) {
+        const state = await bound(financialPauseState(admin, pin, anchor));
+        samePauseSession(state);
+        if (state.baselineCents !== pauseInitial.baselineCents)
+          throw Error('sitout_baseline_changed');
+        if (state.sittingOut) {
+          const hands = await bound(financialPauseHands(admin, pin));
+          countAtPause ??= hands.count;
+          if (hands.count !== countAtPause) throw Error('sitout_formed_new_hand');
+          if (hands.settled) {
+            report.sitout.persistedPause = true;
+            report.sitout.allOldHandsSettled = true;
+            report.sitout.handCountAtPause = hands.count;
+            break;
+          }
+        }
+        await page.waitForTimeout(Math.min(750, remaining()));
+      }
+      // A second authoritative read immediately before opening the normal cashier.
+      const state = await bound(financialPauseState(admin, pin, anchor));
+      const hands = await bound(financialPauseHands(admin, pin));
+      samePauseSession(state);
+      if (
+        !state.sittingOut ||
+        state.baselineCents !== pauseInitial.baselineCents ||
+        !hands.settled ||
+        hands.count !== countAtPause ||
+        pauseRequests.pause !== 1
+      )
+        throw Error('sitout_not_quiescent');
+      report.sitout.noNewFormation = true;
+    }
     const path =
       action === 'stop_playing'
         ? '/rest/v1/rpc/fn_lightning_stop_playing'
@@ -598,6 +862,18 @@ export async function witnessFinancial({
       const amount = Number(await dialog.getByLabel('Amount To Add', { exact: true }).inputValue());
       if (cents(amount) <= 0) throw Error('no_topup_headroom');
       step = 'addon_submit';
+      if (pauseForTopUp) {
+        const state = await bound(financialPauseState(admin, pin, anchor));
+        const hands = await bound(financialPauseHands(admin, pin));
+        samePauseSession(state);
+        if (
+          !state.sittingOut ||
+          state.baselineCents !== pauseInitial.baselineCents ||
+          !hands.settled ||
+          hands.count !== report.sitout.handCountAtPause
+        )
+          throw Error('sitout_not_quiescent');
+      }
       await dialog.getByRole('button', { name: /^Add [\d,.]+$/ }).click({ timeout: remaining() });
     } else {
       await menu();
@@ -691,6 +967,12 @@ export async function witnessFinancial({
     report.cause = 'actual_effect_verified';
   } catch (error) {
     const causes = [
+      'sitout_identity_unknown',
+      'sitout_initial_state_refused',
+      'sitout_refused_or_unknown',
+      'sitout_baseline_changed',
+      'sitout_formed_new_hand',
+      'sitout_not_quiescent',
       'deadline',
       'build_changed',
       'serving_unknown',
@@ -725,6 +1007,19 @@ export async function witnessFinancial({
     report.failure =
       typeof error?.name === 'string' && /^[A-Za-z]{1,40}$/.test(error.name) ? error.name : 'Error';
   } finally {
+    if (pauseAttempted) {
+      try {
+        await restorePausedSeat();
+      } catch {
+        pauseRestored = false;
+      }
+      report.sitout.requests = { ...pauseRequests };
+      report.sitout.returnVerified = pauseRestored;
+      if (!pauseRestored && report.status === 'observed') {
+        report.cause = 'sitout_return_unknown';
+        report.failedStep = 'sitout_return';
+      }
+    }
     if (restoreAuto && !autoRestored) {
       try {
         await restorePreference(Math.max(1, end - Date.now() - 12000));
@@ -758,7 +1053,9 @@ export async function witnessFinancial({
         local = false;
       }
     report.cleanup =
-      closed && local && autoRestored ? 'local_session_and_browser_closed' : 'unknown';
+      closed && local && autoRestored && pauseRestored
+        ? 'local_session_and_browser_closed'
+        : 'unknown';
     if (report.cleanup === 'unknown') report.status = 'unknown';
     if (
       report.matchingRequests > 1 ||

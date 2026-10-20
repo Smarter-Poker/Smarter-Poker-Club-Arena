@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 37376,
-      "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+      "bytes": 37679,
+      "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3561,5 +3561,16 @@
   },
   "stormGuardDeclarationOrdering20261020": {
     "reason": "Refresh only active alert-core runner and manifest input bindings for the exact complete-migration guard-declaration regression; historical records, financial SQL and assertions unchanged. Not production installation evidence."
+  },
+  "neverDealtRebuyMatrixRouting20261020": {
+    "reason": "Preserve concurrent protected alert qualification inputs and audit. The additive never-dealt rebuy classifier routes native driver, fixtures and guard through required PostgreSQL qualification. Refresh only the active current classifier fingerprint; historical pins and financial assertions/statuses remain unchanged. Source identity is not execution or production proof.",
+    "previous": {
+      "bytes": 37376,
+      "sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234"
+    },
+    "current": {
+      "bytes": 37679,
+      "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
+    }
   }
 }

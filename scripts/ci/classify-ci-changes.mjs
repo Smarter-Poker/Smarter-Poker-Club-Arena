@@ -211,6 +211,10 @@ export function classifyChangedPaths(paths) {
   const chipStoreCoverage = matches(
     /^(scripts\/ci\/(?:test-chip-store-coverage\.py$|fixtures\/chip-store-coverage\/)|tests\/chip-store-coverage\.test\.ts$)/
   );
+  // The never-dealt proof owner must qualify every runner/fixture-only edit.
+  const neverDealtRebuy = matches(
+    /^(scripts\/ci\/(?:test-never-dealt-rebuy\.py$|fixtures\/never-dealt-rebuy\/)|tests\/never-dealt-diamond-rebuy\.guard\.test\.ts$)/
+  );
   // Diamond request/receipt changes and retained real SQL probes must reach
   // the existing required PostgreSQL accounting job.
   //
@@ -316,6 +320,7 @@ export function classifyChangedPaths(paths) {
       committedEvidence ||
       bbjFixture ||
       chipStoreCoverage ||
+      neverDealtRebuy ||
       diamondGames ||
       dailyBonus ||
       diamondSqlAcceptance ||
@@ -368,6 +373,7 @@ export function classifyChangedPaths(paths) {
       playerHistoryQualification ||
       bbjFixture ||
       chipStoreCoverage ||
+      neverDealtRebuy ||
       matches(/^scripts\/ops\/build-cashier-totals-index-concurrently\.sql$/) ||
       instructionOnlyPaths(paths) ||
       paths.some((p) => p.startsWith('docs/agent-policy/')) ||

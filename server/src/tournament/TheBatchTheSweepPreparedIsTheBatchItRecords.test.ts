@@ -140,7 +140,11 @@ function threeBustsOfFour(players = 4): void {
     if (request.table === 'rpc:fn_open_tournament_rebuy_decisions') {
       return { data: bustedIds.map((user_id) => ({ user_id, decision_open: false })) };
     }
-    if (request.table === 'wallet_transactions') return { count: 0 };
+    if (
+      request.table === 'wallet_transactions' ||
+      request.table === 'tournament_participant_funding_receipts'
+    )
+      return { count: 0 };
     throw new Error(`Unexpected request in bust-stage fixture: ${request.table}`);
   });
 }

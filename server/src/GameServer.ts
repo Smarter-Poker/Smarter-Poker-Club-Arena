@@ -12301,11 +12301,12 @@ export class GameServer {
    */
   async lightningAnchorFor(
     roomId: string,
-    userId: string
+    userId: string,
+    opts?: { requireOpen?: boolean }
   ): Promise<{ anchorTableId: string; seatNumber: number; occupancyId: string } | null> {
     if (this.tableEngines.has(roomId)) return null;
     try {
-      return await lightningAnchorSeat(roomId, userId);
+      return await lightningAnchorSeat(roomId, userId, opts);
     } catch (err) {
       reportError(err, 'GameServer.lightning_anchor_lookup_failed');
       return null;

@@ -12,6 +12,7 @@ import { witnessRecovery } from './lightning-pilot-recovery.mjs';
 import { collectReplayBatch } from './lightning-pilot-replay-batch.mjs';
 const FINANCIAL_MODES = Object.freeze({
   financial_top_up: 'top_up',
+  financial_top_up_sitout: 'top_up',
   financial_cash_out: 'cash_out',
   financial_auto_top_up: 'auto_top_up',
   financial_stop_playing: 'stop_playing',
@@ -117,6 +118,7 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
         report.result = await (dependencies.witnessFinancial ?? witnessFinancial)({
           ...common,
           action,
+          pauseForTopUp: inputMode === 'financial_top_up_sitout',
         });
       else if (mode === 'admission')
         report.result = await (dependencies.witnessAdmission ?? witnessAdmission)({

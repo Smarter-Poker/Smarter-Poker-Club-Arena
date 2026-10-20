@@ -156,7 +156,11 @@ function oneBustOfTwo(overrides: (request: Request) => Answer | undefined = () =
     if (request.table === 'rpc:fn_open_tournament_rebuy_decisions') {
       return { data: [{ user_id: bustedId, decision_open: false }] };
     }
-    if (request.table === 'wallet_transactions') return { count: 0 };
+    if (
+      request.table === 'wallet_transactions' ||
+      request.table === 'tournament_participant_funding_receipts'
+    )
+      return { count: 0 };
     throw new Error(`Unexpected request in bust-stage fixture: ${request.table}`);
   });
 }
@@ -234,7 +238,8 @@ function backlog(options: { budget?: boolean; unknownCount?: boolean; refuse?: b
       };
     if (r.table === 'rpc:fn_open_tournament_rebuy_decisions')
       return { data: [...pending].map((user_id) => ({ user_id, decision_open: false })) };
-    if (r.table === 'wallet_transactions') return { count: 0 };
+    if (r.table === 'wallet_transactions' || r.table === 'tournament_participant_funding_receipts')
+      return { count: 0 };
     throw new Error(`Unexpected request ${r.table} ${r.columns}`);
   });
   const { manager } = bustStageManager();

@@ -57,7 +57,7 @@ describe('the Sit Out Next Hand switch', () => {
        'sitting_out', and blankNonCode blanks string literals — so the assertion
        can only be written against the raw text. The anchor is specific enough
        that a comment cannot satisfy it by accident. */
-    expect(TABLE_PAGE).toMatch(/const heroIsSittingOut =\s*\n?\s*tableState\.heroSeat > 0/);
+    expect(TABLE_PAGE).toMatch(/const heroIsSittingOut =\s*\n?\s*\(?tableState\.heroSeat > 0/);
     expect(TABLE_PAGE).toMatch(
       /tableState\.players\[tableState\.heroSeat - 1\]\?\.status === 'sitting_out'/
     );

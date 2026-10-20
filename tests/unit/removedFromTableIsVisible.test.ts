@@ -156,7 +156,7 @@ describe('the notice is not lost by its own one-shot flag', () => {
 });
 
 describe('the footer reads state, never a ref, at render time', () => {
-  it('the sitting-out bar is gated on heroSitsOutPerRow', () => {
+  it('the sitting-out bar uses reactive hero state including the seat row', () => {
     /* A ref mutation schedules nothing. When the recovery deleted the hero from
        `sittingOutIdsRef` the footer had no reason to re-render, and every other
        line of that recovery was a setState already at its target value — so the
@@ -165,7 +165,10 @@ describe('the footer reads state, never a ref, at render time', () => {
     const at = TABLE_PAGE.indexOf('data-state="sitting-out"');
     expect(at, 'the sitting-out footer has moved or gone').toBeGreaterThan(-1);
     const before = TABLE_PAGE.slice(TABLE_PAGE.lastIndexOf(') : ', at), at);
-    expect(before).toMatch(/heroSitsOutPerRow/);
+    expect(before).toMatch(/heroIsSittingOut/);
+    const declaration = TABLE_PAGE.match(/const heroIsSittingOut =([^;]+);/);
+    expect(declaration?.[1]).toMatch(/heroSitsOutPerRow/);
+    expect(declaration?.[1]).not.toMatch(/sittingOutIdsRef/);
     expect(before).not.toMatch(/sittingOutIdsRef\.current\.has/);
   });
 });

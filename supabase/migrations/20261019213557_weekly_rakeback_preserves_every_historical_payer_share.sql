@@ -193,6 +193,7 @@ REVOKE ALL ON FUNCTION smarter_private.split_rakeback_payout_complete(uuid,bigin
 
 
 
+
 -- Qualified original owners follow.
 DO $owner$ BEGIN IF md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))<>'d880a99b18d966c092f5d5fb6f2ee98b' OR(SELECT pg_get_userbyid(proowner)FROM pg_proc WHERE oid='public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure)IS DISTINCT FROM 'postgres' OR(SELECT proacl::text FROM pg_proc WHERE oid='public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure)IS DISTINCT FROM '{postgres=X/postgres}' THEN RAISE EXCEPTION 'historical_rakeback_payer_owner_changed: fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)'; END IF; END $owner$;
 CREATE OR REPLACE FUNCTION public.fn_settle_accounting_rakeback_stage(p_scope_kind text, p_scope_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone)
@@ -1858,6 +1859,8 @@ END $function$;
 
 
 REVOKE ALL ON FUNCTION fn_ca_settlement_correctness_check() FROM PUBLIC,anon,authenticated;
+
+GRANT EXECUTE ON FUNCTION public.fn_ca_settlement_correctness_check() TO service_role;
 DO $declaration$ DECLARE declared text;BEGIN
  IF md5(pg_get_functiondef('public.fn_ca_declare_guard_redefinition(text,text)'::regprocedure))<>'3a3746dc6e0a5b7a1db97805588c0eb8'
  THEN RAISE EXCEPTION 'historical_rakeback_guard_declaration_owner_changed';END IF;

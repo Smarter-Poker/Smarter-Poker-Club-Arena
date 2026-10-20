@@ -1,4 +1,4 @@
--- @live-proof: (md5(pg_get_functiondef('fn_accounting_cash_commission_source_guard()'::regprocedure))='f6bb6de73cb43d54a42dbc31caab4a3b' AND md5(pg_get_functiondef('fn_accounting_union_earned_plan_sets(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='01abfa84da1dbe701503ad1da7585d0b' AND md5(pg_get_functiondef('fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='912dd5c0dd309f446de6fecd87b60cc0' AND md5(pg_get_functiondef('fn_accrue_cash_hand_commissions(uuid)'::regprocedure))='020617e6132d5df34b79b403b34f2062' AND md5(pg_get_functiondef('fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='fabde84baa4d2bee303531de45c65c06' AND md5(pg_get_functiondef('fn_rakeback_recompute_split(uuid,date,date)'::regprocedure))='cb4c66d535d0b0584ec2dad3d6f26c13' AND md5(pg_get_functiondef('smarter_private.admit_cash_atomic_contracts(uuid,jsonb)'::regprocedure))='a284c613275609a927efd8b7543fab87' AND to_regclass('public.accounting_cash_atomic_contract_admissions') IS NOT NULL AND position('accounting_effective_cash_rake_sources' IN pg_get_viewdef('public.accounting_payable_earning_sources'::regclass,true))>0 AND NOT has_function_privilege('authenticated','smarter_private.admit_cash_atomic_contracts(uuid,jsonb)','EXECUTE'))
+-- @live-proof: (md5(pg_get_functiondef('fn_accounting_cash_commission_source_guard()'::regprocedure))='f6bb6de73cb43d54a42dbc31caab4a3b' AND md5(pg_get_functiondef('fn_accounting_union_earned_plan_sets(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='01abfa84da1dbe701503ad1da7585d0b' AND md5(pg_get_functiondef('fn_accounting_union_earned_plan_window(uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='912dd5c0dd309f446de6fecd87b60cc0' AND md5(pg_get_functiondef('fn_accrue_cash_hand_commissions(uuid)'::regprocedure))='020617e6132d5df34b79b403b34f2062' AND md5(pg_get_functiondef('fn_prepare_accounting_week(uuid,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='fabde84baa4d2bee303531de45c65c06' AND md5(pg_get_functiondef('fn_rakeback_recompute_split(uuid,date,date)'::regprocedure))='cb4c66d535d0b0584ec2dad3d6f26c13' AND md5(pg_get_functiondef('smarter_private.admit_cash_atomic_contracts(uuid,jsonb)'::regprocedure))='c4c689544fb3781137b3809063b61f96' AND to_regclass('public.accounting_cash_atomic_contract_admissions') IS NOT NULL AND position('accounting_effective_cash_rake_sources' IN pg_get_viewdef('public.accounting_payable_earning_sources'::regclass,true))>0 AND NOT has_function_privilege('authenticated','smarter_private.admit_cash_atomic_contracts(uuid,jsonb)','EXECUTE'))
 -- 20261019211745_unpaid_cash_contracts_resume_from_atomic_earning_history.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
@@ -117,6 +117,15 @@ BEGIN
     OR(a->>'created_at')::timestamptz IS DISTINCT FROM s.earned_at OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(s.contract->'tiers')t
      WHERE t->>'user_id'=a->>'user_id' AND(t->>'amount')::numeric=(a->>'amount')::numeric AND(t->>'rate')::numeric=(a->>'commission_rate')::numeric))
   THEN RAISE EXCEPTION 'atomic_cash_admission_original_commissions_changed' USING ERRCODE='23514'; END IF;
+  -- An admitted source changes this unpaid book's proof fingerprint. Retained
+  -- plan windows/certificates otherwise trust only their age and could reuse
+  -- the prior contract. Invalidate their original scoped proof records in this
+  -- SAME source transition; boundary certificates and other books stay intact.
+  -- The paid-book guard above and original week lock exclude any payer stage.
+  DELETE FROM public.accounting_close_partials
+   WHERE union_id=COALESCE(s.coordinator_union_id,s.club_id) AND period_start=w_from AND period_end=w_to;
+  DELETE FROM public.accounting_close_certificates
+   WHERE union_id=COALESCE(s.coordinator_union_id,s.club_id) AND period_start=w_from AND period_end=w_to;
   INSERT INTO public.accounting_cash_atomic_contract_admissions(source_id,original_contract,admitted_contract,original_commissions,invalid_history_ids)
    VALUES(s.id,s.contract,canonical,old_rows,bad_ids);
   old_setting:=current_setting('app.ledger_maintenance',true);

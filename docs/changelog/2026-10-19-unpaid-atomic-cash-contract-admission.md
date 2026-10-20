@@ -43,3 +43,11 @@ that same source view; all nine existing money-door, overlap, cutoff and access
 assertions pass. The focused unpaid-contract proof uses the complete original
 view, with typed empty tournament prerequisites, and retains all seven function
 postimages and exact original permissions.
+
+The admission transaction also invalidates the original full-week proof windows
+and certificates for that exact coordinator book and period. Those caches had
+age-based validity and could otherwise retain the pre-admission contract even
+when calculator freshness detected the newer source. Boundary certificates,
+other weeks and other books remain intact. The native rollback and concurrent
+admission tests prove scoped invalidation, and duplicate requests preserve
+fresh proofs created after admission. No payment or historical source changes.

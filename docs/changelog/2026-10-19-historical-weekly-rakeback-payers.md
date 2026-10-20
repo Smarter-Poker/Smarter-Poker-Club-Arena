@@ -65,3 +65,9 @@ The page-evidence source contract still compares all predecessor verification
 and certificate bytes after undoing only the exact independently qualified
 agent-zero, direct-owner and historical-payer expressions. Planted changes to
 the payer threshold, owner identity, rate cap and coordinator remain refused.
+
+The zero-payout source law now inspects the actual newest correctness reader,
+preserving both positive-amount requirements, every existing check marker and
+its private/service-only grants. The original immutable migration's hash and
+preimage tests remain unchanged; a historical filename is not a restriction
+against the qualified split-credit evidence extension.

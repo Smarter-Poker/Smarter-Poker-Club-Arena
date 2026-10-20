@@ -25,6 +25,7 @@ try:
   # Generated expressions reference the real columns in this same captured table.
   sql('CREATE TABLE '+r['table_name']+'('+r['columns']+')')
  sql('CREATE TABLE clubs(id uuid,owner_id uuid,is_union boolean,union_id uuid);ALTER TABLE accounting_cash_rake_sources ADD PRIMARY KEY(id);ALTER TABLE ca_ledger_maintenance_kinds ADD PRIMARY KEY(kind);CREATE UNIQUE INDEX ON accounting_period_recompute_requests(club_id,period_start,period_end);')
+ sql('CREATE TABLE accounting_close_partials(kind text,union_id uuid,period_start timestamptz,period_end timestamptz,value jsonb);CREATE TABLE accounting_close_certificates(kind text,union_id uuid,period_start timestamptz,period_end timestamptz,value jsonb);')
  data=json.loads((fixtures/'unpaid-atomic-cash-contract-cases.json').read_text());cases=data['case'];deps=json.loads((fixtures/'unpaid-atomic-cash-contract-dependencies.json').read_text())
  for table,key in [('clubs','clubs'),('accounting_agreement_history','history'),('accounting_cash_rake_sources','sources'),('accounting_cash_accrual_batches','batches'),('rake_attributions','attributions'),('agent_commissions','commissions')]:insert(table,cases[key])
  insert('rake_records',data['records']['rake_records']);insert('accounting_cash_bank_receipts',data['records']['bank'])
@@ -76,7 +77,7 @@ try:
    expected[s['id']]={'original_md5':sql("SELECT md5(contract::text)FROM accounting_cash_rake_sources WHERE id='"+s['id']+"'"),'admitted_md5':sql("SELECT md5(p::text)FROM jsonb_array_elements(fn_accounting_cash_commission_plan('"+s['rake_record_id']+"')->'players')p WHERE p->>'player_id'='"+s['player_id']+"' AND p->>'club_id'='"+s['club_id']+"'")}
  assert len(changed)==6,[(s['id'],[k for k in s['contract'] if s['contract'][k]!=canonical[(s['rake_record_id'],s['player_id'],s['club_id'])].get(k)])for s in changed]
  candidate=next((root/'supabase/migrations').glob('20261019211745_*')).read_text();sql(candidate)
- assert sql('SELECT '+candidate.splitlines()[0].split(': ',1)[1])=='t'
+ assert sql('SELECT '+candidate.splitlines()[0].split(': ',1)[1])=='t', sql("SELECT md5(pg_get_functiondef('smarter_private.admit_cash_atomic_contracts(uuid,jsonb)'::regprocedure))")
  for sig,acl in original_acl.items():assert sql("SELECT proacl::text FROM pg_proc WHERE oid='"+sig+"'::regprocedure")==acl
  native_hashes={r['signature']:sql("SELECT md5(pg_get_functiondef('"+r['signature']+"'::regprocedure))") for r in pre}
  native_hashes['smarter_private.admit_cash_atomic_contracts(uuid,jsonb)']=sql("SELECT md5(pg_get_functiondef('smarter_private.admit_cash_atomic_contracts(uuid,jsonb)'::regprocedure))")
@@ -87,6 +88,8 @@ try:
   q+= "DO $$BEGIN RAISE EXCEPTION 'qualified_admission_rollback';END$$;" if abort else 'COMMIT;'
   return sql(q,error or ('qualified_admission_rollback' if abort else None))
  first=changed[0]
+ for table in ['accounting_close_partials','accounting_close_certificates']:
+  sql("INSERT INTO "+table+" VALUES('earned_plan','fade0000-0000-0000-0000-000000000001','2026-10-12 07:00Z','2026-10-19 07:00Z','{\"fixture\":\"stale_contract\"}'),('earned_plan','fade0000-0000-0000-0000-000000000001','2026-10-05 07:00Z','2026-10-12 07:00Z','{}'),('earned_plan','00000000-0000-0000-0000-000000000099','2026-10-12 07:00Z','2026-10-19 07:00Z','{}'),('pnl_boundary','fade0000-0000-0000-0000-000000000001','2026-10-12 07:00Z','2026-10-12 07:00Z','{}')")
  def fault(prefix,message,expect=expected):
   hand=next(r['hand_id']for r in cases['batches']if r['rake_record_id']==first['rake_record_id'])
   e={x['id']:expect[x['id']] for x in changed if x['rake_record_id']==first['rake_record_id']}
@@ -105,6 +108,7 @@ try:
  sql("BEGIN;SELECT smarter_private.admit_cash_atomic_contracts('"+normal['rake_record_id']+"',"+quoted({normal['id']:{'original_md5':normal_hash,'admitted_md5':normal_hash}})+");COMMIT;",'atomic_cash_admission_no_unfinished_external_history')
  attempt(changed[0],abort=True)
  assert sql('SELECT count(*)FROM accounting_cash_atomic_contract_admissions')=='0'
+ for table in ['accounting_close_partials','accounting_close_certificates']:assert sql('SELECT count(*)FROM '+table)=='4'
  # Concurrent identical requests serialize on the original hand authority.
  with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
   futures=[pool.submit(attempt,first)for _ in range(2)]
@@ -122,15 +126,22 @@ try:
  assert sql("SELECT lifetime_rake_generated FROM agents WHERE id='a9f2c2c6-4e2a-4bed-916e-c7994192d425'")=='10000.0000'
  assert sql("SELECT sum((t->>'amount')::numeric) FROM accounting_cash_atomic_contract_admissions a CROSS JOIN LATERAL jsonb_array_elements(a.admitted_contract->'tiers')t")=='2.72'
  assert sql("SELECT sum(amount)FROM agent_commissions WHERE source_id IN(SELECT source_id FROM accounting_cash_atomic_contract_admissions)")=='2.72'
+ for table in ['accounting_close_partials','accounting_close_certificates']:
+  assert sql('SELECT count(*)FROM '+table)=='3'
+  assert sql("SELECT count(*)FROM "+table+" WHERE value->>'fixture'='stale_contract'")=='0'
+  sql("INSERT INTO "+table+" VALUES('earned_plan','fade0000-0000-0000-0000-000000000001','2026-10-12 07:00Z','2026-10-19 07:00Z','{\"fixture\":\"fresh_contract\"}')")
  for s in changed:attempt(s)
  assert sql('SELECT count(*)FROM accounting_cash_atomic_contract_admissions')=='6'
  assert sql('SELECT count(*)FROM ca_ledger_mutation_log')=='8'
+ for table in ['accounting_close_partials','accounting_close_certificates']:
+  assert sql('SELECT count(*)FROM '+table)=='4'
+  assert sql("SELECT count(*)FROM "+table+" WHERE value->>'fixture'='fresh_contract'")=='1'
  sql('UPDATE accounting_cash_rake_sources SET contract=contract','accounting_agreement_history_is_immutable')
  sql('DELETE FROM accounting_cash_atomic_contract_admissions','accounting_agreement_history_is_immutable')
  sql("UPDATE agent_commissions SET amount=amount+1",'financial journals are append-only')
  assert sql("SELECT has_function_privilege('authenticated','smarter_private.admit_cash_atomic_contracts(uuid,jsonb)','EXECUTE')")=='f'
  sql(candidate,'already exists')
- print(json.dumps({'qualification':'passed','changed_sources':6,'original_sources_unchanged':True,'original_commissions_archived':8,'new_commissions':'2.72','old_commissions':'1.88','rollback':True,'duplicate_unchanged':True,'concurrent_original_requests':True,'no_chip_payment':True,'negative_cases':8,'agent_display_delta_exact':True,'postimages':native_hashes}))
+ print(json.dumps({'qualification':'passed','changed_sources':6,'original_sources_unchanged':True,'original_commissions_archived':8,'new_commissions':'2.72','old_commissions':'1.88','rollback':True,'duplicate_unchanged':True,'concurrent_original_requests':True,'no_chip_payment':True,'negative_cases':8,'agent_display_delta_exact':True,'scoped_stale_proofs_invalidated_atomically':True,'boundaries_and_other_books_preserved':True,'duplicate_keeps_new_proofs':True,'postimages':native_hashes}))
 finally:
  if started:run([a.pg_bin/'pg_ctl','-D',base/'d','-m','immediate','-w','stop'])
  shutil.rmtree(base)

@@ -61,12 +61,29 @@ function sweepViolations(body: string): string[] {
   if (trap < 0 || (handlerEnd > 0 && trap > handlerEnd))
     v.push('a statement timeout inside the refresh is not trapped, so it aborts the whole sweep');
   else {
-    const exit = body.indexOf('EXIT;', trap);
-    if (exit < 0 || exit > handlerEnd)
+    const within = (i: number) => i >= 0 && i < handlerEnd;
+    // Two mechanisms stop the refreshing once the timer is spent. Before
+    // 20261020010133 the handler EXITed the loop. Since then the loop goes on
+    // only to tell every union it can no longer reach (one out_of_time warning
+    // each), and a guard ahead of the refresh call, set by the handler, keeps
+    // any of them from being refreshed.
+    const exited = within(body.indexOf('EXIT;', trap));
+    const loopStart = body.lastIndexOf('FOR u IN', refresh);
+    const guard = body.lastIndexOf('IF v_rb_out_of_time THEN', refresh);
+    const guarded =
+      guard > loopStart &&
+      body.slice(guard, refresh).includes('ELSE') &&
+      within(body.indexOf('v_rb_out_of_time := true;', trap));
+    if (!exited && !guarded)
       v.push('after the timer is spent the sweep goes on refreshing with no timeout at all');
-    const dedupe = body.indexOf("a.context->>'kind' = 'out_of_time'", trap);
-    if (dedupe < 0 || dedupe > handlerEnd)
-      v.push('a refresh that runs out of time files a new warning every hour');
+    // One open warning, not one an hour: the out_of_time lookup itself, or
+    // (20261020010133) the per-kind lookup the handler's kind is filed through.
+    const dedupe = within(body.indexOf("a.context->>'kind' = 'out_of_time'", trap));
+    const keyed =
+      within(body.indexOf("v_kind := 'out_of_time';", trap)) &&
+      within(body.indexOf("AND COALESCE(a.context->>'kind', 'failed') = v_kind", trap)) &&
+      within(body.indexOf('IF v_alert IS NULL THEN', trap));
+    if (!dedupe && !keyed) v.push('a refresh that runs out of time files a new warning every hour');
   }
   return v;
 }
@@ -119,6 +136,24 @@ describe('the union sweep commits its money controls before the snapshot', () =>
     expect(v).toContain(
       'a statement timeout inside the refresh is not trapped, so it aborts the whole sweep'
     );
+  });
+  it('refutes the body in force without its guard or its per-kind lookup (negative proof)', () => {
+    const body = functionBody(
+      latestDeclaring('fn_union_integrity_sweep_all').sql,
+      'fn_union_integrity_sweep_all'
+    );
+    expect(body).toContain('IF v_rb_out_of_time THEN');
+    expect(sweepViolations(body.replace('IF v_rb_out_of_time THEN', 'IF false THEN'))).toContain(
+      'after the timer is spent the sweep goes on refreshing with no timeout at all'
+    );
+    expect(
+      sweepViolations(
+        body.replace(
+          "AND COALESCE(a.context->>'kind', 'failed') = v_kind",
+          "AND COALESCE(a.context->>'kind', 'failed') = 'never'"
+        )
+      )
+    ).toContain('a refresh that runs out of time files a new warning every hour');
   });
   it('the preimage fixture is the one the migration asserts', () => {
     const sql = readMigration(migrationFiles().find((f) => f.startsWith('20260926073120_'))!);

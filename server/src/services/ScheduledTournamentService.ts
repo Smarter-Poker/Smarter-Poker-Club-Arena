@@ -751,7 +751,7 @@ export function fixedBoardRow(
     unionId,
     label: schedule.name,
   });
-  if (freeBuy) return withMidwayStructure({ ...freeBuy, schedule_id: schedule.id });
+  if (freeBuy) return withMidwayStructure({ ...freeBuy, schedule_id: schedule.id }, cfg);
   const template = fixedBoardTemplate(name);
   if (!template) return null;
   const row = recurringMttRow(template.config, startTime, {
@@ -759,7 +759,7 @@ export function fixedBoardRow(
     unionId,
     xmtt: template.kind === 'union_mtt',
   });
-  return withMidwayStructure({ ...row, schedule_id: schedule.id });
+  return withMidwayStructure({ ...row, schedule_id: schedule.id }, { ...template.config, ...cfg });
 }
 
 export class ScheduledTournamentService {
@@ -2319,7 +2319,7 @@ export class ScheduledTournamentService {
       row.table_size = 3;
     }
 
-    return withMidwayStructure(row);
+    return withMidwayStructure(row, cfg);
   }
 
   /**

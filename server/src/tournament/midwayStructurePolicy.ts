@@ -34,7 +34,10 @@ export function midwayBlindStructure(minutes: number, holdEm: boolean): Generate
  * No mutation of live/funded events, no timer and no change to entry prices,
  * bounty economics, destinations or the published timetable. Only the three
  * explicitly requested Free Buy guarantee reductions apply. */
-export function withMidwayStructure<T extends Record<string, unknown>>(row: T): T {
+export function withMidwayStructure<T extends Record<string, unknown>>(
+  row: T,
+  authored: Record<string, unknown> = {}
+): T {
   if (row.club_id !== MIDWAY_UNION_ID && row.union_id !== MIDWAY_UNION_ID) return row;
   if (String(row.tournament_type).toUpperCase() !== 'MTT') return row;
   const free = Number(row.buy_in_amount) + Number(row.buy_in_fee) === 0;
@@ -61,9 +64,21 @@ export function withMidwayStructure<T extends Record<string, unknown>>(row: T): 
   // Other entries/rebuys retain at least 20 BB at the last admitted level.
   let cutoff = free ? 5 : Math.min(requested, blinds.length);
   while (!free && cutoff > 0 && stack / blinds[cutoff - 1].bigBlind < 20) cutoff--;
-  const rebuy = free || row.is_rebuy === true;
-  const reentry = rebuy || row.is_reentry === true;
-  const addon = free || row.add_on_available === true;
+  // Generic MTT rows also use variant=freezeout; only authored formats opt out.
+  const explicitFreezeout =
+    ['freezeout', 'mtt_freezeout'].includes(String(authored.type).toLowerCase()) ||
+    /\bfreeze[ -]?out\b/i.test(String(authored.name ?? row.name));
+  const rebuy = !explicitFreezeout;
+  const reentry = rebuy;
+  const addon = rebuy && !/^Sunday[ -]?200(?:\b|$)/i.test(String(row.name));
+  const purchaseCost = (value: unknown): number => {
+    const existing = Number(value);
+    return Number.isFinite(existing) && existing > 0
+      ? existing
+      : free
+        ? 1
+        : Number(row.buy_in_amount) + Number(row.buy_in_fee);
+  };
   return {
     ...row,
     starting_chips: stack,
@@ -86,11 +101,13 @@ export function withMidwayStructure<T extends Record<string, unknown>>(row: T): 
     late_reg_mins: mttLateRegistrationMinutes(blinds, cutoff),
     is_rebuy: rebuy,
     is_reentry: reentry,
+    rebuy_cost: rebuy ? purchaseCost(row.rebuy_cost) : null,
     rebuy_chips: reentry ? stack : null,
     rebuy_levels: rebuy ? cutoff : null,
     add_on_available: addon,
+    addon_cost: addon ? purchaseCost(row.addon_cost) : null,
     // Free Buy's owner-approved early add-on remains available at sit-down.
-    addon_from_start: free ? row.addon_from_start === true : false,
+    addon_from_start: addon && free ? row.addon_from_start === true : false,
     addon_chips: addon ? (free ? 10000 : Math.max(Number(row.addon_chips) || 0, stack * 2)) : null,
     addon_levels: addon ? 1 : null,
     addon_break_minutes: addon ? 5 : row.addon_break_minutes,

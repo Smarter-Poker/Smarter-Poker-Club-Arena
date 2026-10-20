@@ -70,6 +70,8 @@ describe('Midway standard structures through the actual scheduled creator', () =
           expect(Number(row.buy_in_amount) + Number(row.buy_in_fee)).toBe(config.buyIn);
       }
       if (config.guaranteedPrize != null) expect(row.guaranteed_prize).toBe(config.guaranteedPrize);
+      expect(row.is_rebuy).toBe(true);
+      expect(row.add_on_available).toBe(!/^Sunday[ -]?200(?:\b|$)/i.test(name));
       if (row.is_rebuy) {
         expect(row.rebuy_levels).toBe(row.late_reg_levels);
         expect(row.rebuy_chips).toBe(row.starting_chips);
@@ -118,6 +120,58 @@ describe('Midway standard structures through the actual scheduled creator', () =
     expect((row!.blind_structure as any[])[0].smallBlind).toBe(25);
     expect(row!.guaranteed_prize).toBe(250);
     expect(auditFreeBuyRow({ ...row!, start_time: '2026-10-25T13:30:00Z' })).toEqual([]);
+  });
+
+  it('uses authored freezeout intent and preserves purchase prices', () => {
+    const base: Record<string, unknown> = {
+      club_id: MIDWAY_UNION_ID,
+      tournament_type: 'MTT',
+      name: 'Daily',
+      variant: 'freezeout',
+      buy_in_amount: 18,
+      buy_in_fee: 2,
+      starting_chips: 5000,
+      late_reg_levels: 6,
+      blind_structure: [{ smallBlind: 25, bigBlind: 50, durationMinutes: 8 }],
+    };
+    expect(withMidwayStructure(base, { type: 'mtt' })).toMatchObject({
+      is_rebuy: true,
+      is_reentry: true,
+      rebuy_cost: 20,
+      add_on_available: true,
+      addon_cost: 20,
+      addon_chips: 10000,
+      addon_break_minutes: 5,
+    });
+    for (const authored of [
+      { type: 'freezeout' },
+      { type: 'mtt_freezeout' },
+      { name: 'Daily Freezeout' },
+    ]) {
+      expect(withMidwayStructure(base, authored)).toMatchObject({
+        is_rebuy: false,
+        is_reentry: false,
+        rebuy_cost: null,
+        rebuy_chips: null,
+        rebuy_levels: null,
+        add_on_available: false,
+        addon_cost: null,
+        addon_chips: null,
+        addon_levels: null,
+      });
+    }
+    expect(
+      withMidwayStructure({ ...base, name: 'Sunday 200', add_on_available: true })
+    ).toMatchObject({
+      is_rebuy: true,
+      rebuy_cost: 20,
+      add_on_available: false,
+      addon_cost: null,
+    });
+    expect(withMidwayStructure({ ...base, rebuy_cost: 7, addon_cost: 9 })).toMatchObject({
+      rebuy_cost: 7,
+      addon_cost: 9,
+    });
   });
 
   it('does not change another club or a seat-first format', () => {

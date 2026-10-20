@@ -14,6 +14,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
@@ -27,6 +28,46 @@ const BACKOFF_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000]; // Exponential ba
 
 export default function GlobalWaitlistListener() {
   const { user } = useAuthUser();
+  const activeUserIdRef = useRef(user?.id);
+  activeUserIdRef.current = user?.id;
+  const navigate = useNavigate();
+  const location = useLocation();
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const locationRef = useRef(location);
+  locationRef.current = location;
+  const openedOffersRef = useRef(new Set<string>());
+  // A committed offer finishes the player's earlier Join action. It opens
+  // the purchase door, never purchases chips or follows a turn clock.
+  const openOfferedSeat = useCallback(
+    (row: {
+      id?: string;
+      table_id?: string | number;
+      notified_at?: string | null;
+      hold_expires_at?: string | null;
+    }) => {
+      const deadline = holdDeadline(row);
+      if (
+        !row.id ||
+        !row.table_id ||
+        !deadline ||
+        Date.parse(deadline) <= Date.now() ||
+        !Number.isFinite(Date.parse(deadline))
+      )
+        return;
+      const key = `${row.id}:${row.notified_at ?? deadline}`;
+      if (openedOffersRef.current.has(key)) return;
+      openedOffersRef.current.add(key);
+      const destination = `/table/${row.table_id}`;
+      if (
+        locationRef.current.pathname === destination &&
+        new URLSearchParams(locationRef.current.search).get('buyin') === '1'
+      )
+        return;
+      navigateRef.current(`${destination}?buyin=1`);
+    },
+    []
+  );
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
   const cleanedUpRef = useRef(false);
@@ -311,14 +352,16 @@ export default function GlobalWaitlistListener() {
       // for queues the player was no longer in.
       const { data, error } = await supabase
         .from('table_waitlist')
-        .select('table_id, status, hold_expires_at, notified_at')
+        .select('id, table_id, status, hold_expires_at, notified_at')
         .eq('user_id', user.id)
         .in('status', ['waiting', 'notified']);
       if (error) {
         reportError(error, 'GlobalWaitlistListener.refreshWatchedTables');
         return;
       }
+      if (cleanedUpRef.current || activeUserIdRef.current !== user.id) return;
       type WatchedRow = {
+        id: string;
         table_id: string;
         status?: string | null;
         hold_expires_at?: string | null;
@@ -344,6 +387,7 @@ export default function GlobalWaitlistListener() {
           tableName: '',
           holdExpiresAt: deadline,
         });
+        openOfferedSeat(row);
       }
       /* A row that is no longer notified must forget its offer, or a genuine
          later re-offer on the same table would be deduped into silence. */
@@ -364,11 +408,14 @@ export default function GlobalWaitlistListener() {
     } catch (err) {
       reportError(err, 'GlobalWaitlistListener.refreshWatchedTables');
     }
-  }, [user?.id, setupChannel]);
+  }, [user?.id, setupChannel, openOfferedSeat]);
 
   useEffect(() => {
     cleanedUpRef.current = false;
     retryCountRef.current = 0;
+    openedOffersRef.current.clear();
+    offeredHoldsRef.current.clear();
+    watchedTableIdsRef.current = [];
 
     // Register channel factory so MasterBus health monitor can auto-recover
     masterBus.registerChannelFactory(WAITLIST_CHANNEL_KEY, () => {
@@ -396,6 +443,7 @@ export default function GlobalWaitlistListener() {
             filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
+            if (cleanedUpRef.current || activeUserIdRef.current !== user.id) return;
             /* ── THE SEAT OFFER (Dan 2026-08-26) ──────────────────────────
                The engine claims the queue head by flipping the row to
                'notified' (notifyWaitlistSeatOpen). That UPDATE lands here on
@@ -406,6 +454,7 @@ export default function GlobalWaitlistListener() {
                offer. */
             type WaitlistPayload = {
               new?: {
+                id?: string;
                 status?: string;
                 table_id?: string | number;
                 notified_at?: string | null;
@@ -456,6 +505,7 @@ export default function GlobalWaitlistListener() {
                 tableName: '',
                 holdExpiresAt: deadline,
               });
+              if (newRow) openOfferedSeat(newRow);
 
               /* NO "SEAT HELD" POPUP (Dan 2026-10-12): "there is not point to
                  have a pop up with 'This seat is reserved click to take it.'
@@ -470,7 +520,15 @@ export default function GlobalWaitlistListener() {
             masterBus.emit('WAITLIST_CHANGED', undefined as void);
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          // Close the read/subscribe gap and recover a live offer on reconnect.
+          if (
+            status === 'SUBSCRIBED' &&
+            !cleanedUpRef.current &&
+            activeUserIdRef.current === user.id
+          )
+            void refreshWatchedTables();
+        });
     }
 
     return () => {
@@ -480,7 +538,7 @@ export default function GlobalWaitlistListener() {
       masterBus.removeRegisteredChannel(watchKey);
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
-  }, [setupChannel, refreshWatchedTables, user?.id]);
+  }, [setupChannel, refreshWatchedTables, user?.id, openOfferedSeat]);
 
   return null; // Invisible global background listener
 }

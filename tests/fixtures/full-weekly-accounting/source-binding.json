@@ -340,7 +340,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "ceb603e562a54088d35ddf67c4a48072a1a435a80b7c5084e4b02f9ff1992253",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -358,7 +358,7 @@
     "tests/fixtures/union-pnl-inventory/README.md": "1ec2588a68d7fa3123ca63a033c2ac6b02e3b0d4efb43aff01091ba36d56d826",
     "tests/fixtures/union-pnl-inventory/bootstrap.sql": "7bbbc23553513e88b53c066f6afe47170d5a2f85f2b215ac72fd2df603cd8a08",
     "supabase/migrations/20260917231832_union_accounting_schedule_adoption.sql": "ad8d6c8ff386f7701a7ae394059099bb847574ac88cc06d29401f35b2e62a876",
-    "tests/fixtures/union-weekly-basis/source-binding.json": "a9388141873efdbee3863f0cbf183f05561af8e814439b5226175ab17396f846",
+    "tests/fixtures/union-weekly-basis/source-binding.json": "8300794ccd0340f58b998d8a0292d0de83ea971b0117ec275e507d6f927b4b22",
     "tests/fixtures/union-weekly-basis/installed-precondition.sql": "e72a8066b405a3abe1f573a1b2925986da0bb086f5b0b6cbed7492b777636297",
     "tests/fixtures/union-weekly-basis/captured-close-dependencies.json": "e696d389d3b69ff1b101d56d0b94beb6878faa2ea6113b31cbf6b1d7ec59a3a9",
     "tests/fixtures/union-weekly-basis/tournament-regression.sql": "d3b981a7be49916f2b672c174acfac2f5e3a5e136984cf9e801fe5120dce7a6d",
@@ -379,7 +379,7 @@
     "tests/fixtures/union-weekly-basis/captured-document-dependencies.json": "b5f5a9e7e0a2a7c710295bcd6b0a1b5aca7ddf9c27a6268167eba1a8e35fa23b",
     "tests/fixtures/union-weekly-basis/negative-regression.sql": "b1621071f538fc63c3a479b3dc0d51fde9b85c4d68f93f857699b866df0ce4c7",
     "tests/fixtures/union-weekly-basis/bootstrap.sql": "c0a5fdfbaf5ca0aa7751dc862bbb62d6bf52e819758eb9df45b0e8e13b07a1d1",
-    "scripts/dev/test-union-weekly-basis.py": "3f151d0775837331fce21b2bbcba10da5f358ca192a9db00cb886cec1edfe2e3",
+    "scripts/dev/test-union-weekly-basis.py": "bec0ca77f49087a1406c9dc465a21f1fe8760cdc176c34adb5247b3b4d8d5295",
     "scripts/ci/schema-manifest.d/union-weekly-original-basis.json": "fa2f2f378db56fa7b586c6ddecaf43d58cac0b34817e8497b13ebb5159f33798",
     "supabase/migrations/20260917234315_union_weekly_pnl_uses_original_qualified_basis.sql": "09d254067d87cd0216fd5333c9c6e75c9e64c8077b5ce68b1d553e8bcdab7ee7",
     "docs/changelog/union-original-weekly-basis-2026-09-18.md": "48a214e9d4b353ded7e8089e1619e3ee78077f5dbde6df1be372a6d738efdfcf",
@@ -429,7 +429,7 @@
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
-    "tests/fixtures/spin-mixed-cutover/source-binding.json": "4cb2fdd5141be8a7951fdd582d6d7c2830bbe22d6ce5bd1e335e466bb598f650",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "8a1336e5eb63bd28b0d7b21d00380274dc1ad4f4d29568576e5de82af5f74bfc",
     "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
@@ -468,7 +468,7 @@
     "scripts/ci/classify-ci-changes.mjs": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "44183b53a02b820e826f37bb9a32e55629803a81471b77922966674b4d92c3f1",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "000906440867e485ae832973d1ec62b3ccb55a13d905ac3f0350d66f26b5372d",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -487,7 +487,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "64b7ec88e94688696ab1f53b0e84fe19619179947f08bf35ef4bcb22d397eb87",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "d1273b7bc06e2a6792d49b8909cae6e7d479a1d31ef3f2437b5c89959ba52d8f",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -527,13 +527,17 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "e934e7177890d915154e97b692b2d681ee5d35d7c98c7526f42e969bb35ab780",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "fb5835207b85eb2766f527b1bd7be0e8e1b01e0cbf3410e78ef24431894ac545",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
     "tests/fixtures/messenger-private-accounting/payee-document-privacy-preimage.sql": "1f45bab2cf5905b7e3ba1000a60fc84b29201d977a77fd14c76239b40666d8dc",
     "tests/fixtures/messenger-private-accounting/payee-document-privacy-regression.sql": "c06ddff8284d5d0e5f8d940edbdc99aafa34228104071061f7b48ae1009e8eac",
-    "supabase/migrations/20260921052548_payee_documents_are_private_to_their_payee_and_rosters_are_n.sql": "42a061f0c9101f11a847c415f7814dcd76a24a265a8525b32b23e2fd395c4b5e"
+    "supabase/migrations/20260921052548_payee_documents_are_private_to_their_payee_and_rosters_are_n.sql": "42a061f0c9101f11a847c415f7814dcd76a24a265a8525b32b23e2fd395c4b5e",
+    "scripts/ci/qualify-commission-club-legacy.py": "0625af694ca4a4c452fbf495e23e1e5e16ff9967b0da4cdcb802f671a513c47b",
+    "scripts/ci/fixtures/commission-club-history-preimages.json": "01da8ddb15727b8633502054e55728b12884876649827a3f1a527602eb20bb73",
+    "supabase/migrations/20261020163005_weekly_commission_journals_keep_their_original_club.sql": "cadf718948311b4c88cbacb3072abcd45863291ed1eae8180b56e233c0ab30a4",
+    "scripts/ci/test-commission-club-history-postgres.py": "599055bb43ca0137bdde9c9d60dca9a4e8c6f1cf729ff849190ca74ff90b8bf3"
   },
   "supplemental_captures": {
     "period_writers": "2026-09-15 00:39:03.686932+00",
@@ -4995,5 +4999,18 @@
     "file": "tests/unit/discardedErrorReadRatchet.test.ts",
     "previous_sha256": "6ee42c44014a340d3618dd48c107786fa7b3ab379ccc5fb90c2445b8e716573c",
     "sha256": "8af244b4d2a80952923d67f9be6d2a7576f406077af01bb4f0562be614e4567f"
+  },
+  "commission_club_history_20261020": {
+    "reason": "Exact connected original commission writer and legacy consumer qualification; existing financial assertions and historical bindings preserved.",
+    "changed_active_inputs": [
+      "scripts/dev/test-full-weekly-accounting-activation.sh",
+      "tests/fixtures/union-weekly-basis/source-binding.json",
+      "scripts/dev/test-union-weekly-basis.py"
+    ]
+  },
+  "commission_club_history_parent_20261020": {
+    "reason": "Existing full-parent entrypoint unconditionally executes original R2 exact-club journal native regression. Financial assertions and historical audit evidence unchanged.",
+    "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
+    "sha256": "ceb603e562a54088d35ddf67c4a48072a1a435a80b7c5084e4b02f9ff1992253"
   }
 }

@@ -32,6 +32,7 @@ import { CardSkeleton } from '../../components/skeletons/CardSkeleton';
 import { useToast } from '../../components/common/Toast';
 
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { featuredNow, hasStarted } from '../../lib/featuredOnItsDay';
 import styles from './TournamentLobbyPage.module.css';
 
 import { useIsMounted } from '../../hooks/useIsMounted';
@@ -512,7 +513,7 @@ export default function TournamentLobbyPage() {
         data = await withDiamondSpinCeilings(data);
         if (!isMounted.current) return;
 
-        const mapped: Tournament[] = data.map((t: any) => ({
+        const board: Tournament[] = data.map((t: any) => ({
           id: t.id,
           format_contract: readTournamentFormat(t),
           name: t.name,
@@ -564,6 +565,19 @@ export default function TournamentLobbyPage() {
           arena: t.arena,
           diamond_spin_ceiling: t.diamond_spin_ceiling ?? null,
         }));
+
+        /* Dan 2026-10-19: a nightly featured event is pinned only on its own
+           day; the weekly flagship keeps its pin (src/lib/featuredOnItsDay.ts). */
+        const featuredToday = featuredNow(board, (m) => ({
+          pinned: m.isPinned,
+          started: hasStarted(m.status),
+          startTime: m.startTime ?? null,
+          clubId: m.clubId,
+          name: m.name,
+        }));
+        const mapped = board.map((m) =>
+          m.isPinned && !featuredToday.has(m) ? { ...m, isPinned: false } : m
+        );
 
         if (seq !== loadSeqRef.current) return;
         setTournaments(mapped);

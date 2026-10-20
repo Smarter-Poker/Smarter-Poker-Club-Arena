@@ -44,6 +44,14 @@ describe('the original Lightning final gate survives the release review', () => 
         expect(existsSync(resolve(root, path)), path).toBe(true);
       expect(documented.get(gate.id), gate.id).toBe(gate.requirement);
     }
+    // The two 9-max gates are retired by the owner's 2026-10-19 six-seat
+    // ruling: kept as history, marked superseded, never silently deleted.
+    const superseded = catalog.requirements.filter(
+      (g: { status?: string }) => g.status === 'superseded'
+    );
+    expect(superseded.map((g: { id: string }) => g.id)).toEqual(['L07', 'L08']);
+    for (const g of superseded) expect(g.supersededOn).toBe('2026-10-19');
+    expect(review).toContain('## Owner Update: Six-Seat Only (2026-10-19)');
     expect(review).toContain('Current public-launch verdict: NO_GO');
     expect(review).toContain('not silently promoted from a source assertion');
   });
@@ -75,7 +83,11 @@ describe('a shadow-only stage cannot manufacture hand evidence', () => {
     expect(stage2).toContain('every configured leg with nonzero samples');
     expect(stage2).toContain('absent leg is missing evidence');
     expect(stage2).toContain('At least 5,000 actual completed Lightning hands');
-    expect(rollout).toContain('across at least five clubs and both table sizes');
+    // Owner ruling 2026-10-19: every Lightning game is six-seat, so the old
+    // "both table sizes" coverage is superseded rather than an open gate.
+    expect(rollout).toContain('across at least five clubs, on six-seat Clusters');
+    expect(rollout).not.toContain('across at least five clubs and both table sizes');
+    expect(rollout).toContain('## Owner Update: Six-Seat Only (2026-10-19)');
     for (const text of [
       stage2,
       rollout.split('## Stage 3:')[1].split('## The Pilot Cluster')[0],

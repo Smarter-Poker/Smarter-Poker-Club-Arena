@@ -642,6 +642,8 @@ describe('5. the lobby says each Cluster mode truthfully', () => {
       smallBlind: 1,
       bigBlind: 2,
       maxPlayers: 6,
+      // Lightning is six-seat only (owner, 2026-10-19): the raw size decides.
+      handedness: 6,
       clusterMode,
       enabled: true,
     });

@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { collectReplaySample } from './lightning-pilot-replay-sample.mjs';
 import { pathToFileURL } from 'node:url';
 import {
+  LIGHTNING_PILOT_TABLE_SIZE,
   PILOT,
   PILOT_TARGETS as PREPARATION_TARGETS,
   pilotServiceFetch,
@@ -141,6 +142,7 @@ export function selectTargets(games, clubId) {
       !pilotTemplateMatches(g, target) ||
       stake(g.sb) !== target.sb ||
       stake(g.bb) !== target.bb ||
+      g.handedness !== LIGHTNING_PILOT_TABLE_SIZE ||
       g.handedness !== target.handedness ||
       g.must_move !== true ||
       g.ruleset_snapshot?.options?.is_private !== true
@@ -223,9 +225,12 @@ function safeConfig(raw) {
 }
 /** Populated Must-Move Clusters whose existing members already play there.
  * The private pilot club cannot hold horses (the house-board membership law),
- * so populated house-board Clusters are the only legitimate place where both
- * activation thresholds can be crossed without inventing identities. This
- * section only observes them; it never enables, seats or funds anything. */
+ * so populated house-board Clusters are the only legitimate place where the
+ * activation threshold can be crossed without inventing identities. This
+ * section only observes them; it never enables, seats or funds anything. Only
+ * six-seat Clusters are observed: every Lightning game is six-handed (owner
+ * ruling 2026-10-19), so the nine-seat 27/18 band is no longer evidence of
+ * anything. */
 export const MAX_POPULATED_TARGETS = 4;
 export function parsePopulatedClusterIds(raw) {
   if (raw === null || raw === undefined || String(raw).trim() === '') return [];
@@ -262,7 +267,7 @@ export async function collectPopulatedTargets({ admin, player, clusterIds }) {
         v.must_move === true &&
         v.enabled === true &&
         !v.closed_at &&
-        (v.handedness === 6 || v.handedness === 9)
+        v.handedness === LIGHTNING_PILOT_TABLE_SIZE
     );
     if (target.game.status !== 'known') {
       results.push(target);

@@ -11,7 +11,12 @@
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { PILOT, PILOT_TARGETS, pilotServiceFetch } from './prepare-lightning-private-pilot.mjs';
+import {
+  LIGHTNING_PILOT_TABLE_SIZE,
+  PILOT,
+  PILOT_TARGETS,
+  pilotServiceFetch,
+} from './prepare-lightning-private-pilot.mjs';
 
 export const PILOT_RECOVERY_CONTROLS = Object.freeze([
   'pause',
@@ -246,6 +251,7 @@ export function assertStageTarget(game, clubId) {
     game.club_id !== clubId ||
     game.template_name !== target.templateName ||
     game.variant !== 'nlh' ||
+    game.handedness !== LIGHTNING_PILOT_TABLE_SIZE ||
     game.handedness !== target.handedness ||
     Number(game.sb) !== target.sb ||
     Number(game.bb) !== target.bb ||
@@ -295,9 +301,11 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
     if (result.error) throw new Error(`${label}: ${result.error.code || 'Request Failed'}`);
     return result.data;
   };
-  // Targets are named by template. Both are six-seat since 2026-10-17, so a
-  // seat count no longer names one; the old 6 and 9 inputs still mean Action
-  // and Madness so an earlier dispatch reads the same targets.
+  // Targets are named by template. Both are six-seat since 2026-10-17, and
+  // every Lightning game is six-seat by the owner's 2026-10-19 ruling, so a
+  // seat count no longer names one; the old 6 and 9 inputs are only aliases
+  // for Action and Madness so an earlier dispatch reads the same six-seat
+  // targets. No input ever selects a nine-seat game (assertStageTarget).
   const LEGACY_SIZES = { 6: 'action', 9: 'madness' };
   const wanted = [
     ...new Set(

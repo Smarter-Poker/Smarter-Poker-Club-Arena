@@ -2,6 +2,7 @@
  * UUIDs come from normal creation; a UUID alone never authorizes a pilot action.
  */
 import {
+  LIGHTNING_PILOT_TABLE_SIZE,
   PILOT_TARGETS,
   assertPilotClub,
   pilotTemplateMatches,
@@ -20,6 +21,7 @@ export function assertCurrentPilotTarget(game, clubId = PILOT_CLUB_ID, { active 
     !UUID.test(game?.id) ||
     game.club_id !== clubId ||
     game.union_id ||
+    game.handedness !== LIGHTNING_PILOT_TABLE_SIZE ||
     game.handedness !== target.handedness ||
     Number(game.sb) !== target.sb ||
     Number(game.bb) !== target.bb ||

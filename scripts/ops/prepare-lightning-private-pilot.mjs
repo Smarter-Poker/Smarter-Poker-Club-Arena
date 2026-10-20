@@ -11,8 +11,22 @@ export const PILOT = Object.freeze({
   gameName: 'Lightning Pilot NLH Action 6',
 });
 
+/** Owner ruling 2026-10-19: "classic games never get lightning games, only
+ * action and madness, make all lightning games 6 handed". A pilot target is a
+ * six-seat Action or Madness game, and nothing else is ever accepted as one. */
+export const LIGHTNING_PILOT_TABLE_SIZE = 6;
+export function assertLightningPilotTarget(target) {
+  if (
+    !target ||
+    (target.templateName !== 'action' && target.templateName !== 'madness') ||
+    target.handedness !== LIGHTNING_PILOT_TABLE_SIZE
+  )
+    throw new Error('Lightning Pilot Targets Must Be Six Seat Action Or Madness');
+  return target;
+}
+
 // The existing one-per-key index excludes handedness. Distinct microstakes
-// keep both must-move sizes valid without altering the schema or seeded games.
+// keep each must-move target valid without altering the schema or seeded games.
 export const PILOT_TARGETS = Object.freeze([
   Object.freeze({
     gameName: PILOT.gameName,
@@ -38,12 +52,15 @@ export const PILOT_TARGETS = Object.freeze([
     integrityRequestId: 'd89cc46f-8d5c-4120-ac46-890f65adaf25',
   }),
 ]);
+for (const target of PILOT_TARGETS) assertLightningPilotTarget(target);
 
-/** Targets a later owner decision replaced. Each is retired only through the
- * club owner's switch (fn_cash_game_switch_off): no new seating or opening,
- * nobody is stood up, moved or cashed out, and its tables close as they empty.
- * Its stakes share the one-per-key and one-per-band slots its replacement
- * needs, so the replacement is created only after the switch is read back. */
+/** Games a later owner decision took out of the pilot. Each is retired only
+ * through the club owner's switch (fn_cash_game_switch_off): no new seating or
+ * opening, nobody is stood up, moved or cashed out, and its tables close as
+ * they empty. A replaced target's stakes share the one-per-key and one-per-band
+ * slots its replacement needs, so the replacement is created only after the
+ * switch is read back. Each keeps one stable request id and one stable reason,
+ * so a rerun replays rather than acting twice. */
 export const RETIRED_PILOT_TARGETS = Object.freeze([
   Object.freeze({
     gameName: 'Lightning Pilot NLH Madness 9',
@@ -52,9 +69,77 @@ export const RETIRED_PILOT_TARGETS = Object.freeze([
     sb: 0.02,
     bb: 0.04,
     replacedBy: 'Lightning Pilot NLH Madness 6',
+    switchOffReason: 'Replaced by Lightning Pilot NLH Madness 6; seated players finish normally',
     switchOffRequestId: 'a6f1c0de-5b7e-4d2a-9c3f-6e8b1d4a7f20',
   }),
+  // Owner ruling 2026-10-19: Classic never gets Lightning, so the two Classic
+  // games in the pilot club have no purpose in the Lightning pilot. They held
+  // most of its horses away from the two Lightning targets. Retired on every
+  // setup run (and by the retirement-only run), whatever targets it names.
+  Object.freeze({
+    gameName: 'Lightning Pilot NLH 6',
+    templateName: 'classic',
+    handedness: 6,
+    sb: 0.01,
+    bb: 0.02,
+    replacedBy: null,
+    switchOffReason:
+      'Classic never gets Lightning (owner ruling 2026-10-19); seated players finish normally',
+    switchOffRequestId: '852ba69e-b057-4358-a724-236f5ba8ae63',
+  }),
+  Object.freeze({
+    gameName: 'Lightning Pilot NLH 9',
+    templateName: 'classic',
+    handedness: 9,
+    sb: 0.02,
+    bb: 0.04,
+    replacedBy: null,
+    switchOffReason:
+      'Classic never gets Lightning (owner ruling 2026-10-19); seated players finish normally',
+    switchOffRequestId: 'd493b753-5083-45ff-9faf-4e4e4f3633e5',
+  }),
 ]);
+
+/** The exact identity of a retired game before its owner switch is used: the
+ * pilot club, its name, size, stakes and template, private, must-move, still
+ * enabled, and never in a Lightning state (that needs the operator drain). */
+export function assertRetiredPilotGame(game, clubId, retired) {
+  const classic = retired?.templateName === 'classic';
+  const template = classic
+    ? game?.template_name === 'classic' && game?.ruleset_snapshot?.template === 'classic'
+    : pilotTemplateMatches(game, retired);
+  if (
+    !game?.id ||
+    game.club_id !== clubId ||
+    game.union_id ||
+    game.name !== retired.gameName ||
+    game.handedness !== retired.handedness ||
+    !template ||
+    Number(game.sb) !== retired.sb ||
+    Number(game.bb) !== retired.bb ||
+    game.enabled !== true ||
+    game.variant !== 'nlh' ||
+    game.must_move !== true ||
+    game.ruleset_snapshot?.options?.is_private !== true
+  )
+    throw new Error('Pilot Game Identity Or Isolation Configuration Mismatch');
+  if (game.lightning_enabled !== false || game.cluster_mode !== 'must_move') {
+    throw new Error('Pilot Is Already Active; Preserve Its State And Use The Operator Door');
+  }
+}
+
+/** Which retired games one setup run switches off: every Classic game always,
+ * a replaced target with the template it replaced, and all of them on the
+ * retirement-only run. */
+export function selectRetirements(setupTargets) {
+  const retireOnly = !setupTargets?.length;
+  return RETIRED_PILOT_TARGETS.filter(
+    (r) =>
+      retireOnly ||
+      r.templateName === 'classic' ||
+      setupTargets.some((t) => t.templateName === r.templateName)
+  );
+}
 /** Switch off one retired target, or prove it is already off. Never forces a
  * seat: the owner's switch (fn_cash_game_switch_off, OPORD 18.4) stops new
  * seating and opening; everyone seated keeps playing and leaves normally, and
@@ -68,12 +153,12 @@ export async function retirePilotTarget({ admin, player, must, clubId, games, re
   if (game.club_id !== clubId) throw new Error('Retired Pilot Target Scope Is Invalid');
   if (game.enabled !== true)
     return { gameName: retired.gameName, clusterId: game.id, outcome: 'already_switched_off' };
-  assertPilotGame(game, clubId, retired);
+  assertRetiredPilotGame(game, clubId, retired);
   const answer = must(
     await player.rpc('fn_cash_game_switch_off', {
       p_game_id: game.id,
       p_request_id: retired.switchOffRequestId,
-      p_reason: `Replaced by ${retired.replacedBy}; seated players finish normally`,
+      p_reason: retired.switchOffReason,
     }),
     'Retired Pilot Target Switch Off'
   );
@@ -130,12 +215,13 @@ export function pilotTemplateMatches(game, target) {
 }
 
 export function assertPilotGame(game, clubId, target = null) {
-  const expected = target ?? PILOT_TARGETS[0];
+  const expected = assertLightningPilotTarget(target ?? PILOT_TARGETS[0]);
   if (
     !game?.id ||
     game.club_id !== clubId ||
     game.union_id ||
     game.name !== expected.gameName ||
+    game.handedness !== LIGHTNING_PILOT_TABLE_SIZE ||
     game.handedness !== expected.handedness ||
     !pilotTemplateMatches(game, expected) ||
     (target && (game.sb !== target.sb || game.bb !== target.bb || game.enabled !== true)) ||
@@ -258,8 +344,16 @@ function assertPilotControlReceipt(row, clusterId, action, requestId, target) {
 
 /** The targets one setup run prepares, by template. A target already live
  * in a Lightning stage is left out by name rather than refused as a whole run,
- * so the other one can still be prepared; unknown names select nothing. */
+ * so the other one can still be prepared; unknown names select nothing.
+ * `retire` alone selects no target: that run only switches off the retired
+ * games (selectRetirements), so it works while both targets are live. */
 export function selectSetupTargets(value) {
+  if (
+    String(value ?? '')
+      .trim()
+      .toLowerCase() === 'retire'
+  )
+    return [];
   const wanted = new Set(
     String(value ?? 'action,madness')
       .split(',')
@@ -268,7 +362,7 @@ export function selectSetupTargets(value) {
   );
   const selected = PILOT_TARGETS.filter((t) => wanted.has(t.templateName));
   if (!selected.length || selected.length !== wanted.size)
-    throw new Error('Pilot Setup Targets Must Name Action, Madness Or Both');
+    throw new Error('Pilot Setup Targets Must Name Action, Madness Or Both, Or Retire');
   return selected;
 }
 
@@ -343,9 +437,7 @@ export async function preparePilot(env = process.env, clientFactory) {
     // A replaced target is switched off, and read back off, before its
     // replacement may claim the same stake slot.
     const retirements = [];
-    for (const retired of RETIRED_PILOT_TARGETS.filter((r) =>
-      setupTargets.some((t) => t.templateName === r.templateName)
-    )) {
+    for (const retired of selectRetirements(setupTargets)) {
       const outcome = await retirePilotTarget({
         admin,
         player,

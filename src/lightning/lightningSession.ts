@@ -19,7 +19,7 @@
 import { useSyncExternalStore } from 'react';
 import { supabase } from '../lib/supabase';
 import { isUUID } from '../utils/clubIdResolver';
-import { clusterModeDisplay, isLightningTemplate } from './lightningLobby';
+import { clusterModeDisplay, isLightningEligible } from './lightningLobby';
 import { markLightningRoom } from './lightningDeviceReport';
 
 /** fn_lightning_my_session, as the client reads it. */
@@ -177,6 +177,11 @@ export interface LightningClusterMeta {
   smallBlind: number;
   bigBlind: number;
   maxPlayers: number;
+  /**
+   * `cash_games.handedness` exactly as read: null when absent or unreadable.
+   * maxPlayers above falls back to 6 for display; eligibility never does.
+   */
+  handedness?: number | null;
   templateName?: string | null;
   clusterMode: string | null;
   enabled: boolean;
@@ -196,6 +201,7 @@ export function parseLightningClusterMeta(raw: unknown): LightningClusterMeta | 
     smallBlind: num(row.sb) ?? 0,
     bigBlind: num(row.bb) ?? 0,
     maxPlayers: handedness && handedness >= 2 && handedness <= 10 ? handedness : 6,
+    handedness: handedness !== null && Number.isInteger(handedness) ? handedness : null,
     templateName: text(row.template_name),
     clusterMode: text(row.cluster_mode),
     enabled: row.enabled !== false,
@@ -498,10 +504,12 @@ export function lightningEntryDecision(
      player is offered it; nothing moves them (CLAUDE.md 10.6). */
   if (session?.seatTableId) return { kind: 'seat', seatTableId: session.seatTableId };
   const mode = meta?.clusterMode ?? session?.clusterMode ?? null;
-  /* JOIN LIGHTNING only while the Cluster IS Lightning. On its way in
-     (pending_on) or out (pending_off, draining) the door is JOIN GAME. */
+  /* JOIN LIGHTNING only while the Cluster IS Lightning, and only for a
+     six-seat Action or Madness game. On its way in (pending_on) or out
+     (pending_off, draining) the door is JOIN GAME. */
   const lightning =
-    isLightningTemplate(meta?.templateName) && clusterModeDisplay(mode).joinLightning;
+    isLightningEligible(meta?.templateName, meta?.handedness) &&
+    clusterModeDisplay(mode).joinLightning;
   return { kind: 'entry', joinLabel: lightning ? 'Join Lightning' : 'Join Game', lightning };
 }
 

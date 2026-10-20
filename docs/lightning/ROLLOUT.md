@@ -6,11 +6,15 @@ Enabling Lightning for real players is the single biggest outward action in the 
 
 ## Owner Update: Evidence-Based Progression
 
-On 2026-10-12 the owner removed the fixed pilot and limited-club calendar waits. No minimum elapsed-day or batch-age requirement applies. Advance on completed active-play samples, workload coverage, recovery rehearsals and recorded readiness, not time spent with an empty pool. The retained 5,000-hand target, five-club coverage, both table sizes, calibration and latency sample/ceiling requirements remain. The bounded shadow-stage time box is a safety limit, not a waiting period. Historical handoffs cannot restore the removed waits.
+On 2026-10-12 the owner removed the fixed pilot and limited-club calendar waits. No minimum elapsed-day or batch-age requirement applies. Advance on completed active-play samples, workload coverage, recovery rehearsals and recorded readiness, not time spent with an empty pool. The retained 5,000-hand target, five-club coverage, calibration and latency sample/ceiling requirements remain. (The "both table sizes" coverage that stood here is superseded by the 2026-10-19 six-seat ruling below.) The bounded shadow-stage time box is a safety limit, not a waiting period. Historical handoffs cannot restore the removed waits.
 
 ## Owner Update: Eligible Game Styles
 
 On October 16 the owner confirmed that Lightning is available only for Action and Madness. Classic remains normal poker. The earlier Classic private pilots are ineligible and remain disabled. Their historical evidence is retained, but cannot qualify the corrected Action 6-max and Madness 9-max targets. Provision corrected targets through the existing authenticated setup route, preserving Classic games and sessions; record their actual IDs and fresh evidence before activation.
+
+## Owner Update: Six-Seat Only (2026-10-19)
+
+On 2026-10-19 at 19:44 Central the owner ruled, verbatim: "classic games never get lightning games, only action and madness, make all lightning games 6 handed." Lightning exists only on six-seat (handedness 6) Action and Madness games. This supersedes, as of that date, every requirement in this plan for 9-max Lightning or for coverage of "both table sizes": there is no 9-max Lightning to cover, and the 9-max 27/18 thresholds are retired, not open gates. The 6-max 18/12 thresholds are unchanged. Migration `20261020005222_lightning_only_on_six_seat_action_and_madness.sql` refuses any other size by name (`LIGHTNING_TABLE_SIZE_NOT_ALLOWED`) at the operator door, readiness, thresholds, formation and the hand trigger, and the `cash_games_lightning_six_seat_only` constraint refuses enabling or converting one; the engine and the lobby offer Lightning only at six seats. The earlier Madness 9-max target was retired on 2026-10-17 and stays off; the two Classic games in the private pilot club are switched off through the owner's seat-safe switch. The history below is kept as written.
 
 ## Ground Rules For Every Stage
 
@@ -93,7 +97,7 @@ The same pilot Cluster, now forming real hands with the live SQL matcher (m1), i
 
 ## Stage 3: Limited Clubs
 
-Lightning enabled on a small set of Clusters in clubs that opt in, a few Clusters at a time, both 6-max and 9-max.
+Lightning enabled on a small set of Clusters in clubs that opt in, a few Clusters at a time. Six-seat only (superseded 2026-10-19: this stage previously named both 6-max and 9-max).
 
 **Go / No-Go Evidence (Per Cluster)**
 
@@ -118,7 +122,7 @@ Lightning available to every club whose Clusters pass readiness.
 
 **Go / No-Go Evidence**
 
-- Stage 3 has completed active-play qualification across at least five clubs and both table sizes with the Stage 2 exit criteria holding everywhere. There is no minimum elapsed-day wait.
+- Stage 3 has completed active-play qualification across at least five clubs, on six-seat Clusters (the earlier "both table sizes" requirement is superseded by the 2026-10-19 six-seat ruling), with the Stage 2 exit criteria holding everywhere. There is no minimum elapsed-day wait.
 - The Final Release Gate checklist (Phase 14) passes with evidence, including emergency drain, Cluster freeze, rollback, shadow matcher, alerts and the operator dashboard.
 
 **Rollback**

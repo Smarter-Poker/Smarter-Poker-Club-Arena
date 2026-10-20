@@ -1,0 +1,3 @@
+# tests/special-hand-achievements-are-the-engines-record-horses-alike.law.test.ts
+
+Royal Flush, Straight Flush and Four Of A Kind are recorded by the database from the engine's per-player record of the hand that won each player a pot (`hand_history.daily_mission_events` strong_hands 10 / 9 / 8, `trg_hand_history_winning_hand_achievements`, migration 20261020005219), horses alike (CLAUDE.md 10.5), never failing the hand; the Royal Flush still pays its 500 diamonds once through `fn_achievement_unlock_server`. The browser no longer reports them (its name mapping never matched the engine's display names and read the first winner's hand). Proved on native PostgreSQL by `scripts/ci/test-achievement-diamonds-postgres.py`.

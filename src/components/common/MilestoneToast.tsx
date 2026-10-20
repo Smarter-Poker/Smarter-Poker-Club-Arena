@@ -45,6 +45,34 @@ async function playMilestoneFeedback(): Promise<void> {
   }
 }
 
+/**
+ * What a milestone's reward says, as text (2026-10-20). A bus payload's
+ * `reward` was rendered as-is, and AchievementTriggerService sent it as an
+ * OBJECT (`{ chips: 100 }`), which threw inside formatPopupText during render
+ * and, with only the root error boundary above this app-wide toast, would
+ * have taken down the whole app. Text passes through; `{ chips: N }` and
+ * `{ diamonds: N }` become "+N Chips" / "+N Diamonds"; anything else shows no
+ * reward line rather than an invented one.
+ */
+export function milestoneRewardText(reward: unknown): string | undefined {
+  if (typeof reward === 'string') return reward.trim() || undefined;
+  if (!reward || typeof reward !== 'object' || Array.isArray(reward)) return undefined;
+  const parts: string[] = [];
+  for (const [key, label] of [
+    ['chips', 'Chips'],
+    ['diamonds', 'Diamonds'],
+  ] as const) {
+    const n = Number((reward as Record<string, unknown>)[key]);
+    if (Number.isFinite(n) && n > 0) parts.push(`+${n.toLocaleString()} ${label}`);
+  }
+  return parts.length > 0 ? parts.join(' And ') : undefined;
+}
+
+/** Bus text fields are untyped: only a non-empty string is copy. */
+function busText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
 interface MilestoneNotification {
   id: string;
   title: string;
@@ -73,10 +101,11 @@ export const MilestoneToast: React.FC = () => {
 
     const notification: MilestoneNotification = {
       id: `milestone-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      title: data.title || data.milestoneName || 'Milestone Unlocked!',
-      description: data.description || data.message || 'You Reached A New Milestone!',
-      icon: data.icon || 'Trophy',
-      reward: data.reward || data.rewardText,
+      title: busText(data.title) || busText(data.milestoneName) || 'Milestone Unlocked!',
+      description:
+        busText(data.description) || busText(data.message) || 'You Reached A New Milestone!',
+      icon: busText(data.icon) || 'Trophy',
+      reward: milestoneRewardText(data.reward) ?? milestoneRewardText(data.rewardText),
       diamonds:
         Number.isFinite(Number(data.rewardDiamonds)) && Number(data.rewardDiamonds) > 0
           ? Math.floor(Number(data.rewardDiamonds))

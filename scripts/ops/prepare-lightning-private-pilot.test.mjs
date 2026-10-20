@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assertLightningPilotTarget,
   assertPilotClub,
   assertPilotGame,
   PILOT,
   PILOT_TARGETS,
+  RETIRED_PILOT_TARGETS,
+  selectRetirements,
   pilotServiceFetch,
   selectSetupTargets,
   selectPilotGame,
@@ -448,12 +451,8 @@ async function runTwoTargetFlow(estate, options = {}) {
                 enabled: false,
                 replayed: false,
               };
-              if (
-                answer.ok === true &&
-                answer.game_id === retired9.id &&
-                !options.keepRetiredEnabled
-              ) {
-                const row = estate.find((g) => g.id === retired9.id);
+              if (answer.ok === true && !options.keepRetiredEnabled) {
+                const row = estate.find((g) => g.id === answer.game_id);
                 if (row) Object.assign(row, { enabled: false });
               }
               return { data: answer };
@@ -802,21 +801,38 @@ test('Action and Madness keep their own immutable rules and never accept Classic
   assert.ok(keys.every((k) => !oldKeys.has(k)));
 });
 
-test('normal creation preserves both original Classic pilots and creates distinct Action/Madness categories', async () => {
+// Superseded 2026-10-19: this test used to pin that setup left both original
+// Classic pilots enabled. Classic never gets Lightning, so a normal setup run now
+// switches them off through the owner's seat-safe switch and changes nothing else.
+test('normal creation switches off both original Classic pilots through the owner door and creates distinct Action/Madness categories', async () => {
+  const classicSnapshot = { template: 'classic', variant: 'nlh', options: { is_private: true } };
   const legacy = [
-    { ...game, id: 'legacy-six', name: 'Lightning Pilot NLH 6', template_name: 'classic' },
+    {
+      ...game,
+      id: 'legacy-six',
+      name: 'Lightning Pilot NLH 6',
+      template_name: 'classic',
+      ruleset_snapshot: classicSnapshot,
+    },
     {
       ...gameM,
       id: 'legacy-nine',
       name: 'Lightning Pilot NLH 9',
       template_name: 'classic',
+      ruleset_snapshot: classicSnapshot,
       handedness: 9,
     },
   ];
-  const original = JSON.stringify(legacy);
-  const estate = [...legacy];
+  const original = JSON.stringify(legacy.map((g) => ({ ...g, enabled: false })));
+  const estate = [...legacy.map((g) => ({ ...g }))];
   const { calls } = await runTwoTargetFlow(estate);
   assert.equal(JSON.stringify(estate.slice(0, 2)), original);
+  assert.deepEqual(
+    calls.filter((c) => c.name === 'fn_cash_game_switch_off').map((c) => c.args.p_game_id),
+    ['legacy-six', 'legacy-nine']
+  );
+  const order = calls.map((c) => c.name);
+  assert.ok(order.lastIndexOf('fn_cash_game_switch_off') < order.indexOf('fn_cash_game_create'));
   const created = calls.filter((c) => c.name === 'fn_cash_game_create');
   assert.deepEqual(
     created.map((c) => [c.args.p_template, c.args.p_handedness, c.args.p_sb, c.args.p_bb]),
@@ -949,4 +965,165 @@ test('setup target selection names templates exactly and defaults to both', () =
   );
   for (const bad of ['', 'classic', 'madness,classic', '9'])
     assert.throws(() => selectSetupTargets(bad), /Must Name Action, Madness Or Both/);
+});
+
+// Owner ruling 2026-10-19: "classic games never get lightning games, only action
+// and madness, make all lightning games 6 handed".
+const classic6 = {
+  ...game,
+  id: 'retired-classic-six',
+  name: 'Lightning Pilot NLH 6',
+  template_name: 'classic',
+  ruleset_snapshot: { template: 'classic', variant: 'nlh', options: { is_private: true } },
+  handedness: 6,
+  sb: 0.01,
+  bb: 0.02,
+};
+const classic9 = {
+  ...classic6,
+  id: 'retired-classic-nine',
+  name: 'Lightning Pilot NLH 9',
+  handedness: 9,
+  sb: 0.02,
+  bb: 0.04,
+};
+
+test('a pilot Lightning target is six-seat Action or Madness, never nine seats', () => {
+  for (const t of PILOT_TARGETS) assert.equal(assertLightningPilotTarget(t), t);
+  for (const bad of [
+    { ...PILOT_TARGETS[1], handedness: 9 },
+    { ...PILOT_TARGETS[0], handedness: 8 },
+    { ...PILOT_TARGETS[0], handedness: undefined },
+    { ...PILOT_TARGETS[0], templateName: 'classic' },
+    null,
+  ])
+    assert.throws(() => assertLightningPilotTarget(bad), /Six Seat Action Or Madness/);
+  // A nine-seat game is never adopted as a Lightning target, whatever it is called.
+  assert.throws(() =>
+    assertPilotGame({ ...gameM, handedness: 9 }, club.id, { ...PILOT_TARGETS[1], handedness: 9 })
+  );
+  assert.throws(() => assertPilotGame({ ...gameM, handedness: 9 }, club.id, PILOT_TARGETS[1]));
+});
+
+test('both Classic pilot games are retired with their own stable ids and reasons; Madness 9 keeps its entry', () => {
+  assert.deepEqual(
+    RETIRED_PILOT_TARGETS.map((r) => [r.gameName, r.templateName, r.handedness]),
+    [
+      ['Lightning Pilot NLH Madness 9', 'madness', 9],
+      ['Lightning Pilot NLH 6', 'classic', 6],
+      ['Lightning Pilot NLH 9', 'classic', 9],
+    ]
+  );
+  assert.equal(RETIRED_PILOT_TARGETS[0].switchOffRequestId, 'a6f1c0de-5b7e-4d2a-9c3f-6e8b1d4a7f20');
+  assert.equal(
+    RETIRED_PILOT_TARGETS[0].switchOffReason,
+    'Replaced by Lightning Pilot NLH Madness 6; seated players finish normally'
+  );
+  assert.equal(new Set(RETIRED_PILOT_TARGETS.map((r) => r.switchOffRequestId)).size, 3);
+  for (const r of RETIRED_PILOT_TARGETS) assert.ok(r.switchOffReason.length >= 12);
+  assert.deepEqual(
+    selectRetirements([]).map((r) => r.gameName),
+    RETIRED_PILOT_TARGETS.map((r) => r.gameName)
+  );
+  assert.deepEqual(
+    selectRetirements(selectSetupTargets('action')).map((r) => r.gameName),
+    ['Lightning Pilot NLH 6', 'Lightning Pilot NLH 9']
+  );
+  assert.deepEqual(selectSetupTargets('retire'), []);
+  assert.deepEqual(selectSetupTargets(' RETIRE '), []);
+});
+
+test('the retirement-only run switches off both Classic games through the owner door while both Lightning targets stay live and untouched', async () => {
+  const liveAction = { ...game, lightning_enabled: true };
+  const liveMadness = { ...gameM, lightning_enabled: true };
+  const estate = [
+    liveAction,
+    liveMadness,
+    { ...retired9, enabled: false },
+    { ...classic6 },
+    { ...classic9 },
+  ];
+  const before = JSON.stringify([liveAction, liveMadness]);
+  const { receipt, calls } = await runTwoTargetFlow(estate, {
+    setupTargets: 'retire',
+    switchOffAnswer: (args) => ({
+      ok: true,
+      game_id: args.p_game_id,
+      enabled: false,
+      replayed: false,
+      event_id: args.p_game_id === classic6.id ? 61 : 91,
+      seated_at_switch_off: args.p_game_id === classic6.id ? 10 : 18,
+    }),
+  });
+  const offs = calls.filter((c) => c.name === 'fn_cash_game_switch_off');
+  assert.deepEqual(
+    offs.map((c) => [c.args.p_game_id, c.args.p_request_id]),
+    [
+      [classic6.id, '852ba69e-b057-4358-a724-236f5ba8ae63'],
+      [classic9.id, 'd493b753-5083-45ff-9faf-4e4e4f3633e5'],
+    ]
+  );
+  for (const c of offs) assert.match(c.args.p_reason, /Classic never gets Lightning/);
+  assert.deepEqual(
+    receipt.retirements.map((r) => [r.gameName, r.outcome, r.seatedAtSwitchOff]),
+    [
+      ['Lightning Pilot NLH Madness 9', 'already_switched_off', undefined],
+      ['Lightning Pilot NLH 6', 'switched_off', 10],
+      ['Lightning Pilot NLH 9', 'switched_off', 18],
+    ]
+  );
+  assert.deepEqual(receipt.targets, []);
+  assert.equal(estate.find((g) => g.id === classic6.id).enabled, false);
+  assert.equal(estate.find((g) => g.id === classic9.id).enabled, false);
+  // No creation, no operator control, and nobody is moved, stood up or cashed out.
+  assert.ok(
+    calls.every(
+      (c) =>
+        !/fn_cash_game_create|fn_lightning_operator_control|managed_game|leave|cashout|cash_out|seat/i.test(
+          c.name
+        )
+    )
+  );
+  assert.equal(JSON.stringify([liveAction, liveMadness]), before);
+});
+
+test('a rerun replays: Classic games already off are read, not switched again', async () => {
+  const estate = [
+    { ...game, lightning_enabled: true },
+    { ...classic6, enabled: false },
+    { ...classic9, enabled: false },
+  ];
+  const { receipt, calls } = await runTwoTargetFlow(estate, { setupTargets: 'retire' });
+  assert.equal(calls.filter((c) => c.name === 'fn_cash_game_switch_off').length, 0);
+  assert.deepEqual(
+    receipt.retirements.map((r) => r.outcome),
+    ['already_switched_off', 'already_switched_off']
+  );
+});
+
+test('a Classic retirement refuses a drifted game instead of switching it off', async () => {
+  for (const patch of [
+    { template_name: 'action' },
+    { handedness: 8 },
+    { sb: 0.05, bb: 0.1 },
+    { club_id: 'other' },
+    { ruleset_snapshot: { template: 'classic', options: { is_private: false } } },
+  ]) {
+    let failedCalls = [];
+    await assert.rejects(
+      runTwoTargetFlow(
+        [
+          { ...game, lightning_enabled: true },
+          { ...classic9, ...patch },
+        ],
+        {
+          setupTargets: 'retire',
+          inspectCalls: (calls) => {
+            failedCalls = calls;
+          },
+        }
+      )
+    );
+    assert.equal(failedCalls.filter((c) => c.name === 'fn_cash_game_switch_off').length, 0);
+  }
 });

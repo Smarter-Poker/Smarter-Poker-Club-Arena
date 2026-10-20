@@ -149,9 +149,14 @@ describe('Lightning idle return and recovery', () => {
     await act(async () => pending.resolve({ sittingOut: false, since: null }));
     expect(result.current.sittingOut).toBe(true);
     expect(read).toHaveBeenCalledTimes(1);
+    const requestedBeforeOtherDevice = result.current.requestVersion();
     rerender({ nextEvent: { ...event, sitting_out: false, sit_out_at: null } });
     expect(result.current.sittingOut).toBe(false);
     expect(result.current.since).toBeNull();
+    act(() => {
+      expect(result.current.acknowledge(pool, user, true, requestedBeforeOtherDevice)).toBe(false);
+    });
+    expect(result.current.sittingOut).toBe(false);
   });
   it('a newer accepted pause or resume cannot be overwritten by an older bootstrap', async () => {
     const pending = deferred();
@@ -235,8 +240,12 @@ it('the actual footer permits idle Lightning return before spectator/reserved br
   expect(source).toMatch(/heroIsSittingOut =[\s\S]*?lightningSitOut\.sittingOut/);
   expect(source).toMatch(/heroSeat <= 0\s*&&\s*!heroIsSittingOut \? \(/);
   expect(source).toMatch(/heroIsSittingOut \? \([\s\S]*?data-state="sitting-out"/);
-  expect(source).toMatch(/lightningSitOut\.acknowledge\(tableId, String\(userId\), true\)/);
-  expect(source).toMatch(/lightningSitOut\.acknowledge\(tableId, String\(userId\), false\)/);
+  expect(source).toMatch(
+    /lightningSitOut\.acknowledge\(tableId, String\(userId\), true, requestVersion\)/
+  );
+  expect(source).toMatch(
+    /lightningSitOut\.acknowledge\(tableId, String\(userId\), false, requestVersion\)/
+  );
 });
 
 it('settings and footer cannot submit competing opposite sit-out requests', () => {

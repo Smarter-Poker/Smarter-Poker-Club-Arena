@@ -26,7 +26,9 @@ The named persisted `lightning_sitout_changed` event on the existing pool
 socket renders the persisted transition directly for cross-device changes.
 Only matching pool/player events with a UUID occupancy and valid persisted
 timestamp are accepted; older bootstrap reads cannot overwrite that event. Its containing server follow-up remains a live
-verification prerequisite. Successful action ACKs remain immediately usable.
+verification prerequisite. Successful action ACKs remain immediately usable. A persisted event newer than
+the request wins over its delayed HTTP ACK, including another device returning
+the owner; the settings intent and notice follow the persisted transition.
 
 Verification: focused regressions cover exact own-anchor lookup, replaced
 identity/invalid timestamp/pending exit, initial idle/reconnect state, stale

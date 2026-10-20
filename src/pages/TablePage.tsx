@@ -4564,11 +4564,16 @@ function LiveTablePage({
    * stayed null and the deadline silently vanished from the bar. The player
    * under the clock was the one who could not see it.
    */
+  const acceptLightningSitOutTransition = useCallback((sittingOut: boolean) => {
+    setSitOutNextHand(false);
+    if (!sittingOut) setShowSitOut(false);
+  }, []);
   const lightningSitOut = useLightningSitOut({
     room: lightningRoom,
     userId,
     connectionStatus: engineWsStatus,
     event: rawEngineLastEvent,
+    onPersisted: acceptLightningSitOutTransition,
   });
   const heroIsSittingOut =
     (tableState.heroSeat > 0 &&
@@ -5179,10 +5184,15 @@ function LiveTablePage({
     }
     if (sitOutRequestInFlightRef.current) return;
     sitOutRequestInFlightRef.current = true;
+    const requestVersion = lightningSitOut.requestVersion();
     try {
       const res = await setSitOut(tableId, false);
       if (res?.success) {
-        if (lightningRoom && !lightningSitOut.acknowledge(tableId, String(userId), false)) return;
+        if (
+          lightningRoom &&
+          !lightningSitOut.acknowledge(tableId, String(userId), false, requestVersion)
+        )
+          return;
         clearLocalSitOutState();
         toast?.success?.("Welcome Back, You'll Be Dealt Into The Next Hand");
       } else {
@@ -5191,12 +5201,21 @@ function LiveTablePage({
     } finally {
       sitOutRequestInFlightRef.current = false;
     }
-  }, [tableId, toast, clearLocalSitOutState, lightningRoom, lightningSitOut.acknowledge, userId]);
+  }, [
+    tableId,
+    toast,
+    clearLocalSitOutState,
+    lightningRoom,
+    lightningSitOut.acknowledge,
+    lightningSitOut.requestVersion,
+    userId,
+  ]);
 
   const handleSitOut = useCallback(async () => {
     if (!tableId) return;
     if (sitOutRequestInFlightRef.current) return;
     sitOutRequestInFlightRef.current = true;
+    const requestVersion = lightningSitOut.requestVersion();
     try {
       /**
        * THE ONE-HAND GATE IS THE SERVER'S (fixed 2026-08-29).
@@ -5231,7 +5250,11 @@ function LiveTablePage({
        */
       const res = await setSitOut(tableId, true);
       if (res?.success) {
-        if (lightningRoom && !lightningSitOut.acknowledge(tableId, String(userId), true)) return;
+        if (
+          lightningRoom &&
+          !lightningSitOut.acknowledge(tableId, String(userId), true, requestVersion)
+        )
+          return;
         setSitOutSince(Date.now());
         setShowSitOut(true);
       } else {
@@ -5244,7 +5267,14 @@ function LiveTablePage({
        local one-hand gate that read them — the gate is the server's alone now
        (see the note above). A dependency nothing in the body reads is a claim
        about the code that is not true. */
-  }, [tableId, toast, lightningRoom, lightningSitOut.acknowledge, userId]);
+  }, [
+    tableId,
+    toast,
+    lightningRoom,
+    lightningSitOut.acknowledge,
+    lightningSitOut.requestVersion,
+    userId,
+  ]);
 
   // ─── Table Menu Actions ────────────────────────────────────────────────
   useMasterBusSubscription('TABLE_MENU_ACTION', (event) => {
@@ -28855,15 +28885,18 @@ function LiveTablePage({
               // All entry points share the same request owner. A second settings
               // tap cannot race the footer/menu and reverse a newer accepted ACK.
               sitOutRequestInFlightRef.current = true;
+              const requestVersion = lightningSitOut.requestVersion();
               void setSitOut(tableId, wanted)
                 .then((res) => {
                   if (lightningRoom && !lightningSitOut.isCurrent(tableId, String(userId))) return;
                   if (res?.success) {
                     if (
                       lightningRoom &&
-                      !lightningSitOut.acknowledge(tableId, String(userId), wanted)
-                    )
+                      !lightningSitOut.acknowledge(tableId, String(userId), wanted, requestVersion)
+                    ) {
+                      setSitOutNextHand(false);
                       return;
+                    }
                     if (!wanted) clearLocalSitOutState();
                   } else {
                     setSitOutNextHand(!wanted);

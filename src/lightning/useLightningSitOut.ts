@@ -52,12 +52,14 @@ export function useLightningSitOut({
   userId,
   connectionStatus,
   event,
+  onPersisted,
   read = readLightningSitOut,
 }: {
   room: LightningPoolEntry | null;
   userId: string | null | undefined;
   connectionStatus: string;
   event?: Record<string, unknown> | null;
+  onPersisted?: (sittingOut: boolean) => void;
   read?: typeof readLightningSitOut;
 }) {
   const pool = room?.poolSessionId;
@@ -66,6 +68,7 @@ export function useLightningSitOut({
     pool && cluster && userId && userId !== 'guest' ? `${pool}/${cluster}/${userId}` : null;
   const identity = useRef(key);
   const generation = useRef(0);
+  const persistedVersion = useRef(0);
   const scope = useRef(0);
   if (identity.current !== key) {
     identity.current = key;
@@ -132,8 +135,10 @@ export function useLightningSitOut({
       return;
     if (!mounted.current || identity.current !== key || scope.current !== currentScope) return;
     generation.current++;
+    persistedVersion.current++;
     setState({ key, scope: currentScope, value: { sittingOut: event.sitting_out, since } });
-  }, [event, key, pool, userId, currentScope]);
+    onPersisted?.(event.sitting_out);
+  }, [event, key, pool, userId, currentScope, onPersisted]);
   const isCurrent = useCallback(
     (targetPool: string, targetUser: string) =>
       mounted.current &&
@@ -142,8 +147,15 @@ export function useLightningSitOut({
       key === `${targetPool}/${cluster}/${targetUser}`,
     [key, cluster, currentScope]
   );
+  const requestVersion = useCallback(() => persistedVersion.current, []);
   const acknowledge = useCallback(
-    (targetPool: string, targetUser: string, sittingOut: boolean) => {
+    (
+      targetPool: string,
+      targetUser: string,
+      sittingOut: boolean,
+      expectedVersion = persistedVersion.current
+    ) => {
+      if (expectedVersion !== persistedVersion.current) return false;
       const current = identity.current;
       if (
         !mounted.current ||
@@ -169,5 +181,6 @@ export function useLightningSitOut({
     since: state?.key === key && state.scope === currentScope ? state.value.since : null,
     acknowledge,
     isCurrent,
+    requestVersion,
   };
 }

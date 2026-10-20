@@ -100,6 +100,20 @@ export function recordCycleEvent(hands, e, armedHandNumber = null) {
   hands.set(e.handNumber, row);
 }
 
+/** A disappearing optional control cannot consume the remaining natural-cycle witness.
+ * One click only. An unknown acknowledgment is retained and never re-clicked.
+ */
+export async function clickCycleControlOnce(page, control, matches, remaining) {
+  const timeout = Math.min(5000, remaining());
+  const responseP = page.waitForResponse(matches, { timeout });
+  const [response] = await Promise.allSettled([
+    responseP,
+    control.click({ timeout: Math.min(2500, remaining()) }),
+  ]);
+  if (response.status !== 'fulfilled') return null;
+  return response.value;
+}
+
 export async function witnessCycle({
   admin,
   createClient,
@@ -311,7 +325,9 @@ export async function witnessCycle({
       }
       report.subphase = key;
       report.cause = 'optional_action_unverified';
-      const responseP = page.waitForResponse(
+      const response = await clickCycleControlOnce(
+        page,
+        control,
         (r) => {
           if (r.request().method() !== 'POST' || new URL(r.url()).pathname !== path) return false;
           try {
@@ -333,9 +349,12 @@ export async function witnessCycle({
             return false;
           }
         },
-        { timeout: remaining() }
+        remaining
       );
-      const [response] = await Promise.all([responseP, control.click({ timeout: remaining() })]);
+      if (!response) {
+        report[key] = 'click_or_response_unknown';
+        continue;
+      }
       const answer = await bound(response.json());
       report[key] = response.ok() && answer.success === true ? 'accepted' : 'refused';
       if (key === 'preaction' && report[key] === 'accepted') report.preaction = 'armed';

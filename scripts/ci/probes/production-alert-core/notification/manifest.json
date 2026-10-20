@@ -228,13 +228,18 @@
     },
     "storm_qualifier": {
       "path": "scripts/qualification/tournament-finish-storm-members.sql",
-      "bytes": 7667,
-      "sha256": "3d70934d30a59c45b891179e853e99b5ef9739b02a9e6ae8fa8fd191c8207512"
+      "bytes": 7648,
+      "sha256": "d56d79a660bad71eb1bf30f4dbd0676f5e4fc64a672fc9251f0fb4194c463a02"
     },
     "storm_native": {
       "path": "scripts/qualification/tournament-finish-storm/native.mjs",
-      "bytes": 6762,
-      "sha256": "74e1cadbcb9551b634ab89de4bc8d480e88da9b2385d96ff2a82a43adbb8261a"
+      "bytes": 7338,
+      "sha256": "5d99cd5776098e4af715621d448ce510c7abd6bd6f63ffaf4301638135c0cc66"
+    },
+    "storm_bridge": {
+      "path": "scripts/qualification/fixtures/tournament-finish-storm/current-bridge.sql",
+      "bytes": 10372,
+      "sha256": "cde98cc3b71552ee3f98fa1abb09c63be8acf0f7d9360afbb7cc764cecb6f441"
     }
   },
   "sequenceContract": {

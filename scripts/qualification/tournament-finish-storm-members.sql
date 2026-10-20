@@ -7,6 +7,10 @@ SET LOCAL statement_timeout='15s';
 ALTER TABLE public.ca_drift_incidents ADD COLUMN IF NOT EXISTS closure_basis text;
 CREATE FUNCTION pg_temp.storm_assert(ok boolean,label text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'storm qualification: %',label; END IF; END $$;
+-- The surrounding core snapshot predates resolved-on-insert handling. Install
+-- the exact current captured bridge, never disable its authentic INSERT trigger.
+SELECT public.fn_ca_declare_guard_redefinition('fn_ca_financial_alert_to_incident','qualification exact current bridge');
+\ir fixtures/tournament-finish-storm/current-bridge.sql
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_raise_drift_incident','qualification exact current preimage');
 \ir fixtures/tournament-finish-storm/preimages.sql
 CREATE TEMP TABLE storm_ids(label text PRIMARY KEY,id uuid NOT NULL);
@@ -15,14 +19,11 @@ DECLARE a uuid;b uuid;v uuid;
 BEGIN
  DELETE FROM storm_ids;
  INSERT INTO ca_drift_incidents(source,dedupe_key) SELECT 'financial_alerts:Tournament.atomic_finish_refused','storm-test-filler:'||n FROM generate_series(1,25)n;
- INSERT INTO financial_alerts(severity,source,message,resolved,resolved_at) VALUES('critical','Tournament.atomic_finish_refused','isolated first refusal',true,now()) RETURNING id INTO a;
- INSERT INTO financial_alerts(severity,source,message,resolved,resolved_at) VALUES('critical','Tournament.atomic_finish_refused','isolated second refusal',true,now()) RETURNING id INTO b;
- -- Seed identities without the AFTER INSERT bridge independently raising them.
- -- The actual original raiser and AFTER UPDATE resolution transition are tested.
- UPDATE financial_alerts SET resolved=false,resolved_at=NULL WHERE id IN(a,b);
- v:=fn_ca_raise_drift_incident(p_source=>'financial_alerts:Tournament.atomic_finish_refused',p_classification=>'unknown',p_severity=>'critical',p_dedupe_key=>'storm-test-member:first',p_discrepancy=>0,p_metadata=>jsonb_build_object('alert_id',a));
+ -- Exercise authentic INSERT -> financial bridge -> original raiser exactly twice.
+ INSERT INTO financial_alerts(severity,source,message,context) VALUES('critical','Tournament.atomic_finish_refused','isolated first refusal',jsonb_build_object('club_id','fade0000-0000-0000-0000-000000000001','tournament_id',gen_random_uuid())) RETURNING id INTO a;
+ INSERT INTO financial_alerts(severity,source,message,context) VALUES('critical','Tournament.atomic_finish_refused','isolated second refusal',jsonb_build_object('club_id','fade0000-0000-0000-0000-000000000001','tournament_id',gen_random_uuid())) RETURNING id INTO b;
+ SELECT id INTO STRICT v FROM ca_drift_incidents WHERE dedupe_key='storm:financial_alerts:Tournament.atomic_finish_refused' AND status='open';
  INSERT INTO storm_ids VALUES('a',a),('b',b),('storm',v);
- PERFORM fn_ca_raise_drift_incident(p_source=>'financial_alerts:Tournament.atomic_finish_refused',p_classification=>'unknown',p_severity=>'critical',p_dedupe_key=>'storm-test-member:second',p_discrepancy=>0,p_metadata=>jsonb_build_object('alert_id',b));
 END $$;
 SAVEPOINT before_source;
 SELECT pg_temp.storm_setup();

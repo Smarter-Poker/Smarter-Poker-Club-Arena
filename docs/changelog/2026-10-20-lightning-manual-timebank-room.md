@@ -60,9 +60,15 @@ was added.
 The original real HTTP/host/proxy regression failed seven times before the
 source correction (404 and absent proxy method), retained externally.
 After: 12 real server tests and 46 client/API/presentation/event tests pass.
-Server TypeScript passes; final client TypeScript and normal delivery checks
-remain pending. The existing seat-feedback source test now locates the same
+Both TypeScript compilers pass on the clean transplant onto protected main.
+Normal delivery checks remain pending. The existing seat-feedback source test now locates the same
 automatic callback with its new context argument; all refusal and no-client-fold
 assertions remain intact. No production actor, money or entitlement action was
 performed. Protected merge, installation/publication and affected live proof
 remain required and are not claimed by these results.
+
+The first normal pre-push also caught the expired-turn contract's old two-argument
+call locator. Its same no-client-fold/refusal/engine-authority assertions are
+preserved, the locator now names the decision argument, and a new assertion
+requires the stale-response fence. All five contract tests pass. The original
+failed hook result is retained; it is not passing delivery evidence.

@@ -70,3 +70,10 @@ Delivery state and exact production evidence are recorded in the task checkpoint
 The Mid-Morning Turbo (6-Max NLH) also publishes and creates six-seat tables, matching its advertised format.
 
 Owner follow-up removes the Midway 11 AM Coffee Break Freeroll. The board owner retires it, the creator refuses stale copies, and installation deactivates its schedule. Diamond Arena is unchanged. The revised Midway schedule has 144 definitions and 350 weekly starts.
+
+Hosted delivery also exposed a stale historical refund live-proof: its exact
+closed two-kind list refused the installed ticket-refund extension. The proof
+still requires the original marker and both original entitlement kinds, but
+accepts subsequent list entries. No executable migration body or live function
+is changed. Four positive/negative PostgreSQL expressions, current live catalog
+readback, and the maintained migration-proof regression qualify this correction.

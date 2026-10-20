@@ -3,6 +3,7 @@
 -- Existing entrants keep the contract they registered for. No wallet, escrow,
 -- player stack, live event, start time, entry price or bounty is changed.
 -- Future spawn correctness is in ScheduledTournamentService, not a repair loop.
+-- @live-proof: (SELECT count(*)=144 AND bool_and(COALESCE(config->'blindStructure'->0->>'smallBlind'='25' AND config->'blindStructure'->0->>'bigBlind'='25' AND (config->>'startingStack')::integer>=3000 AND jsonb_array_length(config->'blindStructure')=40,false)) FROM public.tournament_schedules WHERE active AND (club_id='fade0000-0000-0000-0000-000000000001'::uuid OR union_id='fade0000-0000-0000-0000-000000000001'::uuid)) AND (SELECT NOT active FROM public.tournament_schedules WHERE id='10f642b9-2ec8-4b05-93d4-a6e26b1e9218'::uuid) AND (SELECT count(*)=3 AND bool_and((config->>'guaranteedPrize')::numeric=CASE WHEN id='9d0977ec-5f30-4a28-9beb-fa8e96cafe79'::uuid THEN 500 ELSE 250 END) FROM public.tournament_schedules WHERE id IN ('a4e5ac92-019f-415a-b4c4-fb95bc037ecc'::uuid,'9d0977ec-5f30-4a28-9beb-fa8e96cafe79'::uuid,'b9c31f19-70df-4b5c-9e8a-04ebaa945f61'::uuid))
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '45s';

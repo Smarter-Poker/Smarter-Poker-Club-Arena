@@ -100,5 +100,6 @@
   "captureTimingSource": "private capture receipt filesystem completion timestamp",
   "catalogQuerySHA256": "0befc233aa3699e9d8e3678c44a5b288c022ab61bfc52be91e7a342ee26d3639",
   "sourceHistorySHA256": "64ba64dd23526ee2dffc02a96234739757647d179046386e453461df061468bd",
-  "platformContractSHA256": "2362f5d496b79b77e66ed2c02f4671dac2541b93e09f35e37b43614d940da895"
+  "platformContractSHA256": "2362f5d496b79b77e66ed2c02f4671dac2541b93e09f35e37b43614d940da895",
+  "extensionRuntimeSHA256": "b5d8cb788aa92530b78920dfe4a47f5c8c69d2dd400e0c00f1311b780dd74bc3"
 }

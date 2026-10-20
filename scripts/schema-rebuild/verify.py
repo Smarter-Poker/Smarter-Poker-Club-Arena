@@ -54,7 +54,13 @@ def main():
   version=run([pg/'postgres','--version'])
   if not re.search(r'\b17\.',version):raise Refused('PostgreSQL17 required')
   run([pg/'initdb','-D',data,'-U','schema_restore_owner','--auth-local=trust','--auth-host=reject','--locale-provider=icu','--icu-locale='+platform['locale'],'--lc-collate='+platform['collate'],'--lc-ctype='+platform['ctype'],'-E',platform['encoding']])
-  with (data/'postgresql.conf').open('a') as f:f.write("\nlisten_addresses=''\nunix_socket_directories="+lit(socket)+"\nshared_buffers='32MB'\nshared_preload_libraries='pg_cron,pg_net,pg_stat_statements'\ncron.database_name='postgres'\ncron.launch_active_jobs=off\n")
+  with (data/'postgresql.conf').open('a') as f:f.write("\nlisten_addresses=''\nunix_socket_directories="+lit(socket)+"\nshared_buffers='32MB'\nshared_preload_libraries='pg_cron,pg_net,pg_stat_statements,supautils'\ncron.database_name='postgres'\ncron.launch_active_jobs=off\n")
+  runtime=json.loads((BASE/'pokeriq-extension-runtime.json').read_text())
+  allowed={'supautils.privileged_extensions','supautils.privileged_extensions_superuser','supautils.privileged_role','supautils.superuser'}
+  with (data/'postgresql.conf').open('a') as f:
+   for setting in runtime['settings']:
+    if setting['name'] not in allowed:raise Refused('Unreviewed extension runtime setting')
+    f.write(setting['name']+'='+lit(setting['setting'])+'\n')
   run([pg/'pg_ctl','-D',data,'-l',work/'server.log','-w','start']);started=True
   cmd=[pg/'psql','-X','-qAt','-h',socket,'-U','schema_restore_owner','-d','postgres','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose']
   def sql(s):return run(cmd,s)

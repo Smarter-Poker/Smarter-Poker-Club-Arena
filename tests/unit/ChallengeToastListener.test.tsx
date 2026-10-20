@@ -192,6 +192,9 @@ describe('ChallengeToastListener', () => {
       undefined,
       expect.any(Function)
     );
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/table/11111111-2222-4333-8444-555555555555'
+    );
     tapToast();
     expect(screen.getByTestId('location').textContent).toBe('/challenges');
   });

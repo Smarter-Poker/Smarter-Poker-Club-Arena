@@ -166,8 +166,8 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 229424,
-      "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
+      "bytes": 229699,
+      "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
@@ -3568,6 +3568,17 @@
     "current": {
       "bytes": 37679,
       "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
+    }
+  },
+  "unattendedOfferWorkflowInput20261020": {
+    "reason": "Adds the native unattended cash offer qualification to accounting shard 2. Updates the current workflow input only; prior receipts and financial source pins remain unchanged.",
+    "previous": {
+      "bytes": 229424,
+      "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
+    },
+    "current": {
+      "bytes": 229699,
+      "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
     }
   }
 }

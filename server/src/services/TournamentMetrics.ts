@@ -113,8 +113,46 @@ export const STALLED_MTT_MINUTES = 15;
 /** Extra time after the persisted break/add-on deadline, beyond the five-minute break. */
 export const OVERDUE_BREAK_GRACE_MINUTES = 10;
 
+/**
+ * LAUNCH LATENESS (2026-10-19). tournaments.started_at is written equal to
+ * start_time, so it can never show a late launch; the first dealt hand can.
+ * From 2026-10-12 to 2026-10-18, 20-30% of scheduled MTTs dealt their first
+ * hand over 60 s late and 9-14% over 120 s (worst 7,648 s), and nothing could
+ * see it. fn_tournament_launch_lateness_metrics measures from
+ * hand_history.started_at; started_at keeps its meaning.
+ */
+export const LATE_START_SECONDS = 120;
+/**
+ * hand_history is written when a hand ENDS (created_at - started_at p99 77 s),
+ * so "no hand recorded yet" needs this much more before it means late: an
+ * on-time first hand still in play must not read as a late start.
+ */
+export const LATE_START_HEADROOM_SECONDS = 120;
+/** How far back a late first hand stays counted after it is recorded. */
+export const LATE_START_WINDOW_MINUTES = 15;
+
+/** The launch-lateness read. collectedAt 0 = never answered: unknown, not zero. */
+export interface LaunchLatenessSnapshot {
+  lateFirstHands: number;
+  lateWaiting: number;
+  worstLateSeconds: number;
+  collectedAt: number;
+}
+
 export class TournamentMetrics {
   private snapshot: TournamentMetricsSnapshot = { ...EMPTY };
+  /**
+   * Kept apart from the snapshot on purpose: the launch-lateness read is a
+   * newer, independent function, and its failure must not freeze the
+   * established tournament gauges (or the other way round). Its own staleness
+   * gauge says when it is blind.
+   */
+  private lateness: LaunchLatenessSnapshot = {
+    lateFirstHands: 0,
+    lateWaiting: 0,
+    worstLateSeconds: 0,
+    collectedAt: 0,
+  };
   private refreshing = false;
   private stopped = false;
   private generation = 0;
@@ -148,6 +186,35 @@ export class TournamentMetrics {
     return this.snapshot;
   }
 
+  getLaunchLateness(): LaunchLatenessSnapshot {
+    return this.lateness;
+  }
+
+  /**
+   * Publish a launch-lateness read only when every count is a nonnegative
+   * integer. Anything else keeps the last good read, whose age the staleness
+   * gauge reports (CLAUDE.md 10.86 rules 1 and 2).
+   */
+  private absorbLateness(
+    read: PromiseSettledResult<{ data: unknown; error: { message?: string } | null }>
+  ): void {
+    if (read.status !== 'fulfilled' || read.value.error) return;
+    const data = read.value.data;
+    const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+    if (!row || typeof row !== 'object') return;
+    const count = (value: unknown): number | null => {
+      if (typeof value === 'string' && !/^[0-9]+$/.test(value)) return null;
+      if (typeof value !== 'number' && typeof value !== 'string') return null;
+      const n = Number(value);
+      return Number.isSafeInteger(n) && n >= 0 ? n : null;
+    };
+    const lateFirstHands = count(row.late_first_hands);
+    const lateWaiting = count(row.late_waiting);
+    const worstLateSeconds = count(row.worst_late_seconds);
+    if (lateFirstHands === null || lateWaiting === null || worstLateSeconds === null) return;
+    this.lateness = { lateFirstHands, lateWaiting, worstLateSeconds, collectedAt: Date.now() };
+  }
+
   /**
    * Read the counts. Never throws, never zeroes a good snapshot on failure.
    *
@@ -160,7 +227,7 @@ export class TournamentMetrics {
     const generation = this.generation;
     this.refreshing = true;
     try {
-      const [countRead, progressRead] = await Promise.allSettled([
+      const [countRead, progressRead, latenessRead] = await Promise.allSettled([
         supabase.rpc('fn_tournament_metrics', {
           p_overdue_minutes: OVERDUE_START_MINUTES,
           p_completing_minutes: STUCK_COMPLETING_MINUTES,
@@ -170,8 +237,14 @@ export class TournamentMetrics {
           p_stalled_minutes: STALLED_MTT_MINUTES,
           p_break_grace_minutes: OVERDUE_BREAK_GRACE_MINUTES,
         }),
+        supabase.rpc('fn_tournament_launch_lateness_metrics', {
+          p_late_seconds: LATE_START_SECONDS,
+          p_headroom_seconds: LATE_START_HEADROOM_SECONDS,
+          p_window_minutes: LATE_START_WINDOW_MINUTES,
+        }),
       ]);
       if (this.stopped || generation !== this.generation) return;
+      this.absorbLateness(latenessRead);
       if (countRead.status === 'rejected') throw countRead.reason;
       if (progressRead.status === 'rejected') throw progressRead.reason;
       const counts = countRead.value;
@@ -297,6 +370,12 @@ export class TournamentMetrics {
     const staleSeconds =
       s.collectedAt === 0 ? 86_400 : Math.max(0, Math.round((Date.now() - s.collectedAt) / 1000));
 
+    const late = this.lateness;
+    const latenessKnown = late.collectedAt !== 0;
+    const latenessStaleSeconds = latenessKnown
+      ? Math.max(0, Math.round((Date.now() - late.collectedAt) / 1000))
+      : 86_400;
+
     const owned = Math.max(0, Math.floor(fleet.owned));
     const unserved =
       fleet.isLeader &&
@@ -351,6 +430,21 @@ export class TournamentMetrics {
       '# HELP poker_tournaments_seat_first_waiting SNG/Spin open past a nominal start time. Their ordinary resting state - informational, do NOT alert on it.',
       '# TYPE poker_tournaments_seat_first_waiting gauge',
       `poker_tournaments_seat_first_waiting ${s.seatFirstWaiting}`,
+      // Launch lateness. HELP/TYPE always, a sample only once the database has
+      // answered: before that the count is unknown, and an invented zero would
+      // read as "every MTT started on time".
+      `# HELP poker_mtt_late_first_hands MTTs whose first hand was dealt over ${LATE_START_SECONDS}s after start_time (hand_history.started_at), recorded in the last ${LATE_START_WINDOW_MINUTES}m.`,
+      '# TYPE poker_mtt_late_first_hands gauge',
+      ...(latenessKnown ? [`poker_mtt_late_first_hands ${late.lateFirstHands}`] : []),
+      `# HELP poker_mtt_late_start_waiting MTTs still ANNOUNCED/REGISTERING/RUNNING with no recorded hand ${LATE_START_SECONDS + LATE_START_HEADROOM_SECONDS}s after start_time.`,
+      '# TYPE poker_mtt_late_start_waiting gauge',
+      ...(latenessKnown ? [`poker_mtt_late_start_waiting ${late.lateWaiting}`] : []),
+      '# HELP poker_mtt_worst_late_start_seconds Largest launch lateness among the MTTs counted by the two gauges above; 0 when none.',
+      '# TYPE poker_mtt_worst_late_start_seconds gauge',
+      ...(latenessKnown ? [`poker_mtt_worst_late_start_seconds ${late.worstLateSeconds}`] : []),
+      '# HELP poker_mtt_launch_lateness_stale_seconds Age of the launch-lateness read. 86400 when it has never answered; the lateness gauges are absent until it does.',
+      '# TYPE poker_mtt_launch_lateness_stale_seconds gauge',
+      `poker_mtt_launch_lateness_stale_seconds ${latenessStaleSeconds}`,
       '# HELP poker_tournament_metrics_stale_seconds Age of the tournament snapshot. A failed read keeps the last good values, so THIS is what proves the gauges above are current.',
       '# TYPE poker_tournament_metrics_stale_seconds gauge',
       `poker_tournament_metrics_stale_seconds ${staleSeconds}`,

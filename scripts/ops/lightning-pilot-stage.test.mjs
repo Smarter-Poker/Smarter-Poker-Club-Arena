@@ -76,12 +76,25 @@ function fakeClients({
   const factory = () => {
     const admin = n++ === 0;
     const table = (name) => {
+      const filters = {};
       const q = {
         select: () => q,
-        eq: () => q,
-        maybeSingle: async () => ({
-          data: club ?? { id: CLUB, owner_id: PILOT.ownerId, name: PILOT.name, is_public: false },
-        }),
+        eq: (key, value) => {
+          filters[key] = value;
+          return q;
+        },
+        maybeSingle: async () => {
+          if (name === 'lightning_integrity_signal') {
+            calls.push({ who: 'service', name: 'read_integrity_signal', args: { ...filters } });
+            const rows = signals
+              .map((s) => ({ cluster_id: filters.cluster_id, ...s }))
+              .filter((s) => s.id === filters.id && s.cluster_id === filters.cluster_id);
+            return rows.length > 1 ? { error: { code: 'PGRST116' } } : { data: rows[0] ?? null };
+          }
+          return {
+            data: club ?? { id: CLUB, owner_id: PILOT.ownerId, name: PILOT.name, is_public: false },
+          };
+        },
         then: (res, rej) =>
           Promise.resolve({ data: name === 'cash_games' ? games : [] }).then(res, rej),
       };
@@ -586,7 +599,7 @@ const investigatedSignal = (id) => {
     evidence: { ...f.evidence, latest_score: 80 },
   };
 };
-test('each investigated Action finding is recorded reviewed from its exact evidence, read on its own page', async () => {
+test('each investigated Action finding is recorded reviewed from its exact scoped row', async () => {
   assert.deepEqual(
     Object.keys(INVESTIGATED_FINDINGS)
       .map(Number)
@@ -599,9 +612,10 @@ test('each investigated Action finding is recorded reviewed from its exact evide
       { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: id },
       f.factory
     );
-    const read = f.calls.filter((c) => c.name === 'fn_lightning_operator_cluster');
+    const read = f.calls.filter((c) => c.name === 'read_integrity_signal');
     assert.equal(read.length, 1);
-    assert.equal(read[0].args.p_to, INVESTIGATED_FINDINGS[id].readTo);
+    assert.deepEqual(read[0].args, { id: Number(id), cluster_id: measuredGame.id });
+    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_cluster').length, 0);
     const writes = f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review');
     assert.equal(writes.length, 1);
     assert.equal(writes[0].args.p_signal_id, Number(id));
@@ -665,5 +679,20 @@ test('finding 158 review refuses drift in every measured field and either player
       )
     );
     assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
+  }
+});
+
+test('review refuses a missing, duplicate or foreign-cluster row without loading the dashboard', async () => {
+  const signal = investigatedSignal(158);
+  for (const signals of [[], [signal, signal], [{ ...signal, cluster_id: game9.id }]]) {
+    const f = fakeClients({ signals, games: [measuredGame] });
+    await assert.rejects(
+      runPilotStage(
+        { ...env, PILOT_STAGE: 'review', PILOT_TARGETS: 'action', PILOT_SIGNAL_ID: '158' },
+        f.factory
+      )
+    );
+    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_signal_review').length, 0);
+    assert.equal(f.calls.filter((c) => c.name === 'fn_lightning_operator_cluster').length, 0);
   }
 });

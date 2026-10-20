@@ -421,21 +421,22 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
     // never a bulk clear or launch certificate. Preserve the original evidence.
     if (stage === 'review') {
       const { game, entry } = staged[0];
-      const detail = must(
-        await player.rpc('fn_lightning_operator_cluster', {
-          p_cluster_id: game.id,
-          p_from: '2026-10-15T20:00:00Z',
-          // The view pages the newest 100 findings; an investigated finding is
-          // read up to just after its own detection so it stays on that page.
-          p_to: INVESTIGATED_FINDINGS[signalId]?.readTo ?? new Date().toISOString(),
-        }),
+      // Review only needs this one persisted finding, not the dashboard's
+      // current pool reconciliation and historical telemetry. The existing
+      // service client reads the exact private target; the authenticated owner
+      // remains the sole writer through the normal operator review door.
+      const signal = must(
+        await admin
+          .from('lightning_integrity_signal')
+          .select(
+            'id,cluster_id,pattern_type,source,player_a,player_b,severity,status,evidence,notes'
+          )
+          .eq('id', signalId)
+          .eq('cluster_id', game.id)
+          .maybeSingle(),
         'Signal Evidence'
       );
       const note = `${reason} [operation ${operationId}]`;
-      const matches = Array.isArray(detail?.integrity_signals)
-        ? detail.integrity_signals.filter((s) => Number(s.id) === signalId)
-        : [];
-      const signal = matches[0];
       // Finding 8 is a separate, measured timing review, not one of the
       // legacy short-sample findings. Preserve its exact evidence and live
       // workload; this door only records reviewed, never cleared/actioned.
@@ -475,9 +476,8 @@ export async function runPilotStage(env = process.env, clientFactory, accessRunn
       const investigated = investigatedFinding(signalId, game.id, signal);
       if (
         !(measured || madnessMeasured || legacy || investigated) ||
-        detail?.ok !== true ||
-        detail.cluster_id !== game.id ||
-        matches.length !== 1 ||
+        signal?.id !== signalId ||
+        signal?.cluster_id !== game.id ||
         signal.pattern_type !== (investigated?.pattern ?? 'TIMING_CORRELATION') ||
         signal.source !== (investigated?.source ?? 'engine') ||
         signal.severity !== 'high' ||

@@ -188,3 +188,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original cash freshness preserves earning scope plus late effective admissions.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-effective-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Original hand outcome reductions progress in bounded canonical native windows.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-native-weekly-hand-parts-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

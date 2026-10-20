@@ -4,11 +4,14 @@ import { reportError } from '../../utils/errorReporter';
 import './TournamentStartCountdown.css';
 
 type StartRow = { status: string; start_time: string | null; format_contract: string | null };
-export function scheduledTournamentStart(row: StartRow | null): number | null {
-  if (!row || !['REGISTERING', 'ANNOUNCED'].includes(row.status.toUpperCase())) return null;
+export function scheduledTournamentStart(row: StartRow | null, nowMs = Date.now()): number | null {
+  if (!row || !['REGISTERING', 'ANNOUNCED', 'RUNNING'].includes(row.status.toUpperCase()))
+    return null;
   // Spins and Heads Up start when their seats fill, not at an advertised clock.
   if (!['mtt-v1', 'mtt-v2'].includes(row.format_contract ?? '')) return null;
   const at = Date.parse(row.start_time ?? '');
+  // Pre-seating stamps RUNNING before the advertised first deal.
+  if (row.status.toUpperCase() === 'RUNNING' && at <= nowMs) return null;
   return Number.isFinite(at) ? at : null;
 }
 export function startCountdownText(remainingMs: number): string {
@@ -35,6 +38,7 @@ export default function TournamentStartCountdown({
   useEffect(() => {
     if (hasLiveHand) return;
     let active = true;
+    let clockOffset = 0;
     let refresh: ReturnType<typeof setTimeout>;
     const read = async () => {
       try {
@@ -46,9 +50,11 @@ export default function TournamentStartCountdown({
         if (!active) return;
         if (error) reportError(error, 'TournamentStartCountdown.read');
         else {
-          const at = scheduledTournamentStart(data);
+          const at = scheduledTournamentStart(data, Date.now() + clockOffset);
           setStart(at === null ? null : { id: tournamentId, at });
-          if (data && !['REGISTERING', 'ANNOUNCED'].includes(data.status.toUpperCase())) return;
+          if (data && !['REGISTERING', 'ANNOUNCED', 'RUNNING'].includes(data.status.toUpperCase()))
+            return;
+          if (data?.status.toUpperCase() === 'RUNNING' && at === null) return;
         }
       } catch (error) {
         if (active) reportError(error, 'TournamentStartCountdown.read');
@@ -65,12 +71,17 @@ export default function TournamentStartCountdown({
         }
         const answered = Date.now();
         const at = typeof data === 'string' ? Date.parse(data) : NaN;
-        if (Number.isFinite(at) && answered - asked < 5_000) setOffset(at - (asked + answered) / 2);
+        if (Number.isFinite(at) && answered - asked < 5_000) {
+          clockOffset = at - (asked + answered) / 2;
+          setOffset(clockOffset);
+        }
       })
       .catch((error) => {
         if (active) reportError(error, 'TournamentStartCountdown.clock');
+      })
+      .finally(() => {
+        if (active) void read();
       });
-    void read();
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       active = false;

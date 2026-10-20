@@ -12,6 +12,31 @@ const room = '11111111-1111-4111-8111-111111111111';
 const history = '22222222-2222-4222-8222-222222222222';
 const event = (type, extra = {}) =>
   JSON.stringify({ type: 'EVENT', tableId: room, payload: { type, hand_number: 7, ...extra } });
+test('live producer showdown without payload timestamp uses sequenced envelope time only', () => {
+  const live = {
+    type: 'EVENT',
+    tableId: room,
+    seq: 8,
+    ts: 101,
+    payload: { type: 'showdown', table_id: room, hand_number: 7, results: [{ cards: ['SECRET'] }] },
+  };
+  assert.deepEqual(cycleEvent(JSON.stringify(live), room, 100), {
+    handNumber: 7,
+    kind: 'showdown',
+  });
+  for (const altered of [
+    { ...live, seq: undefined },
+    { ...live, seq: 0 },
+    { ...live, seq: 1.5 },
+    { ...live, ts: 99 },
+    { ...live, ts: undefined },
+    { ...live, payload: { ...live.payload, replayed: true } },
+    { ...live, payload: { ...live.payload, timestamp: 99 } },
+    { ...live, payload: { ...live.payload, timestamp: '101' } },
+  ])
+    assert.equal(cycleEvent(JSON.stringify(altered), room, 100), null);
+  assert.equal(cycleEvent(event('showdown', { timestamp: 101, replayed: true }), room, 100), null);
+});
 test('recent bounded hand ring observes a qualifying hand after twelve early nonshowdowns', () => {
   const hands = new Map();
   for (let handNumber = 1; handNumber <= 20; handNumber++)
@@ -194,4 +219,97 @@ test('partial authentication is owned inside cleanup and normal fetch is deadlin
   assert.equal(boundedSignal, true);
   assert.deepEqual(signouts, [{ scope: 'local' }]);
   assert.doesNotMatch(JSON.stringify(r), /PRIVATE_AUTH_ERROR/);
+});
+
+test('partial browser failure retains bounded live phases and requested hand identity without qualifying controls', async () => {
+  const handlers = {},
+    socket = {},
+    selectors = [];
+  let closed = false,
+    signedOut = false;
+  const pin = {
+    playerId: history,
+    poolSessionId: room,
+    clubId: 'e14bc9f7-736d-425f-8f2c-e78305ebac1d',
+    clusterId: 'babb43f1-368e-406f-a97a-a0d5013648b2',
+  };
+  const page = {
+    on: (name, callback) => {
+      handlers[name] = callback;
+    },
+    goto: async () => {
+      handlers.websocket({
+        on: (name, callback) => {
+          socket[name] = callback;
+        },
+      });
+      socket.framesent({
+        payload: JSON.stringify({ type: 'RENDER_ACK', tableId: room, hand_id: history }),
+      });
+      for (const type of ['player_action', 'showdown'])
+        socket.framereceived({
+          payload: JSON.stringify({
+            type: 'EVENT',
+            tableId: room,
+            seq: 8,
+            ts: Date.now(),
+            payload: { type, hand_number: 7, action: 'bet', amount: 999, cards: ['SECRET'] },
+          }),
+        });
+      handlers.request({
+        method: () => 'POST',
+        url: () => 'https://engine.smarter.poker/preaction',
+        postDataJSON: () => ({
+          tableId: room,
+          action: 'auto_check',
+          handId: history,
+          maxCallAmount: 999,
+        }),
+      });
+    },
+    waitForFunction: async () => {},
+    locator: (selector) => {
+      selectors.push(selector);
+      return {
+        getAttribute: async () => 'accepted',
+        isVisible: async () => {
+          throw new Error('SECRET_FAILURE');
+        },
+      };
+    },
+  };
+  const client = {
+    auth: {
+      signOut: async () => {
+        signedOut = true;
+        return {};
+      },
+    },
+  };
+  const result = await witnessCycle({
+    pin,
+    timebank: true,
+    openSession: async () => ({ client, session: {} }),
+    chromium: {
+      launch: async () => ({
+        newContext: async () => ({ addInitScript: async () => {}, newPage: async () => page }),
+        close: async () => {
+          closed = true;
+        },
+      }),
+    },
+  });
+  assert.equal(result.status, 'unknown');
+  assert.equal(result.controlsQualified, false);
+  assert.equal(result.preactionRequestHandId, history);
+  assert.deepEqual(result.requests, { timebank: 0, preaction: 1 });
+  assert.deepEqual(result.observedHands, [
+    { handNumber: 7, betting: true, showdown: true, hand_complete: false, historyId: null },
+  ]);
+  assert.ok(
+    selectors.some((selector) => selector.includes('title="Unlimited Lifetime VIP Time Banks"'))
+  );
+  assert.equal(result.cleanup, 'local_session_closed');
+  assert.equal(closed && signedOut, true);
+  assert.doesNotMatch(JSON.stringify(result), /SECRET|999|cards|maxCallAmount/);
 });

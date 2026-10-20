@@ -202,7 +202,7 @@ describe('the table page carries no bare Chips a Diamond seat can reach', () => 
   it('every exit sentence is read from the copy module, keyed by the seat asset', () => {
     const code = withoutComments(page);
     expect(code).toMatch(
-      /import \{ bootExplanation, seatCopy \} from '\.\.\/components\/table\/seatExitCopy'/
+      /import \{ bootExplanation, seatCopy, seatUnits \} from '\.\.\/components\/table\/seatExitCopy'/
     );
     expect(code).toMatch(/bootExplanation\(reason, seatAsset\)/);
     expect(code).toMatch(/seatCopy\(seatAsset\)\.removedFromTable/);

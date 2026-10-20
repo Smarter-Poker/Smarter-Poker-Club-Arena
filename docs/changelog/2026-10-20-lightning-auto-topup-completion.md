@@ -13,3 +13,5 @@ The financial witness now opens the menu according to its actual expanded state,
 Verification includes actual fail-before evidence, 35 client boundary tests, 24 real host tests, 21 financial witness tests and both compilers. Final normal hooks and required hosted checks remain part of delivery. Live funding proof requires the containing client and engine; public rollout stays off.
 
 Real-time law: triggered by the existing `hand_history_saved` discrete WS event after successful settlement, no snapshot diff.
+
+Review hardening: opt-out fences new dispatch while a separate same-player/pool scope fence preserves an already accepted debit's ordinary bookkeeping. A deferred real-hook regression pins both conditions and the actual handler wiring. The receipt copy uses existing seatUnits; the existing Diamond contract retains all literal guards and recognizes that import. Final focused 36 hook tests plus nine Diamond-copy contracts and compiler are required before the normal push.

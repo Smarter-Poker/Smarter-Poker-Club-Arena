@@ -302,7 +302,7 @@ import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnit
 import { topUpCashierPath } from '../utils/topUpCashierPath';
 import { mergeSessionFacts, sessionBuyInTotal } from '../utils/sessionBuyInTotal';
 import { bustPromptMustWait } from '../utils/bustPromptGate';
-import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
+import { bootExplanation, seatCopy, seatUnits } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
 import {
@@ -8395,7 +8395,7 @@ function LiveTablePage({
   const handleAddChips = async (
     amount: number,
     opId?: string,
-    opts?: { source?: 'manual' | 'auto'; isCurrent?: () => boolean }
+    opts?: { source?: 'manual' | 'auto'; isCurrent?: () => boolean; isScopeCurrent?: () => boolean }
   ): Promise<boolean> => {
     if (opts?.isCurrent && !opts.isCurrent()) return false;
     /* A Diamond seat tops up too, through the same engine call. What differs is
@@ -8444,7 +8444,9 @@ function LiveTablePage({
       }
       if (opts?.isCurrent && !opts.isCurrent()) return false;
       const res = await GameServerAPI.addChips(addOnTableId, amount, opId);
-      if (opts?.isCurrent && !opts.isCurrent()) return false;
+      // Opting out prevents the next debit; an already committed response still
+      // updates this same player/pool's ordinary balance and session records.
+      if (opts?.isScopeCurrent && !opts.isScopeCurrent()) return false;
       if (!res.success) {
         /* The AUTOMATIC top-up sizes itself from the stack it can see, and
            it cannot see a queued mid-hand add-on that already fills the seat
@@ -24292,12 +24294,14 @@ function LiveTablePage({
     enabled: isAutoRebuyEnabled,
     balance: accountBalance,
     event: engineLastEvent,
-    add: (amount, opId, isCurrent) =>
-      handleAddChipsRef.current(amount, opId, { source: 'auto', isCurrent }),
+    add: (amount, opId, isCurrent, isScopeCurrent) =>
+      handleAddChipsRef.current(amount, opId, { source: 'auto', isCurrent, isScopeCurrent }),
     onAdded: (requested) => {
       const result = lastAddChipsResultRef.current;
       if (result && !result.queued && result.applied >= requested)
-        toast.success(`Auto Top Up: Added ${result.applied.toFixed(2)} Chips`);
+        toast.success(
+          `Auto Top Up: Added ${result.applied.toFixed(2)} ${seatUnits(tableStateRef.current.arenaAsset)}`
+        );
     },
   });
 

@@ -87,7 +87,12 @@ export function useLightningAutoTopUp({
   enabled: boolean;
   balance: number | null;
   event: Record<string, unknown> | null;
-  add: (amount: number, opId: string, isCurrent: () => boolean) => Promise<boolean>;
+  add: (
+    amount: number,
+    opId: string,
+    isCurrent: () => boolean,
+    isScopeCurrent: () => boolean
+  ) => Promise<boolean>;
   onAdded?: (amount: number) => void;
   read?: typeof readLightningTopUp;
 }) {
@@ -164,7 +169,8 @@ export function useLightningAutoTopUp({
       const amount = Math.round(Math.min(target.maximum - target.stack, available) * 100) / 100;
       if (!Number.isFinite(amount) || amount <= 0) return;
       // The normal handler revalidates the own anchor and the database retains every money guard.
-      const accepted = await latest.current.add(amount, crypto.randomUUID(), current);
+      const sameScope = () => mounted.current && state.current === owner && owner.key === key;
+      const accepted = await latest.current.add(amount, crypto.randomUUID(), current, sameScope);
       if (accepted && current()) latest.current.onAdded?.(amount);
     })()
       .catch((error) => reportError(error, 'TablePage.lightning_auto_topup_failed'))

@@ -26,7 +26,14 @@ const receipt = {
 };
 const target = { stack: 1.37, maximum: 4 };
 function setup() {
-  const add = vi.fn(async (_amount: number, _opId: string, _isCurrent: () => boolean) => true);
+  const add = vi.fn(
+    async (
+      _amount: number,
+      _opId: string,
+      _isCurrent: () => boolean,
+      _isScopeCurrent: () => boolean
+    ) => true
+  );
   const read = vi.fn(async () => target);
   const onAdded = vi.fn();
   const props = {
@@ -50,8 +57,35 @@ describe('Lightning opt-in top-up at its committed receipt', () => {
     expect(source).toMatch(/event: engineLastEvent/);
     expect(source).toMatch(/!lightningRoomRef.current\s*&&\s*isAutoRebuyEnabled/);
     expect(source).toContain(
-      "handleAddChipsRef.current(amount, opId, { source: 'auto', isCurrent })"
+      "handleAddChipsRef.current(amount, opId, { source: 'auto', isCurrent, isScopeCurrent })"
     );
+  });
+  it('keeps a committed response in scope after opt-out, but fences a changed room', async () => {
+    const h = setup();
+    let finish!: (value: boolean) => void;
+    h.add.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    h.rerender({ ...h.props, event: receipt });
+    await waitFor(() => expect(h.add).toHaveBeenCalledTimes(1));
+    const [, , mayDispatch, mayApplyReceipt] = h.add.mock.calls[0];
+    h.rerender({ ...h.props, enabled: false, event: receipt });
+    expect(mayDispatch()).toBe(false);
+    expect(mayApplyReceipt()).toBe(true);
+    await act(async () => finish(true));
+    expect(h.onAdded).not.toHaveBeenCalled();
+    h.rerender({ ...h.props, room: { ...room, poolSessionId: other }, event: receipt });
+    expect(mayApplyReceipt()).toBe(false);
+    const source = readFileSync('src/pages/TablePage.tsx', 'utf8');
+    const response = source.slice(
+      source.indexOf('const res = await GameServerAPI.addChips(addOnTableId')
+    );
+    const bookkeeping = response.slice(0, response.indexOf('applyBalanceDelta('));
+    expect(bookkeeping).toContain('opts?.isScopeCurrent && !opts.isScopeCurrent()');
+    expect(bookkeeping).not.toMatch(/opts\?\.isCurrent/);
   });
   it('uses fresh own anchor arithmetic with no fabricated hand seat', async () => {
     const h = setup();

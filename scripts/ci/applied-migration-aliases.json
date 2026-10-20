@@ -25,6 +25,14 @@
       "file": "supabase/migrations/20261010083333_choice_losses_keep_half_the_last_prize_and_games_show_lifeti.sql",
       "sameBytes": true,
       "basis": "Read-only production recovery 2026-10-11: public.fn_ca_migration_text applied SQL bytes are byte-identical to the existing authored source file (19453 bytes, MD5 3152fe965f368e7352b4aa206b321125). Same declared objects and executable SQL, including preimage and postcondition assertions. Supabase recorded the apply-time version and untruncated name; the source retained its reserved version and truncated filename. No new SQL is introduced and the installed migration must not be replayed."
+    },
+    {
+      "appliedVersion": "20261020203834",
+      "appliedName": "20261020203733_add_agent_assignment_transaction_before_client_publication",
+      "appliedMd5": "6e50fc551b976bac9210eff38315855e",
+      "file": "supabase/migrations/20261020203733_add_agent_assignment_transaction_before_client_publication.sql",
+      "sameBytes": true,
+      "basis": "Exact additive assignment transaction installed once through Supabase MCP at 2026-10-20T20:38:34Z before compatible client publication. History bytes6333 and MD5 equal source; helper definitions, owner, search_path, ACLs and receipt RLS/privileges read back. No bank or report restrictions installed by this additive phase; never replay it."
     }
   ],
   "superseded": [

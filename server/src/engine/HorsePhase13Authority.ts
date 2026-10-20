@@ -595,8 +595,8 @@ export interface HorsePhase13AuthoritySelection {
 }
 
 /**
- * The protected release selections, one per joint variant. PLO8 generation 1
- * qualifies on da94e437, run 39132906218. Its prospective completion window
+ * The protected release selections, one per joint variant. PLO4 and PLO8 generation 1
+ * qualify on da94e437, runs 39132910448 and 39132906218. Their completion window
  * on 41296ff3 admits boards 1 and 2; board 3 has no eligible sample and remains
  * refused. The other variants remain unselected. Qualification, strength and
  * completion evidence ship byte-identically in the engine image.
@@ -605,7 +605,24 @@ export const PHASE13_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<JointVariant, HorsePhase13AuthoritySelection | null>
 > = Object.freeze({
   nlh: null,
-  plo4: null,
+  plo4: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase13',
+    variant: 'plo4',
+    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+    packVersion: 'joint-multiway-round1-v4',
+    contractVersion: 'joint-strength-contract-v1',
+    contractDigest: '0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8',
+    domain: 'plo4-cash-joint-multiway-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase13/phase13-qualification-2026-10-20-plo4.json',
+    qualificationSha256: '099eea8275df9642c244179c480e94453d8137716d033e3df86eb94ce0f91c00',
+    completionPath: 'docs/evidence/phase13/da94e437/phase13-completion-2026-10-19-plo4.json',
+    completionSha256: '34990e77cb3f59413b209b6d2864f19889e578af0f4e099fe3b17e0be32ccd2c',
+    approvalGeneration: 1,
+    issuedAt: '2026-10-20T18:28:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   plo5: null,
   plo6: null,
   plo8: Object.freeze({

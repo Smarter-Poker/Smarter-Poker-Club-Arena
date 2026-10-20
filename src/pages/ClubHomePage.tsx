@@ -6258,8 +6258,12 @@ function ClubHomePageContent({
       {showOpeningWizard &&
         isOwner &&
         club &&
-        club.chip_treasury != null &&
-        openingChecklistEligible && (
+        openingChecklistEligible &&
+        (club.chip_treasury == null ? (
+          <p aria-live="polite">
+            {openingBankError ? 'Club Bank Balance Unavailable' : 'Reading Club Bank...'}
+          </p>
+        ) : (
           <ClubOpeningWizard
             clubId={club.id}
             clubName={club.name}
@@ -6289,7 +6293,7 @@ function ClubHomePageContent({
               setShowOpeningWizard(false);
             }}
           />
-        )}
+        ))}
     </div>
   );
 }

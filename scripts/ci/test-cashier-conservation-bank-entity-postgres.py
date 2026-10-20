@@ -240,12 +240,10 @@ INSERT INTO chip_ledger(club_id,from_type,from_entity_id,to_type,to_entity_id,am
     results['installed_definition_md5'] = installed
     results['installed_prosrc_md5'] = run('installed-prosrc',
         "SELECT md5(prosrc) FROM pg_proc WHERE oid='fn_cashier_conservation_report(uuid)'::regprocedure;")
-    contract = (ROOT / 'scripts/verification-harness/cashier-release-contract.sql').read_text()
-    entry = contract[contract.index("'signature', 'public.fn_cashier_conservation_report(uuid)'"):]
-    entry = entry[:entry.index('    )')]
-    assert f"'hash', '{PREIMAGE}'" in entry, entry
-    assert f"'replacement_hash', '{installed}'" in entry, (installed, entry)
-    results['cases'].append({'name': 'release-contract-names-the-installed-definition', 'passed': True})
+    # Qualify this historical bank-entity postimage independently of the
+    # current production canary, which the journal-origin successor owns.
+    assert installed == '8b13c8eee26460f44bbf977136635c5d', installed
+    results['cases'].append({'name': 'exact-bank-entity-postimage', 'passed': True})
     run('replay-refused', NEW.read_text(), refused='55000')
 
     # THE FIX: every bank is read by its own entity.

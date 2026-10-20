@@ -465,10 +465,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234",
+    "scripts/ci/classify-ci-changes.mjs": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "68d96d1f5f80fa2b1e6e2c8ea54daf02d5e4b3c3244ddbb3af87487683a30427",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "24034135cef51a4db95bf91f4311f52e20661ba588070db89451269bb89edb37",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -487,7 +487,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "9569ef53fcd82119f3b358bbba8d1371d139f98dd1ad6dbd3a39b483d10b75ba",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "c444aa71609c0da67baa2d3f3a622b0e1b66339296c94aae9b4914d829f2794f",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -5074,5 +5074,30 @@
     "previous_sha256": "8af244b4d2a80952923d67f9be6d2a7576f406077af01bb4f0562be614e4567f",
     "sha256": "31eeaf23d5803eb6de9f311b1a994b7364a383d83a423a41b9c020f1715f92ef",
     "reason": "AgentAssignmentPanel now binds every query error; tighten its permitted discarded-error count from 1 to 0. No financial assertion, fixture row, engine function or financial test result changed."
+  },
+  "neverDealtRebuyRouting20261020": {
+    "reason": "Reviewed additive routing of the never-dealt rebuy driver, fixtures and guard to existing required server/native qualification. Refresh current classifier and dependent binding identities only. Financial inputs, assertions, historical audits and qualification statuses are preserved. Matching hashes are not financial or production certification.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234",
+        "current_sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "44183b53a02b820e826f37bb9a32e55629803a81471b77922966674b4d92c3f1",
+        "current_sha256": "e6489896cee3550e18796beef0da92d70e578b8bc9afe31fc26984859b397ab0"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "64b7ec88e94688696ab1f53b0e84fe19619179947f08bf35ef4bcb22d397eb87",
+        "current_sha256": "407514ab9fdff445cc1b3a7cef5a0cf1d54d083eee1c0b9647fd6da31955d8ac"
+      }
+    ],
+    "integration_reason": "Preserve concurrent protected commission and ticket-refund qualification parents and all audit histories. Update combined current classifier/dependent identities only; no financial assertion or qualification status changes.",
+    "combined_dependent_sha256": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": "24034135cef51a4db95bf91f4311f52e20661ba588070db89451269bb89edb37",
+      "tests/fixtures/sep8-spin-custody/source-binding.json": "c444aa71609c0da67baa2d3f3a622b0e1b66339296c94aae9b4914d829f2794f"
+    }
   }
 }

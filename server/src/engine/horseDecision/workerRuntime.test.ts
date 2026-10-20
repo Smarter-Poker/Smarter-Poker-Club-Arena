@@ -4841,6 +4841,23 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
     expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo8')).toBe(true);
   });
 
+  it('the committed PLO4 selection reaches an applied natural worker path on two boards', async () => {
+    const r = changedCash(976, 'plo4');
+    const live = await decideThrough(
+      r,
+      (v) => admitHorsePhase13ReleaseAuthority(v),
+      false,
+      changedSeed('plo4')
+    );
+    expect(live.decision.jointPolicy).toMatchObject({
+      variant: 'plo4',
+      mode: 'candidate',
+      applied: true,
+      authority: { state: 'usable', approvalGeneration: 1 },
+    });
+    expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
+  });
+
   const refused = (overrides: {
     qualification?: Record<string, unknown>;
     completion?: Record<string, unknown> | null;

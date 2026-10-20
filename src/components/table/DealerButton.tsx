@@ -403,7 +403,12 @@ export function DealerButton({
       const w = host.offsetWidth;
       const h = host.offsetHeight;
       if (w <= 0 || h <= 0) return;
-      setScalerSize((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+      const railBets = window.innerWidth <= 480 && h > w;
+      setScalerSize((prev) =>
+        prev && prev.w === w && prev.h === h && prev.railBets === railBets
+          ? prev
+          : { w, h, railBets }
+      );
     };
     read();
     if (typeof ResizeObserver === 'undefined') return;

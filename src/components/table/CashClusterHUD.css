@@ -138,9 +138,9 @@
 /* The available action matches Lobby, Message and Previous Hand. The artwork
    owns the frame; the label stays accessible live text inside its lower face. */
 .cch-seat-change.cch-seat-change--control {
-  width: var(--sp-hud-tile-size, 66px);
-  height: var(--sp-hud-tile-size, 66px);
-  min-height: 44px;
+  width: var(--sp-hud-tile-size, 40px);
+  height: var(--sp-hud-tile-size, 40px);
+  min-height: 0;
   padding: 0;
   border: 0;
   border-radius: 0;

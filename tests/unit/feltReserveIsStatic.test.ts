@@ -215,22 +215,28 @@ describe('the felt is ONE size — no state may change it (Dan 2026-08-28)', () 
     // than retain dead space for its retracted toolbar. Other layouts keep
     // their existing svh contract. Gameplay state and JS measurements remain
     // forbidden inputs by the independent tests in this file.
-    const media = /@media\s*\(max-width:\s*480px\)\s*and\s*\(orientation:\s*portrait\)\s*\{/.exec(
-      ALL_CSS
+    const media = /@media\s*\(max-width:\s*480px\)\s*and\s*\(orientation:\s*portrait\)\s*\{/g;
+    const ranges = [...ALL_CSS.matchAll(media)].map((match) => {
+      const start = match.index!;
+      let end = start + match[0].length;
+      let depth = 1;
+      while (end < ALL_CSS.length && depth > 0) {
+        if (ALL_CSS[end] === '{') depth++;
+        if (ALL_CSS[end] === '}') depth--;
+        end++;
+      }
+      expect(depth, 'portrait-phone rule must close').toBe(0);
+      return { start, end };
+    });
+    expect(ranges.length, 'portrait-phone viewport rule must exist').toBeGreaterThan(0);
+    const phone = ranges.flatMap(({ start, end }) =>
+      declarationsOf('--sp-page-h', ALL_CSS.slice(start, end))
     );
-    expect(media, 'portrait-phone viewport rule must exist').not.toBeNull();
-    const start = media!.index;
-    let end = start + media![0].length;
-    let depth = 1;
-    while (end < ALL_CSS.length && depth > 0) {
-      if (ALL_CSS[end] === '{') depth++;
-      if (ALL_CSS[end] === '}') depth--;
-      end++;
-    }
-    expect(depth, 'portrait-phone rule must close').toBe(0);
-    const phone = declarationsOf('--sp-page-h', ALL_CSS.slice(start, end));
     expect(phone.every((d) => /\d+dvh\b/.test(d.value))).toBe(true);
-    const other = declarationsOf('--sp-page-h', ALL_CSS.slice(0, start) + ALL_CSS.slice(end));
+    let nonPhone = ALL_CSS;
+    for (const { start, end } of [...ranges].reverse())
+      nonPhone = nonPhone.slice(0, start) + nonPhone.slice(end);
+    const other = declarationsOf('--sp-page-h', nonPhone);
     const fallback = other.filter((d) => /\d+dvh\b/.test(d.value));
     const stable = other.filter((d) => /\d+svh\b/.test(d.value));
     expect(phone, 'route and embedded phones must use the visible viewport').toHaveLength(2);

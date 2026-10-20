@@ -12,15 +12,23 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
       const rows = Array.from(scaler.querySelectorAll<HTMLElement>('.seat__cards--revealed'));
       rows.forEach((row) => row.style.removeProperty('translate'));
       const scale = scaler.getBoundingClientRect().width / scaler.offsetWidth || 1;
-      topPods().forEach((pod) => pod.style.removeProperty('translate'));
+      topPods().forEach((pod) => {
+        pod.style.removeProperty('translate');
+        pod.style.removeProperty('--sp-top-seat-shift');
+      });
       const mini = page.querySelector('.bbj-mini-plate')?.getBoundingClientRect();
       // On phones the top player's head sits immediately below the actual
       // Mini BBJ frame, rather than below a guessed viewport-sized gap.
       if (page.getBoundingClientRect().width <= 768 && mini && mini.height > 0) {
         for (const pod of topPods()) {
           const image = pod.querySelector('.seat__avatar-img')?.getBoundingClientRect();
-          if (image && image.height > 0)
-            pod.style.translate = `0px ${(mini.bottom + 4 * scale - image.top) / scale}px`;
+          if (image && image.height > 0) {
+            const shift = (mini.bottom + 4 * scale - image.top) / scale;
+            pod.style.translate = `0px ${shift}px`;
+            // Bets use the scaler's rail coordinates. Moving the top avatar
+            // below the jackpot must not carry its bet onto the player plate.
+            pod.style.setProperty('--sp-top-seat-shift', `${shift}px`);
+          }
         }
       }
       const visibleBox = (element: Element): CardBox | null => {
@@ -87,7 +95,10 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
       scaler.removeEventListener('animationend', schedule);
       scaler.removeEventListener('load', schedule, true);
       if (frame !== null) cancelAnimationFrame(frame);
-      topPods().forEach((pod) => pod.style.removeProperty('translate'));
+      topPods().forEach((pod) => {
+        pod.style.removeProperty('translate');
+        pod.style.removeProperty('--sp-top-seat-shift');
+      });
       scaler
         .querySelectorAll<HTMLElement>('.seat__cards--revealed')
         .forEach((row) => row.style.removeProperty('translate'));

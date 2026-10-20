@@ -64,6 +64,14 @@ export async function certifyMobileLiveTableLayout(page: Page, testInfo: TestInf
             for (const node of protectedNodes)
               if (intersects(rect, box(node))) violations.push(`Card Covers ${node.className}`);
           }
+          const board = table.querySelector('.community-area');
+          if (board && visible(board)) {
+            for (const node of table.querySelectorAll(
+              '.seat__info, .seat__avatar-img, .seat__action, .seat__bet-chips'
+            ))
+              if (visible(node) && intersects(box(node), box(board)))
+                violations.push(`Player Or Bet Covers Board: ${node.className}`);
+          }
           const mini = table.querySelector('.bbj-mini-plate');
           const head = table.querySelector('.seat-wrapper--top .seat__avatar-img');
           const topGap = mini && head && visible(head) ? box(head).top - box(mini).bottom : null;

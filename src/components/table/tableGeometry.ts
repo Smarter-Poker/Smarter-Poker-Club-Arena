@@ -107,6 +107,29 @@ export interface Pos {
 export interface Size {
   w: number;
   h: number;
+  /** Portrait phones place resting bets directly inside the painted rail. */
+  railBets?: boolean;
+}
+
+/** Owner October 20: the far rail is 80% of the near rail. This one
+ * homography paints the art and projects marker coordinates. UI stays upright. */
+export const PORTRAIT_TABLE_TAPER = 0.25;
+export function projectPortraitTable(p: Pos): Pos {
+  const denominator = 1 + PORTRAIT_TABLE_TAPER * (1 - p.y / 100);
+  return { x: 50 + (p.x - 50) / denominator, y: p.y / denominator };
+}
+export function unprojectPortraitTable(p: Pos): Pos {
+  const y = (p.y * (1 + PORTRAIT_TABLE_TAPER)) / (1 + (PORTRAIT_TABLE_TAPER * p.y) / 100);
+  return { x: 50 + (p.x - 50) * (1 + PORTRAIT_TABLE_TAPER * (1 - y / 100)), y };
+}
+export function portraitBoardWidthOfFeltPct(): number {
+  const boardY = (FELT_WINDOW.top + FELT_WINDOW.height * 0.425) / 100;
+  return (95 * (1 + PORTRAIT_TABLE_TAPER * boardY)) / (1 + PORTRAIT_TABLE_TAPER);
+}
+export function portraitTableTransform(size: Size): string {
+  if (!(size.w > 0 && size.h > 0)) return 'none';
+  const k = PORTRAIT_TABLE_TAPER;
+  return `matrix3d(1,0,0,0,${(-size.w * k) / (2 * size.h)},1,0,${-k / size.h},0,0,1,0,${(size.w * k) / 2},0,0,${1 + k})`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -399,7 +422,20 @@ export function fitSeatToViewport(
   const minX = ((edge - canvasLeftPx) / canvas.w) * 100;
   const maxX = ((viewportWidthPx - edge - canvasLeftPx) / canvas.w) * 100;
   if (minX > maxX) return seat;
-  const x = Math.max(minX, Math.min(maxX, seat.x));
+  // Side pods belong in the screen's outboard lanes, independently of the
+  // narrower art. Top caps retain their own rail positions.
+  const portraitPhone = viewportWidthPx <= 480 && canvas.h > canvas.w;
+  const targetX =
+    portraitPhone && seat.x !== 50 && seat.y < 20
+      ? seat.x < 50
+        ? 15
+        : 85
+      : portraitPhone && seat.y >= 20 && seat.y < 100
+        ? seat.x < 50
+          ? minX
+          : maxX
+        : seat.x;
+  const x = Math.max(minX, Math.min(maxX, targetX));
   return x === seat.x ? seat : { ...seat, x };
 }
 
@@ -860,7 +896,11 @@ export const SEAT_BOX_RISE_WIDTH_PCT = 4;
  * its caller to notice is the "second opinion" the wrapper's header warns
  * about. Uses the puck's real radius, not the chips' margin constant.
  */
-export function overlapsBoard(cand: Pos, size: Size = NOMINAL_SCALER): boolean {
+export function overlapsBoard(
+  cand: Pos,
+  size: Size = NOMINAL_SCALER,
+  markerRadiusWidthPct = buttonRadiusWidthPct(size)
+): boolean {
   const BOARD_FELT_FRACTION = 0.95;
   const BOARD_GAP_PX = 2;
   const BOARD_TOP_FELT_PCT = 42.5;
@@ -870,7 +910,7 @@ export function overlapsBoard(cand: Pos, size: Size = NOMINAL_SCALER): boolean {
   const gapPct = (BOARD_GAP_PX / size.w) * 100;
   const cardW = (BOARD_FELT_FRACTION * FELT_WINDOW.width - 4 * gapPct) / 5;
   const halfH = (cardW * (92 / 64) * (size.w / size.h)) / 2;
-  const puckHalf = buttonRadiusWidthPct(size);
+  const puckHalf = markerRadiusWidthPct;
   return (
     Math.abs(cand.x - centreX) < halfW + puckHalf &&
     Math.abs(cand.y - centreY) < halfH + puckHalf * (size.w / size.h)
@@ -971,6 +1011,7 @@ function insideStadiumPx(px: number, py: number, box: ReturnType<typeof feltBoxP
  * daylight rather than take the constant's word for it.
  */
 export function feltEdgeClearanceWidthPct(p: Pos, size: Size = NOMINAL_SCALER): number {
+  if (size.railBets) p = unprojectPortraitTable(p);
   const box = feltBoxPx(size, 0);
   const d = spineDistancePx((p.x / 100) * size.w, (p.y / 100) * size.h, box);
   return ((box.r - d) / size.w) * 100;
@@ -1030,6 +1071,7 @@ export function isInsideFelt(
   size: Size = NOMINAL_SCALER,
   marginWidthPct: number = FELT_MARKER_MARGIN_WIDTH_PCT
 ): boolean {
+  if (size.railBets) p = unprojectPortraitTable(p);
   const box = feltBoxPx(size, marginWidthPct);
   return insideStadiumPx((p.x / 100) * size.w, (p.y / 100) * size.h, box);
 }
@@ -1066,6 +1108,10 @@ export function clampIntoFelt(
   size: Size = NOMINAL_SCALER,
   marginWidthPct: number = FELT_MARKER_MARGIN_WIDTH_PCT
 ): Pos {
+  if (size.railBets)
+    return projectPortraitTable(
+      clampIntoFelt(unprojectPortraitTable(p), { ...size, railBets: false }, marginWidthPct)
+    );
   const s = feltExitScale(p, size, marginWidthPct);
   if (!Number.isFinite(s) || s >= 1) return { x: p.x, y: p.y };
   const c = feltCenter();
@@ -1246,6 +1292,56 @@ function podExitDistanceSq(ux: number, uy: number, size: Size, pod?: Size): numb
  * that is about the rail itself rather than about the furniture passes.
  */
 export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
+  if (size.railBets) {
+    // Use the nearest stadium edge, so side bets retain the seat's height. The
+    // marker radius plus 3px of daylight leaves the whole stack on the felt.
+    const stackHalfPx = Math.max(17, (chipRadiusWidthPct(size) * size.w) / 100);
+    const box = feltBoxPx(size, ((stackHalfPx + MARKER_INSET_PX) / size.w) * 100);
+    const nearest = (source: Pos): Pos => {
+      const px = (source.x * size.w) / 100;
+      const py = (source.y * size.h) / 100;
+      const sx = Math.min(Math.max(px, box.left + box.r), box.left + box.w - box.r);
+      const sy = Math.min(Math.max(py, box.top + box.r), box.top + box.h - box.r);
+      const dx = px - sx;
+      const dy = py - sy;
+      const length = Math.hypot(dx, dy);
+      if (length < 1e-6) return { ...source };
+      return projectPortraitTable({
+        x: ((sx + (dx / length) * box.r) / size.w) * 100,
+        y: ((sy + (dy / length) * box.r) / size.h) * 100,
+      });
+    };
+    // The amount label is wider than the disc. At short phone heights the
+    // cap bends toward the board; walk along that same edge until the whole
+    // stack clears the actual 95% board, instead of moving into the centre.
+    const footprint = Math.max(buttonRadiusWidthPct(size), (20 / size.w) * 100);
+    if (isHeroSeat(seat) && pod) {
+      // The hero pod straddles the bottom cap. Stay on that cap and use the
+      // nearest free point beside its bust instead of parking a bet on it.
+      for (let step = 0; step <= 100; step++) {
+        const candidate = nearest({ x: seat.x + step * 2, y: seat.y });
+        const dx = (Math.abs(candidate.x - seat.x) * size.w) / 100;
+        if (dx >= pod.w * 0.625 + stackHalfPx + MARKER_INSET_PX) return candidate;
+      }
+      // A very small cap cannot fit a wide amount label beside the bust.
+      // Continue up the same right rail until it clears the crown instead.
+      for (let step = 0; step <= 80; step++) {
+        const candidate = nearest({ x: seat.x + 100, y: seat.y - step * 2 });
+        const dy = ((seat.y - candidate.y) * size.h) / 100;
+        if (
+          dy >= pod.h * 0.9 + stackHalfPx + MARKER_INSET_PX &&
+          !overlapsBoard(candidate, size, footprint)
+        )
+          return candidate;
+      }
+    }
+    const direction = seat.y < 50 ? -1 : 1;
+    for (let step = 0; step <= 80; step++) {
+      const candidate = nearest({ x: seat.x, y: seat.y + ((direction * step * 5) / size.h) * 100 });
+      if (!overlapsBoard(candidate, size, footprint)) return candidate;
+    }
+    return nearest(seat);
+  }
   const c = feltCenter();
   const s = sq(seat, size);
   const t = sq(c, size);
@@ -1418,6 +1514,8 @@ export function chipStepWidthPct(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
  * breakpoint, so the default is exact in production rather than approximate.
  */
 export function dealerButtonPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: Size): Pos {
+  if (size.railBets)
+    return projectPortraitTable(dealerButtonPosition(seat, { ...size, railBets: false }, pod));
   const c = feltCenter();
   const s = sq(seat, size);
   const t = sq(c, size);

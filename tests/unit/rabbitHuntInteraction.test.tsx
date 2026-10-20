@@ -99,7 +99,7 @@ describe('Rabbit Hunt human decision safety', () => {
     );
   });
 
-  it('announces and paints Unlimited only for exact Lifetime VIP', async () => {
+  it('keeps Lifetime VIP entitlement accessible without a painted Unlimited badge', async () => {
     vi.mocked(vipService.checkVIPStatus).mockResolvedValueOnce({
       isVIP: true,
       status: 'lifetime',
@@ -119,7 +119,7 @@ describe('Rabbit Hunt human decision safety', () => {
     await waitFor(() =>
       expect(getByRole('button', { name: 'Rabbit Hunt, Unlimited With Lifetime VIP' })).toBeTruthy()
     );
-    expect(getByText('Unlimited')).toBeTruthy();
+    expect(queryByText('Unlimited')).toBeNull();
     expect(queryByText('100')).toBeNull();
   });
 

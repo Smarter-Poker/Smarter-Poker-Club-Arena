@@ -41,7 +41,7 @@
 
 import { test, expect } from '@playwright/test';
 import { chromium } from 'playwright';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
 import { readFileSync } from 'node:fs';
 import {
   buildCss,
@@ -362,7 +362,7 @@ test.describe('every device gets the same proportions', () => {
     expect(offenders, 'two different-sized tables drew the same card — that is a rung').toEqual([]);
   });
 
-  test('the felt is edge-to-edge on portrait phones (Dan 2026-08-26, restored 2026-08-29)', async ({
+  test('portrait phones reserve 22 percent for outboard players (owner correction October 20)', async ({
     page,
   }) => {
     /* SHIPPED BUG, twice. #950 removed the 4px side gutters "per Dan --
@@ -401,7 +401,7 @@ test.describe('every device gets the same proportions', () => {
     for (const r of rows) {
       if (!WIDTH_BOUND_PHONES.includes(r.device)) continue;
       const vpW = Number(r.vp.split('x')[0]);
-      if (Math.abs(r.feltW - vpW) > 0.5) {
+      if (Math.abs(r.feltW - vpW * 0.78) > 0.5) {
         offenders.push(
           `${r.device} (${r.vp}): felt is ${r.feltW}px on a ${vpW}px screen -- ` +
             `${(vpW - r.feltW).toFixed(1)}px of gutter came back`
@@ -747,7 +747,7 @@ test('the compact profit tracker shares the hand-pill centre beside the rightmos
 
 // Both rings must keep the rail wide even when the phone's height binds.
 // Seating/action state must never change either dimension of that canvas.
-test('portrait phone rings fill the width and keep their height through gameplay states', async ({
+test('portrait phone rings reserve outboard lanes and keep their height through gameplay states', async ({
   page,
 }) => {
   for (const [width, height] of [
@@ -764,7 +764,7 @@ test('portrait phone rings fill the width and keep their height through gameplay
         .locator('.table-page')
         .evaluate((el, count) => el.setAttribute('data-seats', String(count)), seats);
       const initial = await page.locator('.table-scaler').boundingBox();
-      expect(initial!.width, `${seats}-max at ${width}x${height}`).toBeCloseTo(width, 0);
+      expect(initial!.width, `${seats}-max at ${width}x${height}`).toBeCloseTo(width * 0.78, 0);
       expect(
         await page
           .locator('.table-page')
@@ -806,7 +806,302 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
         .evaluate((el, seats) => el.setAttribute('data-seats', String(seats)), count);
       boxes.push(await page.locator('.table-scaler').boundingBox());
     }
-    expect(boxes[1]!.width).toBeCloseTo(390, 0);
+    expect(boxes[1]!.width).toBeCloseTo(390 * 0.78, 0);
     expect(boxes[1]!.height).toBeCloseTo(boxes[0]!.height, 1);
   }
+});
+
+// Real occupied components, not placeholder rectangles: this guards the
+// overlap missed by the old containment-only regression.
+test('occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  const { buildSync } = await import('esbuild');
+  const bundled = buildSync({
+    entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
+    bundle: true,
+    write: false,
+    metafile: true,
+    format: 'iife',
+    platform: 'browser',
+    loader: {
+      '.css': 'empty',
+      '.png': 'dataurl',
+      '.webp': 'dataurl',
+      '.svg': 'dataurl',
+      '.jpg': 'dataurl',
+    },
+    define: {
+      'import.meta.env': JSON.stringify({
+        VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co',
+        VITE_SUPABASE_ANON_KEY: 'local-fixture',
+        VITE_MEDIA_BASE: 'https://smarter.poker/hub/club-arena/',
+        DEV: true,
+      }),
+      'process.env.NODE_ENV': '"test"',
+    },
+  });
+  const bundle = bundled.outputFiles[0].text;
+  const avatarResponse = await page.request.get(
+    'https://smarter.poker/avatars/table/vip_wolf@2x.webp'
+  );
+  expect(avatarResponse.ok()).toBe(true);
+  const avatarBytes = await avatarResponse.body();
+  await page.route('**/avatars/table/**', (route) =>
+    route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
+  );
+  const sheets = [
+    ...new Set([
+      'src/styles/club-engine.css',
+      'src/styles/animations.css',
+      'src/styles/metallic-popups.css',
+      'src/styles/reducedMotion.css',
+      'src/pages/MultiTablePage.css',
+      'src/pages/TablePage.css',
+      'src/components/table/ActionPanel.css',
+      ...Object.keys(bundled.metafile!.inputs).filter((f) => f.endsWith('.css')),
+      'src/components/table/TableChat.css',
+      'src/components/table/TableVisualHotfix.css',
+    ]),
+  ];
+  const toolAlpha: Record<string, { left: number; top: number; right: number; bottom: number }> =
+    {};
+  for (const icon of ['chat', 'timebank', 'rabbit']) {
+    const response = await page.request.get(
+      `https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/assets/buttons/black/icon-${icon}.webp`
+    );
+    expect(response.ok()).toBe(true);
+    const bytes = await response.body();
+    toolAlpha[icon] = await page.evaluate(async (base64) => {
+      const image = new Image();
+      image.src = `data:image/webp;base64,${base64}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(image, 0, 0);
+      const pixels = ctx.getImageData(0, 0, image.width, image.height).data;
+      let left = image.width,
+        top = image.height,
+        right = 0,
+        bottom = 0;
+      for (let y = 0; y < image.height; y++)
+        for (let x = 0; x < image.width; x++)
+          if (pixels[(y * image.width + x) * 4 + 3] > 128) {
+            left = Math.min(left, x);
+            top = Math.min(top, y);
+            right = Math.max(right, x + 1);
+            bottom = Math.max(bottom, y + 1);
+          }
+      return {
+        left: left / image.width,
+        top: top / image.height,
+        right: right / image.width,
+        bottom: bottom / image.height,
+      };
+    }, bytes.toString('base64'));
+    await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
+      route.fulfill({ body: bytes, contentType: 'image/webp' })
+    );
+  }
+  const fontSheet = await page.request.get('https://smarter.poker/hub/club-arena/fonts/fonts.css');
+  expect(fontSheet.ok()).toBe(true);
+  const inter = [...(await fontSheet.text()).matchAll(/@font-face\s*\{[^}]+\}/g)]
+    .map((m) => m[0])
+    .find((face) => face.includes("font-family: 'Inter'") && face.includes('U+0000-00FF'))!;
+  expect(inter).toBeTruthy();
+  const fontPath = /url\(([^)]+)\)/.exec(inter)![1];
+  const fontResponse = await page.request.get(new URL(fontPath, 'https://smarter.poker').href);
+  expect(fontResponse.ok()).toBe(true);
+  const fontFace = inter
+    .replace(/font-weight:\s*\d+;/, 'font-weight: 100 900;')
+    .replace(fontPath, `data:font/woff2;base64,${(await fontResponse.body()).toString('base64')}`);
+  const readStyle = (file: string): string =>
+    readFileSync(resolve(process.cwd(), file), 'utf8').replace(
+      /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
+      (_, imported: string) => readStyle(resolve(dirname(file), imported))
+    );
+  const realCss = fontFace + '\n' + sheets.map(readStyle).join('\n');
+  for (const width of [320, 375, 393, 430, 480])
+    for (const count of [6, 9])
+      for (const revealed of [false, true]) {
+        await page.setViewportSize({
+          width,
+          height: width === 320 ? 568 : width === 375 ? 667 : 852,
+        });
+        await page.route('http://rail.fixture/', (route) =>
+          route.fulfill({
+            contentType: 'text/html',
+            body: `<html data-seats="${count}" data-revealed="${revealed}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+          })
+        );
+        await page.goto('http://rail.fixture/');
+        const runtimeErrors: string[] = [];
+        page.on('pageerror', (error) => runtimeErrors.push(error.message));
+        await page.addScriptTag({ content: bundle });
+        expect(runtimeErrors).toEqual([]);
+        await page.waitForFunction(
+          () =>
+            document.querySelectorAll('.seat__info').length ===
+            Number(document.documentElement.dataset.seats)
+        );
+        await expect(page.locator('.seat__avatar-img')).toHaveCount(count);
+        await page.waitForFunction(() =>
+          [...document.querySelectorAll<HTMLImageElement>('.seat__avatar-img')].every(
+            (i) => i.complete && i.naturalWidth > 0
+          )
+        );
+        await page.evaluate(async () => {
+          const faces = await document.fonts.load('600 14px Inter');
+          if (!faces.length) throw new Error('Inter Face Missing');
+          await document.fonts.ready;
+        });
+        await expect(page.locator('.card-image__fallback')).toHaveCount(0);
+        await page.waitForFunction(() =>
+          [...document.querySelectorAll<HTMLImageElement>('.card-image__img')].every(
+            (i) => i.complete && i.naturalWidth > 0
+          )
+        );
+        await page.waitForFunction(
+          () =>
+            !document.querySelector(
+              '.community-area [data-rs-animating="true"],.community-cards__card--flop-deal'
+            )
+        );
+        await page.evaluate(async () => {
+          await Promise.all(
+            document
+              .getAnimations()
+              .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+              .map((a) => a.finished.catch(() => {}))
+          );
+        });
+        const result = await page.evaluate(() => {
+          const box = (e: Element) => e.getBoundingClientRect();
+          const overlaps = (a: DOMRect, b: DOMRect) =>
+            a.left < b.right - 0.5 &&
+            a.right > b.left + 0.5 &&
+            a.top < b.bottom - 0.5 &&
+            a.bottom > b.top + 0.5;
+          const board = box(document.querySelector('.community-area')!);
+          const violations: string[] = [];
+          for (const e of document.querySelectorAll(
+            '.seat__info,.seat__avatar-img,.seat__action,.seat__bet-chips,.seat__cards--opponent .seat__card,.dealer-button'
+          )) {
+            if (overlaps(box(e), board)) violations.push(`${e.className} Covers Board`);
+          }
+          for (const bet of document.querySelectorAll('.seat__bet-chips'))
+            for (const pod of document.querySelectorAll(
+              '.seat__info,.seat__avatar-img,.seat__action,.seat__cards--revealed .seat__card'
+            ))
+              if (overlaps(box(bet), box(pod)))
+                violations.push(
+                  `Bet ${bet.closest('.seat')?.querySelector('.seat__name')?.textContent} Covers Player ${pod.closest('.seat')?.querySelector('.seat__name')?.textContent} ${pod.className} bet=${JSON.stringify(box(bet))} player=${JSON.stringify(box(pod))}`
+                );
+          for (const action of document.querySelectorAll('.seat__action'))
+            for (const plaque of document.querySelectorAll('.bbj-widget,.bbj-mini-plate'))
+              if (overlaps(box(action), box(plaque)))
+                violations.push('Action Badge Covers Jackpot');
+          const canvas = box(document.querySelector('.table-scaler')!);
+          const felt = box(document.querySelector('.table-surface')!);
+          // The browser's inverse homography maps a DOM rectangle to a
+          // quadrilateral on the original painted stadium. Distance to its spine
+          // tests the actual felt, including curved caps, rather than its bounding box.
+          const inverse = new DOMMatrixReadOnly(
+            getComputedStyle(document.querySelector('.table-art')!).transform
+          ).inverse();
+          const unpaint = (x: number, y: number) => {
+            const p = new DOMPoint(x - canvas.left, y - canvas.top).matrixTransform(inverse);
+            return { x: p.x / p.w, y: p.y / p.w };
+          };
+          type Point = { x: number; y: number };
+          const radius = felt.width / 2;
+          const spineA = { x: felt.left - canvas.left + radius, y: felt.top - canvas.top + radius };
+          const spineB = { x: spineA.x, y: felt.bottom - canvas.top - radius };
+          const distance = (p: Point, a: Point, b: Point) => {
+            const dx = b.x - a.x,
+              dy = b.y - a.y;
+            const t = Math.max(
+              0,
+              Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy))
+            );
+            return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+          };
+          const cross = (a: Point, b: Point, c: Point) =>
+            (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+          for (const e of document.querySelectorAll(
+            '.seat-wrapper:not(.seat-wrapper--hero) .seat__info,.seat-wrapper:not(.seat-wrapper--hero) .seat__avatar-img'
+          )) {
+            const r = box(e);
+            const corners = [
+              unpaint(r.left, r.top),
+              unpaint(r.right, r.top),
+              unpaint(r.right, r.bottom),
+              unpaint(r.left, r.bottom),
+            ];
+            const touches = corners.some((a, i) => {
+              const b = corners[(i + 1) % 4];
+              const crosses =
+                cross(a, b, spineA) * cross(a, b, spineB) <= 0 &&
+                cross(spineA, spineB, a) * cross(spineA, spineB, b) <= 0;
+              return (
+                crosses ||
+                Math.min(
+                  distance(a, spineA, spineB),
+                  distance(spineA, a, b),
+                  distance(spineB, a, b)
+                ) <
+                  radius - 0.5
+              );
+            });
+            if (touches) violations.push(`Player On Painted Felt: ${e.className}`);
+          }
+          const tools = [
+            '.mtp-lobby-btn',
+            '.chat-collapsed',
+            '.tbc-widget',
+            '.rabbit-hunt__button',
+          ].map((s) => ({
+            selector: s,
+            width: box(document.querySelector(s)!).width,
+            height: box(document.querySelector(s)!).height,
+          }));
+          return { violations, tools, canvas: { width: canvas.width, height: canvas.height } };
+        });
+        expect(result.violations, `${width}px ${count}-max`).toEqual([]);
+        for (const tool of result.tools) {
+          expect(tool.width, tool.selector).toBeCloseTo(result.tools[0].width, 1);
+          expect(tool.height, tool.selector).toBeCloseTo(result.tools[0].height, 1);
+        }
+        for (const [selector, icon] of [
+          ['.chat-collapsed', 'chat'],
+          ['.tbc-widget', 'timebank'],
+          ['.rabbit-hunt__button', 'rabbit'],
+        ]) {
+          const painted = await page.locator(`${selector} img`).evaluate((image, alpha) => {
+            const r = image.getBoundingClientRect();
+            return {
+              width: r.width * (alpha.right - alpha.left),
+              height: r.height * (alpha.bottom - alpha.top),
+            };
+          }, toolAlpha[icon]);
+          expect(Math.max(painted.width, painted.height), `${icon} painted frame`).toBeCloseTo(
+            result.tools[0].width,
+            0
+          );
+        }
+        if (width === 393) {
+          const name = `occupied-${count}-max-${revealed ? 'revealed' : 'playing'}`;
+          const path = testInfo.outputPath(`${name}.png`);
+          await page.screenshot({ path });
+          await testInfo.attach(name, { path, contentType: 'image/png' });
+          await testInfo.attach(`${name}-geometry`, {
+            body: JSON.stringify(result),
+            contentType: 'application/json',
+          });
+        }
+        await page.unroute('http://rail.fixture/');
+      }
 });

@@ -3,8 +3,17 @@ import { GameServer } from '../GameServer.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
-beforeEach(() => vi.mocked(reportError).mockClear());
-afterEach(() => vi.restoreAllMocks());
+beforeEach(() => {
+  // Ticket delivery is tested outside the hourly maintenance admission window.
+  // A wall-clock fixture can otherwise cross that gate with its +10m start.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-20T14:10:00.000Z'));
+  vi.mocked(reportError).mockClear();
+});
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 const T = 'aaaaaaaa-1111-4111-8111-111111111111';
 function harness(ticketRows: unknown[] = [{ id: 'ticket', source_tournament_id: T }]) {
   const server = Object.create(GameServer.prototype) as any;

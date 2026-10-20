@@ -1,0 +1,9 @@
+# Tournament finish refusal storms close with their exact members
+
+The capped `Tournament.atomic_finish_refused` incident dropped the originating financial alert IDs. The existing alert-resolution trigger could close ordinary alert mirrors but could never identify the aggregate. Incident `d205bf24-b6ef-4969-9ec7-5e3c03b8b1ec` consequently stayed open after all 966 original tournaments had completed and their underlying alerts resolved.
+
+The original raiser now retains each exact member alert ID in its existing recurrence event and marks new tournament-finish aggregates as membership version 1. The existing last-member resolution transition locks its aggregate, then independently reads all members. It closes only when every member exists, belongs to the exact source and is resolved, and the event count matches the occurrence count. Missing, malformed and wrong-source identities remain open. Other storm families, ordinary alert mirrors and financial records retain their existing behavior.
+
+The migration closes only the historical named incident after checking its exact original revision, 966 distinct event IDs and their fixed hash, durable completed terminal receipts, zero prize/bounty/fee escrow and no unresolved source alerts. It does not move chips or close the unrelated cash-settler lag incident.
+
+The existing required native alert-core job runs fail-before/pass-after coverage with the authentic connected trigger graph. Its additional bounded PG17 concurrency slice observes the second last-member transition waiting on the first's aggregate lock, then verifies closure after both commits. Production installation and UI verification are separate delivery evidence.

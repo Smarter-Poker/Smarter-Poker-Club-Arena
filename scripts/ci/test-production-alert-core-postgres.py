@@ -50,6 +50,13 @@ CHECKOUT_INPUTS.update({
     'legacy_envelope_qualifier': 'scripts/qualification/direct-operational-source-legacy-envelope.sql',
 })
 
+CHECKOUT_INPUTS.update({
+ 'storm_component':'supabase/components/tournament-finish-storm-members.sql',
+ 'storm_preimages':'scripts/qualification/fixtures/tournament-finish-storm/preimages.sql',
+ 'storm_qualifier':'scripts/qualification/tournament-finish-storm-members.sql',
+ 'storm_native':'scripts/qualification/tournament-finish-storm/native.mjs',
+})
+
 MARKER = b'CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user();'
 
 
@@ -407,6 +414,10 @@ def main():
         sql('core_identity_rollback_readback', ROOT / CHECKOUT_INPUTS['core_readback'], user='postgres')
         sql('core_actual_connected_chain', ROOT / CHECKOUT_INPUTS['core_connected'], user='postgres')
         sql('core_connected_rollback_readback', ROOT / CHECKOUT_INPUTS['core_readback'], user='postgres')
+        sql('storm_original_members_connected', ROOT / CHECKOUT_INPUTS['storm_qualifier'], user='postgres')
+        node = shutil.which('node')
+        require(node is not None, 'existing Node runtime required for real storm concurrency')
+        command('storm_original_members_concurrent', [node, ROOT / CHECKOUT_INPUTS['storm_native'], work], timeout=30)
         sql('cash_actual_connected_chain', ROOT / CHECKOUT_INPUTS['cash_connected'], user='postgres')
         sql('cash_connected_rollback_readback', ROOT / CHECKOUT_INPUTS['core_readback'], user='postgres')
         # Extend the same actual component check; no new job, provider or sender.

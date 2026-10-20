@@ -290,7 +290,12 @@ import TimebankCounter from '../components/table/TimebankCounter';
 // Dan 2026-08-21, item 3: buy more time banks with diamonds (1/10/25/100/500).
 import TimeBankStoreModal from '../components/table/TimeBankStoreModal';
 import { sessionStatsService } from '../services/SessionStatsService';
-import { parseTableArenaIdentity, seatCanAddFunds } from '../../server/src/domain/ArenaContext';
+import {
+  parseTableArenaIdentity,
+  seatCanAddFunds,
+  type ArenaIdentity,
+} from '../../server/src/domain/ArenaContext';
+import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
 import { mergeSessionFacts, sessionBuyInTotal } from '../utils/sessionBuyInTotal';
@@ -8360,7 +8365,7 @@ function LiveTablePage({
       if (addOnRoom) {
         let anchor: LightningAnchorSeat | null = null;
         try {
-          anchor = await fetchLightningAnchorSeat(addOnRoom.clusterId);
+          anchor = await fetchLightningAnchorSeat(addOnRoom.clusterId, addOnRoom.poolSessionId);
         } catch (anchorErr) {
           reportError(anchorErr, 'TablePage.lightning_addon_anchor_read_failed', {
             clusterId: addOnRoom.clusterId,
@@ -23898,6 +23903,51 @@ function LiveTablePage({
   /* What the felt prints before the first snapshot, from the Cluster. The
      seat arrays are only sized while they are still empty, so a snapshot that
      has already painted the roster is never overwritten. */
+  /* A normal table bootstraps its balance in loadTableInfo; a room has no
+     table row. Read its own anchor balance on the player's explicit funding
+     gesture. Never refresh an open cashier because hands or snapshots change. */
+  useEffect(() => {
+    if (
+      !lightningRoom ||
+      !tableId ||
+      !userId ||
+      userId === 'guest' ||
+      (!showCashier && !isAutoRebuyEnabled)
+    )
+      return;
+    let current = true;
+    const revision = readBalanceRevision();
+    void readTableFundingBalance(userId, { tableId })
+      .then((result) => {
+        if (current && result.balance !== null) setBalanceIfCurrent(revision, result.balance);
+      })
+      .catch((error) => reportError(error, 'TablePage.lightning_funding_balance_read_failed'));
+    return () => {
+      current = false;
+    };
+  }, [
+    lightningRoom?.poolSessionId,
+    tableId,
+    userId,
+    showCashier,
+    isAutoRebuyEnabled,
+    readBalanceRevision,
+    setBalanceIfCurrent,
+  ]);
+
+  const acceptLightningFundingArena = useCallback((poolSessionId: string, arena: ArenaIdentity) => {
+    setTableState((prev) =>
+      prev.tableId !== poolSessionId
+        ? prev
+        : {
+            ...prev,
+            arenaAsset: arena.asset,
+            arenaId: arena.id,
+          }
+    );
+  }, []);
+  useLightningFundingArena({ room: lightningRoom, userId, onArena: acceptLightningFundingArena });
+
   const lightningMeta = lightningRoom?.meta ?? null;
   useEffect(() => {
     if (!lightningMeta) return;

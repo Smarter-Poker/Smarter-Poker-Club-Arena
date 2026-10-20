@@ -158,9 +158,12 @@ export function lightningAnchorSeat(
  * tell "no seat" (null) from "could not ask" (an error).
  */
 export async function fetchLightningAnchorSeat(
-  clusterId: string
+  clusterId: string,
+  expectedPoolSessionId?: string
 ): Promise<LightningAnchorSeat | null> {
-  return lightningAnchorSeat(await fetchMyLightningSession(clusterId));
+  const session = await fetchMyLightningSession(clusterId);
+  if (expectedPoolSessionId && session.poolSessionId !== expectedPoolSessionId) return null;
+  return lightningAnchorSeat(session);
 }
 
 /** What a leave from a Lightning room during a live hand tells the player. */

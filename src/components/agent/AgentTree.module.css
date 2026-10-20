@@ -191,15 +191,19 @@
 
 /* Transfer Button */
 .transferBtn {
-  width: 32px;
-  height: 32px;
+  width: auto;
+  min-height: 32px;
+  padding: 0 10px;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(251, 191, 36, 0.15);
   border: 1px solid rgba(251, 191, 36, 0.3);
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #e4e7ec;
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;

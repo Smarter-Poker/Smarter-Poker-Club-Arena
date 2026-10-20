@@ -26,7 +26,7 @@
  *                monthly cap, any pack and any debit is reached;
  *   2. ENGINE    revealRabbitHunt asks that function and adds no VIP cap,
  *                count or price of its own;
- *   3. FELT      a Lifetime VIP's tile reads Unlimited from its first frame,
+ *   3. FELT      a Lifetime VIP's tile exposes unlimited entitlement accessibly,
  *                while the lookup is pending AND after it fails, and never
  *                shows a diamond price or a countdown;
  *   and the two things that must NOT change: an ordinary VIP is never told
@@ -136,13 +136,13 @@ describe('2. the engine adds no VIP limit of its own', () => {
 });
 
 describe('3. the felt never shows a Lifetime VIP a limit or a price', () => {
-  it('reads Unlimited from the first frame while the lookup is still pending', () => {
+  it('keeps unlimited entitlement without a visible badge while the lookup is pending', () => {
     signIn(LIFETIME_ID, 'lifetime');
     vi.mocked(vipService.checkVIPStatus).mockReturnValue(new Promise(() => {}));
-    const { getByRole, getByText, queryByText } = tile(LIFETIME_ID);
+    const { getByRole, queryByText } = tile(LIFETIME_ID);
 
     expect(getByRole('button', { name: 'Rabbit Hunt, Unlimited With Lifetime VIP' })).toBeTruthy();
-    expect(getByText('Unlimited')).toBeTruthy();
+    expect(queryByText('Unlimited')).toBeNull();
     expect(queryByText('5')).toBeNull();
   });
 

@@ -188,3 +188,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original cash freshness preserves earning scope plus late effective admissions.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-effective-source-freshness-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# Original weekly incomplete counts seek immutable source and batch keys per attribution.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-counts-indexed-incomplete-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

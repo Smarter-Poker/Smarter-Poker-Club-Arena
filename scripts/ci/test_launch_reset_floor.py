@@ -185,3 +185,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original satellite ownership verifies its exact ledger receipt and forty-source guard.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-satellite-ledger-identity-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
+
+# The original standalone weekly bank is funding once, with its native mint lineage.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-standalone-weekly-statement-funding-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))

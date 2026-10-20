@@ -1,4 +1,5 @@
 import type { GeneratedBlindLevel } from './blindLadder.js';
+import { maxSeatsFor } from '../engine/VariantRules.js';
 import { mttLateRegistrationMinutes, mttSpeedColumns } from './mttStructurePolicy.js';
 
 export const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
@@ -66,6 +67,12 @@ export function withMidwayStructure<T extends Record<string, unknown>>(row: T): 
   return {
     ...row,
     starting_chips: stack,
+    // Match the launcher's deck ceiling, never the tighter CASH seat policy.
+    table_size: Math.min(
+      10,
+      Math.max(2, Number(row.table_size) || 9),
+      maxSeatsFor(String(row.game_type).toLowerCase())
+    ),
     ...(!free || MIDWAY_FREE_BUY_GUARANTEES[String(row.name)] === undefined
       ? {}
       : {

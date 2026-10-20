@@ -18,6 +18,11 @@ NLH uses one full big-blind ante beginning at level 5; Omaha uses no ante.
 AnteMath already recognizes an authored full-BB ante as one total, not one per
 seat, so that existing engine contract is preserved.
 
+Five six-card Omaha schedule definitions advertised nine seats even though
+the launcher correctly caps those tables at seven for deck capacity. New
+rows and their schedule metadata now use that same arithmetic ceiling. The
+separate cash-game seat policy is not applied to tournaments.
+
 The runtime audit also found paid add-on windows hard-coded to 60 seconds
 despite a longer configured break. The original durable-window calculation
 now uses that configured duration. A real-manager regression reproduced

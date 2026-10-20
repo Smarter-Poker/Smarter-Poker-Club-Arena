@@ -8,6 +8,7 @@ import { fixedFreeBuyRow } from '../services/TournamentRecurringService.js';
 import { auditFreeBuyRow } from '../services/FreeBuy.js';
 import { MIDWAY_UNION_ID, withMidwayStructure } from './midwayStructurePolicy.js';
 import { bigBlindAnteTotal } from '../engine/AnteMath.js';
+import { maxSeatsFor } from '../engine/VariantRules.js';
 import { validateMttBlindStructure } from '../domain/tournamentBlindContract.js';
 
 const schedules: { name: string; config: Record<string, unknown> }[] = JSON.parse(
@@ -33,6 +34,7 @@ describe('Midway standard structures through the actual scheduled creator', () =
       const row = await (service as any).buildInsertRow(schedule, config, start);
       expect(row, name).not.toBeNull();
       const levels = row.blind_structure;
+      expect(row.table_size).toBeLessThanOrEqual(maxSeatsFor(row.game_type));
       expect(levels).toHaveLength(40);
       expect(levels[0]).toMatchObject({ smallBlind: 25, bigBlind: 25, ante: 0 });
       expect(levels[1]).toMatchObject({ smallBlind: 25, bigBlind: 50, ante: 0 });

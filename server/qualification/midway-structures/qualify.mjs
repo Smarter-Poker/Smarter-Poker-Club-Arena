@@ -27,7 +27,7 @@ function sql(input, mustPass = true) {
 }
 let fixture = `DROP TABLE IF EXISTS schedules_once,after_once,originals,fixture_kinds,tournament_players,tournaments,tournament_schedules CASCADE;
 CREATE TABLE tournament_schedules(id uuid PRIMARY KEY,club_id uuid,union_id uuid,active boolean,config jsonb,updated_at timestamptz);
-CREATE TABLE tournaments(id uuid PRIMARY KEY,schedule_id uuid,club_id uuid,union_id uuid,status text,start_time timestamptz,entry_contract_locked boolean,prize_pool_finalized boolean,current_players integer,starting_chips integer,blind_structure text,blind_speed text,is_turbo boolean,late_reg_levels integer,late_reg_mins integer,rebuy_chips integer,rebuy_levels integer,addon_chips integer,addon_levels integer,addon_from_start boolean,addon_break_minutes integer,big_blind_ante boolean,guaranteed_prize numeric,updated_at timestamptz);
+CREATE TABLE tournaments(id uuid PRIMARY KEY,schedule_id uuid,club_id uuid,union_id uuid,status text,start_time timestamptz,entry_contract_locked boolean,prize_pool_finalized boolean,current_players integer,starting_chips integer,blind_structure text,blind_speed text,is_turbo boolean,late_reg_levels integer,late_reg_mins integer,rebuy_chips integer,rebuy_levels integer,addon_chips integer,addon_levels integer,addon_from_start boolean,addon_break_minutes integer,big_blind_ante boolean,guaranteed_prize numeric,table_size integer,updated_at timestamptz);
 CREATE TABLE tournament_players(tournament_id uuid);
 CREATE TABLE fixture_kinds(id uuid,kind text);
 CREATE OR REPLACE FUNCTION fn_platform_frozen() RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
@@ -37,7 +37,7 @@ for (const d of definitions) {
   for (const kind of ['eligible', 'registered', 'running', 'foreign', 'finalized', 'locked']) {
     const id = `md5(${quote(d.id + kind)})::uuid`;
     fixture += `INSERT INTO fixture_kinds VALUES(${id},${quote(kind)});
-INSERT INTO tournaments VALUES(${id},${quote(d.id)},${quote(kind === 'foreign' ? '00000000-0000-0000-0000-000000000099' : 'fade0000-0000-0000-0000-000000000001')},NULL,${quote(kind === 'running' ? 'RUNNING' : 'REGISTERING')},now()+interval '20 days',${kind === 'locked'},${kind === 'finalized'},0,3000,'[{"level":1,"smallBlind":12,"bigBlind":25,"ante":1,"durationMinutes":6}]','standard',false,11,60,3000,11,10000,1,true,1,false,500,'2000-01-01');\n`;
+INSERT INTO tournaments VALUES(${id},${quote(d.id)},${quote(kind === 'foreign' ? '00000000-0000-0000-0000-000000000099' : 'fade0000-0000-0000-0000-000000000001')},NULL,${quote(kind === 'running' ? 'RUNNING' : 'REGISTERING')},now()+interval '20 days',${kind === 'locked'},${kind === 'finalized'},0,3000,'[{"level":1,"smallBlind":12,"bigBlind":25,"ante":1,"durationMinutes":6}]','standard',false,11,60,3000,11,10000,1,true,1,false,500,9,'2000-01-01');\n`;
     if (kind === 'registered') fixture += `INSERT INTO tournament_players VALUES(${id});\n`;
   }
 }
@@ -50,6 +50,7 @@ try {
 IF (SELECT count(*) FROM tournaments WHERE updated_at>'2000-01-01')<>145 THEN RAISE EXCEPTION 'Wrong changed cohort'; END IF;
 IF EXISTS(SELECT 1 FROM tournaments t JOIN originals o USING(id) JOIN fixture_kinds k USING(id) WHERE k.kind<>'eligible' AND to_jsonb(t) IS DISTINCT FROM to_jsonb(o)) THEN RAISE EXCEPTION 'Protected contract changed'; END IF;
 IF EXISTS(SELECT 1 FROM tournaments t JOIN fixture_kinds k USING(id) WHERE k.kind='eligible' AND (t.blind_structure::jsonb->0->>'smallBlind'<>'25' OR t.blind_structure::jsonb->0->>'bigBlind'<>'25')) THEN RAISE EXCEPTION 'Bad opening'; END IF;
+IF EXISTS(SELECT 1 FROM tournaments t JOIN fixture_kinds k USING(id) JOIN tournament_schedules s ON s.id=t.schedule_id WHERE k.kind='eligible' AND (t.table_size<>(s.config->>'tableSize')::integer OR t.starting_chips<>(s.config->>'startingStack')::integer OR t.blind_structure::jsonb<>s.config->'blindStructure' OR t.guaranteed_prize<>(s.config->>'guaranteedPrize')::numeric)) THEN RAISE EXCEPTION 'Event and schedule contract differ'; END IF;
 END $$;
 CREATE TABLE after_once AS SELECT * FROM tournaments;
 CREATE TABLE schedules_once AS SELECT * FROM tournament_schedules;`);

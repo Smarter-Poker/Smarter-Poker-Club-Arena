@@ -1,3 +1,4 @@
+import { nearbyMaintenanceWindows } from './maintenance/maintenanceSchedule.js';
 import { readPendingOperatorCashClose } from './services/operatorCashClose.js';
 import { type OperatorCommand, acknowledgeMaintenance } from './maintenance/OperatorCommands.js';
 import {
@@ -532,6 +533,9 @@ const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
 const scheduledPreparationAt = (startAt: number, fieldCount: number): number =>
   scheduledLaunchPreparationAt(startAt, fieldCount, TOURNAMENT_PRESEAT_LEAD_MS, {
     startMinute: MaintenanceBreak.BREAK_START_MINUTE,
+    freezeStartsAt: nearbyMaintenanceWindows(startAt)
+      .map((w) => w.startsAt)
+      .reverse(),
     lastHandLeadMs: MaintenanceBreak.LAST_HAND_LEAD_MS,
     durationMs: MaintenanceBreak.BREAK_DURATION_MS,
   });

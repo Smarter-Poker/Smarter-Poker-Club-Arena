@@ -166,7 +166,7 @@ describe('a past-start event is started from its roster, not a stale counter', (
   });
 
   it('prepares a large noon field from its roster even when the counter is one', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T16:39:10Z'));
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T16:46:10Z'));
     const { server, rosterReads } = harness({
       target: { current_players: 1, start_time: '2026-10-18T17:00:00Z' },
       roster: 1000,

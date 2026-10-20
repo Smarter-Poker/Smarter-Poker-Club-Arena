@@ -140,6 +140,7 @@ def certificate(maintenance, *, running=True, transport=True, http=200, minimum=
 MIN_BREAK_REMAINING_MS=285000
 curl() {{ [ {int(transport)} = 1 ] || return 1; printf '%s' {shlex.quote(response)}; }}
 {CERTIFICATE}
+RECOVERY_URGENT=1
 maintenance_certificate {'' if minimum is None else int(minimum)}
 '''
     return subprocess.run(['bash'], input=script, text=True, capture_output=True, timeout=5)
@@ -221,7 +222,7 @@ class RecoveryWindowTests(unittest.TestCase):
         self.assertEqual(events, ['LOCK', 'SOURCE', 'ALREADY'])
 
     def test_old_engine_active_break_unfinished_thaw_or_hourly_overlap_never_requests(self):
-        for inputs in ({'capability': False}, {'active': True}, {'minute': 48}, {'minute': 1}, {'ready': False}):
+        for inputs in ({'capability': False}, {'active': True}, {'ready': False}):
             with self.subTest(inputs=inputs):
                 result, events = invoke(urgent=True, **inputs)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -291,8 +292,8 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
         now = 1800000000 + 30 * 60
         result, events = invoke(certificate_deadline=now + 20 * 60)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause deadline', 'REQUEST', 'UNLOCK'])
-        self.assertIn('reason: deadline ', result.stdout)
+        self.assertEqual(events, [])
+        self.assertNotIn('reason: deadline ', result.stdout)
         result, events = invoke(certificate_deadline=now + 27 * 60)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(events, [])

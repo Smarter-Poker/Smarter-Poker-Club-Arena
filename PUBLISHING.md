@@ -48,7 +48,7 @@ Verify the jobs and affected behavior applicable to the assigned change. A clien
 
 ## Club Arena engine and other changed components
 
-For engine changes, use the existing **stage-engine-release.yml** followed by **auto-deploy-hetzner.yml**. Preserve the hosted engine checks, production-door checks, Hetzner build, maintenance cutover, concurrency, sealed receipt and applicable post-deployment verification.
+For engine changes, use the existing **stage-engine-release.yml** followed by **auto-deploy-hetzner.yml**. Routine updates prepare at 03:30 and activate at 04:00 America/Chicago (DST aware). Routine daytime pushes queue. Explicit urgent/degraded emergencies retain certified recovery. The owner authorized one final existing :55 window to install this transition; its commit marker closes on a serving engine that exposes the daily schedule. Hourly tournament breaks remain independent; cash games no longer freeze hourly. See CLAUDE.md section13. Preserve the hosted engine checks, production-door checks, Hetzner build, maintenance cutover, concurrency, sealed receipt and applicable post-deployment verification.
 
 Record the staging run, selected runtime component revision and receiving engine release run. The runtime component revision can differ from a later documentation-only main revision. Confirm the expected component revision at **https://engine.smarter.poker/health** together with the existing release proof. A health response alone is not proof that the changed feature works.
 

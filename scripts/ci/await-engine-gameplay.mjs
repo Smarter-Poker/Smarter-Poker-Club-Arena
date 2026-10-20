@@ -31,17 +31,29 @@ const POLL_MS = 5_000;
  * for that break first, and the ordinary wait below then holds it until the
  * engine has resumed every table.
  */
-export const BREAK_START_MINUTE = 55;
+export const BREAK_START_MINUTE = 0;
 export const LAST_HAND_LEAD_MINUTES = 2;
 export const CERTIFICATE_LEAD_MS = 15 * 60_000;
 const BREAK_ANNOUNCED_SETTLE_MS = 30_000;
 
 /** Milliseconds from `wallMs` (UTC epoch) to the next :53:00 announcement. */
 export function msUntilNextAnnouncement(wallMs) {
-  const hour = 60 * 60_000;
-  const offset = (BREAK_START_MINUTE - LAST_HAND_LEAD_MINUTES) * 60_000;
-  const intoHour = ((wallMs % hour) + hour) % hour;
-  return intoHour < offset ? offset - intoHour : hour - intoHour + offset;
+  const day = 24 * 60 * 60_000;
+  const chicago = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Chicago',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  });
+  const midnight = Math.floor(wallMs / day) * day;
+  for (let d = 0; d <= 2; d++) {
+    for (const utcHour of [9, 10]) {
+      const start = midnight + d * day + utcHour * 60 * 60_000;
+      const announcement = start - LAST_HAND_LEAD_MINUTES * 60_000;
+      if (Number(chicago.format(start)) === 4 && announcement > wallMs)
+        return announcement - wallMs;
+    }
+  }
+  throw new Error('daily_maintenance_schedule_unresolvable');
 }
 const FULL_SHA = /^[0-9a-f]{40}$/;
 

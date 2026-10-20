@@ -100,7 +100,7 @@ describe('an off-cycle break needs a reason, and the newest release owns it', ()
       "acquire_engine_lock 'one recovery announcement'"
     );
     expect(gate).toMatch(
-      /case "\$\{reason%% \*\}" in\s+urgent\|engine-degraded\|deadline\) ;;\s+\*\) return 0 ;;\s+esac/
+      /case "\$\{reason%% \*\}" in\s+urgent\|engine-degraded\) ;;\s+\*\) return 0 ;;\s+esac/
     );
     expect(request.split("acquire_engine_lock 'one recovery announcement'")).toHaveLength(2);
     expect(request).toContain('reserve_args+=(--cause "${reason%% *}")');
@@ -110,7 +110,6 @@ describe('an off-cycle break needs a reason, and the newest release owns it', ()
     expect([...reasons.matchAll(/echo "([a-z-]+) /g)].map((m) => m[1])).toEqual([
       'urgent',
       'engine-degraded',
-      'deadline',
     ]);
     // An ordinary short read is still judged by when the release arrived, not
     // recorded as a missed break outright. The record no longer asks for

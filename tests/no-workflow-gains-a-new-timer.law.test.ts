@@ -51,6 +51,8 @@ const WORKFLOWS = join(ROOT, '.github', 'workflows');
 
 /** Every timer this repository runs. Measured 2026-09-19: 11 across 9 files. */
 const TIMERS: ReadonlyArray<readonly [string, string]> = [
+  // Owner explicitly requested daily 04:00 Chicago engine updates, 2026-10-20.
+  ['stage-engine-release.yml', '30 8,9 * * *'],
   ['applied-migrations-recorded.yml', '25 7,19 * * *'],
   ['ci.yml', '17 */2 * * *'],
   ['ci.yml', '35 6 * * *'],
@@ -134,8 +136,8 @@ describe('no workflow gains a new timer', () => {
 
   it('the surface is the size it was measured at', () => {
     expect(found).toHaveLength(TIMERS.length);
-    expect(TIMERS).toHaveLength(11);
-    expect(new Set(TIMERS.map(([f]) => f)).size).toBe(9);
+    expect(TIMERS).toHaveLength(12);
+    expect(new Set(TIMERS.map(([f]) => f)).size).toBe(10);
   });
 
   it('schema-manifest-refresh keeps the two that three other laws bound it to', () => {

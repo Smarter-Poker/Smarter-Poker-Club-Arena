@@ -1,0 +1,11 @@
+# Routine engine maintenance at 4 AM Chicago
+
+Owner direction October20: routine engine updates at 04:00 America/Chicago only; remove hourly cash-game/platform freeze; retain hourly tournament breaks and emergency updates. The owner approved one final existing :55 window for initial installation because the serving predecessor cannot certify 04:00-04:05 activation.
+
+Maintenance now announces last hand at03:58 and runs04:00-04:05 using IANA Chicago DST rules. Cash play is independent of hourly tournament :55-:00 breaks. Durable break adoption, deadline-preserving v3 thaw, pause ownership, hand drain, seat/chip safeguards, certificate thresholds and rollback reserves remain intact. Tournament pre-seating uses actual daily freeze instants. The lobby heads-up uses Chicago03:55-03:58 and advertises the daily window.
+
+The existing protected-main producer prepares routine releases at03:30 Chicago through its existing receiver. UTC twins08:30/09:30 are guarded by Chicago hour; routine pushes queue. Explicit urgency and measured engine degradation preserve emergency access. A request deadline or missed window cannot create an emergency, including in the sealed reservation authority. The initial transition trailer admits only the predecessor's existing :55 certificate, does not request another break, and is refused once the serving engine exposes its daily schedule.
+
+The database already freezes from actual durable maintenance state. Its conservative hourly migration-DDL-only exclusion remains installed and does not freeze players. Observation migration20261020210313 retains the real recorder and its failure tests while selecting actual daily/emergency breaks instead of inventing missing hourly freezes. Native PostgreSQL17 proves old phantom failure, exact migration, daily/DST/emergency/missing-break behavior and replay refusal; its existing accounting shard runs the retained check. No balance, seat or payout function changes.
+
+Implementation and local evidence are recorded in CHECKPOINT-daily-chicago-maintenance.md. Protected checks, migration installation, publication, actual serving identity and production cash/tournament behavior remain separate evidence gates. A daily cutover can only be observed live at its actual clock boundary; deterministic DST tests do not claim a future production event happened.

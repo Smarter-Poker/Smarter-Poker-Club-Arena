@@ -441,7 +441,7 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
   });
 
   it('uses the ordinary hour when a recovery pause would overlap its announcement', async () => {
-    vi.setSystemTime(Date.parse('2026-09-17T10:48:00Z'));
+    vi.setSystemTime(Date.parse('2026-09-17T08:53:00Z'));
     const h = harness();
     await h.owner.start();
     expect((await h.owner.requestRecoveryWindow(Date.now())).status).toBe('use_hourly');

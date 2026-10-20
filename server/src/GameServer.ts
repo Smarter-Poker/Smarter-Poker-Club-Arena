@@ -3726,8 +3726,8 @@ export class GameServer {
     return this.maintenanceBreak.snapshot();
   }
 
-  requestMaintenanceRecoveryWindow(announcedAt: number) {
-    return this.maintenanceBreak.requestRecoveryWindow(announcedAt);
+  requestMaintenanceRecoveryWindow(announcedAt: number, cause: 'urgent' | 'engine-degraded') {
+    return this.maintenanceBreak.requestRecoveryWindow(announcedAt, cause);
   }
 
   private readonly maintenanceBreak = new MaintenanceBreak({

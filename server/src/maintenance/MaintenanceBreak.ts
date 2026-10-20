@@ -1024,11 +1024,15 @@ export class MaintenanceBreak {
    * can observe the same active break, but can never start a later one or move
    * its deadline. This method does not schedule another recovery request.
    */
-  async requestRecoveryWindow(announcedAt: number): Promise<{
+  async requestRecoveryWindow(
+    announcedAt: number,
+    cause: 'urgent' | 'engine-degraded'
+  ): Promise<{
     status: 'accepted' | 'active' | 'pending' | 'busy' | 'expired' | 'use_hourly' | 'unavailable';
     announcedAt?: number;
     endsAt?: number;
   }> {
+    if (cause !== 'urgent' && cause !== 'engine-degraded') return { status: 'unavailable' };
     if (!this.startOperation || !this.deps.assertRecoveryWindowContract) {
       return { status: 'unavailable' };
     }
@@ -2708,6 +2712,7 @@ export class MaintenanceBreak {
         nextAnnouncementAt: nextMaintenanceAnnouncement(this.now()),
         hourlyCashFreeze: false,
       },
+      recoveryWindowCauseRequired: true,
       recoveryWindowProtocol: this.deps.assertRecoveryWindowContract
         ? 'engine-recovery-window-v1'
         : null,

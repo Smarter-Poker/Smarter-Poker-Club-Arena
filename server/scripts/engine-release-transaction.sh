@@ -1084,7 +1084,7 @@ newer_release_awaiting_certificate() {
 }
 
 request_recovery_window() {
-  local health minute now stamp outcome reason cause_key newer stuck
+  local health minute now stamp outcome reason cause_key newer stuck cause_required
   local reserve_args
   [ "$RECOVERY_REQUESTED" = 0 ] || return 0
   # A drill is planned work: it waits for a scheduled break and never spends
@@ -1175,6 +1175,10 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
     return 0
   fi
   [[ "$stamp" =~ ^[1-9][0-9]{12}$ ]] || die 'invalid recovery announcement timestamp'
+  cause_required="$(printf '%s' "$health" | python3 -c '
+import json,sys
+print(1 if (json.load(sys.stdin).get("maintenance") or {}).get("recoveryWindowCauseRequired") is True else 0)
+')" || return 0
   RECOVERY_REQUESTED=1
   echo "[engine-release-transaction] off-cycle recovery window reason: $reason"
   # The configured key stays inside the running engine container. The API is
@@ -1182,13 +1186,15 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   # A lost response is UNKNOWN; observe the certificate, never allocate a new
   # timestamp or send another announcement in this invocation.
   outcome="$(timeout --signal=TERM --kill-after=1s 20s docker exec -i "$CONTAINER" \
-    node - "$stamp" <<'NODE'
+    node - "$stamp" "${reason%% *}" "$cause_required" <<'NODE'
 const announcedAt=Number(process.argv[2]);
+const cause=process.argv[3];
+const causeRequired=process.argv[4]==="1";
 const key=process.env.INTERNAL_API_KEY;
 if (!key) process.exit(1);
 fetch('http://127.0.0.1:8080/internal/maintenance-recovery-window', {
   method:'POST', headers:{authorization:`Bearer ${key}`,'content-type':'application/json'},
-  body:JSON.stringify({announcedAt}), signal:AbortSignal.timeout(15000)
+  body:JSON.stringify(causeRequired ? {announcedAt,cause} : {announcedAt}), signal:AbortSignal.timeout(15000)
 }).then(async r=>{
   const d=await r.json();
   if (!r.ok || !['accepted','active','pending','busy','expired','use_hourly','unavailable'].includes(d.status)) process.exit(1);

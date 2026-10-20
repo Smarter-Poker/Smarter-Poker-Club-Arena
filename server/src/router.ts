@@ -398,16 +398,20 @@ export function createRouter(
         !body ||
         typeof body !== 'object' ||
         Array.isArray(body) ||
-        Object.keys(body).length !== 1 ||
+        Object.keys(body).length !== 2 ||
         typeof body.announcedAt !== 'number' ||
-        !Number.isSafeInteger(body.announcedAt)
+        !Number.isSafeInteger(body.announcedAt) ||
+        (body.cause !== 'urgent' && body.cause !== 'engine-degraded')
       )
         return sendJSON(res, 400, { error: 'Invalid recovery request' });
       if (!gameServer.requestMaintenanceRecoveryWindow) {
         return sendJSON(res, 503, { error: 'Recovery window unavailable' });
       }
       try {
-        const result = await gameServer.requestMaintenanceRecoveryWindow(body.announcedAt);
+        const result = await gameServer.requestMaintenanceRecoveryWindow(
+          body.announcedAt,
+          body.cause
+        );
         return sendJSON(res, 200, result);
       } catch {
         // A lost database acknowledgment is UNKNOWN. The host retains and

@@ -84,6 +84,7 @@ import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { uuid } from '../utils/uuid';
 import { DAY_COMPLETE_LABEL, isBaggedStatus } from '../utils/multiDaySchedule';
+import { featuredNow, hasStarted } from '../lib/featuredOnItsDay';
 
 type TournFilter = 'all' | 'freeroll' | 'micro' | 'highroller';
 
@@ -996,12 +997,28 @@ export default function TournamentPage() {
           if (filter === 'highroller') return t.buy_in_amount >= 10000;
           return true;
         })
-        // Featured (is_pinned) first — same rule as the main tournament lobby.
-        .sort(
-          (a, b) => Number(Boolean((b as any).is_pinned)) - Number(Boolean((a as any).is_pinned))
-        )
     );
   }, [tournaments, filter]);
+  /* Featured first, same rule as the main lobby board: a nightly event floats
+     only on its own day (Dan 2026-10-19, src/lib/featuredOnItsDay.ts). */
+  const featuredToday = useMemo(
+    () =>
+      featuredNow(tournaments, (t) => ({
+        pinned: Boolean((t as any).is_pinned),
+        started: hasStarted((t as any).status),
+        startTime: (t as any).start_time ?? null,
+        clubId: (t as any).club_id,
+        name: (t as any).name ?? '',
+      })),
+    [tournaments]
+  );
+  const sortedTournaments = useMemo(
+    () =>
+      [...filteredTournaments].sort(
+        (a, b) => Number(featuredToday.has(b)) - Number(featuredToday.has(a))
+      ),
+    [filteredTournaments, featuredToday]
+  );
 
   // ─── Countdown Timer Hook (Initiative 2) ───────────────────────────
   const [countdownStr, setCountdownStr] = useState<Record<string, string>>({});
@@ -1418,7 +1435,7 @@ export default function TournamentPage() {
           <p className="sc-copy sc-copy--center">No Tournaments Match Your Filters</p>
         </SpadeConsole>
       ) : (
-        filteredTournaments.map((tourn) => {
+        sortedTournaments.map((tourn) => {
           const pill = statePill(tourn);
           return (
             <SpadeConsole

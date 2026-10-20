@@ -7,6 +7,7 @@
  * payload of any shape renders, and that a structured reward reads as text.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { render, screen, act } from '@testing-library/react';
 
 let handler: ((data: unknown) => void) | null = null;
@@ -60,7 +61,11 @@ describe('MilestoneToast renders any bus payload without throwing', () => {
   });
 
   it('an object reward renders as "+100 Chips"', () => {
-    render(<MilestoneToast />);
+    render(
+      <MemoryRouter>
+        <MilestoneToast />
+      </MemoryRouter>
+    );
     expect(() =>
       fire({
         milestoneName: 'royal flush',
@@ -73,7 +78,11 @@ describe('MilestoneToast renders any bus payload without throwing', () => {
   });
 
   it('non-string title, description, icon and reward never reach .replace', () => {
-    render(<MilestoneToast />);
+    render(
+      <MemoryRouter>
+        <MilestoneToast />
+      </MemoryRouter>
+    );
     expect(() =>
       fire({
         title: { x: 1 },
@@ -90,7 +99,11 @@ describe('MilestoneToast renders any bus payload without throwing', () => {
   });
 
   it('diamonds the server credited still show, Title Case, no em dash', () => {
-    render(<MilestoneToast />);
+    render(
+      <MemoryRouter>
+        <MilestoneToast />
+      </MemoryRouter>
+    );
     fire({
       milestoneName: 'monthly grinder',
       description: 'log in 30 days — in a row',

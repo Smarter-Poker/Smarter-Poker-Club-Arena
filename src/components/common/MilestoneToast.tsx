@@ -7,6 +7,8 @@
  * animated toast notification that auto-dismisses after 5 seconds.
  */
 
+import { useNavigate } from 'react-router-dom';
+import { mayLeaveCurrentPage } from '../../lib/navigationGuard';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import './MilestoneToast.css';
@@ -84,6 +86,7 @@ interface MilestoneNotification {
 }
 
 export const MilestoneToast: React.FC = () => {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<MilestoneNotification[]>([]);
   const timerRefs = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -141,7 +144,19 @@ export const MilestoneToast: React.FC = () => {
           key={n.id}
           className="milestone-toast"
           style={{ animationDelay: `${i * 100}ms` }}
-          onClick={() => dismissNotification(n.id)}
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            if (!mayLeaveCurrentPage()) return;
+            navigate('/achievements');
+            dismissNotification(n.id);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              event.currentTarget.click();
+            }
+          }}
         >
           <div className="milestone-toast__icon">{n.icon}</div>
           <div className="milestone-toast__content">

@@ -37,7 +37,9 @@
         "tests/lightning/lightning-action-madness-only.law.test.ts",
         "scripts/dev/test-lightning-template-boundary.sh",
         "scripts/dev/test-lightning-phase3-feeder-first.sh",
-        "scripts/dev/test-lightning-phase3-remediation.sh"
+        "scripts/dev/test-lightning-phase3-remediation.sh",
+        "tests/lightning/lightning-six-seat-only.law.test.ts",
+        "scripts/dev/test-lightning-six-seat-boundary.sh"
       ]
     },
     {
@@ -62,7 +64,10 @@
       "qualificationFiles": [
         "scripts/dev/test-lightning-phase4-population.sh",
         "scripts/dev/test-lightning-phase6-matcher.sh"
-      ]
+      ],
+      "status": "superseded",
+      "supersededOn": "2026-10-19",
+      "supersededBy": "Owner ruling 2026-10-19: \"classic games never get lightning games, only action and madness, make all lightning games 6 handed.\" No 9-max Lightning exists, so this 9-max gate is retired, not open. Kept unchanged as history."
     },
     {
       "id": "L08",
@@ -70,7 +75,10 @@
       "qualificationFiles": [
         "scripts/dev/test-lightning-phase7-reversion.sh",
         "scripts/dev/test-lightning-phase13-operator-recovery.sh"
-      ]
+      ],
+      "status": "superseded",
+      "supersededOn": "2026-10-19",
+      "supersededBy": "Owner ruling 2026-10-19: \"classic games never get lightning games, only action and madness, make all lightning games 6 handed.\" No 9-max Lightning exists, so this 9-max gate is retired, not open. Kept unchanged as history."
     },
     {
       "id": "L09",

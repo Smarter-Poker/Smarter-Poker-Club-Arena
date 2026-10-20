@@ -106,6 +106,49 @@ describe('FinancialReportingPanel', () => {
       screen.queryByText('No Rakeback Period Or Payout Receipt In This Scope.')
     ).not.toBeInTheDocument();
   });
+  it('shows every credit of one historical-payer payout and retains single receipts', async () => {
+    get.mockResolvedValue({
+      ...base,
+      rakeback: {
+        ...base.rakeback,
+        paid_amount: 1.03,
+        payout_receipts: [
+          {
+            id: 'split-payout',
+            status: 'paid',
+            payout_amount: 0.03,
+            paid_at: '2026-10-19',
+            wallet_transaction_id: null,
+            wallet_transactions: [
+              { wallet_transaction_id: 'credit-a', amount: 0.02 },
+              { wallet_transaction_id: 'credit-b', amount: 0.01 },
+            ],
+          },
+          {
+            id: 'single-payout',
+            status: 'paid',
+            payout_amount: 1,
+            paid_at: '2026-10-19',
+            wallet_transaction_id: 'single-credit',
+          },
+        ],
+      },
+    });
+    render(
+      <FinancialReportingPanel
+        userId="u"
+        clubId="c"
+        clubLabel="Exact Club"
+        days={30}
+        timezone="UTC"
+        asset="chips"
+      />
+    );
+    expect(await screen.findByText('Wallet Receipts')).toBeInTheDocument();
+    expect(screen.getByText('credit-a (0.02 Chips); credit-b (0.01 Chips)')).toBeInTheDocument();
+    expect(screen.getByText('single-credit')).toBeInTheDocument();
+    expect(screen.queryByText('Not Issued')).not.toBeInTheDocument();
+  });
   it('renders verification failure, not an empty ledger', async () => {
     get.mockResolvedValue(null);
     render(
@@ -122,6 +165,46 @@ describe('FinancialReportingPanel', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('Receipts Could Not Be Verified')
     );
     expect(screen.queryByText(/No Posted Tournament/)).not.toBeInTheDocument();
+  });
+  it('retains every cent and formats timestamps in the selected report calendar', async () => {
+    get.mockResolvedValue({
+      ...base,
+      scope: { ...base.scope, range_tz: 'America/Chicago' },
+      tournament_wallet: { ...base.tournament_wallet, entries: [] },
+      rakeback: {
+        pending_amount: 0,
+        paid_amount: 1234567.89,
+        periods: [
+          { id: 'calendar-period', status: 'paid', amount: 0.03, period_end: '2026-10-18' },
+        ],
+        payout_receipts: [
+          {
+            id: 'exact-payout',
+            status: 'paid',
+            payout_amount: 1234567.89,
+            paid_at: '2026-10-19T02:00:00Z',
+            wallet_transaction_id: 'exact-credit',
+          },
+        ],
+      },
+    });
+    const { container } = render(
+      <FinancialReportingPanel
+        userId="u"
+        clubId="c"
+        clubLabel="Exact Club"
+        days={30}
+        timezone="America/Chicago"
+        asset="chips"
+      />
+    );
+    expect(await screen.findByText('exact-credit')).toBeInTheDocument();
+    expect(screen.getAllByText('1,234,567.89 Chips')).toHaveLength(2);
+    expect(screen.getByText('0.03 Chips')).toBeInTheDocument();
+    expect([...container.querySelectorAll('time')].map((time) => time.textContent)).toEqual([
+      '10/18/2026',
+      '10/18/2026',
+    ]);
   });
   it('never paints an older club response over the current club', async () => {
     let resolveA!: (value: typeof base) => void;

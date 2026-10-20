@@ -1,0 +1,34 @@
+{
+  "_owner": "union-full-audit-01a15550 - migration 20261019213557",
+  "_comment": "PROMISED, NOT INSTALLED. The original weekly certificate and R3 transaction preserve all historical payers under one unchanged player entitlement. Required native qualification executes real calculation, cached and direct R3 paths, private reserve, deferred receipt guard, original invoice delivery, partial restart and exact reporting. Installation and live proof remain separate.",
+  "functions": [
+    "smarter_private.rakeback_payer_plan",
+    "smarter_private.record_rakeback_payer_contracts",
+    "smarter_private.rakeback_certificate_payers",
+    "smarter_private.split_rakeback_payout_complete"
+  ],
+  "tables": ["accounting_rakeback_payer_contracts", "accounting_rakeback_payer_transfers"],
+  "columns": {
+    "accounting_rakeback_payer_contracts": [
+      "calculation_id",
+      "payer_kind",
+      "payer_entity_id",
+      "payer_user_id",
+      "amount",
+      "unrounded",
+      "rake",
+      "source_count",
+      "source_fingerprint"
+    ],
+    "accounting_rakeback_payer_transfers": [
+      "payout_id",
+      "calculation_id",
+      "period_id",
+      "payer_kind",
+      "payer_entity_id",
+      "amount",
+      "ledger_id",
+      "wallet_transaction_id"
+    ]
+  }
+}

@@ -24,17 +24,20 @@ rewards are diamonds, paid once on a server-proved unlock) had already landed.
 
 ## What changed
 
-- **Migration 20261020005219.** One trigger,
-  `trg_hand_history_winning_hand_achievements`, replaces the Royal Flush-only
-  trigger in the same transaction. It reads the engine's per-player record of
-  the strongest hand that won each player a pot
+- **Migration 20261020022215** (supersedes 20261020005219, which was merged
+  in #7513 but never installed: it dropped the Royal Flush trigger to replace
+  it, `DROP TRIGGER` needs ACCESS EXCLUSIVE on `hand_history`, waited behind
+  readers and was refused by its 5 s `lock_timeout`, nothing committed). The
+  Royal Flush trigger is left exactly as it is; a second trigger,
+  `trg_hand_history_straight_flush_quads_achievements`, only CREATEd (SHARE
+  ROW EXCLUSIVE, which readers do not block), reads the engine's per-player
+  record of the strongest hand that won each player a pot
   (`hand_history.daily_mission_events[*].magnitudes.strong_hands`) and records
-  10 -> `royal_flush`, 9 -> `straight_flush`, 8 -> `quads` through
-  `fn_achievement_unlock_server`, horses included, never failing the hand.
-  `quads` and `straight_flush` get server evidence `engine_winning_hand`, so
-  the browser door writes nothing for them. Rewards are unchanged: Royal Flush
-  500 diamonds once (same reference `achievement:royal_flush:<user>`, so nobody
-  already paid is paid again), the other two are zero-reward badges.
+  9 -> `straight_flush`, 8 -> `quads` through `fn_achievement_unlock_server`,
+  horses included, never failing the hand. `quads` and `straight_flush` get
+  server evidence `engine_winning_hand`, so the browser door writes nothing for
+  them. Rewards are unchanged: Royal Flush 500 diamonds once, the other two are
+  zero-reward badges.
 - **Client.** `quads` and `straight_flush` are `serverProved`;
   `checkSpecialHand` and the `handRank` hand-off from TablePage are removed.
   The unlock is announced by the server's notification, as Royal Flush is.
@@ -57,11 +60,11 @@ rewards are diamonds, paid once on a server-proved unlock) had already landed.
 
 ## Proof
 
-- `scripts/ci/test-achievement-diamonds-postgres.py` now applies 20261020005219
+- `scripts/ci/test-achievement-diamonds-postgres.py` now applies 20261020022215
   byte for byte after 20261019155445 on a throwaway PostgreSQL 17 cluster and
   proves quads / straight flush for a human and a horse, Royal Flush still paid
-  once and not also a Straight Flush, the browser door refused, one trigger
-  armed, malformed events never failing the hand. (Its veteran fixture's "last
+  once and not also a Straight Flush, the browser door refused, the Royal Flush
+  trigger untouched beside the new one, malformed events never failing the hand. (Its veteran fixture's "last
   login yesterday" now uses the UTC day, as the streaker's already did; it
   failed on a machine whose local date differs from UTC.)
 - `tests/special-hand-achievements-are-the-engines-record-horses-alike.law.test.ts`,

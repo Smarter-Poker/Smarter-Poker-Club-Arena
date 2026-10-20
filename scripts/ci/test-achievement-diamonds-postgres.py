@@ -27,7 +27,7 @@ comments stripped, which is how they were installed) - then applies
     so the next qualifying event pays it;
   * the unlock notification carries the diamonds actually credited.
 
-Then it applies 20261020005219 BYTE FOR BYTE on top (2026-10-20: Straight
+Then it applies 20261020022215 BYTE FOR BYTE on top (2026-10-20: Straight
 Flush and Four Of A Kind are proved from the same engine record, horses alike)
 and proves:
 
@@ -37,7 +37,8 @@ and proves:
     already paid is never paid again, and a Royal Flush is not also recorded
     as a Straight Flush;
   * the browser door can no longer write either badge;
-  * exactly one achievement trigger is armed on hand_history, and a malformed
+  * the Royal Flush trigger is untouched and the Straight Flush / quads trigger
+    sits beside it (two achievement triggers on hand_history), and a malformed
     event list still never fails the hand.
 """
 import argparse
@@ -51,7 +52,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / 'supabase/migrations'
 MIGRATION = MIGRATIONS / '20261019155445_achievements_pay_diamonds_from_server_evidence.sql'
-WINNING_HANDS = MIGRATIONS / '20261020005219_straight_flush_and_quads_are_proved_from_the_engine_hand_rec.sql'
+WINNING_HANDS = MIGRATIONS / '20261020022215_straight_flush_and_quads_get_their_own_hand_trigger.sql'
 # The production schema capture already in this repo (pg_dump of the live
 # database). Its two achievement bodies are byte-identical to production's
 # (md5(prosrc) e3055777... and 0ad6dc7f..., read 2026-10-19).
@@ -354,11 +355,12 @@ try:
                             "FROM public.diamond_transactions;"))
     assert total == {'n': 4, 'sum': 1600, 'types': ['achievement'], 'issuance': ['promotional']}, total
 
-    # 7. 20261020005219, byte for byte: Straight Flush and Four Of A Kind are
+    # 7. 20261020022215, byte for byte: Straight Flush and Four Of A Kind are
     #    proved from the same engine record, horses alike, and pay nothing.
     psql(WINNING_HANDS.read_text())
-    assert psql("SELECT count(*) FROM pg_trigger WHERE tgrelid = 'public.hand_history'::regclass "
-                "AND NOT tgisinternal;") == '1'
+    assert psql("SELECT string_agg(tgname, ',' ORDER BY tgname) FROM pg_trigger "
+                "WHERE tgrelid = 'public.hand_history'::regclass AND NOT tgisinternal;") == (
+        'trg_hand_history_royal_flush_achievement,trg_hand_history_straight_flush_quads_achievements')
 
     def strong(uid, rank):
         e = royal(uid)
@@ -416,7 +418,7 @@ try:
                    'freeze_leaves_unearned_then_pays', 'login_streak_server_counted_pays_once',
                    'no_back_pay', 'only_award_diamonds_v2_credits',
                    'quads_and_straight_flush_server_proved_human_and_horse', 'royal_still_paid_once',
-                   'royal_is_not_a_straight_flush', 'browser_cannot_write_hand_badges', 'one_hand_trigger'],
+                   'royal_is_not_a_straight_flush', 'browser_cannot_write_hand_badges', 'royal_trigger_untouched'],
         'winning_hands_migration': WINNING_HANDS.name,
     }))
 finally:

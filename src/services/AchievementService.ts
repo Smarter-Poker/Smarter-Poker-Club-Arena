@@ -254,7 +254,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     requirement: 1,
     diamondReward: 0,
     // 2026-10-20: proved from the engine's hand record (strong_hands 9),
-    // horses alike. Migration 20261020005219.
+    // horses alike. Migration 20261020022215.
     serverProved: true,
   },
   {
@@ -624,8 +624,9 @@ class AchievementServiceClass {
    * read the FIRST winner's hand, not this player's; and a horse has no
    * browser to report anything. All three are now recorded by the database
    * from the engine's own per-player record of the hand that won each player
-   * a pot (hand_history.daily_mission_events strong_hands 10/9/8,
-   * trg_hand_history_winning_hand_achievements, migration 20261020005219),
+   * a pot (hand_history.daily_mission_events strong_hands: 10 by
+   * trg_hand_history_royal_flush_achievement, 9 / 8 by
+   * trg_hand_history_straight_flush_quads_achievements, migration 20261020022215),
    * horses alike, and the server's notification announces the unlock.
    */
 }

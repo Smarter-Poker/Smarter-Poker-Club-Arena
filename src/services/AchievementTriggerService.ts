@@ -87,7 +87,7 @@ class AchievementTriggerServiceClass {
     // 3. Royal Flush, Straight Flush and Four Of A Kind are not reported from
     //    here (2026-10-20): the database records them from the engine's own
     //    record of the hand that won each player a pot, horses alike
-    //    (trg_hand_history_winning_hand_achievements).
+    //    (trg_hand_history_royal_flush_achievement, trg_hand_history_straight_flush_quads_achievements).
 
     // 4. Update user stats, against the club whose table dealt the hand.
     await this.updateUserStats(

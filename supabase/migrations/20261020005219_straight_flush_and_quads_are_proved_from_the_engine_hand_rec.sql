@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261020022215: never installed; Apply Merged Migration run 39358146943 was refused (55P03 lock timeout, nothing committed) because DROP TRIGGER needs ACCESS EXCLUSIVE on hand_history, which waits behind every reader. The replacement leaves the Royal Flush trigger alone and only CREATEs a second trigger (SHARE ROW EXCLUSIVE, which readers do not block).
 -- 20261020005219_straight_flush_and_quads_are_proved_from_the_engine_hand_rec.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every

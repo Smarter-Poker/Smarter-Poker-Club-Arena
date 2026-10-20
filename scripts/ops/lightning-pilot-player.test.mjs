@@ -9,8 +9,10 @@ import {
   acceptPlayerTerms,
   CONSENT_PLAYERS,
   PLAYER_DEVICES,
+  foldControlDiagnostics,
 } from './lightning-pilot-player.mjs';
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 
 function termsPage(initial = 'not_accepted', identity = true) {
   let status = initial;
@@ -681,4 +683,57 @@ test('each tap waits for a hand painted after its preflight reads', async () => 
   const actions = r.devices.flatMap((d) => d.actions);
   assert.equal(actions.length, 4);
   for (const action of actions) assert.equal(preflightHands.has(action.requestHandId), false);
+});
+
+test('control diagnostics execute against DOM state without retaining private content', async () => {
+  const rect = { x: 10, y: 20, top: 20, left: 10, bottom: 60, right: 110, width: 100, height: 40 };
+  const button = {
+    disabled: true,
+    textContent: 'PRIVATE CARD OR AUTH CONTENT',
+    getAttribute: (key) => (key === 'aria-hidden' ? 'true' : 'PRIVATE'),
+    getBoundingClientRect: () => rect,
+    contains: () => false,
+  };
+  const sandbox = {
+    innerWidth: 1440,
+    innerHeight: 900,
+    matchMedia: () => ({ matches: false }),
+    document: {
+      querySelectorAll: (selector) => (selector.includes('lightning-fold-watch') ? [] : [button]),
+      elementFromPoint: () => button,
+    },
+    getComputedStyle: () => ({
+      display: 'block',
+      visibility: 'visible',
+      opacity: '0',
+      pointerEvents: 'none',
+    }),
+  };
+  const answer = await foldControlDiagnostics({
+    evaluate: (fn) => runInNewContext(`(${fn})()`, sandbox),
+  });
+  assert.equal(answer.viewportWidth, 1440);
+  assert.equal(answer.coarsePointer, false);
+  assert.equal(answer.controls['lightning-fold-watch'].length, 0);
+  assert.equal(answer.controls['lightning-fold'][0].disabled, true);
+  assert.equal(answer.controls['lightning-fold'][0].receivesPointer, true);
+  assert.equal(answer.controls['lightning-fold'][0].inViewport, true);
+  assert.equal(JSON.stringify(answer).includes('PRIVATE'), false);
+});
+
+test('unavailable Fold & Watch retains bounded diagnostics and remains unknown', async () => {
+  const f = fixture(),
+    b = fakeBrowser(false, true, 'desktop_watch');
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.subphase, 'fold_control');
+  assert.ok(r.controlFailure);
+  assert.equal(r.cleanup, 'local_session_closed');
+  assert.equal(b.calls.includes('fold_watch'), false);
 });

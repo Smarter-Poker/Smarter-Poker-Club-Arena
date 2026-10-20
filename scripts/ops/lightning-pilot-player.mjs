@@ -242,6 +242,43 @@ export async function acceptPlayerTerms(
   return { authorized: true, acceptedNow: true, status: 'accepted' };
 }
 
+/** Read only control state and geometry; never page text, cards, frames or auth. */
+export async function foldControlDiagnostics(page) {
+  return page.evaluate(() => {
+    const controls = {};
+    for (const id of ['lightning-fold', 'lightning-fold-watch']) {
+      const nodes = [...document.querySelectorAll(`[data-testid="${id}"]`)];
+      controls[id] = nodes.map((node) => {
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        return {
+          disabled: node.disabled === true,
+          ariaHidden: node.getAttribute('aria-hidden') === 'true',
+          display: style.display,
+          visibility: style.visibility,
+          opacity: style.opacity,
+          pointerEvents: style.pointerEvents,
+          width: rect.width,
+          height: rect.height,
+          inViewport:
+            rect.top >= 0 &&
+            rect.left >= 0 &&
+            rect.bottom <= innerHeight &&
+            rect.right <= innerWidth,
+          receivesPointer: hit === node || node.contains(hit),
+        };
+      });
+    }
+    return {
+      viewportWidth: innerWidth,
+      viewportHeight: innerHeight,
+      coarsePointer: matchMedia('(pointer: coarse)').matches,
+      controls,
+    };
+  });
+}
+
 export async function witnessPlayer({
   admin,
   createClient,
@@ -281,6 +318,7 @@ export async function witnessPlayer({
     remaining()
   );
   let browser;
+  let page;
   const report = {
     playerId: pin.playerId,
     poolSessionId: pin.poolSessionId,
@@ -307,7 +345,7 @@ export async function witnessPlayer({
       ),
       remaining()
     );
-    const page = await bounded(context.newPage(), remaining());
+    page = await bounded(context.newPage(), remaining());
     let latestHand = null;
     let navigationGeneration = 0;
     page.on('websocket', (ws) => {
@@ -389,6 +427,7 @@ export async function witnessPlayer({
           await page.waitForTimeout(Math.min(25, remaining()));
         report.subphase = 'fold_control';
         report.cause = 'fold_control_unavailable';
+        row.controlsBefore = await bounded(foldControlDiagnostics(page), remaining());
         const button = page.getByTestId(selector);
         await button.waitFor({ state: 'visible', timeout: remaining() });
         // Trial waits for actionable UI without sending an action.
@@ -449,6 +488,11 @@ export async function witnessPlayer({
   } catch {
     // Browser exceptions can contain private frame/token data. Retain bounded outcomes only.
     report.status = 'unknown';
+    if (page && report.subphase === 'fold_control') {
+      report.controlFailure = await bounded(foldControlDiagnostics(page), 1500).catch(() => ({
+        status: 'unknown',
+      }));
+    }
   } finally {
     if (browser)
       await bounded(browser.close(), 10000).catch(() => {

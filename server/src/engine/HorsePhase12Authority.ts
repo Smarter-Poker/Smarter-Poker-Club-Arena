@@ -510,7 +510,24 @@ export interface HorsePhase12AuthoritySelection {
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
 > = Object.freeze({
-  short_deck: null,
+  short_deck: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase12',
+    variant: 'short_deck',
+    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+    packVersion: 'short-deck-round4-v1',
+    contractVersion: 'remaining-variant-strength-contract-v2',
+    contractDigest: '0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2',
+    domain: 'short_deck-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase12/phase12-qualification-2026-10-20-short_deck.json',
+    qualificationSha256: 'ac82168403f0dcd7843a373e42c9dff27f57235c2a83b538182f4b017ec7137d',
+    completionPath: 'docs/evidence/phase12/da94e437/phase12-completion-2026-10-18-short_deck.json',
+    completionSha256: '021458012fe61c50a3b0f54ccf724929fe215757a5486ac8c0dba5723a29f590',
+    approvalGeneration: 1,
+    issuedAt: '2026-10-20T14:45:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   pineapple: Object.freeze({
     schema: 'horse-qualified-authority-selection-v1',
     phase: 'phase12',

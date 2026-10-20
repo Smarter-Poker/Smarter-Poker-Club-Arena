@@ -172,6 +172,7 @@ export default function CashGameCreateFlow({
   /* The club's live games, so a rung it already holds is greyed rather than
      refused. Advisory only: the database is the authority, and a read the
      host's role cannot see simply leaves the chip enabled. */
+  const [clubUUID, setClubUUID] = useState<string | null>(null);
   const [existingGames, setExistingGames] = useState<ExistingCashGame[]>([]);
   const [existingGamesEpoch, setExistingGamesEpoch] = useState(0);
   /* Two taps inside one render tick both see busy === null; the ref is the
@@ -255,6 +256,7 @@ export default function CashGameCreateFlow({
           reportError(error, 'CashGameCreateFlow.existingGames');
           return;
         }
+        setClubUUID(resolvedClubId);
         setExistingGames(
           ((data ?? []) as Array<Record<string, unknown>>).map((g) => ({
             name: String(g.name ?? ''),
@@ -279,9 +281,17 @@ export default function CashGameCreateFlow({
   const rungTaken = useCallback(
     (sb: number, bb: number): string | null =>
       template && variant && tableMode
-        ? stakesRungTaken(existingGames, template, variant, sb, bb, tableMode === 'must_move')
+        ? stakesRungTaken(
+            existingGames,
+            template,
+            variant,
+            sb,
+            bb,
+            tableMode === 'must_move',
+            clubUUID
+          )
         : null,
-    [existingGames, template, variant, tableMode]
+    [existingGames, template, variant, tableMode, clubUUID]
   );
 
   /* A rung that closes under the chosen row (the template, variant or mode

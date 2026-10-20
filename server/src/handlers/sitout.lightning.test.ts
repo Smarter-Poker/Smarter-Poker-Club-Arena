@@ -33,7 +33,7 @@ describe('Lightning room sit out and return', () => {
   it.each([true, false])('routes sitOut=%s through the caller-owned anchor', async (wanted) => {
     lightningAnchorFor.mockResolvedValue({ anchorTableId: table });
     expect(await request(room, wanted)).toMatchObject({ status: 200, body: { success: true } });
-    expect(lightningAnchorFor).toHaveBeenCalledWith(room, 'owner');
+    expect(lightningAnchorFor).toHaveBeenCalledWith(room, 'owner', { requireOpen: true });
     expect(sitOut.mock.calls).toEqual([['owner', wanted]]);
   });
 

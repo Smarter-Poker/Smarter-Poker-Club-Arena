@@ -35,7 +35,7 @@ def main():
  if sys.platform=='darwin' and not any(output.is_relative_to(root) for root in ['/Volumes/SmarterWork/agent-work','/Volumes/SmarterArchives/agent-evidence']):raise Refused('Mac result must be on an external task volume')
  if output.exists() or not output.parent.is_dir() or output.parent.resolve()!=output.parent:raise Refused('New result file in a real existing directory required')
  output.write_text(json.dumps({'schemaRebuilt':False,'status':'started'})+'\n');os.chmod(output,0o600)
- pg=Path(args.pg_bin);manifest=json.loads((BASE/'pokeriq-baseline.json').read_text());contract=json.loads((BASE/'pokeriq-role-contract.json').read_text());source=(BASE/manifest['schemaFile']).read_bytes()
+ pg=Path(args.pg_bin);manifest=json.loads((BASE/'pokeriq-baseline.json').read_text());contract=json.loads((BASE/'pokeriq-role-contract.json').read_text());platform=json.loads((BASE/'pokeriq-platform-contract.json').read_text())['database'];source=(BASE/manifest['schemaFile']).read_bytes()
  if hashlib.sha256(source).hexdigest()!=manifest['schemaSHA256']:raise Refused('Baseline source checksum differs')
  if any(os.environ.get(k) for k in ['PGHOST','PGPORT','PGDATABASE','PGUSER','PGPASSWORD','PGSERVICE','PGSERVICEFILE','DATABASE_URL','SUPABASE_DB_URL']):raise Refused('Remote or caller-provided database settings are forbidden')
  if os.geteuid()==0:raise Refused('Run PostgreSQL as an unprivileged local user')
@@ -53,11 +53,13 @@ def main():
  try:
   version=run([pg/'postgres','--version'])
   if not re.search(r'\b17\.',version):raise Refused('PostgreSQL17 required')
-  run([pg/'initdb','-D',data,'-U','schema_restore_owner','--auth-local=trust','--auth-host=reject','--no-locale','-E','UTF8'])
+  run([pg/'initdb','-D',data,'-U','schema_restore_owner','--auth-local=trust','--auth-host=reject','--locale-provider=icu','--icu-locale='+platform['locale'],'--lc-collate='+platform['collate'],'--lc-ctype='+platform['ctype'],'-E',platform['encoding']])
   with (data/'postgresql.conf').open('a') as f:f.write("\nlisten_addresses=''\nunix_socket_directories="+lit(socket)+"\nshared_buffers='32MB'\nshared_preload_libraries='pg_cron,pg_net,pg_stat_statements'\ncron.database_name='postgres'\ncron.launch_active_jobs=off\n")
   run([pg/'pg_ctl','-D',data,'-l',work/'server.log','-w','start']);started=True
   cmd=[pg/'psql','-X','-qAt','-h',socket,'-U','schema_restore_owner','-d','postgres','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose']
   def sql(s):return run(cmd,s)
+  actualplatform=json.loads(sql("SELECT jsonb_build_object('encoding',pg_encoding_to_char(encoding),'collate',datcollate,'ctype',datctype,'provider',datlocprovider,'locale',to_jsonb(d)->>'datlocale','collation_version',datcollversion,'icu_rules',to_jsonb(d)->>'daticurules') FROM pg_database d WHERE datname=current_database();"))
+  if actualplatform!=platform:raise Refused('Source database locale/collation runtime differs: '+json.dumps(actualplatform))
   available=json.loads(sql("SELECT jsonb_agg(jsonb_build_object('name',name,'version',version)) FROM pg_available_extension_versions;"));have={(x['name'],x['version']) for x in available}
   missing=[(x['name'],x['version']) for x in contract['extensions'] if (x['name'],x['version']) not in have]
   if missing:raise Refused('Faithful extension runtime unavailable: '+json.dumps(missing))
@@ -71,7 +73,7 @@ def main():
    for setting in role.get('config') or []:
     key,value=setting.split('=',1)
     if not re.fullmatch(r'[a-z_][a-z0-9_.]*',key):raise Refused('Invalid captured role setting name')
-    sql('SELECT set_config('+lit(key)+','+lit(value)+',false);ALTER ROLE '+q(name)+' SET '+q(key)+' FROM CURRENT;RESET '+q(key)+';')
+    sql('BEGIN;SELECT set_config('+lit(key)+','+lit(value)+',true);ALTER ROLE '+q(name)+' SET '+q(key)+' FROM CURRENT;COMMIT;')
   for member in contract['memberships']:
    sql('GRANT '+q(member['role'])+' TO '+q(member['member'])+' WITH ADMIN '+str(member['admin']).upper()+', INHERIT '+str(member['inherit']).upper()+', SET '+str(member['set']).upper()+' GRANTED BY '+q(member['grantor'])+';')
   # Provider extensions are real installed versions, created under their exact
@@ -105,7 +107,7 @@ def main():
   catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()));
   if any(x['count'] for x in catalog['unsupported_objects']):raise Refused('Catalog contains unsupported object families')
   expected=json.loads((BASE/'pokeriq-catalog-reference.json').read_text());differences=compare(expected,catalog)
-  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
+  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
   output.write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt))
   if differences:raise Refused('Independent source catalog comparison differs')
  finally:

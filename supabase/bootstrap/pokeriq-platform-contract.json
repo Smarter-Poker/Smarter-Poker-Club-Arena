@@ -1,0 +1,19 @@
+{
+  "sourceProject": "kuklfnapbkmacvwxktbh",
+  "source": "Supabase execute_sql read-only pg_database metadata, verified2026-10-20 during lineage followup",
+  "database": {
+    "encoding": "UTF8",
+    "collate": "en_US.UTF-8",
+    "ctype": "en_US.UTF-8",
+    "provider": "i",
+    "locale": "en-US",
+    "collation_version": "153.120",
+    "icu_rules": null
+  },
+  "queries": [
+    "SELECT pg_encoding_to_char(encoding) AS encoding,datcollate,datctype,datlocprovider,datcollversion FROM pg_database WHERE datname=current_database();",
+    "SELECT jsonb_build_object('locale',to_jsonb(d)->>'datlocale','icu_locale',to_jsonb(d)->>'daticulocale','icu_rules',to_jsonb(d)->>'daticurules') AS locale_metadata FROM pg_database d WHERE datname=current_database();"
+  ],
+  "businessRowsRead": false,
+  "productionWrites": false
+}

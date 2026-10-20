@@ -6,7 +6,7 @@ BASE=Path(__file__).resolve().parents[2]/'supabase/bootstrap'
 def main():
  manifest=json.loads((BASE/'pokeriq-baseline.json').read_text());source=(BASE/manifest['schemaFile']).read_bytes()
  if len(source)!=manifest['bytes'] or hashlib.sha256(source).hexdigest()!=manifest['schemaSHA256']:raise ValueError('Native baseline bytes differ from provenance')
- for name,expected in [('pokeriq-catalog-reference.json',manifest['catalogSHA256']),('source-history.json',manifest['sourceHistorySHA256'])]:
+ for name,expected in [('pokeriq-catalog-reference.json',manifest['catalogSHA256']),('source-history.json',manifest['sourceHistorySHA256']),('pokeriq-platform-contract.json',manifest['platformContractSHA256'])]:
   if hashlib.sha256((BASE/name).read_bytes()).hexdigest()!=expected:raise ValueError('Baseline evidence checksum differs: '+name)
  if hashlib.sha256((BASE.parents[1]/'scripts/schema-rebuild/catalog.sql').read_bytes()).hexdigest()!=manifest['catalogQuerySHA256']:raise ValueError('Catalog comparison query differs from captured source contract')
  if not manifest['allSchemas'] or manifest['dataIncluded']:raise ValueError('Complete schema-only export required')

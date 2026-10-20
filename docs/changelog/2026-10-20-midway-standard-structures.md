@@ -18,6 +18,14 @@ NLH uses one full big-blind ante beginning at level 5; Omaha uses no ante.
 AnteMath already recognizes an authored full-BB ante as one total, not one per
 seat, so that existing engine contract is preserved.
 
+The runtime audit also found paid add-on windows hard-coded to 60 seconds
+despite a longer configured break. The original durable-window calculation
+now uses that configured duration. A real-manager regression reproduced
+five- and ten-minute offers being truncated to one minute before the fix;
+after it, persisted deadlines and broadcasts match one, five and ten minutes,
+duplicate openings do not extend the window, and Free Buy's early hour plus
+its break remains intact.
+
 Free Buys retain the owner's 3,000 starting stack, 10,000 add-on, one-chip
 rebuy/add-on prices, early add-on availability and one-hour registration.
 Five 12-minute levels make that hour explicit. At the last admitted level the

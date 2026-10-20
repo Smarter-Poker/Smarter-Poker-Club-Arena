@@ -78,7 +78,7 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
       /const windowAnchorMs = fromStart \? Math\.max\(advertisedStartMs, requestedStartMs\) : NaN;/
     );
     expect(trigger).toMatch(
-      /const requestedEndMs = fromStart\s*\? windowAnchorMs \+ lateRegMs \+ this\.addOnBreakDurationMs\(\)\s*:\s*requestedStartMs \+ 60_000/
+      /const requestedEndMs = fromStart\s*\? windowAnchorMs \+ lateRegMs \+ this\.addOnBreakDurationMs\(\)\s*:\s*requestedStartMs \+ this\.addOnBreakDurationMs\(\)/
     );
     expect(trigger).toContain('addon_period_started_at: requestedStart');
     expect(trigger).toContain('addon_period_ends_at: requestedEnd');

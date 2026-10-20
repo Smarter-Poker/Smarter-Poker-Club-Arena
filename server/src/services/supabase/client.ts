@@ -19,6 +19,7 @@ import { reportError } from '../errorReporter.js';
 import { dataActorHeaders } from './dataActorContext.js';
 import { bindRealtimeCallbacksToRegistration } from './realtimeCallbackContext.js';
 import { observeFenceInResponse } from './tournamentManagerFence.js';
+import { measureLightningFoldFetch } from '../../lightning/LightningFoldTiming.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -149,7 +150,7 @@ function createBoundedServiceClient(timeoutMs: number, actorToken?: string): Sup
           try {
             callerSignal?.addEventListener('abort', onAbort, { once: true });
             callerSignal?.throwIfAborted();
-            const operation = (async () => {
+            const operation = measureLightningFoldFetch(async (timing) => {
               const headers = new Headers(
                 typeof Request !== 'undefined' && attemptInput instanceof Request
                   ? attemptInput.headers
@@ -191,6 +192,7 @@ function createBoundedServiceClient(timeoutMs: number, actorToken?: string): Sup
                 headers: authoritativeHeaders,
                 signal: ctl.signal,
               });
+              timing.headers(response);
               if (ctl.signal.aborted) {
                 // Late completion cannot become success or start a replay.
                 void response.body?.cancel(ctl.signal.reason).catch(() => {});
@@ -199,6 +201,7 @@ function createBoundedServiceClient(timeoutMs: number, actorToken?: string): Sup
               // Consume the actual body under the deadline. Returning its
               // buffered bytes keeps later SDK decoding off the network stream.
               const bytes = response.body === null ? null : await response.arrayBuffer();
+              timing.bodyComplete();
               ctl.signal.throwIfAborted();
               if (bytes === null) return response;
               return preserveResponseMetadata(
@@ -209,7 +212,7 @@ function createBoundedServiceClient(timeoutMs: number, actorToken?: string): Sup
                 }),
                 response
               );
-            })();
+            });
             // Abort is cooperative; reject independently if transport stalls.
             // The race observes late failures without replaying ambiguous writes.
             return await Promise.race([operation, boundary]);

@@ -131,6 +131,7 @@ import type {
   LightningSettleResult,
 } from './LightningHandBackend.js';
 import { lightningMetrics, type LightningMetrics } from './LightningMetrics.js';
+import { traceLightningFold } from './LightningFoldTiming.js';
 import { lightningTelemetry, type LightningTelemetry } from './LightningTelemetry.js';
 import type { LightningDecision } from './LightningRegistry.js';
 import type { LightningWorkerLogger } from './LightningClusterWorker.js';
@@ -1813,21 +1814,24 @@ export class LightningHandHost {
     const committed = cents(
       this.hc?.getState().players.find((p) => p.user_id === userId)?.totalInvested ?? 0
     );
-    void this.withRetry(async () => {
-      const out = await this.deps.backend.fastFold(
-        this.handId,
-        userId,
-        lightningRequestId(this.handId, `fold/${userId}`),
-        type,
-        committed
-      );
-      if (!out.ok && out.transport && out.retryable !== false) throw new Error(out.reason);
-      if (!out.ok && out.transport && out.retryable === false)
-        this.logger.error(
-          `[LightningHost:${this.instanceId}] original fold outcome unknown; not replayed`
+    const foldRequestId = lightningRequestId(this.handId, `fold/${userId}`);
+    void traceLightningFold(foldRequestId, () =>
+      this.withRetry(async () => {
+        const out = await this.deps.backend.fastFold(
+          this.handId,
+          userId,
+          foldRequestId,
+          type,
+          committed
         );
-      return out;
-    })
+        if (!out.ok && out.transport && out.retryable !== false) throw new Error(out.reason);
+        if (!out.ok && out.transport && out.retryable === false)
+          this.logger.error(
+            `[LightningHost:${this.instanceId}] original fold outcome unknown; not replayed`
+          );
+        return out;
+      })
+    )
       .then((out) => {
         if (!out?.ok) return;
         this.metrics.recordFold(type);

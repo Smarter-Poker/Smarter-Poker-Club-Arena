@@ -2799,6 +2799,12 @@ jobs:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-diamond-health-comparisons.py
 
+      - name: Diamond source resolution commits with its drift episode
+        if: matrix.shard == 3
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 -B scripts/ci/test-diamond-resolution-drift.py
+
       - name: Diamond own hand history admits automatic membership and stays private
         if: matrix.shard == 3
         env:

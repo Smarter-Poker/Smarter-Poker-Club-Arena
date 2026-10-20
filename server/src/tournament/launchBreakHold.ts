@@ -24,6 +24,29 @@ export function launchWouldCrossLastHand(fieldCount: number, msUntilLastHand: nu
   return Number.isFinite(msUntilLastHand) && msUntilLastHand < launchSeatingBudgetMs(fieldCount);
 }
 
+/**
+ * A BREAK-ADJACENT LAUNCH GETS A WINDOW A DISCOVERY PASS CAN HIT (2026-10-20).
+ *
+ * The start gate admits a scheduled field from `scheduledLaunchPreparationAt`
+ * and holds it once `launchWouldCrossLastHand` says the seating would run into
+ * the :53 door. For a start the break moves ahead of the door, those two
+ * instants used to be one seated minute apart, so a discovery pass that came
+ * round more than sixty seconds after preparation opened found the start
+ * held, and the event was launched only after the thaw. Production
+ * 2026-10-19: both 342-player 17:00 freerolls opened at 16:47:27, the pass
+ * reached them at 16:48:37, and they were held to the thaw and dealt 196 and
+ * 202 s late. Starts at :53-:54 were worse: they were measured against the
+ * PREVIOUS hour's break, so their window was under a minute or none at all.
+ *
+ * So every start whose seating would come within this margin of the next
+ * (or previous) last-hand door, or of the thaw, is prepared this much
+ * earlier, and the window
+ * between preparation and the hold is the seated minute plus the margin. It
+ * moves SEATING only: start() still holds dealing and the level clock to the
+ * advertised `start_time`, and the hold itself is unchanged.
+ */
+export const LAUNCH_BREAK_PASS_MARGIN_MS = 3 * 60_000;
+
 /** Latest setup admission that leaves the promised seated minute intact. */
 export function scheduledLaunchPreparationAt(
   startAt: number,
@@ -34,15 +57,24 @@ export function scheduledLaunchPreparationAt(
   const hourMs = 60 * 60_000;
   const budget = launchSeatingBudgetMs(fieldCount);
   let readyAt = startAt - seatedLeadMs;
-  let freezeStartsAt = Math.floor(startAt / hourMs) * hourMs + maintenance.startMinute * 60_000;
-  if (freezeStartsAt > startAt) freezeStartsAt -= hourMs;
-  const lastHandAt = freezeStartsAt - maintenance.lastHandLeadMs;
-  const freezeEndsAt = freezeStartsAt + maintenance.durationMs;
-  if (readyAt >= lastHandAt && readyAt - budget < freezeEndsAt) {
-    // Entry doors close at last-hand, not at countdown. Keep the same
-    // seated minute ahead of that door too, so a five-second discovery pass
-    // cannot turn the exact budget boundary into a refused half-launch.
-    readyAt = lastHandAt - seatedLeadMs;
+  // The freeze in this start's clock hour (which may come after the start)
+  // and the one before it; the later one first, so a field moved ahead of it
+  // is then checked against the earlier break too.
+  const hourFreezeAt = Math.floor(startAt / hourMs) * hourMs + maintenance.startMinute * 60_000;
+  for (const freezeStartsAt of [hourFreezeAt, hourFreezeAt - hourMs]) {
+    const lastHandAt = freezeStartsAt - maintenance.lastHandLeadMs;
+    const freezeEndsAt = freezeStartsAt + maintenance.durationMs;
+    // Entry doors close at last-hand, not at countdown. Keep the seated
+    // minute and the pass margin ahead of that door, so a discovery pass
+    // that is slow to come round cannot turn the budget boundary into a
+    // start held to the thaw or a refused half-launch.
+    const latestReadyAt = lastHandAt - seatedLeadMs - LAUNCH_BREAK_PASS_MARGIN_MS;
+    // The same margin after the thaw: the first passes after :00 share the
+    // engine with the whole fleet's resume, so a setup due that close to the
+    // thaw is moved ahead of the break as well.
+    if (readyAt > latestReadyAt && readyAt - budget < freezeEndsAt + LAUNCH_BREAK_PASS_MARGIN_MS) {
+      readyAt = latestReadyAt;
+    }
   }
   return readyAt - budget;
 }

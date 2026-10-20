@@ -167,6 +167,12 @@ try{
     JSON.parse(sql(`SELECT fn_accounting_qualify_owner_direct_fee('${id(120)}')`)).replayed,
     true
   );
+  sql(fixture(21).replaceAll(event,id(800)));
+  await Promise.all([concurrent(`BEGIN;SELECT fn_accounting_qualify_owner_direct_fee('${id(121)}');SELECT pg_sleep(.05);COMMIT;`),concurrent(`SELECT fn_accounting_qualify_owner_direct_fee('${id(121)}');`)]);
+  assert.equal(sql(`SELECT count(*) FROM accounting_tournament_fee_sources WHERE rake_record_id='${id(121)}'`),'1');
+  assert.equal(sql(`SELECT count(*) FROM accounting_owner_direct_fee_proofs WHERE rake_record_id='${id(121)}'`),'1');
+  sql(fixture(22,'','2026-10-19T15:42:00Z').replaceAll(event,id(800)));
+  assert.equal(sql(`SELECT smarter_private.owner_direct_fee_close_ready('${id(122)}')`),'f','incident label cannot admit a fee outside its exact time boundary');
   refuse(detectorMigration, 'fee_detector_source_preimage_changed');
   console.log(
     'PASS: fee detector real before/after, no writes, exact original shared plan, invalid evidence and contract, private ACL, unexpected errors visible, completion-only writer and replay refusal.'

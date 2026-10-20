@@ -101,6 +101,23 @@ function migrations(): string[] {
 }
 
 describe('a merged migration must be live', () => {
+  it('the original refund proof accepts added entitlement kinds without losing either original kind', () => {
+    const sql = read(
+      'supabase/migrations/20261006154000_an_escrow_refund_and_a_cutover_entry_refund_are_proven.sql'
+    );
+    const [proof] = declaredProofs(sql);
+    expect(proofIsRunnable(proof)).toBe(true);
+    expect(proof).toContain("position('(20261006154000)' in prosrc) > 0");
+    const pattern = proof.match(/prosrc ~ \$\$(.*?)\$\$/)?.[1];
+    expect(pattern).toBeDefined();
+    const matcher = new RegExp(pattern!);
+    expect(matcher.test("entitlement_kind IN('satellite_seat','wallet_charge')")).toBe(true);
+    expect(
+      matcher.test("entitlement_kind IN('satellite_seat','wallet_charge','tournament_ticket')")
+    ).toBe(true);
+    expect(matcher.test("entitlement_kind IN('satellite_seat','tournament_ticket')")).toBe(false);
+    expect(matcher.test("entitlement_kind IN('satellite_seat','wallet_charge_fake')")).toBe(false);
+  });
   it('invalidates cached file bytes after a same-length rewrite', () => {
     const dir = fs.mkdtempSync(
       path.join(

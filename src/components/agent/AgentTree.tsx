@@ -202,12 +202,15 @@ function TreeNode({
         {onTransferClick && node.status === 'active' && (
           <button
             className={styles.transferBtn}
-            aria-label="Transfer"
             onClick={(e) => {
               e.stopPropagation();
               onTransferClick(node);
             }}
-          ></button>
+          >
+            {/* It was an empty square (2026-10-19): the row body opens
+                Commission History, so the send was undiscoverable. */}
+            Send Chips
+          </button>
         )}
       </div>
 

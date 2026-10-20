@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useRef, memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -65,6 +66,12 @@ function FriendListPanelInner({
   onInviteClick,
 }: FriendListPanelProps) {
   const { user } = useAuthUser();
+  const navigate = useNavigate();
+  /* TAPPING A FRIEND OPENS THEIR PROFILE (2026-10-19). The Profile page mounts
+     this panel with no handlers, so the avatar tap only buzzed. The caller's
+     handler still wins when one is given. */
+  const openProfile = (friendId: string) =>
+    onProfileClick ? onProfileClick(friendId) : navigate(`/profile/${friendId}`);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -436,7 +443,7 @@ function FriendListPanelInner({
                 showVipRing={true}
                 onClick={() => {
                   haptic.selection();
-                  onProfileClick?.(friend.friendId);
+                  openProfile(friend.friendId);
                 }}
               />
 
@@ -448,15 +455,19 @@ function FriendListPanelInner({
               </div>
 
               <div className={styles.actions}>
-                <button
-                  className={styles.iconBtn}
-                  onClick={() => {
-                    haptic.light();
-                    onMessageClick?.(friend.friendId, friend.displayName);
-                  }}
-                  title="Message"
-                  aria-label="Message"
-                ></button>
+                {/* A Message control with nowhere to go is not shown: it
+                    buzzed and did nothing (2026-10-19). Same rule as Invite. */}
+                {onMessageClick && (
+                  <button
+                    className={styles.iconBtn}
+                    onClick={() => {
+                      haptic.light();
+                      onMessageClick(friend.friendId, friend.displayName);
+                    }}
+                    title="Message"
+                    aria-label="Message"
+                  ></button>
+                )}
                 {friend.isOnline && onInviteClick && (
                   <button
                     className={styles.iconBtn}

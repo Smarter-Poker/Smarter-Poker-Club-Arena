@@ -180,7 +180,7 @@ describe('ChallengeToastListener', () => {
     }
   });
 
-  it('never carries a player off a live table: there the toast only informs', () => {
+  it('opens the reward page on an explicit tap at a live table', () => {
     renderListener('/table/11111111-2222-4333-8444-555555555555');
 
     act(() => {
@@ -190,11 +190,13 @@ describe('ChallengeToastListener', () => {
     expect(mocks.success).toHaveBeenCalledWith(
       'Challenge Complete: Win A Showdown. Claim 25 Diamonds In Daily Challenges.',
       undefined,
-      undefined
+      expect.any(Function)
     );
+    tapToast();
+    expect(screen.getByTestId('location').textContent).toBe('/challenges');
   });
 
-  it('a tap that lands after the player sat down at a table leaves them on the table', () => {
+  it('keeps an attention alert actionable after the player opens a table', () => {
     renderListener('/profile');
 
     act(() => {
@@ -205,8 +207,6 @@ describe('ChallengeToastListener', () => {
     });
     tapToast();
 
-    expect(screen.getByTestId('location').textContent).toBe(
-      '/table/11111111-2222-4333-8444-555555555555'
-    );
+    expect(screen.getByTestId('location').textContent).toBe('/challenges');
   });
 });

@@ -305,7 +305,17 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           ) {
             welcomeNudged.current.add(key);
             toast.info(
-              'Finish Setting Up Your Custom Messages. Open Custom Messages Below Messages.'
+              'Finish Setting Up Your Custom Messages. Tap To Open Custom Messages.',
+              undefined,
+              () => {
+                if (!mayLeaveCurrentPage()) return;
+                navigate(
+                  workspace.clubUUID
+                    ? `/clubs/${workspace.clubUUID}/welcome-message`
+                    : '/welcome-messages'
+                );
+                onClose();
+              }
             );
           }
         }

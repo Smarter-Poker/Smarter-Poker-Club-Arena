@@ -19,6 +19,8 @@ export interface SitoutDeps {
         }
       | null
       | undefined;
+    /** Resolve only an open Lightning room owned by the authenticated caller. */
+    lightningAnchorFor?(roomId: string, userId: string): Promise<{ anchorTableId: string } | null>;
   };
 }
 
@@ -44,7 +46,13 @@ export async function handleSitout(
       });
     }
 
-    const engine = deps.gameServer.getTableEngine(tableId);
+    let engine = deps.gameServer.getTableEngine(tableId);
+    if (!engine && typeof tableId === 'string' && deps.gameServer.lightningAnchorFor) {
+      // The room owns no physical engine. Both directions use the existing
+      // anchor's cash sit-out rules; matcher legality reads that seat's flag.
+      const anchor = await deps.gameServer.lightningAnchorFor(tableId, userId);
+      if (anchor) engine = deps.gameServer.getTableEngine(anchor.anchorTableId);
+    }
     if (!engine) {
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }

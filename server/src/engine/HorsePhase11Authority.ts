@@ -444,6 +444,15 @@ export interface HorsePhase11AuthoritySelection {
  * 7bdf1c08.... The same prospective completion window on release 6e3ab4f3
  * completed every eligible PLO5 decision on every street (river 1,237 of
  * 1,237, lowest Wilson bound 0.9947). Cash only. PLO6 stays null.
+ *
+ * October 20: PLO6 generation 3. The locked P11 PLO6 matrix requalified the
+ * exact VPIP-floor source da94e437 (run 39132893655, every shard complete):
+ * cash after rake against the horse population +3.66 [+2.88, +4.45] bb/100
+ * over 2,519,424 pairs, qualified with no reasons, at policy digest
+ * 93439b27.... The same prospective completion window on release 6e3ab4f3
+ * completed every eligible PLO6 decision on every street (river 765 of 765,
+ * lowest Wilson bound 0.9914). Cash only. All three Phase 11 packs are now
+ * selected.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
@@ -466,7 +475,24 @@ export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
     expiresAt: null,
     withdrawn: null,
   } as const),
-  plo6: null,
+  plo6: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase11',
+    variant: 'plo6',
+    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+    packVersion: 'plo6-high-round3-v2',
+    contractVersion: 'omaha-variant-strength-contract-v1',
+    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
+    domain: 'plo6-cash-single-board-after-rake-horse-population',
+    qualificationPath: 'docs/evidence/phase11/da94e437/phase11-qualification-2026-10-20-plo6.json',
+    qualificationSha256: '6588eb2e99b33f9c7c6597c6cb223612b4a23aacd44c018629cf713e14e751db',
+    completionPath: 'docs/evidence/phase11/da94e437/phase11-completion-2026-10-18-plo6.json',
+    completionSha256: 'f4a91ae0ced6e07f937cec2bce897b181dba805d72da01a38e407f15f8ffe37a',
+    approvalGeneration: 3,
+    issuedAt: '2026-10-20T00:50:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   plo8: Object.freeze({
     schema: 'horse-qualified-authority-selection-v1',
     phase: 'phase11',

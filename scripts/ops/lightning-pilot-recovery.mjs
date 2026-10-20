@@ -18,7 +18,8 @@ export function recoveryFrame(payload, direction, rooms) {
     if (direction === 'sent') {
       const handId = renderHand(payload, frame.tableId);
       if (handId) return { type: 'RENDER_ACK', room: frame.tableId, handId };
-      if (frame.type === 'SUBSCRIBE') return { type: 'SUBSCRIBE', room: frame.tableId };
+      if (['SUBSCRIBE', 'UNSUBSCRIBE'].includes(frame.type))
+        return { type: frame.type, room: frame.tableId };
     } else if (['SUBSCRIBED', 'SNAPSHOT'].includes(frame.type))
       return { type: frame.type, room: frame.tableId };
   } catch {}
@@ -34,8 +35,8 @@ export function initializeRecoverySession({ session }) {
 }
 
 /** Observe the existing consumer, without clearing storage or navigating for it. */
-export async function observeRevokedConsumer(page, context, evidence, remaining) {
-  const transports = evidence.sockets.filter((socket) => !socket.closed);
+export async function observeRevokedConsumer(page, context, evidence, remaining, room) {
+  const transports = evidence.socketsFor(room);
   if (transports.length !== 1) throw new Error('Revoked Consumer Transport Unavailable');
   await context.setOffline(true);
   await evidence.wait(() => transports.every((socket) => socket.closed));
@@ -54,7 +55,7 @@ export async function observeRevokedConsumer(page, context, evidence, remaining)
   return { redirect: 'observed', localSessionCleared: true };
 }
 
-function journal(page, rooms, remaining, playerId) {
+export function recoveryJournal(page, rooms, remaining, playerId) {
   const wire = recoveryWireObservation(rooms, playerId);
   const frames = [],
     sockets = [];
@@ -69,7 +70,7 @@ function journal(page, rooms, remaining, playerId) {
     } catch {
       return;
     }
-    const socket = { closed: false };
+    const socket = { closed: false, requested: new Set(), subscribed: new Set() };
     sockets.push(socket);
     ws.on('close', () => {
       socket.closed = true;
@@ -82,6 +83,12 @@ function journal(page, rooms, remaining, playerId) {
       ws.on(event, ({ payload }) => {
         if (direction === 'received') wire.receive(payload);
         const frame = recoveryFrame(payload, direction, rooms);
+        if (frame?.type === 'SUBSCRIBE') socket.requested.add(frame.room);
+        if (frame?.type === 'SUBSCRIBED') socket.subscribed.add(frame.room);
+        if (frame?.type === 'UNSUBSCRIBE') {
+          socket.requested.delete(frame.room);
+          socket.subscribed.delete(frame.room);
+        }
         if (frame && frames.length < 2000) {
           frames.push({ ...frame, at: Date.now() });
           emit();
@@ -92,6 +99,9 @@ function journal(page, rooms, remaining, playerId) {
   return {
     frames,
     sockets,
+    socketsFor(room) {
+      return sockets.filter((s) => !s.closed && s.requested.has(room) && s.subscribed.has(room));
+    },
     wire,
     async wait(predicate) {
       if (predicate()) return;
@@ -120,6 +130,64 @@ function journal(page, rooms, remaining, playerId) {
       );
     },
   };
+}
+/** One existing manual SPA route. No join control, scripted navigation or tab eviction. */
+async function openOtherPool(page, admin, pin, remaining, progress) {
+  progress.step = 'find_existing_pool_tab';
+  const existing = page.locator(`[data-tabid="${pin.poolSessionId}"]`);
+  const matches = await existing.count();
+  if (matches > 1) throw new Error('Manual Pool Tab Ambiguous');
+  if (matches === 1) {
+    if (!(await existing.isVisible())) {
+      progress.step = 'existing_pool_tab_hidden';
+      throw new Error('Manual Pool Tab Hidden');
+    }
+    progress.step = 'select_existing_pool_tab';
+    await existing.tap({ timeout: Math.min(5000, remaining()) });
+    if ((await existing.getAttribute('aria-current', { timeout: remaining() })) !== 'true')
+      throw new Error('Manual Selection');
+    return;
+  }
+  progress.step = 'open_another_table';
+  const add = page.getByRole('button', { name: 'Open Another Table', exact: true });
+  if ((await add.count()) !== 1 || !(await add.isVisible())) {
+    progress.step = 'open_another_table_unavailable';
+    throw new Error('Manual Pool Door Unavailable');
+  }
+  // The maintained context menu is the desktop equivalent of holding '+'.
+  await add.click({ button: 'right', timeout: Math.min(5000, remaining()) });
+  progress.step = 'open_lobby';
+  await page
+    .getByRole('menu', { name: 'Open A New Tab', exact: true })
+    .getByRole('button', { name: 'Open Lobby', exact: true })
+    .click({ timeout: Math.min(5000, remaining()) });
+  progress.step = 'identify_cluster_row';
+  const rows = page.locator('tr[data-kind="cash"][data-id]');
+  await rows.first().waitFor({ state: 'visible', timeout: Math.min(15000, remaining()) });
+  const ids = await rows.evaluateAll((elements) =>
+    elements.slice(0, 101).map((e) => e.getAttribute('data-id'))
+  );
+  if (ids.length === 0 || ids.length > 100 || ids.some((id) => !UUID.test(id)))
+    throw new Error('Manual Pool Row Unknown');
+  const result = await admin
+    .from('tables')
+    .select('id,cluster_id,club_id')
+    .eq('club_id', pin.clubId)
+    .eq('cluster_id', pin.clusterId)
+    .in('id', ids)
+    .limit(2);
+  if (result.error || result.data?.length !== 1) throw new Error('Manual Pool Row Unknown');
+  const row = result.data[0];
+  if (!ids.includes(row.id) || row.cluster_id !== pin.clusterId || row.club_id !== pin.clubId)
+    throw new Error('Manual Pool Row Unknown');
+  progress.step = 'view_existing_game';
+  await page
+    .locator(`tr[data-kind="cash"][data-id="${row.id}"]`)
+    .getByRole('button', { name: /^View Game / })
+    .click({ timeout: Math.min(5000, remaining()) });
+}
+export function recoveryDiagnosticBudget(started, timeoutMs, now = Date.now()) {
+  return Math.max(1, Math.min(1500, started + timeoutMs - now - 10000));
 }
 /** Revokes only the synthetic session already opened by this operation. */
 export async function observeRevokedSocket(WebSocket, poolSessionId, token, timeoutMs = 10000) {
@@ -171,6 +239,7 @@ export async function witnessRecovery({
     status: 'unknown',
     phase: 'preflight',
     touch: [],
+    touchProgress: [],
     transportSamples: [],
     navigation: [],
     reconnect: 'unknown',
@@ -291,7 +360,7 @@ export async function witnessRecovery({
         });
         await c.addInitScript(initializeRecoverySession, { session });
         const page = await c.newPage();
-        const evidence = journal(
+        const evidence = recoveryJournal(
           page,
           pins.map((p) => p.poolSessionId),
           remaining,
@@ -305,13 +374,15 @@ export async function witnessRecovery({
       context = initial.c;
       const { page, evidence } = initial;
       report.phase = 'touch';
-      for (const pin of pins) {
+      for (const [index, pin] of pins.entries()) {
         const progress = { poolSessionId: pin.poolSessionId, step: 'entry_navigation' };
         report.navigation.push(progress);
-        await page.goto(`https://smarter.poker/hub/club-arena/lightning/${pin.clusterId}`, {
-          waitUntil: 'domcontentloaded',
-          timeout: remaining(),
-        });
+        if (index === 0)
+          await page.goto(`https://smarter.poker/hub/club-arena/lightning/${pin.clusterId}`, {
+            waitUntil: 'domcontentloaded',
+            timeout: remaining(),
+          });
+        else await openOtherPool(page, admin, pin, remaining, progress);
         progress.step = 'first_render';
         await evidence.wait(() => evidence.lastHand(pin.poolSessionId) !== null);
         progress.step = 'rendered';
@@ -324,10 +395,29 @@ export async function witnessRecovery({
         for (const pin of pins) {
           remaining();
           await validate(admin, pin);
+          const progress = {
+            device: device.name,
+            poolSessionId: pin.poolSessionId,
+            step: 'locate_tab',
+            matches: 0,
+            present: false,
+            visible: null,
+            selected: null,
+          };
+          report.touchProgress.push(progress);
           const tab = page.locator(`[data-tabid="${pin.poolSessionId}"]`);
-          await tab.tap({ timeout: remaining() });
-          if ((await tab.getAttribute('aria-current', { timeout: remaining() })) !== 'true')
-            throw new Error('Manual Selection');
+          progress.matches = Math.min(2, await tab.count());
+          progress.present = progress.matches === 1;
+          if (!progress.present) throw new Error('Manual Tab Missing');
+          progress.visible = await tab.isVisible();
+          if (!progress.visible) throw new Error('Manual Tab Hidden');
+          progress.step = 'tap';
+          await tab.tap({ timeout: Math.min(5000, remaining()) });
+          progress.step = 'verify_selection';
+          progress.selected =
+            (await tab.getAttribute('aria-current', { timeout: remaining() })) === 'true';
+          if (!progress.selected) throw new Error('Manual Selection');
+          progress.step = 'selected';
           report.touch.push({
             device: device.name,
             poolSessionId: pin.poolSessionId,
@@ -337,7 +427,7 @@ export async function witnessRecovery({
       }
       const pin = pins.at(-1),
         beforeHand = evidence.lastHand(pin.poolSessionId),
-        oldSockets = evidence.sockets.filter((s) => !s.closed);
+        oldSockets = evidence.socketsFor(pin.poolSessionId);
       if (!beforeHand || oldSockets.length !== 1) throw new Error('Initial Transport');
       report.phase = 'disconnect';
       let restoredAt;
@@ -366,7 +456,7 @@ export async function witnessRecovery({
       const subscriptions = evidence.frames.filter(
         (f) => f.type === 'SUBSCRIBED' && f.room === pin.poolSessionId && f.at >= restoredAt
       );
-      if (subscriptions.length !== 1 || evidence.sockets.filter((s) => !s.closed).length !== 1)
+      if (subscriptions.length !== 1 || evidence.socketsFor(pin.poolSessionId).length !== 1)
         throw new Error('Reconnect Ownership');
       report.reconnect = 'observed';
       report.sameHand =
@@ -394,7 +484,13 @@ export async function witnessRecovery({
       );
       if (report.revoked !== 'auth_refused') throw new Error('Revoked Refusal Unverified');
       report.phase = 'revoked_consumer';
-      report.revokedConsumer = await observeRevokedConsumer(page, context, evidence, remaining);
+      report.revokedConsumer = await observeRevokedConsumer(
+        page,
+        context,
+        evidence,
+        remaining,
+        pin.poolSessionId
+      );
       await context.close();
       context = null;
       remaining();
@@ -422,7 +518,7 @@ export async function witnessRecovery({
       try {
         report.ui = await bounded(
           diagnosticPage.evaluate(recoveryUiInPage),
-          Math.max(1, Math.min(1500, deadline - Date.now()))
+          recoveryDiagnosticBudget(started, timeoutMs)
         );
       } catch {
         report.ui = { route: 'unavailable' };
@@ -432,6 +528,10 @@ export async function witnessRecovery({
     report.transportSamples = journals.map((j) => ({
       sockets: j.sockets.length,
       openSocketsBeforeCleanup: j.sockets.filter((s) => !s.closed).length,
+      roomSocketCounts: pins.map((p) => ({
+        poolSessionId: p.poolSessionId,
+        openOwners: j.socketsFor(p.poolSessionId).length,
+      })),
       frames: ['SUBSCRIBE', 'SUBSCRIBED', 'SNAPSHOT', 'RENDER_ACK'].map((type) => ({
         type,
         count: j.frames.filter((f) => f.type === type).length,

@@ -202,6 +202,7 @@ export interface TableModalsLayerProps {
   showWaitList: boolean;
   waitListPlayers: any[];
   onCloseWaitList: () => void;
+  onJoinWaitList?: () => Promise<void>;
   /** Sends the player to the cashier from a buy-in they cannot afford. */
   onTopUpAccount?: () => void;
   /**
@@ -575,6 +576,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     showWaitList,
     waitListPlayers,
     onCloseWaitList,
+    onJoinWaitList,
     onWaitListError,
     onTopUpAccount,
     diamondGamesClubId,
@@ -909,6 +911,7 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
       <WaitListModal
         isOpen={showWaitList}
         onClose={onCloseWaitList}
+        onJoinWaitList={onJoinWaitList}
         tableName={tableName}
         blinds={blinds}
         players={waitListPlayers}

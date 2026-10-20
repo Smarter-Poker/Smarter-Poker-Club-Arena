@@ -528,6 +528,7 @@ import { useFrameBudgetMonitor } from '../hooks/useFrameBudgetMonitor';
 // Bible V8 §11: 4-Corner Table HUD Components
 import { TableHUD } from '../components/table/TableHUD';
 import { TournamentLobbyModal } from '../components/table/TournamentLobbyModal';
+import { useCashSeatEntry } from '../components/table/useCashSeatEntry';
 import { MustMoveLobbyModal } from '../components/table/MustMoveLobbyModal';
 import { CashClusterHUD } from '../components/table/CashClusterHUD';
 import TournamentInfoPanel from '../components/tournament/TournamentInfoPanel';
@@ -2662,6 +2663,11 @@ function LiveTablePage({
     };
   }, [tableId, userId]);
 
+  // Seat-exit state precedes every snapshot and removal consumer.
+  const leftSeatPendingRef = useRef(false);
+  const [pendingSeat, setPendingSeat] = useState<number | null>(null);
+  const pendingSeatStackRef = useRef<number>(0);
+
   // A roster arriving during restoration supplies a placeholder, not a top-up.
   const sessionBuyInSeedRef = useRef(0);
   // Phase 1.1 PR-3: apply authoritative engine snapshot to tableState when
@@ -2723,6 +2729,7 @@ function LiveTablePage({
         cardHoldNextHand <= 0 || cardHoldPrevHand <= 0 || cardHoldNextHand === cardHoldPrevHand;
       const nextPlayers: (SeatPlayer | null)[] = rosterPlayers.map((p, i) => {
         if (!p) return null;
+        if (leftSeatPendingRef.current && p.id === userId) return null;
         let sp = p as unknown as SeatPlayer;
         /* Dan 2026-10-14: an all-in / showdown snapshot carries the hero's
            cards in DEALT order. Keep the row in its display order. */
@@ -5083,11 +5090,9 @@ function LiveTablePage({
    * seat_left names us; CLEARED only by deliberately taking a seat again, so
    * it can never lock a player out of a seat they have just bought.
    *
-   * DECLARED HERE, above applySeatRemoved, because that is its first reader and
-   * tests/no-tdz-in-table-route.law.test.ts does not allow a name to be read
-   * before its declaration on this route.
+   * Declared above the snapshot merge, the earliest consumer. Every roster
+   * path must respect the confirmed exit until a new purchase clears it.
    */
-  const leftSeatPendingRef = useRef(false);
 
   const applySeatRemoved = useCallback(
     /* `announce` separates the two halves of this function, which used to be
@@ -5106,6 +5111,14 @@ function LiveTablePage({
       leftSeatPendingRef.current = true;
       const heroId = String(userId ?? '');
       heroSeatRef.current = 0;
+      // A confirmed exit retires the optimistic purchase as well as the roster.
+      // Otherwise an empty engine seat is drawn again as our zero-stack chair.
+      setPendingSeat(null);
+      setSelectedSeat(null);
+      pendingSeatStackRef.current = 0;
+      setHeroRowStack(null);
+      setShowBuyInModal(false);
+      setShowRebuyModal(false);
       sittingOutIdsRef.current.delete(heroId);
       setHeroSitsOutPerRow(false);
       setShowSitOut(false);
@@ -7369,7 +7382,6 @@ function LiveTablePage({
   // wholesale and would wipe an optimistic entry mid-flight. Holding it in
   // its own state lets the placeholder survive until real data replaces it.
   // ─────────────────────────────────────────────────────────────────
-  const [pendingSeat, setPendingSeat] = useState<number | null>(null);
   useEffect(() => {
     const scope = `${userId}:${tableId}`;
     if (restoredBuyInScopeRef.current !== null && restoredBuyInScopeRef.current !== scope) {
@@ -7403,7 +7415,6 @@ function LiveTablePage({
    * contain the hero yet, so without this the seat rendered EMPTY and the
    * player watched their own chair sit vacant.
    */
-  const pendingSeatStackRef = useRef<number>(0);
 
   // ─────────────────────────────────────────────────────────────────
   // Bible V8 §1.16 Real-Time Law — chip-to-pot collection animation.
@@ -15533,6 +15544,7 @@ function LiveTablePage({
             const dbSeatNums = new Set(existingSeats.map((s) => s.seat_number));
 
             for (const seat of existingSeats) {
+              if (leftSeatPendingRef.current && seat.user_id === userId) continue;
               const seatIdx = seat.seat_number - 1;
               if (seatIdx < 0 || seatIdx >= updatedPlayers.length) continue;
               // Seed the authoritative sit-out set from the seat rows.
@@ -16497,6 +16509,8 @@ function LiveTablePage({
   const engineSeatMismatchReportedRef = useRef<string>('');
   useEffect(() => {
     if (!USE_ENGINE_WS || !engineSnapshot || !userId || userId === 'guest') return;
+    // The last snapshot can predate the confirmed exit. It cannot reclaim it.
+    if (leftSeatPendingRef.current) return;
     const enginePlayers =
       (engineSnapshot as unknown as { players?: Array<{ seat?: number; user_id?: string }> })
         .players ?? [];
@@ -16824,7 +16838,9 @@ function LiveTablePage({
         if (!syncData) break;
 
         setTableState((prev) => {
-          const updatedPlayers = [...prev.players];
+          const updatedPlayers = prev.players.map((p) =>
+            leftSeatPendingRef.current && p?.id === userId ? null : p
+          );
           const serverPlayers = syncData.players || [];
           /* ═══ THE FOURTH DOOR (Dan 2026-09-01) ══════════════════════════
              This merge carries `existing?.holeCards` forward when the
@@ -16863,6 +16879,7 @@ function LiveTablePage({
           let syncedHeroSeat = 0;
 
           serverPlayers.forEach((sp: any) => {
+            if (leftSeatPendingRef.current && sp.user_id === userId) return;
             const seatIdx = sp.seat - 1;
             /* NEVER DROP A SEAT THE SERVER SAYS EXISTS (Dan 2026-08-30): the
                old `seatIdx < updatedPlayers.length` guard silently discarded
@@ -20845,6 +20862,25 @@ function LiveTablePage({
     updateSeat(seatNumber).catch((e) => console.warn('[Seat] Presence update failed:', e));
   };
 
+  // A seat tap is explicit permission to follow this game's assigned entry.
+  // This does not change focus between already-running table tabs.
+  const goToCashEntryTable = (dest: string) => {
+    if (embeddedTableId) {
+      onTableInfoUpdate?.({ movedToTableId: dest, buyInRequested: true });
+    } else {
+      navigate(`/table/${dest}?buyin=1`);
+    }
+  };
+  const enterCashSeat = useCashSeatEntry({
+    tableId,
+    userId,
+    gameId: tableState.clusterId,
+    openBuyIn: openCashBuyIn,
+    goToTable: goToCashEntryTable,
+    showWaitlist: () => setShowMustMoveLobby(true),
+    notify: (message) => toast.info(message),
+  });
+
   /* A TAP IS NEVER SPENT ON A CHECK (Dan 2026-10-14): "IT SHOULD JUST CHECK
      AUTOMATICALLY". A tap that lands before the table's funding is known used
      to answer with a popup and throw the tap away. It is remembered instead,
@@ -20991,12 +21027,12 @@ function LiveTablePage({
       void readBustBalance(userId, tableId).then((b) => {
         if (b !== null) setBalanceIfCurrent(revision, b);
         if (refuseIfShort(b)) return;
-        openCashBuyIn(seatNumber);
+        void enterCashSeat(seatNumber);
       });
       return;
     }
     if (refuseIfShort(accountBalance)) return;
-    openCashBuyIn(seatNumber);
+    void enterCashSeat(seatNumber);
   };
 
   /* Replay a tap that landed before the table's funding was known. */
@@ -21017,6 +21053,9 @@ function LiveTablePage({
      mount, and never on a tournament table (handleSeatClick refuses those). */
   const [acceptedChair, setAcceptedChair] = useState(0);
   const autoBuyInFiredRef = useRef(false);
+  useEffect(() => {
+    autoBuyInFiredRef.current = false;
+  }, [tableId, userId]);
   useEffect(() => {
     if (autoBuyInFiredRef.current) return;
     let wantsBuyIn = openBuyInOnArrival || acceptedChair > 0;
@@ -22022,7 +22061,9 @@ function LiveTablePage({
           .select('user_id, is_sitting_out, sit_out_at, leave_pending, stack')
           .eq('table_id', tableId)
           .is('left_at', null);
-        if (error || cancelled || !data) return;
+        if (cancelled) return;
+        if (error) throw error;
+        if (!data) return;
         const rows = data as Array<{
           user_id: string;
           is_sitting_out: boolean | null;
@@ -22125,7 +22166,13 @@ function LiveTablePage({
          * recovery cannot be missed. The toast is deduped against the websocket
          * path by `bootNoticeShownRef` so a player who DID catch the event is
          * not told twice. */
-        if (userId && heroSeatRef.current > 0 && !stillSeated.has(String(userId))) {
+        if (
+          userId &&
+          (heroSeatRef.current > 0 ||
+            tableStateRef.current.heroSeat > 0 ||
+            tableStateRef.current.players.some((p) => p?.id === userId)) &&
+          !stillSeated.has(String(userId))
+        ) {
           const freshJoin =
             seatAcquiredAtRef.current != null && Date.now() - seatAcquiredAtRef.current < 15_000;
           // A buy-in that has not landed yet is not an eviction.
@@ -28437,6 +28484,31 @@ function LiveTablePage({
         showWaitList={showWaitList}
         waitListPlayers={waitListPlayers}
         onCloseWaitList={() => setShowWaitList(false)}
+        onJoinWaitList={async () => {
+          if (!tableId) return;
+          const scope = `${userId}:${tableId}`;
+          const entry = await waitlistService.joinWaitlist(tableId);
+          if (buyInScopeRef.current !== scope) return;
+          if (!entry) {
+            toast.error('Could Not Join The List. Please Try Again.');
+            return;
+          }
+          const queue = await waitlistService.getPosition(tableId);
+          if (buyInScopeRef.current !== scope) return;
+          if (queue?.status === 'notified') {
+            toast.info('Your Seat Is Reserved. Confirm Your Buy-In To Join The Game.');
+            setShowWaitList(false);
+            autoBuyInFiredRef.current = false;
+            setAcceptedChair((count) => count + 1);
+            return;
+          }
+          toast.info(
+            queue && queue.position > 0
+              ? `You Are Number ${queue.position} On The Waiting List.`
+              : 'You Have Joined The Waiting List. Your Seat Offer Will Appear When Ready.'
+          );
+          await loadWaitlist();
+        }}
         onWaitListError={(m) => toast?.error?.(m)}
         onTopUpAccount={() =>
           tableState.arenaAsset === 'diamonds'
@@ -28660,6 +28732,26 @@ function LiveTablePage({
               reportError(outcome.error, 'TablePage.atomic_table_buyin_returned_failure');
               const message =
                 cashBuyInRefusalText(outcome.error) ?? 'The Server Refused This Buy-In.';
+              if (
+                /^SEAT_RESERVED:/.test(
+                  String(
+                    typeof outcome.error === 'object' &&
+                      outcome.error !== null &&
+                      'message' in outcome.error
+                      ? outcome.error.message
+                      : outcome.error
+                  )
+                )
+              ) {
+                // The rejected receipt proves no purchase committed. Replace
+                // the dead-end sheet with the actionable game/table queue.
+                setPendingSeat(null);
+                setSelectedSeat(null);
+                setShowBuyInModal(false);
+                toast.info('This Seat Is Reserved. Join The List To Get Your Next Available Seat.');
+                handleOpenWaitlist();
+                return false;
+              }
               toast.error(message);
               if (cashBuyInSeatConflictText(outcome.error)) {
                 // A proven seat collision moved no chips. Release only this

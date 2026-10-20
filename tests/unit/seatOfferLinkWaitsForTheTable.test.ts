@@ -21,7 +21,7 @@ import { sliceMethod } from '../helpers/sourceWindow';
 const SOURCE = readFileSync(join(__dirname, '..', '..', 'src', 'pages', 'TablePage.tsx'), 'utf8');
 
 function deepLinkEffect(): string {
-  const start = SOURCE.indexOf('const autoBuyInFiredRef = useRef(false);');
+  const start = SOURCE.indexOf('useEffect(() => {\n    if (autoBuyInFiredRef.current) return;');
   expect(start, 'the ?buyin=1 deep-link effect is gone').toBeGreaterThan(-1);
   const end = SOURCE.indexOf('}, [', start);
   const closing = SOURCE.indexOf(']);', end);

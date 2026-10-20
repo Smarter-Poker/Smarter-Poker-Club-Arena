@@ -88,7 +88,8 @@ function fixture() {
     supabase: { rpc: vi.fn().mockResolvedValue({ data: null, error: null }), from: vi.fn() },
     useUserStore: { getState: () => ({ currentClubId: 'a0000000-0000-4000-8000-000000000001' }) },
     reportError: vi.fn(),
-    toast: { error: vi.fn(), warning: vi.fn() },
+    toast: { error: vi.fn(), warning: vi.fn(), info: vi.fn() },
+    handleOpenWaitlist: vi.fn(),
     cashBuyInRefusalText,
     cashBuyInSeatConflictText,
     isDeadSessionRefusal,
@@ -385,14 +386,20 @@ it.each([
         error: name === 'atomic_table_buyin' ? error : null,
       })
     );
-    expect(await f.handler(100, false)).toEqual({ status: 'rejected', message });
+    const reserved = error.message.startsWith('SEAT_RESERVED:');
+    expect(await f.handler(100, false)).toEqual(reserved ? false : { status: 'rejected', message });
     await Promise.resolve();
-    expect(f.d.toast.error).toHaveBeenCalledWith(message);
+    if (reserved) {
+      expect(f.d.handleOpenWaitlist).toHaveBeenCalledOnce();
+      expect(f.d.toast.info).toHaveBeenCalledWith(expect.stringContaining('Join The List'));
+      expect(f.d.toast.error).not.toHaveBeenCalled();
+    } else expect(f.d.toast.error).toHaveBeenCalledWith(message);
     expect(f.d.cashBuyInJournal.read(f.d.userId, f.d.tableId)).toBeNull();
     expect(f.d.cashBuyInPendingRef.current).toBeNull();
     expect(f.d.buyInProcessingRef.current).toBe(false);
     expect(f.state().heroSeat).toBe(0);
-    if (cashBuyInSeatConflictText(error)) expect(f.d.setShowBuyInModal).toHaveBeenCalledWith(false);
+    if (reserved || cashBuyInSeatConflictText(error))
+      expect(f.d.setShowBuyInModal).toHaveBeenCalledWith(false);
     else expect(f.d.setShowBuyInModal).not.toHaveBeenCalledWith(false);
     const originalKey = f.d.supabase.rpc.mock.calls[0][1].p_idempotency_key;
     f.d.selectedSeat = 3;

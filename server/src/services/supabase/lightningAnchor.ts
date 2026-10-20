@@ -28,12 +28,13 @@ export interface LightningAnchorSeat {
  */
 export async function lightningAnchorSeat(
   poolSessionId: string,
-  userId: string
+  userId: string,
+  opts?: { requireOpen?: boolean }
 ): Promise<LightningAnchorSeat | null> {
   if (!isUuid(poolSessionId) || !isUuid(userId)) return null;
   const { data: session, error } = await supabase
     .from('lightning_pool_session')
-    .select('player_id, cluster_id, anchor_seat_id')
+    .select('player_id, cluster_id, anchor_seat_id, exited_at')
     .eq('id', poolSessionId)
     .maybeSingle();
   if (error) throw new Error(`lightning_pool_session read failed: ${error.message}`);
@@ -41,12 +42,19 @@ export async function lightningAnchorSeat(
     player_id?: unknown;
     cluster_id?: unknown;
     anchor_seat_id?: unknown;
+    exited_at?: unknown;
   } | null;
-  if (!s || s.player_id !== userId || !isUuid(s.anchor_seat_id) || !isUuid(s.cluster_id))
+  if (
+    !s ||
+    s.player_id !== userId ||
+    !isUuid(s.anchor_seat_id) ||
+    !isUuid(s.cluster_id) ||
+    (opts?.requireOpen && s.exited_at !== null)
+  )
     return null;
   const { data: seat, error: seatError } = await supabase
     .from('table_seats')
-    .select('table_id, seat_number, occupancy_id, user_id')
+    .select('table_id, seat_number, occupancy_id, user_id, left_at')
     .eq('id', s.anchor_seat_id)
     .maybeSingle();
   if (seatError) throw new Error(`anchor seat read failed: ${seatError.message}`);
@@ -55,6 +63,7 @@ export async function lightningAnchorSeat(
     seat_number?: unknown;
     occupancy_id?: unknown;
     user_id?: unknown;
+    left_at?: unknown;
   } | null;
   // A seat already vacated is still answered (same user, same occupancy), so
   // a retried leave finds its cash-out receipt; an add-on there is refused
@@ -62,6 +71,7 @@ export async function lightningAnchorSeat(
   if (
     !row ||
     row.user_id !== userId ||
+    (opts?.requireOpen && row.left_at !== null) ||
     !isUuid(row.table_id) ||
     !isUuid(row.occupancy_id) ||
     !Number.isInteger(Number(row.seat_number))

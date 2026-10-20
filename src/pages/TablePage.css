@@ -127,6 +127,10 @@
         #080d15 100%
       );
   overflow: hidden;
+  /* Keep the gameplay typography at its authored size in mobile Safari.
+     The document reset in globals.css is not loaded by this application. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   /* Mobile touch optimizations */
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
@@ -5020,4 +5024,28 @@ button.post-bb-overlay-button {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* Portrait phones keep the same edge-to-edge rail as the desktop reference.
+   The tablet roundness cap above otherwise narrows shorter phones (333px on
+   a 375px screen). Safari's small viewport also retains the expanded browser
+   toolbar allowance after the toolbar retracts, leaving unused space below
+   the table. For the October 20 mobile gameplay correction, use the currently
+   visible viewport on phones, just as the page shell does. This intentionally
+   supersedes the small-viewport rule above for portrait phones. Only an actual
+   viewport change can resize the canvas; actions, folds and taking a seat
+   still use the same declared chrome/hero budget. Art and every seat follow
+   that one canvas. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-container {
+    --sp-page-h: 100dvh;
+  }
+
+  .table-page--embedded .table-container {
+    --sp-page-h: calc(100dvh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))));
+  }
+
+  .table-scaler {
+    width: 100%;
+  }
 }

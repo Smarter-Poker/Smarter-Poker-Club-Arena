@@ -5676,8 +5676,9 @@ export abstract class ServerTableEngineBase {
     // waiting loop restores presence or starts its heartbeat tick. The halt
     // stops ordinary deals, not the seated players' input devices. Without
     // this local observation every restored seat stays unknown to matching.
-    // Adopt carried state before registering; never run continuity releases,
-    // sit-out eviction, seat moves or add-ons from this parked boundary.
+    // Adopt carried state before registering. The halt stops dealing, not
+    // the original cash clock or a voluntary departure it is holding.
+    // Sit-out eviction, seat moves and add-ons remain outside this boundary.
     if (!this.isTournamentTable() && !isMaintenanceFrozen()) {
       if (!(await this.adoptMovedPresence())) return;
       if (!this.lifecycleCanMutate()) return;
@@ -5690,6 +5691,17 @@ export abstract class ServerTableEngineBase {
     }
     await this.completeQueuedLeavesWhileHalted();
     if (!this.lifecycleCanMutate()) return;
+    if (!this.isTournamentTable()) {
+      // The existing tracker observes changed presence only. Calling it while
+      // frozen performs no RPC and records that thaw must refresh its mirror.
+      // Run after queued leaves: their native refusal establishes clock holds.
+      await this.chipContinuity.sweepPresence(this.seatedPlayers ?? [], (uid) =>
+        this.isContinuityActive(uid)
+      );
+      if (!this.lifecycleCanMutate()) return;
+      await this.releaseLeavesHeldByClock();
+      if (!this.lifecycleCanMutate()) return;
+    }
     await this.recoverBustedHorsesWhileHalted();
     if (!this.lifecycleCanMutate()) return;
     await this.observeDealingHalt();

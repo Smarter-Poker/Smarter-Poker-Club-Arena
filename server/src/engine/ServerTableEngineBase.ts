@@ -1,4 +1,5 @@
 import { isPreExecutionDbUnavailable } from './committedSeatStackRead.js';
+import { SeatSitOutPersistence } from './SeatSitOutPersistence.js';
 import { randomUUID } from 'node:crypto';
 import { positionLabelsFor } from './presentation/projectHandState.js';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
@@ -405,6 +406,9 @@ export abstract class ServerTableEngineBase {
    * at engine construction. null in unit tests / until PR-2 wiring lands.
    */
   protected hub: TableStateHub | null = null;
+  private readonly seatSitOutPersistence = new SeatSitOutPersistence((room, event) => {
+    this.hub?.emitEvent(room, { ...event });
+  });
   protected tableInfo: TableInfo | null = null;
   protected seatedPlayers: SeatedPlayer[] = [];
   /** Tracks busted users who explicitly rejected a rebuy in the current hand (Dan 2026-08-24). */
@@ -3065,7 +3069,8 @@ export abstract class ServerTableEngineBase {
       // table_seats subscription both map it to the greyed seat state). A
       // sat-out player — voluntary or forced after 3 timeouts — looked fully
       // active to everyone, including themselves. Persist both transitions;
-      // fire-and-forget, the UI write must never affect gameplay.
+      // Gameplay stays synchronous. The original explicit persistence owns
+      // ordered, exact-occupancy Lightning publication after the database ACK.
       if (event.type === 'PLAYER_SAT_OUT' || event.type === 'PLAYER_SAT_BACK') {
         const sittingOut = event.type === 'PLAYER_SAT_OUT';
         const satPlayer = this.seatedPlayers.find((p) => p.user_id === event.playerId);
@@ -3093,23 +3098,8 @@ export abstract class ServerTableEngineBase {
           }
         }
         if (!occupancyId) return;
-        void Promise.resolve(
-          supabase
-            .from('table_seats')
-            .update({ is_sitting_out: sittingOut })
-            .eq('table_id', this.tableId)
-            .eq('user_id', event.playerId)
-            .eq('occupancy_id', occupancyId)
-            .is('left_at', null)
-        )
-          .then(({ error }) => {
-            if (error) {
-              reportError(
-                new Error(`persist is_sitting_out=${sittingOut} failed: ${error.message}`),
-                'ServerTableEngine.' + this.tableId + '.sitout_persist_failed'
-              );
-            }
-          })
+        void this.seatSitOutPersistence
+          .persist(this.tableId, event.playerId, occupancyId, sittingOut)
           .catch((err) => {
             reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_persist_threw');
           });

@@ -130,7 +130,7 @@ describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualificati
     (v) => PHASE12_PROTECTED_RELEASE_SELECTIONS[v] === null
   );
 
-  it('FLH generation 5 and Crazy Pineapple generation 2 are selected; FLH generations 2, 3 and 4 and Crazy Pineapple generation 1 are retained; each pack keeps its own contract digest, FLH the frozen v1', () => {
+  it('Short Deck generation 1, FLH generation 5 and Crazy Pineapple generation 2 are selected; FLH generations 2, 3 and 4 and Crazy Pineapple generation 1 are retained; each pack keeps its own contract digest, FLH the frozen v1', () => {
     expect(Object.isFrozen(PHASE12_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect([...HORSE_PHASE12_VARIANTS]).toEqual(['short_deck', 'pineapple', 'flh', 'flo8']);
     // FLH's generation-1 selection measured policy digest a55db7fe..., which
@@ -143,7 +143,7 @@ describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualificati
     // call-down (2026-10-17 evening) moved every digest again. FLH generation 5
     // requalified the VPIP-floor source da94e437 (2026-10-19); the other three
     // packs stay unselected until their own matrices finish.
-    expect(selected).toEqual(['pineapple', 'flh']);
+    expect(selected).toEqual(['short_deck', 'pineapple', 'flh']);
     expect(PHASE12_PROTECTED_RELEASE_SELECTIONS.flh!.approvalGeneration).toBeGreaterThan(
       RETIRED_2026_10_17_PHASE12_SELECTIONS.flh!.approvalGeneration
     );
@@ -208,7 +208,7 @@ describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualificati
         packVersion: REMAINING_VARIANT_PACKS[variant].version,
         contractDigest: PHASE12_RUNNING_CONTRACT_DIGESTS[variant],
         sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-        approvalGeneration: variant === 'flh' ? 5 : 2,
+        approvalGeneration: variant === 'flh' ? 5 : variant === 'pineapple' ? 2 : 1,
         expiresAt: null,
         withdrawn: null,
       });
@@ -443,6 +443,7 @@ describe('P12.3 the VPIP floor call-down (2026-10-17) requires fresh qualificati
     expect([...qualifiedSelected].sort()).toEqual([
       'flh:da94e437/phase12-qualification-2026-10-19-flh.json',
       'pineapple:da94e437/phase12-qualification-2026-10-20-pineapple.json',
+      'short_deck:phase12-qualification-2026-10-20-short_deck.json',
     ]);
   });
 });

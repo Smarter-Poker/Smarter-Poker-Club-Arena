@@ -275,6 +275,7 @@ import { decisionPipelineDistress } from './decisionPipelinePressure.js';
 import { isFleetWideStall } from './fleetWideZombieVerdict.js';
 import {
   RunningResumeCooldowns,
+  awaitsFirstDeal,
   resumesHoldingASlot,
   selectRunningResumes,
 } from './tournamentResumeBudget.js';
@@ -9424,12 +9425,24 @@ export class GameServer {
           );
         // Keyset order is only for complete enumeration. Admission still goes
         // oldest first; a NULL start is not evidence of waiting longer.
+        /* A FIELD STILL WAITING FOR ITS FIRST CARD GOES FIRST (2026-10-20).
+           A scheduled event is seated before the :53 door and is RUNNING with
+           started_at = its advertised start, so after the :55 restart it is
+           the NEWEST row on this board and was re-adopted last. On a heavy
+           hour (2026-10-19 18:57: 505 resume attempts over eleven minutes
+           at this budget) the :00 field would wait behind every older event and deal
+           late. The few rows whose first deal is still ahead, or just due,
+           are re-adopted first, soonest first; the rest keep the
+           longest-waiting order exactly. */
+        const orderedAt = Date.now();
         const running = runningErr
           ? []
           : board.rows.sort((a, b) => {
               const aStarted = a.started_at === null ? Infinity : Date.parse(a.started_at);
               const bStarted = b.started_at === null ? Infinity : Date.parse(b.started_at);
-              return aStarted - bStarted || a.id.localeCompare(b.id);
+              const aFirst = awaitsFirstDeal(aStarted, orderedAt) ? 0 : 1;
+              const bFirst = awaitsFirstDeal(bStarted, orderedAt) ? 0 : 1;
+              return aFirst - bFirst || aStarted - bStarted || a.id.localeCompare(b.id);
             });
         if (runningErr) {
           reportError(

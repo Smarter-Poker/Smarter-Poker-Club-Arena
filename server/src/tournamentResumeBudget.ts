@@ -99,6 +99,21 @@ export interface RunningResumePass {
 }
 
 /**
+ * How long after its advertised start a RUNNING event still counts as waiting
+ * for its first deal when the resume lane orders its board (2026-10-20).
+ */
+export const FIRST_DEAL_RESUME_PRIORITY_MS = 2 * 60_000;
+
+/**
+ * A pre-seated field whose first card is still ahead (or just due): its
+ * started_at is the advertised start, in the future or within the window.
+ * NaN/Infinity (no start recorded) is never prioritised.
+ */
+export function awaitsFirstDeal(startedAtMs: number, nowMs: number): boolean {
+  return Number.isFinite(startedAtMs) && startedAtMs > nowMs - FIRST_DEAL_RESUME_PRIORITY_MS;
+}
+
+/**
  * The tournaments this pass may start resuming: board order preserved; owned,
  * already-admitting and cooling-down ids skipped without spending budget; and
  * never more than the room left under the budget once earlier in-flight

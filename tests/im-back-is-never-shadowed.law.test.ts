@@ -37,7 +37,7 @@ describe("LAW - I'm Back is never shadowed by the reserved bar", () => {
   });
 
   it('the placeholder hero prints the seat row stack, not zero', () => {
-    expect(PAGE).toContain('stack: pendingSeatStackRef.current || heroRowStack || 0,');
+    expect(PAGE).toContain('stack: heroRowStack ?? pendingSeatStackRef.current ?? 0,');
     expect(PAGE).toMatch(/select\('user_id, is_sitting_out, sit_out_at, leave_pending, stack'\)/);
   });
 });

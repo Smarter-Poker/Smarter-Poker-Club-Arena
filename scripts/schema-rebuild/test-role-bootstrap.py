@@ -31,8 +31,14 @@ for correct in [False,True]:
     assert exc.diagnostic['phase']=='role-membership',exc.diagnostic
     assert exc.diagnostic['context']=={'role':'pg_monitor','member':'postgres','grantor':bootstrap},exc.diagnostic
    else:raise AssertionError('Wrong bootstrap principal unexpectedly accepted captured grantor')
+   try:v.require_builtin_extension(sql,next(x for x in contract['extensions'] if x['name']=='plpgsql'))
+   except v.Refused:pass
+   else:raise AssertionError('Wrong builtin owner was accepted')
   else:
    v.bootstrap_roles(sql,contract,bootstrap)
+   before=sql("SELECT oid FROM pg_extension WHERE extname='plpgsql';")
+   v.require_builtin_extension(sql,next(x for x in contract['extensions'] if x['name']=='plpgsql'))
+   assert sql("SELECT oid FROM pg_extension WHERE extname='plpgsql';")==before,'Exact initializer extension was replaced'
    actual=json.loads(sql("SELECT jsonb_agg(jsonb_build_object('role',pg_get_userbyid(roleid),'member',pg_get_userbyid(member),'grantor',pg_get_userbyid(grantor),'admin',admin_option,'inherit',inherit_option,'set',set_option)) FROM pg_auth_members;"))
    assert {json.dumps(x,sort_keys=True) for x in actual}=={json.dumps(x,sort_keys=True) for x in contract['memberships']}
    rolequery="SELECT jsonb_agg(jsonb_build_object('name',rolname,'inherit',rolinherit,'canlogin',rolcanlogin,'createdb',rolcreatedb,'bypassrls',rolbypassrls,'superuser',rolsuper,'createrole',rolcreaterole,'replication',rolreplication,'connectionlimit',rolconnlimit,'config',rolconfig)) FROM pg_roles WHERE rolname IN ("+','.join(v.lit(r['name']) for r in contract['roles'])+");"
@@ -47,4 +53,4 @@ for correct in [False,True]:
  finally:
   if started:subprocess.run([str(pg/'pg_ctl'),'-D',str(work/'d'),'-m','immediate','-w','stop'],capture_output=True,env=env,timeout=30)
   shutil.rmtree(work)
-print('PASS: wrong bootstrap authority reproduces 42501; captured principal restores all 32 membership grantors/options and 37 role capabilities/configs with declared NOLOGIN containment.')
+print('PASS: wrong bootstrap authority reproduces 42501; captured principal restores all 32 membership grantors/options and 37 role capabilities/configs with declared NOLOGIN containment; exact initial plpgsql retained and wrong owner refused.')

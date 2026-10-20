@@ -33,3 +33,9 @@ captured membership grantor and option. The native regression reproduces the
 old 42501 and checks all 32 memberships plus 37 role capability/configuration
 contracts after repair. Failure receipts retain nonsecret phase/object context
 and SQLSTATE while omitting routine bodies and raw detail.
+
+The real provider image also showed that dropping the initializer's `plpgsql`
+can break provider extension hooks. With the captured bootstrap principal, its
+initial owner/version/schema already match the source contract. Qualification
+now reads and retains that exact builtin, refuses any mismatch, and tests that
+its identity survives the check. No extension is stubbed or silently replaced.

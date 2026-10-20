@@ -56,6 +56,10 @@ def bootstrap_roles(sql,contract,bootstrap):
    sql('ALTER ROLE '+q(name)+' SET '+q(key)+' TO '+rendered+';',phase='role-setting',role=name,setting=key)
  for member in contract['memberships']:
   sql('SET ROLE '+q(member['grantor'])+';GRANT '+q(member['role'])+' TO '+q(member['member'])+' WITH ADMIN '+str(member['admin']).upper()+', INHERIT '+str(member['inherit']).upper()+', SET '+str(member['set']).upper()+' GRANTED BY '+q(member['grantor'])+';RESET ROLE;',phase='role-membership',role=member['role'],member=member['member'],grantor=member['grantor'])
+def require_builtin_extension(sql,expected):
+ actual=json.loads(sql("SELECT jsonb_build_object('name',e.extname,'owner',pg_get_userbyid(e.extowner),'schema',n.nspname,'version',e.extversion) FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname="+lit(expected['name'])+';',phase='extension-initial-contract',extension=expected['name'],owner=expected['owner']))
+ if actual!=expected:raise Refused('Initial builtin extension differs from captured metadata: '+json.dumps(actual))
+ return actual
 def main():
  ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--scratch',required=True);ap.add_argument('--result',required=True);ap.add_argument('--pg-bin',default=os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin'));args=ap.parse_args()
  parent=validate_parent(args.scratch);output=Path(args.result).absolute()
@@ -105,7 +109,9 @@ def main():
   # Provider extensions are real installed versions, created under their exact
   # captured owner. This explicit baseline normalization changes no app DDL.
   builtin=next(x for x in contract['extensions'] if x['name']=='plpgsql')
-  sql('DROP EXTENSION plpgsql;SET ROLE '+q(builtin['owner'])+';CREATE EXTENSION plpgsql WITH SCHEMA '+q(builtin['schema'])+' VERSION '+lit(builtin['version'])+';RESET ROLE;',phase='extension-plpgsql',extension='plpgsql',owner=builtin['owner'])
+  # The captured bootstrap principal already owns the initializer's builtin.
+  # Provider hooks need this language, so never drop/recreate an exact match.
+  require_builtin_extension(sql,builtin)
   rendered=source.decode()
   for extension in contract['extensions']:
    if extension['name']=='plpgsql':continue

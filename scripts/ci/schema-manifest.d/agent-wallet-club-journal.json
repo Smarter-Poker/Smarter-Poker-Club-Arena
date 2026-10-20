@@ -1,0 +1,4 @@
+{
+  "_owner": "Union financial audit. Existing journal store and ledger key owners are redefined by qualified migration 20261020151328_agent_wallet_journal_keys_preserve_their_club after protected merge. Source qualification is not production installation.",
+  "functions": ["fn_ca_tally_store_move", "fn_ca_ledger_tally_key"]
+}

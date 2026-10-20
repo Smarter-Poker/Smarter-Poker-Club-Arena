@@ -340,7 +340,7 @@
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-current-function-guards.json": "0ad50effa23915730ac1bd3de2bb11fcbf822d1c774f1c9680e68be24f38ff8d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor.sql": "18cd5f51250aee5b6dc3ec08b9f96eda4a770f3fbd87e17834bfc8d573b2159d",
     "tests/fixtures/union-provider-preimages-20260917/direct-intake-receipt-row-successor-provenance.json": "00570d7e512019165d6db188ac7a30ec93cb951d2f826abe600a77b682f6e0a5",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "ceb603e562a54088d35ddf67c4a48072a1a435a80b7c5084e4b02f9ff1992253",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
     "supabase/migrations/20260917113717_the_finish_lane_is_exclusive_among_finishes.sql": "8de12ef61deedf0de81db16968e08ac5cc6cf0a5ab606c341ecac478f74c8a41",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-authority.raw.txt": "c753e62d919b1a5ff6a48df7842e4f9221c77586a1bacdb86c435cf8bd737627",
     "tests/fixtures/union-provider-preimages-20260917/finish-lane-installed-readback.sql": "d5e3d2791250638b6b3c90f4f4a6344050a426e18a12bb2cea5d0520a2b6cc12",
@@ -429,7 +429,7 @@
     "tests/fixtures/spin-mixed-cutover/setup.sql": "023ca3e1c6b4614d83190bcd7c1ad8f8a1e7d5ceea8ffa419564b59aa5d2e06c",
     "scripts/dev/qualify-spin-mixed-cutover.py": "4b50779f6ed435262e7281057d4dbf588dab131fb0a6862fb743d7b13e5d402f",
     "supabase/migrations/20260918085836_original_mixed_cutover_spin_fee_proof.sql": "a79d6e958f06bf17470a870e20167fa2e9b0cc358cb79a22f75f5866e737f8c6",
-    "tests/fixtures/spin-mixed-cutover/source-binding.json": "8a1336e5eb63bd28b0d7b21d00380274dc1ad4f4d29568576e5de82af5f74bfc",
+    "tests/fixtures/spin-mixed-cutover/source-binding.json": "07517a1bb9f9731b62d1df93597ddb062732358f6dd702c88ae5dad29df3c141",
     "tests/fixtures/legacy-fee-finality/fn_terminal_tournament_evidence_is_immutable.sql": "dfb2ee68610de70577b3ed8a61c90a397e4b987bfdec0903654daea61e5c9906",
     "tests/fixtures/legacy-fee-finality/build-candidate.py": "2fc2667d4b6ab644b3f97ba440922900daeb0f9edf67fc6a2874869d6bd90f37",
     "tests/fixtures/legacy-fee-finality/negative.sql": "9a824c9f45318ed8cb665b4de7868fe80788de3f80aff84d06c3a08ee11cc14f",
@@ -468,7 +468,7 @@
     "scripts/ci/classify-ci-changes.mjs": "6d8eaa6100215e6988ff37227b2f94e3d18aadfcb0c3b5dd0837800b5d042234",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "000906440867e485ae832973d1ec62b3ccb55a13d905ac3f0350d66f26b5372d",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "68d96d1f5f80fa2b1e6e2c8ea54daf02d5e4b3c3244ddbb3af87487683a30427",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -487,7 +487,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "d1273b7bc06e2a6792d49b8909cae6e7d479a1d31ef3f2437b5c89959ba52d8f",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "9569ef53fcd82119f3b358bbba8d1371d139f98dd1ad6dbd3a39b483d10b75ba",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -527,7 +527,7 @@
     "tests/fixtures/earlybird-fee-custody/after.sql": "5c86539a1f6e4904d61c4f3c2ee79b98fbc29b976adbc89fc38f8a4be8c97e0b",
     "scripts/dev/qualify-earlybird-fee-custody.py": "fea2adbadd175341680d1988589be233c2a67a7a400743a2ccfaafdf9e6d0d62",
     "supabase/migrations/20260919025445_early_bird_original_fee_custody_after_player_finality.sql": "3b3fa10d81077d09fc997bb0549ee7dd73b12726406f92da17105d002d021ab8",
-    "tests/fixtures/earlybird-fee-custody/source-binding.json": "fb5835207b85eb2766f527b1bd7be0e8e1b01e0cbf3410e78ef24431894ac545",
+    "tests/fixtures/earlybird-fee-custody/source-binding.json": "d8b54cbb3a6bd6103e1f98522181713e4f22104cf63524711664524b4e85c3b0",
     "tests/fixtures/earlybird-fee-custody/paid-originals.json": "7b0137cce446c509e1b0cbd1e9361547fb700e409fceb373bb6c21909170faf0",
     "tests/fixtures/earlybird-fee-custody/credit-originals.json": "76b7a6152c538bd051754e0a17106a14e86458968132bea26f03c339ad77b439",
     "tests/fixtures/earlybird-fee-custody/README.md": "ae19f37a0179956d0d26c64f626fa401c10b4319f0d7d8453f8993d811e98536",
@@ -5018,5 +5018,55 @@
     "path": "tests/fixtures/union-weekly-basis/source-binding.json",
     "previous": "8300794ccd0340f58b998d8a0292d0de83ea971b0117ec275e507d6f927b4b22",
     "current": "5223e74ad4d09480d9975cc3887c9cf7e085cd6a6fd9d2621b8ce55bce306387"
+  },
+  "ticketRefundPnlParent20261020": {
+    "reason": "The reviewed parent diff appends the unconditional actual-component ticket-refund PNL qualification. Existing financial fixture assertions, financial source pins, historical audit records and qualification states are preserved. Update current parent and dependent binding identities only; this is not production certification.",
+    "changes": {
+      "scripts/dev/test-full-weekly-accounting-activation.sh": {
+        "previous": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
+        "current": "072f5a7849f768e28a723a8369837d01f3550e4ea92db079e86d0bb7d482da3f"
+      },
+      "tests/fixtures/spin-mixed-cutover/source-binding.json": {
+        "previous": "4cb2fdd5141be8a7951fdd582d6d7c2830bbe22d6ce5bd1e335e466bb598f650",
+        "current": "46204bbd7efcd86d0591e0b220c27bff3df872c09db9ab96f0dee04a55b5ac93"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "44183b53a02b820e826f37bb9a32e55629803a81471b77922966674b4d92c3f1",
+        "current": "bd36285d1c96e1272882eb991e100ef113f9bdf6e19671897bd6c92da7b635a6"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "64b7ec88e94688696ab1f53b0e84fe19619179947f08bf35ef4bcb22d397eb87",
+        "current": "0ec347e85a389014ad3354cdd899826aa2cefe5e8a181dfdb71c5dd25658e37b"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "previous": "e934e7177890d915154e97b692b2d681ee5d35d7c98c7526f42e969bb35ab780",
+        "current": "e5678d79508cdc70bd24ddede29371210d4f29f05c41d7ae04e72b605620eca4"
+      }
+    }
+  },
+  "commission_ticket_parent_integration_20261020": {
+    "reason": "Resolve protected C ticket-refund qualification and D commission-club-history qualification append conflicts by retaining both unconditional native calls. Preserve all decoded historical evidence and both prior explanation sections unchanged. Rebind only affected current parent/dependent fixture bytes after normal formatting; not production certification.",
+    "changes": {
+      "scripts/dev/test-full-weekly-accounting-activation.sh": {
+        "previous": "ceb603e562a54088d35ddf67c4a48072a1a435a80b7c5084e4b02f9ff1992253",
+        "current": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae"
+      },
+      "tests/fixtures/spin-mixed-cutover/source-binding.json": {
+        "previous": "8a1336e5eb63bd28b0d7b21d00380274dc1ad4f4d29568576e5de82af5f74bfc",
+        "current": "07517a1bb9f9731b62d1df93597ddb062732358f6dd702c88ae5dad29df3c141"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "000906440867e485ae832973d1ec62b3ccb55a13d905ac3f0350d66f26b5372d",
+        "current": "68d96d1f5f80fa2b1e6e2c8ea54daf02d5e4b3c3244ddbb3af87487683a30427"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "d1273b7bc06e2a6792d49b8909cae6e7d479a1d31ef3f2437b5c89959ba52d8f",
+        "current": "9569ef53fcd82119f3b358bbba8d1371d139f98dd1ad6dbd3a39b483d10b75ba"
+      },
+      "tests/fixtures/earlybird-fee-custody/source-binding.json": {
+        "previous": "fb5835207b85eb2766f527b1bd7be0e8e1b01e0cbf3410e78ef24431894ac545",
+        "current": "d8b54cbb3a6bd6103e1f98522181713e4f22104cf63524711664524b4e85c3b0"
+      }
+    }
   }
 }

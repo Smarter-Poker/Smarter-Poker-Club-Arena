@@ -31,7 +31,7 @@
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
-    "scripts/dev/test-full-weekly-accounting-activation.sh": "ceb603e562a54088d35ddf67c4a48072a1a435a80b7c5084e4b02f9ff1992253",
+    "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
@@ -1268,5 +1268,23 @@
     "reason": "Existing full-parent entrypoint unconditionally executes original R2 exact-club journal native regression. Financial assertions and historical audit evidence unchanged.",
     "path": "scripts/dev/test-full-weekly-accounting-activation.sh",
     "sha256": "ceb603e562a54088d35ddf67c4a48072a1a435a80b7c5084e4b02f9ff1992253"
+  },
+  "ticketRefundPnlParent20261020": {
+    "reason": "The reviewed parent diff appends the unconditional actual-component ticket-refund PNL qualification. Existing financial fixture assertions, financial source pins, historical audit records and qualification states are preserved. Update current parent and dependent binding identities only; this is not production certification.",
+    "changes": {
+      "scripts/dev/test-full-weekly-accounting-activation.sh": {
+        "previous": "9b68bb22efbd6ed9d857161bf4292ed9746f4ab13edaea3bf6d26bff36a4872e",
+        "current": "072f5a7849f768e28a723a8369837d01f3550e4ea92db079e86d0bb7d482da3f"
+      }
+    }
+  },
+  "commission_ticket_parent_integration_20261020": {
+    "reason": "Resolve protected C ticket-refund qualification and D commission-club-history qualification append conflicts by retaining both unconditional native calls. Preserve all decoded historical evidence and both prior explanation sections unchanged. Rebind only affected current parent/dependent fixture bytes after normal formatting; not production certification.",
+    "changes": {
+      "scripts/dev/test-full-weekly-accounting-activation.sh": {
+        "previous": "ceb603e562a54088d35ddf67c4a48072a1a435a80b7c5084e4b02f9ff1992253",
+        "current": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae"
+      }
+    }
   }
 }

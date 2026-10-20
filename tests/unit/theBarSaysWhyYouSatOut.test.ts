@@ -1,7 +1,7 @@
 /**
  * THE BAR SAYS WHY YOU SAT OUT (disconnect audit item 3, 2026-09-04)
  *
- * A forced sit-out (three consecutive timeouts) and a chosen one were
+ * A forced sit-out (two consecutive timeouts) and a chosen one were
  * indistinguishable on the client: both collapsed to 'sitting_out' and the
  * hero's bar said "You Are Sitting Out" to a player who never asked to.
  * The engine now carries `sitOutReason` in the presence map and the bar
@@ -17,11 +17,11 @@ const read = (p: string) => readFileSync(resolve(root, p), 'utf8');
 
 describe('sitOutBadgeLabel with the forced subject', () => {
   it('keeps the deadline hedge and the seat-at-risk line', () => {
-    const forced = 'You Timed Out Three Times, So You Are Sitting Out';
+    const forced = 'You Timed Out Two Times, So You Are Sitting Out';
     expect(sitOutBadgeLabel(null, forced)).toBe(forced);
     expect(sitOutBadgeLabel(0, forced)).toBe(`${forced}. Seat At Risk`);
     expect(sitOutBadgeLabel(90_000, forced)).toMatch(
-      /^You Timed Out Three Times, So You Are Sitting Out\. Up To 1:30$/
+      /^You Timed Out Two Times, So You Are Sitting Out\. Up To 1:30$/
     );
   });
 });
@@ -40,7 +40,7 @@ describe('the wiring', () => {
   it("the hero's bar reads the reason off the presence map", () => {
     const page = read('src/pages/TablePage.tsx');
     expect(page).toMatch(
-      /disconnectStates\[userId \?\? ''\]\?\.sitOutReason === 'forced'\s*\?\s*'You Timed Out Three Times, So You Are Sitting Out'\s*:\s*'You Are Sitting Out'/
+      /disconnectStates\[userId \?\? ''\]\?\.sitOutReason === 'forced'\s*\?\s*'You Timed Out Two Times, So You Are Sitting Out'\s*:\s*'You Are Sitting Out'/
     );
     expect(read('src/utils/mapEngineSnapshot.ts')).toMatch(
       /sitOutReason\?: 'voluntary' \| 'forced' \| null;/

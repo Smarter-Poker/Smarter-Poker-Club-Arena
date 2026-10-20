@@ -19,6 +19,7 @@ def q(sql,fail=None):return run([PG/'psql','-XqAt','-v','ON_ERROR_STOP=1','-h',s
 def uid(n):return '00000000-0000-4000-8000-'+str(n).zfill(12)
 def as_user(n,sql):return "SET ROLE authenticated; SET request.jwt.claim.sub='"+uid(n)+"';"+sql
 migration=next((ROOT/'supabase/migrations').glob('*_restrict_agent_banks_and_authorize_downline_reassignment.sql')).read_text()
+additive=next((ROOT/'supabase/migrations').glob('*_add_agent_assignment_transaction_before_client_publication.sql')).read_text()
 try:
  run([PG/'initdb','-D',data,'-U','fixture_admin','--auth-local=trust','--auth-host=reject','--no-locale','-E','UTF8'])
  run([PG/'pg_ctl','-D',data,'-o',"-h '' -k '"+str(sock)+"'",'-l',w/'pg.log','-w','start'])
@@ -69,6 +70,12 @@ try:
  # Check migration rollback and source-drift refusal, then apply once.
  q(migration.replace('COMMIT;',"DO $$BEGIN RAISE EXCEPTION 'fixture_rollback';END$$;COMMIT;"),'fixture_rollback')
  assert q("SELECT to_regclass('public.club_assignment_operations') IS NULL;")=='t'
+ # The first installation supports the client without changing old bank reads.
+ q(additive)
+ assert q(as_user(2,f"SELECT fn_can_use_club_bank('{club}');"))=='t'
+ for n in [2,3,4]:
+  assert q(as_user(n,f"SELECT fn_can_manage_club_assignments('{club}');"))=='f'
+ assert q(as_user(1,f"SELECT fn_can_manage_club_assignments('{club}');"))=='t'
  q(migration)
  q(migration,'AGENT_BOUNDARY_SOURCE_CHANGED')
  for n in [2,3,4]:

@@ -963,7 +963,7 @@ $$;
 REVOKE ALL ON FUNCTION public.fn_can_manage_club_assignments(uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.fn_can_manage_club_assignments(uuid) TO authenticated,service_role;
 
-CREATE TABLE public.club_assignment_operations (
+CREATE TABLE IF NOT EXISTS public.club_assignment_operations (
  id uuid PRIMARY KEY, club_id uuid NOT NULL, actor_id uuid NOT NULL,
  destination_user_id uuid NOT NULL, source_user_id uuid,
  member_user_ids uuid[] NOT NULL, created_at timestamptz NOT NULL DEFAULT now()

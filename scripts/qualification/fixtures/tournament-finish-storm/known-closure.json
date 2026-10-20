@@ -1,0 +1,8 @@
+{
+  "resolved_at": "2026-10-20 15:10:51.090351+00",
+  "resolved_by": "2d1cd6c3-5700-4af9-a271-d4863fdab20d",
+  "closure_basis": "verified_remeasured",
+  "root_cause": "The storm aggregated original terminal-close refusals. Original owner-fee recovery migration 20261019180622 is installed, and every financial alert from both atomic finish refusal and finished-but-not-completed sources is now explicitly resolved. The aggregate retained the historical storm after its source findings resolved.",
+  "correction_ref": "verified: original-close migration 20261019180622; zero unresolved findings across both terminal-close financial sources",
+  "resolution": "Reviewed the resolved source records and their receipt-backed resolution notes. The newest atomic refusal completed with terminal receipt v1, closed zero escrow and 47 payout rows totaling 37100. This closes the historical storm summary only; underlying alerts and receipts remain. No payment or tournament operation was replayed."
+}

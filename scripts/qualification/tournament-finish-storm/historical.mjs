@@ -1,6 +1,6 @@
-// Real PG17 two-session original last-member transition; no production access.
-import {execFileSync,spawn} from 'node:child_process';
-import {readFileSync,mkdirSync,mkdtempSync,rmSync,writeFileSync} from 'node:fs';
+// Real PG17 historical installation guard; isolated original witnesses, no production writes.
+import {execFileSync} from 'node:child_process';
+import {readFileSync,mkdirSync,mkdtempSync,rmSync} from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 const root=path.resolve(import.meta.dirname,'../../..');
@@ -32,11 +32,12 @@ try{
  sql(historicalFunction);
  sql('SELECT public.fixture_close_historical()');
  assert.equal(sql("SELECT status FROM ca_drift_incidents"),'resolved');
- // Build the second exact known preimage from the migration's own literal guard.
- const checks=migration.match(/OR \(v_i.status='resolved'([\s\S]*?)\)\n \) THEN/)[1];
- const assignments=[...checks.matchAll(/AND v_i\.(\w+) IS NOT DISTINCT FROM ('(?:[^']|'')*'(?:\:\:\w+)?)/g)].map(x=>x[1]+'='+x[2]);
- assert.equal(assignments.length,6);
+ // Independently captured production closure, never derived from the guard under test.
+ const known=JSON.parse(readFileSync(path.join(root,'scripts/qualification/fixtures/tournament-finish-storm/known-closure.json'),'utf8'));
+ const assignments=Object.entries(known).map(([key,value])=>key+"='"+value.replaceAll("'","''")+"'");
  sql("UPDATE ca_drift_incidents SET "+assignments.join(','));
+ const preimage=readFileSync(path.join(root,'scripts/qualification/fixtures/tournament-finish-storm/historical-preimage.sql'),'utf8');
+ assert.throws(()=>sql(preimage),/HISTORICAL_STORM_STATE_CHANGED/,'original guard refuses this same known closure');
  const before=sql('SELECT row_to_json(i)::text FROM ca_drift_incidents i');
  sql('SELECT public.fixture_close_historical()');
  assert.equal(sql('SELECT row_to_json(i)::text FROM ca_drift_incidents i'),before,'entire existing resolved row preserved');

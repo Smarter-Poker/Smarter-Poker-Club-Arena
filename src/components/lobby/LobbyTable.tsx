@@ -41,6 +41,7 @@ import {
   type LobbyRowContext,
 } from './lobbyCardContext';
 export type { LobbyRowContext } from './lobbyCardContext';
+import { featuredNow } from '../../lib/featuredOnItsDay';
 import './LobbyTable.css';
 import './LobbySortBar.css';
 
@@ -1490,7 +1491,7 @@ interface LobbyTableProps {
 }
 
 export default function LobbyTable({
-  entries,
+  entries: boardEntries,
   category,
   selectedId,
   onSelect,
@@ -1506,6 +1507,26 @@ export default function LobbyTable({
   onStylesChange,
   styleCounts,
 }: LobbyTableProps) {
+  /* Dan 2026-10-19: a featured NIGHTLY event floats only on its own day; the
+     weekly flagship (Sunday 200) keeps its pin all week. Rows that lose the pin
+     lose the FEATURED chip too, since the chip says "Pinned To The Top Of The
+     Board". Unchanged rows keep their identity. See src/lib/featuredOnItsDay.ts. */
+  const entries = useMemo(() => {
+    const keep = featuredNow(boardEntries, (e) => ({
+      pinned: e.kind !== 'cash' && e.featured,
+      started: e.status === 'running' || e.status === 'late_reg',
+      startTime: e.startTime,
+      clubId: (e.raw as { club_id?: string | null }).club_id,
+      name: e.name,
+    }));
+    let changed = false;
+    const out = boardEntries.map((e) => {
+      if (e.kind === 'cash' || !e.featured || keep.has(e)) return e;
+      changed = true;
+      return { ...e, featured: false };
+    });
+    return changed ? out : boardEntries;
+  }, [boardEntries]);
   /* Two heading menus, one open at a time: 'variant' under Variant, 'stakes'
      under Stakes.
 

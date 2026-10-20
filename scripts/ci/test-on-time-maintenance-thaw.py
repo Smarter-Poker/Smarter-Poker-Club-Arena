@@ -179,3 +179,7 @@ CREATE TRIGGER zz_freeze_entry_guard BEFORE INSERT OR UPDATE OF left_at,user_id 
 
 if __name__=='__main__':
     main()
+    # The heavy-hour release (20261020011548) is qualified on this same
+    # authority and runner, so it runs wherever this qualification runs.
+    import subprocess, sys
+    subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/ci/test-heavy-thaw-releases-on-the-hour.py')], check=True)

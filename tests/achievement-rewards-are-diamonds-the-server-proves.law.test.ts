@@ -58,7 +58,10 @@ describe('the server holds the canonical achievements', () => {
           a.serverProved
             ? a.id === 'royal_flush'
               ? 'engine_royal_flush'
-              : 'server_login_streak'
+              : a.id.startsWith('streak_')
+                ? 'server_login_streak'
+                : // 20261020022215 gave these two the engine's record.
+                  ''
             : ''
         }`
     );

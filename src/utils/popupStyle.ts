@@ -81,7 +81,19 @@ const DASH_CLAUSE = /\s+[\u2014\u2013]\s+/g;
 /** Any stray em/en dash left over (unspaced, decorative, doubled). */
 const DASH_ANY = /[\u2014\u2013]/g;
 
-export function formatPopupText(message: string): string {
+/**
+ * NEVER THROWS ON WHAT IT IS GIVEN (2026-10-20). Popup text arrives from bus
+ * payloads typed `any`, and AchievementTriggerService once sent
+ * `reward: { chips: 100 }` - an object - which MilestoneToast handed straight
+ * here, and `.replace` on an object threw during render. MilestoneToast is
+ * mounted at the app root with only the root error boundary above it, so one
+ * achievement would have replaced the whole app, open tables included, with
+ * the error screen. A number is text; anything else that is not a string is
+ * not copy and renders as nothing.
+ */
+export function formatPopupText(message: unknown): string {
+  if (typeof message === 'number') message = Number.isFinite(message) ? String(message) : '';
+  if (typeof message !== 'string') return '';
   if (!message) return message;
   return (
     arenaDisplayText(message)

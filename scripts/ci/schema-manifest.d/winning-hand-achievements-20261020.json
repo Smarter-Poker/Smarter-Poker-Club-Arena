@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/phase3a-achievements",
+  "_comment": "Migration 20261020022215 (supersedes never-installed 20261020005219): Straight Flush and Four Of A Kind are proved from the engine hand record. Installed after merge through Apply Merged Migration.",
+  "tables": [],
+  "functions": ["tr_hand_history_straight_flush_quads_achievements"],
+  "columns": {}
+}

@@ -112,6 +112,25 @@ describe('a page reached through the + button keeps its action bar', () => {
     expect(MULTI).toContain('if (open.length === 0) return;');
   });
 
+  it('the backstop focuses the tournament it opened, not the table whose URL it borrows', () => {
+    // Dan 2026-10-19: tapping a tournament on the top ticker "silently fails".
+    // The backstop opened the registration page in the Lobby tab, then its
+    // navigate back to /table/<returnTo> let the route effect focus that table
+    // again. The intended tab must be handed over through pendingTabIndexRef
+    // BEFORE the navigate, exactly as every other borrowed-URL caller does.
+    const start = MULTI.indexOf("matchPath('/tournaments/:tournamentId', location.pathname)");
+    expect(start).toBeGreaterThan(-1);
+    const backstop = MULTI.slice(start, MULTI.indexOf('THE SAME BACKSTOP FOR THE TOURNAMENT *LIST*'));
+    const pending = backstop.indexOf('pendingTabIndexRef.current = tournamentTabIdx;');
+    const nav = backstop.indexOf('navigate(`/table/${returnTo.id}${tableQuery(returnTo)}`');
+    expect(pending).toBeGreaterThan(-1);
+    expect(nav).toBeGreaterThan(pending);
+    // And the index is the tab openTournamentTab actually focuses.
+    expect(backstop).toContain(
+      'const tournamentTabIdx = existingLobby !== -1 ? existingLobby : open.length;'
+    );
+  });
+
   it('the in-tab tournament error state offers no route-leaving escape', () => {
     // "Back To Clubs" on the Tournament Not Found screen is a real anchor to a
     // route outside /table/*. In the tab it is suppressed; MultiTablePage's own

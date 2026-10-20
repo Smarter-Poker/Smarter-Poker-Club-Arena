@@ -496,12 +496,40 @@ export interface HorsePhase12AuthoritySelection {
  * Wilson bound 0.9807). Cash only: the tournament objective remains an
  * unavailable dependency. Short Deck, Crazy Pineapple and FLO8 stay null until
  * their own matrices finish on the same source.
+ *
+ * October 20: Crazy Pineapple generation 2. The locked contract v2 Pineapple
+ * matrix requalified the exact VPIP-floor source da94e437 (run 39132896867,
+ * every shard complete): cash after rake against the horse population +1.51
+ * [+0.95, +2.08] bb/100 over 3,032,640 pairs, qualified with no reasons, at
+ * policy digest 018a3dad.... The same prospective completion window on release
+ * 6e3ab4f3 completed every eligible Pineapple betting decision on every street
+ * (river 320 of 320, lowest Wilson bound 0.9797). Crazy Pineapple has no
+ * tournament format, so the selection is cash only. Short Deck and FLO8 stay
+ * null.
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
 > = Object.freeze({
   short_deck: null,
-  pineapple: null,
+  pineapple: Object.freeze({
+    schema: 'horse-qualified-authority-selection-v1',
+    phase: 'phase12',
+    variant: 'pineapple',
+    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+    packVersion: 'crazy-pineapple-round4-v1',
+    contractVersion: 'remaining-variant-strength-contract-v2',
+    contractDigest: '0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2',
+    domain: 'pineapple-cash-single-board-after-rake-horse-population',
+    qualificationPath:
+      'docs/evidence/phase12/da94e437/phase12-qualification-2026-10-20-pineapple.json',
+    qualificationSha256: '486e10c30f91608f2edffaca0eedd0c90934dd6ea23d0b0d6895d1e7b236bb4b',
+    completionPath: 'docs/evidence/phase12/da94e437/phase12-completion-2026-10-18-pineapple.json',
+    completionSha256: 'a418ca7168fc5c19462b43a42acbc79743ed867b631dd757bcf0fa599d1f7d98',
+    approvalGeneration: 2,
+    issuedAt: '2026-10-20T01:10:00.000Z',
+    expiresAt: null,
+    withdrawn: null,
+  } as const),
   flh: Object.freeze({
     schema: 'horse-qualified-authority-selection-v1',
     phase: 'phase12',

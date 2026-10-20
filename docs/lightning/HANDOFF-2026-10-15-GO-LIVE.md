@@ -4,6 +4,10 @@ You are picking up the Lightning programme for Club Arena (Smarter Poker). Light
 
 **The dated delivery checkpoints above section U supersede the historical state in section U and sections 3 to 5.** Sections 3 to 5 were written at 17:30 UTC and are kept for their ids and history.
 
+## Owner Ruling: Lightning Is Six-Seat Only (2026-10-19)
+
+Dan, 2026-10-19 19:44 Central, verbatim: "classic games never get lightning games, only action and madness, make all lightning games 6 handed." Lightning exists only on six-seat (handedness 6) Action and Madness games. As of that date every 9-max item below is **superseded, not open**: R06 (9-max coverage), the 27/18 9-max thresholds in R07, the "both table sizes" coverage in R21, and gates L07/L08. Every 9-max measurement, calibration bias or cluster below (including cluster `3330ff9f`, now the Classic "Lightning Pilot NLH 9", and the retired Madness 9-max `0cdc133d`) is history only. Migration `20261020005222` refuses any other size by name (`LIGHTNING_TABLE_SIZE_NOT_ALLOWED`); the engine, lobby and pilot tooling refuse it too. The two Classic games in the private pilot club are switched off through the owner's seat-safe switch (setup workflow, targets `retire`). See `docs/changelog/2026-10-20-lightning-is-six-seat-only.md`.
+
 ## Atomic Assignment Candidate Locally Qualified (2026-10-17)
 
 - New exact-registration wrapper fn_lightning_pilot_withdraw_zero(event,registration,request) takes the maintained admission/settlement lane then parent/exact booking locks, asserts active assignment and zero pre-start/unseated/no paid obligations, invokes the unchanged normal self-unregister once and atomically rolls back nonzero/wrong-lifecycle results. Money registry registration precedes CREATE; authenticated exact player only, no service/anon execution. Read-only receipt accessor retains ordinary core/table ACLs. No raw booking/wallet/seat writes in orchestration, no new financial implementation.
@@ -951,8 +955,8 @@ Dan already approved Stage 1 and Stage 2 on the pilot ("run Stage 1 and Stage 2 
 
 ### 5.4 Phase 4: Complete Player And Financial Flows
 
-- R06: 9-max coverage (target exists; needs live play).
-- R07: conversion and hysteresis across 18/12 and 27/18; concurrent joins and exits; pending conversion; low liquidity; MUST-MOVE rebuild. No stack, baseline, stay-clock, rejoin or session-history change caused by conversion (L04 to L16).
+- R06: 9-max coverage (target exists; needs live play). **Superseded 2026-10-19: six-seat only; retired, not open.**
+- R07: conversion and hysteresis across 18/12 and 27/18 (the 27/18 9-max part is superseded 2026-10-19, six-seat only); concurrent joins and exits; pending conversion; low liquidity; MUST-MOVE rebuild. No stack, baseline, stay-clock, rejoin or session-history change caused by conversion (L04 to L16).
 - R08: dealing, betting, showdown, Fast Fold, Fold and Watch, next-hand arrival, time bank, pre-actions; no stale action across hands (L21, L22, L24, L25, L28).
 - R09: multi-table and device limits (desktop, tablet, mobile at 375px), independent hands and timers, manual table selection, reconnect, touch controls; never auto-switch tables (L23 to L27, L41, L54).
 - R10: wallet, cash session, rake, opt-in rebuy and cash-out conservation; duplicates idempotent (L01 to L03, L11 to L15, L32, L33, L38).
@@ -976,7 +980,7 @@ Dan already approved Stage 1 and Stage 2 on the pilot ("run Stage 1 and Stage 2 
 
 ### 5.7 Phase 7: Active-Play Release Coverage
 
-- R21: 5,000 completed Lightning hands with conservation and replay, zero `LIGHTNING_*_MOVED_MONEY`, no unexplained freeze or orphan reservation, no open high integrity signal, latency coverage, readiness `go`. At least five participating clubs and both table sizes, in bounded batches. No calendar waits (removed 2026-10-12). No fabricated hands.
+- R21: 5,000 completed Lightning hands with conservation and replay, zero `LIGHTNING_*_MOVED_MONEY`, no unexplained freeze or orphan reservation, no open high integrity signal, latency coverage, readiness `go`. At least five participating clubs and both table sizes (both sizes superseded 2026-10-19: six-seat only), in bounded batches. No calendar waits (removed 2026-10-12). No fabricated hands.
 - Stage 3 (limited clubs) happens here: per cluster, readiness `go` read and recorded immediately before `enable_lightning`; club control members must know drain, pause and joins. Enabling Lightning in public clubs is a new outward action: get Dan's own-words approval naming the clubs.
 
 ### 5.8 Phase 8: Final Launch Verification

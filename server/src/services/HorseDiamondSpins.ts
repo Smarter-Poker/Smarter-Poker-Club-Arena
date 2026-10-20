@@ -19,16 +19,21 @@
  * entry range, limits, bonus queue and payouts are the person's, unchanged
  * (CLAUDE.md 10.5). This module only decides what a player decides.
  *
- * WHEN IT STARTS. Out of chips is HorseBankroll rule 7, "BROKE MEANS
- * FREEROLLS": below one buy-in of the cheapest cash game the host has open.
- * Diamond Spins is now the second way back, beside freerolls and rakeback.
- * It converts the horse's OWN Diamonds at the wheel's price - a purchase, not
- * a grant (StableHand section 8.8 still holds).
+ * WHEN IT STARTS. When the fleet can no longer seat the horse at the cheapest
+ * cash game the host has open: its roll at that club - the wallet plus the
+ * chips it already has on a cash table there - is under the bar below. That
+ * is the fleet's own broke path (HorseBankroll `bestAffordableGame` answers
+ * null, the fleet's `ladder_exhausted` gauge counts it), so a horse is never
+ * left between "too poor to be seated" and "not poor enough to spin".
+ * Phase 4 started at one buy-in (rule 7 as written) and left exactly that
+ * gap: a gambler with 150 chips at a 4.00 minimum game was refused every seat
+ * and never spun (Phase 5, 2026-10-19). Diamond Spins is the second way back,
+ * beside freerolls and rakeback. It converts the horse's OWN Diamonds at the
+ * wheel's price - a purchase, not a grant (StableHand section 8.8 still holds).
  *
- * WHEN IT STOPS. When its club wallet reaches the bar the fleet needs before
- * it will seat this horse at the cheapest open game again - the seat gate
+ * WHEN IT STOPS. When that roll reaches the bar the fleet needs before it
+ * will seat this horse at the cheapest open game again - the seat gate
  * (`rollSupportsStake`) and bankroll rule 1 (`canSit`), whichever is higher.
- * Stopping at one buy-in would leave a horse that still cannot be seated.
  * It also stops when its Diamonds fall to the reserve it keeps for the
  * Diamond Arena, where it grinds Diamonds back.
  */
@@ -90,18 +95,23 @@ export function cheapestGame(
   return best;
 }
 
-/** Rule 7: below one buy-in of the cheapest open game there is no cash play. */
-export function isOutOfChips(chips: number, game: CheapestGame): boolean {
-  return chips < game.minBuyIn;
-}
-
 /**
- * The chips a horse spins up to: the higher of the seat gate and bankroll
- * rule 1 at the cheapest open game, so the fleet will actually seat it again.
+ * The chips a horse needs behind it before the fleet will seat it at the
+ * cheapest open game: the higher of the seat gate and bankroll rule 1. It is
+ * both where a horse starts spinning (under it) and where it stops (at it).
  */
 export function spinTargetChips(horseId: string, game: CheapestGame): number {
   const policy = bankrollPolicyFor(horseId);
   return targetFor(policy.buyInsToSit, game);
+}
+
+/**
+ * The fleet can no longer seat this horse at the cheapest open game: its roll
+ * (wallet plus chips on a cash table at that club) is under the bar. Below
+ * one buy-in is the deepest case of it, never the only one.
+ */
+export function cannotBeSeated(horseId: string, rollChips: number, game: CheapestGame): boolean {
+  return rollChips < spinTargetChips(horseId, game);
 }
 
 function targetFor(buyInsToSit: number, game: CheapestGame): number {
@@ -233,10 +243,11 @@ export interface OpenChoiceRound {
 export interface HorseSpinState {
   horseId: string;
   clubId: string;
+  /** The roll at this club: the wallet plus chips on a cash table there. */
   chips: number;
   diamonds: number;
   targetChips: number;
-  /** Out of chips now, or spun at this club within the session window. */
+  /** The fleet cannot seat it at the cheapest open game (`cannotBeSeated`). */
   inSession: boolean;
   cards: PendingCard[];
   awards: PendingAward[];

@@ -161,6 +161,39 @@ describe('a full Lightning hand, dealt by the host', () => {
   });
 });
 
+/** The Daily Mission facts a settled Lightning hand carries (2026-10-19). */
+function expectMissionFactsForEveryParticipant(
+  settle: any,
+  participants: Array<{ playerId: string }>
+) {
+  const events = settle.handRow.daily_mission_events as Array<any> | null;
+  expect(Array.isArray(events)).toBe(true);
+  expect(events!.map((e) => e.user_id).sort()).toEqual(participants.map((p) => p.playerId).sort());
+  for (const e of events!) {
+    expect(e.amounts.hands_played).toBe(1);
+    const won = settle.results.find((r: any) => r.playerId === e.user_id)!.won;
+    if (Math.floor(won) > 0) expect(e.amounts.hands_won).toBe(1);
+    else expect(e.amounts.hands_won).toBeUndefined();
+  }
+}
+
+describe('a Lightning hand is a hand: it carries its Daily Mission facts', () => {
+  it('every participant dealt in, folded or not, gets the same facts a physical table records', async () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const rnd = mulberry32(seed);
+      const n = 2 + (seed % 5);
+      const formed = formedHand(n, 300 + seed * 10);
+      const stacks = Array.from({ length: n }, () => 40 + Math.floor(rnd() * 300));
+      const t = buildHost(formed, stacks);
+      await t.host.start();
+      await playOut(t.host, rnd);
+      await flush();
+      expect(t.calls.settle).toHaveLength(1);
+      expectMissionFactsForEveryParticipant(t.calls.settle[0], t.participants);
+    }
+  });
+});
+
 describe('cards reach only their owners (property)', () => {
   it('no room ever receives another player’s hole cards unless they were tabled at showdown', async () => {
     let tabledSeenByOthers = 0;
@@ -423,6 +456,8 @@ describe('the clock, the time bank and a horse', () => {
     expect(t.hub.frames.some((f) => f.payload.type === 'TIME_BANK_ACTIVATED')).toBe(false);
     everyActionWasTheHorses(t);
     expect(t.calls.settle).toHaveLength(1);
+    // A horse-only hand records its Daily Mission facts like any other hand.
+    expectMissionFactsForEveryParticipant(t.calls.settle[0], t.participants);
   });
 
   it('a horse that tanks runs into its bank, not out of its clock, and still acts', async () => {

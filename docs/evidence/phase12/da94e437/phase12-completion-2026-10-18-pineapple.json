@@ -1,0 +1,50 @@
+{
+  "schema": "horse-phase12-completion-v1",
+  "definition": "horse-phase12-completion-definition-v1",
+  "variant": "pineapple",
+  "packVersion": "crazy-pineapple-round4-v1",
+  "releaseSha": "6e3ab4f3edd0be2115c37b1245beb896107ce672",
+  "policyDigestDefinition": "horse-phase12-policy-digest-v2",
+  "policyDigest": "018a3dad66dd4e32fcf7cfd3d52ce3aa3aa15ca72a3a436acc7002d42f7f29db",
+  "gameMode": "cash",
+  "window": {
+    "from": "2026-10-18T23:02:00.000Z",
+    "to": "2026-10-18T23:50:00.000Z",
+    "releaseUnchanged": true,
+    "source": "/Volumes/SmarterArchives/agent-evidence/horse-brain-resume-20261018-01a14f3e/completion-20261018T23; declaration_sha256=287f754747091fb28da86865c9c4d0bb3a73870c120605a7b34ecf4d05ac4796"
+  },
+  "streets": {
+    "preflop": {
+      "eligible": 1880,
+      "completed": 1880,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "flop": {
+      "eligible": 960,
+      "completed": 960,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "turn": {
+      "eligible": 597,
+      "completed": 597,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    },
+    "river": {
+      "eligible": 320,
+      "completed": 320,
+      "workBudget": 0,
+      "samplerBudgetExhausted": 0,
+      "sampleUnavailable": 0,
+      "governorReduced": 0
+    }
+  }
+}

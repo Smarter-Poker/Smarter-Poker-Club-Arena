@@ -1,0 +1,144 @@
+{
+  'rule_files': ['../../infra/monitoring/tournament-rules.yml'],
+  'evaluation_interval': '30s',
+  'tests':
+    [
+      {
+        'name': 'A first hand dealt more than two minutes late fires the warning',
+        'interval': '1m',
+        'input_series':
+          [
+            {
+              'series': 'poker_mtt_late_first_hands{job="engine_game_server"}',
+              'values': '0 0 1 1 1 1 1 1 0 0',
+            },
+            {
+              'series': 'poker_mtt_late_start_waiting{job="engine_game_server"}',
+              'values': '0+0x9',
+            },
+            {
+              'series': 'poker_mtt_launch_lateness_stale_seconds{job="engine_game_server"}',
+              'values': '30+0x9',
+            },
+          ],
+        'alert_rule_test':
+          [
+            { 'alertname': 'MttStartedLate', 'eval_time': '2m', 'exp_alerts': [] },
+            {
+              'alertname': 'MttStartedLate',
+              'eval_time': '4m',
+              'exp_alerts':
+                [
+                  {
+                    'exp_labels':
+                      {
+                        'severity': 'warning',
+                        'component': 'tournament',
+                        'job': 'engine_game_server',
+                      },
+                    'exp_annotations':
+                      {
+                        'summary': '1 MTT(s) dealt their first hand more than 2 minutes after the advertised start',
+                        'description': "One or more MTTs either dealt their first hand more than 120 s\nafter start_time (within the last 15 minutes) or have dealt no hand\n240 s after it. tournaments.started_at equals start_time and will\nnot show this; read the first hand_history.started_at per event.\npoker_mtt_worst_late_start_seconds is the largest lateness.\n",
+                        'runbook': 'docs/runbooks/mtt-started-late.md',
+                      },
+                  },
+                ],
+            },
+            { 'alertname': 'MttStartedLate', 'eval_time': '9m', 'exp_alerts': [] },
+          ],
+      },
+      {
+        'name': 'An event still waiting for its first hand fires the warning',
+        'interval': '1m',
+        'input_series':
+          [
+            { 'series': 'poker_mtt_late_first_hands{job="engine_game_server"}', 'values': '0+0x9' },
+            {
+              'series': 'poker_mtt_late_start_waiting{job="engine_game_server"}',
+              'values': '2+0x9',
+            },
+            {
+              'series': 'poker_mtt_launch_lateness_stale_seconds{job="engine_game_server"}',
+              'values': '30+0x9',
+            },
+          ],
+        'promql_expr_test':
+          [
+            {
+              'expr': 'ALERTS{alertname="MttStartedLate",alertstate="firing"}',
+              'eval_time': '3m',
+              'exp_samples':
+                [
+                  {
+                    'labels': 'ALERTS{alertname="MttStartedLate",alertstate="firing",component="tournament",job="engine_game_server",severity="warning"}',
+                    'value': 1,
+                  },
+                ],
+            },
+          ],
+      },
+      {
+        'name': 'Every MTT on time stays quiet',
+        'interval': '1m',
+        'input_series':
+          [
+            {
+              'series': 'poker_mtt_late_first_hands{job="engine_game_server"}',
+              'values': '0+0x30',
+            },
+            {
+              'series': 'poker_mtt_late_start_waiting{job="engine_game_server"}',
+              'values': '0+0x30',
+            },
+            {
+              'series': 'poker_mtt_launch_lateness_stale_seconds{job="engine_game_server"}',
+              'values': '30+0x30',
+            },
+          ],
+        'alert_rule_test':
+          [
+            { 'alertname': 'MttStartedLate', 'eval_time': '25m', 'exp_alerts': [] },
+            { 'alertname': 'MttLaunchLatenessBlind', 'eval_time': '25m', 'exp_alerts': [] },
+          ],
+      },
+      {
+        'name': 'A stale lateness read cannot assert lateness, and says it is blind',
+        'interval': '1m',
+        'input_series':
+          [
+            {
+              'series': 'poker_mtt_late_first_hands{job="engine_game_server"}',
+              'values': '1+0x30',
+            },
+            {
+              'series': 'poker_mtt_late_start_waiting{job="engine_game_server"}',
+              'values': '0+0x30',
+            },
+            {
+              'series': 'poker_mtt_launch_lateness_stale_seconds{job="engine_game_server"}',
+              'values': '86400+0x30',
+            },
+          ],
+        'promql_expr_test':
+          [
+            {
+              'expr': 'ALERTS{alertname="MttStartedLate",alertstate="firing"}',
+              'eval_time': '20m',
+              'exp_samples': [],
+            },
+            {
+              'expr': 'ALERTS{alertname="MttLaunchLatenessBlind",alertstate="firing"}',
+              'eval_time': '20m',
+              'exp_samples':
+                [
+                  {
+                    'labels': 'ALERTS{alertname="MttLaunchLatenessBlind",alertstate="firing",component="tournament",job="engine_game_server",severity="warning"}',
+                    'value': 1,
+                  },
+                ],
+            },
+          ],
+      },
+    ],
+}

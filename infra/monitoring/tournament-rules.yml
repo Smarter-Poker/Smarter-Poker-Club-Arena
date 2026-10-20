@@ -51,6 +51,60 @@ groups:
             sweep.
           runbook: 'docs/runbooks/tournament-never-started.md'
 
+      # ── A LATE START WAS INVISIBLE (2026-10-19) ──────────────────────
+      # tournaments.started_at is written equal to start_time (166 of 166
+      # MTTs in the 24 h to 2026-10-19 22:00 UTC), so nothing reading it could
+      # see a late launch, and TournamentNeverStarted waits ten minutes and
+      # only for REGISTERING. Measured from the first dealt hand instead, from
+      # 2026-10-12 to 2026-10-18 20-30% of scheduled MTTs dealt their first
+      # hand over 60 s late and 9-14% over 120 s; the worst was 7,648 s. By
+      # minute of the hour every :53-:57 start was late (held through the
+      # hourly break) and :00 starts had a median of 85 s, 59 of 212 over
+      # 120 s. On 2026-10-19 (00:00-22:40) 4 of 152 were over 120 s.
+      #
+      # The gauges come from fn_tournament_launch_lateness_metrics through
+      # TournamentMetrics (LATE_START_* constants): a first hand dealt over
+      # 120 s late and recorded in the last 15 minutes, or no hand recorded
+      # 240 s after start_time (120 s late plus 120 s because a hand is
+      # recorded when it ENDS; p99 77 s). Deliberately NOT break-guarded: an
+      # event held through the break still started late for the players who
+      # registered for its advertised time. Expect this to fire on some
+      # break-adjacent starts until their launch is fixed at the source; it
+      # reports that defect, it does not excuse it.
+      - alert: MttStartedLate
+        expr: (poker_mtt_late_first_hands + poker_mtt_late_start_waiting) > 0 and poker_mtt_launch_lateness_stale_seconds < 600
+        for: 1m
+        labels:
+          severity: warning
+          component: tournament
+        annotations:
+          summary: '{{ $value }} MTT(s) dealt their first hand more than 2 minutes after the advertised start'
+          description: |
+            One or more MTTs either dealt their first hand more than 120 s
+            after start_time (within the last 15 minutes) or have dealt no hand
+            240 s after it. tournaments.started_at equals start_time and will
+            not show this; read the first hand_history.started_at per event.
+            poker_mtt_worst_late_start_seconds is the largest lateness.
+          runbook: 'docs/runbooks/mtt-started-late.md'
+
+      # The lateness read is its own RPC; if it fails the gauges above keep
+      # their last value and stop being emitted fresh, so its staleness is
+      # what proves MttStartedLate can see anything (CLAUDE.md 10.86 rule 3).
+      - alert: MttLaunchLatenessBlind
+        expr: poker_mtt_launch_lateness_stale_seconds > 600
+        for: 10m
+        labels:
+          severity: warning
+          component: tournament
+        annotations:
+          summary: 'The MTT launch-lateness read is {{ $value }}s stale - MttStartedLate cannot see late starts'
+          description: |
+            fn_tournament_launch_lateness_metrics has not answered for over
+            ten minutes (86400 means never since this engine started). Check
+            that the migration that created it is installed and that the
+            engine log shows no RPC error for it.
+          runbook: 'docs/runbooks/mtt-started-late.md'
+
       # ── NOBODY IS RUNNING THE TOURNAMENTS (2026-09-09) ────────────────
       # Measured on production 05:52 UTC, and nothing anywhere said it:
       #

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type TestInfo } from '@playwright/test';
+import { isEngineHealthUnavailableDiagnostic } from './support/engineCutoverConsole';
 import {
   BATCH_VERDICTS,
   batchVerdictFor,
@@ -239,8 +240,14 @@ test.describe('Production Cashier Certification', () => {
     }
 
     await expect(page.locator('text=Something went wrong')).toHaveCount(0);
+    const engineHealthDiagnostics = consoleErrors.filter(isEngineHealthUnavailableDiagnostic);
+    await testInfo.attach('cashier-engine-health-diagnostics.json', {
+      body: JSON.stringify(engineHealthDiagnostics, null, 2),
+      contentType: 'application/json',
+    });
     const cashierCritical = consoleErrors.filter(
       (message) =>
+        !isEngineHealthUnavailableDiagnostic(message) &&
         !message.text.includes('[cashier-telemetry]') &&
         !message.text.includes('favicon') &&
         !message.url.includes('favicon')

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
@@ -49,4 +50,54 @@ describe('the natural multirun observation survives a failed continuity case', (
     expect(retain?.if).toContain('always()');
     expect(retain?.if).toContain("steps.multirun.outcome != 'skipped'");
   });
+});
+
+const origin = workflow.jobs['publication-gate'].steps.find((step: any) => step.id === 'origin');
+function admitTarget(target: string, mobile = 'true', pin = 'null') {
+  return spawnSync('bash', ['-c', origin.run], {
+    env: {
+      ...process.env,
+      EVENT_NAME: 'repository_dispatch',
+      MOBILE_MULTIRUN_TARGET_JSON: target,
+      MOBILE_MULTIRUN_JSON: mobile,
+      ENGINE_TRIGGER_JSON: pin,
+      ENGINE_TRIGGER_SHA: pin === 'null' ? '' : pin.slice(1, -1),
+      GITHUB_OUTPUT: '/dev/null',
+    },
+    encoding: 'utf8',
+    timeout: 2_000,
+  });
+}
+it('passes the raw target and authority JSON into publication admission and the actual spec', () => {
+  const actual = steps.find((step: any) => step.id === 'multirun') as any;
+  for (const step of [origin, actual]) {
+    expect(step.env.MOBILE_MULTIRUN_TARGET_JSON).toBe(
+      '${{ toJSON(github.event.client_payload.mobile_multirun_target) }}'
+    );
+    expect(step.env.MOBILE_MULTIRUN_JSON).toBe(
+      '${{ toJSON(github.event.client_payload.mobile_multirun) }}'
+    );
+    expect(step.env.ENGINE_TRIGGER_JSON).toBe(
+      '${{ toJSON(github.event.client_payload.engine_sha) }}'
+    );
+  }
+});
+it('admits default null and typed three before production fixtures', () => {
+  expect(admitTarget('null').status).toBe(0);
+  expect(admitTarget('3').status).toBe(0);
+});
+it.each(['"3"', '2', 'true', '[]', '{}', '[3]', 'false'])(
+  'refuses raw target %s before fixtures',
+  (target) => {
+    expect(admitTarget(target).status).not.toBe(0);
+  }
+);
+it('refuses a targeted engine certificate or nonliteral mobile request', () => {
+  expect(admitTarget('3', 'true', '"' + 'a'.repeat(40) + '"').status).not.toBe(0);
+  expect(admitTarget('3', '"true"').status).not.toBe(0);
+});
+it('names a targeted three-run step honestly and leaves default BOTH coverage intact', () => {
+  expect(multirun?.name).toContain('mobile_multirun_target');
+  expect(multirun?.name).toContain('three-run only');
+  expect(multirun?.name).toContain('two-run and three-run');
 });

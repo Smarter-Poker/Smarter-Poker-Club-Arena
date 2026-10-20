@@ -633,8 +633,12 @@ describe('S-07: the mint pre-flight is the role-checked panel', () => {
         : { data: null, error: null }
     );
     mint();
-    await waitFor(() => expect(screen.queryByText('Mint Chips')).toBeNull());
-    expect(screen.getByText(/Midway Union/)).toBeTruthy();
+    // Wait for the revoked state itself: it renders only after both the panel
+    // and the union-name read resolve. 'Mint Chips' is already absent while
+    // the dialog is still loading, so waiting on its absence passed at once
+    // and the union name was asserted before it had arrived (CI, 2026-10-19).
+    await waitFor(() => expect(screen.getByText(/Midway Union/)).toBeTruthy());
+    expect(screen.queryByText('Mint Chips')).toBeNull();
   });
 
   it('refuses "1e3" diamonds while accepting 1000', async () => {

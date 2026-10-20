@@ -1,0 +1,126 @@
+{
+  'rule_files': ['../../infra/monitoring/alert-rules.yml'],
+  'evaluation_interval': '30s',
+  'tests':
+    [
+      {
+        'name': 'The 2026-10-18 settlement-refusal shape pages: most Lightning hands abandoned',
+        'interval': '1m',
+        'input_series':
+          [
+            {
+              'series': 'poker_lightning_hands_total{job="engine_game_server",outcome="settled"}',
+              'values': '0+12x40',
+            },
+            {
+              'series': 'poker_lightning_hands_total{job="engine_game_server",outcome="abandoned"}',
+              'values': '0+20x40',
+            },
+          ],
+        'alert_rule_test':
+          [
+            { 'alertname': 'LightningHandsAbandoned', 'eval_time': '3m', 'exp_alerts': [] },
+            {
+              'alertname': 'LightningHandsAbandoned',
+              'eval_time': '20m',
+              'exp_alerts':
+                [
+                  {
+                    'exp_labels': { 'severity': 'critical', 'component': 'lightning' },
+                    'exp_annotations':
+                      {
+                        'summary': '62.5% of Lightning hands in 10 minutes ended abandoned instead of settled',
+                        'description': "More than 10% of Lightning (fast-fold) hand ends in the last ten\nminutes were abandoned, for five minutes running. An abandoned hand\nis dealt and then never settled: players see a hand vanish. The\nordinary share is 0 (worst measured window 1.5%). Read the reason\nper instance in lightning_instance.abandon_reason - the 2026-10-18\nincident was settlement_refused:physical_settlement_refused - and\nthe engine log line \"[LightningHost:<id>] abandoned: <reason>\".\n",
+                        'runbook': 'docs/runbooks/lightning-hands-abandoned.md',
+                      },
+                  },
+                ],
+            },
+          ],
+      },
+      {
+        'name': 'The worst ordinary window (1.5% abandoned) stays quiet',
+        'interval': '1m',
+        'input_series':
+          [
+            {
+              'series': 'poker_lightning_hands_total{job="engine_game_server",outcome="settled"}',
+              'values': '0+20.7x40',
+            },
+            {
+              'series': 'poker_lightning_hands_total{job="engine_game_server",outcome="abandoned"}',
+              'values': '0+0.3x40',
+            },
+          ],
+        'alert_rule_test':
+          [{ 'alertname': 'LightningHandsAbandoned', 'eval_time': '30m', 'exp_alerts': [] }],
+      },
+      {
+        'name': "A quiet pool's few abandoned hands are not a share",
+        'interval': '1m',
+        'input_series':
+          [
+            {
+              'series': 'poker_lightning_hands_total{job="engine_game_server",outcome="settled"}',
+              'values': '0+1x40',
+            },
+            {
+              'series': 'poker_lightning_hands_total{job="engine_game_server",outcome="abandoned"}',
+              'values': '0+0.5x40',
+            },
+          ],
+        'alert_rule_test':
+          [{ 'alertname': 'LightningHandsAbandoned', 'eval_time': '30m', 'exp_alerts': [] }],
+      },
+      {
+        'name': 'The measured 61 GiB host band (peak 6.82 GiB) does not fire the engine memory warning',
+        'interval': '1m',
+        'input_series':
+          [
+            {
+              'series': 'poker_engine_process_rss_bytes{job="engine_game_server",host="engine-01"}',
+              'values': '7322747944+0x60',
+            },
+          ],
+        'alert_rule_test':
+          [{ 'alertname': 'EngineProcessMemoryHigh', 'eval_time': '45m', 'exp_alerts': [] }],
+      },
+      {
+        'name': 'Growth past 8 GiB for fifteen minutes fires the engine memory warning',
+        'interval': '1m',
+        'input_series':
+          [
+            {
+              'series': 'poker_engine_process_rss_bytes{job="engine_game_server",host="engine-01"}',
+              'values': '9663676416+0x60',
+            },
+          ],
+        'alert_rule_test':
+          [
+            { 'alertname': 'EngineProcessMemoryHigh', 'eval_time': '10m', 'exp_alerts': [] },
+            {
+              'alertname': 'EngineProcessMemoryHigh',
+              'eval_time': '20m',
+              'exp_alerts':
+                [
+                  {
+                    'exp_labels':
+                      {
+                        'severity': 'warning',
+                        'component': 'engine',
+                        'job': 'engine_game_server',
+                        'host': 'engine-01',
+                      },
+                    'exp_annotations':
+                      {
+                        'summary': 'Engine process RSS 9GiB - above the 8 GiB process-memory warning',
+                        'description': "Engine process RSS has exceeded 8 GiB for fifteen minutes - above\nthe 4.85-6.82 GiB hourly-maximum band measured 2026-10-17/19 on the\n61 GiB, 14-equity-worker host.\nCompare whole-process RSS, main-isolate V8 usage, worker activity,\nexternal memory and threads. poker_engine_native_main_arena_bytes\nis current [heap] virtual extent, not RSS or allocation ownership.\nCorrelation between these observations does not establish a leak,\nTLS attribution or a runtime memory limit. Use the existing\non-host build gate to establish build headroom at the actual attempt.\n",
+                        'runbook': 'docs/runbooks/engine-memory.md',
+                      },
+                  },
+                ],
+            },
+          ],
+      },
+    ],
+}

@@ -176,6 +176,22 @@ whichever test the next agent notices first.
   must-move, break or balance moves as a 10.6 violation, and do not cite this
   ruling to add any client-side auto-switch.
 
+- **Lightning is six-seat Action and Madness only (ruled 2026-10-19, Dan):**
+  "classic games never get lightning games, only action and madness, make all
+  lightning games 6 handed." (19:44 Central). Classic never gets Lightning
+  (`lightning-action-madness-only.law.test.ts`, 2026-10-16), and every
+  Lightning game is six-handed: a game of any other size keeps ordinary entry
+  and lobby actions and is never offered, enabled, converted, formed or counted
+  as Lightning. The database refuses it by name (`LIGHTNING_TABLE_SIZE_NOT_ALLOWED`,
+  constraint `cash_games_lightning_six_seat_only`, migration `20261020005222`),
+  the engine forms nothing for it, the lobby never offers Join Lightning for it,
+  and the pilot tooling never accepts a nine-seat target. This retires the 9-max
+  Lightning requirements (R06, the 27/18 thresholds, "both table sizes"
+  coverage, gates L07/L08); they are marked superseded, not open. Pinned by
+  `tests/lightning/lightning-six-seat-only.law.test.ts` and
+  `scripts/dev/test-lightning-six-seat-boundary.sh`. Do not reintroduce a
+  nine-seat Lightning target to satisfy an older coverage document.
+
 ## Registry
 
 **The registry is the directory `docs/laws.d/` - one file per law.** This

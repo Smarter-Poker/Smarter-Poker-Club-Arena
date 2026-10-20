@@ -26,6 +26,20 @@ comments stripped, which is how they were installed) - then applies
   * an issuance freeze leaves the achievement unearned (and the hand intact),
     so the next qualifying event pays it;
   * the unlock notification carries the diamonds actually credited.
+
+Then it applies 20261020022215 BYTE FOR BYTE on top (2026-10-20: Straight
+Flush and Four Of A Kind are proved from the same engine record, horses alike)
+and proves:
+
+  * strong_hands 9 records straight_flush and 8 records quads, for a human and
+    a horse alike, paying nothing (they are zero-reward badges);
+  * a Royal Flush still pays 500 once under the same reference, a player
+    already paid is never paid again, and a Royal Flush is not also recorded
+    as a Straight Flush;
+  * the browser door can no longer write either badge;
+  * the Royal Flush trigger is untouched and the Straight Flush / quads trigger
+    sits beside it (two achievement triggers on hand_history), and a malformed
+    event list still never fails the hand.
 """
 import argparse
 import json
@@ -38,6 +52,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / 'supabase/migrations'
 MIGRATION = MIGRATIONS / '20261019155445_achievements_pay_diamonds_from_server_evidence.sql'
+WINNING_HANDS = MIGRATIONS / '20261020022215_straight_flush_and_quads_get_their_own_hand_trigger.sql'
 # The production schema capture already in this repo (pg_dump of the live
 # database). Its two achievement bodies are byte-identical to production's
 # (md5(prosrc) e3055777... and 0ad6dc7f..., read 2026-10-19).
@@ -219,7 +234,7 @@ try:
     psql("INSERT INTO public.training_achievement_definitions(id, category, name) VALUES "
          + ', '.join(f"('{i}', 'x', '{'Royal Flush' if i == 'royal_flush' else i}')" for i in IDS) + ';')
     for uid, horse, streak, last in ((HUMAN, False, 0, None), (HORSE, True, 0, None),
-                                     (VETERAN, False, 30, "current_date - 1"),
+                                     (VETERAN, False, 30, "(now() AT TIME ZONE 'UTC')::date - 1"),
                                      (STREAKER, False, 29, "(now() AT TIME ZONE 'UTC')::date - 1"),
                                      (FROZEN, False, 0, None), (CHEAT, False, 0, None)):
         psql(f"INSERT INTO public.profiles(id, is_horse, login_streak, last_login_date) VALUES "
@@ -340,6 +355,58 @@ try:
                             "FROM public.diamond_transactions;"))
     assert total == {'n': 4, 'sum': 1600, 'types': ['achievement'], 'issuance': ['promotional']}, total
 
+    # 7. 20261020022215, byte for byte: Straight Flush and Four Of A Kind are
+    #    proved from the same engine record, horses alike, and pay nothing.
+    psql(WINNING_HANDS.read_text())
+    assert psql("SELECT string_agg(tgname, ',' ORDER BY tgname) FROM pg_trigger "
+                "WHERE tgrelid = 'public.hand_history'::regclass AND NOT tgisinternal;") == (
+        'trg_hand_history_royal_flush_achievement,trg_hand_history_straight_flush_quads_achievements')
+
+    def strong(uid, rank):
+        e = royal(uid)
+        e['magnitudes'] = {'strong_hands': rank}
+        e['values'] = {'strong_hands': [rank]}
+        return e
+
+    QUADS_HUMAN = '00000000-0000-4000-8000-0000000000a7'
+    QUADS_HORSE = '00000000-0000-4000-8000-0000000000b8'
+    NEW_ROYAL = '00000000-0000-4000-8000-0000000000c9'
+    for uid, horse in ((QUADS_HUMAN, False), (QUADS_HORSE, True), (NEW_ROYAL, False)):
+        psql(f"INSERT INTO public.profiles(id, is_horse) VALUES ('{uid}', {str(horse).lower()});")
+    psql("DELETE FROM public.notifications;")
+    psql(hand('00000000-0000-4000-8000-000000000201',
+              [strong(QUADS_HUMAN, 8), strong(QUADS_HORSE, 8), loser(HUMAN)]))
+    for uid in (QUADS_HUMAN, QUADS_HORSE):
+        assert unlocked(uid, 'quads') == 't', uid
+        assert unlocked(uid, 'straight_flush') == 'f' and unlocked(uid, 'royal_flush') == 'f', uid
+        assert paid(uid, 'quads') == '0/0', paid(uid, 'quads')
+    note = json.loads(psql("SELECT json_agg(message ORDER BY user_id) FROM public.notifications;"))
+    assert note == ['quads', 'quads'], note
+    psql(hand('00000000-0000-4000-8000-000000000202', [strong(QUADS_HORSE, 9), strong(QUADS_HUMAN, 7)]))
+    assert unlocked(QUADS_HORSE, 'straight_flush') == 't'
+    assert unlocked(QUADS_HUMAN, 'straight_flush') == 'f'
+    # A Royal Flush pays once and is not also a Straight Flush.
+    psql(hand('00000000-0000-4000-8000-000000000203', [royal(NEW_ROYAL), royal(HUMAN), royal(HORSE)]))
+    assert paid(NEW_ROYAL, 'royal_flush') == '500/1', paid(NEW_ROYAL, 'royal_flush')
+    assert unlocked(NEW_ROYAL, 'straight_flush') == 'f' and unlocked(NEW_ROYAL, 'quads') == 'f'
+    assert paid(HUMAN, 'royal_flush') == '500/1' and paid(HORSE, 'royal_flush') == '500/1'
+    psql(hand('00000000-0000-4000-8000-000000000204', [royal(NEW_ROYAL)]))
+    assert paid(NEW_ROYAL, 'royal_flush') == '500/1'
+    # The browser door writes neither badge any more.
+    for aid in ('quads', 'straight_flush'):
+        assert as_user(CHEAT, f"SELECT public.fn_achievement_record_progress('{CHEAT}', '{aid}', 1, 1);") == 'f'
+        assert unlocked(CHEAT, aid) == 'f'
+    # Malformed lists never fail the hand.
+    psql(hand('00000000-0000-4000-8000-000000000205', [{'user_id': 'not-a-uuid', 'magnitudes': {'strong_hands': 8}},
+                                                      {'user_id': 7, 'magnitudes': {'strong_hands': 9}},
+                                                      {'user_id': QUADS_HUMAN, 'magnitudes': {'strong_hands': '9'}},
+                                                      {'user_id': QUADS_HUMAN, 'magnitudes': {'strong_hands': 8.5}}]))
+    assert unlocked(QUADS_HUMAN, 'straight_flush') == 'f'
+    assert psql("SELECT count(*) FROM public.hand_history WHERE id::text LIKE '%0000002%';") == '5'
+    total = json.loads(psql("SELECT json_build_object('n', count(*), 'sum', sum(amount)) "
+                            "FROM public.diamond_transactions;"))
+    assert total == {'n': 5, 'sum': 2100}, total
+
     print(json.dumps({
         'ok': True,
         'migration': MIGRATION.name,
@@ -349,7 +416,10 @@ try:
                    'definitions_and_streak_not_browser_writable', 'royal_flush_paid_once_human_and_horse',
                    'notification_carries_diamonds', 'straight_flush_not_royal', 'malformed_events_never_fail_hand',
                    'freeze_leaves_unearned_then_pays', 'login_streak_server_counted_pays_once',
-                   'no_back_pay', 'only_award_diamonds_v2_credits'],
+                   'no_back_pay', 'only_award_diamonds_v2_credits',
+                   'quads_and_straight_flush_server_proved_human_and_horse', 'royal_still_paid_once',
+                   'royal_is_not_a_straight_flush', 'browser_cannot_write_hand_badges', 'royal_trigger_untouched'],
+        'winning_hands_migration': WINNING_HANDS.name,
     }))
 finally:
     if start_attempted:

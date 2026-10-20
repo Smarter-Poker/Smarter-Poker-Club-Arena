@@ -18,11 +18,34 @@ Retired local/custom pipelines remain unavailable under the shared owner policy.
 - `EngineBuildHeadroomLost`: host MemAvailable below 2304 MiB for thirty minutes,
   warning. It reports sustained pressure relative to the current on-host build
   gate; conditions can change before the next authorized attempt.
-- `EngineProcessMemoryHigh`: engine RSS above 4294967296 bytes (4 GiB) for
-  fifteen minutes, warning. Re-measured 2026-10-02 on the 16 GiB host: hourly
-  RSS maxima over 48 h were 1.73-2.94 GiB with the main V8 heap flat at
-  0.47-0.93 GiB, so the historical 1.6 GiB line fired continuously without any
-  growth. It is not a process cap, a build-fit calculation or proof of a leak.
+- `EngineProcessMemoryHigh`: engine RSS above 8589934592 bytes (8 GiB) for
+  fifteen minutes, warning. Re-measured 2026-10-19 after engine-01 was resized
+  at ~17:00 UTC 2026-10-17 from 30.6 GiB to 61.3 GiB with 16 cores. The equity
+  worker pool sizes from cores (`availableParallelism() - 2` in
+  `server/src/engine/equity/EquityWorkerPool.ts`), so it went from 6 to 14
+  workers and resident memory rose with it: over 52 hourly windows
+  (2026-10-17 18:00Z to 2026-10-19 22:00Z) the hourly RSS maximum was
+  4.85-6.82 GiB, typically 5.2-6.2 GiB, flat within each uptime, with about
+  52 GiB of the host still available. The previous 4 GiB line was set on
+  2026-10-02 for the 1.7-2.9 GiB band of the 16 GiB host and
+  fired continuously after the resize without any growth. 8 GiB sits 1.2 GiB
+  above the 52-hour peak. It is not a process cap, a build-fit calculation or
+  proof of a leak.
+
+**Re-measure this threshold whenever the host is resized or
+`poker_equity_worker_pool_configured_workers` changes.** RSS scales with the
+worker count: with 6 workers on the 30.6 GiB host (2026-10-15/17) the
+6-hour RSS maximum was 2.81-3.74 GiB, so each added equity worker cost roughly
+0.3 GiB and a resize moves the steady band. Read the hourly maxima since the resize:
+
+```promql
+max_over_time(poker_engine_process_rss_bytes[1h])
+poker_equity_worker_pool_configured_workers
+node_memory_MemTotal_bytes{host="engine-01"}
+```
+
+Hourly minima near 0.1 GiB are engine restarts at the maintenance break, not
+low-memory periods; read the maxima, not the minima.
 
 The September 13/14 incident recorded a roughly 3819 MiB host, approximately
 1060 MiB of other residents, rising engine RSS and repeated refused builds.

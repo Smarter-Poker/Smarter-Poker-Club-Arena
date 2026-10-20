@@ -39,9 +39,10 @@ export interface Achievement {
   diamondReward?: number;
   /**
    * Proved by the server from its own records - the engine's hand record for
-   * a Royal Flush, the server-counted login streak - never by this browser.
-   * Only these can carry a reward; fn_achievement_record_progress writes
-   * nothing for them, so this client does not send them.
+   * a Royal Flush, Straight Flush or Four Of A Kind, the server-counted login
+   * streak - never by this browser. Only these can carry a reward;
+   * fn_achievement_record_progress writes nothing for them, so this client
+   * does not send them.
    */
   serverProved?: boolean;
   hidden?: boolean;
@@ -252,6 +253,9 @@ export const ACHIEVEMENTS: Achievement[] = [
     rarity: 'epic',
     requirement: 1,
     diamondReward: 0,
+    // 2026-10-20: proved from the engine's hand record (strong_hands 9),
+    // horses alike. Migration 20261020022215.
+    serverProved: true,
   },
   {
     id: 'quads',
@@ -262,6 +266,8 @@ export const ACHIEVEMENTS: Achievement[] = [
     rarity: 'rare',
     requirement: 1,
     diamondReward: 0,
+    // 2026-10-20: proved from the engine's hand record (strong_hands 8).
+    serverProved: true,
   },
   {
     id: 'bad_beat',
@@ -610,21 +616,19 @@ class AchievementServiceClass {
     return unlocked;
   }
 
-  async checkSpecialHand(userId: string, handRank: string): Promise<Achievement | null> {
-    // SECURITY: Validate handRank against known values to prevent garbage input
-    const HAND_RANK_MAP: Record<string, string> = {
-      royal_flush: 'royal_flush',
-      straight_flush: 'straight_flush',
-      four_of_a_kind: 'quads',
-    };
-
-    const achievementId = HAND_RANK_MAP[handRank] || null;
-    if (achievementId) {
-      const result = await this.incrementProgress(userId, achievementId, 1);
-      return result.achievement || null;
-    }
-    return null;
-  }
+  /*
+   * checkSpecialHand IS GONE (2026-10-20). It mapped the winning hand's name
+   * to royal_flush / straight_flush / quads, but it only knew the snake keys
+   * ("four_of_a_kind") while the table passed the engine's display name
+   * ("Four of a Kind"), so none of the three could ever unlock from play; it
+   * read the FIRST winner's hand, not this player's; and a horse has no
+   * browser to report anything. All three are now recorded by the database
+   * from the engine's own per-player record of the hand that won each player
+   * a pot (hand_history.daily_mission_events strong_hands: 10 by
+   * trg_hand_history_royal_flush_achievement, 9 / 8 by
+   * trg_hand_history_straight_flush_quads_achievements, migration 20261020022215),
+   * horses alike, and the server's notification announces the unlock.
+   */
 }
 
 export const achievementService = new AchievementServiceClass();

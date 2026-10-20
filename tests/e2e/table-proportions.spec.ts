@@ -390,6 +390,7 @@ test.describe('every device gets the same proportions', () => {
        HEIGHT-bound under insets no emulation models. If a device is ever
        width-starved again, it must be starved HERE, loudly. */
     const WIDTH_BOUND_PHONES = [
+      'iPhone SE',
       'iPhone 12/13/14',
       'iPhone 14 Pro Max',
       'iPhone 12/13/14 (real)',
@@ -742,4 +743,70 @@ test('the compact profit tracker shares the hand-pill centre beside the rightmos
         true
       );
     }
+});
+
+// Both rings must keep the rail wide even when the phone's height binds.
+// Seating/action state must never change either dimension of that canvas.
+test('portrait phone rings fill the width and keep their height through gameplay states', async ({
+  page,
+}) => {
+  for (const [width, height] of [
+    [320, 568],
+    [375, 667],
+    [393, 852],
+    [430, 932],
+    [480, 975],
+  ]) {
+    await page.setViewportSize({ width, height });
+    for (const seats of [6, 9]) {
+      await page.setContent(buildHtml(css));
+      await page
+        .locator('.table-page')
+        .evaluate((el, count) => el.setAttribute('data-seats', String(count)), seats);
+      const initial = await page.locator('.table-scaler').boundingBox();
+      expect(initial!.width, `${seats}-max at ${width}x${height}`).toBeCloseTo(width, 0);
+      expect(
+        await page
+          .locator('.table-page')
+          .evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-text-size-adjust'))
+      ).toBe('100%');
+      for (const [hero, action] of [
+        ['false', 'none'],
+        ['true', 'waiting'],
+        ['true', 'active'],
+      ]) {
+        await page.locator('.table-page').evaluate(
+          (el, state) => {
+            el.setAttribute('data-hero', state[0]);
+            el.setAttribute('data-hero-action', state[1]);
+          },
+          [hero, action]
+        );
+        const box = await page.locator('.table-scaler').boundingBox();
+        expect(box!.height).toBeCloseTo(initial!.height, 1);
+        expect(box!.width).toBeCloseTo(initial!.width, 1);
+      }
+    }
+  }
+});
+
+test('Safari toolbar space is reclaimed by portrait gameplay without narrowing the rail', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const count of [6, 9]) {
+    const boxes = [];
+    // A mobile browser may expose a smaller svh than its currently visible
+    // dvh. Resolve that input explicitly: desktop emulation gives them equal
+    // values and otherwise cannot exercise this Safari toolbar condition.
+    for (const styles of [css, css.replaceAll('100svh', '650px')]) {
+      await page.setContent(buildHtml(styles));
+      await page
+        .locator('.table-page')
+        .evaluate((el, seats) => el.setAttribute('data-seats', String(seats)), count);
+      boxes.push(await page.locator('.table-scaler').boundingBox());
+    }
+    expect(boxes[1]!.width).toBeCloseTo(390, 0);
+    expect(boxes[1]!.height).toBeCloseTo(boxes[0]!.height, 1);
+  }
 });

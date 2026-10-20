@@ -11,11 +11,13 @@
  * A Cluster HOLDS A WORKER when both hold:
  *   - `cash_games.cluster_mode` is `lightning` or `pending_off`,
  *   - its `fn_lightning_config` says `worker_mode <> 'off'`.
- * It FORMS only for Action or Madness, in `lightning` with `lightning_enabled = true`;
- * otherwise its worker is DRAINING (see below).
+ * It FORMS only for a six-seat Action or Madness game (owner rulings 2026-10-16
+ * and 2026-10-19: "classic games never get lightning games, only action and
+ * madness, make all lightning games 6 handed"), in `lightning` with
+ * `lightning_enabled = true`; otherwise its worker is DRAINING (see below).
  *
  * ONE CHEAP QUERY PER INTERVAL. The first is a single select of
- * `id, cluster_mode, lightning_enabled, template_name` over `cash_games`, every
+ * `id, cluster_mode, lightning_enabled, template_name, handedness` over `cash_games`, every
  * LIGHTNING_DISCOVERY_INTERVAL_MS. Only a Cluster that passes it costs a
  * second call (`fn_lightning_config`), and today none does: every Cluster is
  * must_move with Lightning disabled, so this ships dark and costs one tiny
@@ -184,10 +186,17 @@ const FRONT_TABLE_TTL_MS = 30_000;
 export async function discoverLightningClusters(): Promise<LightningDiscoveredCluster[]> {
   const { data, error } = await supabase
     .from('cash_games')
-    .select('id, cluster_mode, lightning_enabled, template_name')
+    .select('id, cluster_mode, lightning_enabled, template_name, handedness')
     .in('cluster_mode', [...LIGHTNING_WORKER_CLUSTER_MODES]);
   if (error) throw error;
   return parseDiscoveredClusters(data);
+}
+
+/** Lightning tables are six-handed (owner, 2026-10-19). Exactly 6, nothing else. */
+export const LIGHTNING_TABLE_SIZE = 6;
+
+export function isLightningTableSize(handedness: unknown): boolean {
+  return handedness === LIGHTNING_TABLE_SIZE;
 }
 
 /**
@@ -203,9 +212,15 @@ export function parseDiscoveredClusters(rows: unknown): LightningDiscoveredClust
       cluster_mode?: unknown;
       lightning_enabled?: unknown;
       template_name?: unknown;
+      handedness?: unknown;
     } | null;
     if (!r || !isUuid(r.id)) continue;
-    const blocked = r.template_name !== 'action' && r.template_name !== 'madness';
+    // Lightning is six-seat Action or Madness only. Anything else - Classic, an
+    // unknown template, a nine-seat or any other table size, or a size that
+    // could not be read - forms nothing; a host already dealing drains.
+    const blocked =
+      (r.template_name !== 'action' && r.template_name !== 'madness') ||
+      !isLightningTableSize(r.handedness);
     const eligibility = blocked ? { formationBlocked: true as const } : {};
     if (r.cluster_mode === 'draining' || r.cluster_mode === 'paused') {
       out.push({ clusterId: r.id, draining: true, hold: r.cluster_mode, ...eligibility });

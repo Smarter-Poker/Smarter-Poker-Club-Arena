@@ -1,0 +1,397 @@
+{
+  "postgres": "17.11 (Ubuntu 17.11-1.pgdg24.04+2)",
+  "manifest": {
+    "fn_ca_lock_mtt_admission_contract()": "10644d522bb50245f76942ecce735cbc",
+    "fn_ca_lock_settlement_lane_global()": "7c759bb7a639c3124de2607bdbf12577",
+    "fn_ca_lock_settlement_lane_for_finish(uuid)": "1626c6807e525783fa0fae2f1d03d978",
+    "fn_ca_lock_settlement_lane_for_satellite_finish(uuid)": "0aaaac620ce2f34f2cd9523c4323a12e",
+    "fn_ca_share_settlement_lane_for_table(uuid)": "409b14ee72ce888d3b26524c52d49a68",
+    "fn_ca_replay_terminal_receipts(integer,integer)": "1d5d067c97c46776fb6c1fc5e02f0b7c",
+    "apply_rakeback_player_stats(uuid,uuid,uuid,integer,numeric)": "1519023c9ec579568a347b6088c898ec",
+    "fn_sync_profile_total_hands()": "886d9aae3d1fbd18a98d172ebe13758e",
+    "fn_process_cash_accounting_source(uuid)": "460e4b0a936b41246548cb0a9efc9f7f",
+    "fn_credit_agent_commissions_batch(jsonb)": "1ae9eb0e32f8169ce0cdd6b730c859a6",
+    "fn_project_hand_side_effects_after_post_commit_20260908(uuid)": "ef3cb3725ca3a1566e0e1254830a9a63"
+  },
+  "results": [
+    {
+      "case": "replay-vs-live-target",
+      "state": "before",
+      "replay_advisory_locks_held_while_paused": 4,
+      "engine_hand_waited_for": ["replay"],
+      "unrelated_finish_waited_for": ["replay"],
+      "engine_hand_seconds": 0.518,
+      "unrelated_finish_seconds": 0.516,
+      "engine_errors": [],
+      "target_seat_chips_after": "2002",
+      "replay": {
+        "ok": true,
+        "hours": 26,
+        "raised": 1,
+        "refused": 1,
+        "failures": [
+          {
+            "code": "P0404",
+            "type": "SATELLITE",
+            "error": "satellite S2 completed without a settlement header",
+            "tournament_id": "S2"
+          }
+        ],
+        "replayed": 3,
+        "resolved": 0,
+        "skipped_locked": 0
+      },
+      "alerts": [
+        {
+          "refusal": "satellite <id> completed without a settlement header",
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "case": "batch-vs-projection-existing-rows",
+      "state": "before",
+      "deadlocks": 1,
+      "projection_waited_for": ["batch"],
+      "projection": "PL/pgSQL function fn_project_hand_side_effects_after_post_commit_20260908(uuid) line 159 at SQL statement",
+      "batch": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "first_error": null,
+        "deferred": []
+      },
+      "item_attempts": [1, 1],
+      "player_stats": {
+        "b@club": [6, 5],
+        "a@club": [6, 5]
+      },
+      "profile_total_hands": {
+        "b": 6,
+        "a": 6
+      }
+    },
+    {
+      "case": "batch-vs-projection-new-rows",
+      "state": "before",
+      "deadlocks": 1,
+      "projection_waited_for": ["batch"],
+      "projection": "PL/pgSQL function fn_project_hand_side_effects_after_post_commit_20260908(uuid) line 159 at SQL statement",
+      "batch": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "first_error": null,
+        "deferred": []
+      },
+      "item_attempts": [1, 1],
+      "player_stats": {
+        "b@club": [1, 0],
+        "a@club": [1, 0]
+      },
+      "profile_total_hands": {
+        "b": 1,
+        "a": 1
+      }
+    },
+    {
+      "case": "batch-vs-projection-profiles-across-clubs",
+      "state": "before",
+      "deadlocks": 1,
+      "projection_waited_for": ["batch"],
+      "projection": "PL/pgSQL function fn_project_hand_side_effects_after_post_commit_20260908(uuid) line 159 at SQL statement",
+      "batch": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "first_error": null,
+        "deferred": []
+      },
+      "item_attempts": [1, 1],
+      "player_stats": {
+        "b@club": [6, 5],
+        "a@club": [6, 5]
+      },
+      "profile_total_hands": {
+        "b": 6,
+        "a": 6
+      }
+    },
+    {
+      "case": "replay-vs-live-target",
+      "state": "after",
+      "replay_advisory_locks_held_while_paused": 0,
+      "engine_hand_waited_for": [],
+      "unrelated_finish_waited_for": [],
+      "engine_hand_seconds": 0.004,
+      "unrelated_finish_seconds": 0.004,
+      "engine_errors": [],
+      "target_seat_chips_after": "2002",
+      "replay": {
+        "ok": true,
+        "hours": 26,
+        "raised": 1,
+        "refused": 1,
+        "failures": [
+          {
+            "code": "P0404",
+            "type": "SATELLITE",
+            "error": "satellite S2 completed without a settlement header",
+            "tournament_id": "S2"
+          }
+        ],
+        "replayed": 3,
+        "resolved": 0,
+        "skipped_locked": 0
+      },
+      "alerts": [
+        {
+          "refusal": "satellite <id> completed without a settlement header",
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "case": "batch-vs-projection-existing-rows",
+      "state": "after",
+      "deadlocks": 0,
+      "projection_waited_for": ["batch"],
+      "projection": "ok",
+      "batch": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "first_error": null,
+        "deferred": []
+      },
+      "item_attempts": [1, 1],
+      "player_stats": {
+        "a@club": [6, 6],
+        "b@club": [6, 6]
+      },
+      "profile_total_hands": {
+        "b": 6,
+        "a": 6
+      }
+    },
+    {
+      "case": "batch-vs-projection-new-rows",
+      "state": "after",
+      "deadlocks": 0,
+      "projection_waited_for": ["batch"],
+      "projection": "ok",
+      "batch": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "first_error": null,
+        "deferred": []
+      },
+      "item_attempts": [1, 1],
+      "player_stats": {
+        "a@club": [1, 1],
+        "b@club": [1, 1]
+      },
+      "profile_total_hands": {
+        "b": 1,
+        "a": 1
+      }
+    },
+    {
+      "case": "batch-vs-projection-profiles-across-clubs",
+      "state": "after",
+      "deadlocks": 0,
+      "projection_waited_for": ["batch"],
+      "projection": "ok",
+      "batch": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "first_error": null,
+        "deferred": []
+      },
+      "item_attempts": [1, 1],
+      "player_stats": {
+        "b@club": [6, 5],
+        "a@club": [6, 5],
+        "a@club2": [0, 1],
+        "b@club2": [0, 1]
+      },
+      "profile_total_hands": {
+        "a": 6,
+        "b": 6
+      }
+    },
+    {
+      "case": "batch-defers-for-a-held-player-key",
+      "state": "after",
+      "deadlocks": 0,
+      "first": {
+        "ok": 0,
+        "failed": 0,
+        "blocked": 0,
+        "deferred": ["3ea9ee99-669c-5478-ad3b-c6f8a4b35692", "38e417a1-a78f-53e8-b703-f7405cb5d726"]
+      },
+      "first_seconds": 1.006,
+      "rows_written_while_held": 0,
+      "resubmitted": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "deferred": []
+      },
+      "hands_played": [6, 6]
+    },
+    {
+      "case": "replay-vs-live-target",
+      "state": "budgeted",
+      "replay_advisory_locks_held_while_paused": 0,
+      "engine_hand_waited_for": [],
+      "unrelated_finish_waited_for": [],
+      "engine_hand_seconds": 0.005,
+      "unrelated_finish_seconds": 0.004,
+      "engine_errors": [],
+      "target_seat_chips_after": "2002",
+      "replay": {
+        "ok": true,
+        "hours": 26,
+        "raised": 1,
+        "refused": 1,
+        "failures": [
+          {
+            "code": "P0404",
+            "type": "SATELLITE",
+            "error": "satellite S2 completed without a settlement header",
+            "tournament_id": "S2"
+          }
+        ],
+        "replayed": 3,
+        "resolved": 0,
+        "skipped_locked": 0
+      },
+      "alerts": [
+        {
+          "refusal": "satellite <id> completed without a settlement header",
+          "count": "1"
+        }
+      ]
+    },
+    {
+      "case": "batch-vs-projection-existing-rows",
+      "state": "budgeted",
+      "deadlocks": 0,
+      "projection_waited_for": ["batch"],
+      "projection": "ok",
+      "batch": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "first_error": null,
+        "deferred": []
+      },
+      "item_attempts": [1, 1],
+      "player_stats": {
+        "a@club": [6, 6],
+        "b@club": [6, 6]
+      },
+      "profile_total_hands": {
+        "b": 6,
+        "a": 6
+      }
+    },
+    {
+      "case": "batch-vs-projection-new-rows",
+      "state": "budgeted",
+      "deadlocks": 0,
+      "projection_waited_for": ["batch"],
+      "projection": "ok",
+      "batch": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "first_error": null,
+        "deferred": []
+      },
+      "item_attempts": [1, 1],
+      "player_stats": {
+        "a@club": [1, 1],
+        "b@club": [1, 1]
+      },
+      "profile_total_hands": {
+        "b": 1,
+        "a": 1
+      }
+    },
+    {
+      "case": "batch-vs-projection-profiles-across-clubs",
+      "state": "budgeted",
+      "deadlocks": 0,
+      "projection_waited_for": ["batch"],
+      "projection": "ok",
+      "batch": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "first_error": null,
+        "deferred": []
+      },
+      "item_attempts": [1, 1],
+      "player_stats": {
+        "b@club": [6, 5],
+        "a@club": [6, 5],
+        "a@club2": [0, 1],
+        "b@club2": [0, 1]
+      },
+      "profile_total_hands": {
+        "a": 6,
+        "b": 6
+      }
+    },
+    {
+      "case": "batch-defers-for-a-held-player-key",
+      "state": "budgeted",
+      "deadlocks": 0,
+      "first": {
+        "ok": 0,
+        "failed": 0,
+        "blocked": 0,
+        "deferred": ["ec6db565-d893-55f5-a592-8ed109883f57", "082cf909-deb4-58fd-8ff9-7082b94cacf2"]
+      },
+      "first_seconds": 1.005,
+      "rows_written_while_held": 0,
+      "resubmitted": {
+        "ok": 2,
+        "failed": 0,
+        "blocked": 0,
+        "deferred": []
+      },
+      "hands_played": [6, 6]
+    }
+  ],
+  "migration_output": "",
+  "installed": {
+    "fn_ca_replay_terminal_receipts(integer,integer)": "3370c9e5aa0f5f551f011f9fd0023786",
+    "fn_credit_agent_commissions_batch(jsonb)": "9befae963f3b9cda25b357f60a9b53d7",
+    "fn_project_hand_side_effects_after_post_commit_20260908(uuid)": "cee6c2257fcc49c6c6974e5fe8832107"
+  },
+  "budgeted_batch": "1c9d9ff9cfb2803f05223c703f61f09b",
+  "checks": {
+    "replay: before, the engine hand and an unrelated finish wait for the paused replay": true,
+    "replay: after, neither waits and the paused replay holds no lane key": true,
+    "replay: the outcome and the alerts are identical": true,
+    "replay: the engine wrote its hand both times": true,
+    "batch-vs-projection-existing-rows: before deadlocks": true,
+    "batch-vs-projection-existing-rows: after no deadlock, the projection waited for the batch, every value once": true,
+    "batch-vs-projection-new-rows: before deadlocks": true,
+    "batch-vs-projection-new-rows: after no deadlock, the projection waited for the batch, every value once": true,
+    "batch-vs-projection-profiles-across-clubs: before deadlocks": true,
+    "batch-vs-projection-profiles-across-clubs: after no deadlock, the projection waited for the batch, every value once": true,
+    "a held player key defers the batch, writes nothing, and the resubmission accrues": true,
+    "batch-vs-projection-existing-rows: with 20261019214727's batch, still no deadlock, every value once": true,
+    "batch-vs-projection-new-rows: with 20261019214727's batch, still no deadlock, every value once": true,
+    "batch-vs-projection-profiles-across-clubs: with 20261019214727's batch, still no deadlock, every value once": true,
+    "with 20261019214727's batch, a held player key still defers the batch and the resubmission accrues": true,
+    "with 20261019214727's batch, the replay is unchanged": true
+  },
+  "ok": true
+}

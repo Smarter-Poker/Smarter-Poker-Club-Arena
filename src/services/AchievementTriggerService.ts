@@ -50,7 +50,6 @@ class AchievementTriggerServiceClass {
     handData: {
       won: boolean;
       potSize: number;
-      handRank?: string; // e.g., 'Royal Flush', 'Full House'
       showdown: boolean;
       /** The club that dealt the hand. `player_stats` is keyed per club. */
       clubId?: string;
@@ -85,13 +84,10 @@ class AchievementTriggerServiceClass {
       }
     }
 
-    // 3. Check for special hands
-    if (handData.handRank) {
-      const specialAch = await achievementService.checkSpecialHand(userId, handData.handRank);
-      if (specialAch) {
-        result.triggeredAchievements.push(specialAch);
-      }
-    }
+    // 3. Royal Flush, Straight Flush and Four Of A Kind are not reported from
+    //    here (2026-10-20): the database records them from the engine's own
+    //    record of the hand that won each player a pot, horses alike
+    //    (trg_hand_history_royal_flush_achievement, trg_hand_history_straight_flush_quads_achievements).
 
     // 4. Update user stats, against the club whose table dealt the hand.
     await this.updateUserStats(

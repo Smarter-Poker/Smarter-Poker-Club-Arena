@@ -137,6 +137,23 @@ describe('actual RUNNING discovery reads the complete recovery board', () => {
     expect(admitted()).toEqual(['c-old', 'd-old', 'b-new', 'a-null']);
   });
 
+  it('re-adopts a pre-seated field still waiting for its first card before older events', async () => {
+    // After the :55 restart the :00 field is the NEWEST RUNNING row; it must
+    // not wait behind the whole board for its first deal (2026-10-20).
+    const soon = new Date(Date.now() + 90_000).toISOString();
+    const later = new Date(Date.now() + 240_000).toISOString();
+    const { server, admitted } = harness([
+      row('a-old'),
+      row('b-null', null),
+      row('c-later', later),
+      row('d-soon', soon),
+      row('e-old'),
+    ]);
+    server.tournamentResumeBudget = 3;
+    await server.discoverRunningResumes();
+    expect(admitted()).toEqual(['d-soon', 'c-later', 'a-old']);
+  });
+
   it('selects an older event on a later id page before spending the admission budget', async () => {
     const { server, admitted } = harness([...firstPage(), row('z-old', '2026-09-13T00:00:00Z')]);
     server.tournamentResumeBudget = 1;

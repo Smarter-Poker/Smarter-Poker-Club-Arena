@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/mtt-launch-lateness-fn-20261019",
+  "_comment": "Migration 20261019223841: read-only fn_tournament_launch_lateness_metrics, the MTT launch-lateness gauges TournamentMetrics reads (first dealt hand vs start_time). Installed through apply-merged-migration.yml after merge.",
+  "functions": ["fn_tournament_launch_lateness_metrics"]
+}

@@ -54,11 +54,22 @@ BUSY_KEY_CASES = ('batch-vs-finish-on-a-busy-key', 'retry-vs-finish-on-a-busy-ke
 # lowest uuids). Its AFTER state is called 'skipping' here.
 SKIP_FIX = ROOT / 'supabase/migrations/20261019171753_a_busy_commission_key_never_holds_the_cash_queue.sql'
 STARVE_CASES = ('retry-queue-head-on-a-busy-key', 'batch-item-behind-a-busy-key')
-# 20261019190103 bounds every item's lock wait (2 s) and every call (8 s), so a call always returns
+# 20261019194410 (installed 2026-10-19) rebuilt the batch on 20261019171753's text: it also takes every
+# 'player-stats-user:<player>' key in player order after the club keys, and the hand projection takes
+# the same keys. Its batch (and its projection, when this cluster carries 194410's pinned preimage) is
+# installed here before the budget; that state is called 'keyed' and is production's text.
+KEYED_FIX = ROOT / 'supabase/migrations/20261019194410_replay_holds_no_lock_past_its_receipt_player_stats_key_order.sql'
+KEYED_BODIES = (
+    ('batch', 'fn_credit_agent_commissions_batch(jsonb)', '1ae9eb0e32f8169ce0cdd6b730c859a6',
+     '9befae963f3b9cda25b357f60a9b53d7'),
+    ('projection', 'fn_project_hand_side_effects_after_post_commit_20260908(uuid)', 'ef3cb3725ca3a1566e0e1254830a9a63',
+     'cee6c2257fcc49c6c6974e5fe8832107'))
+# 20261019214727 bounds every item's lock wait (2 s) and every call (8 s), so a call always returns
 # inside the engine's 15 s client budget (2026-10-19 17:02: a 16.1 s batch, two items behind a held
-# profiles row at the session's 8 s lock_timeout, halted the settler for 27 minutes). Its AFTER state
-# is called 'budgeted' here.
-BUDGET_FIX = ROOT / 'supabase/migrations/20261019190103_a_cash_source_call_fits_the_engines_patience.sql'
+# profiles row at the session's 8 s lock_timeout, halted the settler for 27 minutes). It replaces
+# 20261019190103, merged but refused at install because 20261019194410 had replaced the batch, and it
+# keeps 194410's player key walk. Its AFTER state is called 'budgeted' here.
+BUDGET_FIX = ROOT / 'supabase/migrations/20261019214727_a_cash_source_call_fits_the_engines_patience.sql'
 NOT_FIXED = ('finish-vs-raked-hand', 'finish-vs-two-raked-hands', 'pr5542-player-stats-across-hands')
 PR5542_ORDER_LINE = '     ORDER BY s.uid::uuid\n'
 
@@ -214,6 +225,50 @@ def apply_migration(cl, path=MIGRATION):
     finally:
         tmp.unlink()
     return hashlib.md5(block.encode()).hexdigest()
+
+
+def probe_budget_rolled_back(cl):
+    """20261019214727's $subs$ block in a transaction that is rolled back: what it lands on from
+    the text this cluster holds now. Used on 20261019171753's text, the other accepted preimage."""
+    text = BUDGET_FIX.read_text()
+    block = re.search(r'^DO \$subs\$\n.*?^END \$subs\$;\n', text, re.S | re.M).group(0)
+    tmp = HERE / ('zz-chip-deadlocks-probe-%d.sql' % os.getpid())
+    tmp.write_text("BEGIN;\nSET LOCAL lock_timeout = '2s';\n" + block +
+                   "SELECT md5(pg_get_functiondef('public.fn_credit_agent_commissions_batch(jsonb)'::regprocedure)) || ',' ||"
+                   " md5(pg_get_functiondef('public.fn_retry_cash_accounting_sources(integer)'::regprocedure));\nROLLBACK;\n")
+    try:
+        before = cl.q("SELECT md5(pg_get_functiondef('public.fn_credit_agent_commissions_batch(jsonb)'::regprocedure))")
+        out = cl.psql(DB, '-f', str(tmp)).splitlines()[-1]
+        after_rollback = cl.q("SELECT md5(pg_get_functiondef('public.fn_credit_agent_commissions_batch(jsonb)'::regprocedure))")
+    finally:
+        tmp.unlink()
+    batch, retry = out.split(',')
+    return {'batch_before': before, 'batch_inside': batch, 'retry_inside': retry, 'batch_after_rollback': after_rollback}
+
+
+def apply_keyed(cl):
+    """Install 20261019194410's batch (and its projection, if this cluster holds 194410's pinned
+    preimage of it) exactly as its $subs$ block would: preimage md5, text, postimage md5."""
+    text, done = KEYED_FIX.read_text(), {}
+    for tag, sig, before, after in KEYED_BODIES:
+        body = re.search(r'\$%s\$(CREATE OR REPLACE FUNCTION.*?)\$%s\$' % (tag, tag), text, re.S).group(1)
+        md5 = lambda: cl.q("SELECT md5(pg_get_functiondef('public.%s'::regprocedure))" % sig)
+        cur = md5()
+        if cur != before:
+            if tag == 'batch':
+                raise SystemExit('REFUSED: the batch is not 20261019194410\'s preimage (%s)' % cur)
+            done[tag] = 'not installed: this cluster holds %s, not 194410\'s preimage' % cur
+            continue
+        tmp = HERE / ('zz-chip-deadlocks-keyed-%d.sql' % os.getpid())
+        tmp.write_text(body + ';\n')
+        try:
+            cl.psql(DB, '-f', str(tmp))
+        finally:
+            tmp.unlink()
+        if md5() != after:
+            raise SystemExit('REFUSED: %s is not 20261019194410\'s postimage (%s)' % (sig, md5()))
+        done[tag] = after
+    return done
 
 
 # ---------------------------------------------------------------------------------------------
@@ -584,7 +639,7 @@ def case_batch_busy_key(cl, ctl, run, hold_past_wait=True):
         c.notes['finish_paused_holding_club_a'] = wait_until_waiting(ctl, F)
         t0 = time.time()
         tb = B.send('BEGIN; ' + batch_sql(I['rrB'], I['rrA']))
-        if run in ('sorted', 'skipping', 'budgeted') and hold_past_wait:
+        if run in ('sorted', 'skipping', 'keyed', 'budgeted') and hold_past_wait:
             c.notes['batch'] = outcome(B.wait(tb))
             c.notes['batch_seconds'] = round(time.time() - t0, 2)
             B.run('COMMIT;')
@@ -633,7 +688,7 @@ def case_retry_busy_key(cl, ctl, run):
         tf = F.send("BEGIN; SET LOCAL harness.pause_before = '%s'; %s" % (I['YB'], finish_sql(I['t'], I['A'])))
         c.notes['finish_paused_holding_club_a'] = wait_until_waiting(ctl, F)
         tb = B.send('BEGIN; SELECT fn_retry_cash_accounting_sources(2);')
-        if run in ('sorted', 'skipping', 'budgeted'):
+        if run in ('sorted', 'skipping', 'keyed', 'budgeted'):
             c.notes['retry'] = outcome(B.wait(tb)); B.run('COMMIT;')
             c.notes['work_while_deferred'] = ctl.run(work)
             ctl.run('SELECT pg_advisory_unlock(%d);' % GATE)
@@ -872,7 +927,7 @@ def main():
         report['functions_pinned_and_verified'] = build(cl)
         report['projection2_statement_md5'] = projection2_functions(cl)
         ctl = Session(cl, 'ctl')
-        for state in ('before', 'after', 'sorted', 'skipping', 'budgeted'):
+        for state in ('before', 'after', 'sorted', 'skipping', 'keyed', 'budgeted'):
             if state == 'sorted':
                 ctl.close()
                 report['sorted_fix_subs_block_md5'] = apply_migration(cl, SORTED_FIX)
@@ -880,6 +935,11 @@ def main():
             if state == 'skipping':
                 ctl.close()
                 report['skip_fix_subs_block_md5'] = apply_migration(cl, SKIP_FIX)
+                ctl = Session(cl, 'ctl')
+            if state == 'keyed':
+                ctl.close()
+                report['budget_on_171753_text'] = probe_budget_rolled_back(cl)
+                report['keyed_bodies'] = apply_keyed(cl)
                 ctl = Session(cl, 'ctl')
             if state == 'budgeted':
                 ctl.close()
@@ -903,12 +963,12 @@ def main():
                 print('%-34s %-6s deadlocks=%d  %s' % (r['case'], state, r['deadlocks'],
                       {k: v for k, v in r.items() if k not in ('case', 'pair', 'state', 'deadlocks')}), flush=True)
             # The 2026-10-19 pair: production's text ('after') against 20261019094914 ('sorted').
-            if state in ('after', 'sorted', 'skipping', 'budgeted'):
+            if state in ('after', 'sorted', 'skipping', 'keyed', 'budgeted'):
                 busy = [case_batch_busy_key, case_retry_busy_key]
-                if state in ('sorted', 'skipping', 'budgeted'):
+                if state in ('sorted', 'skipping', 'keyed', 'budgeted'):
                     busy.append(lambda cl, ctl, run: case_batch_busy_key(cl, ctl, run, hold_past_wait=False))
                     busy += [case_batch_skips_busy_key, case_retry_starvation]
-                if state in ('skipping', 'budgeted'):
+                if state in ('skipping', 'keyed', 'budgeted'):
                     busy.append(case_items_behind_held_rows)
                 if state == 'budgeted':
                     busy.append(lambda cl, ctl, run: case_items_behind_held_rows(cl, ctl, run, held=5))
@@ -922,7 +982,7 @@ def main():
         ctl.close()
         report['values_equal'] = (report['values']['before'] == report['values']['after']
                                   == report['values']['sorted'] == report['values']['skipping']
-                                  == report['values']['budgeted'])
+                                  == report['values']['keyed'] == report['values']['budgeted'])
         print('horse-mind values equal before/after:', report['values_equal'])
     finally:
         cl.stop()
@@ -933,9 +993,10 @@ def main():
                and held.get('after', '').startswith('item refused and queued for retry')
                and held.get('sorted', '').startswith('deferred until its commission keys are free: 1')
                and held.get('skipping', '').startswith('deferred until its commission keys are free: 1')
+               and held.get('keyed', '').startswith('deferred until its commission keys are free: 1')
                and held.get('budgeted', '').startswith('deferred until its commission keys are free: 1'))
     print('batch while a finish holds its key:', held, 'OK' if keys_ok else 'NOT AS CLAIMED')
-    fixed = [r for r in report['results'] if r['state'] in ('after', 'sorted', 'skipping', 'budgeted') and r['case'] not in NOT_FIXED
+    fixed = [r for r in report['results'] if r['state'] in ('after', 'sorted', 'skipping', 'keyed', 'budgeted') and r['case'] not in NOT_FIXED
              and r['case'] != 'batch-while-a-finish-holds-a-key'
              and not (r['state'] == 'after' and r['case'] in BUSY_KEY_CASES)]
     by = {(r['case'], r['state']): r for r in report['results']}
@@ -998,11 +1059,14 @@ def main():
         # 2026-10-19 17:02 reproduced on production's text: three items behind held rows, 8 s each
         q('batch-items-behind-held-rows', 'skipping')['call_seconds'] >= 15
         and q('batch-items-behind-held-rows', 'skipping')['batch'] == {'ok': 2, 'blocked': 3, 'deferred': 0}
+        # and on production's installed text, 20261019194410's
+        and q('batch-items-behind-held-rows', 'keyed')['call_seconds'] >= 15
+        and q('batch-items-behind-held-rows', 'keyed')['batch'] == {'ok': 2, 'blocked': 3, 'deferred': 0}
         # 20261019190103: the same call fits the engine's budget, with the same outcome
         and q('batch-items-behind-held-rows', 'budgeted')['call_seconds'] < 9.5
         and q('batch-items-behind-held-rows', 'budgeted')['batch'] == {'ok': 2, 'blocked': 3, 'deferred': 0}
         and q('batch-items-behind-held-rows', 'budgeted')['lock_timeout_after'] == '8s'
-        and all(q('batch-items-behind-held-rows', st)['commission_rows'] == 2 for st in ('skipping', 'budgeted'))
+        and all(q('batch-items-behind-held-rows', st)['commission_rows'] == 2 for st in ('skipping', 'keyed', 'budgeted'))
         # five held rows: the call stops at its 8 s and defers the rest, which the resubmission accrues
         and q('batch-runs-out-of-budget', 'budgeted')['call_seconds'] < 9.5
         and q('batch-runs-out-of-budget', 'budgeted')['batch'] == {'ok': 0, 'blocked': 4, 'deferred': 1}
@@ -1030,10 +1094,22 @@ def main():
         and rb['drain']['longest_call_seconds'] < 8.0
         and rb['deadlocks'] == 0)
     report['drain_ok'] = drain_ok
+    probe = report.get('budget_on_171753_text') or {}
+    either_ok = (
+        # on production's installed text (20261019194410's batch) the budget lands on the combined body
+        (report.get('keyed_bodies') or {}).get('batch') == '9befae963f3b9cda25b357f60a9b53d7'
+        # and on 20261019171753's text, the other accepted preimage, on the budget-only body
+        and probe.get('batch_before') == '1ae9eb0e32f8169ce0cdd6b730c859a6'
+        and probe.get('batch_inside') == '6c9a388585158521f0ac36300d5124fd'
+        and probe.get('retry_inside') == 'df10ba64229df0c99918dad77f39aec7'
+        and probe.get('batch_after_rollback') == '1ae9eb0e32f8169ce0cdd6b730c859a6')
+    report['either_order_ok'] = either_ok
+    print('20261019214727 accepts 20261019194410\'s and 20261019171753\'s texts:', 'OK' if either_ok else 'NOT AS CLAIMED',
+          report.get('keyed_bodies'), probe)
     print('2026-10-19 retry backlog (%d due: one call a run drains %d a cycle; the drain loop drains the rest, %s/s):'
           % (rb['n'], rb['one_call_a_run']['accrued'], rb['drain']['sources_per_second']),
           'OK' if drain_ok else 'NOT AS CLAIMED')
-    print('2026-10-19 17:02 slow call (production text > 15 s, 20261019190103 < 9.5 s):',
+    print('2026-10-19 17:02 slow call (production text > 15 s, 20261019214727 < 9.5 s):',
           'OK' if budget_ok else 'NOT AS CLAIMED')
     print('2026-10-19 17:00 starvation (production text starves, 20261019171753 does not):',
           'OK' if skip_ok else 'NOT AS CLAIMED')
@@ -1041,7 +1117,7 @@ def main():
           'OK' if busy_ok else 'NOT AS CLAIMED')
     ok = (all(r['deadlocks'] == 0 for r in fixed)
           and all(r['deadlocks'] > 0 for r in report['results'] if r['state'] == 'before' and r['case'] != 'batch-while-a-finish-holds-a-key')
-          and report['values_equal'] and keys_ok and busy_ok and skip_ok and budget_ok and drain_ok)
+          and report['values_equal'] and keys_ok and busy_ok and skip_ok and budget_ok and drain_ok and either_ok)
     print('CHIP DEADLOCKS: %s' % ('every fixed pair deadlocks before and not after' if ok else 'NOT AS CLAIMED'))
     report['passed'] = ok
     if a.out:

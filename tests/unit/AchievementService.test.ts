@@ -187,7 +187,14 @@ describe('AchievementService', () => {
 
     it('never sends a server-proved achievement from the browser', async () => {
       const { supabase } = await import('../../src/lib/supabase');
-      for (const id of ['royal_flush', 'streak_7', 'streak_30', 'streak_100']) {
+      for (const id of [
+        'royal_flush',
+        'straight_flush',
+        'quads',
+        'streak_7',
+        'streak_30',
+        'streak_100',
+      ]) {
         await expect(achievementService.incrementProgress('u1', id, 1)).resolves.toEqual({
           unlocked: false,
         });

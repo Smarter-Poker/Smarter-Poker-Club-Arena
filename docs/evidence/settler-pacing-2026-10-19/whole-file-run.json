@@ -1,15 +1,20 @@
 {
-  "migration": "20261019190103_a_cash_source_call_fits_the_engines_patience.sql",
-  "executed": "psql -f of the whole file (one BEGIN/COMMIT) on an isolated PostgreSQL 17.11 cluster built by chip-deadlocks.py with production bodies, then 20261019094914 and 20261019171753 applied",
+  "migration": "20261019214727_a_cash_source_call_fits_the_engines_patience.sql",
+  "replaces": "20261019190103 (merged in #7485, refused at install 2026-10-19 21:44 UTC by its preimage guard, apply run 39329770170, nothing committed); file removed",
+  "executed": "psql -f of the whole file (one BEGIN/COMMIT) on an isolated PostgreSQL 17.11 cluster built by chip-deadlocks.py with production bodies, then 20261019094914, 20261019171753 and 20261019194410's batch applied",
   "postgres": "PostgreSQL 17.11 (Ubuntu 17.11-1.pgdg24.04+2) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit",
+  "keyed_bodies": {
+    "batch": "9befae963f3b9cda25b357f60a9b53d7",
+    "projection": "not installed: this cluster holds ee06376aba27a84ac4759d8ce9f42a1e, not 194410's preimage"
+  },
   "before_md5": {
-    "fn_credit_agent_commissions_batch": "1ae9eb0e32f8169ce0cdd6b730c859a6",
+    "fn_credit_agent_commissions_batch": "9befae963f3b9cda25b357f60a9b53d7",
     "fn_retry_cash_accounting_sources": "779590b67fc21e95504a9827f1289207"
   },
   "seconds": 0.02,
   "after_md5": {
-    "fn_credit_agent_commissions_batch": "a581a0c9b52583014fd5bd89138b525d",
-    "fn_retry_cash_accounting_sources": "0e7fb9713fcacdbda70c846191940cae"
+    "fn_credit_agent_commissions_batch": "1c9d9ff9cfb2803f05223c703f61f09b",
+    "fn_retry_cash_accounting_sources": "df10ba64229df0c99918dad77f39aec7"
   },
   "acl_after": {
     "fn_credit_agent_commissions_batch": "{postgres=X/postgres,service_role=X/postgres}",
@@ -19,10 +24,10 @@
     "fn_credit_agent_commissions_batch": "{search_path=public,statement_timeout=300s}",
     "fn_retry_cash_accounting_sources": "{search_path=public,statement_timeout=300s}"
   },
-  "replay": "refused: psql:/var/tmp/qrun-pace/supabase/migrations/20261019190103_a_cash_source_call_fits_the_engines_patience.sql:326: ERROR:  fn_credit_agent_commissions_batch(jsonb) is not the pinned text (md5 a581a0c9b52583014fd5bd89138b525d)",
+  "replay": "refused: psql:/var/tmp/qrun-pace2/supabase/migrations/20261019214727_a_cash_source_call_fits_the_engines_patience.sql:525: ERROR:  fn_credit_agent_commissions_batch(jsonb) is not a pinned text (md5 1c9d9ff9cfb2803f05223c703f61f09b)",
   "after_replay_md5": {
-    "fn_credit_agent_commissions_batch": "a581a0c9b52583014fd5bd89138b525d",
-    "fn_retry_cash_accounting_sources": "0e7fb9713fcacdbda70c846191940cae"
+    "fn_credit_agent_commissions_batch": "1c9d9ff9cfb2803f05223c703f61f09b",
+    "fn_retry_cash_accounting_sources": "df10ba64229df0c99918dad77f39aec7"
   },
-  "production_preimage_read": "2026-10-19 19:16:03 UTC (read-only): fn_credit_agent_commissions_batch 33e0be86d6a2a88f18be4ec4e058cadd, fn_retry_cash_accounting_sources 0a5daa862601baaf365972ac6b577e6a - 20261019171753 not yet installed; this migration refuses until it is"
+  "production_preimage_read": "2026-10-19 21:46:26 UTC (read-only): fn_credit_agent_commissions_batch def md5 9befae963f3b9cda25b357f60a9b53d7 prosrc md5 c99362ad1b5164e9b455f27c213e156d (20261019194410); fn_retry_cash_accounting_sources def md5 779590b67fc21e95504a9827f1289207 prosrc md5 35e2337d10fc7051a1feefd046425707 (20261019171753); owner postgres, ACL {postgres=X/postgres,service_role=X/postgres}, config {search_path=public,statement_timeout=300s}. The texts in this file reproduce both md5s."
 }

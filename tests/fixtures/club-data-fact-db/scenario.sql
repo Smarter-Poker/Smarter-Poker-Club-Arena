@@ -209,6 +209,7 @@ END $$;
 -- ===== The seed reproduces exactly what the triggers wrote. =====
 -- Copy the facts aside, wipe them, move live_from past every row, seed, compare.
 CREATE TEMP TABLE live_facts AS SELECT * FROM ca_club_data_fact;
+CREATE TEMP TABLE trigger_facts AS SELECT * FROM ca_club_data_fact;
 -- The seed must refuse to run before live_from has settled.
 DO $$ BEGIN
   UPDATE ca_club_data_fact_state SET live_from = now() + interval '1 minute';
@@ -246,3 +247,22 @@ BEGIN
   END;
   RAISE NOTICE 'SCENARIO PASSED';
 END $$;
+
+-- ===== Put the clock back (2026-10-20). =====
+-- The seed check above simulated two hours passing by moving every source row
+-- back two hours. The Report tables the live writers filled (club_table_daily
+-- and the four ca_club_*_daily tables) still carry the day those rows were
+-- written, so the Report scenario that runs next against this database would
+-- compare them with facts from two hours earlier. Between 00:00 and 02:00 UTC
+-- those two hours cross midnight: the facts fell on the day before, the
+-- rebuild for today found none of them, and CI shard 2 failed on every pull
+-- request (job 118406110340, 01:40 UTC). Both the writers and the rebuild date
+-- a row by its own created_at in UTC, so production never disagrees; only the
+-- simulation did. The sources return to the instants the writers saw and the
+-- facts to what the triggers wrote, which the seed was just proved equal to.
+UPDATE rake_records SET created_at = created_at + interval '2 hours';
+UPDATE wallet_transactions SET created_at = created_at + interval '2 hours';
+UPDATE chip_ledger SET created_at = created_at + interval '2 hours';
+UPDATE table_seats SET joined_at = joined_at + interval '2 hours';
+DELETE FROM ca_club_data_fact;
+INSERT INTO ca_club_data_fact SELECT * FROM trigger_facts;

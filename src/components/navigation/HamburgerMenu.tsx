@@ -327,7 +327,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     return () => {
       live = false;
     };
-  }, [isOpen, user?.id, workspace.clubUUID, clubRole]);
+  }, [isOpen, user?.id, workspace.clubUUID, clubRole, navigate, onClose, toast]);
   const canCustomizeWelcome =
     welcomeAccess !== null &&
     welcomeAccess.actorId === user?.id &&

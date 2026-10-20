@@ -1,0 +1,3 @@
+# tests/daily-engine-maintenance.law.test.ts
+
+Owner October20,2026: routine engine activation at04:00-04:05 America/Chicago only, hourly tournament breaks remain :55-:00, and hourly cash/global freezes end. The existing producer prepares at03:30 Chicago through its single receiver. Request expiry cannot cause an emergency; explicit urgency and measured degradation retain emergency admission. The owner-approved initial transition admits only an old engine's existing :55 certificate and closes on a serving daily engine. Native observation regression executes in required accounting CI and preserves genuine daily/emergency failures.

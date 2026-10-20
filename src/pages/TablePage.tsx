@@ -297,6 +297,7 @@ import {
 } from '../../server/src/domain/ArenaContext';
 import { useLightningSitOut } from '../lightning/useLightningSitOut';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
+import { lightningTimeBankRequest } from '../utils/lightningTimeBankRequest';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
 import { mergeSessionFacts, sessionBuyInTotal } from '../utils/sessionBuyInTotal';
@@ -22838,6 +22839,29 @@ function LiveTablePage({
      `actionClock` is a store whose identity never changes; the leaves subscribe
      to it. Measured across one 20 second turn: 20 renders of this page before,
      zero after. See src/hooks/actionClockStore.ts. */
+  const timeBankScopeRef = useRef({ scope: '', generation: 0, mounted: true });
+  const timeBankScope = `${tableId ?? ''}:${userId ?? ''}`;
+  if (timeBankScopeRef.current.scope !== timeBankScope) {
+    timeBankScopeRef.current.scope = timeBankScope;
+    timeBankScopeRef.current.generation++;
+  }
+  useEffect(() => {
+    timeBankScopeRef.current.mounted = true;
+    return () => {
+      timeBankScopeRef.current.mounted = false;
+    };
+  }, []);
+  const captureTimeBankRequest = useCallback(
+    () =>
+      lightningTimeBankRequest(() => ({
+        ...timeBankScopeRef.current,
+        scope: `${timeBankScopeRef.current.scope}:${timeBankScopeRef.current.generation}`,
+        lightning: Boolean(lightningRoomRef.current),
+        handId: lightningHandId(engineSnapshotRef.current as LightningSnapshotFields),
+        actionContext: tableStateRef.current.actionContext,
+      })),
+    []
+  );
   const { clock: actionClock, resetTimer } = useTableTimer({
     isActiveTurn: tableState.currentPlayerSeat > 0 && tableState.isHandInProgress,
     /* Dan 2026-08-23: `&& !timeBankActive` used to be here, and it did more harm
@@ -22868,7 +22892,9 @@ function LiveTablePage({
         userId &&
         (timeBankUnlimited || (timeBanksRemaining ?? 0) > 0)
       ) {
-        setTimeBankActive(true);
+        const request = captureTimeBankRequest();
+        if (!request.mayDispatch) return;
+        if (!lightningRoomRef.current) setTimeBankActive(true);
         // 2026-08-20: this was a `.catch(...)` that could NEVER run.
         // GameServerAPI.activateTimeBank does not throw: every failure
         // (non-OK status, unreachable server, a thrown fetch) is converted
@@ -22877,7 +22903,8 @@ function LiveTablePage({
         // So on the one path where the player is by definition not watching —
         // their shot clock just expired — a refused time bank left the client
         // showing borrowed time it did not have. Check the result.
-        void GameServerAPI.activateTimeBank(tableId, userId).then((result) => {
+        void GameServerAPI.activateTimeBank(tableId, userId, request.decision).then((result) => {
+          if (!request.isCurrent()) return;
           if (result?.success) return;
           /* NOT every refusal means "no time left".
 
@@ -22931,7 +22958,10 @@ function LiveTablePage({
     if (!tableId || !userId || (!timeBankUnlimited && (timeBanksRemaining ?? 0) <= 0)) {
       return;
     }
-    const result = await GameServerAPI.activateTimeBank(tableId, userId);
+    const request = captureTimeBankRequest();
+    if (!request.mayDispatch) return;
+    const result = await GameServerAPI.activateTimeBank(tableId, userId, request.decision);
+    if (!request.isCurrent()) return;
     if (!result?.success) {
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
       return;
@@ -22983,7 +23013,15 @@ function LiveTablePage({
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-  }, [tableId, userId, timeBanksRemaining, timeBankUnlimited, toast, heroPineappleCards]);
+  }, [
+    tableId,
+    userId,
+    timeBanksRemaining,
+    timeBankUnlimited,
+    toast,
+    heroPineappleCards,
+    captureTimeBankRequest,
+  ]);
 
   /* An arm belongs to ONE turn. Hero acts, folds, times out or the hand moves
      on, and a leftover `true` would keep the pending indicator lit on a seat

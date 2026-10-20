@@ -12293,6 +12293,11 @@ export class GameServer {
     return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
   }
 
+  /** POST /timebank follows the same current-hand room authority as actions. */
+  getTimeBankEngine(tableId: string): ServerTableEngine | LightningSeatProxy | undefined {
+    return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
+  }
+
   /**
    * A Lightning room's anchor seat (Lightning Phase 6 remediation): leave and
    * add chips from a pool_session_id act on the seat the chips sit in. Null

@@ -47,6 +47,21 @@ describe('GameServerAPI', () => {
     );
   });
 
+  it('sends the Lightning hand and decision without changing the ordinary Time Bank body', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
+    await GameServerAPI.activateTimeBank('pool', 'ignored', {
+      handId: 'hand',
+      actionContext: 'decision',
+    });
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      tableId: 'pool',
+      handId: 'hand',
+      actionContext: 'decision',
+    });
+    await GameServerAPI.activateTimeBank('cash', 'ignored');
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toEqual({ tableId: 'cash' });
+  });
+
   it('sends the admin occupancy contract to the configured engine origin', async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
     await GameServerAPI.notifyServerKickOccupancy('table', 'player', 2, 'occupancy', 'reason');

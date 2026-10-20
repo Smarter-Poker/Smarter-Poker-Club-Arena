@@ -131,6 +131,25 @@ export function recoveryJournal(page, rooms, remaining, playerId) {
     },
   };
 }
+/** A document route does not prove which restored game is active. Select normally. */
+async function selectPoolTab(page, pin, remaining, progress) {
+  const tab = page.locator(`[data-tabid="${pin.poolSessionId}"]`);
+  progress.step = 'wait_for_pool_tab';
+  await tab.waitFor({ state: 'visible', timeout: Math.min(15000, remaining()) });
+  progress.step = 'find_existing_pool_tab';
+  progress.matches = Math.min(2, await tab.count());
+  if (progress.matches !== 1) throw new Error('Manual Pool Tab Missing Or Ambiguous');
+  progress.visible = await tab.isVisible();
+  if (!progress.visible) {
+    progress.step = 'existing_pool_tab_hidden';
+    throw new Error('Manual Pool Tab Hidden');
+  }
+  progress.step = 'select_existing_pool_tab';
+  await tab.tap({ timeout: Math.min(5000, remaining()) });
+  progress.step = 'verify_pool_selection';
+  progress.selected = (await tab.getAttribute('aria-current', { timeout: remaining() })) === 'true';
+  if (!progress.selected) throw new Error('Manual Selection');
+}
 /** One existing manual SPA route. No join control, scripted navigation or tab eviction. */
 async function openOtherPool(page, admin, pin, remaining, progress) {
   progress.step = 'find_existing_pool_tab';
@@ -142,10 +161,7 @@ async function openOtherPool(page, admin, pin, remaining, progress) {
       progress.step = 'existing_pool_tab_hidden';
       throw new Error('Manual Pool Tab Hidden');
     }
-    progress.step = 'select_existing_pool_tab';
-    await existing.tap({ timeout: Math.min(5000, remaining()) });
-    if ((await existing.getAttribute('aria-current', { timeout: remaining() })) !== 'true')
-      throw new Error('Manual Selection');
+    await selectPoolTab(page, pin, remaining, progress);
     return;
   }
   progress.step = 'open_another_table';
@@ -377,12 +393,13 @@ export async function witnessRecovery({
       for (const [index, pin] of pins.entries()) {
         const progress = { poolSessionId: pin.poolSessionId, step: 'entry_navigation' };
         report.navigation.push(progress);
-        if (index === 0)
+        if (index === 0) {
           await page.goto(`https://smarter.poker/hub/club-arena/lightning/${pin.clusterId}`, {
             waitUntil: 'domcontentloaded',
             timeout: remaining(),
           });
-        else await openOtherPool(page, admin, pin, remaining, progress);
+          await selectPoolTab(page, pin, remaining, progress);
+        } else await openOtherPool(page, admin, pin, remaining, progress);
         progress.step = 'first_render';
         await evidence.wait(() => evidence.lastHand(pin.poolSessionId) !== null);
         progress.step = 'rendered';
@@ -463,11 +480,20 @@ export async function witnessRecovery({
         evidence.lastHand(pin.poolSessionId) === beforeHand ? 'observed' : 'not_observed';
       report.phase = 'duplicate';
       const duplicate = await newPage(primary.session);
+      const duplicateProgress = {
+        context: 'duplicate',
+        poolSessionId: pin.poolSessionId,
+        step: 'entry_navigation',
+      };
+      report.navigation.push(duplicateProgress);
       await duplicate.page.goto(`https://smarter.poker/hub/club-arena/table/${pin.poolSessionId}`, {
         waitUntil: 'domcontentloaded',
         timeout: remaining(),
       });
+      await selectPoolTab(duplicate.page, pin, remaining, duplicateProgress);
+      duplicateProgress.step = 'first_render';
       await duplicate.evidence.wait(() => duplicate.evidence.lastHand(pin.poolSessionId) !== null);
+      duplicateProgress.step = 'rendered';
       await validate(admin, pin);
       report.duplicate = 'second_connection_rendered_same_pool';
       await duplicate.c.close();
@@ -498,11 +524,20 @@ export async function witnessRecovery({
       replacement = await openSession(admin, ownedCreateClient, url, pin, remaining);
       clients.add(replacement.client);
       const recovered = await newPage(replacement.session);
+      const recoveredProgress = {
+        context: 'replacement',
+        poolSessionId: pin.poolSessionId,
+        step: 'entry_navigation',
+      };
+      report.navigation.push(recoveredProgress);
       await recovered.page.goto(`https://smarter.poker/hub/club-arena/table/${pin.poolSessionId}`, {
         waitUntil: 'domcontentloaded',
         timeout: remaining(),
       });
+      await selectPoolTab(recovered.page, pin, remaining, recoveredProgress);
+      recoveredProgress.step = 'first_render';
       await recovered.evidence.wait(() => recovered.evidence.lastHand(pin.poolSessionId) !== null);
+      recoveredProgress.step = 'rendered';
       await validate(admin, pin);
       remaining();
       report.recovery = 'new_local_session_same_pool_rendered';

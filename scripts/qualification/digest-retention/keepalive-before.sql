@@ -47,4 +47,3 @@ BEGIN
                             'state', i.state, 'deadline_at', v_deadline);
 END
 $function$
-

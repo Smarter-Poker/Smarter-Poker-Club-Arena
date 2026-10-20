@@ -7,7 +7,7 @@ from pathlib import Path
 
 def qualify(root, pg, port, sql):
     here = Path(__file__).parent
-    migration = root / 'supabase/migrations/20261020145913_lightning_keepalive_does_not_lock_an_already_covered_deadline.sql'
+    migration = root / 'supabase/migrations/20261020145913_lightning_keepalive_preserves_covered_deadlines.sql'
     sql('ALTER TABLE lightning_instance ADD COLUMN deadline_at timestamptz, ADD COLUMN hand_id uuid')
     sql((here / 'keepalive-before.sql').read_text())
     signature = 'fn_lightning_instance_keepalive(uuid,interval,timestamptz)'

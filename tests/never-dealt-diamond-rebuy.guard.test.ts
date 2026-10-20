@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { KNOWN_VARIANTS } from '../server/src/engine/VariantRules';
 const sql = readFileSync(
   'supabase/migrations/20261020143955_never_dealt_diamond_rebuy_proves_original_custody.sql',
   'utf8'
@@ -48,7 +49,7 @@ describe('a never-dealt Diamond rebuy proves its own original custody', () => {
       'python3 scripts/ci/test-never-dealt-rebuy.py --pg-bin'
     );
   });
-  it('enforces all seven game types and both paid generations in each currency fixture', () => {
+  it('enforces all maintained game types and both paid generations in each currency fixture', () => {
     const runner = readFileSync('scripts/ci/test-never-dealt-rebuy.py', 'utf8');
     expect(runner.split("root/DATA/'game-currency-matrix.sql'")).toHaveLength(3);
     const matrix = readFileSync(
@@ -59,7 +60,8 @@ describe('a never-dealt Diamond rebuy proves its own original custody', () => {
       expect(matrix).toContain(`'${game}'`);
     expect(matrix).toContain("ARRAY['rebuy','reentry']");
     expect(matrix).toContain("asset NOT IN ('chips','diamonds')");
-    expect(matrix).toContain('runs<>14');
+    expect(matrix).toContain('runs<>20');
+    for (const variant of KNOWN_VARIANTS) expect(matrix).toContain(`'${variant.toUpperCase()}'`);
     expect(matrix).toContain('smarter_private.f06_movement_never_dealt_prior(');
     expect(matrix).toContain('ROLLBACK;');
   });

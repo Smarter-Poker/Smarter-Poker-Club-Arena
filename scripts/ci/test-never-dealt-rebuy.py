@@ -33,8 +33,8 @@ def main():
   e.sql(db,file=root/diamond_migration,label='exact-diamond-custody-read-owner')
   _,diamond_stdout,_=e.sql(db,file=root/DATA/'diamond-boundaries.sql',label='diamond-native-boundaries-duplicates-acl')
   if diamond_stdout.splitlines().count('NEVER_DEALT_DIAMOND_NATIVE_PASS')!=1:raise RuntimeError('diamond completion absent')
-  e.sql(db,file=root/DATA/'game-currency-matrix.sql',label='seven-games-diamond-rebuy-reentry-matrix')
-  e.report.update(status='passed',passed=True,synthetic_only=True,game_currency_generation_cases=28)
+  e.sql(db,file=root/DATA/'game-currency-matrix.sql',label='all-games-diamond-rebuy-reentry-matrix')
+  e.report.update(status='passed',passed=True,synthetic_only=True,game_currency_generation_cases=40)
  finally:
   e.close();(out/'never-dealt-rebuy-report.json').write_text(json.dumps(e.report,indent=2)+'\n')
 if __name__=='__main__':main()

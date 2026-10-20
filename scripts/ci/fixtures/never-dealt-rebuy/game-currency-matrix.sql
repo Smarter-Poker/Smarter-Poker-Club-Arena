@@ -6,7 +6,7 @@ DECLARE game text; op text; asset text; proof jsonb; runs integer:=0;
 BEGIN
  SELECT min(f.asset) INTO asset FROM public.tournament_participant_funding_receipts f WHERE f.operation='rebuy';
  IF asset NOT IN ('chips','diamonds') THEN RAISE EXCEPTION 'MATRIX_ASSET_MISSING'; END IF;
- FOREACH game IN ARRAY ARRAY['NLH','PLO4','PLO5','PLO6','PLO8','SHORT_DECK','OFC_PINEAPPLE'] LOOP
+ FOREACH game IN ARRAY ARRAY['NLH','PLO4','PLO5','PLO6','PLO8','SHORT_DECK','OFC_PINEAPPLE','FLH','FLO8','PINEAPPLE'] LOOP
   FOREACH op IN ARRAY ARRAY['rebuy','reentry'] LOOP
    UPDATE public.tables SET game_type=game;
    UPDATE public.tournaments SET game_type=game;
@@ -32,8 +32,8 @@ BEGIN
    runs:=runs+1;
   END LOOP;
  END LOOP;
- IF runs<>14 THEN RAISE EXCEPTION 'INCOMPLETE_MATRIX'; END IF;
- RAISE NOTICE 'ALL_SEVEN_GAMES_TWO_GENERATIONS_PASS:%',asset;
+ IF runs<>20 THEN RAISE EXCEPTION 'INCOMPLETE_MATRIX'; END IF;
+ RAISE NOTICE 'ALL_TEN_GAMES_TWO_GENERATIONS_PASS:%',asset;
 END $matrix$;
 ROLLBACK;
 SELECT 'GAME_CURRENCY_MATRIX_PASS';

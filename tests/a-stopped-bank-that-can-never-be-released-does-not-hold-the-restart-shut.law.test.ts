@@ -111,6 +111,7 @@ function certificate({
     ...(releaseSha === undefined ? {} : { releaseSha }),
     ...(hands === 'absent' ? {} : { handsInFlightTotal: hands }),
     maintenance: {
+      reason: 'Deployment Recovery',
       active: true,
       phase: 'counting_down',
       durableConfirmed: true,

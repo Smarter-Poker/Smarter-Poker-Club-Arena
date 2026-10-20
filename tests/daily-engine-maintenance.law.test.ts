@@ -1,3 +1,4 @@
+import { queuedDailyRelease } from '../scripts/ci/daily-engine-provenance.mjs';
 import { describe, expect, it } from 'vitest';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -144,5 +145,54 @@ describe('routine activation and the owner-approved initial transition stay boun
     expect(transaction.split('# Protect mixed-version rollout too:')).toHaveLength(3);
     expect(certificatePolicy('2026-10-20T20:20:00+00:00', 'Deployment Recovery')).toBe(0);
     expect(transaction).not.toContain('urgent|engine-degraded|deadline)');
+  });
+});
+
+const dailyHealth = {
+  maintenance: {
+    schedule: {
+      timeZone: 'America/Chicago',
+      startHour: 4,
+      startMinute: 0,
+      hourlyCashFreeze: false,
+    },
+  },
+};
+describe('provenance distinguishes a legitimate daily queue from a missed release', () => {
+  it('queues daytime changes only until their first eligible window proof deadline', () => {
+    const queued = queuedDailyRelease(
+      dailyHealth,
+      '2026-10-20T15:00:00Z',
+      Date.parse('2026-10-20T21:00:00Z')
+    );
+    expect(queued?.dueAt).toBe(Date.parse('2026-10-21T09:15:00Z'));
+    expect(
+      queuedDailyRelease(dailyHealth, '2026-10-20T15:00:00Z', Date.parse('2026-10-21T09:15:00Z'))
+    ).toBeNull();
+  });
+  it('respects the03:30 preparation cutoff and Chicago DST', () => {
+    expect(
+      queuedDailyRelease(dailyHealth, '2026-10-20T08:29:59Z', Date.parse('2026-10-20T08:50:00Z'))
+        ?.dueAt
+    ).toBe(Date.parse('2026-10-20T09:15:00Z'));
+    expect(
+      queuedDailyRelease(dailyHealth, '2026-10-20T08:30:01Z', Date.parse('2026-10-20T08:50:00Z'))
+        ?.dueAt
+    ).toBe(Date.parse('2026-10-21T09:15:00Z'));
+    expect(
+      queuedDailyRelease(dailyHealth, '2026-10-31T15:00:00Z', Date.parse('2026-11-01T09:00:00Z'))
+        ?.dueAt
+    ).toBe(Date.parse('2026-11-01T10:15:00Z'));
+  });
+  it('never grants this envelope to an old engine, missing time or future commit', () => {
+    expect(
+      queuedDailyRelease({}, '2026-10-20T15:00:00Z', Date.parse('2026-10-20T21:00:00Z'))
+    ).toBeNull();
+    expect(queuedDailyRelease(dailyHealth, 'unreadable', Date.now())).toBeNull();
+    expect(queuedDailyRelease(dailyHealth, '2030-10-20T15:00:00Z', Date.now())).toBeNull();
+    const audit = readFileSync(join(root, '.github/scripts/audit-engine-provenance.sh'), 'utf8');
+    expect(audit).toContain('git log --reverse --format=%cI "$SERVED..$REQ_SHA"');
+    expect(audit).toContain('QUEUED (not deployed)');
+    expect(audit).toContain('ENGINE PROVENANCE MISMATCH');
   });
 });

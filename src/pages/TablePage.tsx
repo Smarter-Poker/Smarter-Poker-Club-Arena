@@ -27428,10 +27428,10 @@ function LiveTablePage({
                   now: sitOutTick,
                 }),
                 /* 2026-09-04 (audit item 3): the engine says whether this
-                   sit-out was forced (three timeouts) or chosen, and the bar
+                   sit-out was forced (two timeouts) or chosen, and the bar
                    says so too. Same I'm Back either way. */
                 disconnectStates[userId ?? '']?.sitOutReason === 'forced'
-                  ? 'You Timed Out Three Times, So You Are Sitting Out'
+                  ? 'You Timed Out Two Times, So You Are Sitting Out'
                   : 'You Are Sitting Out'
               )}
             </span>

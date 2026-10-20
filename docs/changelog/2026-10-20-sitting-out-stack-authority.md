@@ -22,3 +22,7 @@ The regression executes the actual placeholder branch with the observed
 cases failed before the repair. The existing I'm Back source contract is
 updated to pin the corrected precedence. Delivery and live verification are
 recorded separately in the task checkpoint; this note is not a live pass.
+
+The live two-timeout check exposed an older footer claiming three timeouts.
+The forced-sit-out copy and its existing wiring test now say two, matching
+the engine rule. This changes no timeout threshold or gambling action.

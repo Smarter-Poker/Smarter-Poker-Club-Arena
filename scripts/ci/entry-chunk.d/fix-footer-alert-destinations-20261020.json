@@ -1,0 +1,4 @@
+{
+  "_owner": "Footer attention alerts: the app-root challenge and achievement listeners must synchronously consult the same unsaved-draft guard as the menu before explicit navigation. navigationGuard.ts is 36 lines with no imports or service dependencies; keeping one shared holder prevents an alert from bypassing unsaved work, without adding an asynchronous chunk load to a short-lived alert click. The reviewed entry remains below the existing independent bundle-size cap.",
+  "modules": ["src/lib/navigationGuard.ts"]
+}

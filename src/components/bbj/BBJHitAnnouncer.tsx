@@ -37,8 +37,9 @@
  */
 
 import { useCallback, useState } from 'react';
-import { matchPath, useLocation } from 'react-router-dom';
-import { masterBus } from '../../core/MasterBus';
+import { matchPath, useLocation, useNavigate } from 'react-router-dom';
+import { openTableAsObserver } from '../../utils/observeTable';
+import { mayLeaveCurrentPage } from '../../lib/navigationGuard';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { shouldAnnounceBbjHit } from '../../lib/bbjHitOnce';
 import { soundService } from '../../services/SoundService';
@@ -57,6 +58,7 @@ interface Notice {
 export function BBJHitAnnouncer() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const location = useLocation();
+  const navigate = useNavigate();
   const onScreenTableId = matchPath('/table/:tableId', location.pathname)?.params.tableId ?? null;
 
   useMasterBusSubscription('BBJ_HIT_GLOBAL', (payload) => {
@@ -104,7 +106,8 @@ export function BBJHitAnnouncer() {
       asset={notice.asset}
       tableName={notice.tableName}
       onObserve={() => {
-        masterBus.emit('OPEN_OBSERVE_TABLE', {
+        if (!mayLeaveCurrentPage()) return;
+        openTableAsObserver(navigate, {
           tableId: notice.tableId,
           tableName: notice.tableName,
         });

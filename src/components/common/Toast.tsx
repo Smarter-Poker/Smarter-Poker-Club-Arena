@@ -170,20 +170,35 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
     };
   }, [toast.duration, onRemove]);
 
+  const activate = () => {
+    if (!toast.onClick || isExiting) return;
+    toast.onClick();
+    setIsExiting(true);
+    setTimeout(onRemove, 300);
+  };
+
   return (
     <div
       className={`toast toast--${toast.type} ${isExiting ? 'toast--exiting' : ''}${toast.onClick ? ' toast--clickable' : ''}`}
-      onClick={() => {
-        if (toast.onClick) {
-          toast.onClick();
-          setIsExiting(true);
-          setTimeout(onRemove, 300);
-        }
-      }}
+      onClick={activate}
       style={{ cursor: toast.onClick ? 'pointer' : 'default' }}
     >
       <ToastInstrumentIcon type={toast.type} />
-      <span className="toast__message">{toast.message}</span>
+      <span
+        role={toast.onClick ? 'button' : undefined}
+        tabIndex={toast.onClick ? 0 : undefined}
+        aria-label={toast.onClick ? toast.message : undefined}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            activate();
+          }
+        }}
+        className="toast__message"
+      >
+        {toast.message}
+      </span>
       <button
         type="button"
         className="toast__close"

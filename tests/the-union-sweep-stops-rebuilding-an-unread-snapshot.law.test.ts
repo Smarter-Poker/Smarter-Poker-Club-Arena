@@ -23,12 +23,15 @@ import { functionBody, latestDeclaring, migrationFiles, readMigration } from './
 
 const REMOVED = '20261003225101_the_union_sweep_stops_rebuilding_an_unread_snapshot.sql';
 const RESTORED = '20261003235228_the_union_sweep_refreshes_the_windowed_snapshot_again.sql';
+// 20261020010133 declares the sweep in force again (whole text, over a pinned
+// preimage); the money-controls-first order below is checked on its body.
+const LANDS = '20261020010133_the_open_week_rake_basis_lands_or_says_so.sql';
 const read = (f: string) => readFileSync(resolve(process.cwd(), 'supabase/migrations', f), 'utf8');
 
 describe('the union sweep only rebuilds a bounded snapshot', () => {
   it('the sweep in force runs every money control, and the refresh only after them', () => {
     const { name, sql } = latestDeclaring('fn_union_integrity_sweep_all');
-    expect(name).toBe(RESTORED);
+    expect(name).toBe(LANDS);
     const body = functionBody(sql, 'fn_union_integrity_sweep_all');
     const controls = [
       'public.fn_union_integrity_sweep(u.id, p_hours)',

@@ -1,0 +1,3 @@
+# tests/the-open-week-rake-basis-lands-or-says-so.law.test.ts
+
+The open-week rake basis lands or says so once (2026-10-20): job 123 counts a refresh as landed only when it wrote the snapshot or found its inputs unchanged, and every other outcome (windows in progress, success false, timeout, unreached union, error) holds exactly one open fn_union_rake_basis_refresh warning per union and kind, repeats counted, all closed by the next landing; fn_union_rake_basis_windowed stamps a saved window with the union clubs it reads (not every club on the platform) and proves at least one window per call; fn_accounting_union_earned_plan_window joins by hash (enable_nestloop off) and reads only the window's recognitions, with the same six proofs and the same output.

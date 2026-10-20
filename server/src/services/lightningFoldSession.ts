@@ -3,7 +3,8 @@
  * in the same transaction. Raw sockets do not create an authorization exception.
  */
 import pg from 'pg';
-import { supabase, DB_TIMEOUT_MS } from './supabase/client.js';
+import { supabase } from './supabase/client.js';
+import { resolveClientTimeoutMs } from './cashAccountingBatchBudget.js';
 import { enginePgSsl } from './supabase/enginePgSession.js';
 import { currentTournamentDataAuthority, dataActorHeaders } from './supabase/dataActorContext.js';
 import {
@@ -11,12 +12,11 @@ import {
   notifyTournamentManagerFenced,
 } from './supabase/tournamentManagerFence.js';
 
-export const LIGHTNING_FOLD_SESSION_URL_RPC = 'fn_engine_lightning_fold_session_url';
 export const LIGHTNING_FOLD_POOL_MAX = 4;
 export const LIGHTNING_FOLD_ACQUIRE_MS = 100;
 export const LIGHTNING_FOLD_SQL =
   'SELECT smarter_private.fn_engine_lightning_fast_fold($1::uuid,$2::uuid,$3::uuid,$4::text,$5::numeric,$6::jsonb) AS result';
-const BEGIN_SQL = `BEGIN; SET LOCAL synchronous_commit = on; SET LOCAL statement_timeout = '${DB_TIMEOUT_MS}ms'; SET LOCAL idle_in_transaction_session_timeout = '${DB_TIMEOUT_MS}ms'`;
+const DB_TIMEOUT_MS = resolveClientTimeoutMs();
 
 export interface LightningFoldArgs {
   p_hand_id: string;
@@ -51,9 +51,10 @@ function verifiedConnectionString(value: unknown): string | null {
       !url.hostname
     )
       return null;
-    // pg's connection-string SSL fields otherwise replace the explicit verified TLS options.
-    for (const key of ['ssl', 'sslmode', 'sslcert', 'sslkey', 'sslrootcert'])
-      url.searchParams.delete(key);
+    // pg merges ALL query fields over its explicit configuration, including user,
+    // port, options and TLS. Only the validated canonical authority/path is used.
+    url.search = '';
+    url.hash = '';
     return url.toString();
   } catch {
     return null;
@@ -65,7 +66,10 @@ export function createLightningFoldSession(deps: {
   readUrl: () => Promise<unknown>;
   openPool: (connectionString: string) => LightningFoldPool;
   log?: (line: string) => void;
+  timeoutMs?: number;
 }) {
+  const timeoutMs = deps.timeoutMs ?? DB_TIMEOUT_MS;
+  const BEGIN_SQL = `BEGIN; SET LOCAL synchronous_commit = on; SET LOCAL statement_timeout = '${timeoutMs}ms'; SET LOCAL idle_in_transaction_session_timeout = '${timeoutMs}ms'`;
   let pool: LightningFoldPool | null = null;
   let starting: Promise<boolean> | null = null;
   let stopped = false;
@@ -217,7 +221,7 @@ export function createLightningFoldSession(deps: {
           expired = true;
           destroy = true;
           reject(new Error('fold_request_boundary'));
-        }, DB_TIMEOUT_MS);
+        }, timeoutMs);
         requestTimer.unref?.();
       });
       return await Promise.race([transaction, boundary]);
@@ -270,7 +274,7 @@ export function createLightningFoldSession(deps: {
 
 const session = createLightningFoldSession({
   readUrl: async () => {
-    const { data, error } = await supabase.rpc(LIGHTNING_FOLD_SESSION_URL_RPC);
+    const { data, error } = await supabase.rpc('fn_engine_lightning_fold_session_url');
     if (error) throw new Error('lightning_fold_session_credential_unavailable');
     return data;
   },

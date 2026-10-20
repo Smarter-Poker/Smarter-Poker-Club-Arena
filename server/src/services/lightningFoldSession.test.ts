@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-vi.mock('./supabase/client.js', () => ({ supabase: { rpc: vi.fn() }, DB_TIMEOUT_MS: 1_000 }));
+import pg from 'pg';
+import { enginePgSsl } from './supabase/enginePgSession.js';
+vi.mock('./supabase/client.js', () => ({ supabase: { rpc: vi.fn() } }));
 import {
   createLightningFoldSession,
   LIGHTNING_FOLD_SQL,
@@ -50,7 +52,12 @@ function fixture() {
   const logs: string[] = [];
   const readUrl = vi.fn(async () => url);
   const openPool = vi.fn((_connectionString: string) => pool);
-  const session = createLightningFoldSession({ readUrl, openPool, log: (line) => logs.push(line) });
+  const session = createLightningFoldSession({
+    readUrl,
+    openPool,
+    log: (line) => logs.push(line),
+    timeoutMs: 1_000,
+  });
   return {
     session,
     pool,
@@ -66,6 +73,36 @@ function fixture() {
 }
 
 describe('dedicated original Lightning fold session', () => {
+  it.each(['ssl=0', 'sslmode=disable'])(
+    'prevents URL query parameters from overriding the verified login, session port and TLS: %s',
+    async (sslQuery) => {
+      const f = fixture();
+      const tls = enginePgSsl();
+      let parameters!: { user: string; port: number; ssl: unknown; options: unknown };
+      let canonical = '';
+      const session = createLightningFoldSession({
+        readUrl: async () =>
+          url.split('?')[0] +
+          `?${sslQuery}&user=postgres&port=6543&options=-c%20synchronous_commit%3Doff#ignored-fragment`,
+        openPool: (connectionString) => {
+          canonical = connectionString;
+          const client = new pg.Client({ connectionString, ssl: tls });
+          parameters = (client as unknown as { connectionParameters: typeof parameters })
+            .connectionParameters;
+          return f.pool;
+        },
+        log: () => {},
+      });
+      expect(await session.start()).toBe(true);
+      expect(parameters.user).toBe('engine_lightning_fold');
+      expect(parameters.port).toBe(5432);
+      expect(parameters.ssl).toBe(tls);
+      expect(parameters.options).toBeFalsy();
+      expect(new URL(canonical).search).toBe('');
+      expect(new URL(canonical).hash).toBe('');
+      await session.stop();
+    }
+  );
   it('warms separate constrained sockets and acknowledges only the original durable transaction', async () => {
     const f = fixture();
     expect(await f.session.start()).toBe(true);

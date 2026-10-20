@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/lightning-fold-lane-20261020; qualified source, NOT installed; apply exact merged 20261020160107 through apply-merged-migration before engine adoption",
+  "functions": [
+    "smarter_private.fn_engine_lightning_fast_fold",
+    "fn_engine_lightning_fold_session_url"
+  ]
+}

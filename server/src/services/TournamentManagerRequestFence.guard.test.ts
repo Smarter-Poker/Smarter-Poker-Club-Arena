@@ -203,7 +203,7 @@ describe('Stage-A tournament-manager Data API request fence', () => {
       join(process.cwd(), 'src', 'services', 'lightningFoldSession.ts'),
       'utf8'
     );
-    expect(fold).toContain("'fn_engine_lightning_fold_session_url'");
+    expect(fold).toContain("supabase.rpc('fn_engine_lightning_fold_session_url')");
     expect(fold).toContain(
       "decodeURIComponent(url.username).split('.')[0] !== 'engine_lightning_fold'"
     );

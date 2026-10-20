@@ -72,15 +72,25 @@ function fixture({
   const layerDialog = (name) => ({
     first: () => layerDialog(name),
     waitFor: async () => {},
-    getByRole: (role, opts) => ({
-      click: async () => {
-        if (layerFailure?.control === opts.name) throw layerFailure.error;
-        actions.push(`${name}:${opts.name}`);
-        if ((opts.name === 'Enter Poker Arena' || opts.name === 'Not Now') && doors.length > 1)
-          doors.shift();
-      },
-      getAttribute: async () => 'true',
-    }),
+    getByRole: (role, opts) => {
+      if (name === 'daily_bonus')
+        assert.equal(opts.name, 'Close', 'Actual daily bonus secondary plate has aria-label Close');
+      const label = name === 'daily_bonus' ? 'Not Now' : opts.name;
+      const control = {
+        filter: (criteria) => {
+          assert.equal(criteria.hasText, 'Not Now');
+          return control;
+        },
+        click: async () => {
+          if (layerFailure?.control === label) throw layerFailure.error;
+          actions.push(`${name}:${label}`);
+          if ((label === 'Enter Poker Arena' || label === 'Not Now') && doors.length > 1)
+            doors.shift();
+        },
+        getAttribute: async () => 'true',
+      };
+      return control;
+    },
   });
   const request = (name) => ({
     method: () => 'POST',
@@ -793,4 +803,15 @@ test('the normal buy-in intent with a null club is the same exact intent when it
     assert.equal(u.status, 'unknown');
     assert.deepEqual(g.actions, ['join', 'buy']);
   }
+});
+
+test('daily bonus dismissal contract matches its real named secondary plate', () => {
+  const source = readFileSync(
+    new URL('../../src/components/daily-bonus/DailyBonusSheet.tsx', import.meta.url),
+    'utf8'
+  );
+  assert.match(
+    source,
+    /secondary:\s*\{[\s\S]*?label: 'Not Now'[\s\S]*?onClick: onClose,[\s\S]*?'aria-label': 'Close'/
+  );
 });

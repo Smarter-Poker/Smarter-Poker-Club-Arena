@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "purpose": "Immutable source history preserved as lineage, not replayed as financial data during empty schema bootstrap. Every included byte is fingerprinted. New SQL must be explicitly admitted as forward schema input.",
+  "purpose": "Captured source lineage; pending-at-capture schema inputs are separately pinned and actually applied by the finite local forward runner. Historical financial data transformations are never replayed.",
   "repositories": {
     "hub": {
       "revision": "73ce1b5c2f343857013124263ad4542d0e6ac615",
@@ -6572,7 +6572,7 @@
       ]
     },
     "arena": {
-      "revision": "bd4a2e136f5bde6b3e8117e32cbc324dc285af0a",
+      "revision": "18ee8e3102454a53bc06bd3267a77f13df4c5284",
       "files": [
         {
           "path": "supabase/migrations/001_club_arena_schema.sql",
@@ -29537,6 +29537,14 @@
         {
           "path": "supabase/migrations/20261020171735_lightning_settlement_evaluates_the_original_cash_stay_clock.sql",
           "sha256": "f305f0a7dd94affd0e9fcac2b01d0285414fdc3fee7c133eea0402e48fcc0bc6"
+        },
+        {
+          "path": "supabase/migrations/20261020174041_standalone_weekly_statement_proves_original_bank_funding.sql",
+          "sha256": "5b8f96522c5615a25eda180257779ab04c6802ce513bc79d9f2135d2e534e782"
+        },
+        {
+          "path": "supabase/migrations/20261020190723_weekly_count_incomplete_joins_use_original_source_keys.sql",
+          "sha256": "325d91776bf409744303207ad29794e9e576f6c0fa07716c4569f16dddcdb58f"
         }
       ]
     }

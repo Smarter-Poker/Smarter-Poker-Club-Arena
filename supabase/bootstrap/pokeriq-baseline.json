@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "sourceProject": "kuklfnapbkmacvwxktbh",
   "schemaFile": "pokeriq-20261020.sql",
-  "schemaSHA256": "a2da6a141a8082b38d15cc70c0125e9907fbd7b4d81962a48242cfc7e401cf6b",
-  "bytes": 28892711,
+  "schemaSHA256": "a874ad97ff1e8ddc8a9cbb9d0c2a564ec7e40ff5af90ecf84abd968ca43b23ee",
+  "bytes": 28898578,
   "allSchemas": true,
   "dataIncluded": false,
   "sourceRevisionHub": "73ce1b5c2f343857013124263ad4542d0e6ac615",
@@ -95,11 +95,14 @@
     }
   ],
   "sameExportedSnapshot": true,
-  "catalogSHA256": "199f5a8275b5b087f42e193bdb5f74aadc180f77b81f76816904f055dee32eed",
-  "captureCompletedAt": "2026-10-20T19:45:25.934034+00:00",
+  "catalogSHA256": "75710de01a4fc8b57af16c4f4e9af2b7ecf672c8ff3d9d6992d34cafa1b35924",
+  "captureCompletedAt": "2026-10-20T20:33:00.853065+00:00",
   "captureTimingSource": "private capture receipt filesystem completion timestamp",
   "catalogQuerySHA256": "0befc233aa3699e9d8e3678c44a5b288c022ab61bfc52be91e7a342ee26d3639",
-  "sourceHistorySHA256": "64ba64dd23526ee2dffc02a96234739757647d179046386e453461df061468bd",
+  "sourceHistorySHA256": "a2172560c8c6c7e36bb4f38c7dd0fbe01d9ee26443c145fa58ff0207fc108194",
   "platformContractSHA256": "7a0caa25d85d0580cc1d75a711ca460cf84b6b4de083809edfd71c09e071fc08",
-  "extensionRuntimeSHA256": "b5d8cb788aa92530b78920dfe4a47f5c8c69d2dd400e0c00f1311b780dd74bc3"
+  "extensionRuntimeSHA256": "b5d8cb788aa92530b78920dfe4a47f5c8c69d2dd400e0c00f1311b780dd74bc3",
+  "sourceRevisionArena": "18ee8e3102454a53bc06bd3267a77f13df4c5284",
+  "pendingSchemaVersions": ["20261020182843", "20261020184651"],
+  "installedNewVersions": ["20261020174041", "20261020190723"]
 }

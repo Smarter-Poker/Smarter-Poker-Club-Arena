@@ -4,6 +4,7 @@ No URL/credential input or existing database target is supported.
 """
 import argparse,hashlib,json,os,re,shutil,subprocess,sys,tempfile
 from pathlib import Path
+import forward as pending
 ROOT=Path(__file__).resolve().parents[2]
 BASE=ROOT/'supabase/bootstrap'
 class Refused(RuntimeError):pass
@@ -158,7 +159,19 @@ def main():
   catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()));
   if any(x['count'] for x in catalog['unsupported_objects']):raise Refused('Catalog contains unsupported object families')
   differences=compare(expected,catalog)
-  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
+  if differences:
+   output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',phase='baseline-catalog-comparison',differences=differences))+'\n')
+   raise Refused('Independent source catalog comparison differs before pending schema application: '+json.dumps(differences))
+  entries=json.loads((BASE/'forward-schema.json').read_text())['arena']
+  if entries:
+   entries=pending.validate(ROOT,entries)
+   expected=pending.expected_catalog(expected)
+   for entry in entries:
+    sql('SET ROLE postgres;\n'+(ROOT/entry['path']).read_text()+'\nRESET ROLE;',phase='forward-schema-apply',sourceFile=entry['path'])
+   catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()))
+   differences=compare(expected,catalog)
+
+  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'pendingSchemaInputsApplied':[x['path'] for x in entries],'pendingExpectedCatalog':'Reviewed exact nine routine postimages, metadata/ACLs, one constraint enum change; every other captured field unchanged','noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
   output.write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt))
   if differences:raise Refused('Independent source catalog comparison differs')
  finally:

@@ -2,12 +2,12 @@
 -- PostgreSQL database dump
 --
 
-\restrict nGYLiw3yg3sgSFg3hMkbioBqGpYCZGhP0WwlchhNEHaEpbHl59klHDccrzn1AMY
+\restrict 5YgDmcxJ8jwKdKqtUvxLUK6ifCKz5tFDC5Hf7djskCQtCWsjc4T2cb4g7Tf0XkY
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 17.11
 
--- Started on 2026-10-20 14:44:50 CDT
+-- Started on 2026-10-20 15:32:18 CDT
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -38257,7 +38257,7 @@ COMMENT ON FUNCTION public.fn_admin_close_table(p_table_id uuid) IS 'AUDIT M17: 
 
 
 --
--- TOC entry 4388 (class 1255 OID 20513803)
+-- TOC entry 4387 (class 1255 OID 20513803)
 -- Name: fn_admin_holds_no_player_wallet(); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -144911,6 +144911,9 @@ DECLARE period public.settlement_periods%ROWTYPE;close_row public.ca_settlements
  unknown_roles int;missing_periods int;receipt_issues int;source_issues int:=0;rows_count int;source_count int;stage_count int;
  ledger_ids jsonb;private_ledger_ids jsonb:='[]';source_fingerprint text;quality jsonb;bank record;bank_sources int;bank_sum numeric;bad_sources int;
  ready boolean;close_count int;bank_bad bigint;bank_burned numeric;bank_ids jsonb;
+ standalone_funding numeric:=0;standalone_cash numeric;standalone_fees numeric;standalone_expected numeric;
+ standalone_key text;standalone_leg public.chip_ledger%ROWTYPE;standalone_legs int;standalone_registers int;
+ standalone_ledger_ids jsonb:='[]';standalone_mint_ids jsonb:='[]';
 BEGIN
  SELECT * INTO period FROM public.settlement_periods WHERE id=p_period_id;
  IF NOT FOUND OR period.club_id IS NULL THEN RAISE EXCEPTION 'club_accounting_period_missing' USING ERRCODE='22023';END IF;
@@ -145017,6 +145020,56 @@ BEGIN
  private_burned:=private_burned+bank_burned;
  private_ledger_ids:=private_ledger_ids||bank_ids;
  IF private_banked+private_burned IS DISTINCT FROM private_basis THEN source_issues:=source_issues+1;END IF;
+ -- Retirement explains the original private earning source; the separate
+ -- original weekly bank mint supplies spendable standalone treasury funding.
+ -- Never add that later mint to private_banked or count the retirement twice.
+ IF period.union_id IS NULL THEN
+  SELECT COALESCE(sum(b.amount),0) INTO standalone_cash FROM public.accounting_cash_bank_receipts b
+   WHERE b.union_id IS NULL AND b.club_id=period.club_id AND b.club_ledger_id IS NOT NULL
+    AND b.banked_at>=period.start_at AND b.banked_at<period.end_at;
+  SELECT COALESCE(sum(s.amount),0) INTO standalone_fees FROM public.tournament_rake_settlements s
+   WHERE s.destination='chip_retirement:'||period.club_id::text
+    AND s.settled_at>=period.start_at AND s.settled_at<period.end_at;
+  standalone_expected:=standalone_cash+standalone_fees;
+  standalone_key:='standalone-rake-bank:'||period.club_id::text||':'
+   ||to_char(period.start_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"')||'..'
+   ||to_char(period.end_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"');
+  SELECT count(*) INTO standalone_legs FROM public.chip_ledger l WHERE l.idempotency_key=standalone_key;
+  IF standalone_expected IS DISTINCT FROM private_basis THEN source_issues:=source_issues+1;END IF;
+  IF standalone_legs=1 THEN
+   SELECT * INTO standalone_leg FROM public.chip_ledger l WHERE l.idempotency_key=standalone_key;
+   SELECT count(*) INTO standalone_registers FROM public.ca_mint_ledger m
+    WHERE m.op_id=standalone_key OR m.chip_ledger_id=standalone_leg.id;
+   IF private_basis>0 AND standalone_expected IS NOT DISTINCT FROM private_basis AND standalone_registers=1
+    AND standalone_leg.status IS NOT DISTINCT FROM 'posted' AND standalone_leg.category IS NOT DISTINCT FROM 'mint'
+    AND standalone_leg.club_id IS NOT DISTINCT FROM period.club_id AND standalone_leg.union_id IS NULL
+    AND standalone_leg.from_type IS NOT DISTINCT FROM 'system_mint' AND standalone_leg.from_entity_id IS NULL
+    AND standalone_leg.to_type IS NOT DISTINCT FROM 'club_treasury' AND standalone_leg.to_entity_id IS NOT DISTINCT FROM period.club_id
+    AND standalone_leg.amount IS NOT DISTINCT FROM standalone_expected
+    AND standalone_leg.amount>0 AND standalone_leg.amount=round(standalone_leg.amount,2)
+    AND standalone_leg.amount::text NOT IN('NaN','Infinity','-Infinity')
+    AND standalone_leg.created_at IS NOT NULL AND standalone_leg.created_at>=period.end_at
+    AND standalone_leg.pre_to_balance IS NOT NULL AND standalone_leg.post_to_balance IS NOT NULL
+    AND standalone_leg.pre_to_balance::text NOT IN('NaN','Infinity','-Infinity')
+    AND standalone_leg.post_to_balance::text NOT IN('NaN','Infinity','-Infinity')
+    AND standalone_leg.pre_to_balance=round(standalone_leg.pre_to_balance,2)
+    AND standalone_leg.post_to_balance=round(standalone_leg.post_to_balance,2)
+    AND standalone_leg.post_to_balance-standalone_leg.pre_to_balance=standalone_leg.amount
+    AND EXISTS(SELECT FROM public.ca_mint_ledger m WHERE m.op_id=standalone_key
+     AND m.chip_ledger_id=standalone_leg.id AND m.action='mint' AND m.asset='chips'
+     AND m.holder_type='club' AND m.holder_id=period.club_id AND m.amount=standalone_leg.amount
+     AND m.balance_before=standalone_leg.pre_to_balance AND m.balance_after=standalone_leg.post_to_balance
+     AND m.balance_after-m.balance_before=m.amount AND m.performed_by_label='fn_ca_fund_club'
+     AND m.created_at IS NOT NULL AND m.created_at>=standalone_leg.created_at) THEN
+    standalone_funding:=standalone_leg.amount;
+    standalone_ledger_ids:=jsonb_build_array(standalone_leg.id);
+    SELECT jsonb_build_array(m.id) INTO standalone_mint_ids FROM public.ca_mint_ledger m WHERE m.op_id=standalone_key;
+   ELSE source_issues:=source_issues+1;END IF;
+  ELSIF private_basis<>0 OR standalone_legs<>0 OR EXISTS(SELECT FROM public.ca_mint_ledger m WHERE m.op_id=standalone_key) THEN
+   source_issues:=source_issues+1;
+  END IF;
+ END IF;
+
  WITH transfers AS (
   SELECT l.*,i.to_entity_type,i.breakdown->>'payee_role_at_transfer' AS payee_role,
    (i.id IS NULL OR i.net_amount IS DISTINCT FROM l.amount OR i.status IS DISTINCT FROM 'paid' OR i.chips_transferred IS DISTINCT FROM true
@@ -145058,16 +145111,17 @@ BEGIN
  RETURN jsonb_build_object('accounting_version',3,'scope_kind',scope_kind,'scope_id',scope_id,'period_id',period.id,'club_id',period.club_id,'union_id',period.union_id,
   'period_start',period.start_at,'period_end',period.end_at,'currency','CHIPS','rake_earned',union_basis+private_basis,
   'union_rake_earned',union_basis,'private_rake_earned',private_basis,'private_rake_banked',private_banked,'private_rake_burned',private_burned,'rake_received',received,'expected_union_receipt',expected,
-  'total_rake_funding',received+private_banked,'paid_super_agents',COALESCE((roles->>'super_agent')::numeric,0),'paid_agents',COALESCE((roles->>'agent')::numeric,0),
+  'standalone_rake_funding',standalone_funding,'standalone_bank_ledger_ids',standalone_ledger_ids,'standalone_bank_mint_ids',standalone_mint_ids,
+  'total_rake_funding',received+private_banked+standalone_funding,'paid_super_agents',COALESCE((roles->>'super_agent')::numeric,0),'paid_agents',COALESCE((roles->>'agent')::numeric,0),
   'paid_sub_agents',COALESCE((roles->>'sub_agent')::numeric,0),'paid_players',COALESCE((roles->>'player')::numeric,0),'paid_unclassified',COALESCE((roles->>'unclassified')::numeric,0),
-  'total_paid_by_club',outgoing,'retained_by_club',received+private_banked-outgoing,'downstream_redistributed',downstream,
+  'total_paid_by_club',outgoing,'retained_by_club',received+private_banked+standalone_funding-outgoing,'downstream_redistributed',downstream,
   'downstream_paid_super_agents',COALESCE((down_roles->>'super_agent')::numeric,0),'downstream_paid_agents',COALESCE((down_roles->>'agent')::numeric,0),
   'downstream_paid_sub_agents',COALESCE((down_roles->>'sub_agent')::numeric,0),'downstream_paid_players',COALESCE((down_roles->>'player')::numeric,0),
   'transfer_count',rows_count,'source_ledger_ids',ledger_ids,'private_bank_ledger_ids',private_ledger_ids,'source_count',source_count,'source_fingerprint_v3',source_fingerprint,
   'unclassified_role_count',unknown_roles,'missing_period_count',missing_periods,'receipt_issue_count',receipt_issues,'source_issue_count',source_issues,'certified_stage_count',stage_count,
   'tournament_quality',quality,'ready_to_issue',ready,'status',CASE WHEN run_status='complete' AND ready THEN 'complete' ELSE 'needs_reconciliation' END,'run_status',run_status,
   'basis_source','Recorded Earning Sources And Posted Disposition Receipts',
-  'note','Direct Club Payments Count Once. Downstream Transfers Are Separate. Retained Rake Is This Week''s Funding Less Direct Payments, Not The Treasury Balance Or An Additional Bill. Burned Standalone Rake Is Not Funding; Negative Retained Rake Reflects Payments From Other Existing Treasury Funds.');
+  'note','Direct Club Payments Count Once. Downstream Transfers Are Separate. Retained Rake Is This Week''s Funding Less Direct Payments, Not The Treasury Balance Or An Additional Bill. Original Rake Retirement Is Not Funding. A Proven Standalone Weekly Bank Mint Is Funding. Negative Retained Rake Reflects Payments From Other Existing Treasury Funds.');
 END $$;
 
 
@@ -166648,7 +166702,7 @@ $$;
 ALTER FUNCTION public.fn_export_user_data_gdpr(p_user_id uuid, p_requested_by uuid) OWNER TO postgres;
 
 --
--- TOC entry 4387 (class 1255 OID 22468829)
+-- TOC entry 4388 (class 1255 OID 22468829)
 -- Name: fn_extract_youtube_video_id(text); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -166699,7 +166753,7 @@ ALTER FUNCTION public.fn_extract_youtube_video_id(p_value text) OWNER TO postgre
 
 --
 -- TOC entry 46898 (class 0 OID 0)
--- Dependencies: 4387
+-- Dependencies: 4388
 -- Name: FUNCTION fn_extract_youtube_video_id(p_value text); Type: COMMENT; Schema: public; Owner: postgres
 --
 
@@ -235545,8 +235599,20 @@ BEGIN
    OR invalid_count>0 OR attributed<>rake_amount OR rake_amount<>round(rake_amount,2)
  ), incomplete AS (
   SELECT count(*) AS n FROM club_attributions a JOIN week_records r ON r.id=a.rake_record_id
-   LEFT JOIN week_sources s ON s.rake_record_id=r.id AND s.player_id=a.player_id
-   LEFT JOIN week_batches b ON b.rake_record_id=r.id
+   -- r already belongs to week_records: its equality proves the original
+   -- source/batch keyset membership. Keep full-week source scope and every
+   -- LEFT missing-row/multiplicity rule, using the original unique indexes.
+   LEFT JOIN LATERAL (
+    SELECT s0.id,s0.rake_record_id,s0.player_id,s0.club_id,s0.earned_at,s0.rake_credit,
+     s0.contract->>'attribution_id' c_attribution,s0.contract->>'player_id' c_player,s0.contract->>'club_id' c_club
+    FROM public.accounting_cash_rake_sources s0
+    WHERE s0.rake_record_id=r.id AND s0.player_id=a.player_id
+     AND s0.club_id=p_club_id AND s0.earned_at>=v_from AND s0.earned_at<v_to OFFSET 0
+   )s ON true
+   LEFT JOIN LATERAL (
+    SELECT b0.rake_record_id,b0.status FROM public.accounting_cash_accrual_batches b0
+    WHERE b0.rake_record_id=r.id OFFSET 0
+   )b ON true
    WHERE s.id IS NULL OR b.status IS DISTINCT FROM 'accrued' OR s.club_id IS DISTINCT FROM a.club_id
      OR s.earned_at IS DISTINCT FROM r.created_at OR s.rake_credit IS DISTINCT FROM a.weighted_rake_credit
      OR s.c_attribution IS DISTINCT FROM a.id::text
@@ -271162,7 +271228,7 @@ END $$;
 ALTER FUNCTION public.fn_submit_video_creator_claim(p_operation_id uuid, p_content_source_id uuid, p_provider_channel_id text, p_evidence_kind text, p_evidence_reference text, p_evidence_sha256 text) OWNER TO postgres;
 
 --
--- TOC entry 6792 (class 1255 OID 103569769)
+-- TOC entry 6793 (class 1255 OID 103569769)
 -- Name: fn_submit_video_creator_clip_review(uuid, uuid, integer, text, text); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -323675,7 +323741,7 @@ END; $$;
 ALTER FUNCTION public.prune_old_notifications() OWNER TO postgres;
 
 --
--- TOC entry 6793 (class 1255 OID 206771640)
+-- TOC entry 6792 (class 1255 OID 206771640)
 -- Name: publish_horse_grounded_hand(uuid, bigint, text, text, text, text, text, jsonb); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
@@ -323687,6 +323753,7 @@ DECLARE
  v_existing public.social_posts%ROWTYPE;
  v_review public.horse_hand_reviews%ROWTYPE;
  v_post uuid; v_lock text; v_field text;
+ v_previous_lock_timeout text; v_profile_found boolean;
  v_phrase text:=btrim(regexp_replace(regexp_replace(regexp_replace(lower(split_part(p_content,E'\n',1)),
   'https?://\S+','','g'),'[^a-z0-9\s]','','g'),'\s+',' ','g'));
  v_hash text:=md5(jsonb_build_array(p_author_id,p_review_id,p_content,p_phrase_norm,p_semantic_key,p_frame_key,p_publication_key,p_brief)::text);
@@ -323741,6 +323808,27 @@ BEGIN
   END IF;
   RETURN QUERY SELECT NULL::uuid,false,'duplicate_slot'::text; RETURN;
  END IF;
+ -- One bounded acquisition, never a publication retry. Acquire the reward's
+ -- final profile lock before shared configuration gates; preserve caller budget.
+ v_previous_lock_timeout:=current_setting('lock_timeout');
+ BEGIN
+  PERFORM set_config('lock_timeout',CASE
+   WHEN v_previous_lock_timeout='0' THEN '2s'
+   WHEN current_setting('lock_timeout')::interval>interval '2 seconds' THEN '2s'
+   ELSE v_previous_lock_timeout END,true);
+  PERFORM 1 FROM public.profiles p
+   WHERE p.id=p_author_id AND p.is_horse IS TRUE AND p.status='active'
+   AND p.horse_status='available' AND p.avatar_url IS NOT NULL FOR UPDATE;
+  v_profile_found:=FOUND;
+  PERFORM set_config('lock_timeout',v_previous_lock_timeout,true);
+ EXCEPTION WHEN OTHERS THEN
+  PERFORM set_config('lock_timeout',v_previous_lock_timeout,true);
+  RAISE;
+ END;
+ IF NOT v_profile_found THEN RAISE EXCEPTION 'grounded author inactive' USING ERRCODE='42501'; END IF;
+ PERFORM 1 FROM public.content_authors ca WHERE ca.profile_id=p_author_id
+  AND ca.is_active IS TRUE FOR SHARE NOWAIT;
+ IF NOT FOUND THEN RAISE EXCEPTION 'grounded author inactive' USING ERRCODE='42501'; END IF;
  PERFORM 1 FROM public.content_settings FOR SHARE;
  IF (SELECT count(*) FROM public.content_settings)<>1 OR NOT EXISTS(SELECT 1 FROM public.content_settings WHERE engine_enabled IS TRUE AND auto_publish IS TRUE) THEN
   RAISE EXCEPTION 'grounded master gate disabled' USING ERRCODE='42501'; END IF;
@@ -323749,11 +323837,6 @@ BEGIN
   RAISE EXCEPTION 'grounded zero model budget gate failed' USING ERRCODE='42501'; END IF;
  PERFORM 1 FROM public.horse_post_modes WHERE mode='grounded_hand' AND enabled IS TRUE AND approved_at IS NOT NULL AND nullif(btrim(approved_by),'') IS NOT NULL FOR SHARE;
  IF NOT FOUND THEN RAISE EXCEPTION 'grounded hand mode not approved/enabled' USING ERRCODE='42501'; END IF;
- -- Ordinary post rewards need this final profile lock. Never upgrade after INSERT.
- PERFORM 1 FROM public.profiles p JOIN public.content_authors ca ON ca.profile_id=p.id
- WHERE p.id=p_author_id AND p.is_horse IS TRUE AND p.status='active' AND p.horse_status='available'
- AND p.avatar_url IS NOT NULL AND ca.is_active IS TRUE FOR UPDATE OF p NOWAIT FOR SHARE OF ca NOWAIT;
- IF NOT FOUND THEN RAISE EXCEPTION 'grounded author inactive' USING ERRCODE='42501'; END IF;
  SELECT * INTO v_review FROM public.horse_hand_reviews WHERE id=p_review_id AND horse_user_id=p_author_id
  AND review_status='auto_reviewed' AND played_at>=now()-interval '7 days' AND played_at<=now() FOR SHARE NOWAIT;
  IF NOT FOUND OR v_review.hand_id IS NULL THEN RAISE EXCEPTION 'grounded own hand source unavailable' USING ERRCODE='42501'; END IF;
@@ -560012,7 +560095,7 @@ GRANT ALL ON FUNCTION extensions.geometry_out(extensions.geometry) TO postgres W
 
 --
 -- TOC entry 43226 (class 0 OID 0)
--- Dependencies: 4739
+-- Dependencies: 4738
 -- Name: FUNCTION geometry_recv(internal); Type: ACL; Schema: extensions; Owner: supabase_admin
 --
 
@@ -560567,7 +560650,7 @@ GRANT ALL ON FUNCTION extensions.geography(extensions.geometry) TO postgres WITH
 
 --
 -- TOC entry 43278 (class 0 OID 0)
--- Dependencies: 4738
+-- Dependencies: 4739
 -- Name: FUNCTION geometry(extensions.geometry, integer, boolean); Type: ACL; Schema: extensions; Owner: supabase_admin
 --
 
@@ -573547,7 +573630,7 @@ REVOKE ALL ON FUNCTION public.fn_admin_close_table(p_table_id uuid) FROM PUBLIC;
 
 --
 -- TOC entry 44779 (class 0 OID 0)
--- Dependencies: 4388
+-- Dependencies: 4387
 -- Name: FUNCTION fn_admin_holds_no_player_wallet(); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -590477,7 +590560,7 @@ GRANT ALL ON FUNCTION public.fn_export_user_data_gdpr(p_user_id uuid, p_requeste
 
 --
 -- TOC entry 46899 (class 0 OID 0)
--- Dependencies: 4387
+-- Dependencies: 4388
 -- Name: FUNCTION fn_extract_youtube_video_id(p_value text); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -604527,7 +604610,7 @@ GRANT ALL ON FUNCTION public.fn_submit_video_creator_claim(p_operation_id uuid, 
 
 --
 -- TOC entry 48714 (class 0 OID 0)
--- Dependencies: 6792
+-- Dependencies: 6793
 -- Name: FUNCTION fn_submit_video_creator_clip_review(p_operation_id uuid, p_candidate_id uuid, p_expected_version integer, p_decision text, p_reason text); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -614787,7 +614870,7 @@ GRANT ALL ON FUNCTION public.prune_old_notifications() TO service_role;
 
 --
 -- TOC entry 49945 (class 0 OID 0)
--- Dependencies: 6793
+-- Dependencies: 6792
 -- Name: FUNCTION publish_horse_grounded_hand(p_author_id uuid, p_review_id bigint, p_content text, p_phrase_norm text, p_semantic_key text, p_frame_key text, p_publication_key text, p_brief jsonb); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -643821,11 +643904,11 @@ ALTER EVENT TRIGGER xp_ban_guard OWNER TO postgres;
 COMMENT ON EVENT TRIGGER xp_ban_guard IS 'ZERO XP POLICY v3 (substring-matching): blocks any CREATE/ALTER introducing XP-named column/table/function.';
 
 
--- Completed on 2026-10-20 14:45:20 CDT
+-- Completed on 2026-10-20 15:32:53 CDT
 
 --
 -- PostgreSQL database dump complete
 --
 
-\unrestrict nGYLiw3yg3sgSFg3hMkbioBqGpYCZGhP0WwlchhNEHaEpbHl59klHDccrzn1AMY
+\unrestrict 5YgDmcxJ8jwKdKqtUvxLUK6ifCKz5tFDC5Hf7djskCQtCWsjc4T2cb4g7Tf0XkY
 

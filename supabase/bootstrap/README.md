@@ -26,8 +26,13 @@ network and receives no production secrets. The workflow must pass on the actual
 image before calling a full rebuild verified.
 
 `source-history.json` fingerprints both source repositories at capture. New,
-modified, or missing historical SQL refuses qualification. Forward entries are
-currently forbidden: adding a migration requires a refreshed, independently
-qualified baseline and history inventory. Hash admission alone never proves new
-SQL was applied. Historical data transformations are not executed against an
+modified, or missing historical SQL refuses qualification. Exactly two reviewed migrations were pending at the refreshed capture:
+`20261020182843` and `20261020184651`. The finite forward runner applies their
+unchanged guarded DDL as `postgres` only after the full independent baseline
+comparison passes. It then compares six existing routine postimage hashes,
+three new private routines with exact metadata/ACLs, the constraint enum addition,
+and every other catalog field unchanged. These migrations contain no top-level
+business-data writes; embedded accounting routines are created but never called.
+All other new SQL remains refused until independently qualified. Hash admission
+alone never proves new SQL was applied. Historical data transformations are not executed against an
 empty database to simulate financial history.

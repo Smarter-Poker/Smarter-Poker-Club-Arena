@@ -1,1 +1,15 @@
-{"schemaVersion":1,"hub":[],"arena":[]}
+{
+  "hub": [],
+  "arena": [
+    {
+      "path": "supabase/migrations/20261020182843_native_weekly_hand_outcomes_use_original_bounded_parts.sql",
+      "sha256": "0ec1002c063f2f18c664cefd944c1993287e71607b00f252ac465c67128e7031",
+      "state": "pending-at-capture"
+    },
+    {
+      "path": "supabase/migrations/20261020184651_statement_provenance_stays_out_of_messenger.sql",
+      "sha256": "540577870c6ae11d73548d20b4cc97625671623b12208ca8a2e016c46eeee1c0",
+      "state": "pending-at-capture"
+    }
+  ]
+}

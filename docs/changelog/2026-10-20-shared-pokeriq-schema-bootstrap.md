@@ -48,3 +48,5 @@ TOAST, named-object and dependency allowances require 32,485 lock slots; with
 100 isolated connections the rounded budget is 512 locks per transaction.
 Qualification reads those settings back. Production configuration and the
 single-transaction restore are unchanged.
+
+Current-main qualification refresh: the source history guard correctly refused four concurrent migrations. Read-only history and routine preimages distinguish two installed versions (174041/190723) from two pending versions (182843/184651). A new consistent schema/catalog snapshot captures production faithfully. Only the two exact pending guarded DDL inputs are applied locally after baseline fidelity passes, then checked against independently reviewed routine/ACL/constraint expectations with all other catalog fields unchanged. No production installation, financial-history replay, report, or payment invocation occurs. Full image qualification remains pending.

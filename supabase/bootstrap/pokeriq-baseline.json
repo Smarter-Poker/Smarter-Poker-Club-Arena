@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "sourceProject": "kuklfnapbkmacvwxktbh",
+  "schemaFile": "pokeriq-20261020.sql",
+  "schemaSHA256": "a2da6a141a8082b38d15cc70c0125e9907fbd7b4d81962a48242cfc7e401cf6b",
+  "bytes": 28892711,
+  "allSchemas": true,
+  "dataIncluded": false,
+  "sourceRevisionHub": "73ce1b5c2f343857013124263ad4542d0e6ac615",
+  "scope": "Observed schema/ACL fidelity baseline, not permission intent inferred from broad ACL. Fresh caller intent is separately checked against maintained reviewed manifests. No production installation or historical financial data replay.",
+  "extensions": [
+    {
+      "name": "dblink",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "1.2"
+    },
+    {
+      "name": "http",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "1.6"
+    },
+    {
+      "name": "pg_cron",
+      "owner": "supabase_admin",
+      "schema": "pg_catalog",
+      "version": "1.6.4"
+    },
+    {
+      "name": "pg_net",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "0.19.5"
+    },
+    {
+      "name": "pg_stat_statements",
+      "owner": "postgres",
+      "schema": "extensions",
+      "version": "1.11"
+    },
+    {
+      "name": "pg_trgm",
+      "owner": "supabase_admin",
+      "schema": "public",
+      "version": "1.6"
+    },
+    {
+      "name": "pgcrypto",
+      "owner": "postgres",
+      "schema": "extensions",
+      "version": "1.3"
+    },
+    {
+      "name": "pgstattuple",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "1.5"
+    },
+    {
+      "name": "plpgsql",
+      "owner": "supabase_admin",
+      "schema": "pg_catalog",
+      "version": "1.0"
+    },
+    {
+      "name": "plpgsql_check",
+      "owner": "supabase_admin",
+      "schema": "public",
+      "version": "2.7"
+    },
+    {
+      "name": "postgis",
+      "owner": "supabase_admin",
+      "schema": "extensions",
+      "version": "3.3.7"
+    },
+    {
+      "name": "supabase_vault",
+      "owner": "supabase_admin",
+      "schema": "vault",
+      "version": "0.3.1"
+    },
+    {
+      "name": "uuid-ossp",
+      "owner": "postgres",
+      "schema": "extensions",
+      "version": "1.1"
+    },
+    {
+      "name": "vector",
+      "owner": "supabase_admin",
+      "schema": "public",
+      "version": "0.8.0"
+    }
+  ],
+  "sameExportedSnapshot": true,
+  "catalogSHA256": "199f5a8275b5b087f42e193bdb5f74aadc180f77b81f76816904f055dee32eed",
+  "captureCompletedAt": "2026-10-20T19:45:25.934034+00:00",
+  "captureTimingSource": "private capture receipt filesystem completion timestamp",
+  "catalogQuerySHA256": "0befc233aa3699e9d8e3678c44a5b288c022ab61bfc52be91e7a342ee26d3639",
+  "sourceHistorySHA256": "64ba64dd23526ee2dffc02a96234739757647d179046386e453461df061468bd"
+}

@@ -1,0 +1,72 @@
+name: Full shared schema rebuild
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - 'scripts/schema-rebuild/**'
+      - '.github/workflows/full-schema-rebuild.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - 'scripts/schema-rebuild/**'
+      - '.github/workflows/full-schema-rebuild.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Smarter-Poker/Smarter-Poker-World-Hub
+          ref: 73ce1b5c2f343857013124263ad4542d0e6ac615
+          path: shared-hub-source
+          sparse-checkout: supabase/migrations
+          persist-credentials: false
+      - name: Verify immutable source lineage and local-only guard tests
+        run: |
+          python3 scripts/schema-rebuild/check_history.py --checkout . --repo arena --inventory supabase/bootstrap/source-history.json --forward supabase/bootstrap/forward-schema.json
+          python3 scripts/schema-rebuild/check_history.py --checkout shared-hub-source --repo hub --inventory supabase/bootstrap/source-history.json --forward supabase/bootstrap/forward-schema.json
+          python3 scripts/schema-rebuild/test_boundaries.py
+          python3 scripts/schema-rebuild/check_source.py
+      - name: Pull pinned official PostgreSQL 17 platform runtime
+        run: docker pull --platform linux/amd64 supabase/postgres@sha256:432d12926b09e10eb3317b0e2e9672c9ce8ea6bccb359857a31ff9f90683161d
+      - name: Rebuild every schema with no external network or production credentials
+        run: |
+          set -euo pipefail
+          image=supabase/postgres@sha256:432d12926b09e10eb3317b0e2e9672c9ce8ea6bccb359857a31ff9f90683161d
+          scratch="$RUNNER_TEMP/schema-rebuild"
+          tools="$RUNNER_TEMP/schema-pg-tools"
+          mkdir -m 700 "$scratch" "$tools"
+          mkdir -p schema-rebuild-results
+          container=$(docker run -d --rm --network none --platform linux/amd64 \
+            --user "$(id -u):$(id -g)" --entrypoint /bin/sleep \
+            -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro \
+            -v "$scratch:$scratch:rw" "$image" infinity)
+          trap 'docker stop "$container" >/dev/null' EXIT
+          export SCHEMA_REBUILD_CONTAINER="$container"
+          for command in postgres initdb pg_ctl psql; do
+            cat > "$tools/$command" <<'WRAPPER'
+          #!/bin/sh
+          exec docker exec -i "$SCHEMA_REBUILD_CONTAINER" "/usr/lib/postgresql/bin/$(basename "$0")" "$@"
+          WRAPPER
+            chmod 700 "$tools/$command"
+          done
+          "$tools/postgres" --version
+          PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 scripts/schema-rebuild/test-catalog.py
+          python3 scripts/schema-rebuild/verify.py --scratch "$scratch" \
+            --result "$PWD/schema-rebuild-results/result.json" --pg-bin "$tools"
+      - name: Preserve finite rebuild result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-schema-rebuild-result
+          path: schema-rebuild-results/
+          if-no-files-found: error

@@ -43,6 +43,7 @@ export interface WaitListModalProps {
   players: WaitListPlayer[];
   myPlayerId: string;
   onLeaveWaitList: () => void;
+  onJoinWaitList?: () => Promise<void>;
   avgWaitTimeMinutes?: number;
 }
 
@@ -89,6 +90,7 @@ export function WaitListModal({
   players,
   myPlayerId,
   onLeaveWaitList,
+  onJoinWaitList,
   /* No default (final sweep 2026-09-08). This used to default to 5, and no
      caller ever passed it, so every player on every wait list was quoted
      "(position - 1) x 5 min" - a number nobody measured. A wait estimate is
@@ -96,6 +98,19 @@ export function WaitListModal({
      stands alone, which is true. */
   avgWaitTimeMinutes,
 }: WaitListModalProps) {
+  const joiningRef = useRef(false);
+  const [joining, setJoining] = useState(false);
+  const join = async () => {
+    if (!onJoinWaitList || joiningRef.current) return;
+    joiningRef.current = true;
+    setJoining(true);
+    try {
+      await onJoinWaitList();
+    } finally {
+      joiningRef.current = false;
+      setJoining(false);
+    }
+  };
   const [showConfirmLeave, setShowConfirmLeave] = useState(false);
   const [visiblePlayers, setVisiblePlayers] = useState<Set<number>>(new Set());
 
@@ -157,7 +172,14 @@ export function WaitListModal({
      ink once they have said they mean it. Cancel is the lit word on the glass
      beside the question - the control Club Rules uses for its second action. */
   const plate = !inLine
-    ? { label: 'Close', ink: 'silver' as const, onClick: onClose }
+    ? onJoinWaitList
+      ? {
+          label: joining ? 'Joining' : 'Join The List',
+          ink: 'blue' as const,
+          disabled: joining,
+          onClick: () => void join(),
+        }
+      : { label: 'Close', ink: 'silver' as const, onClick: onClose }
     : showConfirmLeave
       ? {
           label: 'Leave',

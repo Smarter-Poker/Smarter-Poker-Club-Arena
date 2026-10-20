@@ -95,6 +95,14 @@ try:
  sql(f"SET ROLE anon;SELECT fn_cashier_conservation_report('{D}')",'permission denied')
  assert sql(meta)==metadata
  post=sql("SELECT md5(pg_get_functiondef('"+sig+"'::regprocedure))")
+ # Only the actual successor definition may be accepted by the live canary.
+ assert post=='617a6a58c41f8a1f204e3438d6ea2a4c',post
+ contract=(root/'scripts/verification-harness/cashier-release-contract.sql').read_text()
+ entry=contract[contract.index("'signature', 'public.fn_cashier_conservation_report(uuid)'"):]
+ entry=entry[:entry.index('    )')]
+ hashes=re.findall(r"'hash',\s*'([0-9a-f]{32})'",entry)
+ assert hashes==[post] and "'replacement_hash'" not in entry,(post,entry)
+ assert "'20261019185853'" in contract and "'new_clubs_reconcile_player_wallets_from_their_journal_origin'" in contract
  sql(migration,'new_club_conservation_preimage_changed')
  print(json.dumps({'qualification':'passed','old_missing_new_covered':True,'exact_bank_and_player_balances':True,'legacy_report_unchanged':True,'legacy_full_report_equivalence_controls':6,'raw_and_sealed_day_equivalence':True,'missing_leg_stays_mismatch':True,'legacy_unknown_null_future_prebirth_member_stay_incomplete':True,'explicit_baseline_precedence':True,'read_only':True,'role_and_session_refusals_preserved':True,'metadata_preserved':True,'replay_refused':True,'postimage_md5':post,'production_money_write':False,'role_helpers_controlled_in_fixture':True}))
 finally:

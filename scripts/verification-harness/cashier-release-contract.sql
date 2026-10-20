@@ -77,19 +77,23 @@ BEGIN
     RAISE EXCEPTION 'cashier accounting report posture drift';
   END IF;
 
+  IF NOT EXISTS (
+    SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE version = '20261019185853'
+       AND name = 'new_clubs_reconcile_player_wallets_from_their_journal_origin'
+  ) THEN
+    RAISE EXCEPTION 'cashier conservation origin migration history drift';
+  END IF;
+
   v_contract := jsonb_build_array(
     jsonb_build_object(
       'signature', 'public.fn_cashier_conservation_report(uuid)',
-      -- Same report contract. The installed definition is 20261017184739's
-      -- sealed-day read (issue #7309); qualified 20261019093951 reads the club
-      -- bank by its own treasury entity instead of the leg's club_id (issue
-      -- #7321), leaving the player side and inventory exactly as they are.
-      -- The installed definition and this replacement are the only accepted
-      -- definitions; scripts/ci/test-cashier-conservation-bank-entity-postgres.py
-      -- certifies the replacement hash against the definition the migration
-      -- installs.
-      'hash', '884cbcbfae7f556ef0d5972e7e9b24c9',
-      'replacement_hash', '8b13c8eee26460f44bbf977136635c5d'
+      -- Installed 20261019185853 retains the sealed-day and bank-entity
+      -- contracts and reconciles new-club wallets from their journal origin.
+      -- scripts/ci/test-new-club-conservation-origin-postgres.py qualifies
+      -- the exact installed definition, legacy equivalence and refusals.
+      -- Retired predecessors and unknown definitions must fail closed.
+      'hash', '617a6a58c41f8a1f204e3438d6ea2a4c'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_recovery_receipts(uuid,uuid[],text[])',

@@ -194,3 +194,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Statement provenance remains on invoices, excluded by original delivery and private readers.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-statement-provenance-delivery-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))
+
+# Original hand outcome reductions progress in bounded canonical native windows.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-native-weekly-hand-parts-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

@@ -1,4 +1,5 @@
 /** Finite existing-player recovery observations. No joins, wagers, consent or fabricated frames. */
+import { recoveryWireObservation, recoveryUiInPage } from './recovery-wire-observation.mjs';
 import {
   CONSENT_PLAYERS,
   openPlayerSession,
@@ -53,7 +54,8 @@ export async function observeRevokedConsumer(page, context, evidence, remaining)
   return { redirect: 'observed', localSessionCleared: true };
 }
 
-function journal(page, rooms, remaining) {
+function journal(page, rooms, remaining, playerId) {
+  const wire = recoveryWireObservation(rooms, playerId);
   const frames = [],
     sockets = [];
   const waiters = new Set();
@@ -78,6 +80,7 @@ function journal(page, rooms, remaining) {
       ['framereceived', 'received'],
     ]) {
       ws.on(event, ({ payload }) => {
+        if (direction === 'received') wire.receive(payload);
         const frame = recoveryFrame(payload, direction, rooms);
         if (frame && frames.length < 2000) {
           frames.push({ ...frame, at: Date.now() });
@@ -89,6 +92,7 @@ function journal(page, rooms, remaining) {
   return {
     frames,
     sockets,
+    wire,
     async wait(predicate) {
       if (predicate()) return;
       await new Promise((resolve, reject) => {
@@ -167,6 +171,8 @@ export async function witnessRecovery({
     status: 'unknown',
     phase: 'preflight',
     touch: [],
+    transportSamples: [],
+    navigation: [],
     reconnect: 'unknown',
     phaseBracket: { status: 'unknown', phase: 'unknown' },
     phaseCoverage: { idle: 'unknown', reservation: 'unknown', dealing: 'unknown' },
@@ -179,7 +185,8 @@ export async function witnessRecovery({
   };
   const started = Date.now(),
     deadline = started + timeoutMs - 20000;
-  let browser, primary, replacement, context;
+  let browser, primary, replacement, context, diagnosticPage;
+  const journals = [];
   let cleaning = false;
   const clients = new Set(),
     closedClients = new Set();
@@ -287,8 +294,11 @@ export async function witnessRecovery({
         const evidence = journal(
           page,
           pins.map((p) => p.poolSessionId),
-          remaining
+          remaining,
+          pins[0].playerId
         );
+        diagnosticPage = page;
+        journals.push(evidence);
         return { c, page, evidence };
       };
       const initial = await newPage(primary.session);
@@ -296,11 +306,15 @@ export async function witnessRecovery({
       const { page, evidence } = initial;
       report.phase = 'touch';
       for (const pin of pins) {
+        const progress = { poolSessionId: pin.poolSessionId, step: 'entry_navigation' };
+        report.navigation.push(progress);
         await page.goto(`https://smarter.poker/hub/club-arena/lightning/${pin.clusterId}`, {
           waitUntil: 'domcontentloaded',
           timeout: remaining(),
         });
+        progress.step = 'first_render';
         await evidence.wait(() => evidence.lastHand(pin.poolSessionId) !== null);
+        progress.step = 'rendered';
       }
       for (const device of [
         { name: 'phone', width: 375, height: 812 },
@@ -404,7 +418,26 @@ export async function witnessRecovery({
     aborted = true;
     report.status = 'unknown';
     report.errorCode = 'RECOVERY_SCOPE_OR_OBSERVATION_UNAVAILABLE';
+    if (diagnosticPage) {
+      try {
+        report.ui = await bounded(
+          diagnosticPage.evaluate(recoveryUiInPage),
+          Math.max(1, Math.min(1500, deadline - Date.now()))
+        );
+      } catch {
+        report.ui = { route: 'unavailable' };
+      }
+    }
   } finally {
+    report.transportSamples = journals.map((j) => ({
+      sockets: j.sockets.length,
+      openSocketsBeforeCleanup: j.sockets.filter((s) => !s.closed).length,
+      frames: ['SUBSCRIBE', 'SUBSCRIBED', 'SNAPSHOT', 'RENDER_ACK'].map((type) => ({
+        type,
+        count: j.frames.filter((f) => f.type === type).length,
+      })),
+      wire: j.wire.summary(),
+    }));
     cleaning = true;
     const cleanupDeadline = started + timeoutMs;
     let clean = true;

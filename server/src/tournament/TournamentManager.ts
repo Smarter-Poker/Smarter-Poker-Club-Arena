@@ -662,6 +662,37 @@ export class TournamentManager extends TournamentManagerEliminations {
        * prefix; the door's code and message ride behind it.
        */
       if (error) {
+        // The same unrecorded bust that blocks break preparation can block
+        // movement-only startup before that preparation is reachable. Its
+        // stopped dealer cannot emit another hand-complete wake. Give the
+        // original elimination stage its turn only on current, authoritative
+        // zero-stack evidence; the movement refusal itself still stands.
+        if (
+          error.code === '55000' &&
+          ['F06_MOVEMENT_ELIMINATION_UNPROVEN', 'F06_MOVEMENT_WHOLE_ROSTER_REQUIRED'].includes(
+            error.message
+          )
+        ) {
+          try {
+            const { data: busts, error: bustReadError } = await supabase
+              .from('tournament_players')
+              .select('user_id')
+              .eq('tournament_id', this.tournamentId)
+              .eq('table_id', tableId)
+              .eq('status', 'playing')
+              .lte('chips', 0)
+              .limit(1);
+            if (current() && !bustReadError && Array.isArray(busts) && busts.length > 0) {
+              this.bustAwaitsItsStage();
+              this.requestUrgentEliminationSweepAfter(0);
+            }
+          } catch (bustReadError) {
+            reportError(bustReadError, 'Tournament.movement_admission_bust_read_failed', {
+              tournamentId: this.tournamentId,
+              tableId,
+            });
+          }
+        }
         throw new Error(
           `f06_movement_admission_unproven [${String(error.code ?? 'no_code')}]: ${String(error.message ?? error)}`
         );

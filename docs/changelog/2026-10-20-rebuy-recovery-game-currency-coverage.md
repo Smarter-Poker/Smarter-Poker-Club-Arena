@@ -7,3 +7,11 @@ This change adds qualification coverage only. It does not change game rules, ena
 Runner-only and fixture-only changes now select the required PostgreSQL accounting job. Before this change both returned server=false, so the native tests could be edited without executing them. A regression pins the driver, whole fixture directory and source guard.
 
 The matrix includes all nine maintained engine variants plus the historical OFC Pineapple tournament label. The source guard compares the engine variant list against the matrix, so adding a variant requires explicit recovery coverage.
+
+## A movement admission gives its blocking bust the earlier stage
+
+The fleet scan found today's Diamond Coffee Break with 376 zero-stack playing registrations and sealed-hand movement refusals. Break preparation already returns the cursor to elimination when it sees that roster mismatch. Movement-only startup can meet the same refusal before preparation is reachable, while its stopped dealer cannot emit another hand-complete wake. That admission path previously threw without asking for the earlier stage.
+
+For the two exact SQLSTATE 55000 elimination/whole-roster refusals, read at most one zero-stack playing registration on the exact tournament and source table. Current authoritative evidence gives the existing elimination stage its next admission; retain the original movement refusal, operation identity and all financial checks. Unknown reads, changed ownership, other errors and an empty result cannot rewind. No new repair loop, payment, seat adjustment or forced engine restart is added.
+
+Both positive regressions failed before the source fix and pass after it. Connected original-manager and refused-proof tests also pass. This reproduces and fixes the connected wiring gap; the old manager's retained logs were unavailable after an unrelated container cutover, so the tests do not establish that this was its sole blocker. Its backlog cleared naturally under the earlier engine before that cutover. Engine delivery and live proof are required for this source change separately from the already installed database fix.

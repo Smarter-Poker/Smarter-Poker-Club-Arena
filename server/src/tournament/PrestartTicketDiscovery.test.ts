@@ -3,7 +3,12 @@ import { GameServer } from '../GameServer.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
-beforeEach(() => vi.mocked(reportError).mockClear());
+beforeEach(() => {
+  vi.mocked(reportError).mockClear();
+  // Ticket-ramp cases must stay outside break-adjacent launch preparation.
+  // The real wall clock made this release gate fail around :50 each hour.
+  vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-20T12:10:00Z'));
+});
 afterEach(() => vi.restoreAllMocks());
 const T = 'aaaaaaaa-1111-4111-8111-111111111111';
 function harness(ticketRows: unknown[] = [{ id: 'ticket', source_tournament_id: T }]) {
@@ -121,6 +126,20 @@ describe('existing prestart discovery continues ticket delivery after the fundin
       0,
       expect.objectContaining({ redeemTickets: true })
     );
+  });
+  it('offers a break-adjacent field to launch admission instead of registration top-up', async () => {
+    vi.mocked(Date.now).mockReturnValue(Date.parse('2026-10-20T14:51:00Z'));
+    const { server } = harness();
+    server.engineStartBudget = 1;
+    server.ensureTournamentManagerAdmission = vi.fn(async () => undefined);
+    await server.discoverTournaments();
+    expect(server.ensureTournamentManagerAdmission).toHaveBeenCalledWith(
+      T,
+      'start',
+      expect.any(String),
+      1
+    );
+    expect(server.tournamentRecurring.topUpWithHorses).not.toHaveBeenCalled();
   });
   it('does not add ordinary top-ups when no target ticket exists', async () => {
     const { server } = harness([]);

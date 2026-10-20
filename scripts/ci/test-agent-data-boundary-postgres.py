@@ -18,7 +18,9 @@ def run(a,sql=None,fail=None):
 def q(sql,fail=None):return run([PG/'psql','-XqAt','-v','ON_ERROR_STOP=1','-h',sock,'-U','fixture_admin','postgres'],sql,fail)
 def uid(n):return '00000000-0000-4000-8000-'+str(n).zfill(12)
 def as_user(n,sql):return "SET ROLE authenticated; SET request.jwt.claim.sub='"+uid(n)+"';"+sql
-migration=next((ROOT/'supabase/migrations').glob('*_restrict_agent_banks_and_authorize_downline_reassignment.sql')).read_text()
+restriction_path=next((ROOT/'supabase/migrations').glob('*_restrict_agent_banks_and_authorize_downline_reassignment.sql'))
+migration=restriction_path.read_text()
+assert restriction_path.name > next((ROOT/'supabase/migrations').glob('*_add_agent_assignment_transaction_before_client_publication.sql')).name, 'Full restrictions must follow the additive phase on fresh replay'
 additive=next((ROOT/'supabase/migrations').glob('*_add_agent_assignment_transaction_before_client_publication.sql')).read_text()
 try:
  run([PG/'initdb','-D',data,'-U','fixture_admin','--auth-local=trust','--auth-host=reject','--no-locale','-E','UTF8'])

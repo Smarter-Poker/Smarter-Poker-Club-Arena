@@ -57,6 +57,9 @@ try {
   assert.equal(await rpc('fn_can_use_club_bank',{p_club_id:club}),false);
   assert.equal(await rpc('ca_can_view_club_finances',{p_club_id:club}),false);
   assert.equal(await rpc('fn_can_manage_club_assignments',{p_club_id:club}),false);
+  assert.equal(await rpc('is_club_admin',{p_club_id:club}),false);
+  const audit=await request(`/rest/v1/audit_trail?club_id=eq.${club}&select=id`,caller);
+  assert.equal(audit.data.length,0);
   const scope=await rpc('fn_cashier_statement_scope',{p_club_id:club});
   assert.equal(scope.authorized,true);assert.equal(scope.role,role);assert.equal(scope.scope,'downline');
   const rows=await request(`/rest/v1/club_members?club_id=eq.${club}&select=user_id`,caller);
@@ -91,7 +94,7 @@ try {
    zero(row,['credit_used','credit_limit','business_balance','player_balance','promo_balance','agent_wallet_balance','player_wallet_balance','promo_wallet_balance','total_players','active_player_count','sub_agent_count','weekly_rake_generated','lifetime_earnings','lifetime_rake_generated']);
    const children=await request(`/rest/v1/club_members?club_id=eq.${club}&agent_id=eq.${account.id}&select=user_id`);
    assert.equal(children.data.length,0);
-   const agentChildren=await request(`/rest/v1/agents?club_id=eq.${club}&parent_agent_id=eq.${account.id}&select=id`);
+   const agentChildren=await request(`/rest/v1/agents?club_id=eq.${club}&parent_agent_id=eq.${agentId}&select=id`);
    assert.equal(agentChildren.data.length,0);
    await request(agent,{method:'DELETE'});
   }

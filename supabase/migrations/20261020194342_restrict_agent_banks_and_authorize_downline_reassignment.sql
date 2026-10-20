@@ -3,6 +3,17 @@
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
+DO $$ BEGIN IF md5(pg_get_functiondef('is_club_admin(uuid)'::regprocedure)) <> '8cec4d8f44baaf2af97fb3c1d4229215' THEN RAISE EXCEPTION 'AGENT_BOUNDARY_SOURCE_CHANGED: is_club_admin'; END IF; END $$;
+CREATE OR REPLACE FUNCTION public.is_club_admin(p_club_id uuid)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+BEGIN
+ IF auth.uid() IS NULL THEN RETURN false; END IF;
+ RETURN EXISTS(SELECT 1 FROM public.club_members m WHERE m.club_id=p_club_id
+  AND m.user_id=auth.uid() AND m.role IN ('owner','co_owner','admin')
+  AND public.fn_cashier_member_is_active(m.club_id,m.user_id));
+END $$;
+REVOKE ALL ON FUNCTION public.is_club_admin(uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.is_club_admin(uuid) TO authenticated,service_role;
 DO $$ BEGIN IF md5(pg_get_functiondef('ca_can_view_club_finances(uuid)'::regprocedure)) <> '20d5095763dc302c5cad8fcf1f66a9e9' THEN RAISE EXCEPTION 'AGENT_BOUNDARY_SOURCE_CHANGED: ca_can_view_club_finances'; END IF; END $$;
 CREATE OR REPLACE FUNCTION public.ca_can_view_club_finances(p_club_id uuid)
  RETURNS boolean
@@ -972,6 +983,11 @@ ALTER TABLE public.club_assignment_operations ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.club_assignment_operations FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT ON public.club_assignment_operations TO service_role;
 
+DO $$ BEGIN
+ IF to_regprocedure('public.fn_reassign_club_members(uuid,uuid[],uuid,uuid,uuid)') IS NOT NULL
+  AND md5(pg_get_functiondef(to_regprocedure('public.fn_reassign_club_members(uuid,uuid[],uuid,uuid,uuid)'))) <> '050cd8f056044ca1abf7df1c84dd8bab' THEN
+  RAISE EXCEPTION 'AGENT_BOUNDARY_SOURCE_CHANGED: fn_reassign_club_members'; END IF;
+END $$;
 CREATE OR REPLACE FUNCTION public.fn_reassign_club_members(
  p_club_id uuid,p_member_user_ids uuid[],p_agent_user_id uuid,p_op_id uuid,
  p_expected_agent_user_id uuid DEFAULT NULL)
@@ -1026,9 +1042,9 @@ BEGIN
    WHERE m.club_id=p_club_id AND m.agent_id=a.user_id),updated_at=now() WHERE a.club_id=p_club_id;
  INSERT INTO public.club_assignment_operations(id,club_id,actor_id,destination_user_id,source_user_id,member_user_ids)
  VALUES(p_op_id,p_club_id,auth.uid(),p_agent_user_id,p_expected_agent_user_id,v_ids);
- INSERT INTO public.audit_trail(actor_id,actor_role,action,target_type,target_id,reason)
+ INSERT INTO public.audit_trail(actor_id,actor_role,action,target_type,target_id,club_id,reason)
  VALUES(auth.uid(),COALESCE(public.fn_club_bank_role(p_club_id),'union_overseer'),
-  'reassign_club_downline','club',p_club_id,jsonb_build_object('operation_id',p_op_id,
+  'reassign_club_downline','club',p_club_id,p_club_id,jsonb_build_object('operation_id',p_op_id,
   'destination',p_agent_user_id,'source',p_expected_agent_user_id,'members',v_ids)::text);
  RETURN jsonb_build_object('success',true,'operation_id',p_op_id,'moved',cardinality(v_ids));
 END $$;

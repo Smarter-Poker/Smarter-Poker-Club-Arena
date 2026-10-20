@@ -25,7 +25,7 @@ async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@e
    if(method==='PATCH') Object.assign(state.agent,body);
    if(method==='DELETE') state.agent=null;
    data=state.agent?[state.agent]:[];
-  } else if(u.pathname==='/rest/v1/player_stats') data=[];
+  } else if(u.pathname==='/rest/v1/player_stats' || u.pathname==='/rest/v1/audit_trail') data=[];
   else if(u.pathname==='/rest/v1/clubs') {status=failure==='private-column'?200:403;data=[];}
   else if(u.pathname==='/rest/v1/rpc/fn_cashier_statement_scope') data={authorized:true,role:state.role,scope:'downline'};
   else if(u.pathname==='/rest/v1/rpc/ca_club_roster_rows') data=[{user_id:id}];

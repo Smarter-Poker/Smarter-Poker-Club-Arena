@@ -40,7 +40,7 @@ try:
  CREATE FUNCTION public.fn_club_role_rank(r text) RETURNS integer LANGUAGE sql AS $$SELECT CASE r WHEN 'super_agent' THEN 60 WHEN 'agent' THEN 40 WHEN 'sub_agent' THEN 20 ELSE 0 END$$;
  CREATE FUNCTION public.fn_ca_declare_guard_redefinition(n text,r text) RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
  SET check_function_bodies=off;""")
- for f in json.loads((F/'baseline.json').read_text())+[json.loads((F/'home.json').read_text())]+[f for f in json.loads((F/'extra.json').read_text()) if f['proname'] in ['fn_actor_can_manage_club_treasury','fn_ca_is_club_staff','ca_club_operations_overview','fn_club_trade_ledger','ca_club_roster_rows','ca_club_roster_access','ca_club_members','ca_club_members_summary','fn_guard_agent_agreement']]:q('SET check_function_bodies=off;'+f['definition'])
+ for f in json.loads((F/'baseline.json').read_text())+[json.loads((F/'home.json').read_text()),json.loads((F/'admin-helper.json').read_text())]+[f for f in json.loads((F/'extra.json').read_text()) if f['proname'] in ['fn_actor_can_manage_club_treasury','fn_ca_is_club_staff','ca_club_operations_overview','fn_club_trade_ledger','ca_club_roster_rows','ca_club_roster_access','ca_club_members','ca_club_members_summary','fn_guard_agent_agreement']]:q('SET check_function_bodies=off;'+f['definition'])
  q("""CREATE FUNCTION fn_caller_is_engine() RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
  CREATE FUNCTION fn_is_platform_admin() RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
  CREATE FUNCTION fn_is_union_overseer(c uuid,u uuid) RETURNS boolean LANGUAGE sql AS $$SELECT false$$;
@@ -63,6 +63,10 @@ try:
  q("ALTER TABLE agents ENABLE ROW LEVEL SECURITY; CREATE POLICY base ON agents FOR SELECT TO authenticated USING(true);")
  q("ALTER TABLE player_stats ENABLE ROW LEVEL SECURITY; CREATE POLICY base ON player_stats FOR SELECT TO authenticated USING(true);")
  q(f"INSERT INTO player_stats(club_id,user_id) SELECT club_id,user_id FROM club_members;")
+ q("ALTER TABLE audit_trail ENABLE ROW LEVEL SECURITY; CREATE POLICY staff ON audit_trail FOR SELECT TO authenticated USING(is_club_admin(club_id));")
+ q(f"INSERT INTO audit_trail(club_id,actor_id,action) VALUES('{club}','{uid(7)}','fixture_private');")
+ assert q(as_user(3,f"SELECT is_club_admin('{club}');"))=='t'
+ assert q(as_user(3,"SELECT count(*) FROM audit_trail;"))=='1'
  # Reproduce both actual flaws before installing the candidate.
  assert q(as_user(2,f"SELECT fn_can_use_club_bank('{club}');"))=='t'
  assert q(as_user(2,f"SELECT fn_cashier_statement_scope('{club}')->>'scope';"))=='all'
@@ -79,6 +83,8 @@ try:
  q(migration)
  q(migration,'AGENT_BOUNDARY_SOURCE_CHANGED')
  for n in [2,3,4]:
+  assert q(as_user(n,f"SELECT is_club_admin('{club}');"))=='f'
+  assert q(as_user(n,"SELECT count(*) FROM audit_trail;"))=='0'
   assert q(as_user(n,f"SELECT fn_can_use_club_bank('{club}');"))=='f'
   assert q(as_user(n,f"SELECT fn_cashier_statement_scope('{club}')->>'scope';"))=='downline'
   assert q(as_user(n,f"SELECT ca_can_view_club_finances('{club}');"))=='f'
@@ -92,6 +98,10 @@ try:
  assert q(as_user(4,"SELECT count(*) FROM club_members;"))=='2'
  assert q(as_user(2,"SELECT count(*) FROM agents;"))=='4'
  assert q(as_user(1,f"SELECT fn_can_use_club_bank('{club}');"))=='t'
+ assert q(as_user(1,f"SELECT is_club_admin('{club}');"))=='t'
+ q(f"UPDATE club_members SET status='suspended' WHERE user_id='{uid(1)}';")
+ assert q(as_user(1,f"SELECT is_club_admin('{club}');"))=='f'
+ q(f"UPDATE club_members SET status='active' WHERE user_id='{uid(1)}';")
  op=uid(901)
  call=f"SELECT fn_reassign_club_members('{club}',ARRAY['{uid(5)}'::uuid],'{uid(6)}','{op}','{uid(4)}')->>'moved';"
  assert q(as_user(1,call))=='1'
@@ -105,7 +115,8 @@ try:
  assert q(f"SELECT agent_id IS NULL FROM club_members WHERE user_id='{uid(8)}';")=='t'
  q(as_user(1,f"SELECT fn_reassign_club_members('{club}',ARRAY['{uid(4)}'::uuid],'{uid(6)}','{uid(905)}');"))
  assert q(f"SELECT parent_agent_id='{uid(206)}' FROM agents WHERE user_id='{uid(4)}';")=='t'
- assert q("SELECT count(*) FROM audit_trail;")=='2'
+ assert q("SELECT count(*) FROM audit_trail;")=='3'
+ assert q(f"SELECT count(*) FROM audit_trail WHERE action='reassign_club_downline' AND club_id='{club}';")=='2'
  q("SET ROLE anon;SELECT * FROM club_assignment_operations;",'permission denied')
  q("SET ROLE authenticated;SELECT * FROM club_assignment_operations;",'permission denied')
  # The unchanged production agreement trigger must reject a transfer that

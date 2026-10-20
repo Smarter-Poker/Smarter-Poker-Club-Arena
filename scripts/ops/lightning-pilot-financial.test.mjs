@@ -221,6 +221,8 @@ function fixture(
     gate = 'accepted',
     cleanupError = false,
     restoreError = false,
+    replyError,
+    httpStatus = 200,
   } = {}
 ) {
   const actions = [],
@@ -373,8 +375,13 @@ function fixture(
           }
         : action === 'stop_playing'
           ? { ok: !refused, pool_session_id: pin.poolSessionId }
-          : { ...a.reply, success: !refused };
-    resolveResponse({ request: () => req, ok: () => true, json: async () => reply });
+          : { ...a.reply, success: !refused, error: replyError };
+    resolveResponse({
+      request: () => req,
+      status: () => httpStatus,
+      ok: () => httpStatus < 400,
+      json: async () => reply,
+    });
   };
   const loc = (role, name, nested = false) => ({
     waitFor: async () => {},
@@ -602,6 +609,59 @@ test('a normal step that never appears names that step and still cleans up', asy
 });
 test('the session fetch ceiling does not spend the cleanup reserve', async () => {
   const src = readFileSync(new URL('./lightning-pilot-financial.mjs', import.meta.url), 'utf8');
-  assert.match(src, /AbortSignal\.timeout\(Math\.max\(1, Math\.min\(15000, end - Date\.now\(\)\)\)\)/);
+  assert.match(
+    src,
+    /AbortSignal\.timeout\(Math\.max\(1, Math\.min\(15000, end - Date\.now\(\)\)\)\)/
+  );
   assert.doesNotMatch(src, /Math\.min\(15000, end - Date\.now\(\) - 20000\)/);
+});
+
+test('addon refusal preserves only bounded HTTP facts and exact public classifications without replay', async () => {
+  for (const [message, code] of [
+    [
+      'Your Chips Are In A Lightning Hand. Add Chips When It Finishes.',
+      'LIGHTNING_HAND_IN_PROGRESS',
+    ],
+    ['Scheduled maintenance is in progress', 'MAINTENANCE'],
+    ['Already at the maximum buy-in for this table', 'MAX_BUY_IN'],
+    ['Player not seated', 'NOT_SEATED'],
+    ['Insufficient wallet balance', 'INSUFFICIENT_BALANCE'],
+    [
+      'Your Chips Are In A Lightning Hand. Add Chips When It Finishes. SECRET_TOKEN',
+      'UNCLASSIFIED',
+    ],
+    [{ message: 'SECRET_TOKEN' }, 'UNCLASSIFIED'],
+  ]) {
+    const f = fixture('top_up', { refused: true, replyError: message, httpStatus: 400 });
+    const r = await witnessFinancial(f.args);
+    assert.deepEqual(r.addonResponse, { httpStatus: 400, success: false, code });
+    assert.ok(Number.isFinite(Date.parse(r.requestAt)));
+    assert.ok(Number.isFinite(Date.parse(r.responseAt)));
+    assert.ok(Date.parse(r.requestAt) <= Date.parse(r.responseAt));
+    assert.equal(r.intent.opId, intent.opId);
+    assert.equal(r.matchingRequests, 1);
+    assert.equal(r.cause, 'addon_refused');
+    assert.equal(r.cleanup, 'local_session_and_browser_closed');
+    assert.ok(!JSON.stringify(r).includes('SECRET'));
+  }
+});
+
+test('refusal classification is pinned to maintained add-on producers', () => {
+  const seating = readFileSync(
+    new URL('../../server/src/engine/ServerTableEngineSeating.ts', import.meta.url),
+    'utf8'
+  );
+  const errors = readFileSync(
+    new URL('../../server/src/lightning/rpcErrors.ts', import.meta.url),
+    'utf8'
+  );
+  assert.ok(errors.includes("'Your Chips Are In A Lightning Hand. Add Chips When It Finishes.'"));
+  assert.ok(seating.includes('error: LIGHTNING_ADD_ON_REFUSED_MESSAGE'));
+  for (const message of [
+    'Scheduled maintenance is in progress',
+    'Already at the maximum buy-in for this table',
+    'Player not seated',
+    'Insufficient wallet balance',
+  ])
+    assert.ok(seating.includes(`'${message}'`));
 });

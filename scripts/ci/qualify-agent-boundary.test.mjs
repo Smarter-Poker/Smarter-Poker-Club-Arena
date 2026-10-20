@@ -14,7 +14,7 @@ async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@e
   state.reads++;const u=new URL(url);const method=init.method;const body=init.body?JSON.parse(init.body):null;
   let data,status=200;
   if(u.pathname.startsWith('/api/club-arena/')) {status=403;data={error:'forbidden'};}
-  else if(u.pathname==='/auth/v1/token') data={access_token:'fixture-session',user:{id}};
+  else if(u.pathname==='/auth/v1/token') {assert.equal(init.headers.apikey,'sb_publishable_fixture');assert.equal(init.headers.Authorization,undefined);data={access_token:'fixture-session',user:{id}};}
   else if(u.pathname==='/auth/v1/logout') {data=null;status=204;}
   else if(u.pathname==='/rest/v1/profiles') data=[{email,role:'user',is_admin:false,is_horse:false}];
   else if(u.pathname==='/rest/v1/club_members') {

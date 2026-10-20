@@ -18,7 +18,9 @@ assert.ok(base && service && anon && account.password);
 let token;
 async function request(path,{method='GET',body,key=service,jwt=service,allowFailure=false}={}) {
  const common={'Content-Type':'application/json',Prefer:'return=representation'};
- const headers=jwt===service ? supabaseServerHeaders(service,common) : {...common,apikey:key,Authorization:`Bearer ${jwt}`};
+ const headers=jwt===service ? supabaseServerHeaders(service,common)
+  : jwt===anon && key===anon ? {...common,apikey:key}
+  : {...common,apikey:key,Authorization:`Bearer ${jwt}`};
  const r=await fetch(base+path,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)})});
  const text=await r.text();const data=text?JSON.parse(text):null;
  if(!allowFailure && !r.ok) throw new Error(`Boundary qualification ${method} ${path.split('?')[0]} refused: HTTP ${r.status}, code ${data?.code || 'unknown'}`);

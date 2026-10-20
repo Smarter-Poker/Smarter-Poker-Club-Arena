@@ -132,8 +132,8 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P13.3 protected PLO8 selection and unselected variant boundaries', () => {
-  it('only PLO8 is selected and admits precisely the proven board counts', () => {
+describe('P13.3 protected PLO4/PLO8 selections and unselected variant boundaries', () => {
+  it('PLO4 and PLO8 are selected and admit precisely the proven board counts', () => {
     expect([...HORSE_PHASE13_VARIANTS].sort()).toEqual([...KNOWN_VARIANTS].sort());
     // The load-time literals are the joint owner's own values.
     expect([...HORSE_PHASE13_VARIANTS]).toEqual([...JOINT_VARIANTS]);
@@ -144,13 +144,13 @@ describe('P13.3 protected PLO8 selection and unselected variant boundaries', () 
     );
     expect(
       HORSE_PHASE13_VARIANTS.filter((v) => PHASE13_PROTECTED_RELEASE_SELECTIONS[v] !== null)
-    ).toEqual(['plo8']);
+    ).toEqual(['plo4', 'plo8']);
     expect(Object.isFrozen(PHASE13_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(PHASE13_RUNNING_CONTRACT_DIGEST).toBe(jointStrengthContractDigest());
     expect(PHASE13_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE13_VARIANTS) {
       const release = admitHorsePhase13ReleaseAuthority(variant);
-      if (variant === 'plo8') {
+      if (variant === 'plo4' || variant === 'plo8') {
         expect(release.status).toBe('admitted');
         const authority = selectedHorsePhase13Authority(variant, release);
         expect(authority?.admittedBoardCounts).toEqual([1, 2]);
@@ -208,8 +208,10 @@ describe('P13.3 protected PLO8 selection and unselected variant boundaries', () 
     for (const variant of HORSE_PHASE13_VARIANTS) {
       const gate = liveHorsePhase13Authorities[variant];
       gate.refresh();
-      expect(gate.mainState(), variant).toBe(variant === 'plo8' ? 'usable' : 'unselected');
-      if (variant === 'plo8') continue;
+      expect(gate.mainState(), variant).toBe(
+        ['plo4', 'plo8'].includes(variant) ? 'usable' : 'unselected'
+      );
+      if (variant === 'plo4' || variant === 'plo8') continue;
       const worker = new HorseQualifiedAuthorityHolder(
         `p133-null-${variant}`,
         horsePhase13ContinuationVersion(variant)
@@ -313,7 +315,7 @@ describe('P13.3 protected PLO8 selection and unselected variant boundaries', () 
       if (parsed.schema === HORSE_PHASE13_COMPLETION_SCHEMA) {
         const variant = parsed.variant as JointVariant;
         expect(HORSE_PHASE13_VARIANTS as readonly string[], file).toContain(variant);
-        if (variant !== 'plo8')
+        if (variant !== 'plo4' && variant !== 'plo8')
           expect(PHASE13_PROTECTED_RELEASE_SELECTIONS[variant], file).toBeNull();
       }
     }

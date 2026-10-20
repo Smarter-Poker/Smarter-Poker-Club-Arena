@@ -969,8 +969,8 @@ CREATE TABLE public.club_assignment_operations (
  member_user_ids uuid[] NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.club_assignment_operations ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.club_assignment_operations FROM PUBLIC,anon,authenticated;
-GRANT ALL ON public.club_assignment_operations TO service_role;
+REVOKE ALL ON public.club_assignment_operations FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT ON public.club_assignment_operations TO service_role;
 
 CREATE OR REPLACE FUNCTION public.fn_reassign_club_members(
  p_club_id uuid,p_member_user_ids uuid[],p_agent_user_id uuid,p_op_id uuid,

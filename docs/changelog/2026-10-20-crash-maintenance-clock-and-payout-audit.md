@@ -6,6 +6,12 @@ decision and time-settlement eligibility use elapsed flight time less the
 overlap with completed and current maintenance freezes. Production installation
 is recorded separately; this migration must not be replayed there.
 
+A further guarded migration keeps the clock paused when an active freeze has
+already written its thaw checkpoint. The active interval and recorded interval
+are unioned per freeze start, preventing both early advancement during a
+delayed thaw and double subtraction. Regression cases cover a checkpoint
+overrun, future certified release, and exact resumption after its extension.
+
 The client still extrapolated from its original wall-clock anchor after that
 database installation. During a break its curve could reach a multiplier the
 server would refuse. The page now adopts elapsed time on every open-round

@@ -370,6 +370,7 @@ run_game_probe diamond-crash-round-is-sealed 'NOTICE:  PASS Crash round sealed: 
 # authenticated settlement through a five-minute freeze, before and after.
 "${diamond_psql[@]}" -v clock_fixed=false -f "$root/tests/sql/diamond-crash-maintenance-clock.sql"
 "${diamond_psql[@]}" -f "$root/supabase/migrations/20261020033541_the_crash_clock_pauses_for_the_maintenance_break.sql"
+"${diamond_psql[@]}" -f "$root/supabase/migrations/20261020160815_the_crash_clock_waits_for_an_active_checkpointed_freeze.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-before.jsonl"
 "${diamond_psql[@]}" -v clock_fixed=true -f "$root/tests/sql/diamond-crash-maintenance-clock.sql"
 "${diamond_psql[@]}" -At -f "$diamond/snapshot.sql" > "$fixture/diamond-after-clock.jsonl"

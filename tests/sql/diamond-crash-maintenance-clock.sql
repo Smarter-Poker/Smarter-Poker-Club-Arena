@@ -60,7 +60,12 @@ BEGIN
  INSERT INTO engine_maintenance_break(id,phase,enforce_freeze,break_started_at,break_ends_at,ownership_token)
  VALUES(true,'counting_down',true,'2040-01-01T00:00:10Z','2040-01-01T00:05:10Z',gen_random_uuid())
  ON CONFLICT(id) DO UPDATE SET enforce_freeze=true,break_started_at=excluded.break_started_at;
- IF fn_crash_flight_ms('2040-01-01T00:00:00Z','2040-01-01T00:05:12Z')<>12000 THEN RAISE EXCEPTION 'Recorded break was counted twice'; END IF;
+ IF fn_crash_flight_ms('2040-01-01T00:00:00Z','2040-01-01T00:05:12Z')<>10000 THEN RAISE EXCEPTION 'Active checkpointed break advances the flight'; END IF;
+ UPDATE engine_maintenance_thaws SET frozen_seconds=320 WHERE freeze_started_at='2040-01-01T00:00:10Z';
+ IF fn_crash_flight_ms('2040-01-01T00:00:00Z','2040-01-01T00:05:12Z')<>10000 THEN RAISE EXCEPTION 'Future certified release advances flight'; END IF;
+ UPDATE engine_maintenance_break SET enforce_freeze=false;
+ IF fn_crash_flight_ms('2040-01-01T00:00:00Z','2040-01-01T00:05:32Z')<>12000 THEN RAISE EXCEPTION 'Extended thaw fails to resume exactly'; END IF;
+ UPDATE engine_maintenance_break SET enforce_freeze=true;
  DELETE FROM engine_maintenance_thaws;
  IF fn_crash_flight_ms('2040-01-01T00:00:00Z','2040-01-01T00:03:00Z')<>10000 THEN RAISE EXCEPTION 'Current break advances the flight'; END IF;
  IF has_function_privilege('authenticated','fn_crash_flight_ms(timestamptz,timestamptz)','EXECUTE')

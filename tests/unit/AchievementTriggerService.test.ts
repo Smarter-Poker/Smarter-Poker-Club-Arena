@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Tests the auto-award trigger engine:
- * - onHandComplete: calls incrementProgress, checkWins, checkSpecialHand
+ * - onHandComplete: calls incrementProgress, checkWins (special hands are the server's)
  * - onTournamentComplete: increments tourney play/win
  * - onFriendAdded: increments friends_5 and friends_25
  * - onLogin: increments streak_7
@@ -128,18 +128,12 @@ describe('AchievementTriggerService', () => {
       expect(mockCheckWins).not.toHaveBeenCalled();
     });
 
-    it('should check special hand rank when provided', async () => {
-      await achievementTriggerService.onHandComplete('user-1', {
-        won: true,
-        potSize: 500,
-        handRank: 'Royal Flush',
-        showdown: true,
-      });
-
-      expect(mockCheckSpecialHand).toHaveBeenCalledWith('user-1', 'Royal Flush');
-    });
-
-    it('should NOT check special hand rank when not provided', async () => {
+    // REPLACED 2026-10-20. The browser reported Royal Flush / Straight Flush
+    // / Four Of A Kind from the winning hand's display name, which the mapping
+    // never recognised, and a horse has no browser. The database records all
+    // three from the engine's per-player hand record now
+    // (trg_hand_history_winning_hand_achievements), so nothing is sent here.
+    it('never reports a special hand from the browser', async () => {
       await achievementTriggerService.onHandComplete('user-1', {
         won: true,
         potSize: 500,
@@ -147,6 +141,9 @@ describe('AchievementTriggerService', () => {
       });
 
       expect(mockCheckSpecialHand).not.toHaveBeenCalled();
+      for (const call of mockIncrementProgress.mock.calls) {
+        expect(['royal_flush', 'straight_flush', 'quads']).not.toContain(call[1]);
+      }
     });
 
     // REPLACED 2026-10-19. This summed `chipReward` off whatever the browser

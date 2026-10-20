@@ -102,6 +102,21 @@ describe('formatPopupText — no em dashes, ever', () => {
   });
 });
 
+describe('formatPopupText never throws on what it is given (2026-10-20)', () => {
+  // An achievement toast once passed `{ chips: 100 }` here; `.replace` on an
+  // object threw during render under the app-root toast.
+  it('renders an object, array, null or undefined as nothing', () => {
+    for (const v of [{ chips: 100 }, ['a'], null, undefined, true, NaN]) {
+      expect(() => formatPopupText(v)).not.toThrow();
+      expect(formatPopupText(v)).toBe('');
+    }
+  });
+
+  it('a number is text', () => {
+    expect(formatPopupText(100)).toBe('100');
+  });
+});
+
 describe('the Toast layer actually enforces the rule', () => {
   // These used to grep Toast.tsx for the literal string
   // `formatPopupText(message)`. That is a test of how the code is SPELLED, not

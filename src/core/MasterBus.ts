@@ -660,7 +660,9 @@ export interface BusPayloadMap {
     description?: string;
     icon?: string;
     rewardDiamonds?: number;
-    reward?: Record<string, unknown>;
+    /** Text, or `{ chips: N }` / `{ diamonds: N }`; MilestoneToast renders
+     *  either through milestoneRewardText (never the raw value). */
+    reward?: string | Record<string, unknown>;
   };
   // Tournament timer & rebuy event payloads
   BLIND_LEVEL_CHANGE: {

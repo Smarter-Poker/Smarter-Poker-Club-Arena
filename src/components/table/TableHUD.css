@@ -57,30 +57,9 @@
      them through var() fallbacks so neither component breaks if it is ever
      mounted outside the HUD. */
   --sp-hud-tile-bg: rgba(10, 12, 18, 0.72);
-  /* Dan 2026-08-28: "previous hand and rabbit hunt buttons need to be
-     increased in size to be the same size as the chat button." The chat
-     button is 44px / radius 12 (TableChat.css) at every breakpoint, so the
-     tile token — which sizes prev-hand, rabbit hunt AND the time-bank tile
-     together by design — moves to match. The 44px touch-target pseudos on
-     those widgets are now simply coincident with the painted tile.
-     --sp-hero-clear budget: 44 + 8 = 52, still under the 68px reserve.
-
-     Dan 2026-09-04: "the previous hand, chat, time bank, and rabbit hunt
-     buttons all need to be 50% larger." 44 -> 66px, radius 12 -> 18px so the
-     corner rounding scales with the tile. The chat button (TableChat.css)
-     moves with it: it is not a consumer of this token because it is mounted
-     outside .table-hud, so its 66px is written there and pinned to this one
-     by tests/all-in-cannot-leave-and-the-hud-slot.test.ts.
-
-     The row is now taller than --sp-hero-clear (66 + 8 = 74 against a 60px
-     desktop / 50-68px phone reserve) and that is deliberate: the reserve is
-     the HERO's strip and shrinking the felt to fit a corner tile is exactly
-     the regression Dan has rejected three times. The tiles live at the page's
-     left edge, under the stadium's rounded corner, where the oval leaves
-     that room empty - at 375px the felt's bottom 24px spans x 95..280 and the
-     tiles end at x 148. */
-  --sp-hud-tile-radius: 18px;
-  --sp-hud-tile-size: 66px;
+  /* Owner October 20: square gameplay tools match the Lobby footprint. */
+  --sp-hud-tile-radius: 10px;
+  --sp-hud-tile-size: var(--sp-game-tool-size, 40px);
   --sp-hud-tile-fg: rgba(255, 255, 255, 0.86);
   position: fixed;
   inset: 0;
@@ -302,11 +281,6 @@
 .table-page {
   --sp-hud-line: calc(var(--sp-action-reserve, 96px) + 2px);
 }
-@media (max-width: 768px) {
-  .table-hud {
-    --sp-hud-tile-size: clamp(44px, 13.5vw, 66px);
-  }
-}
 
 /* ── THE SEAT CHANGE BUTTON IS ON THE LEFT (Dan 2026-10-14) ──────────────────
    "THE 'SEAT CHANGE' BUTTON SHOULD NEVER BE IN THE UPPER RIGHT HAND CORNER, IT
@@ -316,8 +290,8 @@
    stays clear of the tab row above it and the seats below it. Pinned by
    tests/unit/theSeatChangeButtonIsOnTheLeft.test.ts. */
 .hud-seat-change-dock {
-  /* Match chat, whose hit area stays66px even when lower HUD tiles shrink. */
-  --sp-hud-tile-size: 66px;
+  /* Match the same Lobby footprint as Chat and the lower HUD. */
+  --sp-hud-tile-size: var(--sp-game-tool-size, 40px);
   position: fixed;
   top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 54px);
   left: 6px;
@@ -327,4 +301,12 @@
 
 .hud-seat-change-dock .cch-column {
   align-items: flex-start;
+}
+
+@media (max-width: 480px) {
+  .table-hud,
+  .hud-seat-change-dock {
+    --sp-hud-tile-size: var(--sp-game-tool-size, 34px);
+    --sp-hud-tile-radius: 8px;
+  }
 }

@@ -1,0 +1,61 @@
+/* Approved tool rasters have different transparent gutters. Normalize their
+   painted frame, not merely the <img> box, to the Lobby tile. Measured from
+   the current 256px black/blue masters at alpha128 (October20). Artwork stays
+   unchanged and keeps its native ratio. Unknown/custom art keeps its own fit. */
+.table-page
+  :is(.chat-collapsed__icon-img, .tbc-icon-img, .rabbit-hunt__icon-img, .prev-hand-card__icon-img) {
+  width: calc(var(--sp-game-tool-size, 40px) * var(--sp-tool-art-scale, 1));
+  height: calc(var(--sp-game-tool-size, 40px) * var(--sp-tool-art-scale, 1));
+  max-width: none;
+  flex-shrink: 0;
+  translate: calc(var(--sp-game-tool-size, 40px) * var(--sp-tool-art-x, 0))
+    calc(var(--sp-game-tool-size, 40px) * var(--sp-tool-art-y, 0));
+}
+
+.table-page img[src*='/buttons/black/icon-chat.webp'] {
+  --sp-tool-art-scale: 1.28643216;
+  --sp-tool-art-x: 0.002513;
+  --sp-tool-art-y: 0.025126;
+}
+
+.table-page img[src*='/buttons/black/icon-timebank.webp'] {
+  --sp-tool-art-scale: 1.24878049;
+  --sp-tool-art-x: 0.009756;
+  --sp-tool-art-y: 0.012195;
+}
+
+.table-page img[src*='/buttons/black/icon-rabbit.webp'] {
+  --sp-tool-art-scale: 1.12280702;
+  --sp-tool-art-x: 0.002193;
+  --sp-tool-art-y: 0.008772;
+}
+
+.table-page img[src*='/buttons/black/icon-prevhand.webp'] {
+  --sp-tool-art-scale: 1.26732673;
+  --sp-tool-art-x: 0.00495;
+  --sp-tool-art-y: 0.034653;
+}
+
+.table-page img[src*='/buttons/blue/icon-chat.webp'] {
+  --sp-tool-art-scale: 1.24271845;
+  --sp-tool-art-x: 0.007282;
+  --sp-tool-art-y: 0.014563;
+}
+
+.table-page img[src*='/buttons/blue/icon-timebank.webp'] {
+  --sp-tool-art-scale: 1.19069767;
+  --sp-tool-art-x: 0.016279;
+  --sp-tool-art-y: 0.016279;
+}
+
+.table-page img[src*='/buttons/blue/icon-rabbit.webp'] {
+  --sp-tool-art-scale: 1.10344828;
+  --sp-tool-art-x: 0.00431;
+  --sp-tool-art-y: 0.017241;
+}
+
+.table-page img[src*='/buttons/blue/icon-prevhand.webp'] {
+  --sp-tool-art-scale: 1.22488038;
+  --sp-tool-art-x: 0.009569;
+  --sp-tool-art-y: 0.016746;
+}

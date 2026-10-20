@@ -295,6 +295,7 @@ import {
   seatCanAddFunds,
   type ArenaIdentity,
 } from '../../server/src/domain/ArenaContext';
+import { useLightningSitOut } from '../lightning/useLightningSitOut';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
@@ -4563,9 +4564,17 @@ function LiveTablePage({
    * stayed null and the deadline silently vanished from the bar. The player
    * under the clock was the one who could not see it.
    */
+  const lightningSitOut = useLightningSitOut({
+    room: lightningRoom,
+    userId,
+    connectionStatus: engineWsStatus,
+    event: rawEngineLastEvent,
+  });
   const heroIsSittingOut =
-    tableState.heroSeat > 0 &&
-    (tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' || heroSitsOutPerRow);
+    (tableState.heroSeat > 0 &&
+      (tableState.players[tableState.heroSeat - 1]?.status === 'sitting_out' ||
+        heroSitsOutPerRow)) ||
+    (!!lightningRoom && lightningSitOut.sittingOut);
   /**
    * A PROVISIONAL stamp, replaced by the server's the moment the seat read
    * comes back (see `sitOutStamps` in the table_seats poll).
@@ -4581,10 +4590,11 @@ function LiveTablePage({
   useEffect(() => {
     setSitOutSince((prev) => {
       if (!heroIsSittingOut) return null;
+      if (lightningRoom && lightningSitOut.since !== null) return lightningSitOut.since;
       if (prev !== null) return prev;
       return sitOutStamps.get(String(userId ?? '')) ?? Date.now();
     });
-  }, [heroIsSittingOut, userId, sitOutStamps]);
+  }, [heroIsSittingOut, userId, sitOutStamps, lightningRoom, lightningSitOut.since]);
 
   /* Drive the footer countdown. Starts only when there is genuinely a deadline
      to count — see the note on sitOutTick — and stops the moment there is not,
@@ -5172,6 +5182,7 @@ function LiveTablePage({
     try {
       const res = await setSitOut(tableId, false);
       if (res?.success) {
+        if (lightningRoom && !lightningSitOut.acknowledge(tableId, String(userId), false)) return;
         clearLocalSitOutState();
         toast?.success?.("Welcome Back, You'll Be Dealt Into The Next Hand");
       } else {
@@ -5180,7 +5191,7 @@ function LiveTablePage({
     } finally {
       sitOutRequestInFlightRef.current = false;
     }
-  }, [tableId, toast, clearLocalSitOutState]);
+  }, [tableId, toast, clearLocalSitOutState, lightningRoom, lightningSitOut.acknowledge, userId]);
 
   const handleSitOut = useCallback(async () => {
     if (!tableId) return;
@@ -5220,6 +5231,7 @@ function LiveTablePage({
        */
       const res = await setSitOut(tableId, true);
       if (res?.success) {
+        if (lightningRoom && !lightningSitOut.acknowledge(tableId, String(userId), true)) return;
         setSitOutSince(Date.now());
         setShowSitOut(true);
       } else {
@@ -5232,7 +5244,7 @@ function LiveTablePage({
        local one-hand gate that read them — the gate is the server's alone now
        (see the note above). A dependency nothing in the body reads is a claim
        about the code that is not true. */
-  }, [tableId, toast]);
+  }, [tableId, toast, lightningRoom, lightningSitOut.acknowledge, userId]);
 
   // ─── Table Menu Actions ────────────────────────────────────────────────
   useMasterBusSubscription('TABLE_MENU_ACTION', (event) => {
@@ -6767,8 +6779,18 @@ function LiveTablePage({
        where you were already sitting out could offer "Sit Out" instead of
        "I'm Back". */
     const hero = tableState.players[tableState.heroSeat - 1];
-    return (!!hero && hero.status === 'sitting_out') || heroSitsOutPerRow;
-  }, [tableState.players, tableState.heroSeat, heroSitsOutPerRow]);
+    return (
+      (!!hero && hero.status === 'sitting_out') ||
+      heroSitsOutPerRow ||
+      (!!lightningRoom && lightningSitOut.sittingOut)
+    );
+  }, [
+    tableState.players,
+    tableState.heroSeat,
+    heroSitsOutPerRow,
+    lightningRoom,
+    lightningSitOut.sittingOut,
+  ]);
 
   /** The hero's sit-out deadline at THIS table, for the multi-table surfaces. */
   const heroTabSitOutDeadlineMs = useMemo(() => {
@@ -21976,7 +21998,7 @@ function LiveTablePage({
    * is patched in the same pass.
    */
   useEffect(() => {
-    if (!tableId) return;
+    if (!tableId || lightningRoom) return;
     let cancelled = false;
 
     /** Apply a set of sat-out user ids to the seats we are already rendering. */
@@ -22229,7 +22251,7 @@ function LiveTablePage({
       window.clearInterval(pollId);
       void supabase.removeChannel(channel);
     };
-  }, [tableId, userId, applySeatRemoved]);
+  }, [tableId, userId, applySeatRemoved, lightningRoom]);
 
   //broadcastLocalHandState removed — server broadcasts state authoritatively
 
@@ -27176,7 +27198,8 @@ function LiveTablePage({
             2026-04-17: action bar fixed to footer at all times, every state. */}
         {!tableState.players.some((p) => p?.isHero) &&
         tableState.heroSeat <= 0 &&
-        awaitingTournamentSeat ? (
+        awaitingTournamentSeat &&
+        !heroIsSittingOut ? (
           /**
            * PAID, ON THE ROSTER, NOT YET SEATED (Dan 2026-08-23).
            *
@@ -27193,7 +27216,9 @@ function LiveTablePage({
               You Are Registered, Your Seat Is Being Assigned
             </span>
           </div>
-        ) : !tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (
+        ) : !tableState.players.some((p) => p?.isHero) &&
+          tableState.heroSeat <= 0 &&
+          !heroIsSittingOut ? (
           /* ── THE FOOTER TELLS THE TRUTH ABOUT *THIS* TABLE (Dan 2026-09-07,
                 item 9) ──────────────────────────────────────────────────────
              "THE 'CHAIR OPEN, TAKE A SEAT' SHOULD BE ON THE BOTTOM, WHERE
@@ -27447,7 +27472,7 @@ function LiveTablePage({
                `heroSitsOutPerRow` is the same fact as state; `heroIsSittingOut`
                was converted to it on 2026-08-29 and this, the surface the
                player actually looks at, was missed. */
-        getPlayerAtSeat(tableState.heroSeat)?.status === 'sitting_out' || heroSitsOutPerRow ? (
+        heroIsSittingOut ? (
           /* SIT-OUT VISIBILITY 2026-08-21: whether the hero sat out from the
              settings panel or was force-sat-out after 3 straight timeouts,
              the footer says so plainly and offers the way back. In
@@ -28831,7 +28856,14 @@ function LiveTablePage({
               // points: revert the switch when the server refuses so it never
               // shows a state the server does not hold.
               void setSitOut(tableId, wanted).then((res) => {
-                if (!res?.success) {
+                if (res?.success) {
+                  if (
+                    lightningRoom &&
+                    !lightningSitOut.acknowledge(tableId, String(userId), wanted)
+                  )
+                    return;
+                  if (!wanted) clearLocalSitOutState();
+                } else {
                   setSitOutNextHand(!wanted);
                   reportError(
                     new Error(res?.error || 'setSitOut rejected by engine'),

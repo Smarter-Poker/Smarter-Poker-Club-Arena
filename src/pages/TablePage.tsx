@@ -2661,6 +2661,11 @@ function LiveTablePage({
     };
   }, [tableId, userId]);
 
+  // Seat-exit state precedes every snapshot and removal consumer.
+  const leftSeatPendingRef = useRef(false);
+  const [pendingSeat, setPendingSeat] = useState<number | null>(null);
+  const pendingSeatStackRef = useRef<number>(0);
+
   // A roster arriving during restoration supplies a placeholder, not a top-up.
   const sessionBuyInSeedRef = useRef(0);
   // Phase 1.1 PR-3: apply authoritative engine snapshot to tableState when
@@ -2722,6 +2727,7 @@ function LiveTablePage({
         cardHoldNextHand <= 0 || cardHoldPrevHand <= 0 || cardHoldNextHand === cardHoldPrevHand;
       const nextPlayers: (SeatPlayer | null)[] = rosterPlayers.map((p, i) => {
         if (!p) return null;
+        if (leftSeatPendingRef.current && p.id === userId) return null;
         let sp = p as unknown as SeatPlayer;
         /* Dan 2026-10-14: an all-in / showdown snapshot carries the hero's
            cards in DEALT order. Keep the row in its display order. */
@@ -5082,11 +5088,9 @@ function LiveTablePage({
    * seat_left names us; CLEARED only by deliberately taking a seat again, so
    * it can never lock a player out of a seat they have just bought.
    *
-   * DECLARED HERE, above applySeatRemoved, because that is its first reader and
-   * tests/no-tdz-in-table-route.law.test.ts does not allow a name to be read
-   * before its declaration on this route.
+   * Declared above the snapshot merge, the earliest consumer. Every roster
+   * path must respect the confirmed exit until a new purchase clears it.
    */
-  const leftSeatPendingRef = useRef(false);
 
   const applySeatRemoved = useCallback(
     /* `announce` separates the two halves of this function, which used to be
@@ -5105,6 +5109,14 @@ function LiveTablePage({
       leftSeatPendingRef.current = true;
       const heroId = String(userId ?? '');
       heroSeatRef.current = 0;
+      // A confirmed exit retires the optimistic purchase as well as the roster.
+      // Otherwise an empty engine seat is drawn again as our zero-stack chair.
+      setPendingSeat(null);
+      setSelectedSeat(null);
+      pendingSeatStackRef.current = 0;
+      setHeroRowStack(null);
+      setShowBuyInModal(false);
+      setShowRebuyModal(false);
       sittingOutIdsRef.current.delete(heroId);
       setHeroSitsOutPerRow(false);
       setShowSitOut(false);
@@ -7368,7 +7380,6 @@ function LiveTablePage({
   // wholesale and would wipe an optimistic entry mid-flight. Holding it in
   // its own state lets the placeholder survive until real data replaces it.
   // ─────────────────────────────────────────────────────────────────
-  const [pendingSeat, setPendingSeat] = useState<number | null>(null);
   useEffect(() => {
     const scope = `${userId}:${tableId}`;
     if (restoredBuyInScopeRef.current !== null && restoredBuyInScopeRef.current !== scope) {
@@ -7402,7 +7413,6 @@ function LiveTablePage({
    * contain the hero yet, so without this the seat rendered EMPTY and the
    * player watched their own chair sit vacant.
    */
-  const pendingSeatStackRef = useRef<number>(0);
 
   // ─────────────────────────────────────────────────────────────────
   // Bible V8 §1.16 Real-Time Law — chip-to-pot collection animation.
@@ -15532,6 +15542,7 @@ function LiveTablePage({
             const dbSeatNums = new Set(existingSeats.map((s) => s.seat_number));
 
             for (const seat of existingSeats) {
+              if (leftSeatPendingRef.current && seat.user_id === userId) continue;
               const seatIdx = seat.seat_number - 1;
               if (seatIdx < 0 || seatIdx >= updatedPlayers.length) continue;
               // Seed the authoritative sit-out set from the seat rows.
@@ -16496,6 +16507,8 @@ function LiveTablePage({
   const engineSeatMismatchReportedRef = useRef<string>('');
   useEffect(() => {
     if (!USE_ENGINE_WS || !engineSnapshot || !userId || userId === 'guest') return;
+    // The last snapshot can predate the confirmed exit. It cannot reclaim it.
+    if (leftSeatPendingRef.current) return;
     const enginePlayers =
       (engineSnapshot as unknown as { players?: Array<{ seat?: number; user_id?: string }> })
         .players ?? [];
@@ -16823,7 +16836,9 @@ function LiveTablePage({
         if (!syncData) break;
 
         setTableState((prev) => {
-          const updatedPlayers = [...prev.players];
+          const updatedPlayers = prev.players.map((p) =>
+            leftSeatPendingRef.current && p?.id === userId ? null : p
+          );
           const serverPlayers = syncData.players || [];
           /* ═══ THE FOURTH DOOR (Dan 2026-09-01) ══════════════════════════
              This merge carries `existing?.holeCards` forward when the
@@ -16862,6 +16877,7 @@ function LiveTablePage({
           let syncedHeroSeat = 0;
 
           serverPlayers.forEach((sp: any) => {
+            if (leftSeatPendingRef.current && sp.user_id === userId) return;
             const seatIdx = sp.seat - 1;
             /* NEVER DROP A SEAT THE SERVER SAYS EXISTS (Dan 2026-08-30): the
                old `seatIdx < updatedPlayers.length` guard silently discarded
@@ -22043,7 +22059,9 @@ function LiveTablePage({
           .select('user_id, is_sitting_out, sit_out_at, leave_pending, stack')
           .eq('table_id', tableId)
           .is('left_at', null);
-        if (error || cancelled || !data) return;
+        if (cancelled) return;
+        if (error) throw error;
+        if (!data) return;
         const rows = data as Array<{
           user_id: string;
           is_sitting_out: boolean | null;
@@ -22146,7 +22164,13 @@ function LiveTablePage({
          * recovery cannot be missed. The toast is deduped against the websocket
          * path by `bootNoticeShownRef` so a player who DID catch the event is
          * not told twice. */
-        if (userId && heroSeatRef.current > 0 && !stillSeated.has(String(userId))) {
+        if (
+          userId &&
+          (heroSeatRef.current > 0 ||
+            tableStateRef.current.heroSeat > 0 ||
+            tableStateRef.current.players.some((p) => p?.id === userId)) &&
+          !stillSeated.has(String(userId))
+        ) {
           const freshJoin =
             seatAcquiredAtRef.current != null && Date.now() - seatAcquiredAtRef.current < 15_000;
           // A buy-in that has not landed yet is not an eviction.

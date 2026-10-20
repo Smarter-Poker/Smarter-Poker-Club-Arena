@@ -133,10 +133,10 @@ export function sitOutBadgeLabel(
     | 'Sitting Out'
     | 'You Are Sitting Out'
     /* 2026-09-04 (disconnect audit item 3): the bar could not tell a forced
-       sit-out from a chosen one and told a player who timed out three times
+       sit-out from a chosen one and told a player who timed out two times
        that they were "sitting out", as if they had asked. The engine now
        says which; this is the sentence for the one they did not choose. */
-    | 'You Timed Out Three Times, So You Are Sitting Out' = 'Sitting Out'
+    | 'You Timed Out Two Times, So You Are Sitting Out' = 'Sitting Out'
 ): string {
   if (msRemaining === null) return subject;
   if (msRemaining <= 0) return `${subject}. Seat At Risk`;

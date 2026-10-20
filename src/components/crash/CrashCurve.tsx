@@ -85,6 +85,8 @@ export interface CrashCurveProps {
   growthK: number;
   capCents: number;
   startedAtLocalMs: number | null;
+  /** The server flight time held during a maintenance break. */
+  pausedElapsedMs?: number;
   /** Read-only replay clock. Live play always follows startedAtLocalMs. */
   replayElapsedMs?: number;
   finalCents: number | null;
@@ -1164,6 +1166,7 @@ export default function CrashCurve(props: CrashCurveProps) {
         plateShown = false;
       } else revealedFor += visibleDelta;
       const elapsed =
+        p.pausedElapsedMs ??
         p.replayElapsedMs ??
         (p.startedAtLocalMs === null ? 0 : Math.max(0, performance.now() - p.startedAtLocalMs));
       const current =

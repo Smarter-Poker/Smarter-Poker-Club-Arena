@@ -15,14 +15,56 @@ def canonical(value):
   return {k:canonical(v) for k,v in value.items()}
  if isinstance(value,list):return [canonical(x) for x in value]
  return value
+def metadata_value(value,field):
+ # SQL expressions/comments may contain arbitrary literals. Identify their
+ # differences without ever uploading expression text or routine bodies.
+ encoded=json.dumps(value,sort_keys=True,separators=(',',':'))
+ if isinstance(value,(dict,list)) or field in {'definition','view','default','comment','settings'} or len(encoded)>240:
+  return {'sha256':hashlib.sha256(encoded.encode()).hexdigest(),'characters':len(encoded)}
+ if isinstance(value,str):
+  if re.search(r'(?:https?|postgres(?:ql)?)://|eyJ[A-Za-z0-9_-]+\.|(?:sbp_|sb_secret_|sk_live_|sk_test_|ghp_|github_pat_)',value,re.I):return '[redacted value]'
+ return value
+def field_differences(expected,actual,path='',limit=24):
+ fields=[];count=0
+ def walk(e,a,p,field):
+  nonlocal count
+  if e==a:return
+  if isinstance(e,dict) and isinstance(a,dict):
+   for key in sorted(set(e)|set(a)):walk(e.get(key),a.get(key),p+'.'+key if p else key,key)
+  elif isinstance(e,list) and isinstance(a,list):
+   if all(isinstance(x,dict) and 'name' in x for x in e+a):
+    em={x['name']:x for x in e};am={x['name']:x for x in a}
+    if len(em)==len(e) and len(am)==len(a):
+     for name in sorted(set(em)|set(am)):walk(em.get(name),am.get(name),p+'['+name+']',field)
+     if set(em)==set(am) and e!=a and all(em[k]==am[k] for k in em):walk('captured order','different order',p,field)
+     return
+   for index in range(max(len(e),len(a))):walk(e[index] if index<len(e) else None,a[index] if index<len(a) else None,p+'['+str(index)+']',field)
+  else:
+   count+=1
+   if len(fields)<limit:fields.append({'field':p,'expected':metadata_value(e,field),'actual':metadata_value(a,field)})
+ walk(expected,actual,path,'')
+ return {'fields':fields,'fieldCount':count,'omittedFields':max(0,count-len(fields))}
+def object_identity(value):
+ if isinstance(value,dict):
+  if 'name' in value:return '.'.join(str(value[k]) for k in ['schema','name'] if k in value)+(('('+value['args']+')') if 'args' in value else '')
+  if 'object' in value:return str(value['object'])
+ return hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
 def compare(expected,actual):
- # Compare independently captured source metadata, not a second local dump.
- differences=[]
+ # Every value still participates in strict comparison. Diagnostics are bounded
+ # metadata-only object/field identities, never a reason to ignore a mismatch.
+ differences=[];remaining=100
  for category in sorted(set(expected)|set(actual)):
   e=canonical(expected.get(category));a=canonical(actual.get(category))
   if e!=a:
    es={json.dumps(x,sort_keys=True) for x in e or []};as_={json.dumps(x,sort_keys=True) for x in a or []}
-   differences.append({'category':category,'expectedCount':len(e or []),'actualCount':len(a or []),'missingOrChanged':len(es-as_),'extraOrChanged':len(as_-es)})
+   em={object_identity(x):x for x in e or []};am={object_identity(x):x for x in a or []};details=[];changed=0
+   for identity in sorted(set(em)|set(am)):
+    if em.get(identity)!=am.get(identity):
+     changed+=1
+     if remaining:
+      details.append(dict(object=metadata_value(identity,'object'),**field_differences(em.get(identity),am.get(identity))))
+      remaining-=1
+   differences.append({'category':category,'expectedCount':len(e or []),'actualCount':len(a or []),'missingOrChanged':len(es-as_),'extraOrChanged':len(as_-es),'objectDifferences':details,'omittedObjects':changed-len(details),'arrayOrderDiffers':es==as_})
  return differences
 def validate_parent(path):
  path=Path(path).absolute()

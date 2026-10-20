@@ -29,6 +29,14 @@ class Boundaries(unittest.TestCase):
  def test_provider_error_firstline_is_retained_without_values_or_context(self):
   result=v.failure_diagnostic('ERROR:  XX000: Superuser owned event trigger must execute a superuser owned function\nHINT: use role "sensitive" https://example.test/secret\nDETAIL: secret body\nCONTEXT: secret routine','baseline-restore',{},'psql')
   self.assertIn('Superuser owned event trigger',result['message']);self.assertNotIn('sensitive',str(result));self.assertNotIn('example.test',str(result));self.assertNotIn('secret body',str(result))
+ def test_catalog_diagnostics_name_fields_without_expression_values(self):
+  expected={'relations':[{'schema':'public','name':'proof','owner':'postgres','columns':[{'name':'id','default':"'private literal'",'acl':[]}]}]}
+  actual={'relations':[{'schema':'public','name':'proof','owner':'wrong_owner','columns':[{'name':'id','default':"'different private literal'",'acl':[]}]}]}
+  result=v.compare(expected,actual);detail=result[0]['objectDifferences'][0]
+  self.assertEqual(detail['object'],'public.proof');self.assertEqual({x['field'] for x in detail['fields']},{'owner','columns[id].default'})
+  self.assertNotIn('private literal',json.dumps(result));self.assertIn('wrong_owner',json.dumps(result))
+  result=v.compare({'relations':[dict(name=str(i),owner='old') for i in range(150)]},{'relations':[dict(name=str(i),owner='new') for i in range(150)]})
+  self.assertEqual(len(result[0]['objectDifferences']),100);self.assertEqual(result[0]['omittedObjects'],50)
  def test_required_private_real_scratch(self):
   with self.assertRaises(v.Refused):v.validate_parent('/does/not/exist')
  def test_catalog_detects_missing_routine_constraint_policy_and_acl(self):

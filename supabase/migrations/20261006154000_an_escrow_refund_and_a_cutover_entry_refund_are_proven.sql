@@ -1,4 +1,5 @@
--- 20261006154000_an_escrow_refund_and_a_cutover_entry_refund_are_proven.sql (recorded in production as an_escrow_refund_and_a_cutover_entry_refund_are_proven_returns)
+-- SUPERSEDED BY 20261020155211: the qualified original-flow definition also proves original ticket refunds; never replay this predecessor.
+-- Recorded in production as an_escrow_refund_and_a_cutover_entry_refund_are_proven_returns.
 -- @live-proof: (SELECT position('(20261006154000)' in prosrc) > 0 AND position($$IN('satellite_seat','wallet_charge')$$ in prosrc) > 0 FROM pg_proc WHERE oid = 'public.fn_union_pnl_original_flow_evidence(uuid,timestamptz,timestamptz)'::regprocedure)
 --
 -- WHAT HAPPENED (rows read 2026-10-06 ~15:30 UTC):

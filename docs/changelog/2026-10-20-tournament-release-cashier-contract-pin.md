@@ -10,3 +10,10 @@ Validated with the native PostgreSQL journal-origin qualification, the focused
 cashier certification contracts, and the full corrected read-only contract on
 production. The native qualification verifies legacy equivalence, access and
 replay refusals, and the exact installed fingerprint.
+
+The required migration-agreement check also found the historical refund proof
+still searching for its old two-kind predicate after qualified migration
+`20261020155211` added fully evidenced original ticket refunds. Mark that
+predecessor superseded through the checker's maintained metadata route. Both
+production migration receipts and the successor's complete exact-hash/source
+proof were read back; no migration is replayed or installed by this change.

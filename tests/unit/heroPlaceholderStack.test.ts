@@ -23,6 +23,24 @@ function placeholder(rowStack: number | null, pendingStack = 400) {
 }
 
 describe('hero placeholder stack', () => {
+  it('retires the original buy-in after the authoritative row arrives', () => {
+    const rowStart = page.indexOf('        {\n          const rowStack = heroRow?');
+    const rowEnd = page.indexOf('        const stillSeated', rowStart);
+    if (rowStart < 0 || rowEnd < rowStart) throw new Error('Seat balance read not found');
+    const read = ts.transpile(page.slice(rowStart, rowEnd));
+    const pending = { current: 400 };
+    let balance: number | null = null;
+    new Function('heroRow', 'pendingSeatStackRef', 'setHeroRowStack', read)(
+      { stack: '528.70' },
+      pending,
+      (update: (previous: number | null) => number | null) => {
+        balance = update(balance);
+      }
+    );
+    expect(balance).toBe(528.7);
+    expect(pending.current).toBe(0);
+  });
+
   it('keeps the current 528.70 stack after sitting out instead of the original 400 buy-in', () => {
     expect(placeholder(528.7).stack).toBe(528.7);
   });

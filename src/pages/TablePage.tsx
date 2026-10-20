@@ -22040,6 +22040,7 @@ function LiveTablePage({
           const rowStack = heroRow?.stack == null ? null : Number(heroRow.stack);
           const next =
             rowStack !== null && Number.isFinite(rowStack) && rowStack >= 0 ? rowStack : null;
+          if (next !== null) pendingSeatStackRef.current = 0;
           setHeroRowStack((prev) => (prev === next ? prev : next));
         }
         const stillSeated = new Set(rows.map((r) => String(r.user_id)).filter(Boolean));

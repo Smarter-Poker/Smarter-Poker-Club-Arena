@@ -14,6 +14,8 @@ are changed by this presentation fix.
 A newly confirmed purchase also invalidates the prior occupancy's row balance.
 Receipt recovery keeps the current balance, since an old receipt is not a new
 seat. The actual buy-in callback regression pins this boundary.
+The first valid seat read retires the pending buy-in, so a later missing row
+cannot resurrect an obsolete purchase value.
 
 The regression executes the actual placeholder branch with the observed
 400/528.70 inputs, a confirmed zero, and a not-yet-read seat. Both balance

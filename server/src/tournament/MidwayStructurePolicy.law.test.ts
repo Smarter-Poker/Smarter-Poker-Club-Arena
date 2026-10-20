@@ -33,6 +33,20 @@ describe('Midway standard structures through the actual scheduled creator', () =
       );
       const row = await (service as any).buildInsertRow(schedule, config, start);
       expect(row, name).not.toBeNull();
+      const smallBounty = ['Sunrise Bounty (NLH)', 'Midnight Bounty (NLH)'].includes(name);
+      if (smallBounty) {
+        expect(row).toMatchObject({
+          buy_in_amount: 5,
+          buy_in_fee: 0.5,
+          bounty_amount: 2,
+          rebuy_cost: 5.5,
+          addon_cost: 5.5,
+        });
+        expect(row.buy_in_amount - row.bounty_amount).toBe(3);
+      } else if (row.is_bounty && !row.is_pko && !row.is_mystery_bounty) {
+        expect(row.bounty_amount % 5).toBe(0);
+        expect(row.bounty_amount).toBeLessThanOrEqual(row.buy_in_amount);
+      }
       const levels = row.blind_structure;
       expect(row.table_size).toBeLessThanOrEqual(maxSeatsFor(row.game_type));
       if (name === 'Mid-Morning Turbo (6-Max NLH)') expect(row.table_size).toBe(6);
@@ -66,7 +80,7 @@ describe('Midway standard structures through the actual scheduled creator', () =
           ).toBeGreaterThanOrEqual(20);
         if (row.add_on_available)
           expect(row.addon_chips).toBeGreaterThanOrEqual(row.starting_chips * 2);
-        if (config.buyIn != null)
+        if (config.buyIn != null && !smallBounty)
           expect(Number(row.buy_in_amount) + Number(row.buy_in_fee)).toBe(config.buyIn);
       }
       if (config.guaranteedPrize != null) expect(row.guaranteed_prize).toBe(config.guaranteedPrize);
@@ -120,6 +134,33 @@ describe('Midway standard structures through the actual scheduled creator', () =
     expect((row!.blind_structure as any[])[0].smallBlind).toBe(25);
     expect(row!.guaranteed_prize).toBe(250);
     expect(auditFreeBuyRow({ ...row!, start_time: '2026-10-25T13:30:00Z' })).toEqual([]);
+  });
+
+  it('rounds only fixed bounties up to five and refuses an unfunded promise', () => {
+    const row = {
+      club_id: MIDWAY_UNION_ID,
+      tournament_type: 'MTT',
+      name: 'Fixed Bounty',
+      buy_in_amount: 13.5,
+      buy_in_fee: 1.5,
+      starting_chips: 5000,
+      late_reg_levels: 6,
+      blind_structure: [{ smallBlind: 25, bigBlind: 50, durationMinutes: 8 }],
+      is_bounty: true,
+      is_pko: false,
+      is_mystery_bounty: false,
+      bounty_amount: 7.5,
+    };
+    expect(withMidwayStructure(row).bounty_amount).toBe(10);
+    expect(withMidwayStructure({ ...row, bounty_amount: 10 }).bounty_amount).toBe(10);
+    expect(withMidwayStructure({ ...row, is_pko: true }).bounty_amount).toBe(7.5);
+    expect(withMidwayStructure({ ...row, is_mystery_bounty: true }).bounty_amount).toBe(7.5);
+    expect(() => withMidwayStructure({ ...row, buy_in_amount: NaN })).toThrow(
+      'funded by the net entry'
+    );
+    expect(() => withMidwayStructure({ ...row, buy_in_amount: 4.5, bounty_amount: 1.5 })).toThrow(
+      'funded by the net entry'
+    );
   });
 
   it('uses authored freezeout intent and preserves purchase prices', () => {

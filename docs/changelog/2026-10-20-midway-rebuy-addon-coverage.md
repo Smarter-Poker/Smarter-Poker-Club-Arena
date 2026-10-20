@@ -1,4 +1,4 @@
-# Midway rebuy and add-on coverage
+# Midway rebuys, add-ons and fixed bounties
 
 Owner follow-up: every event not explicitly designated freezeout permits rebuys;
 every rebuy except Sunday 200 Deep Stack offers an add-on. None of the current
@@ -12,13 +12,20 @@ break. Sunday 200 remains rebuy-only. Free Buy's one-chip purchases, 3,000 rebuy
 10,000 add-on and approved early add-on remain. Existing positive purchase prices
 are retained; newly enabled paid purchases use the published total entry price.
 
+Fixed knockout bounties round upward to multiples of five. Sunrise and Midnight
+are explicit owner exceptions: 5.50 total entry = 2 bounty + 3 prize contribution
+
+- 0.50 fee. PKO and mystery-bounty amounts are unchanged. Unfunded fixed bounty
+  promises are refused.
+
 The qualified migration accepts the original snapshot or the previous normalized
 configuration, updates full published purchase terms and only future occurrences
 without entrants, entry locks or finalized pools. Registered contracts remain
 unchanged. No money/player-stack writes, new timers or repair loops.
 
-Validation: 148 actual-creator/policy cases; server TypeScript; native PostgreSQL
+Validation: 149 actual-creator/policy cases; server TypeScript; native PostgreSQL
 144 eligible/720 protected cases, exact replay, drift refusal, prior-normalized
-upgrade, full purchase flag/cost parity and installed-state proof. Required hosted
+upgrade, exact full terms/40-level ladder parity, NULL-profile refusal, injected-NULL
+verifier regression, installed-config creator round trips and installed-state proof. Required hosted
 checks, protected merge, containing runtime, migration and live parity are separate
 remaining delivery evidence.

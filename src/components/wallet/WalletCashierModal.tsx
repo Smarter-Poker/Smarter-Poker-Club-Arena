@@ -432,7 +432,7 @@ export default function WalletCashierModal({
     null
   );
   /** Brings that sentence into view once, when it appears (a stable ref, so a re-render never scrolls). */
-  const revealOnMount = useCallback((el: HTMLDivElement | null) => {
+  const revealOnMount = useCallback((el: HTMLElement | null) => {
     el?.scrollIntoView?.({ block: 'nearest' });
   }, []);
 
@@ -963,7 +963,10 @@ export default function WalletCashierModal({
   // promo floats live on the agents table and are fetched when the holder is
   // chosen. The claim button stays disabled until the figure is known.
   useEffect(() => {
-    if ((tab !== 'claim' && walletType !== 'club_bank') || !recipient || !clubUuid) {
+    /* EVERY WALLET'S SEND FORM OPENS ON THE CHOSEN PLAYER (Dan 2026-10-19), and
+       that card prints what they hold in the destination wallet, so the figure
+       is read for any send or claim form - not only the Club Bank's. */
+    if ((tab !== 'claim' && tab !== 'send') || !recipient || !clubUuid) {
       setHolderHeld(null);
       return;
     }
@@ -1620,6 +1623,15 @@ export default function WalletCashierModal({
      on the glass. */
   const formTab = !agentClaimTab && (tab === 'send' || tab === 'claim');
   const bankTransfer = walletType === 'club_bank' && formTab;
+  /* TAPPING A MEMBER OPENS THE SEND TO THAT MEMBER, IN EVERY WALLET (Dan
+     2026-10-19: "when i click a player ... it should open up to that user to
+     send chips. currently it does nothing"). Only the Club Bank swapped the
+     roster for the chosen player's card; the Promo and Agent Wallets just
+     lit the row's text, so a tap read as nothing happening. Any wallet's send
+     or claim form with a recipient chosen now shows that player's card, the
+     destination picker on it, and Change Recipient - the same face for all
+     three. Pinned by tests/wallet-recipient-tap-opens-send.law.test.tsx. */
+  const showRecipientCard = formTab && Boolean(recipient);
 
   // Belt and braces: this modal is only mounted behind a role check, and the
   // row that opens it only renders for roles that hold the wallet. If it is
@@ -1918,7 +1930,7 @@ export default function WalletCashierModal({
               ) : tab === 'send' || tab === 'claim' ? (
                 <>
                   {/* Destination (send) or source (claim) */}
-                  <div className="cbc-field" hidden={bankTransfer && Boolean(recipient)}>
+                  <div className="cbc-field" hidden={showRecipientCard}>
                     <label className="cbc-label cbc-destination-label">
                       {tab === 'claim' ? 'Claim From' : 'Send Into'}
                     </label>
@@ -1937,67 +1949,76 @@ export default function WalletCashierModal({
                   </div>
 
                   {/* Recipient (send) or holder (claim) */}
-                  {bankTransfer && recipient && (
-                    <section className={transferStyles.playerCard} aria-label="Selected Player">
-                      <img
-                        className={transferStyles.playerCardAvatar}
-                        src={
-                          recipient.avatar_url ||
-                          generateAvatarSvg(recipient.user_id, recipient.name)
-                        }
-                        alt=""
-                        onError={(event) => {
-                          event.currentTarget.onerror = null;
-                          event.currentTarget.src = generateAvatarSvg(
-                            recipient.user_id,
-                            recipient.name
-                          );
-                        }}
-                      />
-                      <span className={transferStyles.playerCardPlate}>
-                        <span className={transferStyles.playerCardIdentity}>
-                          <strong className={transferStyles.playerCardName}>
-                            {titleCase(recipient.name)}
-                          </strong>
-                          <span className={transferStyles.playerCardId}>
-                            ID: {recipient.short_id}
+                  {showRecipientCard && recipient && (
+                    /* Outside the Club Bank the dialog is not the transfer
+                       console, so the card brings the console's scope with it
+                       (its frame and inks are scoped to .console). */
+                    <div className={bankTransfer ? undefined : transferStyles.console}>
+                      <section
+                        ref={revealOnMount}
+                        className={transferStyles.playerCard}
+                        aria-label="Selected Player"
+                      >
+                        <img
+                          className={transferStyles.playerCardAvatar}
+                          src={
+                            recipient.avatar_url ||
+                            generateAvatarSvg(recipient.user_id, recipient.name)
+                          }
+                          alt=""
+                          onError={(event) => {
+                            event.currentTarget.onerror = null;
+                            event.currentTarget.src = generateAvatarSvg(
+                              recipient.user_id,
+                              recipient.name
+                            );
+                          }}
+                        />
+                        <span className={transferStyles.playerCardPlate}>
+                          <span className={transferStyles.playerCardIdentity}>
+                            <strong className={transferStyles.playerCardName}>
+                              {titleCase(recipient.name)}
+                            </strong>
+                            <span className={transferStyles.playerCardId}>
+                              ID: {recipient.short_id}
+                            </span>
+                          </span>
+                          <span className={transferStyles.playerCardBalance}>
+                            <span>{destinationLabel(destination)}</span>
+                            <svg
+                              className={transferStyles.entityChevron}
+                              viewBox="0 0 12 8"
+                              aria-hidden="true"
+                            >
+                              <path
+                                d="M1 1.5 6 6.5 11 1.5"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              />
+                            </svg>
+                            <CashierFrameBalance text={fmtWallet(holderHeld)} />
                           </span>
                         </span>
-                        <span className={transferStyles.playerCardBalance}>
-                          <span>{destinationLabel(destination)}</span>
-                          <svg
-                            className={transferStyles.entityChevron}
-                            viewBox="0 0 12 8"
-                            aria-hidden="true"
-                          >
-                            <path
-                              d="M1 1.5 6 6.5 11 1.5"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            />
-                          </svg>
-                          <CashierFrameBalance text={fmtWallet(holderHeld)} />
-                        </span>
-                      </span>
-                      <select
-                        className={transferStyles.walletSelect}
-                        aria-label={tab === 'claim' ? 'Claim From' : 'Send Into'}
-                        value={destination}
-                        disabled={inFlight}
-                        onChange={(event) =>
-                          setDestination(event.target.value as DestinationWallet)
-                        }
-                      >
-                        {destinations.map((key) => (
-                          <option key={key} value={key}>
-                            {destinationLabel(key)}
-                          </option>
-                        ))}
-                      </select>
-                    </section>
+                        <select
+                          className={transferStyles.walletSelect}
+                          aria-label={tab === 'claim' ? 'Claim From' : 'Send Into'}
+                          value={destination}
+                          disabled={inFlight}
+                          onChange={(event) =>
+                            setDestination(event.target.value as DestinationWallet)
+                          }
+                        >
+                          {destinations.map((key) => (
+                            <option key={key} value={key}>
+                              {destinationLabel(key)}
+                            </option>
+                          ))}
+                        </select>
+                      </section>
+                    </div>
                   )}
-                  {bankTransfer && recipient && (
+                  {showRecipientCard && (
                     <button
                       type="button"
                       className="cbc-word"
@@ -2007,7 +2028,7 @@ export default function WalletCashierModal({
                       Change Recipient
                     </button>
                   )}
-                  <div className="cbc-field" hidden={bankTransfer && Boolean(recipient)}>
+                  <div className="cbc-field" hidden={showRecipientCard}>
                     <label className="cbc-label" htmlFor="cbc-search">
                       {tab === 'claim' ? 'Claim From Member' : 'Recipient'}
                     </label>

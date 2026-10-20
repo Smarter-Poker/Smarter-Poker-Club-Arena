@@ -460,7 +460,10 @@ describe('The Sender Chooses The Recipient Wallet', () => {
       fx.members = [{ data: [{ ...kingfish, role }], error: null }];
       openCashier({ role: 'owner', walletType: 'agent_wallet' });
       await pick(/Kingfish/);
-      await toPlayerWallet();
+      // Picking opens the player's card (2026-10-19); the wallet is chosen on it.
+      fireEvent.change(screen.getByRole('combobox', { name: 'Send Into' }), {
+        target: { value: 'player_wallet' },
+      });
       typeAmount('5');
       await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
       fireEvent.click(plate('Send Chips'));

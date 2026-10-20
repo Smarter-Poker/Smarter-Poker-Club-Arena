@@ -8,7 +8,7 @@ import {
   choiceMovesWanted,
   crashCashoutCents,
   entryCapFor,
-  isOutOfChips,
+  cannotBeSeated,
   maxSpinTargetChips,
   mineCell,
   nextStep,
@@ -64,11 +64,21 @@ describe('the cheapest open game', () => {
   });
 });
 
-describe('out of chips is bankroll rule 7', () => {
-  it('is below one buy-in of the cheapest open game, and not at it', () => {
-    expect(isOutOfChips(0, GAME)).toBe(true);
-    expect(isOutOfChips(3.99, GAME)).toBe(true);
-    expect(isOutOfChips(4, GAME)).toBe(false);
+describe('a horse spins when the fleet can no longer seat it', () => {
+  it('starts under the seat bar, not only under one buy-in', () => {
+    // A gambler needs 200 at a 0.10 game: at 150 it is refused every seat
+    // while holding 37 buy-ins of the 4.00 minimum. Phase 4 left it there.
+    expect(cannotBeSeated(GAMBLER, 0, GAME)).toBe(true);
+    expect(cannotBeSeated(GAMBLER, 3.99, GAME)).toBe(true);
+    expect(cannotBeSeated(GAMBLER, 150, GAME)).toBe(true);
+    expect(cannotBeSeated(GAMBLER, 199.99, GAME)).toBe(true);
+    expect(cannotBeSeated(GAMBLER, 200, GAME)).toBe(false);
+  });
+  it('uses each temperament’s own bar', () => {
+    expect(cannotBeSeated(NIT, 399, GAME)).toBe(true);
+    expect(cannotBeSeated(NIT, 400, GAME)).toBe(false);
+    expect(cannotBeSeated(STD, 249, GAME)).toBe(true);
+    expect(cannotBeSeated(STD, 250, GAME)).toBe(false);
   });
 });
 

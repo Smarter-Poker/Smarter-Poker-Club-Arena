@@ -31,8 +31,7 @@ type Outcome = {
 class FakeWheel implements HorseSpinDoors {
   clock = 1_000_000;
   isFrozen = false;
-  member: SpinMember = { userId: HORSE, clubId: CLUB, chips: 0, diamonds: 100_000 };
-  recent = new Set<string>();
+  member: SpinMember = { userId: HORSE, clubId: CLUB, chips: 0, feltChips: 0, diamonds: 100_000 };
   outcomes: Outcome[] = [];
   work: OpenWork = { cards: [], awards: [], crashRounds: [], choiceRounds: [] };
   calls: Array<{ action: string; args: Record<string, unknown> }> = [];
@@ -50,9 +49,6 @@ class FakeWheel implements HorseSpinDoors {
   }
   async loadMember() {
     return { ...this.member };
-  }
-  async loadRecentSpins() {
-    return new Set(this.recent);
   }
   async loadOpenWork() {
     return JSON.parse(JSON.stringify(this.work)) as OpenWork;
@@ -81,7 +77,6 @@ class FakeWheel implements HorseSpinDoors {
         if (this.work.awards.length || this.work.cards.length)
           return { ok: false, error: 'Finish Your Bonus Game Before Another Spin' };
         this.member.diamonds -= entry;
-        this.recent.add(`${HORSE}:${CLUB}`);
         const o = this.outcomes.shift() ?? { chips: 1 };
         if (o.chips) this.member.chips += (o.chips * entry) / 100;
         if (o.award)
@@ -203,15 +198,40 @@ describe('a horse with no chips spins its Diamonds into chips', () => {
   });
 });
 
-describe('a horse that has chips is left alone', () => {
-  it('does not spin above one buy-in unless it is already mid-session', async () => {
-    wheel.member.chips = 50; // above the 4.00 minimum, below its 200 target
+describe('who spins: the horse the fleet cannot seat', () => {
+  it('spins with more than a buy-in when that is still under its seat bar', async () => {
+    wheel.member.chips = 195; // 48 buy-ins of the 4.00 minimum, under the gambler's 200
+    await wheel.pass();
+    expect(wheel.calls.map((c) => c.action)).toEqual(['wheel_commit', 'wheel_spin']);
+    // 5 chips short needs 625 Diamonds at the wheel's return: the 500 entry, not 2,500.
+    expect(wheel.calls[1].args).toMatchObject({ entry_diamonds: 500 });
+  });
+
+  it('counts the chips it has on a cash table as its roll', async () => {
+    wheel.member.chips = 0;
+    wheel.member.feltChips = 250; // seated with all of it: the fleet can seat it again
     await wheel.pass();
     expect(wheel.calls).toEqual([]);
-    wheel.recent.add(`${HORSE}:${CLUB}`); // it spun here inside the window
-    wheel.clock += 60_000; // past the roster refresh
+    expect(horseDiamondSpinsStatus().cannotBeSeated).toBe(0);
+  });
+
+  it('leaves a horse the fleet can seat alone', async () => {
+    wheel.member.chips = 200;
     await wheel.pass();
-    expect(wheel.calls.map((c) => c.action)).toContain('wheel_spin');
+    expect(wheel.calls).toEqual([]);
+  });
+
+  it('reports the horses it cannot help: under the bar with no Diamonds to spin', async () => {
+    wheel.member.chips = 10;
+    wheel.member.diamonds = 10_000; // only the Diamond Arena reserve
+    await wheel.pass();
+    expect(wheel.calls).toEqual([]);
+    expect(horseDiamondSpinsStatus()).toMatchObject({
+      cannotBeSeated: 1,
+      cannotSpinNoDiamonds: 1,
+      inSession: 0,
+      cheapestGame: { bigBlind: 0.1, minBuyIn: 4, maxBuyIn: 20 },
+    });
   });
 });
 

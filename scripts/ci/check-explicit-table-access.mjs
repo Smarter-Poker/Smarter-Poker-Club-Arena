@@ -52,10 +52,12 @@ function same(a, b) { return a[0] === b[0] && a[1] === b[1]; }
 
 export function auditMigration(sql) {
   const syntax = sqlSyntax(sql), issues = [];
-  const creates = [...syntax.matchAll(new RegExp(`\\bCREATE\\s+(?:(TEMP(?:ORARY)?|UNLOGGED)\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(${relation})`, 'gi'))]
+  const tables = [...syntax.matchAll(new RegExp(`\\bCREATE\\s+(?:(TEMP(?:ORARY)?|UNLOGGED)\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(${relation})`, 'gi'))]
     .filter(m => !/^temp/i.test(m[1] || ''))
-    .map(m => name(m[2])).filter(parts => parts[0] === 'public');
-  for (const table of creates) {
+    .map(m => ({ parts: name(m[2]), rls: true }));
+  const views = [...syntax.matchAll(new RegExp(`\\bCREATE\\s+(?:OR\\s+REPLACE\\s+)?(?:(TEMP(?:ORARY)?)\\s+)?(?:MATERIALIZED\\s+)?VIEW\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(${relation})`, 'gi'))]
+    .filter(m => !m[1]).map(m => ({ parts: name(m[2]), rls: false }));
+  for (const { parts: table, rls } of [...tables, ...views].filter(entry => entry.parts[0] === 'public')) {
     const label = table.join('.');
     const revokes = [...syntax.matchAll(/\bREVOKE\s+ALL(?:\s+PRIVILEGES)?\s+ON\s+(?:TABLE\s+)?([^;]+?)\s+FROM\s+([^;]+);/gi)];
     const revoked = new Set();
@@ -69,7 +71,7 @@ export function auditMigration(sql) {
     }
     const enabled = [...syntax.matchAll(new RegExp(`\\bALTER\\s+TABLE\\s+(?:ONLY\\s+)?(${relation})\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`, 'gi'))]
       .some(m => same(name(m[1]), table));
-    if (!enabled) issues.push(`${label}: enable row level security in the creation migration`);
+    if (rls && !enabled) issues.push(`${label}: enable row level security in the creation migration`);
   }
   return issues;
 }

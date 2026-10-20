@@ -38,3 +38,13 @@ test('an uncalled stored function cannot supply a table boundary', () => {
   assert.equal(auditMigration(`CREATE TABLE public.example(id int);
 CREATE FUNCTION later() RETURNS void LANGUAGE sql AS $$ ${boundary} $$;`).length, 5);
 });
+
+test('views and materialized views declare explicit access without table RLS', () => {
+  for (const ddl of ['CREATE VIEW', 'CREATE OR REPLACE VIEW', 'CREATE MATERIALIZED VIEW']) {
+    assert.equal(auditMigration(`${ddl} public.example AS SELECT 1 AS id;`).length, 4);
+    assert.deepEqual(auditMigration(`${ddl} public.example AS SELECT 1 AS id; REVOKE ALL ON public.example FROM PUBLIC, anon, authenticated, service_role; GRANT SELECT ON public.example TO service_role;`), []);
+  }
+});
+test('temporary views and non-public relations do not need API exposure declarations', () => {
+  assert.deepEqual(auditMigration('CREATE TEMP VIEW example AS SELECT 1; CREATE VIEW private.example AS SELECT 1;'), []);
+});

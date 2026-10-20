@@ -7603,12 +7603,11 @@ function LiveTablePage({
     showdown: boolean;
     won: boolean;
     potWon: number;
-    handRank: string;
     /** Which hand this outcome describes. A POT_WIN for an older hand can
      *  land after the next one has started; without this the accumulator had
      *  no way to refuse it. */
     handNumber: number;
-  }>({ dealtIn: false, showdown: false, won: false, potWon: 0, handRank: '', handNumber: 0 });
+  }>({ dealtIn: false, showdown: false, won: false, potWon: 0, handNumber: 0 });
   /** Pot identities already added to `potWon`, so a split/side-pot hand adds
    *  each share once and a re-sent frame adds none. Cleared at hand start. */
   const heroPotsCountedRef = useRef<Set<string>>(new Set());
@@ -17434,7 +17433,6 @@ function LiveTablePage({
           showdown: false,
           won: false,
           potWon: 0,
-          handRank: '',
           handNumber: Number(startedHandNumber) || tableStateRef.current.handNumber || 0,
         };
         heroPotsCountedRef.current = new Set();
@@ -18137,7 +18135,6 @@ function LiveTablePage({
               .onHandComplete(userId, {
                 won: outcome.won,
                 potSize: outcome.potWon,
-                handRank: outcome.handRank || undefined,
                 showdown: outcome.showdown,
                 /* player_stats is keyed (user_id, club_id). Without the club
                    the counter cannot be incremented truthfully - see the note
@@ -19029,7 +19026,10 @@ function LiveTablePage({
               heroPotsCountedRef.current.add(potKey);
               heroHandOutcomeRef.current.potWon += amounts[userId] || 0;
             }
-            if (winHandName) heroHandOutcomeRef.current.handRank = winHandName;
+            /* The winning hand's name is no longer carried to achievements
+               (2026-10-20): it was winnersArray[0]'s, not necessarily this
+               player's. Royal Flush / Straight Flush / Four Of A Kind are
+               recorded by the database from the engine's per-player record. */
             presentPayoutVisual(() => {
               const bb = safeBB(tableStateRef.current.blinds, 1);
               const winBB = (amounts[userId] || potAmount) / bb;

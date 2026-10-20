@@ -7,6 +7,9 @@ const dollarDisplayCharacters = new RegExp(
 
 /** Owner rule, 2026-10-09: no dollar signs in either arena's displayed copy. */
 export function arenaDisplayText(text: string): string {
+  // Callers are typed, but popup copy reaches here from untyped bus payloads;
+  // a non-string must never throw during render (2026-10-20, MilestoneToast).
+  if (typeof text !== 'string') return typeof text === 'number' ? String(text) : '';
   return text.replace(dollarDisplayCharacters, '');
 }
 

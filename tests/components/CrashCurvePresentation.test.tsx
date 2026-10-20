@@ -190,6 +190,24 @@ describe('the multiplier is the hero', () => {
     // The figure went from the loop to the text node: one scene frame, no render of it.
     expect(frames.render.mock.calls.length - drawn).toBe(1);
   });
+
+  it('keeps the actual curve and tick at the paused server flight time during maintenance', () => {
+    const { tick: frame } = clock();
+    const onTick = vi.fn();
+    const { container } = render(
+      <CrashCurve
+        {...base}
+        phase="open"
+        pausedElapsedMs={8000}
+        replayElapsedMs={300000}
+        onTick={onTick}
+      />
+    );
+    frame(100);
+    frame(300100);
+    expect(hero(container)).toHaveTextContent('2.61x');
+    expect(onTick).toHaveBeenLastCalledWith(crashMultiplierCents(0.12, 8000, 10000));
+  });
   it('holds the figure the page freezes while a cash-out is pending', () => {
     const { tick: frame } = clock();
     const { container, rerender } = render(

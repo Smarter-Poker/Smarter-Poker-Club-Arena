@@ -132,7 +132,7 @@ describe('AchievementTriggerService', () => {
     // / Four Of A Kind from the winning hand's display name, which the mapping
     // never recognised, and a horse has no browser. The database records all
     // three from the engine's per-player hand record now
-    // (trg_hand_history_winning_hand_achievements), so nothing is sent here.
+    // (trg_hand_history_royal_flush_achievement / _straight_flush_quads_achievements), so nothing is sent here.
     it('never reports a special hand from the browser', async () => {
       await achievementTriggerService.onHandComplete('user-1', {
         won: true,

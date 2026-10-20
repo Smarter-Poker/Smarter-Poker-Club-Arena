@@ -6,9 +6,10 @@
  * display name ("Four of a Kind") and AchievementService.checkSpecialHand only
  * knew snake keys ("four_of_a_kind"), so none of them could unlock from play;
  * it read the first winner's hand, not this player's; and a horse has no
- * browser (CLAUDE.md 10.5: horses are players, identically). Migration
- * 20261020005219 reads hand_history.daily_mission_events strong_hands - the
- * engine's per-player strongest hand that won a pot - for 10, 9 and 8.
+ * browser (CLAUDE.md 10.5: horses are players, identically). The Royal Flush
+ * trigger (20261019155445) reads hand_history.daily_mission_events
+ * strong_hands = 10 - the engine's per-player strongest hand that won a pot -
+ * and migration 20261020022215 adds one beside it for 9 and 8.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -19,7 +20,7 @@ import { dailyMissionHandStrength } from '../server/src/engine/dailyMissionEvent
 const ROOT = process.cwd();
 const read = (p: string) => readFileSync(join(ROOT, p), 'utf8');
 const MIGRATION =
-  'supabase/migrations/20261020005219_straight_flush_and_quads_are_proved_from_the_engine_hand_rec.sql';
+  'supabase/migrations/20261020022215_straight_flush_and_quads_get_their_own_hand_trigger.sql';
 const sql = read(MIGRATION);
 const body = sql.slice(sql.indexOf('\nBEGIN;\n'));
 
@@ -52,32 +53,39 @@ describe('the engine names every special hand the badges name', () => {
 });
 
 describe('the database records them, horses alike', () => {
-  it('maps 10 / 9 / 8 to royal_flush / straight_flush / quads, and nothing else', () => {
+  it('maps 9 / 8 to straight_flush / quads and leaves 10 to the Royal Flush trigger', () => {
     expect(body).toMatch(
-      /WHEN 10 THEN 'royal_flush'\s+WHEN 9\s+THEN 'straight_flush'\s+WHEN 8\s+THEN 'quads'\s+END AS achievement_id/
+      /CASE \(e #>> '\{magnitudes,strong_hands\}'\)::numeric\s+WHEN 9 THEN 'straight_flush'\s+WHEN 8 THEN 'quads'\s+END AS achievement_id/
     );
     expect(body).toContain(
-      "'$[*] ? (@.magnitudes.strong_hands >= 8 && @.magnitudes.strong_hands <= 10)'"
+      "'$[*] ? (@.magnitudes.strong_hands == 9 || @.magnitudes.strong_hands == 8)'"
     );
     expect(body).toMatch(
-      /CREATE TRIGGER trg_hand_history_winning_hand_achievements\s+AFTER INSERT ON public\.hand_history\s+FOR EACH ROW\s+WHEN \(NEW\.daily_mission_events IS NOT NULL\s+AND jsonb_path_exists\(NEW\.daily_mission_events, '\$\[\*\] \? \(@\.magnitudes\.strong_hands >= 8\)'\)\)/
+      /CREATE TRIGGER trg_hand_history_straight_flush_quads_achievements\s+AFTER INSERT ON public\.hand_history\s+FOR EACH ROW\s+WHEN \(NEW\.daily_mission_events IS NOT NULL\s+AND jsonb_path_exists\(NEW\.daily_mission_events,\s+'\$\[\*\] \? \(@\.magnitudes\.strong_hands == 9 \|\| @\.magnitudes\.strong_hands == 8\)'\)\)/
     );
+    expect(body).not.toMatch(/WHEN 10 THEN|@\.magnitudes\.strong_hands == 10|strong_hands >= /);
   });
 
-  it('replaces the Royal Flush-only trigger in the same transaction, so no royal is read twice', () => {
-    expect(body).toContain(
-      'DROP TRIGGER trg_hand_history_royal_flush_achievement ON public.hand_history;'
-    );
-    expect(body).toContain('DROP FUNCTION public.tr_hand_history_royal_flush_achievement();');
-    expect(body.indexOf('DROP TRIGGER')).toBeLessThan(body.indexOf('CREATE TRIGGER'));
+  it('never drops anything on hand_history: only a CREATE TRIGGER, which readers do not block', () => {
+    // 20261020005219 dropped the Royal Flush trigger in the same transaction;
+    // DROP TRIGGER needs ACCESS EXCLUSIVE, waited behind readers and was
+    // refused by lock_timeout (nothing committed). It is superseded.
+    expect(body).not.toMatch(/DROP TRIGGER|DROP FUNCTION|ALTER TABLE public\.hand_history/);
     expect(body.trim().endsWith('COMMIT;')).toBe(true);
     expect(body).toContain("SET LOCAL lock_timeout = '5s';");
+    expect(
+      read(
+        'supabase/migrations/20261020005219_straight_flush_and_quads_are_proved_from_the_engine_hand_rec.sql'
+      ).startsWith('-- SUPERSEDED BY 20261020022215:')
+    ).toBe(true);
   });
 
-  it('pays through the one server door, and can never fail the hand', () => {
+  it('records through the one server door, and can never fail the hand', () => {
     expect(body).toContain('PERFORM public.fn_achievement_unlock_server(');
     expect(body).toMatch(/EXCEPTION WHEN OTHERS THEN\s+RAISE WARNING '% achievement for/);
-    expect(body).toMatch(/EXCEPTION WHEN OTHERS THEN\s+RAISE WARNING 'winning hand achievements/);
+    expect(body).toMatch(
+      /EXCEPTION WHEN OTHERS THEN\s+RAISE WARNING 'straight flush \/ quads achievements/
+    );
     expect(body).not.toMatch(/award_diamonds_v2\(|diamond_transactions|INSERT INTO/i);
   });
 
@@ -113,7 +121,7 @@ describe('the browser does not report them', () => {
   it('the native PostgreSQL proof applies this migration byte for byte', () => {
     const proof = read('scripts/ci/test-achievement-diamonds-postgres.py');
     expect(proof).toContain(
-      '20261020005219_straight_flush_and_quads_are_proved_from_the_engine_hand_rec.sql'
+      '20261020022215_straight_flush_and_quads_get_their_own_hand_trigger.sql'
     );
     expect(proof).toContain('psql(WINNING_HANDS.read_text())');
   });

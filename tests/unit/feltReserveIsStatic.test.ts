@@ -149,16 +149,17 @@ function dependencies(root: string): Set<string> {
  * opens its rule, then back again to the end of the previous block to recover
  * the selector text.
  */
-function declarationsOf(prop: string): Array<{ selector: string; value: string }> {
+function declarationsOf(prop: string, css = ALL_CSS): Array<{ selector: string; value: string }> {
   const out: Array<{ selector: string; value: string }> = [];
   const re = new RegExp(`(^|[;{\\s])${prop}\\s*:([^;}]*)`, 'g');
-  for (const m of ALL_CSS.matchAll(re)) {
+  for (const m of css.matchAll(re)) {
     const at = m.index ?? 0;
-    const brace = ALL_CSS.lastIndexOf('{', at);
+    const brace = css.lastIndexOf('{', at);
     if (brace === -1) continue;
-    const prev = Math.max(ALL_CSS.lastIndexOf('}', brace), ALL_CSS.lastIndexOf('{', brace - 1));
+    const prev = Math.max(css.lastIndexOf('}', brace), css.lastIndexOf('{', brace - 1));
     out.push({
-      selector: ALL_CSS.slice(prev + 1, brace)
+      selector: css
+        .slice(prev + 1, brace)
         .replace(/\s+/g, ' ')
         .trim(),
       value: m[2].trim(),
@@ -209,32 +210,34 @@ describe('the felt is ONE size — no state may change it (Dan 2026-08-28)', () 
     ).toEqual([]);
   });
 
-  it('sizes the felt from a viewport unit that does not move', () => {
-    /* `dvh` grows and shrinks as a phone browser's URL bar collapses — sizing
-       the felt from it means the oval rescales on a scroll gesture. `svh` is the
-       viewport with chrome shown, and is constant. Every dvh declaration of
-       --sp-page-h must therefore have an svh partner in the @supports block. */
-    const decls = declarationsOf('--sp-page-h');
-    /* NOT `/\bdvh\b/`. There is no word boundary between the `0` and the `d` of
-       `100dvh`, so that pattern matches nothing and the whole assertion passes
-       vacuously — which is exactly what it did until a mutation test (delete
-       every svh declaration; expect red) came back green. A guard that cannot
-       fail is worse than no guard, because it is also a claim. */
-    const dvh = decls.filter((d) => /\d+dvh\b/.test(d.value));
-    const svh = decls.filter((d) => /\d+svh\b/.test(d.value));
-    expect(decls.length, 'no --sp-page-h declaration found — the walk is broken').toBeGreaterThan(
-      0
+  it('uses the visible viewport only for portrait phones and keeps stable sizing elsewhere', () => {
+    // October 20: phone gameplay must fill Safari's visible viewport rather
+    // than retain dead space for its retracted toolbar. Other layouts keep
+    // their existing svh contract. Gameplay state and JS measurements remain
+    // forbidden inputs by the independent tests in this file.
+    const media = /@media\s*\(max-width:\s*480px\)\s*and\s*\(orientation:\s*portrait\)\s*\{/.exec(
+      ALL_CSS
     );
-    // Floor: proves the pattern matches something, so the equality below cannot
-    // be satisfied by both sides being zero.
-    expect(dvh.length, 'no dvh fallback found — the walk or the pattern is broken').toBeGreaterThan(
-      0
+    expect(media, 'portrait-phone viewport rule must exist').not.toBeNull();
+    const start = media!.index;
+    let end = start + media![0].length;
+    let depth = 1;
+    while (end < ALL_CSS.length && depth > 0) {
+      if (ALL_CSS[end] === '{') depth++;
+      if (ALL_CSS[end] === '}') depth--;
+      end++;
+    }
+    expect(depth, 'portrait-phone rule must close').toBe(0);
+    const phone = declarationsOf('--sp-page-h', ALL_CSS.slice(start, end));
+    expect(phone.every((d) => /\d+dvh\b/.test(d.value))).toBe(true);
+    const other = declarationsOf('--sp-page-h', ALL_CSS.slice(0, start) + ALL_CSS.slice(end));
+    const fallback = other.filter((d) => /\d+dvh\b/.test(d.value));
+    const stable = other.filter((d) => /\d+svh\b/.test(d.value));
+    expect(phone, 'route and embedded phones must use the visible viewport').toHaveLength(2);
+    expect(fallback.length, 'the non-phone fallback walk must not be empty').toBeGreaterThan(0);
+    expect(stable.length, 'every non-phone dvh fallback retains its svh override').toBe(
+      fallback.length
     );
-    expect(
-      svh.length,
-      `${dvh.length} --sp-page-h declaration(s) use dvh but only ${svh.length} use svh. ` +
-        'Every dvh fallback needs its svh override or the felt resizes with the URL bar.'
-    ).toBe(dvh.length);
   });
 
   it('keeps the spectator collapse deleted', () => {

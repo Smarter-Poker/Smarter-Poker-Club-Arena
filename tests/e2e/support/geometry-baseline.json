@@ -1,15 +1,15 @@
 {
   "iPhone SE": {
     "vp": "375x667",
-    "feltW": 332.6,
+    "feltW": 375,
     "feltH": 475.2,
     "btnH": 46,
-    "card2W": 50,
-    "card2H": 70,
-    "avatar": 52.5,
-    "heroAvatar": 70.1,
-    "seatW": 78.2,
-    "plo4Row": 112.5
+    "card2W": 52.1,
+    "card2H": 73,
+    "avatar": 59.3,
+    "heroAvatar": 79,
+    "seatW": 88.1,
+    "plo4Row": 117.3
   },
   "iPhone 12/13/14": {
     "vp": "390x844",

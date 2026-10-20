@@ -113,15 +113,17 @@ function expectedKey(identity: Record<string, unknown>): string {
 describe('P11.3 the VPIP floor call-down (2026-10-17) requires a fresh qualification of every pack', () => {
   const selected = HORSE_PHASE11_VARIANTS.filter((v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null);
 
-  it('PLO8 and PLO5 generation 4 (da94e437) are selected; PLO8 and PLO5 generation 3 (d9190c9e) are refused by policy digest, and every retained generation 1 and 2 by contract', () => {
+  it('every Phase 11 pack is selected on da94e437 (PLO5 and PLO8 generation 4, PLO6 generation 3); PLO8 and PLO5 generation 3 (d9190c9e) are refused by policy digest, and every retained generation 1 and 2 by contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     expect(Object.keys(RETIRED_2026_10_17_PHASE11_SELECTIONS).sort()).toEqual(['plo5', 'plo8']);
-    // 2026-10-19: PLO8 and PLO5 generation 4 requalified the VPIP-floor source
-    // and are admitted from their shipped evidence; PLO6 stays unselected.
-    const selectedNow = ['plo5', 'plo8'] as const;
+    // 2026-10-19/20: PLO5 and PLO8 generation 4 and PLO6 generation 3
+    // requalified the VPIP-floor source and are admitted from their shipped
+    // evidence.
+    const selectedNow = ['plo5', 'plo6', 'plo8'] as const;
+    const expectedGeneration = { plo5: 4, plo6: 3, plo8: 4 } as const;
     expect(
       HORSE_PHASE11_VARIANTS.filter((v) => PHASE11_PROTECTED_RELEASE_SELECTIONS[v] !== null)
     ).toEqual([...selectedNow]);
@@ -134,13 +136,15 @@ describe('P11.3 the VPIP floor call-down (2026-10-17) requires a fresh qualifica
         sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
         packVersion: OMAHA_VARIANT_PACKS[variant].version,
         contractDigest: PHASE11_RUNNING_CONTRACT_DIGEST,
-        approvalGeneration: 4,
+        approvalGeneration: expectedGeneration[variant],
         expiresAt: null,
         withdrawn: null,
       });
-      expect(live.approvalGeneration).toBeGreaterThan(
-        RETIRED_2026_10_17_PHASE11_SELECTIONS[variant]!.approvalGeneration
-      );
+      const previous =
+        RETIRED_2026_10_17_PHASE11_SELECTIONS[variant] ??
+        RETIRED_2026_10_16_PHASE11_SELECTIONS[variant] ??
+        PREVIOUS_PHASE11_SELECTIONS[variant]!;
+      expect(live.approvalGeneration).toBeGreaterThan(previous.approvalGeneration);
       const liveRelease = admitHorsePhase11ReleaseAuthority(variant);
       expect(liveRelease.status, variant).toBe('admitted');
       expect(selectedHorsePhase11Authority(variant, liveRelease)).not.toBeNull();

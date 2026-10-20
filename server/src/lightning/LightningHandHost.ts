@@ -1821,7 +1821,11 @@ export class LightningHandHost {
         type,
         committed
       );
-      if (!out.ok && out.transport) throw new Error(out.reason);
+      if (!out.ok && out.transport && out.retryable !== false) throw new Error(out.reason);
+      if (!out.ok && out.transport && out.retryable === false)
+        this.logger.error(
+          `[LightningHost:${this.instanceId}] original fold outcome unknown; not replayed`
+        );
       return out;
     })
       .then((out) => {

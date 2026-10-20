@@ -83,3 +83,5 @@ def qualify(root,pg,port,sql):
   assert sql('BEGIN;UPDATE hand_atomic_commits SET '+change+';'+selector(new)+';ROLLBACK;')==''
  print('PASS: actual alert selector sees exact Lightning completion; wrong hand/table/number, incomplete and malformed receipts remain open')
  print(sql("SELECT json_build_object('fold',md5(pg_get_functiondef('fn_lightning_fast_fold(uuid,uuid,uuid,text,numeric)'::regprocedure)),'resolver',md5(pg_get_functiondef('fn_resolve_settled_financial_alerts(boolean,integer)'::regprocedure)))"))
+ import runpy
+ runpy.run_path(str(here/'fold-lane-roots.py'))['qualify'](root,pg,port,sql)

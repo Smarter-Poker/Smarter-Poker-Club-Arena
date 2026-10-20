@@ -48,4 +48,19 @@ describe('a never-dealt Diamond rebuy proves its own original custody', () => {
       'python3 scripts/ci/test-never-dealt-rebuy.py --pg-bin'
     );
   });
+  it('enforces all seven game types and both paid generations in each currency fixture', () => {
+    const runner = readFileSync('scripts/ci/test-never-dealt-rebuy.py', 'utf8');
+    expect(runner.split("root/DATA/'game-currency-matrix.sql'")).toHaveLength(3);
+    const matrix = readFileSync(
+      'scripts/ci/fixtures/never-dealt-rebuy/game-currency-matrix.sql',
+      'utf8'
+    );
+    for (const game of ['NLH', 'PLO4', 'PLO5', 'PLO6', 'PLO8', 'SHORT_DECK', 'OFC_PINEAPPLE'])
+      expect(matrix).toContain(`'${game}'`);
+    expect(matrix).toContain("ARRAY['rebuy','reentry']");
+    expect(matrix).toContain("asset NOT IN ('chips','diamonds')");
+    expect(matrix).toContain('runs<>14');
+    expect(matrix).toContain('smarter_private.f06_movement_never_dealt_prior(');
+    expect(matrix).toContain('ROLLBACK;');
+  });
 });

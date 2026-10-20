@@ -69,6 +69,10 @@ function fixture() {
     retryAccountBalance: vi.fn(),
     requestEngineSnapshot: vi.fn(),
     pendingSeatStackRef: ref(0),
+    heroRowStack: 528.7,
+    setHeroRowStack: (stack: number | null) => {
+      dependencies.heroRowStack = stack;
+    },
     selectedSeat: 2,
     userId: 'd0000000-0000-4000-8000-000000000001',
     tableId: 'b0000000-0000-4000-8000-000000000001',
@@ -113,6 +117,13 @@ afterEach(() => {
 });
 
 describe('cash buy-in callback recovery', () => {
+  it('discards the prior occupancy balance when a new buy-in is confirmed', async () => {
+    const f = fixture();
+    await f.handler(400, false);
+    expect(f.d.heroRowStack).toBe(null);
+    expect(f.d.pendingSeatStackRef.current).toBe(400);
+  });
+
   it('buys in without native randomUUID and without a preliminary seat read', async () => {
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => bytes.fill(7) });
     const f = fixture();

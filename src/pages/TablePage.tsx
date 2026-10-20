@@ -28612,6 +28612,9 @@ function LiveTablePage({
               });
             if (!outcome.fromReceipt) {
               pendingSeatStackRef.current = paid.p_amount;
+              // A new occupancy must not inherit the previous seat's balance
+              // while waiting for its first authoritative row read.
+              setHeroRowStack(null);
               // Only a confirmed new purchase may paint its initial stack.
               // A historical receipt cannot reseat somebody who already left,
               // or replace the current stack with their old buy-in amount.

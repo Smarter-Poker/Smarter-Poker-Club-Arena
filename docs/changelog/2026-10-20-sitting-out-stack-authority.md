@@ -11,6 +11,10 @@ zero. An unread seat balance is represented by null, so a newly confirmed
 buy-in still displays before its first row read. No chips or server state
 are changed by this presentation fix.
 
+A newly confirmed purchase also invalidates the prior occupancy's row balance.
+Receipt recovery keeps the current balance, since an old receipt is not a new
+seat. The actual buy-in callback regression pins this boundary.
+
 The regression executes the actual placeholder branch with the observed
 400/528.70 inputs, a confirmed zero, and a not-yet-read seat. Both balance
 cases failed before the repair. The existing I'm Back source contract is

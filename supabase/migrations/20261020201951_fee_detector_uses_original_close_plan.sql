@@ -300,4 +300,6 @@ $function$
 ;
 REVOKE ALL ON FUNCTION smarter_private.owner_direct_fee_capture_plan(uuid),smarter_private.owner_direct_fee_close_ready(uuid) FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.fn_accounting_qualify_owner_direct_fee(uuid) FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_horse_fleet_metrics(integer) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.fn_ca_horse_fleet_metrics(integer) TO service_role;
 COMMIT;

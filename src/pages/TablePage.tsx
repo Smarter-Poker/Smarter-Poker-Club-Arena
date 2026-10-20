@@ -28848,30 +28848,35 @@ function LiveTablePage({
           ) {
             toggleV8Setting('show_stack_in_bb');
           }
-          if (settingsUpdate.sitOutNextHand !== undefined) {
+          if (settingsUpdate.sitOutNextHand !== undefined && !sitOutRequestInFlightRef.current) {
             const wanted = settingsUpdate.sitOutNextHand;
             setSitOutNextHand(wanted);
             if (tableId) {
-              // Same dead-.catch problem as the other three sit-out entry
-              // points: revert the switch when the server refuses so it never
-              // shows a state the server does not hold.
-              void setSitOut(tableId, wanted).then((res) => {
-                if (res?.success) {
-                  if (
-                    lightningRoom &&
-                    !lightningSitOut.acknowledge(tableId, String(userId), wanted)
-                  )
-                    return;
-                  if (!wanted) clearLocalSitOutState();
-                } else {
-                  setSitOutNextHand(!wanted);
-                  reportError(
-                    new Error(res?.error || 'setSitOut rejected by engine'),
-                    'TablePage.Failed'
-                  );
-                  toast?.error?.(res?.error || 'Could not change your sit-out setting');
-                }
-              });
+              // All entry points share the same request owner. A second settings
+              // tap cannot race the footer/menu and reverse a newer accepted ACK.
+              sitOutRequestInFlightRef.current = true;
+              void setSitOut(tableId, wanted)
+                .then((res) => {
+                  if (lightningRoom && !lightningSitOut.isCurrent(tableId, String(userId))) return;
+                  if (res?.success) {
+                    if (
+                      lightningRoom &&
+                      !lightningSitOut.acknowledge(tableId, String(userId), wanted)
+                    )
+                      return;
+                    if (!wanted) clearLocalSitOutState();
+                  } else {
+                    setSitOutNextHand(!wanted);
+                    reportError(
+                      new Error(res?.error || 'setSitOut rejected by engine'),
+                      'TablePage.Failed'
+                    );
+                    toast?.error?.(res?.error || 'Could not change your sit-out setting');
+                  }
+                })
+                .finally(() => {
+                  sitOutRequestInFlightRef.current = false;
+                });
             }
           }
           /* The `autoMuckWinners` branch that was here is gone (2026-08-29).

@@ -134,6 +134,14 @@ export function useLightningSitOut({
           reportError(error, 'TablePage.lightning_sitout_read_failed', { clusterId: cluster });
       });
   }, [event, key, pool, cluster, userId, read, currentScope]);
+  const isCurrent = useCallback(
+    (targetPool: string, targetUser: string) =>
+      mounted.current &&
+      identity.current === key &&
+      scope.current === currentScope &&
+      key === `${targetPool}/${cluster}/${targetUser}`,
+    [key, cluster, currentScope]
+  );
   const acknowledge = useCallback(
     (targetPool: string, targetUser: string, sittingOut: boolean) => {
       const current = identity.current;
@@ -160,5 +168,6 @@ export function useLightningSitOut({
     sittingOut: state?.key === key && state.scope === currentScope ? state.value.sittingOut : false,
     since: state?.key === key && state.scope === currentScope ? state.value.since : null,
     acknowledge,
+    isCurrent,
   };
 }

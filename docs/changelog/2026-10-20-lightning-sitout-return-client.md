@@ -14,6 +14,8 @@ connection and reconnect. It refuses replaced pools, exited chairs and pending
 leaves. Generation and identity fencing prevents an old read or action result
 from changing a replacement room/account, or a read overwriting a newer ACK.
 No hand seats, stacks, timers or financial state are fabricated.
+Settings shares the same in-flight request guard as the menu/footer, preserving
+refusal rollback and refusing stale room/account completions.
 
 The legacy physical-table seat poll/subscription remains for ordinary tables
 and is disabled for Lightning pool IDs. No new poll, subscription, socket,

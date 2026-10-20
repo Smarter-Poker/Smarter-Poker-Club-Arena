@@ -190,6 +190,7 @@ describe('Lightning idle return and recovery', () => {
         nextUser: change === 'user' ? occupancy : user,
       });
       act(() => {
+        expect(result.current.isCurrent(pool, user)).toBe(false);
         expect(result.current.acknowledge(pool, user, true)).toBe(false);
       });
       await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
@@ -232,4 +233,17 @@ it('the actual footer permits idle Lightning return before spectator/reserved br
   expect(source).toMatch(/heroIsSittingOut \? \([\s\S]*?data-state="sitting-out"/);
   expect(source).toMatch(/lightningSitOut\.acknowledge\(tableId, String\(userId\), true\)/);
   expect(source).toMatch(/lightningSitOut\.acknowledge\(tableId, String\(userId\), false\)/);
+});
+
+it('settings and footer cannot submit competing opposite sit-out requests', () => {
+  const source = readFileSync('src/pages/TablePage.tsx', 'utf8');
+  const at = source.indexOf('if (settingsUpdate.sitOutNextHand !== undefined');
+  const block = source.slice(at, source.indexOf('/* The `autoMuckWinners`', at));
+  expect(block).toMatch(/!sitOutRequestInFlightRef.current/);
+  expect(block.indexOf('sitOutRequestInFlightRef.current = true')).toBeLessThan(
+    block.indexOf('setSitOut(tableId, wanted)')
+  );
+  expect(block).toMatch(/\.finally\(\(\) => \{\s*sitOutRequestInFlightRef.current = false/);
+  expect(block).toMatch(/lightningSitOut.isCurrent\(tableId, String\(userId\)\)/);
+  expect(block).toMatch(/setSitOutNextHand\(!wanted\)/);
 });

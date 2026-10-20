@@ -736,6 +736,25 @@ export async function activateTimeBank(
     });
 
     if (!response.ok) {
+      // A concurrent automatic grant answers "already running". Preserve that
+      // maintained refusal so the existing caller keeps its granted clock.
+      try {
+        const refused: unknown = await response.json();
+        if (
+          refused &&
+          typeof refused === 'object' &&
+          'success' in refused &&
+          refused.success === false &&
+          'error' in refused &&
+          typeof refused.error === 'string' &&
+          refused.error.length > 0 &&
+          refused.error.length <= 256
+        ) {
+          return { success: false, error: refused.error };
+        }
+      } catch {
+        /* Non-JSON HTTP failures retain the generic refusal. */
+      }
       return { success: false, error: `Server error (${response.status})` };
     }
 

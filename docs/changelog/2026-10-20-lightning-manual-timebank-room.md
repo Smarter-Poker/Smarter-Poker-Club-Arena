@@ -72,3 +72,16 @@ call locator. Its same no-client-fold/refusal/engine-authority assertions are
 preserved, the locator now names the decision argument, and a new assertion
 requires the stale-response fence. All five contract tests pass. The original
 failed hook result is retained; it is not passing delivery evidence.
+
+## Change 4 — Preserve the existing concurrent-grant refusal
+
+The normal API's non-2xx branch discarded the handler's JSON error and returned
+only `Server error (400)`. When the automatic bank won a race, this erased
+`Your Time Bank Is Already Running`, so the existing timeout callback could
+clear the already-granted UI. A real API regression failed before the fix
+with exactly that lost error. This endpoint now accepts only a maintained
+`success:false` payload with a nonempty string error of at most 256 characters;
+other or non-JSON bodies retain the original generic HTTP refusal. It neither
+logs nor forwards the raw body. Existing current-decision reply fences still
+apply. The real host race regression proves single consumption; API tests pin
+refusal preservation and malformed/oversized/non-JSON fallbacks.

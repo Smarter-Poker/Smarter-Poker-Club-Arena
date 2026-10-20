@@ -11,3 +11,5 @@ Native PostgreSQL tests reproduce the prior bank, statement, roster and player-s
 A companion World Hub change closes the service-role operations API paths that treated super agents as club admins and restricts chip-flow aggregation to the verified recursive downline.
 
 This source note is not production completion evidence. The task checkpoint records required checks, protected integration, installation, provider publication and live proof separately.
+
+Delivery is split for compatibility: the client is published first, then the retained qualified database migration and native test wiring are installed and submitted in a follow-up. Until that database step completes, the new staff assignment control fails closed when its authorization RPC is unavailable.

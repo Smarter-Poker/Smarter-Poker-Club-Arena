@@ -135,6 +135,11 @@ import {
   stopLeaseHeartbeatSessions,
 } from './services/leaseHeartbeatSession.js';
 import { HandOutboxMetrics } from './services/supabase/handOutboxMetrics.js';
+import {
+  startLightningFoldSession,
+  stopLightningFoldSession,
+  lightningFoldSessionToPrometheus,
+} from './services/lightningFoldSession.js';
 import { handProjectionWakesToPrometheus } from './services/supabase/handProjection.js';
 import {
   wsAuthRefusalPrometheusLines,
@@ -3968,6 +3973,7 @@ export class GameServer {
     // ENGINE_PG_LISTEN_URL (migration 20261002223745). Not awaited: until it
     // answers, heartbeats use the shared client exactly as before.
     void resolveLeaseHeartbeatSessionUrl();
+    void startLightningFoldSession();
     // E2E test mode — when set, MAINTENANCE_MODE still applies (no auto-spawn,
     // no recurring tournaments, no horse fleet) but a single table engine is
     // booted for this exact tableId so a tester can sit down and play hands
@@ -4986,6 +4992,7 @@ export class GameServer {
     await releaseLeadership();
     // Renewal is over once the leases are released; close its sessions.
     await stopLeaseHeartbeatSessions();
+    await stopLightningFoldSession();
     markShutdownStep('leadership-release');
 
     // Phase 1.1 PR-5: no Supabase Realtime channels to clean up — engine
@@ -5942,6 +5949,7 @@ export class GameServer {
       // while ENGINE_PG_LISTEN_URL is set means the dedicated session is down.
       // See services/leaseHeartbeatSession.ts.
       ...leaseHeartbeatSessionsToPrometheus(),
+      ...lightningFoldSessionToPrometheus(),
       ...this.handOutboxMetrics.toPrometheus(),
       // ── IS ANYBODY ACTUALLY PLAYING? (2026-09-04) ────────────────────
       //

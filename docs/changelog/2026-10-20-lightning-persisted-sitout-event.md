@@ -26,7 +26,13 @@ separate evidence.
 Verified: YES, the final writer, callback and event payload were reread.
 TypeScript: PASS (`npm --prefix server exec tsc -- --noEmit -p server/tsconfig.json`).
 Regression: the unchanged original engine failed the two positive/concurrency
-cases and passed six refusal cases. The final focused run passes 107 tests,
+cases and passed six refusal cases. The final focused run passes 122 tests,
 including recovery from a refused earlier transition. Database completion is
 controlled in this isolated real-engine test; production event delivery remains
 an explicit post-release verification requirement.
+
+Pending-exit boundary: suppress publication for `leave_pending` anchors and
+non-active pools, while retaining the original seat flag write. The existing
+recovered-bank forced-fold regression still checks every exact seat predicate
+and heartbeat/explicit-return invariant; its database double now models the
+returned-row query and waits for the asynchronous persisted flag.

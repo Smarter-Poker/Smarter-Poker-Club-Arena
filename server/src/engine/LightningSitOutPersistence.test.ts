@@ -26,7 +26,7 @@ beforeEach(() => {
     release = r;
   });
   seatRow = { id: seat, table_id: table, user_id: player, occupancy_id: occupancy, left_at: null };
-  poolRow = { id: pool, player_id: player, anchor_seat_id: seat, exited_at: null };
+  poolRow = { id: pool, player_id: player, anchor_seat_id: seat, exited_at: null, state: 'active' };
   failWrite = false;
   vi.spyOn(supabase, 'from').mockImplementation(((name: string) => {
     let wanted = false;
@@ -152,6 +152,8 @@ describe('the original engine sit-out persistence publishes its own Lightning tr
     'closed_pool',
     'ordinary_cash',
     'write_refused',
+    'pending_exit',
+    'inactive_pool',
   ])('does not publish an unproven transition: %s', async (why) => {
     if (why === 'no_row') seatRow = null;
     if (why === 'replaced_occupancy') seatRow!.occupancy_id = pool;
@@ -159,6 +161,8 @@ describe('the original engine sit-out persistence publishes its own Lightning tr
     if (why === 'closed_pool') poolRow!.exited_at = stamp;
     if (why === 'ordinary_cash') poolRow = null;
     if (why === 'write_refused') failWrite = true;
+    if (why === 'pending_exit') seatRow!.leave_pending = true;
+    if (why === 'inactive_pool') poolRow!.state = 'leaving';
     engine.sitOut(player, true);
     await vi.waitFor(() => expect(writes).toEqual([true]));
     release?.();

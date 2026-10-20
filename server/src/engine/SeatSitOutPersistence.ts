@@ -36,7 +36,9 @@ export class SeatSitOutPersistence {
           .eq('user_id', playerId)
           .eq('occupancy_id', occupancyId)
           .is('left_at', null)
-          .select('id,table_id,user_id,occupancy_id,is_sitting_out,sit_out_at,left_at')
+          .select(
+            'id,table_id,user_id,occupancy_id,is_sitting_out,sit_out_at,left_at,leave_pending'
+          )
           .maybeSingle();
         if (error) throw new Error(`persist is_sitting_out=${sittingOut} failed: ${error.message}`);
         if (
@@ -45,6 +47,7 @@ export class SeatSitOutPersistence {
           seat.user_id !== playerId ||
           seat.occupancy_id !== occupancyId ||
           seat.left_at !== null ||
+          seat.leave_pending === true ||
           seat.is_sitting_out !== sittingOut ||
           !uuid.test(seat.id) ||
           !uuid.test(occupancyId)
@@ -60,7 +63,7 @@ export class SeatSitOutPersistence {
         // Resolve the room from this exact persisted anchor, never a replacement pool.
         const { data: pool, error: poolError } = await supabase
           .from('lightning_pool_session')
-          .select('id,player_id,anchor_seat_id,exited_at')
+          .select('id,player_id,anchor_seat_id,exited_at,state')
           .eq('anchor_seat_id', seat.id)
           .eq('player_id', playerId)
           .is('exited_at', null)
@@ -71,7 +74,8 @@ export class SeatSitOutPersistence {
           !uuid.test(pool.id) ||
           pool.player_id !== playerId ||
           pool.anchor_seat_id !== seat.id ||
-          pool.exited_at !== null
+          pool.exited_at !== null ||
+          pool.state !== 'active'
         )
           return;
         this.emit(pool.id, {

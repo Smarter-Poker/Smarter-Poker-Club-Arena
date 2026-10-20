@@ -34,7 +34,10 @@ try{
  run('initdb',['-D',path.join(dir,'db'),'-U','postgres','-A','trust','--no-locale','--encoding=UTF8']);
  run('pg_ctl',['-D',path.join(dir,'db'),'-l',path.join(dir,'log'),'-o',`-k ${socket} -p 55479 -c listen_addresses='' -c shared_buffers=16MB -c max_connections=15`,'-w','start']);running=true;
  assert.ok(Number(sql("SHOW server_version_num"))>=170000&&Number(sql("SHOW server_version_num"))<180000,'actual PostgreSQL17');
- sql(setup);sql(readFileSync(path.join(root,'scripts/qualification/fixtures/tournament-finish-storm/preimages.sql'),'utf8'));
+ sql(setup);
+ const appendOnly=schema.match(/CREATE OR REPLACE FUNCTION public.fn_ca_incident_events_append_only\(\)[\s\S]*?\$function\$;/)[0];
+ sql(appendOnly);sql('CREATE TRIGGER trg_ca_incident_events_append_only BEFORE DELETE OR UPDATE ON ca_incident_events FOR EACH ROW EXECUTE FUNCTION fn_ca_incident_events_append_only();');
+ sql(readFileSync(path.join(root,'scripts/qualification/fixtures/tournament-finish-storm/preimages.sql'),'utf8'));
  sql(readFileSync(path.join(root,'scripts/qualification/fixtures/tournament-finish-storm/current-bridge.sql'),'utf8'));
  sql('CREATE TRIGGER financial_bridge AFTER INSERT ON financial_alerts FOR EACH ROW EXECUTE FUNCTION fn_ca_financial_alert_to_incident();');
  sql('CREATE TRIGGER resolution AFTER UPDATE OF resolved ON financial_alerts FOR EACH ROW EXECUTE FUNCTION fn_ca_alert_resolution_reaches_the_incident();');

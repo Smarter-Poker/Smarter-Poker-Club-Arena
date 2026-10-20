@@ -14,15 +14,28 @@ SELECT public.fn_ca_declare_guard_redefinition('fn_ca_financial_alert_to_inciden
 SELECT public.fn_ca_declare_guard_redefinition('fn_ca_raise_drift_incident','qualification exact current preimage');
 \ir fixtures/tournament-finish-storm/preimages.sql
 CREATE TEMP TABLE storm_ids(label text PRIMARY KEY,id uuid NOT NULL);
-CREATE FUNCTION pg_temp.storm_setup() RETURNS void LANGUAGE plpgsql AS $$
+CREATE FUNCTION pg_temp.storm_setup(p_case text DEFAULT 'valid') RETURNS void LANGUAGE plpgsql AS $$
 DECLARE a uuid;b uuid;v uuid;
 BEGIN
  DELETE FROM storm_ids;
  INSERT INTO ca_drift_incidents(source,dedupe_key) SELECT 'financial_alerts:Tournament.atomic_finish_refused','storm-test-filler:'||n FROM generate_series(1,25)n;
- -- Exercise authentic INSERT -> financial bridge -> original raiser exactly twice.
- INSERT INTO financial_alerts(severity,source,message,context) VALUES('critical','Tournament.atomic_finish_refused','isolated first refusal',jsonb_build_object('club_id','fade0000-0000-0000-0000-000000000001','tournament_id',gen_random_uuid())) RETURNING id INTO a;
- INSERT INTO financial_alerts(severity,source,message,context) VALUES('critical','Tournament.atomic_finish_refused','isolated second refusal',jsonb_build_object('club_id','fade0000-0000-0000-0000-000000000001','tournament_id',gen_random_uuid())) RETURNING id INTO b;
- SELECT id INTO STRICT v FROM ca_drift_incidents WHERE dedupe_key='storm:financial_alerts:Tournament.atomic_finish_refused' AND status='open';
+ IF p_case='valid' THEN
+  -- Positive cases exercise the authentic INSERT -> bridge -> raiser graph.
+  INSERT INTO financial_alerts(severity,source,message,context) VALUES('critical','Tournament.atomic_finish_refused','isolated first refusal',jsonb_build_object('club_id','fade0000-0000-0000-0000-000000000001','tournament_id',gen_random_uuid())) RETURNING id INTO a;
+  INSERT INTO financial_alerts(severity,source,message,context) VALUES('critical','Tournament.atomic_finish_refused','isolated second refusal',jsonb_build_object('club_id','fade0000-0000-0000-0000-000000000001','tournament_id',gen_random_uuid())) RETURNING id INTO b;
+  SELECT id INTO STRICT v FROM ca_drift_incidents WHERE dedupe_key='storm:financial_alerts:Tournament.atomic_finish_refused' AND status='open';
+ ELSE
+  -- Negative evidence is supplied at the original raise, never by rewriting
+  -- append-only incident events or deleting an original financial record.
+  INSERT INTO financial_alerts(severity,source,message,resolved,resolved_at)
+   VALUES('critical',CASE WHEN p_case='wrong_source' THEN 'unrelated_source' ELSE 'Tournament.atomic_finish_refused' END,'isolated first refusal',true,now()) RETURNING id INTO a;
+  INSERT INTO financial_alerts(severity,source,message,resolved,resolved_at)
+   VALUES('critical','Tournament.atomic_finish_refused','isolated second refusal',true,now()) RETURNING id INTO b;
+  UPDATE financial_alerts SET resolved=false,resolved_at=NULL WHERE id IN(a,b);
+  v:=fn_ca_raise_drift_incident(p_source=>'financial_alerts:Tournament.atomic_finish_refused',p_classification=>'unknown',p_severity=>'critical',p_dedupe_key=>'storm-test-member:first',p_discrepancy=>0,
+   p_metadata=>CASE p_case WHEN 'unknown' THEN '{}'::jsonb WHEN 'malformed' THEN '{"alert_id":"not-a-uuid"}'::jsonb WHEN 'missing' THEN jsonb_build_object('alert_id',gen_random_uuid()) ELSE jsonb_build_object('alert_id',a) END);
+  PERFORM fn_ca_raise_drift_incident(p_source=>'financial_alerts:Tournament.atomic_finish_refused',p_classification=>'unknown',p_severity=>'critical',p_dedupe_key=>'storm-test-member:second',p_discrepancy=>0,p_metadata=>jsonb_build_object('alert_id',b));
+ END IF;
  INSERT INTO storm_ids VALUES('a',a),('b',b),('storm',v);
 END $$;
 SAVEPOINT before_source;
@@ -44,20 +57,17 @@ SELECT pg_temp.storm_assert((SELECT count(*)=2 AND count(DISTINCT detail->>'aler
 ROLLBACK TO final_source;
 -- Unknown, missing and wrong-source members cannot authorize closure.
 SAVEPOINT unknown_member;
-SELECT pg_temp.storm_setup();
-UPDATE ca_incident_events SET detail=detail-'alert_id' WHERE incident_id=(SELECT id FROM storm_ids WHERE label='storm') AND detail->>'alert_id'=(SELECT id::text FROM storm_ids WHERE label='a');
+SELECT pg_temp.storm_setup('unknown');
 UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id IN(SELECT id FROM storm_ids WHERE label IN('a','b'));
 SELECT pg_temp.storm_assert((SELECT status='open' FROM ca_drift_incidents WHERE id=(SELECT id FROM storm_ids WHERE label='storm')),'unknown member refuses closure');
 ROLLBACK TO unknown_member;
 SAVEPOINT missing_member;
-SELECT pg_temp.storm_setup();
-DELETE FROM financial_alerts WHERE id=(SELECT id FROM storm_ids WHERE label='a');
+SELECT pg_temp.storm_setup('missing');
 UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id=(SELECT id FROM storm_ids WHERE label='b');
 SELECT pg_temp.storm_assert((SELECT status='open' FROM ca_drift_incidents WHERE id=(SELECT id FROM storm_ids WHERE label='storm')),'missing member refuses closure');
 ROLLBACK TO missing_member;
 SAVEPOINT wrong_source;
-SELECT pg_temp.storm_setup();
-UPDATE financial_alerts SET source='unrelated_source' WHERE id=(SELECT id FROM storm_ids WHERE label='a');
+SELECT pg_temp.storm_setup('wrong_source');
 UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id IN(SELECT id FROM storm_ids WHERE label IN('a','b'));
 SELECT pg_temp.storm_assert((SELECT status='open' FROM ca_drift_incidents WHERE id=(SELECT id FROM storm_ids WHERE label='storm')),'wrong-source member refuses closure');
 ROLLBACK TO wrong_source;
@@ -72,8 +82,7 @@ UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id=(SELECT id 
 SELECT pg_temp.storm_assert((SELECT status='resolved' FROM ca_drift_incidents WHERE dedupe_key='storm-fixture-direct'),'ordinary direct mirror unchanged');
 ROLLBACK TO direct_mirror;
 SAVEPOINT malformed_member;
-SELECT pg_temp.storm_setup();
-UPDATE ca_incident_events SET detail=jsonb_set(detail,'{alert_id}','"not-a-uuid"') WHERE incident_id=(SELECT id FROM storm_ids WHERE label='storm') AND detail->>'alert_id'=(SELECT id::text FROM storm_ids WHERE label='a');
+SELECT pg_temp.storm_setup('malformed');
 UPDATE financial_alerts SET resolved=true,resolved_at=now() WHERE id IN(SELECT id FROM storm_ids WHERE label IN('a','b'));
 SELECT pg_temp.storm_assert((SELECT status='open' FROM ca_drift_incidents WHERE id=(SELECT id FROM storm_ids WHERE label='storm')),'malformed member refuses closure without an exception');
 ROLLBACK TO malformed_member;

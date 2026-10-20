@@ -183,7 +183,7 @@
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
       "bytes": 11454,
-      "sha256": "a5d0a163890904a3115ccc276e8395b29a990382c90d99231b8bf272861f61bb"
+      "sha256": "06be0b0bdf1eb8d5264eb7ae48b82a4d4da0c8336fd3b6f56d0697a0875f86bd"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
       "bytes": 30584,
@@ -3533,7 +3533,7 @@
         },
         "current": {
           "bytes": 11454,
-          "sha256": "a5d0a163890904a3115ccc276e8395b29a990382c90d99231b8bf272861f61bb"
+          "sha256": "06be0b0bdf1eb8d5264eb7ae48b82a4d4da0c8336fd3b6f56d0697a0875f86bd"
         }
       },
       "scripts/ci/test-production-alert-core-postgres.py": {

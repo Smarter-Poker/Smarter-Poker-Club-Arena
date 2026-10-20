@@ -228,13 +228,13 @@
     },
     "storm_qualifier": {
       "path": "scripts/qualification/tournament-finish-storm-members.sql",
-      "bytes": 7648,
-      "sha256": "d56d79a660bad71eb1bf30f4dbd0676f5e4fc64a672fc9251f0fb4194c463a02"
+      "bytes": 8515,
+      "sha256": "c46ba174d8557b3279e856e4c564809ae1f9152bf1b657b7ddd4e70d81a025fa"
     },
     "storm_native": {
       "path": "scripts/qualification/tournament-finish-storm/native.mjs",
-      "bytes": 7338,
-      "sha256": "5d99cd5776098e4af715621d448ce510c7abd6bd6f63ffaf4301638135c0cc66"
+      "bytes": 7659,
+      "sha256": "3085c864b1651742aebe91cd0c2436c32f08407e8390d073bfbe6cf1bed0904d"
     },
     "storm_bridge": {
       "path": "scripts/qualification/fixtures/tournament-finish-storm/current-bridge.sql",

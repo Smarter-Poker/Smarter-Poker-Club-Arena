@@ -22,6 +22,10 @@ import {
   horseDecisionJournalHealth,
   type HorseJournalHealth,
 } from '../services/HorseDecisionJournal.js';
+import {
+  horseDiamondSpinsStatus,
+  type HorseSpinStatus,
+} from '../services/HorseDiamondSpinsDriver.js';
 
 // Minimal structural typing so handlers don't need to import the GameServer
 // class (which lives in `index.ts`) nor the transport classes. Anything that
@@ -50,6 +54,15 @@ export interface HealthDeps {
    * body without the section.
    */
   horseJournal?: () => HorseJournalHealth | null;
+  /**
+   * 2026-10-19: the Diamond Spins service's own figures (Dan, 2026-10-18: a
+   * horse with no chips spins its Diamonds into chips). How many horses the
+   * fleet cannot seat at the cheapest open game, how many of those have no
+   * Diamonds above the reserve, and every spin, bonus game, refusal and error
+   * since start. Until now its only reader was one log line at start-up.
+   * In-memory and synchronous; a null leaves the body without the section.
+   */
+  horseDiamondSpins?: () => HorseSpinStatus | null;
 }
 
 export interface WsMetricsDeps {
@@ -141,7 +154,14 @@ export function handleHealth(
   // certificate line below stays byte-identical to the 2026-09-08 form the
   // release transaction's law test pins.
   const horseJournal = (deps.horseJournal ?? horseDecisionJournalHealth)();
-  const status = horseJournal ? { ...snapshot, horseJournal } : snapshot;
+  // The same rule for the Diamond Spins figures: diagnostics on a copy of the
+  // body, never a routing verdict.
+  const horseDiamondSpins = (deps.horseDiamondSpins ?? horseDiamondSpinsStatus)();
+  const status = {
+    ...snapshot,
+    ...(horseJournal ? { horseJournal } : {}),
+    ...(horseDiamondSpins ? { horseDiamondSpins } : {}),
+  };
   sendJSON(res, dealerReady ? 200 : 503, status);
 }
 

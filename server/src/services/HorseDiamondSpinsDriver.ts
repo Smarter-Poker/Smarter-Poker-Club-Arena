@@ -21,9 +21,15 @@
  * aHorseSpinsThroughTheEngineDoor.law.test.ts).
  *
  * STATELESS ACROSS RESTARTS. The engine restarts every hour. Who is spinning
- * is read from the database each pass: a horse out of chips at a club, or one
- * that spun there inside the session window and is still under its target, or
- * one with a card or bonus game still unplayed. The only memory is pacing.
+ * is read from the database each pass: a horse the fleet can no longer seat at
+ * the cheapest open game (its wallet plus the chips it has on a cash table at
+ * that club are under the seat bar), or one with a card or bonus game still
+ * unplayed. The only memory is pacing.
+ *
+ * THE READER. `horseDiamondSpinsStatus()` is published on the engine's
+ * /health as `horseDiamondSpins`: how many horses the fleet cannot seat, how
+ * many of those have no Diamonds above the reserve to spin with, and every
+ * spin, bonus game, refusal and error since the engine started.
  *
  * THE FREEZE. Nothing moves during the hourly break (CLAUDE.md 13): the pass
  * checks it first and between actions, and the wheel refuses anyway.
@@ -38,9 +44,11 @@ import { fetchAllRows } from './supabase/pagination.js';
 import { MIDWAY_UNION_ID, WALLETS_FOR_HOST } from './StableHand.js';
 import {
   CHOICE_MODE,
+  DIAMOND_RESERVE,
+  SPIN_ENTRIES,
   cheapestGame,
   crashCashoutCents,
-  isOutOfChips,
+  cannotBeSeated,
   maxSpinTargetChips,
   nextStep,
   paceMs,
@@ -58,8 +66,6 @@ import {
 } from './HorseDiamondSpins.js';
 
 export const HORSE_DIAMOND_SPINS_TICK_MS = Number(process.env.HORSE_DIAMOND_SPINS_TICK_MS ?? 5_000);
-/** How long after its last spin a horse still counts as mid-session. */
-export const SESSION_WINDOW_MS = 2 * 60 * 60_000;
 /** Actions per pass across the whole fleet, so the wheel sees a room of
  *  players, not a burst. */
 export const ACTIONS_PER_PASS = 6;
@@ -70,7 +76,11 @@ const MEMBER_STATUSES = ['active', 'approved'];
 export interface SpinMember {
   userId: string;
   clubId: string;
+  /** The club wallet (`club_members.chip_balance`). */
   chips: number;
+  /** Chips this horse has on cash tables paid from that wallet. They are
+   *  still its roll: they come back to the wallet when it stands up. */
+  feltChips: number;
   diamonds: number;
 }
 
@@ -89,14 +99,13 @@ export interface HorseSpinDoors {
     min_buy_in: unknown;
     max_buy_in: unknown;
   }> | null>;
-  /** Horse memberships at the host's wallets below `maxChips`, with Diamonds.
-   *  Null when the read was incomplete (fail closed: no pass). */
+  /** Horse memberships at the host's wallets whose wallet is below
+   *  `maxChips`, with their chips on the felt and their Diamonds. Null when
+   *  the read was incomplete (fail closed: no pass). */
   loadMembers(maxChips: number): Promise<SpinMember[] | null>;
   /** One horse's membership as it stands now: 'gone' when it is no longer an
    *  active membership of a horse, null when the read failed. */
   loadMember(userId: string, clubId: string): Promise<SpinMember | 'gone' | null>;
-  /** `${userId}:${clubId}` for every spin at or after `sinceIso`. */
-  loadRecentSpins(userIds: string[], sinceIso: string): Promise<Set<string> | null>;
   loadOpenWork(userIds: string[]): Promise<OpenWork | null>;
   /** The one door. */
   act(horseId: string, action: string, args: Record<string, unknown>): Promise<unknown>;
@@ -111,6 +120,55 @@ export interface HorseSpinDoors {
 function num(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Chips each horse has on an open CASH seat paid from one of the host's
+ * wallets, keyed `${userId}:${clubId}`. A tournament stack is tournament
+ * chips, not the wallet's, and a Diamond Arena or Lightning seat is paid from
+ * another wallet, so neither is counted. Null when a read was incomplete.
+ */
+async function loadFelt(userIds: string[]): Promise<Map<string, number> | null> {
+  const wallets = WALLETS_FOR_HOST[MIDWAY_UNION_ID] ?? [];
+  const felt = new Map<string, number>();
+  if (userIds.length === 0 || wallets.length === 0) return felt;
+  const seats = await selectInChunks<{
+    user_id: string;
+    club_id: string;
+    table_id: string;
+    stack: unknown;
+  }>(
+    userIds,
+    (batch) =>
+      supabase
+        .from('table_seats')
+        .select('user_id, club_id, table_id, stack')
+        .is('left_at', null)
+        .in('club_id', wallets)
+        .in('user_id', batch),
+    'HorseDiamondSpins.feltSeats'
+  );
+  if (!seats.complete) return null;
+  if (seats.rows.length === 0) return felt;
+  const cash = await selectInChunks<{ id: string }>(
+    [...new Set(seats.rows.map((s) => String(s.table_id)))],
+    (batch) =>
+      supabase
+        .from('tables')
+        .select('id')
+        .is('tournament_id', null)
+        .eq('game_type', 'cash')
+        .in('id', batch),
+    'HorseDiamondSpins.feltTables'
+  );
+  if (!cash.complete) return null;
+  const cashIds = new Set(cash.rows.map((t) => String(t.id)));
+  for (const s of seats.rows) {
+    if (!cashIds.has(String(s.table_id))) continue;
+    const key = `${s.user_id}:${s.club_id}`;
+    felt.set(key, (felt.get(key) ?? 0) + num(s.stack));
+  }
+  return felt;
 }
 
 const rpcDoors: HorseSpinDoors = {
@@ -158,17 +216,20 @@ const rpcDoors: HorseSpinDoors = {
     );
     if (!horses.complete) return null;
     const diamonds = new Map(horses.rows.map((h) => [String(h.id), num(h.diamonds)]));
+    const felt = await loadFelt([...diamonds.keys()]);
+    if (!felt) return null;
     return rows
       .filter((r) => diamonds.has(String(r.user_id)))
       .map((r) => ({
         userId: String(r.user_id),
         clubId: String(r.club_id),
         chips: num(r.chip_balance),
+        feltChips: felt.get(`${r.user_id}:${r.club_id}`) ?? 0,
         diamonds: diamonds.get(String(r.user_id)) ?? 0,
       }));
   },
   async loadMember(userId, clubId) {
-    const [m, p] = await Promise.all([
+    const [m, p, felt] = await Promise.all([
       supabase
         .from('club_members')
         .select('chip_balance')
@@ -182,24 +243,17 @@ const rpcDoors: HorseSpinDoors = {
         .eq('id', userId)
         .eq('is_horse', true)
         .maybeSingle(),
+      loadFelt([userId]),
     ]);
-    if (m.error || p.error) return null;
+    if (m.error || p.error || !felt) return null;
     if (!m.data || !p.data) return 'gone';
-    return { userId, clubId, chips: num(m.data.chip_balance), diamonds: num(p.data.diamonds) };
-  },
-  async loadRecentSpins(userIds, sinceIso) {
-    const res = await selectInChunks<{ user_id: string; club_id: string }>(
-      userIds,
-      (batch) =>
-        supabase
-          .from('wheel_spins')
-          .select('user_id, club_id')
-          .in('user_id', batch)
-          .gte('created_at', sinceIso),
-      'HorseDiamondSpins.recentSpins'
-    );
-    if (!res.complete) return null;
-    return new Set(res.rows.map((r) => `${r.user_id}:${r.club_id}`));
+    return {
+      userId,
+      clubId,
+      chips: num(m.data.chip_balance),
+      feltChips: felt.get(`${userId}:${clubId}`) ?? 0,
+      diamonds: num(p.data.diamonds),
+    };
   },
   async loadOpenWork(userIds) {
     // Only what a player can see on their own screen. Never the crash point,
@@ -314,6 +368,15 @@ export interface HorseSpinStatus {
   active: boolean;
   lastPassAt: string | null;
   lastRosterAt: string | null;
+  /** The cheapest open cash game the roster was measured against. */
+  cheapestGame: CheapestGame | null;
+  /** Horse wallets the fleet cannot seat at that game, at the last roster. */
+  cannotBeSeated: number;
+  /** Of those, how many have no Diamonds above the reserve to spin with:
+   *  they wait on the Diamond Arena, freerolls and rakeback. */
+  cannotSpinNoDiamonds: number;
+  /** Horses with something to do at the last roster: a spin, a card or a
+   *  bonus game. */
   inSession: number;
   spins: number;
   bonusesStarted: number;
@@ -327,6 +390,9 @@ const status: HorseSpinStatus = {
   active: false,
   lastPassAt: null,
   lastRosterAt: null,
+  cheapestGame: null,
+  cannotBeSeated: 0,
+  cannotSpinNoDiamonds: 0,
   inSession: 0,
   spins: 0,
   bonusesStarted: 0,
@@ -337,13 +403,19 @@ const status: HorseSpinStatus = {
 };
 
 export function horseDiamondSpinsStatus(): HorseSpinStatus {
-  return { ...status, refusals: { ...status.refusals } };
+  return {
+    ...status,
+    cheapestGame: status.cheapestGame ? { ...status.cheapestGame } : null,
+    refusals: { ...status.refusals },
+  };
 }
 
 interface Roster {
   at: number;
   game: CheapestGame;
   states: HorseSpinState[];
+  cannotBeSeated: number;
+  cannotSpinNoDiamonds: number;
 }
 
 let roster: Roster | null = null;
@@ -359,6 +431,9 @@ export function __resetHorseSpins(): void {
   Object.assign(status, {
     lastPassAt: null,
     lastRosterAt: null,
+    cheapestGame: null,
+    cannotBeSeated: 0,
+    cannotSpinNoDiamonds: 0,
     inSession: 0,
     spins: 0,
     bonusesStarted: 0,
@@ -374,38 +449,42 @@ export async function readRoster(): Promise<Roster | null> {
   if (!games) return null;
   const game = cheapestGame(games);
   if (!game) return null;
+  // A wallet at or above the highest bar can never be under any horse's bar,
+  // felt or no felt, so the read stops there.
   const members = await doors.loadMembers(maxSpinTargetChips(game));
   if (!members) return null;
-  if (members.length === 0) return { at: doors.now(), game, states: [] };
+  const empty = { at: doors.now(), game, states: [], cannotBeSeated: 0, cannotSpinNoDiamonds: 0 };
+  if (members.length === 0) return empty;
   const ids = [...new Set(members.map((m) => m.userId))];
-  const since = new Date(doors.now() - SESSION_WINDOW_MS).toISOString();
-  const [recent, work] = await Promise.all([
-    doors.loadRecentSpins(ids, since),
-    doors.loadOpenWork(ids),
-  ]);
-  if (!recent || !work) return null;
+  const work = await doors.loadOpenWork(ids);
+  if (!work) return null;
 
   const states: HorseSpinState[] = [];
+  let stranded = 0;
+  let strandedDry = 0;
   for (const m of members) {
-    const targetChips = spinTargetChips(m.userId, game);
+    const roll = m.chips + m.feltChips;
+    const inSession = cannotBeSeated(m.userId, roll, game);
     const own = <T extends { userId: string }>(xs: T[]) => xs.filter((x) => x.userId === m.userId);
     const state: HorseSpinState = {
       horseId: m.userId,
       clubId: m.clubId,
-      chips: m.chips,
+      chips: roll,
       diamonds: m.diamonds,
-      targetChips,
-      inSession:
-        isOutOfChips(m.chips, game) ||
-        (m.chips < targetChips && recent.has(`${m.userId}:${m.clubId}`)),
+      targetChips: spinTargetChips(m.userId, game),
+      inSession,
       cards: own(work.cards),
       awards: own(work.awards),
       crashRounds: own(work.crashRounds),
       choiceRounds: own(work.choiceRounds),
     };
+    if (inSession) {
+      stranded += 1;
+      if (Math.floor(m.diamonds) - DIAMOND_RESERVE < SPIN_ENTRIES[0]) strandedDry += 1;
+    }
     if (nextStep(state).kind !== 'rest') states.push(state);
   }
-  return { at: doors.now(), game, states };
+  return { ...empty, states, cannotBeSeated: stranded, cannotSpinNoDiamonds: strandedDry };
 }
 
 function countRefusal(error: string): void {
@@ -530,6 +609,9 @@ export async function horseSpinPass(isCurrent: () => boolean = () => true): Prom
     if (!next) return; // fail closed: an unread room is not acted on
     roster = next;
     status.lastRosterAt = new Date(roster.at).toISOString();
+    status.cheapestGame = { ...roster.game };
+    status.cannotBeSeated = roster.cannotBeSeated;
+    status.cannotSpinNoDiamonds = roster.cannotSpinNoDiamonds;
     status.inSession = roster.states.length;
   }
   const now = doors.now();
@@ -564,7 +646,7 @@ async function refreshState(listed: HorseSpinState): Promise<HorseSpinState | nu
   if (!m || m === 'gone' || !work) return null;
   return {
     ...listed,
-    chips: m.chips,
+    chips: m.chips + m.feltChips,
     diamonds: m.diamonds,
     cards: work.cards,
     awards: work.awards,
@@ -611,7 +693,7 @@ export function startHorseDiamondSpins(): void {
   timer = setInterval(launchPass, HORSE_DIAMOND_SPINS_TICK_MS);
   timer.unref?.();
   console.log(
-    `[HorseDiamondSpins] Running - horses out of chips spin Diamonds every ${HORSE_DIAMOND_SPINS_TICK_MS / 1000}s pass`
+    `[HorseDiamondSpins] Running - horses the fleet cannot seat spin Diamonds every ${HORSE_DIAMOND_SPINS_TICK_MS / 1000}s pass`
   );
 }
 

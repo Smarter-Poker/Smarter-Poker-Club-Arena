@@ -20,6 +20,7 @@ describe('handleHealth', () => {
   const withDisabledJournal = (status: Record<string, unknown>) => ({
     ...status,
     horseJournal: expect.objectContaining({ mode: 'disabled', lastFailureReason: null }),
+    horseDiamondSpins: expect.objectContaining({ active: false, spins: 0, errors: 0 }),
   });
   function statusCodeFor(status: Record<string, unknown>): number {
     const { res, captured } = mockRes();
@@ -120,7 +121,7 @@ describe('handleHealth', () => {
       getPrometheusMetrics: () => '',
     };
     const journal = vi.fn().mockReturnValue(horseJournal);
-    handleHealth(res, { gameServer, horseJournal: journal });
+    handleHealth(res, { gameServer, horseJournal: journal, horseDiamondSpins: () => null });
     expect(journal).toHaveBeenCalledTimes(1);
     expect(captured.statusCode).toBe(200);
     expect(parseJson(captured)).toEqual({ ...status, horseJournal });
@@ -133,10 +134,50 @@ describe('handleHealth', () => {
       getStatus: vi.fn().mockReturnValue(status),
       getPrometheusMetrics: () => '',
     };
-    handleHealth(res, { gameServer, horseJournal: () => null });
+    handleHealth(res, { gameServer, horseJournal: () => null, horseDiamondSpins: () => null });
     expect(captured.statusCode).toBe(503);
     expect(parseJson(captured)).toEqual(status);
     expect(parseJson(captured)).not.toHaveProperty('horseJournal');
+  });
+
+  it('carries the Diamond Spins figures without letting them move the routing verdict', () => {
+    // 2026-10-19: the service that spins a horse's Diamonds into chips had no
+    // reader but a start-up log line. Its figures ride on /health; a service
+    // full of refusals is still a diagnostics question, never a reason to
+    // route traffic away from a dealer.
+    const { res, captured } = mockRes();
+    const status = {
+      liveness: 'ok',
+      status: 'ok',
+      dealerPrerequisitesReady: true,
+      liveHorseDecision: { phase: 'ready' },
+    };
+    const horseDiamondSpins = {
+      active: true,
+      lastPassAt: '2026-10-19T22:00:05.000Z',
+      lastRosterAt: '2026-10-19T22:00:00.000Z',
+      cheapestGame: { bigBlind: 0.1, minBuyIn: 4, maxBuyIn: 20 },
+      cannotBeSeated: 3,
+      cannotSpinNoDiamonds: 1,
+      inSession: 2,
+      spins: 40,
+      bonusesStarted: 6,
+      moves: 9,
+      cardsPicked: 2,
+      refusals: { 'One Moment Between Spins': 1 },
+      errors: 0,
+    };
+    const gameServer = {
+      getStatus: vi.fn().mockReturnValue(status),
+      getPrometheusMetrics: () => '',
+    };
+    handleHealth(res, {
+      gameServer,
+      horseJournal: () => null,
+      horseDiamondSpins: () => horseDiamondSpins,
+    });
+    expect(captured.statusCode).toBe(200);
+    expect(parseJson(captured)).toEqual({ ...status, horseDiamondSpins });
   });
 
   it('requests the scoped table snapshot without weakening dealer routing readiness', () => {

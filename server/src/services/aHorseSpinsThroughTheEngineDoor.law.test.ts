@@ -18,6 +18,10 @@
  *   3. THE FREEZE. Nothing is done during the hourly break (CLAUDE.md 13).
  *   4. IT RUNS. It is started and stopped with the leader-owned services in
  *      index.ts, so a standby never spins and a shutdown waits for the pass.
+ *   5. IT HAS A READER (CLAUDE.md 10.83, Phase 5 2026-10-19). Its figures -
+ *      horses the fleet cannot seat, spins, refusals, errors - are published
+ *      on /health, and the trigger is the fleet's own "cannot be seated" bar,
+ *      never only one buy-in.
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -28,6 +32,7 @@ const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\
 const DRIVER = strip(here('HorseDiamondSpinsDriver.ts'));
 const RULES = strip(here('HorseDiamondSpins.ts'));
 const INDEX = strip(here('../index.ts'));
+const HEALTH = strip(here('../handlers/health.ts'));
 
 describe('a horse spins through the engine door', () => {
   it('sends every action through fn_horse_diamond_spins and nothing else', () => {
@@ -94,5 +99,18 @@ describe('the freeze and the lifecycle', () => {
       /startHorseDiamondSpins\(\)/
     );
     expect(INDEX).toMatch(/\['HorseDiamondSpins', stopHorseDiamondSpins\]/);
+  });
+});
+
+describe('the reader and the trigger', () => {
+  it('publishes its figures on /health', () => {
+    expect(HEALTH).toMatch(/deps\.horseDiamondSpins \?\? horseDiamondSpinsStatus/);
+    expect(HEALTH).toMatch(/horseDiamondSpins \? \{ horseDiamondSpins \}/);
+  });
+
+  it('starts a horse spinning when the fleet cannot seat it, counting its chips on the felt', () => {
+    expect(DRIVER).toMatch(/cannotBeSeated\(m\.userId, roll, game\)/);
+    expect(DRIVER).toMatch(/const roll = m\.chips \+ m\.feltChips/);
+    expect(DRIVER).not.toMatch(/isOutOfChips/);
   });
 });

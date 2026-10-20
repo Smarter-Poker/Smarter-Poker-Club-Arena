@@ -14,6 +14,8 @@ import { HorseLogic } from './HorseLogic.js';
 import {
   HORSE_PHASE13_VARIANTS,
   horsePhase13AdmittedMode,
+  admitHorsePhase13ReleaseAuthority,
+  selectedHorsePhase13Authority,
   horsePhase13ContinuationVersion,
 } from './HorsePhase13Authority.js';
 import type { HorseAuthorityVerdict } from './HorseQualifiedAuthority.js';
@@ -103,6 +105,26 @@ function decide(
 }
 
 describe('P13.3 worker-owned Phase 13 mode', () => {
+  it('the committed PLO4 generation admits cash boards one and two but refuses board three and tournaments', () => {
+    const admitted = admitHorsePhase13ReleaseAuthority('plo4');
+    const authority = selectedHorsePhase13Authority('plo4', admitted);
+    expect(authority).toMatchObject({ approvalGeneration: 1, admittedBoardCounts: [1, 2] });
+    for (const boardCount of [1, 2, 3]) {
+      const input: Parameters<typeof horsePhase13AdmittedMode>[0] = {
+        callerMode: undefined,
+        asset: undefined,
+        gameMode: 'cash',
+        variant: 'plo4',
+        packVariant: 'plo4',
+        verdict: 'usable' as const,
+        authority,
+        boardCount,
+      };
+      expect(horsePhase13AdmittedMode(input)).toBe(boardCount === 3 ? 'shadow' : 'candidate');
+      expect(horsePhase13AdmittedMode({ ...input, gameMode: 'tournament' })).toBe('shadow');
+    }
+  });
+
   const VERDICTS: HorseAuthorityVerdict[] = [
     'missing_receipt',
     'mismatched',

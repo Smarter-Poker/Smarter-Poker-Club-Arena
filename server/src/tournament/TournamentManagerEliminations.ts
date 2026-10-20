@@ -321,22 +321,37 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      * failed one still leaves its previous value in place.
      */
     try {
-      const [entrantsRead, rebuysRead, addonsRead] = await Promise.allSettled([
-        supabase
-          .from('tournament_players')
-          .select('*', { count: 'exact', head: true })
-          .eq('tournament_id', this.tournamentId),
-        supabase
-          .from('wallet_transactions')
-          .select('*', { count: 'exact', head: true })
-          .eq('related_entity_id', this.tournamentId)
-          .eq('category', 'rebuy'),
-        supabase
-          .from('wallet_transactions')
-          .select('*', { count: 'exact', head: true })
-          .eq('related_entity_id', this.tournamentId)
-          .eq('category', 'addon'),
-      ]);
+      const [entrantsRead, rebuysRead, addonsRead, fundedRebuysRead, fundedAddonsRead] =
+        await Promise.allSettled([
+          supabase
+            .from('tournament_players')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', this.tournamentId),
+          supabase
+            .from('wallet_transactions')
+            .select('*', { count: 'exact', head: true })
+            .eq('related_entity_id', this.tournamentId)
+            .in('category', ['rebuy', 'reentry']),
+          supabase
+            .from('wallet_transactions')
+            .select('*', { count: 'exact', head: true })
+            .eq('related_entity_id', this.tournamentId)
+            .eq('category', 'addon'),
+          // Funding receipts describe granted chips for both payment assets,
+          // including free grants. Diamond purchases have no chip-wallet leg.
+          // Retain legacy wallet evidence; take the larger count rather than
+          // counting one modern purchase once in each of its two records.
+          supabase
+            .from('tournament_participant_funding_receipts')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', this.tournamentId)
+            .in('operation', ['rebuy', 'reentry']),
+          supabase
+            .from('tournament_participant_funding_receipts')
+            .select('*', { count: 'exact', head: true })
+            .eq('tournament_id', this.tournamentId)
+            .eq('operation', 'addon'),
+        ]);
       const settledCount = (read: typeof entrantsRead): number | null => {
         if (read.status === 'rejected') {
           reportError(read.reason, 'Tournament.refresh_chip_cap_inputs');
@@ -345,16 +360,20 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         const { count, error } = read.value;
         return !error && typeof count === 'number' ? count : null;
       };
+      const largestKnownCount = (...reads: Array<typeof entrantsRead>): number | null => {
+        const known = reads.map(settledCount).filter((count): count is number => count !== null);
+        return known.length > 0 ? Math.max(...known) : null;
+      };
 
       const entrants = settledCount(entrantsRead);
       if (entrants !== null && entrants > this.entrantCountForChipCap) {
         this.entrantCountForChipCap = entrants;
       }
-      const rebuys = settledCount(rebuysRead);
+      const rebuys = largestKnownCount(rebuysRead, fundedRebuysRead);
       if (rebuys !== null && rebuys > this.rebuysGrantedForChipCap) {
         this.rebuysGrantedForChipCap = rebuys;
       }
-      const addons = settledCount(addonsRead);
+      const addons = largestKnownCount(addonsRead, fundedAddonsRead);
       if (addons !== null && addons > this.addonsGrantedForChipCap) {
         this.addonsGrantedForChipCap = addons;
       }

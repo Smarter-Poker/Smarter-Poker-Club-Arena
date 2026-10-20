@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { KNOWN_VARIANTS } from '../server/src/engine/VariantRules';
 const sql = readFileSync(
   'supabase/migrations/20261020143955_never_dealt_diamond_rebuy_proves_original_custody.sql',
   'utf8'
@@ -47,5 +48,32 @@ describe('a never-dealt Diamond rebuy proves its own original custody', () => {
     expect(readFileSync('.github/workflows/ci.yml', 'utf8')).toContain(
       'python3 scripts/ci/test-never-dealt-rebuy.py --pg-bin'
     );
+  });
+  it('enforces all maintained game types and both paid generations in each currency fixture', () => {
+    const runner = readFileSync('scripts/ci/test-never-dealt-rebuy.py', 'utf8');
+    expect(runner.split("root/DATA/'game-currency-matrix.sql'")).toHaveLength(3);
+    const matrix = readFileSync(
+      'scripts/ci/fixtures/never-dealt-rebuy/game-currency-matrix.sql',
+      'utf8'
+    );
+    for (const game of ['NLH', 'PLO4', 'PLO5', 'PLO6', 'PLO8', 'SHORT_DECK', 'OFC_PINEAPPLE'])
+      expect(matrix).toContain(`'${game}'`);
+    expect(matrix).toContain("ARRAY['rebuy','reentry']");
+    expect(matrix).toContain("asset NOT IN ('chips','diamonds')");
+    expect(matrix).toContain('runs<>20');
+    for (const variant of KNOWN_VARIANTS) expect(matrix).toContain(`'${variant.toUpperCase()}'`);
+    expect(matrix).toContain('smarter_private.f06_movement_never_dealt_prior(');
+    expect(matrix).toContain('ROLLBACK;');
+  });
+  it('runs PostgreSQL for runner-only and fixture-only edits', async () => {
+    const { classifyChangedPaths } = await import('../scripts/ci/classify-ci-changes.mjs');
+    for (const path of [
+      'scripts/ci/test-never-dealt-rebuy.py',
+      'scripts/ci/fixtures/never-dealt-rebuy/game-currency-matrix.sql',
+      'scripts/ci/fixtures/never-dealt-rebuy/next-boundary.sql',
+      'tests/never-dealt-diamond-rebuy.guard.test.ts',
+    ])
+      expect(classifyChangedPaths([path]).server).toBe(true);
+    expect(classifyChangedPaths(['docs/changelog/rebuy-proof.md']).server).toBe(false);
   });
 });

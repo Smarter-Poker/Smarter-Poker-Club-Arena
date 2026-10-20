@@ -67,7 +67,7 @@ export async function searchClubs(query: string): Promise<Club[]> {
   const { data, error } = await supabase
     .from('clubs')
     .select(
-      'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+      'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
     )
     /* `%` and `_` are ilike WILDCARDS. Interpolated raw, a search for "100%"
        matched every club and "a_b" matched "axb". The escaper is already in
@@ -95,7 +95,7 @@ export async function getClub(identifier: string): Promise<Club | null> {
   const { data, error } = await supabase
     .from('clubs')
     .select(
-      'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, chip_treasury, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+      'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
     )
     .eq(isUUID ? 'id' : 'slug', identifier)
     .maybeSingle();
@@ -803,7 +803,7 @@ async function _getUserMembershipsUncached(
         .select(
           `
       club_id, user_id, role, status, tier, chip_balance, credit_used, diamonds, trust_score, rank_level, sessions_played, orange_ball_status, joined_at, agent_id, hands_played, chips_won, chips_lost, total_rake_paid,
-      club:clubs(id, asset, is_platform, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, chip_treasury, is_public, is_union, requires_approval, owner_id, union_id, lifecycle_status, retired_at, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
+      club:clubs(id, asset, is_platform, club_id, name, slug, description, avatar_url, logo_url, card_image_url, banner_url, color_theme, member_count, table_count, is_public, is_union, requires_approval, owner_id, union_id, lifecycle_status, retired_at, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next)
     `
         )
         .eq('user_id', userId)
@@ -1122,7 +1122,9 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
     .from('clubs')
     .update(sanitizedUpdates)
     .eq('id', resolvedId)
-    .select()
+    .select(
+      'id, name, description, owner_id, created_at, is_union, club_id, avatar_url, is_public, requires_approval, gps_restricted, settings, updated_at, union_id, color_theme, slug, online_count, game_types, member_count, table_count, code, rake_percent, rake_cap_bb, max_tables, max_members, status, logo_url, banner_url, game_variants, settlement_locked, settlement_locked_until, auto_settlement_enabled, auto_settlement_day, auto_settlement_hour, bbj_enabled, player_level, hierarchy_level, level, player_threshold_current, player_threshold_next, hierarchy_units, hierarchy_units_rounded_up, hierarchy_threshold_current, hierarchy_threshold_next, tags, average_rating, game_type, settlement_lock_until, card_image_url, active_players, default_rake_percent, rake_cap, min_buyin_bb, max_buyin_bb, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, logo, is_private, min_buy_in, max_buy_in, default_game_type, allow_insurance, auto_approve_agents, auto_settlement, active_tables, admin_count, super_agent_count, agent_count, bbj_rake_enabled, spins_enabled, ticker_enabled, guarantee_enforcement_enabled, tagline, opening_checklist_started_at, lobby_message, lobby_message_updated_at, message_revision, lifecycle_status, retired_at, retired_by, retirement_reason, asset, is_platform'
+    )
     .maybeSingle();
 
   if (error) {
@@ -1130,6 +1132,7 @@ export async function updateClub(clubId: string, updates: Record<string, any>): 
     throw new Error('Failed to update club');
   }
 
+  if (!data) throw new Error('Club Update Returned No Record');
   return data;
 }
 

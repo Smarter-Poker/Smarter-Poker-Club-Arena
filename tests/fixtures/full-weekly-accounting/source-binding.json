@@ -227,7 +227,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "8af244b4d2a80952923d67f9be6d2a7576f406077af01bb4f0562be614e4567f",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "31eeaf23d5803eb6de9f311b1a994b7364a383d83a423a41b9c020f1715f92ef",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -5068,5 +5068,11 @@
         "current": "d8b54cbb3a6bd6103e1f98522181713e4f22104cf63524711664524b4e85c3b0"
       }
     }
+  },
+  "agent_data_boundary_20261020": {
+    "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+    "previous_sha256": "8af244b4d2a80952923d67f9be6d2a7576f406077af01bb4f0562be614e4567f",
+    "sha256": "31eeaf23d5803eb6de9f311b1a994b7364a383d83a423a41b9c020f1715f92ef",
+    "reason": "AgentAssignmentPanel now binds every query error; tighten its permitted discarded-error count from 1 to 0. No financial assertion, fixture row, engine function or financial test result changed."
   }
 }

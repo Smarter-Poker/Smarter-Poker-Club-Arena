@@ -69,7 +69,7 @@ describe('a cashier list names a member by the arena name', () => {
   });
 
   it('keeps who sees what', () => {
-    expect(trade.body).toContain("IF v_role IN ('owner', 'co_owner', 'admin', 'super_agent') THEN");
+    expect(trade.body).toContain("IF v_role IN ('owner', 'co_owner', 'admin') THEN");
     expect(trade.body).toContain('FROM public.fn_club_active_cashier_edges(p_club_id) edge');
     expect(trade.body).toContain('AND (ct.from_user_id = v_viewer OR ct.to_user_id = v_viewer)');
     expect(reversible.body).toContain('and t.from_user_id = auth.uid()');

@@ -193,10 +193,10 @@ describe('fn_union_promo_send lands in the club promo wallet', () => {
 
 describe('the club Promo Wallet cashier stands at the right account', () => {
   it('a bank role stands at the club pot; an agent at their own float', () => {
-    for (const r of ['owner', 'co_owner', 'admin', 'super_agent']) {
+    for (const r of ['owner', 'co_owner', 'admin']) {
       expect(promoSourceFor(r)).toBe('club_pot');
     }
-    for (const r of ['agent', 'sub_agent']) {
+    for (const r of ['super_agent', 'agent', 'sub_agent']) {
       expect(promoSourceFor(r)).toBe('own_float');
     }
   });

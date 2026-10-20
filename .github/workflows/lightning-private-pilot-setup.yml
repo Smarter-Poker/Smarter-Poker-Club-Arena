@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: 'Pilot targets to prepare, comma separated: action, madness or action,madness'
+        description: 'Pilot targets to prepare, comma separated: action, madness or action,madness; or retire (switch off retired games only)'
         required: false
         default: 'action,madness'
         type: string

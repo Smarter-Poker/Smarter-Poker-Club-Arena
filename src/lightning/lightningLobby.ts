@@ -31,6 +31,24 @@ export function isLightningTemplate(template: unknown): boolean {
   return template === 'action' || template === 'madness';
 }
 
+/** Owner rule, 2026-10-19: "make all lightning games 6 handed". Exactly six seats. */
+export const LIGHTNING_TABLE_SIZE = 6;
+
+/** A missing, unreadable or any other table size is ineligible. */
+export function isLightningTableSize(handedness: unknown): boolean {
+  return handedness === LIGHTNING_TABLE_SIZE;
+}
+
+/**
+ * Lightning is offered only for a six-seat Action or Madness game. Every other
+ * game - Classic, unknown, or Action/Madness at any other size - keeps its
+ * ordinary entry and lobby actions. The database refuses the rest the same way
+ * (cash_games_lightning_six_seat_only, LIGHTNING_TABLE_SIZE_NOT_ALLOWED).
+ */
+export function isLightningEligible(template: unknown, handedness: unknown): boolean {
+  return isLightningTemplate(template) && isLightningTableSize(handedness);
+}
+
 export type LightningPoolStatus = 'BUILDING' | 'ACTIVE' | 'HOT' | 'THIN';
 
 export interface LightningLobbyState {

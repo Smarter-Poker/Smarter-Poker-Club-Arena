@@ -23,7 +23,7 @@ import {
 
 import {
   lightningLobbyBadge,
-  isLightningTemplate,
+  isLightningEligible,
   type LightningLobbyState,
   type LightningPoolStatus,
 } from '../../lightning/lightningLobby';
@@ -102,6 +102,8 @@ export interface LobbyTableRow extends CashFeatureSource {
   lifecycle?: string | null;
   cluster_must_move?: boolean | null;
   cluster_template?: string | null;
+  /** `cash_games.handedness` when the read embeds it; else the table's max_players. */
+  cluster_handedness?: number | null;
   cluster_state?: string | null;
   cluster_players?: number | null;
   cluster_tables?: number | null;
@@ -1387,7 +1389,10 @@ export function cashEntry(t: LobbyTableRow, waiting = 0): LobbyEntry {
   const lightning =
     t.cluster_id && figures
       ? lightningLobbyBadge({
-          clusterMode: isLightningTemplate(t.cluster_template)
+          clusterMode: isLightningEligible(
+            t.cluster_template,
+            t.cluster_handedness ?? t.max_players
+          )
             ? t.cluster_mode
             : ['paused', 'frozen', 'dead'].includes(t.cluster_mode ?? '')
               ? t.cluster_mode

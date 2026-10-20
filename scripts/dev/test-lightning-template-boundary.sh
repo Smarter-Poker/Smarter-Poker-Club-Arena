@@ -27,3 +27,7 @@ echo 'PASS: before image admits Classic Lightning activation/formation (expected
 "${psql[@]}" -f "$root/scripts/dev/fixtures/lightning-template-assertions.sql"
 echo 'PASS: Action/Madness native positives; Classic/unknown/null refused; ordinary cash/replay retained; legacy formation refused'
 
+
+# Owner ruling 2026-10-19: every Lightning game is six-seat as well. Its own
+# disposable cluster, chained here so the required native step runs it.
+bash "$root/scripts/dev/test-lightning-six-seat-boundary.sh"

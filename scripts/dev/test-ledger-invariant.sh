@@ -74,4 +74,5 @@ export PGOPTIONS='-c statement_timeout=60000 -c lock_timeout=5000 -c timezone=UT
 "$pgbin/createdb" -h "$fixture/socket" -p 55493 cashout_readers
 python3 "$root/scripts/dev/cashout-reader-sql.py" > "$fixture/cashout-readers.sql"
 "$pgbin/psql" -X -q -v ON_ERROR_STOP=1 -h "$fixture/socket" -p 55493 -d cashout_readers -f "$fixture/cashout-readers.sql"
+python3 "$root/scripts/ci/test-agent-wallet-club-journal-postgres.py" --pg-bin "$pgbin" --scratch "${TMPDIR:-$fixture}"
 echo "ledger invariant: every refusal named, every live shape committed, on every chip store, nothing balances against suspense, and every refusal is recorded outside its rollback"

@@ -33,6 +33,14 @@
       "file": "supabase/migrations/20261020203733_add_agent_assignment_transaction_before_client_publication.sql",
       "sameBytes": true,
       "basis": "Exact additive assignment transaction installed once through Supabase MCP at 2026-10-20T20:38:34Z before compatible client publication. History bytes6333 and MD5 equal source; helper definitions, owner, search_path, ACLs and receipt RLS/privileges read back. No bank or report restrictions installed by this additive phase; never replay it."
+    },
+    {
+      "appliedVersion": "20261021174527",
+      "appliedName": "20261020210238_restrict_agent_banks_and_authorize_downline_reassignment",
+      "appliedMd5": "a0ff8030653d8aaa18b26a3d507efa5f",
+      "file": "supabase/migrations/20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql",
+      "sameBytes": true,
+      "basis": "Installed once successfully 2026-10-21T17:45:27Z after compatible client publication. History SQL MD5 equals exact source. Fourteen restrictive policies, private column denial, function owner/search_path/ACL read back. Earlier lock refusals rolled back; never replay the installed migration."
     }
   ],
   "superseded": [

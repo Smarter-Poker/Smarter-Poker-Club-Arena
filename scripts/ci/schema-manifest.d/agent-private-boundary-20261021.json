@@ -1,0 +1,7 @@
+{
+  "_owner": "bank-downline-20261020",
+  "_comment": "Observed installed history20261021174527 exact SQL MD5 a0ff8030653d8aaa18b26a3d507efa5f. Helper owner postgres SECURITY DEFINER search_path public,pg_temp; authenticated/service only. Fourteen restrictive policies and revoked private club columns read back.",
+  "tables": [],
+  "functions": ["fn_can_read_club_member_data"],
+  "columns": {}
+}

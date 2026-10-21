@@ -49,6 +49,8 @@ import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
 export interface BBJRecentHitsProps {
   poolId: string | null;
   limit?: number;
+  /** Compact popup: latest five only, without history heading or paging. */
+  recentOnly?: boolean;
   /** Highlights the viewer's own row. Name is the fallback when no id is known. */
   currentUserName?: string | null;
   /** The viewer's user id - unique, unlike a display name. */
@@ -219,6 +221,7 @@ function normalize(data: unknown): Hit[] {
 export function BBJRecentHits({
   poolId,
   limit = 5,
+  recentOnly = false,
   currentUserName,
   currentUserId,
   onOpenHand,
@@ -226,10 +229,11 @@ export function BBJRecentHits({
   kind = 'all',
 }: BBJRecentHitsProps) {
   const kindArg = kind === 'all' ? null : kind;
+  const readLimit = recentOnly ? 5 : limit;
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [settledKey, setSettledKey] = useState<string | null>(null);
-  const layoutKey = `${poolId}:${kindArg}:${limit}`;
+  const layoutKey = `${poolId}:${kindArg}:${readLimit}`;
   /**
    * PAGING. The list ended at `limit` and said nothing about the rest.
    *
@@ -284,7 +288,7 @@ export function BBJRecentHits({
   useEffect(() => {
     setHits(null);
     setSettledKey(null);
-  }, [poolId, limit, kindArg]);
+  }, [poolId, readLimit, kindArg]);
 
   useEffect(() => {
     if (!poolId) return;
@@ -306,7 +310,7 @@ export function BBJRecentHits({
       try {
         const { data, error } = await supabase.rpc('fn_bbj_recent_hits', {
           p_pool_id: poolId,
-          p_limit: limit,
+          p_limit: readLimit,
           p_kind: kindArg,
         });
         if (!alive) return;
@@ -318,7 +322,7 @@ export function BBJRecentHits({
         // jsonb arrives parsed, but this renders money - never let a shape
         // surprise throw inside the map and blank the whole panel.
         const rows = normalize(data);
-        setHits(rows);
+        setHits(recentOnly ? rows.slice(0, 5) : rows);
         setTotal(rows[0]?.total_hits ?? rows.length);
         setMoreFailed(false);
       } catch (e) {
@@ -333,7 +337,7 @@ export function BBJRecentHits({
     return () => {
       alive = false;
     };
-  }, [poolId, limit, revision, kindArg, layoutKey]);
+  }, [poolId, readLimit, recentOnly, revision, kindArg, layoutKey]);
 
   /**
    * The next page, appended.
@@ -528,11 +532,13 @@ export function BBJRecentHits({
     <div className="bbj-hits" data-initial-layout="settled">
       {/* The caption stated a count as though it were the whole history. It is
           a page, so it says which page of what. */}
-      <div className="bbj-hits__caption">
-        {total && total > hits.length
-          ? `${kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot Winners (${hits.length} Of ${total})`
-          : `Last ${hits.length} ${kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot ${hits.length === 1 ? 'Winner' : 'Winners'}`}
-      </div>
+      {!recentOnly && (
+        <div className="bbj-hits__caption">
+          {total && total > hits.length
+            ? `${kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot Winners (${hits.length} Of ${total})`
+            : `Last ${hits.length} ${kind === 'mini' ? 'Mini ' : ''}Bad Beat Jackpot ${hits.length === 1 ? 'Winner' : 'Winners'}`}
+        </div>
+      )}
 
       {shown.map(({ hit, cards, label, beatBy, beatByLabel }) => {
         // Id first: two players can share a display name, and lighting up the
@@ -637,7 +643,7 @@ export function BBJRecentHits({
         );
       })}
 
-      {total !== null && hits.length < total && (
+      {!recentOnly && total !== null && hits.length < total && (
         <button
           type="button"
           className="bbj-hits__more"

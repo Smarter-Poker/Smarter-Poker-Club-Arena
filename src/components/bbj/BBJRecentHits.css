@@ -48,9 +48,11 @@
   align-items: center;
   column-gap: 2cqw;
   row-gap: 1.2cqw;
-  padding: 2.4cqw 0;
-  border-top: var(--bbjh-rule);
-  box-shadow: var(--bbjh-rule-lit);
+  padding: 4cqw 0;
+  border-top: 2px solid #9aa5b3;
+  box-shadow:
+    0 -1px 0 #000,
+    inset 0 1px 0 #050607;
   text-align: left;
 }
 

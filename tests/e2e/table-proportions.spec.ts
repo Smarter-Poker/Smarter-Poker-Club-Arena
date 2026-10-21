@@ -813,120 +813,132 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 
 // Real occupied components, not placeholder rectangles: this guards the
 // overlap missed by the old containment-only regression.
-test('occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized', async ({
-  page,
-}, testInfo) => {
-  test.setTimeout(60_000);
-  const { buildSync } = await import('esbuild');
-  const bundled = buildSync({
-    entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
-    bundle: true,
-    write: false,
-    metafile: true,
-    format: 'iife',
-    platform: 'browser',
-    loader: {
-      '.css': 'empty',
-      '.png': 'dataurl',
-      '.webp': 'dataurl',
-      '.svg': 'dataurl',
-      '.jpg': 'dataurl',
-    },
-    define: {
-      'import.meta.env': JSON.stringify({
-        VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co',
-        VITE_SUPABASE_ANON_KEY: 'local-fixture',
-        VITE_MEDIA_BASE: 'https://smarter.poker/hub/club-arena/',
-        DEV: true,
-      }),
-      'process.env.NODE_ENV': '"test"',
-    },
-  });
-  const bundle = bundled.outputFiles[0].text;
-  const avatarResponse = await page.request.get(
-    'https://smarter.poker/avatars/table/vip_wolf@2x.webp'
-  );
-  expect(avatarResponse.ok()).toBe(true);
-  const avatarBytes = await avatarResponse.body();
-  await page.route('**/avatars/table/**', (route) =>
-    route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
-  );
-  const sheets = [
-    ...new Set([
-      'src/styles/club-engine.css',
-      'src/styles/animations.css',
-      'src/styles/metallic-popups.css',
-      'src/styles/reducedMotion.css',
-      'src/pages/MultiTablePage.css',
-      'src/pages/TablePage.css',
-      'src/components/table/ActionPanel.css',
-      ...Object.keys(bundled.metafile!.inputs).filter((f) => f.endsWith('.css')),
-      'src/components/table/TableChat.css',
-      'src/components/table/TableVisualHotfix.css',
-    ]),
-  ];
-  const toolAlpha: Record<string, { left: number; top: number; right: number; bottom: number }> =
-    {};
-  for (const icon of ['chat', 'timebank', 'rabbit']) {
-    const response = await page.request.get(
-      `https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/assets/buttons/black/icon-${icon}.webp`
+for (const width of [320, 375, 393, 430, 480])
+  test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(60_000);
+    const { buildSync } = await import('esbuild');
+    const bundled = buildSync({
+      entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
+      bundle: true,
+      write: false,
+      metafile: true,
+      format: 'iife',
+      platform: 'browser',
+      loader: {
+        '.css': 'empty',
+        '.png': 'dataurl',
+        '.webp': 'dataurl',
+        '.svg': 'dataurl',
+        '.jpg': 'dataurl',
+      },
+      define: {
+        'import.meta.env': JSON.stringify({
+          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co',
+          VITE_SUPABASE_ANON_KEY: 'local-fixture',
+          VITE_MEDIA_BASE: 'https://smarter.poker/hub/club-arena/',
+          DEV: true,
+        }),
+        'process.env.NODE_ENV': '"test"',
+      },
+    });
+    const bundle = bundled.outputFiles[0].text;
+    const avatarResponse = await page.request.get(
+      'https://smarter.poker/avatars/table/vip_wolf@2x.webp'
     );
-    expect(response.ok()).toBe(true);
-    const bytes = await response.body();
-    toolAlpha[icon] = await page.evaluate(async (base64) => {
-      const image = new Image();
-      image.src = `data:image/webp;base64,${base64}`;
-      await image.decode();
-      const canvas = document.createElement('canvas');
-      canvas.width = image.width;
-      canvas.height = image.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(image, 0, 0);
-      const pixels = ctx.getImageData(0, 0, image.width, image.height).data;
-      let left = image.width,
-        top = image.height,
-        right = 0,
-        bottom = 0;
-      for (let y = 0; y < image.height; y++)
-        for (let x = 0; x < image.width; x++)
-          if (pixels[(y * image.width + x) * 4 + 3] > 128) {
-            left = Math.min(left, x);
-            top = Math.min(top, y);
-            right = Math.max(right, x + 1);
-            bottom = Math.max(bottom, y + 1);
-          }
-      return {
-        left: left / image.width,
-        top: top / image.height,
-        right: right / image.width,
-        bottom: bottom / image.height,
-      };
-    }, bytes.toString('base64'));
-    await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
-      route.fulfill({ body: bytes, contentType: 'image/webp' })
+    expect(avatarResponse.ok()).toBe(true);
+    const avatarBytes = await avatarResponse.body();
+    await page.route('**/avatars/table/**', (route) =>
+      route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
     );
-  }
-  const fontSheet = await page.request.get('https://smarter.poker/hub/club-arena/fonts/fonts.css');
-  expect(fontSheet.ok()).toBe(true);
-  const inter = [...(await fontSheet.text()).matchAll(/@font-face\s*\{[^}]+\}/g)]
-    .map((m) => m[0])
-    .find((face) => face.includes("font-family: 'Inter'") && face.includes('U+0000-00FF'))!;
-  expect(inter).toBeTruthy();
-  const fontPath = /url\(([^)]+)\)/.exec(inter)![1];
-  const fontResponse = await page.request.get(new URL(fontPath, 'https://smarter.poker').href);
-  expect(fontResponse.ok()).toBe(true);
-  const fontFace = inter
-    .replace(/font-weight:\s*\d+;/, 'font-weight: 100 900;')
-    .replace(fontPath, `data:font/woff2;base64,${(await fontResponse.body()).toString('base64')}`);
-  const readStyle = (file: string): string =>
-    readFileSync(resolve(process.cwd(), file), 'utf8').replace(
-      /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
-      (_, imported: string) => readStyle(resolve(dirname(file), imported))
+    const sheets = [
+      ...new Set([
+        'src/styles/club-engine.css',
+        'src/styles/animations.css',
+        'src/styles/metallic-popups.css',
+        'src/styles/reducedMotion.css',
+        'src/pages/MultiTablePage.css',
+        'src/pages/TablePage.css',
+        'src/components/table/ActionPanel.css',
+        ...Object.keys(bundled.metafile!.inputs).filter((f) => f.endsWith('.css')),
+        'src/components/table/TableChat.css',
+        'src/components/table/TableVisualHotfix.css',
+      ]),
+    ];
+    const toolAlpha: Record<string, { left: number; top: number; right: number; bottom: number }> =
+      {};
+    for (const icon of ['chat', 'timebank', 'rabbit']) {
+      const response = await page.request.get(
+        `https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/assets/buttons/black/icon-${icon}.webp`
+      );
+      expect(response.ok()).toBe(true);
+      const bytes = await response.body();
+      toolAlpha[icon] = await page.evaluate(async (base64) => {
+        const image = new Image();
+        image.src = `data:image/webp;base64,${base64}`;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(image, 0, 0);
+        const pixels = ctx.getImageData(0, 0, image.width, image.height).data;
+        let left = image.width,
+          top = image.height,
+          right = 0,
+          bottom = 0;
+        for (let y = 0; y < image.height; y++)
+          for (let x = 0; x < image.width; x++)
+            if (pixels[(y * image.width + x) * 4 + 3] > 128) {
+              left = Math.min(left, x);
+              top = Math.min(top, y);
+              right = Math.max(right, x + 1);
+              bottom = Math.max(bottom, y + 1);
+            }
+        return {
+          left: left / image.width,
+          top: top / image.height,
+          right: right / image.width,
+          bottom: bottom / image.height,
+        };
+      }, bytes.toString('base64'));
+      await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
+        route.fulfill({ body: bytes, contentType: 'image/webp' })
+      );
+    }
+    const fontSheet = await page.request.get(
+      'https://smarter.poker/hub/club-arena/fonts/fonts.css'
     );
-  const realCss = fontFace + '\n' + sheets.map(readStyle).join('\n');
-  for (const width of [320, 375, 393, 430, 480])
+    expect(fontSheet.ok()).toBe(true);
+    const inter = [...(await fontSheet.text()).matchAll(/@font-face\s*\{[^}]+\}/g)]
+      .map((m) => m[0])
+      .find((face) => face.includes("font-family: 'Inter'") && face.includes('U+0000-00FF'))!;
+    expect(inter).toBeTruthy();
+    const fontPath = /url\(([^)]+)\)/.exec(inter)![1];
+    const fontResponse = await page.request.get(new URL(fontPath, 'https://smarter.poker').href);
+    expect(fontResponse.ok()).toBe(true);
+    const fontFace = inter
+      .replace(/font-weight:\s*\d+;/, 'font-weight: 100 900;')
+      .replace(
+        fontPath,
+        `data:font/woff2;base64,${(await fontResponse.body()).toString('base64')}`
+      );
+    const readStyle = (file: string): string =>
+      readFileSync(resolve(process.cwd(), file), 'utf8').replace(
+        /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
+        (_, imported: string) => readStyle(resolve(dirname(file), imported))
+      );
+    const realCss = fontFace + '\n' + sheets.map(readStyle).join('\n');
     for (const count of [6, 9])
-      for (const revealed of [false, true]) {
+      for (const [revealed, jackpot] of [
+        [false, 'mini'],
+        [true, 'mini'],
+        [false, 'main'],
+        [true, 'main'],
+        [false, 'none'],
+        [true, 'none'],
+      ] as const) {
         await page.setViewportSize({
           width,
           height: width === 320 ? 568 : width === 375 ? 667 : 852,
@@ -934,7 +946,7 @@ test('occupied portrait rings keep the board clear, bets on the rail and tools L
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
             contentType: 'text/html',
-            body: `<html data-seats="${count}" data-revealed="${revealed}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+            body: `<html data-seats="${count}" data-revealed="${revealed}" data-jackpot="${jackpot}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
           })
         );
         await page.goto('http://rail.fixture/');
@@ -1070,7 +1082,10 @@ test('occupied portrait rings keep the board clear, bets on the rail and tools L
           }));
           return { violations, tools, canvas: { width: canvas.width, height: canvas.height } };
         });
-        expect(result.violations, `${width}px ${count}-max`).toEqual([]);
+        expect(
+          result.violations,
+          `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'}`
+        ).toEqual([]);
         for (const tool of result.tools) {
           expect(tool.width, tool.selector).toBeCloseTo(result.tools[0].width, 1);
           expect(tool.height, tool.selector).toBeCloseTo(result.tools[0].height, 1);
@@ -1093,7 +1108,7 @@ test('occupied portrait rings keep the board clear, bets on the rail and tools L
           );
         }
         if (width === 393) {
-          const name = `occupied-${count}-max-${revealed ? 'revealed' : 'playing'}`;
+          const name = `occupied-${count}-max-${jackpot}-${revealed ? 'revealed' : 'playing'}`;
           const path = testInfo.outputPath(`${name}.png`);
           await page.screenshot({ path });
           await testInfo.attach(name, { path, contentType: 'image/png' });
@@ -1104,4 +1119,4 @@ test('occupied portrait rings keep the board clear, bets on the rail and tools L
         }
         await page.unroute('http://rail.fixture/');
       }
-});
+  });

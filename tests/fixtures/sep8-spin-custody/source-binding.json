@@ -27,7 +27,7 @@
   "raw_sources_per_event": 1,
   "recognized_contributors_per_event": 3,
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "7034b268896907731a499340bb792081f8d0165fae994d6c8ac3319b8bf3c4f0",
+    "scripts/ci/classify-ci-changes.mjs": "1325da3a525cd7e3523fdf26a70dddbe4ce62952da4fe7a3a6a5291676c20e40",
     "scripts/ci/schema-manifest.d/union-sep8-spin-custody.json": "b79ed45b40b172ed16f7cd4dd101d541d4ebab29e8defb20be4e531eae7215a8",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/qualify-sep8-spin-custody.py": "28a2b63e4424f15d3b85ad742f7592fd65c2f8a8493eabb06210665e01e9ad67",
@@ -1298,6 +1298,11 @@
     ],
     "integration_reason": "Preserve concurrent protected commission and ticket-refund qualification parents and all audit histories. Update combined current classifier/dependent identities only; no financial assertion or qualification status changes."
   },
+  "clubDataUnionMttRouting20261021": {
+    "reason": "Additive routing of Club Data native driver and fixtures to the existing required accounting verdict. Financial fixture SQL, assertions, source inventories and qualification states unchanged; current CI classifier identity only.",
+    "previous_classifier_sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944",
+    "current_classifier_sha256": "5a2b0ee1194a06a3a1b8d9bfa93281713010033ba62a418411a6214c89fd6cfd"
+  },
   "clubNewsOnceRouting20261021": {
     "reason": "Reviewed additive CI selection for the club-entry-news native regression only. Current financial fixtures, assertions, historical audits and qualification statuses are unchanged. Refresh classifier and dependent binding fingerprints; matching hashes do not certify financial or production behavior.",
     "changes": [
@@ -1307,5 +1312,13 @@
         "current_sha256": "7034b268896907731a499340bb792081f8d0165fae994d6c8ac3319b8bf3c4f0"
       }
     ]
+  },
+  "clubDataCurrentMainIntegration20261021": {
+    "reason": "Preserve both protected Midway cash-policy/news inputs and additive Club Data native qualification routing. Current input identity only; existing financial sources, assertions, inventories and qualification states unchanged.",
+    "prior_classifier": "5a2b0ee1194a06a3a1b8d9bfa93281713010033ba62a418411a6214c89fd6cfd",
+    "current_classifier": {
+      "bytes": 37913,
+      "sha256": "1325da3a525cd7e3523fdf26a70dddbe4ce62952da4fe7a3a6a5291676c20e40"
+    }
   }
 }

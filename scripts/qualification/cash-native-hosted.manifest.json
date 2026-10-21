@@ -166,16 +166,16 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 229699,
-      "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
+      "bytes": 229951,
+      "sha256": "53d246ff4d64aee62cab01069a4ea967b20dc7bbdd4f396d25683d5ae5d4b5d6"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 37679,
-      "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
+      "bytes": 37817,
+      "sha256": "7034b268896907731a499340bb792081f8d0165fae994d6c8ac3319b8bf3c4f0"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,

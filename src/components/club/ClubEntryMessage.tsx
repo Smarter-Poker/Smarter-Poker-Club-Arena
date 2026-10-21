@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from '../common/Modal';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
@@ -67,6 +67,10 @@ export default function ClubEntryMessage({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const scopeKey = `${user?.id || ''}:${clubId}`;
+  const activeScope = useRef(scopeKey);
+  activeScope.current = scopeKey;
+  const scopeEpoch = useRef(0);
 
   /*
     Claims unseen news once per club entry. Receipts live on the server, so
@@ -80,6 +84,7 @@ export default function ClubEntryMessage({
     setEntry(null);
     setAnnouncements([]);
     setEditing(false);
+    setSaving(false);
     if (!clubId || !user?.id) return;
     let live = true;
     void (async () => {
@@ -110,13 +115,20 @@ export default function ClubEntryMessage({
     })();
     return () => {
       live = false;
+      scopeEpoch.current += 1;
     };
   }, [clubId, user?.id]);
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    scopeEpoch.current += 1;
+    setSaving(false);
+    setOpen(false);
+  }, []);
 
   const save = async () => {
-    if (saving) return;
+    if (saving || !user?.id || !clubId) return;
+    const epoch = scopeEpoch.current;
+    const isCurrent = () => activeScope.current === scopeKey && scopeEpoch.current === epoch;
     const next = draft.replace(/\s+/g, ' ').trim().slice(0, CLUB_ENTRY_MESSAGE_MAX);
     setSaving(true);
     try {
@@ -125,6 +137,7 @@ export default function ClubEntryMessage({
         p_message: next,
       });
       if (error) throw error;
+      if (!isCurrent()) return;
       const result = (data || {}) as {
         ok?: boolean;
         reason?: string;
@@ -140,29 +153,42 @@ export default function ClubEntryMessage({
         );
         return;
       }
-      onMessageSaved?.(result.lobby_message ?? null);
-      onToast('success', 'Club Message Updated');
       const saved = result.lobby_message?.trim();
       if (!saved) {
         /* Cleared. There is nothing left to greet anybody with. */
+        onMessageSaved?.(null);
+        onToast('success', 'Club Message Updated');
         setOpen(false);
         return;
       }
       // The staff member is seeing the edited copy in this same popup.
       // Record that delivery too, so their next entry does not replay it.
-      const { data: claimed, error: claimError } = await claimEntryNews(user?.id || '', clubId);
-      if (claimError) reportError(claimError, 'ClubEntryMessage.savedReceipt');
+      const { data: claimed, error: claimError } = await claimEntryNews(user.id, clubId);
+      if (!isCurrent()) return;
+      if (claimError) throw claimError;
       const news = claimed as {
+        ok?: boolean;
+        message?: string;
+        revision?: number;
+        should_show?: boolean;
         announcements?: Array<{ id: string; title: string; content: string }>;
       } | null;
-      if (news?.announcements?.length) setAnnouncements(news.announcements);
-      setEntry({ message: saved, revision: Number(result.revision ?? 0) });
+      if (!news?.ok) throw new Error('Could not record the saved news delivery');
+      // Render precisely the claimed snapshot: another staff save may have
+      // superseded our write while its response was in flight.
+      const text = news.should_show ? news.message?.trim() || '' : '';
+      const posts = news.announcements || [];
+      onMessageSaved?.(text || result.lobby_message || null);
+      onToast('success', 'Club Message Updated');
+      setEntry({ message: text, revision: Number(news.revision ?? 0) });
+      setAnnouncements(posts);
       setEditing(false);
+      if (!text && !posts.length) setOpen(false);
     } catch (e) {
       reportError(e, 'ClubEntryMessage.save');
-      onToast('error', 'Could Not Save The Club Message');
+      if (isCurrent()) onToast('error', 'Could Not Save The Club Message');
     } finally {
-      setSaving(false);
+      if (isCurrent()) setSaving(false);
     }
   };
 

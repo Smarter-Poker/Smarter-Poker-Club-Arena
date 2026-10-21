@@ -23,6 +23,8 @@ vi.mock('../../src/lib/supabase', () => ({
       return q;
     },
     rpc: (name: string, args: any) => {
+      const override = mocks.rpc?.(name, args);
+      if (override !== undefined) return override;
       if (name === 'fn_claim_club_entry_news') {
         const data = { ...mocks.entry, announcements: mocks.posts };
         mocks.entry = { ...mocks.entry, should_show: false };
@@ -83,6 +85,7 @@ describe('the club message meets you at the door', () => {
     mocks.entry = SHOWING;
     mocks.dismissCalls = [];
     mocks.saveCalls = [];
+    mocks.rpc = null;
   });
 
   it('greets on entry when the server says to', async () => {
@@ -206,6 +209,96 @@ describe('the club message meets you at the door', () => {
     await click(/save message/i);
     expect(mocks.saveCalls).toHaveLength(1);
     expect(mocks.saveCalls[0].p_club_id).toBe('club-1');
+  });
+
+  it('renders the claimed message when another staff edit overtakes a save', async () => {
+    renderGreeting(true);
+    await screen.findByText(SHOWING.message);
+    await click(/edit message/i);
+    mocks.rpc = (name: string) =>
+      name === 'fn_claim_club_entry_news'
+        ? Promise.resolve({
+            data: {
+              ok: true,
+              should_show: true,
+              message: 'Newer Staff Update',
+              revision: 9,
+              announcements: [],
+            },
+            error: null,
+          })
+        : undefined;
+    await click(/save message/i);
+    expect(await screen.findByText('Newer Staff Update')).toBeInTheDocument();
+    expect(screen.queryByText(SHOWING.message)).toBeNull();
+  });
+
+  it('does not claim or repaint an old club after a delayed staff save', async () => {
+    const saved = vi.fn();
+    const view = render(
+      <ClubEntryMessage
+        clubId="club-1"
+        clubName="First Club"
+        canEdit
+        onMessageSaved={saved}
+        onOpenAnnouncements={() => {}}
+        onToast={() => {}}
+      />
+    );
+    await screen.findByText(SHOWING.message);
+    await click(/edit message/i);
+    let finish!: (result: unknown) => void;
+    const pending = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const calls: string[] = [];
+    mocks.rpc = (name: string) => {
+      calls.push(name);
+      return name === 'fn_set_club_lobby_message' ? pending : undefined;
+    };
+    await click(/save message/i);
+    mocks.entry = { ...SHOWING, message: 'Second Club News' };
+    view.rerender(
+      <ClubEntryMessage
+        clubId="club-2"
+        clubName="Second Club"
+        canEdit
+        onMessageSaved={saved}
+        onOpenAnnouncements={() => {}}
+        onToast={() => {}}
+      />
+    );
+    await screen.findByText('Second Club News');
+    const claims = calls.filter((name) => name === 'fn_claim_club_entry_news').length;
+    await act(async () =>
+      finish({ data: { ok: true, lobby_message: 'Old Club Save', revision: 8 }, error: null })
+    );
+    expect(screen.getByText('Second Club News')).toBeInTheDocument();
+    expect(saved).not.toHaveBeenCalled();
+    expect(calls.filter((name) => name === 'fn_claim_club_entry_news')).toHaveLength(claims);
+  });
+
+  it('does not claim unseen news after closing an in-flight staff save', async () => {
+    renderGreeting(true);
+    await screen.findByText(SHOWING.message);
+    await click(/edit message/i);
+    let finish!: (result: unknown) => void;
+    const pending = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const claims = vi.fn();
+    mocks.rpc = (name: string) => {
+      if (name === 'fn_set_club_lobby_message') return pending;
+      if (name === 'fn_claim_club_entry_news') claims();
+      return undefined;
+    };
+    await click(/save message/i);
+    await click(/^close$/i);
+    await act(async () =>
+      finish({ data: { ok: true, lobby_message: 'Later News', revision: 8 }, error: null })
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(claims).not.toHaveBeenCalled();
   });
 
   /**

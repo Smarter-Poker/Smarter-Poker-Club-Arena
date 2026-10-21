@@ -10,6 +10,7 @@ import importlib.util
 import json
 import re
 import signal
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -29,6 +30,7 @@ def main():
         raise ValueError('executed satellite caller differs from recorded source')
     output = args.evidence.resolve()
     output.mkdir(parents=True, exist_ok=False)
+    subprocess.run(['node',str(root/'scripts/ci/test-satellite-seat-context.mjs'),str(output/'seat-context')],check=True,env={**__import__('os').environ,'PG_BIN':str(args.pg_bin)})
     native = module(root/'scripts/ci/test-mtt-unlimited.py', 'satellite_existing_execution')
     manifest = compose(root)
     (output/'foundation.sql').write_text(manifest.pop('sql'))

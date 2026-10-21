@@ -34,6 +34,7 @@ function Review() {
     return () => ro.disconnect();
   }, []);
   useProtectedCardLayout(ref, JSON.stringify(size));
+  const jackpot = document.documentElement.dataset.jackpot || 'mini';
   const revealed = document.documentElement.dataset.revealed !== 'false';
   const width = innerWidth;
   const markerSize = { ...size, railBets: width <= 480 };
@@ -59,7 +60,7 @@ function Review() {
         className="table-page table-page--embedded"
         data-seats={n}
         data-hero="true"
-        data-bbj-mini="1"
+        data-bbj-mini={jackpot === 'mini' ? '1' : '0'}
         style={{ background: '#080808' }}
       >
         <button className="mtp-lobby-btn" style={{ position: 'fixed', top: 0, right: 0 }}>
@@ -84,7 +85,13 @@ function Review() {
             </div>
           }
         />
-        <BadBeatJackpot amount={33073} miniAmount={425} qualifyingHand="Quads" />
+        {jackpot !== 'none' && (
+          <BadBeatJackpot
+            amount={33073}
+            miniAmount={jackpot === 'mini' ? 425 : null}
+            qualifyingHand="Quads"
+          />
+        )}
         <div className="table-container">
           <div
             className="table-scaler"

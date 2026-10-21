@@ -60,9 +60,14 @@ for (const width of [320, 375, 393, 568, 1440]) {
       ]);
       expect(live).not.toBeNull();
       expect(help).not.toBeNull();
+      expect(live!.y, 'mode controls must sit below Page Help').toBeGreaterThanOrEqual(
+        help!.y + help!.height
+      );
+      const mode = await page.locator('.members-mode-toggle').boundingBox();
+      expect(mode).not.toBeNull();
       expect(
-        Math.abs(live!.y - help!.y),
-        'a titleless header adds an empty row'
+        Math.abs(mode!.x + mode!.width - help!.x - help!.width),
+        'mode controls must align with the right edge of Page Help'
       ).toBeLessThanOrEqual(1);
     });
   }
@@ -82,13 +87,17 @@ for (const width of [375, 393]) {
           <label class="members-search"><input type="search" aria-label="Search Club Members" /></label>
           <div class="members-toolbar">
             <button class="members-group-role">Group By Role</button>
+            <label class="members-sort members-winloss-period"><span class="members-sort__label">Win / Loss</span>
+              <select aria-label="Win And Loss Period"><option>Win / Loss This Week</option></select></label>
             <label class="members-sort"><span class="members-sort__label">Sort By</span>
-              <select aria-label="Sort Players"><option>Role Hierarchy</option></select></label>
-            <button class="members-refresh">Refresh</button>
+              <select aria-label="Sort Players"><option>Newest Players First</option></select></label>
           </div>
         </section>
       </section></main>`);
-    for (const field of [page.getByRole('searchbox'), page.getByRole('combobox')]) {
+    for (const field of [
+      page.getByRole('searchbox'),
+      ...(await page.getByRole('combobox').all()),
+    ]) {
       expect(
         await field.evaluate((element) => parseFloat(getComputedStyle(element).fontSize))
       ).toBe(16);
@@ -97,8 +106,7 @@ for (const width of [375, 393]) {
     expect(toolbar).not.toBeNull();
     for (const control of [
       page.getByRole('button', { name: 'Group By Role' }),
-      page.getByRole('combobox'),
-      page.getByRole('button', { name: 'Refresh' }),
+      ...(await page.getByRole('combobox').all()),
     ]) {
       const box = await control.boundingBox();
       expect(box).not.toBeNull();
@@ -137,7 +145,6 @@ for (const width of [1449, 375, 393]) {
             <label class="members-sort"><span class="members-sort__label">Sort</span>
               <select aria-label="Sort Players"><option>Role Hierarchy</option></select></label>
             <button class="members-select-loaded">Select Loaded</button>
-            <button class="members-refresh">Refresh</button>
             <details class="members-columns"><summary>Columns</summary></details>
             <button class="members-export">Export CSV</button>
           </div>
@@ -175,7 +182,6 @@ for (const width of [1449, 375, 393]) {
       '.members-search',
       '.members-search input',
       '.members-sort',
-      '.members-refresh',
       '.members-columns',
       '.members-select-loaded',
       '.members-export',
@@ -196,7 +202,6 @@ for (const width of [1449, 375, 393]) {
     for (const selector of [
       '.members-search input',
       '.members-sort',
-      '.members-refresh',
       '.members-columns',
       '.members-select-loaded',
       '.members-export',
@@ -268,8 +273,7 @@ for (const width of [375, 393]) {
                 <select aria-label="Sort Players"><option>Role Hierarchy</option></select></label>
               <details class="members-columns"><summary>Columns</summary></details>
               <button class="members-select-loaded">Select Loaded</button>
-              <button class="members-refresh">Refresh</button>
-              <button class="members-export">Export CSV</button>
+                <button class="members-export">Export CSV</button>
             </div>
             <p class="members-count" role="note" aria-label="Export Scope"><strong>Export Scope: </strong>
               <span>All Matching Players Across Every Page</span> Includes Authorized Fields Regardless Of Visible Columns.</p>

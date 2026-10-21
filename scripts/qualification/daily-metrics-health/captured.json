@@ -1,0 +1,1842 @@
+{
+  "columns": [
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "break_ended_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "break_started_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "hands_in_window",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "tables_dealing_in_window",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "thaw_ran",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "thaw_frozen_seconds",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "kill_rebuilds_after",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "recovery_seconds",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "pre_break_tables",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "shipped_sha",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "shipped",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "freeze_conserved",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "freeze_delta",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "verdict",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "detail",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "recorded_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "unparked_at_countdown",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "peak_unparked",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "ready_for_restart_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_break_scorecards",
+      "column_name": "gate_opened",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "id",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "detected_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "window_days",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "user_a",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "user_b",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "hands_together",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "gross_flow",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "net_flow",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "direction_ratio",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "both_cert",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "ca_collusion_signals",
+      "column_name": "detail",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "id",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "occurred_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "rule",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "severity",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "amount",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "writer",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "db_role",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "app_name",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "detail",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "resolved_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "resolution",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "acknowledged_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "acknowledged_by",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "resolved_by",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "reopened_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_diamond_incidents",
+      "column_name": "reopened_by",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "detected_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "deadline_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "classification",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "severity",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "layer",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "source",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "dedupe_key",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "union_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "club_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "entity_type",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "entity_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "table_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "tournament_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "hand_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "settlement_id",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "wallet_ids",
+      "data_type": "ARRAY",
+      "udt_name": "_uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "transaction_ids",
+      "data_type": "ARRAY",
+      "udt_name": "_uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "currency",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "expected_amount",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "actual_amount",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "discrepancy_amount",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "ledger_balanced",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "suspected_cause",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "auto_repair_status",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "escalation_level",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "past_target",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "occurrences",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "last_seen_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "acknowledged_by",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "acknowledged_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "assigned_to",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "root_cause",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "correction_ref",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "resolution",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "resolved_by",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "resolved_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "metadata",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_drift_incidents",
+      "column_name": "closure_basis",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_engine_deploy_attempts",
+      "column_name": "id",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "ca_engine_deploy_attempts",
+      "column_name": "at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_engine_deploy_attempts",
+      "column_name": "run_id",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_engine_deploy_attempts",
+      "column_name": "target_sha",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_engine_deploy_attempts",
+      "column_name": "shipped",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "ca_engine_deploy_attempts",
+      "column_name": "reason",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_engine_deploy_attempts",
+      "column_name": "actor",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_ledger_invariant_findings",
+      "column_name": "txid",
+      "data_type": "xid8",
+      "udt_name": "xid8"
+    },
+    {
+      "table_name": "ca_ledger_invariant_findings",
+      "column_name": "account_key",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_ledger_invariant_findings",
+      "column_name": "found_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "ca_ledger_invariant_findings",
+      "column_name": "balance_delta",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_ledger_invariant_findings",
+      "column_name": "ledger_net",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "ca_ledger_invariant_findings",
+      "column_name": "mode",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_ledger_invariant_findings",
+      "column_name": "actor_service",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_ledger_invariant_findings",
+      "column_name": "db_role",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "ca_ledger_invariant_findings",
+      "column_name": "statement",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "id",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "boundary",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "section",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "route",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "url",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "error_name",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "message",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "stack",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "component_stack",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "user_agent",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "embedded",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "client_crash_log",
+      "column_name": "build_sha",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "id",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "received_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "occurred_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "automated",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "route",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "app_version",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "user_agent",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "code",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "error_name",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "message",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "stack",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "source",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "context",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "dedupe_key",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "client_error_events",
+      "column_name": "occurrences",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "severity",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "source",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "message",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "context",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "resolved",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "resolved_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "resolved_by",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "financial_alerts",
+      "column_name": "resolution",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "id",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "source",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "event_key",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "alertname",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "severity",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "payload",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "received_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "last_received_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "delivery_count",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "investigation_status",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "investigation",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "operational_alert_events",
+      "column_name": "investigation_touched_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "probe_heartbeats",
+      "column_name": "id",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "probe_heartbeats",
+      "column_name": "probe_name",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "probe_heartbeats",
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "probe_heartbeats",
+      "column_name": "duration_ms",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "probe_heartbeats",
+      "column_name": "details",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "probe_heartbeats",
+      "column_name": "occurred_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "full_name",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "display_name",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "first_name",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "last_name",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "username",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "email",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "phone",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "bio",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "city",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "state",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "alias",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "avatar_url",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "role",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "status",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "is_vip",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "is_horse",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "is_admin",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "is_online",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "player_number",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "diamonds",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "diamond_balance",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "diamond_multiplier",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "level",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "tier",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "skill_tier",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "login_streak",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "streak_days",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "settings",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "social_page_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "favorite_venue",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "home_poker_club",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "referred_by",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "friends_count",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "hendon_total_cashes",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "hendon_total_earnings",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "email_verified",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "phone_verified",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "onboarding_complete",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "last_login",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "last_login_date",
+      "data_type": "date",
+      "udt_name": "date"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "last_seen",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "training_view_mode",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "last_trivia_date",
+      "data_type": "date",
+      "udt_name": "date"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "trivia_streak",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "trivia_high_score",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "total_hands_played",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "notification_token",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "referral_code",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "horse_status",
+      "data_type": "character varying",
+      "udt_name": "varchar"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "horse_profile",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "sounds_enabled",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "vibrations_enabled",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "show_stack_bb",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "birth_year",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "favorite_hand_type",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "card_back_preference",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "country",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "website",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "twitter",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "instagram",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "hendon_url",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "favorite_game",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "favorite_hand",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "home_casino",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "cover_photo_url",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "favorite_hand_plo",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "app_settings",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "display_name_preference",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "cover_photo_position",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "tiktok",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "telegram",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "birthday",
+      "data_type": "date",
+      "udt_name": "date"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "hendon_biggest_cash",
+      "data_type": "numeric",
+      "udt_name": "numeric"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "use_real_name",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "streak_count",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "access_tier",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "vip_tier",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "vip_expires_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "last_active",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "poker_near_me_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "can_review",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "deleted_reviews_count",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "kyc_status",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "kyc_provider",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "kyc_inquiry_id",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "kyc_completed_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "kyc_rejection_reason",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "age_verified",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "age_verified_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "jurisdiction_country",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "mfa_required",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "hub_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "friend_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "store_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "messenger_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "reels_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "over_18_attested_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "jurisdiction_region",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "jurisdiction_acknowledged_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "home_games_onboarded_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "social_profile_completed",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "is_farming_flagged",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "stripe_customer_id",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "club_arena_tos_accepted_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "bankroll_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "memory_games_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "news_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "video_library_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "memory_elo",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "arena_avatar_url",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "equipped_frame",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "equipped_aura",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "use_avatar_as_profile_pic",
+      "data_type": "boolean",
+      "udt_name": "bool"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "status_text",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "player_tags",
+      "data_type": "ARRAY",
+      "udt_name": "_text"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "vip_lifetime_card_purchase_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "lifetime_vip_since",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "trivia_preferences",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "trivia_preferences_revision",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "profiles",
+      "column_name": "vip_gift_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "job",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "slot",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "started_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "finished_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "claimed",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "sent",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "failed",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "skipped",
+      "data_type": "integer",
+      "udt_name": "int4"
+    },
+    {
+      "table_name": "push_dispatch_runs",
+      "column_name": "note",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "signup_errors",
+      "column_name": "id",
+      "data_type": "bigint",
+      "udt_name": "int8"
+    },
+    {
+      "table_name": "signup_errors",
+      "column_name": "user_id",
+      "data_type": "uuid",
+      "udt_name": "uuid"
+    },
+    {
+      "table_name": "signup_errors",
+      "column_name": "email",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "signup_errors",
+      "column_name": "trigger_name",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "signup_errors",
+      "column_name": "error_code",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "signup_errors",
+      "column_name": "error_msg",
+      "data_type": "text",
+      "udt_name": "text"
+    },
+    {
+      "table_name": "signup_errors",
+      "column_name": "raw_meta",
+      "data_type": "jsonb",
+      "udt_name": "jsonb"
+    },
+    {
+      "table_name": "signup_errors",
+      "column_name": "occurred_at",
+      "data_type": "timestamp with time zone",
+      "udt_name": "timestamptz"
+    }
+  ],
+  "view": " SELECT p.id,\n    p.created_at,\n    p.last_seen,\n    p.phone_verified,\n    p.is_vip,\n    p.vip_tier,\n    p.vip_expires_at,\n    p.referred_by,\n    p.username,\n    u.email_confirmed_at\n   FROM (profiles p\n     JOIN auth.users u ON ((u.id = p.id)))\n  WHERE ((NOT COALESCE(p.is_horse, false)) AND (NOT COALESCE(u.is_anonymous, false)) AND ((p.id)::text !~~ '00000000-0000-0000-0000-%'::text) AND (POSITION(('@'::text) IN (COALESCE(u.email, ''::character varying))) > 0) AND (lower((u.email)::text) !~ '(\\.invalid|\\.local|\\.test|@horses\\.smarter\\.poker|@hydra\\.bot|@example\\.(com|org|net))$'::text) AND (lower((u.email)::text) !~ '@([a-z0-9-]+\\.)*(smarter\\.poker|pepnationlab\\.com|bekavactrading\\.com)$'::text) AND (lower(COALESCE(p.email, ''::text)) !~ '(\\.invalid|\\.local|\\.test|@hydra\\.bot|@example\\.(com|org|net))$'::text) AND (COALESCE(p.username, ''::text) !~* '^(deleted-|crest_cert_|postdeploy|reels_qa|trivia_canary|codex-)'::text) AND (NOT (EXISTS ( SELECT 1\n           FROM ca_cert_accounts c\n          WHERE ((c.user_id = p.id) AND c.active)))));",
+  "health": "SELECT jsonb_build_object(\n    'breaks', (SELECT jsonb_build_object('total', count(*), 'passed', count(*) FILTER (WHERE verdict = 'pass'))\n                 FROM public.ca_break_scorecards WHERE recorded_at >= '2026-10-20 05:00Z'::timestamptz AND recorded_at < '2026-10-21 05:00Z'::timestamptz),\n    'deploys', (SELECT jsonb_build_object('attempted', count(*), 'shipped', count(*) FILTER (WHERE a.shipped OR a.superseded),\n                                     'superseded', count(*) FILTER (WHERE a.superseded))\n                  /* A RELEASE THAT STOOD DOWN FOR A NEWER ONE THAT SHIPPED DID\n                     SHIP (2026-10-16). The receiver stands an older revision\n                     down when protected main has moved on; the newer revision\n                     contains it. Counted as shipped only when the revision it\n                     names really shipped within twelve hours either side. */\n                  FROM (SELECT x.shipped,\n                               (NOT x.shipped AND EXISTS (\n                                  SELECT 1 FROM public.ca_engine_deploy_attempts y\n                                   WHERE y.shipped\n                                     AND y.target_sha = substring(x.reason from 'protected main had moved to ([0-9a-f]{40})')\n                                     AND y.at BETWEEN x.at - interval '12 hours' AND x.at + interval '12 hours')) AS superseded\n                          FROM public.ca_engine_deploy_attempts x WHERE x.at >= '2026-10-20 05:00Z'::timestamptz AND x.at < '2026-10-21 05:00Z'::timestamptz) a),\n    'alerts_new', (SELECT jsonb_build_object('critical', count(*) FILTER (WHERE severity = 'critical'), 'warning', count(*) FILTER (WHERE severity = 'warning'))\n                     FROM public.operational_alert_events WHERE received_at >= '2026-10-20 05:00Z'::timestamptz AND received_at < '2026-10-21 05:00Z'::timestamptz\n                      AND investigation_status IS DISTINCT FROM 'informational' AND severity IN ('critical','warning')),\n    'alerts_top', COALESCE((SELECT jsonb_agg(x) FROM (SELECT alertname, severity, count(*) n FROM public.operational_alert_events\n         WHERE received_at >= '2026-10-20 05:00Z'::timestamptz AND received_at < '2026-10-21 05:00Z'::timestamptz AND investigation_status IS DISTINCT FROM 'informational' AND severity IN ('critical','warning')\n         GROUP BY 1,2 ORDER BY 3 DESC LIMIT 8) x), '[]'::jsonb),\n    'alert_names', COALESCE((SELECT jsonb_object_agg(alertname, n) FROM (SELECT COALESCE(alertname,'unknown') alertname, count(*) n FROM public.operational_alert_events\n         WHERE received_at >= '2026-10-20 05:00Z'::timestamptz AND received_at < '2026-10-21 05:00Z'::timestamptz AND investigation_status IS DISTINCT FROM 'informational' AND severity = 'critical'\n         GROUP BY 1) x), '{}'::jsonb),\n    'alerts_fixed', (SELECT count(*) FROM public.operational_alert_events WHERE investigation_touched_at >= '2026-10-20 05:00Z'::timestamptz AND investigation_touched_at < '2026-10-21 05:00Z'::timestamptz\n                       AND investigation_status = 'verified_fixed'),\n    'financial_alerts_new', (SELECT jsonb_build_object('critical', count(*) FILTER (WHERE severity = 'critical'), 'warning', count(*) FILTER (WHERE severity = 'warning'))\n                               FROM public.financial_alerts WHERE created_at >= '2026-10-20 05:00Z'::timestamptz AND created_at < '2026-10-21 05:00Z'::timestamptz),\n    'financial_alerts_open', (SELECT count(*) FROM public.financial_alerts WHERE NOT resolved AND severity IN ('critical','warning')),\n    'drift_open', (SELECT count(*) FROM public.ca_drift_incidents WHERE resolved_at IS NULL),\n    'drift_past_deadline', (SELECT count(*) FROM public.ca_drift_incidents WHERE resolved_at IS NULL AND deadline_at < '2026-10-21 05:00Z'::timestamptz),\n    'ledger_findings', (SELECT count(*) FROM public.ca_ledger_invariant_findings WHERE found_at >= '2026-10-20 05:00Z'::timestamptz AND found_at < '2026-10-21 05:00Z'::timestamptz),\n    'diamond_incidents_new', (SELECT count(*) FROM public.ca_diamond_incidents WHERE occurred_at >= '2026-10-20 05:00Z'::timestamptz AND occurred_at < '2026-10-21 05:00Z'::timestamptz AND severity <> 'info'),\n    'client_errors', (SELECT COALESCE(sum(occurrences),0) FROM public.client_error_events WHERE received_at >= '2026-10-20 05:00Z'::timestamptz AND received_at < '2026-10-21 05:00Z'::timestamptz),\n    'client_errors_top', COALESCE((SELECT jsonb_agg(x) FROM (SELECT COALESCE(NULLIF(code,''), error_name, 'unknown') k, sum(occurrences) n\n         FROM public.client_error_events WHERE received_at >= '2026-10-20 05:00Z'::timestamptz AND received_at < '2026-10-21 05:00Z'::timestamptz GROUP BY 1 ORDER BY 2 DESC LIMIT 5) x), '[]'::jsonb),\n    'db_timeouts', (SELECT COALESCE(sum(occurrences),0) FROM public.client_error_events WHERE received_at >= '2026-10-20 05:00Z'::timestamptz AND received_at < '2026-10-21 05:00Z'::timestamptz AND code = '57014'),\n    -- An app crash is an error boundary catching a render failure. The auth\n    -- flow''2026-10-20 05:00Z'::timestamptz own failure reports (boundary 'auth': a wrong password, an\n    -- unconfirmed email) and delivery probes share client_crash_log but are\n    -- not crashes (2026-10-16: both \"app crashes\" on Oct 15 were login form\n    -- refusals, DailyDigest.client_crash).\n    'crashes', (SELECT count(*) FROM public.client_crash_log WHERE created_at >= '2026-10-20 05:00Z'::timestamptz AND created_at < '2026-10-21 05:00Z'::timestamptz\n                  AND boundary IS DISTINCT FROM 'auth' AND error_name IS DISTINCT FROM 'Probe'),\n    'signup_errors', (SELECT count(*) FROM public.signup_errors WHERE occurred_at >= '2026-10-20 05:00Z'::timestamptz AND occurred_at < '2026-10-21 05:00Z'::timestamptz),\n    'probe_failures', COALESCE((SELECT jsonb_object_agg(probe_name, n) FROM (SELECT COALESCE(probe_name,'unknown') probe_name, count(*) n FROM public.probe_heartbeats\n         WHERE occurred_at >= '2026-10-20 05:00Z'::timestamptz AND occurred_at < '2026-10-21 05:00Z'::timestamptz AND status = 'failed' GROUP BY 1) x), '{}'::jsonb),\n    -- signals between two horses are the house playing itself; only pairs with a real player count\n    'collusion_signals', (SELECT count(*) FROM public.ca_collusion_signals c WHERE c.detected_at >= '2026-10-20 05:00Z'::timestamptz AND c.detected_at < '2026-10-21 05:00Z'::timestamptz AND NOT COALESCE(c.both_cert,false)\n                           AND EXISTS (SELECT 1 FROM smarter_private.sp_real_humans hu WHERE hu.id IN (c.user_a, c.user_b))),\n    'collusion_signals_horse_only', (SELECT count(*) FROM public.ca_collusion_signals c WHERE c.detected_at >= '2026-10-20 05:00Z'::timestamptz AND c.detected_at < '2026-10-21 05:00Z'::timestamptz AND NOT COALESCE(c.both_cert,false)\n                           AND NOT EXISTS (SELECT 1 FROM smarter_private.sp_real_humans hu WHERE hu.id IN (c.user_a, c.user_b))),\n    'beta_accounts_flagged', COALESCE((SELECT jsonb_agg(DISTINCT p.username) FROM public.ca_collusion_signals c\n         JOIN public.profiles p ON p.id IN (c.user_a, c.user_b)\n        WHERE c.detected_at >= '2026-10-20 05:00Z'::timestamptz AND c.detected_at < '2026-10-21 05:00Z'::timestamptz AND p.username ~* '^(kingfish|danimal)'), '[]'::jsonb),\n    'push', (SELECT jsonb_build_object('sent', COALESCE(sum(sent),0), 'failed', COALESCE(sum(failed),0))\n               FROM public.push_dispatch_runs WHERE started_at >= '2026-10-20 05:00Z'::timestamptz AND started_at < '2026-10-21 05:00Z'::timestamptz)\n  ) "
+}

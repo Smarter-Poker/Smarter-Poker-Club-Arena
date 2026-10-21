@@ -32,7 +32,11 @@ const fromChain = (table?: string) => {
   return chain;
 };
 vi.mock('../src/lib/supabase', () => ({
-  supabase: { rpc: (name: string, args: Record<string, unknown>) => durableIntents.call(name, args, () => rpc(name, args)), from: (t: string) => fromChain(t) },
+  supabase: {
+    rpc: (name: string, args: Record<string, unknown>) =>
+      durableIntents.call(name, args, () => rpc(name, args)),
+    from: (t: string) => fromChain(t),
+  },
 }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/hooks/useAuthUser', () => ({

@@ -1,9 +1,7 @@
 {
   "_owner": "fix/hand-wallet-player-levels-01a15f7c",
   "_comment": "Promised source objects only. Not an installation claim. Apply exact merged migrations and record production readback separately.",
-  "tables": [
-    "union_wallet_browser_intents"
-  ],
+  "tables": ["union_wallet_browser_intents"],
   "functions": [
     "fn_union_wallet_reserve_intent",
     "fn_union_wallet_acknowledge_intent",

@@ -40,7 +40,11 @@ const fromChain = (table?: string) => {
   return chain;
 };
 vi.mock('../src/lib/supabase', () => ({
-  supabase: { rpc: (name: string, args: Record<string, unknown>) => durableIntents.call(name, args, () => rpc(name, args)), from: (t: string) => fromChain(t) },
+  supabase: {
+    rpc: (name: string, args: Record<string, unknown>) =>
+      durableIntents.call(name, args, () => rpc(name, args)),
+    from: (t: string) => fromChain(t),
+  },
 }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/hooks/useAuthUser', () => ({
@@ -368,7 +372,10 @@ describe('UnionWalletModal', () => {
       fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 
       expect(await screen.findByRole('status')).toHaveTextContent(/sent 250/i);
-      expect(rpc).toHaveBeenCalledWith('fn_union_send_to_member', expect.objectContaining({p_op_id: expect.stringMatching(/^[0-9a-f-]{36}$/)}));
+      expect(rpc).toHaveBeenCalledWith(
+        'fn_union_send_to_member',
+        expect.objectContaining({ p_op_id: expect.stringMatching(/^[0-9a-f-]{36}$/) })
+      );
     } finally {
       setItem.mockRestore();
     }

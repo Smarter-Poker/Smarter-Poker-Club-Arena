@@ -114,7 +114,8 @@ describe('the actual manager resolves raw level duration before applying acceler
                 durationMinutes: 5,
               }),
             ]);
-            const expected = accelerated && closed ? Math.max(5, Math.ceil(minutes / 2)) : Math.max(5, minutes);
+            const expected =
+              accelerated && closed ? Math.max(5, Math.ceil(minutes / 2)) : Math.max(5, minutes);
             for (const index of [0, 1, 3, 9]) {
               const level = state.resolveBlindLevel(structure, index);
               expect(state.levelDurationMs(level)).toBe(expected * 60000);

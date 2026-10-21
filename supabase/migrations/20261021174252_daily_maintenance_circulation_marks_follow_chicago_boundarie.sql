@@ -1,3 +1,4 @@
+-- periodic-work: Retimes the existing read-only maintenance circulation observations to the owner-requested daily break; no game, payment, release or repair is performed.
 -- Align existing observation-only circulation marks with daily Chicago maintenance.
 -- @live-proof: (SELECT position('America/Chicago' in pg_get_functiondef('public.fn_ca_capture_freeze_mark(text)'::regprocedure)) > 0)
 BEGIN;

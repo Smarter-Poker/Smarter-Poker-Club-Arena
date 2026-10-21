@@ -490,6 +490,8 @@ BEGIN
 END $function$
 $definition$;
  SELECT jsonb_build_array(proowner,proacl,prosecdef,provolatile,proconfig,proparallel,proisstrict)INTO after_meta FROM pg_proc WHERE oid='smarter_private.record_rakeback_payer_contracts()'::regprocedure;IF before_meta IS DISTINCT FROM after_meta THEN RAISE EXCEPTION 'confirmed_payer_metadata_not_preserved';END IF;END $patch$;
+-- Explicitly retain the captured postgres-only full calculator ACL.
+REVOKE ALL ON FUNCTION public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[]) FROM PUBLIC,anon,authenticated,service_role;
 -- Explicit private legacy transition; installation performs no admissions.
 CREATE FUNCTION smarter_private.admit_legacy_rakeback_payer_contracts(p_calculations bigint[])
  RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,public AS $legacy$

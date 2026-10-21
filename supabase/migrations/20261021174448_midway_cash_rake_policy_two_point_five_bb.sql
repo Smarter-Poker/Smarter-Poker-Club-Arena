@@ -5,12 +5,29 @@ BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '60s';
 
--- Take every hot-table lock up front, in the order live requests take them
--- (clubs -> tables -> hand_history). Three installs on 2026-10-21 were refused:
--- one lock timeout and two deadlocks (40P01), because the first ALTER held
--- hand_history while waiting for tables/clubs that live requests held and
--- needed hand_history after. Nothing committed on any attempt.
-LOCK TABLE public.clubs, public.tables, public.hand_history IN ACCESS EXCLUSIVE MODE;
+-- Take every hot-table lock up front without ever waiting long while holding
+-- one. Live requests take clubs/tables/hand_history in more than one order, so
+-- a single blocking LOCK deadlocked on 2026-10-21 (four installs refused, one
+-- lock timeout and three 40P01; nothing committed). Each try waits at most
+-- 200 ms, well under deadlock_timeout (1 s), so this transaction always backs
+-- off first: no live request is ever chosen as a deadlock victim and none
+-- waits more than 200 ms behind it. A failed try rolls back its subtransaction,
+-- releasing anything it took, then sleeps briefly and tries again.
+DO $locks$
+DECLARE i int;
+BEGIN
+ FOR i IN 1..100 LOOP
+  BEGIN
+   PERFORM set_config('lock_timeout','200ms',true);
+   LOCK TABLE public.clubs, public.tables, public.hand_history IN ACCESS EXCLUSIVE MODE;
+   PERFORM set_config('lock_timeout','3s',true);
+   RETURN;
+  EXCEPTION WHEN lock_not_available OR deadlock_detected THEN
+   PERFORM pg_sleep(0.1 + random()*0.15);
+  END;
+ END LOOP;
+ RAISE EXCEPTION 'clubs/tables/hand_history locks not obtained in 100 short tries';
+END $locks$;
 
 -- These four pricing readers/setup functions are not watched guards. Do not
 -- declare unrelated guard changes. If that authority changes before install,

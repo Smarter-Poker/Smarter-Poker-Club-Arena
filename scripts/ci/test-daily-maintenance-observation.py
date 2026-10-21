@@ -80,3 +80,7 @@ TRUNCATE engine_maintenance_break_log;
     finally:
         result = run([PG/'pg_ctl', '-D', temp/'data', '-m', 'immediate', '-w', 'stop'])
         assert result.returncode == 0, result.stderr
+
+# Daily mark alignment shares this already-required observation qualification.
+import sys
+subprocess.run([sys.executable, '-B', str(ROOT/'scripts/ci/test-daily-maintenance-marks.py')], check=True)

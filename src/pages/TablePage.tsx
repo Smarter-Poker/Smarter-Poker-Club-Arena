@@ -5703,6 +5703,8 @@ function LiveTablePage({
       tableState.communityCards3,
       tableState.pot,
       tableState.heroSeat,
+      tableState.lastActions,
+      tableState.lastBetAmounts,
     ])
   );
 
@@ -25706,32 +25708,6 @@ function LiveTablePage({
                                 (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
                             </MastheadGameLine>
                           </span>
-                          {/* \u2500\u2500 LINE 3: THE ONE HOUSE RULE THAT CHANGES PLAY \u2500
-                              Dan 2026-09-07, 7C: "YOU HAVE WEIRD TEXT WHERE
-                              THE GAME DYNAMICS ARE, VPIP 30% (FOR ACTION AND
-                              50% FOR MADNESS) IS ALL THAT SHOULD BE THERE (NO
-                              NEED FOR ANYTHING ELSE ABOUT HANDS)"
-
-                              Three things left this row. The ante moved up to
-                              the stakes on line 2 where he asked for it, so
-                              printing it twice is out. The measurement window
-                              ("\u00B7 10 Hands") is an implementation detail of how
-                              the floor is enforced, not a rule anyone plays
-                              differently for. And "Min" stays because the
-                              number is a FLOOR, not the table average - a
-                              player who reads it as a stat has misread the
-                              game they just sat in.
-
-                              A Classic table has no VPIP floor and so prints
-                              no row at all, which is what makes the row mean
-                              something on the tables that do. */}
-                          {tableState.vpipFloor != null && (
-                            <span className="table-brand__line table-brand__line--rules">
-                              <span className="table-brand__vpip">
-                                VPIP {tableState.vpipFloor}% Min
-                              </span>
-                            </span>
-                          )}
                           {/* THE JACKPOT ROW IS GONE (Dan 2026-09-07, item 6).
                               "YOU'VE ADDED THE BOMBPOT TOTAL TO ALL OF THE
                               TABLES, THAT SHOULD NEVER BE THERE."

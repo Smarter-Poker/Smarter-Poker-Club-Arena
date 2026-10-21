@@ -314,6 +314,7 @@ export function classifyChangedPaths(paths) {
   return {
     src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
     server:
+      matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
       playerHistoryQualification ||
       broad ||
@@ -369,6 +370,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
       playerHistoryQualification ||
       bbjFixture ||

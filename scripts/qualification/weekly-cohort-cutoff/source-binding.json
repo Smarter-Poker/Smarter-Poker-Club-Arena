@@ -2,8 +2,8 @@
   "scope": "Exact final narrow/hash-compatible cohort native inputs; no moneyRPC",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 229699,
-      "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
+      "bytes": 229951,
+      "sha256": "53d246ff4d64aee62cab01069a4ea967b20dc7bbdd4f396d25683d5ae5d4b5d6"
     },
     "scripts/qualification/original-flow-eligibility/after-flow.sql": {
       "bytes": 13791,
@@ -238,5 +238,8 @@
       "bytes": 229699,
       "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
     }
+  },
+  "clubNewsOnceRouting20261021": {
+    "reason": "Reviewed CI addition of the club-entry-news native test in accounting shard 2. Refresh only current workflow enforcement bytes; candidate SQL, financial assertions and native result records are unchanged."
   }
 }

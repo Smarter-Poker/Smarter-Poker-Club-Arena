@@ -218,7 +218,8 @@ const BASELINE = new Map<string, number>([
   ['src/pages/CreateUnionPage.tsx', 1],
   ['src/lib/authToken.ts', 1],
   ['src/hooks/useTableChat.ts', 1],
-  ['src/hooks/useEffectiveRake.ts', 1],
+  // 1 -> 0: a failed club-price read stays unknown instead of implying inheritance.
+  ['src/hooks/useEffectiveRake.ts', 0],
   ['src/components/waitlist/WaitlistManager.tsx', 1],
   ['src/components/tournament/TournamentRankingCard.tsx', 1],
   ['src/components/tournament/MysteryBountyPanel.tsx', 1],

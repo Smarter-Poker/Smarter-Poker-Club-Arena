@@ -1,3 +1,5 @@
+import { useCashRakePolicyVersion } from '../../hooks/useCashRakePolicyVersion';
+import { resolveRakeOverride } from '../../lib/rakeOverride';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  NEW CASH GAME (Operation Table Stakes, Slice 1 - OPORD 1.3 section 7 as
@@ -51,7 +53,7 @@ import {
 import { presetsFor, DEFAULT_BLINDS_INDEX } from '../../config/blindsPresets';
 import { isFixedLimitVariant, stakesLabel } from '../../lib/bettingStructure';
 import { isEightOrBetterVariant } from '../../utils/handEvaluator';
-import { getRakeConfig, RAKE_INHERIT } from '../../config/RakeConfig';
+import { getRakeConfig } from '../../config/RakeConfig';
 import { formatCurrency } from '../../lib/utils';
 import CashGameCard, { rulesLineFor } from './CashGameCard';
 import {
@@ -172,6 +174,12 @@ export default function CashGameCreateFlow({
   /* The club's live games, so a rung it already holds is greyed rather than
      refused. Advisory only: the database is the authority, and a read the
      host's role cannot see simply leaves the chip enabled. */
+  const cashPolicyVersion = useCashRakePolicyVersion();
+  const [rakeClub, setRakeClub] = useState<{
+    union_id: string | null;
+    default_rake_percent: number | null;
+    rake_cap: number | null;
+  } | null>(null);
   const [clubUUID, setClubUUID] = useState<string | null>(null);
   const [existingGames, setExistingGames] = useState<ExistingCashGame[]>([]);
   const [existingGamesEpoch, setExistingGamesEpoch] = useState(0);
@@ -275,6 +283,30 @@ export default function CashGameCreateFlow({
       live = false;
     };
   }, [clubId, existingGamesEpoch]);
+
+  useEffect(() => {
+    setRakeClub(null);
+    if (!clubUUID) return;
+    let active = true;
+    void (async () => {
+      const { data, error } = await supabase
+        .from('clubs')
+        .select('union_id, default_rake_percent, rake_cap')
+        .eq('id', clubUUID)
+        .maybeSingle();
+      if (!active) return;
+      if (error) {
+        reportError(error, 'CashGameCreateFlow.rakePolicy');
+        return;
+      }
+      setRakeClub(data);
+    })().catch((error) => {
+      if (active) reportError(error, 'CashGameCreateFlow.rakePolicy');
+    });
+    return () => {
+      active = false;
+    };
+  }, [clubUUID]);
 
   /* Why each rung of the ladder is closed to this template, variant and mode,
      or null when it is open. */
@@ -923,11 +955,18 @@ export default function CashGameCreateFlow({
               into advertising a rate we do not charge.
             */}
             {stakes &&
+              rakeClub &&
+              cashPolicyVersion !== null &&
               (() => {
-                const priced = getRakeConfig(stakes.bb, variant || 'nlh', stakes.sb, {
-                  rakePercent: RAKE_INHERIT,
-                  rakeCapBB: RAKE_INHERIT,
-                });
+                const override = resolveRakeOverride(null, rakeClub);
+                const priced = getRakeConfig(
+                  stakes.bb,
+                  variant || 'nlh',
+                  stakes.sb,
+                  cashPolicyVersion === 1
+                    ? override
+                    : { rakePercent: override?.rakePercent, rakeCapBB: override?.rakeCapBB }
+                );
                 const capInBB = stakes.bb > 0 ? priced.rakeCap / stakes.bb : 0;
                 return (
                   <div className="config-slider" data-testid="cash-create-price">

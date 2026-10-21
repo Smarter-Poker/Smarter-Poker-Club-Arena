@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/club-news-once-20261021: native-qualified migration 20261021180854_club_entry_news_automatically_shown_once.sql installed through Supabase apply_migration on 2026-10-21; independent readback retained in task evidence.",
+  "tables": ["club_entry_news_receipts"],
+  "functions": ["fn_claim_club_entry_news"]
+}

@@ -2292,6 +2292,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
       this.currentHandSawFlopForMoney = false; // ... and the hand's own money-facing flop fact
       // ... and the published schedule this hand is priced by, read above.
       this.currentHandDiamondRakeSchedule = diamondRakeSchedule;
+      this.currentHandCashRakePolicy = undefined;
       this.currentHandReturnedUncalled.clear(); // ... and the returned-uncalled audit map
       this.currentHandInsuranceSettlements = []; // Bible V8 §4.19: Reset insurance settlements
       this.currentHandInsuranceNet = 0; // chip standard 2026-09-04: declared to the stack write
@@ -3226,6 +3227,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         rakeConfig: this.isTournamentTable()
           ? { percent: 0, cap: 0, noFlopNoDrop: true }
           : {
+              cashPolicy: { version: 1, scope: this.getRakeOverride()?.scope ?? 'standard' },
               percent: fullRakeConfig.rakePercent,
               cap: fullRakeConfig.rakeCap,
               noFlopNoDrop: true,
@@ -3317,6 +3319,10 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           : undefined
       );
       const preparedController = this.handController;
+      this.currentHandCashRakePolicy =
+        !config.isTournament && config.asset !== 'diamonds'
+          ? preparedController.getRakeConfigSnapshot()
+          : undefined;
       // KILL POT: the hand exists, so the deal decision is committed. A
       // cancellation is final; a kill stays pending until this hand SETTLES.
       this.killSchedule.commitDeal(killDecision);

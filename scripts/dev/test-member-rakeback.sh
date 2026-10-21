@@ -39,6 +39,14 @@ assert sum(row['success'] for row in results)==1,results
 assert any('Reload Terms' in row.get('error','') for row in results),results
 print('PASS: Concurrent Editors Serialize And Refuse The Stale Writer')
 PY
+# Before the boundary fix, an authenticated direct percentage UPDATE succeeds.
+# The fixture raises afterwards, so the reproduction rolls itself back.
+if "${psql[@]}" -f "$root/tests/fixtures/member-rakeback/browser-boundary.sql" >"$fixture/browser-before" 2>&1; then
+  echo 'FAIL: Browser Boundary Preimage Was Not Reproduced'; exit 1
+fi
+grep -q 'FAIL: Direct Player Percentage Bypassed Authorization' "$fixture/browser-before"
+"${psql[@]}" -f "$root/supabase/migrations/20261021175019_individual_player_rates_cannot_bypass_agreement_authorizatio.sql" -f "$root/tests/fixtures/member-rakeback/browser-boundary.sql"
+"${psql[@]}" -c "SET test.uid='00000000-0000-4000-8000-000000000002';SELECT assert_true((fn_member_rakeback_terms(u(10),u(3),'player',.25,fn_player_rakeback_rate(u(3),u(10),0))->>'success')::boolean,'Authorized RPC Still Writes Through The Hardened Boundary');"
 # The migration cannot be replayed and must leave the installed function intact.
 if "${psql[@]}" -f "$root/supabase/migrations/20261021173355_member_role_panel_edits_individual_rakeback_agreements.sql" >"$fixture/replay" 2>&1; then
   echo 'FAIL: Migration Replay Was Accepted'; exit 1

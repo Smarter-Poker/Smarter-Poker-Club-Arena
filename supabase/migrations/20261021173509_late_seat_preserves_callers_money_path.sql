@@ -152,4 +152,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $function$
 ;
+-- Pin the existing owner-only posture explicitly for source authorization checks.
+REVOKE ALL ON FUNCTION public.fn_seat_late_registrant_before_maintenance_gate(uuid,uuid)
+ FROM PUBLIC,anon,authenticated,service_role;
 COMMIT;

@@ -2,6 +2,8 @@
 TRUNCATE ca_club_data_fact,club_table_daily,ca_club_tournament_daily,ca_club_tournament_player_daily;
 UPDATE table_seats SET left_at=now();
 INSERT INTO unions VALUES ('fade0000-0000-0000-0000-000000000001','Midway Union','00000000-0000-0000-0000-0000000000a1');
+INSERT INTO clubs(id,name) VALUES('fade0000-0000-0000-0000-000000000001','Midway Union Account'),('88000000-0000-0000-0000-000000000099','Empty Member Club') ON CONFLICT DO NOTHING;
+INSERT INTO union_clubs(union_id,club_id) VALUES('fade0000-0000-0000-0000-000000000001','88000000-0000-0000-0000-000000000099');
 INSERT INTO tournaments(id,club_id,union_id,name,tournament_type,status,start_time) VALUES
 ('88000000-0000-0000-0000-000000000001','fade0000-0000-0000-0000-000000000001','fade0000-0000-0000-0000-000000000001','Fixture SNG','SNG','COMPLETED',now()),
 ('88000000-0000-0000-0000-000000000002','fade0000-0000-0000-0000-000000000001','fade0000-0000-0000-0000-000000000001','Fixture Spin','SPIN','COMPLETED',now()),
@@ -17,6 +19,8 @@ INSERT INTO ca_club_data_fact(club_id,stat_date,kind,game_id,user_id,fee,buyins,
 INSERT INTO table_seats(table_id,user_id,club_id,stack,joined_at) VALUES
 ('00000000-0000-0000-0000-0000000000c1','00000000-0000-0000-0000-0000000000b1','a0000000-0000-0000-0000-000000000001',120,now()),
 ('00000000-0000-0000-0000-0000000000c1','00000000-0000-0000-0000-0000000000b2','a4143400-0000-0000-0000-000000000001',40,now());
+INSERT INTO tournaments(id,club_id,name,tournament_type,status,start_time) VALUES('88000000-0000-0000-0000-000000000004','fade0000-0000-0000-0000-000000000001','Satellite Is Not MTT','SATELLITE','COMPLETED',now()-interval '1 day');
+INSERT INTO ca_club_data_fact(club_id,stat_date,kind,game_id,user_id,fee,buyins,cashouts,winnings,last_at) VALUES('fade0000-0000-0000-0000-000000000001',CURRENT_DATE-1,'TOURNAMENT','88000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-0000000000a1',0,0,0,0,now()-interval '1 day');
 SELECT public.fn_ca_reporting_rollups_from_facts(CURRENT_DATE);
 INSERT INTO member_record_daily_facts VALUES
 ('a0000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b1',CURRENT_DATE,false,20,5,NULL),
@@ -28,7 +32,7 @@ BEGIN
  s:=public.ca_club_data_screen('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL,1);
  IF s->'summary'->>'games'<>'5' OR s->'summary'->>'mtt_winnings'<>'7.00' OR s->'summary'->>'total_winnings'<>'22.00' OR s->'summary'->>'fee'<>'24.01' THEN RAISE EXCEPTION 'Union totals wrong: %',s; END IF;
  IF (s->'summary'->>'live_games')::integer<=jsonb_array_length(s->'rows') THEN RAISE EXCEPTION 'live count was limited by page: %',s; END IF;
- s:=public.ca_club_data_screen('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'MTT','ALL',NULL,200);
+ s:=public.ca_club_data_screen('fade0000-0000-0000-0000-000000000001',CURRENT_DATE-1,CURRENT_DATE,'MTT','ALL',NULL,200);
  IF s->'summary'->>'games'<>'2' OR s->'summary'->>'mtt_winnings'<>'7.00' OR s->'summary'->>'total_winnings'<>'7.00' THEN RAISE EXCEPTION 'MTT includes SNG/Spin or misses a member club: %',s; END IF;
  IF EXISTS(SELECT 1 FROM jsonb_array_elements(s->'rows') x WHERE x->>'kind'<>'MTT') THEN RAISE EXCEPTION 'MTT row misclassified'; END IF;
  s:=public.ca_club_data_screen('a0000000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL,200);
@@ -44,6 +48,11 @@ BEGIN
  IF (pg->>'filtered_count')::integer<>5 OR (SELECT sum((x->>'winnings')::numeric) FROM jsonb_array_elements(pg->'rows') x)<>22 THEN RAISE EXCEPTION 'Paged rows fail reconciliation: %',pg; END IF;
  IF (SELECT sum((x->>'fee')::numeric) FROM jsonb_array_elements(pg->'rows') x)<>24.01 THEN RAISE EXCEPTION 'Paged fees fail reconciliation: %',pg; END IF;
  IF (SELECT sum(winnings) FROM public.fn_ca_club_games('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL))<>22 THEN RAISE EXCEPTION 'Export winnings disagree'; END IF;
+ PERFORM set_config('test.uid','00000000-0000-0000-0000-0000000000a1',false);
+ r:=public.ca_rake_snapshot_v2('union',NULL,'fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,NULL,200);
+ IF (r->'summary'->>'total_winnings')::numeric<>22 OR (r->'summary'->>'mtt_winnings')::numeric<>7 OR (r->'summary'->>'fee')::numeric<>24.01 OR (r->'summary'->>'games')::integer<>5 THEN RAISE EXCEPTION 'Dedicated union page disagrees: %',r; END IF;
+ IF jsonb_array_length(r->'breakdown')<>4 OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(r->'breakdown') x WHERE x->>'name'='Empty Member Club') THEN RAISE EXCEPTION 'Union breakdown omitted empty member club: %',r; END IF;
+ IF (SELECT sum((x->>'winnings')::numeric) FROM jsonb_array_elements(r->'series') x)<>22 THEN RAISE EXCEPTION 'Series does not reconcile'; END IF;
  r:=public.ca_club_player_breakdown('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,200);
  IF (r->>'player_count')::integer<2 OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(r->'players') x WHERE x->>'user_id'='00000000-0000-0000-0000-0000000000b2') THEN RAISE EXCEPTION 'Union player breakdown missed member club: %',r; END IF;
  pg:=public.ca_club_player_page_core_20261006('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'winners',NULL,NULL,200);
@@ -67,5 +76,16 @@ END $test$;
 SELECT set_config('test.uid','00000000-0000-0000-0000-0000000000a1',false);
 DO $test$ BEGIN
  IF (public.ca_club_data_screen('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE)->'summary'->>'games')::integer<>5 THEN RAISE EXCEPTION 'union overseer cannot read union'; END IF;
+END $test$;
+DO $test$ DECLARE r jsonb; again jsonb; BEGIN
+ r:=public.ca_rake_export_start_v2('union','fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,NULL,NULL,'rake','88000000-0000-0000-0000-000000000088');
+ IF (r->>'total_rows')::integer<>4 OR (r->>'total_amount')::numeric<>24.01 THEN RAISE EXCEPTION 'Export disagrees: %',r; END IF;
+ again:=public.ca_rake_export_start_v2('union','fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,NULL,NULL,'rake','88000000-0000-0000-0000-000000000088');
+ IF again<>r THEN RAISE EXCEPTION 'Export request replay changed receipt'; END IF;
+END $test$;
+\connect live postgres 127.0.0.1 @PORT@
+DO $test$ BEGIN
+ IF (SELECT round(sum((payload->>'fee')::numeric),2) FROM ca_club_data_export_rows)<>24.01 THEN RAISE EXCEPTION 'Immutable export precision disagrees'; END IF;
+ IF (SELECT sum((payload->>'winnings')::numeric) FROM ca_club_data_export_rows)<>22 THEN RAISE EXCEPTION 'Immutable export rows disagree'; END IF;
 END $test$;
 DO $test$ BEGIN RAISE NOTICE 'UNION MTT SCENARIO PASSED'; END $test$;

@@ -83,6 +83,7 @@ try:
        "CREATE FUNCTION fn_can_see_horse_flag(uuid) RETURNS boolean LANGUAGE sql AS $$SELECT false$$; "
        "CREATE FUNCTION ca_club_member_fee_totals(uuid,date,date) RETURNS TABLE(user_id uuid,total_fees numeric) LANGUAGE sql AS $$SELECT f.user_id,sum(f.fee) FROM ca_club_data_fact f WHERE club_id=$1 AND stat_date BETWEEN $2 AND $3 GROUP BY f.user_id$$;")
     run(psql("live"), (ROOT / "tests/fixtures/club-data-report-db/reporting-preimages.sql").read_text())
+    run(psql("live"), (ROOT / "tests/fixtures/club-data-report-db/rake-v2-fixture.sql").read_text())
     correction=(ROOT / "supabase/migrations/20261021202610_club_data_totals_use_exact_game_types_and_union_scope.sql").read_text()
     scenario=(ROOT / "tests/fixtures/club-data-report-db/union-mtt-scenario.sql").read_text().replace("@PORT@",str(PORT))
     setup,assertions=scenario.split('DO $test$',1)

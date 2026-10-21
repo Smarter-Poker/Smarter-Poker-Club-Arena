@@ -208,7 +208,7 @@ BEGIN
     ), described AS (
       SELECT CASE WHEN tp.k = 'CASH' THEN 'CASH'
                   WHEN tr.tournament_type = 'SPIN' THEN 'SPIN'
-                  WHEN tr.tournament_type = 'SNG' THEN 'SNG' ELSE 'MTT' END AS kind,
+                  WHEN tr.tournament_type = 'SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END AS kind,
              tp.game_id::text AS id,
              CASE WHEN tp.k = 'CASH' THEN COALESCE(t.name, 'Unnamed') ELSE COALESCE(tr.name, 'Tournament') END AS name,
              CASE WHEN tp.k = 'CASH' THEN UPPER(COALESCE(t.game_variant, 'nlh'))
@@ -217,7 +217,7 @@ BEGIN
                     CASE WHEN COALESCE(t.game_variant,'') ILIKE '%plo%' OR COALESCE(t.game_variant,'') ILIKE '%omaha%' THEN 'OMAHA'
                          WHEN COALESCE(t.game_variant,'') ILIKE '%mixed%' OR COALESCE(t.game_mode,'') ILIKE '%mixed%' THEN 'MIXED'
                          ELSE 'HOLDEM' END
-                  WHEN tr.tournament_type = 'SPIN' THEN 'SPIN' WHEN tr.tournament_type = 'SNG' THEN 'SNG' ELSE 'MTT' END AS game_class,
+                  WHEN tr.tournament_type = 'SPIN' THEN 'SPIN' WHEN tr.tournament_type = 'SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END AS game_class,
              CASE WHEN tp.k <> 'CASH' THEN 'NA'
                   WHEN COALESCE(t.big_blind,0) < 1 THEN 'MICRO'
                   WHEN COALESCE(t.big_blind,0) < 5 THEN 'SMALL'
@@ -320,7 +320,7 @@ BEGIN
     -- Read only when a filter needs it: v_attrs is a one-time filter, so the
     -- tournaments join is never executed for the plain screen.
     SELECT tu.*, COALESCE(tr.name, 'Tournament') AS name,
-           CASE WHEN tr.tournament_type = 'SPIN' THEN 'SPIN' WHEN tr.tournament_type = 'SPIN' THEN 'SPIN' WHEN tr.tournament_type = 'SNG' THEN 'SNG' ELSE 'MTT' END AS game_class
+           CASE WHEN tr.tournament_type = 'SPIN' THEN 'SPIN' WHEN tr.tournament_type = 'SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END AS game_class
       FROM tour tu JOIN public.tournaments tr ON tr.id = tu.game_id
      WHERE v_attrs
   ), filtered AS (
@@ -364,7 +364,7 @@ BEGIN
   ), described AS (
     SELECT CASE WHEN tp.k = 'CASH' THEN 'CASH'
                 WHEN tr.tournament_type = 'SPIN' THEN 'SPIN'
-                WHEN tr.tournament_type = 'SNG' THEN 'SNG' ELSE 'MTT' END AS kind,
+                WHEN tr.tournament_type = 'SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END AS kind,
            tp.game_id::text AS id,
            CASE WHEN tp.k = 'CASH' THEN COALESCE(t.name, 'Unnamed') ELSE COALESCE(tr.name, 'Tournament') END AS name,
            CASE WHEN tp.k = 'CASH' THEN UPPER(COALESCE(t.game_variant, 'nlh'))
@@ -373,7 +373,7 @@ BEGIN
                   CASE WHEN COALESCE(t.game_variant,'') ILIKE '%plo%' OR COALESCE(t.game_variant,'') ILIKE '%omaha%' THEN 'OMAHA'
                        WHEN COALESCE(t.game_variant,'') ILIKE '%mixed%' OR COALESCE(t.game_mode,'') ILIKE '%mixed%' THEN 'MIXED'
                        ELSE 'HOLDEM' END
-                WHEN tr.tournament_type = 'SPIN' THEN 'SPIN' WHEN tr.tournament_type = 'SNG' THEN 'SNG' ELSE 'MTT' END AS game_class,
+                WHEN tr.tournament_type = 'SPIN' THEN 'SPIN' WHEN tr.tournament_type = 'SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END AS game_class,
            CASE WHEN tp.k <> 'CASH' THEN 'NA'
                 WHEN COALESCE(t.big_blind,0) < 1 THEN 'MICRO'
                 WHEN COALESCE(t.big_blind,0) < 5 THEN 'SMALL'
@@ -512,9 +512,9 @@ AS $function$
       LEFT JOIN public.profiles pr ON pr.id=t.created_by
     UNION ALL
     SELECT CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN'
-                WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,
+                WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
       tr.id::text,COALESCE(tr.name,'Tournament'),UPPER(COALESCE(tr.variant,tr.game_type,'nlh')),
-      CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,
+      CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
       0::numeric,0::numeric,NULL::numeric,tr.start_time,NULL::uuid,tr.status,
       round(COALESCE(f.fee,0),2),round(COALESCE(f.winnings,0),2),0::bigint,
       COALESCE(tp.players,0)::integer,''::text
@@ -574,9 +574,9 @@ BEGIN
         FROM cash c JOIN public.tables t ON t.id=c.table_id
       UNION ALL
       SELECT CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN'
-                  WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,
+                  WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
         tr.id::text,COALESCE(tr.name,'Tournament'),UPPER(COALESCE(tr.variant,tr.game_type,'nlh')),
-        CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,
+        CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
         0::numeric,0::numeric,NULL::numeric,tr.start_time,NULL::uuid,tr.status,
         round(COALESCE(f.fee,0),2),round(COALESCE(f.winnings,0),2),0::bigint,
         COALESCE(tp.players,0)::integer
@@ -631,9 +631,9 @@ BEGIN
         LEFT JOIN public.profiles pr ON pr.id=t.created_by
       UNION ALL
       SELECT CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN'
-                  WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,
+                  WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
         tr.id::text,COALESCE(tr.name,'Tournament'),UPPER(COALESCE(tr.variant,tr.game_type,'nlh')),
-        CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,'NA',
+        CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,'NA',
         0::numeric,0::numeric,NULL::numeric,tr.start_time,NULL::uuid,tr.status,
         round(COALESCE(f.fee,0),2),round(COALESCE(f.winnings,0),2),0::bigint,0::integer,
         ''::text,NULL::text
@@ -751,10 +751,10 @@ BEGIN
         FROM cash c LEFT JOIN public.profiles pr ON pr.id=c.created_by
       UNION ALL
       SELECT CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN'
-                  WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,
+                  WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
              tr.id::text,COALESCE(tr.name,'Tournament'),
              UPPER(COALESCE(tr.variant,tr.game_type,'nlh')),
-             CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,
+             CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
              'NA',0::numeric,0::numeric,NULL::numeric,tr.start_time,NULL::uuid,
              tr.status,f.fee,f.winnings,0::bigint,COALESCE(tp.players,0),
              ''::text,NULL::text
@@ -814,7 +814,7 @@ BEGIN
         FROM cash c JOIN public.tables t ON t.id=c.table_id
         LEFT JOIN public.profiles pr ON pr.id=t.created_by
       UNION ALL
-      SELECT CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,'NA',
+      SELECT CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,'NA',
              tr.id::text,COALESCE(tr.name,'Tournament'),'',f.fee,f.winnings,0::bigint
         FROM tournament_facts f JOIN public.tournaments tr ON tr.id=f.tournament_id
     ), filtered AS (
@@ -960,9 +960,9 @@ BEGIN
         LEFT JOIN public.profiles pr ON pr.id=t.created_by
       UNION ALL
       SELECT CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN'
-                  WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,
+                  WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
              tr.id::text,
-             CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' ELSE 'MTT' END,
+             CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
              'NA',
              -- The name is read here only to search it. Unsearched, this branch
              -- needs id, type and start time alone (idx_tournaments_game_page_keys).
@@ -1309,5 +1309,650 @@ REVOKE ALL ON FUNCTION public.ca_club_player_breakdown(uuid,date,date,integer) F
 REVOKE ALL ON FUNCTION public.ca_club_player_page_core_20261006(uuid,date,date,text,text,jsonb,integer) FROM PUBLIC,anon;
 REVOKE ALL ON FUNCTION public.fn_ca_club_data_scope(uuid) FROM PUBLIC,anon;
 REVOKE ALL ON FUNCTION public.ca_club_data_screen(uuid,date,date,text,text,text,integer) FROM PUBLIC,anon;
+
+-- The dedicated Union Data page uses the long-window rake endpoint. Its v2
+-- contract shares the authoritative facts and current cash stacks, without
+-- changing the legacy endpoint while old clients are still open.
+CREATE OR REPLACE FUNCTION public.fn_ca_rake_felt_v2(p_clubs uuid[],p_start date,p_end date)
+RETURNS TABLE(table_id uuid,club_id uuid,stat_date date,felt numeric) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $function$
+ SELECT s.table_id,coalesce(s.club_id,public.fn_ca_cash_reporting_club(t.union_id,t.club_id,s.user_id)),(s.joined_at AT TIME ZONE 'UTC')::date,sum(s.stack)
+ FROM public.table_seats s JOIN public.tables t ON t.id=s.table_id AND t.tournament_id IS NULL
+ WHERE s.left_at IS NULL AND s.user_id IS NOT NULL AND coalesce(s.status,'active')<>'left' AND coalesce(s.stack,0)>0
+ AND (s.joined_at AT TIME ZONE 'UTC')::date BETWEEN p_start AND p_end
+ AND coalesce(s.club_id,public.fn_ca_cash_reporting_club(t.union_id,t.club_id,s.user_id))=ANY(p_clubs)
+ GROUP BY 1,2,3;
+$function$;
+REVOKE ALL ON FUNCTION public.fn_ca_rake_felt_v2(uuid[],date,date) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_ca_rake_window_v2(p_clubs uuid[],p_start date,p_end date)
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $function$
+ WITH f AS MATERIALIZED (
+ SELECT d.*,tr.tournament_type FROM public.ca_club_data_fact d LEFT JOIN public.tournaments tr ON d.kind='TOURNAMENT' AND tr.id=d.game_id
+ WHERE d.club_id=ANY(p_clubs) AND d.stat_date BETWEEN p_start AND p_end
+ ), felt AS MATERIALIZED (SELECT * FROM public.fn_ca_rake_felt_v2(p_clubs,p_start,p_end)),
+ a AS (SELECT coalesce(sum(fee),0) fee,coalesce(sum(winnings),0) win,
+ coalesce(sum(fee) FILTER(WHERE kind='CASH'),0) cf,coalesce(sum(winnings) FILTER(WHERE kind='CASH'),0) cw,
+ coalesce(sum(fee) FILTER(WHERE kind='TOURNAMENT'),0) tf,coalesce(sum(winnings) FILTER(WHERE kind='TOURNAMENT'),0) tw,
+ coalesce(sum(fee) FILTER(WHERE kind='TOURNAMENT' AND tournament_type='MTT'),0) mf,coalesce(sum(winnings) FILTER(WHERE kind='TOURNAMENT' AND tournament_type='MTT'),0) mw FROM f),
+ games AS(SELECT kind,game_id FROM f UNION SELECT 'CASH',table_id FROM felt),
+ hands AS(SELECT CASE WHEN cardinality(p_clubs)>1 THEN
+ (SELECT count(*) FROM public.rake_records r WHERE r.created_at>=p_start::timestamp AT TIME ZONE 'UTC' AND r.created_at<(p_end+1)::timestamp AT TIME ZONE 'UTC'
+ AND r.tournament_id IS NULL AND NOT coalesce(r.is_tournament,false)
+ AND EXISTS(SELECT 1 FROM public.club_table_daily c WHERE c.club_id=ANY(p_clubs) AND c.stat_date BETWEEN p_start AND p_end AND c.table_id=r.table_id))
+ ELSE (SELECT coalesce(sum(c.hands),0)::bigint FROM public.club_table_daily c WHERE c.club_id=ANY(p_clubs) AND c.stat_date BETWEEN p_start AND p_end) END n)
+ SELECT jsonb_build_object('games',(SELECT count(*) FROM games),'cash_games',(SELECT count(*) FROM games WHERE kind='CASH'),
+ 'mtt_games',(SELECT count(DISTINCT game_id) FROM f WHERE kind='TOURNAMENT' AND tournament_type='MTT'),
+ 'tournament_games',(SELECT count(*) FROM games WHERE kind='TOURNAMENT'),'hands',(SELECT n FROM hands),
+ 'fee_exact',a.fee,'cash_fee_exact',a.cf,'mtt_fee_exact',a.mf,'tournament_fee_exact',a.tf,'fee',round(a.fee,2),'cash_fee',round(a.cf,2),'mtt_fee',round(a.mf,2),'tournament_fee',round(a.tf,2),
+ 'total_winnings',round(a.win+coalesce((SELECT sum(felt) FROM felt),0),2),
+ 'cash_winnings',round(a.cw+coalesce((SELECT sum(felt) FROM felt),0),2),'mtt_winnings',round(a.mw,2),'tournament_winnings',round(a.tw,2)) FROM a;
+$function$;
+REVOKE ALL ON FUNCTION public.fn_ca_rake_window_v2(uuid[],date,date) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_ca_rake_series_v2(p_clubs uuid[],p_start date,p_end date,p_bucket text)
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $function$
+ WITH rows AS(SELECT d.stat_date d,d.fee,d.winnings FROM public.ca_club_data_fact d WHERE d.club_id=ANY(p_clubs) AND d.stat_date BETWEEN p_start AND p_end
+ UNION ALL SELECT stat_date,0,felt FROM public.fn_ca_rake_felt_v2(p_clubs,p_start,p_end)),
+ agg AS(SELECT date_trunc(CASE WHEN p_bucket IN('day','week','month') THEN p_bucket ELSE 'day' END,d::timestamp)::date bucket,sum(fee) fee,sum(winnings) winnings FROM rows GROUP BY 1)
+ SELECT coalesce(jsonb_agg(to_jsonb(a) ORDER BY bucket),'[]'::jsonb) FROM agg a;
+$function$;
+REVOKE ALL ON FUNCTION public.fn_ca_rake_series_v2(uuid[],date,date,text) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_ca_rake_by_club_v2(p_clubs uuid[],p_start date,p_end date,p_limit integer,p_offset integer DEFAULT 0,p_search text DEFAULT NULL,p_sort text DEFAULT 'rake')
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $function$
+ WITH ids AS(SELECT DISTINCT unnest(p_clubs) id),
+ listed AS(SELECT c.id club_id,c.name,c.code,coalesce(c.avatar_url,c.logo_url) avatar_url,
+ (w.s->>'fee_exact')::numeric fee,(w.s->>'cash_fee_exact')::numeric cash_fee,(w.s->>'mtt_fee_exact')::numeric mtt_fee,(w.s->>'tournament_fee_exact')::numeric tournament_fee,
+ (w.s->>'total_winnings')::numeric winnings,(w.s->>'hands')::bigint hands,(w.s->>'games')::bigint games,public.ca_can_read_club_production(c.id) can_drill
+ FROM ids JOIN public.clubs c ON c.id=ids.id CROSS JOIN LATERAL(SELECT public.fn_ca_rake_window_v2(ARRAY[c.id],p_start,p_end) s) w),
+ filtered AS(SELECT * FROM listed WHERE nullif(btrim(coalesce(p_search,'')),'') IS NULL OR name ILIKE '%'||public.fn_like_escape(btrim(p_search))||'%' ESCAPE '\' OR coalesce(code,'') ILIKE '%'||public.fn_like_escape(btrim(p_search))||'%' ESCAPE '\'),
+ page AS(SELECT * FROM filtered ORDER BY CASE WHEN p_sort='name' THEN name END,CASE WHEN p_sort='hands' THEN hands END DESC,CASE WHEN p_sort NOT IN('name','hands') THEN fee END DESC,name,club_id OFFSET greatest(coalesce(p_offset,0),0) LIMIT greatest(least(coalesce(p_limit,50),200),1))
+ SELECT jsonb_build_object('rows',coalesce((SELECT jsonb_agg(to_jsonb(p)) FROM page p),'[]'::jsonb),'total',(SELECT count(*) FROM filtered),'total_direct',(SELECT round(coalesce(sum(fee),0),2) FROM listed),'total_commission',NULL);
+$function$;
+REVOKE ALL ON FUNCTION public.fn_ca_rake_by_club_v2(uuid[],date,date,integer,integer,text,text) FROM PUBLIC,anon,authenticated,service_role;
+CREATE OR REPLACE FUNCTION public.ca_rake_snapshot_v2(p_scope text DEFAULT 'club'::text, p_club_id uuid DEFAULT NULL::uuid, p_union_id uuid DEFAULT NULL::uuid, p_start date DEFAULT NULL::date, p_end date DEFAULT NULL::date, p_agent_user_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 50, p_offset integer DEFAULT 0, p_search text DEFAULT NULL::text, p_sort text DEFAULT 'rake'::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ SET statement_timeout TO '20s'
+ SET work_mem TO '64MB'
+AS $function$
+DECLARE
+  v_scope text := lower(COALESCE(NULLIF(btrim(p_scope),''),'club'));
+  v_today date := (now() AT TIME ZONE 'UTC')::date;
+  v_end date := LEAST(COALESCE(p_end, v_today), v_today);
+  v_start date := COALESCE(p_start, v_end - 6);
+  v_off int := GREATEST(COALESCE(p_offset,0),0);
+  v_q text := NULLIF(btrim(COALESCE(p_search,'')),'');
+  v_sort text := lower(COALESCE(NULLIF(btrim(p_sort),''),'rake'));
+  v_days int; v_pstart date; v_pend date; v_bucket text;
+  v_union uuid; v_clubs uuid[];
+  v_cur jsonb; v_prev jsonb; v_series jsonb;
+  v_pack jsonb := jsonb_build_object('rows','[]'::jsonb,'total',0,'total_direct',0);
+  v_kind text := 'none'; v_label text;
+  v_agent jsonb; v_agent_p jsonb; v_live boolean := false;
+BEGIN
+  IF v_scope NOT IN ('club','union','agent') THEN
+    RAISE EXCEPTION 'unknown scope %', v_scope USING ERRCODE='22023'; END IF;
+  IF v_start < v_end - 730 THEN v_start := v_end - 730; END IF;
+  IF v_start > v_end THEN v_start := v_end; END IF;
+  v_days := (v_end - v_start) + 1; v_pend := v_start - 1; v_pstart := v_pend - (v_days - 1);
+  v_bucket := CASE WHEN v_days <= 62 THEN 'day' WHEN v_days <= 400 THEN 'week' ELSE 'month' END;
+
+  IF v_scope = 'agent' THEN
+    IF p_club_id IS NULL THEN RAISE EXCEPTION 'agent scope needs a club' USING ERRCODE='22023'; END IF;
+    v_agent := public.fn_agent_downline_rake_summary(p_agent_user_id, p_club_id,
+      (v_start::timestamp AT TIME ZONE 'UTC'), ((v_end+1)::timestamp AT TIME ZONE 'UTC'));
+    v_agent_p := public.fn_agent_downline_rake_summary(p_agent_user_id, p_club_id,
+      (v_pstart::timestamp AT TIME ZONE 'UTC'), ((v_pend+1)::timestamp AT TIME ZONE 'UTC'));
+    IF v_sort NOT IN ('rake','name','hands') THEN v_sort := 'rake'; END IF;
+    v_pack := public.fn_ca_rake_by_downline(p_agent_user_id, p_club_id,
+      (v_start::timestamp AT TIME ZONE 'UTC'), ((v_end+1)::timestamp AT TIME ZONE 'UTC'),
+      p_limit, v_off, v_q, v_sort);
+    SELECT COALESCE(c.name,'Club') INTO v_label FROM public.clubs c WHERE c.id = p_club_id;
+    RETURN jsonb_build_object(
+      'scope','agent','scope_label',COALESCE(v_label,'Downline'),'club_id',p_club_id,
+      'union_id',NULL,'agent_user_id',p_agent_user_id,
+      'range',jsonb_build_object('start',v_start,'end',v_end,'days',v_days),
+      'previous_range',jsonb_build_object('start',v_pstart,'end',v_pend,'days',v_days),
+      'summary',jsonb_build_object(
+        'fee',round(COALESCE((v_agent->>'rake_generated')::numeric,0),2),
+        'cash_fee',NULL,'mtt_fee',NULL,'games',NULL,
+        'hands',COALESCE((v_agent->>'hands')::bigint,0),
+        'total_winnings',NULL,'mtt_winnings',NULL,
+        'members',COALESCE((v_agent->>'members')::int,0),
+        'active',COALESCE((v_agent->>'active')::int,0),
+        'commission_rate',(v_agent->>'commission_rate')::numeric,
+        'estimated_commission',round(COALESCE((v_agent->>'estimated_commission')::numeric,0),2)),
+      'previous',jsonb_build_object('fee',round(COALESCE((v_agent_p->>'rake_generated')::numeric,0),2),
+        'hands',COALESCE((v_agent_p->>'hands')::bigint,0)),
+      'delta',jsonb_build_object(
+        'fee_pct',CASE WHEN COALESCE((v_agent_p->>'rake_generated')::numeric,0)=0 THEN NULL
+          ELSE round((COALESCE((v_agent->>'rake_generated')::numeric,0)-(v_agent_p->>'rake_generated')::numeric)
+               /abs((v_agent_p->>'rake_generated')::numeric)*100,1) END,
+        'fee_abs',round(COALESCE((v_agent->>'rake_generated')::numeric,0)-COALESCE((v_agent_p->>'rake_generated')::numeric,0),2),
+        'games_pct',NULL,'winnings_abs',NULL),
+      'series','[]'::jsonb,'series_bucket',v_bucket,
+      'breakdown',v_pack->'rows','breakdown_kind','downline',
+      'breakdown_total',(v_pack->>'total_direct')::numeric,
+      'breakdown_count',(v_pack->>'total')::int,
+      'breakdown_offset',v_off,'commission_total',(v_pack->>'total_commission')::numeric,
+      'breakdown_live',true,'rake_complete_through',NULL,
+      'applied_search',v_q,'applied_sort',v_sort,
+      'top_earner',v_agent->'top_earner','accounting_basis','utc_net_money_flow','generated_at',now());
+  END IF;
+
+  IF v_scope = 'union' THEN
+    v_union := p_union_id;
+    IF v_union IS NULL AND p_club_id IS NOT NULL THEN
+      SELECT uc.union_id INTO v_union FROM public.union_clubs uc WHERE uc.club_id=p_club_id LIMIT 1; END IF;
+    IF v_union IS NULL THEN RAISE EXCEPTION 'no union for this context' USING ERRCODE='22023'; END IF;
+    IF NOT public.ca_can_oversee_union(v_union) THEN
+      RAISE EXCEPTION 'not authorized for this union' USING ERRCODE='42501'; END IF;
+    v_clubs:=public.fn_ca_club_data_clubs(v_union);
+    SELECT u.name INTO v_label FROM public.unions u WHERE u.id=v_union;
+    IF v_sort NOT IN ('rake','name','hands') THEN v_sort := 'rake'; END IF;
+    v_pack := public.fn_ca_rake_by_club_v2(v_clubs, v_start, v_end, p_limit, v_off, v_q, v_sort);
+    v_kind := 'club'; v_live := false;
+  ELSE
+    IF p_club_id IS NULL THEN RAISE EXCEPTION 'club scope needs a club' USING ERRCODE='22023'; END IF;
+    IF NOT public.ca_can_read_whole_club_production(p_club_id) THEN
+      RAISE EXCEPTION 'not authorized for this club' USING ERRCODE='42501'; END IF;
+    v_clubs := ARRAY[p_club_id];
+    SELECT uc.union_id INTO v_union FROM public.union_clubs uc WHERE uc.club_id=p_club_id LIMIT 1;
+    SELECT c.name INTO v_label FROM public.clubs c WHERE c.id=p_club_id;
+    IF v_sort NOT IN ('rake','name','cost','players') THEN v_sort := 'rake'; END IF;
+    v_pack := public.fn_ca_rake_by_agent(p_club_id, v_start, v_end, p_limit, v_off, v_q, v_sort);
+    v_kind := 'agent'; v_live := true;
+  END IF;
+
+  IF v_clubs IS NULL OR array_length(v_clubs,1) IS NULL THEN v_clubs := ARRAY[]::uuid[]; END IF;
+
+  v_cur := public.fn_ca_rake_window_v2(v_clubs, v_start, v_end);
+  v_prev := public.fn_ca_rake_window_v2(v_clubs, v_pstart, v_pend);
+  v_series := public.fn_ca_rake_series_v2(v_clubs, v_start, v_end, v_bucket);
+
+  RETURN jsonb_build_object(
+    'scope',v_scope,'scope_label',COALESCE(v_label,initcap(v_scope)),
+    'club_id',p_club_id,'union_id',v_union,'club_count',array_length(v_clubs,1),
+    'range',jsonb_build_object('start',v_start,'end',v_end,'days',v_days),
+    'previous_range',jsonb_build_object('start',v_pstart,'end',v_pend,'days',v_days),
+    'summary',v_cur,'previous',v_prev,
+    'delta',jsonb_build_object(
+      'fee_pct',CASE WHEN COALESCE((v_prev->>'fee')::numeric,0)=0 THEN NULL
+        ELSE round(((v_cur->>'fee')::numeric-(v_prev->>'fee')::numeric)/abs((v_prev->>'fee')::numeric)*100,1) END,
+      'games_pct',CASE WHEN COALESCE((v_prev->>'games')::numeric,0)=0 THEN NULL
+        ELSE round(((v_cur->>'games')::numeric-(v_prev->>'games')::numeric)/abs((v_prev->>'games')::numeric)*100,1) END,
+      'fee_abs',round((v_cur->>'fee')::numeric-(v_prev->>'fee')::numeric,2),
+      'winnings_abs',round((v_cur->>'total_winnings')::numeric-(v_prev->>'total_winnings')::numeric,2)),
+    'series',v_series,'series_bucket',v_bucket,
+    'breakdown',v_pack->'rows','breakdown_kind',v_kind,
+    'breakdown_total',(v_pack->>'total_direct')::numeric,
+    'breakdown_count',(v_pack->>'total')::int,
+    'breakdown_offset',v_off,'commission_total',(v_pack->>'total_commission')::numeric,
+    'breakdown_live',v_live,'rake_complete_through',NULL,
+    'applied_search',v_q,'applied_sort',v_sort,
+    'data_updated_at',GREATEST(
+      (SELECT max(c.updated_at) FROM public.club_table_daily c
+        WHERE c.club_id = ANY(v_clubs) AND c.stat_date BETWEEN v_start AND v_end),
+      (SELECT max(d.updated_at) FROM public.ca_club_tournament_daily d
+        WHERE d.club_id = ANY(v_clubs) AND d.stat_date BETWEEN v_start AND v_end)),
+    'accounting_basis','utc_net_money_flow','generated_at',now());
+END;
+$function$
+
+;
+REVOKE ALL ON FUNCTION public.ca_rake_snapshot_v2(text,uuid,uuid,date,date,uuid,integer,integer,text,text) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.ca_rake_snapshot_v2(text,uuid,uuid,date,date,uuid,integer,integer,text,text) TO authenticated,service_role;
+CREATE OR REPLACE FUNCTION public.ca_rake_export_start_v2(p_scope_type text, p_scope_id uuid, p_start date DEFAULT NULL::date, p_end date DEFAULT NULL::date, p_agent_user_id uuid DEFAULT NULL::uuid, p_search text DEFAULT NULL::text, p_sort text DEFAULT 'rake'::text, p_request_id uuid DEFAULT gen_random_uuid())
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET statement_timeout TO '120s'
+AS $function$
+DECLARE
+  v_user uuid := auth.uid();
+  v_scope text := lower(COALESCE(NULLIF(btrim(p_scope_type), ''), ''));
+  v_scope_id uuid := p_scope_id;
+  v_club_id uuid;
+  v_union_id uuid;
+  v_agent_user_id uuid;
+  v_today date := (now() AT TIME ZONE 'UTC')::date;
+  v_end date := LEAST(COALESCE(p_end, v_today), v_today);
+  v_start date := COALESCE(p_start, v_end - 6);
+  v_search text := NULLIF(left(btrim(COALESCE(p_search, '')), 160), '');
+  v_sort text := lower(COALESCE(NULLIF(btrim(p_sort), ''), 'rake'));
+  v_request uuid := COALESCE(p_request_id, gen_random_uuid());
+  v_chunk integer;
+  v_max_rows constant integer := 20000;
+  v_export_id uuid;
+  v_expires_at timestamptz;
+  v_existing public.ca_club_data_exports%ROWTYPE;
+  v_response jsonb;
+  v_reported integer;
+  v_inserted integer;
+  v_agent_overflow boolean;
+  v_book_rows integer;
+BEGIN
+  IF v_user IS NULL THEN
+    RAISE EXCEPTION 'sign in to prepare a Rake Snapshot export'
+      USING ERRCODE = '42501';
+  END IF;
+  IF v_scope NOT IN ('club', 'union', 'agent') OR v_scope_id IS NULL THEN
+    RAISE EXCEPTION 'Rake Snapshot export scope is invalid'
+      USING ERRCODE = '22023';
+  END IF;
+
+  IF v_start < v_end - 730 THEN v_start := v_end - 730; END IF;
+  IF v_start > v_end THEN v_start := v_end; END IF;
+
+  IF v_scope = 'club' THEN
+    v_club_id := v_scope_id;
+    v_agent_user_id := NULL;
+    v_chunk := 200;
+    IF v_sort NOT IN ('rake', 'name', 'cost', 'players') THEN v_sort := 'rake'; END IF;
+    IF NOT public.ca_can_read_club_production(v_club_id) THEN
+      RAISE EXCEPTION 'Rake Snapshot export is no longer authorized'
+        USING ERRCODE = '42501';
+    END IF;
+  ELSIF v_scope = 'union' THEN
+    v_union_id := v_scope_id;
+    v_agent_user_id := NULL;
+    v_chunk := 200;
+    IF v_sort NOT IN ('rake', 'name', 'hands') THEN v_sort := 'rake'; END IF;
+    IF NOT public.ca_can_oversee_union(v_union_id) THEN
+      RAISE EXCEPTION 'Rake Snapshot export is no longer authorized'
+        USING ERRCODE = '42501';
+    END IF;
+  ELSE
+    v_club_id := v_scope_id;
+    v_agent_user_id := COALESCE(p_agent_user_id, v_user);
+    v_chunk := 500;
+    IF v_sort NOT IN ('rake', 'name', 'hands') THEN v_sort := 'rake'; END IF;
+    IF NOT public.ca_can_read_rake_agent(v_agent_user_id, v_club_id) THEN
+      RAISE EXCEPTION 'Rake Snapshot export is no longer authorized'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
+  -- One start per user at a time, refused immediately rather than queued.
+  IF NOT pg_try_advisory_xact_lock(
+    hashtextextended('ca-club-data-export-user:' || v_user::text, 0)
+  ) THEN
+    RAISE EXCEPTION 'Another Club Data export is already being prepared.'
+      USING ERRCODE = '55000';
+  END IF;
+
+  -- A retried request resumes the same immutable job, and only a Rake job.
+  SELECT *
+    INTO v_existing
+    FROM public.ca_club_data_exports existing_job
+   WHERE existing_job.user_id = v_user
+     AND existing_job.request_id = v_request
+     AND existing_job.kind = 'rake'
+     AND existing_job.expires_at >= now();
+
+  IF v_existing.id IS NOT NULL THEN
+    IF v_existing.scope_type IS DISTINCT FROM v_scope
+       OR v_existing.scope_id IS DISTINCT FROM v_scope_id
+       OR v_existing.agent_user_id IS DISTINCT FROM v_agent_user_id
+       OR v_existing.date_from IS DISTINCT FROM v_start
+       OR v_existing.date_to IS DISTINCT FROM v_end
+       OR v_existing.request_search IS DISTINCT FROM v_search
+       OR v_existing.sort_key IS DISTINCT FROM v_sort THEN
+      RAISE EXCEPTION 'Rake Snapshot request id was already used for different inputs'
+        USING ERRCODE = '22023';
+    END IF;
+    IF v_existing.status <> 'ready' THEN
+      RAISE EXCEPTION 'Rake Snapshot export is still being prepared'
+        USING ERRCODE = '55000';
+    END IF;
+    IF COALESCE(
+         (v_existing.metadata ->> 'contains_admin_commission')::boolean,
+         false
+       )
+       AND NOT public.fn_is_club_admin_uid(v_existing.club_id) THEN
+      RAISE EXCEPTION
+        'Rake Snapshot export permissions changed; prepare a new export'
+        USING ERRCODE = '55000';
+    END IF;
+    RETURN jsonb_build_object(
+      'export_id', v_existing.id,
+      'status', v_existing.status,
+      'kind', v_existing.kind,
+      'total_rows', v_existing.total_rows,
+      'total_amount', v_existing.total_amount,
+      'expires_at', v_existing.expires_at,
+      'metadata', v_existing.metadata,
+      'metadata_fingerprint', v_existing.metadata_fingerprint
+    );
+  END IF;
+
+  -- The same request id held by a live job of another kind is a different
+  -- request: refused, never replayed as Rake and never rebuilt over it.
+  IF EXISTS (
+    SELECT 1
+      FROM public.ca_club_data_exports other_kind
+     WHERE other_kind.user_id = v_user
+       AND other_kind.request_id = v_request
+       AND other_kind.kind <> 'rake'
+       AND other_kind.expires_at >= now()
+  ) THEN
+    RAISE EXCEPTION 'Rake Snapshot request id was already used for different inputs'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- The expired job owned by the caller is reclaimed first, and never behind
+  -- the shared prune's try-lock: an owner whose previous export lost its
+  -- cleanup must not be locked out of the next one. Bounded to one export
+  -- (50,000 rows exceeds anything a door can prepare); SKIP LOCKED so a
+  -- prune retiring the same parent from another session is never waited on.
+  DELETE FROM public.ca_club_data_export_rows own_row
+   USING (
+     SELECT stale_row.export_id, stale_row.ordinal
+       FROM public.ca_club_data_export_rows stale_row
+       JOIN public.ca_club_data_exports expired_slot
+         ON expired_slot.id = stale_row.export_id
+      WHERE expired_slot.user_id = v_user
+        AND expired_slot.expires_at < now()
+      ORDER BY stale_row.export_id, stale_row.ordinal
+      LIMIT 50000
+      FOR UPDATE OF stale_row SKIP LOCKED
+   ) doomed
+   WHERE own_row.export_id = doomed.export_id
+     AND own_row.ordinal = doomed.ordinal;
+
+  DELETE FROM public.ca_club_data_exports expired_slot
+   USING (
+     SELECT reclaimable.id
+       FROM public.ca_club_data_exports reclaimable
+      WHERE reclaimable.user_id = v_user
+        AND reclaimable.expires_at < now()
+      FOR UPDATE SKIP LOCKED
+   ) reclaimed
+   WHERE expired_slot.id = reclaimed.id
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.ca_club_data_export_rows export_row
+        WHERE export_row.export_id = expired_slot.id
+     );
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.ca_club_data_exports active_slot
+     WHERE active_slot.user_id = v_user
+  ) THEN
+    RAISE EXCEPTION
+      'Another Club Data export is already being prepared, downloaded, or cleaned up.'
+      USING ERRCODE = '55000';
+  END IF;
+
+  INSERT INTO public.ca_club_data_exports(
+    user_id, club_id, request_id, kind, scope_type, scope_id, union_id,
+    agent_user_id, date_from, date_to, request_search, sort_key
+  )
+  VALUES (
+    v_user, v_club_id, v_request, 'rake', v_scope, v_scope_id, v_union_id,
+    v_agent_user_id, v_start, v_end, v_search, v_sort
+  )
+  RETURNING id, expires_at INTO v_export_id, v_expires_at;
+
+  -- One data-changing statement owns the reporting snapshot. Its first call
+  -- goes through ca_rake_snapshot, the public canonical door and authorization
+  -- gate. Remaining pages call only the same private helpers that door uses.
+  -- No Rake arithmetic or commission allocation is reimplemented here.
+  WITH first_snapshot AS MATERIALIZED (
+    SELECT public.ca_rake_snapshot_v2(
+      v_scope,
+      v_club_id,
+      v_union_id,
+      v_start,
+      v_end,
+      v_agent_user_id,
+      v_chunk,
+      0,
+      v_search,
+      v_sort
+    ) AS document
+  -- Search is applied after fn_ca_rake_by_downline's deliberately widened
+  -- 20,001-row source walk. Count that unfiltered source independently: a
+  -- narrow search must never turn a truncated downline into a "complete" file.
+  ), agent_capacity AS MATERIALIZED (
+    SELECT public.fn_ca_rake_by_downline(
+             v_agent_user_id,
+             v_club_id,
+             (v_start::timestamp AT TIME ZONE 'UTC'),
+             ((v_end + 1)::timestamp AT TIME ZONE 'UTC'),
+             1,
+             0,
+             NULL,
+             'rake'
+           ) AS document
+     WHERE v_scope = 'agent'
+  ), snapshot_shape AS MATERIALIZED (
+    SELECT first_snapshot.document,
+           GREATEST(
+             COALESCE((first_snapshot.document ->> 'breakdown_count')::integer, 0),
+             0
+           ) AS total,
+           (
+             v_scope = 'club'
+             AND public.fn_is_club_admin_uid(v_club_id)
+           ) AS contains_admin_commission,
+           COALESCE(
+             (agent_capacity.document ->> 'total')::integer,
+             0
+           ) > v_max_rows AS agent_overflow
+      FROM first_snapshot
+      LEFT JOIN agent_capacity ON true
+  ), bounded_snapshot AS MATERIALIZED (
+    SELECT *
+      FROM snapshot_shape
+     WHERE snapshot_shape.total <= v_max_rows
+       AND NOT snapshot_shape.agent_overflow
+  ), page_offsets AS (
+    SELECT generate_series(0, bounded_snapshot.total - 1, v_chunk)::integer AS page_offset,
+           bounded_snapshot.document,
+           bounded_snapshot.total,
+           bounded_snapshot.contains_admin_commission
+      FROM bounded_snapshot
+  ), page_packs AS MATERIALIZED (
+    SELECT page_offsets.page_offset,
+           CASE
+             WHEN page_offsets.page_offset = 0 THEN
+               jsonb_build_object(
+                 'rows', COALESCE(page_offsets.document -> 'breakdown', '[]'::jsonb)
+               )
+             WHEN v_scope = 'club' THEN public.fn_ca_rake_by_agent(
+               v_club_id, v_start, v_end, v_chunk, page_offsets.page_offset,
+               v_search, v_sort
+             )
+             WHEN v_scope = 'union' THEN public.fn_ca_rake_by_club_v2(
+               public.fn_ca_club_data_clubs(v_union_id),
+               v_start, v_end, v_chunk, page_offsets.page_offset, v_search, v_sort
+             )
+             ELSE public.fn_ca_rake_by_downline(
+               v_agent_user_id,
+               v_club_id,
+               (v_start::timestamp AT TIME ZONE 'UTC'),
+               ((v_end + 1)::timestamp AT TIME ZONE 'UTC'),
+               v_chunk,
+               page_offsets.page_offset,
+               v_search,
+               v_sort
+             )
+           END AS page_document
+      FROM page_offsets
+  ), collected AS MATERIALIZED (
+    SELECT page_row.row_data
+      FROM page_packs
+      CROSS JOIN LATERAL jsonb_array_elements(
+        COALESCE(page_packs.page_document -> 'rows', '[]'::jsonb)
+      ) WITH ORDINALITY AS page_row(row_data, page_ordinal)
+  ), ordered AS (
+    SELECT row_number() OVER (
+             ORDER BY
+               CASE WHEN v_scope = 'club' THEN
+                 COALESCE((collected.row_data ->> 'is_unassigned')::boolean, false)
+               END ASC NULLS LAST,
+               CASE WHEN v_scope = 'club' AND v_sort = 'name' THEN
+                 lower(COALESCE(collected.row_data ->> 'name', ''))
+               END ASC NULLS LAST,
+               CASE WHEN v_scope = 'club' AND v_sort = 'cost' THEN
+                 NULLIF(collected.row_data ->> 'commission_earned', '')::numeric
+               END DESC NULLS LAST,
+               CASE WHEN v_scope = 'club' AND v_sort = 'players' THEN
+                 COALESCE((collected.row_data ->> 'network_players')::numeric, 0)
+               END DESC NULLS LAST,
+               CASE WHEN v_scope = 'club' AND v_sort = 'rake' THEN
+                 COALESCE((collected.row_data ->> 'network_rake')::numeric, 0)
+               END DESC NULLS LAST,
+               CASE WHEN v_scope = 'union' AND v_sort = 'name' THEN
+                 lower(COALESCE(collected.row_data ->> 'name', ''))
+               END ASC NULLS LAST,
+               CASE WHEN v_scope = 'union' AND v_sort = 'hands' THEN
+                 COALESCE((collected.row_data ->> 'hands')::numeric, 0)
+               END DESC NULLS LAST,
+               CASE WHEN v_scope = 'union' AND v_sort = 'rake' THEN
+                 COALESCE((collected.row_data ->> 'fee')::numeric, 0)
+               END DESC NULLS LAST,
+               CASE WHEN v_scope = 'agent' AND v_sort = 'name' THEN
+                 lower(COALESCE(collected.row_data ->> 'name', ''))
+               END ASC NULLS LAST,
+               CASE WHEN v_scope = 'agent' AND v_sort = 'hands' THEN
+                 COALESCE((collected.row_data ->> 'hands')::numeric, 0)
+               END DESC NULLS LAST,
+               CASE WHEN v_scope = 'agent' AND v_sort = 'rake' THEN
+                 COALESCE((collected.row_data ->> 'rake')::numeric, 0)
+               END DESC NULLS LAST,
+               lower(COALESCE(collected.row_data ->> 'name', '')) ASC,
+               CASE WHEN v_scope = 'club' THEN
+                 COALESCE(collected.row_data ->> 'agent_user_id', '')
+               END ASC,
+               CASE WHEN v_scope = 'union' THEN
+                 COALESCE(collected.row_data ->> 'club_id', '')
+               END ASC,
+               CASE WHEN v_scope = 'agent' THEN
+                 COALESCE(collected.row_data ->> 'player_id', '')
+               END ASC
+           )::integer AS ordinal,
+           collected.row_data AS payload
+      FROM collected
+  ), inserted_rows AS (
+    INSERT INTO public.ca_club_data_export_rows(export_id, ordinal, payload)
+    SELECT v_export_id, ordered.ordinal, ordered.payload
+      FROM ordered
+     ORDER BY ordered.ordinal
+    RETURNING ordinal
+  ), ready_metadata AS MATERIALIZED (
+    SELECT jsonb_build_object(
+             'schema_version', 1,
+             'kind', 'rake',
+             'scope_type', v_scope,
+             'scope_id', v_scope_id,
+             'club_id', v_club_id,
+             -- Scope identity, not incidental membership context: a club that
+             -- belongs to a union is still a club-scoped immutable request.
+             'union_id', v_union_id,
+             'agent_user_id', v_agent_user_id,
+             'date_from', v_start,
+             'date_to', v_end,
+             'search', v_search,
+             'sort', v_sort,
+             'generated_at', snapshot_shape.document -> 'generated_at',
+             'scope_label', snapshot_shape.document -> 'scope_label',
+             'breakdown_kind', snapshot_shape.document -> 'breakdown_kind',
+             'breakdown_total', COALESCE(
+               (snapshot_shape.document ->> 'breakdown_total')::numeric,
+               0
+             ),
+             'commission_total', snapshot_shape.document -> 'commission_total',
+             'contains_admin_commission', snapshot_shape.contains_admin_commission
+           ) AS metadata,
+           snapshot_shape.total,
+           COALESCE(
+             (snapshot_shape.document ->> 'breakdown_total')::numeric,
+             0
+           ) AS total_amount
+      FROM snapshot_shape
+     WHERE snapshot_shape.total <= v_max_rows
+       AND NOT snapshot_shape.agent_overflow
+  ), finalized AS (
+    UPDATE public.ca_club_data_exports export_job
+       SET status = 'ready',
+           total_rows = ready_metadata.total,
+           total_amount = ready_metadata.total_amount,
+           union_id = NULLIF(ready_metadata.metadata ->> 'union_id', '')::uuid,
+           metadata = ready_metadata.metadata,
+           metadata_fingerprint = md5(ready_metadata.metadata::text)
+      FROM ready_metadata
+     WHERE export_job.id = v_export_id
+       AND (SELECT count(*) FROM inserted_rows) = ready_metadata.total
+    RETURNING jsonb_build_object(
+      'export_id', export_job.id,
+      'status', export_job.status,
+      'kind', export_job.kind,
+      'total_rows', export_job.total_rows,
+      'total_amount', export_job.total_amount,
+      'expires_at', export_job.expires_at,
+      'metadata', export_job.metadata,
+      'metadata_fingerprint', export_job.metadata_fingerprint
+    ) AS response
+  )
+  SELECT (SELECT finalized.response FROM finalized),
+         snapshot_shape.total,
+         (SELECT count(*)::integer FROM inserted_rows),
+         snapshot_shape.agent_overflow
+    INTO v_response, v_reported, v_inserted, v_agent_overflow
+    FROM snapshot_shape;
+
+  IF COALESCE(v_agent_overflow, false) THEN
+    -- Refused before any search filtering, and the refusal names the whole
+    -- unfiltered book, never the searched subset. The capacity walk above
+    -- stops at its 20,001-row sentinel, so the book is counted once more
+    -- here, uncapped, on this refusal path only.
+    SELECT count(*)::integer
+      INTO v_book_rows
+      FROM public.fn_agent_downline_rake(
+             v_agent_user_id,
+             v_club_id,
+             (v_start::timestamp AT TIME ZONE 'UTC'),
+             ((v_end + 1)::timestamp AT TIME ZONE 'UTC'),
+             NULL,
+             2147483647
+           );
+    RAISE EXCEPTION
+      'Rake Snapshot export has % rows; the safe limit is %',
+      v_book_rows,
+      v_max_rows
+      USING ERRCODE = '54000';
+  END IF;
+  IF v_reported > v_max_rows THEN
+    RAISE EXCEPTION
+      'Rake Snapshot export has % rows; the safe limit is %',
+      v_reported,
+      v_max_rows
+      USING ERRCODE = '54000';
+  END IF;
+  IF v_reported IS NULL OR v_inserted IS DISTINCT FROM v_reported
+     OR v_response IS NULL THEN
+    RAISE EXCEPTION
+      'Rake Snapshot export changed while it was being prepared'
+      USING ERRCODE = '55000';
+  END IF;
+
+  -- Somebody else's stranded expired job, if any: bounded, non-blocking,
+  -- and last, so the row locks it takes are held only until this commit.
+  PERFORM public.ca_prune_expired_club_data_exports(2000);
+
+  RETURN v_response;
+END;
+$function$
+;
+REVOKE ALL ON FUNCTION public.ca_rake_export_start_v2(text,uuid,date,date,uuid,text,text,uuid) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.ca_rake_export_start_v2(text,uuid,date,date,uuid,text,text,uuid) TO authenticated,service_role;
+
 
 COMMIT;

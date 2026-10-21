@@ -1,6 +1,16 @@
 {
   "_owner": "PR7608; migration20261021202610 exact MTT/union reporting. No money mutations.",
   "tables": [],
-  "functions": ["fn_ca_club_data_clubs", "fn_ca_club_data_hand_count", "ca_club_data_snapshot_v2"],
+  "functions": [
+    "fn_ca_club_data_clubs",
+    "fn_ca_club_data_hand_count",
+    "ca_club_data_snapshot_v2",
+    "fn_ca_rake_felt_v2",
+    "fn_ca_rake_window_v2",
+    "fn_ca_rake_series_v2",
+    "fn_ca_rake_by_club_v2",
+    "ca_rake_snapshot_v2",
+    "ca_rake_export_start_v2"
+  ],
   "columns": {}
 }

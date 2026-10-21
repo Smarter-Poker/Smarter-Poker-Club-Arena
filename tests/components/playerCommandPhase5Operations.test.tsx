@@ -143,7 +143,7 @@ async function refreshRows(ids: string[]) {
     has_more: false,
     filtered_total: ids.length,
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+  act(() => window.dispatchEvent(new Event('online')));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
@@ -278,7 +278,7 @@ it('clears selection and pending operation on confirmed export permission revoca
     ...allowed,
     capabilities: { ...allowed.capabilities, can_export: false },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+  act(() => window.dispatchEvent(new Event('online')));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });

@@ -16,3 +16,11 @@ passes after it for newest/oldest, tied and null dates, three pages, search,
 club scope, malformed and mismatched cursors, export and replay refusal.
 The native regression runs in the existing Data Console PostgreSQL workflow.
 Client workspace tests cover defaults, oldest selection and saved-view continuity.
+
+The owner's follow-up also simplifies the directory presentation: PlayerID is
+one label at the name's font size, seated text is white, seated row/avatar accents
+are blue, and net results show only their signed amount in red or green at the
+fee figure's size. Simple/Advanced sits beneath the help control on the right;
+the extra teal console rule and Refresh button are removed. Routine connected
+and read-time text is omitted; genuine connection failures retain the existing
+retry action. Reconnect and query changes still reread authoritative data.

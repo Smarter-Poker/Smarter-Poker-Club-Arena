@@ -80,8 +80,8 @@ const SHARED_TOUR_HEAD: TutorialStep[] = [
 ];
 const SHARED_TOUR_TAIL: TutorialStep[] = [
   {
-    title: 'Sort And Refresh',
-    body: 'Order The List, Group It By Role Or Refresh It From The Server.',
+    title: 'Sort Players',
+    body: 'Order The List By Club Join Date Or Group It By Role.',
     target: '.members-toolbar',
   },
   {
@@ -1530,6 +1530,7 @@ export default function ClubMembersPage() {
       className={`club-members-page${simpleMode ? ' members-simple' : ''}`}
       aria-busy={loading}
       data-players-mode={simpleMode ? 'simple' : 'advanced'}
+      data-roster-connection={connectionState}
     >
       <PageBar
         className="members-page-bar"
@@ -1720,15 +1721,6 @@ export default function ClubMembersPage() {
             </button>
           )}
 
-          <button
-            type="button"
-            className="members-refresh"
-            onClick={() => void refresh()}
-            disabled={loading || isRefreshing || searchQuery !== debouncedSearch}
-            aria-busy={isRefreshing}
-          >
-            {isRefreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
           {!simpleMode && summary.capabilities.can_export && (
             <button
               type="button"
@@ -1788,14 +1780,16 @@ export default function ClubMembersPage() {
           </details>
         )}
 
-        <RosterConnectionStatus
-          state={connectionState}
-          hasData={hasVerifiedDirectory}
-          lastSuccessfulSyncAt={lastSuccessfulSyncAt}
-          isRefreshing={isRefreshing}
-          isSlow={loadSlow}
-          onRetry={retryLiveSync}
-        />
+        {(loadSlow || !['live', 'connecting'].includes(connectionState)) && (
+          <RosterConnectionStatus
+            state={connectionState}
+            hasData={hasVerifiedDirectory}
+            lastSuccessfulSyncAt={lastSuccessfulSyncAt}
+            isRefreshing={isRefreshing}
+            isSlow={loadSlow}
+            onRetry={retryLiveSync}
+          />
+        )}
         <p
           className="members-count"
           role="status"
@@ -2054,12 +2048,17 @@ export const MemberRow = memo(function MemberRow({
             )}
           </span>
           <span className="member-subline">
-            <span className="member-role" style={{ color: roleColor(member.role) }}>
-              {roleLabel(member.role)}
-            </span>
+            {(!simpleMode || member.role !== 'player') && (
+              <span
+                className="member-role"
+                style={{ color: simpleMode ? undefined : roleColor(member.role) }}
+              >
+                {roleLabel(member.role)}
+              </span>
+            )}
             {member.player_number && (
               <span className="member-number">
-                {simpleMode ? 'ID: ' : 'No. '}
+                {'PlayerID: '}
                 {highlight(member.player_number, query)}
               </span>
             )}
@@ -2086,18 +2085,23 @@ export const MemberRow = memo(function MemberRow({
                   Downline {feeFigure(member.downline_fees)}
                 </span>
               )}
-              <span className={`member-simple-balance__winloss${winLossTone}`}>
-                {winLossLabel} {winLossText(winLoss, winLossUnavailable)}
-              </span>
+              <strong
+                className={`member-simple-balance__winloss${winLossTone}`}
+                aria-label={`${winLossLabel} ${winLossText(winLoss, winLossUnavailable)}`}
+              >
+                {winLossText(winLoss, winLossUnavailable)}
+              </strong>
             </span>
           )}
           {!simpleMode && member.can_view_financials && (
             <span className="member-metrics">
-              <span className={`member-metric member-metric--winloss${winLossTone}`}>
+              <span
+                className={`member-metric member-metric--winloss${winLossTone}`}
+                aria-label={`${winLossLabel} ${winLossText(winLoss, winLossUnavailable)}`}
+              >
                 <span className="member-metric__value">
                   {winLossText(winLoss, winLossUnavailable)}
                 </span>
-                <span className="member-metric__label">{winLossLabel}</span>
               </span>
               {columns.has('downlines') && (
                 <Metric label="Downlines" value={countFigure(member.downline_total)} />

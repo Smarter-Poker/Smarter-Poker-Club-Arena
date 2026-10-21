@@ -64,7 +64,10 @@ vi.mock('../../src/utils/strictClubIdResolver', () => ({
 vi.mock('../../src/services/ClubRosterService', () => ({
   default: { getRosterPage: f.page, getSummary: f.summary },
 }));
-import ClubMembersPage, { liveRosterRefreshPolicy } from '../../src/pages/ClubMembersPage';
+import ClubMembersPage, {
+  MemberRow,
+  liveRosterRefreshPolicy,
+} from '../../src/pages/ClubMembersPage';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -135,7 +138,7 @@ it.each([false, true])(
       await vi.advanceTimersByTimeAsync(400);
     });
     act(() => f.channel?.onSubscriptionStatus?.('SUBSCRIBED'));
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+    expect(screen.queryByRole('button', { name: 'Refresh', exact: true })).not.toBeInTheDocument();
     expect(f.channel?.restartKey).toBe(1);
     expect(f.wallet?.restartKey ?? 0).toBe(0);
   }
@@ -175,7 +178,7 @@ it('retires an audit failure when the viewer no longer has audit access', async 
   });
   expect(screen.getByRole('button', { name: 'Retry Live Sync' })).toBeInTheDocument();
   f.summary.mockResolvedValue(summary('player'));
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry Live Sync' }));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(400);
   });
@@ -300,7 +303,7 @@ it('shows the authorized fees generated, never the wallet, and opens the existin
 });
 
 for (const mode of ['Simple', 'Advanced']) {
-  it(`keeps ${mode} refresh usable after an unsettled search is reverted`, async () => {
+  it(`keeps ${mode} query reads usable without a refresh control`, async () => {
     render(
       <MemoryRouter initialEntries={['/clubs/shark-club/members']}>
         <Routes>
@@ -308,29 +311,24 @@ for (const mode of ['Simple', 'Advanced']) {
         </Routes>
       </MemoryRouter>
     );
-    await act(async () => {});
     await act(async () => {
       await vi.advanceTimersByTimeAsync(400);
     });
     if (mode === 'Advanced') fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
-    expect(screen.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Refresh', exact: true })).not.toBeInTheDocument();
     const search = screen.getByRole('searchbox');
     fireEvent.change(search, { target: { value: 'pending' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
     fireEvent.change(search, { target: { value: '' } });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(400);
     });
-    const refresh = screen.getByRole('button', { name: /^Refresh/ });
-    expect(refresh).toBeEnabled();
-    expect(refresh).toHaveAttribute('aria-busy', 'false');
     const calls = f.page.mock.calls.length;
-    fireEvent.click(refresh);
+    fireEvent.change(search, { target: { value: 'King' } });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(110);
+      await vi.advanceTimersByTimeAsync(400);
     });
     expect(f.page.mock.calls.length).toBe(calls + 1);
-    expect(refresh).toBeEnabled();
+    expect(f.page.mock.calls.at(-1)?.[1].search).toBe('King');
   });
 }
 
@@ -352,19 +350,19 @@ it('requires every enabled roster feed to acknowledge before reporting connected
   await act(async () => {
     await vi.advanceTimersByTimeAsync(400);
   });
-  const status = () => document.querySelector('.members-connection-status');
+  const status = () => document.querySelector('[data-roster-connection]');
   expect(f.audit?.enabled).toBe(true);
   act(() => f.channel?.onSubscriptionStatus?.('SUBSCRIBED'));
-  expect(status()).toHaveAttribute('data-connection-state', 'connecting');
+  expect(status()).toHaveAttribute('data-roster-connection', 'connecting');
   act(() => {
     f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
     f.record?.onSubscriptionStatus?.('SUBSCRIBED');
   });
-  expect(status()).toHaveAttribute('data-connection-state', 'connecting');
+  expect(status()).toHaveAttribute('data-roster-connection', 'connecting');
   act(() => f.audit?.onSubscriptionStatus?.('SUBSCRIBED'));
-  expect(status()).toHaveAttribute('data-connection-state', 'live');
+  expect(status()).toHaveAttribute('data-roster-connection', 'live');
   act(() => f.audit?.onSubscriptionError?.('TIMED_OUT'));
-  expect(status()).toHaveAttribute('data-connection-state', 'reconnecting');
+  expect(status()).toHaveAttribute('data-roster-connection', 'reconnecting');
   fireEvent.click(screen.getByRole('button', { name: 'Retry Live Sync' }));
   await act(async () => {});
   await act(async () => {
@@ -372,9 +370,9 @@ it('requires every enabled roster feed to acknowledge before reporting connected
   });
   expect(f.audit?.restartKey).toBe(1);
   expect(f.channel?.restartKey ?? 0).toBe(0);
-  expect(status()).toHaveAttribute('data-connection-state', 'connecting');
+  expect(status()).toHaveAttribute('data-roster-connection', 'connecting');
   act(() => f.audit?.onSubscriptionStatus?.('SUBSCRIBED'));
-  expect(status()).toHaveAttribute('data-connection-state', 'live');
+  expect(status()).toHaveAttribute('data-roster-connection', 'live');
 });
 
 it('requires a newly enabled audit feed even when existing member and wallet feeds are live', async () => {
@@ -394,8 +392,8 @@ it('requires a newly enabled audit feed even when existing member and wallet fee
     f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
     f.record?.onSubscriptionStatus?.('SUBSCRIBED');
   });
-  expect(document.querySelector('.members-connection-status')).toHaveAttribute(
-    'data-connection-state',
+  expect(document.querySelector('[data-roster-connection]')).toHaveAttribute(
+    'data-roster-connection',
     'live'
   );
   f.summary.mockResolvedValue({
@@ -404,19 +402,24 @@ it('requires a newly enabled audit feed even when existing member and wallet fee
     counts: { total: 0, online: 0, seated: 0, agents: 0, admins: 0 },
     page_size: 80,
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh', exact: true }));
+  act(() => window.dispatchEvent(new Event('online')));
   await act(async () => {});
   await act(async () => {
     await vi.advanceTimersByTimeAsync(400);
   });
   expect(f.audit?.enabled).toBe(true);
-  expect(document.querySelector('.members-connection-status')).toHaveAttribute(
-    'data-connection-state',
+  act(() => {
+    f.channel?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
+    f.record?.onSubscriptionStatus?.('SUBSCRIBED');
+  });
+  expect(document.querySelector('[data-roster-connection]')).toHaveAttribute(
+    'data-roster-connection',
     'connecting'
   );
   act(() => f.audit?.onSubscriptionStatus?.('SUBSCRIBED'));
-  expect(document.querySelector('.members-connection-status')).toHaveAttribute(
-    'data-connection-state',
+  expect(document.querySelector('[data-roster-connection]')).toHaveAttribute(
+    'data-roster-connection',
     'live'
   );
 });
@@ -440,8 +443,8 @@ it('requires fresh acknowledgments after the roster account changes', async () =
     f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
     f.record?.onSubscriptionStatus?.('SUBSCRIBED');
   });
-  expect(document.querySelector('.members-connection-status')).toHaveAttribute(
-    'data-connection-state',
+  expect(document.querySelector('[data-roster-connection]')).toHaveAttribute(
+    'data-roster-connection',
     'live'
   );
   try {
@@ -457,21 +460,21 @@ it('requires fresh acknowledgments after the roster account changes', async () =
     await act(async () => {
       await vi.advanceTimersByTimeAsync(400);
     });
-    expect(document.querySelector('.members-connection-status')).toHaveAttribute(
-      'data-connection-state',
+    expect(document.querySelector('[data-roster-connection]')).toHaveAttribute(
+      'data-roster-connection',
       'connecting'
     );
     act(() => f.channel?.onSubscriptionStatus?.('SUBSCRIBED'));
-    expect(document.querySelector('.members-connection-status')).toHaveAttribute(
-      'data-connection-state',
+    expect(document.querySelector('[data-roster-connection]')).toHaveAttribute(
+      'data-roster-connection',
       'connecting'
     );
     act(() => {
       f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
       f.record?.onSubscriptionStatus?.('SUBSCRIBED');
     });
-    expect(document.querySelector('.members-connection-status')).toHaveAttribute(
-      'data-connection-state',
+    expect(document.querySelector('[data-roster-connection]')).toHaveAttribute(
+      'data-roster-connection',
       'live'
     );
   } finally {
@@ -500,17 +503,54 @@ it('keeps a cold record feed connecting after verified HTTP reads and requires e
     f.wallet?.onSubscriptionStatus?.('SUBSCRIBED');
     f.record?.onSubscriptionStatus?.('CONNECTING');
   });
-  const status = () => document.querySelector('.members-connection-status');
+  const status = () => document.querySelector('[data-roster-connection]');
   expect(f.page).toHaveBeenCalled();
-  expect(status()).toHaveAttribute('data-connection-state', 'connecting');
+  expect(status()).toHaveAttribute('data-roster-connection', 'connecting');
   act(() => f.record?.onSubscriptionError?.('CHANNEL_ERROR'));
-  expect(status()).not.toHaveAttribute('data-connection-state', 'live');
+  expect(status()).not.toHaveAttribute('data-roster-connection', 'live');
   act(() => {
     f.record?.onSubscriptionStatus?.('SUBSCRIBED');
   });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(liveRosterRefreshPolicy.minIntervalMs + 2000);
   });
-  expect(status()).toHaveAttribute('data-connection-state', 'live');
+  expect(status()).toHaveAttribute('data-roster-connection', 'live');
   expect(f.toast).not.toHaveBeenCalled();
+});
+
+it.each([
+  [9300, '+9.3K'],
+  [-9300, '-9.3K'],
+])('prints a signed net without a visible metric label for %s', (net, label) => {
+  const { container } = render(
+    <MemberRow
+      member={
+        {
+          user_id: 'test-player',
+          alias: 'RunnerFox44',
+          role: 'player',
+          player_number: '695811',
+          is_seated: true,
+          can_view_financials: true,
+          total_fees: 1700,
+        } as any
+      }
+      position={1}
+      total={1}
+      query=""
+      onOpen={() => {}}
+      selectable={false}
+      selected={false}
+      onSelect={() => {}}
+      columns={new Set(['fees'])}
+      simpleMode
+      winLoss={{ net: Number(net), cash: Number(net), mtt: 0 }}
+      winLossLabel="Week W/L"
+    />
+  );
+  expect(screen.getByText('PlayerID: 695811')).toBeInTheDocument();
+  const amount = container.querySelector('.member-simple-balance__winloss');
+  expect(amount?.textContent?.trim()).toBe(label);
+  expect(amount).toHaveAttribute('aria-label', `Week W/L ${label}`);
+  expect(container.querySelector('.member-subline')?.textContent).not.toMatch(/^Player\s/);
 });

@@ -66,6 +66,10 @@ END $fn$;
 REVOKE ALL ON FUNCTION public.fn_ca_tournament_level_clock_floor() FROM PUBLIC,anon,authenticated,service_role;
 -- Runs after the booked Spin projection, so its immutable draw remains intact
 -- while the current timing rule is applied to the playable projection.
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note)
+VALUES ('tournaments','zzzzzzzzzz_tournament_level_clock_floor',
+'Reviewed October 21: applies only the owner minimum playable clock and its derived registration minutes. It moves no money and preserves stakes, prize values, booked Spin economics and terminal tournament history.')
+ON CONFLICT(table_name,trigger_name) DO UPDATE SET note=EXCLUDED.note;
 CREATE TRIGGER zzzzzzzzzz_tournament_level_clock_floor BEFORE INSERT OR UPDATE ON public.tournaments
 FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tournament_level_clock_floor();
 

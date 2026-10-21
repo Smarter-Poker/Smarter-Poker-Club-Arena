@@ -82,7 +82,8 @@ try:
  assert collected==expected and len(set(collected))==205
  exported=json.loads(q("SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000002',false); SELECT ca_club_members_export('00000000-0000-0000-0000-000000000001','','all','newest',NULL);").splitlines()[-1])
  assert [r['user_id'] for r in exported['rows']]==expected
- q("""CREATE TABLE tournaments(id integer,status text,tournament_type text,variant text,blind_speed text,accelerated_mtt boolean,blind_structure text,late_reg_levels integer,late_reg_mins integer,buy_in_amount numeric,prize_pool numeric);
+ q("""CREATE TABLE ca_declared_money_triggers(table_name text,trigger_name text,note text,PRIMARY KEY(table_name,trigger_name));
+ CREATE TABLE tournaments(id integer,status text,tournament_type text,variant text,blind_speed text,accelerated_mtt boolean,blind_structure text,late_reg_levels integer,late_reg_mins integer,buy_in_amount numeric,prize_pool numeric);
  CREATE TABLE tournament_schedules(id integer,active boolean,config jsonb);
  INSERT INTO tournaments VALUES (1,'REGISTERING','MTT','freezeout','turbo',false,'[{"smallBlind":25,"bigBlind":50,"durationMinutes":2}]',1,2,20,100),
  (2,'RUNNING','MTT','freezeout','standard',false,'[{"smallBlind":25,"bigBlind":50,"duration":120}]',1,2,20,100),

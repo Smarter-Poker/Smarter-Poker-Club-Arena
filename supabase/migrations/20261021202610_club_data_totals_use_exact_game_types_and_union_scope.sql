@@ -7,9 +7,13 @@
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='45s';
-DO $guard$ BEGIN
+DO $guard$ DECLARE expected record; actual text; BEGIN
  IF to_regprocedure('public.fn_ca_club_data_clubs(uuid)') IS NOT NULL THEN RAISE EXCEPTION 'Club Data correction already installed'; END IF;
  IF md5(pg_get_functiondef('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)'::regprocedure))<>'4d5395ef6cf7af32da37b18ab7fb41b1' THEN RAISE EXCEPTION 'Club Data screen preimage changed'; END IF;
+ FOR expected IN SELECT * FROM (VALUES ('fn_ca_club_data_scope','7022f13a854fbaa7684b93cf6aae1868'),('ca_club_data_screen','4d5395ef6cf7af32da37b18ab7fb41b1'),('fn_ca_club_cash_felt','7c16aa54bad4612afbe7bdd7d5b82e43'),('fn_ca_club_games','76d0b8f01e9a3b1f0956c8eb293633c2'),('fn_ca_club_games_searched','ed86cc8ecf0ab2c32755a65c8f797af7'),('fn_ca_club_games_unsearched','94c2b97d6df043ada9337fd25a0d39be'),('fn_ca_club_game_rows_filtered','353bc956a6ec2c8ab70a7fa67e1ce835'),('fn_ca_club_game_rows','97180802749f9963f8e973f740e84bb1'),('fn_ca_club_game_summary_filtered','01d7d260c52226978da9cb9c56db0cf2'),('fn_ca_club_game_summary','82a77e6208196fbfd33acb1dd149cd96'),('ca_club_game_page_core_20261006','aeef4d24b6e39308350217029ba01415'),('ca_club_data_snapshot','4c94b72310edd7fd63de7329a5b87239'),('ca_club_player_breakdown','617b01bce9519650c5bf9982acaa3a2b'),('ca_club_player_page_core_20261006','495397d214459c3b0b25260791aa5002')) v(name,hash) LOOP
+  SELECT md5(pg_get_functiondef(p.oid)) INTO actual FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=expected.name;
+  IF actual IS DISTINCT FROM expected.hash THEN RAISE EXCEPTION 'Reporting preimage changed: %',expected.name; END IF;
+ END LOOP;
  IF current_user NOT IN ('postgres','supabase_admin') THEN
    RAISE EXCEPTION 'club data migration requires the maintained installer';
  END IF;

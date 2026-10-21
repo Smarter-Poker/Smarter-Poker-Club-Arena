@@ -82,6 +82,7 @@ try:
        "CREATE FUNCTION fn_arena_name(text,text,text,text,text,text) RETURNS text LANGUAGE sql AS $$SELECT coalesce($1,$2,$3,$4,$5,$6)$$; "
        "CREATE FUNCTION fn_can_see_horse_flag(uuid) RETURNS boolean LANGUAGE sql AS $$SELECT false$$; "
        "CREATE FUNCTION ca_club_member_fee_totals(uuid,date,date) RETURNS TABLE(user_id uuid,total_fees numeric) LANGUAGE sql AS $$SELECT f.user_id,sum(f.fee) FROM ca_club_data_fact f WHERE club_id=$1 AND stat_date BETWEEN $2 AND $3 GROUP BY f.user_id$$;")
+    run(psql("live"), (ROOT / "tests/fixtures/club-data-report-db/reporting-preimages.sql").read_text())
     correction=(ROOT / "supabase/migrations/20261021202610_club_data_totals_use_exact_game_types_and_union_scope.sql").read_text()
     scenario=(ROOT / "tests/fixtures/club-data-report-db/union-mtt-scenario.sql").read_text().replace("@PORT@",str(PORT))
     setup,assertions=scenario.split('DO $test$',1)
@@ -91,10 +92,19 @@ try:
     run(psql("live"), "SET ROLE authenticated;\n"+correction, expect_fail="requires the maintained installer")
     run(psql("live"), correction.replace("\nCOMMIT;\n","\nROLLBACK;\n"))
     require(q("live", "SELECT to_regprocedure('public.fn_ca_club_data_clubs(uuid)') IS NULL")=="t", "a rolled-back installation changes nothing")
+    run(psql("live"), "BEGIN; ALTER FUNCTION public.ca_club_data_screen(uuid,date,date,text,text,text,integer) SET work_mem='1MB';\n"+correction, expect_fail="preimage changed")
     run(psql("live"), correction)
     run(psql("live"), correction, expect_fail="Club Data correction already installed")
     p=run(psql("live"), "DO $test$"+assertions)
     require("UNION MTT SCENARIO PASSED" in p.stdout+p.stderr, "MTT classification, union deduplication, exact fees, payouts, felt, pages, export and authorization")
+    evidence=os.environ.get('CLUB_DATA_CONTRACT_EVIDENCE')
+    if evidence:
+        import re
+        names=sorted(set(re.findall(r'CREATE OR REPLACE FUNCTION public\.(\w+)',correction)))
+        names_sql=','.join("'"+name+"'" for name in names)
+        certificate=q("live", "SELECT jsonb_agg(jsonb_build_object('name',p.proname,'source_md5',md5(p.prosrc),'definition_md5',md5(pg_get_functiondef(p.oid)),'security_definer',p.prosecdef,'settings',p.proconfig)) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname IN ("+names_sql+")")
+        Path(evidence).write_text(certificate+'\n')
+
 finally:
     if started:
         run([PG / "pg_ctl", "-D", data, "-m", "fast", "-w", "stop"])

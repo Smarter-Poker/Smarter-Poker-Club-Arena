@@ -108,7 +108,7 @@ describe('the public arena is readable without JavaScript', () => {
       '<meta property="og:title" content="Terms Of Service | Smarter.Poker" />'
     );
     expect(doc).toContain(
-      '<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Terms Of Service"}</script>'
+      '<script id="route-jsonld" type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Terms Of Service"}</script>'
     );
     expect(doc).toContain('<style data-prerender="css">.x{color:red}</style>');
     expect(doc).toContain(

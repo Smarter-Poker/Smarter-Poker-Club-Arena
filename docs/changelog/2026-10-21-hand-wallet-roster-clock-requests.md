@@ -17,9 +17,9 @@ confirmed results retire only their exact key, and acknowledgement failure never
 relabels a confirmed transfer as failed. During installation, only an explicit
 pre-execution missing-function response may use the previous durable protocol.
 
-Newest Players sorts the complete authorized roster by joined_at descending,
-with UUID ties and matching cursor/export order. Existing search, scope and
-workspace continuity remain in use.
+Newest Players is delivered by #7600 (Newest Players First, the default Player
+Management order by club joined_at, installed as roster_club_join_date_sorting).
+This change carries no separate roster migration so the two cannot conflict.
 
 The existing agent-send cores permit agent-wallet to the holder's own player
 wallet. Other self destinations remain refused. Membership, source funds/credit,
@@ -37,7 +37,7 @@ minimum while a booked Spin's economic receipt remains unchanged.
 Qualification: private PostgreSQL exercised the baseline refusal and repaired
 self transfer, one debit/credit/receipt under replay, changed-intent refusal,
 source limits, recipient scope, durable reservation/acknowledgement and ACLs;
-205 roster rows across three pages and full export; existing/future clock aliases,
+existing/future clock aliases,
 standard and accelerated floors, preserved amounts and completed history.
 Existing required native wallet qualification invokes this regression script.
 Component transport tests cover lost responses/remounts and unavailable browser
@@ -53,7 +53,7 @@ The presentation readback compares that same clock projection against both the
 old booked-draw trigger and the new database floor. Real-manager tests reach a
 first hand and full action clock for both versions; changed stakes still refuse.
 The clock migration has an actual engine-first rollout dependency and must wait
-for compatible engine activation. The wallet and roster migrations are independent.
+for compatible engine activation. The wallet migrations are independent.
 
 The same unavailable-browser-storage refusal also existed in the three directly
 affected self-funding cashier surfaces. Shared server-backed recovery preserves

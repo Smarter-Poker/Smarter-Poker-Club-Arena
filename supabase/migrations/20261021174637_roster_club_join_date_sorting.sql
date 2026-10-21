@@ -1,26 +1,21 @@
--- 20261021172603_newest_joined_roster_ordering.sql
---
--- Version reserved by scripts/new-migration.mjs against origin/main and every
--- remote branch, so it cannot collide with another agent's in-flight work.
---
--- WHAT THIS CHANGES, AND WHY:
---
--- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
--- Supabase's schema-cache reload, which takes ~28s on this database, and ten
--- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).
-
--- Newest Players orders the entire authorized roster by club join time.
--- UUID tie breaking matches the keyset cursor and the full CSV export.
+-- @live-proof: md5(pg_get_functiondef('public.ca_club_members_page(uuid,text,text,text,jsonb,integer)'::regprocedure)) = '6d447b10687e83e3916136cc79567d31'
+-- @live-proof: md5(pg_get_functiondef('public.ca_club_members_export(uuid,text,text,text,uuid[])'::regprocedure)) = '010f6e78ed97f6a5918df54bf101bb1b'
+-- Player Management join order uses club membership joined_at, never profile creation
+-- or recent activity. Preserve authorized roster scope, privacy and bound cursors.
+-- Null dates sort last; equal dates use user_id. Export follows the same order.
+-- Exact preimages preserve concurrent changes and refuse accidental replay.
 BEGIN;
-SET LOCAL lock_timeout = '3s';
+SET LOCAL lock_timeout = '2s';
 SET LOCAL statement_timeout = '15s';
-DO $guard$ BEGIN
-IF md5(pg_get_functiondef('public.ca_club_members_page(uuid,text,text,text,jsonb,integer)'::regprocedure)) <> '7d79a33da2d276056ca06f75d4130b2b'
-OR md5(pg_get_functiondef('public.ca_club_members_export(uuid,text,text,text,uuid[])'::regprocedure)) <> '0bbab8e8c6c824a8f22b36d8ae38904b' THEN
-RAISE EXCEPTION 'Roster ordering preimage changed';
-END IF;
-END $guard$;
-CREATE OR REPLACE FUNCTION public.ca_club_members_page(p_club_id uuid, p_search text DEFAULT ''::text, p_filter text DEFAULT 'all'::text, p_sort text DEFAULT 'hierarchy'::text, p_cursor jsonb DEFAULT NULL::jsonb, p_limit integer DEFAULT 80)
+
+DO $install_join_sort$
+DECLARE v_definition text;
+BEGIN
+  SELECT pg_get_functiondef('public.ca_club_members_page(uuid,text,text,text,jsonb,integer)'::regprocedure) INTO v_definition;
+  IF md5(v_definition) <> '7d79a33da2d276056ca06f75d4130b2b' THEN
+    RAISE EXCEPTION 'Roster join sort source preimage changed: public.ca_club_members_page(uuid,text,text,text,jsonb,integer)';
+  END IF;
+  EXECUTE $definition$CREATE OR REPLACE FUNCTION public.ca_club_members_page(p_club_id uuid, p_search text DEFAULT ''::text, p_filter text DEFAULT 'all'::text, p_sort text DEFAULT 'hierarchy'::text, p_cursor jsonb DEFAULT NULL::jsonb, p_limit integer DEFAULT 80)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
@@ -41,7 +36,7 @@ BEGIN
   ) THEN
     v_filter := 'all';
   END IF;
-  IF v_sort NOT IN ('hierarchy', 'activity', 'newest', 'name', 'downlines', 'wallet', 'fees') THEN
+  IF v_sort NOT IN ('newest', 'oldest', 'hierarchy', 'activity', 'name', 'downlines', 'wallet', 'fees') THEN
     v_sort := 'hierarchy';
   END IF;
 
@@ -73,6 +68,9 @@ BEGIN
 
   WITH rows AS MATERIALIZED (
     SELECT r.*,
+           CASE WHEN r.joined_at IS NULL THEN 1e30::numeric
+                WHEN v_sort = 'newest' THEN -extract(epoch FROM r.joined_at)
+                ELSE extract(epoch FROM r.joined_at) END AS joined_sort,
            lower(r.alias) AS sort_name,
            CASE WHEN r.is_seated THEN 2 WHEN r.is_online THEN 1 ELSE 0 END AS presence_rank,
            coalesce(extract(epoch FROM r.last_login), 0)::numeric AS activity_epoch,
@@ -103,9 +101,11 @@ BEGIN
       FROM rows r
      WHERE v_cursor IS NULL OR CASE v_sort
        WHEN 'newest' THEN
-         coalesce(extract(epoch FROM r.joined_at), 0) < coalesce((v_cursor->>'metric')::numeric, 0)
-         OR (coalesce(extract(epoch FROM r.joined_at), 0) = coalesce((v_cursor->>'metric')::numeric, 0)
-             AND r.user_id::text > coalesce(v_cursor->>'id', ''))
+         (r.joined_sort, r.user_id::text) >
+         (coalesce((v_cursor->>'metric')::numeric, 0), coalesce(v_cursor->>'id', ''))
+       WHEN 'oldest' THEN
+         (r.joined_sort, r.user_id::text) >
+         (coalesce((v_cursor->>'metric')::numeric, 0), coalesce(v_cursor->>'id', ''))
        WHEN 'name' THEN
          (r.sort_name, r.user_id::text) >
          (coalesce(v_cursor->>'name', ''), coalesce(v_cursor->>'id', ''))
@@ -144,13 +144,13 @@ BEGIN
     SELECT e.*,
            row_number() OVER (
              ORDER BY
+               CASE WHEN v_sort IN ('newest', 'oldest') THEN e.joined_sort END ASC,
                CASE WHEN v_sort = 'hierarchy' THEN e.role_rank END DESC,
                CASE WHEN v_sort = 'hierarchy' THEN coalesce(e.downline_total, 0) END DESC,
                CASE WHEN v_sort = 'hierarchy' THEN e.sort_name END ASC,
                CASE WHEN v_sort = 'activity' THEN e.presence_rank END DESC,
                CASE WHEN v_sort = 'activity' THEN e.activity_epoch END DESC,
-               CASE WHEN v_sort = 'newest' THEN coalesce(extract(epoch FROM e.joined_at), 0) END DESC,
-       CASE WHEN v_sort = 'name' THEN e.sort_name END ASC,
+               CASE WHEN v_sort = 'name' THEN e.sort_name END ASC,
                CASE WHEN v_sort = 'downlines' THEN coalesce(e.downline_total, 0) END DESC,
                CASE WHEN v_sort = 'wallet' THEN e.wallet_total END DESC,
                CASE WHEN v_sort = 'fees' THEN coalesce(e.total_fees, 0) END DESC,
@@ -158,12 +158,12 @@ BEGIN
            ) AS rn
       FROM eligible e
      ORDER BY
-       CASE WHEN v_sort = 'hierarchy' THEN e.role_rank END DESC,
+       CASE WHEN v_sort IN ('newest', 'oldest') THEN e.joined_sort END ASC,
+               CASE WHEN v_sort = 'hierarchy' THEN e.role_rank END DESC,
        CASE WHEN v_sort = 'hierarchy' THEN coalesce(e.downline_total, 0) END DESC,
        CASE WHEN v_sort = 'hierarchy' THEN e.sort_name END ASC,
        CASE WHEN v_sort = 'activity' THEN e.presence_rank END DESC,
        CASE WHEN v_sort = 'activity' THEN e.activity_epoch END DESC,
-       CASE WHEN v_sort = 'newest' THEN coalesce(extract(epoch FROM e.joined_at), 0) END DESC,
        CASE WHEN v_sort = 'name' THEN e.sort_name END ASC,
        CASE WHEN v_sort = 'downlines' THEN coalesce(e.downline_total, 0) END DESC,
        CASE WHEN v_sort = 'wallet' THEN e.wallet_total END DESC,
@@ -178,7 +178,7 @@ BEGIN
   SELECT jsonb_build_object(
     'items', coalesce((
       SELECT jsonb_agg(
-        to_jsonb(v) - ARRAY['sort_name', 'presence_rank', 'activity_epoch', 'wallet_total', 'rn']::text[]
+        to_jsonb(v) - ARRAY['joined_sort', 'sort_name', 'presence_rank', 'activity_epoch', 'wallet_total', 'rn']::text[]
         ORDER BY v.rn
       ) FROM visible v
     ), '[]'::jsonb),
@@ -196,12 +196,11 @@ BEGIN
         'downlines', coalesce(l.downline_total, 0),
         'presence', l.presence_rank,
         'activity', l.activity_epoch,
-        'metric', CASE v_sort
-          WHEN 'newest' THEN coalesce(extract(epoch FROM l.joined_at), 0)
+        'metric', CASE WHEN v_sort IN ('newest', 'oldest') THEN to_jsonb(l.joined_sort::text) ELSE to_jsonb(CASE v_sort
           WHEN 'wallet' THEN l.wallet_total
           WHEN 'fees' THEN coalesce(l.total_fees, 0)
           WHEN 'downlines' THEN coalesce(l.downline_total, 0)
-          ELSE 0 END
+          ELSE 0 END) END
       ) FROM last_row l
     ) ELSE NULL END,
     'has_more', (SELECT count(*) FROM ordered) > v_limit,
@@ -217,9 +216,19 @@ BEGIN
     'query', jsonb_build_object('filter', v_filter, 'sort', v_sort)
   ));
 END;
-$function$;
+$function$
+$definition$;
+END
+$install_join_sort$;
 
-CREATE OR REPLACE FUNCTION public.ca_club_members_export(p_club_id uuid, p_search text DEFAULT ''::text, p_filter text DEFAULT 'all'::text, p_sort text DEFAULT 'hierarchy'::text, p_user_ids uuid[] DEFAULT NULL::uuid[])
+DO $install_join_sort$
+DECLARE v_definition text;
+BEGIN
+  SELECT pg_get_functiondef('public.ca_club_members_export(uuid,text,text,text,uuid[])'::regprocedure) INTO v_definition;
+  IF md5(v_definition) <> '0bbab8e8c6c824a8f22b36d8ae38904b' THEN
+    RAISE EXCEPTION 'Roster join sort source preimage changed: public.ca_club_members_export(uuid,text,text,text,uuid[])';
+  END IF;
+  EXECUTE $definition$CREATE OR REPLACE FUNCTION public.ca_club_members_export(p_club_id uuid, p_search text DEFAULT ''::text, p_filter text DEFAULT 'all'::text, p_sort text DEFAULT 'hierarchy'::text, p_user_ids uuid[] DEFAULT NULL::uuid[])
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -242,7 +251,7 @@ DECLARE
 BEGIN
   IF v_filter NOT IN ('all', 'mine', 'seated', 'online', 'agents', 'admins',
     'inactive_30', 'inactive_60', 'inactive_90', 'high_fees') THEN v_filter := 'all'; END IF;
-  IF v_sort NOT IN ('hierarchy', 'activity', 'newest', 'name', 'downlines', 'wallet', 'fees') THEN v_sort := 'hierarchy'; END IF;
+  IF v_sort NOT IN ('newest', 'oldest', 'hierarchy', 'activity', 'name', 'downlines', 'wallet', 'fees') THEN v_sort := 'hierarchy'; END IF;
   IF coalesce(array_length(p_user_ids, 1), 0) > 5000 THEN
     RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'Select No More Than 5,000 Players Per Export';
   END IF;
@@ -283,6 +292,9 @@ BEGIN
 
   WITH rows AS MATERIALIZED (
     SELECT r.*,
+           CASE WHEN r.joined_at IS NULL THEN 1e30::numeric
+                WHEN v_sort = 'newest' THEN -extract(epoch FROM r.joined_at)
+                ELSE extract(epoch FROM r.joined_at) END AS joined_sort,
            lower(r.alias) AS sort_name,
            CASE WHEN r.is_seated THEN 2 WHEN r.is_online THEN 1 ELSE 0 END AS presence_rank,
            coalesce(extract(epoch FROM r.last_login), 0)::numeric AS activity_epoch,
@@ -311,12 +323,12 @@ BEGIN
   ), ordered AS (
     SELECT r.* FROM rows r
      ORDER BY
+       CASE WHEN v_sort IN ('newest', 'oldest') THEN r.joined_sort END ASC,
+       CASE WHEN v_sort IN ('newest', 'oldest') THEN r.user_id END ASC,
        CASE WHEN v_sort = 'hierarchy' THEN r.role_rank END DESC,
        CASE WHEN v_sort = 'hierarchy' THEN coalesce(r.downline_total, 0) END DESC,
        CASE WHEN v_sort = 'activity' THEN r.presence_rank END DESC,
        CASE WHEN v_sort = 'activity' THEN r.activity_epoch END DESC,
-       CASE WHEN v_sort = 'newest' THEN coalesce(extract(epoch FROM r.joined_at), 0) END DESC,
-       CASE WHEN v_sort = 'newest' THEN r.user_id END ASC,
        CASE WHEN v_sort = 'name' THEN r.sort_name END ASC,
        CASE WHEN v_sort = 'downlines' THEN coalesce(r.downline_total, 0) END DESC,
        CASE WHEN v_sort = 'wallet' THEN r.wallet_total END DESC,
@@ -324,7 +336,7 @@ BEGIN
        r.sort_name ASC, r.user_id ASC
   )
   SELECT coalesce(jsonb_agg(
-           to_jsonb(o) - ARRAY['sort_name', 'presence_rank', 'activity_epoch', 'wallet_total',
+           to_jsonb(o) - ARRAY['joined_sort', 'sort_name', 'presence_rank', 'activity_epoch', 'wallet_total',
                                   'can_view_financials', 'can_view_notes', 'in_viewer_downline']::text[]
          ), '[]'::jsonb), count(*)::int
     INTO v_rows, v_count
@@ -354,6 +366,9 @@ BEGIN
     'audit_id', v_audit_id
   );
 END;
-$function$;
+$function$
+$definition$;
+END
+$install_join_sort$;
 
 COMMIT;

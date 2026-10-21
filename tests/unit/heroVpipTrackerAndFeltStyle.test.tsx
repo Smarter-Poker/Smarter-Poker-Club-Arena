@@ -290,7 +290,7 @@ describe('the regular ante reaches the felt', () => {
      appeared between the stakes and the hand number, and the club and union
      were being ellipsized to fit the wordmark. The rows and their order are
      now his: identity, game, VPIP, hand, bomb clock. */
-  it('the masthead: full club + union, then style + game + stakes on ONE line, then VPIP, then the hand', () => {
+  it('the masthead: full club + union, then style + game + stakes on ONE line, then the hand without a duplicate VPIP rule', () => {
     const page = read('src/pages/TablePage.tsx');
     // The CASH masthead: the tournament branch above it uses the same row class.
     const brand = page.slice(
@@ -307,9 +307,9 @@ describe('the regular ante reaches the felt', () => {
     expect(brand).not.toContain('table-brand__line--style');
     expect(brand).not.toContain('table-brand__ante');
 
-    // 7C: the rules row is VPIP and nothing else - no ante, no hands window.
-    expect(brand).toMatch(/\{tableState\.vpipFloor != null && \(/);
-    expect(brand).toMatch(/VPIP \{tableState\.vpipFloor\}% Min/);
+    // October 21: the personal tracker owns VPIP; no duplicate rule on felt.
+    expect(brand).not.toContain('table-brand__vpip');
+    expect(brand).not.toContain('VPIP {tableState.vpipFloor}% Min');
     expect(brand).not.toContain('vpipWindow');
     expect(brand).not.toContain('formatChipFigure(tableState.ante)');
 
@@ -324,8 +324,7 @@ describe('the regular ante reaches the felt', () => {
     // 7D: the bomb clock is last, below everything else.
     const at = (s: string) => brand.indexOf(s);
     expect(at('table-brand__line--identity')).toBeLessThan(at('table-brand__line--level'));
-    expect(at('table-brand__line--level')).toBeLessThan(at('table-brand__line--rules'));
-    expect(at('table-brand__line--rules')).toBeLessThan(at('table-brand__line--hand'));
+    expect(at('table-brand__line--level')).toBeLessThan(at('table-brand__line--hand'));
     expect(page.indexOf('table-brand__line--hand')).toBeLessThan(
       page.indexOf('table-brand__line--bomb')
     );

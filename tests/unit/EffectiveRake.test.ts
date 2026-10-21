@@ -42,7 +42,7 @@ describe('resolveRakeOverride — precedence must match the server', () => {
         { rake_percent: 4, rake_cap_bb: 2 },
         { default_rake_percent: 7, rake_cap: 9 }
       )
-    ).toEqual({ rakePercent: 4, rakeCapBB: 2 });
+    ).toEqual({ scope: 'standard', rakePercent: 4, rakeCapBB: 2 });
   });
 
   it('falls back to the club when the table inherits', () => {
@@ -51,7 +51,7 @@ describe('resolveRakeOverride — precedence must match the server', () => {
         { rake_percent: RAKE_INHERIT, rake_cap_bb: RAKE_INHERIT },
         { default_rake_percent: 7, rake_cap: 9 }
       )
-    ).toEqual({ rakePercent: 7, rakeCapBB: 9 });
+    ).toEqual({ scope: 'standard', rakePercent: 7, rakeCapBB: 9 });
   });
 
   it('mixes: table sets the percent, club sets the cap', () => {
@@ -60,29 +60,41 @@ describe('resolveRakeOverride — precedence must match the server', () => {
         { rake_percent: 4, rake_cap_bb: RAKE_INHERIT },
         { default_rake_percent: 7, rake_cap: 9 }
       )
-    ).toEqual({ rakePercent: 4, rakeCapBB: 9 });
+    ).toEqual({ scope: 'standard', rakePercent: 4, rakeCapBB: 9 });
   });
 
-  it('returns undefined — meaning "use the schedule" — when nothing is set', () => {
+  it('returns the standard scope when nothing is set', () => {
     expect(
       resolveRakeOverride(
         { rake_percent: RAKE_INHERIT, rake_cap_bb: RAKE_INHERIT },
         { default_rake_percent: RAKE_INHERIT, rake_cap: RAKE_INHERIT }
       )
-    ).toBeUndefined();
-    expect(resolveRakeOverride(null, null)).toBeUndefined();
-    expect(resolveRakeOverride({}, {})).toBeUndefined();
+    ).toEqual({ scope: 'standard', rakePercent: undefined, rakeCapBB: undefined });
+    expect(resolveRakeOverride(null, null)).toEqual({
+      scope: 'standard',
+      rakePercent: undefined,
+      rakeCapBB: undefined,
+    });
+    expect(resolveRakeOverride({}, {})).toEqual({
+      scope: 'standard',
+      rakePercent: undefined,
+      rakeCapBB: undefined,
+    });
   });
 
   it('treats NULL (never configured) as inherit, not as zero rake', () => {
     // A NULL read as 0 would tell the player the house takes nothing.
     expect(
-      resolveRakeOverride({ rake_percent: null, rake_cap_bb: null }, { default_rake_percent: null, rake_cap: null })
-    ).toBeUndefined();
+      resolveRakeOverride(
+        { rake_percent: null, rake_cap_bb: null },
+        { default_rake_percent: null, rake_cap: null }
+      )
+    ).toEqual({ scope: 'standard', rakePercent: undefined, rakeCapBB: undefined });
   });
 
   it('accepts a deliberate zero — a genuinely rake-free table', () => {
     expect(resolveRakeOverride({ rake_percent: 0, rake_cap_bb: 0 }, null)).toEqual({
+      scope: 'standard',
       rakePercent: 0,
       rakeCapBB: 0,
     });
@@ -96,7 +108,11 @@ describe('resolveRakeOverride — precedence must match the server', () => {
       default_rake_percent?: number | null;
       rake_cap?: number | null;
     };
-    expect(resolveRakeOverride(null, legacyShaped)).toBeUndefined();
+    expect(resolveRakeOverride(null, legacyShaped)).toEqual({
+      scope: 'standard',
+      rakePercent: undefined,
+      rakeCapBB: undefined,
+    });
   });
 });
 

@@ -5416,6 +5416,7 @@ export class GameServer {
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
+      cashRakePolicyVersion: 1,
       // Public liveness comes from the worker-owned store. The main thread no
       // longer hydrates a second solver artifact whose status could look healthy
       // while the live action path was empty or failed.

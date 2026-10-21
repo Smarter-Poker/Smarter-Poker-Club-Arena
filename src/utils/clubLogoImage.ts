@@ -22,6 +22,47 @@ function canvasBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
   });
 }
 
+/** Keep the ordinary image decoder available in browsers without bitmap decoding. */
+async function decodeLogo(file: File): Promise<{
+  image: CanvasImageSource;
+  width: number;
+  height: number;
+  release: () => void;
+}> {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file);
+      return {
+        image: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        release: () => bitmap.close(),
+      };
+    } catch {
+      // A bitmap decode failure does not mean the browser's image decoder fails.
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error('That file is not a valid image.'));
+      image.src = url;
+    });
+    return {
+      image,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      release: () => {
+        image.src = '';
+      },
+    };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 /** Decode, center-crop, resize, and compress a user-controlled club logo. */
 export async function optimizeClubLogo(file: File): Promise<string> {
   if (!ACCEPTED_TYPES.has(file.type)) {
@@ -31,41 +72,33 @@ export async function optimizeClubLogo(file: File): Promise<string> {
     throw new Error('The source image must be 5MB or smaller.');
   }
 
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch {
-    throw new Error('That file is not a valid image.');
-  }
-  if (!bitmap.width || !bitmap.height) {
-    bitmap.close();
-    throw new Error('That image has invalid dimensions.');
-  }
-
+  const decoded = await decodeLogo(file);
   const canvas = document.createElement('canvas');
   canvas.width = OUTPUT_EDGE;
   canvas.height = OUTPUT_EDGE;
-  const context = canvas.getContext('2d', { alpha: true });
-  if (!context) {
-    bitmap.close();
-    throw new Error('Image optimization is unavailable in this browser.');
+  try {
+    if (!decoded.width || !decoded.height) {
+      throw new Error('That image has invalid dimensions.');
+    }
+    const context = canvas.getContext('2d', { alpha: true });
+    if (!context) {
+      throw new Error('Image optimization is unavailable in this browser.');
+    }
+    const sourceEdge = Math.min(decoded.width, decoded.height);
+    context.drawImage(
+      decoded.image,
+      (decoded.width - sourceEdge) / 2,
+      (decoded.height - sourceEdge) / 2,
+      sourceEdge,
+      sourceEdge,
+      0,
+      0,
+      OUTPUT_EDGE,
+      OUTPUT_EDGE
+    );
+  } finally {
+    decoded.release();
   }
-
-  const sourceEdge = Math.min(bitmap.width, bitmap.height);
-  const sourceX = (bitmap.width - sourceEdge) / 2;
-  const sourceY = (bitmap.height - sourceEdge) / 2;
-  context.drawImage(
-    bitmap,
-    sourceX,
-    sourceY,
-    sourceEdge,
-    sourceEdge,
-    0,
-    0,
-    OUTPUT_EDGE,
-    OUTPUT_EDGE
-  );
-  bitmap.close();
 
   let output = await canvasBlob(canvas, 0.88);
   if (output.size > MAX_OUTPUT_BYTES) output = await canvasBlob(canvas, 0.72);

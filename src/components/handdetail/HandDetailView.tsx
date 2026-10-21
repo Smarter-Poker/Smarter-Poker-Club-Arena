@@ -24,7 +24,6 @@
  *                Pot        Main(x)
  *   Showdown:    every player dealt in — cards or backs, the made hand, the
  *                five that played lit, the net, the pot they contested
- *   the drop:    rake and jackpot fee, taken from the pot
  *
  * THE STACK COLUMN IS CONDITIONAL, and that is deliberate. It is reconstructed
  * (nothing stores a starting stack), and the reconstruction is only sound when
@@ -557,22 +556,6 @@ export function HandDetailView({
           </div>
         </section>
       ))}
-
-      {(model.rake > 0 || model.bbjFee > 0) && (
-        <div className="hdv__drop">
-          {model.rake > 0 && (
-            <span>
-              Rake <strong>{money(model.rake)}</strong>
-            </span>
-          )}
-          {model.bbjFee > 0 && (
-            <span>
-              Jackpot Fee <strong>{money(model.bbjFee)}</strong>
-            </span>
-          )}
-          <span className="hdv__drop-note">Taken From The Pot</span>
-        </div>
-      )}
 
       {viewerFacts && <AllInFacts facts={viewerFacts} arenaAsset={model.arenaAsset} />}
 

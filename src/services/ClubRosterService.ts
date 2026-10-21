@@ -124,9 +124,10 @@ export type RosterFilter =
   | 'inactive_90'
   | 'high_fees';
 export type RosterSort =
+  | 'newest'
+  | 'oldest'
   | 'hierarchy'
   | 'activity'
-  | 'newest'
   | 'name'
   | 'downlines'
   | 'wallet'
@@ -442,7 +443,7 @@ export const ClubRosterService = {
           p_club_id: clubId,
           p_search: normalizeRosterSearch(query.search),
           p_filter: query.filter ?? 'all',
-          p_sort: query.sort ?? 'hierarchy',
+          p_sort: query.sort ?? 'newest',
           p_cursor: query.cursor ?? null,
           p_limit: query.limit ?? 80,
         });
@@ -854,7 +855,7 @@ export const ClubRosterService = {
             p_club_id: clubId,
             p_search: normalizeRosterSearch(query.search),
             p_filter: query.filter ?? 'all',
-            p_sort: query.sort ?? 'hierarchy',
+            p_sort: query.sort ?? 'newest',
             p_user_ids: userIds,
           })
           .abortSignal(signal);

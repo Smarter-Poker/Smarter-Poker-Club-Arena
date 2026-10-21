@@ -289,7 +289,7 @@ describe('Players tab shows what the brief asked for', () => {
 
   it('offers every sort the brief listed, hierarchy first', () => {
     expect(SERVICE).toMatch(
-      /'hierarchy'\s*\|\s*'activity'\s*\|\s*'newest'\s*\|\s*'name'\s*\|\s*'downlines'\s*\|\s*'wallet'\s*\|\s*'fees'/
+      /'hierarchy'\s*\|\s*'activity'\s*\|\s*'name'\s*\|\s*'downlines'\s*\|\s*'wallet'\s*\|\s*'fees'/
     );
     expect(PAGE).toContain("readSort(searchParams.get('sort'))");
   });

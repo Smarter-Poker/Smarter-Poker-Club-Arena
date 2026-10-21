@@ -1,0 +1,8 @@
+{
+  "_owner": "union-full-audit-01a15550 - migration 20261020203346",
+  "_comment": "Source-only historical positive payee financial custody. Engine club-channel access prerequisite must be activated and verified before installation. No migration-triggered payments.",
+  "functions": [
+    "smarter_private.historical_rakeback_wallet_admission",
+    "smarter_private.preserve_historical_rakeback_wallet"
+  ]
+}

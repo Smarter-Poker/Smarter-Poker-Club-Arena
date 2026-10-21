@@ -1,28 +1,6 @@
-/**
- * The club message greets you once, at the door, and takes no if for an answer
- * only until you give it one.
- *
- * Dan, 2026-09-03: "Club Message should appear as a 'full screen pop up' when
- * you enter the club, not anywhere 'baked into the screen'. [...] leave padding
- * around all edges top and bottom and create an 'X' off the message button. as
- * well as a don't show me this message again. and the only time a new pop up
- * will be displayed is if the club owner, co owner or admin creates a new
- * message."
- *
- * The two ways out are NOT the same promise, and collapsing them was the
- * tempting simplification:
- *
- *   X            closes it now, writes nothing, greets again next visit. That
- *                is what a day's message is for.
- *   Do Not Show  writes the dismissal and stays quiet until staff write a NEW
- *                message, at which point the club has something else to say.
- *
- * An X that silences a club forever is a trap. A greeting with no quick way out
- * is an obstacle. Both are pinned below.
- */
 import { readFileSync } from 'node:fs';
 import { render, screen, waitFor } from '@testing-library/react';
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -45,8 +23,13 @@ vi.mock('../../src/lib/supabase', () => ({
       return q;
     },
     rpc: (name: string, args: any) => {
-      if (name === 'fn_get_club_entry_message') {
-        return Promise.resolve({ data: mocks.entry, error: null });
+      const override = mocks.rpc?.(name, args);
+      if (override !== undefined) return override;
+      if (name === 'fn_claim_club_entry_news') {
+        const data = { ...mocks.entry, announcements: mocks.posts };
+        mocks.entry = { ...mocks.entry, should_show: false };
+        mocks.posts = [];
+        return Promise.resolve({ data, error: null });
       }
       if (name === 'fn_dismiss_club_message') {
         mocks.dismissCalls.push(args.p_club_id);
@@ -102,6 +85,7 @@ describe('the club message meets you at the door', () => {
     mocks.entry = SHOWING;
     mocks.dismissCalls = [];
     mocks.saveCalls = [];
+    mocks.rpc = null;
   });
 
   it('greets on entry when the server says to', async () => {
@@ -125,11 +109,14 @@ describe('the club message meets you at the door', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('greets again on the next club day without retiring the message revision', async () => {
-    localStorage.setItem('sp-club-greeting-day:player-1:club-1', '2020-01-01');
+  it('has no daily reset or opt-out control', async () => {
     renderGreeting();
-    expect(await screen.findByText(SHOWING.message)).toBeInTheDocument();
-    expect(mocks.dismissCalls).toEqual([]);
+    await screen.findByText(SHOWING.message);
+    expect(screen.queryByRole('button', { name: /do not show again/i })).toBeNull();
+    expect(read('src/components/club/ClubEntryMessage.tsx')).not.toContain('localStorage');
+    expect(read('src/components/club/ClubEntryMessage.tsx')).not.toContain(
+      'fn_dismiss_club_message'
+    );
   });
 
   it('shows available announcements directly even when there is no greeting', async () => {
@@ -165,13 +152,36 @@ describe('the club message meets you at the door', () => {
     expect(mocks.dismissCalls, 'the X must never write a dismissal').toEqual([]);
   });
 
-  /** The other control is the one that writes. */
-  it('records the dismissal when asked not to show it again', async () => {
+  it('enters the lobby without a preference write', async () => {
     renderGreeting();
     await screen.findByText(SHOWING.message);
-    await click(/do not show again/i);
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(mocks.dismissCalls).toEqual(['club-1']);
+    await click(/enter lobby/i);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(mocks.dismissCalls).toEqual([]);
+  });
+
+  it('survives StrictMode effect replay', async () => {
+    render(
+      <StrictMode>
+        <ClubEntryMessage
+          clubId="club-1"
+          clubName="Deep Stack Society"
+          canEdit={false}
+          onOpenAnnouncements={() => {}}
+          onToast={() => {}}
+        />
+      </StrictMode>
+    );
+    expect(await screen.findByText(SHOWING.message)).toBeInTheDocument();
+  });
+
+  it('shows a new server message on a later entry', async () => {
+    const first = renderGreeting();
+    await screen.findByText(SHOWING.message);
+    first.unmount();
+    mocks.entry = { ...SHOWING, message: 'New Club News', revision: 8 };
+    renderGreeting();
+    expect(await screen.findByText('New Club News')).toBeInTheDocument();
   });
 
   /**
@@ -199,6 +209,96 @@ describe('the club message meets you at the door', () => {
     await click(/save message/i);
     expect(mocks.saveCalls).toHaveLength(1);
     expect(mocks.saveCalls[0].p_club_id).toBe('club-1');
+  });
+
+  it('renders the claimed message when another staff edit overtakes a save', async () => {
+    renderGreeting(true);
+    await screen.findByText(SHOWING.message);
+    await click(/edit message/i);
+    mocks.rpc = (name: string) =>
+      name === 'fn_claim_club_entry_news'
+        ? Promise.resolve({
+            data: {
+              ok: true,
+              should_show: true,
+              message: 'Newer Staff Update',
+              revision: 9,
+              announcements: [],
+            },
+            error: null,
+          })
+        : undefined;
+    await click(/save message/i);
+    expect(await screen.findByText('Newer Staff Update')).toBeInTheDocument();
+    expect(screen.queryByText(SHOWING.message)).toBeNull();
+  });
+
+  it('does not claim or repaint an old club after a delayed staff save', async () => {
+    const saved = vi.fn();
+    const view = render(
+      <ClubEntryMessage
+        clubId="club-1"
+        clubName="First Club"
+        canEdit
+        onMessageSaved={saved}
+        onOpenAnnouncements={() => {}}
+        onToast={() => {}}
+      />
+    );
+    await screen.findByText(SHOWING.message);
+    await click(/edit message/i);
+    let finish!: (result: unknown) => void;
+    const pending = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const calls: string[] = [];
+    mocks.rpc = (name: string) => {
+      calls.push(name);
+      return name === 'fn_set_club_lobby_message' ? pending : undefined;
+    };
+    await click(/save message/i);
+    mocks.entry = { ...SHOWING, message: 'Second Club News' };
+    view.rerender(
+      <ClubEntryMessage
+        clubId="club-2"
+        clubName="Second Club"
+        canEdit
+        onMessageSaved={saved}
+        onOpenAnnouncements={() => {}}
+        onToast={() => {}}
+      />
+    );
+    await screen.findByText('Second Club News');
+    const claims = calls.filter((name) => name === 'fn_claim_club_entry_news').length;
+    await act(async () =>
+      finish({ data: { ok: true, lobby_message: 'Old Club Save', revision: 8 }, error: null })
+    );
+    expect(screen.getByText('Second Club News')).toBeInTheDocument();
+    expect(saved).not.toHaveBeenCalled();
+    expect(calls.filter((name) => name === 'fn_claim_club_entry_news')).toHaveLength(claims);
+  });
+
+  it('does not claim unseen news after closing an in-flight staff save', async () => {
+    renderGreeting(true);
+    await screen.findByText(SHOWING.message);
+    await click(/edit message/i);
+    let finish!: (result: unknown) => void;
+    const pending = new Promise((resolve) => {
+      finish = resolve;
+    });
+    const claims = vi.fn();
+    mocks.rpc = (name: string) => {
+      if (name === 'fn_set_club_lobby_message') return pending;
+      if (name === 'fn_claim_club_entry_news') claims();
+      return undefined;
+    };
+    await click(/save message/i);
+    await click(/^close$/i);
+    await act(async () =>
+      finish({ data: { ok: true, lobby_message: 'Later News', revision: 8 }, error: null })
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(claims).not.toHaveBeenCalled();
   });
 
   /**

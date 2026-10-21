@@ -47,16 +47,33 @@ const mocks = vi.hoisted(() => ({
   existingGames: [] as Array<Record<string, unknown>>,
 }));
 
+vi.mock('../src/hooks/useCashRakePolicyVersion', () => ({ useCashRakePolicyVersion: () => 1 }));
 vi.mock('../src/lib/supabase', () => ({
   supabase: {
     rpc: mocks.rpc,
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          eq: async () => ({ data: mocks.existingGames, error: null }),
-        }),
-      }),
-    }),
+    from: (table: string) =>
+      table === 'clubs'
+        ? {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: {
+                    union_id: 'fade0000-0000-0000-0000-000000000001',
+                    default_rake_percent: -1,
+                    rake_cap: -1,
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }
+        : {
+            select: () => ({
+              eq: () => ({
+                eq: async () => ({ data: mocks.existingGames, error: null }),
+              }),
+            }),
+          },
   },
 }));
 vi.mock('react-router-dom', () => ({ useNavigate: () => mocks.navigate }));

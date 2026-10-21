@@ -98,7 +98,8 @@ describe('operator Data surfaces use intentional Club Arena console families', (
     expect(rates).not.toMatch(/entityId\.slice\s*\(/);
     expect(rates).not.toMatch(/changed_by\.slice\s*\(/);
 
-    expect(clubData).toContain("'Creator Name Unavailable'");
+    expect(clubData).toContain("'Club Name Unavailable'");
+    expect(clubData).not.toContain('By {row.creator_name}');
     expect(clubData).not.toMatch(/creator_id\.slice\s*\(/);
     expect(bombPots).toContain("d.table_name ?? 'Table Name Unavailable'");
     expect(bombPots).not.toMatch(/table_id\.slice\s*\(/);

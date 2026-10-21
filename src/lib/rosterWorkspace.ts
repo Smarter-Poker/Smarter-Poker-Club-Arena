@@ -27,7 +27,7 @@ const FILTERS = [
   'inactive_90',
   'high_fees',
 ];
-const SORTS = ['hierarchy', 'activity', 'newest', 'name', 'downlines', 'wallet', 'fees'];
+const SORTS = ['newest', 'oldest', 'hierarchy', 'activity', 'name', 'downlines', 'wallet', 'fees'];
 export const ROSTER_COLUMNS: RosterColumn[] = ['downlines', 'wallets', 'fees', 'activity'];
 export const ROSTER_ROW_HEIGHT = 123;
 export const MAX_ROSTER_RETURN_TOP = ROSTER_ROW_HEIGHT * 10_000;
@@ -35,7 +35,7 @@ export const MAX_ROSTER_RETURN_TOP = ROSTER_ROW_HEIGHT * 10_000;
    generated, never a wallet balance by default (Dan, 2026-10-14). */
 export const DEFAULT_ROSTER_COLUMNS: RosterColumn[] = ['fees', 'downlines', 'activity'];
 export function defaultRosterWorkspace(): RosterWorkspace {
-  return { search: '', filter: 'all', sort: 'hierarchy', columns: [...DEFAULT_ROSTER_COLUMNS] };
+  return { search: '', filter: 'all', sort: 'newest', columns: [...DEFAULT_ROSTER_COLUMNS] };
 }
 export function rosterWorkspaceKey(viewer: string, club: string): string {
   return `roster_workspace_v1_${encodeURIComponent(viewer)}_${encodeURIComponent(club)}`;
@@ -79,7 +79,11 @@ export function readRosterWorkspace(viewer: string, club: string): RosterWorkspa
     }
     if (raw.length > 2048) return null;
     const value = JSON.parse(raw);
-    return value?.version === 1 ? decodeWorkspace(value) : null;
+    if (value?.version !== 1 && value?.version !== 2) return null;
+    const workspace = decodeWorkspace(value);
+    // Apply the new join-order default once when upgrading the old workspace.
+    // Keep the operator's search, filter and columns; subsequent choices persist.
+    return workspace && value.version === 1 ? { ...workspace, sort: 'newest' } : workspace;
   } catch {
     return null;
   }
@@ -94,7 +98,7 @@ export function writeRosterWorkspace(
   try {
     sessionStorage.setItem(
       rosterWorkspaceKey(viewer, club),
-      JSON.stringify({ version: 1, ...safe })
+      JSON.stringify({ version: 2, ...safe })
     );
   } catch {
     /* Optional browser continuity. */

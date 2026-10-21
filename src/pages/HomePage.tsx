@@ -870,7 +870,7 @@ function HomePageInner() {
       clubs.push({
         id: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
         club_id: SHARK_CLUB_ID,
-        name: 'Shark Club',
+        name: 'Kings Club',
         /* member_count is deliberately NOT seeded (2026-08-28). It used to
            carry a hard-coded 580 — a number nobody measured — and the sort
            immediately below ranks by member count, so a fabricated figure

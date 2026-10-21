@@ -1,0 +1,194 @@
+[
+  {
+    "tgname": "aaa_ca_refuse_replica_money_write",
+    "proname": "fn_ca_refuse_replica_money_write",
+    "definition": "CREATE TRIGGER aaa_ca_refuse_replica_money_write BEFORE INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH STATEMENT EXECUTE FUNCTION fn_ca_refuse_replica_money_write()",
+    "source_md5": "42ed613371ddac424b618f5ac767a733"
+  },
+  {
+    "tgname": "accounting_agreement_history",
+    "proname": "fn_accounting_agreement_capture",
+    "definition": "CREATE TRIGGER accounting_agreement_history AFTER INSERT OR DELETE OR UPDATE OF club_id, user_id, agent_id, parent_agent_id, role, status, is_active, commission_rate, rakeback_rate, player_rakeback_pct ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_accounting_agreement_capture()",
+    "source_md5": "746fab25cd56f6ad761325e7c0d525d5"
+  },
+  {
+    "tgname": "capture_club_messenger_admission",
+    "proname": "fn_capture_club_messenger_admission",
+    "definition": "CREATE TRIGGER capture_club_messenger_admission AFTER INSERT OR UPDATE OF status, is_active, membership_lifecycle_status, agent_id ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_capture_club_messenger_admission()",
+    "source_md5": "a2cdfdb7e9b9e9b650f0cfc72e693eae"
+  },
+  {
+    "tgname": "club_staff_notice_membership",
+    "proname": "fn_club_staff_notice_role_event",
+    "definition": "CREATE CONSTRAINT TRIGGER club_staff_notice_membership AFTER INSERT OR DELETE OR UPDATE OF role, status, is_active, membership_lifecycle_status, agent_id, club_id, user_id ON public.club_members DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_club_staff_notice_role_event()",
+    "source_md5": "a7f817a4fc8c54ae1b401462862cf8a9"
+  },
+  {
+    "tgname": "deliver_club_messenger_welcome",
+    "proname": "fn_deliver_club_messenger_welcome",
+    "definition": "CREATE CONSTRAINT TRIGGER deliver_club_messenger_welcome AFTER INSERT OR UPDATE OF status, is_active, membership_lifecycle_status, agent_id ON public.club_members DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_deliver_club_messenger_welcome()",
+    "source_md5": "70c0923f21660acd6bccffb6b2a6b490"
+  },
+  {
+    "tgname": "lock_cashier_hierarchy_insert_delete",
+    "proname": "lock_club_cashier_hierarchy_mutation",
+    "definition": "CREATE TRIGGER lock_cashier_hierarchy_insert_delete BEFORE INSERT OR DELETE ON public.club_members FOR EACH ROW EXECUTE FUNCTION lock_club_cashier_hierarchy_mutation()",
+    "source_md5": "2bf2e0dc1876c5b1238603fc18558907"
+  },
+  {
+    "tgname": "member_record_membership",
+    "proname": "fn_publish_member_record_row",
+    "definition": "CREATE TRIGGER member_record_membership AFTER INSERT OR DELETE OR UPDATE OF user_id, club_id, role, agent_id, status, nickname, notes, display_name, joined_at, last_active_at, chip_balance, promo_balance ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_publish_member_record_row()",
+    "source_md5": "9c508011d3e04af5b43137d46cc58901"
+  },
+  {
+    "tgname": "poker_arena_membership_guard",
+    "proname": "fn_poker_guard_arena_structure",
+    "definition": "CREATE TRIGGER poker_arena_membership_guard BEFORE INSERT OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_poker_guard_arena_structure()",
+    "source_md5": "0bcf6105fbcabf5cb68236d67817b952"
+  },
+  {
+    "tgname": "trg_admin_holds_no_player_wallet",
+    "proname": "fn_admin_holds_no_player_wallet",
+    "definition": "CREATE TRIGGER trg_admin_holds_no_player_wallet BEFORE INSERT OR UPDATE OF role, chip_balance ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_admin_holds_no_player_wallet()",
+    "source_md5": "3c54c86c548917606c846febfadf704b"
+  },
+  {
+    "tgname": "trg_approval_gate_ins",
+    "proname": "fn_membership_approval_gate",
+    "definition": "CREATE TRIGGER trg_approval_gate_ins BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_approval_gate()",
+    "source_md5": "b5edea413fa87af75f47b925a23b1d10"
+  },
+  {
+    "tgname": "trg_audit_club_join",
+    "proname": "fn_audit_club_entry_mutation",
+    "definition": "CREATE TRIGGER trg_audit_club_join AFTER INSERT OR UPDATE OF status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_entry_mutation()",
+    "source_md5": "d26149a3b10aa00618a98f5076ebf079"
+  },
+  {
+    "tgname": "trg_block_browser_balance_inserts",
+    "proname": "fn_block_browser_balance_inserts",
+    "definition": "CREATE TRIGGER trg_block_browser_balance_inserts BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_block_browser_balance_inserts()",
+    "source_md5": "88e61c03b82bedcdc67113f795355d4a"
+  },
+  {
+    "tgname": "trg_ca_autoledger_insert",
+    "proname": "fn_ca_autoledger",
+    "definition": "CREATE TRIGGER trg_ca_autoledger_insert AFTER INSERT ON public.club_members FOR EACH ROW WHEN (((COALESCE(new.chip_balance, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.promo_balance, (0)::numeric) <> (0)::numeric))) EXECUTE FUNCTION fn_ca_autoledger('chip_balance=player_wallet', 'promo_balance=promo_wallet')",
+    "source_md5": "620ce72294bdf8e3c8d3c556c8de35c9"
+  },
+  {
+    "tgname": "trg_club_members_bot_follows_horse",
+    "proname": "fn_club_members_bot_follows_horse",
+    "definition": "CREATE TRIGGER trg_club_members_bot_follows_horse BEFORE INSERT OR UPDATE OF user_id, is_bot ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_club_members_bot_follows_horse()",
+    "source_md5": "02033ded814911b9a5a74ecf91dfa2e9"
+  },
+  {
+    "tgname": "trg_club_members_emit_management_access",
+    "proname": "fn_emit_management_access_event",
+    "definition": "CREATE TRIGGER trg_club_members_emit_management_access AFTER INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_emit_management_access_event()",
+    "source_md5": "9963925e6cd6da557b9de6f1749db0fd"
+  },
+  {
+    "tgname": "trg_club_members_human_user_club_only",
+    "proname": "fn_ca_reject_automated_user_club_row",
+    "definition": "CREATE TRIGGER trg_club_members_human_user_club_only BEFORE INSERT OR UPDATE OF club_id, user_id, is_bot ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_reject_automated_user_club_row()",
+    "source_md5": "7c73094df30c90f94a78cbbd5d24f504"
+  },
+  {
+    "tgname": "trg_club_members_level_sync",
+    "proname": "trg_auto_recompute_club_level",
+    "definition": "CREATE TRIGGER trg_club_members_level_sync AFTER INSERT OR DELETE OR UPDATE OF role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION trg_auto_recompute_club_level()",
+    "source_md5": "91f239bc0f5b75e5147ef6bd19ff761b"
+  },
+  {
+    "tgname": "trg_club_members_no_agent_cycle_ins",
+    "proname": "fn_club_members_no_agent_cycle",
+    "definition": "CREATE TRIGGER trg_club_members_no_agent_cycle_ins BEFORE INSERT ON public.club_members FOR EACH ROW WHEN ((new.agent_id IS NOT NULL)) EXECUTE FUNCTION fn_club_members_no_agent_cycle()",
+    "source_md5": "a7ad3c53fcab80a15831e71544b53c56"
+  },
+  {
+    "tgname": "trg_club_members_require_explicit_join",
+    "proname": "fn_require_explicit_club_membership_source",
+    "definition": "CREATE TRIGGER trg_club_members_require_explicit_join BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_require_explicit_club_membership_source()",
+    "source_md5": "f694fef84a37560028281eead6f45257"
+  },
+  {
+    "tgname": "trg_club_members_staff_earn_no_rakeback",
+    "proname": "fn_club_members_staff_earn_no_rakeback",
+    "definition": "CREATE TRIGGER trg_club_members_staff_earn_no_rakeback BEFORE INSERT OR UPDATE ON public.club_members FOR EACH ROW WHEN (((new.role = ANY (ARRAY['co_owner'::text, 'admin'::text])) AND ((COALESCE(new.player_rakeback_pct, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.rakeback_rate, (0)::numeric) <> (0)::numeric) OR (COALESCE(new.commission_rate, (0)::numeric) <> (0)::numeric)))) EXECUTE FUNCTION fn_club_members_staff_earn_no_rakeback()",
+    "source_md5": "09ae811a57faa517720d493d89262f31"
+  },
+  {
+    "tgname": "trg_four_club_limit_ins",
+    "proname": "fn_enforce_four_club_limit",
+    "definition": "CREATE TRIGGER trg_four_club_limit_ins BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_enforce_four_club_limit()",
+    "source_md5": "7c79db5e707510912f4fa3c6f9ff7cb5"
+  },
+  {
+    "tgname": "trg_guard_retired_club_mutation",
+    "proname": "fn_guard_retired_club_mutation",
+    "definition": "CREATE TRIGGER trg_guard_retired_club_mutation BEFORE INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_retired_club_mutation()",
+    "source_md5": "941df8f6c1a4857d46885ddf7c1941d8"
+  },
+  {
+    "tgname": "trg_membership_starts_with_zero_chips",
+    "proname": "fn_membership_starts_with_zero_chips",
+    "definition": "CREATE TRIGGER trg_membership_starts_with_zero_chips BEFORE INSERT ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_membership_starts_with_zero_chips()",
+    "source_md5": "e865fa31892646611ec011821a9fd219"
+  },
+  {
+    "tgname": "trg_recompute_club_level_on_member_change",
+    "proname": "fn_recompute_club_level_on_member_change",
+    "definition": "CREATE TRIGGER trg_recompute_club_level_on_member_change AFTER INSERT OR DELETE OR UPDATE OF role, status ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_recompute_club_level_on_member_change()",
+    "source_md5": "0a761d5d6027c26ddbe4a7760d23d434"
+  },
+  {
+    "tgname": "trg_sync_agent_player_counts",
+    "proname": "fn_sync_agent_player_counts",
+    "definition": "CREATE TRIGGER trg_sync_agent_player_counts AFTER INSERT OR DELETE OR UPDATE OF agent_id, club_id, is_active ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_agent_player_counts()",
+    "source_md5": "76a5848cfdb6c1674b48cb62ae1f22dd"
+  },
+  {
+    "tgname": "trg_sync_club_member_count",
+    "proname": "fn_sync_club_member_count",
+    "definition": "CREATE TRIGGER trg_sync_club_member_count AFTER INSERT OR DELETE OR UPDATE OF status, club_id, role ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_club_member_count()",
+    "source_md5": "2abaebf91e89f56487f01b25d7e3ac98"
+  },
+  {
+    "tgname": "trg_sync_mfa_required_on_club_role",
+    "proname": "fn_sync_mfa_required_on_club_role",
+    "definition": "CREATE TRIGGER trg_sync_mfa_required_on_club_role AFTER INSERT OR UPDATE OF role, user_id ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_sync_mfa_required_on_club_role()",
+    "source_md5": "b09cbcddc87075221d72aee3899e97b4"
+  },
+  {
+    "tgname": "zy_ca_tally_balance_move",
+    "proname": "fn_ca_tally_balance_move",
+    "definition": "CREATE TRIGGER zy_ca_tally_balance_move AFTER INSERT OR DELETE OR UPDATE OF chip_balance, user_id, club_id ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_tally_balance_move()",
+    "source_md5": "b7911a245d4bf33134a9a2f474c1f410"
+  },
+  {
+    "tgname": "zy_ca_tally_store_move",
+    "proname": "fn_ca_tally_store_move",
+    "definition": "CREATE TRIGGER zy_ca_tally_store_move AFTER INSERT OR DELETE OR UPDATE OF promo_balance, user_id, club_id ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_ca_tally_store_move()",
+    "source_md5": "6db4f04e33013c8f9b00e2155b31e72d"
+  },
+  {
+    "tgname": "zz_ca_balance_has_its_ledger_row",
+    "proname": "fn_ca_balance_has_its_ledger_row",
+    "definition": "CREATE CONSTRAINT TRIGGER zz_ca_balance_has_its_ledger_row AFTER INSERT OR DELETE OR UPDATE OF chip_balance, user_id, club_id ON public.club_members DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_ca_balance_has_its_ledger_row()",
+    "source_md5": "2df7b3f67e95b8a6c0abe7ba3faff63c"
+  },
+  {
+    "tgname": "zz_ca_store_has_its_ledger_row",
+    "proname": "fn_ca_balance_has_its_ledger_row",
+    "definition": "CREATE CONSTRAINT TRIGGER zz_ca_store_has_its_ledger_row AFTER INSERT OR DELETE OR UPDATE OF promo_balance, user_id, club_id ON public.club_members DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fn_ca_balance_has_its_ledger_row()",
+    "source_md5": "2df7b3f67e95b8a6c0abe7ba3faff63c"
+  },
+  {
+    "tgname": "zz_freeze_guard",
+    "proname": "fn_refuse_while_frozen",
+    "definition": "CREATE TRIGGER zz_freeze_guard BEFORE INSERT OR DELETE OR UPDATE ON public.club_members FOR EACH ROW EXECUTE FUNCTION fn_refuse_while_frozen('chip_balance')",
+    "source_md5": "9dd363ba494c92c08988022a34831def"
+  }
+]

@@ -1,6 +1,6 @@
 {
   "repository_files": {
-    "scripts/ci/classify-ci-changes.mjs": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944",
+    "scripts/ci/classify-ci-changes.mjs": "7034b268896907731a499340bb792081f8d0165fae994d6c8ac3319b8bf3c4f0",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
     "scripts/dev/test-full-weekly-accounting-activation.sh": "6edf29df3c6108fa7d7f0a7e433fd582148064812610944bb1a42e3e9b87cdae",
@@ -1059,5 +1059,15 @@
       }
     ],
     "integration_reason": "Preserve concurrent protected commission and ticket-refund qualification parents and all audit histories. Update combined current classifier/dependent identities only; no financial assertion or qualification status changes."
+  },
+  "clubNewsOnceRouting20261021": {
+    "reason": "Reviewed additive CI selection for the club-entry-news native regression only. Current financial fixtures, assertions, historical audits and qualification statuses are unchanged. Refresh classifier and dependent binding fingerprints; matching hashes do not certify financial or production behavior.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944",
+        "current_sha256": "7034b268896907731a499340bb792081f8d0165fae994d6c8ac3319b8bf3c4f0"
+      }
+    ]
   }
 }

@@ -121,6 +121,16 @@
   --sp-spectator-line-h: 22px;
 }
 
+/* The phone's preselection and decision rows share one compact footprint.
+   Keep the 44px controls usable while reserving their exact border/padding
+   sum, including when the street or selected pre-action changes. */
+@media (max-width: 480px) {
+  :root {
+    --sp-action-btn-h: 44px;
+    --sp-action-pad-top: 4px;
+  }
+}
+
 /* The floor itself. `.action-panel-wrapper` is declared in TablePage.css, which
    is owned elsewhere; this rule is scoped `.table-page .action-panel-wrapper`
    (0,2,0) so it wins on specificity rather than on which stylesheet the bundler
@@ -1722,7 +1732,7 @@
     /* Vertical padding matches the <=640px rule exactly: the row's height is
        --sp-bottom-row-h at EVERY phone width, or the wrapper's floor stops
        being a measurement. Only the side gutters tighten here. */
-    padding: 5px 8px;
+    padding: var(--sp-action-pad-top) 8px;
     /* Flush — see the base rule. */
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }

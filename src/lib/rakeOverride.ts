@@ -1,3 +1,4 @@
+import { cashRakeScope } from '../config/cashRakePolicy';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  RAKE OVERRIDE RESOLUTION — pure
@@ -29,8 +30,16 @@ export function parseBlinds(blinds: string | undefined | null): { sb: number; bb
  * schedule lookup takes. Pure, so the precedence is testable without a network.
  */
 export function resolveRakeOverride(
-  table: { rake_percent?: number | null; rake_cap_bb?: number | null } | null,
-  club: { default_rake_percent?: number | null; rake_cap?: number | null } | null
+  table: {
+    union_id?: string | null;
+    rake_percent?: number | null;
+    rake_cap_bb?: number | null;
+  } | null,
+  club: {
+    union_id?: string | null;
+    default_rake_percent?: number | null;
+    rake_cap?: number | null;
+  } | null
 ): RakeOverride | undefined {
   // A value counts as "set" only when it is a real number >= 0. The database
   // stores -1 as the inherit sentinel, and NULL for never-configured.
@@ -44,10 +53,8 @@ export function resolveRakeOverride(
   };
   const rakePercent = pick(table?.rake_percent, club?.default_rake_percent);
   const rakeCapBB = pick(table?.rake_cap_bb, club?.rake_cap);
-  if (rakePercent === undefined && rakeCapBB === undefined) return undefined;
-  return { rakePercent, rakeCapBB };
+  return { rakePercent, rakeCapBB, scope: cashRakeScope(table?.union_id, club?.union_id) };
 }
-
 
 /**
  * The rake the Game Rules modal shows when neither the table nor the club has

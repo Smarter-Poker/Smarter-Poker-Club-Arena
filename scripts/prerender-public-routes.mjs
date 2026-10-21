@@ -84,14 +84,15 @@ function replaceOnce(html, pattern, replacement, what) {
 function setMeta(html, attr, name, content) {
   const pattern = new RegExp(`<meta\\s+${attr}="${name}"[^>]*>`, 'i');
   const tag = `<meta ${attr}="${name}" content="${escapeAttr(content)}" />`;
-  return pattern.test(html) ? html.replace(pattern, tag) : html.replace('</head>', `  ${tag}\n</head>`);
+  return pattern.test(html)
+    ? html.replace(pattern, tag)
+    : html.replace('</head>', `  ${tag}\n</head>`);
 }
 
 export function jsonLdDocument(jsonLd) {
   if (Array.isArray(jsonLd)) return { '@context': 'https://schema.org', '@graph': jsonLd };
   return { '@context': 'https://schema.org', ...jsonLd };
 }
-
 
 /**
  * THE FONTS ARE KNOWN AT FIRST PAINT, AND DECLARED ONCE (2026-09-17).
@@ -131,13 +132,23 @@ function readFonts() {
   const file = readdirSync(dir).find((f) => /^fonts-[a-f0-9]+\.css$/.test(f));
   if (!file) return null;
   const css = readFileSync(path.join(dir, file), 'utf8');
-  return { file, css: css.replace(/\/\*[^*]*\*\//g, '').replace(/\s+/g, ' ').trim(), urls: latinFontUrls(css) };
+  return {
+    file,
+    css: css
+      .replace(/\/\*[^*]*\*\//g, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    urls: latinFontUrls(css),
+  };
 }
 
 export function fontHeadMarkup(fonts) {
   if (!fonts || !fonts.css) return '';
   const preloads = fonts.urls
-    .map((u) => `  <link rel="preload" href="${escapeAttr(u)}" as="font" type="font/woff2" crossorigin />`)
+    .map(
+      (u) =>
+        `  <link rel="preload" href="${escapeAttr(u)}" as="font" type="font/woff2" crossorigin />`
+    )
     .join('\n');
   return `${preloads}\n  <style data-prerender="fonts">${fonts.css}</style>\n`;
 }
@@ -150,9 +161,14 @@ export function fontHeadMarkup(fonts) {
  */
 export function replaceFontStylesheet(shell, file, markup) {
   const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const asyncLink = new RegExp(`<link\\s+href="[^"]*${escaped}"\\s+rel="stylesheet"\\s+media="print"[^>]*>`);
-  const noscript = new RegExp(`\\s*<noscript>\\s*<link\\s+href="[^"]*${escaped}"\\s+rel="stylesheet"\\s*/?>\\s*</noscript>`);
-  if (!asyncLink.test(shell)) throw new Error(`prerender: shell index.html has no async link to ${file}`);
+  const asyncLink = new RegExp(
+    `<link\\s+href="[^"]*${escaped}"\\s+rel="stylesheet"\\s+media="print"[^>]*>`
+  );
+  const noscript = new RegExp(
+    `\\s*<noscript>\\s*<link\\s+href="[^"]*${escaped}"\\s+rel="stylesheet"\\s*/?>\\s*</noscript>`
+  );
+  if (!asyncLink.test(shell))
+    throw new Error(`prerender: shell index.html has no async link to ${file}`);
   return shell.replace(asyncLink, markup.trim()).replace(noscript, '');
 }
 
@@ -166,14 +182,19 @@ export function composeDocument({ shell, page, css, fonts = null }) {
     : 'noindex, nofollow';
 
   let doc = shell;
-  doc = replaceOnce(doc, /<title>[^<]*<\/title>/i, `<title>${escapeText(title)}</title>`, '<title>');
+  doc = replaceOnce(
+    doc,
+    /<title>[^<]*<\/title>/i,
+    `<title>${escapeText(title)}</title>`,
+    '<title>'
+  );
   doc = setMeta(doc, 'name', 'description', seo.description);
   doc = setMeta(doc, 'name', 'robots', robots);
   doc = replaceOnce(
     doc,
     /<link\s+rel="canonical"[^>]*>/i,
     `<link rel="canonical" href="${escapeAttr(canonical)}" />`,
-    'canonical link',
+    'canonical link'
   );
   doc = setMeta(doc, 'property', 'og:title', title);
   doc = setMeta(doc, 'property', 'og:description', seo.description);
@@ -181,12 +202,29 @@ export function composeDocument({ shell, page, css, fonts = null }) {
   doc = setMeta(doc, 'name', 'twitter:title', title);
   doc = setMeta(doc, 'name', 'twitter:description', seo.description);
 
-  const ld = `<script type="application/ld+json">${JSON.stringify(jsonLdDocument(seo.jsonLd || {}))}</script>`;
+  if (seo.brandedShare) {
+    for (const [attr, name, value] of [
+      ['property', 'og:image', seo.image],
+      ['property', 'og:image:secure_url', seo.image],
+      ['property', 'og:image:width', '1254'],
+      ['property', 'og:image:height', '1254'],
+      ['property', 'og:image:type', 'image/png'],
+      ['property', 'og:image:alt', 'KINGS CLUB Logo'],
+      ['name', 'twitter:image', seo.image],
+      ['name', 'twitter:image:alt', 'KINGS CLUB Logo'],
+      ['name', 'twitter:card', 'summary'],
+    ])
+      doc = setMeta(doc, attr, name, value);
+    // The club app remains private. Sharing public identity never indexes its data.
+    doc = doc.replace(/<link\s+rel="canonical"[^>]*>\s*/i, '');
+  }
+
+  const ld = `<script id="route-jsonld" type="application/ld+json">${JSON.stringify(jsonLdDocument(seo.jsonLd || {})).replace(/</g, '\\u003c')}</script>`;
   doc = replaceOnce(
     doc,
-    /<script type="application\/ld\+json">[\s\S]*?<\/script>/i,
+    /<script\b(?=[^>]*type="application\/ld\+json")[^>]*>[\s\S]*?<\/script>/i,
     ld,
-    'JSON-LD block',
+    'JSON-LD block'
   );
 
   const fontMarkup = fontHeadMarkup(fonts);
@@ -215,19 +253,29 @@ export function composeDocument({ shell, page, css, fonts = null }) {
       `<script>try{var l=location.pathname.replace(/\\/+$/,"");var s=window.localStorage.getItem(${JSON.stringify(SESSION_STORAGE_KEY)});if(s||(l!==${JSON.stringify(WEB_BASE)}&&l!=="")){var p=document.getElementById("prerender-landing");if(p)p.remove()}}catch(e){}</script>` +
       `<div id="root"></div>`;
     doc = doc.replace(rootPattern, landing);
+  } else if (seo.brandedShare) {
+    // No new first-paint UI or layout shift on signed-in app deep links.
+    doc = doc.replace(rootPattern, `<div id="root"><noscript>${body}</noscript></div>`);
   } else {
-    doc = doc.replace(rootPattern, `<div id="root"><div data-prerender="${escapeAttr(route)}">${body}</div></div>`);
+    doc = doc.replace(
+      rootPattern,
+      `<div id="root"><div data-prerender="${escapeAttr(route)}">${body}</div></div>`
+    );
   }
   return doc;
 }
 
 function buildPrerenderBundle() {
   const vite = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
-  execFileSync(process.execPath, [vite, 'build', '--config', 'vite.prerender.config.ts', '--logLevel', 'warn'], {
-    cwd: ROOT,
-    stdio: 'inherit',
-    env: { ...process.env, VITE_NATIVE: '' },
-  });
+  execFileSync(
+    process.execPath,
+    [vite, 'build', '--config', 'vite.prerender.config.ts', '--logLevel', 'warn'],
+    {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env: { ...process.env, VITE_NATIVE: '' },
+    }
+  );
 }
 
 function readPrerenderCss() {
@@ -241,7 +289,9 @@ function readPrerenderCss() {
 }
 
 function outputPathFor(route) {
-  return route === '/' ? path.join(DIST, 'index.html') : path.join(DIST, route.replace(/^\//, ''), 'index.html');
+  return route === '/'
+    ? path.join(DIST, 'index.html')
+    : path.join(DIST, route.replace(/^\//, ''), 'index.html');
 }
 
 /** What a reader must find in each prerendered page for the build to pass. */
@@ -263,23 +313,31 @@ export function verifyDocument(route, doc) {
   const words = text.split(/\s+/).filter(Boolean).length;
   if (words < 120) problems.push(`only ${words} words of readable text`);
   if (!/<meta name="robots" content="index, follow/i.test(doc)) problems.push('not indexable');
-  if (!/<link rel="canonical" href="https:\/\/smarter\.poker\/hub\/club-arena/i.test(doc)) problems.push('no canonical');
+  if (!/<link rel="canonical" href="https:\/\/smarter\.poker\/hub\/club-arena/i.test(doc))
+    problems.push('no canonical');
   const headWithoutComments = doc.slice(0, bodyStart).replace(/<!--[\s\S]*?-->/g, '');
-  if (/<meta[^>]+content="[^"]*noindex/i.test(headWithoutComments)) problems.push('head says noindex');
-  if (problems.length) throw new Error(`prerender: ${route} failed verification: ${problems.join('; ')}`);
+  if (/<meta[^>]+content="[^"]*noindex/i.test(headWithoutComments))
+    problems.push('head says noindex');
+  if (problems.length)
+    throw new Error(`prerender: ${route} failed verification: ${problems.join('; ')}`);
   return words;
 }
 
 async function main() {
   if (process.env.VITE_NATIVE === '1') {
-    console.log('[prerender] native build: nothing to prerender (the shell is the app inside the native wrapper)');
+    console.log(
+      '[prerender] native build: nothing to prerender (the shell is the app inside the native wrapper)'
+    );
     return;
   }
   const shellPath = path.join(DIST, 'index.html');
-  if (!existsSync(shellPath)) throw new Error(`prerender: ${shellPath} missing; run after vite build`);
+  if (!existsSync(shellPath))
+    throw new Error(`prerender: ${shellPath} missing; run after vite build`);
   const shell = readFileSync(shellPath, 'utf8');
   if (shell.includes('data-prerender=')) {
-    throw new Error('prerender: dist/index.html is already prerendered; run vite build first (this step is not idempotent by design)');
+    throw new Error(
+      'prerender: dist/index.html is already prerendered; run vite build first (this step is not idempotent by design)'
+    );
   }
 
   buildPrerenderBundle();
@@ -299,14 +357,65 @@ async function main() {
     manifest.push({ route, file: path.relative(DIST, out), words, title: page.seo.title });
     console.log(`[prerender] ${route} -> ${path.relative(ROOT, out)} (${words} words)`);
   }
+  for (const route of entry.SHARE_PREVIEW_PATHS) {
+    const doc = composeDocument({ shell, page: entry.renderSharePreview(route), css: '', fonts });
+    verifySharePreview(route, doc);
+    const out = outputPathFor(route);
+    mkdirSync(path.dirname(out), { recursive: true });
+    writeFileSync(out, doc);
+    console.log(`[prerender] brand-only preview ${route} -> ${path.relative(ROOT, out)}`);
+  }
   writeFileSync(
     path.join(DIST, 'prerender-manifest.json'),
-    JSON.stringify({ base: WEB_BASE, generatedFrom: 'src/prerender/entry-server.tsx', routes: manifest }, null, 2) + '\n',
+    JSON.stringify(
+      { base: WEB_BASE, generatedFrom: 'src/prerender/entry-server.tsx', routes: manifest },
+      null,
+      2
+    ) + '\n'
   );
-  console.log(`[prerender] ${manifest.length} public routes prerendered; css inlined: ${(css.length / 1024).toFixed(1)} KB; fonts preloaded: ${fonts ? fonts.urls.length : 0}`);
+  console.log(
+    `[prerender] ${manifest.length} public routes prerendered; css inlined: ${(css.length / 1024).toFixed(1)} KB; fonts preloaded: ${fonts ? fonts.urls.length : 0}`
+  );
 }
 
-const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname;
+export function verifySharePreview(route, doc) {
+  const head = doc.slice(0, doc.indexOf('</head>'));
+  const content = (name) =>
+    new RegExp(`<meta\\s+(?:name|property)="${name}"[^>]*content="([^"]*)"`).exec(head)?.[1];
+  const image = 'https://smarter.poker/hub/club-arena/images/kings-club-logo.png';
+  const schemaText =
+    /<script id="route-jsonld" type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(head)?.[1];
+  let organization;
+  try {
+    organization = JSON.parse(schemaText || '{}')['@graph']?.find(
+      (node) => node['@type'] === 'Organization'
+    );
+  } catch {
+    /* refused below */
+  }
+  if (
+    !/<title>[^<]*KINGS CLUB/.test(head) ||
+    /SHARK[ -]CLUB|shark-club/i.test(doc) ||
+    !['description', 'og:title', 'og:description', 'twitter:title', 'twitter:description'].every(
+      (name) => content(name)?.includes('KINGS CLUB')
+    ) ||
+    !['og:image', 'og:image:secure_url', 'twitter:image'].every(
+      (name) => content(name) === image
+    ) ||
+    content('og:image:width') !== '1254' ||
+    content('og:image:height') !== '1254' ||
+    content('og:url') !== `https://smarter.poker/hub/club-arena${route}` ||
+    organization?.name !== 'KINGS CLUB' ||
+    organization?.logo?.url !== image ||
+    content('robots') !== 'noindex, nofollow' ||
+    /<link\s+rel="canonical"/.test(head)
+  ) {
+    throw new Error(`prerender: invalid private brand preview ${route}`);
+  }
+}
+
+const invokedDirectly =
+  process.argv[1] && path.resolve(process.argv[1]) === new URL(import.meta.url).pathname;
 if (invokedDirectly) {
   main().catch((err) => {
     console.error(err.message || err);

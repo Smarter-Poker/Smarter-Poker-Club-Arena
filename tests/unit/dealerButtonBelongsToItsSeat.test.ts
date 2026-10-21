@@ -37,13 +37,14 @@
  * note on BUTTON_ANGLE_DEG for why 36 is load-bearing (at 20 degrees the two
  * markers are 4.4% apart against a 6% minimum).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   dealerButtonPositionClearOfSeat,
   overlapsSeatPlate,
 } from '../../src/components/table/DealerButton';
 import {
   buttonRadiusWidthPct,
+  fitSeatToViewport,
   chipRestPosition,
   isOnFeltText,
   markerGapWidthPct,
@@ -177,6 +178,46 @@ describe('the ownership constraint degrades safely', () => {
     for (const seat of seats) {
       const p = dealerButtonPositionClearOfSeat(seat, size, pod(size, seat));
       expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
+    }
+  });
+});
+
+describe('compact portrait dealer and every wager share separate rail slots', () => {
+  it('clears neighbouring amount labels as well as its own stack', () => {
+    vi.stubGlobal('innerWidth', 320);
+    try {
+      for (const height of [300, 310, 340, 400]) {
+        const size = { w: 320 * 0.82, h: height, railBets: true };
+        for (const count of [6, 9]) {
+          const seats = (SEAT_LAYOUTS[count] as unknown as Pos[]).map((raw) =>
+            fitSeatToViewport(raw, size, 320, seatPodPx(320, raw.y >= 100 && raw.x === 50, size.w))
+          );
+          for (const seat of seats) {
+            const p = dealerButtonPositionClearOfSeat(
+              seat,
+              size,
+              seatPodPx(320, seat.y >= 100 && seat.x === 50, size.w),
+              seats
+            );
+            for (const other of seats) {
+              const wager = chipRestPosition(
+                other,
+                size,
+                seatPodPx(320, other.y >= 100 && other.x === 50, size.w)
+              );
+              const x = (Math.abs(p.x - wager.x) * size.w) / 100;
+              const y = (Math.abs(p.y - wager.y) * size.h) / 100;
+              const radius = (buttonRadiusWidthPct(size) * size.w) / 100;
+              expect(
+                x >= 20 + radius + 3 || y >= 11 + radius + 3,
+                `${count}/${seat.x},${seat.y}`
+              ).toBe(true);
+            }
+          }
+        }
+      }
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 });

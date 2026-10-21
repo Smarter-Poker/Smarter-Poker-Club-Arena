@@ -68,30 +68,6 @@ try:
  except RuntimeError as e: assert 'Union Wallet Access Is Required' in str(e)
  else: raise AssertionError('unauthorized reservation accepted')
  assert q("SELECT has_table_privilege('authenticated','union_wallet_browser_intents','SELECT');")=='f'
- q("""CREATE TABLE roster_values(user_id uuid,management_club_id uuid,home_club_id uuid,home_club_name text,player_number text,alias text,username text,display_name text,avatar_url text,role text,role_rank integer,is_online boolean,is_seated boolean,chip_balance numeric,player_wallet numeric,agent_wallet numeric,promo_wallet numeric,total_fees numeric,downline_fees numeric,total_hands bigint,downline_direct integer,downline_total integer,upline_user_id uuid,upline_name text,joined_at timestamptz,last_login timestamptz,nickname text,remark text,can_view_financials boolean,can_view_notes boolean,in_viewer_downline boolean);
- CREATE FUNCTION ca_club_roster_rows(uuid) RETURNS SETOF roster_values LANGUAGE sql AS $$ SELECT * FROM roster_values WHERE management_club_id=$1 $$;
- CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$ SELECT 'authenticated'::text $$;
- CREATE FUNCTION fn_club_scope_ids(uuid) RETURNS uuid[] LANGUAGE sql AS $$ SELECT ARRAY[$1] $$;
- CREATE FUNCTION fn_is_union_overseer(uuid,uuid) RETURNS boolean LANGUAGE sql AS $$ SELECT false $$;
- CREATE FUNCTION fn_club_role_rank(text) RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$;
- ALTER TABLE profiles ADD COLUMN is_admin boolean DEFAULT false;
- CREATE TABLE audit_trail(id uuid DEFAULT gen_random_uuid(),actor_id uuid,actor_role text,action text,target_type text,target_id uuid,club_id uuid,after_state jsonb,reason text);
- INSERT INTO roster_values(user_id,management_club_id,alias,username,role,role_rank,joined_at,can_view_financials)
- SELECT ('10000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'00000000-0000-0000-0000-000000000001',lpad((206-i)::text,3,'0'),'P'||i,'player',1,'2026-10-01'::timestamptz-(i%7)*interval '1 day',true FROM generate_series(1,205) i;""")
- q(f('tests/fixtures/hand-wallet/roster-before.sql'))
- roster_call="SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000002',false); SELECT ca_club_members_page('00000000-0000-0000-0000-000000000001','','all','newest',%s,80);"
- expected=json.loads(q("SELECT json_agg(user_id ORDER BY joined_at DESC,user_id) FROM roster_values;"))
- before=json.loads(q(roster_call%'NULL').splitlines()[-1])
- assert [r['user_id'] for r in before['items']]!=expected[:80]
- q(f('supabase/migrations/20261021172603_newest_joined_roster_ordering.sql'))
- collected=[];cursor='NULL'
- while True:
-  page=json.loads(q(roster_call%cursor).splitlines()[-1]);collected += [r['user_id'] for r in page['items']]
-  if not page['has_more']:break
-  cursor="'"+json.dumps(page['next_cursor']).replace("'","''")+"'::jsonb"
- assert collected==expected and len(set(collected))==205
- exported=json.loads(q("SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000002',false); SELECT ca_club_members_export('00000000-0000-0000-0000-000000000001','','all','newest',NULL);").splitlines()[-1])
- assert [r['user_id'] for r in exported['rows']]==expected
  q("""CREATE TABLE ca_declared_money_triggers(table_name text,trigger_name text,note text,PRIMARY KEY(table_name,trigger_name));
  CREATE TABLE tournaments(id integer,status text,tournament_type text,variant text,blind_speed text,accelerated_mtt boolean,blind_structure text,late_reg_levels integer,late_reg_mins integer,buy_in_amount numeric,prize_pool numeric);
  CREATE TABLE tournament_schedules(id integer,active boolean,config jsonb);

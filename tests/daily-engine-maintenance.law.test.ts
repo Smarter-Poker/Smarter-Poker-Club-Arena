@@ -12,7 +12,14 @@ const workflow = parse(
 );
 const admission = workflow.jobs.detect.steps.find((s: { id?: string }) => s.id === 'admission').run;
 
-function admit(event: string, hour: string, message: string, health: string) {
+function admit(
+  event: string,
+  hour: string,
+  message: string,
+  health: string,
+  schedule = '30 8 * * *',
+  createdAt = '2026-10-21T08:30:01Z'
+) {
   const dir = mkdtempSync(join(tmpdir(), 'daily-admission-'));
   try {
     const result = spawnSync(
@@ -22,6 +29,7 @@ function admit(event: string, hour: string, message: string, health: string) {
         `
       git() { printf '%s' "$MESSAGE"; }
       date() { printf '%s' "$HOUR"; }
+      gh() { printf '%s' "$RUN_CREATED_AT"; }
       curl() { printf '%s' "$HEALTH"; }
       ${admission}
       cat "$GITHUB_OUTPUT"
@@ -33,6 +41,10 @@ function admit(event: string, hour: string, message: string, health: string) {
           ...process.env,
           EVENT_NAME: event,
           HOUR: hour,
+          SCHEDULE_EXPRESSION: schedule,
+          RUN_CREATED_AT: createdAt,
+          REPO: 'test/repo',
+          RUN_ID: '123',
           MESSAGE: message,
           HEALTH: health,
           GITHUB_OUTPUT: join(dir, 'output'),
@@ -52,8 +64,30 @@ describe('daily routine admission uses the existing protected receiver only', ()
   });
   it('admits only the 03:30 Chicago candidate of the UTC DST pair', () => {
     expect(admit('schedule', '03', 'routine', '{"liveness":"ok"}')).toBe(true);
-    expect(admit('schedule', '04', 'routine', '{"liveness":"ok"}')).toBe(false);
-    expect(admit('schedule', '02', 'routine', '{"liveness":"ok"}')).toBe(false);
+    // The actual runner hour does not change nominal admission.
+    expect(admit('schedule', '04', 'routine', '{"liveness":"ok"}')).toBe(true);
+    expect(admit('schedule', '14', 'routine', '{"liveness":"ok"}')).toBe(true);
+    expect(
+      admit('schedule', '03', 'routine', '{"liveness":"ok"}', '30 9 * * *', '2026-10-21T09:30:01Z')
+    ).toBe(false);
+    expect(
+      admit('schedule', '04', 'routine', '{"liveness":"ok"}', '30 9 * * *', '2026-12-21T09:30:01Z')
+    ).toBe(true);
+    expect(
+      admit('schedule', '03', 'routine', '{"liveness":"ok"}', '30 8 * * *', '2026-12-21T08:30:01Z')
+    ).toBe(false);
+    expect(
+      admit('schedule', '04', 'routine', '{"liveness":"ok"}', '30 8 * * *', '2026-03-08T08:30:01Z')
+    ).toBe(true);
+    expect(
+      admit('schedule', '04', 'routine', '{"liveness":"ok"}', '30 9 * * *', '2026-11-01T09:30:01Z')
+    ).toBe(true);
+    expect(admit('schedule', '04', 'routine', '{"liveness":"ok"}', '30 8 * * *', 'malformed')).toBe(
+      false
+    );
+    expect(
+      admit('schedule', '04', 'routine', '{"liveness":"ok"}', '30 8 * * *', '2026-10-22T00:01:00Z')
+    ).toBe(false);
   });
   it('keeps explicit urgency and measured degradation as emergency causes', () => {
     expect(admit('push', '14', 'fix\n\nEngine-Release: urgent', '{}')).toBe(true);

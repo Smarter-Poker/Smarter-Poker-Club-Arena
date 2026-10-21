@@ -117,7 +117,7 @@ export const DiamondArenaCard: React.FC<DiamondArenaCardProps> = ({
       as="div"
       className="club-card-panel club-card-panel--arena"
       crest="diamond"
-      title="SMARTER.POKER"
+      title="Play Poker With Your Diamonds"
       foot="foot"
     >
       {!imgLoaded && <div className="club-card-skeleton" />}

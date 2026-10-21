@@ -1196,97 +1196,97 @@ for (const [width, height] of [
   [393, 852],
   [430, 932],
 ])
-  test(`mobile preselection and decision rows remain below the hero in the embedded shell at ${width}px`, async ({
-    page,
-  }, testInfo) => {
-    test.setTimeout(60_000);
+  for (const bottomInset of [0, 34])
+    for (const ticker of [0, 32])
+      test(`mobile preselection and decision rows remain below the hero in the embedded shell at ${width}px inset ${bottomInset}px ticker ${ticker}px`, async ({
+        page,
+      }, testInfo) => {
+        test.setTimeout(60_000);
 
-    const { buildSync } = await import('esbuild');
-    const bundled = buildSync({
-      entryPoints: ['tests/e2e/support/actionRowsFixture.tsx'],
-      bundle: true,
-      write: false,
-      jsx: 'automatic',
-      metafile: true,
-      format: 'iife',
-      platform: 'browser',
-      outfile: 'actions-fixture.js',
-      loader: {
-        '.css': 'empty',
-        '.png': 'dataurl',
-        '.webp': 'dataurl',
-        '.svg': 'dataurl',
-        '.jpg': 'dataurl',
-      },
-      define: {
-        'import.meta.env': JSON.stringify({
-          VITE_SUPABASE_URL: 'https://dummy.supabase.co',
-          VITE_SUPABASE_ANON_KEY: 'fixture',
-          DEV: true,
-        }),
-        'process.env.NODE_ENV': '"test"',
-      },
-    });
-    await page.route('**/cards/**', async (route) => {
-      const path = new URL(route.request().url()).pathname.split('/cards/')[1];
-      const source = resolve(process.cwd(), 'public/cards', path.replace(/\.webp$/, '.png'));
-      const original = resolve(process.cwd(), 'public/cards', path);
-      const file = existsSync(original) ? original : source;
-      expect(file.startsWith(resolve(process.cwd(), 'public/cards') + '/')).toBe(true);
-      expect(existsSync(file), `Local Card Artwork: ${path}`).toBe(true);
-      await route.fulfill({
-        body: readFileSync(file),
-        contentType: file.endsWith('.png') ? 'image/png' : 'image/webp',
-      });
-    });
-    await page.route('**/rest/v1/rpc/fn_cash_vpip_status', (route) =>
-      route.fulfill({
-        json: { ok: true, seated: true, required: 50, vpip: 38, hands: 12, window: 10 },
-      })
-    );
-    const avatarResponse = await page.request.get(
-      'https://smarter.poker/avatars/table/vip_wolf@2x.webp'
-    );
-    expect(avatarResponse.ok()).toBe(true);
-    const avatarBytes = await avatarResponse.body();
-    await page.route('**/avatars/table/**', (route) =>
-      route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
-    );
-    for (const icon of ['chat', 'timebank', 'rabbit', 'prevhand']) {
-      const response = await page.request.get(
-        `https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/assets/buttons/black/icon-${icon}.webp`
-      );
-      expect(response.ok()).toBe(true);
-      const bytes = await response.body();
-      await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
-        route.fulfill({ body: bytes, contentType: 'image/webp' })
-      );
-    }
-    const sheets = [
-      ...new Set([
-        'src/styles/club-engine.css',
-        'src/styles/animations.css',
-        'src/styles/metallic-popups.css',
-        'src/styles/reducedMotion.css',
-        'src/pages/MultiTablePage.css',
-        'src/components/table/TableTabBar.css',
-        'src/pages/TablePage.css',
-        'src/components/table/TableChat.css',
-        ...Object.keys(bundled.metafile!.inputs).filter((file) => file.endsWith('.css')),
-        'src/components/table/TableVisualHotfix.css',
-      ]),
-    ];
-    const readStyle = (file: string): string =>
-      readFileSync(resolve(process.cwd(), file), 'utf8').replace(
-        /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
-        (_, imported: string) => readStyle(resolve(dirname(file), imported))
-      );
-    const css =
-      sheets.map(readStyle).join('\n') +
-      '\n' +
-      (bundled.outputFiles.find((file) => file.path.endsWith('.css'))?.text || '');
-    for (const bottomInset of [0, 34])
-      for (const ticker of [0, 32])
+        const { buildSync } = await import('esbuild');
+        const bundled = buildSync({
+          entryPoints: ['tests/e2e/support/actionRowsFixture.tsx'],
+          bundle: true,
+          write: false,
+          jsx: 'automatic',
+          metafile: true,
+          format: 'iife',
+          platform: 'browser',
+          outfile: 'actions-fixture.js',
+          loader: {
+            '.css': 'empty',
+            '.png': 'dataurl',
+            '.webp': 'dataurl',
+            '.svg': 'dataurl',
+            '.jpg': 'dataurl',
+          },
+          define: {
+            'import.meta.env': JSON.stringify({
+              VITE_SUPABASE_URL: 'https://dummy.supabase.co',
+              VITE_SUPABASE_ANON_KEY: 'fixture',
+              DEV: true,
+            }),
+            'process.env.NODE_ENV': '"test"',
+          },
+        });
+        await page.route('**/cards/**', async (route) => {
+          const path = new URL(route.request().url()).pathname.split('/cards/')[1];
+          const source = resolve(process.cwd(), 'public/cards', path.replace(/\.webp$/, '.png'));
+          const original = resolve(process.cwd(), 'public/cards', path);
+          const file = existsSync(original) ? original : source;
+          expect(file.startsWith(resolve(process.cwd(), 'public/cards') + '/')).toBe(true);
+          expect(existsSync(file), `Local Card Artwork: ${path}`).toBe(true);
+          await route.fulfill({
+            body: readFileSync(file),
+            contentType: file.endsWith('.png') ? 'image/png' : 'image/webp',
+          });
+        });
+        await page.route('**/rest/v1/rpc/fn_cash_vpip_status', (route) =>
+          route.fulfill({
+            json: { ok: true, seated: true, required: 50, vpip: 38, hands: 12, window: 10 },
+          })
+        );
+        const avatarResponse = await page.request.get(
+          'https://smarter.poker/avatars/table/vip_wolf@2x.webp'
+        );
+        expect(avatarResponse.ok()).toBe(true);
+        const avatarBytes = await avatarResponse.body();
+        await page.route('**/avatars/table/**', (route) =>
+          route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
+        );
+        for (const icon of ['chat', 'timebank', 'rabbit', 'prevhand']) {
+          const response = await page.request.get(
+            `https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/assets/buttons/black/icon-${icon}.webp`
+          );
+          expect(response.ok()).toBe(true);
+          const bytes = await response.body();
+          await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
+            route.fulfill({ body: bytes, contentType: 'image/webp' })
+          );
+        }
+        const sheets = [
+          ...new Set([
+            'src/styles/club-engine.css',
+            'src/styles/animations.css',
+            'src/styles/metallic-popups.css',
+            'src/styles/reducedMotion.css',
+            'src/pages/MultiTablePage.css',
+            'src/components/table/TableTabBar.css',
+            'src/pages/TablePage.css',
+            'src/components/table/TableChat.css',
+            ...Object.keys(bundled.metafile!.inputs).filter((file) => file.endsWith('.css')),
+            'src/components/table/TableVisualHotfix.css',
+          ]),
+        ];
+        const readStyle = (file: string): string =>
+          readFileSync(resolve(process.cwd(), file), 'utf8').replace(
+            /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
+            (_, imported: string) => readStyle(resolve(dirname(file), imported))
+          );
+        const css =
+          sheets.map(readStyle).join('\n') +
+          '\n' +
+          (bundled.outputFiles.find((file) => file.path.endsWith('.css'))?.text || '');
         for (const swipe of [false, true]) {
           await page.setViewportSize({ width, height });
           const withInsets = css.replace(
@@ -1410,4 +1410,4 @@ for (const [width, height] of [
             await page.unroute('http://actions.fixture/');
           }
         }
-  });
+      });

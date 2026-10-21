@@ -61,12 +61,34 @@ const attr = (html, re) => {
   return m ? m[1] : null;
 };
 
+// Published scripts have id="route-jsonld" before type. Read actual attributes,
+// not one serialization order or a type-like string inside another attribute.
+function jsonLdBlock(html) {
+  const markup = html.replace(/<!--[\s\S]*?-->/g, '');
+  const scripts = markup.matchAll(
+    /<script\b((?:"[^"]*"|'[^']*'|[^'">])*)>([\s\S]*?)<\/script\s*>/gi
+  );
+  for (const [, attributes, body] of scripts) {
+    const pairs = attributes.matchAll(
+      /([^\s=/'">]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g
+    );
+    for (const [, name, doubleQuoted, singleQuoted, unquoted] of pairs) {
+      if (name.toLowerCase() === 'type') {
+        const value = doubleQuoted ?? singleQuoted ?? unquoted ?? '';
+        if (value.toLowerCase() === 'application/ld+json') return body;
+        break;
+      }
+    }
+  }
+  return null;
+}
+
 export function inspectHead(html) {
   const title = attr(html, /<title>([^<]*)<\/title>/i);
   const robots = attr(html, /<meta\s+name="robots"\s+content="([^"]*)"/i);
   const canonical = attr(html, /<link\s+rel="canonical"\s+href="([^"]*)"/i);
   const description = attr(html, /<meta\s+name="description"\s+content="([^"]*)"/i);
-  const ldRaw = attr(html, /<script type="application\/ld\+json">([\s\S]*?)<\/script>/i);
+  const ldRaw = jsonLdBlock(html);
   let ld = null;
   let ldError = null;
   if (ldRaw) {

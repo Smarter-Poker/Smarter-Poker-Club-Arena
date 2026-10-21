@@ -1,0 +1,19 @@
+# Exact MTT and union reporting contract
+
+MTT result fields and filters include MTT events only. Explicit all-tournament subtotals retain SNG/Spin contributions to overall winnings and fees. The advanced v2 contract reconciles against those subtotals; the old contract remains compatible with already-open clients.
+
+An authorized union identity expands to each member club plus its direct account. Financial values aggregate at full precision; shared games and physical hand totals are counted once. Initial, paged and exported games include the same cash stacks. Player breakdowns use each contributing club's own launch cutoff and fee source. Member-club ownership and agent access do not grant union-wide access.
+
+The migration writes no money. It checks every replaced function against its observed preimage, preserves existing execution grants, refuses replay, and introduces only private scope/count helpers plus an authenticated, permission-checked v2 snapshot. Native qualification proves the original failures, corrected union/type totals, rollback/replay refusal, exact fees, pages/export and authorization. It runs in the existing required Data Console PostgreSQL suite.
+
+The dedicated Union Data page uses a second endpoint. Its new compatible v2 snapshot, series, per-club list and immutable CSV preparation now use the same money-flow facts and cash stacks. All linked clubs appear even with zero activity; fees retain their source precision in breakdown/export rows and round only after aggregation. Existing endpoints remain available to open clients. Native PostgreSQL qualification exercises the actual union snapshot and immutable export transaction, including replay, empty clubs and fractional fees.
+
+The native union hand count deduplicates physical raked hands across clubs. A bounded production read showed that the old heap scan exceeded eight seconds for the current month, so the same migration adds a covering cash-hand index through the maintained concurrent preamble route. The installer verifies its valid, ready, exact definition before replacing reporting functions. Zero/negative adjustments do not add hands. Qualification proves concurrent-index reuse, wrong-index refusal, and rollback of reporting definitions.
+
+Paged Report rows retain live and on-felt metadata while counting stacks once. Native checks also cover a 31-day window, older MTT payouts, and legacy reconciliation. The historical precision runner now gives psql a finite input file: the Mac pipe transport stalled after the deliberate dynamic-DDL permission refusal. All financial assertions and native SQL remain unchanged, and the complete historical suite passes. Source contracts follow the canonical v2 paths while retaining funded-seat and authorization checks.
+
+Cash game player counts deduplicate actual fact users across clubs and days, including closed tables; they no longer take the largest single-club daily count. The native paged/export regression covers that case after seats close.
+
+The actual immutable game CSV producer now uses the same canonical scoped game queries as the screen, including union membership, cash stacks and exact tournament types. A live one-day audit found a seven-cent discrepancy from summing rounded game fees. Page/export payloads now retain an additional exact fee while keeping the legacy cent field compatible; new CSV clients use that precision. Native tests exercise the actual export transaction, union deduplication, MTT-only filtering, replay and fractional-fee reconciliation.
+
+Both private summary doors now delegate to the canonical authorized screen summary instead of keeping a second arithmetic implementation. The native fail-before case reproduced MTT fee20.00 instead of17.00 and total-138.00 instead of22.00 because cash stacks were omitted. Full, filtered, SNG and MTT summary regressions now require exact agreement for every monetary subtotal.

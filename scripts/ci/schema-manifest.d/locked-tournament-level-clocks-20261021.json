@@ -1,0 +1,11 @@
+{
+  "_owner": "fix/locked-tournament-level-clocks",
+  "_comment": "Migration 20261021222049 (applied 2026-10-21 22:20 UTC, recorded in schema_migrations): every MTT and satellite level runs one fixed clock.",
+  "tables": [],
+  "functions": [
+    "fn_ca_locked_level_minutes",
+    "fn_ca_lock_structure_clock",
+    "fn_ca_tournament_lock_level_clock"
+  ],
+  "columns": {}
+}

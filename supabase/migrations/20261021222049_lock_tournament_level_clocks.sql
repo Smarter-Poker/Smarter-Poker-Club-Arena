@@ -1,4 +1,4 @@
--- 20261021220920_lock_tournament_level_clocks.sql
+-- 20261021222049_lock_tournament_level_clocks.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

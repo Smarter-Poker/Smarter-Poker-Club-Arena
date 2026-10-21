@@ -18,7 +18,7 @@ fixed clocks but at 12 minutes for Free Buys and deep stacks.
   standard/bounty 8, deep stack 10) and `withLockedLevelClock`, applied at the
   scheduled and recurring MTT insert paths. Midway's structure policy uses it.
 - Free Buys keep Dan's one hour of late registration: twelve 5-minute levels.
-- `supabase/migrations/20261021220920_lock_tournament_level_clocks.sql`:
+- `supabase/migrations/20261021222049_lock_tournament_level_clocks.sql`:
   `fn_ca_locked_level_minutes` (the same rule) and the BEFORE INSERT trigger
   `tournaments_lock_level_clock`, so no creator can publish a range. Every
   not-yet-started MTT and satellite and every schedule config with an explicit

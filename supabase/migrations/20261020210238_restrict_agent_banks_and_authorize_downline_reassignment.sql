@@ -3,11 +3,11 @@
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
--- Follow hand reporting's facts -> table-player -> membership -> agents
+-- Follow hand reporting's facts -> table-player -> agents -> membership
 -- dependency order before replacing functions. Admission is bounded by the
 -- three-second lock timeout; every refusal rolls the complete batch back.
 LOCK TABLE public.club_member_daily_facts, public.ca_club_table_player_daily,
- public.club_members, public.agents, public.ca_club_member_tournament_fee_daily,
+ public.agents, public.club_members, public.ca_club_member_tournament_fee_daily,
  public.ca_club_player_daily, public.ca_club_rake_daily_user,
  public.ca_club_tournament_player_daily, public.ca_union_rake_attribution,
  public.club_member_daily_stats, public.club_member_play_totals,

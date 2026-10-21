@@ -269,5 +269,8 @@
       "bytes": 229699,
       "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
     }
+  },
+  "clubNewsOnceRouting20261021": {
+    "reason": "Reviewed CI addition of the club-entry-news native test in accounting shard 2. Refresh only current workflow enforcement bytes; candidate SQL, financial assertions and native result records are unchanged."
   }
 }

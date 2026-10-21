@@ -3583,5 +3583,8 @@
       "bytes": 229699,
       "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
     }
+  },
+  "clubNewsOnceRouting20261021": {
+    "reason": "Reviewed additive news-test workflow step and classifier selector. Refresh current enforcement fingerprints only; existing native/financial fixtures and qualification status are unchanged."
   }
 }

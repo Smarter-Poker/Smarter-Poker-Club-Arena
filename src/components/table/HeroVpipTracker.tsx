@@ -197,7 +197,7 @@ export default function HeroVpipTracker({
       // The real name/stack plate is the anchor, including its responsive lift.
       // Center the indicator column beside the plate and keep its clock
       // above the plate's bottom edge, clear of the action bar.
-      node.style.left = `${(plate.left - parent.left) / scaleX - 12}px`;
+      node.style.left = `${(plate.left - parent.left) / scaleX - (window.innerWidth <= 480 ? 6 : 12)}px`;
       const center = (plate.top + plate.height / 2 - parent.top) / scaleY;
       const actions = actionPanel?.getBoundingClientRect();
       const bottomEdge =

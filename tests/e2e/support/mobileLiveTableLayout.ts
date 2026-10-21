@@ -16,10 +16,16 @@ async function attachMobileProof(
 }
 
 /** Read the deployed table through the isolated spectator's real mobile UI. */
-export async function certifyMobileLiveTableLayout(page: Page, testInfo: TestInfo) {
+export async function certifyMobileLiveTableLayout(
+  page: Page,
+  testInfo: TestInfo,
+  options: { widths?: number[]; seatChangeToggle?: boolean } = {}
+) {
+  const capacity = await page.locator('.table-page:visible').first().getAttribute('data-seats');
+  const proofTag = `mobile-live-table-${capacity || 'unknown'}max`;
   const originalViewport = page.viewportSize();
   try {
-    for (const width of [375, 393, 430]) {
+    for (const width of options.widths || [375, 393, 430]) {
       await page.setViewportSize({ width, height: 852 });
       // Commit the resize and its observer-driven layout before measuring.
       await page.evaluate(
@@ -101,17 +107,18 @@ export async function certifyMobileLiveTableLayout(page: Page, testInfo: TestInf
       console.log(`MOBILE_LIVE_TABLE_LAYOUT ${JSON.stringify(measured)}`);
       await attachMobileProof(
         testInfo,
-        `mobile-live-table-${width}`,
+        `${proofTag}-${width}`,
         await page.screenshot(),
         'image/png'
       );
       await attachMobileProof(
         testInfo,
-        `mobile-live-table-${width}-measurements`,
+        `${proofTag}-${width}-measurements`,
         Buffer.from(JSON.stringify(measured)),
         'application/json'
       );
     }
+    if (options.seatChangeToggle === false) return;
     const menu = page.getByRole('button', { name: 'Table Menu', exact: true });
     await menu.click();
     const toggle = page.getByRole('menuitemcheckbox', { name: /Seat Change/ });
@@ -125,7 +132,7 @@ export async function certifyMobileLiveTableLayout(page: Page, testInfo: TestInf
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
     await attachMobileProof(
       testInfo,
-      'mobile-live-table-seat-change-toggle',
+      `${proofTag}-seat-change-toggle`,
       await page.screenshot(),
       'image/png'
     );

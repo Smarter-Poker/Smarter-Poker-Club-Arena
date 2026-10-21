@@ -1,6 +1,7 @@
 import type { GeneratedBlindLevel } from './blindLadder.js';
 import { maxSeatsFor } from '../engine/VariantRules.js';
 import { mttLateRegistrationMinutes, mttSpeedColumns } from './mttStructurePolicy.js';
+import { FREE_BUY_LATE_REG_MINUTES, lockedLevelMinutes } from './lockedLevelClock.js';
 
 export const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
 export const MIDWAY_STRUCTURE_VERSION = 'midway-25-25-v1';
@@ -56,7 +57,9 @@ export function withMidwayStructure<T extends Record<string, unknown>>(
     opening?.durationMinutes ?? opening?.duration_minutes ?? Number(opening?.duration) / 60
   );
   if (!(originalMinutes > 0)) throw new Error('Midway requires an authored clock');
-  const minutes = free ? 12 : originalMinutes <= 5 ? 5 : originalMinutes >= 12 ? 12 : 8;
+  // Dan 2026-10-21: one fixed clock per event, never a range. Freerolls and
+  // turbos 5, standard and bounty 8, deep stack 10 (lockedLevelClock.ts).
+  const minutes = lockedLevelMinutes({ ...row, blind_structure: old });
   const originalStack = Number(row.starting_chips);
   if (!Number.isSafeInteger(originalStack) || originalStack <= 0) {
     throw new Error('Midway requires a positive whole starting stack');
@@ -67,9 +70,10 @@ export function withMidwayStructure<T extends Record<string, unknown>>(
   const requested = Number(row.late_reg_levels ?? 0);
   if (!Number.isSafeInteger(requested) || requested < 0)
     throw new Error('Invalid Midway late registration');
-  // Free Buys: exactly five 12-minute levels, one hour, then the add-on.
-  // Other entries/rebuys retain at least 20 BB at the last admitted level.
-  let cutoff = free ? 5 : Math.min(requested, blinds.length);
+  // Free Buys: one hour of late registration (twelve 5-minute levels), then
+  // the add-on. Other entries/rebuys retain at least 20 BB at the last
+  // admitted level.
+  let cutoff = free ? FREE_BUY_LATE_REG_MINUTES / minutes : Math.min(requested, blinds.length);
   while (!free && cutoff > 0 && stack / blinds[cutoff - 1].bigBlind < 20) cutoff--;
   // Generic MTT rows also use variant=freezeout; only authored formats opt out.
   const explicitFreezeout =

@@ -55,6 +55,7 @@ import {
 } from './diamondScheduledSpawn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { withMidwayStructure } from '../tournament/midwayStructurePolicy.js';
+import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import {
   TournamentRecurringService,
@@ -1321,7 +1322,9 @@ export class ScheduledTournamentService {
     // Resolve everything that can fail BEFORE claiming the spawn key, so a
     // skipped spawn (e.g. satellite target not found yet) is retried next poll
     // instead of being burned forever.
-    const row = await this.buildInsertRow(schedule, cfg, startTime);
+    // Dan 2026-10-21: every MTT and satellite runs one locked clock per level.
+    const built = await this.buildInsertRow(schedule, cfg, startTime);
+    const row = built ? withLockedLevelClock(built) : built;
     if (!row) {
       // A satellite whose target event does not exist yet is not a missed
       // event: a daily satellite feeding a weekly target only runs once that
@@ -2657,7 +2660,7 @@ export class ScheduledTournamentService {
 
     const { data: created, error: insertErr } = await supabase
       .from('tournaments')
-      .insert(withMidwayStructure(row))
+      .insert(withLockedLevelClock(withMidwayStructure(row)))
       .select('id')
       .maybeSingle();
     if (insertErr || !created) {

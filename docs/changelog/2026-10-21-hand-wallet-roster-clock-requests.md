@@ -65,3 +65,5 @@ A pre-existing native accounting qualification failed because its expiry fault
 hard-coded two days instead of the authoritative proof lifetime. Its one-line
 fixture correction derives that lifetime and reproduces fail-before/pass-after
 without changing accounting behavior.
+
+Recovery operation identities validate nonzero UUID shape rather than version or variant nibbles. The existing UUID law remains unchanged; native coverage accepts legacy-shaped identities and rejects zero wallet, batch and per-target identities.

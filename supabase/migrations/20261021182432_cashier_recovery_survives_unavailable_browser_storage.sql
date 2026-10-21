@@ -46,7 +46,8 @@ CREATE FUNCTION public.fn_cashier_browser_recovery_valid(
  p_actor_id uuid,p_club_id uuid,p_kind text,p_intent_key text,p_envelope jsonb
 ) RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path=public,pg_temp AS $fn$
 DECLARE v_identity text; v_targets jsonb; v_target text; v_failure jsonb; v_value jsonb; v_seen text[]:=ARRAY[]::text[];
- v_uuid constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
+ -- Operation identities accept every UUID shape; only the zero sentinel is invalid.
+ v_uuid constant text:='^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
  v_entity constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 BEGIN
  IF p_actor_id IS NULL OR p_club_id IS NULL OR p_actor_id='00000000-0000-0000-0000-000000000000'::uuid OR p_club_id='00000000-0000-0000-0000-000000000000'::uuid

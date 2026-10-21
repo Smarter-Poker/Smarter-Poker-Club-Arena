@@ -33,7 +33,7 @@ try:
  q(f"INSERT INTO club_members VALUES('{C}','{A}','active','agent');")
  assert q("SELECT to_regprocedure('fn_cashier_browser_recovery_reserve(uuid,uuid,text,text,jsonb)') IS NULL;")=='t'
  q((ROOT/'supabase/migrations/20261021182432_cashier_recovery_survives_unavailable_browser_storage.sql').read_text())
- w=dict(version=1,userId=A,clubId=C,action='fn_agent_wallet_send',digest='a'*64,operationId=str(uuid.uuid4()),createdAt=1)
+ w=dict(version=1,userId=A,clubId=C,action='fn_agent_wallet_send',digest='a'*64,operationId='10000000-0000-0000-0000-000000000001',createdAt=1)
  wk=w['action']+':'+w['digest'];assert reserve('wallet',wk,w)==w
  draft={**w,'operationId':str(uuid.uuid4()),'createdAt':2}
  with ThreadPoolExecutor(max_workers=4) as pool:r=list(pool.map(lambda _:reserve('wallet',wk,draft),range(4)))
@@ -41,6 +41,12 @@ try:
  alias={**w,'digest':'b'*64};denied(lambda:reserve('wallet',alias['action']+':'+alias['digest'],alias))
  e=dict(version=1,userId=A,clubId=C,kind='send',amount=10,targetIds=T,targetAmounts={t:10 for t in T},failures=[dict(userId=t,name='Player',message='Unresolved') for t in T],submissionId=str(uuid.uuid4()),opIds={t:str(uuid.uuid4()) for t in T},destinations={t:'player_wallet' for t in T},source='agent_wallet',createdAt=1)
  k=key(e)
+ e={**e,'submissionId':'10000000-0000-0000-0000-000000000002','opIds':{t:'10000000-0000-0000-0000-'+str(i+3).zfill(12) for i,t in enumerate(T)}}
+ assert reserve('transfer',k,e)==e,'non-versioned legacy submission and operation UUIDs remain valid'
+ zero='00000000-0000-0000-0000-000000000000'
+ denied(lambda:reserve('wallet',wk,{**w,'operationId':zero}))
+ denied(lambda:reserve('transfer',k,{**e,'submissionId':zero}))
+ denied(lambda:reserve('transfer',k,{**e,'opIds':{**e['opIds'],T[0]:zero}}))
  def race(_):return reserve('transfer',k,{**e,'submissionId':str(uuid.uuid4()),'opIds':{t:str(uuid.uuid4()) for t in T}})
  with ThreadPoolExecutor(max_workers=4) as pool:r=list(pool.map(race,range(4)))
  assert all(v==r[0] for v in r);e=r[0]

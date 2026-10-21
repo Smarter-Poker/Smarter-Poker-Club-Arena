@@ -114,6 +114,7 @@ interface SnapshotRow {
   creator_name: string | null;
   creator_avatar: string | null;
   fee: number;
+  fee_exact?: number;
   winnings: number;
   hands: number;
   players: number;
@@ -483,6 +484,10 @@ function isSnapshotExportRow(value: unknown): value is SnapshotRow {
     isStringOrNull(value.creator_name) &&
     isStringOrNull(value.creator_avatar) &&
     isExactCent(value.fee) &&
+    (value.fee_exact === undefined ||
+      (typeof value.fee_exact === 'number' &&
+        Number.isFinite(value.fee_exact) &&
+        Number.isSafeInteger(Math.trunc(value.fee_exact * 100)))) &&
     isExactCent(value.winnings) &&
     isNonNegativeInteger(value.hands) &&
     isNonNegativeInteger(value.players)
@@ -836,7 +841,7 @@ function rowsToCsv(rows: SnapshotRow[]): string {
       r.rake_percent,
       r.hands,
       r.players,
-      r.fee,
+      r.fee_exact ?? r.fee,
       r.winnings,
     ]
       .map(esc)

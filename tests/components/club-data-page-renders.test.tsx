@@ -663,7 +663,13 @@ describe('ClubDataPage', () => {
   });
 
   it('exports the exact prepared game snapshot instead of only the visible page', async () => {
-    const secondRow = { ...snapshot.rows[0], id: 'game-2', name: 'Shark Table Two' };
+    const secondRow = {
+      ...snapshot.rows[0],
+      id: 'game-2',
+      name: 'Shark Table Two',
+      fee: 0,
+      fee_exact: 0.0049,
+    };
 
     // THE COLD READ IS HELD OPEN BY THE TEST, NOT BY A TIMER (2026-09-02).
     //
@@ -727,6 +733,7 @@ describe('ClubDataPage', () => {
       await screen.findAllByText('Exported All 2 Games.', undefined, { timeout: 10_000 })
     ).toHaveLength(2);
     expect(downloadMock.mock.calls[0][1].split('\n')).toHaveLength(3);
+    expect(downloadMock.mock.calls[0][1].split('\n')[2].split(',')[8]).toBe('0.0049');
     expect(downloadMock.mock.calls[0][2]).toEqual(expect.any(Function));
     expect(rpcMock).toHaveBeenCalledWith(
       'ca_club_game_export_start',
@@ -777,49 +784,57 @@ describe('ClubDataPage', () => {
     await waitFor(() => expect(screen.queryByText('Exported All 1 Games.')).toBeNull());
   });
 
-  it('refuses malformed money in a prepared game export instead of downloading a partial file', async () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
-      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
-      if (fn === 'ca_club_game_export_start') {
-        return {
-          data: { export_id: 'bad-game-export', total_rows: 1, status: 'ready' },
-          error: null,
-        };
-      }
-      if (fn === 'ca_club_data_export_page') {
-        return {
-          data: {
-            rows: [{ ...snapshot.rows[0], fee: 42.501 }],
-            total_rows: 1,
-            next_offset: 1,
-            has_more: false,
-          },
-          error: null,
-        };
-      }
-      if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
-      return { data: null, error: null };
-    });
+  it.each([
+    { fee: 42.501 },
+    { fee_exact: Number.NaN },
+    { fee_exact: '0.0049' },
+    { fee_exact: Number.MAX_VALUE },
+  ])(
+    'refuses malformed export money %j instead of downloading a partial file',
+    async (invalidMoney) => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      rpcMock.mockImplementation(async (fn: string) => {
+        if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
+        if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+        if (fn === 'ca_club_game_export_start') {
+          return {
+            data: { export_id: 'bad-game-export', total_rows: 1, status: 'ready' },
+            error: null,
+          };
+        }
+        if (fn === 'ca_club_data_export_page') {
+          return {
+            data: {
+              rows: [{ ...snapshot.rows[0], ...invalidMoney }],
+              total_rows: 1,
+              next_offset: 1,
+              has_more: false,
+            },
+            error: null,
+          };
+        }
+        if (fn === 'ca_club_data_export_cancel') return { data: true, error: null };
+        return { data: null, error: null };
+      });
 
-    try {
-      render(<ClubDataPage />);
-      fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
-      const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
-      await waitFor(() => expect(exportButton).toBeEnabled());
-      fireEvent.click(exportButton);
+      try {
+        render(<ClubDataPage />);
+        fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+        const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
+        await waitFor(() => expect(exportButton).toBeEnabled());
+        fireEvent.click(exportButton);
 
-      expect(
-        await screen.findAllByText(
-          'The Complete Export Could Not Be Prepared. No Partial File Was Downloaded. Try Again.'
-        )
-      ).toHaveLength(2);
-      expect(downloadMock).not.toHaveBeenCalled();
-    } finally {
-      errorSpy.mockRestore();
+        expect(
+          await screen.findAllByText(
+            'The Complete Export Could Not Be Prepared. No Partial File Was Downloaded. Try Again.'
+          )
+        ).toHaveLength(2);
+        expect(downloadMock).not.toHaveBeenCalled();
+      } finally {
+        errorSpy.mockRestore();
+      }
     }
-  });
+  );
 
   it('refuses an unreconciled prepared player export instead of downloading it', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

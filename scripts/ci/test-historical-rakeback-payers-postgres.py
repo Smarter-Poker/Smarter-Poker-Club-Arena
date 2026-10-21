@@ -3,7 +3,7 @@
 import argparse,concurrent.futures,hashlib,json,os,re,shutil,socket,subprocess,tempfile
 from decimal import Decimal
 from pathlib import Path
-ap=argparse.ArgumentParser();ap.add_argument('--pg-bin',type=Path,required=True);ap.add_argument('--scratch',type=Path,required=True)
+ap=argparse.ArgumentParser();ap.add_argument('--coordinator-scope-only',action='store_true');ap.add_argument('--pg-bin',type=Path,required=True);ap.add_argument('--scratch',type=Path,required=True)
 a=ap.parse_args();root=Path(__file__).resolve().parents[2];base=Path(tempfile.mkdtemp(prefix='hrp-',dir=a.scratch));started=False
 with socket.socket()as listener:listener.bind(('127.0.0.1',0));port=str(listener.getsockname()[1])
 env={**os.environ,'TMPDIR':str(base)}
@@ -19,6 +19,40 @@ def run(args,content=None,error=None,no_warnings=False):
  return p.stdout.strip()
 def sql(s,error=None,no_warnings=False):return run([a.pg_bin/'psql','-XqAt','-v','ON_ERROR_STOP=1','-h','127.0.0.1','-p',port,'-U','postgres'],s,error,no_warnings)
 def load(p):return sql((root/p).read_text())
+def install_historical_wallet_candidate():
+ sql("""ALTER TABLE clubs ADD COLUMN asset text DEFAULT 'chips',ADD COLUMN lifecycle_status text DEFAULT 'active';
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS membership_lifecycle_status text DEFAULT 'active';
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS departed_at timestamptz;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS departed_by uuid;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS departure_reason text;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS promo_balance numeric DEFAULT 0;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS credit_limit numeric DEFAULT 0;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS credit_used numeric DEFAULT 0;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS commission_rate numeric DEFAULT 0;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS rakeback_rate numeric DEFAULT 0;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS player_rakeback_pct numeric DEFAULT 0;
+ ALTER TABLE club_members ADD COLUMN IF NOT EXISTS parent_agent_id uuid;
+ CREATE SCHEMA supabase_migrations;
+ CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY);
+ CREATE FUNCTION fn_platform_frozen() RETURNS boolean LANGUAGE sql AS $$SELECT coalesce(current_setting('test.wallet_freeze',true),'false')::boolean$$;
+ CREATE FUNCTION fn_active_maintenance_release_boundary() RETURNS uuid LANGUAGE sql AS $$SELECT NULL::uuid$$;
+ CREATE FUNCTION smarter_private.original_inventory_proof_sources_match() RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
+ CREATE FUNCTION smarter_private.original_inventory_basis_generation() RETURNS text LANGUAGE sql AS $$SELECT 'fixture-original-generation'::text$$;
+ CREATE TABLE audit_trail(club_id uuid,actor_id uuid,actor_role text,action text,target_type text,target_id uuid,after_state jsonb);
+ """)
+ for name in ['fn_club_membership_lock','fn_require_explicit_club_membership_source','fn_audit_club_entry_mutation']:
+  load('scripts/ci/fixtures/historical-rakeback-wallet/'+name+'.sql')
+ load('scripts/ci/fixtures/deleted-weekly-routing/fn_guard_membership_lifecycle_write.sql')
+ sql("CREATE TRIGGER historical_wallet_original_source BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_require_explicit_club_membership_source();CREATE TRIGGER historical_wallet_original_lifecycle BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_membership_lifecycle_write();CREATE TRIGGER historical_wallet_original_audit AFTER INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_entry_mutation();")
+ sql("REVOKE ALL ON FUNCTION fn_require_explicit_club_membership_source(),fn_audit_club_entry_mutation()FROM PUBLIC,anon,authenticated;GRANT EXECUTE ON FUNCTION fn_require_explicit_club_membership_source(),fn_audit_club_entry_mutation()TO service_role;")
+ wallet_candidate=(root/'supabase/migrations/20261020203346_historical_rakeback_preserves_departed_financial_wallets.sql').read_text()
+ original_stage=sql("SELECT pg_get_functiondef('fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)'::regprocedure)")
+ sql(wallet_candidate)
+ inserted=re.search(r'\$new\$( FOR r IN.*? END LOOP;\n)',wallet_candidate,re.S).group(1)
+ repaired_stage=sql("SELECT pg_get_functiondef('fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)'::regprocedure)")
+ assert repaired_stage.count(inserted)==1 and repaired_stage.replace(inserted,'')==original_stage,'R3 changed outside one financial custody admission'
+ return wallet_candidate
 try:
  run([a.pg_bin/'initdb','-D',base/'d','-U','postgres','-A','trust','--no-locale','--encoding=UTF8'])
  run([a.pg_bin/'pg_ctl','-D',base/'d','-l',base/'log','-o',f"-h 127.0.0.1 -k '' -p {port}",'-w','start']);started=True
@@ -88,6 +122,75 @@ try:
  sql("SELECT smarter_private.rakeback_payer_plan('[{\"payer_kind\":\"club\",\"payer_user_id\":null,\"rake_credit\":1,\"rate\":0.1}]',0.2)",'rakeback_payer_total_disagrees')
  assert sql("SELECT has_table_privilege('service_role','accounting_rakeback_payer_contracts','INSERT')")=='f'
  assert sql("SELECT has_function_privilege('authenticated','smarter_private.rakeback_certificate_payers(bigint)','EXECUTE')")=='f'
+ if a.coordinator_scope_only:
+  # Original A owner, exact source scope, no proposed correction installed.
+  assert sql("SELECT md5(pg_get_functiondef('fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)'::regprocedure))")=='fa489e420cf45112efe0b1e709fb4827'
+  assert sql("SELECT count(*)FROM accounting_payable_earning_sources WHERE coordinator_union_id IS NULL")=='0'
+  assert sql("SELECT count(*)FROM rakeback_periods")=='5'
+  clubcall="PERFORM fn_settle_accounting_rakeback_stage('club',u(11),'2026-09-07 07:00Z','2026-09-14 07:00Z');"
+  observed=[]
+  for name,prefix,expected in [
+   ('union_only_club_zero_standalone_sources_refused', '', 'routed_rakeback_certificate_required'),
+   ('real_standalone_source_with_foreign_certificate_refused', "UPDATE accounting_cash_rake_sources SET coordinator_union_id=NULL WHERE id=u(401);", 'routed_rakeback_certificate_required'),
+  ]:
+   probe="BEGIN;"+prefix+"DO $probe$DECLARE reason text;code text;BEGIN BEGIN "+clubcall+" RAISE EXCEPTION 'unexpected_scope_acceptance';EXCEPTION WHEN OTHERS THEN GET STACKED DIAGNOSTICS reason=MESSAGE_TEXT,code=RETURNED_SQLSTATE;IF reason<>'"+expected+"' OR code<>'55000' THEN RAISE EXCEPTION 'scope_fixture_wrong_refusal: %/%',code,reason;END IF;END;IF EXISTS(SELECT FROM rakeback_period_payouts) OR EXISTS(SELECT FROM wallet_transactions) OR EXISTS(SELECT FROM chip_ledger) OR EXISTS(SELECT FROM settlement_invoices) OR EXISTS(SELECT FROM accounting_routed_settlement_runs) THEN RAISE EXCEPTION 'scope_fixture_money_changed';END IF;RAISE EXCEPTION 'qualified_scope_failure_rollback';END $probe$;"
+   sql(probe,'qualified_scope_failure_rollback');observed.append({'case':name,'actual_sqlstate':'55000','actual_message':expected,'rolled_back':True})
+  wallet_candidate=install_historical_wallet_candidate()
+  assert sql("SELECT md5(pg_get_functiondef('fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)'::regprocedure))")=='4803071b28b2ad86c84291d9db9d5a2e'
+  for prefix in ['', "UPDATE accounting_cash_rake_sources SET coordinator_union_id=NULL WHERE id=u(401);"]:
+   sql("BEGIN;"+prefix+"SELECT fn_settle_accounting_rakeback_stage('club',u(11),'2026-09-07 07:00Z','2026-09-14 07:00Z');",'routed_rakeback_certificate_required')
+  assert sql('SELECT count(*)FROM rakeback_period_payouts')=='0'
+  assert Decimal(sql('SELECT sum(chip_balance)FROM club_members'))==Decimal(30)
+  assert Decimal(sql('SELECT sum(chip_treasury)FROM clubs'))==Decimal(1000)
+  sql('CREATE TABLE accounting_close_partials(kind text,union_id uuid,period_start timestamptz,period_end timestamptz,window_start timestamptz,window_end timestamptz,value jsonb,computed_at timestamptz,cash_ids uuid[],cash_md5 text[],fee_ids uuid[],fee_md5 text[],UNIQUE(kind,union_id,period_start,period_end,window_start));')
+  for cached_owner in json.loads((root/'scripts/ci/fixtures/historical-rakeback-payer-cache-preimages.json').read_text()):sql(cached_owner['definition'])
+  scope_candidate=(root/'supabase/migrations/20261021173708_standalone_rakeback_only_admits_its_original_coordinator_obl.sql').read_text()
+  signatures=['fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)','fn_settle_accounting_rakeback_plan(text,uuid,timestamptz,timestamptz)']
+  original={sig:sql("SELECT pg_get_functiondef('"+sig+"'::regprocedure)")for sig in signatures}
+  sql(scope_candidate)
+  old=re.search(r'old text:=\$old\$(.*?)\$old\$;',scope_candidate,re.S).group(1)
+  replacement=re.search(r'replacement text:=\$new\$(.*?)\$new\$;',scope_candidate,re.S).group(1)
+  for sig,n in zip(signatures,[2,1]):
+   repaired=sql("SELECT pg_get_functiondef('"+sig+"'::regprocedure)")
+   assert repaired.count(replacement)==n and repaired.replace(replacement,old)==original[sig],sig
+  def no_money():
+   assert sql('SELECT count(*)FROM rakeback_period_payouts')=='0'
+   assert sql('SELECT count(*)FROM chip_ledger')=='0'
+   assert sql('SELECT count(*)FROM wallet_transactions')=='0'
+   assert sql('SELECT count(*)FROM settlement_invoices')=='0'
+  faults=[
+   ('standalone_cash_wrong_foreign_certificate',"UPDATE accounting_cash_rake_sources SET coordinator_union_id=NULL WHERE id=u(401);"),
+   ('standalone_tournament_wrong_foreign_certificate',"UPDATE accounting_tournament_fee_sources SET coordinator_union_id=NULL WHERE id=u(402);UPDATE accounting_tournament_fee_recognitions SET union_id=NULL WHERE tournament_id=u(802);"),
+   ('standalone_zero_rake_wrong_foreign_certificate',"UPDATE accounting_cash_rake_sources SET coordinator_union_id=NULL WHERE id=u(407);"),
+   ('missing_latest_certificate',"SET LOCAL session_replication_role=replica;DELETE FROM accounting_rakeback_period_calculations WHERE player_id=u(301);SET LOCAL session_replication_role=origin;"),
+   ('malformed_latest_fingerprint',"SET LOCAL session_replication_role=replica;UPDATE accounting_rakeback_period_calculations SET source_fingerprint='bad' WHERE player_id=u(301);SET LOCAL session_replication_role=origin;"),
+   ('malformed_latest_allocation',"SET LOCAL session_replication_role=replica;UPDATE accounting_rakeback_period_calculations SET source_allocations='[]' WHERE player_id=u(301);SET LOCAL session_replication_role=origin;"),
+   ('inconsistent_weighted_display_rate',"SET LOCAL session_replication_role=replica;UPDATE accounting_rakeback_period_calculations SET display_rate=.2 WHERE player_id=u(301);UPDATE rakeback_periods SET rakeback_rate=.2 WHERE user_id=u(301);UPDATE accounting_rakeback_period_calculations SET source_fingerprint=md5(jsonb_build_object('allocations',source_allocations,'rake',rake_generated,'amount',rakeback_amount,'rate',display_rate)::text) WHERE player_id=u(301);SET LOCAL session_replication_role=origin;"),
+   ('split_allocation_player_pays_itself',"SET LOCAL session_replication_role=replica;UPDATE accounting_rakeback_period_calculations SET source_allocations=jsonb_set(source_allocations,'{0,payer_user_id}',to_jsonb(player_id)) WHERE player_id=u(301);UPDATE accounting_rakeback_period_calculations SET source_fingerprint=md5(jsonb_build_object('allocations',source_allocations,'rake',rake_generated,'amount',rakeback_amount,'rate',display_rate)::text) WHERE player_id=u(301);SET LOCAL session_replication_role=origin;"),
+   ('wrong_latest_published_identity',"SET LOCAL session_replication_role=replica;UPDATE accounting_rakeback_period_calculations SET rake_generated=rake_generated+1 WHERE player_id=u(301);SET LOCAL session_replication_role=origin;"),
+  ]
+  for name,prefix in faults:
+   sql("BEGIN;"+prefix+"SELECT fn_settle_accounting_rakeback_stage('club',u(11),'2026-09-07 07:00Z','2026-09-14 07:00Z');",'routed_rakeback_certificate_required')
+   no_money();observed.append({'case':name,'refused':True,'rolled_back':True})
+  result=json.loads(sql("SELECT fn_settle_accounting_rakeback_stage('club',u(11),'2026-09-07 07:00Z','2026-09-14 07:00Z')"))
+  assert sql('SELECT count(*)FROM rakeback_period_payouts')=='0',result
+  assert sql("SELECT count(*)FROM rakeback_periods WHERE status='pending'")=='5',result
+  assert Decimal(sql('SELECT sum(chip_balance)FROM club_members'))==Decimal(30)
+  duplicate=json.loads(sql("SELECT fn_settle_accounting_rakeback_stage('club',u(11),'2026-09-07 07:00Z','2026-09-14 07:00Z')"))
+  assert duplicate['duplicate'] is True and duplicate['amount']==0,duplicate
+  no_money()
+  chunk="BEGIN;SET LOCAL app.weekly_accounting_chunked='on';SET LOCAL app.weekly_accounting_scope_deadline='2099-01-01';"
+  for kind,scope_id,union_id,standalone in [('club','u(11)','NULL','u(11)'),('union','u(1)','u(1)','NULL')]:
+   build="INSERT INTO accounting_close_partials(kind,union_id,period_start,period_end,window_start,window_end,value,computed_at)SELECT 'round3_"+kind+"_window',"+scope_id+",'2026-09-07 07:00Z','2026-09-14 07:00Z',w.window_start,w.window_end,fn_settle_accounting_rakeback_window("+union_id+","+standalone+",w.window_start,w.window_end),clock_timestamp()FROM fn_accounting_close_windows('2026-09-07 07:00Z','2026-09-14 07:00Z')w;"
+   if kind=='club':
+    answer=sql(chunk+build+"SELECT fn_settle_accounting_rakeback_plan('club',u(11),'2026-09-07 07:00Z','2026-09-14 07:00Z');SELECT fn_settle_accounting_rakeback_stage('club',u(11),'2026-09-07 07:00Z','2026-09-14 07:00Z');ROLLBACK;")
+    assert 'round3_windows_missing' in answer and '"amount": 0' in answer,answer
+   else:
+    answer=sql(chunk+build+"SELECT fn_settle_accounting_rakeback_plan('union',u(1),'2026-09-07 07:00Z','2026-09-14 07:00Z');SELECT fn_settle_accounting_rakeback_stage('union',u(1),'2026-09-07 07:00Z','2026-09-14 07:00Z');SET CONSTRAINTS ALL IMMEDIATE;SELECT sum(payout_amount) FROM rakeback_period_payouts;SELECT count(*)FROM rakeback_period_payouts;ROLLBACK;")
+    assert answer.splitlines()[-2:]==['0.16','5'],answer
+   no_money()
+  print(json.dumps({'qualification':'passed','result':result,'cases':observed,'postimages':{sig:sql("SELECT md5(pg_get_functiondef('"+sig+"'::regprocedure))")for sig in signatures},'reverse_byte_proof':True,'all_foreign_periods_pending':True,'standalone_zero_duplicate':True,'native_cached_empty_plan_semantics_preserved':True,'native_union_cached_all_five_paid_exact_016_then_rolled_back':True,'production_writes':False}))
+  raise SystemExit(0)
  call="SELECT fn_settle_accounting_rakeback_stage('union',u(1),'2026-09-07 07:00Z','2026-09-14 07:00Z');"
  sql("BEGIN;SET LOCAL test.is_engine='false';"+call,'service_role_required')
  sql("BEGIN;INSERT INTO settlement_locks VALUES('GLOBAL_SETTLEMENT_FREEZE',true);"+call,'EMERGENCY_PROFIT_DRIFT_LOCK')
@@ -105,38 +208,7 @@ try:
  # owners above remain the actual financial route; isolation controls below
  # represent only installation freeze/generation, never payment behavior.
  sql("BEGIN;DELETE FROM club_members WHERE user_id=u(301);"+call,'routed_rakeback_account_missing_or_invalid')
- sql("""ALTER TABLE clubs ADD COLUMN asset text DEFAULT 'chips',ADD COLUMN lifecycle_status text DEFAULT 'active';
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS membership_lifecycle_status text DEFAULT 'active';
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS departed_at timestamptz;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS departed_by uuid;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS departure_reason text;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS promo_balance numeric DEFAULT 0;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS credit_limit numeric DEFAULT 0;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS credit_used numeric DEFAULT 0;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS commission_rate numeric DEFAULT 0;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS rakeback_rate numeric DEFAULT 0;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS player_rakeback_pct numeric DEFAULT 0;
- ALTER TABLE club_members ADD COLUMN IF NOT EXISTS parent_agent_id uuid;
- CREATE SCHEMA supabase_migrations;
- CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY);
- CREATE FUNCTION fn_platform_frozen() RETURNS boolean LANGUAGE sql AS $$SELECT coalesce(current_setting('test.wallet_freeze',true),'false')::boolean$$;
- CREATE FUNCTION fn_active_maintenance_release_boundary() RETURNS uuid LANGUAGE sql AS $$SELECT NULL::uuid$$;
- CREATE FUNCTION smarter_private.original_inventory_proof_sources_match() RETURNS boolean LANGUAGE sql AS $$SELECT true$$;
- CREATE FUNCTION smarter_private.original_inventory_basis_generation() RETURNS text LANGUAGE sql AS $$SELECT 'fixture-original-generation'::text$$;
- CREATE TABLE audit_trail(club_id uuid,actor_id uuid,actor_role text,action text,target_type text,target_id uuid,after_state jsonb);
- """)
- for name in ['fn_club_membership_lock','fn_require_explicit_club_membership_source','fn_audit_club_entry_mutation']:
-  load('scripts/ci/fixtures/historical-rakeback-wallet/'+name+'.sql')
- load('scripts/ci/fixtures/deleted-weekly-routing/fn_guard_membership_lifecycle_write.sql')
- sql("CREATE TRIGGER historical_wallet_original_source BEFORE INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_require_explicit_club_membership_source();CREATE TRIGGER historical_wallet_original_lifecycle BEFORE UPDATE ON club_members FOR EACH ROW EXECUTE FUNCTION fn_guard_membership_lifecycle_write();CREATE TRIGGER historical_wallet_original_audit AFTER INSERT ON club_members FOR EACH ROW EXECUTE FUNCTION fn_audit_club_entry_mutation();")
- sql("REVOKE ALL ON FUNCTION fn_require_explicit_club_membership_source(),fn_audit_club_entry_mutation()FROM PUBLIC,anon,authenticated;GRANT EXECUTE ON FUNCTION fn_require_explicit_club_membership_source(),fn_audit_club_entry_mutation()TO service_role;")
- wallet_candidate=(root/'supabase/migrations/20261020203346_historical_rakeback_preserves_departed_financial_wallets.sql').read_text()
- original_stage=sql("SELECT pg_get_functiondef('fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)'::regprocedure)")
- sql(wallet_candidate)
- inserted=re.search(r'\$new\$( FOR r IN.*? END LOOP;\n)',wallet_candidate,re.S).group(1)
- repaired_stage=sql("SELECT pg_get_functiondef('fn_settle_accounting_rakeback_stage(text,uuid,timestamptz,timestamptz)'::regprocedure)")
- assert repaired_stage.count(inserted)==1 and repaired_stage.replace(inserted,'')==original_stage,'R3 changed outside one financial custody admission'
+ wallet_candidate=install_historical_wallet_candidate()
  sql(wallet_candidate,'historical_wallet_preimage_changed')
  for role in ['anon','authenticated','service_role']:
   sql("BEGIN;SET LOCAL ROLE "+role+";SELECT smarter_private.preserve_historical_rakeback_wallet(NULL,NULL,NULL,NULL);",'permission denied')

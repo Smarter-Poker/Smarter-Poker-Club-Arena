@@ -11,6 +11,10 @@ describe('retired club brand links', () => {
       '/clubs/kings-club/cashier?tab=history#recent',
     ],
     ['/clubs/SHARK-CLUB', '/clubs/kings-club'],
+    [
+      '/invite/shark-club?code=join&ref=player&i=token#join',
+      '/invite/kings-club?code=join&ref=player&i=token#join',
+    ],
     ['/stats?club=shark-club&days=7#games', '/stats?club=kings-club&days=7#games'],
     ['/marketplace?club_id=shark-club', '/marketplace?club_id=kings-club'],
     ['/clubs/shark-clubhouse?days=7', '/clubs/shark-clubhouse?days=7'],

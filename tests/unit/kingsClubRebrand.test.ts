@@ -27,6 +27,10 @@ describe('Kings Club identity and branding', () => {
       expect(read(file)).toContain('images/kings-club-logo.png');
       expect(read(file)).not.toContain('images/shark-club-card.jpg');
     }
+    expect(read('src/pages/InvitePage.tsx')).toContain(
+      "club.id === 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'"
+    );
+    expect(read('src/pages/InvitePage.tsx')).not.toContain("includes('SHARK')");
     expect(read('src/pages/HomePage.tsx')).toContain("name: 'Kings Club'");
     expect(read('src/App.tsx')).toContain('<ClubBrandRedirect />');
     expect(read('src/components/common/ClubBrandRedirect.tsx')).toContain('{ replace: true }');

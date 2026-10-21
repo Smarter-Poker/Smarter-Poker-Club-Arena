@@ -7,8 +7,8 @@ export default function ClubBrandRedirect() {
   const navigate = useNavigate();
   useEffect(() => {
     const pathname = location.pathname.replace(
-      /^\/clubs\/shark-club(?=\/|$)/i,
-      '/clubs/kings-club'
+      /^\/(clubs|invite)\/shark-club(?=\/|$)/i,
+      '/$1/kings-club'
     );
     const query = new URLSearchParams(location.search);
     let queryChanged = false;

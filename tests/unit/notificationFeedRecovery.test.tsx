@@ -206,6 +206,38 @@ describe('The mounted notification feed owns recovery and account state', () => 
     expect(localStorage.getItem('ca-notif-cache:v2:account-a')).toContain('Personal Notice');
   });
 
+  it('paints an hour-old confirmed feed on the first frame and replaces it from the feed', async () => {
+    localStorage.setItem(
+      'ca-notif-cache:v2:account-a',
+      JSON.stringify([
+        { ...row('earlier', 'Earlier Confirmed Notice'), _cache_ts: Date.now() - 60 * 60 * 1000 },
+      ])
+    );
+    const pending = deferred<any>();
+    feeds.push(pending.promise);
+    mount();
+    expect(screen.queryByText('Earlier Confirmed Notice')).not.toBeNull();
+    await act(async () => pending.resolve(response([row('fresh', 'Fresh Notice')])));
+    await flush();
+    expect(screen.queryByText('Fresh Notice')).not.toBeNull();
+    expect(screen.queryByText('Earlier Confirmed Notice')).toBeNull();
+  });
+
+  it('does not paint a cached feed older than seven days', async () => {
+    localStorage.setItem(
+      'ca-notif-cache:v2:account-a',
+      JSON.stringify([
+        { ...row('ancient', 'Ancient Notice'), _cache_ts: Date.now() - 8 * 24 * 60 * 60 * 1000 },
+      ])
+    );
+    const pending = deferred<any>();
+    feeds.push(pending.promise);
+    mount();
+    expect(screen.queryByText('Ancient Notice')).toBeNull();
+    await act(async () => pending.resolve(response([])));
+    await flush();
+  });
+
   it('rejects an auth read error even if the SDK also returns cached session data', async () => {
     fixture.getSession.mockResolvedValue({
       data: { session: { user: { id: 'account-a' }, access_token: 'cached-token' } },

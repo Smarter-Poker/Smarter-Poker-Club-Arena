@@ -82,7 +82,11 @@ const DEFAULT_AVATAR = `${import.meta.env.BASE_URL || '/hub/club-arena/'}default
  */
 // Retire feeds captured before operational alerts had a separate destination.
 const CACHE_KEY = 'ca-notif-cache:v2:';
-const CACHE_TTL_MS = 300_000; // 5 minutes, matching the hub page.
+// The cache only paints the first frame: every mount and every tab return
+// refreshes from the feed at once and replaces it. At 5 minutes any visit after
+// a short break opened on an empty skeleton for the whole feed round trip
+// (about a second on desktop, longer on a phone). Seven days, as on Club Home.
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CACHE_MAX = 30;
 
 /** A row exactly as /api/notifications/feed returns it. */

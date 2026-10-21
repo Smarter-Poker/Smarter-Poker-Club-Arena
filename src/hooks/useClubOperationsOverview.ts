@@ -299,6 +299,7 @@ function observeScope() {
   // The cache outlives routes, so identity/permission invalidation must too.
   masterBus.subscribe('AUTH_STATE_CHANGED', invalidateScope);
   masterBus.subscribe('MEMBER_ROLE_CHANGED', invalidateScope);
+  masterBus.subscribe('GAME_MANAGEMENT_ACCESS_CHANGED', invalidateScope);
 }
 
 /** Exported for tests: forget every shared answer. */

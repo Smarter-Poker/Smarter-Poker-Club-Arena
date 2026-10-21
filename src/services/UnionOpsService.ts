@@ -880,15 +880,20 @@ export const UnionOpsService = {
     memberIds: string[],
     agentId: string,
     operationId: string,
-    sourceId?: string
+    sourceId?: string,
+    reviewToken?: string
   ) {
-    const { data, error } = await supabase.rpc('fn_reassign_club_members', {
-      p_club_id: clubId,
-      p_member_user_ids: memberIds,
-      p_agent_user_id: agentId,
-      p_op_id: operationId,
-      p_expected_agent_user_id: sourceId ?? null,
-    });
+    const { data, error } = await supabase.rpc(
+      reviewToken ? 'fn_apply_reviewed_club_assignment' : 'fn_reassign_club_members',
+      {
+        p_club_id: clubId,
+        p_member_user_ids: memberIds,
+        p_agent_user_id: agentId,
+        p_op_id: operationId,
+        p_expected_agent_user_id: sourceId ?? null,
+        ...(reviewToken ? { p_review_token: reviewToken } : {}),
+      }
+    );
     if (error) throw error;
     if (
       !data ||

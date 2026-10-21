@@ -113,6 +113,7 @@ beforeEach(() => {
   model.theme.themePreference = 'dark';
   model.read.mockReset().mockResolvedValue(row());
   localStorage.clear();
+  sessionStorage.clear();
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
 });
 afterEach(() => {
@@ -120,6 +121,72 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('the private own-account carrier', () => {
+  it('invalidates only the recipient club through the existing private account carrier', async () => {
+    await mount();
+    model.emit.mockClear();
+    model.read.mockClear();
+    const club = '00000000-0000-4000-8000-000000000100';
+    sessionStorage.setItem('roster_cache_v5_player-a_' + club, 'private roster');
+    sessionStorage.setItem('roster_cache_v5_player-b_' + club, 'another account');
+    await act(async () =>
+      model.options.onPayload({
+        payload: {
+          user_id: 'player-b',
+          club_id: club,
+          reason: 'member_scope_changed',
+          domains: [],
+        },
+      })
+    );
+    expect(model.emit).not.toHaveBeenCalled();
+    await act(async () =>
+      model.options.onPayload({
+        payload: {
+          user_id: 'player-a',
+          club_id: club,
+          reason: 'member_scope_changed',
+          domains: [],
+        },
+      })
+    );
+    expect(model.emit).toHaveBeenCalledWith('GAME_MANAGEMENT_ACCESS_CHANGED', {
+      userId: 'player-a',
+      clubId: club,
+      scope: 'club',
+      scopeId: club,
+    });
+    expect(sessionStorage.getItem('roster_cache_v5_player-a_' + club)).toBeNull();
+    expect(sessionStorage.getItem('roster_cache_v5_player-b_' + club)).toBe('another account');
+    expect(model.read).not.toHaveBeenCalled();
+  });
+  it('on rejoin clears every owned club read cache while preserving drafts and pending operations', async () => {
+    await mount();
+    model.emit.mockClear();
+    for (const key of [
+      'roster_cache_v5_player-a_club-a',
+      'roster_cache_v5_player-a_club-b',
+      'club_data_swr_v1_player-a:club-b:period=all',
+      'agent_dashboard_swr_player-a_club-b',
+    ])
+      sessionStorage.setItem(key, 'old private data');
+    sessionStorage.setItem('agent_assignment_intent_v1:player-a:club-b', 'pending operation');
+    sessionStorage.setItem('cashier-draft:player-a:club-a', 'unsubmitted amount');
+    sessionStorage.setItem('roster_cache_v5_player-b_club-a', 'another account');
+    await act(async () => model.options.onSubscriptionStatus('SUBSCRIBED'));
+    expect(model.emit).toHaveBeenCalledWith('GAME_MANAGEMENT_ACCESS_CHANGED', {
+      userId: 'player-a',
+    });
+    expect(sessionStorage.getItem('roster_cache_v5_player-a_club-a')).toBeNull();
+    expect(sessionStorage.getItem('roster_cache_v5_player-a_club-b')).toBeNull();
+    expect(sessionStorage.getItem('club_data_swr_v1_player-a:club-b:period=all')).toBeNull();
+    expect(sessionStorage.getItem('agent_dashboard_swr_player-a_club-b')).toBeNull();
+    expect(sessionStorage.getItem('agent_assignment_intent_v1:player-a:club-b')).toBe(
+      'pending operation'
+    );
+    expect(sessionStorage.getItem('cashier-draft:player-a:club-a')).toBe('unsubmitted amount');
+    expect(sessionStorage.getItem('roster_cache_v5_player-b_club-a')).toBe('another account');
+  });
+
   it('mounts one private owner topic and populates the existing consumers from narrow authority', async () => {
     localStorage.setItem('ca_user_settings:player-a', JSON.stringify({ soundVolume: 42 }));
     localStorage.setItem(

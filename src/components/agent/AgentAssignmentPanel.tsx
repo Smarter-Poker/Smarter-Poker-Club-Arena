@@ -14,6 +14,18 @@ import { titleCase } from '../../utils/titleCase';
 import { uuid } from '../../utils/uuid';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './AgentAssignmentPanel.css';
+import {
+  AgentAssignmentService,
+  type AssignmentPreview,
+} from '../../services/AgentAssignmentService';
+import AgentAssignmentHistory from './AgentAssignmentHistory';
+import { useUserStore } from '../../stores/useUserStore';
+import {
+  readAssignmentIntent,
+  saveAssignmentIntent,
+  clearAssignmentIntent,
+  type AssignmentIntent,
+} from '../../lib/assignmentIntent';
 
 interface Member {
   user_id: string;
@@ -22,17 +34,11 @@ interface Member {
   agent_id: string | null;
   holds_agent?: boolean;
 }
-interface Pending {
-  id: string;
-  club: string;
-  members: string[];
-  target: string;
-  source?: string;
-}
 const AGENT_ROLES = ['super_agent', 'agent', 'sub_agent'];
 
 export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
   const toast = useToast();
+  const userId = useUserStore((state) => state.user?.id);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
@@ -42,7 +48,9 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
   const [source, setSource] = useState('');
   const [target, setTarget] = useState('');
   const [uncertain, setUncertain] = useState(false);
-  const pending = useRef<Pending | null>(null);
+  const [preview, setPreview] = useState<AssignmentPreview | null>(null);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const pending = useRef<AssignmentIntent | null>(null);
   const version = useRef(0);
   const inFlight = useRef(false);
 
@@ -52,6 +60,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
     setError('');
     setAllowed(false);
     setMembers([]);
+    setPreview(null);
     try {
       const permission = await supabase.rpc('fn_can_manage_club_assignments', {
         p_club_id: clubId,
@@ -115,25 +124,64 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
   }, [clubId]);
 
   useEffect(() => {
-    pending.current = null;
-    setUncertain(false);
-    setSelected([]);
-    setSource('');
-    setTarget('');
-    void load();
+    try {
+      pending.current = userId ? readAssignmentIntent(userId, clubId) : null;
+      setUncertain(Boolean(pending.current));
+      setSelected(pending.current?.members || []);
+      setSource(pending.current?.source || '');
+      setTarget(pending.current?.target || '');
+      void load();
+    } catch (cause) {
+      pending.current = null;
+      setAllowed(false);
+      setLoading(false);
+      setError((cause as Error).message);
+      reportError(cause, 'AgentAssignmentPanel.savedIntent');
+    }
     return () => {
       ++version.current;
     };
-  }, [load]);
+  }, [load, userId, clubId]);
+
+  const review = async () => {
+    if (inFlight.current || !selected.length || !target) return;
+    const mine = version.current;
+    inFlight.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const value = await AgentAssignmentService.preview(
+        clubId,
+        selected,
+        target,
+        source || undefined
+      );
+      if (mine === version.current) setPreview(value);
+    } catch (cause) {
+      if (mine !== version.current) return;
+      setError((cause as { message?: string }).message || 'Could Not Preview Assignment.');
+      reportError(cause, 'AgentAssignmentPanel.preview');
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
 
   const assign = async () => {
-    if (inFlight.current || (!pending.current && (!selected.length || !target))) return;
+    if (
+      inFlight.current ||
+      !userId ||
+      (!pending.current && (!selected.length || !target || !preview))
+    )
+      return;
     const request = pending.current ?? {
       id: uuid(),
       club: clubId,
+      userId,
       members: [...selected],
       target,
       source: source || undefined,
+      reviewToken: preview!.review_token,
     };
     pending.current = request;
     const mine = version.current;
@@ -141,17 +189,22 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
     setBusy(true);
     setError('');
     try {
+      saveAssignmentIntent(request);
       const receipt = await UnionOpsService.reassignClubMembers(
         request.club,
         request.members,
         request.target,
         request.id,
-        request.source
+        request.source,
+        request.reviewToken
       );
       if (mine !== version.current) return;
+      clearAssignmentIntent(request);
       pending.current = null;
       setUncertain(false);
       setSelected([]);
+      setPreview(null);
+      setHistoryRevision((value) => value + 1);
       toast.success(`${receipt.moved.toLocaleString()} Members Reassigned`);
       await load();
     } catch (e) {
@@ -160,11 +213,17 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
       // A database refusal rolls back the complete operation. A transport
       // failure retains the exact request and id for an explicit safe retry.
       const refused = typeof code === 'string' && /^(22|23|40|42|P0)/.test(code);
-      if (refused) pending.current = null;
+      if (refused) {
+        clearAssignmentIntent(request);
+        pending.current = null;
+        setPreview(null);
+      }
       setUncertain(!refused);
       setError(
         refused
-          ? ((e as { message?: string }).message ?? 'Assignment Refused.')
+          ? (e as { message?: string }).message === 'assignment_review_changed_preview_again'
+            ? 'The Downline Changed. Review The Transfer Again.'
+            : ((e as { message?: string }).message ?? 'Assignment Refused.')
           : 'Assignment Outcome Unconfirmed. Retry The Same Request To Read Its Receipt.'
       );
       reportError(e, 'AgentAssignmentPanel.assign');
@@ -189,7 +248,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
       ['member', 'player', ...AGENT_ROLES].includes(m.role) && (!source || m.agent_id === source)
   );
   const label = (id: string | null) => members.find((m) => m.user_id === id)?.label ?? 'Unassigned';
-  const locked = busy || uncertain;
+  const locked = busy || uncertain || preview !== null;
   return (
     <SpadeConsole title="Assign And Transfer" pill="Staff" eyebrow="Club Management" foot="foot">
       <div className="agent-assignment">
@@ -210,7 +269,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
             <option value="">All Active Members</option>
             {agents.map((m) => (
               <option key={m.user_id} value={m.user_id}>
-                {m.label}
+                {titleCase(m.label)}
               </option>
             ))}
           </select>
@@ -227,7 +286,8 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
           >
             {assignable.map((m) => (
               <option key={m.user_id} value={m.user_id}>
-                {m.label} / {titleCase(m.role.replace(/_/g, ' '))} / {label(m.agent_id)}
+                {titleCase(m.label)} / {titleCase(m.role.replace(/_/g, ' '))} /{' '}
+                {titleCase(label(m.agent_id))}
               </option>
             ))}
           </select>
@@ -253,7 +313,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
               .filter((m) => !selected.includes(m.user_id) && m.user_id !== source)
               .map((m) => (
                 <option key={m.user_id} value={m.user_id}>
-                  {m.label} / {titleCase(m.role.replace(/_/g, ' '))}
+                  {titleCase(m.label)} / {titleCase(m.role.replace(/_/g, ' '))}
                 </option>
               ))}
           </select>
@@ -267,18 +327,50 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
             {titleCase(error)}
           </p>
         )}
+        {preview && (
+          <section aria-label="Transfer Preview" className="agent-assignment-preview">
+            <h3 className="sc-label">Review Transfer</h3>
+            <p className="sc-copy">Destination: {titleCase(preview.destination.name)}</p>
+            <p className="sc-copy">
+              {preview.selected_count.toLocaleString()} Selected /{' '}
+              {preview.affected_count.toLocaleString()} Total Members Including Attached Downlines
+            </p>
+            <ul>
+              {preview.members.map((member) => (
+                <li key={member.user_id} className="sc-copy">
+                  {titleCase(member.name)} / {titleCase(member.source_name)} To{' '}
+                  {titleCase(preview.destination.name)}
+                </li>
+              ))}
+            </ul>
+            <p className="sc-copy">
+              Confirm The Complete Transfer. Changed Hierarchies Require A New Review.
+            </p>
+            <button
+              type="button"
+              className="sc-label sc-ink--blue"
+              disabled={busy || uncertain}
+              onClick={() => setPreview(null)}
+            >
+              Edit Selection
+            </button>
+          </section>
+        )}
         <button
           type="button"
           className="sc-label sc-ink--blue"
           disabled={busy || (!uncertain && (!selected.length || !target))}
-          onClick={() => void assign()}
+          onClick={() => void (preview || uncertain ? assign() : review())}
         >
           {busy
             ? 'Saving Assignment...'
             : uncertain
               ? 'Retry Same Assignment'
-              : 'Assign Or Transfer Selected'}
+              : preview
+                ? 'Confirm Transfer'
+                : 'Review Assignment Or Transfer'}
         </button>
+        <AgentAssignmentHistory clubId={clubId} revision={historyRevision} />
       </div>
     </SpadeConsole>
   );

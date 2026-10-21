@@ -6,6 +6,11 @@ const state = vi.hoisted(() => ({
   from: vi.fn(),
   assign: vi.fn(),
   toast: vi.fn(),
+  preview: vi.fn(),
+  history: vi.fn(),
+}));
+vi.mock('../../src/stores/useUserStore', () => ({
+  useUserStore: (select: (state: unknown) => unknown) => select({ user: { id: 'viewer' } }),
 }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: state.rpc, from: state.from } }));
 vi.mock('../../src/services/UnionOpsService', () => ({
@@ -22,10 +27,29 @@ vi.mock('../../src/utils/fetchAllRows', () => ({
     { user_id: 'target', role: 'super_agent', agent_id: null },
   ],
 }));
+vi.mock('../../src/services/AgentAssignmentService', () => ({
+  AgentAssignmentService: { preview: state.preview, history: state.history },
+}));
 import AgentAssignmentPanel from '../../src/components/agent/AgentAssignmentPanel';
 beforeEach(() => {
   vi.clearAllMocks();
+  sessionStorage.clear();
   state.allowed = true;
+  state.preview.mockImplementation(async (club, ids, target) => ({
+    club_id: club,
+    review_token: 'a'.repeat(32),
+    destination: { user_id: target, name: 'Target Agent', role: 'super_agent' },
+    members: ids.map((id: string) => ({
+      user_id: id,
+      name: 'Player One',
+      role: 'player',
+      source_user_id: 'source',
+      source_name: 'Source Agent',
+    })),
+    selected_count: ids.length,
+    affected_count: 3,
+  }));
+  state.history.mockResolvedValue({ rows: [], hasMore: false });
   state.rpc.mockImplementation(async () => ({ data: state.allowed, error: null }));
   state.from.mockReturnValue({
     select: () => ({
@@ -60,14 +84,67 @@ describe('assignment access and safe retry', () => {
     fireEvent.change(screen.getByLabelText('Current Agent'), { target: { value: 'source' } });
     fireEvent.click(screen.getByRole('button', { name: 'Select All Shown' }));
     fireEvent.change(screen.getByLabelText('Destination Agent'), { target: { value: 'target' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Assign Or Transfer Selected' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review Assignment Or Transfer' }));
+    await screen.findByRole('button', { name: 'Confirm Transfer' });
+    expect(state.assign).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Transfer Preview')).toHaveTextContent('3 Total Members');
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm Transfer' }));
     await screen.findByRole('button', { name: 'Retry Same Assignment' });
     expect(screen.getByLabelText('Destination Agent')).toBeDisabled();
     const first = state.assign.mock.calls[0];
     expect(first.slice(0, 3)).toEqual(['club', ['player'], 'target']);
     expect(first[4]).toBe('source');
+    expect(first[5]).toBe('a'.repeat(32));
     fireEvent.click(screen.getByRole('button', { name: 'Retry Same Assignment' }));
     await waitFor(() => expect(state.toast).toHaveBeenCalledWith('1 Members Reassigned'));
     expect(state.assign.mock.calls[1]).toEqual(first);
+  });
+  it('requires a new review after a stale hierarchy refusal', async () => {
+    state.assign.mockRejectedValueOnce({
+      code: '22023',
+      message: 'assignment_review_changed_preview_again',
+    });
+    render(<AgentAssignmentPanel clubId="club" />);
+    await screen.findByLabelText('Current Agent');
+    fireEvent.change(screen.getByLabelText('Current Agent'), { target: { value: 'source' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Select All Shown' }));
+    fireEvent.change(screen.getByLabelText('Destination Agent'), { target: { value: 'target' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Review Assignment Or Transfer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm Transfer' }));
+    await screen.findByRole('button', { name: 'Review Assignment Or Transfer' });
+    expect(screen.queryByLabelText('Transfer Preview')).toBeNull();
+    expect(screen.getByLabelText('Destination Agent')).not.toBeDisabled();
+    expect(state.assign).toHaveBeenCalledTimes(1);
+  });
+  it('loads staff history through the scoped search service', async () => {
+    render(<AgentAssignmentPanel clubId="club" />);
+    await screen.findByLabelText('Search Transfers');
+    fireEvent.change(screen.getByLabelText('Search Transfers'), {
+      target: { value: 'Player One' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search History' }));
+    await waitFor(() =>
+      expect(state.history).toHaveBeenLastCalledWith('club', 'Player One', undefined)
+    );
+  });
+  it('recovers exactly the same request after an interrupted screen remount', async () => {
+    state.assign.mockRejectedValueOnce(new Error('Response Unknown'));
+    const view = render(<AgentAssignmentPanel clubId="club" />);
+    await screen.findByLabelText('Current Agent');
+    fireEvent.change(screen.getByLabelText('Current Agent'), { target: { value: 'source' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Select All Shown' }));
+    fireEvent.change(screen.getByLabelText('Destination Agent'), { target: { value: 'target' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Review Assignment Or Transfer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm Transfer' }));
+    await screen.findByRole('button', { name: 'Retry Same Assignment' });
+    const request = state.assign.mock.calls[0];
+    view.unmount();
+    render(<AgentAssignmentPanel clubId="club" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry Same Assignment' }));
+    await waitFor(() => expect(state.assign).toHaveBeenCalledTimes(2));
+    expect(state.assign.mock.calls[1]).toEqual(request);
+    await waitFor(() =>
+      expect(sessionStorage.getItem('agent_assignment_intent_v1:viewer:club')).toBeNull()
+    );
   });
 });

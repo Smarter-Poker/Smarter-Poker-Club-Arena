@@ -145,7 +145,25 @@ export default function AgentDashboardPage() {
   const { user } = useAuthUser();
   const [params] = useSearchParams();
   const key = useCashoutScopeKey(user?.id, params.toString());
-  return <AgentDashboardContent key={key} />;
+  const [scopeGeneration, setScopeGeneration] = useState(0);
+  useEffect(
+    () =>
+      masterBus.subscribe('GAME_MANAGEMENT_ACCESS_CHANGED', ({ payload }) => {
+        if (!user?.id || (payload.userId && payload.userId !== user.id)) return;
+        try {
+          for (let index = sessionStorage.length - 1; index >= 0; index--) {
+            const cacheKey = sessionStorage.key(index);
+            if (cacheKey?.startsWith(`agent_dashboard_swr_${user.id}_`))
+              sessionStorage.removeItem(cacheKey);
+          }
+        } catch {
+          /* Optional read cache; the new generation still rechecks the server. */
+        }
+        setScopeGeneration((value) => value + 1);
+      }),
+    [user?.id]
+  );
+  return <AgentDashboardContent key={`${key}:${scopeGeneration}`} />;
 }
 
 function AgentDashboardContent() {

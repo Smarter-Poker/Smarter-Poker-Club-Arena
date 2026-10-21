@@ -1,0 +1,1112 @@
+[
+  {
+    "relname": "chip_transactions",
+    "attname": "id",
+    "type": "uuid"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "club_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "from_user_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "to_user_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "amount",
+    "type": "numeric(14,2)"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "transaction_type",
+    "type": "text"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "notes",
+    "type": "text"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "related_cashout_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "metadata",
+    "type": "jsonb"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "created_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "balance_after",
+    "type": "numeric(14,2)"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "clawed_back",
+    "type": "boolean"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "reversible_until",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "is_reversed",
+    "type": "boolean"
+  },
+  {
+    "relname": "chip_transactions",
+    "attname": "table_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "club_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "user_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "played_on",
+    "type": "date"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "game_variant",
+    "type": "text"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "is_mtt",
+    "type": "boolean"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "hands",
+    "type": "bigint"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "wins",
+    "type": "bigint"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "vpip_hands",
+    "type": "bigint"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "pfr_hands",
+    "type": "bigint"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "tb_hands",
+    "type": "bigint"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "faced_tb",
+    "type": "bigint"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "folded_tb",
+    "type": "bigint"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "cb_hands",
+    "type": "bigint"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "cb_opps",
+    "type": "bigint"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "fees",
+    "type": "numeric"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "net",
+    "type": "numeric"
+  },
+  {
+    "relname": "member_record_daily_facts",
+    "attname": "accounting_cutoff",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "id",
+    "type": "uuid"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "table_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "seat_number",
+    "type": "integer"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "user_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "player_id",
+    "type": "integer"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "member_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "stack",
+    "type": "numeric(15,2)"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "is_sitting_out",
+    "type": "boolean"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "is_away",
+    "type": "boolean"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "joined_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "horse_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "scheduled_leave_hands",
+    "type": "integer"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "left_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "status",
+    "type": "text"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "leave_pending",
+    "type": "boolean"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "auto_rebuy",
+    "type": "boolean"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "time_bank_remaining",
+    "type": "integer"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "time_bank_uses_remaining",
+    "type": "integer"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "club_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "sit_out_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "entry_hold",
+    "type": "text"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "entry_post_agreed",
+    "type": "boolean"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "occupancy_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "active_game_scope",
+    "type": "text"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "active_parent_key",
+    "type": "text"
+  },
+  {
+    "relname": "table_seats",
+    "attname": "terminal_closed_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "id",
+    "type": "uuid"
+  },
+  {
+    "relname": "tables",
+    "attname": "club_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "tables",
+    "attname": "name",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "game_type",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "stakes",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "small_blind",
+    "type": "numeric(15,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "big_blind",
+    "type": "numeric(15,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "min_buy_in",
+    "type": "numeric(15,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "max_buy_in",
+    "type": "numeric(15,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "max_players",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "current_players",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "status",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "is_private",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "settings",
+    "type": "jsonb"
+  },
+  {
+    "relname": "tables",
+    "attname": "created_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "updated_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "game_variant",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "enable_straddle",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "run_it_twice",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "auto_muck",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "ante",
+    "type": "numeric(15,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "allow_rabbit_hunt",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "allow_run_it_twice",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "allow_straddle",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "game_mode",
+    "type": "character varying(10)"
+  },
+  {
+    "relname": "tables",
+    "attname": "is_vip_only",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "is_anonymous",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "ban_chat",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "label_as_new",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "is_featured",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "hide_club_name",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "is_template",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "double_board",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "triple_board",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "pineapple_holdem",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "seven_deuce_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "nit_game",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "cap_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "no_rathole",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "action_time_seconds",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "ante_bb",
+    "type": "numeric(10,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "career_percent_min",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "maintain_percent_min",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "maintain_hands",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "auto_start_players",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "game_length_hours",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "created_by",
+    "type": "uuid"
+  },
+  {
+    "relname": "tables",
+    "attname": "calltime_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "auto_extension",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "auto_restart",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "auto_create_table",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "auto_utg_straddle",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "voluntary_straddle",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "insurance_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "run_it_mode",
+    "type": "character varying(20)"
+  },
+  {
+    "relname": "tables",
+    "attname": "rake_percent",
+    "type": "numeric(5,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "rake_cap_bb",
+    "type": "numeric(5,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "agent_downline_limit",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "buy_in_authorization",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "restrict_device",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "restrict_observers",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "gps_restriction",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "ip_restriction",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "pc_emulator_restriction",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "photo_rotation_verification",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "short_description",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "accelerated_mtt",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "all_in_or_fold",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "custom_rebuy_reentry_cost",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "number_of_rebuys_reentries",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "add_on_multiplier",
+    "type": "numeric(3,1)"
+  },
+  {
+    "relname": "tables",
+    "attname": "custom_add_on",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "add_on_break_length_minutes",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "ko_bounty",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "gtd_prize_pool",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "final_table_deal",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "big_blind_ante",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "authorized_to_register",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "late_registration_level",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "early_bird_registration",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "bubble_protection",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "featured_tournament",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "min_players_mtt",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "max_players_mtt",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "multi_day_mtt",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "save_start_time",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "start_time",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "restart_tournament_every",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "tournament_schedule",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "synchronized_breaks",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "sng_buy_in",
+    "type": "numeric(10,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "blind_structure",
+    "type": "character varying(20)"
+  },
+  {
+    "relname": "tables",
+    "attname": "payout_structure",
+    "type": "character varying(50)"
+  },
+  {
+    "relname": "tables",
+    "attname": "starting_chips",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "blinds_up_minutes",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "next_step_satellite",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "sng_custom_buy_in",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "sng_player_count",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "is_spins",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "spins_multiplier",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "is_deleted",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "deleted_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "deleted_by",
+    "type": "uuid"
+  },
+  {
+    "relname": "tables",
+    "attname": "bbj_percent",
+    "type": "numeric(5,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "tournament_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "tables",
+    "attname": "live_state",
+    "type": "jsonb"
+  },
+  {
+    "relname": "tables",
+    "attname": "union_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "tables",
+    "attname": "big_blind_ante_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "straddle_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "straddle_type",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "max_straddles",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "run_it_twice_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "auto_muck_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "show_hand_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "disconnect_timeout_seconds",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "max_consecutive_timeouts",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "prefer_check_over_fold",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "time_bank_max_uses",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "time_bank_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "ante_enabled",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_frequency",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_ante_multiplier",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "wait_for_big_blind",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "seven_deuce_amount",
+    "type": "numeric"
+  },
+  {
+    "relname": "tables",
+    "attname": "hands_dealt",
+    "type": "bigint"
+  },
+  {
+    "relname": "tables",
+    "attname": "avg_pot",
+    "type": "numeric(14,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_double_board",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "cap_bb",
+    "type": "numeric(10,2)"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_board_count",
+    "type": "smallint"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_trigger_mode",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_interval_seconds",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_min_players",
+    "type": "smallint"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_ante_fixed",
+    "type": "numeric"
+  },
+  {
+    "relname": "tables",
+    "attname": "first_button_seat",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_variant",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_next_due_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_sched_state",
+    "type": "jsonb"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_manual_pending",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_button_policy",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "bomb_pot_announce_seconds",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "min_buy_in_bb",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "max_buy_in_bb",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "min_buyin",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "max_buyin",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "cluster_id",
+    "type": "uuid"
+  },
+  {
+    "relname": "tables",
+    "attname": "role",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "main_index",
+    "type": "integer"
+  },
+  {
+    "relname": "tables",
+    "attname": "lifecycle",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "opened_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "live_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "break_started_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "break_eligible_since",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "promote_pending",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "observer_show_cards",
+    "type": "boolean"
+  },
+  {
+    "relname": "tables",
+    "attname": "terminal_closed_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "seat_game_scope",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "seat_admission_key",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "f06_lifecycle",
+    "type": "bigint"
+  },
+  {
+    "relname": "tables",
+    "attname": "dealing_halted_at",
+    "type": "timestamp with time zone"
+  },
+  {
+    "relname": "tables",
+    "attname": "dealing_halted_reason",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "kill_mode",
+    "type": "text"
+  },
+  {
+    "relname": "tables",
+    "attname": "kill_threshold_bb",
+    "type": "smallint"
+  },
+  {
+    "relname": "tables",
+    "attname": "dealing_halt_observed_at",
+    "type": "timestamp with time zone"
+  }
+]

@@ -236,7 +236,11 @@ ${body}`,
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
-    }
+    },
+    // The shell has its own 5s deadline. Creating/cloning the fixture Git
+    // repositories and removing them also takes time on the SSD. Allow setup
+    // and cleanup headroom without changing that child-process deadline.
+    20_000
   );
 });
 

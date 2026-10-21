@@ -25,6 +25,38 @@
       "file": "supabase/migrations/20261010083333_choice_losses_keep_half_the_last_prize_and_games_show_lifeti.sql",
       "sameBytes": true,
       "basis": "Read-only production recovery 2026-10-11: public.fn_ca_migration_text applied SQL bytes are byte-identical to the existing authored source file (19453 bytes, MD5 3152fe965f368e7352b4aa206b321125). Same declared objects and executable SQL, including preimage and postcondition assertions. Supabase recorded the apply-time version and untruncated name; the source retained its reserved version and truncated filename. No new SQL is introduced and the installed migration must not be replayed."
+    },
+    {
+      "appliedVersion": "20261020203834",
+      "appliedName": "20261020203733_add_agent_assignment_transaction_before_client_publication",
+      "appliedMd5": "6e50fc551b976bac9210eff38315855e",
+      "file": "supabase/migrations/20261020203733_add_agent_assignment_transaction_before_client_publication.sql",
+      "sameBytes": true,
+      "basis": "Exact additive assignment transaction installed once through Supabase MCP at 2026-10-20T20:38:34Z before compatible client publication. History bytes6333 and MD5 equal source; helper definitions, owner, search_path, ACLs and receipt RLS/privileges read back. No bank or report restrictions installed by this additive phase; never replay it."
+    },
+    {
+      "appliedVersion": "20261021174527",
+      "appliedName": "20261020210238_restrict_agent_banks_and_authorize_downline_reassignment",
+      "appliedMd5": "a0ff8030653d8aaa18b26a3d507efa5f",
+      "file": "supabase/migrations/20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql",
+      "sameBytes": true,
+      "basis": "Installed once successfully 2026-10-21T17:45:27Z after compatible client publication. History SQL MD5 equals exact source. Fourteen restrictive policies, private column denial, function owner/search_path/ACL read back. Earlier lock refusals rolled back; never replay the installed migration."
+    },
+    {
+      "appliedVersion": "20261021182211",
+      "appliedName": "20261021180032_agent_transfer_review_history_and_scope_events",
+      "appliedMd5": "274d312792131d0cd8650d128e470661",
+      "file": "supabase/migrations/20261021180032_agent_transfer_review_history_and_scope_events.sql",
+      "sameBytes": true,
+      "basis": "Installed once through Supabase MCP 2026-10-21T18:22:11Z from qualified source ab3ad733260811b9d92cff8572c82994eef80b77. Recorded SQL17770 bytes and MD5 equal source. Review/history RPCs, recipient helper, optimized downline lookup, exact owner/search_path/ACLs, review column and keyset index read back. Generic events use existing private account broadcast; hot event table remains unpublished. Never replay."
+    },
+    {
+      "appliedVersion": "20261021184621",
+      "appliedName": "20261021183705_bind_private_club_helper_reads_to_the_caller",
+      "appliedMd5": "a4e0e85c11cdd5b006cf57495c9cea96",
+      "file": "supabase/migrations/20261021183705_bind_private_club_helper_reads_to_the_caller.sql",
+      "sameBytes": true,
+      "basis": "Installed once successfully 2026-10-21T18:46:21Z from qualified source66875d4c19. History17264bytes and SQL MD5 equal exact source. Four raw actor-taking helpers authenticated/anon EXECUTE false; four caller-bound wrappers postgres-owned SECURITY DEFINER public,pg_temp with authenticated/service EXECUTE and anon denied. Seven RLS policies use wrappers, zero remaining raw policy calls. Both grantable-role definitions caller-bound and read back. Never replay."
     }
   ],
   "superseded": [

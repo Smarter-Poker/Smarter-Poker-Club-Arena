@@ -30,3 +30,26 @@
 .agent-assignment button:focus-visible {
   outline: 1px solid #45adff;
 }
+
+.agent-assignment input {
+  width: 100%;
+  max-width: 100%;
+  background: #050607;
+  color: #e4e7ec;
+  font: inherit;
+}
+.agent-assignment-preview,
+.agent-assignment-history,
+.agent-assignment-history li {
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  padding-top: 2cqw;
+  min-width: 0;
+}
+.agent-assignment ul,
+.agent-assignment ol {
+  padding-inline-start: 4cqw;
+}
+.agent-assignment-operation {
+  overflow-wrap: anywhere;
+}

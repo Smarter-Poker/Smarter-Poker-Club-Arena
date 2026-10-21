@@ -87,3 +87,18 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* The previous-hand tile owns the outer corner. Keep the personal readout
+   in a small column immediately beside the hero's actual nameplate. */
+@media (max-width: 480px) {
+  .hero-vpip {
+    --vpip-badge-size: 50px;
+    width: 54px;
+  }
+  .hero-vpip__clock {
+    font-size: 8px;
+  }
+  .hero-vpip__clock time {
+    font-size: 12px;
+  }
+}

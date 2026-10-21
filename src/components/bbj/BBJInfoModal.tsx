@@ -370,8 +370,6 @@ export function BBJInfoModal({
           eyebrow={isMini ? 'MINI BAD BEAT JACKPOT' : 'BAD BEAT JACKPOT'}
           title={headline}
           subtitle={asset === 'diamonds' ? 'Whole Diamonds' : sublabel}
-          pill={isMini ? 'Mini' : 'Main'}
-          pillInk={isMini ? 'gold' : 'blue'}
           foot="foot"
           className="bbjc__console"
         >
@@ -448,6 +446,7 @@ export function BBJInfoModal({
                   key={tier}
                   poolId={poolId}
                   limit={5}
+                  recentOnly
                   currentUserName={currentUserName}
                   currentUserId={currentUserId}
                   onOpenHand={setOpenHandPayoutId}

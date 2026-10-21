@@ -346,3 +346,47 @@
   cursor: pointer;
   touch-action: manipulation;
 }
+
+/* The popup header prints on the centre axis beneath the spade. The former
+   tier plate is covered with an unpainted glass crop from the same master. */
+.bbjc__console .sc__head::before {
+  content: '';
+  position: absolute;
+  left: 60%;
+  top: 43%;
+  width: 32%;
+  height: 48%;
+  background: url('/assets/club-buttons/console/spade-console-v1/top.png') 14.7% 82.7% / 312.5%
+    208.3% no-repeat;
+  mask-image:
+    linear-gradient(to right, transparent, #000 7%, #000 93%, transparent),
+    linear-gradient(to bottom, transparent, #000 9%, #000 91%, transparent);
+  mask-composite: intersect;
+}
+
+.bbjc__console .sc__eyebrow {
+  justify-items: center;
+  left: 15% !important;
+  top: 47% !important;
+  width: 70% !important;
+  height: 12% !important;
+  text-align: center;
+}
+
+.bbjc__console .sc__title {
+  justify-items: center;
+  left: 15% !important;
+  top: 58% !important;
+  width: 70% !important;
+  height: 26% !important;
+  text-align: center;
+}
+
+.bbjc__console .sc__subtitle {
+  justify-items: center;
+  left: 15% !important;
+  top: 84% !important;
+  width: 70% !important;
+  height: 12% !important;
+  text-align: center;
+}

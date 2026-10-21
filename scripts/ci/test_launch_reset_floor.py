@@ -201,5 +201,6 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 
 # Original hand outcome reductions progress in bounded canonical native windows.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-native-weekly-hand-parts-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-hand-witness-window-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 # Original weekly incomplete counts seek immutable source and batch keys per attribution.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-weekly-counts-indexed-incomplete-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))

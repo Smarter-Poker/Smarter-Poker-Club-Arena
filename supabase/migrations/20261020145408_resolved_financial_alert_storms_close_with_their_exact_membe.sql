@@ -311,6 +311,8 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_alert_resolution_reaches_the_incident() T
 REVOKE ALL ON FUNCTION public.fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb) TO postgres,service_role;
 
+-- Record the definition just installed, after retaining the pre-DDL declaration.
+SELECT public.fn_ca_declare_guard_redefinition('fn_ca_raise_drift_incident','migration 20261020145408_resolved_financial_alert_storms_close_with_their_exact_membe');
 DO $post$
 DECLARE r record;
 BEGIN

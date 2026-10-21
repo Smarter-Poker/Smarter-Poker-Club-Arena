@@ -321,7 +321,11 @@ test('published club news appears once per new message across fresh browser cont
     await expect(popup(page)).toBeHidden();
     await silent(page);
 
-    // Carry only this synthetic player's authentication into a cold device.
+    // Carry only this synthetic player's authentication into a cold device,
+    // plus the device-local welcome acceptance that global setup seeded: that
+    // first-run overlay otherwise stacks above the club message and covers its
+    // Close control. Neither key holds club-news state, which lives server-side.
+    const coldDeviceKeys = new Set(['smarter-poker-auth', 'club_arena_welcome_accepted']);
     const state = await page.context().storageState();
     secondContext = await browser.newContext({
       baseURL: testInfo.project.use.baseURL,
@@ -330,7 +334,7 @@ test('published club news appears once per new message across fresh browser cont
         cookies: state.cookies,
         origins: state.origins.map((origin) => ({
           ...origin,
-          localStorage: origin.localStorage.filter((item) => item.name === 'smarter-poker-auth'),
+          localStorage: origin.localStorage.filter((item) => coldDeviceKeys.has(item.name)),
         })),
       },
     });

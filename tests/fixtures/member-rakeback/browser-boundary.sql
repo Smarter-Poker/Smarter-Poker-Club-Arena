@@ -19,3 +19,14 @@ DO $$BEGIN
   RAISE NOTICE 'PASS: Browser Cannot Insert A Self Assigned Deal';
  END;
 END $$;
+
+-- Owner wallets can have an active agent row; that must not hide the existing
+-- club-funded seventy-percent deal or relax ordinary agent-margin rates.
+INSERT INTO agents(id,club_id,user_id,role,status,commission_rate,player_rakeback_rate)
+ VALUES(u(11),u(10),u(1),'agent','active',.7,.2);
+UPDATE club_members SET agent_id=u(1) WHERE user_id=u(4);
+SELECT set_config('test.uid',u(1)::text,false);
+SELECT assert_true((fn_member_rakeback_terms(u(10),u(4),'player')->>'max_rate')::numeric=.7,'Direct Owner Deal Remains Available');
+SELECT assert_true((fn_member_rakeback_terms(u(10),u(4),'player',.7,.2)->>'success')::boolean,'Assign Existing Club Funded Seventy Percent Deal');
+SELECT assert_true(fn_player_rakeback_rate(u(4),u(10),0)=.7,'Original Pricing Honors Owner Funded Seventy Percent');
+SELECT assert_true((fn_member_rakeback_terms(u(10),u(4),'player',.65,.7)->>'success')::boolean=false,'Ordinary Owner Agent Rates Still Preserve Their Margin');

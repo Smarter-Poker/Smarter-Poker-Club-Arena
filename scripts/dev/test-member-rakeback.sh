@@ -51,4 +51,7 @@ grep -q 'FAIL: Direct Player Percentage Bypassed Authorization' "$fixture/browse
 if "${psql[@]}" -f "$root/supabase/migrations/20261021173355_member_role_panel_edits_individual_rakeback_agreements.sql" >"$fixture/replay" 2>&1; then
   echo 'FAIL: Migration Replay Was Accepted'; exit 1
 fi
+if "${psql[@]}" -f "$root/supabase/migrations/20261021175019_individual_player_rates_cannot_bypass_agreement_authorizatio.sql" >"$fixture/boundary-replay" 2>&1; then
+  echo 'FAIL: Boundary Migration Replay Was Accepted'; exit 1
+fi
 echo 'PASS: Individual Rakeback Native Regression And Replay Refusal'

@@ -12,13 +12,16 @@ function fixture(response: Promise<unknown>, click = vi.fn().mockResolvedValue(u
   // The invitation's Not Now; its evaluate is the handler's stack read.
   const notNow = { evaluate: vi.fn().mockResolvedValue(null), click: vi.fn() };
   const dismiss = {
-    isVisible: vi.fn().mockResolvedValue(false),
+    isVisible: vi.fn().mockResolvedValue(true),
     waitFor: vi.fn().mockResolvedValue(undefined),
     click,
   };
+  const enter = { ...dismiss, click: vi.fn().mockResolvedValue(undefined) };
   const dialog = {
     waitFor: vi.fn().mockResolvedValue(undefined),
-    getByRole: vi.fn(() => dismiss),
+    getByRole: vi.fn((_role: string, options: { name: string }) =>
+      options.name === 'Enter Lobby' ? enter : dismiss
+    ),
   };
   const invitation = {
     isVisible: vi.fn().mockResolvedValue(false),
@@ -35,20 +38,21 @@ function fixture(response: Promise<unknown>, click = vi.fn().mockResolvedValue(u
     }),
     removeLocatorHandler: vi.fn().mockResolvedValue(undefined),
   };
-  return { page: page as unknown as Page, dialog, invitation, dismiss, notNow, handlers };
+  return { page: page as unknown as Page, dialog, invitation, dismiss, enter, notNow, handlers };
 }
 
 describe('production club-message setup', () => {
   it('takes Enter Lobby without a preference write on automatic-once clients', async () => {
-    const { page, dismiss, dialog } = fixture(Promise.resolve(null));
-    dismiss.isVisible.mockResolvedValue(true);
+    const { page, dismiss, enter, dialog } = fixture(Promise.resolve(null));
+    dismiss.isVisible.mockResolvedValue(false);
     await expect(dismissClubEntryMessage(page)).resolves.toBe(true);
     expect(page.waitForResponse).not.toHaveBeenCalled();
-    expect(dismiss.click).toHaveBeenCalledTimes(1);
+    expect(enter.click).toHaveBeenCalledTimes(1);
+    expect(dismiss.click).not.toHaveBeenCalled();
     expect(dialog.waitFor).toHaveBeenCalledWith({ state: 'hidden', timeout: 10_000 });
   });
 
-  it('takes the current persistence control only inside the Club Message dialog', async () => {
+  it('uses the legacy persistence control when Enter Lobby is also present only inside the Club Message dialog', async () => {
     const { page, dialog, dismiss } = fixture(
       Promise.resolve({
         ok: () => true,

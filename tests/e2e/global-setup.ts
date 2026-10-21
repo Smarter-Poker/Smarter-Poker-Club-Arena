@@ -112,14 +112,15 @@ export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
   if (!visible) return false;
   // New clients record the receipt atomically before opening the dialog.
   // Keep the old control path for already-open tabs on the previous release.
-  const enter = dialog.getByRole('button', { name: 'Enter Lobby', exact: true });
-  const automatic = await enter.isVisible();
+  const legacyDismiss = dialog.getByRole('button', {
+    name: 'Do Not Show Again',
+    exact: true,
+  });
+  // Older clients have both controls; Enter Lobby alone did not persist there.
+  const automatic = !(await legacyDismiss.isVisible());
   const dismiss = automatic
-    ? enter
-    : dialog.getByRole('button', {
-        name: 'Do Not Show Again',
-        exact: true,
-      });
+    ? dialog.getByRole('button', { name: 'Enter Lobby', exact: true })
+    : legacyDismiss;
   const appeared = await dismiss
     .waitFor({ state: 'visible', timeout: 15_000 })
     .then(() => true)

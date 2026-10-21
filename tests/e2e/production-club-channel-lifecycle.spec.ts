@@ -84,7 +84,9 @@ test('exact serving engine refuses absent and departed financial club channels',
     ] as const) {
       expect(row[field], `Missing ${field} is not zero`).not.toBeNull();
       expect(row[field], `Missing ${field} is not zero`).not.toBeUndefined();
-      expect(Number(row[field]), `Unexpected ${field}; never move or erase a fixture balance`).toBe(0);
+      expect(Number(row[field]), `Unexpected ${field}; never move or erase a fixture balance`).toBe(
+        0
+      );
     }
   }
   await engineIdentity();
@@ -104,9 +106,9 @@ test('exact serving engine refuses absent and departed financial club channels',
   try {
     // Browser transport only: no application session or preexisting app socket.
     await page.goto('about:blank');
-    async function open(token: string, user: string) {
+    async function open(token: string) {
       return page.evaluate(
-        async ({ token, user, club }) => {
+        async ({ token, club }) => {
           const scope = window as unknown as {
             proofSockets: { socket: WebSocket; sync: boolean; pong: number; closed: boolean }[];
           };
@@ -149,7 +151,7 @@ test('exact serving engine refuses absent and departed financial club channels',
           state.socket.send(JSON.stringify({ type: 'CHANNEL_PING' }));
           return index;
         },
-        { token, user, club: CLUB }
+        { token, club: CLUB }
       );
     }
     async function state(index: number) {
@@ -162,7 +164,7 @@ test('exact serving engine refuses absent and departed financial club channels',
       await page.evaluate((index) => (window as any).proofSockets[index].socket.close(), index);
     }
     async function positiveControl() {
-      const i = await open(staffLogin.data.session!.access_token, staff.id);
+      const i = await open(staffLogin.data.session!.access_token);
       await expect.poll(async () => (await state(i)).sync, { timeout: 15_000 }).toBe(true);
       await expect.poll(async () => (await state(i)).pong, { timeout: 15_000 }).toBeGreaterThan(0);
       await close(i);
@@ -170,7 +172,7 @@ test('exact serving engine refuses absent and departed financial club channels',
     async function negative(label: string) {
       await engineIdentity();
       await positiveControl();
-      const i = await open(targetSession.access_token, account.id);
+      const i = await open(targetSession.access_token);
       await expect.poll(async () => (await state(i)).pong, { timeout: 15_000 }).toBeGreaterThan(0);
       // This is bounded negative observation, not a protocol denial receipt.
       const until = Date.now() + 5_000;
@@ -198,7 +200,7 @@ test('exact serving engine refuses absent and departed financial club channels',
     expect(active[0].membership_lifecycle_status).toBe('active');
     // A fresh socket does not invalidate the shared negative membership cache.
     await page.waitForTimeout(Math.max(0, cachedAt + CLUB_CACHE_TTL_MS + 1_000 - Date.now()));
-    const activeSocket = await open(targetSession.access_token, account.id);
+    const activeSocket = await open(targetSession.access_token);
     await expect.poll(async () => (await state(activeSocket)).sync, { timeout: 15_000 }).toBe(true);
     cachedAt = Date.now();
     observed.push({ label: 'active', ...(await state(activeSocket)) });
@@ -233,6 +235,9 @@ test('exact serving engine refuses absent and departed financial club channels',
       ),
     });
   } finally {
+    await cleanup();
+  }
+  async function cleanup() {
     const failures: unknown[] = [];
     try {
       await page.evaluate(() => {

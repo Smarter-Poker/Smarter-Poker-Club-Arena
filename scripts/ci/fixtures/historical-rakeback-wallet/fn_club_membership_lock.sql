@@ -6,4 +6,3 @@ AS $function$
   SELECT pg_advisory_xact_lock(hashtextextended(p_user_id::text, 77431))
 $function$
 ;
-

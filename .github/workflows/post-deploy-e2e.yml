@@ -516,7 +516,8 @@ jobs:
             # roll either guard back to an older, weaker implementation.
             git checkout "$HERE" -- \
               tests/e2e/global-setup.ts \
-              tests/e2e/support
+              tests/e2e/support \
+              tests/e2e/production-club-channel-lifecycle.spec.ts
             echo "specs=$LIVE" >> $GITHUB_OUTPUT
             echo "Production is serving \`$LIVE\`, an ancestor of this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
             echo "Page assertions taken from \`$LIVE\`; auth and support harnesses kept at \`$HERE\`." >> $GITHUB_STEP_SUMMARY

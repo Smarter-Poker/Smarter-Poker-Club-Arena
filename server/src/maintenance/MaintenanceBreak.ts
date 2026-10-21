@@ -52,42 +52,10 @@
  *   :00   end(). The clocks are thawed, then every engine resumes on the
  *         hour - in waves across the first ~10s, see RESUME_WAVES.
  *
- * ─── WHY :55, AND WHY EVERY HOUR ───────────────────────────────────────────
- *
- * Tournaments already take a synchronized five-minute break at :55 (see
- * GameServer.scheduleSynchronizedBreaks). The restart moves onto it rather
- * than inventing a second, competing break: an MTT must never be stopped twice
- * in one hour, and at :55 its blind clock is already suspended by
- * TournamentManagerBase.pauseForBreak, so levels cannot tick through a
- * restart. Aligning also fixes an old wart for free - because this module has
- * every table parked by :55, the tournament break's `waitForAllTablesParked`
- * succeeds instantly instead of burning its two-minute grace, so tournament
- * breaks now genuinely run :55 to :00 rather than :57 to :02.
- *
- * EVERY HOUR, NOT FIVE TIMES A DAY (Dan, 2026-09-01):
- *
- *   "program the engine restart to be every hour on the :55 instead of every
- *   5 hours so nothing gets lost or orphaned from production improvements."
- *
- * The five-window schedule existed because a restart was expensive and
- * visible, so it was rationed - and the cost of rationing it was that merged
- * engine code sat unshipped for up to six hours, which is how fixes get
- * orphaned and how two agents end up reasoning about different production
- * builds. Now that the restart happens inside a break nobody loses a hand to,
- * the reason to ration it is gone.
- *
- * An hourly WINDOW is not an hourly restart. The deploy dedupes on the served
- * commit, so a window with no new code costs one HTTP request and nothing
- * else. The engine only actually bounces when there is something to ship, and
- * then it does so within the hour.
- *
- * The break itself DOES run every hour regardless, and that is deliberate:
- * tournaments already break hourly, so this simply brings cash tables onto the
- * same rhythm. Dan, 2026-08-27: "EVERY HORSE OR HUMAN PLAYER NEEDS TO BE
- * TREATED 100% EXACTLY THE SAME ALL ACROSS THE BOARD" - and a fleet where the
- * MTTs stop on the hour while the cash games roll on is the same tell one
- * level up. A predictable five minutes at the top of every hour is also the
- * thing that makes the restart unremarkable when it does happen.
+ * Routine maintenance is daily at 04:00 America/Chicago (owner, 2026-10-20).
+ * Last hand: 03:58; countdown: 04:00-04:05. Cash games continue through
+ * hourly tournament breaks. Emergency windows retain the same durable owner,
+ * hand-boundary drain, freeze, proof, rollback reserve and thaw.
  *
  * ─── HORSES ARE PLAYERS (CLAUDE.md 10.5) ───────────────────────────────────
  *
@@ -98,6 +66,12 @@
  * seats are horses.
  */
 
+import {
+  scheduledMaintenanceAt,
+  nextMaintenanceAnnouncement,
+  MAINTENANCE_TIME_ZONE,
+  MAINTENANCE_START_HOUR,
+} from './maintenanceSchedule.js';
 import { randomUUID } from 'node:crypto';
 import { completeReconnectFreeze, completeTableReconnectFreeze } from './reconnectFreeze.js';
 import { setLastHandSettlementWindow, setMaintenanceFrozen } from './freezeState.js';
@@ -319,8 +293,8 @@ export class MaintenanceBreak {
   /** The break itself, matching the tournament synchronized break exactly. */
   static readonly BREAK_DURATION_MS = 5 * 60 * 1000;
 
-  /** The countdown starts at :55, so the announcement lands at :53. */
-  static readonly BREAK_START_MINUTE = 55;
+  /** Daily countdown begins at 04:00 Chicago, announced two minutes earlier. */
+  static readonly BREAK_START_MINUTE = 0;
   static readonly LAST_HAND_LEAD_MS = 2 * 60 * 1000;
   /** Prepare clocks inside the final 90s; the certificate still holds play to :00. */
   static readonly THAW_PREPARATION_LEAD_MS = 90_000;
@@ -667,34 +641,13 @@ export class MaintenanceBreak {
    * `engine_maintenance_break_log` recorded neither break - so the only thing
    * that ever noticed was the scorecard, twelve minutes later.
    *
-   * The row was never the only evidence available. CLAUDE.md 13's timeline is
-   * fixed and carries no time zone - announce at :53, park at :55, resume at
-   * :00 - so a process booting at 14:56:33 can tell from the wall clock alone
-   * that it is standing in the middle of a break. `msUntilNextAnnouncement`
-   * has always derived the NEXT window this way. This derives the CURRENT one.
-   *
-   * It returns null everywhere outside [:53, :00), and the window it returns
-   * can never be longer than LAST_HAND_LEAD_MS + BREAK_DURATION_MS because
-   * both ends are anchored to the CURRENT hour's :53. That is deliberate, and
-   * it is why this does not ask for "the next :00": the deleted
-   * `nextHourBoundary()` did exactly that and would have parked the whole
-   * fleet for sixty minutes on a boot at :00:00.000. A false positive here is
-   * a fleet-wide freeze, so the derivation has to have no boundary case at
-   * all, and anchoring to the announcement has none.
+   * The current owner schedule is 03:58-04:05 America/Chicago. A cold boot
+   * inside that daily window must preserve it even when the row was lost.
+   * maintenanceSchedule.ts derives the exact bounded window using IANA DST
+   * rules. Ordinary hourly tournament breaks never supply this witness.
    */
   private scheduledBreakWindowAt(at: number): { announcedAt: number; endsAt: number } | null {
-    const announceMinute =
-      MaintenanceBreak.BREAK_START_MINUTE - MaintenanceBreak.LAST_HAND_LEAD_MS / 60000;
-    // UTC setters, the same as `msUntilNextAnnouncement` (#4063): in a
-    // fractional-hour zone a LOCAL :53 is not the deployment window's :53, and
-    // the two derivations of the same timeline must never disagree.
-    const announced = new Date(at);
-    announced.setUTCMinutes(announceMinute, 0, 0);
-    const announcedAt = announced.getTime();
-    const endsAt =
-      announcedAt + MaintenanceBreak.LAST_HAND_LEAD_MS + MaintenanceBreak.BREAK_DURATION_MS;
-    if (at < announcedAt || at >= endsAt) return null;
-    return { announcedAt, endsAt };
+    return scheduledMaintenanceAt(at);
   }
 
   /**
@@ -987,7 +940,7 @@ export class MaintenanceBreak {
     console.log(
       `[MaintenanceBreak] Next maintenance break announcement in ${Math.round(
         msUntil / 60000
-      )} minute(s); the break runs :55 to :00 and carries the engine restart.`
+      )} minute(s); the routine break runs 04:00 to 04:05 America/Chicago.`
     );
 
     const generation = this.lifecycleGeneration;
@@ -1012,43 +965,18 @@ export class MaintenanceBreak {
   }
 
   /**
-   * Milliseconds until the next :53.
-   *
-   * NO TIME ZONE IS INVOLVED, and that is the point of going hourly. The old
-   * five-window schedule had to name Chicago hours, which meant either a
-   * minute-by-minute scan through the tz database here or hand-rolled DST
-   * arithmetic in the workflow - and on the two days a year the arithmetic is
-   * wrong, the platform restarts an hour outside its announced break. Every
-   * hour is a window now. UTC setters keep :53 aligned with the deployment
-   * window during repeated local hours and fractional-hour offsets.
-   *
-   * Anchored to the wall clock and recomputed after every firing, never
-   * accumulated: a slow event loop delays one break instead of skewing all of
-   * them from then on.
-   */
-  /**
-   * Milliseconds until the next :53 announcement (public for the tournament
-   * start gate: a launch that cannot finish seating before it is held until
-   * after the break instead of being cut in half by the entry freeze).
+   * Next daily 03:58 Chicago announcement, exposed to the tournament launch
+   * gate so a field cannot be cut in half by the actual entry freeze.
    */
   msUntilNextLastHand(): number {
-    // No armed hourly schedule (not started, stopped, or a process whose
+    // No armed daily schedule (not started, stopped, or a process whose
     // engine is not running) means there is no announcement to plan around.
     if (!this.started || !this.announceTimer) return Number.POSITIVE_INFINITY;
     return this.msUntilNextAnnouncement();
   }
 
   private msUntilNextAnnouncement(): number {
-    const announceMinute =
-      MaintenanceBreak.BREAK_START_MINUTE - MaintenanceBreak.LAST_HAND_LEAD_MS / 60000;
-    const now = this.now();
-    const next = new Date(now);
-    next.setUTCMinutes(announceMinute, 0, 0);
-    let t = next.getTime();
-    // Already past this hour's mark (the common case, since we are usually
-    // re-arming a moment after firing): take the next hour's.
-    if (t <= now) t += 60 * 60 * 1000;
-    return t - now;
+    return nextMaintenanceAnnouncement(this.now()) - this.now();
   }
 
   // `nextHourBoundary()` lived here and is DELETED (2026-09-07). It computed
@@ -1096,11 +1024,15 @@ export class MaintenanceBreak {
    * can observe the same active break, but can never start a later one or move
    * its deadline. This method does not schedule another recovery request.
    */
-  async requestRecoveryWindow(announcedAt: number): Promise<{
+  async requestRecoveryWindow(
+    announcedAt: number,
+    cause: 'urgent' | 'engine-degraded'
+  ): Promise<{
     status: 'accepted' | 'active' | 'pending' | 'busy' | 'expired' | 'use_hourly' | 'unavailable';
     announcedAt?: number;
     endsAt?: number;
   }> {
+    if (cause !== 'urgent' && cause !== 'engine-degraded') return { status: 'unavailable' };
     if (!this.startOperation || !this.deps.assertRecoveryWindowContract) {
       return { status: 'unavailable' };
     }
@@ -2772,6 +2704,15 @@ export class MaintenanceBreak {
     const unparked = this.isActive() ? this.unparkedTables() : [];
     return {
       active: this.isActive(),
+      schedule: {
+        timeZone: MAINTENANCE_TIME_ZONE,
+        startHour: MAINTENANCE_START_HOUR,
+        startMinute: MaintenanceBreak.BREAK_START_MINUTE,
+        durationMs: MaintenanceBreak.BREAK_DURATION_MS,
+        nextAnnouncementAt: nextMaintenanceAnnouncement(this.now()),
+        hourlyCashFreeze: false,
+      },
+      recoveryWindowCauseRequired: true,
       recoveryWindowProtocol: this.deps.assertRecoveryWindowContract
         ? 'engine-recovery-window-v1'
         : null,
@@ -2823,9 +2764,4 @@ function fnv1a(str: string): number {
   return h >>> 0;
 }
 
-/**
- * `chicagoHourMinute` used to live here, to answer "is this one of the five
- * restart hours". Going hourly deleted the question, and with it the whole
- * class of DST bugs that came with answering it. Do not reintroduce a
- * timezone here: if a future change needs one, it needs a reason first.
- */
+/** Daily Chicago scheduling is owned by maintenanceSchedule.ts (owner 2026-10-20). */

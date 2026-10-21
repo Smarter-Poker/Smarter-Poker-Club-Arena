@@ -1473,3 +1473,13 @@ body[data-ca-pinned-bar='1'] [data-fullscreen-overlay] {
   color: #e4e7ec;
   white-space: nowrap;
 }
+
+/* All square gameplay tools use the Lobby control's painted footprint. */
+.multi-table-page {
+  --sp-game-tool-size: 40px;
+}
+@media (max-width: 480px) {
+  .multi-table-page {
+    --sp-game-tool-size: 34px;
+  }
+}

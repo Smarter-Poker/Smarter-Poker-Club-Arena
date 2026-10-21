@@ -126,7 +126,7 @@ describe('it is collapsible, and collapsing it never resizes the felt', () => {
 });
 
 describe('the corner holds the lobby button', () => {
-  it('a 44px button with the LOBBY plate that opens the tournament lobby', () => {
+  it('a Lobby-sized button with the LOBBY plate that opens the tournament lobby', () => {
     const corner = PAGE.slice(PAGE.indexOf('upperRight={'), PAGE.indexOf('bottomLeft={'));
     expect(corner).toMatch(/className="tournament-lobby-corner-btn"/);
     expect(corner).toMatch(/setShowTournamentLobby\(true\)/);
@@ -134,8 +134,8 @@ describe('the corner holds the lobby button', () => {
     expect(corner).toMatch(/src=\{lobbyButtonArt\}/);
     expect(PAGE).toMatch(/import lobbyButtonArt from '\.\.\/assets\/lobby-button\.webp';/);
     const btn = rule(DOCK_CSS, '.tournament-lobby-corner-btn {');
-    expect(btn).toMatch(/width:\s*44px/);
-    expect(btn).toMatch(/height:\s*44px/);
+    expect(btn).toMatch(/width:\s*var\(--sp-game-tool-size, 40px\)/);
+    expect(btn).toMatch(/height:\s*var\(--sp-game-tool-size, 40px\)/);
   });
 });
 

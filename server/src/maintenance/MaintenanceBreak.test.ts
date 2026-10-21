@@ -1649,18 +1649,20 @@ describe('surviving the restart', () => {
 
 describe('the schedule', () => {
   it.each([
-    ['America/Chicago', '2026-11-01T07:54:00.000Z', '2026-11-01T08:53:00.000Z'],
-    ['America/Chicago', '2026-11-01T07:52:00.000Z', '2026-11-01T07:53:00.000Z'],
-    ['Europe/Berlin', '2026-10-25T01:54:00.000Z', '2026-10-25T02:53:00.000Z'],
-    ['Asia/Kathmandu', '2026-09-10T00:52:00.000Z', '2026-09-10T00:53:00.000Z'],
-    ['UTC', '2026-09-10T00:53:00.000Z', '2026-09-10T01:53:00.000Z'],
-    ['UTC', '2026-12-31T23:54:00.000Z', '2027-01-01T00:53:00.000Z'],
-  ])('targets the next UTC :53 in %s at %s', (zone, now, expected) => {
+    ['America/Chicago', '2026-11-01T07:54:00.000Z', '2026-11-01T09:58:00.000Z'],
+    ['Europe/Berlin', '2026-10-25T01:54:00.000Z', '2026-10-25T08:58:00.000Z'],
+    ['Asia/Kathmandu', '2026-09-10T00:52:00.000Z', '2026-09-10T08:58:00.000Z'],
+    ['UTC', '2026-12-31T23:54:00.000Z', '2027-01-01T09:58:00.000Z'],
+    ['UTC', '2026-03-08T07:59:00.000Z', '2026-03-08T08:58:00.000Z'],
+    ['UTC', '2026-03-07T09:59:00.000Z', '2026-03-08T08:58:00.000Z'],
+    ['UTC', '2026-10-31T08:59:00.000Z', '2026-11-01T09:58:00.000Z'],
+    ['UTC', '2026-10-20T08:58:00.000Z', '2026-10-21T08:58:00.000Z'],
+  ])('targets the next 03:58 Chicago independently of host TZ %s at %s', (zone, now, expected) => {
     vi.stubEnv('TZ', zone);
     try {
       vi.setSystemTime(new Date(now));
       const { mb } = build(0);
-      // @ts-expect-error - verify the actual private scheduler.
+      // @ts-expect-error - exercise the actual private scheduler.
       const ms = mb.msUntilNextAnnouncement();
       expect(ms).toBe(Date.parse(expected) - Date.parse(now));
       expect(ms).toBeGreaterThan(0);
@@ -1669,46 +1671,31 @@ describe('the schedule', () => {
     }
   });
 
-  it('announces at :53 so the countdown starts at :55 with the tournament break', () => {
-    // The two must coincide: an MTT may not be stopped twice in one hour, and
-    // at :55 its blind clock is already suspended.
-    expect(MaintenanceBreak.BREAK_START_MINUTE - MaintenanceBreak.LAST_HAND_LEAD_MS / 60000).toBe(
-      53
-    );
-    expect(MaintenanceBreak.BREAK_START_MINUTE).toBe(55);
-  });
-
-  it('fires every hour, and never restricts itself to a set of hours', () => {
-    // Dan 2026-09-01: "every hour on the :55 instead of every 5 hours so
-    // nothing gets lost or orphaned from production improvements." An hours
-    // allowlist here is the thing that stranded merged code for six hours.
-    expect(MaintenanceBreak).not.toHaveProperty('RESTART_WINDOW_HOURS_CHICAGO');
-
-    const seen = new Set<number>();
-    for (let h = 0; h < 24; h++) {
-      // 07 minutes past each hour, so the next :53 is always this hour's.
-      vi.setSystemTime(new Date(Date.UTC(2026, 8, 1, h, 7, 0)));
-      const { mb } = build(0);
-      // @ts-expect-error - exercising the private scheduler directly is the
-      // point: it is the one thing a wrong answer here would hide.
-      const ms = mb.msUntilNextAnnouncement();
-      const fireAt = new Date(Date.UTC(2026, 8, 1, h, 7, 0) + ms);
-      expect(fireAt.getMinutes(), `hour ${h} did not target :53`).toBe(53);
-      seen.add(fireAt.getUTCHours());
+  it('does not freeze cash games at any hourly tournament break', async () => {
+    for (let hour = 0; hour < 24; hour++) {
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 20, hour, 55)));
+      const { mb, engines } = build(1);
+      await mb.start();
+      expect(mb.isActive(), `cash freeze at UTC hour ${hour}`).toBe(false);
+      expect(engines.get('t0')!.paused).toBe(false);
+      await mb.stop();
     }
-    expect(seen.size, 'the break must be reachable in every hour of the day').toBe(24);
   });
 
-  it('rolls to the next hour once :53 has passed', () => {
-    vi.setSystemTime(new Date(Date.UTC(2026, 8, 1, 9, 54, 0)));
-    const { mb } = build(0);
-    // @ts-expect-error - private by design, see above.
-    const ms = mb.msUntilNextAnnouncement();
-    const fireAt = new Date(Date.UTC(2026, 8, 1, 9, 54, 0) + ms);
-    expect(fireAt.getUTCHours()).toBe(10);
-    expect(fireAt.getMinutes()).toBe(53);
-    // Never zero or negative: a scheduler that returns those spins the loop.
-    expect(ms).toBeGreaterThan(0);
+  it('announces at 03:58 and freezes at 04:00 Chicago', async () => {
+    vi.setSystemTime(new Date('2026-10-20T08:57:59.000Z'));
+    const { mb, store } = build(1);
+    await mb.start();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(store.row?.phase).toBe('last_hand');
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(store.row?.phase).toBe('counting_down');
+    expect(store.row?.breakEndsAt).toBe(Date.parse('2026-10-20T09:05:00Z'));
+    expect(mb.snapshot().schedule).toMatchObject({
+      timeZone: 'America/Chicago',
+      startHour: 4,
+      hourlyCashFreeze: false,
+    });
   });
 
   it('re-arms the next wall-clock hour when the durable announcement fails', async () => {

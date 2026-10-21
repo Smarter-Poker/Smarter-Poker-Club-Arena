@@ -333,7 +333,7 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     const h = harness();
     await h.owner.start();
     const requestAt = Date.now();
-    expect(await h.owner.requestRecoveryWindow(requestAt)).toEqual({
+    expect(await h.owner.requestRecoveryWindow(requestAt, 'urgent')).toEqual({
       status: 'accepted',
       announcedAt: requestAt,
       endsAt: requestAt + 420_000,
@@ -353,7 +353,7 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     });
     expect(h.owner.readyForRestart()).toBe(true);
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(await h.owner.requestRecoveryWindow(requestAt)).toEqual({
+    expect(await h.owner.requestRecoveryWindow(requestAt, 'urgent')).toEqual({
       status: 'active',
       announcedAt: requestAt,
       endsAt: requestAt + 420_000,
@@ -366,17 +366,17 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     const h = harness(50);
     await h.owner.start();
     expect(h.owner.snapshot()).toMatchObject({ recoveryWindowReady: true });
-    await h.owner.requestRecoveryWindow(Date.now());
+    await h.owner.requestRecoveryWindow(Date.now(), 'urgent');
     await vi.advanceTimersByTimeAsync(420_000);
     expect(h.owner.snapshot()).toMatchObject({
       active: false,
       recoveryWindowReady: false,
       presentation: { active: true, phase: 'resuming' },
     });
-    expect((await h.owner.requestRecoveryWindow(Date.now())).status).toBe('busy');
+    expect((await h.owner.requestRecoveryWindow(Date.now(), 'urgent')).status).toBe('busy');
     await vi.advanceTimersByTimeAsync(MaintenanceBreak.RESUME_WAVE_GAP_MS);
     expect(h.owner.snapshot()).toMatchObject({ recoveryWindowReady: true });
-    expect((await h.owner.requestRecoveryWindow(Date.now())).status).toBe('accepted');
+    expect((await h.owner.requestRecoveryWindow(Date.now(), 'urgent')).status).toBe('accepted');
   });
 
   it('recovers a committed announcement with a lost response under the same identity', async () => {
@@ -388,7 +388,7 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
       throw new Error('socket hang up');
     });
     const at = Date.now();
-    expect((await h.owner.requestRecoveryWindow(at)).status).toBe('accepted');
+    expect((await h.owner.requestRecoveryWindow(at, 'urgent')).status).toBe('accepted');
     expect(h.row?.announcedAt).toBe(at);
     expect(h.owner.endsAt()).toBe(at + 420_000);
     expect(h.store.save).toHaveBeenCalledOnce();
@@ -398,13 +398,13 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     const h = harness();
     await h.owner.start();
     const at = Date.now();
-    await h.owner.requestRecoveryWindow(at);
+    await h.owner.requestRecoveryWindow(at, 'urgent');
     await vi.advanceTimersByTimeAsync(425_000);
     expect(h.owner.isActive()).toBe(false);
     expect(h.row).toBeNull();
     expect(h.engine.paused).toBe(false);
     expect(h.engine.independentPause).toBe(true);
-    expect((await h.owner.requestRecoveryWindow(at)).status).toBe('expired');
+    expect((await h.owner.requestRecoveryWindow(at, 'urgent')).status).toBe('expired');
     expect(h.engine.resumes).toBe(1);
   });
 
@@ -413,7 +413,7 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     h.engine.isParkedBetweenHands = () => false;
     h.engine.isBetweenHands = () => false;
     await h.owner.start();
-    await h.owner.requestRecoveryWindow(Date.now());
+    await h.owner.requestRecoveryWindow(Date.now(), 'urgent');
     await vi.advanceTimersByTimeAsync(120_000);
     expect(h.owner.snapshot()).toMatchObject({ phase: 'counting_down', unparkedTables: 1 });
     expect(h.owner.readyForRestart()).toBe(false);
@@ -423,9 +423,9 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     const h = harness();
     await h.owner.start();
     const at = Date.now();
-    await h.owner.requestRecoveryWindow(at);
+    await h.owner.requestRecoveryWindow(at, 'urgent');
     vi.setSystemTime(at + 1_000);
-    expect((await h.owner.requestRecoveryWindow(at + 1_000)).status).toBe('busy');
+    expect((await h.owner.requestRecoveryWindow(at + 1_000, 'urgent')).status).toBe('busy');
     expect(h.row?.announcedAt).toBe(at);
     expect(h.owner.endsAt()).toBe(at + 420_000);
   });
@@ -434,25 +434,37 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     const h = harness();
     await h.owner.start();
     for (const at of [Date.now() - 120_000, Date.now() + 1, 0, NaN]) {
-      expect((await h.owner.requestRecoveryWindow(at)).status).toBe('expired');
+      expect((await h.owner.requestRecoveryWindow(at, 'urgent')).status).toBe('expired');
     }
     expect(h.row).toBeNull();
     expect(h.contract).not.toHaveBeenCalled();
   });
 
   it('uses the ordinary hour when a recovery pause would overlap its announcement', async () => {
-    vi.setSystemTime(Date.parse('2026-09-17T10:48:00Z'));
+    vi.setSystemTime(Date.parse('2026-09-17T08:53:00Z'));
     const h = harness();
     await h.owner.start();
-    expect((await h.owner.requestRecoveryWindow(Date.now())).status).toBe('use_hourly');
+    expect((await h.owner.requestRecoveryWindow(Date.now(), 'urgent')).status).toBe('use_hourly');
     expect(h.row).toBeNull();
+  });
+
+  it('refuses legacy missing and deadline causes at the maintenance owner before a write', async () => {
+    const h = harness();
+    await h.owner.start();
+    for (const cause of [undefined, 'deadline', 'failed-release']) {
+      expect(await h.owner.requestRecoveryWindow(Date.now(), cause as any)).toEqual({
+        status: 'unavailable',
+      });
+    }
+    expect(h.row).toBeNull();
+    expect(h.contract).not.toHaveBeenCalled();
   });
 
   it('cannot pause before the database recovery contract is installed', async () => {
     const h = harness();
     await h.owner.start();
     h.contract.mockRejectedValueOnce(new Error('database contract unavailable'));
-    await expect(h.owner.requestRecoveryWindow(Date.now())).rejects.toThrow(
+    await expect(h.owner.requestRecoveryWindow(Date.now(), 'urgent')).rejects.toThrow(
       'database contract unavailable'
     );
     expect(h.row).toBeNull();
@@ -464,7 +476,7 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     await h.owner.start();
     const pending = deferred();
     h.contract.mockImplementationOnce(() => pending.promise);
-    const attempt = h.owner.requestRecoveryWindow(Date.now());
+    const attempt = h.owner.requestRecoveryWindow(Date.now(), 'urgent');
     await flush();
     await h.owner.stop();
     pending.resolve();
@@ -476,7 +488,7 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     const first = harness();
     await first.owner.start();
     const at = Date.now();
-    await first.owner.requestRecoveryWindow(at);
+    await first.owner.requestRecoveryWindow(at, 'urgent');
     const saved = { ...first.row! };
     await first.owner.stop();
     vi.setSystemTime(at + 30_000);
@@ -484,7 +496,7 @@ describe('one explicit recovery request uses the durable maintenance owner', () 
     second.row = saved;
     await second.owner.start();
     expect(second.owner.endsAt()).toBe(at + 420_000);
-    expect((await second.owner.requestRecoveryWindow(at)).status).toBe('active');
+    expect((await second.owner.requestRecoveryWindow(at, 'urgent')).status).toBe('active');
     expect(second.contract).not.toHaveBeenCalled();
     expect(second.row?.ownershipToken).not.toBe(saved.ownershipToken);
   });

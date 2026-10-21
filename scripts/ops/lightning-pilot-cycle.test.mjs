@@ -7,6 +7,7 @@ import {
   cycleClock,
   ownPreactionExecuted,
   recordCycleEvent,
+  clickCycleControlOnce,
 } from './lightning-pilot-cycle.mjs';
 const room = '11111111-1111-4111-8111-111111111111';
 const history = '22222222-2222-4222-8222-222222222222';
@@ -312,4 +313,58 @@ test('partial browser failure retains bounded live phases and requested hand ide
   assert.equal(result.cleanup, 'local_session_closed');
   assert.equal(closed && signedOut, true);
   assert.doesNotMatch(JSON.stringify(result), /SECRET|999|cards|maxCallAmount/);
+});
+
+test('a disappearing optional control is clicked once with a bounded response and does not block the next observation', async () => {
+  let clicks = 0;
+  const budgets = [];
+  const firstPage = {
+    waitForResponse: async (_match, opts) => {
+      budgets.push(opts.timeout);
+      throw Object.assign(new Error('SECRET_SELECTOR'), { name: 'TimeoutError' });
+    },
+  };
+  const firstControl = {
+    click: async (opts) => {
+      clicks++;
+      budgets.push(opts.timeout);
+      throw new Error('SECRET_DOM');
+    },
+  };
+  assert.equal(
+    await clickCycleControlOnce(
+      firstPage,
+      firstControl,
+      () => true,
+      () => 150000
+    ),
+    null
+  );
+  assert.equal(clicks, 1);
+  assert.deepEqual(budgets, [5000, 2500]);
+  const receipt = { ok: () => true };
+  const secondPage = { waitForResponse: async () => receipt };
+  const secondControl = {
+    click: async () => {
+      clicks++;
+    },
+  };
+  assert.equal(
+    await clickCycleControlOnce(
+      secondPage,
+      secondControl,
+      () => true,
+      () => 4000
+    ),
+    receipt
+  );
+  assert.equal(clicks, 2);
+  const source = readFileSync(new URL('./lightning-pilot-cycle.mjs', import.meta.url), 'utf8');
+  assert.match(source, /const response = await clickCycleControlOnce\(/);
+  assert.match(
+    source,
+    /if \(!response\) \{\s*report\[key\] = 'click_or_response_unknown';\s*continue;/
+  );
+  assert.match(source, /report.requests.timebank === 1/);
+  assert.match(source, /report.timebank === 'accepted'/);
 });

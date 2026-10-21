@@ -503,13 +503,23 @@ export class ChannelWebSocketServer {
       } else {
         const { data, error } = await supabase
           .from('club_members')
-          .select('user_id')
+          .select('user_id,status,is_active,membership_lifecycle_status,clubs!inner(asset)')
           .eq('club_id', clubId)
           .eq('user_id', userId)
           .maybeSingle();
         if (error) throw error;
         if (!this.clubJoinIsCurrent(conn, clubId, pending)) return;
-        member = !!data;
+        // A retained financial wallet is not a club access grant. Departed
+        // players keep their balance while only the native rejoin can restore
+        // membership. Diamond participation has its own automatic status.
+        const arena = Array.isArray(data?.clubs) ? data.clubs[0] : data?.clubs;
+        member =
+          !!data &&
+          data.is_active === true &&
+          data.membership_lifecycle_status === 'active' &&
+          (data.status === 'active' ||
+            data.status === 'approved' ||
+            (data.status === 'automatic' && arena?.asset === 'diamonds'));
         if (this.clubMembershipCache.size >= CLUB_MEMBERSHIP_CACHE_MAX) {
           const oldest = this.clubMembershipCache.keys().next().value;
           if (oldest !== undefined) this.clubMembershipCache.delete(oldest);

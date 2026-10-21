@@ -52,7 +52,12 @@ export function scheduledLaunchPreparationAt(
   startAt: number,
   fieldCount: number,
   seatedLeadMs: number,
-  maintenance: { startMinute: number; lastHandLeadMs: number; durationMs: number }
+  maintenance: {
+    startMinute: number;
+    lastHandLeadMs: number;
+    durationMs: number;
+    freezeStartsAt?: readonly number[];
+  }
 ): number {
   const hourMs = 60 * 60_000;
   const budget = launchSeatingBudgetMs(fieldCount);
@@ -61,7 +66,10 @@ export function scheduledLaunchPreparationAt(
   // and the one before it; the later one first, so a field moved ahead of it
   // is then checked against the earlier break too.
   const hourFreezeAt = Math.floor(startAt / hourMs) * hourMs + maintenance.startMinute * 60_000;
-  for (const freezeStartsAt of [hourFreezeAt, hourFreezeAt - hourMs]) {
+  for (const freezeStartsAt of maintenance.freezeStartsAt ?? [
+    hourFreezeAt,
+    hourFreezeAt - hourMs,
+  ]) {
     const lastHandAt = freezeStartsAt - maintenance.lastHandLeadMs;
     const freezeEndsAt = freezeStartsAt + maintenance.durationMs;
     // Entry doors close at last-hand, not at countdown. Keep the seated

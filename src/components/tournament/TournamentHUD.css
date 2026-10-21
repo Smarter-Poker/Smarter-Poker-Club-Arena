@@ -223,10 +223,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  width: var(--sp-game-tool-size, 40px);
+  height: var(--sp-game-tool-size, 40px);
+  min-width: var(--sp-game-tool-size, 40px);
+  min-height: var(--sp-game-tool-size, 40px);
   padding: 0;
   border: none;
   border-radius: 10px;

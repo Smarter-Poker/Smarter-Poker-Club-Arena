@@ -56,7 +56,16 @@ const club = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const pendingClub = (i: number) => 'cccccccc-cccc-4ccc-8ccc-' + i.toString(16).padStart(12, '0');
 const join = { type: 'JOIN_CLUB', clubId: club };
 const leave = { type: 'LEAVE_CLUB', clubId: club };
-const member = { data: { user_id: 'member' }, error: null };
+const member = {
+  data: {
+    user_id: 'member',
+    status: 'active',
+    is_active: true,
+    membership_lifecycle_status: 'active',
+    clubs: { asset: 'chips' },
+  },
+  error: null,
+};
 async function flush() {
   await vi.advanceTimersByTimeAsync(0);
 }
@@ -77,6 +86,37 @@ afterEach(() => {
 });
 
 describe('club subscriptions survive temporary reads without reviving retired intent', () => {
+  it.each([
+    ['departed', { status: 'active', is_active: true, membership_lifecycle_status: 'departed' }],
+    ['suspended', { status: 'suspended' }],
+    ['inactive', { is_active: false }],
+    ['missing lifecycle', { membership_lifecycle_status: null }],
+    ['automatic chip membership', { status: 'automatic' }],
+  ])('refuses %s membership without granting a club channel', async (_name, fields) => {
+    readMember.mockResolvedValue({ data: { ...member.data, ...fields }, error: null });
+    socket().receive(join);
+    await flush();
+    expect(channelHub.isInClub(user, club)).toBe(false);
+  });
+  it.each(
+    ['active', 'approved'].flatMap((status) =>
+      ['player', 'agent', 'super_agent', 'manager', 'owner'].map((role) => ({ status, role }))
+    )
+  )('admits an active $status $role member', async ({ status, role }) => {
+    readMember.mockResolvedValue({ data: { ...member.data, status, role }, error: null });
+    socket().receive(join);
+    await flush();
+    expect(channelHub.isInClub(user, club)).toBe(true);
+  });
+  it('preserves native automatic Diamond participation', async () => {
+    readMember.mockResolvedValue({
+      data: { ...member.data, status: 'automatic', clubs: { asset: 'diamonds' } },
+      error: null,
+    });
+    socket().receive(join);
+    await flush();
+    expect(channelHub.isInClub(user, club)).toBe(true);
+  });
   it('retries a temporary membership error without another client JOIN', async () => {
     readMember.mockResolvedValueOnce({ data: null, error: { code: 'PGRST003' } });
     const ws = socket();

@@ -2,8 +2,8 @@
   "scope": "Exact original late-proof eligibility component/actual31 and source40 installation qualification inputs; no production timing or financial writer.",
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 229424,
-      "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
+      "bytes": 229699,
+      "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
     },
     "scripts/qualification/original-flow-eligibility/README.md": {
       "bytes": 2608,
@@ -257,6 +257,17 @@
     "current": {
       "bytes": 229424,
       "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
+    }
+  },
+  "unattendedOfferWorkflowInput20261020": {
+    "reason": "Adds the native unattended cash offer check to accounting shard 2; refreshes only current workflow identity, preserving historical execution and financial source pins.",
+    "previous": {
+      "bytes": 229424,
+      "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
+    },
+    "current": {
+      "bytes": 229699,
+      "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
     }
   }
 }

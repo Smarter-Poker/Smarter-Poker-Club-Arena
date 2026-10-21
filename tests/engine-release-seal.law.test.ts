@@ -1409,6 +1409,7 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
     const invalid = named('417-1', 'because-i-said-so');
     expect(invalid.status).not.toBe(0);
     expect(invalid.stderr).toContain('recovery window cause is invalid');
+    expect(named('420-1', 'deadline').status).not.toBe(0);
     const spent = join(sandbox, 'state', 'engine-recovery-window-414-1.json');
     const spentValue = JSON.parse(readFileSync(spent, 'utf8'));
     spentValue.announcedAt -= 3600001;
@@ -1416,7 +1417,6 @@ printf '%s\\n%s' '{"running":true,"releaseSha":"${A_SHA}","liveness":"ok","insta
     for (const [run, cause] of [
       ['418-1', 'urgent'],
       ['419-1', 'engine-degraded'],
-      ['420-1', 'deadline'],
     ]) {
       for (const other of ['418-1', '419-1', '420-1']) {
         rmSync(join(sandbox, 'state', `engine-recovery-window-${other}.json`), { force: true });

@@ -7,6 +7,8 @@ name: Stage Exact Club Arena Engine Release
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: '30 8,9 * * *'
 
 permissions: {}
 
@@ -21,6 +23,7 @@ jobs:
       release_required: ${{ steps.change.outputs.release_required }}
       target_sha: ${{ steps.change.outputs.target_sha }}
       offer_reason: ${{ steps.change.outputs.offer_reason }}
+      admission_allowed: ${{ steps.admission.outputs.allowed }}
     steps:
       # Do not use push.paths here. GitHub only evaluates a bounded portion of
       # a very large diff for path filters, which can omit a real server change
@@ -38,6 +41,41 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+
+      # Owner 2026-10-20 explicitly requests daily routine updates. Both UTC
+      # candidates run; only 03:30 Chicago prepares the 04:00 window. No repair
+      # timer, secondary publisher or automatic deadline-emergency exists.
+      - name: Admit daily preparation or an explicit urgent release
+        id: admission
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          allowed=false
+          if [ "$EVENT_NAME" = schedule ]; then
+            HOUR=$(TZ=America/Chicago date +%H)
+            [ "$HOUR" != 03 ] || allowed=true
+          elif git log -1 --format=%B | grep -Eq '^Engine-Release: (urgent|daily-maintenance-transition)$'; then
+            allowed=true
+          fi
+          if [ "$allowed" = false ]; then
+            HEALTH=$(curl -sS --max-time 15 https://engine.smarter.poker/health) || HEALTH='{}'
+            if printf '%s' "$HEALTH" | python3 -c '
+          import json,sys
+          try:
+              d=json.load(sys.stdin)
+              q=d.get("tournamentManagersQuarantined")
+              degraded=d.get("liveness")=="dead" or d.get("wholeFleetStalled") is True or (type(q) is int and q>=100)
+          except Exception:
+              degraded=False
+          raise SystemExit(0 if degraded else 1)'; then
+              allowed=true
+            fi
+          fi
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+          if [ "$allowed" = false ]; then
+            echo 'Routine engine updates are queued for 04:00 America/Chicago.'
+          fi
 
       - name: Compare the complete server tree
         id: change
@@ -150,7 +188,7 @@ jobs:
   signal:
     name: Dispatch The Exact Main SHA
     needs: detect
-    if: needs.detect.outputs.release_required == 'true'
+    if: needs.detect.outputs.release_required == 'true' && needs.detect.outputs.admission_allowed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     permissions:

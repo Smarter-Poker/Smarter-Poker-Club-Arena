@@ -447,6 +447,7 @@ export async function logHandHistory(params: {
   bigBlind: number;
   potSize: number;
   rakeAmount: number;
+  cashRakePolicy?: import('../../types.js').RakeConfig;
   bbjAmount?: number;
   communityCards: string[];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (empty on single-board hands). */
@@ -738,6 +739,7 @@ export async function logHandHistory(params: {
     big_blind: params.bigBlind,
     pot_size: params.potSize,
     rake_amount: params.rakeAmount,
+    ...(params.cashRakePolicy?.cashPolicy ? { cash_rake_policy: params.cashRakePolicy } : {}),
     bbj_amount: params.bbjAmount || 0,
     community_cards: params.communityCards,
     // DOUBLE-BOARD BOMB POT 2026-08-20: null (not []) on single-board hands

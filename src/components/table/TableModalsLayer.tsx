@@ -539,8 +539,6 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
     maxPlayers,
     players,
     heroStack,
-    rakePercent,
-    rakeCap,
     runItTwice,
     isHandInProgress,
     v8Settings,
@@ -868,8 +866,8 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
         stakes={blinds || '1/2'}
         minBuyIn={minBuyIn}
         maxBuyIn={maxBuyIn}
-        rakePercentage={effectiveRake.rakePercent ?? rakePercent}
-        rakeCap={effectiveRake.rakeCap ?? rakeCap}
+        rakePercentage={effectiveRake.rakePercent}
+        rakeCap={effectiveRake.rakeCap}
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
         isCashTable={!isTournament}

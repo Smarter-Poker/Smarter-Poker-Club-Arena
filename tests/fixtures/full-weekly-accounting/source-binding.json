@@ -227,7 +227,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "31eeaf23d5803eb6de9f311b1a994b7364a383d83a423a41b9c020f1715f92ef",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "f8f9ce54234385d3b8627479c3b44ca517faff1f31d21be0b3582cb7ae7aa886",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -1766,6 +1766,13 @@
     "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 74 PASS steps, 0 failures, including club-floor-run-journal, club-floor-behaviour-seed and club-floor-behaviour-regression (20 assertions). Red control on the same stack, reverting only the three GREATEST clamps of 20260920232503 in the running coordinator: 5 of those 20 assertions fail - the below-floor club week is re-attempted, the first week above the floor is neither reached nor completed, and the club whose earlier week succeeded no longer reaches its next due week."
   },
   "restamp_audit": [
+    {
+      "on": "2026-10-21",
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "31eeaf23d5803eb6de9f311b1a994b7364a383d83a423a41b9c020f1715f92ef",
+      "to": "f8f9ce54234385d3b8627479c3b44ca517faff1f31d21be0b3582cb7ae7aa886",
+      "why": "Reviewed Midway rake policy diff: useEffectiveRake now binds and checks the club-price query error; tighten its allowed discarded-error count from 1 to 0. No captured financial rows, monetary assertions, historical qualifications or completion states changed. Matching source hashes are not production or financial execution proof."
+    },
     {
       "on": "2026-10-07",
       "why": "Reviewed nested legacy-fee-finality and sep8-spin-custody binding diffs: each changes only the reviewed V4 classifier pin and its audit entry. Refresh their parent hashes without changing captured financial inputs or assertions.",

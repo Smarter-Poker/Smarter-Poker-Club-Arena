@@ -1,3 +1,7 @@
+/** Live cash callers supply scope: default 2.5 BB, hard maximum in Midway,
+ * customizable in standalone clubs. Unscoped calls retain historical replay
+ * and the independently unchanged BBJ stake specification. */
+import { scopedCashRake, type CashRakeScope } from './cashRakePolicy';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  CLUB ARENA — Rake & BBJ Configuration
@@ -699,6 +703,8 @@ export function getTierForBB(bigBlind: number | string): StakesTier {
  * server/src/config/RakeConfig.ts getFullRakeConfig.
  */
 export interface RakeOverride {
+  /** Present for live cash tables; omitted only for legacy spec replay. */
+  scope?: CashRakeScope;
   rakePercent?: number | null;
   rakeCapBB?: number | null;
 }
@@ -768,16 +774,25 @@ export function getRakeConfig(
   // override may only move downward from it. Mirrors the server exactly; see
   // the note in server/src/config/RakeConfig.ts. Without the min() this panel
   // would advertise a cap the engine will never actually take.
-  const rakePercent = isRakeSet(override?.rakePercent)
+  let rakePercent = isRakeSet(override?.rakePercent)
     ? Math.min(clampNum(Number(override!.rakePercent), 0, MAX_RAKE_PERCENT), schedulePercent)
     : schedulePercent;
   // Big blinds -> dollars, exactly as the server does it, then held to the cap.
-  const rakeCap = isRakeSet(override?.rakeCapBB)
+  let rakeCap = isRakeSet(override?.rakeCapBB)
     ? Math.min(
         Math.round(clampNum(Number(override!.rakeCapBB), 0, MAX_RAKE_CAP_BB) * bb * 100) / 100,
         scheduleCap
       )
     : scheduleCap;
+  if (override?.scope) {
+    ({ rakePercent, rakeCap } = scopedCashRake(
+      bb,
+      override.scope,
+      override.rakePercent,
+      override.rakeCapBB
+    ));
+  }
+
   const bbjFeeBB = scheduleMatch ? scheduleMatch.bbjFeeBB : tier.bbjFeeBB;
 
   return {

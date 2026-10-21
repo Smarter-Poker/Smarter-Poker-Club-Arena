@@ -37,14 +37,14 @@ const FORM = fs.readFileSync(
 
 describe('the panel resolves the price rather than restating a default', () => {
   it('calls getRakeConfig, the function the engine mirrors', () => {
-    expect(FORM).toContain('getRakeConfig(stakes.bb');
+    expect(FORM).toMatch(/getRakeConfig\(\s*stakes\.bb,/);
   });
 
-  it('asks for the published schedule, which is what the row is created with', () => {
+  it('inherits the owning club price and gates the new policy on the serving engine', () => {
     // fn_cash_game_create writes rake_percent -1 / rake_cap_bb -1 (inherit),
     // so RAKE_INHERIT here is the same precedence the engine will apply.
-    expect(FORM).toMatch(/rakePercent: RAKE_INHERIT/);
-    expect(FORM).toMatch(/rakeCapBB: RAKE_INHERIT/);
+    expect(FORM).toContain('resolveRakeOverride(null, rakeClub)');
+    expect(FORM).toMatch(/cashPolicyVersion === 1\s*\? override/);
     const sql = fs.readFileSync(
       path.join(
         process.cwd(),
@@ -73,11 +73,12 @@ describe('what it would show is what the schedule charges', () => {
     '%s resolves to a published price',
     (_label, sb, bb) => {
       const priced = getRakeConfig(bb, 'nlh', sb, {
+        scope: 'midway',
         rakePercent: RAKE_INHERIT,
         rakeCapBB: RAKE_INHERIT,
       });
       expect(priced.rakePercent).toBe(10);
-      expect(priced.rakeCap).toBeGreaterThan(0);
+      expect(priced.rakeCap).toBe(Math.floor(bb * 2.5 * 100 + 1e-8) / 100);
       expect(priced._exactMatch).toBe(true);
       expect(priced.bbjFeeBB).toBeGreaterThan(0);
     }
@@ -86,19 +87,25 @@ describe('what it would show is what the schedule charges', () => {
   it('an override may only move the price DOWN, and the panel shows the held value', () => {
     const p = BLINDS_PRESETS.find((x) => x.label === '1/2')!;
     const schedule = getRakeConfig(p.bb, 'nlh', p.sb, {
+      scope: 'midway',
       rakePercent: RAKE_INHERIT,
       rakeCapBB: RAKE_INHERIT,
     });
     // Ask for the maximum the slider allows, which is worth more than the
     // schedule cap at this stake: 10 BB = $20 against a $5 published cap.
     const greedy = getRakeConfig(p.bb, 'nlh', p.sb, {
+      scope: 'midway',
       rakePercent: 10,
       rakeCapBB: MAX_RAKE_CAP_BB,
     });
     expect(greedy.rakeCap).toBe(schedule.rakeCap);
     expect(greedy.rakePercent).toBeLessThanOrEqual(schedule.rakePercent);
 
-    const modest = getRakeConfig(p.bb, 'nlh', p.sb, { rakePercent: 5, rakeCapBB: 1 });
+    const modest = getRakeConfig(p.bb, 'nlh', p.sb, {
+      scope: 'midway',
+      rakePercent: 5,
+      rakeCapBB: 1,
+    });
     expect(modest.rakePercent).toBe(5);
     expect(modest.rakeCap).toBe(2);
   });

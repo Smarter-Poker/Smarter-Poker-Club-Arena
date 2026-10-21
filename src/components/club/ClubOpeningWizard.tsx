@@ -1,3 +1,4 @@
+import { useCashRakePolicyVersion } from '../../hooks/useCashRakePolicyVersion';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { requiredSeedForStake, SPIN_BOARD_STAKES } from '../../services/SpinActivationService';
@@ -130,11 +131,12 @@ export default function ClubOpeningWizard({
   onComplete,
 }: Props) {
   const toast = useToast();
+  const cashPolicyReady = useCashRakePolicyVersion() === 1;
   const [step, setStep] = useState(0);
   const [tagline, setTagline] = useState(() => (initialTagline ?? '').trim().slice(0, 72));
   const [rakeMode, setRakeMode] = useState<'house' | 'custom'>('house');
   const [rakePercent, setRakePercent] = useState(10);
-  const [rakeCap, setRakeCap] = useState(3);
+  const [rakeCap, setRakeCap] = useState(2.5);
   const packageEconomics =
     welcomePackage?.status === 'provisioned' ? welcomePackage.economics : null;
   const packageBbjFunded = packageEconomics?.bbjEnabled === true;
@@ -606,11 +608,16 @@ export default function ClubOpeningWizard({
                       <input
                         type="number"
                         min="0"
-                        max="10"
+                        max={cashPolicyReady ? 100 : 10}
                         step="0.5"
                         value={rakePercent}
                         onChange={(event) =>
-                          setRakePercent(Math.min(10, Math.max(0, Number(event.target.value))))
+                          setRakePercent(
+                            Math.min(
+                              cashPolicyReady ? 100 : 10,
+                              Math.max(0, Number(event.target.value))
+                            )
+                          )
                         }
                       />
                     </label>
@@ -619,11 +626,15 @@ export default function ClubOpeningWizard({
                       <input
                         type="number"
                         min="0"
-                        max="10"
                         step="0.5"
                         value={rakeCap}
                         onChange={(event) =>
-                          setRakeCap(Math.min(10, Math.max(0, Number(event.target.value))))
+                          setRakeCap(
+                            Math.min(
+                              cashPolicyReady ? Number.MAX_SAFE_INTEGER : 10,
+                              Math.max(0, Number(event.target.value))
+                            )
+                          )
                         }
                       />
                     </label>

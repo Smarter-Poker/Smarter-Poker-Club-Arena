@@ -1475,7 +1475,7 @@ BEGIN
 
   RETURN jsonb_build_object(
     'scope',v_scope,'scope_label',COALESCE(v_label,initcap(v_scope)),
-    'club_id',p_club_id,'union_id',v_union,'club_count',array_length(v_clubs,1),
+    'club_id',p_club_id,'union_id',v_union,'club_count',CASE WHEN v_scope='union' THEN (SELECT count(DISTINCT uc.club_id) FROM public.union_clubs uc WHERE uc.union_id=v_union) ELSE array_length(v_clubs,1) END,
     'range',jsonb_build_object('start',v_start,'end',v_end,'days',v_days),
     'previous_range',jsonb_build_object('start',v_pstart,'end',v_pend,'days',v_days),
     'summary',v_cur,'previous',v_prev,

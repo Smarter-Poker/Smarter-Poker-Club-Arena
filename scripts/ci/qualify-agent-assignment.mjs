@@ -148,4 +148,4 @@ try {
  if(errors.length) throw new AggregateError(errors,'Assignment fixture cleanup incomplete');
 }
 assert.equal(passed,true);
-console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,realtimeTransferReceived:true,openBrowserScopeChangedWithoutReload:true,directBrowserBankDenied:true,destinationPlayerVisible:true,directMemberScope:true,rosterSearchScope:true,agentExportDenied:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRemoved:owned.length}));
+console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,realtimeTransferReceived:true,openBrowserScopeChangedWithoutReload:true,directBrowserBankDenied:true,destinationPlayerVisible:true,directMemberScope:true,rosterSearchScope:true,agentExportDenied:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRetired:owned.length}));

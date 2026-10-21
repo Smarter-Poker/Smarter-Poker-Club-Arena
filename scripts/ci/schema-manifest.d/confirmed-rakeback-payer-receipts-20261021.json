@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/legacy-confirmed-rakeback-payer-receipts-20261021; qualified source pending protected merge and installation; promised names only, not live observations",
+  "functions": [
+    "smarter_private.ensure_rakeback_payer_contracts",
+    "smarter_private.admit_legacy_rakeback_payer_contracts"
+  ]
+}

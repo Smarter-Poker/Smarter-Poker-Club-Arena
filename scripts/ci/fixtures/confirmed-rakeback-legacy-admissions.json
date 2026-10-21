@@ -1,0 +1,1302 @@
+[
+  {
+    "id": 6674,
+    "certificate_md5": "e52d9385c435cad504e2945cdc5e6d58",
+    "club_id": "a0000000-0000-0000-0000-000000000001",
+    "player_id": "4069a4a8-a21e-455e-bb7f-f65f6dd38f34",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "db45022cee78d49d86d28016ed9869fc",
+    "expected_plan_text": "[{\"rake\": 289.52000000000000000000, \"amount\": 40.5300000000000000, \"unrounded\": 40.532800000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 452, \"payer_user_id\": \"d69e25e8-c1a7-4c38-8a7e-30784cba86c3\"}]"
+  },
+  {
+    "id": 6687,
+    "certificate_md5": "442a5fdb9ab1756e5a1ee6ab76960f7e",
+    "club_id": "a0000000-0000-0000-0000-000000000001",
+    "player_id": "7f2fcb20-a23c-4003-b2de-f23c01460d71",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "9f849f1d633488954463b8f86997fd83",
+    "expected_plan_text": "[{\"rake\": 368.02000000000000000000, \"amount\": 184.0100000000000000, \"unrounded\": 184.010000000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 511, \"payer_user_id\": \"89a23158-4840-4e26-b9b6-d837eca341ad\"}]"
+  },
+  {
+    "id": 6707,
+    "certificate_md5": "501f546c61f7d499a88cb14aa90e8f1c",
+    "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+    "player_id": "02f807c7-52a6-470b-a465-4a45b84a9143",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "aa8b4275d46f86934d0f8605ee8344f1",
+    "expected_plan_text": "[{\"rake\": 2251.51000000000000000000, \"amount\": 472.8200000000000000, \"unrounded\": 472.817100000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 1957, \"payer_user_id\": \"cf17ebeb-7337-45c4-97fd-d1a7fd3286ad\"}]"
+  },
+  {
+    "id": 6710,
+    "certificate_md5": "c829d39e782db6327a02dca0398717e5",
+    "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+    "player_id": "171038e5-f50e-4bdd-988f-621a7ce9479c",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "ae07c052aee536a438d702604ea5710d",
+    "expected_plan_text": "[{\"rake\": 432.64000000000000000000, \"amount\": 216.3200000000000000, \"unrounded\": 216.320000000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 1162, \"payer_user_id\": \"bf3263c5-bb5c-4858-9c41-a94afbadcf4e\"}]"
+  },
+  {
+    "id": 6738,
+    "certificate_md5": "20f9e1eb056f2ff83b8eadef674ad797",
+    "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+    "player_id": "f44d72f2-a596-4938-af60-2e36b18de73f",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "a04285a467e0257cec95b03baa06a8e2",
+    "expected_plan_text": "[{\"rake\": 734.15000000000000000000, \"amount\": 88.1000000000000000, \"unrounded\": 88.098000000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 855, \"payer_user_id\": \"4358b50c-cc20-4e2a-a725-3ecc18e52fde\"}]"
+  },
+  {
+    "id": 6851,
+    "certificate_md5": "6b5e682592160dcf8964fc05ba1683bf",
+    "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+    "player_id": "1576452b-3fc4-4fb2-a3c4-4356a6a7b421",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "dc9bd33364b537c44a2547243286593a",
+    "expected_plan_text": "[{\"rake\": 450.97000000000000000000, \"amount\": 45.1000000000000000, \"unrounded\": 45.097000000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 2033, \"payer_user_id\": \"bc1b7867-4e3a-468a-8b84-e80387a21778\"}]"
+  },
+  {
+    "id": 6863,
+    "certificate_md5": "bc42b32066952da191fce84ca942b666",
+    "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+    "player_id": "40f9d2b3-14d5-45f8-a3e7-f89d1449d054",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "ba1dccd6bc33a912a756208cc623987d",
+    "expected_plan_text": "[{\"rake\": 894.00000000000000000000, \"amount\": 348.6600000000000000, \"unrounded\": 348.660000000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 1257, \"payer_user_id\": \"f39893fa-6830-49b6-9f80-b32191328ac0\"}]"
+  },
+  {
+    "id": 6867,
+    "certificate_md5": "f4ebfe5e8ef3bb3e8c203446b76414ed",
+    "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+    "player_id": "4ceb0525-5b49-4138-b761-cf4c16e89a34",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "db543c91941b9f02d08d76f03946249f",
+    "expected_plan_text": "[{\"rake\": 644.76000000000000000000, \"amount\": 109.6100000000000000, \"unrounded\": 109.609200000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 910, \"payer_user_id\": \"be61d864-3269-46de-976b-06871c6ce271\"}]"
+  },
+  {
+    "id": 6902,
+    "certificate_md5": "16c4f9d00693e4108355f8ff0221da88",
+    "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+    "player_id": "ac61ed82-19cf-41b9-a65e-cfd099da1ecf",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "cf6d030b20eeea65b781a5aec276a3fa",
+    "expected_plan_text": "[{\"rake\": 248.20000000000000000000, \"amount\": 37.2300000000000000, \"unrounded\": 37.230000000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 1039, \"payer_user_id\": \"00000000-0000-0000-0000-000000000002\"}]"
+  },
+  {
+    "id": 6908,
+    "certificate_md5": "9a631629ae31e03313353d66eb833d34",
+    "club_id": "a41434bb-8d0c-400a-8f0d-e8b3d65afed4",
+    "player_id": "c8f5500d-03f6-4cc8-a8f7-e439af601aba",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "03470bdda8874fe053701fc99f27fb9f",
+    "expected_plan_text": "[{\"rake\": 114.11000000000000000000, \"amount\": 39.9400000000000000, \"unrounded\": 39.938500000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 466, \"payer_user_id\": \"00000000-0000-0000-0000-000000000002\"}]"
+  },
+  {
+    "id": 7081,
+    "certificate_md5": "335646b91bbdedbdc11094c23cf49d5b",
+    "club_id": "a0000000-0000-0000-0000-000000000001",
+    "player_id": "be61d864-3269-46de-976b-06871c6ce271",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "4ba4c375bf90a516266517cf148a8dc0",
+    "expected_plan_text": "[{\"rake\": 1271.36000000000000000000, \"amount\": 508.5400000000000000, \"unrounded\": 508.544000000000000000000000, \"payer_kind\": \"agent\", \"source_count\": 1605, \"payer_user_id\": \"7f2fcb20-a23c-4003-b2de-f23c01460d71\"}]"
+  },
+  {
+    "id": 7726,
+    "certificate_md5": "0c8431c98ecde2279bb9b99ecf44544e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "005428fe-a366-461f-a23d-ef08f837a94b",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "75ed069c5539f99f271506eeea04e46e",
+    "expected_plan_text": "[{\"rake\": 16.45000000000000000000, \"amount\": 0.82000000000000000000, \"unrounded\": 0.8225000000000000000000, \"payer_kind\": \"club\", \"source_count\": 437, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7727,
+    "certificate_md5": "6cd577f951344de8309f28423aafb345",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "005d5fd2-ae8c-4d21-bb55-f33592a88b31",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "c0e702fcfafb1838e1ef8ee6e17f3300",
+    "expected_plan_text": "[{\"rake\": 5.15000000000000000000, \"amount\": 0.26000000000000000000, \"unrounded\": 0.2575000000000000000000, \"payer_kind\": \"club\", \"source_count\": 70, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7728,
+    "certificate_md5": "b52def591e59ba6bd6986d1f4cceadc1",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0097309f-2864-4d09-b02b-56bca012a9c3",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "84338d179ff512ced49e38026eff324c",
+    "expected_plan_text": "[{\"rake\": 60.79000000000000000000, \"amount\": 3.0400000000000000, \"unrounded\": 3.0395000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2420, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7729,
+    "certificate_md5": "3e71b28f24c59d2e5da174f805abcbb7",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "00bc0957-1913-4beb-a4d1-acab94950690",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "4a9052b188c38166480f892713998084",
+    "expected_plan_text": "[{\"rake\": 15.87000000000000000000, \"amount\": 0.79000000000000000000, \"unrounded\": 0.7935000000000000000000, \"payer_kind\": \"club\", \"source_count\": 642, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7730,
+    "certificate_md5": "2e6cbf6962a148f33754544d054da03c",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "00d92d99-be9f-4e63-8ab0-ec2d6d491bcc",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "7cbe5284180412731c891b441394f941",
+    "expected_plan_text": "[{\"rake\": 35.65000000000000000000, \"amount\": 1.7800000000000000, \"unrounded\": 1.7825000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1915, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7731,
+    "certificate_md5": "f58b282f789e42705fed8e08029f66b6",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "00f3f3a5-32f9-4efb-8ead-c5e681d22504",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "a36cdeacec61ca2279e07b3d36cfe1ed",
+    "expected_plan_text": "[{\"rake\": 7.00000000000000000000, \"amount\": 0.35000000000000000000, \"unrounded\": 0.3500000000000000000000, \"payer_kind\": \"club\", \"source_count\": 98, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7732,
+    "certificate_md5": "26ec9900071954b0f4f7cda22030d89e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "01809c11-71bc-42a6-ad86-2130737d8cf9",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "25c302fd43f19cf484e367ea8106bec5",
+    "expected_plan_text": "[{\"rake\": 14.66000000000000000000, \"amount\": 0.73000000000000000000, \"unrounded\": 0.7330000000000000000000, \"payer_kind\": \"club\", \"source_count\": 567, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7733,
+    "certificate_md5": "a849ae17f0932b62cb9c9349e6901fe5",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "01bd8786-371e-4ba2-85d6-baab469bba07",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "109a3545ab316bd8716b92b5995bbde1",
+    "expected_plan_text": "[{\"rake\": 69.27000000000000000000, \"amount\": 3.4600000000000000, \"unrounded\": 3.4635000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2662, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7734,
+    "certificate_md5": "adf03e5fa9caf2b59321fc2cb3e18a4e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "023a16c3-4ddb-427f-a9f8-cd7b1d9072f1",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "35af7b0f0b225c5705a8de68aea07fb2",
+    "expected_plan_text": "[{\"rake\": 7.91000000000000000000, \"amount\": 0.40000000000000000000, \"unrounded\": 0.3955000000000000000000, \"payer_kind\": \"club\", \"source_count\": 351, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7735,
+    "certificate_md5": "c77b30f93729070ca2aff3462fa9c892",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "02c8d806-24c7-40bd-b5b5-30cf96811e3e",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "90a588d059c8b0814b248322b2ff5a3d",
+    "expected_plan_text": "[{\"rake\": 66.69000000000000000000, \"amount\": 3.3300000000000000, \"unrounded\": 3.3345000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3292, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7736,
+    "certificate_md5": "cff8d4c12d123db793ab5e27e8cfd1ab",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "02f807c7-52a6-470b-a465-4a45b84a9143",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "1743333124ac09bdcbde1b5d292ff4bf",
+    "expected_plan_text": "[{\"rake\": 71.70000000000000000000, \"amount\": 3.5900000000000000, \"unrounded\": 3.5850000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2848, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7737,
+    "certificate_md5": "3b8286f796d5d93961a2b8047fc62169",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "032b7ef6-ef40-4eb7-9a44-21605be733c8",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "d6ab318767df59917a6ea9d2e8b4125a",
+    "expected_plan_text": "[{\"rake\": 70.24000000000000000000, \"amount\": 3.5100000000000000, \"unrounded\": 3.5120000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2921, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7738,
+    "certificate_md5": "60520054d76fabd54eef5f827f7c56e0",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0335d503-5c71-48d7-aaf4-bc8c907adebb",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "54637d037e50fda228e5efd7f9bcb7f0",
+    "expected_plan_text": "[{\"rake\": 5.94000000000000000000, \"amount\": 0.30000000000000000000, \"unrounded\": 0.2970000000000000000000, \"payer_kind\": \"club\", \"source_count\": 81, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7739,
+    "certificate_md5": "826d37faff4960a5cab3417c856934b3",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0362d601-667c-4301-b3a0-e371615a2bc3",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "d21132e85cd8ce1c400ad2300027d7bc",
+    "expected_plan_text": "[{\"rake\": 6.16000000000000000000, \"amount\": 0.31000000000000000000, \"unrounded\": 0.3080000000000000000000, \"payer_kind\": \"club\", \"source_count\": 83, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7740,
+    "certificate_md5": "9819f1f438dc51f255c328ad2178e3b2",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "036f0b55-c601-4d09-982a-5294cf4ea15d",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "3e3c6a72f165bffebab8685739333440",
+    "expected_plan_text": "[{\"rake\": 7.18000000000000000000, \"amount\": 0.36000000000000000000, \"unrounded\": 0.3590000000000000000000, \"payer_kind\": \"club\", \"source_count\": 98, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7741,
+    "certificate_md5": "e2439847dd45a063d5c5e115af19b26b",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "03951af5-7cf1-4164-aaf0-571b647d98d5",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "16e2d21cb88f3c2a82d0b56d4a135099",
+    "expected_plan_text": "[{\"rake\": 63.73000000000000000000, \"amount\": 3.1900000000000000, \"unrounded\": 3.1865000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2906, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7742,
+    "certificate_md5": "170e628fa38623e722e04b650dde68e2",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "03980374-354e-4e65-8aa4-2f284e5e51ee",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "33295ddda78c69997378b3409af307e6",
+    "expected_plan_text": "[{\"rake\": 5.92000000000000000000, \"amount\": 0.30000000000000000000, \"unrounded\": 0.2960000000000000000000, \"payer_kind\": \"club\", \"source_count\": 83, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7743,
+    "certificate_md5": "7cbd7e18e146719f56974559e01b6919",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "046718c5-474f-4108-a15c-c3a1ce1f8d61",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "dae8f083310f58cb96b6580b8ddd9b46",
+    "expected_plan_text": "[{\"rake\": 2.30000000000000000000, \"amount\": 0.12000000000000000000, \"unrounded\": 0.1150000000000000000000, \"payer_kind\": \"club\", \"source_count\": 31, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7744,
+    "certificate_md5": "f288b42b9a195228f1bfc26d07d09463",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "04910a99-8757-4581-8c84-12ba8a454a75",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "cff18bd705335ba7a6c2d58a15cb26a5",
+    "expected_plan_text": "[{\"rake\": 63.34000000000000000000, \"amount\": 3.1700000000000000, \"unrounded\": 3.1670000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3214, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7745,
+    "certificate_md5": "44ae9df2ff694e9ef877d01400e52a8e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "049c89ca-8c3a-4ffa-9f68-38849f956f07",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "3d785ea5b43aae63f22fd1737c1c7f19",
+    "expected_plan_text": "[{\"rake\": 8.53000000000000000000, \"amount\": 0.43000000000000000000, \"unrounded\": 0.4265000000000000000000, \"payer_kind\": \"club\", \"source_count\": 116, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7746,
+    "certificate_md5": "7009f41521823d9759490a4d69f2c712",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "05710b66-e9e0-42f7-a3e9-2841df4a598a",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "63c9e26c4faba339a724f66232975ffa",
+    "expected_plan_text": "[{\"rake\": 6.23000000000000000000, \"amount\": 0.31000000000000000000, \"unrounded\": 0.3115000000000000000000, \"payer_kind\": \"club\", \"source_count\": 85, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7747,
+    "certificate_md5": "79c2f99cb6be89f6ec472a23c3425acd",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "05835920-da9b-4739-8fa2-2901b844d11d",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "f917493b2754d7f1b17e3d586631c096",
+    "expected_plan_text": "[{\"rake\": 57.88000000000000000000, \"amount\": 2.8900000000000000, \"unrounded\": 2.8940000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2487, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7748,
+    "certificate_md5": "dfc8f6e0f2002083798b4c2062730917",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "05a38e8e-ce5f-44fb-82de-782369bf9fab",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "ab2b636011b132419f28b4ed3b6aa5af",
+    "expected_plan_text": "[{\"rake\": 80.26000000000000000000, \"amount\": 4.0100000000000000, \"unrounded\": 4.0130000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3235, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7749,
+    "certificate_md5": "a8bd29e5fa30385d0c22c592ff3a8e16",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "060c946d-db8d-4d27-b1ec-a203435764f1",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "a9bb3a35ea92295a5800d5243c248adf",
+    "expected_plan_text": "[{\"rake\": 52.83000000000000000000, \"amount\": 2.6400000000000000, \"unrounded\": 2.6415000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2518, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7750,
+    "certificate_md5": "844004e6e4ea67f47eb8b2f44c5c22e1",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "06eb013d-57d3-46ed-a069-b6a71df00d13",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "30144ccfe137e963b7aa4bfcb73abaea",
+    "expected_plan_text": "[{\"rake\": 8.46000000000000000000, \"amount\": 0.42000000000000000000, \"unrounded\": 0.4230000000000000000000, \"payer_kind\": \"club\", \"source_count\": 117, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7751,
+    "certificate_md5": "41f13520fb28f96b4207d15e47070f2e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "06f16138-70cd-49e5-89b3-aec698118b81",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "49b6dbe5b825d44ffa67a7b57bd9d526",
+    "expected_plan_text": "[{\"rake\": 54.46000000000000000000, \"amount\": 2.7200000000000000, \"unrounded\": 2.7230000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2617, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7752,
+    "certificate_md5": "2e4d279851d407f9134f43a69d7987b9",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "06f7b8ff-889c-4634-b7bb-7d6c010ad8a1",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "9fd179e61921d779f1ac5edef81aec97",
+    "expected_plan_text": "[{\"rake\": 7.78000000000000000000, \"amount\": 0.39000000000000000000, \"unrounded\": 0.3890000000000000000000, \"payer_kind\": \"club\", \"source_count\": 107, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7753,
+    "certificate_md5": "4021640b585c856b44f4bab02f270d81",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "07140eab-8afc-46b4-ad0e-e7f10a39cb10",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "d79c4013a175a297bff14f9fdc776092",
+    "expected_plan_text": "[{\"rake\": 6.51000000000000000000, \"amount\": 0.33000000000000000000, \"unrounded\": 0.3255000000000000000000, \"payer_kind\": \"club\", \"source_count\": 90, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7754,
+    "certificate_md5": "34e55c8ac2497679ea15646003b33a65",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "07534039-d056-45bb-adcd-1415ed6a8a08",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "6310ef38037c77bd5c632a99a1caebbf",
+    "expected_plan_text": "[{\"rake\": 67.42000000000000000000, \"amount\": 3.3700000000000000, \"unrounded\": 3.3710000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3032, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7755,
+    "certificate_md5": "a29bf0aecb41230e267ef4e5fd64e765",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "07db1c71-d567-46dd-8f92-e922b6d470ae",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "e5db1f5827f5f6e7b5d8d1599fa87192",
+    "expected_plan_text": "[{\"rake\": 55.25000000000000000000, \"amount\": 2.7600000000000000, \"unrounded\": 2.7625000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2669, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7756,
+    "certificate_md5": "de78aa8b1351ea3ae4f28b44d5dcdc67",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "083db75b-95a3-47ae-9989-927134dfa026",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "39561504a767e59f41c9d4c0ef8e6cbb",
+    "expected_plan_text": "[{\"rake\": 8.45000000000000000000, \"amount\": 0.42000000000000000000, \"unrounded\": 0.4225000000000000000000, \"payer_kind\": \"club\", \"source_count\": 118, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7757,
+    "certificate_md5": "5fc218fb8ab024a22d0efd9004925361",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "085524dc-e663-4dad-abc5-8442450cc9f1",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "29fc5f68c228d12b030fdebfc4d3a227",
+    "expected_plan_text": "[{\"rake\": 42.83000000000000000000, \"amount\": 2.1400000000000000, \"unrounded\": 2.1415000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1614, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7758,
+    "certificate_md5": "6cfa70be0c1db8dd39a64dba1c48c43a",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0860d731-0d86-409a-8384-41a17b99a1f4",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "bb30c6c26f896d340d6c4f2d4f1f0310",
+    "expected_plan_text": "[{\"rake\": 58.18000000000000000000, \"amount\": 2.9100000000000000, \"unrounded\": 2.9090000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1965, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7759,
+    "certificate_md5": "b84067b63c344fee33dfa146f53bb89a",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "08fdc13e-eedc-41f6-8790-a91515e14e4f",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "20010cf5064f8216a73e61ed6cedd48b",
+    "expected_plan_text": "[{\"rake\": 7.74000000000000000000, \"amount\": 0.39000000000000000000, \"unrounded\": 0.3870000000000000000000, \"payer_kind\": \"club\", \"source_count\": 108, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7760,
+    "certificate_md5": "ca2d516787a17e153632316868f8de52",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "096d7521-f924-461e-8c3d-5386a7770170",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "e165351030c842b887913871855749b5",
+    "expected_plan_text": "[{\"rake\": 59.03000000000000000000, \"amount\": 2.9500000000000000, \"unrounded\": 2.9515000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2597, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7761,
+    "certificate_md5": "551dc2447015f80968fa75766948fade",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "097fccb7-2ec3-4eff-8050-36862a080e24",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "57cf99af93601df2cc06e44b841864cb",
+    "expected_plan_text": "[{\"rake\": 7.60000000000000000000, \"amount\": 0.38000000000000000000, \"unrounded\": 0.3800000000000000000000, \"payer_kind\": \"club\", \"source_count\": 104, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7762,
+    "certificate_md5": "02d7dc9649a93c5985cabe332b6a0159",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "09dd202d-115b-49ae-afa8-cb528c7b8f72",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "bc9d72dd4f2e644f35a2a8e7bd05f0fc",
+    "expected_plan_text": "[{\"rake\": 33.55000000000000000000, \"amount\": 1.6800000000000000, \"unrounded\": 1.6775000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1591, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7763,
+    "certificate_md5": "c6c62d920a3bc8da218a3bfb0cb7c1a7",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "09faf9f3-ed77-4582-9242-c464cb88fa93",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "6b86d0b8d537009f9b122a65ead3531e",
+    "expected_plan_text": "[{\"rake\": 70.53000000000000000000, \"amount\": 3.5300000000000000, \"unrounded\": 3.5265000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3075, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7764,
+    "certificate_md5": "9ee87eb11a2b8709557f7462d440a0d6",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0a1e9f3a-87c2-4a4b-b386-3b88de4ed054",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "cb1ada98ba8a081cbf70129891e87a55",
+    "expected_plan_text": "[{\"rake\": 67.15000000000000000000, \"amount\": 3.3600000000000000, \"unrounded\": 3.3575000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3171, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7765,
+    "certificate_md5": "d0a37548680c9e9029df3fba0feaa107",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0a558bc1-50c5-4201-b6ca-c7a1e7de1c22",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "c3adc2d6bc187ec3518016c98960e550",
+    "expected_plan_text": "[{\"rake\": 45.50000000000000000000, \"amount\": 2.2800000000000000, \"unrounded\": 2.2750000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1600, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7766,
+    "certificate_md5": "8a769228902cebe07d717db0670498b9",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0a714eff-ef23-4928-b2a7-addecc97b467",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "61876dfffe62e0d5db0d53eb0572b854",
+    "expected_plan_text": "[{\"rake\": 60.34000000000000000000, \"amount\": 3.0200000000000000, \"unrounded\": 3.0170000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2612, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7767,
+    "certificate_md5": "f7013d04409019e491e51bcd103cf8bf",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0a8005e8-5d79-4d8f-809e-e9951ef74651",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "22ab36c56d8b007163c5376df64b5665",
+    "expected_plan_text": "[{\"rake\": 16.44000000000000000000, \"amount\": 0.82000000000000000000, \"unrounded\": 0.8220000000000000000000, \"payer_kind\": \"club\", \"source_count\": 721, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7768,
+    "certificate_md5": "a9db2eed1f502efd27a278a9469eb246",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0a9625c9-f679-4d98-9ebe-d8bb005c45b6",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "5346711b8e8feac36fa6b423aff99090",
+    "expected_plan_text": "[{\"rake\": 58.12000000000000000000, \"amount\": 2.9100000000000000, \"unrounded\": 2.9060000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3035, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7769,
+    "certificate_md5": "52500c61fe1291734a2b1a65e41601ef",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0b1a64c2-8970-4f89-a396-9863e3aa2ccc",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "cbdce44e485f5bec7b23d9e7bc2adbf5",
+    "expected_plan_text": "[{\"rake\": 57.22000000000000000000, \"amount\": 2.8600000000000000, \"unrounded\": 2.8610000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2346, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7770,
+    "certificate_md5": "694fddc51e73f6e50e94fcff558f8c6f",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0b7b31ad-abb6-486d-98be-4af51bd90a02",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "bd0fa898a80a802f5ed449cebce91f7e",
+    "expected_plan_text": "[{\"rake\": 7.03000000000000000000, \"amount\": 0.35000000000000000000, \"unrounded\": 0.3515000000000000000000, \"payer_kind\": \"club\", \"source_count\": 98, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7771,
+    "certificate_md5": "cb61b89b5f655c63a8ab834eaf3bbb1b",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0bb5a13b-e7e5-4f87-ad4c-d102b4f4f61e",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "86deec24e921514bc054967ba9a5fe62",
+    "expected_plan_text": "[{\"rake\": 8.41000000000000000000, \"amount\": 0.42000000000000000000, \"unrounded\": 0.4205000000000000000000, \"payer_kind\": \"club\", \"source_count\": 116, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7772,
+    "certificate_md5": "18fdd9210b320e7f1a9e1a1842fbc13c",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0bea449d-73af-4654-bf19-61db087d7d45",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "7f1eb4ef50aef4f92d6194c00a629104",
+    "expected_plan_text": "[{\"rake\": 29.91000000000000000000, \"amount\": 1.5000000000000000, \"unrounded\": 1.4955000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1359, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7773,
+    "certificate_md5": "d10afc8d5d0cd7d0fce3bea98d3c3ad7",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0c7ad36f-7ad2-4faa-963f-69ee2f9f5062",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "2b23fd8f75b80933cdd735d04b9872ba",
+    "expected_plan_text": "[{\"rake\": 54.92000000000000000000, \"amount\": 2.7500000000000000, \"unrounded\": 2.7460000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2477, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7774,
+    "certificate_md5": "4f4599f56c97196d5e6cb0c08f193925",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0ce13c54-930f-48b5-93a9-df7a38e90b7f",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "81ba5a8b93dd79778c79a5f07ecb86e7",
+    "expected_plan_text": "[{\"rake\": 19.12000000000000000000, \"amount\": 0.96000000000000000000, \"unrounded\": 0.9560000000000000000000, \"payer_kind\": \"club\", \"source_count\": 680, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7775,
+    "certificate_md5": "e62a5fa42232dee6afa19821a7ae50d9",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0d766e23-bdf2-437a-87f4-0268605c8120",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "c06ed068e94bc39b9c3c69a2d775e29f",
+    "expected_plan_text": "[{\"rake\": 6.10000000000000000000, \"amount\": 0.31000000000000000000, \"unrounded\": 0.3050000000000000000000, \"payer_kind\": \"club\", \"source_count\": 83, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7776,
+    "certificate_md5": "8fcccb00c59170609a89bbbc41a47ceb",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0d8a22d1-8ea8-40d7-a821-10547198ff6c",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "978d9b9eaf02eb021c4f566b081e559f",
+    "expected_plan_text": "[{\"rake\": 8.80000000000000000000, \"amount\": 0.44000000000000000000, \"unrounded\": 0.4400000000000000000000, \"payer_kind\": \"club\", \"source_count\": 469, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7777,
+    "certificate_md5": "758181eb3e0a0d6fb846b252860f0c78",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0d94b1d9-c7a6-472f-94c7-8728718c92f8",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "c961203f07796c839384bcc867671bca",
+    "expected_plan_text": "[{\"rake\": 10.70000000000000000000, \"amount\": 0.54000000000000000000, \"unrounded\": 0.5350000000000000000000, \"payer_kind\": \"club\", \"source_count\": 604, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7778,
+    "certificate_md5": "29781cb2b2065d5dd3d9ab15512a3aca",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0dd67dd0-12b4-4f2c-85fc-c85a702fff2e",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "bd4c108e34d72893d031a9aad7965158",
+    "expected_plan_text": "[{\"rake\": 6.93000000000000000000, \"amount\": 0.35000000000000000000, \"unrounded\": 0.3465000000000000000000, \"payer_kind\": \"club\", \"source_count\": 96, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7779,
+    "certificate_md5": "f88670929857b21c69a197a1e4f09de3",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0ea03648-b12d-4ae7-ba65-aeaff4fcea34",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "d1a32085552a43beb6442e69e5cbe739",
+    "expected_plan_text": "[{\"rake\": 6.75000000000000000000, \"amount\": 0.34000000000000000000, \"unrounded\": 0.3375000000000000000000, \"payer_kind\": \"club\", \"source_count\": 96, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7780,
+    "certificate_md5": "ead4de504b5f7d3328c2c7b18544454f",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0f14f372-0c43-47ff-9257-1324a7e94488",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "12d21e674a04ec347f8552818de24856",
+    "expected_plan_text": "[{\"rake\": 77.01000000000000000000, \"amount\": 3.8500000000000000, \"unrounded\": 3.8505000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3264, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7781,
+    "certificate_md5": "b54b1431b7bee19aa15ad786d673dc7c",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0f40b50c-8ce5-41ec-9537-b58b12385937",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "5e6f7252efb26015ecbbd61d7f780ef3",
+    "expected_plan_text": "[{\"rake\": 8.69000000000000000000, \"amount\": 0.43000000000000000000, \"unrounded\": 0.4345000000000000000000, \"payer_kind\": \"club\", \"source_count\": 118, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7782,
+    "certificate_md5": "7522caccae06a5f368e7d9b0563b5429",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0f5f1d65-7ce1-4250-93fe-49078f4f14d1",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "908b16286b03e4580dc8110d1b2e93de",
+    "expected_plan_text": "[{\"rake\": 10.94000000000000000000, \"amount\": 0.55000000000000000000, \"unrounded\": 0.5470000000000000000000, \"payer_kind\": \"club\", \"source_count\": 514, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7783,
+    "certificate_md5": "a6c26061e485d160d19e3ab60cabf59b",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0fb78895-f4e0-4759-9403-a49a5612e0b5",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "6d35c8f963289dc8070583e3b5daa109",
+    "expected_plan_text": "[{\"rake\": 5.87000000000000000000, \"amount\": 0.29000000000000000000, \"unrounded\": 0.2935000000000000000000, \"payer_kind\": \"club\", \"source_count\": 272, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7784,
+    "certificate_md5": "e40e87532a10174c7eb626a59a2a82a0",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "0fdb265e-7a56-4ecf-8410-eecd49923e42",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "4ae80b80ba3870291b2c03576e5779a8",
+    "expected_plan_text": "[{\"rake\": 58.45000000000000000000, \"amount\": 2.9200000000000000, \"unrounded\": 2.9225000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2965, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7785,
+    "certificate_md5": "b4a3e0d633138a4b74dfa5402d808f93",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "1000eabd-a6a4-4bdc-acfc-11019ce61b0c",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "d4e29e9c72850d403f3116799bdcc3de",
+    "expected_plan_text": "[{\"rake\": 6.80000000000000000000, \"amount\": 0.34000000000000000000, \"unrounded\": 0.3400000000000000000000, \"payer_kind\": \"club\", \"source_count\": 94, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7786,
+    "certificate_md5": "7d6248a081389537ebd9a29ee1dfac29",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "10d08b4f-f6da-41ea-a66c-e97a0d4930e0",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "7197961468699f71194e18708f7ab829",
+    "expected_plan_text": "[{\"rake\": 59.59000000000000000000, \"amount\": 2.9800000000000000, \"unrounded\": 2.9795000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2427, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7787,
+    "certificate_md5": "8ade38040d0018c626300d2615d87b0e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "10f7c3e0-b291-4039-a157-42e5609fe531",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "3b7284b7317ed761ea46b31216bc797f",
+    "expected_plan_text": "[{\"rake\": 5.49000000000000000000, \"amount\": 0.27000000000000000000, \"unrounded\": 0.2745000000000000000000, \"payer_kind\": \"club\", \"source_count\": 276, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7788,
+    "certificate_md5": "93ae1769bd958f12b9d8bc82acab5238",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "1110a1ed-fcf2-423b-9d9a-bc615a16cbd5",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "49ed074b0981de05ef9c671b1c3a096e",
+    "expected_plan_text": "[{\"rake\": 64.59000000000000000000, \"amount\": 3.2300000000000000, \"unrounded\": 3.2295000000000000000000, \"payer_kind\": \"club\", \"source_count\": 4077, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7789,
+    "certificate_md5": "1c53ad5ff264ef11317144093fd6d04c",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "113fc1bc-25f5-4508-8244-2aa3aa04a3cf",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "d2523786add0bf4777d78afdf01c0e6b",
+    "expected_plan_text": "[{\"rake\": 7.94000000000000000000, \"amount\": 0.40000000000000000000, \"unrounded\": 0.3970000000000000000000, \"payer_kind\": \"club\", \"source_count\": 112, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7790,
+    "certificate_md5": "bef55f828c01520b5a0a3091fbabcdd3",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "11758a4f-55bc-4758-861a-bee6830c70b8",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "2519d693b421eaa3e8a30392efc1d723",
+    "expected_plan_text": "[{\"rake\": 6.60000000000000000000, \"amount\": 0.33000000000000000000, \"unrounded\": 0.3300000000000000000000, \"payer_kind\": \"club\", \"source_count\": 93, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7791,
+    "certificate_md5": "ffad1031733655085d78a5c28a3048f5",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "1179f15e-dac7-4b7e-80df-5e525a498ddd",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "bf566da843e01f33a3050689d86e5b35",
+    "expected_plan_text": "[{\"rake\": 49.50000000000000000000, \"amount\": 2.4800000000000000, \"unrounded\": 2.4750000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2744, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7792,
+    "certificate_md5": "e5df0fe73b55842bbf9571834074dad1",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "119d8e7f-1b09-4299-810e-89dc9a6a6277",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "4d349c6d439899dbf86ebfe9b82d413a",
+    "expected_plan_text": "[{\"rake\": 55.63000000000000000000, \"amount\": 2.7800000000000000, \"unrounded\": 2.7815000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2228, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7793,
+    "certificate_md5": "75b1c26a374163078bf8006d267b354c",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "11d2e4ff-a1f7-4845-bb96-a0626eee0d57",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "b75b30fcd000487996b6a6b2b30ce9fd",
+    "expected_plan_text": "[{\"rake\": 15.55000000000000000000, \"amount\": 0.78000000000000000000, \"unrounded\": 0.7775000000000000000000, \"payer_kind\": \"club\", \"source_count\": 715, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7794,
+    "certificate_md5": "ecc24d21152eb8c69240b04d45a95acb",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "127bff9a-8483-4018-80ac-21d7f76ce5c7",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "3dc16967076ac66000f30055363f3057",
+    "expected_plan_text": "[{\"rake\": 37.29000000000000000000, \"amount\": 1.8600000000000000, \"unrounded\": 1.8645000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1917, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7795,
+    "certificate_md5": "eb48b117638b069cbf5be6c51c8315a3",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "13133bc4-9139-4066-8b55-8edd31ef2318",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "ffa9b88d0cd9d3b988cd7ae5556eb144",
+    "expected_plan_text": "[{\"rake\": 7.93000000000000000000, \"amount\": 0.40000000000000000000, \"unrounded\": 0.3965000000000000000000, \"payer_kind\": \"club\", \"source_count\": 110, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7796,
+    "certificate_md5": "34598abcb97dc9242026b77fa556b90b",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "137ca64e-eb2a-48a1-84ad-1db2b59aa51e",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "af237fcf4bac4e8142cefb3299e78fdc",
+    "expected_plan_text": "[{\"rake\": 21.82000000000000000000, \"amount\": 1.0900000000000000, \"unrounded\": 1.0910000000000000000000, \"payer_kind\": \"club\", \"source_count\": 819, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7797,
+    "certificate_md5": "ec21858ae22410ff8a77fc5cf3110fd5",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "1545d652-3c85-429f-9354-a753dd6c8afe",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "b37b2af7ab01fc5bfb980e1137ce0cfe",
+    "expected_plan_text": "[{\"rake\": 10.27000000000000000000, \"amount\": 0.51000000000000000000, \"unrounded\": 0.5135000000000000000000, \"payer_kind\": \"club\", \"source_count\": 537, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7798,
+    "certificate_md5": "d11c7f7edce9fcabe771e66fbe56c51c",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "171038e5-f50e-4bdd-988f-621a7ce9479c",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "89555c6bbe90057ef8c16508a6e6b4bb",
+    "expected_plan_text": "[{\"rake\": 59.00000000000000000000, \"amount\": 2.9500000000000000, \"unrounded\": 2.9500000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2834, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7799,
+    "certificate_md5": "eb85a592b62d248954042f6a8880f27e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "194e5206-bd4d-4ea5-ba2d-142c8bf8a258",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "79d577d1feded06af16ad0fb6519a406",
+    "expected_plan_text": "[{\"rake\": 43.73000000000000000000, \"amount\": 2.1900000000000000, \"unrounded\": 2.1865000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2050, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7800,
+    "certificate_md5": "f6a3f03a4e045fe7322f96fc12692de4",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "19ab1b66-ddba-4b06-bea0-f55c9a3100c7",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "99133388d7e0a172f0f8df87b1e1d714",
+    "expected_plan_text": "[{\"rake\": 38.95000000000000000000, \"amount\": 1.9500000000000000, \"unrounded\": 1.9475000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2299, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7801,
+    "certificate_md5": "965567ffd3d874bf43c5f26585d7ec44",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "19de9af5-6576-4ebb-92c6-1fe53599f782",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "43504c56f852c90596bc084d98cd604f",
+    "expected_plan_text": "[{\"rake\": 32.90000000000000000000, \"amount\": 1.6500000000000000, \"unrounded\": 1.6450000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1529, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7802,
+    "certificate_md5": "fd5af694be3e3ea60e448bbd73fdc337",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "1beebb19-4155-47eb-be8a-4af53ab30432",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "52a4d590b6720698bcec841589716cf4",
+    "expected_plan_text": "[{\"rake\": 11.36000000000000000000, \"amount\": 0.57000000000000000000, \"unrounded\": 0.5680000000000000000000, \"payer_kind\": \"club\", \"source_count\": 497, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7803,
+    "certificate_md5": "540a04e73fac975c4a65acd55d4f97fe",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "1cdb67d7-27af-4709-817c-9270bd915249",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "9014cf34ea57f9c812f5cd72fb453948",
+    "expected_plan_text": "[{\"rake\": 2.34000000000000000000, \"amount\": 0.12000000000000000000, \"unrounded\": 0.1170000000000000000000, \"payer_kind\": \"club\", \"source_count\": 172, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7804,
+    "certificate_md5": "4f7f230e514906ba229b7f235878fc03",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "1cf5f118-0af5-482b-9ab9-8cc7043fb20b",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "4228881e02023abf67508e890340987b",
+    "expected_plan_text": "[{\"rake\": 13.00000000000000000000, \"amount\": 0.65000000000000000000, \"unrounded\": 0.6500000000000000000000, \"payer_kind\": \"club\", \"source_count\": 542, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7805,
+    "certificate_md5": "95fea08f989a1ea02df688ab386d2d8e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "204a6a80-8b83-4cff-98ed-e89f4da7c4dc",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "8eca6190ad1ce433ce66619dfbf630df",
+    "expected_plan_text": "[{\"rake\": 54.65000000000000000000, \"amount\": 2.7300000000000000, \"unrounded\": 2.7325000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2880, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7806,
+    "certificate_md5": "8f3180128d7e4bb1ff3d11148748d79e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "2072ad2e-869c-4537-a3dd-0def0c889401",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "7747f6efa05ea0a705a9a8b2e1621b78",
+    "expected_plan_text": "[{\"rake\": 50.06000000000000000000, \"amount\": 2.5000000000000000, \"unrounded\": 2.5030000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2285, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7807,
+    "certificate_md5": "81c82c2a3516971bee3d32b126aab880",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "20f6af61-75e1-4954-b61a-9042f8a9e638",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "74cac61b3710dbf268804e34094294db",
+    "expected_plan_text": "[{\"rake\": 15.11000000000000000000, \"amount\": 0.76000000000000000000, \"unrounded\": 0.7555000000000000000000, \"payer_kind\": \"club\", \"source_count\": 614, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7808,
+    "certificate_md5": "597d59afeb75c7abbd07ca0ddd2bb30b",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "2143ec37-02ed-4712-9642-a56f1945c379",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "7b93308a049e8128bed8eb3ba01a326f",
+    "expected_plan_text": "[{\"rake\": 54.38000000000000000000, \"amount\": 2.7200000000000000, \"unrounded\": 2.7190000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2059, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7809,
+    "certificate_md5": "fa5633f1e6f2b6d70fbcccbd13771de3",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "227ba92c-9b8c-4705-ba76-181f1f697638",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "37996978c8e07dcfe7b407558a2fbc7c",
+    "expected_plan_text": "[{\"rake\": 37.05000000000000000000, \"amount\": 1.8500000000000000, \"unrounded\": 1.8525000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1964, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7810,
+    "certificate_md5": "0da685039abc8c86c1932209a6ee9cbe",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "22f02ebc-4757-4e06-99e6-f7e4a95720b4",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "b1eed7b602a217a14a032c449a767f05",
+    "expected_plan_text": "[{\"rake\": 68.55000000000000000000, \"amount\": 3.4300000000000000, \"unrounded\": 3.4275000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3136, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7811,
+    "certificate_md5": "a66479a0a04bee9fd6ce03e7a7384a7a",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "24219aee-cce4-4660-9e80-fac05602aeae",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "f155d40d2fc539123bdeb30df73d0bca",
+    "expected_plan_text": "[{\"rake\": 71.40000000000000000000, \"amount\": 3.5700000000000000, \"unrounded\": 3.5700000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3573, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7812,
+    "certificate_md5": "94e9db049ad3b00796266d155c56f4d5",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "2421e6ad-5126-43b5-94a2-80d8edaf490f",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "e8288759092bed7298915f2cfd0492fc",
+    "expected_plan_text": "[{\"rake\": 15.40000000000000000000, \"amount\": 0.77000000000000000000, \"unrounded\": 0.7700000000000000000000, \"payer_kind\": \"club\", \"source_count\": 741, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7813,
+    "certificate_md5": "e1820beb1ceb7a4083873f244ba6c06b",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "24d7c0ff-1b60-453c-8095-836594f30125",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "5cd663ba266fa2861722ab890548ad9c",
+    "expected_plan_text": "[{\"rake\": 35.92000000000000000000, \"amount\": 1.8000000000000000, \"unrounded\": 1.7960000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1863, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7814,
+    "certificate_md5": "c01c6969ea8a7fb8031aaecce194c0d8",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "25842c55-5295-4c44-ba0d-540dfaebb24a",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "46dd40071d7a156c0c70533749bca2b1",
+    "expected_plan_text": "[{\"rake\": 16.93000000000000000000, \"amount\": 0.85000000000000000000, \"unrounded\": 0.8465000000000000000000, \"payer_kind\": \"club\", \"source_count\": 618, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7815,
+    "certificate_md5": "1f5ac04f653e00bc06047bb1a126bce7",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "2610f833-88cd-4a55-b255-75b75070b5da",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "6ad12fe4a3f17f5604c9f621d2cc230a",
+    "expected_plan_text": "[{\"rake\": 26.06000000000000000000, \"amount\": 1.3000000000000000, \"unrounded\": 1.3030000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1956, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7816,
+    "certificate_md5": "42e148e10476ca94ca369388949c0570",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "26fc77c4-60fc-406b-bf17-5f4b35777ec7",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "a08c60a40f6118836c9e11932f51c681",
+    "expected_plan_text": "[{\"rake\": 55.93000000000000000000, \"amount\": 2.8000000000000000, \"unrounded\": 2.7965000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2586, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7817,
+    "certificate_md5": "884607c714afc1c48681bb6404db2563",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "27ebd8e0-2d90-4c96-882d-cff35f91c53b",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "6010c2db2331573a6f6ff4160c401dd6",
+    "expected_plan_text": "[{\"rake\": 9.24000000000000000000, \"amount\": 0.46000000000000000000, \"unrounded\": 0.4620000000000000000000, \"payer_kind\": \"club\", \"source_count\": 567, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7818,
+    "certificate_md5": "6526a39650b09e846c25b4ffa83c86f4",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "28413120-b60a-4ae1-a2e4-3c771aed4c5b",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "f00bd8ff252cc8e240b0e05b67799dc9",
+    "expected_plan_text": "[{\"rake\": 15.20000000000000000000, \"amount\": 0.76000000000000000000, \"unrounded\": 0.7600000000000000000000, \"payer_kind\": \"club\", \"source_count\": 674, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7819,
+    "certificate_md5": "980c12146ce92f76350c0287c3680761",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "285055c6-96a7-4a60-9033-51f83f49dbcb",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "f73ed929926eecafb757a0e75f3aebcf",
+    "expected_plan_text": "[{\"rake\": 25.33000000000000000000, \"amount\": 1.2700000000000000, \"unrounded\": 1.2665000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1716, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7820,
+    "certificate_md5": "349da431b6d6fd3383882b7174b396ea",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "2936c42b-ebe2-4fd8-bc70-eee5e263d014",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "8fe2a1d8aabab0f4b51d553ca645ec90",
+    "expected_plan_text": "[{\"rake\": 29.04000000000000000000, \"amount\": 1.4500000000000000, \"unrounded\": 1.4520000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2060, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7821,
+    "certificate_md5": "852aeac2136fdd45f9e55ef3168ff869",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "2958f800-0cca-43a8-8486-08e524434199",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "9fa80945839af41fbbd25ef402012566",
+    "expected_plan_text": "[{\"rake\": 29.80000000000000000000, \"amount\": 1.4900000000000000, \"unrounded\": 1.4900000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2122, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7822,
+    "certificate_md5": "b06b4dab6eb651c3c12c5235926770d7",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "3086452e-9b29-47eb-b6f8-5a9692889753",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "8e365cc445960153d486040031508c14",
+    "expected_plan_text": "[{\"rake\": 39.89000000000000000000, \"amount\": 1.9900000000000000, \"unrounded\": 1.9945000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2227, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7823,
+    "certificate_md5": "c5f95d930827151843ef75a51ea7e842",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "3c1d70c8-c46a-4e2c-bcc8-dbe53798799a",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "18a76fc1e2ce1060b1778abe07d7c986",
+    "expected_plan_text": "[{\"rake\": 51.98000000000000000000, \"amount\": 2.6000000000000000, \"unrounded\": 2.5990000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2318, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7824,
+    "certificate_md5": "7b770b853ef5a36ab44f910434da8f72",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "3e4ff3e2-f212-4966-abe7-4988e5a62704",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "a830ead7814ad08e889470f7bd1b0bf9",
+    "expected_plan_text": "[{\"rake\": 58.28000000000000000000, \"amount\": 2.9100000000000000, \"unrounded\": 2.9140000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3152, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7825,
+    "certificate_md5": "0b555405593a680d59826fe0c45df3a3",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "3faa1e32-afb8-4b21-9530-2a9fd81c5766",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "0867cf47ffcc5a55407a8ba5a6bf089a",
+    "expected_plan_text": "[{\"rake\": 59.22000000000000000000, \"amount\": 2.9600000000000000, \"unrounded\": 2.9610000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2903, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7826,
+    "certificate_md5": "aa7d7fde380cbebc37a541c7d9a10b58",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "47dd33b3-1bd6-41a7-951e-8582dae98c5a",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "abb61df10cab81a970d50633f521e94a",
+    "expected_plan_text": "[{\"rake\": 45.85000000000000000000, \"amount\": 2.2900000000000000, \"unrounded\": 2.2925000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2425, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7827,
+    "certificate_md5": "c5d8812e1286e4c3087043beb66898f5",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "4a686160-2102-4cba-b3e5-cfa3b1856602",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "424abe89a933d55f5008045c26ddc436",
+    "expected_plan_text": "[{\"rake\": 49.21000000000000000000, \"amount\": 2.4600000000000000, \"unrounded\": 2.4605000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2527, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7828,
+    "certificate_md5": "bc3b24aad5274156cd3ee631e7241ea1",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "4ce9fa05-703f-40e4-a14e-40cffc3ba305",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "14c0b46d2e8a372a979576432d7bd7d0",
+    "expected_plan_text": "[{\"rake\": 22.32000000000000000000, \"amount\": 1.1200000000000000, \"unrounded\": 1.1160000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1623, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7829,
+    "certificate_md5": "5b5d482008202f12b948a2330f57dd1f",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "4ed0fef4-d9fd-41d0-852d-4a52f4193dd2",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "05e48f16f24f4012f4896be51b634133",
+    "expected_plan_text": "[{\"rake\": 43.11000000000000000000, \"amount\": 2.1600000000000000, \"unrounded\": 2.1555000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1947, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7830,
+    "certificate_md5": "165b539c9e475a5769a8f5723c7a092e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "4ffcc7ec-15a1-4c80-8309-e893ef9db022",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "81db4aaa720a8b741f85b39c4985d93d",
+    "expected_plan_text": "[{\"rake\": 54.20000000000000000000, \"amount\": 2.7100000000000000, \"unrounded\": 2.7100000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2521, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7831,
+    "certificate_md5": "e2323ebc905d86af641d3f4c586abb60",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "6162b471-d011-41f7-ad89-9a8d856c9ffb",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "28291462ef3afa8edb159750914f6799",
+    "expected_plan_text": "[{\"rake\": 32.86000000000000000000, \"amount\": 1.6400000000000000, \"unrounded\": 1.6430000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1920, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7832,
+    "certificate_md5": "608387f2a3bf2ce97a5401077592efa5",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "62f0d4da-b736-4629-ad14-894e432d0f04",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "a064168848d7464ee666dbbdb1d1a5b9",
+    "expected_plan_text": "[{\"rake\": 26.96000000000000000000, \"amount\": 1.3500000000000000, \"unrounded\": 1.3480000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1237, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7833,
+    "certificate_md5": "eba72c5c1c44a0818c188049366528d7",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "697d34f5-fe65-422a-b624-5a4957ef4196",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "0cc858c283084617a5646504f65e8ac9",
+    "expected_plan_text": "[{\"rake\": 26.72000000000000000000, \"amount\": 1.3400000000000000, \"unrounded\": 1.3360000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1438, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7834,
+    "certificate_md5": "f2e914a1f06e09b223dc1cc512f9bdc7",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "6d301010-3315-4694-b55d-812ae56110c5",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "50efebcf5577f0fb084a29aa0580145a",
+    "expected_plan_text": "[{\"rake\": 52.05000000000000000000, \"amount\": 2.6000000000000000, \"unrounded\": 2.6025000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3109, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7835,
+    "certificate_md5": "6509de4a486dbdd0917c07f5cfe07fce",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "778f8033-c9e2-45fa-98ca-935f38e2b8ca",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "c22d3719b2a09ed2ccc0bb97cdcc4ec5",
+    "expected_plan_text": "[{\"rake\": 58.11000000000000000000, \"amount\": 2.9100000000000000, \"unrounded\": 2.9055000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3465, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7836,
+    "certificate_md5": "11eeb9870f0f85610905269674e8b7fe",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "78d65d90-7234-4d43-816e-9c29e81dd33d",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "2117174da5eea749309eecff7dae13df",
+    "expected_plan_text": "[{\"rake\": 50.20000000000000000000, \"amount\": 2.5100000000000000, \"unrounded\": 2.5100000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2386, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7837,
+    "certificate_md5": "7920ea52f2e834f72499182b54edb92a",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "7d1b678f-cea8-41fc-873e-2ec47ea5c318",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "53ed27caa5291942b076d8a4b6305736",
+    "expected_plan_text": "[{\"rake\": 49.56000000000000000000, \"amount\": 2.4800000000000000, \"unrounded\": 2.4780000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2809, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7838,
+    "certificate_md5": "13f6f44dddfc4f131876452214cdcb71",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "7d7a80a2-092c-4338-878a-0416611b249c",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "520d2235cf2203379d2146f2da60b53a",
+    "expected_plan_text": "[{\"rake\": 27.30000000000000000000, \"amount\": 1.3700000000000000, \"unrounded\": 1.3650000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1671, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7839,
+    "certificate_md5": "d3a347ac3eee5062026c42b3a0fab65f",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "82861181-5a96-4e7b-bfa4-b75ca2bd145f",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "f4cd34ff72c14d2518f9a0ea5f12f542",
+    "expected_plan_text": "[{\"rake\": 45.44000000000000000000, \"amount\": 2.2700000000000000, \"unrounded\": 2.2720000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2617, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7840,
+    "certificate_md5": "5855e8c8a6655e8f94865a2479eb826e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "84385ab0-d3ea-44c1-8e93-6fa6b1d25457",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "878b2df2b3a46bc2e7f7451f8cf6d4bb",
+    "expected_plan_text": "[{\"rake\": 24.99000000000000000000, \"amount\": 1.2500000000000000, \"unrounded\": 1.2495000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1681, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7841,
+    "certificate_md5": "53c904214a830ae2f89565e807e34536",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "86468a23-14cb-4602-92f7-7e270197fc3c",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "071c3fc73e1b59a8bd0d843965825067",
+    "expected_plan_text": "[{\"rake\": 57.86000000000000000000, \"amount\": 2.8900000000000000, \"unrounded\": 2.8930000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3811, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7842,
+    "certificate_md5": "0d12a32d11351b2be1fe2ead07dd8f09",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "8e5a0e02-7832-416d-970f-f6f74e181dcb",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "15e299fb032035608f06e7696e6c3b56",
+    "expected_plan_text": "[{\"rake\": 50.91000000000000000000, \"amount\": 2.5500000000000000, \"unrounded\": 2.5455000000000000000000, \"payer_kind\": \"club\", \"source_count\": 3120, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7843,
+    "certificate_md5": "df4fbab0979566f38546ca3af0fa9007",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "92cd4964-6206-4989-9730-b7959bae6dc5",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "a331ec9ca2b013fc70e099481eccabfe",
+    "expected_plan_text": "[{\"rake\": 51.91000000000000000000, \"amount\": 2.6000000000000000, \"unrounded\": 2.5955000000000000000000, \"payer_kind\": \"club\", \"source_count\": 2646, \"payer_user_id\": null}]"
+  },
+  {
+    "id": 7844,
+    "certificate_md5": "9a75d6f61fd43cc65f2ee228b7493f7e",
+    "club_id": "e14bc9f7-736d-425f-8f2c-e78305ebac1d",
+    "player_id": "a23ca5c9-b748-482f-9b59-9db35f7aa996",
+    "period_start": "2026-10-12",
+    "period_end": "2026-10-18",
+    "source_fingerprint": "7ba7df1c048e924fb7f100d7d65ebcfb",
+    "expected_plan_text": "[{\"rake\": 25.81000000000000000000, \"amount\": 1.2900000000000000, \"unrounded\": 1.2905000000000000000000, \"payer_kind\": \"club\", \"source_count\": 1801, \"payer_user_id\": null}]"
+  }
+]

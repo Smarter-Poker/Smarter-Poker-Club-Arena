@@ -14,8 +14,9 @@ const seat='fn_seat_late_registrant_before_maintenance_gate';
 const id=n=>`11111111-1111-4111-8111-${String(n).padStart(12,'0')}`;
 let running=false;
 try{
- run('initdb',['-D',path.join(dir,'db'),'-U','postgres','-A','trust','--no-locale','--encoding=UTF8']);
+ run('initdb',['-D',path.join(dir,'db'),'-U','fixture_super','-A','trust','--no-locale','--encoding=UTF8']);
  run('pg_ctl',['-D',path.join(dir,'db'),'-l',path.join(dir,'log'),'-o',`-k ${socket} -p 55478 -c listen_addresses='' -c shared_buffers=16MB -c max_connections=10`,'-w','start']);running=true;
+ run('psql',['-X','-v','ON_ERROR_STOP=1','-h',socket,'-p','55478','-U','fixture_super','-d','postgres','-c','CREATE ROLE postgres LOGIN NOSUPERUSER CREATEROLE;GRANT ALL ON SCHEMA public TO postgres;']);
  sql(`CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role;
  CREATE TABLE tournaments(id uuid PRIMARY KEY,status text,starting_chips int,club_id uuid);
  CREATE TABLE tournament_players(tournament_id uuid,user_id uuid,chips int,table_id uuid,seat_number int,status text);
@@ -37,12 +38,17 @@ try{
  INSERT INTO tournaments VALUES('${id(1)}','RUNNING',1000,'${id(3)}');
  INSERT INTO tables VALUES('${id(2)}','${id(1)}',9,'running',false,now(),0);
  INSERT INTO tournament_players VALUES('${id(1)}','${id(4)}',0,NULL,NULL,'registered');`);
+ assert.equal(sql('SELECT rolsuper FROM pg_roles WHERE rolname=current_user'),'f','managed installer is not a superuser');
+ assert.equal(sql("SELECT current_setting('app.money_path',true) IS NULL"),'t','fresh installer connection has no custom GUC registered');
+ let freshRefusal;try{sql(`ALTER FUNCTION ${seat}(uuid,uuid) SET app.money_path TO 'fn_seat_late_registrant'`);}catch(e){freshRefusal=String(e.stderr);}
+ assert.ok(freshRefusal?.includes('permission denied to set parameter'), 'original bare ALTER refuses in a fresh non-superuser connection');
  const call=`SELECT ${seat}('${id(1)}','${id(4)}')`;
  const parentCall=`BEGIN;SET LOCAL app.money_path='fn_settle_satellite_tournament';${call};INSERT INTO wallet_transactions VALUES('${id(4)}',6,'prize','satellite remainder','${id(1)}');ROLLBACK;`;
  let before;try{sql(parentCall);}catch(e){before=String(e.stderr);}assert.ok(before?.includes('R3: a prize credit of 6')&&before.includes('money_path=fn_seat_late_registrant'),'actual leaked seat context refuses real satellite remainder before fix');
  assert.equal(sql('SELECT count(*) FROM table_seats'),'0','refused transaction leaves no chair');
  const migration=readFileSync(path.join(root,'supabase/migrations/20261021173509_late_seat_preserves_callers_money_path.sql'),'utf8');sql(migration);
  sql(parentCall);
+ const absent=sql(`BEGIN;${call};SELECT NULLIF(current_setting('app.money_path',true),'') IS NULL;ROLLBACK;`);assert.ok(absent.split('\n').includes('t'),'absent caller remains semantically absent, never seat authority');
  assert.equal(sql('SELECT count(*) FROM table_seats'),'0');assert.equal(sql('SELECT count(*) FROM wallet_transactions'),'0');
  for(const caller of ['fn_settle_satellite_tournament','fn_settle_tournament_obligation','other_authority','']){
   const q=sql(`BEGIN;SELECT set_config('app.money_path','${caller}',true);${call};SELECT quote_nullable(current_setting('app.money_path',true));ROLLBACK;`);assert.ok(q.split('\n').includes("'"+caller+"'"),`success restores ${caller}`);

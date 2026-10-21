@@ -56,6 +56,8 @@ BEGIN
   PERFORM public.fn_poker_diamond_guarantee_release(p_tournament_id, 'complete');
   RETURN jsonb_build_object('ok',true,'closed',v_n,'still_held',0);
 END $function$;
+-- A watched guard is redefined here on purpose; record it in this transaction.
+SELECT public.fn_ca_declare_guard_redefinition('fn_poker_diamond_tournament_close_custody', 'migration 20261021231028_tournament_close_custody_locks_owners_in_id_order');
 -- Unchanged access: the terminal settlement owner calls it; no API role does.
 REVOKE ALL ON FUNCTION public.fn_poker_diamond_tournament_close_custody(uuid) FROM PUBLIC, anon, authenticated, service_role;
 DO $post$ BEGIN

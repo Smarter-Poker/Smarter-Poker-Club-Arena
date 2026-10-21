@@ -27,14 +27,25 @@ const unionClubs = [
 ];
 const fromChain = (table?: string) => {
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'contains']) {
+  let projection = '';
+  chain.select = (columns: string) => {
+    projection = columns;
+    return chain;
+  };
+  for (const m of ['eq', 'in', 'order', 'limit', 'contains']) {
     chain[m] = () => chain;
   }
-  chain.then = (resolve: (v: { data: unknown[]; error: null | { message: string } }) => void) =>
+  chain.then = (resolve: (v: { data: unknown[]; error: null | { message: string } }) => void) => {
+    // Production grants club identity columns but protects financial columns.
+    // Selecting the embedded clubs wildcard fails before RLS can return rows.
+    const clubError =
+      sourceState.clubError ||
+      (projection.includes('(*)') ? { message: 'permission denied for table clubs' } : null);
     resolve({
-      data: table === 'union_clubs' && !sourceState.clubError ? unionClubs : [],
-      error: table === 'union_clubs' ? sourceState.clubError : null,
+      data: table === 'union_clubs' && !clubError ? unionClubs : [],
+      error: table === 'union_clubs' ? clubError : null,
     });
+  };
   return chain;
 };
 vi.mock('../src/lib/supabase', () => ({

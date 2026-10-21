@@ -374,7 +374,8 @@ export function UnionWalletModal({
     void Promise.all([
       /* fn_union_player_directory, read past the API's 1,000-row cap. */
       readUnionDirectory<RosterRow>(unionId),
-      supabase.from('union_clubs').select('*, clubs:club_id(*)').eq('union_id', unionId),
+      // Read identity only: club financial columns are intentionally protected.
+      supabase.from('union_clubs').select('club_id, clubs:club_id(name)').eq('union_id', unionId),
     ])
       .then(([rosterRes, clubsRes]) => {
         if (!isCurrent()) return;

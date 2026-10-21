@@ -11,7 +11,11 @@ type Handler = () => Promise<void>;
 function fixture(response: Promise<unknown>, click = vi.fn().mockResolvedValue(undefined)) {
   // The invitation's Not Now; its evaluate is the handler's stack read.
   const notNow = { evaluate: vi.fn().mockResolvedValue(null), click: vi.fn() };
-  const dismiss = { waitFor: vi.fn().mockResolvedValue(undefined), click };
+  const dismiss = {
+    isVisible: vi.fn().mockResolvedValue(false),
+    waitFor: vi.fn().mockResolvedValue(undefined),
+    click,
+  };
   const dialog = {
     waitFor: vi.fn().mockResolvedValue(undefined),
     getByRole: vi.fn(() => dismiss),
@@ -35,6 +39,15 @@ function fixture(response: Promise<unknown>, click = vi.fn().mockResolvedValue(u
 }
 
 describe('production club-message setup', () => {
+  it('takes Enter Lobby without a preference write on automatic-once clients', async () => {
+    const { page, dismiss, dialog } = fixture(Promise.resolve(null));
+    dismiss.isVisible.mockResolvedValue(true);
+    await expect(dismissClubEntryMessage(page)).resolves.toBe(true);
+    expect(page.waitForResponse).not.toHaveBeenCalled();
+    expect(dismiss.click).toHaveBeenCalledTimes(1);
+    expect(dialog.waitFor).toHaveBeenCalledWith({ state: 'hidden', timeout: 10_000 });
+  });
+
   it('takes the current persistence control only inside the Club Message dialog', async () => {
     const { page, dialog, dismiss } = fixture(
       Promise.resolve({
@@ -92,7 +105,7 @@ describe('production club-message setup', () => {
       })
     );
     await expect(dismissClubEntryMessage(page)).rejects.toThrow('dismissal did not persist (403');
-    expect(dialog.waitFor).not.toHaveBeenCalled();
+    expect(dialog.waitFor).not.toHaveBeenCalledWith({ state: 'hidden', timeout: 10_000 });
   });
 
   it('reports a failed invitation decline through setup, never as an unhandled rejection', async () => {

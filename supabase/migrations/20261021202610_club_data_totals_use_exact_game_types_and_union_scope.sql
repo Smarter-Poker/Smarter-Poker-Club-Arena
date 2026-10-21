@@ -20,7 +20,7 @@ DO $guard$ DECLARE expected record; actual text; BEGIN
  THEN RAISE EXCEPTION 'Club Data hand index invalid or changed'; END IF;
  IF to_regprocedure('public.fn_ca_club_data_clubs(uuid)') IS NOT NULL THEN RAISE EXCEPTION 'Club Data correction already installed'; END IF;
  IF md5(pg_get_functiondef('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)'::regprocedure))<>'4d5395ef6cf7af32da37b18ab7fb41b1' THEN RAISE EXCEPTION 'Club Data screen preimage changed'; END IF;
- FOR expected IN SELECT * FROM (VALUES ('fn_ca_club_data_scope','7022f13a854fbaa7684b93cf6aae1868'),('ca_club_data_screen','4d5395ef6cf7af32da37b18ab7fb41b1'),('fn_ca_club_cash_felt','7c16aa54bad4612afbe7bdd7d5b82e43'),('fn_ca_club_games','76d0b8f01e9a3b1f0956c8eb293633c2'),('fn_ca_club_games_searched','ed86cc8ecf0ab2c32755a65c8f797af7'),('fn_ca_club_games_unsearched','94c2b97d6df043ada9337fd25a0d39be'),('fn_ca_club_game_rows_filtered','353bc956a6ec2c8ab70a7fa67e1ce835'),('fn_ca_club_game_rows','97180802749f9963f8e973f740e84bb1'),('fn_ca_club_game_summary_filtered','01d7d260c52226978da9cb9c56db0cf2'),('fn_ca_club_game_summary','82a77e6208196fbfd33acb1dd149cd96'),('ca_club_game_page_core_20261006','aeef4d24b6e39308350217029ba01415'),('ca_club_data_snapshot','4c94b72310edd7fd63de7329a5b87239'),('ca_club_player_breakdown','617b01bce9519650c5bf9982acaa3a2b'),('ca_club_player_page_core_20261006','495397d214459c3b0b25260791aa5002')) v(name,hash) LOOP
+ FOR expected IN SELECT * FROM (VALUES ('fn_ca_club_data_scope','7022f13a854fbaa7684b93cf6aae1868'),('ca_club_data_screen','4d5395ef6cf7af32da37b18ab7fb41b1'),('fn_ca_club_cash_felt','7c16aa54bad4612afbe7bdd7d5b82e43'),('fn_ca_club_games','76d0b8f01e9a3b1f0956c8eb293633c2'),('fn_ca_club_games_searched','ed86cc8ecf0ab2c32755a65c8f797af7'),('fn_ca_club_games_unsearched','94c2b97d6df043ada9337fd25a0d39be'),('fn_ca_club_game_rows_filtered','353bc956a6ec2c8ab70a7fa67e1ce835'),('fn_ca_club_game_rows','97180802749f9963f8e973f740e84bb1'),('fn_ca_club_game_summary_filtered','01d7d260c52226978da9cb9c56db0cf2'),('fn_ca_club_game_summary','82a77e6208196fbfd33acb1dd149cd96'),('ca_club_game_page_core_20261006','aeef4d24b6e39308350217029ba01415'),('ca_club_data_snapshot','4c94b72310edd7fd63de7329a5b87239'),('ca_club_player_breakdown','617b01bce9519650c5bf9982acaa3a2b'),('ca_club_player_page_core_20261006','495397d214459c3b0b25260791aa5002'),('ca_club_game_export_start','cb365a1897026c4544f54f4e04611760')) v(name,hash) LOOP
   SELECT md5(pg_get_functiondef(p.oid)) INTO actual FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=expected.name;
   IF actual IS DISTINCT FROM expected.hash THEN RAISE EXCEPTION 'Reporting preimage changed: %',expected.name; END IF;
  END LOOP;
@@ -515,7 +515,7 @@ AS $function$
            ELSE 'HOLDEM' END game_class,COALESCE(t.small_blind,0) small_blind,
       COALESCE(t.big_blind,0) big_blind,
       CASE WHEN COALESCE(t.rake_percent,-1)>=0 THEN t.rake_percent END rake_percent,
-      t.created_at started_at,t.created_by,t.status,round(c.fee,2) fee,
+      t.created_at started_at,t.created_by,t.status,c.fee fee,
       round(c.winnings,2) winnings,c.hands::bigint,c.players::integer,
       COALESCE(pr.username,'') creator_username
       FROM cash c JOIN public.tables t ON t.id=c.table_id
@@ -526,7 +526,7 @@ AS $function$
       tr.id::text,COALESCE(tr.name,'Tournament'),UPPER(COALESCE(tr.variant,tr.game_type,'nlh')),
       CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
       0::numeric,0::numeric,NULL::numeric,tr.start_time,NULL::uuid,tr.status,
-      round(COALESCE(f.fee,0),2),round(COALESCE(f.winnings,0),2),0::bigint,
+      COALESCE(f.fee,0),round(COALESCE(f.winnings,0),2),0::bigint,
       COALESCE(tp.players,0)::integer,''::text
       FROM tournament_facts f JOIN public.tournaments tr ON tr.id=f.tournament_id
       LEFT JOIN tournament_players tp ON tp.tournament_id=f.tournament_id
@@ -579,7 +579,7 @@ BEGIN
              ELSE 'HOLDEM' END game_class,COALESCE(t.small_blind,0) small_blind,
         COALESCE(t.big_blind,0) big_blind,
         CASE WHEN COALESCE(t.rake_percent,-1)>=0 THEN t.rake_percent END rake_percent,
-        t.created_at started_at,t.created_by,t.status,round(c.fee,2) fee,
+        t.created_at started_at,t.created_by,t.status,c.fee fee,
         round(c.winnings,2) winnings,c.hands::bigint,c.players::integer
         FROM cash c JOIN public.tables t ON t.id=c.table_id
       UNION ALL
@@ -588,7 +588,7 @@ BEGIN
         tr.id::text,COALESCE(tr.name,'Tournament'),UPPER(COALESCE(tr.variant,tr.game_type,'nlh')),
         CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,
         0::numeric,0::numeric,NULL::numeric,tr.start_time,NULL::uuid,tr.status,
-        round(COALESCE(f.fee,0),2),round(COALESCE(f.winnings,0),2),0::bigint,
+        COALESCE(f.fee,0),round(COALESCE(f.winnings,0),2),0::bigint,
         COALESCE(tp.players,0)::integer
         FROM tournament_facts f JOIN public.tournaments tr ON tr.id=f.tournament_id
         LEFT JOIN tournament_players tp ON tp.tournament_id=f.tournament_id
@@ -634,7 +634,7 @@ BEGIN
              WHEN COALESCE(t.big_blind,0)<25 THEN 'MID' ELSE 'HIGH' END stakes_tier,
         COALESCE(t.small_blind,0) small_blind,COALESCE(t.big_blind,0) big_blind,
         CASE WHEN COALESCE(t.rake_percent,-1)>=0 THEN t.rake_percent END rake_percent,
-        t.created_at started_at,t.created_by,t.status,round(c.fee,2) fee,
+        t.created_at started_at,t.created_by,t.status,c.fee fee,
         round(c.winnings,2) winnings,c.hands::bigint,c.players,
         COALESCE(pr.username,'') creator_name,pr.avatar_url creator_avatar
         FROM cash c JOIN public.tables t ON t.id=c.table_id
@@ -645,7 +645,7 @@ BEGIN
         tr.id::text,COALESCE(tr.name,'Tournament'),UPPER(COALESCE(tr.variant,tr.game_type,'nlh')),
         CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,'NA',
         0::numeric,0::numeric,NULL::numeric,tr.start_time,NULL::uuid,tr.status,
-        round(COALESCE(f.fee,0),2),round(COALESCE(f.winnings,0),2),0::bigint,0::integer,
+        COALESCE(f.fee,0),round(COALESCE(f.winnings,0),2),0::bigint,0::integer,
         ''::text,NULL::text
         FROM tournament_facts f JOIN public.tournaments tr ON tr.id=f.tournament_id
     ), bounded AS MATERIALIZED (
@@ -665,7 +665,7 @@ BEGIN
         trim(trailing '.' from trim(trailing '0' from q.big_blind::text)) END,
       'rake_percent',q.rake_percent,'started_at',q.started_at,'status',q.status,
       'creator_id',q.created_by,'creator_name',NULLIF(q.creator_name,''),
-      'creator_avatar',q.creator_avatar,'fee',q.fee,'winnings',q.winnings,
+      'creator_avatar',q.creator_avatar,'fee',round(q.fee,2),'fee_exact',q.fee,'winnings',q.winnings,
       'hands',q.hands,'players',CASE WHEN q.kind='CASH' THEN q.players ELSE COALESCE((
         SELECT count(DISTINCT p.user_id)::integer FROM public.ca_club_tournament_player_daily p
          WHERE p.club_id = ANY (public.fn_ca_club_data_clubs($1)) AND p.tournament_id=q.id::uuid
@@ -719,7 +719,7 @@ BEGIN
              COALESCE(tb.big_blind,0) big_blind,
              CASE WHEN COALESCE(tb.rake_percent,-1)>=0 THEN tb.rake_percent END rake_percent,
              tb.created_at started_at,tb.created_by,tb.status,
-             round(sum(d.rake),2) fee,round(sum(d.net),2) winnings,
+             sum(d.rake) fee,round(sum(d.net),2) winnings,
              sum(d.hands)::bigint hands,max(d.players)::integer players
         FROM recent_cash_ids r
         JOIN public.tables tb ON tb.id=r.id
@@ -740,7 +740,7 @@ BEGIN
        ORDER BY tr.start_time DESC,tr.id DESC
        LIMIT $4
     ), tournament_facts AS MATERIALIZED (
-      SELECT r.id,round(sum(d.fee),2) fee,round(sum(d.winnings),2) winnings
+      SELECT r.id,sum(d.fee) fee,round(sum(d.winnings),2) winnings
         FROM recent_tournament_ids r
         JOIN public.ca_club_tournament_daily d
           ON d.club_id = ANY (public.fn_ca_club_data_clubs($1)) AND d.tournament_id=r.id
@@ -784,7 +784,7 @@ BEGIN
         trim(trailing '.' from trim(trailing '0' from q.big_blind::text)) END,
       'rake_percent',q.rake_percent,'started_at',q.started_at,'status',q.status,
       'creator_id',q.created_by,'creator_name',NULLIF(q.creator_name,''),
-      'creator_avatar',q.creator_avatar,'fee',q.fee,'winnings',q.winnings,
+      'creator_avatar',q.creator_avatar,'fee',round(q.fee,2),'fee_exact',q.fee,'winnings',q.winnings,
       'hands',q.hands,'players',q.players)
       ORDER BY q.started_at DESC NULLS LAST,q.kind DESC,q.id DESC),'[]'::jsonb)
       FROM bounded q
@@ -1015,6 +1015,7 @@ BEGIN
              CASE WHEN v.kind='CASH' THEN t.created_by END created_by,
              CASE WHEN v.kind='CASH' THEN t.status ELSE tr.status END status,
              CASE WHEN v.kind='CASH' THEN round(c.fee,2) ELSE round(COALESCE(f.fee,0),2) END fee,
+             CASE WHEN v.kind='CASH' THEN c.fee ELSE coalesce(f.fee,0) END fee_exact,
              CASE WHEN v.kind='CASH' THEN round(c.winnings,2) ELSE round(COALESCE(f.winnings,0),2) END winnings,
              CASE WHEN v.kind='CASH' THEN c.hands ELSE 0::bigint END hands,
              CASE WHEN v.kind='CASH' THEN coalesce(c.on_felt,0) ELSE 0 END on_felt,
@@ -1052,7 +1053,7 @@ BEGIN
           trim(trailing '.' from trim(trailing '0' from q.big_blind::text)) END,
         'rake_percent',q.rake_percent,'started_at',q.started_at,'status',q.status,
         'creator_id',q.created_by,'creator_name',NULLIF(q.creator_name,''),
-        'creator_avatar',q.creator_avatar,'fee',q.fee,'winnings',q.winnings,
+        'creator_avatar',q.creator_avatar,'fee',q.fee,'fee_exact',q.fee_exact,'winnings',q.winnings,
         'hands',q.hands,'players',q.players,'on_felt',q.on_felt,'live',q.live)
         ORDER BY q.sort_value DESC,q.sort_time DESC,q.kind DESC,q.id DESC) FROM detail q),'[]'::jsonb),
       'next_cursor',CASE WHEN (SELECT count(*) FROM page_plus_one)>$9 THEN
@@ -1965,6 +1966,157 @@ $function$
 ;
 REVOKE ALL ON FUNCTION public.ca_rake_export_start_v2(text,uuid,date,date,uuid,text,text,uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.ca_rake_export_start_v2(text,uuid,date,date,uuid,text,text,uuid) TO authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.ca_club_game_export_start(p_club_id uuid, p_start date DEFAULT NULL::date, p_end date DEFAULT NULL::date, p_game text DEFAULT 'ALL'::text, p_stakes text DEFAULT 'ALL'::text, p_search text DEFAULT NULL::text, p_sort text DEFAULT 'recent'::text, p_request_id uuid DEFAULT gen_random_uuid())
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+ SET statement_timeout TO '120s'
+AS $function$
+DECLARE
+  v_user uuid := auth.uid();
+  v_today date := (now() AT TIME ZONE 'UTC')::date;
+  v_end date := LEAST(COALESCE(p_end,v_today),v_today);
+  v_start date := COALESCE(p_start,v_end-13);
+  v_game text := UPPER(COALESCE(NULLIF(p_game,''),'ALL'));
+  v_stakes text := UPPER(COALESCE(NULLIF(p_stakes,''),'ALL'));
+  v_search text := NULLIF(btrim(COALESCE(p_search,'')),'');
+  v_sort text := LOWER(COALESCE(NULLIF(p_sort,''),'recent'));
+  v_request uuid := COALESCE(p_request_id,gen_random_uuid());
+  v_export_id uuid;
+  v_total integer;
+BEGIN
+  IF v_user IS NULL OR NOT public.ca_can_view_whole_club_report(p_club_id) THEN
+    RAISE EXCEPTION 'not authorized for this club' USING ERRCODE='42501';
+  END IF;
+  IF v_start < v_end-92 THEN v_start := v_end-92; END IF;
+  IF v_start > v_end THEN v_start := v_end; END IF;
+  IF v_sort NOT IN ('recent','fee','winnings','hands') THEN v_sort := 'recent'; END IF;
+
+  -- A retried HTTP request must resume the same immutable export, not create a
+  -- second 43k-row copy. The advisory lock serializes that tiny idempotency key.
+  IF NOT pg_try_advisory_xact_lock(
+    hashtextextended('ca-club-data-export-user:' || v_user::text, 0)
+  ) THEN
+    RAISE EXCEPTION 'Another Club Data export is already being prepared.'
+      USING ERRCODE = '55000';
+  END IF;
+  -- Expiry is owned by the doors: the caller's own slot below, then the bounded prune at the end of this call.
+  SELECT id,total_rows INTO v_export_id,v_total
+    FROM public.ca_club_data_exports
+   WHERE user_id = v_user AND request_id = v_request AND status = 'ready'
+     AND expires_at >= now() AND kind = 'games';
+  -- A request id replays only a job of this door's own kind. The same id
+  -- held by a live job of another kind is a different request: refused,
+  -- never replayed as this kind and never rebuilt over it.
+  IF v_export_id IS NULL AND EXISTS (
+    SELECT 1
+      FROM public.ca_club_data_exports other_kind
+     WHERE other_kind.user_id = v_user
+       AND other_kind.request_id = v_request
+       AND other_kind.kind <> 'games'
+       AND other_kind.expires_at >= now()
+  ) THEN
+    RAISE EXCEPTION 'Club Data request id was already used for different inputs'
+      USING ERRCODE = '22023';
+  END IF;
+  IF v_export_id IS NOT NULL THEN
+    RETURN jsonb_build_object('export_id',v_export_id,'total_rows',v_total,'status','ready');
+  END IF;
+
+  -- The expired job owned by the caller is reclaimed first, and never behind
+  -- the shared prune's try-lock: an owner whose previous export lost its
+  -- cleanup must not be locked out of the next one. Bounded to one export
+  -- (50,000 rows exceeds anything a door can prepare); SKIP LOCKED so a
+  -- prune retiring the same parent from another session is never waited on.
+  DELETE FROM public.ca_club_data_export_rows own_row
+   USING (
+     SELECT stale_row.export_id, stale_row.ordinal
+       FROM public.ca_club_data_export_rows stale_row
+       JOIN public.ca_club_data_exports expired_slot
+         ON expired_slot.id = stale_row.export_id
+      WHERE expired_slot.user_id = v_user
+        AND expired_slot.expires_at < now()
+      ORDER BY stale_row.export_id, stale_row.ordinal
+      LIMIT 50000
+      FOR UPDATE OF stale_row SKIP LOCKED
+   ) doomed
+   WHERE own_row.export_id = doomed.export_id
+     AND own_row.ordinal = doomed.ordinal;
+
+  DELETE FROM public.ca_club_data_exports expired_slot
+   USING (
+     SELECT reclaimable.id
+       FROM public.ca_club_data_exports reclaimable
+      WHERE reclaimable.user_id = v_user
+        AND reclaimable.expires_at < now()
+      FOR UPDATE SKIP LOCKED
+   ) reclaimed
+   WHERE expired_slot.id = reclaimed.id
+     AND NOT EXISTS (
+       SELECT 1
+         FROM public.ca_club_data_export_rows export_row
+        WHERE export_row.export_id = expired_slot.id
+     );
+
+  IF EXISTS (
+    SELECT 1
+      FROM public.ca_club_data_exports active_slot
+     WHERE active_slot.user_id = v_user
+  ) THEN
+    RAISE EXCEPTION 'Another Club Data export is already being prepared, downloaded, or cleaned up.'
+      USING ERRCODE = '55000';
+  END IF;
+  INSERT INTO public.ca_club_data_exports(user_id,club_id,request_id,kind)
+  VALUES(v_user,p_club_id,v_request,'games') RETURNING id INTO v_export_id;
+
+  -- One canonical row source owns scope, filters, felt and exact fee shares.
+  WITH filtered AS MATERIALIZED (
+    SELECT g.*,coalesce(pr.username,'') creator_name,pr.avatar_url creator_avatar
+      FROM public.fn_ca_club_games(p_club_id,v_start,v_end,v_game,v_stakes,v_search) g
+      LEFT JOIN public.profiles pr ON pr.id=g.created_by
+  ), scored AS (
+    SELECT f.*,
+           CASE v_sort WHEN 'fee' THEN round(f.fee,2) WHEN 'winnings' THEN f.winnings
+                       WHEN 'hands' THEN f.hands::numeric
+                       ELSE extract(epoch FROM COALESCE(f.started_at,'0001-01-01'::timestamptz))::numeric
+            END sort_value,
+           extract(epoch FROM COALESCE(f.started_at,'0001-01-01'::timestamptz))::numeric sort_time
+      FROM filtered f
+  ), ordered AS (
+    SELECT row_number() OVER (
+             ORDER BY sort_value DESC,sort_time DESC,kind DESC,id DESC
+           )::integer ordinal,
+           jsonb_build_object(
+             'kind',kind,'id',id,'name',name,'variant',variant,
+             'game_class',game_class,'stakes_tier',stakes_tier,
+             'blinds',CASE WHEN big_blind>0 THEN
+               trim(trailing '.' from trim(trailing '0' from small_blind::text))||'/'||
+               trim(trailing '.' from trim(trailing '0' from big_blind::text)) END,
+             'rake_percent',rake_percent,'started_at',started_at,'status',status,
+             'creator_id',created_by,'creator_name',NULLIF(creator_name,''),
+             'creator_avatar',creator_avatar,
+             'fee',round(fee,2),'fee_exact',fee,'winnings',winnings,'hands',hands,'players',players
+           ) payload
+      FROM scored
+  )
+  INSERT INTO public.ca_club_data_export_rows(export_id,ordinal,payload)
+  SELECT v_export_id,ordinal,payload FROM ordered;
+
+  GET DIAGNOSTICS v_total = ROW_COUNT;
+  UPDATE public.ca_club_data_exports
+     SET total_rows=v_total,status='ready'
+   WHERE id=v_export_id;
+
+  -- Somebody else's stranded expired job, if any: bounded, non-blocking,
+  -- and last, so the row locks it takes are held only until this commit.
+  PERFORM public.ca_prune_expired_club_data_exports(2000);
+  RETURN jsonb_build_object('export_id',v_export_id,'total_rows',v_total,'status','ready');
+END;
+$function$
+;
+REVOKE ALL ON FUNCTION public.ca_club_game_export_start(uuid,date,date,text,text,text,text,uuid) FROM PUBLIC,anon;
 
 
 COMMIT;

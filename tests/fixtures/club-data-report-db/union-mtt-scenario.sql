@@ -114,4 +114,44 @@ DO $test$ DECLARE pg jsonb; BEGIN
  IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(pg->'rows') x WHERE x->>'kind'='CASH' AND (x->>'players')::integer=2 AND NOT (x->>'live')::boolean) THEN RAISE EXCEPTION 'Closed union cash game missed distinct players: %',pg; END IF;
  IF (SELECT players FROM public.fn_ca_club_games('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL) WHERE kind='CASH')<>2 THEN RAISE EXCEPTION 'Export player count differs'; END IF;
 END $test$;
+-- Exact immutable game export, including union scope and fractional fees.
+DELETE FROM ca_club_data_export_rows WHERE true;
+DELETE FROM ca_club_data_exports WHERE true;
+UPDATE table_seats s SET left_at=NULL WHERE s.table_id='00000000-0000-0000-0000-0000000000c1' AND s.stack IN(120,40) AND s.joined_at=(SELECT max(x.joined_at) FROM table_seats x WHERE x.table_id=s.table_id AND x.user_id=s.user_id);
+INSERT INTO tables(id,club_id,name,big_blind) VALUES
+ ('88000000-0000-0000-0000-000000000011','fade0000-0000-0000-0000-000000000001','Fractional Fee One',0.5),
+ ('88000000-0000-0000-0000-000000000012','fade0000-0000-0000-0000-000000000001','Fractional Fee Two',0.5);
+INSERT INTO ca_club_data_fact(club_id,stat_date,kind,game_id,user_id,fee,last_at) VALUES
+ ('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,'CASH','88000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-0000000000a1',0.0049,now()),
+ ('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,'CASH','88000000-0000-0000-0000-000000000012','00000000-0000-0000-0000-0000000000a1',0.0049,now());
+SELECT public.fn_ca_reporting_rollups_from_facts(CURRENT_DATE);
+\connect live authenticator 127.0.0.1 @PORT@
+SET ROLE authenticated;
+SELECT set_config('test.uid','00000000-0000-0000-0000-0000000000a1',false);
+DO $test$ DECLARE r jsonb; again jsonb; BEGIN
+ r:=public.ca_club_game_export_start('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL,'fee','88000000-0000-0000-0000-000000000091');
+ IF (r->>'total_rows')::integer<>7 THEN RAISE EXCEPTION 'Game CSV missed union clubs: %',r; END IF;
+ again:=public.ca_club_game_export_start('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL,'fee','88000000-0000-0000-0000-000000000091');
+ IF again<>r THEN RAISE EXCEPTION 'Game export replay changed receipt'; END IF;
+END $test$;
+\connect live postgres 127.0.0.1 @PORT@
+DO $test$ DECLARE pg jsonb; BEGIN
+ IF (SELECT round(sum((payload->>'fee_exact')::numeric),2) FROM ca_club_data_export_rows)<>24.02 OR (SELECT sum((payload->>'fee')::numeric) FROM ca_club_data_export_rows)<>24.01 THEN RAISE EXCEPTION 'Exact CSV shares were rounded before totaling'; END IF;
+ IF (SELECT sum((payload->>'winnings')::numeric) FROM ca_club_data_export_rows)<>22 THEN RAISE EXCEPTION 'Game CSV missed cash stacks'; END IF;
+ pg:=public.ca_club_game_page_core_20261006('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL,'fee',NULL,200);
+ IF (SELECT round(sum((x->>'fee_exact')::numeric),2) FROM jsonb_array_elements(pg->'rows') x)<>24.02 THEN RAISE EXCEPTION 'Paged fee precision differs'; END IF;
+END $test$;
+DELETE FROM ca_club_data_export_rows WHERE true;
+DELETE FROM ca_club_data_exports WHERE true;
+\connect live authenticator 127.0.0.1 @PORT@
+SET ROLE authenticated;
+SELECT set_config('test.uid','00000000-0000-0000-0000-0000000000a1',false);
+DO $test$ DECLARE r jsonb; BEGIN
+ r:=public.ca_club_game_export_start('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'MTT','ALL',NULL,'recent','88000000-0000-0000-0000-000000000092');
+ IF (r->>'total_rows')::integer<>2 THEN RAISE EXCEPTION 'Game MTT CSV includes other formats'; END IF;
+END $test$;
+\connect live postgres 127.0.0.1 @PORT@
+DO $test$ BEGIN
+ IF EXISTS(SELECT 1 FROM ca_club_data_export_rows WHERE payload->>'kind'<>'MTT') THEN RAISE EXCEPTION 'MTT export row misclassified'; END IF;
+END $test$;
 DO $test$ BEGIN RAISE NOTICE 'UNION MTT SCENARIO PASSED'; END $test$;

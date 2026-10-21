@@ -1073,9 +1073,6 @@ export default function HandHistoryPage() {
                       <span className="pot-value">
                         {money(hand.replay.potTotal, amountPrecision)}
                       </span>
-                      {hand.rake > 0 && (
-                        <span className="pot-rake">Rake {money(hand.rake, amountPrecision)}</span>
-                      )}
                     </div>
                     <div className="hand-tags">
                       <span className="hand-tag">{variant}</span>

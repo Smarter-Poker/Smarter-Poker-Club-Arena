@@ -806,7 +806,7 @@ describe('actual manager launch reaches the first hand and action timer after th
     await expectFirstHand(f, NOW);
     expect(f.blindStarts).toEqual([NOW]);
     expect(f.manager.startBlindTimer).toHaveBeenCalledWith(HEADS_UP_BLIND_STRUCTURE);
-    expect(HEADS_UP_BLIND_STRUCTURE.every((level) => level.durationMinutes === 3)).toBe(true);
+    expect(HEADS_UP_BLIND_STRUCTURE.every((level) => level.durationMinutes === 5)).toBe(true);
     const state = f.engine.handController.getState();
     expect(state.currentBet).toBe(20);
     expect(state.pot).toBe(30);

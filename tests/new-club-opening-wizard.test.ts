@@ -112,7 +112,7 @@ describe('new club opening wizard', () => {
     expect(home).toContain('{club.tagline?.trim() && (');
     expect(settings).toContain('value={settings.tagline}');
     expect(home.toLowerCase()).not.toContain('all fish of all shapes and sizes are welcome');
-    expect(wizard.toLowerCase()).toContain('that tag line belongs to shark club');
+    expect(wizard.toLowerCase()).toContain('that tag line belongs to kings club');
   });
 
   it('commits opening allocations once and never trusts a browser-side debit', () => {

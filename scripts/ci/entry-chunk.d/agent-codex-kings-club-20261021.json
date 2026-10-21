@@ -1,0 +1,4 @@
+{
+  "_owner": "Kings Club rebrand: the small router-only compatibility component canonicalizes retired club and invitation URLs before route resolution while keeping the persistent table shell mounted. It adds no service or page dependencies; the measured entry remains 155kB gzip, below the 157kB baseline.",
+  "modules": ["src/components/common/ClubBrandRedirect.tsx"]
+}

@@ -202,7 +202,7 @@ export default function ClubSettingsPage() {
   const taglineError =
     /all fish of all shapes and sizes are welcome/i.test(settings.tagline) &&
     clubNumericId !== SHARK_CLUB_ID
-      ? 'That Tag Line Belongs To Shark Club'
+      ? 'That Tag Line Belongs To Kings Club'
       : '';
   const formError = nameError || taglineError || buyinError;
 

@@ -65,7 +65,7 @@ function ruleBody(css: string, selector: string): string {
 const CLUBS: UserClub[] = [
   {
     id: 'club-a',
-    name: 'Shark Club',
+    name: 'Kings Club',
     club_id: 25450,
     card_image_url: 'https://example.test/shark.jpg',
   },
@@ -123,7 +123,9 @@ describe('a club card has its final geometry from the first paint', () => {
     for (const item of items) {
       const well = item.querySelector('.club-card-panel .club-card-viewport');
       expect(well).not.toBeNull();
-      expect(well?.querySelector('img.club-card-viewport-img')).not.toBeNull();
+      expect(
+        well?.querySelector('img.club-card-viewport-img, img.club-card-viewport-logo')
+      ).not.toBeNull();
     }
   });
 

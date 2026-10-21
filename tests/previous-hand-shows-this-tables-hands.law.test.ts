@@ -244,10 +244,12 @@ describe('the correct data', () => {
     expect(pre.rows.find((r) => r.verb === 'bb')?.label).toBe('BB');
   });
 
-  it('rake is on the panel, beside the pot it came out of', () => {
-    // Format-tolerant: Prettier decides the line breaks, the pin decides the truth.
-    expect(read('src/components/table/HandHistoryPanel.tsx')).toMatch(
-      /hand\.rake > 0 &&[\s(]*<span className="hh-entry__rake">[^<]*Rake \{formatAmount\(hand\.rake\)\}<\/span>/
+  it('house deductions are absent from the panel under the October 21 owner direction', () => {
+    expect(read('src/components/table/HandHistoryPanel.tsx')).not.toContain(
+      'className="hh-entry__rake"'
+    );
+    expect(read('src/components/table/HandHistoryPanel.tsx')).not.toContain(
+      'Rake: ${money(m.rake)}'
     );
   });
 

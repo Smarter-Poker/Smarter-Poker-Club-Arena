@@ -12,7 +12,7 @@
  *                  hi-lo hand), the net.
  *   HAND DETAIL  — the street-by-street rundown: position, player, action,
  *                  amount, the stack left after each action, the board as it
- *                  came, the running pot, then the showdown and the drop.
+ *                  came, the running pot, then the showdown.
  *
  * Header carries date · stakes · hand number, REPLAY for THE HAND ON SCREEN
  * and the two ways to take it away with you. The bottom bar pages through the
@@ -42,14 +42,14 @@
  * a rounded "Show What Would Have Come" button. The spade master is the frame
  * now: the table is the eyebrow, HAND DETAIL is engraved in the header well,
  * the hand number sits in the well's painted pill slot, every board, pot,
- * showdown row and rake figure is a ROW on the black glass, and REPLAY /
+ * showdown row is a ROW on the black glass, and REPLAY /
  * CLOSE are the plates painted into the foot.
  *
  * WHAT DID NOT MOVE. The sheet's GEOMETRY is unchanged and is pinned by
  * tests/unit/handHistorySheets.test.tsx: three quarters of the height on a
  * phone, anchored to the bottom, so there is a backdrop left to tap, and the
  * safe-area inset paid at the top. So are drag-to-dismiss, the focus trap, the
- * tablist, the subject-by-id pinning, the rake fetch and every copy control.
+ * tablist, the subject-by-id pinning, every copy control.
  */
 
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
@@ -64,7 +64,6 @@ import type { ReplayModel, ReplayShowdownRow } from '../../utils/handReplay';
 import './HandDetailModal.css';
 import { blindLabel, gameTypeLabel, money, moneyForHand, stamp } from '../../utils/handFormat';
 import { handDeepLink } from '../../lib/handHistoryLive';
-import { StatsFactsService, type HandRakeShare } from '../../services/StatsFactsService';
 import { SpadeConsole } from '../console/SpadeConsole';
 
 export interface HandDetailModalProps {
@@ -97,52 +96,6 @@ export interface HandDetailModalProps {
   onReplay?: (hand: HandRecord) => void;
   /** Open the share modal for THE HAND PASSED IN. */
   onShare?: (hand: HandRecord) => void;
-}
-
-/**
- * "Your rake share" for this hand (Dan 2026-08-30). Weighted contributed rake
- * means a player's rake is proportional to what they put in the pot, so the
- * honest figure is their own. Read from the per-player ledger through an RPC
- * that derives identity from auth.uid(); it never exposes anyone else's.
- */
-function HandRakeShareBlock({ share }: { share: HandRakeShare }) {
-  if (!share?.found || (share.your_contribution ?? 0) <= 0) return null;
-  const n = (v: number | undefined, dp = 2) => money(Number(v ?? 0), dp);
-  return (
-    <div className="hdm-rake-share">
-      <div className="hdm-rake-share__title">Your Rake On This Hand</div>
-      <div className="hdm-rake-share__rows">
-        <div className="hdm-rake-share__row">
-          <span>Your Contribution</span>
-          <strong>{n(share.your_contribution)}</strong>
-        </div>
-        {(share.your_returned_uncalled ?? 0) > 0 && (
-          <div className="hdm-rake-share__row">
-            <span>Returned To You (Uncalled)</span>
-            <strong>{n(share.your_returned_uncalled)}</strong>
-          </div>
-        )}
-        <div className="hdm-rake-share__row">
-          <span>Your Share Of The Pot</span>
-          <strong>{n(share.your_share_pct, 1)}%</strong>
-        </div>
-        <div className="hdm-rake-share__row is-primary">
-          <span>Your Rake</span>
-          <strong>
-            {n(share.your_rake)} Of {n(share.hand_rake)}
-          </strong>
-        </div>
-        {(share.hand_bbj ?? 0) > 0 && (
-          <div className="hdm-rake-share__row">
-            <span>Your Jackpot Drop</span>
-            <strong>
-              {n(share.your_bbj)} Of {n(share.hand_bbj)}
-            </strong>
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }
 
 /** How many face-down cards a muck shows - the variant's own holding size. */
@@ -536,30 +489,6 @@ export function HandDetailModal({
     }
   };
 
-  // The viewer's own rake for THIS hand, fetched only where it is shown.
-  const [rakeShare, setRakeShare] = useState<HandRakeShare | null>(null);
-  useEffect(() => {
-    if (!isOpen || !hand?.id || !heroId || tab !== 'detail') {
-      setRakeShare(null);
-      return;
-    }
-    let cancelled = false;
-    setRakeShare(null);
-    const load = StatsFactsService?.getHandRakeShare;
-    if (typeof load !== 'function') return;
-    void load
-      .call(StatsFactsService, hand.id)
-      .then((r) => {
-        if (!cancelled) setRakeShare(r);
-      })
-      .catch(() => {
-        if (!cancelled) setRakeShare(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, hand?.id, heroId, tab]);
-
   /**
    * COPY HAND NUMBER / COPY LINK (Phase 1, 2026-09-05). Every dispute and every
    * chat about a hand starts with its number; the link opens the archive on
@@ -779,7 +708,6 @@ export function HandDetailModal({
                 currentUserName={currentUserName}
                 badge={variant}
                 viewerFacts={hand.heroFacts}
-                footer={rakeShare ? <HandRakeShareBlock share={rakeShare} /> : null}
               />
             ) : (
               <>
@@ -792,13 +720,6 @@ export function HandDetailModal({
                       </span>
                     ))}
                   </span>
-                  {(model.rake > 0 || model.bbjFee > 0) && (
-                    <span className="hdm-potline__drop">
-                      {model.rake > 0 ? `Rake ${money(model.rake)}` : ''}
-                      {model.rake > 0 && model.bbjFee > 0 ? ' · ' : ''}
-                      {model.bbjFee > 0 ? `Jackpot ${money(model.bbjFee)}` : ''}
-                    </span>
-                  )}
                 </div>
 
                 <BoardsBlock model={model} isBomb={isBomb} />

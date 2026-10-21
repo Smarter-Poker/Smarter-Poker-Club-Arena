@@ -73,8 +73,6 @@ function shape(m: ReplayModel) {
     bb: m.bigBlind,
     button: m.buttonSeat,
     potTotal: m.potTotal,
-    rake: m.rake,
-    bbj: m.bbjFee,
     reconciles: m.reconciles,
     rebuiltPot: m.rebuiltPot,
     boards: m.boards.map((b) => b.map((c) => `${c.rank}${c.suit}`).join(' ')),

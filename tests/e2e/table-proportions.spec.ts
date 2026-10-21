@@ -546,14 +546,17 @@ test.describe('a short ring sits lower and gives up no width (Dan 2026-09-23, it
     const c = document.querySelector('.table-container') as HTMLElement;
     const r = s.getBoundingClientRect();
     const cr = c.getBoundingClientRect();
-    return { w: r.width, top: r.top - cr.top, bottomGap: cr.bottom - r.bottom };
+    return { w: r.width, h: r.height, top: r.top - cr.top, bottomGap: cr.bottom - r.bottom };
   };
 
-  test('6-max shares phone headroom with 9-max, retains desktop drop, and is as wide', async ({
+  test('6-max is twelve percent shorter and centered on phones, retains desktop drop, and is as wide', async ({
     page,
   }) => {
     const offenders: string[] = [];
-    for (const [device, width, height, insetTop = 0, insetBottom = 0] of DEVICES) {
+    for (const [device, width, height, insetTop = 0, insetBottom = 0] of [
+      ...DEVICES,
+      ['iPhone 393', 393, 852, 0, 0] as const,
+    ]) {
       await page.setViewportSize({ width, height });
       const html = buildHtml(
         insetTop || insetBottom ? applyInsets(css, insetTop, insetBottom) : css
@@ -563,7 +566,11 @@ test.describe('a short ring sits lower and gives up no width (Dan 2026-09-23, it
       await page.setContent(seatHtml(html, 6));
       const short = await page.evaluate(probeBox);
       const label = `${device} (${width}x${height})`;
-      const expectedDrop = width <= 480 && height > width ? 0 : SHORT_DROP_PX;
+      if (width === 393) console.log(`SIX_MAX_MEASURE ${JSON.stringify({ label, full, short })}`);
+      const phonePortrait = width <= 480 && height > width;
+      const expectedDrop = phonePortrait ? full.h * 0.06 : SHORT_DROP_PX;
+      if (phonePortrait && Math.abs(short.h - full.h * 0.88) > 0.5)
+        offenders.push(`${label}: six-max height ${short.h} must be 88% of nine-max ${full.h}`);
       if (Math.abs(short.top - full.top - expectedDrop) > 0.5) {
         offenders.push(
           `${label}: 6-max starts ${(short.top - full.top).toFixed(1)}px below 9-max, not ${expectedDrop}px`

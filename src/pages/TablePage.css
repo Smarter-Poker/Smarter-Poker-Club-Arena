@@ -5026,9 +5026,9 @@ button.post-bb-overlay-button {
   text-transform: uppercase;
 }
 
-/* Portrait gameplay leaves real outboard lanes for player pods. The narrow
-   painted canvas keeps its full height; seats fit against the screen edges
-   through fitSeatToViewport, rather than being pulled inward with the art. */
+/* Portrait gameplay leaves real outboard lanes for player pods. Nine seats
+   retain the full height; six use the shorter ring below. Both fit seats
+   against the screen edges through fitSeatToViewport. */
 @media (max-width: 480px) and (orientation: portrait) {
   .table-container {
     --sp-page-h: 100dvh;
@@ -5049,9 +5049,11 @@ button.post-bb-overlay-button {
     width: 82%;
   }
   .table-page[data-seats='6'] .table-scaler {
-    --sp-seat-h-scale: 1;
+    /* Six seats use a visibly shorter ring; center its 12% height saving
+       without scaling the cards, player pods, printing or controls. */
+    --sp-seat-h-scale: 0.88;
     --sp-short-table-drop: 0px;
-    margin-top: 0;
+    margin-top: calc(var(--sp-table-h, 100svh) * 0.06);
   }
   .table-page .seat--hero .seat__bet-chips {
     transform: translate(

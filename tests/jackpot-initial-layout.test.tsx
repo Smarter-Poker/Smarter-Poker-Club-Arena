@@ -482,3 +482,30 @@ it.each(['fn_bbj_pool_facts', 'fn_bbj_my_contribution', 'fn_bbj_promo_facts'])(
     expect(io.toast.error).toHaveBeenCalledWith('Failed to load jackpot data.');
   }
 );
+
+it('limits the popup to five recent winners without a history heading or paging', async () => {
+  const { container } = render(<BBJRecentHits poolId="pool-a" limit={10} recentOnly />);
+  expect(io.rpc).toHaveBeenCalledWith(
+    'fn_bbj_recent_hits',
+    expect.objectContaining({ p_limit: 5 })
+  );
+  await act(async () =>
+    requests.fn_bbj_recent_hits.resolve(
+      result(
+        Array.from({ length: 8 }, (_, i) => ({
+          payout_id: `recent-${i}`,
+          awarded_at: '2026-10-20T12:00:00Z',
+          total_payout: 100,
+          bad_beat_name: `Recent Winner ${i}`,
+          bad_beat_amount: 50,
+          recipients: [],
+          total_hits: 17,
+        }))
+      )
+    )
+  );
+  expect(container.querySelectorAll('.bbj-hits__row')).toHaveLength(5);
+  expect(screen.queryByText('Recent Winner 5')).not.toBeInTheDocument();
+  expect(container.querySelector('.bbj-hits__caption')).toBeNull();
+  expect(screen.queryByRole('button', { name: /Show More/ })).not.toBeInTheDocument();
+});

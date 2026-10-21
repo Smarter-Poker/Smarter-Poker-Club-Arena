@@ -3,8 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
-const { rpcMock, authState, clubRow } = vi.hoisted(() => ({
+const { rpcMock, authState, clubRow, unionRow } = vi.hoisted(() => ({
   rpcMock: vi.fn(),
+  unionRow: {
+    current: { unions: { name: 'Midway Union' } } as { unions: { name: string } } | null,
+  },
   clubRow: { current: { name: 'Club JAQK' } as { name: string } | null },
   authState: { current: { user: { id: 'owner-1' }, isHydrating: false } as any },
 }));
@@ -18,9 +21,14 @@ vi.mock('react-router-dom', () => ({
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     rpc: rpcMock,
-    from: () => ({
+    from: (table: string) => ({
       select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: clubRow.current, error: null }) }),
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: table === 'union_clubs' ? unionRow.current : clubRow.current,
+            error: null,
+          }),
+        }),
       }),
     }),
   },
@@ -75,6 +83,7 @@ afterEach(() => {
 beforeEach(() => {
   rpcMock.mockReset();
   clubRow.current = { name: 'Club JAQK' };
+  unionRow.current = { unions: { name: 'Midway Union' } };
   authState.current = { user: { id: 'owner-1' }, isHydrating: false };
 });
 
@@ -111,6 +120,42 @@ describe('helpers', () => {
 });
 
 describe('ClubDataSimplePage', () => {
+  it('attributes games to the union even when the creator is missing or named', async () => {
+    rpcMock.mockResolvedValue({
+      data: {
+        ...live,
+        rows: [
+          { ...live.rows[0], creator_name: 'kingfish' },
+          { ...live.rows[0], id: 'table-2', creator_name: null },
+        ],
+      },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    await waitFor(() => expect(screen.getAllByText('By Midway Union')).toHaveLength(2));
+    expect(screen.queryByText(/kingfish/i)).toBeNull();
+  });
+
+  it('uses the club name when there is no hosting union, never the creator', async () => {
+    unionRow.current = null;
+    rpcMock.mockResolvedValue({
+      data: { ...live, rows: [{ ...live.rows[0], creator_name: 'kingfish' }] },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    expect(await screen.findByText('By Club JAQK')).toBeTruthy();
+    expect(screen.queryByText(/kingfish/i)).toBeNull();
+  });
+
+  it('counts all live games beyond the 200 displayed rows', async () => {
+    rpcMock.mockResolvedValue({
+      data: { ...live, summary: { ...live.summary, live_games: 245 } },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    expect(await screen.findByText(/245 Games In Play/)).toBeTruthy();
+  });
+
   it('shows the four live totals and a live game', async () => {
     rpcMock.mockResolvedValue({ data: live, error: null });
     render(<ClubDataSimplePage />);

@@ -46,6 +46,12 @@ describe('owner rule: Midway cash caps are 2.5 BB and standalone clubs choose th
       'server/src/lightning/LightningHandHost.ts',
     ])
       expect(read(path)).toContain('cashRakeScope(');
+    const dealer = read('server/src/engine/ServerTableEngineDealing.ts');
+    // The real dealHand inline HandConfig must carry the marker, not only
+    // Base.getRakeConfig's snapshot/recovery builder.
+    expect(dealer).toMatch(
+      /rakeConfig: this\.isTournamentTable\(\)\s*\? \{ percent: 0, cap: 0, noFlopNoDrop: true \}\s*:\s*\{\s*cashPolicy: \{ version: 1, scope: this\.getRakeOverride\(\)\?\.scope \?\? 'standard' \}/
+    );
     expect(read('server/src/engine/ServerTableEngineSettlement.ts')).toContain(
       'cashRakePolicy: snap.cashRakePolicy'
     );

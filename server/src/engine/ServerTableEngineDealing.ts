@@ -3227,6 +3227,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         rakeConfig: this.isTournamentTable()
           ? { percent: 0, cap: 0, noFlopNoDrop: true }
           : {
+              cashPolicy: { version: 1, scope: this.getRakeOverride()?.scope ?? 'standard' },
               percent: fullRakeConfig.rakePercent,
               cap: fullRakeConfig.rakeCap,
               noFlopNoDrop: true,

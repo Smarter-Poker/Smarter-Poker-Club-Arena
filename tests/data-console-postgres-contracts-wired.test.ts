@@ -55,6 +55,13 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
     expect(native).toContain('bomb-after.sql');
   });
 
+  it('executes the roster join-order regression in the required PostgreSQL job', () => {
+    expect(wrapper).toContain('bash "$repo/scripts/dev/test-roster-join-sort-postgres.sh"');
+    const native = read('scripts/dev/test-roster-join-sort-postgres.sh');
+    expect(native).toContain('tests/fixtures/stats-club-scope/roster-join-sort');
+    expect(native).toContain('20261021174637_roster_club_join_date_sorting.sql');
+  });
+
   it('is one fail-closed accounting shard step using runner-owned scratch space', () => {
     expect(packageJson.scripts?.['test:data:postgres']).toBe(
       'bash scripts/ci/test-data-console-postgres-contracts.sh'
@@ -68,6 +75,8 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
   it.each([
     'scripts/ci/test-data-console-postgres-contracts.sh',
     'scripts/dev/test-member-record-live-postgres.sh',
+    'scripts/dev/test-roster-join-sort-postgres.sh',
+    'tests/fixtures/stats-club-scope/roster-join-sort/assertions.sql',
     'tests/fixtures/stats-club-scope/member-record-live/readers.sql',
     'tests/fixtures/stats-club-scope/funded-before.sql',
     'tests/fixtures/stats-club-scope/funded-after.sql',

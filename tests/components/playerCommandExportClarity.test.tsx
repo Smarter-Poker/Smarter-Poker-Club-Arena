@@ -129,7 +129,7 @@ it('explains all matching exports and annotates every returned server row with e
   });
   expect(f.export).toHaveBeenCalledWith(
     '00000000-0000-0000-0000-000000000043',
-    { search: '', filter: 'all', sort: 'hierarchy' },
+    { search: '', filter: 'all', sort: 'newest' },
     null,
     expect.any(AbortSignal)
   );
@@ -142,7 +142,7 @@ it('explains all matching exports and annotates every returned server row with e
       export_club_id: '00000000-0000-0000-0000-000000000043',
       export_scope: 'all_matching',
       export_filter: 'all',
-      export_sort: 'hierarchy',
+      export_sort: 'newest',
       export_search: '',
       export_selected_count: 0,
       export_row_count: 1,
@@ -297,7 +297,7 @@ it.each(['denied', 'revoked'])(
             capabilities: { ...allowed.capabilities, can_export: false },
           }
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    act(() => window.dispatchEvent(new Event('online')));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
@@ -309,7 +309,7 @@ it.each(['denied', 'revoked'])(
     expect(f.csv).not.toHaveBeenCalled();
     expect(f.toast.success).not.toHaveBeenCalled();
     f.summary.mockResolvedValue(allowed);
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    act(() => window.dispatchEvent(new Event('online')));
     await ready();
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
     await act(async () => {
@@ -328,7 +328,7 @@ it('keeps an authorized pending export through an unreadable summary rather than
   fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
   const signal = f.export.mock.calls[0][3] as AbortSignal;
   f.summary.mockRejectedValue(new Error('Summary Connection Interrupted'));
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  act(() => window.dispatchEvent(new Event('online')));
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });

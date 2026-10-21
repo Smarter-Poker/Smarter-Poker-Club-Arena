@@ -1,4 +1,6 @@
-**Non-engine delivery: push, publish, verify and finish without waiting for `:55`.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
+**ENGINE RESETS ONCE A DAY (owner update October 20, 2026).** Routine game-engine updates and restarts happen only once daily at 04:00 America/Chicago (DST aware): 03:58 last-hand notice, 04:00-04:05 maintenance window. There is no hourly engine reset and no hourly cash-game or platform freeze. Hourly tournament breaks (:55-:00) still run and are separate from engine maintenance. Only an explicit urgent or degraded-engine emergency may restart outside 04:00. See CLAUDE.md section 13.
+
+**Non-engine delivery: push, publish, verify and finish immediately; never wait for an engine window.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
 
 > **Current owner instruction (September 17):** Use [PUBLISHING.md](PUBLISHING.md) for the active push, protected merge, publication and live-verification procedure. Each authorized agent owns its delivery independently and may work and publish in parallel. There is no restoration-owner approval or numbered release queue. This later owner instruction supersedes conflicting historical release directions below. Retired local/custom publishers, autopilot, watchdog/repair release paths and external error telemetry remain inactive. Preserve required technical checks, production safeguards and other agents’ work. The human-only approval restriction is revoked; Silent Revert Guard reports findings for review and is not a merge gate.
 
@@ -6,8 +8,9 @@
 
 ## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`
 
-If you are picking up the hourly `:55` maintenance break / platform freeze /
-engine restart work, the current state, every measured baseline, the open
+The hourly `:55` engine break and platform freeze are RETIRED (October 20,
+2026): the engine resets once a day at 04:00 America/Chicago (section 13).
+If you are picking up the historical engine-restart work, the state, every measured baseline, the open
 defects and the exact next actions are in
 [`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md) - a 9-phase
 programme; phases 1-3 built (phase 1 merged + live, phases 2+3 in PR #2715),
@@ -259,7 +262,9 @@ TABLE ... REFERENCES public.tournaments(id)` followed by ~10 s of function
    `tournaments` is not.
    `docs/changelog/2026-09-08-deep-sweep-two-and-the-probe-that-took-the-database-down.md`.
 8. **THE DATABASE REFUSES MIGRATIONS INSIDE THE HOURLY BREAK WINDOW
-   (2026-09-10).** The window is minute-of-hour :50-:03 UTC. A migration at
+   (2026-09-10).** This is now a DDL-only guard; it never freezes players and is
+   not an engine reset (the engine resets once daily at 04:00 Chicago,
+   section 13). The window is minute-of-hour :50-:03 UTC. A migration at
    23:52:36 UTC on 2026-09-09 landed on the :53 announcement and cancelled
    the 00:00 break (section 13). Event triggers `ca_break_window_refuses_ddl`
    and `ca_break_window_refuses_drops` now abort any non-temporary DDL from a

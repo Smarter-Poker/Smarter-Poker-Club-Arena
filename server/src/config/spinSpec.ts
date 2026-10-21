@@ -202,7 +202,7 @@ export const SPIN_TIERS: SpinTierSpec[] = [
        solution, and it lands E[m] on 2.76 to the last bit a double holds. */
     freq: 4_809_776,
     payouts: [1],
-    levelMinutes: 3,
+    levelMinutes: 5,
     reserveThresholdX: 0,
   },
   {
@@ -211,42 +211,42 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     // for why this pair moved on 2026-09-05: they are the only two that did.
     freq: 3_930_716,
     payouts: [1],
-    levelMinutes: 3,
+    levelMinutes: 5,
     reserveThresholdX: 0,
   },
   {
     multiplier: 4,
     freq: 900_000,
     payouts: [1],
-    levelMinutes: 3,
+    levelMinutes: 5,
     reserveThresholdX: 0,
   },
   {
     multiplier: 5,
     freq: 250_000,
     payouts: [1],
-    levelMinutes: 3,
+    levelMinutes: 5,
     reserveThresholdX: 0,
   },
   {
     multiplier: 10,
     freq: 100_000,
     payouts: [0.8, 0.2],
-    levelMinutes: 3,
+    levelMinutes: 5,
     reserveThresholdX: 0,
   },
   {
     multiplier: 25,
     freq: 7_500,
     payouts: [0.8, 0.12, 0.08],
-    levelMinutes: 3,
+    levelMinutes: 5,
     reserveThresholdX: 0,
   },
   {
     multiplier: 50,
     freq: 1_000,
     payouts: [0.8, 0.12, 0.08],
-    levelMinutes: 3,
+    levelMinutes: 5,
     reserveThresholdX: 0,
   },
   {
@@ -255,7 +255,7 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     // plus the extra mass needed to hold the expectation flat.
     freq: 1_008,
     payouts: [0.8, 0.12, 0.08],
-    levelMinutes: 3,
+    levelMinutes: 5,
     // Deliberately still 1.5, not the 2.0 the 500x used. Raising it would lock
     // the top of the ladder out of thin pools far more often than before, now
     // that this tier is drawn twice as frequently.
@@ -310,7 +310,7 @@ export const SPIN_FREQ_DENOMINATOR: number = SPIN_TIERS.reduce((sum, t) => sum +
  *
  * Two boards, one blind ladder. Dan, 2026-08-23, still standing: "SPEED
  * SHOULDN'T CHANGE, ONLY THE STARTING STACK. BLIND LEVELS WILL ALWAYS BE THE
- * SAME." Level length stays 3 minutes everywhere, so the only thing separating
+ * SAME." Owner update 2026-10-21: level length stays at least 5 minutes everywhere, so the only thing separating
  * a Turbo from a Deep Stack is how deep it starts:
  *
  *   Turbo        300 chips   15bb, over fast

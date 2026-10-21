@@ -1,3 +1,4 @@
+import { recoveryCanonical } from '../../src/services/CashierDurableRecovery';
 /**
  * Club Arena Cashier launch audit (2026-10-09), Trade Cashier fixes.
  *
@@ -24,6 +25,58 @@ const PLAYER_IDS = [
   '44444444-4444-4444-8444-444444444444',
   '44444444-4444-4444-8444-444444444445',
 ];
+
+// Model the durable server journal, including exact intent and compare-and-ack.
+const durableRows = new Map<string, Record<string, any>>();
+function recoveryReply(name: string, args: Record<string, any>) {
+  if (!name.startsWith('fn_cashier_browser_recovery_')) return undefined;
+  const scope = `${args.p_actor_id}:${args.p_club_id}:${args.p_kind}:`;
+  const key = scope + args.p_intent_key;
+  const row = durableRows.get(key);
+  const identity = (value: Record<string, any>) => value.operationId ?? value.submissionId;
+  const intent = (value: Record<string, any>, identifiers = false) => {
+    const {
+      failures: _failures,
+      createdAt: _created,
+      operationId,
+      submissionId,
+      opIds,
+      ...rest
+    } = value;
+    return recoveryCanonical(identifiers ? { ...rest, operationId, submissionId, opIds } : rest);
+  };
+  let data: unknown;
+  switch (name.split('_').at(-1)) {
+    case 'read':
+      data = [...durableRows]
+        .filter(([key]) => key.startsWith(scope))
+        .map(([, value]) => structuredClone(value));
+      break;
+    case 'reserve':
+      if (row && intent(row) !== intent(args.p_envelope))
+        throw new Error('Recovery Intent Mismatch');
+      if (!row) durableRows.set(key, structuredClone(args.p_envelope));
+      data = structuredClone(durableRows.get(key));
+      break;
+    case 'update':
+      data =
+        !!row &&
+        identity(row) === args.p_identity &&
+        intent(row, true) === intent(args.p_envelope, true) &&
+        args.p_envelope.failures.every((failure: any) =>
+          row.failures.some((original: any) => original.userId === failure.userId)
+        );
+      if (data) durableRows.set(key, structuredClone(args.p_envelope));
+      break;
+    case 'ack':
+      data = !!row && identity(row) === args.p_identity;
+      if (data) durableRows.delete(key);
+      break;
+    default:
+      throw new Error('Unexpected Recovery RPC');
+  }
+  return Promise.resolve({ data, error: null });
+}
 
 type TableCall = {
   table: string;
@@ -109,6 +162,7 @@ vi.mock('../../src/utils/clubIdResolver', async (importOriginal) => ({
 import { supabase } from '../../src/lib/supabase';
 import { useMasterBusChannel } from '../../src/hooks/useMasterBusChannel';
 import {
+  restoreDurableCashierTransfers,
   writeCashierTransferRecovery,
   readCashierTransferRecovery,
   readCashierTransferRecoveries,
@@ -202,7 +256,8 @@ async function openSendOut(amount: string, picks: number) {
   return dialog;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  durableRows.clear();
   state.frozen = false;
   vi.clearAllMocks();
   localStorage.clear();
@@ -303,6 +358,8 @@ beforeEach(() => {
   vi.mocked(supabase.rpc).mockImplementation((name: string, args?: unknown) => {
     const params = (args ?? {}) as Record<string, unknown>;
     state.rpcCalls.push({ name, args: params });
+    const recovery = recoveryReply(name, params);
+    if (recovery) return recovery as never;
     if (name === 'fn_platform_frozen') return Promise.resolve({ data: state.frozen, error: null });
     if (name === 'fn_cashier_recipient_wallet_balances')
       return Promise.resolve({
@@ -403,6 +460,8 @@ beforeEach(() => {
     }
     return Promise.resolve({ data: [], error: null }) as never;
   });
+  await restoreDurableCashierTransfers(USER_ID, CLUB_A);
+  await restoreDurableCashierTransfers(USER_ID, CLUB_B);
 });
 
 describe('large cashier roster stays complete and progressively rendered', () => {
@@ -1022,6 +1081,54 @@ it('keeps a late uncertain transfer in its original club instead of poisoning th
   fireEvent.click(screen.getByRole('checkbox', { name: 'Include Player 1' }));
   fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
   expect(await screen.findByRole('dialog', { name: /Send Out/ })).toBeInTheDocument();
+});
+
+it('restores the original server envelope after a quota-blocked uncertain send and retries its original keys', async () => {
+  const storage = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    throw new DOMException('Quota Exceeded', 'QuotaExceededError');
+  });
+  try {
+    const priorRpc = vi.mocked(supabase.rpc).getMockImplementation()!;
+    vi.mocked(supabase.rpc).mockImplementation((name, args) =>
+      name === 'fn_cashier_recovery_receipts'
+        ? (Promise.resolve({ data: { operations: [], tickets: [] }, error: null }) as never)
+        : priorRpc(name, args)
+    );
+    state.batch = async () => ({ data: null, error: { message: 'Connection Lost' } });
+    const first = mountCashier();
+    await synchronized();
+    const dialog = await openSendOut('25', 1);
+    const confirm = within(dialog).getByRole('button', { name: 'Confirm' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() =>
+      expect(
+        state.rpcCalls.filter((call) => call.name === 'fn_cashier_batch_transfer')
+      ).toHaveLength(1)
+    );
+    await screen.findByText('Transfer Recovery Required');
+    const original = state.rpcCalls.find((call) => call.name === 'fn_cashier_batch_transfer')!.args;
+    expect(durableRows.size).toBe(1);
+    expect(localStorage.length).toBe(0);
+    first.unmount();
+    mountCashier();
+    await synchronized();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review And Retry' }));
+    const retry = await screen.findByRole('dialog', { name: /Send Out/ });
+    fireEvent.click(within(retry).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() =>
+      expect(
+        state.rpcCalls.filter((call) => call.name === 'fn_cashier_batch_transfer')
+      ).toHaveLength(2)
+    );
+    const repeated = state.rpcCalls.filter((call) => call.name === 'fn_cashier_batch_transfer')[1]
+      .args;
+    expect(repeated.p_batch_id).toBe(original.p_batch_id);
+    expect(repeated.p_items).toEqual(original.p_items);
+    expect(durableRows.size).toBe(1);
+  } finally {
+    storage.mockRestore();
+  }
 });
 
 it('Phase 2: editing an uncertain transfer preserves its original journal and honest outcome', async () => {

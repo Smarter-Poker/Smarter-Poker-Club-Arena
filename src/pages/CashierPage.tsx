@@ -28,6 +28,7 @@ import CashierPendingOperations from '../components/wallet/CashierPendingOperati
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { isClubStaff, isAgentRole } from '../types/clubRoles';
+import { holdsPlayerWallet } from '../components/wallet/walletRows';
 import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { withClubContext } from '../utils/clubScopedPath';
 import { masterBus } from '../core/MasterBus';
@@ -504,7 +505,10 @@ function CashierContent() {
 
   const { recentIds } = useRecentRecipients(user?.id, clubId || null, 'cashier');
   const filteredRecipients = useMemo(() => {
-    const candidates = action === 'send' ? recipients.filter((r) => r.id !== user?.id) : recipients;
+    const candidates =
+      action === 'send'
+        ? recipients.filter((r) => r.id !== user?.id || holdsPlayerWallet(r.role))
+        : recipients;
     if (!recipientSearch.trim())
       return [...candidates].sort(
         (a, b) =>
@@ -1058,9 +1062,7 @@ function CashierContent() {
         // rendering "no recipients" over a network error.
         if (scopedErr) throw scopedErr;
         members = ((scoped || []) as Array<Record<string, unknown>>)
-          // The viewer is never in their own downline walk, but guard anyway:
-          // fn_agent_wallet_send refuses a self-send outright.
-          .filter((m) => String(m.user_id) !== user.id)
+          // The directory includes the agent's own player wallet.
           .map((m) => ({
             user_id: String(m.user_id),
             role: String(m.role || 'player'),
@@ -1604,12 +1606,18 @@ function CashierContent() {
   useEffect(() => {
     setDistributeWallet(null);
   }, [selectedRecipient]);
+  const selfPlayerFunding =
+    selectedRecipient === user?.id && (action === 'send' || !distributeViaClubBank);
   const distributeWallets: ClubBankRecipientWallet[] = selectedRecipientData
-    ? clubBankRecipientWallets(selectedRecipientData.role)
+    ? clubBankRecipientWallets(selectedRecipientData.role).filter(
+        (wallet) => !selfPlayerFunding || wallet === 'player_wallet'
+      )
     : [];
-  const distributeDestination: ClubBankRecipientWallet = selectedRecipientData
-    ? clubBankDestinationFor(selectedRecipientData.role, distributeWallet)
-    : 'player_wallet';
+  const distributeDestination: ClubBankRecipientWallet = selfPlayerFunding
+    ? 'player_wallet'
+    : selectedRecipientData
+      ? clubBankDestinationFor(selectedRecipientData.role, distributeWallet)
+      : 'player_wallet';
   // Each wallet the recipient holds, with its current balance (Dan 2026-10-15:
   // "AND IT SHOULD HAVE THERE CURRENT CHIP BALANCES AS WELL").
   const distributeBalances = useRecipientWalletBalances(clubId, selectedRecipientData?.id);
@@ -1897,11 +1905,11 @@ function CashierContent() {
           // had no result check at all, so a refusal printed "Sent 500 chips".
           if (!sendRes?.success) {
             // A definitive refusal moved nothing, so its journal entry closes.
-            if (sendRes && sendRes.success === false) clearCashierWalletOperation(operation);
+            if (sendRes && sendRes.success === false) await clearCashierWalletOperation(operation);
             throw new Error(sendRes?.error || 'The Cashier Refused That Send');
           }
 
-          clearCashierWalletOperation(operation);
+          await clearCashierWalletOperation(operation);
           // The money moved: always report it in the view that asked. Only a
           // changed club or page retires the message, never an authority
           // refresh, or the user sees nothing and sends a second time.
@@ -2619,7 +2627,7 @@ function CashierContent() {
                   )}
                   <p className="sc-copy sc-ink--muted" role="status">
                     {filteredRecipients
-                      .filter((row) => row.id !== user?.id)
+                      .filter((row) => row.id !== user?.id || holdsPlayerWallet(row.role))
                       .length.toLocaleString()}{' '}
                     Results
                   </p>
@@ -2648,11 +2656,9 @@ function CashierContent() {
                       aria-label="Send To Recipient"
                     >
                       <option value="">Select Recipient</option>
-                      {/* fn_agent_wallet_send refuses a self-send, so the viewer
-                        is never offered here (P-07). Distribute keeps them:
-                        fn_club_bank_send funds an owner's own float. */}
+                      {/* Agents may fund their own player wallet. */}
                       {filteredRecipients
-                        .filter((r) => r.id !== user?.id)
+                        .filter((r) => r.id !== user?.id || holdsPlayerWallet(r.role))
                         .map((r) => {
                           const isAgent = ['agent', 'super_agent', 'sub_agent'].includes(r.role);
                           const roleTag =
@@ -3100,10 +3106,10 @@ function CashierContent() {
                       if (!distRes?.success) {
                         // A definitive refusal moved nothing; its journal entry closes.
                         if (distRes && distRes.success === false)
-                          clearCashierWalletOperation(operation);
+                          await clearCashierWalletOperation(operation);
                         throw new Error(distRes?.error || 'The Cashier Refused That Distribution');
                       }
-                      clearCashierWalletOperation(operation);
+                      await clearCashierWalletOperation(operation);
                       // The money moved: report it unless the view itself changed.
                       if (!isMounted.current || transferView.current !== owningView) return;
                       const recipient = recipientRow;

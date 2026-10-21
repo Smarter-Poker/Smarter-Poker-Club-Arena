@@ -1,3 +1,4 @@
+import { cashierRecoveryRpc } from '../helpers/cashierRecoveryRpc';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CLUB = '22222222-2222-4222-8222-222222222222';
 
+const recovery = cashierRecoveryRpc();
 const fx = vi.hoisted(() => ({ rpc: vi.fn(), balances: vi.fn() }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -37,7 +39,8 @@ vi.mock('../../src/services/cashierBalanceRead', () => ({
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    rpc: (...args: unknown[]) => fx.rpc(...args),
+    rpc: (name: string, args: Record<string, unknown> = {}) =>
+      recovery.answer(name, args) ?? fx.rpc(name, args),
     from: () => {
       const q: Record<string, unknown> = {};
       for (const m of ['select', 'eq', 'abortSignal', 'order', 'limit']) q[m] = () => q;
@@ -63,6 +66,7 @@ const promoSnapshot = (over: Record<string, unknown>) => ({
 });
 
 beforeEach(() => {
+  recovery.clear();
   fx.rpc.mockReset();
   fx.balances.mockReset();
   fx.rpc.mockImplementation(async () => ({ data: [], error: null }));

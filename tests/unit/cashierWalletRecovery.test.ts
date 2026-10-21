@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { webcrypto } from 'node:crypto';
 import {
   reserveCashierWalletOperation,
@@ -6,6 +6,32 @@ import {
   readCashierWalletOperations,
 } from '../../src/services/CashierWalletRecovery';
 
+const server = vi.hoisted(() => new Map<string, any>());
+vi.mock('../../src/lib/supabase', () => ({
+  supabase: {
+    rpc: vi.fn(async (name: string, args: any) => {
+      const key = `${args.p_actor_id}:${args.p_club_id}:${args.p_kind}:${args.p_intent_key}`;
+      if (name.endsWith('_reserve')) {
+        if (!server.has(key)) server.set(key, structuredClone(args.p_envelope));
+        return { data: structuredClone(server.get(key)), error: null };
+      }
+      if (name.endsWith('_ack')) {
+        const row = server.get(key);
+        const same = row?.operationId === args.p_identity;
+        if (same) server.delete(key);
+        return { data: same, error: null };
+      }
+      if (name.endsWith('_read'))
+        return {
+          data: [...server.values()].filter(
+            (row) => row.userId === args.p_actor_id && row.clubId === args.p_club_id
+          ),
+          error: null,
+        };
+      throw new Error('Unexpected RPC ' + name);
+    }),
+  },
+}));
 const user = '11111111-1111-4111-8111-111111111111';
 const club = '22222222-2222-4222-8222-222222222222';
 const target = '33333333-3333-4333-8333-333333333333';
@@ -18,6 +44,7 @@ const args = {
 };
 beforeEach(() => {
   localStorage.clear();
+  server.clear();
   Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
 });
 describe('durable wallet operation identity', () => {
@@ -27,7 +54,7 @@ describe('durable wallet operation identity', () => {
     expect(first).not.toBeNull();
     expect(await reserveCashierWalletOperation(user, existingClub, action, args)).toEqual(first);
     expect(readCashierWalletOperations(user, existingClub)).toEqual([first]);
-    clearCashierWalletOperation(first!);
+    await clearCashierWalletOperation(first!);
     expect(readCashierWalletOperations(user, existingClub)).toEqual([]);
     expect(
       await reserveCashierWalletOperation(
@@ -75,9 +102,9 @@ describe('durable wallet operation identity', () => {
   });
   it('clears only the exact confirmed operation', async () => {
     const first = (await reserveCashierWalletOperation(user, club, action, args))!;
-    clearCashierWalletOperation({ ...first, operationId: target });
+    await clearCashierWalletOperation({ ...first, operationId: target });
     expect(readCashierWalletOperations(user, club)).toHaveLength(1);
-    clearCashierWalletOperation(first);
+    await clearCashierWalletOperation(first);
     expect(readCashierWalletOperations(user, club)).toHaveLength(0);
   });
   it('refuses corrupt or silently discarded storage before dispatch', async () => {
@@ -92,17 +119,38 @@ describe('durable wallet operation identity', () => {
       })
     ).toBeNull();
   });
-  it('refuses to allocate a browser operation without cross-tab exclusion', async () => {
+  it('reserves durably without browser locks or writable storage', async () => {
     const locks = navigator.locks;
     Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined });
     try {
-      expect(await reserveCashierWalletOperation(user, club, action, args)).toBeNull();
+      const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+        throw new DOMException('Full', 'QuotaExceededError');
+      });
+      const first = await reserveCashierWalletOperation(user, club, action, args);
+      expect(first).not.toBeNull();
+      expect(await reserveCashierWalletOperation(user, club, action, args)).toEqual(first);
+      write.mockRestore();
     } finally {
       Object.defineProperty(navigator, 'locks', { configurable: true, value: locks });
     }
     expect(localStorage.length).toBe(0);
   });
-  it('same-intent concurrent reservations share the Web Lock', async () => {
+  it('uses the authoritative server identity when browser reads and writes are disabled', async () => {
+    const first = await reserveCashierWalletOperation(user, club, action, args);
+    const read = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+      throw new DOMException('Disabled', 'SecurityError');
+    });
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Disabled', 'SecurityError');
+    });
+    try {
+      expect(await reserveCashierWalletOperation(user, club, action, args)).toEqual(first);
+    } finally {
+      read.mockRestore();
+      write.mockRestore();
+    }
+  });
+  it('same-intent concurrent reservations share the server identity', async () => {
     let chain = Promise.resolve();
     Object.defineProperty(navigator, 'locks', {
       configurable: true,

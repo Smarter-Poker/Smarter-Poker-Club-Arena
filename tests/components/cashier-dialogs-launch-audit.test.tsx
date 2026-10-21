@@ -1,3 +1,4 @@
+import { cashierRecoveryRpc } from '../helpers/cashierRecoveryRpc';
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +28,7 @@ const deferred = <T,>(): Deferred<T> => {
   return { promise, resolve };
 };
 
+const recovery = cashierRecoveryRpc();
 const fx = vi.hoisted(() => ({
   rpc: vi.fn(),
   tables: vi.fn(),
@@ -77,7 +79,8 @@ vi.mock('../../src/components/arena/DiamondCustodyBalance', () => ({
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    rpc: (...args: unknown[]) => fx.rpc(...args),
+    rpc: (name: string, args: Record<string, unknown> = {}) =>
+      recovery.answer(name, args) ?? fx.rpc(name, args),
     from: (table: string) => {
       const filters: Record<string, unknown> = {};
       const q: Record<string, unknown> = {
@@ -159,6 +162,7 @@ const settle = () =>
   });
 
 beforeEach(() => {
+  recovery.clear();
   fx.downloads.length = 0;
   fx.rpc.mockReset();
   fx.tables.mockReset();

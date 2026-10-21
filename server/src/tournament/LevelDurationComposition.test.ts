@@ -114,7 +114,8 @@ describe('the actual manager resolves raw level duration before applying acceler
                 durationMinutes: 5,
               }),
             ]);
-            const expected = accelerated && closed ? Math.max(1, Math.ceil(minutes / 2)) : minutes;
+            const expected =
+              accelerated && closed ? Math.max(5, Math.ceil(minutes / 2)) : Math.max(5, minutes);
             for (const index of [0, 1, 3, 9]) {
               const level = state.resolveBlindLevel(structure, index);
               expect(state.levelDurationMs(level)).toBe(expected * 60000);
@@ -126,20 +127,20 @@ describe('the actual manager resolves raw level duration before applying acceler
     }
   }
 
-  it('keeps three-minute Spin seconds through overflow without a generic duration floor', () => {
+  it('applies the five-minute floor to legacy Spin seconds through overflow', () => {
     const state = manager(false, false, true);
     const structure = [{ level: 1, smallBlind: 5, bigBlind: 10, ante: 0, duration: 180 }];
     for (const index of [0, 1, 12, 25]) {
-      expect(state.levelDurationMs(state.resolveBlindLevel(structure, index))).toBe(180000);
+      expect(state.levelDurationMs(state.resolveBlindLevel(structure, index))).toBe(300000);
     }
   });
 });
 
 describe('level publication carries the duration the actual manager timer uses', () => {
   it.each([
-    { minutes: 5, spin: false, expected: 3 },
+    { minutes: 5, spin: false, expected: 5 },
     { minutes: 10, spin: false, expected: 5 },
-    { minutes: 3, spin: true, expected: 3 },
+    { minutes: 3, spin: true, expected: 5 },
   ])(
     'publishes $expected minutes for a $minutes-minute row, Spin $spin',
     async ({ minutes, spin, expected }) => {

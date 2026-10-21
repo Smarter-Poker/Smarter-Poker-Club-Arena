@@ -1,3 +1,4 @@
+import { durableRecovery } from './CashierDurableRecovery';
 import { CASHIER_WALLET_RECOVERY_PREFIX } from '../lib/financialJournalKeys';
 import { uuid } from '../utils/uuid';
 
@@ -41,7 +42,15 @@ export async function reserveCashierWalletOperation(
 ): Promise<CashierWalletOperation | null> {
   if (!ENTITY_UUID.test(userId) || !ENTITY_UUID.test(clubId) || !ACTIONS.has(action)) return null;
   try {
-    const store = storage ?? window.localStorage;
+    const store =
+      storage ??
+      (() => {
+        try {
+          return window.localStorage;
+        } catch {
+          return undefined;
+        }
+      })();
     const canonical = JSON.stringify(
       Object.keys(args)
         .filter((key) => key !== 'p_op_id')
@@ -54,8 +63,62 @@ export async function reserveCashierWalletOperation(
       .join('');
     const base = { version: 1 as const, userId, clubId, action, digest };
     const key = keyFor({ ...base, operationId: '', createdAt: 0 });
+    if (!storage) {
+      let legacy: CashierWalletOperation | undefined;
+      let legacyRaw: string | null = null;
+      try {
+        legacyRaw = store?.getItem(key) ?? null;
+      } catch {
+        /* Browser storage may be disabled; use the authoritative server journal. */
+      }
+      try {
+        legacy = legacyRaw ? JSON.parse(legacyRaw) : undefined;
+      } catch {
+        return null;
+      }
+      if (
+        legacy &&
+        !(
+          legacy.version === 1 &&
+          legacy.userId === userId &&
+          legacy.clubId === clubId &&
+          legacy.action === action &&
+          legacy.digest === digest &&
+          UUID.test(legacy.operationId) &&
+          Number.isFinite(legacy.createdAt)
+        )
+      )
+        return null;
+      const draft = legacy ?? { ...base, operationId: createId(), createdAt: Date.now() };
+      const row = (await durableRecovery(
+        'reserve',
+        userId,
+        clubId,
+        'wallet',
+        `${action}:${digest}`,
+        draft
+      )) as CashierWalletOperation;
+      if (legacy && row?.operationId !== legacy.operationId) return null;
+      if (
+        !row ||
+        row.userId !== userId ||
+        row.clubId !== clubId ||
+        row.action !== action ||
+        row.digest !== digest ||
+        !UUID.test(row.operationId)
+      )
+        return null;
+      try {
+        store?.setItem(key, JSON.stringify(row));
+      } catch {
+        /* Server journal is authoritative. */
+      }
+      if (typeof window !== 'undefined')
+        window.dispatchEvent(new Event('cashier-wallet-journal-changed'));
+      return row;
+    }
     const reserve = () => {
-      const raw = store.getItem(key);
+      const raw = store!.getItem(key);
       if (raw) {
         const row = JSON.parse(raw) as CashierWalletOperation;
         return row.version === 1 &&
@@ -72,10 +135,10 @@ export async function reserveCashierWalletOperation(
       if (!UUID.test(operationId)) return null;
       const row = { ...base, operationId, createdAt: Date.now() };
       const serialized = JSON.stringify(row);
-      store.setItem(key, serialized);
+      store!.setItem(key, serialized);
       if (typeof window !== 'undefined')
         window.dispatchEvent(new Event('cashier-wallet-journal-changed'));
-      return store.getItem(key) === serialized ? row : null;
+      return store!.getItem(key) === serialized ? row : null;
     };
     // Modern browser Web Locks prevent two tabs allocating different IDs for
     // one intent. Without exclusion, fail before any new financial request.
@@ -89,7 +152,26 @@ export async function reserveCashierWalletOperation(
 }
 
 /** Only an authoritative receipt retires this exact identity. */
-export function clearCashierWalletOperation(row: CashierWalletOperation, storage?: Storage): void {
+export async function clearCashierWalletOperation(
+  row: CashierWalletOperation,
+  storage?: Storage
+): Promise<void> {
+  if (!storage) {
+    try {
+      const acknowledged = await durableRecovery(
+        'ack',
+        row.userId,
+        row.clubId,
+        'wallet',
+        `${row.action}:${row.digest}`,
+        undefined,
+        row.operationId
+      );
+      if (typeof acknowledged !== 'boolean') return;
+    } catch {
+      return;
+    }
+  }
   try {
     const store = storage ?? window.localStorage;
     const key = keyFor(row);
@@ -149,4 +231,22 @@ export function readCashierWalletOperations(
   clubId: string
 ): CashierWalletOperation[] {
   return readCashierWalletRecoveryState(userId, clubId).operations;
+}
+
+/** Reads durable identities even when the browser cannot write its optional mirror. */
+export async function readDurableCashierWalletOperations(
+  userId: string,
+  clubId: string
+): Promise<CashierWalletOperation[]> {
+  const rows = await durableRecovery('read', userId, clubId, 'wallet');
+  if (!Array.isArray(rows)) throw new Error('Cashier Recovery Response Missing');
+  return rows.filter(
+    (row): row is CashierWalletOperation =>
+      row?.userId === userId &&
+      row.clubId === clubId &&
+      row.version === 1 &&
+      ACTIONS.has(row.action) &&
+      UUID.test(row.operationId) &&
+      /^[0-9a-f]{64}$/.test(row.digest)
+  );
 }

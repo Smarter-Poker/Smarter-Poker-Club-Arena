@@ -109,7 +109,9 @@ describe('every member is discoverable in the cashier', () => {
     // The self row is selectable only when the Club Bank can pay it (Dan
     // 2026-10-15: "INCLUDING OWNERS"); a Send Out to yourself is a Club Bank
     // send (a-club-owner-can-be-paid-into-their-player-wallet).
-    expect(page).toContain('const selectable = !r.isSelf || selfCanFundPlayerWallet;');
+    expect(page).toMatch(
+      /const selectable =\s*!r\.isSelf \|\| selfCanFundPlayerWallet \|\| canHoldAgentWallet\(myRole\);/
+    );
     expect(page).toContain('disabled={!selectable || busy}');
     // And the "Available" count is recipients, not rows.
     expect(page).toContain(

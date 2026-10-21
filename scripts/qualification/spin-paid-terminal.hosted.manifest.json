@@ -24,15 +24,15 @@
     },
     "scripts/qualification/fixtures/spin-paid-terminal/rules.json": {
       "bytes": 18511,
-      "sha256": "2ffdfae02572aac6fba86ed9c71ff235e871f172e44acfd15304e242e6e05b46"
+      "sha256": "8d339ff212c59403c76d28030778e3d898ff6f11fa2a1e34527ee8e00fb5388c"
     },
     "server/src/tournament/SpinDrawReceipt.ts": {
-      "bytes": 7528,
-      "sha256": "2a63498d705aefae65c1d0b3fab754b953b8f3384deb84a5adaf51eae23ab79a"
+      "bytes": 7845,
+      "sha256": "99589d854a8ad1c08864c6c04efd96f7af76562f5df7aa5712b6eee39918c718"
     },
     "server/src/config/spinSpec.ts": {
-      "bytes": 44284,
-      "sha256": "8ce21104f01f9d003f1189207af20808c4b439cb7c4afecf583704f83c1be98e"
+      "bytes": 44318,
+      "sha256": "5dc468654ae62fe6dd459ba91d6786fa5efc91a276c4dc76686ef531e65f089b"
     }
   }
 }

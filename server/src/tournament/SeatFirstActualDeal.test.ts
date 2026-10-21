@@ -43,6 +43,7 @@ afterEach(() => {
 function fixture(
   options: {
     spin?: boolean;
+    legacySpinProjection?: 'booked' | 'floor' | 'wrong-stakes';
     stack?: number;
     variant?: 'nlh' | 'plo4';
     setupDelay?: number;
@@ -159,7 +160,24 @@ function fixture(
         return builder;
       },
       then(resolve: any, reject: any) {
-        if (patch) Object.assign(row, structuredClone(patch));
+        if (patch) {
+          Object.assign(row, structuredClone(patch));
+          if (relation === 'tournaments' && patch.blind_structure && options.legacySpinProjection) {
+            // The existing booked-draw trigger restores the immutable 180s
+            // ladder. The subsequent clock trigger, once installed, floors it.
+            row.blind_structure = JSON.stringify(
+              tier.blind_structure.map((blind) => ({
+                ...blind,
+                ...(options.legacySpinProjection === 'floor'
+                  ? { duration: 300, durationMinutes: 5 }
+                  : {}),
+                ...(options.legacySpinProjection === 'wrong-stakes'
+                  ? { bigBlind: blind.bigBlind + 1 }
+                  : {}),
+              }))
+            );
+          }
+        }
         let value: any;
         switch (relation) {
           case 'tournaments':
@@ -209,6 +227,9 @@ function fixture(
   let completedAt = 0;
   const rule_manifest = spinRuleManifest(1, stack);
   const tier = rule_manifest.tiers.find((candidate) => candidate.multiplier === 10)!;
+  if (options.legacySpinProjection) {
+    for (const blind of tier.blind_structure) blind.duration = 180;
+  }
   rpc.mockImplementation(async (name: string, args: any) => {
     if (name === 'fn_ca_operator_floor_state')
       return { data: { hold: null, close: null }, error: null };
@@ -459,6 +480,7 @@ function fixture(
     hub,
     handStarts,
     blindStarts,
+    bookedBlinds: tier.blind_structure,
     started: options.resume ? manager.resume() : manager.start(),
     completedAt: () => completedAt,
     dealing: () => dealing,
@@ -494,6 +516,36 @@ async function expectFirstHand(f: ReturnType<typeof fixture>, earliest: number) 
 }
 
 describe('actual manager launch reaches the first hand and action timer after the shared reveal', () => {
+  it.each(['booked', 'floor'] as const)(
+    'plays legacy booked clocks with the %s database projection',
+    async (projection) => {
+      const f = fixture({ legacySpinProjection: projection });
+      await f.started;
+      await settle();
+      expect(f.manager.running).toBe(true);
+      expect(f.bookedBlinds.every((blind) => blind.duration === 180)).toBe(true);
+      expect(
+        f.manager.tournamentCache.blind_structure.every((blind: any) => blind.duration === 300)
+      ).toBe(true);
+      expect(f.row).toMatchObject({ spin_multiplier: 10, prize_pool: 10, starting_chips: 1000 });
+      const hold = f.engine.dealHoldUntilMs;
+      await vi.advanceTimersByTimeAsync(hold - Date.now());
+      await settle();
+      await expectFirstHand(f, hold);
+    }
+  );
+
+  it('still refuses a different booked stake while normalizing legacy clocks', async () => {
+    const f = fixture({ legacySpinProjection: 'wrong-stakes' });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await f.started;
+    expectNoHand(f);
+    expect(f.manager.running).toBe(false);
+    expect(rpc.mock.calls.some(([name]) => name === 'fn_complete_tournament_launch_atomic')).toBe(
+      false
+    );
+  });
+
   it.each([
     ['ordinary admission', {}],
     ['slow table setup', { setupDelay: spinRevealToDealMs() + 5000 }],
@@ -806,7 +858,7 @@ describe('actual manager launch reaches the first hand and action timer after th
     await expectFirstHand(f, NOW);
     expect(f.blindStarts).toEqual([NOW]);
     expect(f.manager.startBlindTimer).toHaveBeenCalledWith(HEADS_UP_BLIND_STRUCTURE);
-    expect(HEADS_UP_BLIND_STRUCTURE.every((level) => level.durationMinutes === 3)).toBe(true);
+    expect(HEADS_UP_BLIND_STRUCTURE.every((level) => level.durationMinutes === 5)).toBe(true);
     const state = f.engine.handController.getState();
     expect(state.currentBet).toBe(20);
     expect(state.pot).toBe(30);

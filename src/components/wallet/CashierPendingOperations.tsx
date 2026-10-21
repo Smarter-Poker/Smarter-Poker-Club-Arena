@@ -5,6 +5,7 @@ import { reportError } from '../../utils/errorReporter';
 import {
   clearCashierWalletOperation,
   readCashierWalletRecoveryState,
+  readDurableCashierWalletOperations,
 } from '../../services/CashierWalletRecovery';
 
 /** Explicit receipt lookup moves no chips and survives withdrawn club access. */
@@ -59,12 +60,35 @@ export default function CashierPendingOperations({
       window.removeEventListener('cashier-wallet-journal-changed', refresh);
     };
   }, []);
-  void revision;
-  const recovery =
+  const [durable, setDurable] = useState<ReturnType<typeof readCashierWalletRecoveryState>>({
+    operations: [],
+    unreadable: false,
+  });
+  useEffect(() => {
+    let live = true;
+    setDurable({ operations: [], unreadable: false });
+    if (userId && clubId)
+      void readDurableCashierWalletOperations(userId, clubId)
+        .then((operations) => {
+          if (live) setDurable({ operations, unreadable: false });
+        })
+        .catch(() => {
+          if (live) setDurable({ operations: [], unreadable: true });
+        });
+    return () => {
+      live = false;
+    };
+  }, [userId, clubId, revision]);
+  const local =
     userId && clubId
       ? readCashierWalletRecoveryState(userId, clubId)
       : { operations: [], unreadable: false };
-  const { operations, unreadable } = recovery;
+  const operations = [
+    ...new Map(
+      [...local.operations, ...durable.operations].map((row) => [row.operationId, row])
+    ).values(),
+  ];
+  const unreadable = durable.unreadable || local.unreadable;
   async function check() {
     if (!clubId || busy.current) return;
     const token = scope.current;
@@ -89,7 +113,7 @@ export default function CashierPendingOperations({
                 receipt.operation_id === row.operationId && receipt.receipt?.success === true
             )
           ) {
-            clearCashierWalletOperation(row);
+            await clearCashierWalletOperation(row);
             confirmed++;
           }
         }

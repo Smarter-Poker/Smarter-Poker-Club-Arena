@@ -35,7 +35,7 @@ describe('club MTT setup presets reach the creation payload', () => {
     ['Regular', 150, 10],
     ['Deep Stack', 300, 15],
     ['Turbo', 100, 5],
-    ['Hyper Turbo', 50, 2],
+    ['Hyper Turbo', 50, 5],
   ] as const)(
     '%s sets the advertised opening depth and playing clock',
     async (label, bb, minutes) => {
@@ -402,7 +402,7 @@ describe('club profile selection preserves operator terms', () => {
       recurrenceCadence: 'weekly',
     });
     expect(schedule.config.startTime).toBeUndefined();
-    expect(schedule.config.blindStructure[0]).toMatchObject({ bigBlind: 20, durationMinutes: 2 });
+    expect(schedule.config.blindStructure[0]).toMatchObject({ bigBlind: 20, durationMinutes: 5 });
     expect(mocks.create).not.toHaveBeenCalled();
     expect(mocks.error).not.toHaveBeenCalled();
   });

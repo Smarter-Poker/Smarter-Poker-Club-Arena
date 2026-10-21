@@ -1,3 +1,4 @@
+import { durableRecovery, recoveryDigest } from './CashierDurableRecovery';
 import { CASHIER_RECOVERY_PREFIX, CASHIER_REQUEST_RECOVERY_PREFIX } from '../utils/clearUserCaches';
 
 export { CASHIER_RECOVERY_PREFIX, CASHIER_REQUEST_RECOVERY_PREFIX };
@@ -326,7 +327,7 @@ function collectCashierTransferRecoveries(
   };
 }
 
-export function readCashierTransferRecoveries(
+function readLocalCashierTransferRecoveries(
   userId: string,
   clubId: string,
   storage: CashierRecoveryStorage | null = browserRecoveryStorage(),
@@ -341,6 +342,151 @@ export function readCashierTransferRecoveries(
     return collectCashierTransferRecoveries(userId, clubId, storage, now, false).recoveries;
   } catch {
     return [];
+  }
+}
+
+const durableTransfers = new Map<string, CashierTransferRecovery[]>();
+const transferScope = (userId: string, clubId: string) => `${userId}:${clubId}`;
+export function readCashierTransferRecoveries(
+  userId: string,
+  clubId: string,
+  storage: CashierRecoveryStorage | null = browserRecoveryStorage(),
+  now = Date.now()
+): CashierTransferRecovery[] {
+  const rows = new Map(
+    readLocalCashierTransferRecoveries(userId, clubId, storage, now).map((row) => [
+      row.submissionId,
+      row,
+    ])
+  );
+  for (const row of durableTransfers.get(transferScope(userId, clubId)) ?? [])
+    rows.set(row.submissionId, row);
+  return [...rows.values()].sort((a, b) => a.createdAt - b.createdAt);
+}
+async function transferIntentKey(row: CashierTransferRecovery): Promise<string> {
+  const {
+    submissionId: _submission,
+    opIds: _ops,
+    failures: _failures,
+    createdAt: _created,
+    ...intent
+  } = row;
+  return recoveryDigest(intent);
+}
+function privateTransfer(row: CashierTransferRecovery): CashierTransferRecovery {
+  return {
+    ...row,
+    failures: row.failures.map((f) => ({
+      userId: f.userId,
+      name: 'Cashier Recipient',
+      message: 'Outcome Needs Verification',
+    })),
+  };
+}
+function rememberTransfer(row: CashierTransferRecovery) {
+  const key = transferScope(row.userId, row.clubId);
+  const rows = durableTransfers.get(key) ?? [];
+  durableTransfers.set(key, [...rows.filter((r) => r.submissionId !== row.submissionId), row]);
+}
+/** Reserve before a financial round trip; the server owns concurrent-tab identities. */
+export async function reserveDurableCashierTransfer(
+  row: CashierTransferRecovery
+): Promise<CashierTransferRecovery> {
+  if (!isValidRecovery(row, row.userId, row.clubId, Date.now()))
+    throw new Error('Invalid Cashier Recovery Intent');
+  const storage = browserRecoveryStorage();
+  let malformed = false;
+  try {
+    malformed =
+      !!storage &&
+      collectCashierTransferRecoveries(row.userId, row.clubId, storage, Date.now(), false)
+        .malformed;
+  } catch {
+    /* An unavailable browser store cannot veto the durable server journal. */
+  }
+  if (malformed) throw new Error('Cashier Recovery Needs Verification');
+  const legacy = readLocalCashierTransferRecoveries(row.userId, row.clubId).find(
+    (candidate) => candidate.submissionId === row.submissionId
+  );
+  const result = await durableRecovery(
+    'reserve',
+    row.userId,
+    row.clubId,
+    'transfer',
+    await transferIntentKey(row),
+    privateTransfer(row)
+  );
+  if (
+    !isValidRecovery(result, row.userId, row.clubId, Date.now()) ||
+    (await transferIntentKey(result)) !== (await transferIntentKey(row))
+  )
+    throw new Error('Cashier Recovery Response Missing');
+  if (legacy && result.submissionId !== legacy.submissionId)
+    throw new Error('Conflicting Legacy Cashier Recovery Needs Verification');
+  rememberTransfer(result);
+  writeCashierTransferRecovery(result); // Optional browser mirror; quota cannot deny a transfer.
+  return result;
+}
+/** Discover original envelopes after reload, including readable pre-rollout journals. */
+export async function restoreDurableCashierTransfers(
+  userId: string,
+  clubId: string
+): Promise<CashierTransferRecovery[]> {
+  for (const row of readLocalCashierTransferRecoveries(userId, clubId)) {
+    try {
+      await reserveDurableCashierTransfer(row);
+    } catch {
+      /* Keep readable legacy journal available for receipt lookup. */
+    }
+  }
+  const result = await durableRecovery('read', userId, clubId, 'transfer');
+  if (
+    !Array.isArray(result) ||
+    result.some((row) => !isValidRecovery(row, userId, clubId, Date.now()))
+  )
+    throw new Error('Cashier Recovery Response Missing');
+  durableTransfers.set(transferScope(userId, clubId), result);
+  return readCashierTransferRecoveries(userId, clubId);
+}
+export async function updateDurableCashierTransfer(row: CashierTransferRecovery): Promise<void> {
+  try {
+    const updated = await durableRecovery(
+      'update',
+      row.userId,
+      row.clubId,
+      'transfer',
+      await transferIntentKey(row),
+      privateTransfer(row),
+      row.submissionId
+    );
+    if (updated === true) {
+      rememberTransfer(row);
+      writeCashierTransferRecovery(row);
+    }
+  } catch {
+    /* Original envelope remains durable and safe to replay. */
+  }
+}
+export async function clearDurableCashierTransfer(row: CashierTransferRecovery): Promise<void> {
+  try {
+    const acknowledged = await durableRecovery(
+      'ack',
+      row.userId,
+      row.clubId,
+      'transfer',
+      await transferIntentKey(row),
+      undefined,
+      row.submissionId
+    );
+    if (typeof acknowledged !== 'boolean') return;
+    const key = transferScope(row.userId, row.clubId);
+    durableTransfers.set(
+      key,
+      (durableTransfers.get(key) ?? []).filter((r) => r.submissionId !== row.submissionId)
+    );
+    clearCashierTransferRecovery(row.userId, row.clubId, row.submissionId);
+  } catch {
+    /* A retained journal only replays its original identities. */
   }
 }
 

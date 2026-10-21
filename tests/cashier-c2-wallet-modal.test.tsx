@@ -1,3 +1,5 @@
+import { cashierRecoveryRpc } from './helpers/cashierRecoveryRpc';
+import { webcrypto } from 'node:crypto';
 /**
  * Audit C2, the Club Bank, Agent Wallet and Promo Wallet cashier
  * (WalletCashierModal), rendered (2026-10-09). Each test names the finding it
@@ -50,6 +52,8 @@ vi.mock('../src/utils/downloadCsv', async (importOriginal) => ({
     return true;
   },
 }));
+const recoveries = cashierRecoveryRpc();
+
 vi.mock('../src/lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
@@ -68,6 +72,8 @@ vi.mock('../src/lib/supabase', () => ({
     },
     rpc: (fn: string, args: Record<string, unknown>) => {
       fx.calls.push({ fn, args });
+      const recovery = recoveries.answer(fn, args);
+      if (recovery) return Promise.resolve(recovery);
       /* UPDATED 2026-10-09 (launch audit S-07): the cashier reads the Club Bank
          and the promo pot through the role-checked fn_club_money_panel (with
          an abort signal), never through a direct clubs select. The fixture
@@ -149,6 +155,9 @@ const plate = (name: string | RegExp) => screen.getByRole('button', { name });
 const bankFigure = () => document.querySelector('.cbc-bank strong');
 
 beforeEach(() => {
+  recoveries.clear();
+  localStorage.clear();
+  Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
   fx.club = { name: 'Test Club', union_id: null, chip_treasury: 1000, promo_balance: 0 };
   fx.agentRow = null;
   fx.members = [{ data: [kingfish], error: null }];
@@ -538,5 +547,36 @@ describe('Club Bank funding follows the selected account', () => {
     await waitFor(() => expect(sends(rpc)).toHaveLength(1));
     expect(sends(rpc)[0].args).toMatchObject({ p_amount: 5, p_destination: 'agent_wallet' });
     expect(sends('fn_club_bank_send')).toHaveLength(0);
+  });
+});
+
+describe('Agent Own Player Funding With Full Browser Storage', () => {
+  it('discovers the agent and sends to their own player wallet despite quota failure', async () => {
+    fx.agentRow = { agent_wallet_balance: 1000, is_prepaid: true, credit_used: 0 };
+    fx.members = [
+      {
+        data: [{ ...kingfish, user_id: '11111111-1111-4111-8111-111111111111', role: 'agent' }],
+        error: null,
+      },
+    ];
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Full', 'QuotaExceededError');
+    });
+    try {
+      openCashier({ role: 'agent', walletType: 'agent_wallet' });
+      await pick(/Kingfish/);
+      typeAmount('5');
+      await waitFor(() => expect(plate('Send Chips')).not.toBeDisabled());
+      fireEvent.click(plate('Send Chips'));
+      await waitFor(() => expect(sends('fn_agent_wallet_send')).toHaveLength(1));
+      expect(sends('fn_agent_wallet_send')[0].args).toMatchObject({
+        p_to_user_id: '11111111-1111-4111-8111-111111111111',
+        p_destination: 'player_wallet',
+        p_amount: 5,
+      });
+      await waitFor(() => expect(fx.toast.success).toHaveBeenCalled());
+    } finally {
+      write.mockRestore();
+    }
   });
 });

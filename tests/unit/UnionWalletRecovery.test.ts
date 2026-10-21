@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   clearUnionWalletOperation,
+  reserveDurableUnionWalletOperation,
+  acknowledgeDurableUnionWalletOperation,
   reserveUnionWalletOperation,
   unionWalletIntentSignature,
   type UnionWalletRecoveryStorage,
@@ -44,6 +46,47 @@ const scope = (userId = USER_A, intentSignature = signature()) => ({
   unionId: UNION_ID,
   walletKey: 'chips' as const,
   signature: intentSignature,
+});
+
+describe('server-owned Union Wallet recovery', () => {
+  it('reserves without browser storage and repeats the same server operation', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const rpc = async (_name: string, args: Record<string, unknown>) => {
+      calls.push(args);
+      return { data: OP_A, error: null };
+    };
+    expect(await reserveDurableUnionWalletOperation(scope(), rpc, null)).toBe(OP_A);
+    expect(await reserveDurableUnionWalletOperation(scope(), rpc, null)).toBe(OP_A);
+    expect(calls[0]).toMatchObject({ p_union_id: UNION_ID, p_legacy_operation_id: null });
+  });
+  it('adopts an unresolved legacy key rather than paying under a fresh id', async () => {
+    const storage = new MemoryStorage();
+    reserveUnionWalletOperation(scope(), storage, NOW, () => OP_A);
+    let legacy: unknown;
+    const rpc = async (_name: string, args: Record<string, unknown>) => {
+      legacy = args.p_legacy_operation_id;
+      return { data: OP_A, error: null };
+    };
+    expect(await reserveDurableUnionWalletOperation(scope(), rpc, storage)).toBe(OP_A);
+    expect(legacy).toBe(OP_A);
+  });
+  it('propagates an unknown reservation outcome and never invents an id', async () => {
+    const error = new Error('Response Lost');
+    await expect(
+      reserveDurableUnionWalletOperation(scope(), async () => ({ data: null, error }), null)
+    ).rejects.toBe(error);
+  });
+  it('acknowledges only the operation whose result was received', async () => {
+    let captured: unknown;
+    await acknowledgeDurableUnionWalletOperation(scope(), OP_A, async (name, args) => {
+      captured = { name, args };
+      return { data: null, error: null };
+    });
+    expect(captured).toMatchObject({
+      name: 'fn_union_wallet_acknowledge_intent',
+      args: { p_operation_id: OP_A },
+    });
+  });
 });
 
 describe('Union Wallet intent recovery', () => {

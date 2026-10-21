@@ -23,84 +23,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 11,
           "smallBlind": 150,
           "bigBlind": 300,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 12,
           "smallBlind": 200,
           "bigBlind": 400,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         }
       ],
       "payout_structure": [
@@ -138,84 +138,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 11,
           "smallBlind": 150,
           "bigBlind": 300,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 12,
           "smallBlind": 200,
           "bigBlind": 400,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         }
       ],
       "payout_structure": [
@@ -253,84 +253,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 11,
           "smallBlind": 150,
           "bigBlind": 300,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 12,
           "smallBlind": 200,
           "bigBlind": 400,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         }
       ],
       "payout_structure": [
@@ -368,84 +368,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 11,
           "smallBlind": 150,
           "bigBlind": 300,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 12,
           "smallBlind": 200,
           "bigBlind": 400,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         }
       ],
       "payout_structure": [
@@ -483,84 +483,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 11,
           "smallBlind": 150,
           "bigBlind": 300,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 12,
           "smallBlind": 200,
           "bigBlind": 400,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         }
       ],
       "payout_structure": [
@@ -601,84 +601,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 11,
           "smallBlind": 150,
           "bigBlind": 300,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 12,
           "smallBlind": 200,
           "bigBlind": 400,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         }
       ],
       "payout_structure": [
@@ -719,84 +719,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 11,
           "smallBlind": 150,
           "bigBlind": 300,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 12,
           "smallBlind": 200,
           "bigBlind": 400,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         }
       ],
       "payout_structure": [
@@ -837,84 +837,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 11,
           "smallBlind": 150,
           "bigBlind": 300,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         },
         {
           "level": 12,
           "smallBlind": 200,
           "bigBlind": 400,
           "ante": 0,
-          "durationMinutes": 3
+          "durationMinutes": 5
         }
       ],
       "payout_structure": [
@@ -957,84 +957,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         }
       ],
       "payout_structure": [
@@ -1074,84 +1074,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         }
       ],
       "payout_structure": [
@@ -1191,84 +1191,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         }
       ],
       "payout_structure": [
@@ -1308,84 +1308,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         }
       ],
       "payout_structure": [

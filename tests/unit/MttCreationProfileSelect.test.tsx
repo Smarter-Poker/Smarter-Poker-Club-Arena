@@ -46,7 +46,7 @@ function Form({ initial = draft }: { initial?: TournamentFormInput }) {
         onApply={(values) => setConfig((current) => ({ ...current, ...values }))}
       />
       <MttCreationStructurePreview config={config} gameType="nlh" />
-      <button onClick={() => setConfig((current) => ({ ...current, blindsUpMinutes: 4 }))}>
+      <button onClick={() => setConfig((current) => ({ ...current, blindsUpMinutes: 5 }))}>
         Edit Level Duration
       </button>
       <button
@@ -66,7 +66,7 @@ const cases = [
   ['regular', 150, 10, 'standard'],
   ['deep', 300, 15, 'slow'],
   ['turbo', 100, 5, 'turbo'],
-  ['hyper', 50, 2, 'hyper_turbo'],
+  ['hyper', 50, 5, 'turbo'],
 ] as const;
 
 function selectAndSave(id: string) {
@@ -119,7 +119,7 @@ describe('engine MTT setup presets reach actual creation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save Draft Payload' }));
     const payload = JSON.parse(screen.getByTestId('profile-payload').textContent!);
     expect(describeStoredMttStructure(payload.blindStructure, payload.startingStack)).toMatchObject(
-      { startingDepthBB: 150, openingMinutes: 4, speed: 'turbo' }
+      { startingDepthBB: 150, openingMinutes: 5, speed: 'turbo' }
     );
   });
 

@@ -447,6 +447,28 @@ describe('complete immutable Rake exports', () => {
     expect(csv.toLowerCase()).not.toContain('horse');
   });
 
+  it('keeps fractional fees and separates MTT fees from all tournaments in union CSV', async () => {
+    const row = { ...clubRow(1), fee: 24.005, cash_fee: 4.005, mtt_fee: 17, tournament_fee: 20 };
+    const rpc = vi.fn((name: string) => {
+      if (name === 'ca_rake_export_start_v2') return result(receipt('union', 1));
+      if (name === 'ca_club_data_export_page') return result(page('union', [row], 1, 0));
+      return result(true);
+    }) as ClubDataExportRpc;
+    const exported = await fetchRakeSnapshotExport({
+      rpc,
+      scope: 'union',
+      scopeId: UNION_ID,
+      start: '2026-09-01',
+      end: '2026-09-13',
+      viewerUserId: VIEWER_ID,
+      requestId: 'fa056fee-e678-4db6-8c37-9e98f431dcac',
+      signal: new AbortController().signal,
+    });
+    const csv = rakeSnapshotExportToCsv(exported);
+    expect(csv).toContain('fee,cash_fee,mtt_fee,tournament_fee,winnings');
+    expect(csv).toContain(',24.005,4.005,17,20,1,');
+  });
+
   it.each([
     ['union' as const, 'club_id,name,code,avatar_url,games,hands,fee'],
     ['club' as const, 'agent_user_id,name,avatar_url,role,commission_rate'],

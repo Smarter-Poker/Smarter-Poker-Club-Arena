@@ -53,6 +53,7 @@ export interface RakeClubRow {
   fee: number;
   cash_fee: number;
   mtt_fee: number;
+  tournament_fee?: number;
   winnings: number;
   hands: number;
   games: number;

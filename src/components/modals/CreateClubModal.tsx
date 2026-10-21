@@ -66,6 +66,7 @@ import styles from './CreateClubModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
+import { titleCase } from '../../utils/titleCase';
 import { optimizeClubLogo } from '../../utils/clubLogoImage';
 import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
@@ -185,6 +186,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const [allowanceError, setAllowanceError] = useState(false);
   const [allowanceRetry, setAllowanceRetry] = useState(0);
   const [isOptimizingLogo, setIsOptimizingLogo] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
   /** The account whose draft the form holds. Nothing is saved until it is known. */
   const [draftHydratedFor, setDraftHydratedFor] = useState<string | null>(null);
@@ -195,6 +197,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const creationRequestIdRef = useRef<string>(uuid());
   const eligibilitySequenceRef = useRef(0);
   const availabilitySequenceRef = useRef(0);
+  const logoSequenceRef = useRef(0);
   const formOwnerRef = useRef<string | null>(null);
   const hasTypedRef = useRef(false);
   const hasDraft = Boolean(
@@ -381,23 +384,45 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       });
   }, [allowanceRetry, isOpen, user?.id, isMounted]);
 
+  useEffect(() => {
+    // A closed form or account change no longer owns an in-flight selection.
+    logoSequenceRef.current += 1;
+    setIsOptimizingLogo(false);
+    setLogoError(null);
+    return () => {
+      logoSequenceRef.current += 1;
+    };
+  }, [isOpen, user?.id]);
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.currentTarget;
+    const file = input.files?.[0];
+    // Reset synchronously so the same file can be chosen again after a refusal.
+    input.value = '';
     if (!file) return;
+    const sequence = ++logoSequenceRef.current;
+    setLogoError(null);
     setIsOptimizingLogo(true);
     try {
-      setLogoPreview(await optimizeClubLogo(file));
+      const preview = await optimizeClubLogo(file);
+      if (!isMounted.current || sequence !== logoSequenceRef.current) return;
+      setLogoPreview(preview);
       setSelectedPresetId(null);
       toast.success('Custom Logo Ready');
     } catch (error) {
-      toast.error(safeErrorMessage(error, 'Could not process that image'));
+      if (!isMounted.current || sequence !== logoSequenceRef.current) return;
+      const message = safeErrorMessage(error, 'Could Not Process That Image');
+      setLogoError(message);
+      toast.error(message);
     } finally {
-      setIsOptimizingLogo(false);
-      e.target.value = '';
+      if (isMounted.current && sequence === logoSequenceRef.current) setIsOptimizingLogo(false);
     }
   };
 
   const handlePresetSelect = (logo: (typeof DEFAULT_CLUB_LOGOS)[number]) => {
+    logoSequenceRef.current += 1;
+    setIsOptimizingLogo(false);
+    setLogoError(null);
     haptic.selection();
     setSelectedPresetId(logo.id);
     setLogoPreview(defaultLogoUrl(logo.file));
@@ -695,6 +720,18 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
                     })}
                   </div>
 
+                  {!selectedPresetId && (
+                    <img
+                      src={logoPreview}
+                      alt="Custom Club Logo Preview"
+                      className={styles.customLogoPreview}
+                    />
+                  )}
+                  {logoError && (
+                    <p role="alert" className={`sc-copy sc-ink--red ${styles.copy}`}>
+                      {titleCase(logoError)}
+                    </p>
+                  )}
                   <button
                     type="button"
                     className={`${styles.word} ${isOptimizingLogo ? 'sc-ink--muted' : 'sc-ink--blue'}`}

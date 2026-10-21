@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { optimizeClubLogo } from '../src/utils/clubLogoImage';
@@ -18,6 +18,11 @@ const modal = read('src/components/modals/CreateClubModal.tsx');
 const deadJoinRequestRepair = read(
   'supabase/migrations/20260831163500_remove_dead_club_join_requests_dependency.sql'
 );
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('Phase 2 atomic club creation', () => {
   it('commits the club, owner membership, and idempotency record in one RPC', () => {
@@ -149,5 +154,78 @@ describe('Phase 2 create experience', () => {
     await expect(optimizeClubLogo(oversized)).rejects.toThrow(
       'The source image must be 5MB or smaller.'
     );
+  });
+});
+
+describe('club logo browser compatibility', () => {
+  it.each(['missing', 'rejected'])(
+    'uses the image decoder when bitmap decoding is %s',
+    async (mode) => {
+      vi.stubGlobal(
+        'createImageBitmap',
+        mode === 'missing' ? undefined : vi.fn().mockRejectedValue(new Error('Unsupported'))
+      );
+      const revoke = vi.fn();
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:club-logo');
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(revoke);
+      vi.stubGlobal(
+        'Image',
+        class {
+          naturalWidth = 1254;
+          naturalHeight = 1254;
+          onload: (() => void) | null = null;
+          set src(value: string) {
+            if (value) {
+              queueMicrotask(() => this.onload?.());
+            }
+          }
+        }
+      );
+      const drawImage = vi.fn();
+      const originalCreateElement = document.createElement.bind(document);
+      vi.spyOn(document, 'createElement').mockImplementation((tag, options) =>
+        tag === 'canvas'
+          ? ({
+              getContext: () => ({ drawImage }),
+              toBlob: (callback: BlobCallback) =>
+                callback(new Blob(['webp'], { type: 'image/webp' })),
+            } as unknown as HTMLCanvasElement)
+          : originalCreateElement(tag, options)
+      );
+      await expect(
+        optimizeClubLogo(new File(['png'], 'logo.png', { type: 'image/png' }))
+      ).resolves.toMatch(/^data:image\/webp;base64,/);
+      expect(drawImage).toHaveBeenCalledWith(
+        expect.objectContaining({ naturalWidth: 1254, naturalHeight: 1254 }),
+        0,
+        0,
+        1254,
+        1254,
+        0,
+        0,
+        512,
+        512
+      );
+      expect(revoke).toHaveBeenCalledWith('blob:club-logo');
+    }
+  );
+
+  it('rejects a file that neither decoder can read and releases its object URL', async () => {
+    vi.stubGlobal('createImageBitmap', undefined);
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:invalid-logo');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.stubGlobal(
+      'Image',
+      class {
+        onerror: (() => void) | null = null;
+        set src(_value: string) {
+          queueMicrotask(() => this.onerror?.());
+        }
+      }
+    );
+    await expect(
+      optimizeClubLogo(new File(['invalid'], 'logo.png', { type: 'image/png' }))
+    ).rejects.toThrow('That file is not a valid image.');
+    expect(revoke).toHaveBeenCalledWith('blob:invalid-logo');
   });
 });

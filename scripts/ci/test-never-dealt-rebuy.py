@@ -15,7 +15,8 @@ def main():
  native=module(root/'scripts/ci/test-mtt-unlimited.py','rebuy_pg_owner');e=native.Execution(root,out,a.pg_bin.resolve(),out,120,socket_parent=a.socket_root)
  e.report['scope']='actual never-dealt rebuy read-helper; no financial owner certification or production mutations'
  diamond_migration=Path('supabase/migrations/20261020143955_never_dealt_diamond_rebuy_proves_original_custody.sql')
- inputs=[MIGRATION,diamond_migration,Path(__file__).relative_to(root),*sorted(DATA.glob('*.sql'))];e.report['source_sha256']={str(f):hashlib.sha256((root/f).read_bytes()).hexdigest() for f in inputs}
+ arrival_migration=Path('supabase/migrations/20261021172832_never_dealt_arrivals_keep_their_committed_move.sql')
+ inputs=[MIGRATION,diamond_migration,arrival_migration,Path(__file__).relative_to(root),*sorted(DATA.glob('*.sql'))];e.report['source_sha256']={str(f):hashlib.sha256((root/f).read_bytes()).hexdigest() for f in inputs}
  for sig in native.CANCELLATION_SIGNALS:signal.signal(sig,native.interrupted)
  try:
   e.start();db=e.database();e.sql(db,file=root/DATA/'readonly-catalog.sql',label='recorded-native-read-catalog')
@@ -34,7 +35,13 @@ def main():
   _,diamond_stdout,_=e.sql(db,file=root/DATA/'diamond-boundaries.sql',label='diamond-native-boundaries-duplicates-acl')
   if diamond_stdout.splitlines().count('NEVER_DEALT_DIAMOND_NATIVE_PASS')!=1:raise RuntimeError('diamond completion absent')
   e.sql(db,file=root/DATA/'game-currency-matrix.sql',label='all-games-diamond-rebuy-reentry-matrix')
-  e.report.update(status='passed',passed=True,synthetic_only=True,game_currency_generation_cases=40)
+  e.sql(db,file=root/DATA/'arrival-catalog.sql',label='recorded-arrival-catalog')
+  e.sql(db,query=(root/DATA/'arrival-seed.sql').read_text()+(root/DATA/'arrival-before.sql').read_text(),label='before-never-dealt-arrival-refusal')
+  e.sql(db,file=root/arrival_migration,label='exact-arrival-read-owner')
+  e.sql(db,file=root/DATA/'game-currency-matrix.sql',label='arrival-successor-retains-all-paid-generations')
+  _,arrival_stdout,_=e.sql(db,query=(root/DATA/'arrival-seed.sql').read_text()+(root/DATA/'arrival-boundaries.sql').read_text(),label='arrival-boundaries-all-games-both-assets')
+  if arrival_stdout.splitlines().count('NEVER_DEALT_ARRIVAL_NATIVE_PASS')!=1:raise RuntimeError('arrival completion absent')
+  e.report.update(status='passed',passed=True,synthetic_only=True,game_currency_generation_cases=40,game_currency_arrival_cases=20)
  finally:
   e.close();(out/'never-dealt-rebuy-report.json').write_text(json.dumps(e.report,indent=2)+'\n')
 if __name__=='__main__':main()

@@ -361,7 +361,7 @@ describe('the cashier never offers a recipient the server will refuse', () => {
     expect(cashierRefusesSelfSend('promo_wallet', 'club_pot')).toBe(false);
     expect(cashierRefusesSelfSend('promo_wallet', 'own_float')).toBe(true);
     expect(MODAL).toContain(
-      'const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource)'
+      'const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource, destination)'
     );
   });
 
@@ -381,7 +381,9 @@ describe('the cashier never offers a recipient the server will refuse', () => {
     // wallet: it runs on its own through fn_club_bank_send, and any other
     // self target is refused before a request is made.
     expect(TRADE).not.toContain('String(row.user_id) !== viewerId');
-    expect(TRADE).toContain('const selectable = !r.isSelf || selfCanFundPlayerWallet;');
+    expect(TRADE).toMatch(
+      /const selectable =\s*!r\.isSelf \|\| selfCanFundPlayerWallet \|\| canHoldAgentWallet\(myRole\);/
+    );
     expect(TRADE).toContain('target.isSelf || target.userId === user.id');
     expect(TRADE).toContain("'Send To Yourself On Its Own, Then Send To The Others'");
     expect(TRADE).toContain('p_destination: transferDestination(picked[0])');

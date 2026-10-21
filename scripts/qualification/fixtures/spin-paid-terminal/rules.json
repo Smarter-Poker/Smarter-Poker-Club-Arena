@@ -11,7 +11,7 @@
       "payouts": [
         1
       ],
-      "levelMinutes": 3,
+      "levelMinutes": 5,
       "reserveThresholdX": 0,
       "blind_structure": [
         {
@@ -19,84 +19,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180,
+          "duration": 300,
           "spinContinuation": {
             "version": 1,
             "anchorLevel": 10,
@@ -119,7 +119,7 @@
       "payouts": [
         1
       ],
-      "levelMinutes": 3,
+      "levelMinutes": 5,
       "reserveThresholdX": 0,
       "blind_structure": [
         {
@@ -127,84 +127,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180,
+          "duration": 300,
           "spinContinuation": {
             "version": 1,
             "anchorLevel": 10,
@@ -227,7 +227,7 @@
       "payouts": [
         1
       ],
-      "levelMinutes": 3,
+      "levelMinutes": 5,
       "reserveThresholdX": 0,
       "blind_structure": [
         {
@@ -235,84 +235,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180,
+          "duration": 300,
           "spinContinuation": {
             "version": 1,
             "anchorLevel": 10,
@@ -335,7 +335,7 @@
       "payouts": [
         1
       ],
-      "levelMinutes": 3,
+      "levelMinutes": 5,
       "reserveThresholdX": 0,
       "blind_structure": [
         {
@@ -343,84 +343,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180,
+          "duration": 300,
           "spinContinuation": {
             "version": 1,
             "anchorLevel": 10,
@@ -444,7 +444,7 @@
         0.8,
         0.2
       ],
-      "levelMinutes": 3,
+      "levelMinutes": 5,
       "reserveThresholdX": 0,
       "blind_structure": [
         {
@@ -452,84 +452,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180,
+          "duration": 300,
           "spinContinuation": {
             "version": 1,
             "anchorLevel": 10,
@@ -558,7 +558,7 @@
         0.12,
         0.08
       ],
-      "levelMinutes": 3,
+      "levelMinutes": 5,
       "reserveThresholdX": 0,
       "blind_structure": [
         {
@@ -566,84 +566,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180,
+          "duration": 300,
           "spinContinuation": {
             "version": 1,
             "anchorLevel": 10,
@@ -676,7 +676,7 @@
         0.12,
         0.08
       ],
-      "levelMinutes": 3,
+      "levelMinutes": 5,
       "reserveThresholdX": 0,
       "blind_structure": [
         {
@@ -684,84 +684,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180,
+          "duration": 300,
           "spinContinuation": {
             "version": 1,
             "anchorLevel": 10,
@@ -794,7 +794,7 @@
         0.12,
         0.08
       ],
-      "levelMinutes": 3,
+      "levelMinutes": 5,
       "reserveThresholdX": 1.5,
       "blind_structure": [
         {
@@ -802,84 +802,84 @@
           "smallBlind": 10,
           "bigBlind": 20,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 2,
           "smallBlind": 15,
           "bigBlind": 30,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 3,
           "smallBlind": 20,
           "bigBlind": 40,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 4,
           "smallBlind": 30,
           "bigBlind": 60,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 5,
           "smallBlind": 40,
           "bigBlind": 80,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 6,
           "smallBlind": 50,
           "bigBlind": 100,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 7,
           "smallBlind": 60,
           "bigBlind": 120,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 8,
           "smallBlind": 75,
           "bigBlind": 150,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 9,
           "smallBlind": 90,
           "bigBlind": 180,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 10,
           "smallBlind": 105,
           "bigBlind": 210,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 11,
           "smallBlind": 145,
           "bigBlind": 290,
           "ante": 0,
-          "duration": 180
+          "duration": 300
         },
         {
           "level": 12,
           "smallBlind": 205,
           "bigBlind": 410,
           "ante": 0,
-          "duration": 180,
+          "duration": 300,
           "spinContinuation": {
             "version": 1,
             "anchorLevel": 10,

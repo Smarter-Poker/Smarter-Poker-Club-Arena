@@ -5,6 +5,13 @@ BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '60s';
 
+-- Take every hot-table lock up front, in the order live requests take them
+-- (clubs -> tables -> hand_history). Three installs on 2026-10-21 were refused:
+-- one lock timeout and two deadlocks (40P01), because the first ALTER held
+-- hand_history while waiting for tables/clubs that live requests held and
+-- needed hand_history after. Nothing committed on any attempt.
+LOCK TABLE public.clubs, public.tables, public.hand_history IN ACCESS EXCLUSIVE MODE;
+
 -- These four pricing readers/setup functions are not watched guards. Do not
 -- declare unrelated guard changes. If that authority changes before install,
 -- refuse and requalify against the new watchlist instead of leaving drift.

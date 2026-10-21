@@ -611,9 +611,11 @@ describe('the Free Buy ladder', () => {
     // decided the structure, and without it the next agent reads "STANDARD"
     // as somebody's taste.
     const T = BLIND_STRUCTURES.TURBO as Array<{ bigBlind: number; durationMinutes: number }>;
-    expect(ladderMinutesThrough(T, T.length)).toBeLessThan(60);
+    // Owner October 21: even TURBO retains five minutes at every level.
+    expect(T.every((level) => level.durationMinutes >= 5)).toBe(true);
+    expect(ladderMinutesThrough(T, T.length)).toBe(120);
     const lv = lateRegLevelsForMinutes(T, 60);
-    expect(EFFECTIVE / T[lv - 1].bigBlind).toBeLessThan(1);
+    expect(EFFECTIVE / T[lv - 1].bigBlind).toBeLessThan(20);
   });
 });
 

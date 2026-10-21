@@ -98,7 +98,7 @@ function snapshotWith(rows: ReturnType<typeof agentRow>[], total: number, offset
 /** Every offset the panel asked the database for, in order. */
 function offsetsRequested(): number[] {
   return rpcMock.mock.calls
-    .filter(([fn]) => fn === 'ca_rake_snapshot')
+    .filter(([fn]) => fn === 'ca_rake_snapshot_v2')
     .map(([, args]) => (args as { p_offset?: number }).p_offset ?? 0);
 }
 
@@ -127,7 +127,7 @@ describe('rake snapshot paging', () => {
     };
 
     rpcMock.mockImplementation((fn: string, args: { p_offset?: number }) => {
-      if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
+      if (fn !== 'ca_rake_snapshot_v2') return Promise.resolve({ data: null, error: null });
       const offset = args?.p_offset ?? 0;
       return Promise.resolve({
         data: snapshotWith(pages[offset] ?? [], 8, offset),
@@ -161,7 +161,7 @@ describe('rake snapshot paging', () => {
     const pageTwo = [agentRow(3), agentRow(4)];
 
     rpcMock.mockImplementation((fn: string, args: { p_offset?: number }) => {
-      if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
+      if (fn !== 'ca_rake_snapshot_v2') return Promise.resolve({ data: null, error: null });
       const offset = args?.p_offset ?? 0;
       return Promise.resolve({
         data: snapshotWith(offset === 0 ? pageOne : pageTwo, 4, offset),
@@ -188,7 +188,7 @@ describe('rake snapshot paging', () => {
 
   it('says how many rows exist behind the page', async () => {
     rpcMock.mockImplementation((fn: string) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({ data: snapshotWith([agentRow(1)], 207, 0), error: null })
         : Promise.resolve({ data: null, error: null })
     );
@@ -203,7 +203,7 @@ describe('rake snapshot paging', () => {
 
   it('offers no Load More once the list is complete', async () => {
     rpcMock.mockImplementation((fn: string) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({ data: snapshotWith([agentRow(1), agentRow(2)], 2, 0), error: null })
         : Promise.resolve({ data: null, error: null })
     );
@@ -221,7 +221,7 @@ describe('rake snapshot paging', () => {
     // than movement in the world.
     const pageOne = [agentRow(1), agentRow(2)];
     rpcMock.mockImplementation((fn: string, args: { p_offset?: number }) => {
-      if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
+      if (fn !== 'ca_rake_snapshot_v2') return Promise.resolve({ data: null, error: null });
       const offset = args?.p_offset ?? 0;
       return Promise.resolve({
         data: offset === 0 ? snapshotWith(pageOne, 4, 0) : snapshotWith([agentRow(3)], 1, offset),

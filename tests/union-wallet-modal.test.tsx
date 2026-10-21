@@ -1,3 +1,4 @@
+import { unionWalletIntentRpc } from './helpers/unionWalletIntentRpc';
 /**
  * Union wallets must open and be able to send funds to any union member.
  *
@@ -12,6 +13,7 @@ const UNION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const sourceState = vi.hoisted(() => ({ clubError: null as null | { message: string } }));
 
 const rpc = vi.fn();
+const durableIntents = unionWalletIntentRpc();
 /** The roster is read in pages (.order().range()); one mocked page holds it all. */
 function pageable(value: unknown) {
   const p: any = Promise.resolve(value);
@@ -27,18 +29,33 @@ const unionClubs = [
 ];
 const fromChain = (table?: string) => {
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'contains']) {
+  let projection = '';
+  chain.select = (columns: string) => {
+    projection = columns;
+    return chain;
+  };
+  for (const m of ['eq', 'in', 'order', 'limit', 'contains']) {
     chain[m] = () => chain;
   }
-  chain.then = (resolve: (v: { data: unknown[]; error: null | { message: string } }) => void) =>
+  chain.then = (resolve: (v: { data: unknown[]; error: null | { message: string } }) => void) => {
+    // Production grants club identity columns but protects financial columns.
+    // Selecting the embedded clubs wildcard fails before RLS can return rows.
+    const clubError =
+      sourceState.clubError ||
+      (projection.includes('(*)') ? { message: 'permission denied for table clubs' } : null);
     resolve({
-      data: table === 'union_clubs' && !sourceState.clubError ? unionClubs : [],
-      error: table === 'union_clubs' ? sourceState.clubError : null,
+      data: table === 'union_clubs' && !clubError ? unionClubs : [],
+      error: table === 'union_clubs' ? clubError : null,
     });
+  };
   return chain;
 };
 vi.mock('../src/lib/supabase', () => ({
-  supabase: { rpc: (...a: unknown[]) => rpc(...a), from: (t: string) => fromChain(t) },
+  supabase: {
+    rpc: (name: string, args: Record<string, unknown>) =>
+      durableIntents.call(name, args, () => rpc(name, args)),
+    from: (t: string) => fromChain(t),
+  },
 }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/hooks/useAuthUser', () => ({
@@ -92,6 +109,7 @@ const base = {
 };
 
 beforeEach(() => {
+  durableIntents.clear();
   window.localStorage.clear();
   sourceState.clubError = null;
   base.onClose.mockClear();
@@ -352,7 +370,7 @@ describe('UnionWalletModal', () => {
     await screen.findByRole('status');
   });
 
-  it('fails closed before the member RPC when durable safety storage is unavailable', async () => {
+  it('sends safely through server recovery when browser storage is unavailable', async () => {
     const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
       throw new Error('quota exceeded');
     });
@@ -364,8 +382,11 @@ describe('UnionWalletModal', () => {
       fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
       fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(/safety storage is unavailable/i);
-      expect(rpc).not.toHaveBeenCalledWith('fn_union_send_to_member', expect.anything());
+      expect(await screen.findByRole('status')).toHaveTextContent(/sent 250/i);
+      expect(rpc).toHaveBeenCalledWith(
+        'fn_union_send_to_member',
+        expect.objectContaining({ p_op_id: expect.stringMatching(/^[0-9a-f-]{36}$/) })
+      );
     } finally {
       setItem.mockRestore();
     }

@@ -80,6 +80,8 @@ interface Snapshot {
   /** 'club' for the owner, co-owner and admins; 'downline' for an agent. */
   scope?: 'club' | 'downline';
   club_name?: string | null;
+  reporting_scope?: 'club' | 'union';
+  accounting_basis?: 'utc_net_money_flow';
   /** First UTC day the per-club facts cover. */
   facts_from?: string | null;
 }
@@ -388,6 +390,9 @@ export default function ClubDataSimplePage() {
         onAdvanced={isDownline ? undefined : () => navigate(`/clubs/${clubKey}/data/advanced`)}
       />
 
+      {snapshot?.reporting_scope === 'union' && (
+        <div className={styles.agentScopeBanner}>All Member Clubs And Union Account</div>
+      )}
       {isDownline && <div className={styles.agentScopeBanner}>You And Your Downline</div>}
 
       <div className={styles.rangeBar}>
@@ -488,6 +493,11 @@ export default function ClubDataSimplePage() {
           </>
         )}
       </div>
+      {snapshot?.accounting_basis === 'utc_net_money_flow' && (
+        <p className={styles.liveLine}>
+          Net Entries And Payouts In UTC. Unfinished Event Entries Included.
+        </p>
+      )}
       {factsFrom && startDate < factsFrom && (
         <p className={styles.liveLine}>Figures Begin {factsFrom} UTC</p>
       )}

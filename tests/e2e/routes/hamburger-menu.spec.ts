@@ -126,10 +126,11 @@ test.describe('Hamburger Menu — Open / Close', () => {
     if (!(await openMenuOrSkip(page))) return;
 
     // The drawer should be visible (check for the canonical first section)
-    // Exact: the lobby's Diamond Arena card also has a heading containing Play.
-    const gameModes = page.getByRole('heading', { name: 'Play', exact: true });
+    // Scope to the drawer: the lobby also renders a "Play" zone heading.
+    const drawer = page.getByRole('dialog', { name: 'Poker Arena' });
+    const gameModes = drawer.getByRole('heading', { name: 'Play', exact: true });
     await expect(gameModes).toBeVisible({ timeout: 3000 });
-    await expect(page.getByRole('dialog', { name: 'Poker Arena' })).toBeVisible();
+    await expect(drawer).toBeVisible();
     await expect(page.getByRole('button', { name: 'Close' })).toBeFocused();
 
     // Escape removes the focusable dialog tree and restores the opener.
@@ -366,9 +367,9 @@ test.describe('Hamburger Menu — Information Architecture', () => {
     if (!(await openMenuOrSkip(page))) return;
 
     const sections = ['Play', 'Community', 'Wallet & Rewards', 'Support & Legal'];
+    const drawer = page.getByRole('dialog', { name: 'Poker Arena' });
     for (const section of sections) {
-      // Exact: the lobby's Diamond Arena card also has a heading containing Play.
-      await expect(page.getByRole('heading', { name: section, exact: true })).toBeVisible({
+      await expect(drawer.getByRole('heading', { name: section, exact: true })).toBeVisible({
         timeout: 3000,
       });
     }

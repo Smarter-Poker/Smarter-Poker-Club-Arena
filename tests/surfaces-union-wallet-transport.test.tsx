@@ -1,3 +1,4 @@
+import { unionWalletIntentRpc } from './helpers/unionWalletIntentRpc';
 /**
  * A LOST RESPONSE IS NOT A REFUSAL (cashier launch, round 2, 2026-10-09).
  *
@@ -14,6 +15,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const UNION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const rpc = vi.fn();
+const durableIntents = unionWalletIntentRpc();
 /** The roster is read in pages (.order().range()); one mocked page holds it all. */
 function pageable(value: unknown) {
   const p: any = Promise.resolve(value);
@@ -30,7 +32,11 @@ const fromChain = (table?: string) => {
   return chain;
 };
 vi.mock('../src/lib/supabase', () => ({
-  supabase: { rpc: (...a: unknown[]) => rpc(...a), from: (t: string) => fromChain(t) },
+  supabase: {
+    rpc: (name: string, args: Record<string, unknown>) =>
+      durableIntents.call(name, args, () => rpc(name, args)),
+    from: (t: string) => fromChain(t),
+  },
 }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/hooks/useAuthUser', () => ({
@@ -89,6 +95,7 @@ const opIds = (fn: string) =>
     .map(([, args]) => (args as { p_op_id: string }).p_op_id);
 
 beforeEach(() => {
+  durableIntents.clear();
   window.localStorage.clear();
   rpc.mockReset();
 });

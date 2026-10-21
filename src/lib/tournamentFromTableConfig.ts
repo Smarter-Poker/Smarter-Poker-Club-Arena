@@ -255,7 +255,7 @@ export function buildTournamentConfig(
   const preset = isSpins
     ? SPIN_BLIND_STRUCTURE
     : manualTournamentBlindPreset(config.blindStructure);
-  const levelMinutes = Math.max(1, config.blindsUpMinutes);
+  const levelMinutes = Math.max(5, config.blindsUpMinutes);
   const blindStructure = (isSng ? preset : newTournamentPlayingLevels(preset)).map((lvl) =>
     lvl.isBreak ? lvl : { ...lvl, durationMinutes: levelMinutes }
   );

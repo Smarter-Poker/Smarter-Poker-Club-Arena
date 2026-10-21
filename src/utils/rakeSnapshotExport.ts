@@ -359,7 +359,7 @@ export async function fetchRakeSnapshotExport(
 
   const rows = await fetchClubDataExport<RakeBreakdownRow>({
     rpc: options.rpc,
-    startRpc: 'ca_rake_export_start',
+    startRpc: 'ca_rake_export_start_v2',
     startArgs: {
       p_scope_type: options.scope,
       p_scope_id: options.scopeId,
@@ -458,6 +458,7 @@ export function rakeSnapshotExportToCsv(result: RakeSnapshotExportResult): strin
         'fee',
         'cash_fee',
         'mtt_fee',
+        'tournament_fee',
         'winnings',
         'can_drill',
       ].join(',')
@@ -474,6 +475,7 @@ export function rakeSnapshotExportToCsv(result: RakeSnapshotExportResult): strin
           row.fee,
           row.cash_fee,
           row.mtt_fee,
+          row.tournament_fee ?? row.mtt_fee,
           row.winnings,
           row.can_drill ?? false,
         ]

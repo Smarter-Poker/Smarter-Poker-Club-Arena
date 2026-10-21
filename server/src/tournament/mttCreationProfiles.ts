@@ -5,7 +5,7 @@ export const MTT_CREATION_PROFILES = [
   { id: 'regular', label: 'Regular', blindRamp: 'standard', minutes: 10, depthBB: 150 },
   { id: 'deep', label: 'Deep Stack', blindRamp: 'slow', minutes: 15, depthBB: 300 },
   { id: 'turbo', label: 'Turbo', blindRamp: 'turbo', minutes: 5, depthBB: 100 },
-  { id: 'hyper', label: 'Hyper Turbo', blindRamp: 'hyper_turbo', minutes: 2, depthBB: 50 },
+  { id: 'hyper', label: 'Hyper Turbo', blindRamp: 'hyper_turbo', minutes: 5, depthBB: 50 },
 ] as const;
 
 export type MttCreationProfileId = (typeof MTT_CREATION_PROFILES)[number]['id'];

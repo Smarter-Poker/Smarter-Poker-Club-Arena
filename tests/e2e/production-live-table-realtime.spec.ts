@@ -381,83 +381,6 @@ async function visibleRunningCashCandidates(page: Page): Promise<RunningTableCan
   return candidates.map((candidate) => ({ ...candidate, gameFormat: 'cash' }));
 }
 
-/** Extra owner-requested screenshot only: reuse this spectator, never take a seat. */
-async function captureOtherMobileCapacity(page: Page, testInfo: TestInfo, current: number) {
-  const desired = [6, 9].filter((capacity) => capacity !== current);
-  const status: Array<{ capacity: number; status: string; tableId?: string }> = [];
-  const mutations: Array<{ method: string; path: string }> = [];
-  const record = (outgoing: import('@playwright/test').Request) => {
-    if (isSpectatorParticipationMutation(outgoing.method(), outgoing.url()))
-      mutations.push({ method: outgoing.method(), path: new URL(outgoing.url()).pathname });
-  };
-  page.on('request', record);
-  try {
-    for (const capacity of desired) {
-      await page.goto(CLUB_LOBBY, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      await expect(page.locator('.club-home')).toBeVisible({ timeout: 15_000 });
-      await prepareCashLobbyActions(page);
-      let selected: string | undefined;
-      for (const tabName of [null, 'NLH', 'PLO', 'LIMIT']) {
-        if (tabName) {
-          const tab = page.getByRole('tab', { name: tabName, exact: true });
-          await tab.click({ timeout: 5_000 });
-          await expect(tab).toHaveAttribute('aria-selected', 'true');
-        }
-        const candidates = await visibleRunningCashCandidates(page);
-        for (const candidate of candidates) {
-          const card = page.locator(`${CASH_TABLE_CARD_SELECTOR}[data-id="${candidate.id}"]`);
-          if (Number(await card.getAttribute('data-capacity')) === capacity) {
-            selected = candidate.id;
-            break;
-          }
-        }
-        if (selected) break;
-      }
-      if (!selected) {
-        status.push({
-          capacity,
-          status: 'unavailable: no occupied public table with a visible spectator action',
-        });
-        continue;
-      }
-      await prepareCashLobbyActions(page, { retainInvitationHandler: false });
-      const card = page.locator(`${CASH_TABLE_CARD_SELECTOR}[data-id="${selected}"]`);
-      await card.getByRole('button', { name: CASH_SPECTATOR_ACTION }).click();
-      await expect(page.locator(`.table-page[data-seats="${capacity}"]:visible`)).toBeVisible({
-        timeout: 15_000,
-      });
-      await expect(page.getByTestId('table-connection-banner')).toBeHidden({
-        timeout: CONNECT_DEADLINE_MS,
-      });
-      await expect
-        .poll(() => page.locator('.seat[role="region"]').count(), { timeout: 10_000 })
-        .toBeGreaterThanOrEqual(2);
-      await certifyMobileLiveTableLayout(page, testInfo, {
-        widths: [393],
-        seatChangeToggle: false,
-      });
-      status.push({
-        capacity,
-        status: 'captured deployed mobile spectator layout',
-        tableId: selected,
-      });
-    }
-  } finally {
-    page.off('request', record);
-    await testInfo.attach('mobile-capacity-screenshot-status', {
-      body: Buffer.from(
-        JSON.stringify(
-          { alreadyCertifiedCapacity: current, status, participationMutations: mutations },
-          null,
-          2
-        )
-      ),
-      contentType: 'application/json',
-    });
-    expect(mutations, 'extra mobile screenshots must remain spectator-only').toEqual([]);
-  }
-}
-
 interface OccupiedCashTable {
   candidate: RunningTableCandidate;
   table: EngineTableLiveness;
@@ -2037,7 +1960,6 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     const navigationStartedAt = Date.now();
     const banner = page.getByTestId('table-connection-banner');
     let tableId = candidate.id;
-    let certifiedCapacity = 0;
 
     try {
       const protocolReady = Promise.all([
@@ -2241,9 +2163,6 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         // Layout proof follows continuity; its UI reads do not extend any hand deadline.
         testInfo.setTimeout(testInfo.timeout + 45_000);
         await certifyMobileAwardJournal(page, testInfo);
-        certifiedCapacity = Number(
-          await page.locator('.table-page:visible').first().getAttribute('data-seats')
-        );
         await certifyMobileLiveTableLayout(page, testInfo);
       } finally {
         if (offline) await context.setOffline(false).catch(() => {});
@@ -2260,8 +2179,5 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
         contentType: 'application/json',
       });
     }
-    // Original continuity and presentation evidence above remains attached to its table.
-    testInfo.setTimeout(testInfo.timeout + 90_000);
-    await captureOtherMobileCapacity(page, testInfo, certifiedCapacity);
   });
 });

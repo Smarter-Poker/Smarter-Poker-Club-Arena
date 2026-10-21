@@ -321,7 +321,11 @@ test('published club news appears once per new message across fresh browser cont
     await expect(popup(page)).toBeHidden();
     await silent(page);
 
-    // Carry only this synthetic player's authentication into a cold device.
+    // Carry only this synthetic player's authentication into a cold device,
+    // plus the device-local welcome acceptance that global setup seeded: that
+    // first-run overlay otherwise stacks above the club message and covers its
+    // Close control. Neither key holds club-news state, which lives server-side.
+    const coldDeviceKeys = new Set(['smarter-poker-auth', 'club_arena_welcome_accepted']);
     const state = await page.context().storageState();
     secondContext = await browser.newContext({
       baseURL: testInfo.project.use.baseURL,
@@ -330,29 +334,11 @@ test('published club news appears once per new message across fresh browser cont
         cookies: state.cookies,
         origins: state.origins.map((origin) => ({
           ...origin,
-          localStorage: origin.localStorage.filter((item) => item.name === 'smarter-poker-auth'),
+          localStorage: origin.localStorage.filter((item) => coldDeviceKeys.has(item.name)),
         })),
       },
     });
     const second = await secondContext.newPage();
-    await test.step('the cold browser acknowledges its own first-entry welcome', async () => {
-      // Authentication does not carry this device's welcome acknowledgement.
-      // Enter through the real door before observing club news; copying a news
-      // marker here would invalidate the cross-device receipt proof below.
-      await second.goto('notifications', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      const welcome = second.getByRole('dialog', { name: 'Welcome To Poker Arena', exact: true });
-      await expect(welcome).toBeVisible({ timeout: 15_000 });
-      const agreement = welcome.getByRole('checkbox', {
-        name: 'I Understand And Agree To These Terms',
-        exact: true,
-      });
-      await agreement.click({ timeout: 10_000 });
-      await expect(agreement).toHaveAttribute('aria-checked', 'true');
-      await welcome.getByRole('button', { name: 'Enter Poker Arena', exact: true }).click({
-        timeout: 10_000,
-      });
-      await expect(welcome).toBeHidden();
-    });
     await ownInvitation(second);
     await silent(second);
     await save(first); // saving identical copy must not reopen the popup

@@ -307,8 +307,8 @@ export const BLIND_STRUCTURES = {
     startBigBlind: 20,
     speed: 'TURBO',
     levels: 20,
-    openingMinutes: 3,
-    floorMinutes: 2,
+    openingMinutes: 5,
+    floorMinutes: 5,
     anteFromLevel: 3,
   }),
   /**

@@ -114,6 +114,7 @@ interface SnapshotRow {
   creator_name: string | null;
   creator_avatar: string | null;
   fee: number;
+  fee_exact?: number;
   winnings: number;
   hands: number;
   players: number;
@@ -123,6 +124,8 @@ interface SnapshotSummary {
   games: number;
   total_winnings: number;
   mtt_winnings: number;
+  tournament_winnings?: number;
+  tournament_fee?: number;
   cash_winnings: number;
   fee: number;
   cash_fee?: number;
@@ -481,6 +484,10 @@ function isSnapshotExportRow(value: unknown): value is SnapshotRow {
     isStringOrNull(value.creator_name) &&
     isStringOrNull(value.creator_avatar) &&
     isExactCent(value.fee) &&
+    (value.fee_exact === undefined ||
+      (typeof value.fee_exact === 'number' &&
+        Number.isFinite(value.fee_exact) &&
+        Number.isSafeInteger(Math.trunc(value.fee_exact * 100)))) &&
     isExactCent(value.winnings) &&
     isNonNegativeInteger(value.hands) &&
     isNonNegativeInteger(value.players)
@@ -834,7 +841,7 @@ function rowsToCsv(rows: SnapshotRow[]): string {
       r.rake_percent,
       r.hands,
       r.players,
-      r.fee,
+      r.fee_exact ?? r.fee,
       r.winnings,
     ]
       .map(esc)
@@ -1284,7 +1291,7 @@ export default function ClubDataPage() {
         // first 100 rows. Non-recent sorts still use the page RPC in parallel.
         const snapshotRequest = coldRead(
           () =>
-            supabase.rpc('ca_club_data_snapshot', {
+            supabase.rpc('ca_club_data_snapshot_v2', {
               p_club_id: clubUuid,
               p_start: startDate,
               p_end: endDate,
@@ -3304,7 +3311,8 @@ export default function ClubDataPage() {
               Number.isFinite(Number(summary.cash_fee)) &&
               Number.isFinite(Number(summary.mtt_fee)) && (
                 <dd className={`sc-ink--muted ${styles.figureMeta}`}>
-                  {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
+                  {money(summary.cash_fee)} Cash -{' '}
+                  {money(summary.tournament_fee ?? summary.mtt_fee)} Tournaments
                 </dd>
               )}
             {summary && <dd className={styles.figureMeta}>{pctNote(delta?.fee_pct)}</dd>}

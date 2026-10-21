@@ -26,20 +26,20 @@ const initial: TournamentFormInput = {
 const preview = () => screen.getByLabelText('MTT Structure Preview');
 
 describe('the MTT creator previews its actual mapped rules before booking', () => {
-  it('discloses the manual Standard default as 50 BB on a three-minute Turbo clock', () => {
+  it('discloses the manual Standard default as 50 BB on a minimum five-minute Turbo clock', () => {
     const input = Object.freeze({ ...initial });
     render(<MttCreationStructurePreview config={input} gameType="nlh" />);
-    expect(preview().textContent).toContain('Turbo · 3 Min');
+    expect(preview().textContent).toContain('Turbo · 5 Min');
     expect(preview().textContent).toContain('1K Starting Chips · 50 Big Blinds');
     expect(preview().textContent).toContain('Blind Structure Sets How Blinds Grow');
     expect(input).toEqual(initial);
   });
 
-  it('a Slow ramp retains the independently selected three-minute clock', () => {
+  it('a Slow ramp retains the independently selected minimum five-minute clock', () => {
     render(
       <MttCreationStructurePreview config={{ ...initial, blindStructure: 'slow' }} gameType="nlh" />
     );
-    expect(preview().textContent).toContain('Turbo · 3 Min');
+    expect(preview().textContent).toContain('Turbo · 5 Min');
     expect(preview().textContent).toContain('50 Big Blinds');
   });
 
@@ -56,7 +56,7 @@ describe('the MTT creator previews its actual mapped rules before booking', () =
     view.rerender(
       <MttCreationStructurePreview config={{ ...initial, blindsUpMinutes: 2 }} gameType="nlh" />
     );
-    expect(preview().textContent).toContain('Hyper Turbo · 2 Min');
+    expect(preview().textContent).toContain('Turbo · 5 Min');
     expect(preview().textContent).toContain('50 Big Blinds');
   });
 
@@ -64,7 +64,7 @@ describe('the MTT creator previews its actual mapped rules before booking', () =
     render(
       <MttCreationStructurePreview config={{ ...initial, blindsUpMinutes: 0 }} gameType="nlh" />
     );
-    expect(preview().textContent).toContain('Hyper Turbo · 1 Min');
+    expect(preview().textContent).toContain('Turbo · 5 Min');
   });
 
   it('applies equally to a target-linked satellite', () => {
@@ -79,7 +79,7 @@ describe('the MTT creator previews its actual mapped rules before booking', () =
         gameType="plo8"
       />
     );
-    expect(preview().textContent).toContain('Turbo · 3 Min');
+    expect(preview().textContent).toContain('Turbo · 5 Min');
     expect(preview().textContent).toContain('50 Big Blinds');
   });
 

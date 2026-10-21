@@ -51,3 +51,32 @@ it('delivers throws with receipt identity while every reaction slot is occupied'
   });
   expect(received).toHaveBeenCalledExactlyOnceWith(1, 2, 'beer', receipt.toLowerCase());
 });
+
+it('shows the granted seconds from the actual time-bank event contract', async () => {
+  const { masterBus } = await import('../../src/core/MasterBus');
+  const { result } = renderHook(() => useTableChat('table-timebank', 'receiver', []));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  const listener = vi
+    .mocked(masterBus.subscribe)
+    .mock.calls.filter(([type]) => type === 'TIME_BANK_ACTIVATED')
+    .at(-1)?.[1];
+  expect(listener).toBeTypeOf('function');
+  act(() => {
+    listener!({
+      type: 'TIME_BANK_ACTIVATED',
+      timestamp: new Date().toISOString(),
+      payload: {
+        tableId: 'table-timebank',
+        playerId: 'player-timebank',
+        secondsGranted: 20,
+        usesRemaining: 1,
+        totalRemaining: 20,
+      },
+    } as any);
+  });
+  expect(result.current.chatMessages.at(-1)?.content).toBe(
+    'Player play activated Time Bank (+20s)'
+  );
+});

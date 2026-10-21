@@ -161,8 +161,9 @@ function exportPage(rows: unknown[], total: number, offset: number) {
 function installCompleteExport(total = 254) {
   const exportRows = Array.from({ length: total }, (_, index) => agentRow(index + 1));
   rpcMock.mockImplementation((name: string, args: Record<string, unknown>) => {
-    if (name === 'ca_rake_snapshot') return Promise.resolve({ data: snapshot(total), error: null });
-    if (name === 'ca_rake_export_start') {
+    if (name === 'ca_rake_snapshot_v2')
+      return Promise.resolve({ data: snapshot(total), error: null });
+    if (name === 'ca_rake_export_start_v2') {
       return Promise.resolve({ data: exportReceipt(total), error: null });
     }
     if (name === 'ca_club_data_export_page') {
@@ -225,8 +226,9 @@ describe('Rake Snapshot exact CSV export', () => {
       resolveStart = resolve;
     });
     rpcMock.mockImplementation((name: string) => {
-      if (name === 'ca_rake_snapshot') return Promise.resolve({ data: snapshot(1), error: null });
-      if (name === 'ca_rake_export_start') return pendingStart;
+      if (name === 'ca_rake_snapshot_v2')
+        return Promise.resolve({ data: snapshot(1), error: null });
+      if (name === 'ca_rake_export_start_v2') return pendingStart;
       return Promise.resolve({ data: true, error: null });
     });
     render(<RakeSnapshotPanel clubId={CLUB_ID} userId={USER_ID} scopes={['club']} />);
@@ -255,8 +257,9 @@ describe('Rake Snapshot exact CSV export', () => {
       resolveStart = resolve;
     });
     rpcMock.mockImplementation((name: string) => {
-      if (name === 'ca_rake_snapshot') return Promise.resolve({ data: snapshot(1), error: null });
-      if (name === 'ca_rake_export_start') return pendingStart;
+      if (name === 'ca_rake_snapshot_v2')
+        return Promise.resolve({ data: snapshot(1), error: null });
+      if (name === 'ca_rake_export_start_v2') return pendingStart;
       return Promise.resolve({ data: true, error: null });
     });
     const view = render(<RakeSnapshotPanel clubId={CLUB_ID} userId={USER_ID} scopes={['club']} />);
@@ -309,7 +312,7 @@ describe('Rake Snapshot exact CSV export', () => {
   it('keeps export disabled when a changed sort fails and the prior snapshot remains painted', async () => {
     let snapshotReads = 0;
     rpcMock.mockImplementation((name: string) => {
-      if (name === 'ca_rake_snapshot') {
+      if (name === 'ca_rake_snapshot_v2') {
         snapshotReads += 1;
         if (snapshotReads === 1) return Promise.resolve({ data: snapshot(1), error: null });
         return Promise.resolve({ data: null, error: { message: 'sort read failed' } });
@@ -334,8 +337,9 @@ describe('Rake Snapshot exact CSV export', () => {
 
   it('reports an expired immutable job without downloading a partial file', async () => {
     rpcMock.mockImplementation((name: string) => {
-      if (name === 'ca_rake_snapshot') return Promise.resolve({ data: snapshot(1), error: null });
-      if (name === 'ca_rake_export_start') {
+      if (name === 'ca_rake_snapshot_v2')
+        return Promise.resolve({ data: snapshot(1), error: null });
+      if (name === 'ca_rake_export_start_v2') {
         return Promise.resolve({ data: exportReceipt(1), error: null });
       }
       if (name === 'ca_club_data_export_page') {

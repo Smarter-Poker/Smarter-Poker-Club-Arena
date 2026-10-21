@@ -129,7 +129,7 @@ function downlineSnapshot(rows: unknown[]) {
 /** Every ca_rake_snapshot call, in order, with only what these tests care about. */
 function asked() {
   return rpcMock.mock.calls
-    .filter(([fn]) => fn === 'ca_rake_snapshot')
+    .filter(([fn]) => fn === 'ca_rake_snapshot_v2')
     .map(
       ([, a]) =>
         a as {
@@ -152,7 +152,7 @@ afterEach(() => cleanup());
 describe('rake snapshot search and sort', () => {
   it('asks the SERVER to search, and does not filter what it already has', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_search?: string | null }) => {
-      if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
+      if (fn !== 'ca_rake_snapshot_v2') return Promise.resolve({ data: null, error: null });
       const rows = a?.p_search ? [agentRow(2)] : [agentRow(1), agentRow(2), agentRow(3)];
       return Promise.resolve({
         data: clubSnapshot(rows, a?.p_search ? 1 : 3, { search: a?.p_search ?? null }),
@@ -176,7 +176,7 @@ describe('rake snapshot search and sort', () => {
 
   it('counts the matches while the shares stay against the whole club', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_search?: string | null }) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data: clubSnapshot(
               a?.p_search ? [agentRow(2)] : [agentRow(1), agentRow(2), agentRow(3)],
@@ -200,7 +200,7 @@ describe('rake snapshot search and sort', () => {
 
   it('carries the search and the sort into Load More', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_offset?: number }) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data: clubSnapshot(
               (a?.p_offset ?? 0) === 0 ? [agentRow(1), agentRow(2)] : [agentRow(3)],
@@ -237,7 +237,7 @@ describe('rake snapshot search and sort', () => {
 
   it('says so when nothing matches, and leaves a way back', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_search?: string | null }) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data: clubSnapshot(a?.p_search ? [] : [agentRow(1)], a?.p_search ? 0 : 1, {
               search: a?.p_search ?? null,
@@ -262,7 +262,7 @@ describe('rake snapshot search and sort', () => {
 describe('rake snapshot drill out of the club list', () => {
   it('opens only the rows the server says will open', async () => {
     rpcMock.mockImplementation((fn: string) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data: clubSnapshot([agentRow(1, true), agentRow(2, false)], 2),
             error: null,
@@ -282,7 +282,7 @@ describe('rake snapshot drill out of the club list', () => {
 
   it('stays in the downline it opened, even though the owner holds no downline', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) => {
-      if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
+      if (fn !== 'ca_rake_snapshot_v2') return Promise.resolve({ data: null, error: null });
       return Promise.resolve({
         data:
           a?.p_scope === 'agent'
@@ -310,7 +310,7 @@ describe('rake snapshot drill out of the club list', () => {
 
   it('offers a way back to the list it came from, not to a book the owner lacks', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data:
               a?.p_scope === 'agent'
@@ -345,7 +345,7 @@ describe('rake snapshot drill out of the club list', () => {
 
   it('does not carry an agent-name search into a list of player names', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string; p_search?: string | null }) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data:
               a?.p_scope === 'agent'

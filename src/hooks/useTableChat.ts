@@ -350,7 +350,7 @@ export function useTableChat(
     });
 
     const unsubTimeBank = masterBus.subscribe('TIME_BANK_ACTIVATED', (event) => {
-      const data = event.payload as any;
+      const data = event.payload;
       if (!isMounted || !data || (tableId && data.tableId !== tableId)) return;
 
       setChatMessages((prev) => {
@@ -359,7 +359,7 @@ export function useTableChat(
           type: 'SYSTEM',
           playerId: data.playerId,
           playerName: 'System',
-          content: `Player ${data.playerId.substring(0, 4)} activated Time Bank (+${data.addedSeconds}s)`,
+          content: `Player ${data.playerId.substring(0, 4)} activated Time Bank (+${data.secondsGranted}s)`,
           timestamp: new Date(),
         };
         return [...prev.slice(-49), sysMsg];

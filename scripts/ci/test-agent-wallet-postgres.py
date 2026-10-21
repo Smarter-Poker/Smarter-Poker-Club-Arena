@@ -68,3 +68,9 @@ if not args.baseline:
     choice_env = dict(os.environ, PG_BIN=str(pg))
     subprocess.run([sys.executable, str(ROOT/'scripts/ci/test-chip-wallet-choice-postgres.py')],
                    env=choice_env, check=True, timeout=60)
+
+# Owner October 21: own-player funding, server-held recovery, full newest roster
+# pagination and minimum tournament clocks run with the existing native gate.
+if not args.baseline:
+    subprocess.run([sys.executable, str(ROOT/'scripts/ci/test-hand-wallet-requests-postgres.py')],
+                   env=choice_env, check=True, timeout=60)

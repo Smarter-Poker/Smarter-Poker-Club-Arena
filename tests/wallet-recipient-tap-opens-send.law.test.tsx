@@ -1,3 +1,4 @@
+import { cashierRecoveryRpc } from './helpers/cashierRecoveryRpc';
 /**
  * TAPPING A MEMBER OPENS THE SEND TO THAT MEMBER, IN EVERY WALLET
  * (Dan 2026-10-19, binding)
@@ -34,6 +35,8 @@ const fx = vi.hoisted(() => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   blobs: [] as Blob[],
 }));
+
+const recoveries = cashierRecoveryRpc();
 
 vi.mock('../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: '11111111-1111-4111-8111-111111111111' } }),
@@ -77,6 +80,8 @@ vi.mock('../src/lib/supabase', () => ({
     },
     rpc: (fn: string, args: Record<string, unknown>) => {
       fx.calls.push({ fn, args });
+      const recovery = recoveries.answer(fn, args);
+      if (recovery) return Promise.resolve(recovery);
       /* UPDATED 2026-10-09 (launch audit S-07): the cashier reads the Club Bank
          and the promo pot through the role-checked fn_club_money_panel (with
          an abort signal), never through a direct clubs select. The fixture
@@ -156,6 +161,7 @@ function typeAmount(value: string) {
 const plate = (name: string | RegExp) => screen.getByRole('button', { name });
 
 beforeEach(() => {
+  recoveries.clear();
   fx.club = { name: 'Test Club', union_id: null, chip_treasury: 1000, promo_balance: 0 };
   fx.agentRow = null;
   fx.members = [{ data: [kingfish], error: null }];

@@ -118,7 +118,9 @@ function roleLabel(role: string | null | undefined): string {
 
 function money(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(Number(n))) return NO_VALUE;
-  return compactChips(Number(n));
+  return Math.abs(Number(n)) < 1000
+    ? Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : compactChips(Number(n));
 }
 
 function count(n: number | null | undefined): string {
@@ -1073,16 +1075,33 @@ export default function RakeSnapshotPanel({
         </p>
       )}
 
+      {snapshot?.accounting_basis === 'utc_net_money_flow' && !isAgent ? (
+        <p className={`sc-ink--muted ${styles.meta}`}>
+          Net Entries And Payouts In UTC. Unfinished Event Entries Included.
+          {scope === 'union' ? ' All Member Clubs And Union Account.' : ''}
+        </p>
+      ) : null}
       <dl className={styles.rows} aria-busy={loading} aria-label="Rake Snapshot Totals">
         <div className={`${styles.tile} ${styles.headline}`}>
           <dt className={`sc-label sc-ink--blue ${styles.label}`}>Rake / Fee</dt>
-          <dd className={`sc-ink--silver ${styles.value} ${styles.valueBig}`}>
+          <dd
+            title={
+              summary
+                ? Number(summary.fee).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : undefined
+            }
+            className={`sc-ink--silver ${styles.value} ${styles.valueBig}`}
+          >
             {summary ? money(summary.fee) : NO_VALUE}
           </dd>
           <dd className={styles.meta}>
             {summary && !isAgent && summary.cash_fee !== null && summary.mtt_fee !== null ? (
               <span className={`sc-ink--muted ${styles.split}`}>
-                {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
+                {money(summary.cash_fee)} Cash - {money(summary.tournament_fee ?? summary.mtt_fee)}{' '}
+                Tournaments
               </span>
             ) : null}
             {deltaNote(delta?.fee_pct, delta?.fee_abs)}
@@ -1131,6 +1150,14 @@ export default function RakeSnapshotPanel({
                 className={`${styles.value} ${
                   summary && Number(summary.total_winnings) < 0 ? 'sc-ink--red' : 'sc-ink--green'
                 }`}
+                title={
+                  summary
+                    ? Number(summary.total_winnings).toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    : undefined
+                }
               >
                 {summary ? money(summary.total_winnings) : NO_VALUE}
               </dd>
@@ -1142,12 +1169,20 @@ export default function RakeSnapshotPanel({
                 className={`${styles.value} ${
                   summary && Number(summary.mtt_winnings) < 0 ? 'sc-ink--red' : 'sc-ink--green'
                 }`}
+                title={
+                  summary
+                    ? Number(summary.mtt_winnings).toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    : undefined
+                }
               >
                 {summary ? money(summary.mtt_winnings) : NO_VALUE}
               </dd>
               <dd className={`sc-ink--muted ${styles.meta}`}>
                 {summary && summary.mtt_games !== null && summary.mtt_games !== undefined
-                  ? `${compactChips(summary.mtt_games)} Tournaments`
+                  ? `${compactChips(summary.mtt_games)} MTTs`
                   : null}
               </dd>
             </div>

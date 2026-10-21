@@ -799,53 +799,13 @@ CREATE OR REPLACE FUNCTION public.fn_ca_club_game_summary_filtered(p_club_id uui
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE v_out jsonb;
+DECLARE r jsonb;
 BEGIN
-  EXECUTE $query$
-    WITH cash AS (
-      SELECT c.table_id,SUM(c.rake) fee,SUM(c.net) winnings,SUM(c.hands) hands
-        FROM public.club_table_daily c WHERE c.club_id = ANY (public.fn_ca_club_data_clubs($1))
-         AND c.stat_date BETWEEN $2 AND $3 GROUP BY c.table_id
-    ), tournament_facts AS (
-      SELECT d.tournament_id,SUM(d.fee) fee,SUM(d.winnings) winnings
-        FROM public.ca_club_tournament_daily d WHERE d.club_id = ANY (public.fn_ca_club_data_clubs($1))
-         AND d.stat_date BETWEEN $2 AND $3 GROUP BY d.tournament_id
-    ), all_rows AS (
-      SELECT CASE WHEN COALESCE(t.game_variant,'') ILIKE '%plo%'
-                    OR COALESCE(t.game_variant,'') ILIKE '%omaha%' THEN 'OMAHA'
-                  WHEN COALESCE(t.game_variant,'') ILIKE '%mixed%'
-                    OR COALESCE(t.game_mode,'') ILIKE '%mixed%' THEN 'MIXED'
-                  ELSE 'HOLDEM' END game_class,
-             CASE WHEN COALESCE(t.big_blind,0)<1 THEN 'MICRO'
-                  WHEN COALESCE(t.big_blind,0)<5 THEN 'SMALL'
-                  WHEN COALESCE(t.big_blind,0)<25 THEN 'MID' ELSE 'HIGH' END stakes_tier,
-             t.id::text id,COALESCE(t.name,'Unnamed') name,
-             COALESCE(pr.username,'') creator_name,c.fee,c.winnings,c.hands::bigint
-        FROM cash c JOIN public.tables t ON t.id=c.table_id
-        LEFT JOIN public.profiles pr ON pr.id=t.created_by
-      UNION ALL
-      SELECT CASE WHEN tr.tournament_type='SPIN' THEN 'SPIN' WHEN tr.tournament_type='SNG' THEN 'SNG' WHEN tr.tournament_type='MTT' THEN 'MTT' ELSE coalesce(tr.tournament_type,'TOURNAMENT') END,'NA',
-             tr.id::text,COALESCE(tr.name,'Tournament'),'',f.fee,f.winnings,0::bigint
-        FROM tournament_facts f JOIN public.tournaments tr ON tr.id=f.tournament_id
-    ), filtered AS (
-      SELECT * FROM all_rows r
-       WHERE (UPPER(COALESCE(NULLIF($4,''),'ALL'))='ALL' OR r.game_class=UPPER($4))
-         AND (UPPER(COALESCE(NULLIF($5,''),'ALL'))='ALL' OR r.stakes_tier=UPPER($5))
-         AND (NULLIF(btrim(COALESCE($6,'')),'') IS NULL
-           OR r.name ILIKE '%'||btrim($6)||'%' OR r.id ILIKE '%'||btrim($6)||'%'
-           OR r.creator_name ILIKE '%'||btrim($6)||'%')
-    )
-    SELECT jsonb_build_object(
-      'games',count(*),
-      'total_winnings',round(COALESCE(SUM(winnings),0),2),
-      'mtt_winnings',round(COALESCE(SUM(winnings) FILTER(WHERE game_class='MTT'),0),2),
-      'cash_winnings',round(COALESCE(SUM(winnings) FILTER(WHERE game_class NOT IN('MTT','SNG','SPIN')),0),2),
-      'fee',round(COALESCE(SUM(fee),0),2),
-      'cash_fee',round(COALESCE(SUM(fee) FILTER(WHERE game_class NOT IN('MTT','SNG','SPIN')),0),2),
-      'mtt_fee',round(COALESCE(SUM(fee) FILTER(WHERE game_class IN('MTT','SNG','SPIN')),0),2),
-      'hands',public.fn_ca_club_data_hand_count($1,$2,$3,$4,$5,$6)) FROM filtered
-  $query$ INTO v_out USING p_club_id,p_start,p_end,p_game,p_stakes,p_search;
-  RETURN v_out;
+  -- One canonical summary owns exact types, authorized scope and cash stacks.
+  r:=public.ca_club_data_screen(p_club_id,p_start,p_end,p_game,p_stakes,p_search,1);
+  RETURN (r->'summary') || jsonb_build_object('hands',public.fn_ca_club_data_hand_count(
+    p_club_id,(r->'range'->>'start')::date,(r->'range'->>'end')::date,
+    r->'filters'->>'game',r->'filters'->>'stakes',r->'filters'->>'search'));
 END;
 $function$;
 
@@ -855,41 +815,13 @@ CREATE OR REPLACE FUNCTION public.fn_ca_club_game_summary(p_club_id uuid, p_star
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
-DECLARE v_out jsonb;
+DECLARE r jsonb;
 BEGIN
-  IF UPPER(COALESCE(NULLIF(p_game,''),'ALL')) <> 'ALL'
-     OR UPPER(COALESCE(NULLIF(p_stakes,''),'ALL')) <> 'ALL'
-     OR NULLIF(btrim(COALESCE(p_search,'')),'') IS NOT NULL THEN
-    RETURN public.fn_ca_club_game_summary_filtered(
-      p_club_id,p_start,p_end,p_game,p_stakes,p_search
-    );
-  END IF;
-
-  SELECT jsonb_build_object(
-    'games',COALESCE(c.games,0)+COALESCE(t.games,0),
-    'total_winnings',round(COALESCE(c.winnings,0)+COALESCE(t.winnings,0),2),
-    'mtt_winnings',round(COALESCE(t.mtt_winnings,0),2),
-    'cash_winnings',round(COALESCE(c.winnings,0),2),
-    'fee',round(COALESCE(c.fee,0)+COALESCE(t.fee,0),2),
-    'cash_fee',round(COALESCE(c.fee,0),2),
-    'mtt_fee',round(COALESCE(t.fee,0),2),
-    'hands',public.fn_ca_club_data_hand_count(p_club_id,p_start,p_end,p_game,p_stakes,p_search))
-    INTO v_out
-    FROM (
-      SELECT count(DISTINCT d.table_id)::bigint games,
-             COALESCE(sum(d.rake),0) fee,COALESCE(sum(d.net),0) winnings,
-             COALESCE(sum(d.hands),0)::bigint hands
-        FROM public.club_table_daily d
-       WHERE d.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND d.stat_date BETWEEN p_start AND p_end
-    ) c
-    CROSS JOIN (
-      SELECT count(DISTINCT d.tournament_id)::bigint games,
-             COALESCE(sum(d.fee),0) fee,COALESCE(sum(d.winnings),0) winnings,
-             coalesce(sum(d.winnings) FILTER(WHERE EXISTS(SELECT 1 FROM public.tournaments mt WHERE mt.id=d.tournament_id AND mt.tournament_type='MTT')),0) mtt_winnings
-        FROM public.ca_club_tournament_daily d
-       WHERE d.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND d.stat_date BETWEEN p_start AND p_end
-    ) t;
-  RETURN v_out;
+  -- One canonical summary owns exact types, authorized scope and cash stacks.
+  r:=public.ca_club_data_screen(p_club_id,p_start,p_end,p_game,p_stakes,p_search,1);
+  RETURN (r->'summary') || jsonb_build_object('hands',public.fn_ca_club_data_hand_count(
+    p_club_id,(r->'range'->>'start')::date,(r->'range'->>'end')::date,
+    r->'filters'->>'game',r->'filters'->>'stakes',r->'filters'->>'search'));
 END;
 $function$;
 

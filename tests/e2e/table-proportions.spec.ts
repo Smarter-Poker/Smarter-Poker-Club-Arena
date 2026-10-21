@@ -816,7 +816,7 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
 test('occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized', async ({
   page,
 }, testInfo) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   const { buildSync } = await import('esbuild');
   const bundled = buildSync({
     entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
@@ -926,7 +926,14 @@ test('occupied portrait rings keep the board clear, bets on the rail and tools L
   const realCss = fontFace + '\n' + sheets.map(readStyle).join('\n');
   for (const width of [320, 375, 393, 430, 480])
     for (const count of [6, 9])
-      for (const revealed of [false, true]) {
+      for (const [revealed, jackpot] of [
+        [false, 'mini'],
+        [true, 'mini'],
+        [false, 'main'],
+        [true, 'main'],
+        [false, 'none'],
+        [true, 'none'],
+      ] as const) {
         await page.setViewportSize({
           width,
           height: width === 320 ? 568 : width === 375 ? 667 : 852,
@@ -934,7 +941,7 @@ test('occupied portrait rings keep the board clear, bets on the rail and tools L
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
             contentType: 'text/html',
-            body: `<html data-seats="${count}" data-revealed="${revealed}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+            body: `<html data-seats="${count}" data-revealed="${revealed}" data-jackpot="${jackpot}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
           })
         );
         await page.goto('http://rail.fixture/');
@@ -1070,7 +1077,10 @@ test('occupied portrait rings keep the board clear, bets on the rail and tools L
           }));
           return { violations, tools, canvas: { width: canvas.width, height: canvas.height } };
         });
-        expect(result.violations, `${width}px ${count}-max`).toEqual([]);
+        expect(
+          result.violations,
+          `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'}`
+        ).toEqual([]);
         for (const tool of result.tools) {
           expect(tool.width, tool.selector).toBeCloseTo(result.tools[0].width, 1);
           expect(tool.height, tool.selector).toBeCloseTo(result.tools[0].height, 1);
@@ -1093,7 +1103,7 @@ test('occupied portrait rings keep the board clear, bets on the rail and tools L
           );
         }
         if (width === 393) {
-          const name = `occupied-${count}-max-${revealed ? 'revealed' : 'playing'}`;
+          const name = `occupied-${count}-max-${jackpot}-${revealed ? 'revealed' : 'playing'}`;
           const path = testInfo.outputPath(`${name}.png`);
           await page.screenshot({ path });
           await testInfo.attach(name, { path, contentType: 'image/png' });

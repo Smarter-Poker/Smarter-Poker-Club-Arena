@@ -1303,7 +1303,7 @@ export default function WalletCashierModal({
         throw new CashierRefusal(res?.error || 'The Cashier Refused That Movement');
       }
 
-      clearCashierWalletOperation(operation);
+      await clearCashierWalletOperation(operation);
       if (!isMounted.current || actionView.current !== owningView) return;
       const destLabel = destinationLabel(destination) || 'Wallet';
       toast?.success?.(
@@ -1417,7 +1417,7 @@ export default function WalletCashierModal({
       } | null;
       if (!res?.success)
         throw new CashierRefusal(res?.error || 'Those Chips Could Not Be Claimed Back');
-      clearCashierWalletOperation(operation);
+      await clearCashierWalletOperation(operation);
       if (!isMounted.current || actionView.current !== owningView) return;
       toast?.success?.(
         res.replayed
@@ -1477,7 +1477,7 @@ export default function WalletCashierModal({
         error?: string;
       } | null;
       if (!res?.success) throw new CashierRefusal(res?.error || 'That Send Could Not Be Reversed');
-      clearCashierWalletOperation(operation);
+      await clearCashierWalletOperation(operation);
       if (!isMounted.current || actionView.current !== owningView) return;
       toast?.success?.(`Reversed ${fmtWhole(row.amount)} Chips Back Into The Club Bank`);
       masterBus.emit('BALANCE_UPDATED', { source: 'club_bank_reverse', userId: user?.id || '' });

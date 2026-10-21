@@ -46,3 +46,22 @@ timer publication and acceleration. See the task checkpoint for exact commands,
 provider runs, migration receipts and separate live-delivery status.
 
 Time-bank chat reads the producer's secondsGranted contract, fixing the screenshot's undefined seconds. The real hook/bus regression checks the displayed grant.
+
+The legacy Spin launch projects booked clocks to five playable minutes without
+rewriting the immutable receipt or changing stakes, payouts or reveal fields.
+The presentation readback compares that same clock projection against both the
+old booked-draw trigger and the new database floor. Real-manager tests reach a
+first hand and full action clock for both versions; changed stakes still refuse.
+The clock migration has an actual engine-first rollout dependency and must wait
+for compatible engine activation. The wallet and roster migrations are independent.
+
+The same unavailable-browser-storage refusal also existed in the three directly
+affected self-funding cashier surfaces. Shared server-backed recovery preserves
+their original single and batch operation IDs, restores unresolved requests,
+and acknowledges only the exact completed identity. Existing money RPCs remain
+authoritative.
+
+A pre-existing native accounting qualification failed because its expiry fault
+hard-coded two days instead of the authoritative proof lifetime. Its one-line
+fixture correction derives that lifetime and reproduces fail-before/pass-after
+without changing accounting behavior.

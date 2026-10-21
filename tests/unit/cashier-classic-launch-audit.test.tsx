@@ -14,6 +14,7 @@
  *   G-03  the Mint field reads grouped thousands like every other amount
  *   G-04  a failed club read says the club, not the role
  */
+import { cashierRecoveryRpc } from '../helpers/cashierRecoveryRpc';
 import { webcrypto } from 'node:crypto';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { readFileSync } from 'fs';
@@ -111,6 +112,8 @@ function playerRead(): Promise<RoleRead> {
   return Promise.resolve({ data: { role: 'player' }, error: null });
 }
 
+const recoveries = cashierRecoveryRpc();
+
 function installSupabase() {
   vi.mocked(supabase.from).mockImplementation((table: string) => {
     const filters: Record<string, unknown> = {};
@@ -175,6 +178,8 @@ function installSupabase() {
   });
   vi.mocked(supabase.rpc).mockImplementation(((name: string, args: Record<string, unknown>) => {
     rpcCalls.push([name, args]);
+    const recovery = recoveries.answer(name, args);
+    if (recovery) return Promise.resolve(recovery);
     if (name === 'fn_ca_bridge_rate') return Promise.resolve({ data: MINT_RATE, error: null });
     if (name === 'fn_mint_chips_from_diamonds') {
       const next = mintResponses.shift();
@@ -209,6 +214,7 @@ describe('Cashier Classic launch audit', () => {
     Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
     mocks.walletProps.length = 0;
     rpcCalls = [];
+    recoveries.clear();
     mintResponses = [];
     recipientProfiles = [];
     recipientProfileError = null;

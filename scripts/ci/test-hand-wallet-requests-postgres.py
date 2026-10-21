@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Private PG17 qualification for the owner's October 21 cashier requests."""
-import os, json, shutil, subprocess, tempfile
+import os, json, shutil, subprocess, tempfile, sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
@@ -116,3 +116,6 @@ try:
 finally:
  if started:run([PG/'pg_ctl','-D',cluster/'data','-m','fast','-w','stop'])
  shutil.rmtree(cluster)
+
+# Same maintained native gate qualifies browser-independent recovery as well.
+subprocess.run([sys.executable,str(ROOT/'scripts/ci/test-cashier-browser-recoveries-postgres.py')],check=True,timeout=60)

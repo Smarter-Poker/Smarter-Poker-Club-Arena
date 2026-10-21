@@ -34,6 +34,15 @@ export type FundedSpinDraw = {
   provenance: 'at_draw' | 'legacy_projection';
 };
 
+/** Project the owner clock floor without rewriting the immutable funded rules. */
+export function playableSpinBlinds(blinds: SpinBlind[]): SpinBlind[] {
+  return blinds.map((blind) =>
+    blind.duration > 0 && blind.duration < 300
+      ? { ...blind, duration: 300, durationMinutes: 5 }
+      : { ...blind }
+  );
+}
+
 // Freeze all selection and play rules before entering the one database call.
 // The approved Spin specification remains the only source of future rules.
 export function spinRuleManifest(buyIn: number, startingChips: number) {

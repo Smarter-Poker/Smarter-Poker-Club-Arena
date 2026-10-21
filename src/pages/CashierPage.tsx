@@ -1905,11 +1905,11 @@ function CashierContent() {
           // had no result check at all, so a refusal printed "Sent 500 chips".
           if (!sendRes?.success) {
             // A definitive refusal moved nothing, so its journal entry closes.
-            if (sendRes && sendRes.success === false) clearCashierWalletOperation(operation);
+            if (sendRes && sendRes.success === false) await clearCashierWalletOperation(operation);
             throw new Error(sendRes?.error || 'The Cashier Refused That Send');
           }
 
-          clearCashierWalletOperation(operation);
+          await clearCashierWalletOperation(operation);
           // The money moved: always report it in the view that asked. Only a
           // changed club or page retires the message, never an authority
           // refresh, or the user sees nothing and sends a second time.
@@ -3106,10 +3106,10 @@ function CashierContent() {
                       if (!distRes?.success) {
                         // A definitive refusal moved nothing; its journal entry closes.
                         if (distRes && distRes.success === false)
-                          clearCashierWalletOperation(operation);
+                          await clearCashierWalletOperation(operation);
                         throw new Error(distRes?.error || 'The Cashier Refused That Distribution');
                       }
-                      clearCashierWalletOperation(operation);
+                      await clearCashierWalletOperation(operation);
                       // The money moved: report it unless the view itself changed.
                       if (!isMounted.current || transferView.current !== owningView) return;
                       const recipient = recipientRow;

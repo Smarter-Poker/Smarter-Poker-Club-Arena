@@ -8,6 +8,9 @@
 -- Owner October 21: no playable tournament level below five minutes;
 -- standard MTTs use eight to ten minute levels. Legacy seconds and both minute
 -- spellings are normalized together. Only clocks change, never stakes or prizes.
+-- ROLLOUT DEPENDENCY: activate the engine's playable legacy Spin projection
+-- before installing this migration. Older engines compare booked 180-second
+-- receipts exactly against this trigger's 300-second projection and refuse launch.
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='20s';

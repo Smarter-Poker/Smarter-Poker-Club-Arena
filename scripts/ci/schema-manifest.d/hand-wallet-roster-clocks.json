@@ -1,13 +1,19 @@
 {
   "_owner": "fix/hand-wallet-player-levels-01a15f7c",
   "_comment": "Promised source objects only. Not an installation claim. Apply exact merged migrations and record production readback separately.",
-  "tables": ["union_wallet_browser_intents"],
+  "tables": ["union_wallet_browser_intents", "cashier_browser_recoveries"],
   "functions": [
     "fn_union_wallet_reserve_intent",
     "fn_union_wallet_acknowledge_intent",
     "fn_ca_minimum_tournament_levels",
     "fn_ca_tournament_level_clock_floor",
-    "fn_ca_schedule_level_clock_floor"
+    "fn_ca_schedule_level_clock_floor",
+    "fn_cashier_browser_recovery_canonical",
+    "fn_cashier_browser_recovery_valid",
+    "fn_cashier_browser_recovery_reserve",
+    "fn_cashier_browser_recovery_read",
+    "fn_cashier_browser_recovery_update",
+    "fn_cashier_browser_recovery_ack"
   ],
   "columns": {
     "union_wallet_browser_intents": [
@@ -16,6 +22,15 @@
       "wallet_key",
       "signature",
       "operation_id",
+      "created_at"
+    ],
+    "cashier_browser_recoveries": [
+      "actor_id",
+      "club_id",
+      "kind",
+      "intent_key",
+      "identity",
+      "envelope",
       "created_at"
     ]
   }

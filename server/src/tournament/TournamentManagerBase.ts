@@ -31,6 +31,7 @@ import {
 } from './tournamentEntryCapacity.js';
 import {
   continueBookedSpinBlinds,
+  playableSpinBlinds,
   readFundedSpinDraw,
   spinRuleManifest,
   type FundedSpinDraw,
@@ -4931,6 +4932,25 @@ export abstract class TournamentManagerBase {
     return Number.isFinite(actualMs) && actualMs === expectedMs;
   }
 
+  private playableSpinPresentation(
+    row: Record<string, unknown> | null
+  ): Record<string, unknown> | null {
+    if (!row) return row;
+    try {
+      const blinds =
+        typeof row.blind_structure === 'string'
+          ? JSON.parse(row.blind_structure)
+          : row.blind_structure;
+      if (!Array.isArray(blinds)) return row;
+      // Before the clock migration, the booked-draw trigger still projects
+      // legacy seconds. Compare the same playable clock projection, keeping
+      // every other blind key, payout and reveal field exact.
+      return { ...row, blind_structure: playableSpinBlinds(blinds) };
+    } catch {
+      return row;
+    }
+  }
+
   private launchRowMatchesPatch(
     row: Record<string, unknown> | null | undefined,
     patch: Record<string, unknown>
@@ -6361,16 +6381,17 @@ export abstract class TournamentManagerBase {
           }
         }
 
-        // Recovery takes every tier-dependent play rule from the immutable
-        // funded receipt. It never substitutes rules from the current binary.
+        // Recovery takes tier-dependent stakes and payouts from the immutable
+        // funded receipt. The owner clock floor is a playable projection only;
+        // it never changes the booked receipt or its manifest/hash.
         // The board-owned stack was already funded and is independently
         // checked below against both the roster and every occupied seat.
-        const spinBlinds = fundedSpin.blinds;
+        const spinBlinds = playableSpinBlinds(fundedSpin.blinds);
 
         // The atomic database authority already owns and stamped
         // prize_pool, spin_multiplier and spin_locked_tiers. This follow-up is
         // presentation/gameplay configuration only: it must never become a
-        // second money-contract writer. It is still read back exactly before
+        // second money-contract writer. Its playable projection is proved before
         // RUNNING because the blinds, payout display and reveal anchor are
         // required by every engine/client copy.
         const spinPresentationPatch = {
@@ -6439,7 +6460,9 @@ export abstract class TournamentManagerBase {
             if (
               !spinPresentationProofErr &&
               this.launchRowMatchesPatch(
-                spinPresentationProof as Record<string, unknown> | null,
+                this.playableSpinPresentation(
+                  spinPresentationProof as Record<string, unknown> | null
+                ),
                 spinPresentationPatch as unknown as Record<string, unknown>
               )
             ) {

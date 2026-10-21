@@ -25,8 +25,15 @@ vi.mock('../../src/contexts/ClubWorkspaceContext', () => ({
 vi.mock('../../src/stores/useUserStore', () => ({
   useUserStore: (select: (s: unknown) => unknown) => select({ user: { id: 'viewer' } }),
 }));
-vi.mock('../../src/lib/rosterCache', () => ({ purgeRosterCache: state.purge }));
-vi.mock('../../src/lib/clubDataCache', () => ({ removeClubDataCaches: state.data }));
+vi.mock('../../src/lib/rosterCache', () => ({
+  purgeRosterCache: state.purge,
+  ROSTER_CACHE_PREFIX: 'roster_',
+  ROSTER_SEARCH_PREFIX: 'search_',
+}));
+vi.mock('../../src/lib/clubDataCache', () => ({
+  removeClubDataCaches: state.data,
+  CLUB_DATA_CACHE_PREFIX: 'data_',
+}));
 vi.mock('../../src/lib/membershipWarmState', () => ({ clearMembershipsWarmCache: state.warm }));
 vi.mock('../../src/lib/statsCache', () => ({
   clearStatsRangeMemo: state.stats,
@@ -62,6 +69,15 @@ describe('recipient-only private scope invalidation', () => {
     expect(state.purge).toHaveBeenCalledWith('viewer', 'club');
     expect(state.data).toHaveBeenCalledWith('viewer', 'club');
     expect(localStorage.length).toBe(0);
+  });
+  it('rechecks the mounted private club on all-club reconnect catchup', () => {
+    mount('/clubs/club/members');
+    fireEvent.change(screen.getByLabelText('Draft'), {
+      target: { value: 'Previously Visible Player' },
+    });
+    act(() => state.listener?.({ payload: { userId: 'viewer' } }));
+    expect(screen.getByLabelText('Draft')).toHaveValue('');
+    expect(state.purge).toHaveBeenCalledWith('viewer', 'club');
   });
   it('preserves cashier drafts while clearing private read caches', () => {
     mount('/clubs/club/cashier');

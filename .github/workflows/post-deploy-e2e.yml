@@ -1088,6 +1088,13 @@ jobs:
           e2e-report/gameplay-customization-runtime.json
           e2e-report/customization-commerce.json
 
+      - name: Retire interrupted assignment qualification fixtures
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/cleanup-agent-assignment-fixtures.mjs
+
       - name: Hard-delete the isolated production E2E account
         id: account_cleanup
         if: always() && steps.live.outputs.ready == 'true'

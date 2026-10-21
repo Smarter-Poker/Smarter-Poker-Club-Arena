@@ -4,6 +4,8 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {createProductionE2EAccount,prepareProductionE2EStaffMembership,cleanupProductionE2EAccount} from './production-e2e-account.mjs';
+import {createClient} from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import {supabaseServerHeaders} from './supabase-auth-headers.mjs';
 const env=process.env;
 const root=env.RUNNER_TEMP;
@@ -15,7 +17,7 @@ assert.ok(!env.E2E_CLUB_ID || env.E2E_CLUB_ID===club);
 const base=env.SUPABASE_URL?.replace(/\/$/,'');
 const service=env.SUPABASE_SERVICE_ROLE_KEY,anon=env.VITE_SUPABASE_ANON_KEY;
 assert.ok(base && service && anon);
-const owned=[],sessions=[];
+const owned=[],sessions=[],realtimeClients=[];
 async function req(path,{method='GET',body,token}={}) {
  const headers=token?{apikey:anon,Authorization:`Bearer ${token}`} :supabaseServerHeaders(service);
  const r=await fetch(base+path,{method,headers:{...headers,'Content-Type':'application/json',Prefer:'return=representation'},...(body===undefined?{}:{body:JSON.stringify(body)})});
@@ -27,6 +29,28 @@ async function login(account) {
  const r=await fetch(base+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:anon,'Content-Type':'application/json'},body:JSON.stringify({email:account.email,password:account.password})});
  const data=await r.json();assert.ok(r.ok && data.access_token);assert.equal(data.user.id,account.id);
  sessions.push(data.access_token);return data.access_token;
+}
+async function listenForTransfer(viewer,token,baseline) {
+ const client=createClient(base,anon,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{transport:WebSocket}});
+ realtimeClients.push(client);await client.realtime.setAuth(token);
+ const observed=[];let notify;
+ const matches=()=>observed.some(row=>row.user_id===viewer && row.club_id===club && row.reason==='member_scope_changed');
+ const channel=client.channel('profile-account:'+viewer,{config:{private:true}}).on('broadcast',{event:'account_changed'},event=>{observed.push(event.payload);if(notify)notify();});
+ await new Promise((resolve,reject)=>{
+  const timer=setTimeout(()=>reject(new Error('Recipient scope subscription timed out')),15000);
+  channel.subscribe(status=>{
+   if(status==='SUBSCRIBED'){clearTimeout(timer);resolve();}
+   else if(['CHANNEL_ERROR','TIMED_OUT','CLOSED'].includes(status)){clearTimeout(timer);reject(new Error('Recipient scope subscription refused: '+status));}
+  });
+ });
+ return async()=>{
+  if(matches())return;
+  await new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>{notify=null;reject(new Error('Transferred scope event was not received over Realtime'));},20000);
+   notify=()=>{if(matches()){clearTimeout(timer);notify=null;resolve();}};
+   notify();
+  });
+ };
 }
 const member=(id)=>`/rest/v1/club_members?club_id=eq.${club}&user_id=eq.${id}`;
 const zeroFields=['chip_balance','promo_balance','held_chips','locked_chips','credit_used','credit_limit'];
@@ -59,15 +83,20 @@ try {
  const sourceToken=await login(source.account);
  const visible=()=>req(`/rest/v1/club_members?club_id=eq.${club}&select=user_id`,{token:sourceToken});
  assert.deepEqual((await visible()).map(r=>r.user_id).sort(),[source.account.id,player.account.id].sort());
+ const destinationToken=await login(destination.account);
+ const baselineRows=await req(`/rest/v1/game_management_events?recipient_id=in.(${source.account.id},${destination.account.id})&club_id=eq.${club}&select=sequence&order=sequence.desc&limit=1`);
+ const baseline=baselineRows.length?Number(baselineRows[0].sequence):0;assert.ok(Number.isSafeInteger(baseline));
+ const sourceEvent=await listenForTransfer(source.account.id,sourceToken,baseline);
+ const destinationEvent=await listenForTransfer(destination.account.id,destinationToken,baseline);
  const preview=await req('/rest/v1/rpc/fn_preview_club_assignment',{method:'POST',token,body:{p_club_id:club,p_member_user_ids:move.p_member_user_ids,p_agent_user_id:move.p_agent_user_id,p_expected_agent_user_id:move.p_expected_agent_user_id}});
  assert.equal(preview.selected_count,1);assert.equal(preview.affected_count,1);assert.match(preview.review_token,/^[a-f0-9]{32}$/);
  move.p_review_token=preview.review_token;
  writeFileSync(join(root,'agent-assignment-operations.json'),JSON.stringify({first,move}),{mode:0o600});
  const transfer=await req('/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',token,body:move});assert.equal(transfer.success,true);assert.equal(transfer.moved,1);
  assert.equal((await membership(player.account.id)).agent_id,destination.account.id);
+ await Promise.all([sourceEvent(),destinationEvent()]);
  assert.deepEqual((await visible()).map(r=>r.user_id),[source.account.id]);
  const replay=await req('/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',token,body:move});assert.equal(replay.replayed,true);
- const destinationToken=await login(destination.account);
  assert.deepEqual((await req(`/rest/v1/club_members?club_id=eq.${club}&select=user_id`,{token:destinationToken})).map(r=>r.user_id).sort(),[destination.account.id,player.account.id].sort());
  const playerProfile=await req(`/rest/v1/profiles?id=eq.${player.account.id}&select=alias,username`);
  const playerSearch=playerProfile[0].alias || playerProfile[0].username;assert.ok(playerSearch);
@@ -78,12 +107,17 @@ try {
   assert.ok(Array.isArray(page.items));assert.equal(page.items.some(row=>row.user_id===player.account.id),expected);
   const access=await req('/rest/v1/rpc/ca_club_roster_access',{method:'POST',token:viewerToken,body:{p_club_id:club,p_target_user_id:player.account.id}});
   assert.equal(access==='none',!expected);
-  const events=await req(`/rest/v1/game_management_events?recipient_id=eq.${viewer}&club_id=eq.${club}&select=recipient_id,payload&order=sequence.desc&limit=20`,{token:viewerToken});
-  assert.ok(events.some(row=>row.payload?.reason==='member_scope_changed'));
+  const detail=await req('/rest/v1/rpc/ca_club_member_detail',{method:'POST',token:viewerToken,body:{p_club_id:club,p_user_id:player.account.id,p_from:null,p_to:null}});
+  if(expected)assert.equal(detail?.identity?.user_id,player.account.id);else assert.equal(detail,null);
+  const exportResponse=await fetch(base+'/rest/v1/rpc/ca_club_members_export',{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${viewerToken}`,'Content-Type':'application/json'},body:JSON.stringify({p_club_id:club,p_user_ids:[player.account.id]})});
+  assert.equal(exportResponse.status,403,'Agent export requires staff authority');
+  const events=await req(`/rest/v1/game_management_events?recipient_id=eq.${viewer}&club_id=eq.${club}&select=recipient_id,payload,sequence&sequence=gt.${baseline}&order=sequence.desc&limit=20`,{token:viewerToken});
+  assert.ok(events.some(row=>Number(row.sequence)>baseline && row.recipient_id===viewer && row.payload?.reason==='member_scope_changed'));
  }
  passed=true;
 } finally {
  const errors=[];
+ for(const client of realtimeClients){try{await client.removeAllChannels();client.realtime.disconnect();}catch(error){errors.push(error);}}
  // The player is removed first; agent deletion is refused if any child or custody remains.
  for(const item of [...owned].reverse()) {
   try {
@@ -106,4 +140,4 @@ try {
  if(errors.length) throw new AggregateError(errors,'Assignment fixture cleanup incomplete');
 }
 assert.equal(passed,true);
-console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,rosterSearchAndExportScope:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRemoved:owned.length}));
+console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,realtimeTransferReceived:true,directMemberScope:true,rosterSearchScope:true,agentExportDenied:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRemoved:owned.length}));

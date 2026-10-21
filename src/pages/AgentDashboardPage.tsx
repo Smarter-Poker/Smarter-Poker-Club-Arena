@@ -149,7 +149,7 @@ export default function AgentDashboardPage() {
   useEffect(
     () =>
       masterBus.subscribe('GAME_MANAGEMENT_ACCESS_CHANGED', ({ payload }) => {
-        if (!user?.id || (payload.userId && payload.userId !== user.id) || !payload.clubId) return;
+        if (!user?.id || (payload.userId && payload.userId !== user.id)) return;
         try {
           for (let index = sessionStorage.length - 1; index >= 0; index--) {
             const cacheKey = sessionStorage.key(index);

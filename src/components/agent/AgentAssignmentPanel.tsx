@@ -221,7 +221,9 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
       setUncertain(!refused);
       setError(
         refused
-          ? ((e as { message?: string }).message ?? 'Assignment Refused.')
+          ? (e as { message?: string }).message === 'assignment_review_changed_preview_again'
+            ? 'The Downline Changed. Review The Transfer Again.'
+            : ((e as { message?: string }).message ?? 'Assignment Refused.')
           : 'Assignment Outcome Unconfirmed. Retry The Same Request To Read Its Receipt.'
       );
       reportError(e, 'AgentAssignmentPanel.assign');
@@ -267,7 +269,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
             <option value="">All Active Members</option>
             {agents.map((m) => (
               <option key={m.user_id} value={m.user_id}>
-                {m.label}
+                {titleCase(m.label)}
               </option>
             ))}
           </select>
@@ -284,7 +286,8 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
           >
             {assignable.map((m) => (
               <option key={m.user_id} value={m.user_id}>
-                {m.label} / {titleCase(m.role.replace(/_/g, ' '))} / {label(m.agent_id)}
+                {titleCase(m.label)} / {titleCase(m.role.replace(/_/g, ' '))} /{' '}
+                {titleCase(label(m.agent_id))}
               </option>
             ))}
           </select>
@@ -310,7 +313,7 @@ export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
               .filter((m) => !selected.includes(m.user_id) && m.user_id !== source)
               .map((m) => (
                 <option key={m.user_id} value={m.user_id}>
-                  {m.label} / {titleCase(m.role.replace(/_/g, ' '))}
+                  {titleCase(m.label)} / {titleCase(m.role.replace(/_/g, ' '))}
                 </option>
               ))}
           </select>

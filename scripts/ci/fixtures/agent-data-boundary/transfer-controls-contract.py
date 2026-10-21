@@ -1,5 +1,7 @@
 # Executed inside the existing real PG17 boundary fixture, with q/as_user/uid/club.
 preimages=json.loads((F/'enhancement-preimages.json').read_text())
+# A real PostgreSQL producer runs verbatim; only the hosted transport is recorded.
+q("CREATE SCHEMA realtime; CREATE TABLE public.scope_signal_fixture(topic text,event text,payload jsonb,private boolean); CREATE FUNCTION realtime.send(payload jsonb,event text,topic text,private boolean) RETURNS void LANGUAGE sql AS $$INSERT INTO public.scope_signal_fixture VALUES(topic,event,payload,private)$$;")
 q("CREATE TABLE game_management_events(sequence bigserial PRIMARY KEY,event_id uuid UNIQUE DEFAULT gen_random_uuid(),event_type text,scope_kind text,scope_id uuid,club_id uuid,union_id uuid,recipient_id uuid,entity_type text,entity_id uuid,command_id uuid,actor_id uuid,payload jsonb,created_at timestamptz DEFAULT now()); ALTER TABLE game_management_events ENABLE ROW LEVEL SECURITY; CREATE POLICY own ON game_management_events FOR SELECT TO authenticated USING(recipient_id=auth.uid()); GRANT SELECT ON game_management_events TO authenticated;")
 q("""CREATE FUNCTION fn_emit_game_management_event(p_event_type text,p_club_id uuid DEFAULT NULL,p_union_id uuid DEFAULT NULL,p_recipient_id uuid DEFAULT NULL,p_entity_type text DEFAULT NULL,p_entity_id uuid DEFAULT NULL,p_command_id uuid DEFAULT NULL,p_payload jsonb DEFAULT '{}') RETURNS void LANGUAGE sql SECURITY DEFINER AS $$
 INSERT INTO game_management_events(event_type,scope_kind,scope_id,club_id,union_id,recipient_id,entity_type,entity_id,command_id,actor_id,payload)
@@ -25,6 +27,9 @@ assert review['members'][0]['name']=='Player Seven' and review['members'][0]['so
 assert review['destination']['name']=='Destination Agent' and review['selected_count']==review['affected_count']==1
 q(f"UPDATE club_members SET chip_balance=COALESCE(chip_balance,0)+1 WHERE club_id='{club}' AND user_id='{uid(7)}';")
 assert json.loads(q(as_user(1,preview_call)))['review_token']==review['review_token'],'A chip-only update invalidated the hierarchy review'
+q(f"UPDATE profiles SET status='deleted' WHERE id='{uid(8)}';")
+assert json.loads(q(as_user(1,preview_call)))['review_token']!=review['review_token'],'A deleted descendant did not invalidate review'
+q(f"UPDATE profiles SET status=NULL WHERE id='{uid(8)}';")
 # A hierarchy change after preview must refuse and move nobody.
 q(as_user(1,f"SELECT fn_reassign_club_members('{club}',ARRAY['{uid(8)}'::uuid],'{uid(6)}','{uid(1201)}');"))
 apply=f"SELECT fn_apply_reviewed_club_assignment('{club}',ARRAY['{uid(7)}'::uuid],'{uid(6)}','{uid(1202)}','{review['review_token']}','{uid(3)}');"
@@ -32,10 +37,18 @@ q(as_user(1,apply),'assignment_review_changed_preview_again')
 assert q(f"SELECT agent_id='{uid(3)}' FROM club_members WHERE user_id='{uid(7)}';")=='t'
 review2=json.loads(q(as_user(1,preview_call)))
 apply=apply.replace(review['review_token'],review2['review_token'])
-q('TRUNCATE game_management_events;')
+q('TRUNCATE game_management_events,scope_signal_fixture;')
 receipt=json.loads(q(as_user(1,apply)));assert receipt['success'] and receipt['moved']==1
 assert json.loads(q(as_user(1,apply)))['replayed'] is True
 assert q(f"SELECT count(*) FROM club_assignment_operations WHERE id='{uid(1202)}' AND review_snapshot->>'review_token'='{review2['review_token']}';")=='1'
+signals=json.loads(q("SELECT jsonb_agg(jsonb_build_object('topic',topic,'event',event,'payload',payload,'private',private)) FROM scope_signal_fixture;"))
+assert len(signals)==len({x['topic'] for x in signals})
+assert {x['topic'] for x in signals} >= {'profile-account:'+uid(3),'profile-account:'+uid(6)}
+assert 'profile-account:'+uid(8) not in {x['topic'] for x in signals}
+for signal in signals:
+ assert signal['event']=='account_changed' and signal['private'] is True
+ assert signal['topic']=='profile-account:'+signal['payload']['user_id']
+ assert signal['payload']=={'user_id':signal['payload']['user_id'],'club_id':club,'reason':'member_scope_changed','domains':[]}
 # Prior and new uplines get one recipient-only generic event, even if a row repeats in a bulk transaction.
 for viewer in [3,6]:
  assert q(as_user(viewer,"SELECT count(*) FROM game_management_events WHERE payload->>'reason'='member_scope_changed';"))=='1'
@@ -43,6 +56,7 @@ for viewer in [3,6]:
 assert q(as_user(8,"SELECT count(*) FROM game_management_events;"))=='0'
 q(f"BEGIN;UPDATE club_members SET status='approved' WHERE club_id='{club}' AND user_id='{uid(7)}'; UPDATE club_members SET status='active' WHERE club_id='{club}' AND user_id='{uid(7)}'; COMMIT;")
 assert q(f"SELECT count(*) FROM game_management_events WHERE recipient_id='{uid(6)}' AND payload->>'reason'='member_scope_changed';")=='2'
+assert q(f"SELECT count(*) FROM scope_signal_fixture WHERE topic='profile-account:{uid(6)}';")=='2'
 history=json.loads(q(as_user(1,f"SELECT fn_club_assignment_history('{club}','Player Seven');")))
 assert any(row['operation_id']==uid(1202) and row['review']['members'][0]['name']=='Player Seven' for row in history['rows'])
 first=json.loads(q(as_user(1,f"SELECT fn_club_assignment_history('{club}','','NULL'::timestamptz,NULL,1);".replace("'NULL'::timestamptz","NULL"))))

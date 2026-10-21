@@ -10,7 +10,9 @@ CREATE INDEX club_assignment_history_page_idx ON public.club_assignment_operatio
 -- Deterministic event identity coalesces a bulk transaction to one event per affected viewer.
 CREATE OR REPLACE FUNCTION public.fn_publish_club_member_scope(p_club uuid,p_roots uuid[])
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$
+DECLARE recipient uuid;
 BEGIN
+ FOR recipient IN
  INSERT INTO public.game_management_events(event_id,event_type,scope_kind,scope_id,club_id,recipient_id,entity_type,entity_id,payload)
  WITH RECURSIVE uplines(user_id,depth,path) AS (
   SELECT DISTINCT r,0,ARRAY[r] FROM unnest(p_roots) r WHERE r IS NOT NULL
@@ -22,7 +24,14 @@ BEGIN
  SELECT md5('club-private-scope:'||txid_current()::text||':'||p_club::text||':'||user_id::text)::uuid,
   'management_access_changed','club',p_club,p_club,user_id,'club',p_club,
   jsonb_build_object('reason','member_scope_changed') FROM (SELECT DISTINCT user_id FROM uplines) x
- ON CONFLICT(event_id) DO NOTHING;
+ ON CONFLICT(event_id) DO NOTHING RETURNING recipient_id
+ LOOP
+  -- Reuse the existing exact-owner private account carrier. The hot event table
+  -- stays out of the WAL publication and carries no foreign player's identity.
+  PERFORM realtime.send(jsonb_build_object('user_id',recipient,'club_id',p_club,
+    'reason','member_scope_changed','domains','[]'::jsonb),
+    'account_changed','profile-account:'||recipient::text,true);
+ END LOOP;
 END $$;
 REVOKE ALL ON FUNCTION public.fn_publish_club_member_scope(uuid,uuid[]) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_publish_club_member_scope(uuid,uuid[]) TO service_role;
@@ -51,6 +60,9 @@ BEGIN
     END IF;
 
     IF TG_OP='UPDATE' THEN
+      IF NEW.club_id IS DISTINCT FROM OLD.club_id THEN
+        PERFORM public.fn_publish_club_member_scope(OLD.club_id,ARRAY[OLD.user_id,OLD.agent_id]);
+      END IF;
       PERFORM public.fn_publish_club_member_scope(NEW.club_id,ARRAY[NEW.user_id,OLD.agent_id,NEW.agent_id]);
     ELSIF TG_OP='DELETE' THEN
       PERFORM public.fn_publish_club_member_scope(OLD.club_id,ARRAY[OLD.user_id,OLD.agent_id]);
@@ -185,7 +197,7 @@ BEGIN
  SELECT jsonb_build_object('user_id',m.user_id,'name',COALESCE(NULLIF(btrim(p.alias),''),NULLIF(btrim(p.username),''),'Player'),'role',m.role)
  INTO destination FROM public.club_members m JOIN public.agents a ON a.club_id=m.club_id AND a.user_id=m.user_id
  LEFT JOIN public.profiles p ON p.id=m.user_id
- WHERE m.club_id=p_club_id AND m.user_id=p_agent_user_id AND a.status='active'
+ WHERE m.club_id=p_club_id AND m.user_id=p_agent_user_id AND a.status='active' AND m.role IN ('super_agent','agent','sub_agent')
  AND public.fn_cashier_member_is_active(m.club_id,m.user_id);
  IF destination IS NULL THEN RAISE EXCEPTION 'agent_not_active_in_club' USING ERRCODE='22023'; END IF;
  IF (SELECT count(*) FROM public.club_members m WHERE m.club_id=p_club_id AND m.user_id=ANY(ids)
@@ -210,8 +222,8 @@ BEGIN
  ) SELECT count(DISTINCT user_id) INTO affected FROM descendants;
  -- Only hierarchy/activity participates: ordinary chip changes cannot invalidate a review.
  SELECT md5(jsonb_build_object('club',p_club_id,'ids',ids,'target',p_agent_user_id,'source',p_expected_agent_user_id,
-  'hierarchy',jsonb_agg(jsonb_build_array(m.user_id,m.agent_id,m.role,m.status,a.status) ORDER BY m.user_id))::text)
- INTO fingerprint FROM public.club_members m LEFT JOIN public.agents a ON a.club_id=m.club_id AND a.user_id=m.user_id WHERE m.club_id=p_club_id;
+  'hierarchy',jsonb_agg(jsonb_build_array(m.user_id,m.agent_id,m.role,m.status,a.status,COALESCE(profile_state.status='deleted',false)) ORDER BY m.user_id))::text)
+ INTO fingerprint FROM public.club_members m LEFT JOIN public.agents a ON a.club_id=m.club_id AND a.user_id=m.user_id LEFT JOIN public.profiles profile_state ON profile_state.id=m.user_id WHERE m.club_id=p_club_id;
  RETURN jsonb_build_object('club_id',p_club_id,'review_token',fingerprint,'destination',destination,'members',snapshot,'selected_count',cardinality(ids),'affected_count',affected);
 END $$;
 REVOKE ALL ON FUNCTION public.fn_preview_club_assignment(uuid,uuid[],uuid,uuid) FROM PUBLIC,anon;

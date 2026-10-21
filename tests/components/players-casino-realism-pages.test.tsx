@@ -211,7 +211,7 @@ describe('Players detail surfaces', () => {
     const current = await screen.findByRole('button', { name: /Player \(Current\)/ });
     expect(current).toHaveAttribute('aria-current', 'true');
     expect(current).toHaveClass('mm-roles__option--current');
-    expect(current).toBeEnabled();
+    await waitFor(() => expect(current).toBeEnabled());
     fireEvent.click(current);
     expect(await screen.findByRole('spinbutton', { name: 'Rakeback Percent' })).toHaveValue(20);
     expect(

@@ -1,5 +1,41 @@
 # Role And Individual Rakeback Editing
 
+## Current Delivery State - 2026-10-21 18:06 UTC
+
+Source is committed and pushed in PR #7596 at `9ae1c09ade3b71b32e544ac619fd8c17134d3377`. Normal hooks passed. Both database migrations are installed and verified; do not replay either. Source/API/render/native regressions are complete. **Not merged, published or live-verified.**
+
+Final guard installed at 18:03 UTC after a fresh null DDL-refusal result and matching preimages, provider version `20261021180334`, name `individual_player_rates_cannot_bypass_agreement_authorizatio`, SQL MD5 `c3e4c744e4ade28b64feec6c8866dff4`. Live guard MD5 `7afde97b841511ee0553beeb6a703bc7`; final setter MD5 `f2f3dd081e612124b4c88ce7a12d5e23`. Guard covers INSERT and UPDATE OF percentage/explicit marker. Both functions retain postgres ownership/fixed public,pg_temp path; setter remains SECURITY DEFINER with authenticated/service_role execution and no anon/public execution. Existing explicit-rate row count remains zero: no production member deal changed.
+
+External blocker: exact-head CI run `39648952169` (created 18:01:15 UTC) remains queued. Its jobs use the correct ubuntu-latest labels and have no assigned runner. Actions is enabled; no source/configuration failure has been demonstrated. No active comparable CI run was found; latest successful CI returned by provider was main run `39557281743` (created 06:44:15, completed 07:21:08 UTC). Required six branch checks remain mandatory. Do not use a retired runner/publisher or a release watcher. No workflow has been dispatched or retried to bypass the queue.
+
+Storage also reached 100% reported capacity with 2.2 GiB available on /dev/disk5s4. Do not start another disk-heavy build/install here until safe space exists. Task-created npm/Vite caches and the stopped local PostgreSQL cluster were removed. Keep the pending owned checkout and its dependencies for recovery; no other agent files were touched. Evidence/logs and this checkpoint are retained in `/Volumes/SmarterArchives/agent-evidence/role-rakeback-20261021`.
+
+Public build-info baseline from both required endpoints is `21cd2ef5195a77c5d391971fee25df8c70c4c872`, publisher `39645492829`. A Chrome read-only baseline confirmed the current Super Agent button is still disabled. No production percentage save was attempted. The new editor still needs exact containing client publication and read-only live Player/agent control verification.
+
+Next action: read current policies/checkpoint and the exact PR/run state, reuse valid local/native evidence, resolve only real check failures, complete protected squash merge at the reviewed head, follow publish-club-arena.yml, verify both public build-info endpoints and current-role editors, then archive evidence and remove this owned worktree/scratch. No engine activation dependency. Retain responsibility; this is blocked delivery, not completion.
+
+Final canonical policy reader emitted `2026-10-21T18:05:41.807Z`, version 2.9, unchanged manifest and four hashes recorded below. Repository entrypoints, publishing and checkpoint refreshed. The only post-push working-tree change is this delivery record; application and migration source match the pushed candidate.
+
+## Resumption - 2026-10-21 18:22 UTC
+
+Canonical full policy reader refreshed at 18:18:46.779 UTC, version 2.9, manifest a659f31c5c1c2b0864889508079a635dd5fe2fc98decfbfc9d3f9c80dd45ec3b; all four policy hashes unchanged from receipt below. Repository entrypoints, publishing, deploy paths, console skill, storage guide and existing checkpoint freshly read. SSD /dev/disk5s4 has 3.1 GiB free; no heavy builds/install repeated.
+
+Two read-only subagents independently examined CI and installed DB. DB readback at 18:19:11 UTC matches both migrations, setter/guard hashes, owner, fixed searchpath, ACL, enabled triggers and zero explicit-rate rows. No production terms changed. Exact CI check names match branch protection and downstream workflow definitions. Latest exact-head run39648952169 remains queued without assigned ubuntu-latest runners. Comparable other PR runs acquired runners, but this run has no execution/source failure yet.
+
+Retired only verified obsolete own CI runs39648420308,39648153505,39647066973; all now terminal cancelled. Current head9ae1c09ade3b71b32e544ac619fd8c17134d3377 and current run untouched. Failed advisory migration ledger run39648947482 still reports unrelated missing horse_adaptive_legacy_digest_probe index; no unrelated fix attempted. No test reruns, new migrations, workflow changes or bypasses.
+
+Authenticated live page freshly inspected: PhucMot current Super Agent button remains disabled, confirming requested UI has not published. PR7596 remains OPEN/BLOCKED at18:22:07 UTC; exact CI still queued. Read-only local gh status observer stopped. Source/checkpoint retained pending runner execution; protected merge, client publication, both identities and live Player/agent editor verification remain REQUIRED. No completion claim.
+
+## Continuation - 2026-10-21 18:24 UTC
+
+Owner explicitly requests continued execution through live completion. Canonical reader refreshed18:23:43.063Z version2.9, unchanged manifest/hashes. Required repository references and checkpoint refreshed. Current CI39648952169 now executing TypeScript/repository checks; What Changed passed and downstream jobs created. Head remains9ae1c09ade3b71b32e544ac619fd8c17134d3377. No source or migration change. Root owns merge/publication.
+
+## CI Failure Repair - 2026-10-21 19:01 UTC
+
+Exact-head hosted client shard3 exposed two source-contract failures: immediate enabled assertion on awaited current role, and missing WITHHELD documentation for server-only player_rakeback_explicit. Added waitFor without weakening the assertion, and a single SQL comment documenting existing intentionally withheld read access. No executable migration bytes, installed definitions, grants or behavior changed; installed migration must NOT be replayed. Original provider SQL MD5 remains installation evidence; the source adds documentation only. Focused four-file regression73/73 passed including both failing laws, actual role page and editor. Failure log retained client-shard3.log, repair log ci-repair-tests.log. Normal commit/push hooks remain required.
+
+## Historical Work And Evidence
+
 Owner: this chat. Checkout `/Volumes/SmarterWork/agent-work/role-rakeback-20261021/repo`, branch `codex/role-rakeback-20261021`.
 
 Scope: current role has a clear box and remains clickable for player/agent rakeback editing; authorized agents can persist individual player rates and edit existing agent agreements without a role transition. Preserve hierarchy caps, accounting history, staff zero rakeback, and funding separation. No engine change or unrelated financial repair.
@@ -10,7 +46,7 @@ SSD checked: `/dev/disk5s4`, 18 GiB free at start. Canonical policy reader emitt
 
 Cause: current buttons are disabled; same-role role RPC returns unchanged before touching rates. Existing per-player negotiated rate is consumed by original accounting, but no authorized individual editor exists. Zero currently means inherit, requiring an explicit-zero marker retained in historical terms and original pricing functions. Current-role edits must use an independent audited agreement RPC, never a promotion or wallet write.
 
-Implementation in progress. No push, merge, database installation or publication yet.
+Initial pre-delivery state: implementation was in progress; no submission or installation had occurred at that point.
 
 Validation 2026-10-21 17:43 UTC: 112 focused component/source tests passed. Private PostgreSQL 17 regression passed, including original helper positive/zero pricing, active/downline permission refusal, stale role/rate, upline cap, parent/child protection, actual original history-trigger capture, concurrent writer refusal, ACL and migration replay refusal. Source-contract run initially caught missing CSS ownership on the new component; importing its actual shared page stylesheet repaired that without changing the baseline. Compiler and all four copy gates passed. Policy check matches canonical; reader refreshed at 17:42:46.657Z with unchanged version and hashes.
 

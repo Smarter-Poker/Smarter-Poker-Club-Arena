@@ -1,5 +1,6 @@
 -- Reserved by scripts/new-migration.mjs. Individual terms are edited separately
 -- from role transitions; no wallet or historical settled amount is rewritten.
+-- WITHHELD player_rakeback_explicit: Server-only accounting marker; browser clients read authorized terms through fn_member_rakeback_terms.
 -- @live-proof: EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='club_members' AND column_name='player_rakeback_explicit')
 -- @live-proof: strpos(pg_get_functiondef('public.fn_accounting_agreement_terms(text,jsonb)'::regprocedure),'player_rakeback_explicit')>0
 -- @live-proof: strpos(pg_get_functiondef('public.fn_player_rakeback_rate(uuid,uuid,numeric)'::regprocedure),'IF v_explicit OR')>0

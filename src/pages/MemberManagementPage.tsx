@@ -1689,6 +1689,7 @@ export function RoleSection({
           onSaved={() => {
             setEditingRakeback(false);
             setSuccess('Rakeback Updated');
+            toast.success('Rakeback Updated');
             onRoleChanged();
           }}
         />

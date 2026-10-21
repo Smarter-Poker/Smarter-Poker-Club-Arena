@@ -27,6 +27,17 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('Individual Rakeback Editor', () => {
+  it('displays exact stored percentages without floating point tails', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: { ...terms, rate: 0.55, max_rate: 0.55 },
+      error: null,
+    });
+    render(<MemberRakebackEditor {...props} />);
+    const input = await screen.findByRole('spinbutton');
+    expect(input).toHaveValue(55);
+    expect(input).toHaveAttribute('max', '55');
+  });
+
   it('loads existing terms and saves a chosen percentage as a fraction without a role write', async () => {
     render(<MemberRakebackEditor {...props} />);
     const input = await screen.findByRole('spinbutton', { name: 'Rakeback Percent' });

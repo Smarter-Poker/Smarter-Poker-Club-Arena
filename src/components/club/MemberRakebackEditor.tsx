@@ -28,6 +28,8 @@ function verifyTerms(result: Terms, clubId: string, userId: string, role: ClubRo
   }
 }
 
+const percentOf = (rate: number) => Number((Number(rate) * 100).toFixed(2));
+
 /** Edits the existing agreement, without replaying a promotion or funding a wallet. */
 export default function MemberRakebackEditor({
   clubId,
@@ -73,7 +75,7 @@ export default function MemberRakebackEditor({
         verifyTerms(result, clubId, userId, role);
         if (!active) return;
         setTerms(result);
-        setPercent(String(Number(result.rate) * 100));
+        setPercent(String(percentOf(result.rate)));
       } catch (e) {
         if (active) setError(safeErrorMessage(e, 'Rakeback Terms Could Not Be Loaded'));
       }
@@ -91,7 +93,7 @@ export default function MemberRakebackEditor({
       !percent.trim() ||
       !Number.isFinite(value) ||
       value < 0 ||
-      value > Number(terms.max_rate) * 100
+      value > percentOf(terms.max_rate)
     ) {
       setError('Enter A Percentage Within The Available Limit.');
       return;
@@ -146,7 +148,7 @@ export default function MemberRakebackEditor({
               type="number"
               inputMode="decimal"
               min={0}
-              max={Number(terms.max_rate) * 100}
+              max={percentOf(terms.max_rate)}
               step={0.1}
               value={percent}
               onChange={(event) => setPercent(event.target.value)}
@@ -154,7 +156,7 @@ export default function MemberRakebackEditor({
             />
           </label>
           <p className="mm-roles__rates-note">
-            Maximum {Number(terms.max_rate) * 100}%. This Updates The Existing Agreement.
+            Maximum {percentOf(terms.max_rate)}%. This Updates The Existing Agreement.
           </p>
           <button
             type="button"

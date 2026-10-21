@@ -24,7 +24,7 @@ async function fixture({custody=0,personal=false}={}) {
   return {ok:true,status:200,async text(){return JSON.stringify(data)}};
  };
  const cleanupAccount=async({record})=>state.retired.push(record.id);
- return {root,state,pending:()=>run({environment:{RUNNER_TEMP:root,SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_fixture'},fetchImpl,cleanupAccount})};
+ return {root,state,pending:()=>run({environment:{RUNNER_TEMP:root,SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_test_fixture'},fetchImpl,cleanupAccount})};
 }
 test('interrupted child records retire player first and only zero empty owned agents',async()=>{
  const f=await fixture();try{await f.pending();assert.deepEqual(f.state.retired.map(id=>id.slice(-1)),['2','1','0']);assert.equal(f.state.deleted.length,2);for(const i of [0,1,2])assert.equal(existsSync(join(f.root,`agent-assignment-${i}.json`)),false);}finally{rmSync(f.root,{recursive:true});}

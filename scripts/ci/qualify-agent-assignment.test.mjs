@@ -49,7 +49,7 @@ async function fixture(failure) {
  };
  const startAssignmentBrowserProof=async({account,playerId})=>{assert.equal(members.get(playerId).agent_id,account.id);state.browserStarted=true;return {async verifyAfterTransfer(){assert.notEqual(members.get(playerId).agent_id,account.id);state.browserChanged=true;},async verifyDestination(destination){assert.equal(members.get(playerId).agent_id,destination.id);},async close(){state.browserClosed=true;}};};
  const run=new AsyncFunction('assert','readFileSync','writeFileSync','join','randomUUID','createProductionE2EAccount','prepareProductionE2EStaffMembership','cleanupProductionE2EAccount','supabaseServerHeaders','createClient','WebSocket','startAssignmentBrowserProof','process','fetch','console',source);
- const pending=run(assert,()=>JSON.stringify(staff),()=>{},join,randomUUID,create,prepare,cleanup,supabaseServerHeaders,createClient,undefined,startAssignmentBrowserProof,{cwd:()=>'/fixture',env:{RUNNER_TEMP:'/fixture',SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_fixture',VITE_SUPABASE_ANON_KEY:'sb_publishable_fixture'}},fetch,{log(s){state.result=JSON.parse(s)}});
+ const pending=run(assert,()=>JSON.stringify(staff),()=>{},join,randomUUID,create,prepare,cleanup,supabaseServerHeaders,createClient,undefined,startAssignmentBrowserProof,{cwd:()=>'/fixture',env:{RUNNER_TEMP:'/fixture',SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_test_fixture',VITE_SUPABASE_ANON_KEY:'sb_publishable_fixture'}},fetch,{log(s){state.result=JSON.parse(s)}});
  return {state,pending,members,agents};
 }
 test('assignment, transfer, replay and immediate scope change retire all three owned fixtures',async()=>{

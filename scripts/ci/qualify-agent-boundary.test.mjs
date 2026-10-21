@@ -39,7 +39,7 @@ async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@e
   return {status,ok:status<400,async text(){return status===204?'':JSON.stringify(data)}};
  };
  const run=new AsyncFunction('assert','readFileSync','randomUUID','join','supabaseServerHeaders','process','fetch','console',source);
- const pending=run(assert,()=>JSON.stringify(account),randomUUID,join,supabaseServerHeaders,{env:{RUNNER_TEMP:'/fixture',SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_fixture',VITE_SUPABASE_ANON_KEY:'sb_publishable_fixture'}},fetch,{log(text){state.results=JSON.parse(text)}});
+ const pending=run(assert,()=>JSON.stringify(account),randomUUID,join,supabaseServerHeaders,{env:{RUNNER_TEMP:'/fixture',SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_test_fixture',VITE_SUPABASE_ANON_KEY:'sb_publishable_fixture'}},fetch,{log(text){state.results=JSON.parse(text)}});
  return {state,pending};
 }
 test('all three ranks are exercised and zero-balance fixture restores before completion',async()=>{

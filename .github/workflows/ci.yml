@@ -2779,6 +2779,12 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Daily metrics reuses its original health classifier
+        if: matrix.shard == 4
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: node scripts/qualification/daily-metrics-health/native.mjs "${{ runner.temp }}/daily-metrics-health"
+
       - name: Original tournament close resumes exact owner fee capture
         if: matrix.shard == 4
         env:

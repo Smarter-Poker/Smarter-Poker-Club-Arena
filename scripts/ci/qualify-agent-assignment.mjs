@@ -112,8 +112,6 @@ try {
  for(const [viewer,viewerToken,expected] of [[source.account.id,sourceToken,false],[destination.account.id,destinationToken,true]]) {
   const page=await req('/rest/v1/rpc/ca_club_members_page',{method:'POST',token:viewerToken,body:{p_club_id:club,p_search:playerSearch,p_limit:80}});
   assert.ok(Array.isArray(page.items));assert.equal(page.items.some(row=>row.user_id===player.account.id),expected);
-  const access=await req('/rest/v1/rpc/ca_club_roster_access',{method:'POST',token:viewerToken,body:{p_club_id:club,p_target_user_id:player.account.id}});
-  assert.equal(access==='none',!expected);
   const detail=await req('/rest/v1/rpc/ca_club_member_detail',{method:'POST',token:viewerToken,body:{p_club_id:club,p_user_id:player.account.id,p_from:null,p_to:null}});
   if(expected)assert.equal(detail?.identity?.user_id,player.account.id);else assert.equal(detail,null);
   const exportResponse=await fetch(base+'/rest/v1/rpc/ca_club_members_export',{method:'POST',headers:{apikey:anon,Authorization:`Bearer ${viewerToken}`,'Content-Type':'application/json'},body:JSON.stringify({p_club_id:club,p_user_ids:[player.account.id]})});

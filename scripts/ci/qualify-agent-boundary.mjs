@@ -58,6 +58,8 @@ try {
   assert.equal(await rpc('ca_can_view_club_finances',{p_club_id:club}),false);
   assert.equal(await rpc('fn_can_manage_club_assignments',{p_club_id:club}),false);
   assert.equal(await rpc('is_club_admin',{p_club_id:club}),false);
+  assert.equal(await rpc('fn_club_viewer_cashier_scope',{p_club_id:club}),'downline');
+  assert.equal(await rpc('fn_club_viewer_bank_role',{p_club_id:club}),role);
   const audit=await request(`/rest/v1/audit_trail?club_id=eq.${club}&select=id`,caller);
   assert.equal(audit.data.length,0);
   const scope=await rpc('fn_cashier_statement_scope',{p_club_id:club});
@@ -79,6 +81,11 @@ try {
   for(const [name,args] of [
    ['fn_preview_club_assignment',{p_club_id:club,p_member_user_ids:[account.id],p_agent_user_id:account.id}],
    ['fn_club_assignment_history',{p_club_id:club}],
+   ['fn_club_bank_role',{p_club_id:club,p_user_id:account.id}],
+   ['fn_club_cashier_scope',{p_club_id:club,p_user_id:account.id}],
+   ['fn_club_cashier_can_transact',{p_club_id:club,p_actor:account.id,p_target:account.id}],
+   ['fn_club_is_in_downline',{p_club_id:club,p_upline_user_id:account.id,p_member_user_id:account.id}],
+   ['ca_club_roster_access',{p_club_id:club,p_target_user_id:account.id}],
    ['ca_club_members_export',{p_club_id:club,p_user_ids:[account.id]}],
    ['fn_apply_reviewed_club_assignment',{p_club_id:club,p_member_user_ids:[account.id],p_agent_user_id:account.id,p_op_id:randomUUID(),p_review_token:'a'.repeat(32)}],
   ]) {

@@ -181,3 +181,6 @@ try{
  console.log('POSTIMAGES '+JSON.stringify(JSON.parse(sql(`SELECT jsonb_object_agg(sig,md5(pg_get_functiondef(sig::regprocedure))) FROM unnest(ARRAY[${signatures.map(x=>"'"+x+"'").join(',')}]) sig`))));
  console.log('PASS: real PG17 baseline failure, original producer dependency, exact charge validation, immutable batches/proofs, canonical net plan, duplicate/concurrent requests, authorization, rollback of terminal refusal, replay refusal.');
 }finally{if(running)run('pg_ctl',['-D',path.join(dir,'db'),'-m','immediate','-w','stop']);rmSync(dir,{recursive:true,force:true});}
+
+// The existing accounting shard also certifies the daily operations reader.
+execFileSync(process.execPath,[path.join(root,'scripts/qualification/daily-metrics-health/native.mjs'),path.join(parent,'daily-metrics-health')],{stdio:'inherit',env:process.env});

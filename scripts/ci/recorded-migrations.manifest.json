@@ -993,6 +993,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7130",
       "refusedBy": [],
       "liveVerdict": "Read-only production check 2026-10-16: schema_migrations holds this version with a NULL name and ONE statement of exactly 73 bytes, the file name itself (MD5 922e8c28f55e49a2c8a88d01fd12071b). This file is that record and nothing else; it is not executable SQL, records no change, and must never be replayed (the installer reports the version ALREADY-APPLIED). The SQL that ran under this version was not stored by production. What is live from it: public.fn_weekly_statement_issue_settled() (prosrc MD5 9a23bbfc5575db47afe7cd9067f65d82, not SECURITY DEFINER, search_path=public) and trg_weekly_statement_issue_settled BEFORE INSERT ON public.settlement_invoices, which issues a new club_weekly_accounting statement as paid. An authored source whose function body matches that live body byte for byte is on branch agent/antigravity/fix/record-missing-installed-migrations-20261016; it is not recorded here because production does not hold it and later migrations replaced its other function bodies."
+    },
+    {
+      "version": "20261021222049",
+      "name": "lock_tournament_level_clocks",
+      "file": "supabase/migrations/20261021222049_lock_tournament_level_clocks.sql",
+      "md5": "cdf37cae555cea6896e877a4b278653c",
+      "appliedToProductionAt": "2026-10-21T22:20:49Z",
+      "recoveredOn": "2026-10-21",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7620",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-21 22:40 UTC: schema_migrations holds this version with ONE statement (8305 bytes, sha256 e0a46ce7...). It created tournaments_lock_level_clock BEFORE INSERT OR UPDATE OF blind_structure ON public.tournaments -> fn_ca_tournament_lock_level_clock(), which rewrites only unstarted MTT/satellite blind_structure durations and derived late_reg_mins; it moves no money. It did not declare the trigger, which fired UndeclaredTriggerOnAMoneyTable at about 22:21 UTC. The register row now exists (declared 22:24:13 by hand, then recorded by migration 20261021223220_the_locked_level_clock_trigger_is_declared); fn_undeclared_money_triggers() returns 0 rows."
     }
   ]
 }

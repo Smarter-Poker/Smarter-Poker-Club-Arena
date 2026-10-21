@@ -1,48 +1,3 @@
--- 20261021222049_lock_tournament_level_clocks.sql
---
--- Version reserved by scripts/new-migration.mjs against origin/main and every
--- remote branch, so it cannot collide with another agent's in-flight work.
---
--- WHAT THIS CHANGES, AND WHY:
---
--- Dan, 2026-10-21, verbatim: "TOURNAMENT LEVELS CAN NEVER EVER BE A 'RANGE'.
--- ALL TOURNAMENTS NEED TO HAVE SET MINUTE BLIND LEVELS. TURBOS AND FREE ROLLS
--- 5 MINUTE LEVELS, STANDARD TOURNAMENTS AND BOUNTY TOURNAMENTS 8 MINUTE
--- LEVELS, DEEP STACK TOURNAMENTS 10 MINUTE LEVELS. EVERY LEVEL MUST BE LOCKED
--- IN AND DEFINED AND NEVER RANDOM. ... BACK LOG FIXES TO ANY FUTURE SCHEDULED
--- TOURNAMENTS. (THIS DOES NOT EFFECT SPINS OR SIT N GO'S)"
---
--- The cause, read from rows: the engine's MTT presets are tapered ladders
--- (blindLadder.ts durationForLevel): STANDARD opens at 10 and settles at 5,
--- TURBO 4 -> 2, DEEPSTACK 12 -> 6, the Diamond Free Buy 6 -> 5. 181 of 254
--- registering MTTs and all 27 registering satellites carried a mixed clock,
--- which the lobby printed as "10 Min Opening - 5-10 Min Range".
---
--- 1. fn_ca_locked_level_minutes: the one rule, mirrored line for line by
---    server/src/tournament/lockedLevelClock.ts (pinned by
---    tests/tournament-levels-are-locked.law.test.ts). First match wins:
---      free entry, or named Free Buy / Freeroll ............... 5
---      named Turbo / Hyper (not a satellite) .................. 5
---      named Deep (not a satellite) ........................... 10
---      bounty / PKO / mystery / knockout format ............... 8
---      authored opening clock <= 5 ............................ 5
---      authored opening clock >= 12, or already locked at 10 .. 10
---      otherwise .............................................. 8
--- 2. tournaments_lock_level_clock: BEFORE INSERT (and BEFORE UPDATE OF
---    blind_structure while the event has not started) every playable level of
---    an MTT or satellite is written with that one clock. It runs before
---    tournaments_new_mtt_blind_contract, so blind_speed/is_turbo are derived
---    from the locked ladder. Late registration that was derived from the
---    authored clock is re-derived from the locked one. Spins and Sit & Gos are
---    never touched. This is the write path itself, not a repair job: the
---    engine creators now write locked rows, and the trigger makes it
---    impossible for any other creator to publish a range.
--- 3. Every not-yet-started MTT/satellite is re-written through the trigger,
---    and Free Buys keep Dan's one hour of late registration (twelve 5-minute
---    levels, rebuys through the same level).
--- 4. Schedule configs that carry an explicit blindStructure are locked too,
---    so the source of each future occurrence states the clock it will run.
-
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';
@@ -166,18 +121,10 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS tournaments_lock_level_clock ON public.tournaments;
--- Named to sort before tournaments_new_mtt_blind_contract, which derives
--- blind_speed and is_turbo from the (now locked) ladder.
 CREATE TRIGGER tournaments_lock_level_clock
   BEFORE INSERT OR UPDATE OF blind_structure ON public.tournaments
   FOR EACH ROW EXECUTE FUNCTION public.fn_ca_tournament_lock_level_clock();
 
--- 3a. A registered event's contract is guarded by fn_guard_managed_game_lifecycle
---     (only the service-role engine may change it). Root gets one narrow,
---     explicit exception, in the same shape as the Diamond late-registration
---     correction already in that guard: inside a session that names this
---     correction, a pre-start event may take its locked clock and the late
---     registration derived from it. Every other protected field still refuses.
 DO $guard$
 DECLARE
   d text;
@@ -203,14 +150,12 @@ $guard$;
 
 SELECT set_config('app.lock_level_clock', 'on', true);
 
--- 3. Every future (not yet started) MTT and satellite, through the trigger.
 UPDATE public.tournaments
    SET blind_structure = blind_structure
  WHERE upper(COALESCE(status, '')) IN ('REGISTERING', 'ANNOUNCED', 'SCHEDULED', 'PENDING')
    AND upper(COALESCE(tournament_type, '')) IN ('MTT', 'SATELLITE')
    AND lower(COALESCE(variant, '')) NOT IN ('spin', 'sng');
 
--- Free Buys: Dan's one hour of late registration on the 5-minute clock.
 UPDATE public.tournaments
    SET late_reg_levels = 12,
        rebuy_levels = CASE WHEN rebuy_levels = late_reg_levels THEN 12 ELSE rebuy_levels END,
@@ -222,7 +167,6 @@ UPDATE public.tournaments
    AND COALESCE(buy_in_amount, 0) + COALESCE(buy_in_fee, 0) = 0
    AND (late_reg_levels, late_reg_mins) IS DISTINCT FROM (12, 60);
 
--- 4. Schedule configs with an explicit ladder state the clock they will run.
 UPDATE public.tournament_schedules s
    SET config = jsonb_set(s.config, '{blindStructure}',
          public.fn_ca_lock_structure_clock(

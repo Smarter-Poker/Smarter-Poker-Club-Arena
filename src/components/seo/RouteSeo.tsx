@@ -8,9 +8,9 @@ import { useLocation } from 'react-router-dom';
 import { applySeo, resolveSeo } from '../../lib/seo';
 
 export default function RouteSeo() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   useEffect(() => {
-    applySeo(resolveSeo(pathname));
-  }, [pathname]);
+    applySeo(resolveSeo(pathname, search));
+  }, [pathname, search]);
   return null;
 }

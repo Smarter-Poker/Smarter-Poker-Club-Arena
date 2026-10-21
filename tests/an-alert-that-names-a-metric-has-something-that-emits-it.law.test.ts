@@ -354,7 +354,8 @@ describe('an alert that names a metric has something that emits it', () => {
     );
     expect(at.get('poker_maintenance_break_active')).toBe(true);
     expect(at.get('poker_not_a_metric_anybody_emits')).toBe(false);
-  });
+    // The immutable-tree Git scan takes up to 15s under the full concurrent suite.
+  }, 30_000);
 
   it('a build this checkout cannot read is COULD NOT TELL, not absent', () => {
     // The dangerous coercion (CLAUDE.md 10.86 rule 2) would be to treat an

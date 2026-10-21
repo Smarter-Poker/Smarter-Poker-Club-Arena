@@ -123,10 +123,9 @@ describe('new club opening wizard', () => {
     expect(openingSql).toContain("'bbj_main'");
     expect(openingSql).toContain("'leaderboard_prizes'");
     expect(openingSql).toContain('leaderboard_seed_remaining');
-    expect(openingSql).toContain("'authenticated:EXECUTE,postgres:EXECUTE,service_role:EXECUTE'");
-    expect(openingSql).toContain(
-      '-- Existing owner and execute ACL retained by CREATE OR REPLACE.'
-    );
+    expect(openingSql).toContain('proacl IS NOT DISTINCT FROM v_acl');
+    expect(openingSql).toContain('proowner=v_owner');
+    expect(openingSql).toContain('prosecdef=v_secdef');
   });
 
   it('ends the launch checklist with a fully configured first agent', () => {

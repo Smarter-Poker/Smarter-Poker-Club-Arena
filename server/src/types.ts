@@ -119,6 +119,7 @@ export interface SeatPlayer {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface TableInfo {
+  union_id?: string | null;
   arena?: import('./domain/ArenaContext.js').ArenaIdentity;
   id: string;
   club_id: string;
@@ -849,6 +850,7 @@ export interface HorseVariantRules {
 }
 
 export interface RakeConfig {
+  cashPolicy?: { version: 1; scope: import('./config/cashRakePolicy.js').CashRakeScope };
   /** Dedicated, JSON-safe whole-Diamond hand fees; never a chip rate override. */
   diamondCashFees?: { schedule: string; variant: string; doubleBoard: boolean };
   percent: number;

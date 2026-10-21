@@ -1,3 +1,4 @@
+import { useCashRakePolicyVersion } from '../hooks/useCashRakePolicyVersion';
 /**
  *  CLUB SETTINGS PAGE — Club Configuration
  */
@@ -58,12 +59,7 @@ function roleLabelForHandover(role: string): string {
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { SHARK_CLUB_ID } from '../lib/constants';
-import {
-  MAX_RAKE_CAP_BB,
-  MAX_RAKE_PERCENT,
-  RAKE_INHERIT,
-  getRakeConfig,
-} from '../config/RakeConfig';
+import { RAKE_INHERIT, getRakeConfig } from '../config/RakeConfig';
 import {
   BUYIN_BB_CEILING,
   BUYIN_BB_FLOOR,
@@ -110,6 +106,8 @@ export default function ClubSettingsPage() {
   /* Holds the REFERRAL ID: the player number, or "KingFish" for player 1
      (Dan 2026-10-16, src/lib/referralId.ts). */
   const [playerNumber, setPlayerNumber] = useState<string | null>(null);
+  const cashPolicyVersion = useCashRakePolicyVersion();
+  const cashPolicyReady = cashPolicyVersion === 1;
   const [inUnion, setInUnion] = useState<boolean>(false);
   const [clubNumericId, setClubNumericId] = useState<number | null>(null);
   const [resolvedClubIdentity, setResolvedClubIdentity] = useState<{
@@ -273,7 +271,10 @@ export default function ClubSettingsPage() {
   const capPreview = (() => {
     if (settings.rake_cap < 0) return null;
     const at = (sb: number, bb: number) =>
-      getRakeConfig(bb, 'nlh', sb, { rakeCapBB: settings.rake_cap }).rakeCap;
+      getRakeConfig(bb, 'nlh', sb, {
+        rakeCapBB: settings.rake_cap,
+        scope: cashPolicyReady ? 'standalone' : undefined,
+      }).rakeCap;
     const low = at(1, 2);
     const high = at(5, 10);
     const uncappedLow = Math.round(settings.rake_cap * 2 * 100) / 100;
@@ -1794,19 +1795,23 @@ export default function ClubSettingsPage() {
                   const val = parseFloat(raw);
                   updateSetting(
                     'default_rake_percent',
-                    isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_PERCENT, Math.max(0, val))
+                    isNaN(val)
+                      ? RAKE_INHERIT
+                      : Math.min(cashPolicyReady ? 100 : 10, Math.max(0, val))
                   );
                 }}
                 min={0}
-                max={MAX_RAKE_PERCENT}
+                max={cashPolicyReady ? 100 : 10}
                 step={0.5}
                 disabled={!isOwner}
               />
               <small className="form-hint">
-                Leave Blank To Use The House Schedule (10%). A Club Can Take Less, Never More.{' '}
+                {cashPolicyReady
+                  ? 'Leave Blank To Use The Standard Rate (10%). Standalone Clubs Can Set Their Own Rate.'
+                  : 'Leave Blank To Use The House Schedule (10%).'}{' '}
                 {settings.default_rake_percent < 0
                   ? 'Currently: House Schedule.'
-                  : `Currently: ${settings.default_rake_percent}% (House Caps Still Apply).`}
+                  : `Currently: ${settings.default_rake_percent}%.`}
               </small>
             </div>
             <div className="form-group">
@@ -1828,17 +1833,19 @@ export default function ClubSettingsPage() {
                   const val = parseFloat(raw);
                   updateSetting(
                     'rake_cap',
-                    isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_CAP_BB, Math.max(0, val))
+                    !Number.isFinite(val)
+                      ? RAKE_INHERIT
+                      : Math.min(cashPolicyReady ? Number.MAX_SAFE_INTEGER : 10, Math.max(0, val))
                   );
                 }}
                 min={0}
-                max={MAX_RAKE_CAP_BB}
                 step={0.5}
                 disabled={!isOwner}
               />
               <small className="form-hint">
-                Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For
-                Each Stake (3-20 Chips Depending On Blinds).{' '}
+                {cashPolicyReady
+                  ? 'Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The Standard 2.5 BB Cap At Every Stake.'
+                  : 'Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Schedule.'}{' '}
                 {settings.rake_cap < 0 ? 'Currently: House Cap.' : capPreview}
               </small>
             </div>

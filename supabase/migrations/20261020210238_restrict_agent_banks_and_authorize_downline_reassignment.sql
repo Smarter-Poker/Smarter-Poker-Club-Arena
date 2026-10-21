@@ -3,14 +3,16 @@
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
--- Take all policy relations before catalog changes. NOWAIT cannot queue behind
--- a report transaction while already holding a relation that report needs.
+-- Acquire the live membership root first with the bounded lock timeout.
+-- Remaining policy locks refuse immediately, so no secondary lock can wait
+-- behind a report that needs a relation already owned by this transaction.
+LOCK TABLE public.club_members IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE public.agents, public.ca_club_member_tournament_fee_daily,
  public.ca_club_player_daily, public.ca_club_rake_daily_user,
  public.ca_club_table_player_daily, public.ca_club_tournament_player_daily,
  public.ca_union_rake_attribution, public.club_member_daily_facts,
  public.club_member_daily_stats, public.club_member_play_totals,
- public.club_members, public.club_rake_daily_user, public.clubs,
+ public.club_rake_daily_user, public.clubs,
  public.player_stats, public.player_stats_snapshots
  IN ACCESS EXCLUSIVE MODE NOWAIT;
 

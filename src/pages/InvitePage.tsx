@@ -439,7 +439,7 @@ export default function InvitePage() {
             {logo ? (
               <img src={sizedStorageUrl(logo, 208)} alt="" loading="lazy" />
             ) : club.name?.toUpperCase().includes('SHARK') ? (
-              <img src={`${MEDIA_BASE}images/shark-club-logo-v2.png`} alt="" loading="lazy" />
+              <img src={`${MEDIA_BASE}images/kings-club-logo.png`} alt="" loading="lazy" />
             ) : (
               <span aria-hidden="true">{club.name[0]?.toUpperCase()}</span>
             )}

@@ -267,9 +267,9 @@ export default function ClubOpeningWizard({
       if (
         index === 1 &&
         /all fish of all shapes and sizes are welcome/i.test(tagline) &&
-        !/^shark club$/i.test(clubName.trim())
+        !/^kings club$/i.test(clubName.trim())
       ) {
-        return 'That Tag Line Belongs To Shark Club';
+        return 'That Tag Line Belongs To Kings Club';
       }
       if (index === 3 && bbjAnswer === null) {
         return 'Choose Enable BBJ Or Not Now Before Continuing';

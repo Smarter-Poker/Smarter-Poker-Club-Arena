@@ -34,6 +34,9 @@ export function resolveClubIdFilter(clubIdParam: string): {
   column: 'id' | 'club_id' | 'slug';
   value: string | number;
 } {
+  if (clubIdParam.toLowerCase() === 'shark-club' || clubIdParam.toLowerCase() === 'kings-club') {
+    return { column: 'id', value: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4' };
+  }
   if (isUUID(clubIdParam)) {
     return { column: 'id', value: clubIdParam };
   }

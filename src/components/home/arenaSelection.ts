@@ -6,7 +6,9 @@ interface ArenaCard {
   slug?: string;
 }
 const isShark = (card: ArenaCard) =>
-  Number(card.club_id) === SHARK_CLUB_ID || card.slug === 'shark-club';
+  Number(card.club_id) === SHARK_CLUB_ID ||
+  card.slug === 'kings-club' ||
+  card.slug === 'shark-club';
 
 /** Platform entries stay adjacent; joined clubs retain their pins and saved order. */
 export function orderArenaCards<T extends ArenaCard>(

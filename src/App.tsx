@@ -2559,6 +2559,16 @@ function FullApp() {
 export default function App() {
   const location = useLocation();
 
+  // Retain every legacy deep link while presenting the current club name in URLs.
+  if (/^\/clubs\/shark-club(?=\/|$)/i.test(location.pathname)) {
+    return (
+      <Navigate
+        replace
+        to={`${location.pathname.replace(/^\/clubs\/shark-club/i, '/clubs/kings-club')}${location.search}${location.hash}`}
+      />
+    );
+  }
+
   if (location.pathname === '/dev/footer') {
     return <ClubFooterProbe />;
   }

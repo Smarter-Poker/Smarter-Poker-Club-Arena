@@ -653,7 +653,7 @@ describe('dialog behavior and tag line', () => {
   it('still refuses the Shark Club line for any other club, prefilled or typed', () => {
     mount({ initialTagline: 'All Fish Of All Shapes And Sizes Are Welcome' });
     next();
-    expect(alertText()).toBe('That Tag Line Belongs To Shark Club');
+    expect(alertText()).toBe('That Tag Line Belongs To Kings Club');
     expect(primary()).toBeDisabled();
   });
 });

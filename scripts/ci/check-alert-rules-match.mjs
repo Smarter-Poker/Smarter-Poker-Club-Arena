@@ -378,6 +378,8 @@ export function producedAtBuild(names, sha, cwd = process.cwd()) {
       'git',
       [
         'grep',
+        // Bound native worker fanout when this runs beside concurrent test workers.
+        '--threads=1',
         '-h',
         '--fixed-strings',
         ...names.flatMap((name) => ['-e', name]),

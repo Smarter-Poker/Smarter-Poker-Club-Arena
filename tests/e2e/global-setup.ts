@@ -105,10 +105,22 @@ function assertWelcomeKeyStillCurrent() {
  */
 export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
   const dialog = page.getByRole('dialog', { name: /^Club Message From /i });
-  const dismiss = dialog.getByRole('button', {
+  const visible = await dialog
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (!visible) return false;
+  // New clients record the receipt atomically before opening the dialog.
+  // Keep the old control path for already-open tabs on the previous release.
+  const legacyDismiss = dialog.getByRole('button', {
     name: 'Do Not Show Again',
     exact: true,
   });
+  // Older clients have both controls; Enter Lobby alone did not persist there.
+  const automatic = !(await legacyDismiss.isVisible());
+  const dismiss = automatic
+    ? dialog.getByRole('button', { name: 'Enter Lobby', exact: true })
+    : legacyDismiss;
   const appeared = await dismiss
     .waitFor({ state: 'visible', timeout: 15_000 })
     .then(() => true)
@@ -136,17 +148,21 @@ export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
   // Observe both promises immediately. If the click fails, the finally block
   // closes the browser and rejects the response waiter too; an unobserved
   // rejection there terminates the reporter and hides the actual click error.
-  let response: Response;
+  let response: Response | undefined;
   try {
-    [response] = await Promise.all([
-      page.waitForResponse(
-        (candidate) =>
-          candidate.request().method() === 'POST' &&
-          candidate.url().includes('/rest/v1/rpc/fn_dismiss_club_message'),
-        { timeout: 15_000 }
-      ),
-      dismiss.click({ timeout: 10_000 }),
-    ]);
+    if (automatic) {
+      await dismiss.click({ timeout: 10_000 });
+    } else {
+      [response] = await Promise.all([
+        page.waitForResponse(
+          (candidate) =>
+            candidate.request().method() === 'POST' &&
+            candidate.url().includes('/rest/v1/rpc/fn_dismiss_club_message'),
+          { timeout: 15_000 }
+        ),
+        dismiss.click({ timeout: 10_000 }),
+      ]);
+    }
   } catch (error) {
     // A decline still in flight when this click timed out is part of the
     // verdict: let it finish (its own budget is bounded) before choosing
@@ -155,11 +171,13 @@ export async function dismissClubEntryMessage(page: Page): Promise<boolean> {
     if (!invitationFailures.length) throw error;
     throw new Error(`Club entry message dismissal failed${invitationFailure()}`, { cause: error });
   }
-  const result = (await response.json().catch(() => null)) as { ok?: boolean } | null;
-  if (!response.ok() || result?.ok !== true) {
-    throw new Error(
-      `Club entry message dismissal did not persist (${response.status()} ${JSON.stringify(result)})`
-    );
+  if (response) {
+    const result = (await response.json().catch(() => null)) as { ok?: boolean } | null;
+    if (!response.ok() || result?.ok !== true) {
+      throw new Error(
+        `Club entry message dismissal did not persist (${response.status()} ${JSON.stringify(result)})`
+      );
+    }
   }
   await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
   // An invitation that opened beneath the greeting is the top layer now.

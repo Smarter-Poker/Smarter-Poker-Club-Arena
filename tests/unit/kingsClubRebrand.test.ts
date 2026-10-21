@@ -28,7 +28,8 @@ describe('Kings Club identity and branding', () => {
       expect(read(file)).not.toContain('images/shark-club-card.jpg');
     }
     expect(read('src/pages/HomePage.tsx')).toContain("name: 'Kings Club'");
-    expect(read('src/App.tsx')).toContain('${location.search}${location.hash}');
+    expect(read('src/App.tsx')).toContain('<ClubBrandRedirect />');
+    expect(read('src/components/common/ClubBrandRedirect.tsx')).toContain('{ replace: true }');
   });
   it('renames both authoritative identities with preimage guards and leaves money untouched', () => {
     const sql = read('supabase/migrations/20261021180210_rename_shark_club_to_kings_club.sql');

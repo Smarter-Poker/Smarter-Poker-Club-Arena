@@ -10,6 +10,7 @@ import { DIAMOND_GAME_TITLES } from './utils/diamondGameTitles';
 
 import { Suspense, lazy, useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import ClubBrandRedirect from './components/common/ClubBrandRedirect';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 // LIGHTNING PHASE 8: lazy, so the Lightning component tree stays out of the
 // entry chunk every player downloads before first paint (entry-chunk gate).
@@ -2559,19 +2560,14 @@ function FullApp() {
 export default function App() {
   const location = useLocation();
 
-  // Retain every legacy deep link while presenting the current club name in URLs.
-  if (/^\/clubs\/shark-club(?=\/|$)/i.test(location.pathname)) {
-    return (
-      <Navigate
-        replace
-        to={`${location.pathname.replace(/^\/clubs\/shark-club/i, '/clubs/kings-club')}${location.search}${location.hash}`}
-      />
-    );
-  }
-
   if (location.pathname === '/dev/footer') {
     return <ClubFooterProbe />;
   }
 
-  return <FullApp />;
+  return (
+    <>
+      <ClubBrandRedirect />
+      <FullApp />
+    </>
+  );
 }

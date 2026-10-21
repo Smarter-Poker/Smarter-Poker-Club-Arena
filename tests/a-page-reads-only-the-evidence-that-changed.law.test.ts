@@ -144,7 +144,7 @@ export function wholePeriodViolations(body: string, before: string): string[] {
       out.push('the launch waiver is not the exact two exclusions and unpaid-period reuse');
     body = body.replaceAll(waiver, '').replace(waivedReuse, '  IF FOUND THEN');
   }
-  // 20261021172808 qualifies this one immutable payer-receipt repair before
+  // 20261021193318 qualifies this one immutable payer-receipt repair before
   // confirming an unchanged certificate. Normalize only its exact branch.
   const confirmedBefore =
     "   IF certificate.source_fingerprint=plan->>'source_fingerprint' THEN confirmed:=confirmed+1; CONTINUE; END IF;";

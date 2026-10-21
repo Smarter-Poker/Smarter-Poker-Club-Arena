@@ -88,7 +88,7 @@ try:
  cert_before=sql("SELECT md5(jsonb_agg(to_jsonb(c)ORDER BY id)::text)FROM accounting_rakeback_period_calculations c")
  sql("SELECT fn_rakeback_split_write(u(11),'2026-09-07','2026-09-13',NULL)")
  assert sql('SELECT count(*)FROM accounting_rakeback_payer_contracts')=='0','old shortcut unexpectedly admitted receipts'
- migration=next((root/'supabase/migrations').glob('20261021172808_*')).read_text()
+ migration=next((root/'supabase/migrations').glob('20261021193318_*')).read_text()
  source_only=migration
  sql("CREATE FUNCTION fn_platform_frozen()RETURNS boolean LANGUAGE sql AS $$SELECT COALESCE(current_setting('test.confirmed_frozen',true),'')='on'$$;")
  sql("BEGIN;SET LOCAL test.confirmed_frozen='on';"+source_only,'confirmed_payer_install_frozen')

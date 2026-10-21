@@ -62,7 +62,7 @@ PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   python3 -B "$repo/scripts/ci/test-a-long-outside-snapshot-does-not-stall-the-tables.py"
 
 # Agent banks, private data boundaries, and atomic hierarchy assignment.
-node --test "$repo/scripts/ci/qualify-agent-boundary.test.mjs" "$repo/scripts/ci/qualify-agent-assignment.test.mjs" "$repo/scripts/ci/cleanup-agent-assignment-fixtures.test.mjs"
+node --test "$repo/scripts/ci/qualify-agent-boundary.test.mjs" "$repo/scripts/ci/qualify-agent-assignment.test.mjs" "$repo/scripts/ci/cleanup-agent-assignment-fixtures.test.mjs" "$repo/scripts/ci/qualify-agent-assignment-browser.test.mjs"
 PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   AGENT_BOUNDARY_SCRATCH="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
   python3 -B "$repo/scripts/ci/test-agent-data-boundary-postgres.py"

@@ -35,6 +35,7 @@ async function fixture(failure) {
    data=u.searchParams.has('parent_agent_id')?[]:id?(agents.has(id)?[agents.get(id)]:[]):[];
   } else if(u.pathname==='/rest/v1/rpc/fn_preview_club_assignment') data={selected_count:1,affected_count:1,review_token:'a'.repeat(32)};
   else if(u.pathname==='/rest/v1/rpc/fn_club_assignment_history') data={rows:[{operation_id:body.p_search,review:{review_token:'a'.repeat(32)}}]};
+  else if(u.pathname==='/rest/v1/rpc/ca_club_roster_rows') {const caller=init.headers.Authorization.slice(7);data=[...members.values()].filter(r=>r.user_id===caller || r.agent_id===caller).map(row=>({...row,alias:'Fixture Player'}));}
   else if(u.pathname==='/rest/v1/rpc/ca_club_members_page') {const caller=init.headers.Authorization.slice(7);data={items:[...members.values()].filter(r=>r.user_id===state.created[2] && (r.user_id===caller || r.agent_id===caller))};}
   else if(u.pathname==='/rest/v1/rpc/ca_club_roster_access') data=members.get(body.p_target_user_id)?.agent_id===init.headers.Authorization.slice(7)?'agent':'none';
   else if(u.pathname==='/rest/v1/rpc/ca_club_member_detail') {const caller=init.headers.Authorization.slice(7);data=members.get(body.p_user_id)?.agent_id===caller?{identity:{user_id:body.p_user_id}}:null;}
@@ -46,13 +47,14 @@ async function fixture(failure) {
   } else throw new Error(u.pathname);
   return {ok:status<400,status,async text(){return status===204?'':JSON.stringify(data)},async json(){return data}};
  };
- const run=new AsyncFunction('assert','readFileSync','writeFileSync','join','randomUUID','createProductionE2EAccount','prepareProductionE2EStaffMembership','cleanupProductionE2EAccount','supabaseServerHeaders','createClient','WebSocket','process','fetch','console',source);
- const pending=run(assert,()=>JSON.stringify(staff),()=>{},join,randomUUID,create,prepare,cleanup,supabaseServerHeaders,createClient,undefined,{env:{RUNNER_TEMP:'/fixture',SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_fixture',VITE_SUPABASE_ANON_KEY:'sb_publishable_fixture'}},fetch,{log(s){state.result=JSON.parse(s)}});
+ const startAssignmentBrowserProof=async({account,playerId})=>{assert.equal(members.get(playerId).agent_id,account.id);state.browserStarted=true;return {async verifyAfterTransfer(){assert.notEqual(members.get(playerId).agent_id,account.id);state.browserChanged=true;},async verifyDestination(destination){assert.equal(members.get(playerId).agent_id,destination.id);},async close(){state.browserClosed=true;}};};
+ const run=new AsyncFunction('assert','readFileSync','writeFileSync','join','randomUUID','createProductionE2EAccount','prepareProductionE2EStaffMembership','cleanupProductionE2EAccount','supabaseServerHeaders','createClient','WebSocket','startAssignmentBrowserProof','process','fetch','console',source);
+ const pending=run(assert,()=>JSON.stringify(staff),()=>{},join,randomUUID,create,prepare,cleanup,supabaseServerHeaders,createClient,undefined,startAssignmentBrowserProof,{cwd:()=>'/fixture',env:{RUNNER_TEMP:'/fixture',SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_fixture',VITE_SUPABASE_ANON_KEY:'sb_publishable_fixture'}},fetch,{log(s){state.result=JSON.parse(s)}});
  return {state,pending,members,agents};
 }
 test('assignment, transfer, replay and immediate scope change retire all three owned fixtures',async()=>{
  const {state,pending,members,agents}=await fixture();await pending;
- assert.equal(state.result.scopeChangedImmediately,true);assert.equal(state.result.realtimeTransferReceived,true);assert.equal(state.closed,2);assert.equal(state.cleaned.length,3);assert.equal(members.size,1);assert.equal(agents.size,0);
+ assert.equal(state.result.scopeChangedImmediately,true);assert.equal(state.result.realtimeTransferReceived,true);assert.equal(state.browserStarted,true);assert.equal(state.browserChanged,true);assert.equal(state.browserClosed,true);assert.equal(state.closed,2);assert.equal(state.cleaned.length,3);assert.equal(members.size,1);assert.equal(agents.size,0);
 });
 for(const failure of ['transfer','unknown-agent']) test('durable fixture cleanup after '+failure,async()=>{
  const {state,pending,members,agents}=await fixture(failure);await assert.rejects(pending);

@@ -7,6 +7,7 @@ import {createProductionE2EAccount,prepareProductionE2EStaffMembership,cleanupPr
 import {createClient} from '@supabase/supabase-js';
 import WebSocket from 'ws';
 import {supabaseServerHeaders} from './supabase-auth-headers.mjs';
+import {startAssignmentBrowserProof} from './qualify-agent-assignment-browser.mjs';
 const env=process.env;
 const root=env.RUNNER_TEMP;
 assert.ok(root);
@@ -17,7 +18,8 @@ assert.ok(!env.E2E_CLUB_ID || env.E2E_CLUB_ID===club);
 const base=env.SUPABASE_URL?.replace(/\/$/,'');
 const service=env.SUPABASE_SERVICE_ROLE_KEY,anon=env.VITE_SUPABASE_ANON_KEY;
 assert.ok(base && service && anon);
-const owned=[],sessions=[],realtimeClients=[];
+const owned=[],sessions=[],realtimeClients=[],loginSessions=new Map();
+let browserProof;
 async function req(path,{method='GET',body,token}={}) {
  const headers=token?{apikey:anon,Authorization:`Bearer ${token}`} :supabaseServerHeaders(service);
  const r=await fetch(base+path,{method,headers:{...headers,'Content-Type':'application/json',Prefer:'return=representation'},...(body===undefined?{}:{body:JSON.stringify(body)})});
@@ -28,7 +30,7 @@ async function req(path,{method='GET',body,token}={}) {
 async function login(account) {
  const r=await fetch(base+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:anon,'Content-Type':'application/json'},body:JSON.stringify({email:account.email,password:account.password})});
  const data=await r.json();assert.ok(r.ok && data.access_token);assert.equal(data.user.id,account.id);
- sessions.push(data.access_token);return data.access_token;
+ sessions.push(data.access_token);loginSessions.set(account.id,data);return data.access_token;
 }
 async function listenForTransfer(viewer,token,baseline) {
  const client=createClient(base,anon,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},realtime:{transport:WebSocket}});
@@ -88,6 +90,9 @@ try {
  const baseline=baselineRows.length?Number(baselineRows[0].sequence):0;assert.ok(Number.isSafeInteger(baseline));
  const sourceEvent=await listenForTransfer(source.account.id,sourceToken,baseline);
  const destinationEvent=await listenForTransfer(destination.account.id,destinationToken,baseline);
+ const sourceRoster=await req('/rest/v1/rpc/ca_club_roster_rows',{method:'POST',token:sourceToken,body:{p_club_id:club}});
+ const browserPlayer=sourceRoster.find(row=>row.user_id===player.account.id);assert.ok(browserPlayer?.alias);
+ browserProof=await startAssignmentBrowserProof({account:source.account,session:loginSessions.get(source.account.id),clubId:club,playerId:player.account.id,playerAlias:browserPlayer.alias,evidenceDir:join(process.cwd(),'e2e-report','agent-assignment')});
  const preview=await req('/rest/v1/rpc/fn_preview_club_assignment',{method:'POST',token,body:{p_club_id:club,p_member_user_ids:move.p_member_user_ids,p_agent_user_id:move.p_agent_user_id,p_expected_agent_user_id:move.p_expected_agent_user_id}});
  assert.equal(preview.selected_count,1);assert.equal(preview.affected_count,1);assert.match(preview.review_token,/^[a-f0-9]{32}$/);
  move.p_review_token=preview.review_token;
@@ -95,6 +100,8 @@ try {
  const transfer=await req('/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',token,body:move});assert.equal(transfer.success,true);assert.equal(transfer.moved,1);
  assert.equal((await membership(player.account.id)).agent_id,destination.account.id);
  await Promise.all([sourceEvent(),destinationEvent()]);
+ await browserProof.verifyAfterTransfer();
+ await browserProof.verifyDestination(destination.account,loginSessions.get(destination.account.id));
  assert.deepEqual((await visible()).map(r=>r.user_id),[source.account.id]);
  const replay=await req('/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',token,body:move});assert.equal(replay.replayed,true);
  assert.deepEqual((await req(`/rest/v1/club_members?club_id=eq.${club}&select=user_id`,{token:destinationToken})).map(r=>r.user_id).sort(),[destination.account.id,player.account.id].sort());
@@ -117,6 +124,7 @@ try {
  passed=true;
 } finally {
  const errors=[];
+ if(browserProof){try{await browserProof.close();}catch(error){errors.push(error);}}
  for(const client of realtimeClients){try{await client.removeAllChannels();client.realtime.disconnect();}catch(error){errors.push(error);}}
  // The player is removed first; agent deletion is refused if any child or custody remains.
  for(const item of [...owned].reverse()) {
@@ -140,4 +148,4 @@ try {
  if(errors.length) throw new AggregateError(errors,'Assignment fixture cleanup incomplete');
 }
 assert.equal(passed,true);
-console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,realtimeTransferReceived:true,directMemberScope:true,rosterSearchScope:true,agentExportDenied:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRemoved:owned.length}));
+console.log(JSON.stringify({qualification:'agent-assignment-transfer',assignment:true,reviewedTransfer:true,searchableHistory:true,recipientScopeEvents:true,realtimeTransferReceived:true,openBrowserScopeChangedWithoutReload:true,directBrowserBankDenied:true,destinationPlayerVisible:true,directMemberScope:true,rosterSearchScope:true,agentExportDenied:true,transfer:true,replay:true,scopeChangedImmediately:true,isolatedAccountsRemoved:owned.length}));

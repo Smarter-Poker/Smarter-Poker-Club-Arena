@@ -72,11 +72,7 @@ import { useSwipeTabs } from '../hooks/useSwipeTabs';
 import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
 import { AgentRakeService, type AgentRoleRow } from '../services/AgentRakeService';
-import {
-  StatsFactsService,
-  type CashOpportunityStats,
-  type PlayerRakeStats,
-} from '../services/StatsFactsService';
+import type { CashOpportunityStats, PlayerRakeStats } from '../services/StatsFactsService';
 import type { CashEvidenceMetric } from '../components/stats/CashIntelligencePanel';
 import {
   CHIP_STATS,
@@ -539,15 +535,6 @@ export default function PlayerStatsPage() {
       return;
     }
     let cancelled = false;
-    // Defensive by doctrine: a stale cached bundle (or any build where this
-    // method is absent) must degrade to "no rake panel", never take the whole
-    // stats page down with it.
-    const load = StatsFactsService?.getRakeStats;
-    if (typeof load !== 'function') {
-      setRakeStats(null);
-      setRakeLoading(false);
-      return;
-    }
     setRakeLoading(true);
     setRakeStats(null);
     const fail = (err: unknown) => {
@@ -555,8 +542,15 @@ export default function PlayerStatsPage() {
       reportError(err, 'PlayerStatsPage.rpc_ca_player_rake_stats', { days: windowDays });
       setRakeError(true);
     };
-    void load
-      .call(StatsFactsService, statsScope, windowDays, selectedClubId)
+    // Keep optional stats reads outside the page's initial module. Hand details
+    // no longer import this service, so it must not be folded into this route.
+    void import('../services/StatsFactsService')
+      .then(({ StatsFactsService }) => {
+        if (cancelled) return null;
+        const load = StatsFactsService?.getRakeStats;
+        if (typeof load !== 'function') return null;
+        return load.call(StatsFactsService, statsScope, windowDays, selectedClubId);
+      })
       .then((r) => {
         // `error` is set only when the read FAILED; an empty ledger has none.
         if (r?.error) fail(r.error);
@@ -587,15 +581,19 @@ export default function PlayerStatsPage() {
     setCashOpportunityLoading(true);
     setCashOpportunityStats(null);
     setCashOpportunityError(null);
-    void StatsFactsService.getCashOpportunityStats(
-      targetUserId,
-      statsScope,
-      windowDays,
-      selectedClubId,
-      statsTimezone
-    )
+    void import('../services/StatsFactsService')
+      .then(({ StatsFactsService }) => {
+        if (cancelled) return null;
+        return StatsFactsService.getCashOpportunityStats(
+          targetUserId,
+          statsScope,
+          windowDays,
+          selectedClubId,
+          statsTimezone
+        );
+      })
       .then((result) => {
-        if (cancelled) return;
+        if (cancelled || !result) return;
         if ('error' in result && result.error) {
           setCashOpportunityError(result.error);
           return;

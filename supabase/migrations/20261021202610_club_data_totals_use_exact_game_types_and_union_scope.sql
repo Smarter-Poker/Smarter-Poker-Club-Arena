@@ -492,7 +492,7 @@ CREATE OR REPLACE FUNCTION public.fn_ca_club_games_searched(p_club_id uuid, p_st
 AS $function$
   WITH felt AS MATERIALIZED (SELECT * FROM public.fn_ca_club_cash_felt($1,$2,$3,$4,$5,$6)), raw_cash AS (
     SELECT c.table_id,SUM(c.rake) fee,SUM(c.net) winnings,SUM(c.hands) hands,
-           MAX(c.players) players FROM public.club_table_daily c
+           (SELECT count(DISTINCT z.user_id)::integer FROM public.ca_club_data_fact z WHERE z.club_id=ANY(public.fn_ca_club_data_clubs($1)) AND z.stat_date BETWEEN $2 AND $3 AND z.kind='CASH' AND z.game_id=c.table_id AND z.user_id<>'00000000-0000-0000-0000-000000000000'::uuid) players FROM public.club_table_daily c
      WHERE c.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND c.stat_date BETWEEN p_start AND p_end GROUP BY c.table_id
   ), cash AS (
       SELECT coalesce(c.table_id,f.table_id) table_id,coalesce(c.fee,0) fee,
@@ -556,7 +556,7 @@ BEGIN
   RETURN QUERY EXECUTE $query$
     WITH felt AS MATERIALIZED (SELECT * FROM public.fn_ca_club_cash_felt($1,$2,$3,$4,$5,NULL)), raw_cash AS (
       SELECT c.table_id,SUM(c.rake) fee,SUM(c.net) winnings,SUM(c.hands) hands,
-             MAX(c.players) players FROM public.club_table_daily c
+             (SELECT count(DISTINCT z.user_id)::integer FROM public.ca_club_data_fact z WHERE z.club_id=ANY(public.fn_ca_club_data_clubs($1)) AND z.stat_date BETWEEN $2 AND $3 AND z.kind='CASH' AND z.game_id=c.table_id AND z.user_id<>'00000000-0000-0000-0000-000000000000'::uuid) players FROM public.club_table_daily c
        WHERE c.club_id = ANY (public.fn_ca_club_data_clubs($1)) AND c.stat_date BETWEEN $2 AND $3 GROUP BY c.table_id
     ), cash AS (
       SELECT coalesce(c.table_id,f.table_id) table_id,coalesce(c.fee,0) fee,
@@ -617,7 +617,7 @@ BEGIN
   EXECUTE $query$
     WITH cash AS (
       SELECT c.table_id,SUM(c.rake) fee,SUM(c.net) winnings,SUM(c.hands) hands,
-             MAX(c.players)::integer players FROM public.club_table_daily c
+             (SELECT count(DISTINCT z.user_id)::integer FROM public.ca_club_data_fact z WHERE z.club_id=ANY(public.fn_ca_club_data_clubs($1)) AND z.stat_date BETWEEN $2 AND $3 AND z.kind='CASH' AND z.game_id=c.table_id AND z.user_id<>'00000000-0000-0000-0000-000000000000'::uuid) players FROM public.club_table_daily c
        WHERE c.club_id = ANY (public.fn_ca_club_data_clubs($1)) AND c.stat_date BETWEEN $2 AND $3 GROUP BY c.table_id
     ), tournament_facts AS (
       SELECT d.tournament_id,SUM(d.fee) fee,SUM(d.winnings) winnings
@@ -931,13 +931,13 @@ BEGIN
   EXECUTE $query$
     WITH felt AS MATERIALIZED (SELECT * FROM public.fn_ca_club_cash_felt($1,$2,$3,$4,$5,$6)), raw_cash AS (
       SELECT c.table_id,SUM(c.rake) fee,SUM(c.net) winnings,SUM(c.hands)::bigint hands,
-             MAX(c.players)::integer players
+             (SELECT count(DISTINCT z.user_id)::integer FROM public.ca_club_data_fact z WHERE z.club_id=ANY(public.fn_ca_club_data_clubs($1)) AND z.stat_date BETWEEN $2 AND $3 AND z.kind='CASH' AND z.game_id=c.table_id AND z.user_id<>'00000000-0000-0000-0000-000000000000'::uuid) players
         FROM public.club_table_daily c
        WHERE c.club_id = ANY (public.fn_ca_club_data_clubs($1)) AND c.stat_date BETWEEN $2 AND $3
        GROUP BY c.table_id
     ), cash AS (
       SELECT coalesce(c.table_id,f.table_id) table_id,coalesce(c.fee,0) fee,
-             coalesce(c.winnings,0)+coalesce(f.felt,0) winnings,CASE WHEN EXISTS(SELECT 1 FROM public.unions u WHERE u.id=$1) THEN public.fn_ca_club_data_hand_count($1,$2,$3,'ALL','ALL',coalesce(c.table_id,f.table_id)::text) ELSE coalesce(c.hands,0)::bigint END hands,
+             coalesce(c.winnings,0)+coalesce(f.felt,0) winnings,coalesce(f.felt,0) on_felt,CASE WHEN EXISTS(SELECT 1 FROM public.unions u WHERE u.id=$1) THEN public.fn_ca_club_data_hand_count($1,$2,$3,'ALL','ALL',coalesce(c.table_id,f.table_id)::text) ELSE coalesce(c.hands,0)::bigint END hands,
              greatest(coalesce(c.players,0),coalesce(f.seated,0))::integer players
         FROM raw_cash c FULL JOIN felt f ON f.table_id=c.table_id
     ), tournament_facts AS MATERIALIZED (
@@ -1017,6 +1017,8 @@ BEGIN
              CASE WHEN v.kind='CASH' THEN round(c.fee,2) ELSE round(COALESCE(f.fee,0),2) END fee,
              CASE WHEN v.kind='CASH' THEN round(c.winnings,2) ELSE round(COALESCE(f.winnings,0),2) END winnings,
              CASE WHEN v.kind='CASH' THEN c.hands ELSE 0::bigint END hands,
+             CASE WHEN v.kind='CASH' THEN coalesce(c.on_felt,0) ELSE 0 END on_felt,
+             CASE WHEN v.kind='CASH' THEN coalesce(c.on_felt,0)>0 ELSE tr.status='RUNNING' END live,
              CASE WHEN v.kind='CASH' THEN c.players ELSE COALESCE(tp.players,0)::integer END players,
              CASE WHEN v.kind='CASH' THEN pr.avatar_url END creator_avatar
         FROM visible v
@@ -1051,7 +1053,7 @@ BEGIN
         'rake_percent',q.rake_percent,'started_at',q.started_at,'status',q.status,
         'creator_id',q.created_by,'creator_name',NULLIF(q.creator_name,''),
         'creator_avatar',q.creator_avatar,'fee',q.fee,'winnings',q.winnings,
-        'hands',q.hands,'players',q.players)
+        'hands',q.hands,'players',q.players,'on_felt',q.on_felt,'live',q.live)
         ORDER BY q.sort_value DESC,q.sort_time DESC,q.kind DESC,q.id DESC) FROM detail q),'[]'::jsonb),
       'next_cursor',CASE WHEN (SELECT count(*) FROM page_plus_one)>$9 THEN
         (SELECT jsonb_build_object('value',l.sort_value,'time',l.sort_time,'kind',l.kind,'id',l.id)

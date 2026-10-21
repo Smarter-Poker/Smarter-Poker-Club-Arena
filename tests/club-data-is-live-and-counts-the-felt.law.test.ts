@@ -97,11 +97,16 @@ describe('the hourly job never rewrites the live day', () => {
 
 describe('a seated stack is part of the result, not a loss', () => {
   it('the snapshot adds the felt to winnings, totals and rows alike', () => {
-    const b = latest('ca_club_data_snapshot');
-    expect(b).toContain('fn_ca_club_cash_felt(p_club_id,v_start,v_end');
-    expect(b).toContain('fn_ca_club_cash_felt(p_club_id,v_pstart,v_pend');
-    expect(b).toContain("'on_felt'");
-    expect(b).toContain("'live',true");
+    expect(latest('ca_club_data_snapshot')).toContain('ca_club_data_snapshot_v2(');
+    const b = latest('ca_club_data_snapshot_v2');
+    expect(b).toContain('ca_club_data_screen(p_club_id,v_start,v_end');
+    expect(b).toContain('ca_club_data_screen(p_club_id,v_pstart,v_pend');
+    expect(b).toContain('ca_club_game_page_core_20261006(');
+    const rows = latest('ca_club_game_page_core_20261006');
+    expect(rows).toContain('fn_ca_club_cash_felt($1,$2,$3');
+    expect(rows).toContain('coalesce(c.winnings,0)+coalesce(f.felt,0) winnings');
+    expect(rows).toContain("'on_felt',q.on_felt,'live',q.live");
+    expect(rows).toContain('coalesce(c.on_felt,0)>0');
   });
 
   it('the felt is every live seat of the club, horse or human', () => {

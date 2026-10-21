@@ -362,8 +362,6 @@ export function shareableFromModel(
     ? model.streets[model.streets.length - 1].extraBoards.map(toShareCards)
     : [];
   if (extra.some((b) => b.length > 0)) hand.extraBoards = extra.filter((b) => b.length > 0);
-  if (model.rake > 0) hand.rake = model.rake;
-  if (model.bbjFee > 0) hand.bbjFee = model.bbjFee;
   /* A bomb pot posts antes and no blinds. Said out loud on the wire, because
      a reconstruction that infers it would infer blinds nobody posted. */
   if (isBombPot(model)) hand.bombPot = true;

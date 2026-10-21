@@ -227,7 +227,7 @@
     "tests/components/cashier-cashout-generations.test.tsx": "18f5fadfadc7cba15d554d269e03b56bf7f99e01bbbf855d3dd2702bd7a21a39",
     "tests/components/cashout-own-event-acknowledgment.test.tsx": "70d0367305b58d387e47d9e52ff096fbf0a82121f7748a25018d95cddf224ead",
     "tests/unit/FinancialAlertServiceRead.test.ts": "2e9f47a08edbc96afb48d026dbec4fdf55b12a07bcb1f8cbc924af3b13ff4934",
-    "tests/unit/discardedErrorReadRatchet.test.ts": "31eeaf23d5803eb6de9f311b1a994b7364a383d83a423a41b9c020f1715f92ef",
+    "tests/unit/discardedErrorReadRatchet.test.ts": "f8f9ce54234385d3b8627479c3b44ca517faff1f31d21be0b3582cb7ae7aa886",
     "tests/fixtures/correction-writer-authority/README.md": "9ac3f0c9954e25e93d357df32611e4cc08dd40d6b7a81df68537481a27c1a4b2",
     "tests/fixtures/correction-writer-authority/accepted-authority-supplement.sql": "af0366d687755efc1bd8c5b7534d7b3e0059c14f8dabcbe05e68121f3aa40fae",
     "tests/fixtures/correction-writer-authority/authority-regression.sql": "0786d373254eb6cd874577b8eb2cab16d82ec46c492d29d59288ed483a3ea939",
@@ -465,10 +465,10 @@
     "tests/fixtures/legacy-fee-finality/custody-core.sql": "288e953c3b4c75c8eea9e0608a0f2d4b953c4437c9cfe6d50a450a801053d0eb",
     "tests/fixtures/legacy-fee-finality/fn_satellite_transfer_ledger_is_immutable.sql": "51af53e6eb44440aa9901452b42adb4bf3c7ab31ea21cdc1e4e9404c44bea407",
     "scripts/dev/qualify-legacy-fee-finality.py": "4e7c8260250be0485131467c7fbafcf1274c42be5bb2ce665ccdc70b1df27e7b",
-    "scripts/ci/classify-ci-changes.mjs": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944",
+    "scripts/ci/classify-ci-changes.mjs": "1325da3a525cd7e3523fdf26a70dddbe4ce62952da4fe7a3a6a5291676c20e40",
     "scripts/ci/schema-manifest.d/union-legacy-fee-finality.json": "e31a30ded22079973baf940835159370d9a46e7ac314a6e46833549b2f7cd0e7",
     "supabase/migrations/20260918090848_legacy_player_results_preserve_unresolved_original_fee_custo.sql": "8c03be3cd3557be4e22735b0442d84ca936641c15d1384b772e0426343c5fbc7",
-    "tests/fixtures/legacy-fee-finality/source-binding.json": "24034135cef51a4db95bf91f4311f52e20661ba588070db89451269bb89edb37",
+    "tests/fixtures/legacy-fee-finality/source-binding.json": "42110b582b5a1dd35cda9101ca4fd02020b53cb9d8bbb64904cdd62306392b3d",
     "tests/fixtures/sep8-spin-custody/build-candidate.py": "dc929d5df9801fbeb26c1b331fd3836b22069726e00d86c4f75401ab2b55fd4a",
     "tests/fixtures/sep8-spin-custody/resolution.sql": "2eca0534c0cd23223b3394397957e074847345160d3bf7e3ff4d083df55cb384",
     "tests/fixtures/sep8-spin-custody/player-finality.sql": "627be40d0634d483e2cdc421055e8eb72f9d95c22e36ab81e659b725a9db1b6e",
@@ -487,7 +487,7 @@
     "server/src/tournament/completionSettlementReceipt.ts": "a59a97b5b0f76d5c54d01b1fe47f3284efb2fcbd3e7742bb4e9e1ac6f0207dd4",
     "server/src/lib/uuidShape.ts": "e343f233386b551ad73d38b7202d1f28b233b070bed455b52839e3c0e148bbaf",
     "supabase/migrations/20260918095320_september_eight_original_spin_fee_custody_successor.sql": "858c125202405c4ceeabb0032689375c0efdf727c740f8056b7529c098b33804",
-    "tests/fixtures/sep8-spin-custody/source-binding.json": "c444aa71609c0da67baa2d3f3a622b0e1b66339296c94aae9b4914d829f2794f",
+    "tests/fixtures/sep8-spin-custody/source-binding.json": "3066876a4699d913ff74306b15843c11cb907a265307a2f1920ef575b1bd2141",
     "tests/fixtures/sep8-spin-custody/terminal-negative.sql": "e3e4106954a1ebe51c16c69ede5156cb12dc964c63a679d2583c8622b5081bea",
     "tests/fixtures/sep8-spin-custody/resolution-late-fault.sql": "b9425e31803e60630e0ee741e0842ebcc8dc891028517ea87efe1049aff0b7d0",
     "tests/fixtures/sep8-spin-custody/breakfast-predecessor.sql": "37f8a6d6b07a74c923c8b8298561cabec91fccec6281ffab9bab455dbdb1e6f7",
@@ -1766,6 +1766,13 @@
     "verification": "PG_BIN=postgresql@17 scripts/dev/test-union-weekly-basis.py: 74 PASS steps, 0 failures, including club-floor-run-journal, club-floor-behaviour-seed and club-floor-behaviour-regression (20 assertions). Red control on the same stack, reverting only the three GREATEST clamps of 20260920232503 in the running coordinator: 5 of those 20 assertions fail - the below-floor club week is re-attempted, the first week above the floor is neither reached nor completed, and the club whose earlier week succeeded no longer reaches its next due week."
   },
   "restamp_audit": [
+    {
+      "on": "2026-10-21",
+      "file": "tests/unit/discardedErrorReadRatchet.test.ts",
+      "from": "31eeaf23d5803eb6de9f311b1a994b7364a383d83a423a41b9c020f1715f92ef",
+      "to": "f8f9ce54234385d3b8627479c3b44ca517faff1f31d21be0b3582cb7ae7aa886",
+      "why": "Reviewed Midway rake policy diff: useEffectiveRake now binds and checks the club-price query error; tighten its allowed discarded-error count from 1 to 0. No captured financial rows, monetary assertions, historical qualifications or completion states changed. Matching source hashes are not production or financial execution proof."
+    },
     {
       "on": "2026-10-07",
       "why": "Reviewed nested legacy-fee-finality and sep8-spin-custody binding diffs: each changes only the reviewed V4 classifier pin and its audit entry. Refresh their parent hashes without changing captured financial inputs or assertions.",
@@ -5098,6 +5105,58 @@
     "combined_dependent_sha256": {
       "tests/fixtures/legacy-fee-finality/source-binding.json": "24034135cef51a4db95bf91f4311f52e20661ba588070db89451269bb89edb37",
       "tests/fixtures/sep8-spin-custody/source-binding.json": "c444aa71609c0da67baa2d3f3a622b0e1b66339296c94aae9b4914d829f2794f"
+    }
+  },
+  "clubDataUnionMttRouting20261021": {
+    "reason": "Additive routing of Club Data native driver and fixtures to the existing required accounting verdict. Financial fixture SQL, assertions, source inventories and qualification states unchanged; current CI classifier identity only.",
+    "previous_classifier_sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944",
+    "current_classifier_sha256": "5a2b0ee1194a06a3a1b8d9bfa93281713010033ba62a418411a6214c89fd6cfd",
+    "binding_metadata_changes": {
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "previous": "24034135cef51a4db95bf91f4311f52e20661ba588070db89451269bb89edb37",
+        "current": "b0153fd009929c9f000fdefd6a09e4e44db8f087e44f57dc40a34003148fb75b"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "previous": "c444aa71609c0da67baa2d3f3a622b0e1b66339296c94aae9b4914d829f2794f",
+        "current": "c27ca28a132fe03516124fba5c7b547a9dd4dd5118a2de2ed439f923c4604a34"
+      }
+    }
+  },
+  "clubNewsOnceRouting20261021": {
+    "reason": "Reviewed additive CI selection for the club-entry-news native regression only. Current financial fixtures, assertions, historical audits and qualification statuses are unchanged. Refresh classifier and dependent binding fingerprints; matching hashes do not certify financial or production behavior.",
+    "changes": [
+      {
+        "path": "scripts/ci/classify-ci-changes.mjs",
+        "previous_sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944",
+        "current_sha256": "7034b268896907731a499340bb792081f8d0165fae994d6c8ac3319b8bf3c4f0"
+      },
+      {
+        "path": "tests/fixtures/legacy-fee-finality/source-binding.json",
+        "previous_sha256": "24034135cef51a4db95bf91f4311f52e20661ba588070db89451269bb89edb37",
+        "current_sha256": "d62bae4343a38567e62acb7089fff9afa57905a14e509bc1081add9b79443548"
+      },
+      {
+        "path": "tests/fixtures/sep8-spin-custody/source-binding.json",
+        "previous_sha256": "c444aa71609c0da67baa2d3f3a622b0e1b66339296c94aae9b4914d829f2794f",
+        "current_sha256": "d5282bd5eb9161fb1c7cd3c281e2aba6d8a447e0f8cd1923a35908fa07319b85"
+      }
+    ]
+  },
+  "clubDataCurrentMainIntegration20261021": {
+    "reason": "Preserve protected-main Midway cash-policy/news changes and additive Club Data input routing, including both child-binding audit histories. Current identity only; no financial SQL or qualification state changed.",
+    "changes": {
+      "scripts/ci/classify-ci-changes.mjs": {
+        "prior": "5a2b0ee1194a06a3a1b8d9bfa93281713010033ba62a418411a6214c89fd6cfd",
+        "current": "1325da3a525cd7e3523fdf26a70dddbe4ce62952da4fe7a3a6a5291676c20e40"
+      },
+      "tests/fixtures/legacy-fee-finality/source-binding.json": {
+        "prior": "b0153fd009929c9f000fdefd6a09e4e44db8f087e44f57dc40a34003148fb75b",
+        "current": "42110b582b5a1dd35cda9101ca4fd02020b53cb9d8bbb64904cdd62306392b3d"
+      },
+      "tests/fixtures/sep8-spin-custody/source-binding.json": {
+        "prior": "c27ca28a132fe03516124fba5c7b547a9dd4dd5118a2de2ed439f923c4604a34",
+        "current": "3066876a4699d913ff74306b15843c11cb907a265307a2f1920ef575b1bd2141"
+      }
     }
   }
 }

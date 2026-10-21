@@ -13,7 +13,7 @@ import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { retryFetch } from '../utils/retryFetch';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { escapeIlikePattern } from '../utils/clubSlug';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { resolveClubUUID, resolveClubIdFilter } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { serverRefusalMessage } from '../utils/safeErrorMessage';
@@ -89,15 +89,14 @@ export async function searchClubs(query: string): Promise<Club[]> {
  * Get a single club by ID or slug
  */
 export async function getClub(identifier: string): Promise<Club | null> {
-  // Try by ID first, then by slug
-  const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+  const filter = resolveClubIdFilter(identifier);
 
   const { data, error } = await supabase
     .from('clubs')
     .select(
       'id, club_id, name, slug, description, avatar_url, logo_url, banner_url, color_theme, member_count, online_count, table_count, is_public, requires_approval, gps_restricted, owner_id, union_id, settings, created_at, updated_at, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
     )
-    .eq(isUUID ? 'id' : 'slug', identifier)
+    .eq(filter.column, filter.value)
     .maybeSingle();
 
   if (error) {

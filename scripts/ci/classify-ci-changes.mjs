@@ -41,7 +41,7 @@ const nativeRecovery =
 // wrapper, its wiring test, and every fixture are executable inputs; a change
 // to any one of them must select that job even without a migration beside it.
 const dataConsolePostgres =
-  /^(scripts\/ci\/test-data-console-postgres-contracts\.sh$|tests\/(?:data-console-postgres-contracts-wired|rake-agent-report-native-contract)\.test\.ts$|tests\/fixtures\/(?:rake-agent-report|financial-admin-revenue|union-ops-financial-admin|union-statement-availability|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
+  /^(scripts\/ci\/(?:test-data-console-postgres-contracts\.sh|test-club-data-(?:union-mtt|fact-db|report-db)-postgres\.py)$|tests\/(?:data-console-postgres-contracts-wired|rake-agent-report-native-contract)\.test\.ts$|tests\/fixtures\/(?:club-data-(?:fact-db|report-db)|rake-agent-report|financial-admin-revenue|union-ops-financial-admin|union-statement-availability|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
 // Every input to the managed-game one-door fixture must select the hosted
 // PostgreSQL job, including a fixture-only correction.
 const managedGameOneDoor =
@@ -314,6 +314,7 @@ export function classifyChangedPaths(paths) {
   return {
     src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
     server:
+      matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
       playerHistoryQualification ||
       broad ||
@@ -369,6 +370,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
       playerHistoryQualification ||
       bbjFixture ||

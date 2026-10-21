@@ -43,6 +43,7 @@ import {
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { sizedStorageUrl, generateAvatarSvg } from '../../utils/avatarGenerator';
+import { useClubGameHost } from '../../hooks/useClubGameHost';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
@@ -866,6 +867,7 @@ export default function ClubDataPage() {
 
   const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
   const [clubName, setClubName] = useState<string>('');
+  const gameHost = useClubGameHost(clubUuid, !!userId && !isHydrating);
   const [preset, setPreset] = useState<PresetId>(14);
   const [endDate, setEndDate] = useState<string>(() => toISODate(new Date()));
   const [game, setGame] = useState<GameFilter>('ALL');
@@ -3744,9 +3746,7 @@ export default function ClubDataPage() {
                         month: '2-digit',
                       })
                     : '';
-                  const creatorLabel = row.creator_name
-                    ? titleCase(row.creator_name)
-                    : 'Creator Name Unavailable';
+                  const hostLabel = gameHost || clubName || 'Club Name Unavailable';
                   const gameName = titleCase(row.name);
 
                   return (
@@ -3763,34 +3763,14 @@ export default function ClubDataPage() {
                       </div>
 
                       <div className={styles.avatarWrap}>
-                        {/* Sized and error-guarded, matching the player rows below.
-                          This rendered the raw URL with no onError, so a dead
-                          storage object showed the browser's broken-image glyph
-                          and pulled a full-size asset into a 40px box. */}
-                        {row.creator_avatar ? (
-                          <img
-                            className={styles.avatar}
-                            src={sizedStorageUrl(row.creator_avatar, 40)}
-                            alt=""
-                            loading="lazy"
-                            onError={(e) => {
-                              e.currentTarget.onerror = null;
-                              e.currentTarget.src = generateAvatarSvg(
-                                row.creator_id || row.id,
-                                row.creator_name || row.name || '?'
-                              );
-                            }}
-                          />
-                        ) : (
-                          <span
-                            className={`sc-ink--silver ${styles.avatarFallback}`}
-                            aria-hidden="true"
-                          >
-                            {(row.name || '?').slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                        <span className={`sc-ink--muted ${styles.rowId}`} title={creatorLabel}>
-                          {creatorLabel}
+                        <span
+                          className={`sc-ink--silver ${styles.avatarFallback}`}
+                          aria-hidden="true"
+                        >
+                          {hostLabel.slice(0, 1).toUpperCase()}
+                        </span>
+                        <span className={`sc-ink--muted ${styles.rowId}`} title={hostLabel}>
+                          By {hostLabel}
                         </span>
                       </div>
 

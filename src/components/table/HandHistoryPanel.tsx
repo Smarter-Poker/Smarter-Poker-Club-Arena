@@ -24,7 +24,6 @@
  *   - the low half of a PLO8 / FLO8 pot, as its own row;
  *   - who won each run of a run-it-twice, with the hand on THAT run;
  *   - the stack after every action, when the rebuild reconciles;
- *   - rake and the jackpot drop, beside the pot they came out of.
  *
  * The stats strip says what it counts: the last N hands loaded for this table,
  * not "the session".
@@ -275,8 +274,6 @@ function handToText(hand: HandRecord): string {
 
   lines.push('*** SUMMARY ***');
   lines.push(`Total pot: ${money(m.potTotal)}`);
-  if (m.rake > 0) lines.push(`Rake: ${money(m.rake)}`);
-  if (m.bbjFee > 0) lines.push(`Jackpot fee: ${money(m.bbjFee)}`);
   /* "collected N from pot" is the PokerStars wording for the GROSS the pot
      paid out; the net is its own line below. */
   for (const w of hand.winners) {
@@ -373,9 +370,6 @@ function HandEntry({
         <span className="hh-entry__time">{formatTime(hand.timestamp)}</span>
         <span className="hh-entry__pot">
           Pot {formatAmount(hand.replay.potTotal || hand.potTotal)}
-          {hand.rake > 0 && (
-            <span className="hh-entry__rake"> · Rake {formatAmount(hand.rake)}</span>
-          )}
         </span>
         <span className="hh-entry__tags">
           {hand.arenaAsset === 'diamonds' && <span className="hh-entry__tag">Diamonds</span>}

@@ -255,6 +255,7 @@ describe('a table that never dealt is moved from its seated entries', () => {
       '20261007031952_a_never_dealt_rebuy_keeps_its_original_paid_chair.sql',
       '20261016183932_a_mid_hand_add_on_rebase_is_movement_evidence.sql',
       '20261020143955_never_dealt_diamond_rebuy_proves_original_custody.sql',
+      '20261021172832_never_dealt_arrivals_keep_their_committed_move.sql',
     ]);
     const diamond = readFileSync(
       join(MIGRATIONS, '20261020143955_never_dealt_diamond_rebuy_proves_original_custody.sql'),
@@ -262,6 +263,12 @@ describe('a table that never dealt is moved from its seated entries', () => {
     );
     expect(diamond).toContain("<>'5f81993352981f9991b43c9a4d6dbaeb'");
     expect(diamond).toContain("md5(pg_get_functiondef(p.oid))='171b6f3ff886025263b9e2c7e72e6923'");
+    const arrival = readFileSync(
+      join(MIGRATIONS, '20261021172832_never_dealt_arrivals_keep_their_committed_move.sql'),
+      'utf8'
+    );
+    expect(arrival).toContain("<>'171b6f3ff886025263b9e2c7e72e6923'");
+    expect(arrival).toContain("md5(pg_get_functiondef(p.oid))='1952ea35ef547fd1102a4eca7ae1427e'");
     expect(readFileSync(join(MIGRATIONS, ADD_ON), 'utf8')).toContain(
       `md5(p.prosrc) = '${ASSERT_POST}'`
     );

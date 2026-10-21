@@ -518,7 +518,8 @@ export function encodeHand(hand: ShareableHand): string {
   // 13: run-it-twice / bomb-pot boards 2..N, whole boards, ';'-joined.
   parts.push((hand.extraBoards || []).map((b) => encodeCards(b)).join(';'));
   // 14: what the house took, and the jackpot drop.
-  parts.push(`${encodeMoney(hand.rake)}:${encodeMoney(hand.bbjFee)}`);
+  // Keep the legacy field position, without disclosing house deductions.
+  parts.push('');
   // 15: the hand's own number.
   parts.push(hand.handNumber == null ? '' : b64utf8(clip(String(hand.handNumber), 24)));
   // 16: Crazy Pineapple's discard street (the card itself never travels).

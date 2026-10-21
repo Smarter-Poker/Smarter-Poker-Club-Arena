@@ -108,10 +108,10 @@ function MobileLobbyReview({
         </button>
       </section>
 
-      <section className="agc-mobile-unified-shell" aria-label="Shark Club Lobby Controls">
+      <section className="agc-mobile-unified-shell" aria-label="Kings Club Lobby Controls">
         <section className="club-mobile-welcome" aria-labelledby="mobile-review-club-name">
           <span>Welcome To The</span>
-          <h1 id="mobile-review-club-name">Shark Club</h1>
+          <h1 id="mobile-review-club-name">Kings Club</h1>
         </section>
 
         {/* The club message strip was removed from the lobby on 2026-09-03:
@@ -122,8 +122,8 @@ function MobileLobbyReview({
           <div className="lobby-top__main">
             <ClubIdentityCard
               className="lobby-top__identity"
-              clubName="Shark Club"
-              logoUrl={`${MOBILE_REVIEW_ROOT}images/shark-club-logo-v2.png`}
+              clubName="Kings Club"
+              logoUrl={`${MOBILE_REVIEW_ROOT}images/kings-club-logo.png`}
               /* A HANDLE, not a real name. The prop is called `pokerAlias`, and
                  this showcase is what the next person copies from - seeding it
                  with "Dan Bekavac" is the habit that put a legal name on the
@@ -176,7 +176,7 @@ function MobileLobbyReview({
           </div>
         </header>
 
-        <section className="club-lobby-machine" aria-label="Shark Club Game Lobby">
+        <section className="club-lobby-machine" aria-label="Kings Club Game Lobby">
           <ClubLobbyCommandTop
             welcome={<span />}
             controls={
@@ -231,10 +231,7 @@ function MobileLobbyReview({
             }
             campaign={
               <button type="button" className="club-lobby-command-top__campaign-button">
-                <img
-                  src={`${MOBILE_REVIEW_ROOT}assets/club-buttons/lobby/shark-club-championship-ad-mobile-v4.png`}
-                  alt="Shark Club Championship Series, 250,000 Guaranteed Main Event"
-                />
+                <img src={`${MOBILE_REVIEW_ROOT}images/kings-club-logo.png`} alt="Kings Club" />
               </button>
             }
           />

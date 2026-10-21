@@ -196,7 +196,7 @@ import { usePageTitle } from '../hooks/usePageTitle';
    Dan 2026-10-16: the Shark Club logo is now his new emblem,
    shark-club-logo-v2.png, which clubs.logo_url and the club's social page
    also carry. */
-const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo-v2.png`;
+const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/kings-club-logo.png`;
 
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards

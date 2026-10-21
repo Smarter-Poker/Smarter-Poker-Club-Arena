@@ -1,3 +1,4 @@
+import { cashRakeScope } from '../config/cashRakePolicy.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  ONE LIGHTNING HAND, DEALT (Lightning Phase 6, 2026-09-27)
@@ -686,15 +687,15 @@ export class LightningHandHost {
     const club = rules.club_rake_defaults as {
       rakePercent: number | null;
       rakeCapBB: number | null;
+      unionId?: string | null;
     } | null;
     const rakePercent = pick(rules.rake_percent, club?.rakePercent);
     const rakeCapBB = pick(rules.rake_cap_bb, club?.rakeCapBB);
-    const full = getFullRakeConfig(
-      sb,
-      bb,
-      variant,
-      rakePercent === undefined && rakeCapBB === undefined ? undefined : { rakePercent, rakeCapBB }
-    );
+    const full = getFullRakeConfig(sb, bb, variant, {
+      rakePercent,
+      rakeCapBB,
+      scope: cashRakeScope(rules.union_id, club?.unionId),
+    });
     return {
       asset: rules.arena?.asset ?? 'chips',
       tableId: this.hostTableId,
@@ -716,6 +717,7 @@ export class LightningHandHost {
       // THE BARRIER'S BLINDS, never re-derived from the button.
       blindSeats: { smallBlind: sbSeat, bigBlind: bbSeat },
       rakeConfig: {
+        cashPolicy: { version: 1, scope: cashRakeScope(rules.union_id, club?.unionId) },
         percent: full.rakePercent,
         cap: full.rakeCap,
         noFlopNoDrop: true,
@@ -2004,6 +2006,7 @@ export class LightningHandHost {
       big_blind: Number(rules.big_blind),
       pot_size: state.pot,
       rake_amount: rake,
+      cash_rake_policy: this.hc?.getRakeConfigSnapshot(),
       bbj_amount: bbj,
       community_cards: this.boards[0],
       community_cards2: null,

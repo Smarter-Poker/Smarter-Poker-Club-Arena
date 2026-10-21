@@ -474,8 +474,7 @@ export function toPokerStarsHand(model: ReplayModel, meta: PokerStarsMeta): Poke
   }
 
   lines.push('*** SUMMARY ***');
-  const rakeText = model.rake > 0 ? ` | Rake ${money(model.rake)}` : ' | Rake $0.00';
-  lines.push(`Total pot ${money(model.potTotal)}${meta.isTournament ? '' : rakeText}`);
+  lines.push(`Total pot ${money(model.potTotal)}`);
   if (seen.length) lines.push(`Board [${cards(seen)}]`);
   /* Run-it-twice has no PokerStars grammar either. The extra boards are named
      rather than dropped, so a human reading the file sees the hand that was

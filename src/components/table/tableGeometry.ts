@@ -1169,13 +1169,28 @@ function boardRectSq(size: Size): RectSq {
 function feltTextRectSq(size: Size): RectSq {
   const feltWidthPx = (FELT_WINDOW.width / 100) * size.w;
   const brandPx = Math.min(
-    (FELT_TEXT_BAND.widthOfFeltPct / 100) * feltWidthPx,
+    ((size.railBets && size.w <= 340 * 0.82
+      ? 50
+      : size.railBets && size.w <= 380 * 0.82
+        ? 56
+        : FELT_TEXT_BAND.widthOfFeltPct) /
+      100) *
+      feltWidthPx,
     FELT_TEXT_BAND.maxWidthPx
   );
   const metaPx =
     FELT_TEXT_BAND.lines * FELT_TEXT_BAND.lineHeightPx +
     (FELT_TEXT_BAND.lines - 1) * FELT_TEXT_BAND.lineGapPx;
-  const heightPx = brandPx / FELT_TEXT_BAND.logoAspect + FELT_TEXT_BAND.logoToMetaGapPx + metaPx;
+  // Phone CSS: 3px logo gap, single identity line at 7px/1.15,
+  // game clamp(7px, 6.5cqw, 10px), hand/bomb 6px, three 1px row gaps.
+  const phoneGamePx = Math.max(7, Math.min(10, brandPx * 0.065));
+  const heightPx = size.railBets
+    ? brandPx / FELT_TEXT_BAND.logoAspect +
+      3 +
+      (size.w <= 340 * 0.82 ? 6 : 7) * 1.15 +
+      (phoneGamePx + 6 + 6) * 1.6 +
+      3
+    : brandPx / FELT_TEXT_BAND.logoAspect + FELT_TEXT_BAND.logoToMetaGapPx + metaPx;
   const u = unitPx(size);
   const topYPct = FELT_WINDOW.top + (FELT_TEXT_BAND.topOfFeltYPct / 100) * FELT_WINDOW.height;
   const topYSq = ((topYPct / 100) * size.h) / u;
@@ -1204,6 +1219,34 @@ export function isOnFeltText(
   const q = sq(p, size);
   const pad = markerRadiusWidthPct + MARKER_FELT_TEXT_GAP_WIDTH_PCT;
   return q.x > r.x0 - pad && q.x < r.x1 + pad && q.y > r.y0 - pad && q.y < r.y1 + pad;
+}
+
+/** Portrait pot chrome is upright at POT_ANCHOR_PCT, not perspective-projected.
+ * PotDisplay.css uses a 30-32% upward pill translation, a 5px pile gap, and
+ * table chip discs below it. The 90px pill reserve covers the rendered compact
+ * amount/label; a ten-disc half-overlap spread grows it with the chip token.
+ */
+export function overlapsPortraitPot(
+  p: Pos,
+  size: Size,
+  markerRadiusWidthPct = 0,
+  markerHalfHeightWidthPct = markerRadiusWidthPct
+): boolean {
+  if (!size.railBets) return false;
+  const halfWidth = Math.max(45, ((chipRadiusWidthPct(size) * size.w) / 100) * 5.5);
+  const centerX = (POT_ANCHOR_PCT.x * size.w) / 100;
+  const centerY = (POT_ANCHOR_PCT.y * size.h) / 100;
+  const radius = (markerRadiusWidthPct * size.w) / 100;
+  const halfHeight = (markerHalfHeightWidthPct * size.w) / 100;
+  const x = (p.x * size.w) / 100;
+  const y = (p.y * size.h) / 100;
+  const chipDiameter = ((chipRadiusWidthPct(size) * size.w) / 100) * 2;
+  return (
+    x > centerX - halfWidth - radius - MARKER_INSET_PX &&
+    x < centerX + halfWidth + radius + MARKER_INSET_PX &&
+    y > centerY - 28 * 0.32 - halfHeight - MARKER_INSET_PX &&
+    y < centerY + 28 * 0.7 + 5 + chipDiameter + halfHeight + MARKER_INSET_PX
+  );
 }
 
 /**
@@ -1296,7 +1339,7 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
     // Use the nearest stadium edge, so side bets retain the seat's height. The
     // marker radius plus 3px of daylight leaves the whole stack on the felt.
     const stackHalfPx = Math.max(17, (chipRadiusWidthPct(size) * size.w) / 100);
-    const box = feltBoxPx(size, ((stackHalfPx + MARKER_INSET_PX) / size.w) * 100);
+    const box = feltBoxPx(size, chipRadiusWidthPct(size) + (MARKER_INSET_PX / size.w) * 100);
     const nearest = (source: Pos): Pos => {
       const px = (source.x * size.w) / 100;
       const py = (source.y * size.h) / 100;
@@ -1315,30 +1358,47 @@ export function chipRestPosition(seat: Pos, size: Size = NOMINAL_SCALER, pod?: S
     // cap bends toward the board; walk along that same edge until the whole
     // stack clears the actual 95% board, instead of moving into the centre.
     const footprint = Math.max(buttonRadiusWidthPct(size), (20 / size.w) * 100);
+    const clear = (candidate: Pos) =>
+      !overlapsBoard(candidate, size, footprint) &&
+      !isOnFeltText(candidate, size, footprint) &&
+      !overlapsPortraitPot(candidate, size, footprint, (11 / size.w) * 100);
+    if (seat.y < 20) {
+      // Compact upper pods now sit on the rail. Place their wager beside the
+      // pod on that same cap, rather than directly below its action label.
+      const side = seat.x > 50 ? -1 : 1;
+      for (let step = 0; step <= 80; step++) {
+        const candidate = nearest({ x: seat.x + side * (25 + step), y: seat.y + 14 });
+        const dx = (Math.abs(candidate.x - seat.x) * size.w) / 100;
+        if (dx >= (pod?.w ?? 58) / 2 + stackHalfPx + MARKER_INSET_PX && clear(candidate))
+          return candidate;
+      }
+    }
     if (isHeroSeat(seat) && pod) {
       // The hero pod straddles the bottom cap. Stay on that cap and use the
       // nearest free point beside its bust instead of parking a bet on it.
       for (let step = 0; step <= 100; step++) {
         const candidate = nearest({ x: seat.x + step * 2, y: seat.y });
         const dx = (Math.abs(candidate.x - seat.x) * size.w) / 100;
-        if (dx >= pod.w * 0.625 + stackHalfPx + MARKER_INSET_PX) return candidate;
+        if (dx >= pod.w * 0.625 + stackHalfPx + MARKER_INSET_PX && clear(candidate))
+          return candidate;
       }
       // A very small cap cannot fit a wide amount label beside the bust.
       // Continue up the same right rail until it clears the crown instead.
       for (let step = 0; step <= 80; step++) {
         const candidate = nearest({ x: seat.x + 100, y: seat.y - step * 2 });
         const dy = ((seat.y - candidate.y) * size.h) / 100;
-        if (
-          dy >= pod.h * 0.9 + stackHalfPx + MARKER_INSET_PX &&
-          !overlapsBoard(candidate, size, footprint)
-        )
-          return candidate;
+        if (dy >= pod.h * 0.9 + stackHalfPx + MARKER_INSET_PX && clear(candidate)) return candidate;
       }
     }
     const direction = seat.y < 50 ? -1 : 1;
+    // A short bottom cap can be occupied by the masthead. Search both ways
+    // along this same rail, nearest first, rather than falling back onto text
+    // when the outward direction has no available painted edge.
     for (let step = 0; step <= 80; step++) {
-      const candidate = nearest({ x: seat.x, y: seat.y + ((direction * step * 5) / size.h) * 100 });
-      if (!overlapsBoard(candidate, size, footprint)) return candidate;
+      for (const sign of [direction, -direction]) {
+        const candidate = nearest({ x: seat.x, y: seat.y + ((sign * step * 5) / size.h) * 100 });
+        if (clear(candidate)) return candidate;
+      }
     }
     return nearest(seat);
   }

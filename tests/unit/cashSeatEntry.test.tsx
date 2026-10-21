@@ -34,7 +34,7 @@ describe('a cash seat tap always has an actionable admission outcome', () => {
     await act(() => h.result.current(4));
     expect(h.goToTable).toHaveBeenCalledExactlyOnceWith('feeder');
     expect(h.openBuyIn).not.toHaveBeenCalled();
-    expect(h.notify).toHaveBeenCalledWith(expect.stringContaining('Feeder 2'));
+    expect(h.notify).not.toHaveBeenCalled();
     expect(transport.rpc).toHaveBeenCalledExactlyOnceWith('fn_cash_game_join', {
       p_game_id: 'game',
     });
@@ -48,6 +48,21 @@ describe('a cash seat tap always has an actionable admission outcome', () => {
     await act(() => h.result.current(4));
     expect(h.openBuyIn).toHaveBeenCalledExactlyOnceWith(6);
     expect(h.goToTable).not.toHaveBeenCalled();
+    expect(h.notify).not.toHaveBeenCalled();
+  });
+  it('keeps the already-seated confirmation and opens the assigned game', async () => {
+    transport.rpc.mockResolvedValue({
+      data: { ok: true, action: 'seated', table_id: 'feeder', table_name: 'Feeder 2' },
+      error: null,
+    });
+    const h = setup();
+    await act(() => h.result.current(4));
+    expect(h.notify).toHaveBeenCalledExactlyOnceWith(
+      'You Are Already Seated At Feeder 2. Opening Your Game.'
+    );
+    expect(h.goToTable).toHaveBeenCalledExactlyOnceWith('feeder');
+    expect(h.openBuyIn).not.toHaveBeenCalled();
+    expect(h.showWaitlist).not.toHaveBeenCalled();
   });
   it('shows the confirmed queue place and its lobby when there is no seat', async () => {
     transport.rpc.mockResolvedValue({

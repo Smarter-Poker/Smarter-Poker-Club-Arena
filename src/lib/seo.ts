@@ -48,6 +48,9 @@ export interface SeoEntry {
   /** true = discoverable; false = noindex, nofollow, no canonical. */
   index: boolean;
   jsonLd?: JsonLd | JsonLd[];
+  /** Public brand information only; never makes a signed-in route indexable. */
+  brandedShare?: boolean;
+  image?: string;
 }
 
 const ORGANIZATION: JsonLd = {
@@ -222,7 +225,72 @@ export function normalisePath(pathname: string): string {
   return stripped === '' ? '/' : stripped;
 }
 
-export function resolveSeo(pathname: string): SeoEntry {
+export const KINGS_CLUB_IMAGE = `${WEB_APP_URL}/images/kings-club-logo.png`;
+export const KINGS_PREVIEW_PATHS = ['/clubs/kings-club', '/invite/kings-club'] as const;
+const KINGS_IDENTIFIERS = new Set([
+  'kings-club',
+  'shark-club',
+  '25450',
+  'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
+]);
+
+/** Only the already-public identity is shared; no membership, wallet or game data. */
+function kingsSeo(invite: boolean, identityPage: boolean): SeoEntry {
+  const clubUrl = canonicalUrl('/clubs/kings-club');
+  const pagePath = invite ? '/invite/kings-club' : '/clubs/kings-club';
+  const organization: JsonLd = {
+    '@type': 'Organization',
+    '@id': `${clubUrl}#club`,
+    name: 'KINGS CLUB',
+    url: clubUrl,
+    image: KINGS_CLUB_IMAGE,
+    logo: {
+      '@type': 'ImageObject',
+      '@id': `${clubUrl}#logo`,
+      url: KINGS_CLUB_IMAGE,
+      width: 1254,
+      height: 1254,
+    },
+    sameAs: `${WEB_ORIGIN}/hub/social-pages/eba7d82a-94dd-43b8-840d-1d547961174a`,
+  };
+  return {
+    title: invite ? 'Join KINGS CLUB' : 'KINGS CLUB',
+    description:
+      'KINGS CLUB On Smarter.Poker. Club ID 25450. Open The Club Or Use Your Invitation To Join The Existing Poker Community.',
+    canonicalPath: pagePath,
+    index: false,
+    brandedShare: true,
+    image: KINGS_CLUB_IMAGE,
+    jsonLd: identityPage
+      ? [
+          organization,
+          {
+            '@type': 'WebPage',
+            '@id': `${canonicalUrl(pagePath)}#webpage`,
+            name: invite ? 'Join KINGS CLUB' : 'KINGS CLUB',
+            url: canonicalUrl(pagePath),
+            about: { '@id': `${clubUrl}#club` },
+            primaryImageOfPage: { '@id': `${clubUrl}#logo` },
+          },
+        ]
+      : undefined,
+  };
+}
+
+export function resolveSeo(pathname: string, search = ''): SeoEntry {
+  const path = normalisePath(pathname);
+  const club = /^\/(clubs|invite)\/([^/]+)(.*)$/i.exec(path);
+  if (club && KINGS_IDENTIFIERS.has(club[2].toLowerCase())) {
+    return kingsSeo(club[1].toLowerCase() === 'invite', !club[3]);
+  }
+  const query = new URLSearchParams(search);
+  const identifier = query.get('club') || query.get('clubId') || query.get('club_id');
+  if (
+    ['/stats', '/marketplace'].includes(path) &&
+    identifier &&
+    KINGS_IDENTIFIERS.has(identifier.toLowerCase())
+  )
+    return kingsSeo(false, false);
   const entry = PUBLIC_ROUTES[normalisePath(pathname)];
   return entry ? { ...entry, index: true } : PRIVATE_DEFAULT;
 }
@@ -287,23 +355,41 @@ export function applySeo(entry: SeoEntry): void {
   const canonical = entry.index ? canonicalUrl(entry.canonicalPath) : null;
   const ogTitle = fullTitle(entry.title);
 
-  if (entry.index) {
+  if (entry.index || entry.brandedShare) {
     document.title = ogTitle;
-    upsertMeta('meta[name="description"]', { name: 'description' }, entry.description);
-    upsertMeta('meta[property="og:title"]', { property: 'og:title' }, ogTitle);
-    upsertMeta(
-      'meta[property="og:description"]',
-      { property: 'og:description' },
-      entry.description
-    );
-    upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title' }, ogTitle);
-    upsertMeta(
-      'meta[name="twitter:description"]',
-      { name: 'twitter:description' },
-      entry.description
-    );
-    if (canonical) upsertMeta('meta[property="og:url"]', { property: 'og:url' }, canonical);
   }
+  upsertMeta('meta[name="description"]', { name: 'description' }, entry.description);
+  upsertMeta('meta[property="og:title"]', { property: 'og:title' }, ogTitle);
+  upsertMeta('meta[property="og:description"]', { property: 'og:description' }, entry.description);
+  upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title' }, ogTitle);
+  upsertMeta(
+    'meta[name="twitter:description"]',
+    { name: 'twitter:description' },
+    entry.description
+  );
+  upsertMeta('meta[property="og:url"]', { property: 'og:url' }, canonicalUrl(entry.canonicalPath));
+  const image = entry.image || DEFAULT_OG_IMAGE;
+  upsertMeta('meta[property="og:image"]', { property: 'og:image' }, image);
+  upsertMeta('meta[property="og:image:secure_url"]', { property: 'og:image:secure_url' }, image);
+  upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image' }, image);
+  upsertMeta(
+    'meta[name="twitter:card"]',
+    { name: 'twitter:card' },
+    entry.brandedShare ? 'summary' : 'summary_large_image'
+  );
+  for (const [key, value] of Object.entries({
+    width: entry.brandedShare ? '1254' : '1200',
+    height: entry.brandedShare ? '1254' : '630',
+    type: entry.brandedShare ? 'image/png' : 'image/jpeg',
+    alt: entry.brandedShare ? 'KINGS CLUB Logo' : 'Poker Arena On Smarter.Poker',
+  })) {
+    upsertMeta(`meta[property="og:image:${key}"]`, { property: `og:image:${key}` }, value);
+  }
+  upsertMeta(
+    'meta[name="twitter:image:alt"]',
+    { name: 'twitter:image:alt' },
+    entry.brandedShare ? 'KINGS CLUB Logo' : 'Poker Arena On Smarter.Poker'
+  );
 
   upsertMeta(
     'meta[name="robots"]',
@@ -311,5 +397,5 @@ export function applySeo(entry: SeoEntry): void {
     entry.index ? ROBOTS_INDEX : ROBOTS_NOINDEX
   );
   setCanonical(canonical);
-  setJsonLd(entry.index ? entry.jsonLd : undefined);
+  setJsonLd(entry.index || entry.brandedShare ? entry.jsonLd : undefined);
 }

@@ -33,6 +33,7 @@ import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import styles from './ClubDataSimplePage.module.css';
+import { useClubGameHost } from '../../hooks/useClubGameHost';
 import { usePageTitle } from '../../hooks/usePageTitle';
 
 type Preset = 1 | 7 | 14;
@@ -48,6 +49,7 @@ export interface ClubDataSummary {
   cash_fee?: number;
   mtt_fee?: number;
   on_felt?: number;
+  live_games?: number;
 }
 
 export interface ClubDataRow {
@@ -205,6 +207,7 @@ export default function ClubDataSimplePage() {
   // "CLUB JAQK - CLUB DATA": the name stays in the header while a window loads.
   const [clubName, setClubName] = useState<string | null>(null);
 
+  const gameHost = useClubGameHost(clubUuid, !!userId && !isHydrating);
   const today = utcToday();
   const isToday = endDate >= today;
   const startDate = addDays(endDate, -(preset - 1));
@@ -356,7 +359,7 @@ export default function ClubDataSimplePage() {
   const isDownline = snapshot?.scope === 'downline';
   const factsFrom = snapshot?.facts_from ?? null;
   const rows = useMemo(() => snapshot?.rows ?? [], [snapshot]);
-  const liveCount = rows.filter((r) => r.live).length;
+  const liveCount = summary?.live_games ?? rows.filter((r) => r.live).length;
   // A route segment, never a `??` inside the template: the reachability law
   // reads everything after a `?` as a query string.
   const clubKey = clubUuid || clubParam;
@@ -568,7 +571,7 @@ export default function ClubDataSimplePage() {
                       {Number(row.players) === 1 ? '' : 's'}
                     </span>
                   )}
-                  {row.creator_name && <span>By {row.creator_name}</span>}
+                  {(gameHost || clubName) && <span>By {gameHost || clubName}</span>}
                 </div>
               </div>
               <div className={styles.rowFigures}>

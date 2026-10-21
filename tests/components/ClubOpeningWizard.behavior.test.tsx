@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
   report: vi.fn(),
 }));
+vi.mock('../../src/hooks/useCashRakePolicyVersion', () => ({ useCashRakePolicyVersion: () => 1 }));
 vi.mock('../../src/lib/supabase', () => ({ supabase: { rpc: mocks.rpc, from: mocks.from } }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: mocks.report }));
 vi.mock('../../src/components/common/Toast', () => ({ useToast: () => mocks.toast }));
@@ -653,7 +654,7 @@ describe('dialog behavior and tag line', () => {
   it('still refuses the Shark Club line for any other club, prefilled or typed', () => {
     mount({ initialTagline: 'All Fish Of All Shapes And Sizes Are Welcome' });
     next();
-    expect(alertText()).toBe('That Tag Line Belongs To Shark Club');
+    expect(alertText()).toBe('That Tag Line Belongs To Kings Club');
     expect(primary()).toBeDisabled();
   });
 });

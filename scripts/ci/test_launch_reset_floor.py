@@ -172,6 +172,11 @@ print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().pare
 # A single weekly player entitlement preserves every historical payer through
 # native R3 payments, documents, retired reserves and interruption/replay.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-historical-rakeback-payers-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-confirmed-rakeback-payers-postgres.py'), '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
+
+# A zero standalone book excludes only proven foreign obligations; real own
+# sources and malformed certificates retain the original native refusals.
+print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / 'test-historical-rakeback-payers-postgres.py'), '--coordinator-scope-only', '--pg-bin', str(pg), '--scratch', str(args.scratch)], text=True))
 
 # Revenue statements distinguish terminal payouts from successive funding transfers.
 print(subprocess.check_output([sys.executable, str(Path(__file__).resolve().parent / "test-weekly-revenue-digest-postgres.py"), "--pg-bin", str(pg), "--scratch", str(args.scratch)], text=True))

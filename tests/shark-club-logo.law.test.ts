@@ -32,7 +32,7 @@ describe('the Shark Club logo', () => {
       'src/pages/dev/ArenaGameCardsShowcasePage.tsx',
     ]) {
       const src = readFileSync(file, 'utf8');
-      expect(src, file).toContain('images/shark-club-logo-v2.png');
+      expect(src, file).toContain('images/kings-club-logo.png');
       expect(src, file).not.toMatch(/images\/shark-club-logo\.jpg`/);
     }
   });

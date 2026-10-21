@@ -1,3 +1,7 @@
+/** Live cash callers supply scope: default 2.5 BB, hard maximum in Midway,
+ * customizable in standalone clubs. Unscoped calls retain historical replay
+ * and the independently unchanged BBJ stake specification. */
+import { scopedCashRake, type CashRakeScope } from './cashRakePolicy.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  SERVER-SIDE RAKE & BBJ CONFIGURATION
@@ -451,6 +455,8 @@ export function getTierForBB(bigBlind: number): StakesTier {
  * had 10% taken. These are the values that make those controls real.
  */
 export interface RakeOverride {
+  /** Present for live cash tables; omitted only for legacy spec replay. */
+  scope?: CashRakeScope;
   /** Whole-percent units, e.g. 7.5 means 7.5%. */
   rakePercent?: number | null;
   /** BIG BLINDS, not dollars. Converted here and only here. */
@@ -560,9 +566,18 @@ export function getFullRakeConfig(
   // a $5 cap, $100 at 5/10 against $12.50, $250 at 10/25 against $15. A club
   // admin can UPDATE these columns through RLS, so this min() is the guard
   // that actually holds the published rate.
-  const rakePercent =
+  let rakePercent =
     overridePercent !== null ? Math.min(overridePercent, schedulePercent) : schedulePercent;
-  const rakeCap = overrideCap !== null ? Math.min(overrideCap, scheduleCap) : scheduleCap;
+  let rakeCap = overrideCap !== null ? Math.min(overrideCap, scheduleCap) : scheduleCap;
+
+  if (override?.scope) {
+    ({ rakePercent, rakeCap } = scopedCashRake(
+      bigBlind,
+      override.scope,
+      override.rakePercent,
+      override.rakeCapBB
+    ));
+  }
 
   // BBJ payout: total % of pool varies by stakes tier (Dan's authoritative table)
   // Distribution is always 50/25/25 split of the total payout amount.

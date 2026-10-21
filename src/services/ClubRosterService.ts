@@ -123,7 +123,15 @@ export type RosterFilter =
   | 'inactive_60'
   | 'inactive_90'
   | 'high_fees';
-export type RosterSort = 'hierarchy' | 'activity' | 'name' | 'downlines' | 'wallet' | 'fees';
+export type RosterSort =
+  | 'newest'
+  | 'oldest'
+  | 'hierarchy'
+  | 'activity'
+  | 'name'
+  | 'downlines'
+  | 'wallet'
+  | 'fees';
 export type RosterCursor = Record<string, string | number>;
 
 export interface RosterQuery {
@@ -435,7 +443,7 @@ export const ClubRosterService = {
           p_club_id: clubId,
           p_search: normalizeRosterSearch(query.search),
           p_filter: query.filter ?? 'all',
-          p_sort: query.sort ?? 'hierarchy',
+          p_sort: query.sort ?? 'newest',
           p_cursor: query.cursor ?? null,
           p_limit: query.limit ?? 80,
         });
@@ -847,7 +855,7 @@ export const ClubRosterService = {
             p_club_id: clubId,
             p_search: normalizeRosterSearch(query.search),
             p_filter: query.filter ?? 'all',
-            p_sort: query.sort ?? 'hierarchy',
+            p_sort: query.sort ?? 'newest',
             p_user_ids: userIds,
           })
           .abortSignal(signal);

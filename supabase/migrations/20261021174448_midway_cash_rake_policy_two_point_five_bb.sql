@@ -612,4 +612,8 @@ $definition$;
  END IF;
 END $patch$;
 
+-- Explicitly restate the existing reader ACL, verified before this migration.
+REVOKE ALL ON FUNCTION public.fn_effective_rake_config(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_effective_rake_config(uuid) TO authenticated, service_role;
+
 COMMIT;

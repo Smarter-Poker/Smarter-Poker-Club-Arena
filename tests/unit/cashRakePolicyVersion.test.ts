@@ -3,9 +3,10 @@ import { readCashRakePolicyVersion } from '../../src/services/cashRakePolicyVers
 afterEach(() => vi.unstubAllGlobals());
 describe('cash rake display follows the serving engine contract', () => {
   it.each([
-    [{}, 0],
-    [{ cashRakePolicyVersion: 1 }, 1],
-    [{ cashRakePolicyVersion: 2 }, null],
+    [{ version: 'legacy' }, 0],
+    [{ version: 'new', cashRakePolicyVersion: 1 }, 1],
+    [{ version: 'future', cashRakePolicyVersion: 2 }, null],
+    [{}, null],
   ])('reads %j as %s', async (body, expected) => {
     const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => body });
     vi.stubGlobal('fetch', fetch);

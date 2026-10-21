@@ -10,6 +10,7 @@ export async function readCashRakePolicyVersion(): Promise<0 | 1 | null> {
     });
     if (!response.ok) return null;
     const health = await response.json();
+    if (!health || typeof health.version !== 'string') return null;
     if (health.cashRakePolicyVersion === 1) return 1;
     // A reachable older engine explicitly lacks this new contract.
     if (health.cashRakePolicyVersion === undefined) return 0;

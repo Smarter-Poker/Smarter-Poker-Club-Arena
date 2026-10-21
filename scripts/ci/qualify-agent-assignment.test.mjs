@@ -22,7 +22,7 @@ async function fixture(failure) {
   let data,status=200;
   if(u.pathname==='/auth/v1/token') {assert.equal(init.headers.Authorization,undefined);const account=[...accounts.values()].find(a=>a.email===body.email);data={access_token:account.id,user:{id:account.id}};}
   else if(u.pathname==='/auth/v1/logout') {status=204;data=null;}
-  else if(u.pathname==='/rest/v1/profiles') data=[{email:staff.email,role:'user',is_admin:false,is_horse:false}];
+  else if(u.pathname==='/rest/v1/profiles') data=[{alias:'Fixture Player',username:'Fixture Player',email:staff.email,role:'user',is_admin:false,is_horse:false}];
   else if(u.pathname==='/rest/v1/club_members') {
    if(method==='PATCH') Object.assign(members.get(user),body);
    if(user) data=members.has(user)?[members.get(user)]:[];
@@ -32,7 +32,12 @@ async function fixture(failure) {
    if(method==='POST') {agents.set(body.id,{parent_agent_id:null,credit_used:0,credit_limit:0,business_balance:0,player_balance:0,promo_balance:0,agent_wallet_balance:0,player_wallet_balance:0,promo_wallet_balance:0,weekly_rake_generated:0,lifetime_earnings:0,lifetime_rake_generated:0,...body});if(failure==='unknown-agent') throw new Error('unknown agent response');}
    if(method==='DELETE') agents.delete(id);
    data=u.searchParams.has('parent_agent_id')?[]:id?(agents.has(id)?[agents.get(id)]:[]):[];
-  } else if(u.pathname==='/rest/v1/rpc/fn_reassign_club_members') {
+  } else if(u.pathname==='/rest/v1/rpc/fn_preview_club_assignment') data={selected_count:1,affected_count:1,review_token:'a'.repeat(32)};
+  else if(u.pathname==='/rest/v1/rpc/fn_club_assignment_history') data={rows:[{operation_id:body.p_search,review:{review_token:'a'.repeat(32)}}]};
+  else if(u.pathname==='/rest/v1/rpc/ca_club_members_page') {const caller=init.headers.Authorization.slice(7);data={items:[...members.values()].filter(r=>r.user_id===state.created[2] && (r.user_id===caller || r.agent_id===caller))};}
+  else if(u.pathname==='/rest/v1/rpc/ca_club_roster_access') data=members.get(body.p_target_user_id)?.agent_id===init.headers.Authorization.slice(7)?'agent':'none';
+  else if(u.pathname==='/rest/v1/game_management_events') data=[{payload:{reason:'member_scope_changed'}}];
+  else if(['/rest/v1/rpc/fn_reassign_club_members','/rest/v1/rpc/fn_apply_reviewed_club_assignment'].includes(u.pathname)) {
    if(failure==='transfer' && body.p_expected_agent_user_id) {status=409;data={code:'source_changed'};}
    else {const replayed=receipts.has(body.p_op_id);receipts.set(body.p_op_id,body);for(const target of body.p_member_user_ids) members.get(target).agent_id=body.p_agent_user_id;data={success:true,moved:1,replayed};}
   } else throw new Error(u.pathname);

@@ -66,3 +66,6 @@ node --test "$repo/scripts/ci/qualify-agent-boundary.test.mjs" "$repo/scripts/ci
 PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   AGENT_BOUNDARY_SCRATCH="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
   python3 -B "$repo/scripts/ci/test-agent-data-boundary-postgres.py"
+
+# Indexed parent traversal must match the captured predicate and measured budget.
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" RUNNER_TEMP="$DATA_CONSOLE_PG_SCRATCH_PARENT" python3 -B "$repo/scripts/ci/test-agent-downline-performance-postgres.py"

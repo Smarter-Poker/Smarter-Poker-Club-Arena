@@ -76,6 +76,14 @@ try {
   }
   const transfer=await request('/rest/v1/rpc/fn_reassign_club_members',{...caller,method:'POST',allowFailure:true,body:{p_club_id:club,p_member_user_ids:[account.id],p_agent_user_id:account.id,p_op_id:randomUUID()}});
   assert.equal(transfer.ok,false);assert.equal(transfer.status,403);
+  for(const [name,args] of [
+   ['fn_preview_club_assignment',{p_club_id:club,p_member_user_ids:[account.id],p_agent_user_id:account.id}],
+   ['fn_club_assignment_history',{p_club_id:club}],
+   ['fn_apply_reviewed_club_assignment',{p_club_id:club,p_member_user_ids:[account.id],p_agent_user_id:account.id,p_op_id:randomUUID(),p_review_token:'a'.repeat(32)}],
+  ]) {
+   const denied=await request('/rest/v1/rpc/'+name,{...caller,method:'POST',allowFailure:true,body:args});
+   assert.equal(denied.status,403,name+' must refuse agent access');
+  }
   results.push({role,bankDenied:true,privateColumnsDenied:true,unrelatedMembers:0,assignmentDenied:true});
  }
 } finally {

@@ -54,8 +54,10 @@ describe('the engine deploy has one fail-closed Hetzner authority', () => {
     expect(triggers).not.toMatch(
       /^\s{2}(?:workflow_dispatch|repository_dispatch|pull_request|pull_request_target|workflow_run):/m
     );
-    expect(triggers).toContain("cron: '30 8,9 * * *'");
-    expect(engineSignalCode).toContain('TZ=America/Chicago date +%H');
+    expect(triggers).toContain("cron: '30 8 * * *'");
+    expect(triggers).toContain("cron: '30 9 * * *'");
+    expect(engineSignalCode).toContain('RUN_CREATED_AT=$(gh api');
+    expect(engineSignalCode).toContain('local = nominal.astimezone(ZoneInfo("America/Chicago"))');
     expect(engineSignal).toMatch(/^permissions:\s*\{\}\s*$/m);
     expect(engineSignal).toMatch(/^\s{2}detect:\s*$/m);
     expect(engineSignal).toContain('fetch-depth: 0');

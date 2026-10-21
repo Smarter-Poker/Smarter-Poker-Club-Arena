@@ -47,7 +47,9 @@ CREATE FUNCTION cron.schedule(text,text,text) RETURNS bigint LANGUAGE plpgsql AS
   PERFORM set_config('test.at','2026-10-21 09:05Z',false);
   PERFORM fn_ca_capture_freeze_mark('post');
   IF (SELECT count(*) FROM ca_freeze_circulation_marks WHERE window_hour=result)<>2 THEN RAISE EXCEPTION 'missing pair'; END IF;
+  PERFORM set_config('test.at','2026-10-21 09:05:20Z',false);
   PERFORM fn_ca_capture_freeze_mark('post');
+  IF (SELECT mark_at FROM ca_freeze_circulation_marks WHERE window_hour=result AND kind='post') IS DISTINCT FROM '2026-10-21 09:05Z'::timestamptz THEN RAISE EXCEPTION 'duplicate overwrote actual edge'; END IF;
   IF (SELECT count(*) FROM ca_freeze_circulation_marks)<>2 THEN RAISE EXCEPTION 'duplicate changed pair'; END IF;
   PERFORM set_config('test.at','2026-11-01 09:00Z',false);
   IF fn_ca_capture_freeze_mark('pre') IS NOT NULL THEN RAISE EXCEPTION 'unused DST twin sampled'; END IF;

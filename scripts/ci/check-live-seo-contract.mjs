@@ -66,7 +66,7 @@ export function inspectHead(html) {
   const robots = attr(html, /<meta\s+name="robots"\s+content="([^"]*)"/i);
   const canonical = attr(html, /<link\s+rel="canonical"\s+href="([^"]*)"/i);
   const description = attr(html, /<meta\s+name="description"\s+content="([^"]*)"/i);
-  const ldRaw = attr(html, /<script type="application\/ld\+json">([\s\S]*?)<\/script>/i);
+  const ldRaw = attr(html, /<script\b(?=[^>]*type="application\/ld\+json")[^>]*>([\s\S]*?)<\/script>/i);
   let ld = null;
   let ldError = null;
   if (ldRaw) {

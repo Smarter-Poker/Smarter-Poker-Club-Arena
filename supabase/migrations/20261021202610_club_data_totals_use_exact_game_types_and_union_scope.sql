@@ -1294,4 +1294,20 @@ BEGIN
 END;
 $function$;
 
+-- Preserve installed private/browser ACLs explicitly; neither pre-login role can call these reports.
+REVOKE ALL ON FUNCTION public.fn_ca_club_cash_felt(uuid,date,date,text,text,text) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.fn_ca_club_games(uuid,date,date,text,text,text) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.fn_ca_club_games_searched(uuid,date,date,text,text,text) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.fn_ca_club_games_unsearched(uuid,date,date,text,text) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.fn_ca_club_game_rows_filtered(uuid,date,date,text,text,text,integer) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.fn_ca_club_game_rows(uuid,date,date,text,text,text,integer) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.fn_ca_club_game_summary_filtered(uuid,date,date,text,text,text) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.fn_ca_club_game_summary(uuid,date,date,text,text,text) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.ca_club_game_page_core_20261006(uuid,date,date,text,text,text,text,jsonb,integer) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.ca_club_data_snapshot(uuid,date,date,text,text,text,integer) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.ca_club_player_breakdown(uuid,date,date,integer) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.ca_club_player_page_core_20261006(uuid,date,date,text,text,jsonb,integer) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.fn_ca_club_data_scope(uuid) FROM PUBLIC,anon;
+REVOKE ALL ON FUNCTION public.ca_club_data_screen(uuid,date,date,text,text,text,integer) FROM PUBLIC,anon;
+
 COMMIT;

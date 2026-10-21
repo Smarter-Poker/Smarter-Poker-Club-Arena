@@ -13,7 +13,7 @@ import { describeStoredMttStructure, mttClockDescription } from './mttStructureD
    AND FREE ROLLS 5 MINUTE LEVELS, STANDARD TOURNAMENTS AND BOUNTY TOURNAMENTS 8
    MINUTE LEVELS, DEEP STACK TOURNAMENTS 10 MINUTE LEVELS." */
 
-const mtt = (over: Record<string, unknown>) => ({
+const mtt = (over: Record<string, unknown>): Record<string, unknown> => ({
   tournament_type: 'MTT',
   variant: 'freezeout',
   buy_in_amount: 9,
@@ -107,7 +107,7 @@ describe('every tournament level is a locked, defined clock', () => {
     expect(sql).toContain("n ~ 'free ?buy|free ?roll' THEN RETURN 5");
     expect(sql).toContain("n ~ 'turbo|hyper' THEN RETURN 5");
     expect(sql).toContain("n ~ 'deep' THEN RETURN 10");
-    expect(sql).toContain("n ~ 'bounty|pko|knockout')) THEN RETURN 8");
+    expect(sql).toContain("n ~ 'bounty|pko|knockout') THEN RETURN 8");
     expect(sql).toContain('IF opening <= 5 THEN RETURN 5');
     expect(sql).toContain('IF opening >= 12 OR (uniform AND opening = 10) THEN RETURN 10');
     // Sorts before tournaments_new_mtt_blind_contract, which derives blind_speed.

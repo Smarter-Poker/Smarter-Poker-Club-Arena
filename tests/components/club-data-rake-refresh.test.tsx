@@ -290,7 +290,7 @@ beforeEach(() => {
   realtimeState.busHandler = null;
   realtimeState.busEvents = [];
   rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-    if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+    if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
     if (fn === 'ca_club_game_page') {
       return { data: gamePageFor(args), error: null };
     }
@@ -357,13 +357,13 @@ function abortable<T>(promise: Promise<T>, onSignal?: (signal: AbortSignal) => v
     },
   });
 }
-const rakeCalls = () => rpcMock.mock.calls.filter(([fn]) => fn === 'ca_rake_snapshot');
+const rakeCalls = () => rpcMock.mock.calls.filter(([fn]) => fn === 'ca_rake_snapshot_v2');
 
 it('does not amplify failed rake reads through successful ledger invalidations', async () => {
   const ledger = rpcMock.getMockImplementation()!;
   let fail = true;
   rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
-    if (fn === 'ca_rake_snapshot')
+    if (fn === 'ca_rake_snapshot_v2')
       return abortable(
         Promise.resolve(
           fail
@@ -384,14 +384,14 @@ it('does not amplify failed rake reads through successful ledger invalidations',
     expect(document.body.textContent).toMatch(/snapshot could not|statement timeout/i)
   );
   for (let index = 0; index < 2; index++) {
-    const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length;
+    const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2').length;
     await act(async () => {
       for (const handler of realtimeState.handlers) handler({ clubId: CLUB_ID });
       await new Promise((resolve) => setTimeout(resolve, 800));
     });
     await waitFor(() =>
       expect(
-        rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length
+        rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2').length
       ).toBeGreaterThan(before)
     );
     expect(rakeCalls()).toHaveLength(1);
@@ -441,7 +441,7 @@ it('aborts retired reads while preserving the selected reporting period across S
 it('issues no hidden rake reads in default Simple mode', async () => {
   const ledger = rpcMock.getMockImplementation()!;
   rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) =>
-    fn === 'ca_rake_snapshot'
+    fn === 'ca_rake_snapshot_v2'
       ? abortable(Promise.resolve({ data: rakePayload(), error: null }))
       : ledger(fn, args)
   );

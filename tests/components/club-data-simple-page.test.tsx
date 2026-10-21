@@ -120,6 +120,16 @@ describe('helpers', () => {
 });
 
 describe('ClubDataSimplePage', () => {
+  it('identifies an authorized union aggregate and its UTC money-flow basis', async () => {
+    rpcMock.mockResolvedValue({
+      data: { ...live, reporting_scope: 'union', accounting_basis: 'utc_net_money_flow' },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    expect(await screen.findByText('All Member Clubs And Union Account')).toBeTruthy();
+    expect(screen.getByText(/Unfinished Event Entries Included/)).toBeTruthy();
+  });
+
   it('attributes games to the union even when the creator is missing or named', async () => {
     rpcMock.mockResolvedValue({
       data: {

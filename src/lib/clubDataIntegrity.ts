@@ -92,15 +92,16 @@ export function auditClubDataSnapshot(value: unknown): ClubDataIntegrityResult {
   );
 
   const cashFee = finite(summary!.cash_fee);
-  const mttFee = finite(summary!.mtt_fee);
+  const tournamentFee = finite(summary!.tournament_fee ?? summary!.mtt_fee);
   check(
-    cashFee === null || mttFee === null || sameMoney(summary!.fee, cashFee + mttFee),
+    cashFee === null || tournamentFee === null || sameMoney(summary!.fee, cashFee + tournamentFee),
     'Cash and tournament fees do not reconcile to total fees.'
   );
   check(
     sameMoney(
       summary!.total_winnings,
-      (finite(summary!.cash_winnings) ?? Number.NaN) + (finite(summary!.mtt_winnings) ?? Number.NaN)
+      (finite(summary!.cash_winnings) ?? Number.NaN) +
+        (finite(summary!.tournament_winnings ?? summary!.mtt_winnings) ?? Number.NaN)
     ),
     'Cash and tournament results do not reconcile to total winnings.'
   );

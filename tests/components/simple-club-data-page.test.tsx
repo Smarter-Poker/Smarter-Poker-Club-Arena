@@ -299,7 +299,7 @@ beforeEach(() => {
   realtimeState.busHandler = null;
   realtimeState.busEvents = [];
   rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-    if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+    if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
     if (fn === 'ca_club_game_page') {
       return { data: gamePageFor(args), error: null };
     }
@@ -382,7 +382,7 @@ describe('Simple Club Data', () => {
     expect(
       screen.getByRole('group', { name: 'Date Range' }).querySelectorAll('button')
     ).toHaveLength(3);
-    const calls = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length;
+    const calls = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2').length;
     fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
     expect(page).toHaveAttribute('data-club-data-mode', 'advanced');
     expect(screen.getByRole('heading', { name: 'Data Integrity' })).toBeInTheDocument();
@@ -391,7 +391,9 @@ describe('Simple Club Data', () => {
       screen.getByRole('group', { name: 'Date Range' }).querySelectorAll('button')
     ).toHaveLength(5);
     expect(screen.getByText('Shark Table One')).toBeInTheDocument();
-    expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot')).toHaveLength(calls);
+    expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2')).toHaveLength(
+      calls
+    );
     fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
     await screen.findByText('Table Regular');
     fireEvent.click(screen.getByRole('button', { name: 'Simple', exact: true }));
@@ -411,7 +413,7 @@ describe('Simple Club Data', () => {
     fireEvent.change(calendar, { target: { value: '2026-08-15' } });
     await waitFor(() =>
       expect(rpcMock).toHaveBeenCalledWith(
-        'ca_club_data_snapshot',
+        'ca_club_data_snapshot_v2',
         expect.objectContaining({ p_end: '2026-08-15' })
       )
     );
@@ -419,14 +421,14 @@ describe('Simple Club Data', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Micro', exact: true }));
     await waitFor(() =>
       expect(rpcMock).toHaveBeenCalledWith(
-        'ca_club_data_snapshot',
+        'ca_club_data_snapshot_v2',
         expect.objectContaining({ p_game: 'OMAHA', p_stakes: 'MICRO' })
       )
     );
     fireEvent.click(screen.getByRole('button', { name: 'Micro', exact: true }));
     await waitFor(() =>
       expect(rpcMock).toHaveBeenCalledWith(
-        'ca_club_data_snapshot',
+        'ca_club_data_snapshot_v2',
         expect.objectContaining({ p_game: 'OMAHA', p_stakes: 'ALL' })
       )
     );
@@ -447,7 +449,7 @@ for (const advanced of [false, true]) {
       let resolveNew!: (result: any) => void;
       let incomingCalls = 0;
       rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-        if (fn === 'ca_club_data_snapshot') {
+        if (fn === 'ca_club_data_snapshot_v2') {
           if (authState.current.user?.id === 'owner-1' && routeState.clubId === CLUB_ID)
             return await new Promise((resolve) => {
               resolveOld = resolve;
@@ -504,7 +506,7 @@ for (const historical of [false, true]) {
       const expected = historical ? chosen : tomorrow.toISOString().slice(0, 10);
       expect(calendar).toHaveValue(expected);
       expect(rpcMock).toHaveBeenCalledWith(
-        'ca_club_data_snapshot',
+        'ca_club_data_snapshot_v2',
         expect.objectContaining({ p_end: expected })
       );
     } finally {
@@ -521,7 +523,7 @@ for (const advanced of [false, true]) {
     if (advanced) fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
     let resolveQuery!: (result: any) => void;
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot')
+      if (fn === 'ca_club_data_snapshot_v2')
         return await new Promise((resolve) => {
           resolveQuery = resolve;
         });

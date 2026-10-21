@@ -112,7 +112,7 @@ function payload(kind: 'club' | 'agent', rows: unknown[]) {
 
 function asked() {
   return rpcMock.mock.calls
-    .filter(([fn]) => fn === 'ca_rake_snapshot')
+    .filter(([fn]) => fn === 'ca_rake_snapshot_v2')
     .map(
       ([, a]) =>
         a as {
@@ -131,13 +131,48 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('the rake snapshot on a union', () => {
+  it('shows exact MTTs separately from all tournament fees and includes the union accounting basis', async () => {
+    const report = {
+      ...payload('club', [
+        clubRow(CLUB_A, 'SHARK CLUB'),
+        { ...clubRow('empty', 'Empty Club'), fee: 0 },
+      ]),
+      accounting_basis: 'utc_net_money_flow',
+      summary: {
+        games: 5,
+        total_winnings: 22,
+        mtt_winnings: 7,
+        cash_fee: 4.01,
+        mtt_fee: 17,
+        tournament_fee: 20,
+        fee: 24.01,
+        hands: 9,
+        mtt_games: 2,
+      },
+    };
+    rpcMock.mockImplementation((fn: string) =>
+      Promise.resolve({ data: fn === 'ca_rake_snapshot_v2' ? report : null, error: null })
+    );
+    render(
+      <RakeSnapshotPanel clubId={null} unionId={UNION_ID} userId={USER_ID} scopes={['union']} />
+    );
+    expect(await screen.findByText(/All Member Clubs And Union Account/)).toBeInTheDocument();
+    expect(screen.getByText('2 MTTs')).toBeInTheDocument();
+    expect(screen.getByTitle('7.00')).toHaveTextContent('7.00');
+    expect(screen.getByTitle('24.01')).toHaveTextContent('24.01');
+    expect(screen.getByText(/Cash -.*Tournaments/)).toHaveTextContent(
+      '4.01 Cash - 20.00 Tournaments'
+    );
+    expect(screen.getByRole('button', { name: /Empty Club/ })).toBeInTheDocument();
+  });
+
   it('lets an in-flight snapshot finish through repeated ledger refreshes', async () => {
     let resolveRead!: (value: unknown) => void;
     const pending = new Promise((resolve) => {
       resolveRead = resolve;
     });
     rpcMock.mockImplementation((fn: string) =>
-      fn === 'ca_rake_snapshot' ? pending : Promise.resolve({ data: null, error: null })
+      fn === 'ca_rake_snapshot_v2' ? pending : Promise.resolve({ data: null, error: null })
     );
     const props = { clubId: null, unionId: UNION_ID, userId: USER_ID, scopes: ['union'] as const };
     const { rerender } = render(
@@ -159,7 +194,7 @@ describe('the rake snapshot on a union', () => {
 
   it('reads the union when there is no club at all', async () => {
     rpcMock.mockImplementation((fn: string) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({ data: payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]), error: null })
         : Promise.resolve({ data: null, error: null })
     );
@@ -184,7 +219,7 @@ describe('the rake snapshot on a union', () => {
       resolveOld = resolve;
     });
     rpcMock.mockImplementation((fn: string, args: { p_union_id?: string }) => {
-      if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
+      if (fn !== 'ca_rake_snapshot_v2') return Promise.resolve({ data: null, error: null });
       if (args.p_union_id === UNION_ID) return oldRead;
       return Promise.resolve({
         data: payload('club', [clubRow(CLUB_A, 'Current Club')]),
@@ -238,7 +273,7 @@ describe('the rake snapshot on a union', () => {
 
   it('opens only the member clubs the server says will open', async () => {
     rpcMock.mockImplementation((fn: string) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data: payload('club', [
               clubRow(CLUB_A, 'SHARK CLUB', true),
@@ -261,7 +296,7 @@ describe('the rake snapshot on a union', () => {
 
   it('stays in the club it opened, though the viewer holds no club scope', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) => {
-      if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
+      if (fn !== 'ca_rake_snapshot_v2') return Promise.resolve({ data: null, error: null });
       return Promise.resolve({
         data:
           a?.p_scope === 'club'
@@ -292,7 +327,7 @@ describe('the rake snapshot on a union', () => {
 
   it('offers a way back to the union it came from', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data:
               a?.p_scope === 'club'
@@ -317,7 +352,7 @@ describe('the rake snapshot on a union', () => {
 
   it('does not carry a club-name search into a list of agent names', async () => {
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string; p_search?: string | null }) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data:
               a?.p_scope === 'club'
@@ -354,7 +389,7 @@ describe('the rake snapshot on a union', () => {
     // asked for club scope with NO CLUB - which the database rejects outright
     // with "club scope needs a club". The one-level tests could not see it.
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) => {
-      if (fn !== 'ca_rake_snapshot') return Promise.resolve({ data: null, error: null });
+      if (fn !== 'ca_rake_snapshot_v2') return Promise.resolve({ data: null, error: null });
       if (a?.p_scope === 'agent') {
         return Promise.resolve({
           data: {
@@ -436,7 +471,7 @@ describe('the rake snapshot on a union', () => {
     // fails to set the scope leaves the panel in club scope with no club, and
     // the database answers "club scope needs a club".
     rpcMock.mockImplementation((fn: string, a: { p_scope?: string }) =>
-      fn === 'ca_rake_snapshot'
+      fn === 'ca_rake_snapshot_v2'
         ? Promise.resolve({
             data:
               a?.p_scope === 'club'

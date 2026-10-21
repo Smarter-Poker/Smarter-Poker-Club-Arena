@@ -9,6 +9,21 @@ import {
 } from '../../src/lib/clubDataCache';
 
 describe('Club Data SWR cache', () => {
+  it('rejects cached totals from the previous MTT reporting contract', () => {
+    const query = 'report';
+    sessionStorage.setItem(
+      `${CLUB_DATA_CACHE_PREFIX}owner-1:club-1:${query}`,
+      JSON.stringify({
+        userId: 'owner-1',
+        clubId: 'club-1',
+        queryKey: query,
+        at: Date.now(),
+        data: { oldMttIncludesSpins: true },
+      })
+    );
+    expect(readClubDataCache('owner-1', 'club-1', query)).toBeNull();
+  });
+
   beforeEach(() => sessionStorage.clear());
 
   it('is scoped to the user, club, and canonical query', () => {

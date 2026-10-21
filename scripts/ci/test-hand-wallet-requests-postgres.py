@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Private PG17 qualification for the owner's October 21 cashier requests."""
 import os, json, shutil, subprocess, tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 PG=Path(os.environ.get('PG_BIN','/opt/homebrew/opt/postgresql@17/bin' if Path('/Volumes/SmarterWork').exists() else '/usr/lib/postgresql/17/bin'))
@@ -40,6 +41,12 @@ try:
  assert q("SELECT agent_wallet_balance=975 FROM agents WHERE user_id='00000000-0000-0000-0000-000000000003';")=='t'
  assert q("SELECT chip_balance=25 FROM club_members WHERE user_id='00000000-0000-0000-0000-000000000003';")=='t'
  assert q("SELECT count(*)=1 FROM chip_transactions WHERE transaction_type='agent_wallet_send';")=='t'
+ with ThreadPoolExecutor(max_workers=2) as pool:
+  raced=list(pool.map(lambda _:send(1,op='66666666-6666-4666-8666-666666666666'),range(2)))
+ assert all(result['success'] for result in raced) and sum(bool(result.get('replayed')) for result in raced)==1
+ assert q("SELECT agent_wallet_balance=974 FROM agents WHERE user_id='00000000-0000-0000-0000-000000000003';")=='t'
+ assert q("SELECT chip_balance=26 FROM club_members WHERE user_id='00000000-0000-0000-0000-000000000003';")=='t'
+ assert q("SELECT count(*)=2 FROM chip_transactions WHERE transaction_type='agent_wallet_send';")=='t'
  assert not send(26)['success'],'changed retry intent must refuse'
  assert not send(1,'agent_wallet','22222222-2222-4222-8222-222222222222')['success']
  assert not send(1,'promo_wallet','33333333-3333-4333-8333-333333333333')['success']
@@ -48,7 +55,10 @@ try:
  assert q("SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',false); SELECT count(*)=3 FROM fn_club_cashier_members('00000000-0000-0000-0000-000000000001');").splitlines()[-1]=='t'
  q(f('supabase/migrations/20261021172727_union_wallet_intents_survive_unavailable_browser_storage.sql'))
  reserve="SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',false); SELECT fn_union_wallet_reserve_intent('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','chips','exact intent',NULL);"
- first=q(reserve).splitlines()[-1];assert q(reserve).splitlines()[-1]==first
+ with ThreadPoolExecutor(max_workers=4) as pool:
+  reserved=list(pool.map(lambda _:q(reserve).splitlines()[-1],range(4)))
+ assert len(set(reserved))==1,'simultaneous tabs must share one operation ID'
+ first=reserved[0];assert q(reserve).splitlines()[-1]==first
  # A different scope cannot overwrite the first, and a stale acknowledgement cannot retire it.
  q("SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',false); SELECT fn_union_wallet_acknowledge_intent('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','chips','exact intent','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');")
  assert q(reserve).splitlines()[-1]==first

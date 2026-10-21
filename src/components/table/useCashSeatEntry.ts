@@ -48,9 +48,6 @@ export function useCashSeatEntry({
           notify(`You Are Already Seated At ${destination}. Opening Your Game.`);
           goToTable(result.table_id);
         } else {
-          notify(
-            `This Game Assigns Seats. Your Seat Is Reserved At ${destination}. Confirm Your Buy-In There.`
-          );
           if (result.table_id === tableId) {
             const assigned = Number(result.seat_number);
             openBuyIn(Number.isSafeInteger(assigned) && assigned > 0 ? assigned : seat);

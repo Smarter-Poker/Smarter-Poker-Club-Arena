@@ -4651,3 +4651,24 @@
     top: calc(100% + 2px);
   }
 }
+
+/* The upper player uses a compact rail pod instead of consuming a full
+   avatar lane above the phone table. Cards and stack remain upright. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page .seat-wrapper--top .seat {
+    --seat-avatar-base: 36px;
+    --seat-avatar-full: 36px;
+    --seat-plate-min-width: 58px;
+    width: 58px;
+  }
+  .table-page .seat-wrapper--top .seat__info {
+    min-height: 30px;
+    padding: 2px 3px;
+  }
+  .table-page .seat-wrapper--top .seat__name {
+    font-size: 10px;
+  }
+  .table-page .seat-wrapper--top .seat__stack {
+    font-size: 12px;
+  }
+}

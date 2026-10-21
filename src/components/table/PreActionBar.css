@@ -401,7 +401,7 @@
 
 @media (max-width: 768px) {
   .pre-action-bar {
-    padding: 8px 12px;
+    padding: var(--sp-action-pad-top, 8px) 12px;
     /* Flush — see the base rule. */
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -437,7 +437,7 @@
    Change one of the three numbers and you must change it in both files. */
 @media (max-width: 640px) {
   .pre-action-bar {
-    padding: 5px 12px;
+    padding: var(--sp-action-pad-top, 5px) 12px;
     /* Flush — see the base rule. */
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -449,7 +449,7 @@
 
 @media (max-width: 480px) {
   .pre-action-bar {
-    padding: 5px 10px;
+    padding: var(--sp-action-pad-top, 5px) 10px;
     /* Flush — see the base rule. */
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }

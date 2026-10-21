@@ -108,7 +108,7 @@ describe('clause 1 — clicking Cashier never opens the global bank', () => {
 describe('clause 2 — the global bank needs a separate, role-gated click', () => {
   it('only owner, co owner, admin and super agent may stand at it', () => {
     for (const r of STAFF) expect(canUseCashier('club_bank', r)).toBe(true);
-    expect(canUseCashier('club_bank', 'super_agent')).toBe(true);
+    expect(canUseCashier('club_bank', 'super_agent')).toBe(false);
     expect(canUseCashier('club_bank', 'agent')).toBe(false);
     expect(canUseCashier('club_bank', 'sub_agent')).toBe(false);
     expect(canUseCashier('club_bank', 'player')).toBe(false);
@@ -129,7 +129,7 @@ describe('clause 2 — the global bank needs a separate, role-gated click', () =
     expect(TRADE).toContain('canSeeClubBank(myRole) && (');
     expect(TRADE).toContain("setActiveCashier('club_bank')");
     for (const r of STAFF) expect(canSeeClubBank(r)).toBe(true);
-    expect(canSeeClubBank('super_agent')).toBe(true);
+    expect(canSeeClubBank('super_agent')).toBe(false);
     expect(canSeeClubBank('agent')).toBe(false);
   });
 });

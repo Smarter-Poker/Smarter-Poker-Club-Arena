@@ -4640,3 +4640,14 @@
   min-height: clamp(30px, calc(var(--table-w, 360px) * 0.09), 42px);
   padding-block: 3px;
 }
+
+/* Keep rail bets fixed when the top pod clears the actual jackpot frame. */
+.seat-wrapper--top .seat__bet-chips {
+  translate: 0 calc(-1 * var(--sp-top-seat-shift, 0px));
+}
+/* A top player's action stays with its plate, below the jackpot banner. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .seat-wrapper--top .seat__action {
+    top: calc(100% + 2px);
+  }
+}

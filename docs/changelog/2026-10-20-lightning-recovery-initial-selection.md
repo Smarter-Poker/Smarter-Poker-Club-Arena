@@ -1,0 +1,7 @@
+# Select the existing pool before observing recovery
+
+The actual recovery run 39501990414 stopped at its first render with four restored tabs and no subscription to either chosen pool. The witness assumed that opening a Lightning entry route selected the target pool, although Lightning entry routes through the existing session and MultiTablePage restores real seats and preserves the player's active tab.
+
+The witness now waits for the exact pool tab to become visible, verifies that it is unique, taps its normal control once and checks `aria-current` before observing the first scoped render. Initial, duplicate and replacement browser contexts use the same selection helper; the already qualified secondary lobby/View Game route remains intact. Progress retains context, pool, visibility, match count and selection result. Missing, hidden, ambiguous or unconfirmed selection remains UNKNOWN.
+
+A real witness-flow regression starts each browser context on another restored game and withholds scoped subscriptions and render acknowledgments until a normal tap. It failed before the correction and passes with initial, duplicate and replacement recovery. Boundary fixtures cover absent, hidden and ambiguous initial tabs. No player actions, joins, buy-ins, tab eviction, capacity override, route replacement, timers or retries were added. The existing observation and cleanup budgets remain unchanged. Actual live proof belongs to the owning pilot operation.

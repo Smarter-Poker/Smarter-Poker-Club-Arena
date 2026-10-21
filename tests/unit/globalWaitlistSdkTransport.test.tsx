@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { WebSocket, WebSocketServer } from 'ws';
 import { act, cleanup, render, screen } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
@@ -187,7 +187,17 @@ async function localQueue() {
 }
 
 function Location() {
-  return <output data-testid="location">{useLocation().pathname}</output>;
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="location">
+        {location.pathname}
+        {location.search}
+      </output>
+      <button onClick={() => navigate('/elsewhere')}>Elsewhere</button>
+    </>
+  );
 }
 function MountedQueue() {
   return (
@@ -254,7 +264,12 @@ it('delivers real SDK row updates through the mounted listener, bus, service and
     await expect.poll(() => screen.queryByText('#1')).toBeNull();
     expect(screen.queryByText('Seat Held')).toBeNull();
     expect(state.toast.success).not.toHaveBeenCalled();
-    expect(screen.getByTestId('location').textContent).toBe('/lobby');
+    await expect
+      .poll(() => screen.getByTestId('location').textContent)
+      .toBe(`/table/${tableId}?buyin=1`);
+    // A duplicate delivery or a thawed deadline must not reclaim focus after
+    // the player leaves the offered table. No second join/purchase is sent.
+    act(() => screen.getByText('Elsewhere').click());
     const offerCount = offers.length;
     const readCount = queue.reads.length;
     await act(async () => {
@@ -262,6 +277,7 @@ it('delivers real SDK row updates through the mounted listener, bus, service and
     });
     await expect.poll(() => queue.reads.length).toBeGreaterThan(readCount);
     expect(offers).toHaveLength(offerCount);
+    expect(screen.getByTestId('location').textContent).toBe('/elsewhere');
     expect(state.toast.success).not.toHaveBeenCalled();
 
     const movedDeadline = new Date(Date.now() + 360_000).toISOString();
@@ -274,6 +290,7 @@ it('delivers real SDK row updates through the mounted listener, bus, service and
       .toEqual({ tableId, tableName: '', holdExpiresAt: movedDeadline });
     expect(state.toast.success).not.toHaveBeenCalled();
     expect(screen.queryByText('Seat Held')).toBeNull();
+    expect(screen.getByTestId('location').textContent).toBe('/elsewhere');
 
     mounted.unmount();
     await expect.poll(() => queue.channels.size).toBe(0);
@@ -291,6 +308,17 @@ it('delivers real SDK row updates through the mounted listener, bus, service and
     unlistenReload();
     expect(screen.queryByText('Seat Held')).toBeNull();
     expect(state.toast.success).not.toHaveBeenCalled();
+    await expect
+      .poll(() => screen.getByTestId('location').textContent)
+      .toBe(`/table/${tableId}?buyin=1`);
+    mounted.unmount();
+    await expect.poll(() => queue.channels.size).toBe(0);
+    masterBus.reset();
+    queue.patch({ hold_expires_at: new Date(Date.now() - 1000).toISOString() });
+    await queue.reloadClient();
+    mounted = render(<MountedQueue />);
+    await expect.poll(() => queue.channels.size).toBe(2);
+    // Reloading an expired hold does not open a purchase sheet.
     expect(screen.getByTestId('location').textContent).toBe('/lobby');
     expect(queue.writes).toEqual([]);
     expect(queue.sent.length).toBe(5);

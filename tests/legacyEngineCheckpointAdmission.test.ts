@@ -32,6 +32,7 @@ const countdown = transaction.slice(countdownStart, countdownEnd);
 
 function probe(patch: Record<string, unknown> = {}, httpStatus = 200) {
   const maintenance = {
+    reason: 'Deployment Recovery',
     active: true,
     phase: 'counting_down',
     durableConfirmed: true,
@@ -128,6 +129,7 @@ printf '%s' inspector-boundary-reached
                 releaseSha: predecessor8825,
                 instanceId: '1-3846b8bb',
                 maintenance: {
+                  reason: 'Deployment Recovery',
                   active: true,
                   phase: 'counting_down',
                   durableConfirmed: true,

@@ -5026,26 +5026,56 @@ button.post-bb-overlay-button {
   text-transform: uppercase;
 }
 
-/* Portrait phones keep the same edge-to-edge rail as the desktop reference.
-   The tablet roundness cap above otherwise narrows shorter phones (333px on
-   a 375px screen). Safari's small viewport also retains the expanded browser
-   toolbar allowance after the toolbar retracts, leaving unused space below
-   the table. For the October 20 mobile gameplay correction, use the currently
-   visible viewport on phones, just as the page shell does. This intentionally
-   supersedes the small-viewport rule above for portrait phones. Only an actual
-   viewport change can resize the canvas; actions, folds and taking a seat
-   still use the same declared chrome/hero budget. Art and every seat follow
-   that one canvas. */
+/* Portrait gameplay leaves real outboard lanes for player pods. The narrow
+   painted canvas keeps its full height; seats fit against the screen edges
+   through fitSeatToViewport, rather than being pulled inward with the art. */
 @media (max-width: 480px) and (orientation: portrait) {
   .table-container {
     --sp-page-h: 100dvh;
+    --sp-hero-clear: clamp(56px, calc(12vw + 4px), 62px);
+    /* Top player plates finish above the felt, below the jackpot banner. */
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 54px + var(--sp-page-inset-top));
   }
-
   .table-page--embedded .table-container {
     --sp-page-h: calc(100dvh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))));
   }
-
   .table-scaler {
-    width: 100%;
+    width: 78%;
+  }
+  .table-page .seat--hero .seat__bet-chips {
+    transform: translate(
+      calc(-50% + var(--bet-offset-x, 0px)),
+      calc(-50% + var(--bet-offset-y, 0px))
+    );
+  }
+}
+
+.table-page .add-chips-icon-btn {
+  width: var(--sp-game-tool-size, 40px);
+  height: var(--sp-game-tool-size, 40px);
+  min-width: 0;
+  min-height: 0;
+}
+@media (max-width: 480px) {
+  .table-page {
+    --sp-game-tool-size: 34px;
+  }
+}
+/* Compact viewports still reserve the top pod below the jackpot. */
+@media (max-width: 480px) and (max-height: 650px) and (orientation: portrait) {
+  .table-container {
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 70px + var(--sp-page-inset-top));
+  }
+}
+
+/* Taper the painted chassis only. Cards and all live text remain upright. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-art {
+    transform-origin: 0 0;
+    transform: var(--sp-table-taper, none);
+  }
+  .table-surface .community-area {
+    /* 95% of the projected felt at the board's unchanged vertical anchor. */
+    width: var(--sp-taper-board-width, 95%);
   }
 }

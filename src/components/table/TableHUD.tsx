@@ -15,6 +15,7 @@
 
 import React from 'react';
 import './TableHUD.css';
+import './TableToolIconSizing.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES

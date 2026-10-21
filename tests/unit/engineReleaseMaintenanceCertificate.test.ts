@@ -28,6 +28,7 @@ const sourceIdentity = transaction.slice(sourceIdentityStart, sourceIdentityEnd)
 const validCertificate = {
   running: true,
   maintenance: {
+    reason: 'Deployment Recovery',
     active: true,
     phase: 'counting_down',
     durableConfirmed: true,
@@ -163,7 +164,10 @@ describe('the release transaction can read only an explicit maintenance health r
         httpCode: '503',
         body: JSON.stringify({
           ...validCertificate,
-          maintenance: { ...validCertificate.maintenance, readyForRestart: false },
+          maintenance: {
+            ...validCertificate.maintenance,
+            readyForRestart: false,
+          },
         }),
       }).status
     ).not.toBe(0);
@@ -174,7 +178,10 @@ describe('the release transaction can read only an explicit maintenance health r
       httpCode: '503',
       body: JSON.stringify({
         ...validCertificate,
-        maintenance: { ...validCertificate.maintenance, remainingMs: 284_999 },
+        maintenance: {
+          ...validCertificate.maintenance,
+          remainingMs: 284_999,
+        },
       }),
     });
     expect(result.status).toBe(2);
@@ -186,7 +193,10 @@ describe('the release transaction can read only an explicit maintenance health r
     const shortBody = (remainingMs: number) =>
       JSON.stringify({
         ...validCertificate,
-        maintenance: { ...validCertificate.maintenance, remainingMs },
+        maintenance: {
+          ...validCertificate.maintenance,
+          remainingMs,
+        },
       });
     expect(runCertificate({ body: shortBody(284_999), minimum: 285_000 }).status).toBe(2);
     const legacy = runCertificate({ body: shortBody(284_999), minimum: 245_000 });

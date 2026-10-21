@@ -1091,6 +1091,38 @@ function ClubHomePageContent({
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
+  const [openingBankError, setOpeningBankError] = useState(false);
+  const [openingBankRead, setOpeningBankRead] = useState(0);
+  useEffect(() => {
+    if (!club?.id || club.owner_id !== currentUserId) return;
+    let active = true;
+    setOpeningBankError(false);
+    void (async () => {
+      try {
+        const money = await supabase.rpc('fn_club_money_panel', { p_club_id: club.id });
+        if (money.error) throw money.error;
+        const balance = Number(money.data?.club_treasury);
+        if (
+          money.data?.authorized !== true ||
+          money.data.club_treasury == null ||
+          !Number.isFinite(balance)
+        )
+          throw new Error('Club Bank Could Not Be Verified');
+        if (active)
+          setClub((previous) =>
+            previous?.id === club.id ? { ...previous, chip_treasury: balance } : previous
+          );
+      } catch (error) {
+        if (!active) return;
+        setOpeningBankError(true);
+        reportError(error, 'ClubHomePage.openingBank');
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [club?.id, club?.owner_id, currentUserId, openingBankRead]);
+
   /* Owned here, not inside the checklist, so the checklist, the
      data-opening-checklist attribute and the desktop scroll layout all drop in
      the same render the last step resolves. The owner's skips and the
@@ -2447,7 +2479,7 @@ function ClubHomePageContent({
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, settings, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
+              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, settings, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -5757,13 +5789,21 @@ function ClubHomePageContent({
             onStateChange={setWelcomePackageState}
           />
         )}
+        {isOwner && openingBankError && (showLaunchChecklist || showOpeningWizard) && (
+          <p role="alert">
+            Could Not Read The Club Bank.{' '}
+            <button type="button" onClick={() => setOpeningBankRead((value) => value + 1)}>
+              Retry Bank Read
+            </button>
+          </p>
+        )}
         {showLaunchChecklist && (
           <ClubLaunchProgress
             key={`${club.id}:${currentUserId || 'unknown'}`}
             clubId={club.id}
             viewerId={currentUserId || 'unknown'}
             clubName={club.name}
-            openingBank={Number(club.chip_treasury) || 0}
+            openingBank={club.chip_treasury == null ? null : Number(club.chip_treasury)}
             tasks={launchTasks}
             skips={launchSkips}
             waitForCompletion
@@ -6215,37 +6255,45 @@ function ClubHomePageContent({
           }
         />
       )}
-      {showOpeningWizard && isOwner && club && openingChecklistEligible && (
-        <ClubOpeningWizard
-          clubId={club.id}
-          clubName={club.name}
-          clubBank={Number(club.chip_treasury) || 0}
-          initialTagline={club.tagline ?? null}
-          welcomePackage={welcomePackageState}
-          onClose={() => {
-            setShowOpeningWizard(false);
-            /* A close can follow a setup the server already holds (the
+      {showOpeningWizard &&
+        isOwner &&
+        club &&
+        openingChecklistEligible &&
+        (club.chip_treasury == null ? (
+          <p aria-live="polite">
+            {openingBankError ? 'Club Bank Balance Unavailable' : 'Reading Club Bank...'}
+          </p>
+        ) : (
+          <ClubOpeningWizard
+            clubId={club.id}
+            clubName={club.name}
+            clubBank={Number(club.chip_treasury) || 0}
+            initialTagline={club.tagline ?? null}
+            welcomePackage={welcomePackageState}
+            onClose={() => {
+              setShowOpeningWizard(false);
+              /* A close can follow a setup the server already holds (the
                wizard's "Already Completed" answer closes it): read the setup
                state once more through the existing load path above, so the
                checklist step resolves without a reload. One read, no timer. */
-            setOpeningSetupReadRevision((revision) => revision + 1);
-          }}
-          onComplete={({ clubBankAfter, spinsEnabled, tagline }) => {
-            setClub((previous) =>
-              previous
-                ? {
-                    ...previous,
-                    chip_treasury: clubBankAfter,
-                    spins_enabled: spinsEnabled,
-                    tagline,
-                  }
-                : previous
-            );
-            setOpeningSetupComplete(true);
-            setShowOpeningWizard(false);
-          }}
-        />
-      )}
+              setOpeningSetupReadRevision((revision) => revision + 1);
+            }}
+            onComplete={({ clubBankAfter, spinsEnabled, tagline }) => {
+              setClub((previous) =>
+                previous
+                  ? {
+                      ...previous,
+                      chip_treasury: clubBankAfter,
+                      spins_enabled: spinsEnabled,
+                      tagline,
+                    }
+                  : previous
+              );
+              setOpeningSetupComplete(true);
+              setShowOpeningWizard(false);
+            }}
+          />
+        ))}
     </div>
   );
 }

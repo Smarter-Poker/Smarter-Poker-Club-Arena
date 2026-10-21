@@ -31,13 +31,23 @@ export function midwayBlindStructure(minutes: number, holdEm: boolean): Generate
 }
 
 /** Applied by the original spawn transaction, before anyone can register.
- * No mutation of live/funded events, no timer and no change to entry prices,
- * bounty economics, destinations or the published timetable. Only the three
+ * No mutation of live/funded events, no timer and no change to destinations
+ * or the published timetable. Fixed bounty rounding requires a funded net entry;
+ * Sunrise and Midnight use the owner-approved 5 prize/bounty + 0.5 fee split. Only the three
  * explicitly requested Free Buy guarantee reductions apply. */
-export function withMidwayStructure<T extends Record<string, unknown>>(row: T): T {
+export function withMidwayStructure<T extends Record<string, unknown>>(
+  row: T,
+  authored: Record<string, unknown> = {}
+): T {
   if (row.club_id !== MIDWAY_UNION_ID && row.union_id !== MIDWAY_UNION_ID) return row;
   if (String(row.tournament_type).toUpperCase() !== 'MTT') return row;
-  const free = Number(row.buy_in_amount) + Number(row.buy_in_fee) === 0;
+  const fixedBounty =
+    row.is_bounty === true && row.is_pko !== true && row.is_mystery_bounty !== true;
+  const smallBounty =
+    fixedBounty && ['Sunrise Bounty (NLH)', 'Midnight Bounty (NLH)'].includes(String(row.name));
+  const netEntry = smallBounty ? 5 : Number(row.buy_in_amount);
+  const entryFee = smallBounty ? 0.5 : Number(row.buy_in_fee);
+  const free = netEntry + entryFee === 0;
   const old =
     typeof row.blind_structure === 'string' ? JSON.parse(row.blind_structure) : row.blind_structure;
   if (!Array.isArray(old) || !old.length) throw new Error('Midway requires an authored structure');
@@ -61,11 +71,40 @@ export function withMidwayStructure<T extends Record<string, unknown>>(row: T): 
   // Other entries/rebuys retain at least 20 BB at the last admitted level.
   let cutoff = free ? 5 : Math.min(requested, blinds.length);
   while (!free && cutoff > 0 && stack / blinds[cutoff - 1].bigBlind < 20) cutoff--;
-  const rebuy = free || row.is_rebuy === true;
-  const reentry = rebuy || row.is_reentry === true;
-  const addon = free || row.add_on_available === true;
+  // Generic MTT rows also use variant=freezeout; only authored formats opt out.
+  const explicitFreezeout =
+    ['freezeout', 'mtt_freezeout'].includes(String(authored.type).toLowerCase()) ||
+    /\bfreeze[ -]?out\b/i.test(String(authored.name ?? row.name));
+  const rebuy = !explicitFreezeout;
+  const reentry = rebuy;
+  const addon = rebuy && !/^Sunday[ -]?200(?:\b|$)/i.test(String(row.name));
+  const purchaseCost = (value: unknown): number => {
+    const existing = Number(value);
+    return Number.isFinite(existing) && existing > 0 ? existing : free ? 1 : netEntry + entryFee;
+  };
+  const roundedBounty = smallBounty
+    ? 2
+    : fixedBounty
+      ? Math.ceil(Number(row.bounty_amount) / 5) * 5
+      : Number(row.bounty_amount);
+  if (
+    fixedBounty &&
+    (!Number.isFinite(netEntry) ||
+      !Number.isFinite(roundedBounty) ||
+      Number(roundedBounty) <= 0 ||
+      Number(roundedBounty) > netEntry)
+  ) {
+    throw new Error('Midway fixed bounty must be positive and funded by the net entry');
+  }
   return {
     ...row,
+    ...(fixedBounty
+      ? {
+          bounty_amount: roundedBounty,
+          short_description: `Fixed Knockout Bounty: ${roundedBounty} Chips. Entry: ${netEntry - roundedBounty} Prize Pool + ${roundedBounty} Bounty + ${entryFee} Fee.`,
+        }
+      : {}),
+    ...(smallBounty ? { buy_in_amount: netEntry, buy_in_fee: entryFee } : {}),
     starting_chips: stack,
     // Match the launcher's deck ceiling, never the tighter CASH seat policy.
     table_size: Math.min(
@@ -86,11 +125,13 @@ export function withMidwayStructure<T extends Record<string, unknown>>(row: T): 
     late_reg_mins: mttLateRegistrationMinutes(blinds, cutoff),
     is_rebuy: rebuy,
     is_reentry: reentry,
+    rebuy_cost: rebuy ? purchaseCost(row.rebuy_cost) : null,
     rebuy_chips: reentry ? stack : null,
     rebuy_levels: rebuy ? cutoff : null,
     add_on_available: addon,
+    addon_cost: addon ? purchaseCost(row.addon_cost) : null,
     // Free Buy's owner-approved early add-on remains available at sit-down.
-    addon_from_start: free ? row.addon_from_start === true : false,
+    addon_from_start: addon && free ? row.addon_from_start === true : false,
     addon_chips: addon ? (free ? 10000 : Math.max(Number(row.addon_chips) || 0, stack * 2)) : null,
     addon_levels: addon ? 1 : null,
     addon_break_minutes: addon ? 5 : row.addon_break_minutes,

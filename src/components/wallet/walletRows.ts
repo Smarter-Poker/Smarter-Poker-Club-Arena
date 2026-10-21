@@ -10,6 +10,10 @@
  *  DIAMOND WALLET, PLAYER WALLET, AGENT WALLET, PROMO WALLET AND CLUB BANK
  *  (RAKE TREASURY IF THEY ARE A STAND ALONE CLUB)."
  *
+ * Owner October 20 update: super agents, agents and sub agents never see
+ * club banks, club reserves or club promotional pots. This supersedes the
+ * historical August quote above.
+ *
  * Kept OUT of the component on purpose. This is the rule that decides whether
  * a person can see the club's money, and a rule of that weight should be
  * readable in twenty lines and testable without mounting a component with six
@@ -36,8 +40,8 @@ export type WalletRowKey =
   | 'spins_wallet'
   | 'backup_bbj';
 
-/** The four roles that may see, open and spend from the Club Bank. */
-export const CLUB_BANK_ROLES: ClubRole[] = ['owner', 'co_owner', 'admin', 'super_agent'];
+/** The three staff roles that may see, open and spend from the Club Bank. */
+export const CLUB_BANK_ROLES: ClubRole[] = ['owner', 'co_owner', 'admin'];
 
 export function canSeeClubBank(role: unknown): boolean {
   return CLUB_BANK_ROLES.includes(normaliseRole(role));

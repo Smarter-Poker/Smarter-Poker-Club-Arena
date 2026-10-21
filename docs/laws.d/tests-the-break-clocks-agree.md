@@ -1,3 +1,3 @@
 # tests/the-break-clocks-agree.law.test.ts
 
-The :55 maintenance break constants agree across engine, the deploy's break gate (it has no cron since 2026-09-10), watchdog, SQL and client, and the resume waves stay inside the :00 minute and read nothing about who is seated, and the database refuses migration DDL across the whole break window (:50-:03 UTC) with a refusal that cites the CLAUDE.md rule governing it
+Owner October20,2026: the engine and release transaction agree on daily04:00 America/Chicago maintenance, with two-minute last-hand lead, five-minute countdown, v3 release and bounded resume waves. Tournament :55 breaks are independent. The conservative :50-:03 UTC database DDL-only exclusion remains installed and the actual durable entry/release guard protects any daily/emergency freeze through thaw. Socket clocks, freeze ceiling and scoped scorecard verdict invariants remain enforced.

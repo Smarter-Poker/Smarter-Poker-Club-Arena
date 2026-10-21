@@ -176,6 +176,8 @@ beforeEach(() => {
   h.latchCalls = 0;
   h.skipCalls = [];
   h.rpc.mockImplementation((name: string, args: Record<string, unknown>) => {
+    if (name === 'fn_club_money_panel')
+      return Promise.resolve({ data: { authorized: true, club_treasury: 100000 }, error: null });
     if (name === 'fn_club_opening_checklist_state') {
       h.stateCalls += 1;
       return h.stateReplies.shift() ?? Promise.resolve(checklistState());

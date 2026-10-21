@@ -14,6 +14,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { exportToCSV } from '../lib/export';
+import { mayLeaveCurrentPage } from '../lib/navigationGuard';
 import { supabase } from '../lib/supabase';
 import { readPresence } from '../lib/ownProfile';
 import { generateAvatarSvg, sizedStorageUrl } from '../utils/avatarGenerator';
@@ -234,9 +235,13 @@ export default function FriendsPage() {
       loadFriendsRef.current();
       const isNewPendingRequest =
         payload?.eventType === 'INSERT' && payload?.new?.status === 'pending';
-      if (isNewPendingRequest) toast.success('New Friend Request Received');
+      if (isNewPendingRequest)
+        toast.success('New Friend Request Received', undefined, () => {
+          if (!mayLeaveCurrentPage()) return;
+          navigate('/friends?tab=requests');
+        });
     },
-    [toast]
+    [toast, navigate]
   );
 
   useMasterBusChannel({

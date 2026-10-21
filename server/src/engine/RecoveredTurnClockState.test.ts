@@ -77,8 +77,10 @@ function isolatedSitOutSeats(engine: any) {
               if (filters.every(([key, value]) => row[key as keyof typeof row] === value))
                 row.is_sitting_out = patch.is_sitting_out;
             }
-            return Promise.resolve({ error: null });
+            return query;
           },
+          select: () => query,
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
         };
         return query;
       },
@@ -218,7 +220,7 @@ describe('a recovered turn clock carries its actual turn state', () => {
         isSittingOut: true,
         sitOutReason: 'forced',
       });
-      expect(seats.current.is_sitting_out).toBe(true);
+      await vi.waitFor(() => expect(seats.current.is_sitting_out).toBe(true));
       expect(seats.others.map((row) => row.is_sitting_out)).toEqual([false, false, false, false]);
       expect(seats.writes).toEqual([
         {
@@ -237,7 +239,7 @@ describe('a recovered turn clock carries its actual turn state', () => {
       expect(seats.writes).toHaveLength(1);
       h.engine.disconnectEngine.sitBack(TABLE, PLAYER);
       expect(h.engine.disconnectEngine.getState(TABLE, PLAYER).isSittingOut).toBe(false);
-      expect(seats.current.is_sitting_out).toBe(false);
+      await vi.waitFor(() => expect(seats.current.is_sitting_out).toBe(false));
       expect(seats.writes).toEqual([seats.writes[0], { ...seats.writes[0], value: false }]);
       expect(seats.from).toHaveBeenCalledTimes(2);
       expect(seats.others.map((row) => row.is_sitting_out)).toEqual([false, false, false, false]);

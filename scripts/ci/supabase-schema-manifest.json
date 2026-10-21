@@ -3082,6 +3082,7 @@
     "fn_cash_earning_club",
     "fn_cash_effective_buyin",
     "fn_cash_game_barred_seconds",
+    "fn_cash_game_category_key",
     "fn_cash_game_create",
     "fn_cash_game_create_impl_20260905",
     "fn_cash_game_ensure",

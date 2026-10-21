@@ -144,6 +144,8 @@ const WIN_LOSS_SHORT: Record<WinLossPeriod, string> = {
 };
 
 const SORT_LABEL: Record<RosterSort, string> = {
+  newest: 'Newest Players First',
+  oldest: 'Oldest Players First',
   hierarchy: 'Role Hierarchy',
   activity: 'Recent Activity',
   name: 'Name (A To Z)',
@@ -195,7 +197,7 @@ function readFilter(value: string | null): RosterFilter {
 function readSort(value: string | null): RosterSort {
   return value && Object.prototype.hasOwnProperty.call(SORT_LABEL, value)
     ? (value as RosterSort)
-    : 'hierarchy';
+    : 'newest';
 }
 
 /* One formatter per kind of figure, shared with the record and Player
@@ -248,7 +250,7 @@ export default function ClubMembersPage() {
   const [filter, setFilter] = useState<RosterFilter>(() => readFilter(searchParams.get('view')));
   const [sortKey, setSortKey] = useState<RosterSort>(() => readSort(searchParams.get('sort')));
   const [simpleMode, setSimpleMode] = useState(true);
-  const [winLossPeriod, setWinLossPeriod] = useState<WinLossPeriod>('overall');
+  const [winLossPeriod, setWinLossPeriod] = useState<WinLossPeriod>('week');
   const [searchQuery, setSearchQuery] = useState('');
   const [columns, setColumns] = useState<Set<OptionalColumn>>(
     () => new Set(defaultRosterWorkspace().columns)
@@ -400,7 +402,7 @@ export default function ClubMembersPage() {
     next.delete('q');
     if (filter === 'all') next.delete('view');
     else next.set('view', filter);
-    if (sortKey === 'hierarchy') next.delete('sort');
+    if (sortKey === 'newest') next.delete('sort');
     else next.set('sort', sortKey);
     lastWrittenUrlRef.current = { scope: exportScopeKey, query: next.toString() };
     if (next.toString() !== searchParams.toString()) {
@@ -1315,7 +1317,7 @@ export default function ClubMembersPage() {
   useEffect(() => {
     if (summaryFreshness !== 'fresh') return;
     if (!filters.includes(filter)) setFilter('all');
-    if (!sorts.includes(sortKey)) setSortKey('hierarchy');
+    if (!sorts.includes(sortKey)) setSortKey('newest');
   }, [filter, filters, summaryFreshness, sortKey, sorts]);
 
   useEffect(() => {

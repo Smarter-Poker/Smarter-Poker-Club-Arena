@@ -238,6 +238,11 @@ it('routes Simple agent and role grouping controls through the existing server q
   await act(async () => {
     await vi.advanceTimersByTimeAsync(110);
   });
+  expect(f.page.mock.calls.at(-1)?.[1].sort).toBe('hierarchy');
+  fireEvent.click(screen.getByRole('button', { name: 'Group By Role' }));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(110);
+  });
   expect(f.page.mock.calls.at(-1)?.[1].sort).toBe('name');
 });
 

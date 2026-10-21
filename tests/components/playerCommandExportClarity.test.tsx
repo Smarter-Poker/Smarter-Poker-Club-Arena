@@ -129,7 +129,7 @@ it('explains all matching exports and annotates every returned server row with e
   });
   expect(f.export).toHaveBeenCalledWith(
     '00000000-0000-0000-0000-000000000043',
-    { search: '', filter: 'all', sort: 'hierarchy' },
+    { search: '', filter: 'all', sort: 'newest' },
     null,
     expect.any(AbortSignal)
   );
@@ -142,7 +142,7 @@ it('explains all matching exports and annotates every returned server row with e
       export_club_id: '00000000-0000-0000-0000-000000000043',
       export_scope: 'all_matching',
       export_filter: 'all',
-      export_sort: 'hierarchy',
+      export_sort: 'newest',
       export_search: '',
       export_selected_count: 0,
       export_row_count: 1,

@@ -53,10 +53,11 @@ try:
  sql("CREATE CONSTRAINT TRIGGER zz_ca_rakeback_payout_leg_is_documented AFTER INSERT ON public.chip_ledger DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN(NEW.status='posted' AND NEW.category='rakeback' AND NEW.to_type='player_wallet') EXECUTE FUNCTION fn_ca_rakeback_payout_leg_is_documented();")
  # Source records represent two earning-time agents, an agent/club change,
  # and an unchanged payer. The .015 products expose double rounding.
- for i,player,payer,rake in [(1,301,201,'.10'),(2,301,202,'.10'),(3,302,201,'.10'),(4,302,None,'.30'),(5,303,201,'.10'),(6,303,201,'.10'),(7,304,201,'0'),(8,304,202,'0'),(9,305,901,'.10')]:
+ for i,player,payer,rake in [(1,301,201,'.10'),(2,301,202,'.10'),(3,302,201,'.10'),(4,302,None,'.30'),(5,303,201,'.10'),(6,303,201,'.10'),(7,304,201,'.10'),(8,304,202,'.10'),(9,305,901,'.10')]:
   member={'club_id':'00000000-0000-4000-8000-000000000011','user_id':f'00000000-0000-4000-8000-{player:012d}','agent_id':f'00000000-0000-4000-8000-{payer:012d}'if payer else None,'status':'active','is_active':True,'player_rakeback_pct':.15 if payer else 0}
   agent={'club_id':member['club_id'],'user_id':member['agent_id'],'status':'active','player_rakeback_rate':.15,'commission_rate':.25}
   contract={'membership':{'history_id':i,'terms':member},'tiers':[{'depth':1,'rate':.25,'user_id':member['agent_id'],'agreement':{'history_id':100+i,'terms':agent}}]if payer else []}
+  if player==304:member['player_rakeback_pct']=0;member['player_rakeback_explicit']=True
   if player==305:member['player_rakeback_pct']=.70;contract['tiers']=[]
   encoded=json.dumps(contract).replace("'","''");m=json.dumps(member);g=json.dumps(agent)
   sql("INSERT INTO accounting_agreement_history VALUES("+str(i)+",'club_members','"+member['club_id']+":"+member['user_id']+"','2026-09-01','"+m+"'),("+str(100+i)+",'agents','agent-"+str(i)+"','2026-09-01','"+g+"');")
@@ -71,9 +72,16 @@ try:
  assert sql("SELECT def_hash=md5(pg_get_functiondef('public.fn_ca_settlement_correctness_check()'::regprocedure)) AND declared_ref='migration 20261019213557_weekly_rakeback_preserves_every_historical_payer_share' FROM ca_guard_defs WHERE proname='fn_ca_settlement_correctness_check'")=='t'
  assert sql("SELECT count(*)FROM ca_guard_def_history WHERE proname='fn_ca_settlement_correctness_check'")=='2'
  for sig,acl in original_acl.items():assert sql("SELECT proacl::text FROM pg_proc WHERE oid='"+sig+"'::regprocedure")==acl
+ # Preserve the currently installed explicit-zero agreement predicate in all three original owners.
+ for explicit_signature in ['fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])','fn_rakeback_split_write(uuid,date,date,uuid[])','fn_rakeback_split_check(uuid,date,date,uuid[])']:
+  explicit_definition=sql("SELECT pg_get_functiondef('"+explicit_signature+"'::regprocedure)")
+  assert explicit_definition.count("CASE WHEN p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer")==1
+  sql(explicit_definition.replace("CASE WHEN p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer","CASE WHEN COALESCE((p.member->>'player_rakeback_explicit')::boolean,false) OR p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer"))
+ assert sql("SELECT md5(pg_get_functiondef('fn_rakeback_split_check(uuid,date,date,uuid[])'::regprocedure))")=='4255ae4df6902f370d13dc69632277bb'
  check=json.loads(sql("SELECT fn_rakeback_split_check(u(11),'2026-09-07','2026-09-13',NULL)"));assert check['players']==5
  sql("SELECT fn_rakeback_split_write(u(11),'2026-09-07','2026-09-13',NULL)")
  assert sql('SELECT sum(rakeback_amount)FROM rakeback_periods')=='0.16'
+ assert sql("SELECT rakeback_amount=0 AND rake_generated=.20 FROM rakeback_periods WHERE user_id=u(304)")=='t','explicit zero must not inherit either historical agent offer'
  assert sql("SELECT count(*)FROM accounting_rakeback_period_calculations WHERE payer_kind='split'")=='3'
  # Reproduce unchanged legacy certificates that predate the payer trigger.
  sql("ALTER TABLE accounting_rakeback_payer_contracts DISABLE TRIGGER accounting_rakeback_payer_contract_immutable;DELETE FROM accounting_rakeback_payer_contracts;ALTER TABLE accounting_rakeback_payer_contracts ENABLE TRIGGER accounting_rakeback_payer_contract_immutable;")
@@ -85,7 +93,7 @@ try:
  sql("CREATE FUNCTION fn_platform_frozen()RETURNS boolean LANGUAGE sql AS $$SELECT COALESCE(current_setting('test.confirmed_frozen',true),'')='on'$$;")
  sql("BEGIN;SET LOCAL test.confirmed_frozen='on';"+source_only,'confirmed_payer_install_frozen')
  assert sql("SELECT to_regprocedure('smarter_private.ensure_rakeback_payer_contracts(bigint)')IS NULL")=='t'
- wrong_preimage=source_only.replace("IS DISTINCT FROM '715379f789f90ee224118581eac81353'","IS DISTINCT FROM '00000000000000000000000000000000'",1)
+ wrong_preimage=source_only.replace("IS DISTINCT FROM 'fa6d2e8eac30dc1f7e19431d461e9826'","IS DISTINCT FROM '00000000000000000000000000000000'",1)
  assert wrong_preimage!=source_only
  sql(wrong_preimage,'confirmed_payer_preimage_changed')
  assert sql("SELECT to_regprocedure('smarter_private.ensure_rakeback_payer_contracts(bigint)')IS NULL")=='t'

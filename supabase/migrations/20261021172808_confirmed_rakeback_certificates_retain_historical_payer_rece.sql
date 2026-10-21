@@ -1,4 +1,4 @@
--- @live-proof: md5(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure))='85d0ae4bb6c9e20a2451de0917500f65' AND md5(pg_get_functiondef('public.fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure))='8f6fef7e1a90e731e61c6e71d8d27092' AND md5(pg_get_functiondef('smarter_private.record_rakeback_payer_contracts()'::regprocedure))='73325c330ea577c08b4704319c0f89ec' AND md5(pg_get_functiondef('smarter_private.ensure_rakeback_payer_contracts(bigint)'::regprocedure))='69687be498ba5264afedaff49e7f14ae' AND md5(pg_get_functiondef('smarter_private.admit_legacy_rakeback_payer_contracts(bigint[])'::regprocedure))='48e7be4303d837a8189a63e272586ffd'
+-- @live-proof: md5(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure))='4a835bd96653c977e5519f6dcfd7a7c6' AND md5(pg_get_functiondef('public.fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure))='d7d52bfca1f480a869ca8018efe3a854' AND md5(pg_get_functiondef('smarter_private.record_rakeback_payer_contracts()'::regprocedure))='73325c330ea577c08b4704319c0f89ec' AND md5(pg_get_functiondef('smarter_private.ensure_rakeback_payer_contracts(bigint)'::regprocedure))='69687be498ba5264afedaff49e7f14ae' AND md5(pg_get_functiondef('smarter_private.admit_legacy_rakeback_payer_contracts(bigint[])'::regprocedure))='71756810faab88f088df7ae51c72aa8b'
 -- Exact original confirmed-certificate transition; no certificate or financial balance is rewritten.
 BEGIN;
 SET LOCAL statement_timeout='15s';
@@ -36,7 +36,7 @@ END $ensure$;
 REVOKE ALL ON FUNCTION smarter_private.ensure_rakeback_payer_contracts(bigint)FROM PUBLIC,anon,authenticated,service_role;
 
 DO $patch$ DECLARE before_meta jsonb;after_meta jsonb;BEGIN
- IF md5(pg_get_functiondef('fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure)) IS DISTINCT FROM '715379f789f90ee224118581eac81353' THEN RAISE EXCEPTION 'confirmed_payer_preimage_changed';END IF;
+ IF md5(pg_get_functiondef('fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure)) IS DISTINCT FROM 'fa6d2e8eac30dc1f7e19431d461e9826' THEN RAISE EXCEPTION 'confirmed_payer_preimage_changed';END IF;
  SELECT jsonb_build_array(proowner,proacl,prosecdef,provolatile,proconfig,proparallel,proisstrict)INTO before_meta FROM pg_proc WHERE oid='fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure;
  IF before_meta->>0 IS DISTINCT FROM('postgres'::regrole::oid)::text OR(before_meta-0)IS DISTINCT FROM('["16384", ["postgres=X/postgres"], true, "v", ["search_path=public", "statement_timeout=300s"], "u", false]'::jsonb-0) THEN RAISE EXCEPTION 'confirmed_payer_metadata_changed' USING DETAIL=before_meta::text;END IF;
  EXECUTE $definition$CREATE OR REPLACE FUNCTION public.fn_calculate_cash_rakeback_periods(p_club_id uuid, p_period_start date, p_period_end date, p_user_ids uuid[] DEFAULT NULL::uuid[])
@@ -259,7 +259,7 @@ BEGIN
    LEFT JOIN public.accounting_agreement_history ah ON ah.id=(r.direct->'agreement'->>'history_id')::bigint
     AND ah.entity_type='agents' AND ah.observed_at<=r.agreement_at
   ), rates AS (
-   SELECT p.*,CASE WHEN p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer
+   SELECT p.*,CASE WHEN COALESCE((p.member->>'player_rakeback_explicit')::boolean,false) OR p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer
     WHEN p.total_rake>=10000 THEN 0.30 WHEN p.total_rake>=2000 THEN 0.20
     WHEN p.total_rake>=500 THEN 0.15 WHEN p.total_rake>=100 THEN 0.10 ELSE 0.05 END AS base_rate
    FROM parsed p
@@ -346,7 +346,7 @@ END $function$
 $definition$;
  SELECT jsonb_build_array(proowner,proacl,prosecdef,provolatile,proconfig,proparallel,proisstrict)INTO after_meta FROM pg_proc WHERE oid='fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure;IF before_meta IS DISTINCT FROM after_meta THEN RAISE EXCEPTION 'confirmed_payer_metadata_not_preserved';END IF;END $patch$;
 DO $patch$ DECLARE before_meta jsonb;after_meta jsonb;BEGIN
- IF md5(pg_get_functiondef('fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure)) IS DISTINCT FROM '56dabde9e00f5283a882c5c74fb3e6c4' THEN RAISE EXCEPTION 'confirmed_payer_preimage_changed';END IF;
+ IF md5(pg_get_functiondef('fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure)) IS DISTINCT FROM 'cd13c770ec1e3f9e96a80d7e3fdfb417' THEN RAISE EXCEPTION 'confirmed_payer_preimage_changed';END IF;
  SELECT jsonb_build_array(proowner,proacl,prosecdef,provolatile,proconfig,proparallel,proisstrict)INTO before_meta FROM pg_proc WHERE oid='fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure;
  IF before_meta->>0 IS DISTINCT FROM('postgres'::regrole::oid)::text OR(before_meta-0)IS DISTINCT FROM('["16384", ["postgres=X/postgres", "service_role=X/postgres"], false, "v", ["search_path=public"], "u", false]'::jsonb-0) THEN RAISE EXCEPTION 'confirmed_payer_metadata_changed' USING DETAIL=before_meta::text;END IF;
  EXECUTE $definition$CREATE OR REPLACE FUNCTION public.fn_rakeback_split_write(p_club_id uuid, p_period_start date, p_period_end date, p_user_ids uuid[])
@@ -395,7 +395,7 @@ BEGIN
    LEFT JOIN public.accounting_agreement_history ah ON ah.id=(r.direct->'agreement'->>'history_id')::bigint
     AND ah.entity_type='agents' AND ah.observed_at<=r.agreement_at
   ), rates AS (
-   SELECT p.*,CASE WHEN p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer
+   SELECT p.*,CASE WHEN COALESCE((p.member->>'player_rakeback_explicit')::boolean,false) OR p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer
     WHEN p.total_rake>=10000 THEN 0.30 WHEN p.total_rake>=2000 THEN 0.20
     WHEN p.total_rake>=500 THEN 0.15 WHEN p.total_rake>=100 THEN 0.10 ELSE 0.05 END AS base_rate
    FROM parsed p
@@ -500,7 +500,7 @@ BEGIN
  IF public.fn_caller_is_engine()IS DISTINCT FROM true OR public.fn_platform_frozen()IS DISTINCT FROM false THEN RAISE EXCEPTION 'legacy_payer_admission_window_refused';END IF;
  IF p_calculations IS NULL OR cardinality(p_calculations)<1 OR cardinality(p_calculations)>16 OR(SELECT count(DISTINCT x)FROM unnest(p_calculations)x)IS DISTINCT FROM cardinality(p_calculations)::bigint
  OR(SELECT count(*)FROM jsonb_array_elements(expected)allowed_manifest WHERE(allowed_manifest->>'id')::bigint=ANY(p_calculations))IS DISTINCT FROM cardinality(p_calculations)::bigint THEN RAISE EXCEPTION 'legacy_payer_admission_identity_not_qualified';END IF;
- IF md5(pg_get_functiondef('public.fn_rakeback_split_check(uuid,date,date,uuid[])'::regprocedure))IS DISTINCT FROM '681c6a50ca00031cc5826c8be9f8da7d' THEN RAISE EXCEPTION 'legacy_payer_source_validator_changed';END IF;
+ IF md5(pg_get_functiondef('public.fn_rakeback_split_check(uuid,date,date,uuid[])'::regprocedure))IS DISTINCT FROM '4255ae4df6902f370d13dc69632277bb' THEN RAISE EXCEPTION 'legacy_payer_source_validator_changed';END IF;
  FOR e IN SELECT value FROM jsonb_array_elements(expected)WHERE(value->>'id')::bigint=ANY(p_calculations)ORDER BY value->>'player_id'LOOP
  SELECT * INTO STRICT c FROM public.accounting_rakeback_period_calculations WHERE id=(e->>'id')::bigint;
  IF md5(to_jsonb(c)::text)IS DISTINCT FROM e->>'certificate_md5' OR smarter_private.rakeback_payer_plan(c.source_allocations,c.rakeback_amount)IS DISTINCT FROM(e->>'expected_plan_text')::jsonb THEN RAISE EXCEPTION 'legacy_payer_exact_preimage_changed';END IF;
@@ -513,5 +513,5 @@ BEGIN
  IF public.fn_platform_frozen()IS DISTINCT FROM false THEN RAISE EXCEPTION 'legacy_payer_admission_window_refused';END IF;
 END $legacy$;
 REVOKE ALL ON FUNCTION smarter_private.admit_legacy_rakeback_payer_contracts(bigint[])FROM PUBLIC,anon,authenticated,service_role;
-DO $post$ BEGIN IF NOT(md5(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure))='85d0ae4bb6c9e20a2451de0917500f65' AND md5(pg_get_functiondef('public.fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure))='8f6fef7e1a90e731e61c6e71d8d27092' AND md5(pg_get_functiondef('smarter_private.record_rakeback_payer_contracts()'::regprocedure))='73325c330ea577c08b4704319c0f89ec' AND md5(pg_get_functiondef('smarter_private.ensure_rakeback_payer_contracts(bigint)'::regprocedure))='69687be498ba5264afedaff49e7f14ae' AND md5(pg_get_functiondef('smarter_private.admit_legacy_rakeback_payer_contracts(bigint[])'::regprocedure))='48e7be4303d837a8189a63e272586ffd')THEN RAISE EXCEPTION 'confirmed_payer_postimage_changed';END IF;IF has_function_privilege('service_role','smarter_private.ensure_rakeback_payer_contracts(bigint)','EXECUTE')OR has_function_privilege('authenticated','smarter_private.admit_legacy_rakeback_payer_contracts(bigint[])','EXECUTE')THEN RAISE EXCEPTION 'confirmed_payer_private_acl_changed';END IF;END $post$;
+DO $post$ BEGIN IF NOT(md5(pg_get_functiondef('public.fn_calculate_cash_rakeback_periods(uuid,date,date,uuid[])'::regprocedure))='4a835bd96653c977e5519f6dcfd7a7c6' AND md5(pg_get_functiondef('public.fn_rakeback_split_write(uuid,date,date,uuid[])'::regprocedure))='d7d52bfca1f480a869ca8018efe3a854' AND md5(pg_get_functiondef('smarter_private.record_rakeback_payer_contracts()'::regprocedure))='73325c330ea577c08b4704319c0f89ec' AND md5(pg_get_functiondef('smarter_private.ensure_rakeback_payer_contracts(bigint)'::regprocedure))='69687be498ba5264afedaff49e7f14ae' AND md5(pg_get_functiondef('smarter_private.admit_legacy_rakeback_payer_contracts(bigint[])'::regprocedure))='71756810faab88f088df7ae51c72aa8b')THEN RAISE EXCEPTION 'confirmed_payer_postimage_changed';END IF;IF has_function_privilege('service_role','smarter_private.ensure_rakeback_payer_contracts(bigint)','EXECUTE')OR has_function_privilege('authenticated','smarter_private.admit_legacy_rakeback_payer_contracts(bigint[])','EXECUTE')THEN RAISE EXCEPTION 'confirmed_payer_private_acl_changed';END IF;END $post$;
 COMMIT;

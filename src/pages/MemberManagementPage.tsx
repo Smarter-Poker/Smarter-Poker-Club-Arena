@@ -1729,6 +1729,10 @@ export function RoleSection({
             type="button"
             className="mm-roles__option mm-roles__option--current"
             aria-current="true"
+            ref={(button) => {
+              if (button) roleButtonsRef.current.set(targetRole, button);
+              else roleButtonsRef.current.delete(targetRole);
+            }}
             disabled={rolesLoadFailed || !(targetRole === 'player' || isAgentRole(targetRole))}
             onClick={() => setEditingRakeback(true)}
           >

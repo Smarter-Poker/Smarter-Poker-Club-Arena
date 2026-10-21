@@ -219,6 +219,30 @@ describe('Players detail surfaces', () => {
     ).toHaveLength(0);
   });
 
+  it('returns keyboard focus to the current player when no role changes are grantable', async () => {
+    state.getMemberDetail.mockResolvedValue({
+      ...memberDetail,
+      capabilities: { ...memberDetail.capabilities, can_manage_role: true },
+    });
+    state.getGrantableRoles.mockResolvedValue([]);
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: {
+        success: true,
+        club_id: '22222222-2222-4222-8222-222222222222',
+        user_id: '11111111-1111-4111-8111-111111111111',
+        role: 'player',
+        rate: 0.2,
+        max_rate: 0.5,
+      },
+      error: null,
+    } as never);
+    render(<MemberManagementPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /Player \(Current\)/ }));
+    await screen.findByRole('spinbutton', { name: 'Rakeback Percent' });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: /Player \(Current\)/ })).toHaveFocus();
+  });
+
   it.each(['agent', 'admin'] as const)(
     'keeps keyboard focus through %s role confirmation and cancel without writing',
     async (grantRole) => {

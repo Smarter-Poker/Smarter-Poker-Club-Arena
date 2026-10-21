@@ -70,6 +70,17 @@ describe('the live SEO contract checker', () => {
     expect(head.ogImage).toBe('https://smarter.poker/images/og-poker-arena.jpg');
   });
 
+  it('reads the maintained route schema with attributes before or after its type', () => {
+    for (const tag of [
+      '<script id="route-jsonld" type="application/ld+json">',
+      '<script type="application/ld+json" id="route-jsonld">',
+    ]) {
+      const html = HEAD.replace('<script type="application/ld+json">', tag);
+      expect(ldTypes(inspectHead(html).ld)).toEqual(['BreadcrumbList', 'FAQPage']);
+      expect(inspectHead(html.replace('{"@context"', '{"@context')).ldError).toBeTruthy();
+    }
+  });
+
   it('proves the share card the landing names is a real image on the live site (phase 6)', () => {
     const src = readFileSync(join(ROOT, 'scripts/ci/check-live-seo-contract.mjs'), 'utf8');
     expect(src).toContain('async function checkShareImage(head)');

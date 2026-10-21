@@ -49,7 +49,6 @@ BEGIN
   IF md5(v_definition) <> 'af3dc9e20983b85167bd126451a57e1c' THEN
     RAISE EXCEPTION 'kings_opening_copy_predecessor_drift';
   END IF;
-  PERFORM public.fn_ca_declare_guard_redefinition('fn_complete_club_opening_setup', '20261021180210 Kings Club branding copy only');
   EXECUTE replace(v_definition, 'That Tag Line Belongs To Shark Club', 'That Tag Line Belongs To Kings Club');
 END
 $opening_copy$;

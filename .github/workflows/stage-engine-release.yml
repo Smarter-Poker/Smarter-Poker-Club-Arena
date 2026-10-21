@@ -8,7 +8,8 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '30 8,9 * * *'
+    - cron: '30 8 * * *'
+    - cron: '30 9 * * *'
 
 permissions: {}
 
@@ -19,6 +20,7 @@ jobs:
     timeout-minutes: 3
     permissions:
       contents: read
+      actions: read
     outputs:
       release_required: ${{ steps.change.outputs.release_required }}
       target_sha: ${{ steps.change.outputs.target_sha }}
@@ -49,12 +51,38 @@ jobs:
         id: admission
         env:
           EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE_EXPRESSION: ${{ github.event.schedule || '' }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
           allowed=false
           if [ "$EVENT_NAME" = schedule ]; then
-            HOUR=$(TZ=America/Chicago date +%H)
-            [ "$HOUR" != 03 ] || allowed=true
+            # Admission belongs to the nominal scheduled instant, not when a
+            # queued runner finally executes. A delayed 03:30 preparation may
+            # still stage; the host certificate independently owns activation.
+            RUN_CREATED_AT=$(gh api "repos/$REPO/actions/runs/$RUN_ID" --jq .created_at)
+            if RUN_CREATED_AT="$RUN_CREATED_AT" python3 - <<'PYTHON'
+          import os
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+          expression = os.environ["SCHEDULE_EXPRESSION"]
+          hours = {"30 8 * * *": 8, "30 9 * * *": 9}
+          if expression not in hours:
+              raise ValueError("unknown daily preparation schedule")
+          created = datetime.fromisoformat(os.environ["RUN_CREATED_AT"].replace("Z", "+00:00"))
+          if created.utcoffset() is None:
+              raise ValueError("daily preparation run creation time has no timezone")
+          nominal = created.astimezone(timezone.utc).replace(hour=hours[expression], minute=30, second=0, microsecond=0)
+          if nominal > created:
+              raise ValueError("daily preparation nominal instant is after run creation")
+          local = nominal.astimezone(ZoneInfo("America/Chicago"))
+          raise SystemExit(0 if (local.hour, local.minute) == (3, 30) else 1)
+          PYTHON
+            then
+              allowed=true
+            fi
           elif git log -1 --format=%B | grep -Eq '^Engine-Release: (urgent|daily-maintenance-transition)$'; then
             allowed=true
           fi

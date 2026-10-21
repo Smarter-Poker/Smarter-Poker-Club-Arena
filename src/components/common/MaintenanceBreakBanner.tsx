@@ -48,7 +48,9 @@ export function MaintenanceBreakBanner() {
   const [upcoming, setUpcoming] = useState(() => isRoutineMaintenanceUpcoming(serverNow()));
   useEffect(() => {
     if (maintenanceBreak.active) return;
-    const t = setInterval(() => setUpcoming(isRoutineMaintenanceUpcoming(serverNow())), 15_000);
+    const refresh = () => setUpcoming(isRoutineMaintenanceUpcoming(serverNow()));
+    refresh();
+    const t = setInterval(refresh, 15_000);
     return () => clearInterval(t);
   }, [maintenanceBreak.active]);
 

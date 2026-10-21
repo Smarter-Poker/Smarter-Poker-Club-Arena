@@ -69,6 +69,7 @@ describe('owner rule: Midway cash caps are 2.5 BB and standalone clubs choose th
       'supabase/migrations/20261021174448_midway_cash_rake_policy_two_point_five_bb.sql'
     );
     expect(migration).toContain('hh.cash_rake_policy');
+    expect(migration).toContain('fn_ca_remeasure_entity preimage mismatch');
     expect(migration).toContain('ELSE e.rake END AS exp_rake');
     expect(migration).not.toMatch(/UPDATE\s+public\.(hand_history|rake_records|ca_rake_schedule)/i);
   });

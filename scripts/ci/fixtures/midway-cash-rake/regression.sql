@@ -32,6 +32,7 @@ INSERT INTO hand_history(id,table_id,hand_number,created_at,rake_amount,pot_size
  ('c0000000-0000-0000-0000-000000000002','b0000000-0000-0000-0000-000000000001',2,now()-interval '10 minutes',.5,100,'[{},{},{},{}]',ARRAY['As','Kd','Qc'],'[]','{"cashPolicy":{"version":1,"scope":"midway"},"percent":10,"cap":0.5,"noFlopNoDrop":true,"playerCountCaps":[{"players":4,"cap":0.5}]}');
 UPDATE tables SET rake_cap_bb=-1 WHERE id='b0000000-0000-0000-0000-000000000001';
 DO $test$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM fn_ca_remeasure_entity('rake_law','b0000000-0000-0000-0000-000000000001') WHERE measurable AND severity='ok' AND ledger_balance=3.5 AND stored_balance=3.5) THEN RAISE EXCEPTION 'incident reader repriced a frozen hand'; END IF;
  IF EXISTS(SELECT 1 FROM fn_rake_law_violations(interval '1 hour') WHERE kind IN ('over_spec','under_spec')) THEN RAISE EXCEPTION 'rollout repriced history'; END IF;
 END $test$;
 SELECT 'midway-cash-rake-postgres-passed';

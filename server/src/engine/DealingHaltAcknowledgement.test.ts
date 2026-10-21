@@ -308,7 +308,7 @@ describe('reads that answer out of order (verifier P1, 2026-09-26)', () => {
     //    is slow (the step budget gives up on it, the request carries on).
     let answerLate!: () => void;
     db.hold = (cols) =>
-      cols.startsWith('rake_percent')
+      cols.includes('rake_percent, rake_cap_bb')
         ? new Promise((resolve) => {
             answerLate = () => resolve({ data: { ...live }, error: null });
           })

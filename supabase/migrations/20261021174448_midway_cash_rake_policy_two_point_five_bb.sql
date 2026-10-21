@@ -616,4 +616,30 @@ END $patch$;
 REVOKE ALL ON FUNCTION public.fn_effective_rake_config(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_effective_rake_config(uuid) TO authenticated, service_role;
 
+
+-- The incident reader must measure the same versioned price as the primary
+-- audit; otherwise an old finding can be escalated again under the old cap.
+DO $patch$
+DECLARE v_def text; v_new text; v_acl aclitem[]; v_owner oid; v_cfg text[]; v_secdef boolean;
+BEGIN
+ v_def:=pg_get_functiondef('public.fn_ca_remeasure_entity(text,uuid)'::regprocedure);
+ IF md5(v_def)<>'8222efcb6206a4b4b6358f8b6f3fc0be' THEN RAISE EXCEPTION 'fn_ca_remeasure_entity preimage mismatch'; END IF;
+ SELECT proacl,proowner,proconfig,prosecdef INTO v_acl,v_owner,v_cfg,v_secdef FROM pg_proc WHERE oid='public.fn_ca_remeasure_entity(text,uuid)'::regprocedure;
+ v_new:=replace(replace(v_def,$before1$               t.max_players AS seats,$before1$,$after1$               t.max_players AS seats, hh.cash_rake_policy,$after1$),$before2$        SELECT h.*, e.rake AS exp_rake$before2$,$after2$        SELECT h.*, CASE WHEN h.cash_rake_policy IS NOT NULL AND h.dealt IS NOT NULL
+                       THEN public.fn_cash_rake_from_snapshot(h.pot,h.dealt,true,h.cash_rake_policy)
+                       ELSE e.rake END AS exp_rake$after2$);
+ IF md5(v_new)<>'a5e5db39ab33931f005497eb12fd01d3' THEN RAISE EXCEPTION 'remeasure substitution mismatch'; END IF;
+ IF 'fn_ca_remeasure_entity'=ANY(public.fn_ca_guard_watchlist()) THEN
+  PERFORM public.fn_ca_declare_guard_redefinition('fn_ca_remeasure_entity','migration 20261021174448 midway cash policy');
+ END IF;
+ EXECUTE v_new;
+ IF md5(pg_get_functiondef('public.fn_ca_remeasure_entity(text,uuid)'::regprocedure))<>'a5e5db39ab33931f005497eb12fd01d3' THEN RAISE EXCEPTION 'remeasure postimage mismatch'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_remeasure_entity(text,uuid)'::regprocedure
+   AND proacl IS NOT DISTINCT FROM v_acl AND proowner=v_owner AND proconfig IS NOT DISTINCT FROM v_cfg AND prosecdef=v_secdef)
+ THEN RAISE EXCEPTION 'remeasure security identity changed'; END IF;
+ IF 'fn_ca_remeasure_entity'=ANY(public.fn_ca_guard_watchlist()) THEN
+  PERFORM public.fn_ca_declare_guard_redefinition('fn_ca_remeasure_entity','migration 20261021174448 midway cash policy');
+ END IF;
+END $patch$;
+
 COMMIT;

@@ -36,7 +36,7 @@ try:
  run(OWNER+[PG/'pg_ctl','-D',cluster/'data','-l',cluster/'log','-o',f"-k {sock} -p 55831 -c listen_addresses=''",'-w','start'])
  started=True
  sql(FIXTURE/'schema.sql')
- for name in ['fn_unscheduled_cap_bb','fn_rake_tier_price','fn_rake_stake_price','fn_rake_cap_for_dealt','fn_effective_rake','fn_complete_club_opening_setup','fn_rake_law_violations','fn_effective_rake_config']:
+ for name in ['fn_unscheduled_cap_bb','fn_rake_tier_price','fn_rake_stake_price','fn_rake_cap_for_dealt','fn_effective_rake','fn_complete_club_opening_setup','fn_rake_law_violations','fn_effective_rake_config','fn_ca_remeasure_entity']:
   sql(FIXTURE/(name+'.before.sql'))
  run(psql+['-c',"REVOKE ALL ON FUNCTION fn_effective_rake_config(uuid) FROM PUBLIC,anon; GRANT EXECUTE ON FUNCTION fn_effective_rake_config(uuid) TO authenticated,service_role;"])
  before=run(psql+['-c',"SELECT rake FROM fn_effective_rake(.2,100,4,true,.1)"])

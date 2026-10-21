@@ -74,6 +74,11 @@ describe('Data console PostgreSQL contracts stay in the required CI verdict', ()
 
   it.each([
     'scripts/ci/test-data-console-postgres-contracts.sh',
+    'scripts/ci/test-club-data-union-mtt-postgres.py',
+    'tests/fixtures/club-data-report-db/union-mtt-scenario.sql',
+    'tests/fixtures/club-data-report-db/rake-v2-fixture.sql',
+    'tests/fixtures/club-data-report-db/reporting-preimages.sql',
+    'tests/fixtures/club-data-fact-db/fixture.sql',
     'scripts/dev/test-member-record-live-postgres.sh',
     'scripts/dev/test-roster-join-sort-postgres.sh',
     'tests/fixtures/stats-club-scope/roster-join-sort/assertions.sql',

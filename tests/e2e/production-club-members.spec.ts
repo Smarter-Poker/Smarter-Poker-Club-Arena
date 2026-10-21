@@ -7,7 +7,26 @@ import {
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Request, type TestInfo } from '@playwright/test';
 
-const MEMBERS_PATH = 'clubs/shark-club/members';
+// Use the workflow's assigned club identity. Its public slug may change;
+// navigation must retain the canonical club resolved by the actual page.
+const MEMBERS_PATH = `clubs/${process.env.E2E_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'}/members`;
+
+async function openFirstPlayerRecord(page: Page) {
+  const recordPrefix = `${new URL(page.url()).pathname.replace(/\/$/, '')}/`;
+  await page
+    .getByRole('list', { name: 'Club Member Directory' })
+    .getByRole('listitem')
+    .first()
+    .getByRole('button')
+    .click();
+  await expect(page).toHaveURL(
+    (url) =>
+      url.pathname.startsWith(recordPrefix) &&
+      /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(
+        url.pathname.slice(recordPrefix.length)
+      )
+  );
+}
 
 type MembersProbe = {
   startedAt: number;
@@ -465,8 +484,7 @@ test.describe('Production Shark Club Players', () => {
     await expect(history.getByRole('alert')).toHaveCount(0);
     await history.locator('summary').click();
 
-    await directory.getByRole('listitem').first().getByRole('button').click();
-    await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
+    await openFirstPlayerRecord(page);
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
     expect(
@@ -594,7 +612,7 @@ test.describe('Production Shark Club Players', () => {
         '.members-view-filter',
         '.members-view-filter select',
         '.members-sort',
-        '.members-refresh',
+        '.members-sort select',
         '.members-toolbar',
       ]) {
         const elements = await page.locator(selector).all();
@@ -617,7 +635,7 @@ test.describe('Production Shark Club Players', () => {
       expect(consoleFrame).not.toBeNull();
       for (const control of await page
         .locator(
-          '.members-search input, .members-view-filter select, .members-sort select, .members-refresh, .members-columns, .members-export, .members-select-loaded'
+          '.members-search input, .members-view-filter select, .members-sort select, .members-columns, .members-export, .members-select-loaded'
         )
         .all()) {
         const box = await control.boundingBox();
@@ -629,8 +647,11 @@ test.describe('Production Shark Club Players', () => {
           'a roster control clips its own content'
         ).toBe(true);
       }
+      // The owner removed Refresh in #7600; keep that presentation explicit
+      // while measuring every currently required query control above.
+      await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toHaveCount(0);
       // Permission-specific controls are checked whenever the actual viewer
-      // can see them; the required search/sort/refresh checks always execute.
+      // can see them; the required search/filter/sort checks always execute.
       for (const control of await page
         .locator('.members-export, .members-select-loaded, .members-columns, .member-row__open')
         .all()) {
@@ -668,7 +689,7 @@ test.describe('Production Shark Club Players', () => {
 
     for (const control of [
       page.getByRole('combobox', { name: 'Filter Players', exact: true }),
-      page.getByRole('button', { name: 'Refresh', exact: true }),
+      page.getByRole('combobox', { name: 'Sort Players', exact: true }),
     ]) {
       const box = await control.boundingBox();
       expect(box, 'a primary Players control has no rendered box').not.toBeNull();
@@ -724,9 +745,7 @@ test.describe('Production Shark Club Players', () => {
     await expect(clubHistory.getByRole('alert')).toHaveCount(0);
     await clubHistory.locator('summary').click();
 
-    const directory = page.getByRole('list', { name: 'Club Member Directory' });
-    await directory.getByRole('listitem').first().getByRole('button').click();
-    await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
+    await openFirstPlayerRecord(page);
     await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible({
       timeout: 45_000,
     });

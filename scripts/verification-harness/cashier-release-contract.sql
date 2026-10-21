@@ -120,15 +120,6 @@ BEGIN
       'hash', '859bb844228d65085bf134c4dbd8b32b'
     ),
     jsonb_build_object(
-      'signature', 'public.fn_club_cashier_can_transact(uuid,uuid,uuid)',
-      -- The Realtime WAL repair converts this read-only helper from PL/pgSQL
-      -- to equivalent SQL so its scope is resolved once. Production may move
-      -- before the application bundle while deploys converge, so both audited
-      -- definitions are valid; an unknown third body must still fail closed.
-      'hash', '6e02bd4dcb663130bedb41816968350e',
-      'replacement_hash', 'a812c44870554f37cddb36edf600e386'
-    ),
-    jsonb_build_object(
       'signature', 'public.fn_club_cashier_members_page_v3(uuid,integer,uuid,integer)',
       -- Re-pinned 2026-09-03. The body changed for a REASON, not by drift:
       -- 20260903035252 wrapped the flag as
@@ -148,13 +139,15 @@ BEGIN
       'hash', 'a8a8a18f4ee84e0b2e147ebdc380e5d1'
     ),
     -- Active Cashier authority and globally exact retry keys.
+    -- 20261021183705 made the raw hierarchy predicates private. Browsers and
+    -- RLS reach them only through these caller-bound wrappers.
     jsonb_build_object(
-      'signature', 'public.fn_club_bank_role(uuid,uuid)',
-      'hash', '36d48c9e935b77e4410075a482194dab'
+      'signature', 'public.fn_club_viewer_cashier_scope(uuid)',
+      'hash', 'eeccecf423aec1a64eb320b7cb5fd477'
     ),
     jsonb_build_object(
-      'signature', 'public.fn_club_is_in_downline(uuid,uuid,uuid)',
-      'hash', '038be1f54953d43ce7dc02be6fc3015c'
+      'signature', 'public.fn_club_viewer_can_transact(uuid,uuid)',
+      'hash', '4aae2a2d5d0a3c13b2f9d6b6eac9f711'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_cashier_members(uuid)',
@@ -171,7 +164,9 @@ BEGIN
       -- live 2026-10-12) prints a treasury-funded seat as the Club Bank send
       -- it is and names a send's operator only to the operator and the member
       -- paid; same rows, same posture.
-      'hash', '1b1312459ecc90069375d8bcdb3127ca'
+      'hash', '1b1312459ecc90069375d8bcdb3127ca',
+      -- 20261020210238 (installed 20261021174527) restricts agent bank reads.
+      'replacement_hash', 'dd389f9dd3013aef5e50bbd456291297'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_bank_send(uuid,uuid,numeric,text,text,uuid)',
@@ -210,7 +205,9 @@ BEGIN
     -- are unchanged by both.
     jsonb_build_object(
       'signature', 'public.fn_cashier_statement_scope(uuid)',
-      'hash', 'c8137ef74e0e7ccfb05b94697b3fb122'
+      'hash', 'c8137ef74e0e7ccfb05b94697b3fb122',
+      -- 20261020210238 (installed 20261021174527) restricts agent bank reads.
+      'replacement_hash', 'e5b3fd28e1192dbe2e8e4b4f0ce56c79'
     ),
     jsonb_build_object(
       'signature', 'public.fn_cashier_statement_page(uuid,timestamptz,timestamptz,jsonb,jsonb,integer)',
@@ -323,6 +320,8 @@ BEGIN
       -- The installed 20261012181905 launch boundary adds only the scoped
       -- accounting-start read; the retained Club Bank/member/union gates are exact.
       'hash', 'f6b49d2e875e162c086f2186bfc60407',
+      -- 20261020210238 (installed 20261021174527) restricts agent bank reads.
+      'replacement_hash', 'a9cfc2f7f908666f5129743bb3fb44c2',
       'search_path', 'search_path=public, extensions'
     ),
     jsonb_build_object(
@@ -443,6 +442,14 @@ BEGIN
       'hash', 'e2fa92deff49c93f0c68b5deff48aa1f', 'service_execute', true),
     jsonb_build_object('signature', 'public.fn_club_active_cashier_edges(uuid)',
       'hash', '7811cf9a95d7bc76037158c1285d4069', 'service_execute', true),
+    -- Raw hierarchy predicates, private since 20261021183705; the caller-bound
+    -- fn_club_viewer_* wrappers carry the browser and RLS contract instead.
+    jsonb_build_object('signature', 'public.fn_club_bank_role(uuid,uuid)',
+      'hash', 'a09db9468ed6160ddcc88c53d55f7c4a', 'service_execute', true),
+    jsonb_build_object('signature', 'public.fn_club_is_in_downline(uuid,uuid,uuid)',
+      'hash', 'bcfebe3728495bbe67afb93289137c36', 'service_execute', true),
+    jsonb_build_object('signature', 'public.fn_club_cashier_can_transact(uuid,uuid,uuid)',
+      'hash', 'a0cc4f8ffcd889e40a27053c60630f74', 'service_execute', true),
     jsonb_build_object('signature', 'public.fn_cashier_assert_active_actor(uuid)',
       'hash', 'fa89e518a9b123a7f3108a664f3a18dc', 'service_execute', false),
     jsonb_build_object('signature', 'public.fn_cashier_agent_status_mutex()',
@@ -484,19 +491,20 @@ BEGIN
   -- Renaming keeps the audited production bodies intact. Certify each private
   -- core by exact source, owner, definer/search-path posture and denied caller
   -- ACLs so a same-name replacement cannot hide behind the public wrapper.
+  -- Bank and club-promo cores re-pinned to the installed 20261021174527 bodies.
   v_private_contract := jsonb_build_array(
     jsonb_build_object('signature', 'public.fn_club_bank_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
-      'hash', 'fd7ee70c034f97894cedc51e1b413182'),
+      'hash', '0b7684873b6cee74e2eafb2cf9cf604a'),
     jsonb_build_object('signature', 'public.fn_club_bank_claim_core_20261004(uuid,uuid,numeric,text,text,uuid)',
-      'hash', 'e9e3e8b0fef662612d4cedb68fee6c6c'),
+      'hash', '976208c9e650e2a706a41eeea60b641c'),
     jsonb_build_object('signature', 'public.fn_club_bank_reverse_core_20261004(uuid,text,uuid)',
-      'hash', '371e4f56185eb90bbf43b6967d61ea55'),
+      'hash', '2a67b4b80c857356ef0eaca621b358c3'),
     jsonb_build_object('signature', 'public.fn_admin_remove_chips_core_20261004(uuid,uuid,numeric,text,uuid)',
       'hash', 'ac293c1623da0db62d74f5e888c1011a'),
     jsonb_build_object('signature', 'public.fn_promo_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
       'hash', 'b6b0c7686b67d33e2b01c132f8775cbc'),
     jsonb_build_object('signature', 'public.fn_club_promo_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
-      'hash', '5990c675526e842d0671f47890c1ff27'),
+      'hash', 'e2fa848a65ab3615117385fc0614c229'),
     jsonb_build_object('signature', 'public.fn_agent_wallet_send_core_20261004(uuid,uuid,numeric,text,text,uuid)',
       'hash', '7a357ba95a8ca4eb13f00f798233d8d4'),
     jsonb_build_object('signature', 'public.fn_agent_wallet_claim_back_core_20261004(uuid,uuid,numeric,text,uuid)',
@@ -605,7 +613,7 @@ BEGIN
     WHERE schemaname = 'public' AND tablename = 'club_members'
       AND policyname = 'cashier_downline_read' AND cmd = 'SELECT'
       AND roles @> ARRAY['authenticated']::name[]
-      AND qual LIKE '%fn_club_cashier_can_transact%'
+      AND qual LIKE '%fn_club_viewer_can_transact(%'
   ) THEN
     RAISE EXCEPTION 'club_members cashier_downline_read policy drift';
   END IF;
@@ -614,7 +622,7 @@ BEGIN
     WHERE schemaname = 'public' AND tablename = 'agents'
       AND policyname = 'agents_cashier_scoped_read' AND cmd = 'SELECT'
       AND roles @> ARRAY['authenticated']::name[]
-      AND qual LIKE '%fn_club_cashier_can_transact%'
+      AND qual LIKE '%fn_club_viewer_can_transact(%'
   ) THEN
     RAISE EXCEPTION 'agents cashier-scoped policy drift';
   END IF;

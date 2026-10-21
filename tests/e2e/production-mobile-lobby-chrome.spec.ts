@@ -253,7 +253,9 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(sortbar).toBeVisible({ timeout: 45_000 });
     await expect(sortbar).toHaveCSS('position', 'sticky');
 
-    // Reach the end, then use actual upward input. A programmatic scroll
+    // Reach the end, then supply upward touch input with actual page travel.
+    // Mobile WebKit cannot receive Playwright mouse.wheel, even when this
+    // iPhone profile runs under the chromium-named project. A programmatic scroll
     // whose distance matches a concurrent height change has no user intent
     // to distinguish it from the browser preserving its anchor.
     await expect
@@ -264,9 +266,21 @@ test.describe('the mobile lobby chrome on production', () => {
         })
       )
       .toBe(true);
-    const viewport = page.viewportSize()!;
-    await page.mouse.move(viewport.width / 2, viewport.height / 2);
-    await page.mouse.wheel(0, -64);
+    await page.evaluate(() => {
+      const target = document.documentElement;
+      const touch = (type: string, y: number | null) => {
+        const event = new Event(type, { bubbles: true });
+        Object.defineProperty(event, 'touches', { value: y === null ? [] : [{ clientY: y }] });
+        target.dispatchEvent(event);
+      };
+      touch('touchstart', window.innerHeight / 2);
+      touch('touchmove', window.innerHeight / 2 + 64);
+      window.scrollBy(0, -64);
+      // Sample the actual new scroll position in the touch frame, before a
+      // concurrent layout change can be mistaken for this upward intention.
+      document.dispatchEvent(new Event('scroll'));
+      touch('touchend', null);
+    });
     await expect
       .poll(
         () =>

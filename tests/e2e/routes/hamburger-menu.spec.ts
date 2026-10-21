@@ -126,7 +126,8 @@ test.describe('Hamburger Menu — Open / Close', () => {
     if (!(await openMenuOrSkip(page))) return;
 
     // The drawer should be visible (check for the canonical first section)
-    const gameModes = page.getByRole('heading', { name: 'Play' });
+    // Exact: the lobby's Diamond Arena card also has a heading containing Play.
+    const gameModes = page.getByRole('heading', { name: 'Play', exact: true });
     await expect(gameModes).toBeVisible({ timeout: 3000 });
     await expect(page.getByRole('dialog', { name: 'Poker Arena' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Close' })).toBeFocused();
@@ -366,7 +367,10 @@ test.describe('Hamburger Menu — Information Architecture', () => {
 
     const sections = ['Play', 'Community', 'Wallet & Rewards', 'Support & Legal'];
     for (const section of sections) {
-      await expect(page.getByRole('heading', { name: section })).toBeVisible({ timeout: 3000 });
+      // Exact: the lobby's Diamond Arena card also has a heading containing Play.
+      await expect(page.getByRole('heading', { name: section, exact: true })).toBeVisible({
+        timeout: 3000,
+      });
     }
   });
 });

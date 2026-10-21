@@ -335,6 +335,24 @@ test('published club news appears once per new message across fresh browser cont
       },
     });
     const second = await secondContext.newPage();
+    await test.step('the cold browser acknowledges its own first-entry welcome', async () => {
+      // Authentication does not carry this device's welcome acknowledgement.
+      // Enter through the real door before observing club news; copying a news
+      // marker here would invalidate the cross-device receipt proof below.
+      await second.goto('notifications', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      const welcome = second.getByRole('dialog', { name: 'Welcome To Poker Arena', exact: true });
+      await expect(welcome).toBeVisible({ timeout: 15_000 });
+      const agreement = welcome.getByRole('checkbox', {
+        name: 'I Understand And Agree To These Terms',
+        exact: true,
+      });
+      await agreement.click({ timeout: 10_000 });
+      await expect(agreement).toHaveAttribute('aria-checked', 'true');
+      await welcome.getByRole('button', { name: 'Enter Poker Arena', exact: true }).click({
+        timeout: 10_000,
+      });
+      await expect(welcome).toBeHidden();
+    });
     await ownInvitation(second);
     await silent(second);
     await save(first); // saving identical copy must not reopen the popup

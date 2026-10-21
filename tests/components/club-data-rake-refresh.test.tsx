@@ -290,7 +290,7 @@ beforeEach(() => {
   realtimeState.busHandler = null;
   realtimeState.busEvents = [];
   rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-    if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+    if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
     if (fn === 'ca_club_game_page') {
       return { data: gamePageFor(args), error: null };
     }
@@ -384,14 +384,14 @@ it('does not amplify failed rake reads through successful ledger invalidations',
     expect(document.body.textContent).toMatch(/snapshot could not|statement timeout/i)
   );
   for (let index = 0; index < 2; index++) {
-    const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length;
+    const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2').length;
     await act(async () => {
       for (const handler of realtimeState.handlers) handler({ clubId: CLUB_ID });
       await new Promise((resolve) => setTimeout(resolve, 800));
     });
     await waitFor(() =>
       expect(
-        rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length
+        rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2').length
       ).toBeGreaterThan(before)
     );
     expect(rakeCalls()).toHaveLength(1);

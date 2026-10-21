@@ -28,6 +28,26 @@ const snapshot = {
 };
 
 describe('Club Data snapshot integrity', () => {
+  it('reconciles SNG and Spin through the explicit tournament total without counting them as MTTs', () => {
+    const mixed = {
+      ...snapshot,
+      summary: {
+        ...snapshot.summary,
+        mtt_winnings: 7,
+        tournament_winnings: 20,
+        mtt_fee: 2,
+        tournament_fee: 5,
+      },
+    };
+    expect(isVerifiedClubDataSnapshot(mixed)).toBe(true);
+    expect(
+      isVerifiedClubDataSnapshot({
+        ...mixed,
+        summary: { ...mixed.summary, tournament_winnings: 99 },
+      })
+    ).toBe(false);
+  });
+
   it('certifies a complete, internally reconciled snapshot', () => {
     const result = auditClubDataSnapshot(snapshot);
     expect(result).toMatchObject({ level: 'verified', renderable: true });

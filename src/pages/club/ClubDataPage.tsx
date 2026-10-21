@@ -123,6 +123,8 @@ interface SnapshotSummary {
   games: number;
   total_winnings: number;
   mtt_winnings: number;
+  tournament_winnings?: number;
+  tournament_fee?: number;
   cash_winnings: number;
   fee: number;
   cash_fee?: number;
@@ -1284,7 +1286,7 @@ export default function ClubDataPage() {
         // first 100 rows. Non-recent sorts still use the page RPC in parallel.
         const snapshotRequest = coldRead(
           () =>
-            supabase.rpc('ca_club_data_snapshot', {
+            supabase.rpc('ca_club_data_snapshot_v2', {
               p_club_id: clubUuid,
               p_start: startDate,
               p_end: endDate,
@@ -3304,7 +3306,8 @@ export default function ClubDataPage() {
               Number.isFinite(Number(summary.cash_fee)) &&
               Number.isFinite(Number(summary.mtt_fee)) && (
                 <dd className={`sc-ink--muted ${styles.figureMeta}`}>
-                  {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
+                  {money(summary.cash_fee)} Cash -{' '}
+                  {money(summary.tournament_fee ?? summary.mtt_fee)} Tournaments
                 </dd>
               )}
             {summary && <dd className={styles.figureMeta}>{pctNote(delta?.fee_pct)}</dd>}

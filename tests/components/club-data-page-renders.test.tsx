@@ -299,7 +299,7 @@ beforeEach(() => {
   realtimeState.busHandler = null;
   realtimeState.busEvents = [];
   rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-    if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+    if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
     if (fn === 'ca_club_game_page') {
       return { data: gamePageFor(args), error: null };
     }
@@ -326,7 +326,7 @@ describe('ClubDataPage', () => {
       creator_name: null,
     };
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         return { data: snapshotWithRows([unnamedCreator], 1), error: null };
       }
       if (fn === 'ca_club_game_page') {
@@ -368,7 +368,7 @@ describe('ClubDataPage', () => {
       hasMore: false,
     });
     rpcMock.mockImplementation((fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return new Promise(() => undefined);
+      if (fn === 'ca_club_data_snapshot_v2') return new Promise(() => undefined);
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       return Promise.resolve({ data: null, error: null });
     });
@@ -381,7 +381,7 @@ describe('ClubDataPage', () => {
     expect(
       screen.getByText('Showing A Recent Verified Snapshot While Live Numbers Refresh.')
     ).toBeInTheDocument();
-    expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot', expect.any(Object));
+    expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot_v2', expect.any(Object));
   });
 
   it('rejects a cached game ledger that claims another page without a cursor', async () => {
@@ -407,7 +407,7 @@ describe('ClubDataPage', () => {
     });
     let resolveSnapshot!: (value: { data: typeof snapshot; error: null }) => void;
     rpcMock.mockImplementation((fn: string) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         return new Promise((resolve) => {
           resolveSnapshot = resolve;
         });
@@ -457,7 +457,7 @@ describe('ClubDataPage', () => {
       hasMore: false,
     });
     rpcMock.mockImplementation((fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return new Promise(() => undefined);
+      if (fn === 'ca_club_data_snapshot_v2') return new Promise(() => undefined);
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       return Promise.resolve({ data: null, error: null });
     });
@@ -466,7 +466,7 @@ describe('ClubDataPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
 
     await waitFor(() =>
-      expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot', expect.any(Object))
+      expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot_v2', expect.any(Object))
     );
     expect(screen.queryByText('Wrong Window Cached Game')).not.toBeInTheDocument();
     expect(screen.queryByText('Recent Verified Snapshot')).not.toBeInTheDocument();
@@ -493,7 +493,8 @@ describe('ClubDataPage', () => {
     let resolveBreakdown!: (value: { data: typeof playerBreakdown; error: null }) => void;
     let resolvePage!: (value: { data: typeof playerPage; error: null }) => void;
     rpcMock.mockImplementation((fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_data_snapshot_v2')
+        return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
       if (fn === 'ca_club_player_breakdown') {
         return new Promise((resolve) => {
@@ -542,7 +543,8 @@ describe('ClubDataPage', () => {
     let resolveBreakdown!: (value: { data: typeof playerBreakdown; error: null }) => void;
     let resolvePage!: (value: { data: typeof playerPage; error: null }) => void;
     rpcMock.mockImplementation((fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_data_snapshot_v2')
+        return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_player_breakdown') {
         return new Promise((resolve) => {
           resolveBreakdown = resolve;
@@ -597,14 +599,14 @@ describe('ClubDataPage', () => {
       screen.getByText('The 60-Second Verified Poll Remains Active While Live Feeds Reconnect.')
     ).toBeInTheDocument();
 
-    const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length;
+    const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2').length;
     act(() => latestByTable.get('tables')?.onPayload({ eventType: 'UPDATE' }));
     expect(
       Object.keys(sessionStorage).filter((key) => key.startsWith(CLUB_DATA_CACHE_PREFIX))
     ).toHaveLength(0);
     await waitFor(
       () =>
-        expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length).toBe(
+        expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2').length).toBe(
           before + 1
         ),
       { timeout: 2_000 }
@@ -624,7 +626,7 @@ describe('ClubDataPage', () => {
     expect(screen.getByText('Verified')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export As CSV' })).toBeEnabled();
     expect(rpcMock).toHaveBeenCalledWith(
-      'ca_club_data_snapshot',
+      'ca_club_data_snapshot_v2',
       expect.objectContaining({ p_limit: 100 })
     );
     expect(rpcMock.mock.calls.some(([fn]) => fn === 'ca_club_game_page')).toBe(false);
@@ -682,7 +684,7 @@ describe('ClubDataPage', () => {
     });
 
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         await snapshotGate;
         return { data: snapshot, error: null };
       }
@@ -742,7 +744,7 @@ describe('ClubDataPage', () => {
     });
     downloadMock.mockReturnValue(handoff as unknown as boolean);
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       if (fn === 'ca_club_game_export_start') {
         return { data: { export_id: 'export-guard', total_rows: 1, status: 'ready' }, error: null };
@@ -778,7 +780,7 @@ describe('ClubDataPage', () => {
   it('refuses malformed money in a prepared game export instead of downloading a partial file', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       if (fn === 'ca_club_game_export_start') {
         return {
@@ -822,7 +824,7 @@ describe('ClubDataPage', () => {
   it('refuses an unreconciled prepared player export instead of downloading it', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
       if (fn === 'ca_club_player_page') return { data: playerPageFor(args), error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
@@ -870,7 +872,7 @@ describe('ClubDataPage', () => {
   it('fails closed when the union statement service returns malformed rows', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [null], error: null };
       return { data: null, error: null };
     });
@@ -940,7 +942,8 @@ describe('ClubDataPage', () => {
     }));
 
     rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_data_snapshot_v2')
+        return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       if (fn === 'ca_club_player_breakdown') {
         return Promise.resolve({
@@ -986,7 +989,8 @@ describe('ClubDataPage', () => {
 
   it('shows nothing at all when the flag was masked before it arrived', async () => {
     rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_data_snapshot_v2')
+        return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       if (fn === 'ca_club_player_breakdown') {
         return Promise.resolve({
@@ -1036,7 +1040,7 @@ describe('ClubDataPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
 
     await waitFor(() =>
-      expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot', expect.any(Object))
+      expect(rpcMock).toHaveBeenCalledWith('ca_club_data_snapshot_v2', expect.any(Object))
     );
     expect(fromMock).toHaveBeenCalledWith('clubs');
   });
@@ -1045,12 +1049,13 @@ describe('ClubDataPage', () => {
     const secondClubId = 'b52545cc-9e1d-411b-9f1e-f9c4e76bf0e5';
     let resolveSecondSnapshot!: (result: { data: typeof snapshot; error: null }) => void;
     rpcMock.mockImplementation((fn: string, args?: { p_club_id?: string }) => {
-      if (fn === 'ca_club_data_snapshot' && args?.p_club_id === secondClubId) {
+      if (fn === 'ca_club_data_snapshot_v2' && args?.p_club_id === secondClubId) {
         return new Promise<{ data: typeof snapshot; error: null }>((resolve) => {
           resolveSecondSnapshot = resolve;
         });
       }
-      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_data_snapshot_v2')
+        return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
       if (fn === 'ca_club_player_breakdown') {
         return Promise.resolve({ data: playerBreakdown, error: null });
@@ -1073,7 +1078,7 @@ describe('ClubDataPage', () => {
 
     await waitFor(() =>
       expect(rpcMock).toHaveBeenCalledWith(
-        'ca_club_data_snapshot',
+        'ca_club_data_snapshot_v2',
         expect.objectContaining({ p_club_id: secondClubId })
       )
     );
@@ -1086,7 +1091,7 @@ describe('ClubDataPage', () => {
     let resolveNextInvoices!: (result: { data: (typeof latestInvoice)[]; error: null }) => void;
     rpcMock.mockImplementation((fn: string) => {
       const nextAccount = authState.current.user?.id === 'owner-2';
-      if (fn === 'ca_club_data_snapshot' && nextAccount) {
+      if (fn === 'ca_club_data_snapshot_v2' && nextAccount) {
         return new Promise<{ data: typeof snapshot; error: null }>((resolve) => {
           resolveNextSnapshot = resolve;
         });
@@ -1096,7 +1101,8 @@ describe('ClubDataPage', () => {
           resolveNextInvoices = resolve;
         });
       }
-      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_data_snapshot_v2')
+        return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
       if (fn === 'ca_club_union_invoices') {
         return Promise.resolve({ data: [latestInvoice], error: null });
@@ -1145,13 +1151,13 @@ describe('ClubDataPage', () => {
     const refresh = screen.getByRole('button', { name: 'Refresh Club Ledger' });
 
     await waitFor(() => expect(refresh).toBeEnabled());
-    expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot')).toHaveLength(1);
+    expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2')).toHaveLength(1);
     expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_union_invoices')).toHaveLength(1);
 
     fireEvent.click(refresh);
 
     await waitFor(() =>
-      expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot')).toHaveLength(2)
+      expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2')).toHaveLength(2)
     );
     expect(rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_union_invoices')).toHaveLength(2);
     await screen.findByText('Club Ledger Refreshed.');
@@ -1236,7 +1242,8 @@ describe('ClubDataPage', () => {
 
     const pendingPlayers: Array<() => void> = [];
     rpcMock.mockImplementation((fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return Promise.resolve({ data: snapshot, error: null });
+      if (fn === 'ca_club_data_snapshot_v2')
+        return Promise.resolve({ data: snapshot, error: null });
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       if (fn === 'ca_club_player_breakdown') {
         return new Promise((resolve) =>
@@ -1271,7 +1278,7 @@ describe('ClubDataPage', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let snapshotRequest = 0;
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         snapshotRequest += 1;
         return snapshotRequest === 1
           ? { data: snapshot, error: null }
@@ -1312,7 +1319,7 @@ describe('ClubDataPage', () => {
       rows: [{ ...snapshot.rows[0], id: 'malformed-game', name: 'Malformed Table' }],
     };
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         return { data: returnMalformed ? malformed : snapshot, error: null };
       }
       if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
@@ -1420,7 +1427,7 @@ describe('ClubDataPage', () => {
       await screen.findByText('Table Regular');
 
       rpcMock.mockImplementation(async (fn: string) => {
-        if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+        if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
         if (fn === 'ca_club_union_invoices') return { data: [], error: null };
         if (fn === 'ca_club_player_breakdown' || fn === 'ca_club_player_page') {
           return { data: null, error: { code: '57014', message: 'statement timeout' } };
@@ -1449,7 +1456,7 @@ describe('ClubDataPage', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let invoiceRequest = 0;
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
       if (fn === 'ca_club_player_breakdown') return { data: playerBreakdown, error: null };
       if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
@@ -1483,7 +1490,7 @@ describe('ClubDataPage', () => {
   it('heals one transient cold-start cancellation before exposing an error state', async () => {
     let snapshotRequest = 0;
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         snapshotRequest += 1;
         return snapshotRequest === 1
           ? {
@@ -1508,7 +1515,7 @@ describe('ClubDataPage', () => {
   it('keeps healing through a contended cold start before exposing an error state', async () => {
     let snapshotRequest = 0;
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         snapshotRequest += 1;
         return snapshotRequest < 4
           ? {
@@ -1540,7 +1547,7 @@ describe('ClubDataPage', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let mode: 'fail' | 'empty' = 'fail';
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         return mode === 'fail'
           ? { data: null, error: { code: '22P02', message: 'invalid input syntax' } }
           : { data: zeroSnapshot, error: null };
@@ -1559,11 +1566,11 @@ describe('ClubDataPage', () => {
       await waitFor(() => expect(gamesAlert()).toBeTruthy());
       expect(screen.queryByText('No Games In This Period.')).not.toBeInTheDocument();
 
-      const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length;
+      const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2').length;
       fireEvent.click(within(gamesAlert()!).getByRole('button', { name: 'Try Again' }));
       await waitFor(() =>
         expect(
-          rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot').length
+          rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_data_snapshot_v2').length
         ).toBeGreaterThan(before)
       );
       await waitFor(() => expect(gamesAlert()).toBeTruthy());
@@ -1588,7 +1595,7 @@ describe('ClubDataPage', () => {
       summary: { ...snapshot.summary, total_winnings: null },
     };
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: malformed, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: malformed, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       return { data: null, error: null };
     });
@@ -1631,7 +1638,7 @@ describe('ClubDataPage', () => {
   ])('refuses a well-formed success receipt for %s', async (_name, wrongScope) => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: wrongScope, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: wrongScope, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       return { data: null, error: null };
     });
@@ -1668,7 +1675,7 @@ describe('ClubDataPage', () => {
   ])('refuses %s instead of certifying it live', async (_name, malformed) => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: malformed, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: malformed, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       return { data: null, error: null };
     });
@@ -1690,7 +1697,7 @@ describe('ClubDataPage', () => {
   it('refuses malformed player money instead of caching a false player ledger', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_player_breakdown') {
         return {
           data: {
@@ -1732,7 +1739,7 @@ describe('ClubDataPage', () => {
       },
     };
     rpcMock.mockImplementation(async (fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_player_breakdown') return { data: wrongWindow, error: null };
       if (fn === 'ca_club_player_page') return { data: playerPage, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
@@ -1768,7 +1775,7 @@ describe('ClubDataPage', () => {
       },
     };
     rpcMock.mockImplementation((fn: string) => {
-      if (fn === 'ca_club_data_snapshot') return abortableSnapshot;
+      if (fn === 'ca_club_data_snapshot_v2') return abortableSnapshot;
       if (fn === 'ca_club_game_page') return Promise.resolve({ data: gamePage, error: null });
       if (fn === 'ca_club_union_invoices') return Promise.resolve({ data: [], error: null });
       return Promise.resolve({ data: null, error: null });
@@ -1820,7 +1827,7 @@ describe('ClubDataPage', () => {
       },
     };
     rpcMock.mockImplementation((fn: string) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         snapshotCalls += 1;
         return abortableSnapshot;
       }
@@ -1897,7 +1904,7 @@ describe('ClubDataPage', () => {
     let winnersArgs: Record<string, unknown> = {};
     let losersArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       if (fn === 'ca_club_player_breakdown')
@@ -2028,7 +2035,7 @@ describe('ClubDataPage', () => {
     let oldPageArgs: Record<string, unknown> = {};
     let currentPageArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
       if (fn === 'ca_club_player_breakdown')
@@ -2137,7 +2144,7 @@ describe('ClubDataPage', () => {
       started_at: '2026-08-30T11:00:00Z',
     };
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         return { data: snapshotWithRows(snapshot.rows, 2), error: null };
       }
       if (fn === 'ca_club_game_page') {
@@ -2180,7 +2187,7 @@ describe('ClubDataPage', () => {
     let resolvePrefetch!: (result: { data: Record<string, unknown>; error: null }) => void;
     let prefetchArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         expect(args?.p_limit).toBe(100);
         return {
           data: snapshotWithRows(recentRows.slice(0, 100), 250),
@@ -2243,7 +2250,7 @@ describe('ClubDataPage', () => {
       started_at: new Date(Date.UTC(2026, 7, 30, 12, 0, 0) - index * 1_000).toISOString(),
     }));
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         return {
           data: snapshotWithRows(recentRows.slice(0, 100), 250),
           error: null,
@@ -2340,12 +2347,12 @@ describe('ClubDataPage', () => {
     let resolveFee: ((result: Reply) => void) | undefined;
     let feeArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot' && args?.p_limit === 100) {
+      if (fn === 'ca_club_data_snapshot_v2' && args?.p_limit === 100) {
         return new Promise<Reply>((resolve) => {
           resolveRecent = resolve;
         });
       }
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_game_page') {
         feeArgs = args ?? {};
         return new Promise<Reply>((resolve) => {
@@ -2408,7 +2415,7 @@ describe('ClubDataPage', () => {
     let recentArgs: Record<string, unknown> = {};
     let feePageArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot')
+      if (fn === 'ca_club_data_snapshot_v2')
         return {
           data: snapshotWithRows(recentRows.slice(0, 100), 250),
           error: null,
@@ -2512,7 +2519,7 @@ describe('ClubDataPage', () => {
     let recentArgs: Record<string, unknown> = {};
     let rankedArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         return {
           data: snapshotWithRows(recentRows.slice(0, 100), 250),
           error: null,
@@ -2596,7 +2603,7 @@ describe('ClubDataPage', () => {
     let oldPageArgs: Record<string, unknown> = {};
     let losersArgs: Record<string, unknown> = {};
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_data_snapshot_v2') return { data: snapshot, error: null };
       if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
       if (fn === 'ca_club_player_breakdown') {
         return {
@@ -2681,7 +2688,7 @@ describe('ClubDataPage', () => {
     }));
     const rankedCursor = { value: 9_801, time: 1_777_463_801, kind: 'CASH', id: 'ranked-game-200' };
     rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
-      if (fn === 'ca_club_data_snapshot') {
+      if (fn === 'ca_club_data_snapshot_v2') {
         return { data: snapshotWithRows(snapshot.rows, 250), error: null };
       }
       if (fn === 'ca_club_game_page') {

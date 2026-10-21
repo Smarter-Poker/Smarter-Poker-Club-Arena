@@ -46,6 +46,29 @@ try{
  sql("UPDATE ca_drift_incidents SET "+assignments.join(','));
  sql("UPDATE tournament_escrow SET fee_balance=1 WHERE tournament_id='"+ids[0]+"'");
  assert.throws(()=>sql('SELECT public.fixture_close_historical()'),/HISTORICAL_STORM_TERMINAL_PROOF_CHANGED/);
+ // Execute the complete migration with the actual captured declaration helper.
+ // The helper records the definition present when called, not a future DDL body.
+ sql("UPDATE tournament_escrow SET fee_balance=0");
+ sql(`CREATE ROLE service_role; CREATE ROLE anon; CREATE ROLE authenticated;
+ CREATE TABLE ca_guard_defs(proname text PRIMARY KEY,def_hash text,declared_ref text,declared_at timestamptz,updated_at timestamptz);
+ CREATE TABLE ca_guard_def_history(proname text,def_hash text,def_text text,UNIQUE(proname,def_hash));
+ CREATE FUNCTION fn_ca_guard_watchlist() RETURNS text[] LANGUAGE sql AS $$SELECT ARRAY['fn_ca_raise_drift_incident']::text[]$$;`);
+ sql(readFileSync(path.join(root,'scripts/qualification/fixtures/tournament-finish-storm/declare-guard.sql'),'utf8'));
+ sql(readFileSync(path.join(root,'scripts/qualification/fixtures/tournament-finish-storm/preimages.sql'),'utf8'));
+ const signature='fn_ca_raise_drift_incident(text,text,text,text,numeric,numeric,numeric,text,text,uuid,uuid,uuid,uuid,uuid,uuid,text,uuid[],uuid[],text,boolean,jsonb)';
+ sql(`REVOKE ALL ON FUNCTION fn_ca_alert_resolution_reaches_the_incident(),${signature} FROM PUBLIC,anon,authenticated;
+ GRANT EXECUTE ON FUNCTION fn_ca_alert_resolution_reaches_the_incident(),${signature} TO postgres,service_role;`);
+ const declaration="SELECT public.fn_ca_declare_guard_redefinition('fn_ca_raise_drift_incident','migration 20261020145408_resolved_financial_alert_storms_close_with_their_exact_membe');";
+ const lastDeclaration=migration.lastIndexOf(declaration);
+ assert.ok(lastDeclaration>migration.indexOf('CREATE OR REPLACE FUNCTION public.fn_ca_raise_drift_incident'),'final declaration follows the installed definition');
+ const refused=migration.slice(0,lastDeclaration)+migration.slice(lastDeclaration+declaration.length);
+ assert.throws(()=>sql(refused),/STORM_GUARD_DECLARATION_CHANGED/,'pre-DDL declaration alone must refuse and roll back');
+ assert.equal(sql("SELECT md5(pg_get_functiondef('"+signature+"'::regprocedure))"),'b5025fd1a0f856767f3a91166722ed7f','refused transaction preserves original source');
+ const originalRow=sql('SELECT row_to_json(i)::text FROM ca_drift_incidents i');
+ sql(migration);
+ assert.equal(sql("SELECT def_hash FROM ca_guard_defs WHERE proname='fn_ca_raise_drift_incident'"),'0d59dc950cdc32ce9df9ac12b02b2c89');
+ assert.equal(sql('SELECT row_to_json(i)::text FROM ca_drift_incidents i'),originalRow,'full installation preserves known closure');
+ console.log('PASS complete exact migration with actual guard declaration: pre-DDL-only fails and rolls back; post-DDL baseline, private authority, source hashes and existing closure all pass');
  console.log('PASS actual PG17 exact historical block: original open closure, exact verified closure preserves entire row, unknown closure refused, unpaid original witness refused; immutable 966 IDs/hash unchanged');
 }finally{
  if(running)run('pg_ctl',['-D',path.join(dir,'db'),'-m','immediate','-w','stop']);

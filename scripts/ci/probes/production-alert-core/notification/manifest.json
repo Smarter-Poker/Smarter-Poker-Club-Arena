@@ -243,8 +243,8 @@
     },
     "storm_historical": {
       "path": "scripts/qualification/tournament-finish-storm/historical.mjs",
-      "bytes": 5112,
-      "sha256": "b9c5cacef954e0b083ee9df0c24eab68146591b2f132fab033873875f75b1e9a"
+      "bytes": 7776,
+      "sha256": "c4525ad032f874afe1c7d7eb8f86fe0ba1ab52fe768839936d9247f91f50dc78"
     },
     "storm_historical_ids": {
       "path": "scripts/qualification/fixtures/tournament-finish-storm/historical-ids.json",
@@ -253,8 +253,8 @@
     },
     "storm_migration": {
       "path": "supabase/migrations/20261020145408_resolved_financial_alert_storms_close_with_their_exact_membe.sql",
-      "bytes": 24594,
-      "sha256": "80ea09a91a125b3662d892a8152790c46224c50695cbd98b98c97a7af858a8bc"
+      "bytes": 24842,
+      "sha256": "b7701f4ee3d7f28d94afd0361985c1b042057bb417eefb4857007cb40e1f8af3"
     },
     "storm_historical_preimage": {
       "path": "scripts/qualification/fixtures/tournament-finish-storm/historical-preimage.sql",
@@ -265,6 +265,11 @@
       "path": "scripts/qualification/fixtures/tournament-finish-storm/known-closure.json",
       "bytes": 992,
       "sha256": "f58ba17b5a84aaa52948eb9da2c2da6c6570e2b35b3c61c87121a35da2a12f65"
+    },
+    "storm_declare_guard": {
+      "path": "scripts/qualification/fixtures/tournament-finish-storm/declare-guard.sql",
+      "bytes": 2019,
+      "sha256": "cf12f27e760b12e715574f14ce109da82ada1e88fc14e9cc008ab5aba58f92ea"
     }
   },
   "sequenceContract": {

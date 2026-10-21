@@ -1657,6 +1657,10 @@ jobs:
           --scratch "$RUNNER_TEMP"
           --output "$RUNNER_TEMP/adaptive-membership-batch-index.json"
 
+      - name: Mutual friends count distinct players across reciprocal edges
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-mutual-friends-unique-postgres.py
+
       - name: Public discovery enforces current home-group privacy
         if: matrix.shard == 4
         run: python3 scripts/ci/test-discovery-privacy-postgres.py

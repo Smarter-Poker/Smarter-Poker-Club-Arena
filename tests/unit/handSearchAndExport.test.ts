@@ -262,7 +262,8 @@ describe('a hand history a tracker can import', () => {
     }
     expect(text).toContain('*** HOLE CARDS ***');
     expect(text).toContain('*** SUMMARY ***');
-    expect(text).toMatch(/\nTotal pot \$[\d.]+ \| Rake \$[\d.]+/);
+    expect(text).toMatch(/\nTotal pot \$[\d.]+\n/);
+    expect(text).not.toMatch(/rake|jackpot fee/i);
   });
 
   it('writes a raise as "raises BY to TO", with the TO excluding dead money', () => {

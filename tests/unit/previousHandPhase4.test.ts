@@ -150,12 +150,12 @@ describe('share link v4 carries what the reconstruction knows', () => {
     expect(lowBoardTwo?.userId).toBe(shareUserId(2));
   });
 
-  it('carries the rake and the jackpot drop', () => {
+  it('omits rake and jackpot deductions from shared hands', () => {
     const { decoded, rebuilt } = roundTrip(ritHiLoInput());
-    expect(decoded.rake).toBeCloseTo(0.2, 2);
-    expect(decoded.bbjFee).toBeCloseTo(0.05, 2);
-    expect(rebuilt.rake).toBeCloseTo(0.2, 2);
-    expect(rebuilt.bbjFee).toBeCloseTo(0.05, 2);
+    expect(decoded.rake).toBeUndefined();
+    expect(decoded.bbjFee).toBeUndefined();
+    expect(rebuilt.rake).toBe(0);
+    expect(rebuilt.bbjFee).toBe(0);
   });
 
   it('carries the hand number, so a shared hand is called what it is called', () => {

@@ -149,7 +149,9 @@ describe('no Club Bank screen picks the wallet from the role alone', () => {
     expect(trade).toContain("currentClub?.entityType === 'club' && canSeeClubBank(myRole)");
     // Dan 2026-10-15: the owner's own row is selectable like any other, and a
     // A selected Club Bank source pays the chosen eligible wallet, including self.
-    expect(trade).toContain('const selectable = !r.isSelf || selfCanFundPlayerWallet;');
+    expect(trade).toMatch(
+      /const selectable =\s*!r\.isSelf \|\| selfCanFundPlayerWallet \|\| canHoldAgentWallet\(myRole\);/
+    );
     expect(trade).toMatch(
       /kind === 'send' &&\s*targets.length === 1 &&\s*selfCanFundPlayerWallet &&\s*sendSource === 'club_bank'/
     );

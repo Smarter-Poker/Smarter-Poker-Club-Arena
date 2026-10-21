@@ -1044,18 +1044,16 @@ export default function WalletCashierModal({
   /**
    * NEVER OFFER A RECIPIENT THE SERVER WILL REFUSE.
    *
-   * fn_agent_wallet_send and fn_promo_wallet_send both refuse
-   * `p_to_user_id = auth.uid()` outright ("You Cannot Send Chips To Yourself"),
-   * and fn_club_cashier_members returns the caller in its own list for a staff
-   * viewer (scope 'all'). So the roster rendered the viewer with a "(You)" tag,
-   * let them pick it, and the send failed on tap with no way to understand why.
+   * Owner October 21: agent-wallet to own player-wallet is allowed. Other
+   * agent-wallet destinations and the agent's promo float still refuse self.
+   * Eligibility follows both the selected source and destination.
    *
    * The CLUB BANK is deliberately exempt: fn_club_bank_send has no self guard
    * because an owner funding their OWN agent float out of the treasury is the
    * normal way an owner gets a float at all. Removing themselves from that list
    * would break the funding route the whole hierarchy hangs off.
    */
-  const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource);
+  const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource, destination);
 
   // Wallet destinations list only members who can hold that wallet. Other
   // refusals (such as self-send) remain visible with their existing reason.

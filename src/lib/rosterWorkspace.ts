@@ -27,7 +27,7 @@ const FILTERS = [
   'inactive_90',
   'high_fees',
 ];
-const SORTS = ['hierarchy', 'activity', 'name', 'downlines', 'wallet', 'fees'];
+const SORTS = ['hierarchy', 'activity', 'newest', 'name', 'downlines', 'wallet', 'fees'];
 export const ROSTER_COLUMNS: RosterColumn[] = ['downlines', 'wallets', 'fees', 'activity'];
 export const ROSTER_ROW_HEIGHT = 123;
 export const MAX_ROSTER_RETURN_TOP = ROSTER_ROW_HEIGHT * 10_000;

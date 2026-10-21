@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   cashierTabs,
+  cashierRefusesSelfSend,
   cashierDestinations,
   canUseCashier,
   claimNeedsConfirm,
@@ -151,5 +152,15 @@ describe('claimNeedsConfirm', () => {
 
   it('a zero or empty amount has nothing to confirm', () => {
     expect(claimNeedsConfirm(0)).toBe(false);
+  });
+});
+
+// Owner October 21: an agent may fund their own playable wallet.
+describe('agent self funding uses distinct wallets', () => {
+  it('allows agent-wallet to own player wallet and retains the other self refusals', () => {
+    expect(cashierRefusesSelfSend('agent_wallet', 'own_float', 'player_wallet')).toBe(false);
+    expect(cashierRefusesSelfSend('agent_wallet', 'own_float', 'agent_wallet')).toBe(true);
+    expect(cashierRefusesSelfSend('agent_wallet', 'own_float', 'promo_wallet')).toBe(true);
+    expect(cashierRefusesSelfSend('promo_wallet', 'own_float', 'player_wallet')).toBe(true);
   });
 });

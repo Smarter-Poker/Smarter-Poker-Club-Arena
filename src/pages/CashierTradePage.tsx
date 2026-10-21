@@ -2131,23 +2131,30 @@ function CashierTradeWorkspace() {
         setTransferFailures([]);
       }}
     >
-      {recipientSendWallets(target.role).map((wallet) => (
-        <option key={wallet} value={wallet}>
-          {SEND_DESTINATION_LABELS[wallet]}:{' '}
-          {targetBalances[target.userId]?.[wallet] === undefined
-            ? 'Unavailable'
-            : formatWalletChips(targetBalances[target.userId][wallet]!)}
-        </option>
-      ))}
+      {recipientSendWallets(target.role)
+        .filter(
+          (wallet) =>
+            !(target.isSelf && sendSource === 'agent_wallet') || wallet === 'player_wallet'
+        )
+        .map((wallet) => (
+          <option key={wallet} value={wallet}>
+            {SEND_DESTINATION_LABELS[wallet]}:{' '}
+            {targetBalances[target.userId]?.[wallet] === undefined
+              ? 'Unavailable'
+              : formatWalletChips(targetBalances[target.userId][wallet]!)}
+          </option>
+        ))}
     </select>
   );
 
   const transferDestination = (target: DownlineRow): SendDestination =>
-    (transferRecovery?.submissionId === submissionIdRef.current
-      ? transferRecovery.destinations?.[target.userId]
-      : undefined) ||
-    recipientWallets[target.userId] ||
-    (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
+    target.isSelf && sendSource === 'agent_wallet'
+      ? 'player_wallet'
+      : (transferRecovery?.submissionId === submissionIdRef.current
+          ? transferRecovery.destinations?.[target.userId]
+          : undefined) ||
+        recipientWallets[target.userId] ||
+        (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
 
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
@@ -2210,11 +2217,12 @@ function CashierTradeWorkspace() {
     const selfTargeted = targets.some((target) => target.isSelf || target.userId === user.id);
     if (
       selfTargeted &&
-      (kind !== 'send' || !['club_promo_wallet', 'player_wallet'].includes(sendSource))
+      (kind !== 'send' ||
+        !['club_promo_wallet', 'player_wallet', 'agent_wallet'].includes(sendSource))
     ) {
       /* SENDING TO YOURSELF (Dan 2026-10-15: "INCLUDING OWNERS, I CURRENTLY
-         CAN'T SEND CHIPS TO MYSELF"). An agent wallet cannot pay its own
-         holder (fn_agent_wallet_send refuses it), so an owner or co owner's
+         CAN'T SEND CHIPS TO MYSELF"). An agent wallet now funds its holder's player
+         wallet directly. When the chosen source is Club Bank, the owner's
          own player wallet is funded from the Club Bank, the account that
          already pays them through Fund Me. On its own, so a batch never
          mixes two funding accounts. */
@@ -3975,7 +3983,8 @@ function CashierTradeWorkspace() {
                        check behind. Measured by our own clock, because a
                        touch double tap does not reliably fire dblclick. Your
                        own row is selectable when the Club Bank can pay you. */
-                    const selectable = !r.isSelf || selfCanFundPlayerWallet;
+                    const selectable =
+                      !r.isSelf || selfCanFundPlayerWallet || canHoldAgentWallet(myRole);
                     const isSelected = selected.has(r.userId);
                     const toggle = () =>
                       setSelected((previous) => {
@@ -4003,7 +4012,7 @@ function CashierTradeWorkspace() {
                         className={`${styles.row} ${r.isSelf ? styles.rowSelf : ''} ${selectable ? styles.selectableRow : ''} ${isSelected ? styles.rowSelected : ''}`}
                         onClick={onRowTap}
                         title={
-                          r.isSelf && !selfCanFundPlayerWallet
+                          r.isSelf && !selfCanFundPlayerWallet && !canHoldAgentWallet(myRole)
                             ? 'This Is You. Chips Cannot Be Sent To Yourself.'
                             : undefined
                         }

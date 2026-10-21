@@ -32,7 +32,7 @@ function blindLevels(minutes: number, rows: Array<[number, number]>): BlindLevel
   }));
 }
 export const BLIND_STRUCTURES = {
-  hyperTurbo: blindLevels(2, [
+  hyperTurbo: blindLevels(5, [
     [10, 0],
     [20, 0],
     [30, 0],
@@ -64,7 +64,7 @@ export const BLIND_STRUCTURES = {
     [80000, 20000],
     [100000, 25000],
   ]),
-  turbo: blindLevels(3, [
+  turbo: blindLevels(5, [
     [10, 0],
     [15, 0],
     [25, 0],
@@ -225,7 +225,7 @@ export const SPIN_BLIND_STRUCTURE: BlindLevel[] = SPIN_BLINDS.map((b, i) => ({
   smallBlind: b.small,
   bigBlind: b.big,
   ante: 0,
-  durationMinutes: 3,
+  durationMinutes: 5,
 }));
 
 /** Static payout shapes by field size. Pure data; see the note at the top. */

@@ -52,8 +52,8 @@ import { unionApi } from '../../services/UnionApiService';
 import { classifyCashierRpcFailure } from '../../services/CashierResilience';
 import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../../utils/platformFrozen';
 import {
-  clearUnionWalletOperation,
-  reserveUnionWalletOperation,
+  acknowledgeDurableUnionWalletOperation,
+  reserveDurableUnionWalletOperation,
   unionWalletIntentSignature,
   type UnionWalletIntentScope,
 } from '../../services/UnionWalletRecovery';
@@ -582,25 +582,25 @@ export function UnionWalletModal({
         sourceWallet: mode === 'pull' ? selectedRoute.kind : kind === 'chips' ? chipSource : kind,
       }),
     };
-    /* Reserve BEFORE the RPC/fetch. A browser that cannot durably remember
-       the operation id cannot safely recover a committed-but-lost response,
-       so the money door stays closed. */
-    const opId = reserveUnionWalletOperation(intentScope);
-    if (!opId) {
-      const storageError = new Error('Union Wallet operation id could not be stored');
-      reportError(storageError, 'UnionWalletModal.operation_recovery_write_failed');
-      setNotice({
-        ok: false,
-        text: 'Union Wallet Safety Storage Is Unavailable. Free Browser Storage And Try Again.',
-      });
-      return;
-    }
-
     busyRef.current = true;
     setBusy(true);
     setNotice(null);
-
+    let opId: string | null = null;
+    const directoryVersion = directoryLoadVersion.current;
+    const rpc = (name: string, args: Record<string, unknown>) => supabase.rpc(name, args);
+    const acknowledge = async () => {
+      if (!opId) return;
+      try {
+        await acknowledgeDurableUnionWalletOperation(intentScope, opId, rpc);
+      } catch (error) {
+        // Keep the server intent for safe replay. A confirmed movement stays
+        // confirmed even if its acknowledgement response is interrupted.
+        reportError(error, 'UnionWalletModal.intent_acknowledgement_failed');
+      }
+    };
     try {
+      opId = await reserveDurableUnionWalletOperation(intentScope, rpc);
+      if (directoryVersion !== directoryLoadVersion.current) return;
       if (mode === 'send') {
         if (target.type === 'member') {
           const { data, error, status } = await supabase.rpc('fn_union_send_to_member', {
@@ -710,7 +710,7 @@ export function UnionWalletModal({
           };
           if (cb.success === false) {
             if (cb.duplicate) {
-              clearUnionWalletOperation(intentScope, opId);
+              await acknowledge();
               setAmount('');
               setNotice({
                 ok: true,
@@ -743,7 +743,7 @@ export function UnionWalletModal({
           else setLiveBalance((prev) => prev + amt);
         }
       }
-      clearUnionWalletOperation(intentScope, opId);
+      await acknowledge();
       setAmount('');
       try {
         onSent?.();
@@ -753,7 +753,7 @@ export function UnionWalletModal({
         reportError(callbackError, 'UnionWalletModal.on_sent_failed');
       }
     } catch (err: any) {
-      if (err?.definitive === true) clearUnionWalletOperation(intentScope, opId);
+      if (err?.definitive === true) await acknowledge();
       reportError(err, 'UnionWalletModal.action_failed');
       setNotice({
         ok: false,

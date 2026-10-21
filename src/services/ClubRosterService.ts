@@ -123,7 +123,7 @@ export type RosterFilter =
   | 'inactive_60'
   | 'inactive_90'
   | 'high_fees';
-export type RosterSort = 'hierarchy' | 'activity' | 'name' | 'downlines' | 'wallet' | 'fees';
+export type RosterSort = 'hierarchy' | 'activity' | 'newest' | 'name' | 'downlines' | 'wallet' | 'fees';
 export type RosterCursor = Record<string, string | number>;
 
 export interface RosterQuery {

@@ -9456,7 +9456,7 @@ export abstract class TournamentManagerBase {
       const secs = Number(levelData?.duration);
       if (Number.isFinite(secs) && secs > 0) baseMs = secs * 1000;
     }
-    return baseMs;
+    return Math.max(5 * 60_000, baseMs);
   }
 
   protected levelDurationMs(levelData: any): number {

@@ -166,9 +166,11 @@ export function coercesToAgentWallet(
  */
 export function cashierRefusesSelfSend(
   walletType: CashierWalletType,
-  promoSource: PromoSource = 'own_float'
+  promoSource: PromoSource = 'own_float',
+  destination?: string
 ): boolean {
   if (walletType === 'club_bank') return false;
+  if (walletType === 'agent_wallet' && destination === 'player_wallet') return false;
   /* The CLUB'S promo pot is club money, and an owner moving it into their own
      promo float is the same funding route the Club Bank keeps open for the
      agent float. fn_club_promo_wallet_send accepts the caller as recipient;

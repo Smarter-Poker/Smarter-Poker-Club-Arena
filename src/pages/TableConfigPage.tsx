@@ -413,7 +413,7 @@ const DEFAULT_CONFIG: TableConfig = {
   blindStructure: 'standard',
   payoutStructure: 'payout3',
   startingChips: 1000,
-  blindsUpMinutes: 3,
+  blindsUpMinutes: 10,
   sngPlayerCount: 9,
   isSpins: false,
   nextStepSatellite: false,
@@ -1602,7 +1602,7 @@ export default function TableConfigPage({
               label="Blinds Up"
               value={config.blindsUpMinutes}
               onChange={(v) => updateConfig('blindsUpMinutes', v)}
-              min={1}
+              min={5}
               max={15}
               suffix=" min"
               tooltip="Minutes Each Blind Level Lasts Before The Blinds Go Up"

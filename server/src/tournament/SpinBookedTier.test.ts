@@ -116,7 +116,7 @@ describe('the booked Spin tier determines the presentation patch', () => {
       );
       expect(patch.blind_structure).toHaveLength(12);
       expect(
-        patch.blind_structure.every((level: { duration: number }) => level.duration === 180)
+        patch.blind_structure.every((level: { duration: number }) => level.duration === 300)
       ).toBe(true);
       expect(patch).not.toHaveProperty('spin_multiplier');
       expect(patch).not.toHaveProperty('prize_pool');

@@ -146,6 +146,7 @@ const WIN_LOSS_SHORT: Record<WinLossPeriod, string> = {
 const SORT_LABEL: Record<RosterSort, string> = {
   hierarchy: 'Role Hierarchy',
   activity: 'Recent Activity',
+  newest: 'Newest Players',
   name: 'Name (A To Z)',
   downlines: 'Downlines',
   wallet: 'Wallet Balance',

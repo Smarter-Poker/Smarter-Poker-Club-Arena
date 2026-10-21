@@ -1,3 +1,4 @@
+import { unionWalletIntentRpc } from './helpers/unionWalletIntentRpc';
 /**
  * Union wallets must open and be able to send funds to any union member.
  *
@@ -12,6 +13,7 @@ const UNION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const sourceState = vi.hoisted(() => ({ clubError: null as null | { message: string } }));
 
 const rpc = vi.fn();
+const durableIntents = unionWalletIntentRpc();
 /** The roster is read in pages (.order().range()); one mocked page holds it all. */
 function pageable(value: unknown) {
   const p: any = Promise.resolve(value);
@@ -38,7 +40,7 @@ const fromChain = (table?: string) => {
   return chain;
 };
 vi.mock('../src/lib/supabase', () => ({
-  supabase: { rpc: (...a: unknown[]) => rpc(...a), from: (t: string) => fromChain(t) },
+  supabase: { rpc: (name: string, args: Record<string, unknown>) => durableIntents.call(name, args, () => rpc(name, args)), from: (t: string) => fromChain(t) },
 }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/hooks/useAuthUser', () => ({
@@ -92,6 +94,7 @@ const base = {
 };
 
 beforeEach(() => {
+  durableIntents.clear();
   window.localStorage.clear();
   sourceState.clubError = null;
   base.onClose.mockClear();
@@ -352,7 +355,7 @@ describe('UnionWalletModal', () => {
     await screen.findByRole('status');
   });
 
-  it('fails closed before the member RPC when durable safety storage is unavailable', async () => {
+  it('sends safely through server recovery when browser storage is unavailable', async () => {
     const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
       throw new Error('quota exceeded');
     });
@@ -364,8 +367,8 @@ describe('UnionWalletModal', () => {
       fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
       fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(/safety storage is unavailable/i);
-      expect(rpc).not.toHaveBeenCalledWith('fn_union_send_to_member', expect.anything());
+      expect(await screen.findByRole('status')).toHaveTextContent(/sent 250/i);
+      expect(rpc).toHaveBeenCalledWith('fn_union_send_to_member', expect.objectContaining({p_op_id: expect.stringMatching(/^[0-9a-f-]{36}$/)}));
     } finally {
       setItem.mockRestore();
     }

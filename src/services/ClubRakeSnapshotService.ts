@@ -22,6 +22,7 @@ export interface RakeSnapshotSummary {
   fee: number;
   cash_fee: number | null;
   mtt_fee: number | null;
+  tournament_fee?: number | null;
   games: number | null;
   cash_games?: number | null;
   mtt_games?: number | null;
@@ -29,6 +30,7 @@ export interface RakeSnapshotSummary {
   total_winnings: number | null;
   cash_winnings?: number | null;
   mtt_winnings: number | null;
+  tournament_winnings?: number | null;
   /** agent scope only */
   members?: number;
   active?: number;
@@ -136,6 +138,7 @@ export interface RakeDownlineRow {
 export type RakeBreakdownRow = RakeClubRow | RakeAgentRow | RakeDownlineRow;
 
 export interface RakeSnapshot {
+  accounting_basis?: 'utc_net_money_flow';
   scope: RakeScope;
   scope_label: string;
   club_id: string | null;
@@ -356,7 +359,7 @@ export const ClubRakeSnapshotService = {
     sort?: RakeSortKey | null;
     signal?: AbortSignal;
   }): Promise<RakeSnapshot> {
-    let query = supabase.rpc('ca_rake_snapshot', {
+    let query = supabase.rpc('ca_rake_snapshot_v2', {
       p_scope: opts.scope,
       p_club_id: opts.clubId ?? null,
       p_union_id: opts.unionId ?? null,

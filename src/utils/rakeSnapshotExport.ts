@@ -359,7 +359,7 @@ export async function fetchRakeSnapshotExport(
 
   const rows = await fetchClubDataExport<RakeBreakdownRow>({
     rpc: options.rpc,
-    startRpc: 'ca_rake_export_start',
+    startRpc: 'ca_rake_export_start_v2',
     startArgs: {
       p_scope_type: options.scope,
       p_scope_id: options.scopeId,

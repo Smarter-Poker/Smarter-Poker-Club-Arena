@@ -357,13 +357,13 @@ function abortable<T>(promise: Promise<T>, onSignal?: (signal: AbortSignal) => v
     },
   });
 }
-const rakeCalls = () => rpcMock.mock.calls.filter(([fn]) => fn === 'ca_rake_snapshot');
+const rakeCalls = () => rpcMock.mock.calls.filter(([fn]) => fn === 'ca_rake_snapshot_v2');
 
 it('does not amplify failed rake reads through successful ledger invalidations', async () => {
   const ledger = rpcMock.getMockImplementation()!;
   let fail = true;
   rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) => {
-    if (fn === 'ca_rake_snapshot')
+    if (fn === 'ca_rake_snapshot_v2')
       return abortable(
         Promise.resolve(
           fail
@@ -441,7 +441,7 @@ it('aborts retired reads while preserving the selected reporting period across S
 it('issues no hidden rake reads in default Simple mode', async () => {
   const ledger = rpcMock.getMockImplementation()!;
   rpcMock.mockImplementation((fn: string, args?: Record<string, unknown>) =>
-    fn === 'ca_rake_snapshot'
+    fn === 'ca_rake_snapshot_v2'
       ? abortable(Promise.resolve({ data: rakePayload(), error: null }))
       : ledger(fn, args)
   );

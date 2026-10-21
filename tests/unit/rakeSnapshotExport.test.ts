@@ -148,7 +148,7 @@ describe('complete immutable Rake exports', () => {
     const allRows = Array.from({ length: 1254 }, (_, index) => agentRow(index + 1));
     const progress: ClubDataExportProgress[] = [];
     const rpc = vi.fn((name: string, args: Record<string, unknown>) => {
-      if (name === 'ca_rake_export_start') return result(receipt('club', allRows.length));
+      if (name === 'ca_rake_export_start_v2') return result(receipt('club', allRows.length));
       if (name === 'ca_club_data_export_page') {
         const offset = Number(args.p_offset);
         return result(
@@ -178,7 +178,7 @@ describe('complete immutable Rake exports', () => {
       { stage: 'downloading', loaded: 1000, total: 1254 },
       { stage: 'downloading', loaded: 1254, total: 1254 },
     ]);
-    expect(rpc).toHaveBeenNthCalledWith(1, 'ca_rake_export_start', {
+    expect(rpc).toHaveBeenNthCalledWith(1, 'ca_rake_export_start_v2', {
       p_scope_type: 'club',
       p_scope_id: CLUB_ID,
       p_start: '2026-09-01',
@@ -210,7 +210,7 @@ describe('complete immutable Rake exports', () => {
     },
   ])('uses the exact $scope scope and delegated target arguments', async (entry) => {
     const rpc = vi.fn((name: string) => {
-      if (name === 'ca_rake_export_start') return result(receipt(entry.scope, 1));
+      if (name === 'ca_rake_export_start_v2') return result(receipt(entry.scope, 1));
       if (name === 'ca_club_data_export_page') return result(page(entry.scope, entry.rows, 1, 0));
       return result(true);
     }) as ClubDataExportRpc;
@@ -229,7 +229,7 @@ describe('complete immutable Rake exports', () => {
 
     expect(rpc).toHaveBeenNthCalledWith(
       1,
-      'ca_rake_export_start',
+      'ca_rake_export_start_v2',
       expect.objectContaining({
         p_scope_type: entry.scope,
         p_scope_id: entry.scopeId,
@@ -241,7 +241,7 @@ describe('complete immutable Rake exports', () => {
   it('defaults a top-level Downline export to the authenticated viewer identity', async () => {
     const selfMetadata = metadata('agent', { agent_user_id: VIEWER_ID });
     const rpc = vi.fn((name: string) => {
-      if (name === 'ca_rake_export_start') return result(receipt('agent', 1, selfMetadata));
+      if (name === 'ca_rake_export_start_v2') return result(receipt('agent', 1, selfMetadata));
       if (name === 'ca_club_data_export_page') {
         return result(page('agent', [downlineRow(1)], 1, 0, selfMetadata));
       }
@@ -262,7 +262,7 @@ describe('complete immutable Rake exports', () => {
     ).resolves.toMatchObject({ metadata: { agent_user_id: VIEWER_ID } });
     expect(rpc).toHaveBeenNthCalledWith(
       1,
-      'ca_rake_export_start',
+      'ca_rake_export_start_v2',
       expect.objectContaining({ p_agent_user_id: null })
     );
   });
@@ -272,7 +272,7 @@ describe('complete immutable Rake exports', () => {
     const oversizedSearch = `  ${normalizedSearch}ignored  `;
     const normalizedMetadata = metadata('union', { search: normalizedSearch, sort: 'rake' });
     const rpc = vi.fn((name: string) => {
-      if (name === 'ca_rake_export_start') {
+      if (name === 'ca_rake_export_start_v2') {
         return result(receipt('union', 1, normalizedMetadata));
       }
       if (name === 'ca_club_data_export_page') {
@@ -297,7 +297,7 @@ describe('complete immutable Rake exports', () => {
     ).resolves.toMatchObject({ metadata: { search: normalizedSearch, sort: 'rake' } });
     expect(rpc).toHaveBeenNthCalledWith(
       1,
-      'ca_rake_export_start',
+      'ca_rake_export_start_v2',
       expect.objectContaining({ p_search: normalizedSearch, p_sort: 'rake' })
     );
   });
@@ -305,7 +305,7 @@ describe('complete immutable Rake exports', () => {
   it('rejects metadata mutation between immutable pages', async () => {
     const rows = [agentRow(1), agentRow(2)];
     const rpc = vi.fn((name: string, args: Record<string, unknown>) => {
-      if (name === 'ca_rake_export_start') return result(receipt('club', 2));
+      if (name === 'ca_rake_export_start_v2') return result(receipt('club', 2));
       if (name === 'ca_club_data_export_page' && args.p_offset === 0) {
         return result(page('club', [rows[0]], 2, 0));
       }
@@ -334,7 +334,7 @@ describe('complete immutable Rake exports', () => {
 
   it('refuses a receipt above the server export ceiling', async () => {
     const rpc = vi.fn((name: string) => {
-      if (name === 'ca_rake_export_start') return result(receipt('club', 20_001));
+      if (name === 'ca_rake_export_start_v2') return result(receipt('club', 20_001));
       return result(true);
     }) as ClubDataExportRpc;
 
@@ -377,7 +377,7 @@ describe('complete immutable Rake exports', () => {
     },
   ])('rejects $label page corruption', async (testCase) => {
     const rpc = vi.fn((name: string) => {
-      if (name === 'ca_rake_export_start') return result(receipt('club', testCase.announced));
+      if (name === 'ca_rake_export_start_v2') return result(receipt('club', testCase.announced));
       if (name === 'ca_club_data_export_page') return result(testCase.nextPage);
       return result(true);
     }) as ClubDataExportRpc;
@@ -400,7 +400,7 @@ describe('complete immutable Rake exports', () => {
   it('refuses any Rake row or receipt that carries horse identity', async () => {
     const rowWithHorseIdentity = { ...agentRow(1), is_horse: true };
     const rpc = vi.fn((name: string) => {
-      if (name === 'ca_rake_export_start') return result(receipt('club', 1));
+      if (name === 'ca_rake_export_start_v2') return result(receipt('club', 1));
       if (name === 'ca_club_data_export_page') {
         return result(page('club', [rowWithHorseIdentity], 1, 0));
       }
@@ -423,7 +423,7 @@ describe('complete immutable Rake exports', () => {
 
   it('serializes receipt metadata and every row as a complete CSV without horse fields', async () => {
     const rpc = vi.fn((name: string) => {
-      if (name === 'ca_rake_export_start') return result(receipt('club', 1));
+      if (name === 'ca_rake_export_start_v2') return result(receipt('club', 1));
       if (name === 'ca_club_data_export_page') return result(page('club', [agentRow(1)], 1, 0));
       return result(true);
     }) as ClubDataExportRpc;
@@ -453,7 +453,7 @@ describe('complete immutable Rake exports', () => {
     ['agent' as const, 'player_id,name,role,depth,upline_user_id'],
   ])('emits the $scope row schema when the immutable result has no rows', async (scope, header) => {
     const rpc = vi.fn((name: string) => {
-      if (name === 'ca_rake_export_start') return result(receipt(scope, 0));
+      if (name === 'ca_rake_export_start_v2') return result(receipt(scope, 0));
       return result(true);
     }) as ClubDataExportRpc;
 

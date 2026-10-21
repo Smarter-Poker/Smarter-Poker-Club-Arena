@@ -276,6 +276,16 @@ export async function prepareCashLobbyActions(
     // The persistent greeting owner remains through later navigation.
     return;
   }
+  // Doors already open now are settled here, inside preparation's own budget.
+  // Left to the locator handlers, two sequential real actions (Not Now, then
+  // Enter Lobby) would run inside the next caller action's shorter deadline.
+  // Handlers stay registered afterwards for doors that open later.
+  const greetingShown = await page
+    .getByRole('dialog', { name: CLUB_ENTRY_MESSAGE_NAME })
+    .isVisible();
+  if (greetingShown || (await diamondPrompt.isVisible())) {
+    await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+  }
   await registerDiamondInvitationDismissal(page);
 }
 

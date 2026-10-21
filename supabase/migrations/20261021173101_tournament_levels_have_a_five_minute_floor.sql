@@ -51,7 +51,7 @@ BEGIN
    OR TG_OP='INSERT' OR NEW.blind_structure IS DISTINCT FROM OLD.blind_structure THEN
   NEW.blind_structure:=v_structure;
   IF coalesce(NEW.late_reg_levels,0)>0 THEN
-   SELECT count(*), (array_agg(coalesce(nullif((e.value->>'durationMinutes')::numeric,0), nullif((e.value->>'duration_minutes')::numeric,0), (e.value->>'duration')::numeric/60) ORDER BY e.n DESC))[1]
+   SELECT jsonb_array_length(v_structure::jsonb), (array_agg(coalesce(nullif((e.value->>'durationMinutes')::numeric,0), nullif((e.value->>'duration_minutes')::numeric,0), (e.value->>'duration')::numeric/60) ORDER BY e.n DESC))[1]
    INTO v_count,v_last FROM jsonb_array_elements(v_structure::jsonb) WITH ORDINALITY e(value,n)
    WHERE NOT coalesce((e.value->>'isBreak')::boolean,false);
    SELECT ceil(greatest(0,NEW.late_reg_levels-coalesce(v_count,0))*coalesce(v_last,v_floor)+coalesce(sum(coalesce(nullif((e.value->>'durationMinutes')::numeric,0),

@@ -98,6 +98,8 @@ try:
  assert q("SELECT (blind_structure::jsonb->0->>'duration')::int=300 FROM tournaments WHERE id=5;")=='t'
  q("UPDATE tournaments SET late_reg_levels=4,blind_structure='[{\"durationMinutes\":2}]' WHERE id=1;")
  assert q("SELECT late_reg_mins=20 FROM tournaments WHERE id=1;")=='t'
+ q("UPDATE tournaments SET late_reg_levels=4,blind_structure='[{\"durationMinutes\":2},{\"isBreak\":true,\"durationMinutes\":3}]' WHERE id=1;")
+ assert q("SELECT late_reg_mins=15 FROM tournaments WHERE id=1;")=='t'
  print('PASS: all 205 newest-player rows across three cursor pages and full export, ties, persisted clock correction, aliases, standard eight-minute floor, acceleration compatibility, future Spin floor, settled history and amounts unchanged')
  print('PASS: self-player funding, exact replay, changed intent refusal, source conservation, other destinations refused, downline privacy, durable union reservation, compare-and-delete, authorization and table ACL')
 finally:

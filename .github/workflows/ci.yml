@@ -2034,6 +2034,12 @@ jobs:
         env:
           PG_BIN: /usr/lib/postgresql/17/bin
         run: python3 scripts/ci/test-only-staff-remove-member-db-postgres.py
+      - name: Member roles edit individual rakeback without changing role
+        if: matrix.shard == 1
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          TMPDIR: ${{ runner.temp }}
+        run: bash scripts/dev/test-member-rakeback.sh
       - name: Accounting agreement changes preserve immutable observed history
         if: matrix.shard == 1
         env:

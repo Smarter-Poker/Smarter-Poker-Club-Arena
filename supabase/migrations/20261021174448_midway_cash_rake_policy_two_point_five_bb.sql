@@ -5,6 +5,19 @@ BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '60s';
 
+-- These four pricing readers/setup functions are not watched guards. Do not
+-- declare unrelated guard changes. If that authority changes before install,
+-- refuse and requalify against the new watchlist instead of leaving drift.
+DO $watchlist$
+BEGIN
+ IF public.fn_ca_guard_watchlist() && ARRAY[
+   'fn_complete_club_opening_setup','fn_rake_law_violations',
+   'fn_effective_rake_config','fn_ca_remeasure_entity'
+ ]::text[] THEN
+   RAISE EXCEPTION 'cash rake target became watched; requalify guard declarations';
+ END IF;
+END $watchlist$;
+
 ALTER TABLE public.hand_history ADD COLUMN cash_rake_policy jsonb;
 COMMENT ON COLUMN public.hand_history.cash_rake_policy IS
   'Frozen dealt chip-cash rake configuration, versioned independently of the historical stake/BBJ specification. NULL for older hands and Diamond/tournament hands.';
@@ -109,9 +122,6 @@ BEGIN
   IF md5(v_before) <> 'af3dc9e20983b85167bd126451a57e1c' THEN RAISE EXCEPTION 'fn_complete_club_opening_setup preimage mismatch'; END IF;
   SELECT proowner,proacl,proconfig,prosecdef INTO v_owner,v_acl,v_settings,v_secdef
     FROM pg_proc WHERE oid='public.fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure;
-  IF 'fn_complete_club_opening_setup'=ANY(public.fn_ca_guard_watchlist()) THEN
-    PERFORM public.fn_ca_declare_guard_redefinition('fn_complete_club_opening_setup','migration 20261021174448 midway cash policy');
-  END IF;
   EXECUTE $definition$CREATE OR REPLACE FUNCTION public.fn_complete_club_opening_setup(p_club_id uuid, p_operation_id uuid, p_tagline text, p_rake_percent numeric, p_rake_cap_bb numeric, p_bbj_enabled boolean, p_bbj_seed numeric, p_spins_enabled boolean, p_spin_seed numeric, p_spin_max_stake numeric, p_promo_enabled boolean, p_promo_type text, p_promo_name text, p_promo_description text, p_promo_budget numeric, p_leaderboard_rewards_enabled boolean, p_leaderboard_metric text, p_leaderboard_prize_budget numeric, p_leaderboard_overlay_enabled boolean DEFAULT false)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -441,9 +451,6 @@ $definition$;
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid='public.fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure
     AND proowner=v_owner AND proacl IS NOT DISTINCT FROM v_acl AND proconfig IS NOT DISTINCT FROM v_settings AND prosecdef=v_secdef)
   THEN RAISE EXCEPTION 'fn_complete_club_opening_setup security identity changed'; END IF;
-  IF 'fn_complete_club_opening_setup'=ANY(public.fn_ca_guard_watchlist()) THEN
-    PERFORM public.fn_ca_declare_guard_redefinition('fn_complete_club_opening_setup','migration 20261021174448 midway cash policy');
-  END IF;
 END $patch$;
 DO $patch$
 DECLARE v_before text; v_owner oid; v_acl aclitem[]; v_settings text[]; v_secdef boolean;
@@ -452,9 +459,6 @@ BEGIN
   IF md5(v_before) <> '6fe1606ee718c52848c28fb1774673ea' THEN RAISE EXCEPTION 'fn_rake_law_violations preimage mismatch'; END IF;
   SELECT proowner,proacl,proconfig,prosecdef INTO v_owner,v_acl,v_settings,v_secdef
     FROM pg_proc WHERE oid='public.fn_rake_law_violations(interval)'::regprocedure;
-  IF 'fn_rake_law_violations'=ANY(public.fn_ca_guard_watchlist()) THEN
-    PERFORM public.fn_ca_declare_guard_redefinition('fn_rake_law_violations','migration 20261021174448 midway cash policy');
-  END IF;
   EXECUTE $definition$CREATE OR REPLACE FUNCTION public.fn_rake_law_violations(p_window interval DEFAULT '01:00:00'::interval)
  RETURNS TABLE(kind text, hand_id uuid, table_id uuid, occurred_at timestamp with time zone, small_blind numeric, big_blind numeric, pot numeric, rake numeric, allowed numeric)
  LANGUAGE sql
@@ -579,9 +583,6 @@ $definition$;
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid='public.fn_rake_law_violations(interval)'::regprocedure
     AND proowner=v_owner AND proacl IS NOT DISTINCT FROM v_acl AND proconfig IS NOT DISTINCT FROM v_settings AND prosecdef=v_secdef)
   THEN RAISE EXCEPTION 'fn_rake_law_violations security identity changed'; END IF;
-  IF 'fn_rake_law_violations'=ANY(public.fn_ca_guard_watchlist()) THEN
-    PERFORM public.fn_ca_declare_guard_redefinition('fn_rake_law_violations','migration 20261021174448 midway cash policy');
-  END IF;
 END $patch$;
 
 -- Keep the operational reader aligned with the versioned cash policy.
@@ -591,9 +592,6 @@ BEGIN
  IF md5(pg_get_functiondef('public.fn_effective_rake_config(uuid)'::regprocedure))<>'b78323bb4b98b5e1372f9560931a1640' THEN
    RAISE EXCEPTION 'fn_effective_rake_config preimage mismatch'; END IF;
  SELECT proacl,proowner,proconfig,prosecdef INTO v_acl,v_owner,v_cfg,v_secdef FROM pg_proc WHERE oid='public.fn_effective_rake_config(uuid)'::regprocedure;
- IF 'fn_effective_rake_config'=ANY(public.fn_ca_guard_watchlist()) THEN
-  PERFORM public.fn_ca_declare_guard_redefinition('fn_effective_rake_config','migration 20261021174448 midway cash policy');
- END IF;
  EXECUTE $definition$
 CREATE OR REPLACE FUNCTION public.fn_effective_rake_config(p_table_id uuid)
  RETURNS TABLE(table_id uuid, club_name text, source text, effective_percent numeric, effective_cap_bb numeric, note text)
@@ -607,9 +605,6 @@ $definition$;
  IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_effective_rake_config(uuid)'::regprocedure
    AND proacl IS NOT DISTINCT FROM v_acl AND proowner=v_owner AND proconfig IS NOT DISTINCT FROM v_cfg AND prosecdef=v_secdef)
  THEN RAISE EXCEPTION 'cash policy reader security changed'; END IF;
- IF 'fn_effective_rake_config'=ANY(public.fn_ca_guard_watchlist()) THEN
-  PERFORM public.fn_ca_declare_guard_redefinition('fn_effective_rake_config','migration 20261021174448 midway cash policy');
- END IF;
 END $patch$;
 
 -- Explicitly restate the existing reader ACL, verified before this migration.
@@ -629,17 +624,11 @@ BEGIN
                        THEN public.fn_cash_rake_from_snapshot(h.pot,h.dealt,true,h.cash_rake_policy)
                        ELSE e.rake END AS exp_rake$after2$);
  IF md5(v_new)<>'a5e5db39ab33931f005497eb12fd01d3' THEN RAISE EXCEPTION 'remeasure substitution mismatch'; END IF;
- IF 'fn_ca_remeasure_entity'=ANY(public.fn_ca_guard_watchlist()) THEN
-  PERFORM public.fn_ca_declare_guard_redefinition('fn_ca_remeasure_entity','migration 20261021174448 midway cash policy');
- END IF;
  EXECUTE v_new;
  IF md5(pg_get_functiondef('public.fn_ca_remeasure_entity(text,uuid)'::regprocedure))<>'a5e5db39ab33931f005497eb12fd01d3' THEN RAISE EXCEPTION 'remeasure postimage mismatch'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.fn_ca_remeasure_entity(text,uuid)'::regprocedure
    AND proacl IS NOT DISTINCT FROM v_acl AND proowner=v_owner AND proconfig IS NOT DISTINCT FROM v_cfg AND prosecdef=v_secdef)
  THEN RAISE EXCEPTION 'remeasure security identity changed'; END IF;
- IF 'fn_ca_remeasure_entity'=ANY(public.fn_ca_guard_watchlist()) THEN
-  PERFORM public.fn_ca_declare_guard_redefinition('fn_ca_remeasure_entity','migration 20261021174448 midway cash policy');
- END IF;
 END $patch$;
 
 COMMIT;

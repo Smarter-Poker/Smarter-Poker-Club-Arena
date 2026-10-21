@@ -41,13 +41,21 @@ try:
  run(psql+['-c',"REVOKE ALL ON FUNCTION fn_effective_rake_config(uuid) FROM PUBLIC,anon; GRANT EXECUTE ON FUNCTION fn_effective_rake_config(uuid) TO authenticated,service_role;"])
  before=run(psql+['-c',"SELECT rake FROM fn_effective_rake(.2,100,4,true,.1)"])
  if float(before.stdout.strip())!=3: raise RuntimeError('before-case not reproduced: '+before.stdout)
+ # A later watchlist change must refuse before any schema/function mutation.
+ run(psql+['-c',"CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist() RETURNS text[] LANGUAGE sql AS $$ SELECT ARRAY['fn_rake_law_violations']::text[] $$;"])
+ watched=run(psql+['-f',str(MIGRATION)],check=False)
+ if watched.returncode==0 or 'cash rake target became watched' not in watched.stderr:
+  raise RuntimeError('newly watched target was not refused')
+ untouched=run(psql+['-c',"SELECT NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='hand_history' AND column_name='cash_rake_policy') AND md5(pg_get_functiondef('fn_rake_law_violations(interval)'::regprocedure))='6fe1606ee718c52848c28fb1774673ea';"])
+ if untouched.stdout.strip()!='t': raise RuntimeError('watchlist refusal mutated schema or function')
+ run(psql+['-c',"CREATE OR REPLACE FUNCTION public.fn_ca_guard_watchlist() RETURNS text[] LANGUAGE sql AS $$ SELECT '{}'::text[] $$;"])
  sql(MIGRATION)
  result=sql(FIXTURE/'regression.sql')
  if 'midway-cash-rake-postgres-passed' not in result.stdout: raise RuntimeError('regression did not finish')
  # The exact migration must refuse replay, without partially applying anything.
  replay=run(psql+['-f',str(MIGRATION)],check=False)
  if replay.returncode==0: raise RuntimeError('installed migration unexpectedly replayed')
- receipt.update(passed=True,before_cap='3.00',after_cap='0.50',checks='scope,defaults,standalone-custom,table-precedence,future-creation,union-join,discounts,no-flop,snapshot-history,ACL,replay-refusal')
+ receipt.update(passed=True,before_cap='3.00',after_cap='0.50',checks='scope,defaults,standalone-custom,table-precedence,future-creation,union-join,discounts,no-flop,snapshot-history,ACL,watched-target-refusal,replay-refusal')
 except Exception as e:
  receipt['failure']=str(e)
  if (cluster/'log').exists(): (OUT/'postgres.log').write_text((cluster/'log').read_text())

@@ -266,7 +266,15 @@ test.describe('the mobile lobby chrome on production', () => {
       .toBe(true);
     const viewport = page.viewportSize()!;
     await page.mouse.move(viewport.width / 2, viewport.height / 2);
-    await page.mouse.wheel(0, -64);
+    // Mobile emulation (WebKit and Chromium) rejects mouse.wheel. There the
+    // same upward user scroll is issued as a relative scroll, which reaches
+    // the hook through the identical document scroll event a finger produces.
+    try {
+      await page.mouse.wheel(0, -64);
+    } catch (error) {
+      if (!/Mouse wheel is not supported/i.test(String(error))) throw error;
+      await page.evaluate(() => window.scrollBy(0, -64));
+    }
     await expect
       .poll(
         () =>

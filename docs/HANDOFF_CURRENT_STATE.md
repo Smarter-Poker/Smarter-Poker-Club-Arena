@@ -1,5 +1,10 @@
 # CONTINUATION HANDOFF - Club Arena Engine-Restart & Platform-Hardening Programme
 
+> **Current (October 20, 2026):** the engine resets ONCE A DAY at 04:00
+> America/Chicago. The hourly `:55` engine break and hourly platform freeze
+> described in this historical file are retired. Tournament breaks remain
+> hourly. See CLAUDE.md section 13.
+
 ## 2026-09-10 Release Authority Addendum
 
 This file contains historical measurements from the engine-restart programme.

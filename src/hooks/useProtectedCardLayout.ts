@@ -16,17 +16,26 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         pod.style.removeProperty('translate');
         pod.style.removeProperty('--sp-top-seat-shift');
       });
-      const mini = page.querySelector('.bbj-mini-plate')?.getBoundingClientRect();
-      // On phones the top player's head sits immediately below the actual
-      // Mini BBJ frame, rather than below a guessed viewport-sized gap.
-      if (page.getBoundingClientRect().width <= 768 && mini && mini.height > 0) {
+      const pageBox = page.getBoundingClientRect();
+      const chrome = Array.from(page.querySelectorAll('.bbj-widget, .bbj-mini-plate'))
+        .map((element) => element.getBoundingClientRect())
+        .filter((box) => box.width > 0 && box.height > 0);
+      // Every phone table needs the top-seat lane, including tables without
+      // a payable Mini BBJ or any jackpot. Keep the declared plate band when
+      // chrome is absent; the embedded page already starts below the tab bar.
+      const plateHeight =
+        parseFloat(getComputedStyle(page).getPropertyValue('--sp-bbj-plate-h')) || 0;
+      const chromeBottom = chrome.length
+        ? Math.max(...chrome.map((box) => box.bottom))
+        : pageBox.top + plateHeight;
+      if (pageBox.width <= 768) {
         for (const pod of topPods()) {
           const image = pod.querySelector('.seat__avatar-img')?.getBoundingClientRect();
           if (image && image.height > 0) {
-            const shift = (mini.bottom + 4 * scale - image.top) / scale;
+            const shift = (chromeBottom + 4 * scale - image.top) / scale;
             pod.style.translate = `0px ${shift}px`;
             // Bets use the scaler's rail coordinates. Moving the top avatar
-            // below the jackpot must not carry its bet onto the player plate.
+            // within its lane must not carry its bet onto the player plate.
             pod.style.setProperty('--sp-top-seat-shift', `${shift}px`);
           }
         }

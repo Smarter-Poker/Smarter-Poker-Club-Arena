@@ -20,6 +20,21 @@ export function cashierRecoveryRpc() {
         };
       const row = rows.get(key);
       const same = (row?.operationId ?? row?.submissionId) === args.p_identity;
+      if (name.endsWith('_update')) {
+        const immutable = (value: Record<string, any>) => {
+          const { failures: _failures, ...fields } = value;
+          return JSON.stringify(Object.entries(fields).sort(([a], [b]) => a.localeCompare(b)));
+        };
+        const next = args.p_envelope;
+        const narrowed =
+          same &&
+          immutable(row!) === immutable(next) &&
+          next.failures.every((failure: { userId: string }) =>
+            row!.failures.some((original: { userId: string }) => original.userId === failure.userId)
+          );
+        if (narrowed) rows.set(key, copy(next) as Record<string, any>);
+        return { data: narrowed, error: null };
+      }
       if (name.endsWith('_ack')) {
         if (same) rows.delete(key);
         return { data: same, error: null };

@@ -1,3 +1,4 @@
+import { cashierRecoveryRpc } from './helpers/cashierRecoveryRpc';
 /**
  * Club Bank and Promo Wallet follow-up audit, 2026-10-16.
  * Delayed ledger/file/command responses exercise the real modal's ownership
@@ -29,6 +30,8 @@ const fx = vi.hoisted(() => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
   blobs: [] as Blob[],
 }));
+
+const recoveries = cashierRecoveryRpc();
 
 vi.mock('../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: '11111111-1111-4111-8111-111111111111' } }),
@@ -73,6 +76,8 @@ vi.mock('../src/lib/supabase', () => ({
     },
     rpc: (fn: string, args: Record<string, unknown>) => {
       fx.calls.push({ fn, args });
+      const recovery = recoveries.answer(fn, args);
+      if (recovery) return Promise.resolve(recovery);
       /* UPDATED 2026-10-09 (launch audit S-07): the cashier reads the Club Bank
          and the promo pot through the role-checked fn_club_money_panel (with
          an abort signal), never through a direct clubs select. The fixture
@@ -173,6 +178,7 @@ async function openLedger() {
   return view;
 }
 beforeEach(() => {
+  recoveries.clear();
   fx.agentRow = null;
   fx.reversible = [];
   fx.club.chip_treasury = 1000;

@@ -1,3 +1,4 @@
+import { cashierRecoveryRpc } from './helpers/cashierRecoveryRpc';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -41,10 +42,23 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+const recoveryRpc = cashierRecoveryRpc();
+let rejectRecovery = false;
+function installRpc(implementation: (...args: any[]) => any) {
+  vi.mocked(supabase.rpc).mockImplementation(((name: string, args: Record<string, any> = {}) => {
+    if (rejectRecovery && name === 'fn_cashier_browser_recovery_reserve')
+      return Promise.resolve({ data: null, error: new Error('Server Journal Unavailable') });
+    const recovery = recoveryRpc.answer(name, args);
+    return recovery ? Promise.resolve(recovery) : implementation(name, args);
+  }) as never);
+}
+
 describe('CashierTradePage club load ordering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    recoveryRpc.clear();
+    rejectRecovery = false;
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
@@ -126,7 +140,7 @@ describe('CashierTradePage club load ordering', () => {
       };
       return builder as never;
     });
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: [], error: null } as never);
+    installRpc(() => Promise.resolve({ data: [], error: null }));
 
     render(
       <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
@@ -228,7 +242,7 @@ describe('CashierTradePage club load ordering', () => {
       };
       return builder as never;
     });
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: [], error: null } as never);
+    installRpc(() => Promise.resolve({ data: [], error: null }));
 
     render(
       <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
@@ -297,7 +311,7 @@ describe('CashierTradePage club load ordering', () => {
       };
       return builder as never;
     });
-    vi.mocked(supabase.rpc).mockImplementation((name: string) => {
+    installRpc((name: string) => {
       if (name === 'fn_club_trade_ledger') {
         return Promise.resolve({
           data: [
@@ -385,7 +399,7 @@ describe('CashierTradePage club load ordering', () => {
       return builder as never;
     });
 
-    vi.mocked(supabase.rpc).mockImplementation((name: string) => {
+    installRpc((name: string) => {
       if (name === 'fn_club_cashier_members_page_v3') {
         return Promise.resolve({
           data: [
@@ -454,7 +468,7 @@ describe('CashierTradePage club load ordering', () => {
       return builder as never;
     });
 
-    vi.mocked(supabase.rpc).mockImplementation((name: string) => {
+    installRpc((name: string) => {
       if (name !== 'fn_club_cashier_members_page_v3') {
         return Promise.resolve({ data: [], error: null }) as never;
       }
@@ -536,7 +550,7 @@ describe('CashierTradePage club load ordering', () => {
       };
       return builder as never;
     });
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: [], error: null } as never);
+    installRpc(() => Promise.resolve({ data: [], error: null }));
 
     render(
       <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
@@ -621,7 +635,7 @@ describe('CashierTradePage club load ordering', () => {
       };
       return builder as never;
     });
-    vi.mocked(supabase.rpc).mockImplementation(
+    installRpc(
       (name: string) =>
         Promise.resolve(
           name === 'fn_cashier_recovery_receipts'
@@ -668,118 +682,146 @@ describe('CashierTradePage club load ordering', () => {
     expect(localStorage.length).toBe(1);
   });
 
-  it('does not call the money RPC when the preflight recovery journal cannot be persisted', async () => {
-    vi.mocked(supabase.from).mockImplementation((table: string) => {
-      let columns = '';
-      const builder: Record<string, unknown> = {};
-      const chain = () => builder;
-      for (const method of ['eq', 'in', 'or', 'order', 'limit', 'range']) {
-        builder[method] = vi.fn(chain);
-      }
-      builder.select = vi.fn((value: string) => {
-        columns = value;
-        return builder;
+  it.each([false, true])(
+    'uses server recovery with browser quota and refuses an unavailable server journal=%s',
+    async (serverUnavailable) => {
+      vi.mocked(supabase.from).mockImplementation((table: string) => {
+        let columns = '';
+        const builder: Record<string, unknown> = {};
+        const chain = () => builder;
+        for (const method of ['eq', 'in', 'or', 'order', 'limit', 'range']) {
+          builder[method] = vi.fn(chain);
+        }
+        builder.select = vi.fn((value: string) => {
+          columns = value;
+          return builder;
+        });
+        builder.maybeSingle = vi.fn(() =>
+          Promise.resolve(
+            table === 'club_members'
+              ? { data: { role: 'owner', chip_balance: 250 }, error: null }
+              : table === 'agents'
+                ? { data: { agent_wallet_balance: 500 }, error: null }
+                : { data: null, error: null }
+          )
+        );
+        builder.then = (resolve: (value: unknown) => unknown) => {
+          const value =
+            table === 'club_members' && columns.includes('clubs:club_id')
+              ? {
+                  data: [
+                    {
+                      club_id: CLUB_ID,
+                      role: 'owner',
+                      chip_balance: 250,
+                      clubs: { name: 'Storage Guard Club', club_id: 101, logo_url: null },
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: [], error: null, count: 0 };
+          return Promise.resolve(value).then(resolve);
+        };
+        return builder as never;
       });
-      builder.maybeSingle = vi.fn(() =>
-        Promise.resolve(
-          table === 'club_members'
-            ? { data: { role: 'owner', chip_balance: 250 }, error: null }
-            : table === 'agents'
-              ? { data: { agent_wallet_balance: 500 }, error: null }
-              : { data: null, error: null }
-        )
+      installRpc(
+        (name: string) =>
+          Promise.resolve(
+            name === 'fn_club_cashier_members_page_v3'
+              ? {
+                  data: [
+                    {
+                      user_id: PLAYER_ID,
+                      name: 'Storage Guard Player',
+                      username: 'storage_guard',
+                      avatar_url: null,
+                      role: 'player',
+                      role_rank: 0,
+                      chip_balance: 75,
+                      is_horse: false,
+                      depth: 1,
+                      player_number: 'P-2',
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: [], error: null }
+          ) as never
       );
-      builder.then = (resolve: (value: unknown) => unknown) => {
-        const value =
-          table === 'club_members' && columns.includes('clubs:club_id')
-            ? {
-                data: [
-                  {
-                    club_id: CLUB_ID,
-                    role: 'owner',
-                    chip_balance: 250,
-                    clubs: { name: 'Storage Guard Club', club_id: 101, logo_url: null },
-                  },
-                ],
-                error: null,
-              }
-            : { data: [], error: null, count: 0 };
-        return Promise.resolve(value).then(resolve);
-      };
-      return builder as never;
-    });
-    vi.mocked(supabase.rpc).mockImplementation(
-      (name: string) =>
-        Promise.resolve(
-          name === 'fn_club_cashier_members_page_v3'
-            ? {
-                data: [
-                  {
-                    user_id: PLAYER_ID,
-                    name: 'Storage Guard Player',
-                    username: 'storage_guard',
-                    avatar_url: null,
-                    role: 'player',
-                    role_rank: 0,
-                    chip_balance: 75,
-                    is_horse: false,
-                    depth: 1,
-                    player_number: 'P-2',
-                  },
-                ],
-                error: null,
-              }
-            : { data: [], error: null }
-        ) as never
-    );
 
-    render(
-      <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
-        <Routes>
-          <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    const player = await screen.findByRole('checkbox', { name: 'Include Storage Guard Player' });
-    await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
-    expect(screen.getByRole('link', { name: 'Manage Storage Guard Player' })).toHaveAttribute(
-      'href',
-      `/clubs/${CLUB_ID}/members/${PLAYER_ID}`
-    );
-    expect(screen.getByPlaceholderText('Search Name Or ID Number')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Select Storage Guard Player' })).toBeNull();
-    expect(screen.getByText('Storage Guard Player')).toBeInTheDocument();
-    const portrait = screen.getByText('ID: P-2').parentElement!;
-    expect(portrait.querySelector('img')).not.toBeNull();
-    fireEvent.click(player);
-    fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send Diamonds' })).toBeInTheDocument();
-    expect(
-      within(screen.getByRole('dialog')).getByRole('button', { name: 'Send Ticket' })
-    ).toBeInTheDocument();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), {
-      target: { value: '10' },
-    });
-
-    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
-      throw new DOMException('Quota exceeded', 'QuotaExceededError');
-    });
-    try {
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
-      await waitFor(() =>
-        expect(toastMocks.error).toHaveBeenCalledWith(
-          'Cashier Safety Storage Is Unavailable. Free Browser Storage And Try Again'
-        )
+      render(
+        <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
+          <Routes>
+            <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
+          </Routes>
+        </MemoryRouter>
       );
+
+      const player = await screen.findByRole('checkbox', { name: 'Include Storage Guard Player' });
+      await waitFor(() => expect(screen.getByText('Balances Synchronized')).toBeInTheDocument());
+      expect(screen.getByRole('link', { name: 'Manage Storage Guard Player' })).toHaveAttribute(
+        'href',
+        `/clubs/${CLUB_ID}/members/${PLAYER_ID}`
+      );
+      expect(screen.getByPlaceholderText('Search Name Or ID Number')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Select Storage Guard Player' })).toBeNull();
+      expect(screen.getByText('Storage Guard Player')).toBeInTheDocument();
+      const portrait = screen.getByText('ID: P-2').parentElement!;
+      expect(portrait.querySelector('img')).not.toBeNull();
+      fireEvent.click(player);
+      fireEvent.click(screen.getByRole('button', { name: 'Send Out', exact: true }));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Send Diamonds' })).toBeInTheDocument();
       expect(
-        vi.mocked(supabase.rpc).mock.calls.some(([name]) => name === 'fn_cashier_batch_transfer')
-      ).toBe(false);
-    } finally {
-      setItem.mockRestore();
+        within(screen.getByRole('dialog')).getByRole('button', { name: 'Send Ticket' })
+      ).toBeInTheDocument();
+      fireEvent.change(screen.getByRole('textbox', { name: 'Amount' }), {
+        target: { value: '10' },
+      });
+
+      rejectRecovery = serverUnavailable;
+      const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+        throw new DOMException('Quota exceeded', 'QuotaExceededError');
+      });
+      try {
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+        if (serverUnavailable) {
+          await waitFor(() =>
+            expect(toastMocks.error).toHaveBeenCalledWith(
+              'Cashier Recovery Is Unavailable. Try Again'
+            )
+          );
+          expect(
+            vi
+              .mocked(supabase.rpc)
+              .mock.calls.some(([name]) => name === 'fn_cashier_batch_transfer')
+          ).toBe(false);
+        } else {
+          await waitFor(() =>
+            expect(
+              vi
+                .mocked(supabase.rpc)
+                .mock.calls.some(([name]) => name === 'fn_cashier_batch_transfer')
+            ).toBe(true)
+          );
+          const reserve = vi
+            .mocked(supabase.rpc)
+            .mock.calls.find(([name]) => name === 'fn_cashier_browser_recovery_reserve')![1] as any;
+          const batch = vi
+            .mocked(supabase.rpc)
+            .mock.calls.find(([name]) => name === 'fn_cashier_batch_transfer')![1] as any;
+          expect(batch.p_batch_id).toBe(reserve.p_envelope.submissionId);
+          expect(batch.p_items[0].op_id).toBe(reserve.p_envelope.opIds[PLAYER_ID]);
+          expect(toastMocks.error).not.toHaveBeenCalledWith(
+            'Cashier Safety Storage Is Unavailable. Free Browser Storage And Try Again'
+          );
+          await screen.findByText('Transfer Recovery Required');
+        }
+      } finally {
+        setItem.mockRestore();
+      }
     }
-  });
+  );
 
   it('reuses the exact chip-request operation after a lost response and remount', async () => {
     vi.mocked(supabase.from).mockImplementation((table: string) => {
@@ -823,7 +865,7 @@ describe('CashierTradePage club load ordering', () => {
     });
 
     const requestCalls: Array<Record<string, unknown>> = [];
-    vi.mocked(supabase.rpc).mockImplementation((name: string, args?: Record<string, unknown>) => {
+    installRpc((name: string, args?: Record<string, unknown>) => {
       if (name === 'fn_request_chips') {
         requestCalls.push(args || {});
         return Promise.resolve(
@@ -924,7 +966,7 @@ describe('CashierTradePage club load ordering', () => {
       };
       return builder as never;
     });
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: [], error: null } as never);
+    installRpc(() => Promise.resolve({ data: [], error: null }));
 
     render(
       <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>

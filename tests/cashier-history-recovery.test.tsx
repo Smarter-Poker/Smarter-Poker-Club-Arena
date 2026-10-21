@@ -1,3 +1,4 @@
+import { cashierRecoveryRpc } from './helpers/cashierRecoveryRpc';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +9,7 @@ import { masterBus } from '../src/core/MasterBus';
 
 vi.unmock('../src/core/MasterBus');
 
+const recoveryRpc = cashierRecoveryRpc();
 const PLAYER = '22222222-2222-4222-8222-222222222222';
 const CLUB = '11111111-1111-4111-8111-111111111111';
 const mocks = vi.hoisted(() => ({
@@ -104,6 +106,10 @@ describe('Cashier history recovery through the rendered page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    localStorage.clear();
+    recoveryRpc.clear();
+    vi.mocked(supabase.rpc).mockImplementation(((name: string, args: Record<string, any> = {}) =>
+      Promise.resolve(recoveryRpc.answer(name, args) ?? { data: [], error: null })) as never);
     walletReads = [];
     ledgerReads = [];
     vi.spyOn(engineChannelClient, 'onStatusChange').mockImplementation((callback) => {

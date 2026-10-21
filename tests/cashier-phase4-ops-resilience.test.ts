@@ -417,13 +417,22 @@ describe('cashier Phase 4 operational resilience', () => {
     );
     expect(page).toContain('type CashierTransferRecovery');
     expect(page).toContain('setTransferRecovery(recovery)');
-    expect(page).toContain('writeCashierTransferRecovery(recovery)');
-    expect(page).toContain('writeCashierTransferRecovery(uncertainRecovery)');
-    expect(transferBody.indexOf('writeCashierTransferRecovery(uncertainRecovery)')).toBeLessThan(
+    expect(transferBody).toContain('await updateDurableCashierTransfer(recovery)');
+    const reservation = transferBody.indexOf(
+      'uncertainRecovery = await reserveDurableCashierTransfer(uncertainRecovery)'
+    );
+    expect(reservation).toBeGreaterThan(0);
+    expect(transferBody.indexOf('busyRef.current = true')).toBeLessThan(reservation);
+    expect(reservation).toBeLessThan(
       transferBody.indexOf("supabase.rpc('fn_cashier_batch_transfer'")
     );
-    expect(transferBody).toContain('if (!writeCashierTransferRecovery(uncertainRecovery))');
-    expect(transferBody).toContain('Cashier Safety Storage Is Unavailable');
+    expect(transferBody).toContain('submissionId = uncertainRecovery.submissionId');
+    expect(transferBody).toContain(
+      'opIdsRef.current = new Map(Object.entries(uncertainRecovery.opIds))'
+    );
+    expect(transferBody).toContain('await clearDurableCashierTransfer(uncertainRecovery)');
+    expect(transferBody).toContain('Cashier Recovery Is Unavailable. Try Again');
+    expect(transferBody).not.toContain('if (!writeCashierTransferRecovery(uncertainRecovery))');
     expect(page).toContain('readCashierTransferRecovery(user.id, clubUuid)');
     expect(page).toContain('submissionId,');
     expect(page).toContain('opIds: Object.fromEntries(opIdsRef.current)');

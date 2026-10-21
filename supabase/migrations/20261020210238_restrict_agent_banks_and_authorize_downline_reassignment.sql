@@ -3,17 +3,16 @@
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
--- Admit through the hand-report relation before membership and agent locks.
--- All locks precede function/catalog replacement; the three-second timeout
--- bounds admission and the single transaction releases every lock on refusal.
-LOCK TABLE public.ca_club_table_player_daily IN ACCESS EXCLUSIVE MODE;
-LOCK TABLE public.club_members, public.agents,
- public.ca_club_member_tournament_fee_daily, public.ca_club_player_daily,
- public.ca_club_rake_daily_user,
+-- Follow hand reporting's facts -> table-player -> membership -> agents
+-- dependency order before replacing functions. Admission is bounded by the
+-- three-second lock timeout; every refusal rolls the complete batch back.
+LOCK TABLE public.club_member_daily_facts, public.ca_club_table_player_daily,
+ public.club_members, public.agents, public.ca_club_member_tournament_fee_daily,
+ public.ca_club_player_daily, public.ca_club_rake_daily_user,
  public.ca_club_tournament_player_daily, public.ca_union_rake_attribution,
- public.club_member_daily_facts, public.club_member_daily_stats,
- public.club_member_play_totals, public.club_rake_daily_user,
- public.player_stats, public.player_stats_snapshots IN ACCESS EXCLUSIVE MODE NOWAIT;
+ public.club_member_daily_stats, public.club_member_play_totals,
+ public.club_rake_daily_user, public.player_stats, public.player_stats_snapshots
+ IN ACCESS EXCLUSIVE MODE;
 DO $$ BEGIN IF md5(pg_get_functiondef('is_club_admin(uuid)'::regprocedure)) <> '8cec4d8f44baaf2af97fb3c1d4229215' THEN RAISE EXCEPTION 'AGENT_BOUNDARY_SOURCE_CHANGED: is_club_admin'; END IF; END $$;
 CREATE OR REPLACE FUNCTION public.is_club_admin(p_club_id uuid)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public,pg_temp AS $$

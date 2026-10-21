@@ -144,6 +144,32 @@ describe('post-publication verification belongs to its delivered component', () 
     expect(JSON.stringify(steps)).not.toContain('production-e2e-account.mjs prepare-staff');
   });
 
+  it('isolates the finite club-channel lifecycle proof from client and spectator authority', () => {
+    const lifecycle = workflow.jobs['club-channel-lifecycle-e2e'];
+    expect(lifecycle.needs).toBe('publication-gate');
+    expect(lifecycle.if).toContain("github.event_name == 'repository_dispatch'");
+    expect(lifecycle.if).toContain("github.event.client_payload.engine_sha != ''");
+    expect(lifecycle.concurrency['cancel-in-progress']).toBe(false);
+    expect(lifecycle.concurrency.group).not.toBe(engine.concurrency.group);
+    expect(lifecycle.concurrency.group).not.toBe(client.concurrency.group);
+    const proof = lifecycle.steps.find(
+      (step: any) => step.name === 'Certify exact engine club channel lifecycle'
+    );
+    expect(proof.env.EXPECTED_ENGINE_SHA).toBe('${{ github.event.client_payload.engine_sha }}');
+    expect(proof.run).toContain('production-club-channel-lifecycle.spec.ts');
+    expect(proof.run).toContain('--retries=0');
+    expect(JSON.stringify(lifecycle.steps)).toContain('production-e2e-account.mjs prepare-staff');
+    for (const command of ['production-e2e-account.mjs cleanup', 'assert-e2e-actually-ran.mjs']) {
+      const step = lifecycle.steps.find((step: any) => step.run?.includes(command));
+      expect(step.if).toBe('always()');
+    }
+    const retained = lifecycle.steps.find(
+      (step: any) => step.with?.name === 'club-channel-lifecycle'
+    );
+    expect(retained.if).toBe('always()');
+    expect(retained.with['if-no-files-found']).toBe('error');
+  });
+
   it('gives the client its own result without an engine or live-table prerequisite', () => {
     expect(client.needs).toBe('publication-gate');
     expect(client.if).toBe("needs.publication-gate.outputs.should_run == 'true'");

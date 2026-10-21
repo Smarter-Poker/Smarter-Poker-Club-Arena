@@ -1,0 +1,26 @@
+[
+  {
+    "proname": "fn_ca_is_protected_cluster",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_is_protected_cluster()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT current_setting('cluster_name', true) = 'main'\n      OR (SELECT system_identifier::text FROM pg_control_system()) = '7581440907192989109';\n$function$\n"
+  },
+  {
+    "proname": "fn_ca_ledger_tally_add",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_ledger_tally_add(p_key text, p_side text, p_delta numeric)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nDECLARE\n  t jsonb;\n  e jsonb;\n  v numeric;\nBEGIN\n  /* The tally lives in a transaction-local setting, so it is undone with the\n     transaction and with any subtransaction (a plpgsql EXCEPTION block) that\n     rolls back the write it counted. A SET clause on a function restores only\n     the variables it names at exit (measured on production 2026-10-01: a\n     set_config(..., true) made inside a SET search_path function was still\n     set after it returned), so pinning search_path here does not lose the\n     tally. Every object is named by schema regardless. */\n  IF p_key IS NULL OR p_delta IS NULL OR round(p_delta, 2) = 0 THEN\n    RETURN;\n  END IF;\n  t := COALESCE(NULLIF(current_setting('ca.ledger_tally', true), '')::jsonb, '{}'::jsonb);\n  e := COALESCE(t -> p_key, '{\"b\":0,\"l\":0}'::jsonb);\n  IF NOT (e ? 'q') THEN\n    -- The top-level statement that first touched this account in this\n    -- transaction: the name of the door, for the refusal and the finding\n    -- (CLAUDE.md 10.86: a refusal names its writer).\n    e := e || jsonb_build_object('q', left(COALESCE(current_query(), ''), 300));\n  END IF;\n  v := round(COALESCE((e ->> p_side)::numeric, 0) + p_delta, 2);\n  e := jsonb_set(e, ARRAY[p_side], to_jsonb(v), true);\n  t := t || jsonb_build_object(p_key, e);\n  PERFORM set_config('ca.ledger_tally', t::text, true);\n  PERFORM set_config('ca.ledger_tally_ver',\n                     (COALESCE(NULLIF(current_setting('ca.ledger_tally_ver', true), ''), '0')::bigint + 1)::text,\n                     true);\nEND;\n$function$\n"
+  },
+  {
+    "proname": "fn_ca_tally_pair",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_ca_tally_pair(p_k_old text, p_v_old numeric, p_k_new text, p_v_new numeric)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'pg_catalog', 'public'\nAS $function$\nBEGIN\n  /* One balance column of one row, before and after. A row that changes\n     account (a membership changing club, a ticket leaving 'issued') leaves one\n     account and arrives in another; both sides are counted. A NULL key is a\n     side that does not exist (an INSERT's OLD, a DELETE's NEW, a Diamond\n     event), and fn_ca_ledger_tally_add ignores it. */\n  IF p_k_old IS NOT DISTINCT FROM p_k_new THEN\n    PERFORM public.fn_ca_ledger_tally_add(p_k_new, 'b', COALESCE(p_v_new, 0) - COALESCE(p_v_old, 0));\n  ELSE\n    PERFORM public.fn_ca_ledger_tally_add(p_k_old, 'b', -COALESCE(p_v_old, 0));\n    PERFORM public.fn_ca_ledger_tally_add(p_k_new, 'b', COALESCE(p_v_new, 0));\n  END IF;\nEND;\n$function$\n"
+  },
+  {
+    "proname": "fn_dispatch_private_record_signal",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_dispatch_private_record_signal(p_topic text, p_payload jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public', 'pg_temp'\nAS $function$\nDECLARE paid boolean;\nBEGIN\n IF p_topic IS NULL OR NOT (\n   p_topic ~ '^member-record:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n   OR p_topic ~ '^club-roster:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'\n ) THEN RAISE EXCEPTION 'Invalid private record topic'; END IF;\n SELECT supabase_enabled INTO STRICT paid FROM public.ca_private_record_transport_state WHERE singleton;\n PERFORM pg_notify('ca_private_record_changes',jsonb_build_object('topic',p_topic,'event','record_changed')::text);\n IF paid THEN PERFORM realtime.send(p_payload,'record_changed',p_topic,true); END IF;\nEND $function$\n"
+  },
+  {
+    "proname": "fn_freeze_bypass_active",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_freeze_bypass_active()\n RETURNS boolean\n LANGUAGE sql\n STABLE\n SET search_path TO 'public', 'pg_temp'\nAS $function$\n  SELECT COALESCE(current_setting('app.freeze_bypass', TRUE), '') = 'on';\n$function$\n"
+  },
+  {
+    "proname": "fn_game_management_scope",
+    "definition": "CREATE OR REPLACE FUNCTION public.fn_game_management_scope(p_club_id uuid)\n RETURNS TABLE(scope_kind text, scope_id uuid, union_id uuid)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT CASE WHEN x.union_id IS NULL THEN 'club' ELSE 'union' END,\n         COALESCE(x.union_id, p_club_id), x.union_id\n  FROM (\n    SELECT COALESCE(c.union_id, uc.union_id) AS union_id\n    FROM public.clubs c\n    LEFT JOIN public.union_clubs uc ON uc.club_id=c.id\n    WHERE c.id=p_club_id\n    ORDER BY uc.joined_at DESC NULLS LAST\n    LIMIT 1\n  ) x\n$function$\n"
+  }
+]

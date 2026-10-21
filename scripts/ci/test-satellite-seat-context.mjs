@@ -45,7 +45,7 @@ try{
  sql(parentCall);
  assert.equal(sql('SELECT count(*) FROM table_seats'),'0');assert.equal(sql('SELECT count(*) FROM wallet_transactions'),'0');
  for(const caller of ['fn_settle_satellite_tournament','fn_settle_tournament_obligation','other_authority','']){
-  const q=sql(`BEGIN;SELECT set_config('app.money_path','${caller}',true);${call};SELECT current_setting('app.money_path',true);ROLLBACK;`);assert.ok(q.split('\n').includes(caller)||caller==='',`success restores ${caller}`);
+  const q=sql(`BEGIN;SELECT set_config('app.money_path','${caller}',true);${call};SELECT quote_nullable(current_setting('app.money_path',true));ROLLBACK;`);assert.ok(q.split('\n').includes("'"+caller+"'"),`success restores ${caller}`);
  }
  const early=sql(`BEGIN;SET LOCAL app.money_path='sentinel';SELECT ${seat}('${id(9)}','${id(4)}');SELECT current_setting('app.money_path');ROLLBACK;`);assert.ok(early.includes('not_running')&&early.includes('sentinel'));
  const full=sql(`BEGIN;SET LOCAL app.money_path='sentinel';DELETE FROM tables;${call};SELECT current_setting('app.money_path');ROLLBACK;`);assert.ok(full.includes('no_open_seat')&&full.includes('sentinel'));

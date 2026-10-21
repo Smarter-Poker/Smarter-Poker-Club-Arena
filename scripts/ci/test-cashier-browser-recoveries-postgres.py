@@ -47,6 +47,8 @@ try:
  denied(lambda:reserve('wallet',wk,{**w,'operationId':zero}))
  denied(lambda:reserve('transfer',k,{**e,'submissionId':zero}))
  denied(lambda:reserve('transfer',k,{**e,'opIds':{**e['opIds'],T[0]:zero}}))
+ ticket={**e,'kind':'ticket','opIds':{T[0]:zero}}
+ denied(lambda:reserve('transfer',key(ticket),ticket))
  def race(_):return reserve('transfer',k,{**e,'submissionId':str(uuid.uuid4()),'opIds':{t:str(uuid.uuid4()) for t in T}})
  with ThreadPoolExecutor(max_workers=4) as pool:r=list(pool.map(race,range(4)))
  assert all(v==r[0] for v in r);e=r[0]

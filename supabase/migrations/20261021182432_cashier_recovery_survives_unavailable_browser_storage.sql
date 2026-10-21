@@ -47,7 +47,7 @@ CREATE FUNCTION public.fn_cashier_browser_recovery_valid(
 ) RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path=public,pg_temp AS $fn$
 DECLARE v_identity text; v_targets jsonb; v_target text; v_failure jsonb; v_value jsonb; v_seen text[]:=ARRAY[]::text[];
  -- Operation identities accept every UUID shape; only the zero sentinel is invalid.
- v_uuid constant text:='^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+ v_uuid constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
  v_entity constant text:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 BEGIN
  IF p_actor_id IS NULL OR p_club_id IS NULL OR p_actor_id='00000000-0000-0000-0000-000000000000'::uuid OR p_club_id='00000000-0000-0000-0000-000000000000'::uuid
@@ -62,13 +62,13 @@ BEGIN
   OR p_envelope->>'action' IS NULL OR p_envelope->>'action' NOT IN ('fn_club_bank_send','fn_club_bank_claim_back','fn_agent_wallet_send','fn_agent_wallet_claim_back','fn_club_bank_reverse','fn_promo_wallet_send','fn_club_promo_wallet_send')
   OR coalesce(p_envelope->>'digest','')!~'^[0-9a-f]{64}$'
   OR p_intent_key IS DISTINCT FROM (p_envelope->>'action')||':'||(p_envelope->>'digest')
-  OR coalesce(p_envelope->>'operationId','')!~*v_uuid THEN RETURN false;END IF;
+  OR coalesce(p_envelope->>'operationId','')!~*v_uuid OR p_envelope->>'operationId'='00000000-0000-0000-0000-000000000000' THEN RETURN false;END IF;
   RETURN true;
  END IF;
  IF p_intent_key!~'^[0-9a-f]{64}$'
  OR p_envelope-ARRAY['version','userId','clubId','kind','amount','targetIds','targetAmounts','failures','submissionId','opIds','destinations','source','ticketNote','tournamentId','createdAt']<>'{}'::jsonb
  OR coalesce(p_envelope->>'kind','') NOT IN ('send','ticket')
- OR coalesce(p_envelope->>'submissionId','')!~*v_uuid
+ OR coalesce(p_envelope->>'submissionId','')!~*v_uuid OR p_envelope->>'submissionId'='00000000-0000-0000-0000-000000000000'
  OR jsonb_typeof(p_envelope->'amount') IS DISTINCT FROM 'number'
  OR (p_envelope->>'amount')::numeric<=0 OR (p_envelope->>'amount')::numeric>1000000000
  OR (p_envelope->>'amount')::numeric<>round((p_envelope->>'amount')::numeric,2)
@@ -82,10 +82,10 @@ BEGIN
  FOR v_target IN SELECT jsonb_array_elements_text(v_targets) LOOP
   IF v_target!~*v_entity OR v_target='00000000-0000-0000-0000-000000000000' OR v_target=ANY(v_seen) THEN RETURN false;END IF;
   v_seen:=array_append(v_seen,v_target);
-  IF p_envelope->>'kind'='send' AND coalesce(p_envelope->'opIds'->>v_target,'')!~*v_uuid THEN RETURN false;END IF;
+  IF p_envelope->>'kind'='send' AND (coalesce(p_envelope->'opIds'->>v_target,'')!~*v_uuid OR p_envelope->'opIds'->>v_target='00000000-0000-0000-0000-000000000000') THEN RETURN false;END IF;
  END LOOP;
  FOR v_target,v_value IN SELECT key,value FROM jsonb_each(p_envelope->'opIds') LOOP
-  IF NOT(v_targets? v_target) OR jsonb_typeof(v_value)<>'string' OR trim(both '"' FROM v_value::text)!~*v_uuid THEN RETURN false;END IF;
+  IF NOT(v_targets? v_target) OR jsonb_typeof(v_value)<>'string' OR trim(both '"' FROM v_value::text)!~*v_uuid OR trim(both '"' FROM v_value::text)='00000000-0000-0000-0000-000000000000' THEN RETURN false;END IF;
  END LOOP;
  IF p_envelope?'source' AND coalesce(p_envelope->>'source','') NOT IN ('agent_wallet','club_bank','promo_wallet','club_promo_wallet','player_wallet') THEN RETURN false;END IF;
  IF p_envelope?'ticketNote' AND p_envelope->>'ticketNote' IS DISTINCT FROM 'Cashier Ticket' THEN RETURN false;END IF;

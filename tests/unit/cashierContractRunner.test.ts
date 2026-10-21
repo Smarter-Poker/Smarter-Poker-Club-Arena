@@ -101,7 +101,22 @@ describe('cashier database contract runner', () => {
     expect(entry).toBeDefined();
     const pin = entry!.match(/'hash', '([a-f0-9]{32})'/)?.[1];
     expect(pin).toBe(hash(definition(body!)));
-    expect(entry).not.toContain('replacement_hash');
+    // The only accepted alternative is the committed 20261020210238 successor,
+    // which restricts agent banks; any other replacement still fails here.
+    const successor = readFileSync(
+      resolve(
+        __dirname,
+        '../../supabase/migrations/20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql'
+      ),
+      'utf8'
+    ).match(
+      /CREATE OR REPLACE FUNCTION public\.fn_club_money_panel\(p_club_id uuid\)[\s\S]*?AS \$function\$([\s\S]*?)\$function\$/
+    )?.[1];
+    expect(successor).toBeDefined();
+    const replacements = [...entry!.matchAll(/'replacement_hash', '([a-f0-9]{32})'/g)].map(
+      (match) => match[1]
+    );
+    expect(replacements).toEqual([hash(definition(successor!))]);
     expect(entry).toContain("'search_path', 'search_path=public, extensions'");
     // A changed actor gate or missing boundary must not satisfy the exact pin.
     expect(hash(definition(body!.replace('IF v_uid IS NULL', 'IF FALSE')))).not.toBe(pin);

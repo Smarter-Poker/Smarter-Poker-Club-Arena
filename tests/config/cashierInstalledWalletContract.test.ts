@@ -47,6 +47,26 @@ it.each([
       .split('\n')
       .find((line) => line.startsWith('-- @live-proof:') && line.includes(`public.${name}(`));
     expect(proof).toContain(`= '${definitionHash}'`);
+    if (name === 'fn_club_promo_send_core_20261004') {
+      // 20261020210238 later restricted agent banks inside this core; the
+      // contract pins that committed successor body, never this one.
+      const successor = readFileSync(
+        'supabase/migrations/20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
+        'utf8'
+      );
+      const at = successor.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
+      expect(at).toBeGreaterThanOrEqual(0);
+      const next = successor.slice(at);
+      const tag = next.match(/\bAS (\$[A-Za-z0-9_]*\$)/i)!;
+      const from = tag.index! + tag[0].length;
+      const successorHash = createHash('md5')
+        .update(next.slice(from, next.indexOf(tag[1], from)))
+        .digest('hex');
+      expect(successorHash).not.toBe(bodyHash);
+      expect(contract).toContain(`'hash', '${successorHash}'`);
+      expect(contract).not.toContain(`'hash', '${bodyHash}'`);
+      return;
+    }
     const expected = name === 'fn_cashier_batch_transfer' ? definitionHash : bodyHash;
     expect(contract).toContain(`'hash', '${expected}'`);
   }

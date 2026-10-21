@@ -98,21 +98,24 @@ describe('cashier authority and exact intent', () => {
     const exactCorePins = [
       [
         'fn_club_bank_send_core_20261004',
-        'fn_club_bank_send',
-        '20260903170529_the_hierarchy_sends_are_one_journal_row_each.sql',
-        'fd7ee70c034f97894cedc51e1b413182',
+        // 20261020210238 restricts agent banks inside the retained core.
+        'fn_club_bank_send_core_20261004',
+        '20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
+        '0b7684873b6cee74e2eafb2cf9cf604a',
       ],
       [
         'fn_club_bank_claim_core_20261004',
-        'fn_club_bank_claim_back',
-        '20260903170529_the_hierarchy_sends_are_one_journal_row_each.sql',
-        'e9e3e8b0fef662612d4cedb68fee6c6c',
+        // 20261020210238 restricts agent banks inside the retained core.
+        'fn_club_bank_claim_core_20261004',
+        '20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
+        '976208c9e650e2a706a41eeea60b641c',
       ],
       [
         'fn_club_bank_reverse_core_20261004',
-        'fn_club_bank_reverse',
-        '20260903170529_the_hierarchy_sends_are_one_journal_row_each.sql',
-        '371e4f56185eb90bbf43b6967d61ea55',
+        // 20261020210238 restricts agent banks inside the retained core.
+        'fn_club_bank_reverse_core_20261004',
+        '20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
+        '2a67b4b80c857356ef0eaca621b358c3',
       ],
       [
         'fn_admin_remove_chips_core_20261004',
@@ -128,9 +131,10 @@ describe('cashier authority and exact intent', () => {
       ],
       [
         'fn_club_promo_send_core_20261004',
+        // 20261020210238 restricts agent banks inside the retained core.
         'fn_club_promo_send_core_20261004',
-        '20261016024912_cashier_sends_use_the_selected_source_and_destination_wallet.sql',
-        '5990c675526e842d0671f47890c1ff27',
+        '20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql',
+        'e2fa848a65ab3615117385fc0614c229',
       ],
       [
         'fn_agent_wallet_claim_back_core_20261004',

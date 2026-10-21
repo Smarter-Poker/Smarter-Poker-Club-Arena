@@ -58,6 +58,15 @@ BEGIN
  pg:=public.ca_club_player_page_core_20261006('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'winners',NULL,NULL,200);
  IF (pg->>'filtered_count')::integer<>(r->>'player_count')::integer THEN RAISE EXCEPTION 'Player pagination scope disagrees'; END IF;
 END $test$;
+-- A zero-fee or negative adjustment is not an additional raked cash hand.
+DO $test$ DECLARE before_count bigint; after_count bigint; BEGIN
+ before_count:=public.fn_ca_club_data_hand_count('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL);
+ INSERT INTO rake_records(table_id,tournament_id,is_tournament,rake_amount,created_at) VALUES
+ ('00000000-0000-0000-0000-0000000000c1',NULL,false,0,now()),
+ ('00000000-0000-0000-0000-0000000000c1',NULL,false,-1,now());
+ after_count:=public.fn_ca_club_data_hand_count('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL);
+ IF before_count<>after_count THEN RAISE EXCEPTION 'Adjustment counted as another hand'; END IF;
+END $test$;
 UPDATE clubs SET owner_id='00000000-0000-0000-0000-0000000000b3' WHERE id='a0000000-0000-0000-0000-000000000001';
 -- True authorization boundary: role and session_user are the browser transport.
 \connect live authenticator 127.0.0.1 @PORT@

@@ -4,10 +4,20 @@
 -- The union identity includes each member club once plus its direct account.
 -- @live-proof: position('fn_ca_club_data_clubs' IN pg_get_functiondef('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)'::regprocedure))>0
 -- @live-proof: position('v_mtt_win' IN pg_get_functiondef('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)'::regprocedure))>0
+-- Supported concurrent preamble: never lock live rake inserts for this index.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ca_club_data_cash_hand_window
+ ON public.rake_records (created_at,table_id)
+ WHERE tournament_id IS NULL AND is_tournament IS NOT TRUE AND rake_amount>0;
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='45s';
 DO $guard$ DECLARE expected record; actual text; BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_am a ON a.oid=c.relam
+ WHERE i.indexrelid=to_regclass('public.idx_ca_club_data_cash_hand_window') AND i.indrelid='public.rake_records'::regclass
+ AND i.indisvalid AND i.indisready AND NOT i.indisunique AND i.indnkeyatts=2 AND i.indnatts=2 AND a.amname='btree'
+ AND i.indkey::text=(SELECT attnum::text FROM pg_attribute WHERE attrelid=i.indrelid AND attname='created_at')||' '||(SELECT attnum::text FROM pg_attribute WHERE attrelid=i.indrelid AND attname='table_id')
+ AND pg_get_expr(i.indpred,i.indrelid)='((tournament_id IS NULL) AND (is_tournament IS NOT TRUE) AND (rake_amount > (0)::numeric))')
+ THEN RAISE EXCEPTION 'Club Data hand index invalid or changed'; END IF;
  IF to_regprocedure('public.fn_ca_club_data_clubs(uuid)') IS NOT NULL THEN RAISE EXCEPTION 'Club Data correction already installed'; END IF;
  IF md5(pg_get_functiondef('public.ca_club_data_screen(uuid,date,date,text,text,text,integer)'::regprocedure))<>'4d5395ef6cf7af32da37b18ab7fb41b1' THEN RAISE EXCEPTION 'Club Data screen preimage changed'; END IF;
  FOR expected IN SELECT * FROM (VALUES ('fn_ca_club_data_scope','7022f13a854fbaa7684b93cf6aae1868'),('ca_club_data_screen','4d5395ef6cf7af32da37b18ab7fb41b1'),('fn_ca_club_cash_felt','7c16aa54bad4612afbe7bdd7d5b82e43'),('fn_ca_club_games','76d0b8f01e9a3b1f0956c8eb293633c2'),('fn_ca_club_games_searched','ed86cc8ecf0ab2c32755a65c8f797af7'),('fn_ca_club_games_unsearched','94c2b97d6df043ada9337fd25a0d39be'),('fn_ca_club_game_rows_filtered','353bc956a6ec2c8ab70a7fa67e1ce835'),('fn_ca_club_game_rows','97180802749f9963f8e973f740e84bb1'),('fn_ca_club_game_summary_filtered','01d7d260c52226978da9cb9c56db0cf2'),('fn_ca_club_game_summary','82a77e6208196fbfd33acb1dd149cd96'),('ca_club_game_page_core_20261006','aeef4d24b6e39308350217029ba01415'),('ca_club_data_snapshot','4c94b72310edd7fd63de7329a5b87239'),('ca_club_player_breakdown','617b01bce9519650c5bf9982acaa3a2b'),('ca_club_player_page_core_20261006','495397d214459c3b0b25260791aa5002')) v(name,hash) LOOP
@@ -40,7 +50,7 @@ RETURNS bigint LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $f
  SELECT CASE WHEN EXISTS(SELECT 1 FROM public.unions WHERE id=p_club_id) THEN
   (SELECT count(*) FROM public.rake_records r JOIN eligible e ON e.table_id=r.table_id
     WHERE r.created_at>=p_start::timestamp AT TIME ZONE 'UTC' AND r.created_at<(p_end+1)::timestamp AT TIME ZONE 'UTC'
-      AND r.tournament_id IS NULL AND NOT coalesce(r.is_tournament,false))
+      AND r.tournament_id IS NULL AND r.is_tournament IS NOT TRUE AND r.rake_amount>0)
  ELSE (SELECT coalesce(sum(d.hands),0)::bigint FROM public.club_table_daily d JOIN eligible e ON e.table_id=d.table_id
    WHERE d.club_id=p_club_id AND d.stat_date BETWEEN p_start AND p_end) END;
 $function$;
@@ -1337,7 +1347,7 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $fu
  games AS(SELECT kind,game_id FROM f UNION SELECT 'CASH',table_id FROM felt),
  hands AS(SELECT CASE WHEN cardinality(p_clubs)>1 THEN
  (SELECT count(*) FROM public.rake_records r WHERE r.created_at>=p_start::timestamp AT TIME ZONE 'UTC' AND r.created_at<(p_end+1)::timestamp AT TIME ZONE 'UTC'
- AND r.tournament_id IS NULL AND NOT coalesce(r.is_tournament,false)
+ AND r.tournament_id IS NULL AND r.is_tournament IS NOT TRUE AND r.rake_amount>0
  AND EXISTS(SELECT 1 FROM public.club_table_daily c WHERE c.club_id=ANY(p_clubs) AND c.stat_date BETWEEN p_start AND p_end AND c.table_id=r.table_id))
  ELSE (SELECT coalesce(sum(c.hands),0)::bigint FROM public.club_table_daily c WHERE c.club_id=ANY(p_clubs) AND c.stat_date BETWEEN p_start AND p_end) END n)
  SELECT jsonb_build_object('games',(SELECT count(*) FROM games),'cash_games',(SELECT count(*) FROM games WHERE kind='CASH'),

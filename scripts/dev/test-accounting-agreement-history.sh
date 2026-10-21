@@ -41,3 +41,7 @@ PY
   -f "$root/supabase/migrations/20260917230515_union_eco_terms_are_observed_at_their_original_write.sql" \
   -f "$root/tests/fixtures/accounting-agreement-history/regression.sql" \
   -f "$root/tests/fixtures/accounting-agreement-history/eco-regression.sql"
+
+# The member role editor writes the same observed agreement history. Qualify
+# its original RPC and explicit-zero consumer alongside this existing CI gate.
+TMPDIR="${TMPDIR:-${RUNNER_TEMP:?Set An Owned Scratch Directory}}" bash "$root/scripts/dev/test-member-rakeback.sh"

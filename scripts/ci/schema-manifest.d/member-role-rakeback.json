@@ -1,0 +1,5 @@
+{
+  "_owner": "codex/role-rakeback-20261021",
+  "functions": ["fn_member_rakeback_terms", "fn_member_rakeback_explicit_guard"],
+  "columns": { "club_members": ["player_rakeback_explicit"] }
+}

@@ -566,7 +566,6 @@ test.describe('a short ring sits lower and gives up no width (Dan 2026-09-23, it
       await page.setContent(seatHtml(html, 6));
       const short = await page.evaluate(probeBox);
       const label = `${device} (${width}x${height})`;
-      if (width === 393) console.log(`SIX_MAX_MEASURE ${JSON.stringify({ label, full, short })}`);
       const phonePortrait = width <= 480 && height > width;
       const expectedDrop = phonePortrait ? full.h * 0.06 : SHORT_DROP_PX;
       if (phonePortrait && Math.abs(short.h - full.h * 0.88) > 0.5)

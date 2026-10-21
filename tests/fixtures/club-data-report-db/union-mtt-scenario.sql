@@ -1,5 +1,7 @@
 -- Private PostgreSQL fixture only. No production endpoint is used.
 TRUNCATE ca_club_data_fact,club_table_daily,ca_club_tournament_daily,ca_club_tournament_player_daily;
+-- This private fixture owns a complete 31-day synthetic fact history.
+INSERT INTO ca_club_data_fact_seed_log(from_at,to_at,rows_put) VALUES(CURRENT_DATE-30,CURRENT_DATE-1,1);
 UPDATE table_seats SET left_at=now();
 INSERT INTO unions VALUES ('fade0000-0000-0000-0000-000000000001','Midway Union','00000000-0000-0000-0000-0000000000a1');
 INSERT INTO clubs(id,name) VALUES('fade0000-0000-0000-0000-000000000001','Midway Union Account'),('88000000-0000-0000-0000-000000000099','Empty Member Club') ON CONFLICT DO NOTHING;
@@ -21,6 +23,10 @@ INSERT INTO table_seats(table_id,user_id,club_id,stack,joined_at) VALUES
 ('00000000-0000-0000-0000-0000000000c1','00000000-0000-0000-0000-0000000000b2','a4143400-0000-0000-0000-000000000001',40,now());
 INSERT INTO tournaments(id,club_id,name,tournament_type,status,start_time) VALUES('88000000-0000-0000-0000-000000000004','fade0000-0000-0000-0000-000000000001','Satellite Is Not MTT','SATELLITE','COMPLETED',now()-interval '1 day');
 INSERT INTO ca_club_data_fact(club_id,stat_date,kind,game_id,user_id,fee,buyins,cashouts,winnings,last_at) VALUES('fade0000-0000-0000-0000-000000000001',CURRENT_DATE-1,'TOURNAMENT','88000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-0000000000a1',0,0,0,0,now()-interval '1 day');
+INSERT INTO tournaments(id,club_id,name,tournament_type,status,start_time) VALUES('88000000-0000-0000-0000-000000000005','fade0000-0000-0000-0000-000000000001','Earlier MTT','MTT','COMPLETED',now()-interval '20 days');
+INSERT INTO ca_club_data_fact(club_id,stat_date,kind,game_id,user_id,fee,buyins,cashouts,winnings,last_at) VALUES('fade0000-0000-0000-0000-000000000001',CURRENT_DATE-20,'TOURNAMENT','88000000-0000-0000-0000-000000000005','00000000-0000-0000-0000-0000000000a1',1,10,23,13,now()-interval '20 days');
+SELECT public.fn_ca_reporting_rollups_from_facts(CURRENT_DATE-20);
+SELECT public.fn_ca_reporting_rollups_from_facts(CURRENT_DATE-1);
 SELECT public.fn_ca_reporting_rollups_from_facts(CURRENT_DATE);
 INSERT INTO member_record_daily_facts VALUES
 ('a0000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b1',CURRENT_DATE,false,20,5,NULL),
@@ -45,6 +51,7 @@ BEGIN
  s:=public.ca_club_data_screen('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL,200);
  IF ((r->'summary')-'hands')<>((s->'summary')-'hands') THEN RAISE EXCEPTION 'Report and screen totals disagree: %, %',r->'summary',s->'summary'; END IF;
  SELECT public.ca_club_game_page_core_20261006('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL,'winnings',NULL,200) INTO pg;
+ IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(pg->'rows') x WHERE x->>'kind'='CASH' AND (x->>'on_felt')::numeric=160 AND (x->>'live')::boolean) THEN RAISE EXCEPTION 'Paged cash lost live felt metadata: %',pg; END IF;
  IF (pg->>'filtered_count')::integer<>5 OR (SELECT sum((x->>'winnings')::numeric) FROM jsonb_array_elements(pg->'rows') x)<>22 THEN RAISE EXCEPTION 'Paged rows fail reconciliation: %',pg; END IF;
  IF (SELECT sum((x->>'fee')::numeric) FROM jsonb_array_elements(pg->'rows') x)<>24.01 THEN RAISE EXCEPTION 'Paged fees fail reconciliation: %',pg; END IF;
  IF (SELECT sum(winnings) FROM public.fn_ca_club_games('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL))<>22 THEN RAISE EXCEPTION 'Export winnings disagree'; END IF;
@@ -53,6 +60,10 @@ BEGIN
  IF (r->'summary'->>'total_winnings')::numeric<>22 OR (r->'summary'->>'mtt_winnings')::numeric<>7 OR (r->'summary'->>'fee')::numeric<>24.01 OR (r->'summary'->>'games')::integer<>5 THEN RAISE EXCEPTION 'Dedicated union page disagrees: %',r; END IF;
  IF jsonb_array_length(r->'breakdown')<>4 OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(r->'breakdown') x WHERE x->>'name'='Empty Member Club') THEN RAISE EXCEPTION 'Union breakdown omitted empty member club: %',r; END IF;
  IF (SELECT sum((x->>'winnings')::numeric) FROM jsonb_array_elements(r->'series') x)<>22 THEN RAISE EXCEPTION 'Series does not reconcile'; END IF;
+ r:=public.ca_club_data_snapshot_v2('fade0000-0000-0000-0000-000000000001',CURRENT_DATE-30,CURRENT_DATE,'ALL','ALL',NULL,200);
+ IF (r->'summary'->>'total_winnings')::numeric<>35 OR (r->'summary'->>'mtt_winnings')::numeric<>20 OR (r->>'row_count')::integer<>7 OR jsonb_array_length(r->'rows')<>7 THEN RAISE EXCEPTION 'Long window totals and rows disagree: %',r; END IF;
+ r:=public.ca_club_data_snapshot('fade0000-0000-0000-0000-000000000001',CURRENT_DATE-30,CURRENT_DATE,'ALL','ALL',NULL,200);
+ IF (r->'summary'->>'mtt_winnings')::numeric<>25 OR (r->'summary'->>'tournament_winnings')::numeric<>25 THEN RAISE EXCEPTION 'Open legacy client contract changed'; END IF;
  r:=public.ca_club_player_breakdown('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,200);
  IF (r->>'player_count')::integer<2 OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(r->'players') x WHERE x->>'user_id'='00000000-0000-0000-0000-0000000000b2') THEN RAISE EXCEPTION 'Union player breakdown missed member club: %',r; END IF;
  pg:=public.ca_club_player_page_core_20261006('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'winners',NULL,NULL,200);
@@ -96,5 +107,11 @@ END $test$;
 DO $test$ BEGIN
  IF (SELECT round(sum((payload->>'fee')::numeric),2) FROM ca_club_data_export_rows)<>24.01 THEN RAISE EXCEPTION 'Immutable export precision disagrees'; END IF;
  IF (SELECT sum((payload->>'winnings')::numeric) FROM ca_club_data_export_rows)<>22 THEN RAISE EXCEPTION 'Immutable export rows disagree'; END IF;
+END $test$;
+DO $test$ DECLARE pg jsonb; BEGIN
+ UPDATE table_seats SET left_at=now();
+ pg:=public.ca_club_game_page_core_20261006('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL,'recent',NULL,200);
+ IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(pg->'rows') x WHERE x->>'kind'='CASH' AND (x->>'players')::integer=2 AND NOT (x->>'live')::boolean) THEN RAISE EXCEPTION 'Closed union cash game missed distinct players: %',pg; END IF;
+ IF (SELECT players FROM public.fn_ca_club_games('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL) WHERE kind='CASH')<>2 THEN RAISE EXCEPTION 'Export player count differs'; END IF;
 END $test$;
 DO $test$ BEGIN RAISE NOTICE 'UNION MTT SCENARIO PASSED'; END $test$;

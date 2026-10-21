@@ -108,7 +108,7 @@ describe('a hand belongs to the club of the seat AT THAT TABLE', () => {
       'public.fn_ca_cash_table_reporting_club(v_union, v_table_club, rr.uid::uuid, p_table)'
     );
     expect(squash(latest('fn_ca_club_cash_felt'))).toContain(
-      'COALESCE(s.club_id, public.fn_ca_cash_reporting_club(t.union_id, t.club_id, s.user_id)) = p_club_id'
+      'COALESCE(s.club_id, public.fn_ca_cash_reporting_club(t.union_id, t.club_id, s.user_id)) = ANY (public.fn_ca_club_data_clubs(p_club_id))'
     );
   });
 });
@@ -116,11 +116,15 @@ describe('a hand belongs to the club of the seat AT THAT TABLE', () => {
 describe('who sees what', () => {
   it('the owner, co-owner and admins see the club; agents see their downline; nobody else', () => {
     const b = squash(latest('fn_ca_club_data_scope'));
-    expect(b).toContain("cm.role IN ('owner', 'co_owner', 'admin')");
-    expect(b).toContain("cm.role IN ('super_agent', 'agent', 'sub_agent')");
+    expect(b).toMatch(/cm\.role IN \('owner',\s*'co_owner',\s*'admin'\)/);
+    expect(b).toMatch(/cm\.role IN \('super_agent',\s*'agent',\s*'sub_agent'\)/);
     expect(b).toContain("THEN 'downline'");
     expect(b).toContain('ELSE NULL END');
     expect(b).not.toContain("'player'");
+    expect(b).toContain('public.ca_can_oversee_union(p_club_id)');
+    expect(b.indexOf('public.ca_can_oversee_union(p_club_id)')).toBeLessThan(
+      b.indexOf("cm.role IN ('owner'")
+    );
   });
 
   it('the screen refuses anyone the scope does not name, and filters an agent to his downline', () => {
@@ -286,7 +290,7 @@ describe('the Report tables are written by the club the money moved through', ()
     // the filtered form counts players for the page's rows by exact day lookups
     expect(b).toContain('AND f.game_id IN (SELECT tp.game_id FROM top tp)');
     expect(b).toContain(
-      'WHERE f.club_id = p_club_id AND f.stat_date = ANY (v_days) AND f.user_id <>'
+      'WHERE f.club_id = ANY (public.fn_ca_club_data_clubs(p_club_id)) AND f.stat_date = ANY (v_days) AND f.user_id <>'
     );
     // tournaments are described for every game only when a filter reads them
     expect(b).toContain("v_attrs := v_game IN ('MTT', 'SNG') OR v_q IS NOT NULL;");

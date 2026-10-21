@@ -30,8 +30,8 @@ async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@e
   else if(u.pathname==='/rest/v1/rpc/fn_club_viewer_cashier_scope') data='downline';
   else if(u.pathname==='/rest/v1/rpc/fn_club_viewer_bank_role') data=state.role;
   else if(u.pathname==='/rest/v1/rpc/fn_cashier_statement_scope') data={authorized:true,role:state.role,scope:'downline'};
-  else if(u.pathname==='/rest/v1/rpc/ca_club_roster_rows') data=[{user_id:id}];
-  else if(['fn_reassign_club_members','fn_preview_club_assignment','fn_club_assignment_history','fn_apply_reviewed_club_assignment','ca_club_members_export','fn_club_bank_role','fn_club_cashier_scope','fn_club_cashier_can_transact','fn_club_is_in_downline','ca_club_roster_access'].some(name=>u.pathname==='/rest/v1/rpc/'+name)) {status=403;data={code:'42501'};}
+  else if(u.pathname==='/rest/v1/rpc/ca_club_members_page') data={items:[{user_id:id}]};
+  else if(['fn_reassign_club_members','fn_preview_club_assignment','fn_club_assignment_history','fn_apply_reviewed_club_assignment','ca_club_members_export','fn_club_bank_role','fn_club_cashier_scope','fn_club_cashier_can_transact','fn_club_is_in_downline','ca_club_roster_access','ca_club_roster_rows'].some(name=>u.pathname==='/rest/v1/rpc/'+name)) {status=403;data={code:'42501'};}
   else if(u.pathname.startsWith('/rest/v1/rpc/')) data=false;
   else throw new Error('Unexpected fixture request '+u.pathname);
   if(u.pathname==='/rest/v1/club_members' && u.searchParams.has('agent_id')) data=[];

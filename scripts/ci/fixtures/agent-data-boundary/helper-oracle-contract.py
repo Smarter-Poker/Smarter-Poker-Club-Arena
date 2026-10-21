@@ -7,6 +7,12 @@ q("DO $$BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='postgres') THE
 for helper in raw['helpers']:
  signature=helper['signature']
  q(f"ALTER FUNCTION public.{signature} OWNER TO postgres; REVOKE ALL ON FUNCTION public.{signature} FROM PUBLIC,anon,authenticated,service_role; GRANT EXECUTE ON FUNCTION public.{signature} TO authenticated,service_role;")
+grantable=json.loads((F/'grantable-preimages.json').read_text())['function']
+chooser=json.loads((F/'ca-grantable-preimage.json').read_text())
+for helper in [grantable,chooser]:
+ q(helper['definition'])
+ signature=helper['signature']
+ q(f"ALTER FUNCTION public.{signature} OWNER TO postgres; REVOKE ALL ON FUNCTION public.{signature} FROM PUBLIC,anon,authenticated,service_role; GRANT EXECUTE ON FUNCTION public.{signature} TO authenticated,service_role;")
 # RLS consumers directly invoking a raw helper would break after a naive revoke.
 q("""CREATE TABLE cashout_requests(id uuid PRIMARY KEY,club_id uuid,player_id uuid,agent_id uuid);
 CREATE TABLE chip_escrow(id uuid PRIMARY KEY,player_id uuid,cashout_request_id uuid);
@@ -31,6 +37,10 @@ assert q(as_user(7014,f"SELECT fn_club_bank_role('{oracle_club}','{uid(7015)}');
 assert q(as_user(7014,f"SELECT fn_club_cashier_scope('{oracle_club}','{uid(7015)}');"))=='downline'
 assert q(as_user(7014,f"SELECT fn_club_is_in_downline('{oracle_club}','{uid(7015)}','{uid(7016)}');"))=='t'
 assert q(as_user(7014,f"SELECT fn_club_cashier_can_transact('{oracle_club}','{uid(7015)}','{uid(7016)}');"))=='t'
+assert q(as_user(7014,f"SELECT fn_club_grantable_roles('{oracle_club}','{uid(7015)}','{uid(7016)}');"))=='{sub_agent,player}'
+assert json.loads(q(as_user(7014,f"SELECT ca_club_grantable_roles('{oracle_club}','{uid(7016)}');")))['target_role']=='player'
+legitimate_roles=q(as_user(7012,f"SELECT fn_club_grantable_roles('{oracle_club}','{uid(7012)}','{uid(7014)}');"))
+assert legitimate_roles=='{sub_agent,player}'
 # Internal cashout validation deliberately asks on behalf of the assigned agent,
 # with the player's JWT. It must remain legal after browser helper revocation.
 q("CREATE FUNCTION public.fixture_assigned_agent_can_transact(c uuid,a uuid,p uuid) RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path=public,pg_temp AS $$SELECT public.fn_club_cashier_can_transact(c,a,p)$$; GRANT EXECUTE ON FUNCTION public.fixture_assigned_agent_can_transact(uuid,uuid,uuid) TO authenticated;")
@@ -42,6 +52,13 @@ q(oracle_migration)
 q(oracle_migration,'PRIVATE_GRAPH_HELPER_PREIMAGE_CHANGED')
 for fn,args in [('fn_club_bank_role',f"'{oracle_club}','{uid(7015)}'"),('fn_club_cashier_scope',f"'{oracle_club}','{uid(7015)}'"),('fn_club_is_in_downline',f"'{oracle_club}','{uid(7015)}','{uid(7016)}'"),('fn_club_cashier_can_transact',f"'{oracle_club}','{uid(7015)}','{uid(7016)}'")]:
  q(as_user(7014,f'SELECT {fn}({args});'),'permission denied')
+assert q(as_user(7014,f"SELECT fn_club_grantable_roles('{oracle_club}','{uid(7015)}','{uid(7016)}');"))=='{}'
+assert json.loads(q(as_user(7014,f"SELECT ca_club_grantable_roles('{oracle_club}','{uid(7016)}');")))=={'roles':[],'target_role':None,'actor_role':None}
+assert q(as_user(7012,f"SELECT fn_club_grantable_roles('{oracle_club}','{uid(7012)}','{uid(7014)}');"))==legitimate_roles
+assert json.loads(q(as_user(7012,f"SELECT ca_club_grantable_roles('{oracle_club}','{uid(7014)}');")))['target_role']=='player'
+assert json.loads(q(as_user(7010,f"SELECT ca_club_grantable_roles('{oracle_club}','{uid(7016)}');")))['target_role']=='player'
+q(f"SET ROLE anon;SELECT fn_club_grantable_roles('{oracle_club}','{uid(7015)}','{uid(7016)}');",'permission denied')
+q(f"SET ROLE anon;SELECT ca_club_grantable_roles('{oracle_club}','{uid(7016)}');",'permission denied')
 assert q(as_user(7012,f"SELECT fn_club_viewer_cashier_scope('{oracle_club}');"))=='downline'
 assert q(as_user(7012,f"SELECT fn_club_viewer_bank_role('{oracle_club}');"))=='agent'
 for fn in ['fn_club_viewer_is_in_downline','fn_club_viewer_can_transact']:

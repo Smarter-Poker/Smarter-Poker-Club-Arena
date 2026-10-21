@@ -90,8 +90,10 @@ try {
  const baseline=baselineRows.length?Number(baselineRows[0].sequence):0;assert.ok(Number.isSafeInteger(baseline));
  const sourceEvent=await listenForTransfer(source.account.id,sourceToken,baseline);
  const destinationEvent=await listenForTransfer(destination.account.id,destinationToken,baseline);
- const sourceRoster=await req('/rest/v1/rpc/ca_club_roster_rows',{method:'POST',token:sourceToken,body:{p_club_id:club}});
- const browserPlayer=sourceRoster.find(row=>row.user_id===player.account.id);assert.ok(browserPlayer?.alias);
+ const playerProfile=await req(`/rest/v1/profiles?id=eq.${player.account.id}&select=alias,username`);
+ const playerSearch=playerProfile[0].alias || playerProfile[0].username;assert.ok(playerSearch);
+ const sourceRoster=await req('/rest/v1/rpc/ca_club_members_page',{method:'POST',token:sourceToken,body:{p_club_id:club,p_search:playerSearch,p_limit:80}});
+ const browserPlayer=sourceRoster.items.find(row=>row.user_id===player.account.id);assert.ok(browserPlayer?.alias);
  browserProof=await startAssignmentBrowserProof({account:source.account,session:loginSessions.get(source.account.id),clubId:club,playerId:player.account.id,playerAlias:browserPlayer.alias,evidenceDir:join(process.cwd(),'e2e-report','agent-assignment')});
  const preview=await req('/rest/v1/rpc/fn_preview_club_assignment',{method:'POST',token,body:{p_club_id:club,p_member_user_ids:move.p_member_user_ids,p_agent_user_id:move.p_agent_user_id,p_expected_agent_user_id:move.p_expected_agent_user_id}});
  assert.equal(preview.selected_count,1);assert.equal(preview.affected_count,1);assert.match(preview.review_token,/^[a-f0-9]{32}$/);
@@ -105,8 +107,6 @@ try {
  assert.deepEqual((await visible()).map(r=>r.user_id),[source.account.id]);
  const replay=await req('/rest/v1/rpc/fn_apply_reviewed_club_assignment',{method:'POST',token,body:move});assert.equal(replay.replayed,true);
  assert.deepEqual((await req(`/rest/v1/club_members?club_id=eq.${club}&select=user_id`,{token:destinationToken})).map(r=>r.user_id).sort(),[destination.account.id,player.account.id].sort());
- const playerProfile=await req(`/rest/v1/profiles?id=eq.${player.account.id}&select=alias,username`);
- const playerSearch=playerProfile[0].alias || playerProfile[0].username;assert.ok(playerSearch);
  const history=await req('/rest/v1/rpc/fn_club_assignment_history',{method:'POST',token,body:{p_club_id:club,p_search:move.p_op_id,p_limit:25}});
  assert.equal(history.rows.length,1);assert.equal(history.rows[0].operation_id,move.p_op_id);assert.equal(history.rows[0].review.review_token,preview.review_token);
  for(const [viewer,viewerToken,expected] of [[source.account.id,sourceToken,false],[destination.account.id,destinationToken,true]]) {

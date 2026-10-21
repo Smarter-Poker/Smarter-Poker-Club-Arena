@@ -36,7 +36,7 @@ async function fixture(failure) {
   } else if(u.pathname==='/rest/v1/rpc/fn_preview_club_assignment') data={selected_count:1,affected_count:1,review_token:'a'.repeat(32)};
   else if(u.pathname==='/rest/v1/rpc/fn_club_assignment_history') data={rows:[{operation_id:body.p_search,review:{review_token:'a'.repeat(32)}}]};
   else if(u.pathname==='/rest/v1/rpc/ca_club_roster_rows') {const caller=init.headers.Authorization.slice(7);data=[...members.values()].filter(r=>r.user_id===caller || r.agent_id===caller).map(row=>({...row,alias:'Fixture Player'}));}
-  else if(u.pathname==='/rest/v1/rpc/ca_club_members_page') {const caller=init.headers.Authorization.slice(7);data={items:[...members.values()].filter(r=>r.user_id===state.created[2] && (r.user_id===caller || r.agent_id===caller))};}
+  else if(u.pathname==='/rest/v1/rpc/ca_club_members_page') {const caller=init.headers.Authorization.slice(7);data={items:[...members.values()].filter(r=>r.user_id===state.created[2] && (r.user_id===caller || r.agent_id===caller)).map(row=>({...row,alias:"Fixture Player"}))};}
   else if(u.pathname==='/rest/v1/rpc/ca_club_roster_access') data=members.get(body.p_target_user_id)?.agent_id===init.headers.Authorization.slice(7)?'agent':'none';
   else if(u.pathname==='/rest/v1/rpc/ca_club_member_detail') {const caller=init.headers.Authorization.slice(7);data=members.get(body.p_user_id)?.agent_id===caller?{identity:{user_id:body.p_user_id}}:null;}
   else if(u.pathname==='/rest/v1/rpc/ca_club_members_export') {status=403;data={code:'42501'};}

@@ -70,7 +70,8 @@ try {
   assert.ok(stats.data.every(r=>r.user_id===account.id));
   const privateRead=await request(`/rest/v1/clubs?id=eq.${club}&select=chip_treasury`,{...caller,allowFailure:true});
   assert.equal(privateRead.ok,false);assert.equal(privateRead.status,403);
-  const roster=await rpc('ca_club_roster_rows',{p_club_id:club});
+  const rosterPage=await rpc('ca_club_members_page',{p_club_id:club,p_limit:80});
+  const roster=rosterPage.items;
   assert.ok(Array.isArray(roster));assert.ok(roster.some(r=>r.user_id===account.id));assert.ok(roster.every(r=>r.user_id===account.id));
   for(const route of ['player-sessions','club-analytics']) {
    const response=await fetch(`https://smarter.poker/api/club-arena/${route}?clubId=${club}`,{headers:{Authorization:`Bearer ${token}`}});
@@ -85,6 +86,7 @@ try {
    ['fn_club_cashier_scope',{p_club_id:club,p_user_id:account.id}],
    ['fn_club_cashier_can_transact',{p_club_id:club,p_actor:account.id,p_target:account.id}],
    ['fn_club_is_in_downline',{p_club_id:club,p_upline_user_id:account.id,p_member_user_id:account.id}],
+   ['ca_club_roster_rows',{p_club_id:club}],
    ['ca_club_roster_access',{p_club_id:club,p_target_user_id:account.id}],
    ['ca_club_members_export',{p_club_id:club,p_user_ids:[account.id]}],
    ['fn_apply_reviewed_club_assignment',{p_club_id:club,p_member_user_ids:[account.id],p_agent_user_id:account.id,p_op_id:randomUUID(),p_review_token:'a'.repeat(32)}],

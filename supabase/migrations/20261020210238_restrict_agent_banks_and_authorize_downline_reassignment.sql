@@ -3,10 +3,10 @@
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';
--- Acquire the club and membership roots before reporting policy relations.
+-- Acquire the membership root before reporting policy relations.
 -- All locks precede function/catalog replacement; the three-second timeout
 -- bounds admission and the single transaction releases every lock on refusal.
-LOCK TABLE public.clubs, public.club_members, public.agents,
+LOCK TABLE public.club_members, public.agents,
  public.ca_club_member_tournament_fee_daily, public.ca_club_player_daily,
  public.ca_club_rake_daily_user, public.ca_club_table_player_daily,
  public.ca_club_tournament_player_daily, public.ca_union_rake_attribution,

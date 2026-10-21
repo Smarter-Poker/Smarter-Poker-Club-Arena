@@ -1,0 +1,12 @@
+{
+  "_owner": "codex/midway-rake-cap-20261021, migration 20261021174448",
+  "functions": [
+    "fn_cash_rake_policy",
+    "fn_midway_cash_rake_write_guard",
+    "fn_cash_rake_from_snapshot",
+    "fn_effective_rake_config",
+    "fn_rake_law_violations",
+    "fn_complete_club_opening_setup"
+  ],
+  "columns": { "hand_history": ["cash_rake_policy"] }
+}

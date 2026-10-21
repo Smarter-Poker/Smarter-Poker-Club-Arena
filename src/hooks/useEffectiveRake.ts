@@ -1,3 +1,4 @@
+import { readCashRakePolicyVersion } from '../services/cashRakePolicyVersion';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  THE RAKE THIS TABLE ACTUALLY TAKES
@@ -69,33 +70,47 @@ export function useEffectiveRake(
       return;
     }
 
+    setRake(UNKNOWN);
     let alive = true;
     (async () => {
       try {
         const { data: tableRow, error: tErr } = await supabase
           .from('tables')
-          .select('rake_percent, rake_cap_bb, club_id')
+          .select('rake_percent, rake_cap_bb, club_id, union_id')
           .eq('id', tableId)
           .maybeSingle();
         if (tErr) throw tErr;
 
-        let clubRow: { default_rake_percent?: number | null; rake_cap?: number | null } | null =
-          null;
+        let clubRow: {
+          union_id?: string | null;
+          default_rake_percent?: number | null;
+          rake_cap?: number | null;
+        } | null = null;
         if (tableRow?.club_id) {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('clubs')
-            .select('default_rake_percent, rake_cap')
+            .select('default_rake_percent, rake_cap, union_id')
             .eq('id', tableRow.club_id)
             .maybeSingle();
+          if (error) throw error;
           clubRow = data ?? null;
         }
         if (!alive) return;
 
+        const version = await readCashRakePolicyVersion();
+        if (!alive) return;
+        if (version === null) {
+          setRake(UNKNOWN);
+          return;
+        }
+        const override = resolveRakeOverride(tableRow ?? null, clubRow);
         const cfg = getRakeConfig(
           parsed.bb,
           gameType || 'nlh',
           parsed.sb,
-          resolveRakeOverride(tableRow ?? null, clubRow)
+          version === 1
+            ? override
+            : { rakePercent: override?.rakePercent, rakeCapBB: override?.rakeCapBB }
         );
         setRake({ rakePercent: cfg.rakePercent, rakeCap: cfg.rakeCap });
       } catch (e) {

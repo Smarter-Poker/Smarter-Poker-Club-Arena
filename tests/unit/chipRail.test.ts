@@ -36,10 +36,10 @@ import {
   feltEdgeClearanceWidthPct,
   fitSeatToViewport,
   overlapsBoard,
+  overlapsPortraitPot,
   projectPortraitTable,
   unprojectPortraitTable,
   portraitTableTransform,
-  feltEdgeClearanceWidthPct,
   feltRadialFraction,
   isInsideFelt,
   isOnFeltText,
@@ -748,6 +748,30 @@ describe('portrait mobile bets follow the actual rail instead of walking toward 
           );
         }
       }
+  });
+});
+
+describe('short phone rail bets clear the complete felt masthead', () => {
+  it('checks hero and side wagers with the complete amount footprint', async () => {
+    const { seatLayoutFor } = await import('../../src/lib/tableSeatGeometry');
+    for (const height of [300, 340, 400, 560]) {
+      const size = { w: 320 * 0.82, h: height, railBets: true };
+      for (const count of [6, 9]) {
+        for (const raw of seatLayoutFor(count)) {
+          const pod = seatPodPx(320, isHeroSeat(raw), size.w);
+          const seat = fitSeatToViewport(raw, size, 320, pod);
+          const rest = chipRestPosition(seat, size, pod);
+          expect(overlapsPortraitPot(rest, size, (20 / size.w) * 100, (11 / size.w) * 100)).toBe(
+            false
+          );
+          expect(
+            isOnFeltText(rest, size, (20 / size.w) * 100),
+            `${count}/${height}/${raw.x},${raw.y}`
+          ).toBe(false);
+          expect(overlapsBoard(rest, size, (20 / size.w) * 100)).toBe(false);
+        }
+      }
+    }
   });
 });
 

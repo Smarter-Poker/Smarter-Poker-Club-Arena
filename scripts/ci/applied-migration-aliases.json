@@ -49,6 +49,14 @@
       "file": "supabase/migrations/20261021180032_agent_transfer_review_history_and_scope_events.sql",
       "sameBytes": true,
       "basis": "Installed once through Supabase MCP 2026-10-21T18:22:11Z from qualified source ab3ad733260811b9d92cff8572c82994eef80b77. Recorded SQL17770 bytes and MD5 equal source. Review/history RPCs, recipient helper, optimized downline lookup, exact owner/search_path/ACLs, review column and keyset index read back. Generic events use existing private account broadcast; hot event table remains unpublished. Never replay."
+    },
+    {
+      "appliedVersion": "20261021184621",
+      "appliedName": "20261021183705_bind_private_club_helper_reads_to_the_caller",
+      "appliedMd5": "a4e0e85c11cdd5b006cf57495c9cea96",
+      "file": "supabase/migrations/20261021183705_bind_private_club_helper_reads_to_the_caller.sql",
+      "sameBytes": true,
+      "basis": "Installed once successfully 2026-10-21T18:46:21Z from qualified source66875d4c19. History17264bytes and SQL MD5 equal exact source. Four raw actor-taking helpers authenticated/anon EXECUTE false; four caller-bound wrappers postgres-owned SECURITY DEFINER public,pg_temp with authenticated/service EXECUTE and anon denied. Seven RLS policies use wrappers, zero remaining raw policy calls. Both grantable-role definitions caller-bound and read back. Never replay."
     }
   ],
   "superseded": [

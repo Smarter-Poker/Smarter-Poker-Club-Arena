@@ -119,7 +119,7 @@ describe('the ACTIVE figure is real or it is unknown', () => {
 });
 
 describe('DiamondArenaCard', () => {
-  it('owns a diamond crest, centered house name and two live figures', () => {
+  it('owns a diamond crest, centered Diamond play heading and two live figures', () => {
     const { container } = render(
       <DiamondArenaCard
         activePlayers={1284}
@@ -128,7 +128,9 @@ describe('DiamondArenaCard', () => {
     );
     expect(container.querySelector('.club-card-panel.club-card-panel--arena')).not.toBeNull();
     expect(container.querySelector('.sc--crest-diamond')).not.toBeNull();
-    expect(container.querySelector('.sc__title')?.textContent?.trim()).toBe('SMARTER.POKER');
+    expect(container.querySelector('.sc__title')?.textContent?.trim()).toBe(
+      'Play Poker With Your Diamonds'
+    );
     expect(container.querySelector('.sc__pill')).toBeNull();
     expect(container.querySelector('.club-card-viewport img')?.getAttribute('src')).toContain(
       'cards/diamond-arena-square.jpg'

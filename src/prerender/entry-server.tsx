@@ -28,7 +28,13 @@ import React, { StrictMode } from 'react';
 import { renderToString } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom';
 import { ROUTER_BASENAME } from '../lib/appBase';
-import { PUBLIC_PATHS, resolveSeo, type SeoEntry } from '../lib/seo';
+import {
+  PUBLIC_PATHS,
+  KINGS_PREVIEW_PATHS,
+  KINGS_CLUB_IMAGE,
+  resolveSeo,
+  type SeoEntry,
+} from '../lib/seo';
 import PokerArenaLandingPage from '../pages/PokerArenaLandingPage';
 import HelpPrerender from './HelpPrerender';
 import LegalPrerender from './LegalPrerender';
@@ -60,6 +66,28 @@ export const PRERENDER_EXCEPTIONS: Readonly<Record<string, string>> = {
 
 /** The routes this entry can render. With the exceptions, must equal seo.ts PUBLIC_ROUTES. */
 export const PRERENDER_PATHS: readonly string[] = Object.keys(PAGES);
+
+/** Brand-only, non-indexable previews; never enter the public sitemap. */
+export const SHARE_PREVIEW_PATHS = KINGS_PREVIEW_PATHS;
+
+export function renderSharePreview(path: string): PrerenderedPage {
+  if (!SHARE_PREVIEW_PATHS.includes(path as (typeof KINGS_PREVIEW_PATHS)[number])) {
+    throw new Error(`no share preview for ${path}`);
+  }
+  const seo = resolveSeo(path);
+  return {
+    path,
+    seo,
+    html: renderToString(
+      <main>
+        <h1>{seo.title}</h1>
+        <img src={KINGS_CLUB_IMAGE} alt="KINGS CLUB Logo" width="256" height="256" />
+        <p>{seo.description}</p>
+        <a href="https://smarter.poker/hub/club-arena/clubs/kings-club">Open KINGS CLUB</a>
+      </main>
+    ),
+  };
+}
 
 export function assertPrerenderCoversPublicRoutes(): void {
   const missing = PUBLIC_PATHS.filter((p) => !(p in PAGES) && !(p in PRERENDER_EXCEPTIONS));

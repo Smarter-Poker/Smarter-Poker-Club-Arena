@@ -144,6 +144,32 @@ export function wholePeriodViolations(body: string, before: string): string[] {
       out.push('the launch waiver is not the exact two exclusions and unpaid-period reuse');
     body = body.replaceAll(waiver, '').replace(waivedReuse, '  IF FOUND THEN');
   }
+  // 20261021193318 qualifies this one immutable payer-receipt repair before
+  // confirming an unchanged certificate. Normalize only its exact branch.
+  const confirmedBefore =
+    "   IF certificate.source_fingerprint=plan->>'source_fingerprint' THEN confirmed:=confirmed+1; CONTINUE; END IF;";
+  const confirmedAfter = confirmedBefore.replace(
+    'THEN confirmed:=',
+    'THEN PERFORM smarter_private.ensure_rakeback_payer_contracts(certificate.id); confirmed:='
+  );
+  if (body.includes('ensure_rakeback_payer_contracts')) {
+    if (
+      body.split(confirmedAfter).length !== 2 ||
+      body.split('ensure_rakeback_payer_contracts').length !== 2
+    )
+      out.push('the confirmed payer repair is not the exact single qualified branch');
+    body = body.replace(confirmedAfter, confirmedBefore);
+  }
+  const explicitRate =
+    "CASE WHEN COALESCE((p.member->>'player_rakeback_explicit')::boolean,false) OR p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer";
+  if (body.includes(explicitRate)) {
+    if (body.split(explicitRate).length !== 2)
+      out.push('the explicit player agreement rate expression is duplicated');
+    body = body.replace(
+      explicitRate,
+      'CASE WHEN p.deal>0 THEN p.deal WHEN p.member_agent IS NOT NULL THEN p.offer'
+    );
+  }
   const historicalPayers = body.includes("'historical_rakeback_payer_required'");
   for (const [original, qualified] of QUALIFIED_CERTIFICATE_EXPRESSIONS) {
     if (body.includes(qualified) || historicalPayers) {
@@ -445,6 +471,30 @@ describe('a page recompute reads only the evidence that changed', () => {
     ]) {
       expect(wholePeriodViolations(plant(body, from, to), before).length).toBeGreaterThan(0);
     }
+  });
+  it('admits only the exact single qualified unchanged-certificate payer repair', () => {
+    const ensure = 'PERFORM smarter_private.ensure_rakeback_payer_contracts(certificate.id);';
+    expect(body.split(ensure)).toHaveLength(2);
+    for (const replacement of [
+      ensure + ' ' + ensure,
+      ensure.replace('certificate.id', 'period_id'),
+      ensure + ' confirmed:=confirmed+1;',
+      'CONTINUE; ' + ensure,
+    ])
+      expect(
+        wholePeriodViolations(plant(body, ensure, replacement), before).length
+      ).toBeGreaterThan(0);
+  });
+  it('refuses altered explicit-zero agreement semantics', () => {
+    const explicit = "COALESCE((p.member->>'player_rakeback_explicit')::boolean,false) OR p.deal>0";
+    expect(body).toContain(explicit);
+    for (const altered of [
+      explicit.replace(',false)', ',true)'),
+      explicit.replace(' OR ', ' AND '),
+    ])
+      expect(wholePeriodViolations(plant(body, explicit, altered), before).length).toBeGreaterThan(
+        0
+      );
   });
   it('refuses a changed whole-period path', () => {
     expect(

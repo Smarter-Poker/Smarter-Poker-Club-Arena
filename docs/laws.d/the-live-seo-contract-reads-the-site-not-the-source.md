@@ -9,3 +9,7 @@ routes and every URL in it answers 200, and the shell behind a deep link still
 carries the static head. No route list lives in the workflow; the check is
 independent of the engine certificate so an engine release lagging main cannot
 hide a broken head.
+
+JSON-LD recognition reads the script's actual type attribute independently of
+attribute order, quoting and whitespace. The published route-jsonld shell is a
+regression fixture; malformed JSON and missing or falsely labelled blocks still fail.

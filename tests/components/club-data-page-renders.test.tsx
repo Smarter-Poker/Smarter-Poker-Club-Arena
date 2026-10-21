@@ -319,7 +319,7 @@ beforeEach(() => {
 });
 
 describe('ClubDataPage', () => {
-  it('uses a neutral creator label when the verified row has no resolved name', async () => {
+  it('uses the club host instead of an individual creator or identifier', async () => {
     const unnamedCreator = {
       ...snapshot.rows[0],
       creator_id: '11111111-1111-4111-8111-111111111111',
@@ -341,7 +341,7 @@ describe('ClubDataPage', () => {
     render(<ClubDataPage />);
     fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
 
-    expect(await screen.findByText('Creator Name Unavailable')).toBeVisible();
+    expect(await screen.findByText('By Shark Club')).toBeVisible();
     expect(screen.queryByText(/11111111/i)).toBeNull();
   });
 

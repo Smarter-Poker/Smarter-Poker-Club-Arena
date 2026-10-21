@@ -38,7 +38,8 @@ const fromChain = (table?: string) => {
   chain.then = (resolve: (v: { data: unknown[]; error: null | { message: string } }) => void) => {
     // Production grants club identity columns but protects financial columns.
     // Selecting the embedded clubs wildcard fails before RLS can return rows.
-    const clubError = sourceState.clubError ||
+    const clubError =
+      sourceState.clubError ||
       (projection.includes('(*)') ? { message: 'permission denied for table clubs' } : null);
     resolve({
       data: table === 'union_clubs' && !clubError ? unionClubs : [],

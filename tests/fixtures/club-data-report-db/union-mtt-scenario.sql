@@ -69,6 +69,20 @@ BEGIN
  pg:=public.ca_club_player_page_core_20261006('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'winners',NULL,NULL,200);
  IF (pg->>'filtered_count')::integer<>(r->>'player_count')::integer THEN RAISE EXCEPTION 'Player pagination scope disagrees'; END IF;
 END $test$;
+-- Both legacy private summary doors use the same exact totals, including felt.
+DO $test$ DECLARE f record; expected jsonb; actual jsonb; k text; BEGIN
+ FOR f IN SELECT * FROM (VALUES ('ALL',NULL::text),('MTT',NULL::text),('SNG',NULL::text),('ALL','Fixture')) v(game,search) LOOP
+  expected:=public.ca_club_data_screen('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,f.game,'ALL',f.search,1)->'summary';
+  actual:=public.fn_ca_club_game_summary('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,f.game,'ALL',f.search);
+  FOREACH k IN ARRAY ARRAY['games','fee','cash_fee','mtt_fee','tournament_fee','total_winnings','cash_winnings','mtt_winnings','tournament_winnings'] LOOP
+   IF actual->k IS DISTINCT FROM expected->k THEN RAISE EXCEPTION 'Private summary disagrees for % / %: %, expected %, actual %',f.game,f.search,k,expected,actual; END IF;
+  END LOOP;
+  actual:=public.fn_ca_club_game_summary_filtered('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,f.game,'ALL',f.search);
+  FOREACH k IN ARRAY ARRAY['games','fee','cash_fee','mtt_fee','tournament_fee','total_winnings','cash_winnings','mtt_winnings','tournament_winnings'] LOOP
+   IF actual->k IS DISTINCT FROM expected->k THEN RAISE EXCEPTION 'Private filtered summary disagrees for % / %: %',f.game,f.search,k; END IF;
+  END LOOP;
+ END LOOP;
+END $test$;
 -- A zero-fee or negative adjustment is not an additional raked cash hand.
 DO $test$ DECLARE before_count bigint; after_count bigint; BEGIN
  before_count:=public.fn_ca_club_data_hand_count('fade0000-0000-0000-0000-000000000001',CURRENT_DATE,CURRENT_DATE,'ALL','ALL',NULL);

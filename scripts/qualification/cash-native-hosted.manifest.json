@@ -174,8 +174,8 @@
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 37679,
-      "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
+      "bytes": 37775,
+      "sha256": "5a2b0ee1194a06a3a1b8d9bfa93281713010033ba62a418411a6214c89fd6cfd"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
@@ -3582,6 +3582,17 @@
     "current": {
       "bytes": 229699,
       "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
+    }
+  },
+  "clubDataUnionMttInputRouting20261021": {
+    "reason": "Additive input routing for existing required Data Console native verdict: union/MTT driver and Club Data fixtures. No cash scheduler, financial SQL, assertions, source inventory or qualification status changed. Current classifier identity only, not a native cash certification.",
+    "previous": {
+      "bytes": 37679,
+      "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
+    },
+    "current": {
+      "bytes": 37775,
+      "sha256": "5a2b0ee1194a06a3a1b8d9bfa93281713010033ba62a418411a6214c89fd6cfd"
     }
   }
 }

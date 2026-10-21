@@ -66,7 +66,12 @@ export function inspectHead(html) {
   const robots = attr(html, /<meta\s+name="robots"\s+content="([^"]*)"/i);
   const canonical = attr(html, /<link\s+rel="canonical"\s+href="([^"]*)"/i);
   const description = attr(html, /<meta\s+name="description"\s+content="([^"]*)"/i);
-  const ldRaw = attr(html, /<script type="application\/ld\+json">([\s\S]*?)<\/script>/i);
+  // The published head names this script with id="route-jsonld". Attribute
+  // order is not part of HTML's contract; the JSON-LD type and body are.
+  const ldRaw = attr(
+    html,
+    /<script\b[^>]*\stype\s*=\s*(?:"application\/ld\+json"|'application\/ld\+json')[^>]*>([\s\S]*?)<\/script\s*>/i
+  );
   let ld = null;
   let ldError = null;
   if (ldRaw) {

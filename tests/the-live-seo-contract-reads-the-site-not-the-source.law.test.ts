@@ -55,6 +55,27 @@ describe('the live SEO contract checker', () => {
     expect(head.ldError).toBeTruthy();
   });
 
+  it.each([
+    '<script id="route-jsonld" type="application/ld+json">',
+    '<script type="application/ld+json" nonce="fixture">',
+    "<script id='route-jsonld' TYPE = 'application/ld+json'>",
+  ])('reads structured data with valid script attributes: %s', (opening) => {
+    const html = HEAD.replace('<script type="application/ld+json">', opening);
+    expect(ldTypes(inspectHead(html).ld)).toEqual(['BreadcrumbList', 'FAQPage']);
+    expect(inspectHead(html.replace('{"@context"', '{"@context')).ldError).toBeTruthy();
+  });
+
+  it('does not accept a missing JSON-LD type or a data-type attribute', () => {
+    for (const opening of [
+      '<script type="application/json">',
+      '<script data-type="application/ld+json">',
+    ]) {
+      const head = inspectHead(HEAD.replace('<script type="application/ld+json">', opening));
+      expect(head.ld).toBeNull();
+      expect(head.ldError).toBeNull();
+    }
+  });
+
   it('counts words a reader gets without JavaScript, not scripts, styles or comments', () => {
     expect(bodyWords(HEAD)).toBe(152);
     expect(bodyWords('<html><body><script>x</script></body></html>')).toBe(0);

@@ -41,7 +41,7 @@ try:
         f.write("\nlisten_addresses=''\nunix_socket_directories='"+str(sock)+"'\n")
     run([PG/'pg_ctl','-D',data,'-l',cluster/'server.log','-w','start'])
     started = True
-    q('''CREATE ROLE anon; CREATE ROLE authenticated;
+    q('''CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
       CREATE SCHEMA auth;
       CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS
       $$ SELECT nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $$;
@@ -92,6 +92,7 @@ try:
     q(f"UPDATE clubs SET lobby_message='Legacy Dismissed',message_revision=4 WHERE id='{C}'; INSERT INTO club_message_dismissals VALUES ('{U}','{C}',4);")
     assert claim()['should_show'] is False
     assert q("SELECT has_function_privilege('anon','fn_claim_club_entry_news(uuid)','EXECUTE')") == 'f'
+    assert q("SELECT has_table_privilege('service_role','club_entry_news_receipts','INSERT')") == 'f'
     assert q("SELECT has_table_privilege('authenticated','club_entry_news_receipts','INSERT')") == 'f'
     assert q(f"SET SESSION AUTHORIZATION authenticated; SET request.jwt.claim.sub='{U}'; SELECT count(*) FROM club_entry_news_receipts WHERE user_id<>'{U}';") == '0'
     print('PASS: baseline replay; once across days/devices; changed/unchanged/cleared copy; concurrent claims; announcements create/edit/pin/hide/expiry; prior dismissals; auth/RLS/ACL')

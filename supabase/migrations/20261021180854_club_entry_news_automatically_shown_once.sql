@@ -15,7 +15,7 @@ CREATE TABLE public.club_entry_news_receipts (
   PRIMARY KEY (user_id, club_id, news_key)
 );
 ALTER TABLE public.club_entry_news_receipts ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.club_entry_news_receipts FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.club_entry_news_receipts FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON public.club_entry_news_receipts TO authenticated;
 CREATE POLICY club_entry_news_receipts_own ON public.club_entry_news_receipts
   FOR SELECT TO authenticated USING (user_id = (SELECT auth.uid()));

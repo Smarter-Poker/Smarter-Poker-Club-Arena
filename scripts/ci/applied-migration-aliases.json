@@ -41,6 +41,14 @@
       "file": "supabase/migrations/20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql",
       "sameBytes": true,
       "basis": "Installed once successfully 2026-10-21T17:45:27Z after compatible client publication. History SQL MD5 equals exact source. Fourteen restrictive policies, private column denial, function owner/search_path/ACL read back. Earlier lock refusals rolled back; never replay the installed migration."
+    },
+    {
+      "appliedVersion": "20261021182211",
+      "appliedName": "20261021180032_agent_transfer_review_history_and_scope_events",
+      "appliedMd5": "274d312792131d0cd8650d128e470661",
+      "file": "supabase/migrations/20261021180032_agent_transfer_review_history_and_scope_events.sql",
+      "sameBytes": true,
+      "basis": "Installed once through Supabase MCP 2026-10-21T18:22:11Z from qualified source ab3ad733260811b9d92cff8572c82994eef80b77. Recorded SQL17770 bytes and MD5 equal source. Review/history RPCs, recipient helper, optimized downline lookup, exact owner/search_path/ACLs, review column and keyset index read back. Generic events use existing private account broadcast; hot event table remains unpublished. Never replay."
     }
   ],
   "superseded": [

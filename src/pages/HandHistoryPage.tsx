@@ -746,7 +746,6 @@ export default function HandHistoryPage() {
         asset: h.arenaAsset ?? 'unclassified',
         hand_number: h.handNumber,
         pot: h.replay.potTotal,
-        rake: h.rake,
         result: me?.net ?? 0,
         players: h.players.length,
         boards: h.replay.boards.length,

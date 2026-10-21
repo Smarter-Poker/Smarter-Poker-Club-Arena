@@ -71,6 +71,7 @@ describe('hand displays never disclose house deductions', () => {
     ]) {
       const source = readFileSync(file, 'utf8');
       expect(source).not.toMatch(/className="(?:hh-entry__rake|pot-rake)"/);
+      expect(source).not.toMatch(/rake:\s*h\.rake/);
       expect(source).not.toMatch(/lines\.push\(`(?:Rake|Jackpot fee):/);
     }
   });

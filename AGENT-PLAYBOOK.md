@@ -26,6 +26,8 @@ Use `node scripts/ci/pr-status.mjs <PR-number>` or the authenticated Actions API
 
 To read why a job failed, read its log: `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs`, or `gh run view <run-id> --log-failed`. The API answers with a redirect to Actions log storage (`*.blob.core.windows.net`), and a cloud session's egress allowlist or the desktop Linux sandbox may refuse that host (403 at CONNECT, checked 2026-10-21), while check-run annotations carry only the exit code. When the session is linked to this Mac, run the same `gh` command in the host terminal, which reaches log storage directly. A log you could not read is UNKNOWN, never a pass.
 
+Never fetch Actions artifacts or logs through a browser pane or Chrome on the owner's Mac. Every browser download opens a Save dialog on his screen, and on 2026-10-22 a session pulling `p102-*` benchmark artifacts this way raised one every four seconds (53 files). Use `gh run download <run-id> -n <artifact> -D <scratch dir>` in the host terminal instead, write into the task's own scratch folder rather than `~/Downloads`, and read logs with `gh` as above.
+
 ## Complete the assigned result
 
 Do not stop at a push when authorized delivery is unfinished. Find or create the PR, pass applicable checks, complete protected merge, and verify the actual publication and behavior. Reuse a remote commit or PR already present. If its PR has merged, a new follow-up needs an owned branch and PR; pushing into a closed PR does not deliver it.

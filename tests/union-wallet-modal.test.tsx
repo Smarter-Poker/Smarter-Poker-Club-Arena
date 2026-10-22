@@ -652,6 +652,55 @@ describe('UnionWalletModal', () => {
     expect(await screen.findByText('70,000.00')).toBeTruthy();
   });
 
+  /* Dan, 2026-10-21: in the Union Bank a selected club must show its balance.
+     Club money columns are withheld from the browser, so the balances come
+     from fn_union_club_bank_balances (union owner and union leads only). */
+  it('shows each club bank balance and refuses a pull past the opening grant floor', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
+      if (fn === 'fn_union_club_bank_balances')
+        return Promise.resolve({
+          data: [
+            { club_id: 'c-1', club_bank: 250000, club_promo: 0, pull_floor: 100000 },
+            { club_id: 'c-2', club_bank: 4321.5, club_promo: 12, pull_floor: 0 },
+          ],
+          error: null,
+        });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('250,000.00')).toBeTruthy());
+    expect(screen.getByText('4,321.50')).toBeTruthy();
+    expect(rpc).toHaveBeenCalledWith('fn_union_club_bank_balances', { p_union_id: UNION_ID });
+    fireEvent.click(screen.getByText('Club JAQK'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from club jaqk/i }));
+    expect(screen.getByText('Club Bank Balance')).toBeTruthy();
+    expect(
+      screen.getByText('Pullable 150,000.00. The 100,000.00 Opening Grant Stays In The Club.')
+    ).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '200000' } });
+    expect(
+      await screen.findByText(
+        'At Most 150,000.00 Can Be Pulled. The 100,000.00 Opening Grant Stays In The Club.'
+      )
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /pull from club jaqk/i }));
+    expect(rpc).not.toHaveBeenCalledWith('fn_union_clawback_from_club', expect.anything());
+  });
+
+  it('still lists the clubs, without figures, when the balances are refused', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
+      if (fn === 'fn_union_club_bank_balances')
+        return Promise.resolve({ data: null, error: { message: 'union lead access required' } });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
+    expect(screen.queryByText('Could Not Load Club Wallets.')).toBeNull();
+    expect(screen.queryByText('0.00')).toBeNull();
+  });
+
   it('reuses the clawback operation id after an ambiguous transport failure', async () => {
     let clawbackAttempt = 0;
     rpc.mockImplementation((fn: string) => {

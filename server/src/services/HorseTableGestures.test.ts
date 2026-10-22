@@ -84,12 +84,18 @@ import {
   type AllInGestureInput,
 } from './HorseTableGestures.js';
 import { _resetTableTalkGateForTests } from './HorseTableTalkGate.js';
+import { _setAudienceForTests } from './HorseTableTalk.js';
 import { _setHumanPacingForTests } from './horsePacing.js';
-import type { TableTalkInput, TalkSeat, TalkTable } from './HorseTableTalk.js';
+import {
+  _setSpeakChanceForTests,
+  type TableTalkInput,
+  type TalkSeat,
+  type TalkTable,
+} from './HorseTableTalk.js';
 import type { SeatedPlayer, TableInfo } from '../types.js';
 
 const TABLE = '11111111-1111-4111-8111-111111111111';
-const HORSE_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const HORSE_A = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const HORSE_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const HUMAN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
@@ -144,9 +150,11 @@ function handThatDoesNot(moment: 'lost' | 'won' | 'all_in', from = 1): number {
 }
 
 beforeEach(() => {
+  _setSpeakChanceForTests(null);
   _resetGesturesForTests();
   _resetTableTalkGateForTests();
   _setHumanPacingForTests(false);
+  _setAudienceForTests(() => true);
   h.state.rpcCalls = [];
   h.state.sends = [];
   h.state.removed = 0;
@@ -157,6 +165,7 @@ beforeEach(() => {
 
 afterEach(() => {
   _setHumanPacingForTests(true);
+  _setAudienceForTests(null);
 });
 
 describe('what a horse throws is what a person can throw', () => {
@@ -170,7 +179,8 @@ describe('what a horse throws is what a person can throw', () => {
     let m: RegExpExecArray | null;
     while ((m = re.exec(catalog))) live.add(m[1]);
     expect(live.size).toBeGreaterThan(40);
-    for (const id of GESTURE_ITEM_IDS) expect(live.has(id), `${id} is not in the catalog`).toBe(true);
+    for (const id of GESTURE_ITEM_IDS)
+      expect(live.has(id), `${id} is not in the catalog`).toBe(true);
   });
 
   it('the all-in reactions are the TableReactions glyphs, Lucky most of all but never only', () => {
@@ -189,6 +199,49 @@ describe('what a horse throws is what a person can throw', () => {
 });
 
 describe('sometimes, never every time', () => {
+  it('a non-gesturing horse never throws after a loss or sends an all-in reaction', async () => {
+    const quiet = '44444444-4444-4444-8444-444444444444';
+    const horse = seat(quiet, 1, true);
+    for (let n = 1; n <= 100; n++) {
+      const input = lostHand(n);
+      input.seated = [horse, seat(HUMAN, 3, false)];
+      input.showdownResults = input.showdownResults.map((r) =>
+        r.userId === HORSE_A ? { ...r, userId: quiet } : r
+      );
+      expect(await gestureAfterHand(input)).toBe('no_gesture');
+      expect(
+        await gestureBeforeAllIn({
+          table: table(),
+          handNumber: n,
+          horse,
+          targetSeat: 3,
+          seated: input.seated,
+        })
+      ).toBe('no_gesture');
+    }
+    expect(h.state.rpcCalls).toEqual([]);
+    expect(h.state.sends).toEqual([]);
+    expect(h.state.chatInserts).toBe(0);
+  });
+
+  it('a chat-only horse can say something all-in without throwing anything', async () => {
+    const horse = seat('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 1, true);
+    let spoken = 0;
+    for (let n = 1; n <= 200; n++) {
+      const outcome = await gestureBeforeAllIn({
+        table: table(),
+        handNumber: n,
+        horse,
+        targetSeat: 3,
+        seated: [horse, seat(HUMAN, 3, false)],
+      });
+      if (outcome === 'spoken') spoken++;
+    }
+    expect(spoken).toBeGreaterThan(0);
+    expect(spoken).toBeLessThan(30);
+    expect(h.state.rpcCalls).toEqual([]);
+    expect(h.state.sends).toEqual([]);
+  });
   it.each(['lost', 'won', 'all_in'] as const)(
     '%s rolls the same way twice, near its rate across the fleet, and differently per horse',
     (moment) => {
@@ -210,9 +263,8 @@ describe('sometimes, never every time', () => {
         perHorse.push(mine);
       }
       const pct = (yes / n) * 100;
-      expect(Math.abs(pct - GESTURE_CHANCE_PCT[moment])).toBeLessThan(
-        GESTURE_CHANCE_PCT[moment] * 0.3
-      );
+      expect(pct).toBeGreaterThan(GESTURE_CHANCE_PCT[moment] * 0.15);
+      expect(pct).toBeLessThan(GESTURE_CHANCE_PCT[moment] * 0.6);
       expect(pct).toBeLessThan(50);
       expect(Math.max(...perHorse)).toBeGreaterThan(2 * Math.min(...perHorse) + 1);
     }
@@ -258,7 +310,9 @@ describe('after a hand', () => {
     const body = send.payload.payload as { message: string; throwId: string };
     expect(body.message).toBe(`[THROW:${String(args.p_throwable_id)}:3]`);
     expect(body.throwId).toBe(args.p_request_id);
-    expect(body.throwId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(body.throwId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    );
     expect(h.state.removed).toBe(1);
   });
 
@@ -354,5 +408,14 @@ describe('before an all in', () => {
     const body = h.state.sends[0].payload.payload as { message: string; throwId: string };
     expect(body.message).toBe('[THROW:horseshoe:4]');
     expect(body.throwId).toBe(h.state.rpcCalls[0].args.p_request_id);
+  });
+});
+
+describe('nobody watching', () => {
+  it('throws nothing and charges nothing at a table nobody has open', async () => {
+    _setAudienceForTests(() => false);
+    expect(await gestureAfterHand(lostHand(handThatRolls('lost')))).toBe('no_audience');
+    expect(h.state.rpcCalls).toHaveLength(0);
+    expect(h.state.sends).toHaveLength(0);
   });
 });

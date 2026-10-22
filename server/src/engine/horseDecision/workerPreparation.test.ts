@@ -6,6 +6,9 @@ vi.mock('../../services/HorseMindPersistence.js', () => ({
   stopHorseMindPersistence: vi.fn(async () => {}),
 }));
 vi.mock('../../services/HorseMindHydrator.js', () => ({ hydrateHorseMind: vi.fn(async () => {}) }));
+vi.mock('../../services/HorseExploitHydrator.js', () => ({
+  hydrateHorseExploitReads: vi.fn(async () => ({ hands: 0, rows: 0 })),
+}));
 vi.mock('../../services/BrainTelemetryFlush.js', () => ({
   startBrainTelemetryFlush: vi.fn(),
   stopBrainTelemetryFlush: vi.fn(async () => {}),

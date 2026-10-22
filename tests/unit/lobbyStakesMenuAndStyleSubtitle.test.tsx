@@ -36,6 +36,14 @@ import { CASH_TEMPLATES } from '../../src/config/cashGames';
  * required one, so every micro table printed its stakes twice.
  */
 
+// Sorting and style selection are local UI behavior. Keep table warm-up at
+// its transport boundary, as the variant-menu fixture does; its dedicated
+// lifecycle suites cover the real subscription and cleanup paths.
+vi.mock('../../src/services/tableWarmup', () => ({
+  warmTable: vi.fn(),
+  observeLobbyTableWarmups: vi.fn(() => () => undefined),
+}));
+
 vi.mock('../../src/hooks/useSpinTierAvailability', () => ({
   useSpinTierAvailability: () => ({ can_draw_100x: false }),
 }));

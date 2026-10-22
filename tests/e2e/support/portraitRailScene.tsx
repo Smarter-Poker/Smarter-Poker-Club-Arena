@@ -215,7 +215,10 @@ export function Review() {
                             'Burls',
                           ][i],
                           avatar: 'https://smarter.poker/avatars/table/vip_wolf@2x.webp',
-                          stack: 93.23,
+                          stack:
+                            document.documentElement.dataset.allIn === 'true' && i % 3 === 0
+                              ? 0
+                              : 93.23,
                           status:
                             document.documentElement.dataset.allIn === 'true' && i % 3 === 0
                               ? 'all_in'

@@ -20,12 +20,24 @@ export class LightningSeatProxy implements ActionEngine {
     private readonly registry: LightningRegistry
   ) {}
 
+  /**
+   * The room's door is the owner's client: a control claim for its seat
+   * (LightningRegistry.isClientControlling). A registry stand-in without the
+   * claim ledger records nothing.
+   */
+  private claim(userId: string): void {
+    const registry = this.registry as Partial<Pick<LightningRegistry, 'noteClientClaim'>>;
+    if (typeof registry.noteClientClaim === 'function')
+      registry.noteClientClaim.call(this.registry, this.roomId, userId);
+  }
+
   handlePlayerAction(
     userId: string,
     action: string,
     amount?: number,
     actionContext?: string | null
   ): { success: boolean; error?: string; code?: string } {
+    this.claim(userId);
     const host = this.registry.hostForRoom(this.roomId);
     if (!host) return { success: false, error: 'No active hand', code: 'NO_ACTIVE_HAND' };
     // The room is one player's: nobody else may act through it.
@@ -42,6 +54,7 @@ export class LightningSeatProxy implements ActionEngine {
     maxCallAmount?: number,
     handId?: string
   ): { success: boolean; error?: string; code?: string } {
+    this.claim(userId);
     const host = this.registry.hostForRoom(this.roomId);
     if (!host) return { success: false, error: 'No active hand', code: 'NO_ACTIVE_HAND' };
     if (host.roomOf(userId) !== this.roomId) {
@@ -55,6 +68,7 @@ export class LightningSeatProxy implements ActionEngine {
   }
 
   async activateTimeBank(userId: string, actionContext?: string, handId?: string) {
+    this.claim(userId);
     const host = this.registry.hostForRoom(this.roomId);
     if (!host) return { success: false, error: 'No active hand', code: 'NO_ACTIVE_HAND' };
     if (host.roomOf(userId) !== this.roomId) {

@@ -383,6 +383,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             ?.getBoundingClientRect();
           if (!box || !owner) return [];
           const desired = { x: owner.left + owner.width / 2, y: owner.top + owner.height / 2 };
+          const hasAllInMarker = Boolean(bet.querySelector('.seat__allin-puck'));
           const placed = points.map((point) => ({
             left: point.x - box.width / 2,
             top: point.y - box.height / 2,
@@ -418,7 +419,10 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
                   placed.push(candidate);
               }
           }
-          const clearOfTable = placed.filter(
+          // ALL IN is a felt marker, never a label in the avatar lane. Even
+          // crowded-table fallbacks must keep its entire wager slot on felt.
+          const eligible = hasAllInMarker ? placed.filter(wagerOnFelt) : placed;
+          const clearOfTable = eligible.filter(
             (candidate) => !obstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
           );
           // Wholly on the felt whenever every wager fits there together. On a
@@ -455,7 +459,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
           };
           const nearest = [...clearOfTable].sort(byCost);
           const owned = nearest.filter(ownedBy);
-          const overPrinting = placed
+          const overPrinting = eligible
             .filter(
               (candidate) =>
                 !hardObstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
@@ -478,7 +482,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
               // Last resort on the smallest felts: this player's own spots, the
               // least covered first, so two players' wagers never share one.
               least: distinct(
-                placed
+                eligible
                   .filter(ownedBy)
                   .map((candidate) => ({
                     candidate,

@@ -1051,6 +1051,7 @@ function ClubHomePageContent({
   const [loading, setLoading] = useState(!bootCache?.club);
   const [userRole, setUserRole] = useState<ClubRole>('player');
   const [showShareSheet, setShowShareSheet] = useState(false);
+  const [quickStartInvite, setQuickStartInvite] = useState(false);
   const [deletingTableId, setDeletingTableId] = useState<string | null>(null);
   const [, setIsInUnion] = useState(false);
   const [, setUnionName] = useState<string | null>(null);
@@ -3995,6 +3996,22 @@ function ClubHomePageContent({
      than stepping through every row the player looked at. The MultiTablePage
      embed passes clubIdOverride and must never rewrite its host URL. */
   const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (
+      clubIdOverride ||
+      searchParams.get('invite') !== '1' ||
+      !club ||
+      club.id !== clubId ||
+      !isOwner
+    )
+      return;
+    setQuickStartInvite(true);
+    setShowShareSheet(true);
+    const next = new URLSearchParams(searchParams);
+    next.delete('invite');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, club, clubId, clubIdOverride, isOwner]);
+
   const urlSyncEnabled = !clubIdOverride;
   // Captured at first render, before the sync effect below can strip it.
   const pendingGameRef = useRef<string | null>(searchParams.get('game'));
@@ -5032,10 +5049,10 @@ function ClubHomePageContent({
   const launchTaskList: ClubLaunchTask[] = [
     {
       id: 'opening-setup',
-      label: 'Complete The Opening Setup Wizard',
-      detail: 'Configure Rake, BBJ, Spins, Promotions, And Leaderboards',
+      label: 'Club Defaults',
+      detail: 'Use Ready-Made Defaults Or Customize Your Club',
       complete: openingSetupComplete,
-      actionLabel: 'Start Setup',
+      actionLabel: 'Open Setup',
       onAction: () => setShowOpeningWizard(true),
       disabled: !isOwner,
       disabledLabel: 'Owner Required',
@@ -5126,7 +5143,7 @@ function ClubHomePageContent({
       complete: Number(club.member_count || 0) > 1,
       optional: true,
       actionLabel: 'Invite Player',
-      onAction: () => bounceToInvite(true),
+      onAction: () => setShowShareSheet(true),
     },
     {
       id: 'first-agent',
@@ -5833,16 +5850,19 @@ function ClubHomePageContent({
           </p>
         )}
         {showLaunchChecklist && (
-          <ClubLaunchProgress
-            key={`${club.id}:${currentUserId || 'unknown'}`}
-            clubId={club.id}
-            viewerId={currentUserId || 'unknown'}
-            clubName={club.name}
-            openingBank={club.chip_treasury == null ? null : Number(club.chip_treasury)}
-            tasks={launchTasks}
-            skips={launchSkips}
-            waitForCompletion
-          />
+          <details>
+            <summary className="sc-label sc-ink--blue">Customize Club (Optional)</summary>
+            <ClubLaunchProgress
+              key={`${club.id}:${currentUserId || 'unknown'}`}
+              clubId={club.id}
+              viewerId={currentUserId || 'unknown'}
+              clubName={club.name}
+              openingBank={club.chip_treasury == null ? null : Number(club.chip_treasury)}
+              tasks={launchTasks}
+              skips={launchSkips}
+              waitForCompletion
+            />
+          </details>
         )}
         <ClubLaunchCompletionLatch
           resolved={launchChecklistFinished}
@@ -6279,7 +6299,11 @@ function ClubHomePageContent({
       {club && !isAutomaticArena && (
         <ShareInviteSheet
           isOpen={showShareSheet}
-          onClose={() => setShowShareSheet(false)}
+          quickStart={quickStartInvite}
+          onClose={() => {
+            setShowShareSheet(false);
+            setQuickStartInvite(false);
+          }}
           clubId={club.id}
           clubName={club.name}
           clubNumber={club.club_id}

@@ -2862,6 +2862,7 @@
    "WHEN A PLAYER IS ALL IN THEIR CHIPS NEED TO BE ON THE TABLE AND AN ALL IN
    BUTTON SHOULD APPEAR IN FRONT OF THAT USER (LIKE A DEALER BUTTON, BUT FOR ALL
    INS) AS WELL AS IT APPEARING ABOVE THEIR HEAD."
+   Owner correction 2026-10-22: only on the felt, never above their head.
 
    A puck the size of the dealer button, carried in the player's wager slot on
    the felt. The old `.seat__allin-badge` hung below the plate, in the next
@@ -4987,5 +4988,30 @@
     .cp-amount {
     padding: 0;
     line-height: 1;
+  }
+}
+
+/* Phones place the puck and chips independently in the same owner's lane.
+   Roomier layouts keep their original side-by-side wager assembly. */
+.seat__wager-group {
+  display: contents;
+}
+@media (min-width: 481px), (orientation: landscape) {
+  .seat__wager-group:has(.seat__allin-puck) {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(
+      calc(-50% + var(--bet-offset-x, 0px)),
+      calc(-50% + var(--bet-offset-y, 0px))
+    );
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    z-index: 5;
+  }
+  .seat__wager-group:has(.seat__allin-puck) > .seat__bet-chips {
+    position: static;
+    transform: none;
   }
 }

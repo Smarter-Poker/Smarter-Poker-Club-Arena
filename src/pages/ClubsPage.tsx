@@ -674,7 +674,7 @@ export default function ClubsPage() {
       <CreateClubModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        onSuccess={(id) => navigate(`/clubs/${id}`)}
+        onSuccess={(id) => navigate(`/clubs/${id}?invite=1`)}
       />
       <JoinClubModal
         isOpen={showJoinModal}

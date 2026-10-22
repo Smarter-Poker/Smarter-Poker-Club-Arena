@@ -1220,6 +1220,25 @@ for (const width of [320, 375, 393, 430, 480])
             );
             return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
           };
+          const allInMarkers = [...document.querySelectorAll('.seat__allin-puck')];
+          if (document.querySelector('.seat__action--all_in'))
+            violations.push('ALL IN Is Above A Player Head');
+          if (
+            document.documentElement.dataset.allIn === 'true' &&
+            allInMarkers.length !== Math.ceil(Number(document.documentElement.dataset.seats) / 3)
+          )
+            violations.push('Expected Every All-In Player To Have A Persistent Felt Marker');
+          for (const marker of allInMarkers) {
+            const r = box(marker);
+            for (const [x, y] of [
+              [r.left, r.top],
+              [r.right, r.top],
+              [r.right, r.bottom],
+              [r.left, r.bottom],
+            ])
+              if (distance(unpaint(x, y), spineA, spineB) > radius - 0.5)
+                violations.push('ALL IN Marker Is Outside Painted Felt');
+          }
           const cross = (a: Point, b: Point, c: Point) =>
             (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
           for (const e of document.querySelectorAll(

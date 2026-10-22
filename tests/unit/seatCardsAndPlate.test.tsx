@@ -482,6 +482,36 @@ describe("the hero's row opens out only when the table can see it", () => {
       />
     );
 
+  it('prints ALL IN only on the felt puck, including streets with no new wager', () => {
+    const { container, rerender } = renderHero(
+      { lastAction: 'all_in', lastBetAmount: 120 },
+      { status: 'all_in' }
+    );
+    expect(container.querySelector('.seat__action')).toBeNull();
+    expect(container.querySelectorAll('.seat__bet-chips .seat__allin-puck')).toHaveLength(1);
+    expect(container.querySelector('.seat__allin-puck')?.getAttribute('aria-label')).toBe(
+      'HERO: All In'
+    );
+    rerender(
+      <SeatSlot
+        seatNumber={1}
+        player={hero({ status: 'all_in', stack: 0 })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+        lastBetAmount={0}
+      />
+    );
+    expect(container.querySelector('.seat__action')).toBeNull();
+    expect(container.querySelectorAll('.seat__bet-chips .seat__allin-puck')).toHaveLength(1);
+  });
+
+  it('does not turn a stale all-in action into a head label or an active all-in marker', () => {
+    const { container } = renderHero({ lastAction: 'all_in' });
+    expect(container.querySelector('.seat__action')).toBeNull();
+    expect(container.querySelector('.seat__allin-puck')).toBeNull();
+  });
+
   it('stays compact while the hand is private', () => {
     const { container } = renderHero();
     expect(container.querySelector('.seat__cards--hero')).not.toBeNull();
@@ -736,5 +766,33 @@ describe('the dealer button never stands on a name plate', () => {
     // dealerButtonPosition itself (tableGeometry.overlapsBoard) and the module
     // never hands the wrapper a puck on the cards to move.
     expect(moved, 'exactly the 84 measured overlaps move, and nothing else').toBe(84);
+  });
+});
+
+describe('chip contributions do not animate a negative amount', () => {
+  it.each([false, true])('updates the stack without a deduction float (hero=%s)', (isHero) => {
+    const seat = (stack: number, id = 'v1') => (
+      <SeatSlot
+        seatNumber={3}
+        player={villain({ id, stack, isHero })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+      />
+    );
+    const { container, rerender } = render(seat(100));
+    rerender(seat(98));
+    expect(container.querySelector('.seat__stack-delta')).toBeNull();
+    expect(container.querySelector('.seat__stack--down')).toBeNull();
+    expect(container.querySelector('.seat__stack')?.textContent).toContain('98');
+    // A gain is still shown, and a following contribution clears it.
+    rerender(seat(110));
+    expect(container.querySelector('.seat__stack-delta--win')?.textContent).toContain('+12');
+    rerender(seat(108));
+    expect(container.querySelector('.seat__stack-delta')).toBeNull();
+    rerender(seat(120));
+    expect(container.querySelector('.seat__stack-delta--win')).not.toBeNull();
+    rerender(seat(500, 'new-occupant'));
+    expect(container.querySelector('.seat__stack-delta')).toBeNull();
   });
 });

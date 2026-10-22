@@ -6,6 +6,13 @@
  */
 
 .page {
+  /* These legacy tokens are not supplied by the live global stylesheet. */
+  --accent: #45adff;
+  --accent-dark: #1877f2;
+  --accent-rgb: 69, 173, 255;
+  --bg-darker: #050607;
+  --bg-dark: #0a0b0d;
+  --text-muted: #9aa5b3;
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   width: 100%;
@@ -250,6 +257,7 @@
 
 /* Checkbox */
 .checkbox {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 1rem;
@@ -261,13 +269,18 @@
 }
 
 .checkbox input {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
 }
 
 .checkmark {
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #45adff;
   border-radius: 4px;
   flex-shrink: 0;
   display: flex;
@@ -316,6 +329,7 @@
 }
 
 .toggle {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 1rem;
@@ -326,12 +340,18 @@
 }
 
 .toggle input {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
 }
 
 .toggleSlider {
+  box-sizing: border-box;
   width: 44px;
   height: 24px;
+  border: 1px solid #45adff;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   position: relative;
@@ -357,6 +377,12 @@
 
 .toggle input:checked + .toggleSlider::after {
   transform: translateX(20px);
+}
+
+.checkbox input:focus-visible + .checkmark,
+.toggle input:focus-visible + .toggleSlider {
+  outline: 2px solid #8fd4ff;
+  outline-offset: 3px;
 }
 
 .toggle strong {

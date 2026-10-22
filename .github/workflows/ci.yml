@@ -1695,6 +1695,10 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-bbj-cumulative-reads.py
 
+      - name: Mini jackpot operator rates read the pool index and return identical rows
+        if: matrix.shard == 4
+        run: python3 scripts/ci/test-bbj-mini-operator-rates.py
+
       - name: Chip store coverage preserves results with one ledger read
         if: matrix.shard == 4
         run: python3 scripts/ci/test-chip-store-coverage.py

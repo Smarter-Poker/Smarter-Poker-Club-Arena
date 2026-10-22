@@ -118,12 +118,15 @@ export const PHRASE_TABLE_WINDOW_MS = 20 * 60_000;
  * replay answers the same way.
  */
 export const SPEAK_CHANCE_PCT: Readonly<Record<TalkEvent, number>> = {
-  big_pot_won: 45,
-  showdown_loss: 40,
-  big_hand_shown: 30,
-  arrival: 35,
+  // The four original events each have one line per voice, so they are kept
+  // rarer: a horse that would not take one of them falls through to the
+  // ordinary-hand events below, whose pools are wide.
+  big_pot_won: 20,
+  showdown_loss: 25,
+  big_hand_shown: 20,
+  arrival: 30,
   pot_lost: 28,
-  pot_won: 10,
+  pot_won: 14,
   all_in: 22,
 };
 /** The longest line that may be written. The client's input cap is 200. */

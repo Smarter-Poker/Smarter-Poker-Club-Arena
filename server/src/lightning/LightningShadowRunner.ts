@@ -170,6 +170,14 @@ export interface LightningLivePassObservation {
    * name is not in the database's open pool.
    */
   legality?: ReadonlyMap<string, string | null> | null;
+  /**
+   * A/A FROM FORM MODE (2026-10-22): the pass is history only. Its formed
+   * hands enter the pool model but neither side is scored on it, because the
+   * comparison is being fed by the worker's authoritative A/A reads (worker
+   * 'form' mode with the shadow matcher on), and a window may only carry one
+   * snapshot binding.
+   */
+  historyOnly?: boolean;
 }
 
 export interface LightningShadowRunnerDeps {
@@ -427,6 +435,11 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
     return !this.stopped && !!this.config && (this.config.enabled || this.config.integrityEnabled);
   }
 
+  /** Is the shadow matcher comparison on (not just integrity telemetry)? */
+  get comparing(): boolean {
+    return !this.stopped && !!this.config?.enabled;
+  }
+
   /** Records and reports sent (successfully answered calls), for tests and logs. */
   get recordsSent(): number {
     return this.records;
@@ -628,6 +641,12 @@ export class LightningShadowRunner implements LightningClusterTelemetrySink {
   }
 
   private shadowPass(pass: LightningLivePassObservation, cfg: LightningShadowConfig): void {
+    // A HISTORY-ONLY PASS (form mode, A/A reads on) is scored by neither side.
+    if (pass.historyOnly) {
+      if (pass.ok && pass.kind === 'form') this.applyLive(pass);
+      this.forgetStale(pass.nowMs);
+      return;
+    }
     // A FAILED LIVE CALL SCORES NEITHER SIDE (and teaches the model nothing).
     if (!pass.ok) {
       this.skipLiveFailed++;

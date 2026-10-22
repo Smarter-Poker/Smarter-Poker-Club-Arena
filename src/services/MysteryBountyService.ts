@@ -52,6 +52,13 @@ export interface MysteryBountyInventory {
   activationValue: number | null;
   activatedPlayers: number | null;
   activatedAt: string | null;
+  /**
+   * The share of the bounty pool paid as flat heads before the chests open.
+   * 0 is a CHESTS-ONLY event (Dan 2026-10-22: no bounty before the money);
+   * null means the server did not say (an older function), read as the old
+   * terms.
+   */
+  regularPoolPercent: number | null;
   tiers: MysteryBountyTierRow[];
 }
 
@@ -123,6 +130,7 @@ export function parseInventory(raw: unknown): MysteryBountyInventory {
     activationValue: o.activation_value == null ? null : num(o.activation_value),
     activatedPlayers: o.activated_players == null ? null : Math.round(num(o.activated_players)),
     activatedAt: typeof o.activated_at === 'string' ? o.activated_at : null,
+    regularPoolPercent: o.regular_pool_percent == null ? null : num(o.regular_pool_percent),
     tiers: tiers
       .map((t) => {
         const r = (t ?? {}) as Record<string, unknown>;
@@ -333,7 +341,21 @@ export function activationStatusLine(inv: MysteryBountyInventory | null): string
   if (!inv) return 'Mystery Bounty Details Are Loading';
   if (inv.stage === 'active') return 'Mystery Bounties Are Live';
   if (inv.stage === 'complete') return 'Every Mystery Bounty Has Been Awarded';
+  if (isChestsOnlyInventory(inv)) return `${CHESTS_ONLY_NOTE}. ${pendingActivationLine(inv)}`;
   return `${pendingActivationLine(inv)}. ${SMALL_FIELD_NOTE}`;
+}
+
+/**
+ * Dan, 2026-10-22: "DON'T PAY ANY BOUNTIES UNTIL PLAYERS ARE 'IN THE MONEY'
+ * ALL BOUNTIES ARE MYSTERY BOUNTY PRIZES ONLY." A chests-only event seals its
+ * whole bounty pool into chests, so it says so instead of the old small-field
+ * note (a small chests-only field opens its chests at the money too).
+ */
+export const CHESTS_ONLY_NOTE = 'No Bounties Are Paid Before The Money';
+
+/** A chests-only event: no regular half, nothing paid before the money. */
+export function isChestsOnlyInventory(inv: MysteryBountyInventory | null): boolean {
+  return inv?.regularPoolPercent === 0;
 }
 
 /**

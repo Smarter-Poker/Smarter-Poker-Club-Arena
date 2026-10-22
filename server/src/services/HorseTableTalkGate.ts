@@ -51,8 +51,14 @@ export type TableTalkGateVerdict =
   | { allowed: true; reason: 'on'; readAt: number }
   | { allowed: false; reason: TableTalkGateRefusal; readAt: number };
 
-let cached: TableTalkGateVerdict | null = null;
-let inFlight: Promise<TableTalkGateVerdict> | null = null;
+/**
+ * The same two-switch gate also governs horse throwables and reactions at the
+ * felt (mode `table_gestures`, Dan 2026-10-21). One cache entry per mode.
+ */
+export const TABLE_GESTURES_MODE = 'table_gestures';
+
+const cache = new Map<string, TableTalkGateVerdict>();
+const inFlightByMode = new Map<string, Promise<TableTalkGateVerdict>>();
 let lastReportedAt = 0;
 
 /**
@@ -61,18 +67,28 @@ let lastReportedAt = 0;
  * rather than each asking the database at the moment the cache expires.
  */
 export async function readTableTalkGate(now: number = Date.now()): Promise<TableTalkGateVerdict> {
+  return readHorsePostModeGate(TABLE_TALK_MODE, now);
+}
+
+export async function readHorsePostModeGate(
+  postMode: string,
+  now: number = Date.now()
+): Promise<TableTalkGateVerdict> {
+  const cached = cache.get(postMode);
   if (cached && now - cached.readAt >= 0 && now - cached.readAt < TABLE_TALK_GATE_TTL_MS) {
     return cached;
   }
+  let inFlight = inFlightByMode.get(postMode);
   if (!inFlight) {
-    inFlight = readOnce().finally(() => {
-      inFlight = null;
+    inFlight = readOnce(postMode).finally(() => {
+      inFlightByMode.delete(postMode);
     });
+    inFlightByMode.set(postMode, inFlight);
   }
   return inFlight;
 }
 
-async function readOnce(): Promise<TableTalkGateVerdict> {
+async function readOnce(postMode: string): Promise<TableTalkGateVerdict> {
   const readAt = Date.now();
   try {
     const [settings, mode] = await Promise.all([
@@ -80,7 +96,7 @@ async function readOnce(): Promise<TableTalkGateVerdict> {
       supabase
         .from('horse_post_modes')
         .select('mode, enabled')
-        .eq('mode', TABLE_TALK_MODE)
+        .eq('mode', postMode)
         .maybeSingle(),
     ]);
     if (settings.error) {
@@ -97,19 +113,19 @@ async function readOnce(): Promise<TableTalkGateVerdict> {
       );
     }
     const engineOn = (rows[0] as { engine_enabled?: unknown }).engine_enabled === true;
-    if (!engineOn) return remember({ allowed: false, reason: 'engine_off', readAt });
+    if (!engineOn) return remember(postMode, { allowed: false, reason: 'engine_off', readAt });
     const modeRow = mode.data as { mode?: unknown; enabled?: unknown } | null;
-    if (!modeRow) return remember({ allowed: false, reason: 'mode_missing', readAt });
-    if (modeRow.enabled !== true) return remember({ allowed: false, reason: 'mode_off', readAt });
-    return remember({ allowed: true, reason: 'on', readAt });
+    if (!modeRow) return remember(postMode, { allowed: false, reason: 'mode_missing', readAt });
+    if (modeRow.enabled !== true) return remember(postMode, { allowed: false, reason: 'mode_off', readAt });
+    return remember(postMode, { allowed: true, reason: 'on', readAt });
   } catch (err) {
     // A thrown read is a read that did not happen. Closed, and not remembered.
     return unreadable(readAt, err instanceof Error ? err.message : String(err));
   }
 }
 
-function remember(verdict: TableTalkGateVerdict): TableTalkGateVerdict {
-  cached = verdict;
+function remember(postMode: string, verdict: TableTalkGateVerdict): TableTalkGateVerdict {
+  cache.set(postMode, verdict);
   return verdict;
 }
 
@@ -125,7 +141,7 @@ function unreadable(readAt: number, detail: string): TableTalkGateVerdict {
 
 /** Test hook: forget the cached verdict, the shared read and the report throttle. */
 export function _resetTableTalkGateForTests(): void {
-  cached = null;
-  inFlight = null;
+  cache.clear();
+  inFlightByMode.clear();
   lastReportedAt = 0;
 }

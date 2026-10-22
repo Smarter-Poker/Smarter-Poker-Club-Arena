@@ -26,7 +26,7 @@ const SQL = readFileSync(
   ),
   'utf8'
 );
-const CI = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
+const CI = readFileSync(join(ROOT, '.github/workflows/the-hourly-audits-read-less.yml'), 'utf8');
 
 describe('the hourly audits read less and answer the same', () => {
   it('is one transaction with a lock budget, preceded only by concurrent indexes', () => {
@@ -81,5 +81,6 @@ describe('the hourly audits read less and answer the same', () => {
   it('declares its proof and runs its native qualification in CI', () => {
     expect(SQL).toMatch(/^-- @live-proof: /m);
     expect(CI).toContain('python3 scripts/ci/test-the-hourly-audits-stop-holding-the-hot-tables.py');
+    expect(CI).toContain('pull_request:');
   });
 });

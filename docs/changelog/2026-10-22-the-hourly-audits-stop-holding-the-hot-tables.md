@@ -79,6 +79,7 @@ book, which is owned by #7660/#7674.
 exact production definitions captured 2026-10-22 (md5 equal to production),
 records every function's answer on fixtures covering each branch, installs the
 migration, and requires identical answers, unchanged owners and grants, the
-catchup's rebuild rules, and a refused second install. It runs in `ci.yml`
-shard 4. `tests/the-hourly-audits-read-less-and-answer-the-same.law.test.ts`
+catchup's rebuild rules, and a refused second install. It runs in
+`.github/workflows/the-hourly-audits-read-less.yml` on every pull request
+that touches it. `tests/the-hourly-audits-read-less-and-answer-the-same.law.test.ts`
 pins the shapes.

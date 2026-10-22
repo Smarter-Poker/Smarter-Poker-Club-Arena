@@ -1695,12 +1695,6 @@ jobs:
         if: matrix.shard == 4
         run: python3 scripts/ci/test-bbj-cumulative-reads.py
 
-      - name: The hourly audits read less and answer the same
-        if: matrix.shard == 4
-        env:
-          PG_BIN: /usr/lib/postgresql/17/bin
-        run: python3 scripts/ci/test-the-hourly-audits-stop-holding-the-hot-tables.py --output artifacts/hourly-audits-hot-tables
-
       - name: Chip store coverage preserves results with one ledger read
         if: matrix.shard == 4
         run: python3 scripts/ci/test-chip-store-coverage.py

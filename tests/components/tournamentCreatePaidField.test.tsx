@@ -70,7 +70,7 @@ describe('club MTT setup presets reach the creation payload', () => {
       expect(config).toMatchObject({
         buyIn: 10,
         rake: 1,
-        payoutPercent: 10,
+        payoutPercent: 12.5,
         maxPlayers: null,
       });
       expect(config.payoutStructure).toEqual([{ place: 1, percentage: 100 }]);
@@ -403,7 +403,7 @@ describe('club profile selection preserves operator terms', () => {
     expect(schedule.config).toMatchObject({
       startingStack: 1000,
       buyIn: 10,
-      payoutPercent: 10,
+      payoutPercent: 12.5,
       recurrenceCadence: 'weekly',
     });
     expect(schedule.config.startTime).toBeUndefined();

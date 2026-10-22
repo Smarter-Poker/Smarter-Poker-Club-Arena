@@ -193,6 +193,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * the next admission never restarts the same prefix forever.
    */
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
+
+  protected override currentEliminationSweepStage(): number {
+    return this.eliminationSweepCursor.nextStage;
+  }
   /** Exposed for the law test only: where the sweep cursor will resume. */
   get eliminationSweepNextStage(): number {
     return this.eliminationSweepCursor.nextStage;
@@ -559,6 +563,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (this.isProcessingEliminations) return;
 
     this.isProcessingEliminations = true;
+    this.eliminationSweepStartedAt = Date.now();
     // A bust that arrived while a later stage held the continuation takes its
     // turn here, before that stage is admitted again (see bustAwaitsItsStage).
     this.eliminationSweepCursor.beginAdmission();
@@ -1970,6 +1975,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (this.eliminationSweepSignal === signal) this.eliminationSweepSignal = null;
       this.eliminationSweepDeadlineAt = 0;
       this.isProcessingEliminations = false;
+      this.eliminationSweepStartedAt = 0;
       eliminationSweepsInflight.dec();
       eliminationSweepMs.observe(Date.now() - sweepStartedAt);
       // Multi-day: busts in the day's final hands are recorded before the

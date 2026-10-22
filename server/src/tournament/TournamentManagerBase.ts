@@ -2090,6 +2090,56 @@ export abstract class TournamentManagerBase {
    * Returns true only when the hand-off was requested. Until every other table
    * is between hands, GameServer asks again on its next sweep.
    */
+  /**
+   * A STALLED BUST SWEEP HANDS THE EVENT TO A FRESH GENERATION (2026-10-22).
+   *
+   * Coffee Break Freeroll (PLO4) f5a98d7e, 16:17:04-16:40:33 UTC: one admitted
+   * elimination sweep never settled. The scheduler deliberately keeps a live
+   * sweep's slot (no concurrent writes), so for 23 minutes this manager
+   * recorded no bust at all. 308 zero-chip players stayed `playing`, every
+   * table break refused (source_roster_disagrees:bust_unrecorded) and every
+   * re-admission refused (F06_MOVEMENT_ELIMINATION_UNPROVEN), six tables lost
+   * their dealer and the SLO paged "Tables Have Stopped Dealing". Only the
+   * stuck-table watchdog, ten minutes after the first table died, handed the
+   * event on; the successor recorded the whole backlog within seconds.
+   *
+   * The stalled sweep is the defect, so it is now the trigger. GameServer asks
+   * for this once a sweep has been in flight past
+   * GameServer.STALLED_ELIMINATION_SWEEP_MS. Every table finishes the hand in
+   * front of its players and parks, then the event goes to a successor
+   * generation (fenced by lease generation, so the abandoned promise can never
+   * write again), exactly as a stuck table does.
+   *
+   * Returns true only when the hand-off was requested.
+   */
+  getStalledEliminationSweep(now = Date.now()): { msInFlight: number; stage: number } | null {
+    if (!this.isProcessingEliminations || this.eliminationSweepStartedAt <= 0) return null;
+    return {
+      msInFlight: now - this.eliminationSweepStartedAt,
+      stage: this.currentEliminationSweepStage(),
+    };
+  }
+
+  /** The stage the in-flight sweep is in; the eliminations layer knows it. */
+  protected currentEliminationSweepStage(): number {
+    return -1;
+  }
+
+  requestSuccessorForStalledEliminationSweep(): boolean {
+    if (!this.isProcessingEliminations) return false;
+    for (const table of this.tableEngines.values()) {
+      if (table.isRunning()) table.pauseAfterHand(undefined, { untilResumed: true });
+    }
+    for (const table of this.tableEngines.values()) {
+      if (table.isRunning() && !table.isBetweenHands()) return false;
+    }
+    console.info(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Elimination sweep stalled - no bust can be recorded; handing the event to a successor generation`
+    );
+    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
+    return true;
+  }
+
   requestSuccessorForStuckTable(tableId: string): boolean {
     if (!this.tableEngines.has(tableId) && !this.tableAdmissionFailingSince.has(tableId))
       return false;
@@ -11903,6 +11953,8 @@ export abstract class TournamentManagerBase {
 
   /** Local belt; process-wide admission guarantees no concurrent generation. */
   protected isProcessingEliminations = false;
+  /** Wall clock the admitted elimination sweep began at; 0 while none is in flight. */
+  protected eliminationSweepStartedAt = 0;
 
   // ── Implemented by TournamentManagerEliminations (layer 2/3) ──
   protected abstract startEliminationChecker(): void;

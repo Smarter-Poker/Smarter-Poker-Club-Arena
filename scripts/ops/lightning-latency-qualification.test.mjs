@@ -114,13 +114,14 @@ test('a gap between windows breaks consecutiveness', () => {
     assert.equal(r.legs[leg].longestQualifyingRun, 2);
   }
   assert.equal(evaluate([win(0), win(1), win(3), win(4), win(5)]).verdict, 'PASS');
-  // An underfilled middle window breaks the run as well.
+  // An underfilled middle window breaks the per-window run; the unbroken span
+  // still qualifies on its pooled samples (25 + 3 + 25 + 25 = 78 >= 60).
   const thin = good();
   thin.ack_to_idle = { n: 3, p50: 1, p95: 2, p99: 3 };
-  assert.equal(
-    evaluate([win(0), win(1, thin), win(2), win(3)]).legs.ack_to_idle.verdict,
-    'INSUFFICIENT'
-  );
+  const pooled = evaluate([win(0), win(1, thin), win(2), win(3)]).legs.ack_to_idle;
+  assert.equal(pooled.verdict, 'PASS');
+  assert.equal(pooled.method, 'pooled_span');
+  assert.equal(pooled.pooledSpan.samples, 78);
 });
 
 test('a fold-type leg with no traffic is insufficient, and counts only windows where that fold happened', () => {
@@ -151,8 +152,11 @@ test('a fold-type leg with no traffic is insufficient, and counts only windows w
   // A non-fold leg missing from a window is a zero-sample window, not skipped.
   const noRender = good();
   delete noRender.hand_to_first_render;
+  const zero = evaluate([win(0), win(1, noRender), win(2), win(3)]).legs.hand_to_first_render;
+  assert.equal(zero.method, 'pooled_span');
+  assert.equal(zero.pooledSpan.windows, 3);
   assert.equal(
-    evaluate([win(0), win(1, noRender), win(2), win(3)]).legs.hand_to_first_render.verdict,
+    evaluate([win(0, noRender), win(1, noRender), win(2)]).legs.hand_to_first_render.verdict,
     'INSUFFICIENT'
   );
 });
@@ -332,4 +336,46 @@ test('inputs are bounded and credentials are verified before any client work', a
     }),
     { code: 'VERIFIED_SERVICE_CONFIGURATION_REQUIRED' }
   );
+});
+
+test('pooled span: thin windows under the ceiling pass on their union, never weaker than per-window', () => {
+  const thinLeg = (n, p95) => {
+    const legs = good();
+    legs.match_to_hand = { n, p50: 1, p95, p99: p95 };
+    return legs;
+  };
+  // 13 hands a minute: no window reaches 20, five windows hold 65 >= 60.
+  const five = [0, 1, 2, 3, 4].map((i) => win(i, thinLeg(13, 900)));
+  const pass = evaluate(five).legs.match_to_hand;
+  assert.equal(pass.verdict, 'PASS');
+  assert.equal(pass.method, 'pooled_span');
+  assert.deepEqual(
+    [
+      pass.pooledSpan.windows,
+      pass.pooledSpan.samples,
+      pass.pooledSpan.requiredSamples,
+      pass.pooledSpan.maxWindowP95,
+    ],
+    [5, 65, 60, 900]
+  );
+  // Four windows hold 52 < 60: insufficient, never pass.
+  assert.equal(evaluate(five.slice(0, 4)).legs.match_to_hand.verdict, 'INSUFFICIENT');
+  // One slow thin window anywhere in the span: the span restarts after it.
+  const slowMid = [0, 1, 2, 3, 4].map((i) => win(i, thinLeg(13, i === 2 ? 2500 : 900)));
+  assert.equal(evaluate(slowMid).legs.match_to_hand.verdict, 'INSUFFICIENT');
+  // The most recent window slow: no pass, however good the older span was.
+  const slowLast = [...five, win(5, thinLeg(4, 2500))];
+  assert.notEqual(evaluate(slowLast).legs.match_to_hand.verdict, 'PASS');
+  // A full-size breach after the span still fails the leg.
+  const breach = [...five, win(5, thinLeg(25, 2500))];
+  assert.equal(evaluate(breach).legs.match_to_hand.verdict, 'FAIL');
+  // A gap ends the span: older windows on the far side never count.
+  const gapped = [
+    win(0, thinLeg(13, 900)),
+    win(1, thinLeg(13, 900)),
+    win(2, thinLeg(13, 900)),
+    win(4, thinLeg(13, 900)),
+    win(5, thinLeg(13, 900)),
+  ];
+  assert.equal(evaluate(gapped).legs.match_to_hand.verdict, 'INSUFFICIENT');
 });

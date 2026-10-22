@@ -203,7 +203,43 @@ export function evaluateLeg(segments, leg, cfg) {
       latestQualifyingRun: run,
     };
   }
-  if (run) return { ...base, verdict: 'PASS', run };
+  if (run) return { ...base, verdict: 'PASS', method: 'per_window', run };
+  // POOLED SPAN (same strength, fewer samples per minute). If every window in
+  // an unbroken span has p95 <= ceiling, at most 5% of each window's samples
+  // exceed the ceiling, so at most 5% of their union does: the union's p95 is
+  // <= the ceiling. The union must hold k windows with traffic and at least
+  // k * min samples, the same total the per-window rule demands. Only the most
+  // recent span counts and any breaching window (whatever its n) ends it, so a
+  // later slow window can never be outvoted by an older fast one.
+  const latestSeq = sequences.at(-1) ?? [];
+  const span = [];
+  for (let j = latestSeq.length - 1; j >= 0; j--) {
+    const s = latestSeq[j];
+    if (s.n > 0 && (s.p95 === null || s.p95 > ceilingMs)) break;
+    span.unshift(s);
+  }
+  const spanTraffic = span.filter((s) => s.n > 0);
+  const spanSamples = spanTraffic.reduce((t, s) => t + s.n, 0);
+  const latestTraffic = observed.at(-1);
+  if (
+    spanTraffic.length >= k &&
+    spanSamples >= k * min &&
+    latestTraffic &&
+    spanTraffic.at(-1).windowTo === latestTraffic.windowTo
+  )
+    return {
+      ...base,
+      verdict: 'PASS',
+      method: 'pooled_span',
+      pooledSpan: {
+        windowFrom: spanTraffic[0].windowFrom,
+        windowTo: spanTraffic.at(-1).windowTo,
+        windows: spanTraffic.length,
+        samples: spanSamples,
+        maxWindowP95: Math.max(...spanTraffic.map((s) => s.p95)),
+        requiredSamples: k * min,
+      },
+    };
   return {
     ...base,
     verdict: 'INSUFFICIENT',
@@ -403,7 +439,7 @@ export async function collectLatencyQualification({
     queryTime,
     lookbackMinutes,
     method:
-      'Per-window engine aggregates; no percentile averaging. A leg passes on its most recent run of alert_latency_windows consecutive closed windows each with n >= alert_latency_min_samples and p95 <= its ceiling, when no later window with n >= min breaches. Fold-type legs count only windows where that fold happened, within one unbroken telemetry segment. No traffic is INSUFFICIENT.',
+      'Per-window engine aggregates; no percentile averaging. A leg passes on its most recent run of alert_latency_windows consecutive closed windows each with n >= alert_latency_min_samples and p95 <= its ceiling, when no later window with n >= min breaches. Otherwise a leg passes on its most recent unbroken span (ending at its latest traffic window) in which every window with traffic has p95 <= its ceiling, holding at least alert_latency_windows traffic windows and alert_latency_windows * alert_latency_min_samples samples in total: the p95 of their union is then <= the ceiling (method pooled_span). Fold-type legs count only windows where that fold happened, within one unbroken telemetry segment. No traffic is INSUFFICIENT.',
     supplementaryEvidence:
       'scripts/ops/lightning-pilot-latency-workload.mjs browser witness: optional sample only, not the gate',
     verdict: verdicts.includes('UNKNOWN')

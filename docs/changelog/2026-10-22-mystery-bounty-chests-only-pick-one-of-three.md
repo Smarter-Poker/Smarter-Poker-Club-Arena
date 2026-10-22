@@ -103,3 +103,7 @@ lock queues behind every reader; new triggers need no drop.
   database would replace.
 - The Rewards rule, the detail tab, the sign-up dialog and the seat badges no
   longer describe a flat bounty per knockout on a chests-only event.
+- `20261022223610`: `fn_mystery_bounty_pick` refuses once the award is
+  revealed (or void), so the record of which chest was picked cannot move
+  after the chest has opened. Proved on production: a pick against a
+  completed award answers `already_revealed`.

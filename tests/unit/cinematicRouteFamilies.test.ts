@@ -101,21 +101,6 @@ describe('cinematic retained route families', () => {
     expect(freeze).toMatchObject({ width: 720, height: 720, hasAlpha: true });
   });
 
-  it('retains the Challenge Vault art without a bottom lobby card row', async () => {
-    const config = readFileSync('src/config/lobbyTiles.config.ts', 'utf8');
-    const home = readFileSync('src/pages/HomePage.tsx', 'utf8');
-    const homeCss = readFileSync('src/pages/HomePage.module.css', 'utf8');
-    const tile = await sharp('public/images/tiles/daily-challenges-v9.webp').metadata();
-
-    expect(tile).toMatchObject({ width: 1024, height: 1536, hasAlpha: false });
-    expect(config).toContain('images/tiles/daily-challenges-v9.webp');
-    expect(config).not.toContain('images/tiles/daily-challenges-v8.jpg');
-    expect(config).toContain("portalStatus: 'Open Challenge Vault'");
-    expect(home).not.toContain('styles.bottomRow');
-
-    expect(homeCss).toMatch(/\.tileImageNative\s*\{[^}]*object-fit:\s*contain/s);
-  });
-
   it.each(UNION_PAGES)('%s opens on the shared page bar, not a hero', (path) => {
     // 2026-10-17, Dan: "PAGES DON'T NEED TITLES LIKE THIS... REMOVE ALL
     // DESCRIPTIONS". The union pages keep their header component, which now

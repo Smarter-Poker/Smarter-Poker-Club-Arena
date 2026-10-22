@@ -3,7 +3,7 @@
  * CLUB ARENA — Home Page (World Hub Cinematic Design)
  * ═══════════════════════════════════════════════════════════════════════════════
  * Phase 4: 16 Advanced Enhancements
- * - Architecture: Extracted DailyChallenges, ClubContextMenu, lobbyTiles config
+ * - Architecture: Extracted ClubContextMenu and club selection
  * - Core UX: Keyboard shortcuts, pin favorites, leave confirmation, timestamps
  * - Polish: Card entrance, prefetch, search, haptic, sound, seasonal, tooltip
  * - Accessibility: ARIA, focus traps, keyboard nav, offline indicator
@@ -708,11 +708,11 @@ function HomePageInner() {
           break;
         case '2':
           haptic.light();
-          navigate('/leaderboard'); // Leaderboards (tile 2, matches lobbyTiles.config)
+          navigate('/leaderboard'); // Leaderboards
           break;
         case '3':
           haptic.light();
-          navigate('/stats'); // Player Stats (tile 3, matches lobbyTiles.config)
+          navigate('/stats'); // Player Stats
           break;
         case '4': {
           haptic.light();

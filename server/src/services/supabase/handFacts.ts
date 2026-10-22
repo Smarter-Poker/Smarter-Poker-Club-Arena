@@ -409,15 +409,24 @@ const EARLY_NAMES = ['UTG', 'UTG+1'];
  * RPC deliberately so the two never disagree on a shared position name.
  */
 export function derivePosition(seat: number, buttonSeat: number, dealtSeats: number[]): string {
-  const seats = [...new Set(dealtSeats)].sort((x, y) => x - y);
+  const dealt = [...new Set(dealtSeats)].sort((x, y) => x - y);
+  if (dealt.length === 0) return 'UNKNOWN';
+  if (dealt.length === 1) return 'BTN';
+  if (!dealt.includes(seat)) return 'UNKNOWN';
+
+  /* A DEAD BUTTON (TDA Rule 30, deadButton.ts) sits on a seat nobody was dealt
+     from. The old fallback made the next occupied seat the button, which is the
+     seat that POSTED THE SMALL BLIND, and shifted every position at the table
+     by one (Dan, 2026-10-21, hand #43306703: the small blind recorded as BTN).
+     The empty button seat keeps its place in the order instead, so the seat
+     after it is the small blind and the one after that the big blind. */
+  const deadButton =
+    dealt.length >= 3 && Number.isFinite(buttonSeat) && buttonSeat > 0 && !dealt.includes(buttonSeat);
+  const seats = deadButton ? [...dealt, buttonSeat].sort((x, y) => x - y) : dealt;
   const n = seats.length;
-  if (n === 0) return 'UNKNOWN';
-  if (n === 1) return 'BTN';
-
   const myIdx = seats.indexOf(seat);
-  if (myIdx < 0) return 'UNKNOWN';
 
-  // The button may have folded/left; fall back to the next occupied seat.
+  // Heads-up with no button among the dealt seats: the next occupied seat.
   let btnIdx = seats.indexOf(buttonSeat);
   if (btnIdx < 0) {
     btnIdx = seats.findIndex((s) => s > buttonSeat);

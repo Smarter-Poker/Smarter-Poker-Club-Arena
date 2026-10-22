@@ -357,6 +357,10 @@ describe('the shared projection is the engine projection it replaced', () => {
         (s) => ({ seat: s }) as SeatPlayer
       );
       const dealer = 1 + Math.floor(rnd() * 10);
+      // A dead button (three or more seats, button on an empty seat) is labelled
+      // from the blinds now, deliberately not as the frozen copy did; see
+      // aDeadButtonHandIsLabelledFromItsBlinds.test.ts.
+      if (seats.length >= 3 && !seats.some((p) => p.seat === dealer)) continue;
       expect([...positionLabelsFor(dealer, seats)]).toEqual([
         ...legacyPositionLabels(dealer, seats),
       ]);

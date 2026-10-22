@@ -1691,10 +1691,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         // because a field spread one player to a table cannot deal until
         // this stage has merged it (DEFAULT_CONSOLIDATION_SLOTS).
         const redrivesBeforeBalance = this.urgentRedrivesRequested;
+        this.noteEliminationSweepStep('checkTableBalance');
         if (!isMaintenanceFrozen()) {
           let progress: TournamentBalanceProgress | void;
           do {
-            this.noteEliminationSweepStep('checkTableBalance');
             progress = await this.checkTableBalance();
             if (sweepStopped()) return;
             // A slow move/read still owns this stage on the next admission.

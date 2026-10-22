@@ -1076,6 +1076,11 @@ interface SayRequest {
 }
 
 async function say(req: SayRequest): Promise<TalkOutcome> {
+  // All entry points share the speaker's own silence habit, including shove
+  // chat (whose event roll is owned by gestures) and arrival greetings.
+  if (speakChanceOverride === null && personalChance(req.speaker.userId, 100) === 0) {
+    return 'no_event';
+  }
   const voice = voiceFor(req.speaker.horseProfile, req.speaker.userId);
   const chosen = chooseLine(req.event, voice, req.speaker.userId, req.handNumber, req.facts);
   if (!chosen) return 'no_line';
@@ -1193,17 +1198,15 @@ export const greetArrival = bindToProcessRoot(
         )
         .sort((a, b) => a.userId.localeCompare(b.userId));
       if (greeters.length === 0) return 'no_speaker';
-      if (
-        !speaksThisTime('arrival', input.arrivedUserId, input.table.tableId, input.handNumber)
-      ) {
-        return 'no_event';
-      }
-      const gate = await readTableTalkGate(now);
-      if (!gate.allowed) return 'gate_closed';
       const speaker =
         greeters[
           personaHash(`${input.table.tableId}|${input.handNumber}|arrival`) % greeters.length
         ];
+      if (!speaksThisTime('arrival', speaker.userId, input.table.tableId, input.handNumber)) {
+        return 'no_event';
+      }
+      const gate = await readTableTalkGate(now);
+      if (!gate.allowed) return 'gate_closed';
       return await say({
         table: input.table,
         handNumber: input.handNumber,

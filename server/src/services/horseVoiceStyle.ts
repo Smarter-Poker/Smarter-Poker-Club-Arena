@@ -22,8 +22,8 @@
  *   sign off     a word some horses tag on now and then: bro, man, sir...
  *   emoji        none at all for about half the fleet; the rest use their own
  *                two to four favourites, some rarely and some on most lines
- *   chattiness   how often this horse speaks at all, 0.35x to 1.6x the event's
- *                base chance: some horses barely talk, some always have a word
+ *   chattiness   some horses never talk; the others speak only occasionally
+ *   throwiness   independently, some never gesture; the others do so sparingly
  *
  * Emoji are built from code points (CLAUDE.md 5.3, no emoji in source), drawn
  * only from EMOJI_BY_MOOD, single code points with no joiners, and appended by
@@ -45,7 +45,18 @@ const cp = (...points: number[]): string[] => points.map((p) => String.fromCodeP
 
 /** The only emoji a horse ever types, by the mood of the moment. */
 export const EMOJI_BY_MOOD: Readonly<Record<Mood, readonly string[]>> = {
-  lost: cp(0x1f62d, 0x1f624, 0x1f644, 0x1f926, 0x1f480, 0x1f921, 0x1f633, 0x1f62c, 0x1f621, 0x1f605),
+  lost: cp(
+    0x1f62d,
+    0x1f624,
+    0x1f644,
+    0x1f926,
+    0x1f480,
+    0x1f921,
+    0x1f633,
+    0x1f62c,
+    0x1f621,
+    0x1f605
+  ),
   won: cp(0x1f602, 0x1f923, 0x1f60e, 0x1f525, 0x1f4aa, 0x1f389, 0x1f911, 0x1f60f, 0x1f44d),
   luck: cp(0x1f340, 0x1f91e, 0x1f64f, 0x1f525, 0x1f44f, 0x1f4aa, 0x1f60e),
   greet: cp(0x1f44b, 0x1f44d, 0x1f60e),
@@ -74,9 +85,9 @@ export interface VoiceStyle {
   emojiMode: EmojiMode;
   /** this horse's favourite emoji per mood (empty when emojiMode is never) */
   emoji: Readonly<Record<Mood, readonly string[]>>;
-  /** multiplier on every event's speak chance, 0.35..1.6 */
+  /** Independent talking habit: zero means this horse never chats; otherwise 0.15..0.95. */
   chattiness: number;
-  /** multiplier on every throw and reaction chance, 0.2..1.8 */
+  /** Independent gesture habit: zero means no throws/reactions; otherwise 0.15..1.0. */
   throwiness: number;
 }
 
@@ -93,7 +104,18 @@ function weighted<T>(seed: string, table: ReadonlyArray<readonly [T, number]>): 
   return table[0][0];
 }
 
-const SIGN_OFFS = ['bro', 'man', 'sir', 'buddy', 'my friend', 'lol', 'haha', 'folks', 'pal', 'guys'];
+const SIGN_OFFS = [
+  'bro',
+  'man',
+  'sir',
+  'buddy',
+  'my friend',
+  'lol',
+  'haha',
+  'folks',
+  'pal',
+  'guys',
+];
 const LAUGHS = ['lol', 'haha', 'lmao', 'hah', 'hehe', 'lolol', 'ha'];
 
 const cache = new Map<string, VoiceStyle>();
@@ -154,8 +176,8 @@ export function voiceStyleFor(horseId: string): VoiceStyle {
       luck: favourites('luck'),
       greet: favourites('greet'),
     },
-    chattiness: Math.round((0.35 + (personaHash(k('chatty')) % 126) / 100) * 100) / 100,
-    throwiness: Math.round((0.2 + (personaHash(k('throwy')) % 161) / 100) * 100) / 100,
+    chattiness: pct(k('talks')) < 25 ? 0 : (15 + (personaHash(k('chatty')) % 81)) / 100,
+    throwiness: pct(k('gestures')) < 45 ? 0 : (15 + (personaHash(k('throwy')) % 86)) / 100,
   };
   if (cache.size > 5_000) cache.clear();
   cache.set(horseId, style);
@@ -272,14 +294,14 @@ export function styleLine(line: string, horseId: string, mood: Mood, key: string
   return out;
 }
 
-/** Speak chance for this horse: the event's base, scaled by its chattiness, at most 90. */
+/** Even an expressive horse leaves most opportunities alone. Zero is a durable habit. */
 export function personalChance(horseId: string, basePct: number): number {
-  return Math.min(90, Math.round(basePct * voiceStyleFor(horseId).chattiness));
+  return Math.max(0, Math.min(35, Math.round(basePct * voiceStyleFor(horseId).chattiness)));
 }
 
-/** Throw or reaction chance for this horse: the moment's base, scaled by its throwiness, at most 90. */
+/** Gesture habits are independent of talking and emoji preferences. */
 export function personalThrowChance(horseId: string, basePct: number): number {
-  return Math.min(90, Math.round(basePct * voiceStyleFor(horseId).throwiness));
+  return Math.max(0, Math.min(25, Math.round(basePct * voiceStyleFor(horseId).throwiness)));
 }
 
 /** One string naming every habit, for the uniqueness proof. */

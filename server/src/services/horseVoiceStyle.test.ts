@@ -12,6 +12,8 @@ import { chooseLine, fillLine, moodOf, sanitizeStyledLine } from './HorseTableTa
 import {
   EMOJI_BY_MOOD,
   STYLE_EMOJI,
+  personalChance,
+  personalThrowChance,
   personalPool,
   styleFingerprint,
   styleLine,
@@ -47,6 +49,30 @@ describe('the pool', () => {
 });
 
 describe('every horse is its own person', () => {
+  it('has independent silent, chat-only, gesture-only and expressive horses', () => {
+    const styles = HORSES.map(voiceStyleFor);
+    const silent = styles.filter((s) => s.chattiness === 0).length;
+    const still = styles.filter((s) => s.throwiness === 0).length;
+    expect(silent).toBeGreaterThan(150);
+    expect(silent).toBeLessThan(350);
+    expect(still).toBeGreaterThan(350);
+    expect(still).toBeLessThan(550);
+    for (const talks of [false, true])
+      for (const gestures of [false, true]) {
+        expect(
+          styles.some((s) => s.chattiness > 0 === talks && s.throwiness > 0 === gestures)
+        ).toBe(true);
+      }
+    for (const h of HORSES) {
+      const s = voiceStyleFor(h);
+      for (const base of [0, 6, 14, 30, 100]) {
+        expect(personalChance(h, base)).toBeLessThanOrEqual(35);
+        expect(personalThrowChance(h, base)).toBeLessThanOrEqual(25);
+        if (s.chattiness === 0) expect(personalChance(h, base)).toBe(0);
+        if (s.throwiness === 0) expect(personalThrowChance(h, base)).toBe(0);
+      }
+    }
+  });
   it('no two of a thousand horses share a style fingerprint', () => {
     const prints = new Set(HORSES.map((h) => styleFingerprint(h, ALL_LINES)));
     expect(prints.size).toBe(HORSES.length);
@@ -70,8 +96,8 @@ describe('every horse is its own person', () => {
       expect(new Set(styles.map((s) => s[key])).size, key).toBeGreaterThan(2);
     }
     const chatty = styles.map((s) => s.chattiness);
-    expect(Math.min(...chatty)).toBeGreaterThanOrEqual(0.35);
-    expect(Math.max(...chatty)).toBeLessThanOrEqual(1.6);
+    expect(Math.min(...chatty)).toBe(0);
+    expect(Math.max(...chatty)).toBeLessThanOrEqual(0.95);
   });
 
   it('two horses with the same voice say different things', () => {
@@ -82,13 +108,16 @@ describe('every horse is its own person', () => {
     // and nobody is left with nothing to say
     for (const h of HORSES) {
       for (const e of TALK_EVENTS) {
-        for (const v of TALK_VOICES) expect(personalPool(h, LINES[e][v].lines).length).toBeGreaterThan(0);
+        for (const v of TALK_VOICES)
+          expect(personalPool(h, LINES[e][v].lines).length).toBeGreaterThan(0);
       }
     }
   });
 
   it('the same moment reads differently across the fleet', () => {
-    const typed = new Set(HORSES.slice(0, 200).map((h) => styleLine('nice hand', h, 'lost', '7|pot_lost')));
+    const typed = new Set(
+      HORSES.slice(0, 200).map((h) => styleLine('nice hand', h, 'lost', '7|pot_lost'))
+    );
     expect(typed.size).toBeGreaterThan(40);
   });
 });

@@ -20,7 +20,7 @@ import { masterBus } from '../../core/MasterBus';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import { useButtonImage } from '../../hooks/useButtonImage';
 import { isTournamentGameCode } from '../../utils/gameCode';
-import { tournamentTabBuyInLabel } from '../../lib/tournamentTabLabel';
+import { tournamentTabBuyInLabel, tournamentTabEventName } from '../../lib/tournamentTabLabel';
 import './TableTabBar.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -882,10 +882,9 @@ export function TableTabBar({
              known the top line stays "MTT", never blank. The pill's width
              caps and the name ellipsises, so a long title cannot break it. */
           const isMttTab = isTournamentTab && tab.gameCode !== 'SNG' && tab.gameCode !== 'SPIN';
-          const mttName =
-            isMttTab && tab.tournamentName?.trim()
-              ? formatGameTitle(tab.tournamentName.trim())
-              : '';
+          const mttName = isMttTab ? tournamentTabEventName(tab.tournamentName) : '';
+          const mttFullName =
+            mttName && tab.tournamentName ? formatGameTitle(tab.tournamentName.trim()) : '';
           const isDragging = dragState?.id === tab.id;
 
           return (
@@ -895,6 +894,7 @@ export function TableTabBar({
                 'table-tab-bar__tab',
                 isActive && 'table-tab-bar__tab--active',
                 hasCards && 'table-tab-bar__tab--cards',
+                mttName && !hasCards && 'table-tab-bar__tab--event',
                 isFlashing && 'table-tab-bar__tab--flash',
                 !observing && tab.decisionKind && 'table-tab-bar__tab--decision',
                 !observing && tab.folded && 'table-tab-bar__tab--folded',
@@ -1000,7 +1000,7 @@ export function TableTabBar({
                     className={`table-tab-bar__tab-name${
                       mttName ? ' table-tab-bar__tab-name--event' : ''
                     }`}
-                    {...(mttName ? { title: mttName } : {})}
+                    {...(mttName ? { title: mttFullName || mttName } : {})}
                   >
                     {mttName || tab.gameCode || formatGameTitle(tab.name)}
                   </span>

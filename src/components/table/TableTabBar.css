@@ -1119,6 +1119,15 @@
   max-width: 100%;
 }
 
+/* An MTT pill carrying its event name may run wider than a code pill on
+   desktop, so "Prime Time Main Event" reads whole instead of ellipsising at
+   the 160px code-pill cap. Phones keep the shared quarter-width rule. */
+@media (min-width: 481px) {
+  .table-tab-bar__tab.table-tab-bar__tab--event {
+    max-width: 210px;
+  }
+}
+
 @media (max-width: 480px) {
   .table-tab-bar__tab-label .table-tab-bar__tab-name--event {
     font-size: 0.5625rem;

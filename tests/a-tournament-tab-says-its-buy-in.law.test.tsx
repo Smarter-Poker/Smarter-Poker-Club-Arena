@@ -31,6 +31,7 @@ import { TableTabBar, type TabInfo } from '../src/components/table/TableTabBar';
 import {
   TOURNAMENT_TAB_LABEL_MAX_GLYPHS,
   tournamentTabBuyInLabel,
+  tournamentTabEventName,
   readTournamentTabInfo,
 } from '../src/lib/tournamentTabLabel';
 import { isTournamentGameCode } from '../src/utils/gameCode';
@@ -162,6 +163,150 @@ describe('an MTT tab names its event over its buy-in', () => {
       expect(subOf(el)).toBe('35');
       cleanup();
     }
+  });
+
+  it('drops the trailing game tag on the pill, keeps the full name on its title', () => {
+    const el = pill(
+      tab({
+        gameCode: 'MTT',
+        isTournament: true,
+        tournamentBuyIn: 30,
+        tournamentName: 'Prime Time Main Event (NLH)',
+      })
+    );
+    expect(nameOf(el)).toBe('Prime Time Main Event');
+    expect(subOf(el)).toBe('30');
+    expect(el.querySelector('.table-tab-bar__tab-name')?.getAttribute('title')).toBe(
+      'Prime Time Main Event (NLH)'
+    );
+    expect(el.className).toContain('table-tab-bar__tab--event');
+  });
+
+  it('keeps a name that is only a parenthetical, and says MTT for none at all', () => {
+    expect(tournamentTabEventName('(NLH)')).toBe('(NLH)');
+    expect(tournamentTabEventName('Lunch Rush (NLH Deep)')).toBe('Lunch Rush');
+    expect(tournamentTabEventName('Mid-Morning Turbo (6-Max NLH)')).toBe('Mid-Morning Turbo');
+    expect(tournamentTabEventName('Nightly 10K Satellite 15')).toBe('Nightly 10K Satellite 15');
+    expect(tournamentTabEventName(undefined)).toBe('');
+    expect(tournamentTabEventName('   ')).toBe('');
+  });
+
+  /* Every distinct MTT and satellite name registering or running in production
+     on 2026-10-21 (277 events, 75 names, Midway Union and Diamond Arena), each
+     at the real entry totals those events charge. Every one must print a name
+     and a figure, and never fall back to blinds or a bare code. */
+  const LIVE_EVENT_NAMES = [
+    'Afternoon Bounty (NLH)',
+    'Afternoon Deep Stack (NLH)',
+    'Afternoon Free Buy (NLH)',
+    'Brunch Special PKO (PLO8)',
+    'Coffee Break Freeroll (PLO4)',
+    'Daily 25 Chip Freezeout',
+    'Dinner Break PLO (PLO4)',
+    'Evening Mystery Bounty (PLO5)',
+    'Fight Night Opener Satellite 5',
+    'Fight Night PKO Satellite 5',
+    'Five-Card Bounty',
+    'Five-Card Reload',
+    'Friday Feature Satellite 10',
+    'Friday Feature Satellite 5',
+    'Friday Fight Night Opener',
+    'Friday Fight Night PKO',
+    'Friday Five-Card Bounty',
+    'Friday Graveyard',
+    'Friday Morning PLO',
+    'Friday Night Feature',
+    'Friday PLO5 Bounty Satellite 5',
+    'Friday Rebuy Rush',
+    'Friday Six-Card Nightcap',
+    'Grand Championship Satellite 10',
+    'Happy Hour Bounty (NLH)',
+    'Late Night PKO (PLO4)',
+    'Lunch Rush (NLH Deep)',
+    'Mid-Morning Turbo (6-Max NLH)',
+    'Midday Free Buy (NLH)',
+    'Midday Turbo (NLH)',
+    'Midnight Bounty (NLH)',
+    'Midnight Free Buy (NLH)',
+    'Midweek Bounty',
+    'Midweek Mystery',
+    'Morning Free Buy (NLH)',
+    'Morning Grinder (PLO)',
+    'Night Owl Special (NLH)',
+    'Nightly 10K (NLH)',
+    'Nightly 10K Satellite 15',
+    'Nightly 10K Satellite 5',
+    'Omaha Thursday Graveyard',
+    'Omaha Thursday Opener',
+    'PLO5 Mystery Bounty Satellite 5',
+    'PLO8 Hi-Lo Nightcap',
+    'PLO8 Morning Stack',
+    'Prime Time Free Buy (NLH)',
+    'Prime Time Main Event (NLH)',
+    'Prime Time Satellite 10',
+    'Prime Time Satellite 3',
+    'Saturday Big Stack Satellite 10',
+    'Saturday Big Stack Satellite 5',
+    'Saturday Five-Card Stack',
+    'Saturday Graveyard PLO',
+    'Saturday Morning Stack',
+    'Saturday Mystery',
+    'Saturday Night Big Stack',
+    'Saturday Night Mystery Satellite 5',
+    'Saturday Stackfest Opener',
+    'Six-Card Deep Night',
+    'Six-Card Feature',
+    'Stackfest Opener Satellite 5',
+    'Sunday 200 Deep Stack',
+    'Sunday Deep Stack Satellite 10',
+    'Sunday Deep Stack Satellite 25',
+    'Sunday Deep Stack Satellite 5',
+    'Sunrise Bounty (NLH)',
+    'Thursday Night PKO',
+    'Thursday Six-Card Satellite 5',
+    'Union Grand Championship (NLH)',
+    'Union Late Night Turbo (NLH)',
+    'Union Morning Classic (NLH)',
+    'Union Mystery Bounty (PLO5)',
+    'Union PKO Afternoon (PLO4)',
+    'Wednesday Feature',
+    'Wednesday PLO Stack',
+  ];
+  const LIVE_ENTRY_TOTALS = [
+    0, 3, 5, 10, 15, 20, 25, 30, 35, 50, 100, 150, 200, 250, 300, 350, 500, 2000,
+  ];
+
+  it('every live scheduled or running event prints its name over its buy-in', () => {
+    for (const name of LIVE_EVENT_NAMES) {
+      const shown = tournamentTabEventName(name);
+      expect(shown, name).not.toBe('');
+      expect(shown, name).not.toMatch(/\)$/);
+      expect(shown, name).not.toContain('\u2014');
+      for (const total of LIVE_ENTRY_TOTALS) {
+        const el = pill(
+          tab({
+            id: `live-${total}`,
+            gameCode: 'MTT',
+            isTournament: true,
+            tournamentBuyIn: total,
+            tournamentName: name,
+          })
+        );
+        expect(nameOf(el), name).toBe(shown);
+        expect(subOf(el), `${name} @ ${total}`).toBe(tournamentTabBuyInLabel(total));
+        expect(el.textContent).not.toContain('200/400');
+        cleanup();
+      }
+    }
+  });
+
+  it('an event pill may run wider than a code pill on desktop only', () => {
+    const css = read('src/components/table/TableTabBar.css');
+    const rule = sliceCssRule(css, '\n  .table-tab-bar__tab.table-tab-bar__tab--event {');
+    expect(rule).toMatch(/max-width:\s*210px/);
+    expect(css).toMatch(
+      /@media \(min-width: 481px\) {\s*\.table-tab-bar__tab\.table-tab-bar__tab--event/
+    );
   });
 
   it('SNG and SPIN keep their code', () => {

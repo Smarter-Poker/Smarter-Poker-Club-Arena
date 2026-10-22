@@ -2770,8 +2770,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     } else {
       if (!this.eliminationMutationAllowed()) return false;
       // Result, exact status CAS and tournament-scoped seat release are one
-      // transaction. Place and Bubble money wait for the finalized terminal
-      // batch. A transport failure is ambiguous, so replay the same idempotent
+      // transaction, and its commit pays the place in real time once the pool
+      // is finalized (zzz_pay_finisher_at_bust). A transport failure is ambiguous, so replay the same idempotent
       // RPC once; its locked exact-position/prize and knockout-generation
       // checks turn a lost successful response into `{ already: true }`.
       const eliminationRequest = {
@@ -2846,9 +2846,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     /* RESULT, SEAT RELEASE AND BOUNTY OUTBOX SHARE THE ELIMINATION COMMIT.
        The atomic elimination RPC records the provisional place, releases the
        locked seat, and, for bounty events, records the exact knockout outbox.
-       It moves no place or Bubble money. Tournament completion normalizes the
-       final standings and pays the immutable place-plus-Bubble plan in one
-       all-or-none database transaction. */
+       Dan 2026-10-21: the same commit pays the place. A deferred trigger runs
+       fn_ca_pay_tournament_finishers_now at that commit: once the pool is
+       finalized it restamps the true place and credits every finisher in the
+       money (and the Bubble) through the idempotent obligation door. Tournament
+       completion still settles the whole plan in one all-or-none transaction,
+       and finds these places already exactly paid. */
 
     // ── BOUNTY / PKO / MYSTERY BOUNTY COLLECTION ──
     // Determine who knocked this player out by finding the last hand winner at their table
@@ -2901,27 +2904,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // The elimination toast in TournamentDetails/TournamentPage needs a name;
     // the payload previously carried only ids, so the toast could never render
     // even once the payload-key bug was fixed.
+    /* PAID AT THE BUST (Dan, 2026-10-21). Once the pool is finalized the
+       commit that recorded this bust also paid it
+       (fn_ca_pay_tournament_finishers_now, run at that commit), and restamped
+       the place and prize from the locked ladder. The place this sweep
+       proposed is provisional, so the toast reads the row the commit left:
+       the place the player finished in and the amount already credited. */
     let eliminatedName = 'Player';
+    let finishedPosition = position;
+    let finishedPrize = prize;
     try {
       const { data: nameRow } = await supabase
         .from('tournament_players')
-        .select('username')
+        .select('username, position, prize')
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', userId)
         .maybeSingle();
       eliminatedName = nameRow?.username || 'Player';
+      const storedPosition = Number(nameRow?.position);
+      if (Number.isInteger(storedPosition) && storedPosition >= 2) {
+        finishedPosition = storedPosition;
+        const storedPrize = Number(nameRow?.prize);
+        if (Number.isFinite(storedPrize) && storedPrize >= 0) finishedPrize = storedPrize;
+      }
     } catch {
-      /* name lookup is cosmetic */
+      /* the lookup is cosmetic; the proposed place still announces the bust */
     }
     await this.broadcast('player_eliminated', {
       userId,
-      position,
-      prize,
+      position: finishedPosition,
+      prize: finishedPrize,
       playerName: eliminatedName,
     });
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] Eliminated: ${userId.slice(0, 8)} at position ${position} (prize: ${prize})`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Eliminated: ${userId.slice(0, 8)} at position ${finishedPosition} (prize: ${finishedPrize})`
     );
     return true;
   }

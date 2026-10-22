@@ -3422,16 +3422,19 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         }
         this.postingBBToEnter.clear();
       }
-      // B2 2026-08-27: a tournament arrival's big blind is settled the moment it
-      // is actually taken. Anyone sitting in the SMALL blind this hand was skipped
-      // by bbOnlyPosts (charging them would have been a blind on top of a blind),
-      // so they stay on the hook for the next hand — they pay the small blind now
-      // and the big blind then, which is one ordinary blind cycle in reverse
-      // order, not an extra one. Everyone else has either just been charged or is
-      // the big blind and posted it themselves.
+      // B2 2026-08-27: a tournament arrival's entry is settled by the first hand
+      // it is dealt. Every arrival dealt this hand has paid a blind to be here:
+      // the live big blind bbOnlyPosts charged, or the small or big blind of the
+      // seat it is in (bbOnlyPosts skips both, never a blind on top of a blind).
+      //
+      // Dan 2026-10-21: the small blind seat used to stay "on the hook" for a big
+      // blind the next hand. Under the tournament dead button the small blind
+      // seat is the BUTTON next hand, so that debt was billed as a second live
+      // big blind straight after the small blind - a moved-in player paid the
+      // small blind and then the big blind again. A paid small blind settles it.
       if (this.mustPostBB.size > 0) {
         for (const p of players) {
-          if (this.mustPostBB.has(p.user_id) && p.seat_number !== sbSeat) {
+          if (this.mustPostBB.has(p.user_id)) {
             this.mustPostBB.delete(p.user_id);
           }
         }

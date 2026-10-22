@@ -60,9 +60,16 @@ describe('B2 noteTournamentArrival - who owes a big blind', () => {
     engine.noteTournamentArrival(2, 'u2');
     expect(engine.mustPostBB.has('u2')).toBe(true);
 
-    // Seat 3 is the small blind for the coming hand — passed one hand ago.
+  });
+
+  it('never charges an arrival in the small blind seat a second blind (Dan 2026-10-21)', () => {
+    const engine = tournamentEngine({ tournament: true });
+    // Seat 3 is the small blind for the coming hand. The arrival posts that
+    // small blind and is dealt in; it owes nothing more. Under the dead button
+    // the seat is the button next hand, and billing a big blind there is the
+    // "paid the small blind, then had to pay the big blind again" bug.
     engine.noteTournamentArrival(3, 'u3');
-    expect(engine.mustPostBB.has('u3')).toBe(true);
+    expect(engine.mustPostBB.has('u3')).toBe(false);
   });
 
   it('charges nothing for a seat whose big blind is still ahead of it', () => {
@@ -110,12 +117,14 @@ describe('B2 the charge itself', () => {
     expect(dead).not.toMatch(/mustPostBB/);
   });
 
-  it('settles the debt after the hand it is charged on, keeping the small blind seat on the hook', async () => {
+  it('settles the debt on the first hand the arrival is dealt, small blind seat included', async () => {
     const src = await read();
     const at = src.indexOf('if (this.mustPostBB.size > 0) {');
     expect(at, 'mustPostBB settle block not found').toBeGreaterThan(-1);
     const block = sliceBlockAfter(src, 'if (this.mustPostBB.size > 0) {');
-    expect(block).toMatch(/p\.seat_number !== sbSeat/);
+    // Dan 2026-10-21: a paid small blind settles the entry. Keeping the small
+    // blind seat on the hook billed a second blind from the button.
+    expect(block).not.toMatch(/p\.seat_number !== sbSeat/);
     expect(block).toMatch(/this\.mustPostBB\.delete/);
   });
 

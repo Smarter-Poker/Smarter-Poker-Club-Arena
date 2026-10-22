@@ -51,7 +51,6 @@ interface HeaderDataState {
   equippedAura: string | null;
   notificationCount: number;
   unreadMessages: number;
-  isMessengerPageActive: boolean;
 
   // Loading guards
   _loaded: boolean;
@@ -67,7 +66,6 @@ interface HeaderDataState {
   setCosmetics: (frame: string | null, aura: string | null) => void;
   setNotificationCount: (count: number) => void;
   setUnreadMessages: (count: number) => void;
-  setMessengerPageActive: (active: boolean) => void;
   clearUnreadNotifications: (userId: string) => Promise<boolean>;
   clearUnreadMessages: (userId: string) => Promise<boolean>;
   teardown: () => void;
@@ -229,7 +227,6 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   equippedAura: null,
   notificationCount: hydrateCount('ca-notif-count'),
   unreadMessages: hydrateCount('ca-msg-count'),
-  isMessengerPageActive: false,
 
   _loaded: false,
   _userId: null,
@@ -302,8 +299,6 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
     persistCount('ca-msg-count', count);
     masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId: get()._userId || '', count });
   },
-
-  setMessengerPageActive: (active) => set({ isMessengerPageActive: active }),
 
   /* Opening either destination acknowledges the count the player just acted
      on. Zero it synchronously so the badge disappears on the click, then make

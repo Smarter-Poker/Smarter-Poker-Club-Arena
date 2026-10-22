@@ -8,7 +8,6 @@ import {
   type PendingWheelBatch,
 } from '../services/WheelBatchService';
 import GameLifetimeAverages from '../components/games/GameLifetimeAverages';
-import PageHelp from '../components/help/PageHelp';
 import { diamondGameTitle } from '../utils/diamondGameTitles';
 import { useLiveBonusGuard } from '../hooks/useLiveBonusGuard';
 import BonusReplayLibrary from '../components/games/BonusReplayLibrary';
@@ -1681,19 +1680,6 @@ export default function DiamondWheelPage() {
     <div className={`${styles.page} ${styles.fullscreenPage} ${wheelStyles.page}`}>
       <WheelCabinet
         title="Diamond Spins"
-        help={
-          <PageHelp
-            title="Diamond Spins"
-            summary="Choose Your Diamonds And Spin. A Prize Is Paid Into Your Club Chips Or Your Diamonds, And Some Spins Award A Bonus Game."
-            steps={[
-              {
-                title: 'Your Spin',
-                body: 'Choose Your Diamonds, Then Spin. Your Balance And The Day Are Shown Beside The Plates.',
-                target: '[aria-label="Diamond Spins Controls"]',
-              },
-            ]}
-          />
-        }
         titleId="diamond-wheel-title"
         pill={pill}
         pillInk={pillInk}

@@ -1522,6 +1522,18 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
     'OPPX'
   ),
   receipt(
+    'postflop_maniac_call_down_checked',
+    'HorseLogic (maniac pressure)',
+    'a fold facing the bet of a player who limps and then pots every street was re-checked against equity (2026-10-22)',
+    'OPPX'
+  ),
+  receipt(
+    'maniac_short_stack_jam',
+    'HorseLogic (maniac pressure)',
+    'a short tournament stack opening into a maniac moved all in instead of raising to fold to the shove (2026-10-22)',
+    'OPPX'
+  ),
+  receipt(
     'maniac_call_down',
     'HorseLogic (maniac pressure)',
     "a fold facing a maniac's bet became the call its equity pays for (Dan: 'CALL OFF LIGHTER')",

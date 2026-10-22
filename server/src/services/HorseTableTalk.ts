@@ -80,6 +80,13 @@ import { resolveHorseStyle } from '../engine/HorseLogic.js';
 import { HAND_RANKINGS } from '../engine/PokerEngine.js';
 import { readTableTalkGate } from './HorseTableTalkGate.js';
 import { humanBeat, humanBeatMs } from './horsePacing.js';
+import {
+  personalChance,
+  personalPool,
+  STYLE_EMOJI,
+  styleLine,
+  type Mood,
+} from './horseVoiceStyle.js';
 import { LINES, TALK_PLACEHOLDERS, type TalkEvent, type TalkVoice } from './horseTableTalkLines.js';
 import type { SeatedPlayer, TableInfo } from '../types.js';
 
@@ -455,7 +462,7 @@ export function speaksThisTime(
   tableId: string,
   handNumber: number
 ): boolean {
-  const pct = speakChanceOverride ?? SPEAK_CHANCE_PCT[event] ?? 0;
+  const pct = speakChanceOverride ?? personalChance(speakerId, SPEAK_CHANCE_PCT[event] ?? 0);
   return personaHash(`${tableId}|${handNumber}|${event}|${speakerId}|speak`) % 100 < pct;
 }
 
@@ -566,7 +573,9 @@ export function chooseLine(
   handNumber: number,
   facts: TalkFacts
 ): ChosenLine | null {
-  const pool = LINES[event][voice].lines;
+  // Dan 2026-10-22: every horse says different things. A horse draws only
+  // from its own share of the pool (horseVoiceStyle.personalPool).
+  const pool = personalPool(horseId, LINES[event][voice].lines);
   if (pool.length === 0) return null;
   const start = lineIndexFor(horseId, handNumber, event, pool.length);
   for (let k = 0; k < pool.length; k++) {
@@ -671,6 +680,45 @@ export function sanitizeLine(
     }
   }
   return { ok: true, line: trimmed };
+}
+
+/**
+ * The door for a line AFTER the horse's own style was applied: the same rules
+ * as sanitizeLine, except that an emoji is admitted when it is one the style
+ * layer may write (horseVoiceStyle.STYLE_EMOJI) and no other.
+ */
+export function sanitizeStyledLine(
+  line: string,
+  usernames: readonly (string | null | undefined)[]
+): SanitizeVerdict {
+  const trimmed = line.trim();
+  if (trimmed.length > TALK_LINE_MAX_CHARS) return { ok: false, reason: 'too_long' };
+  let bare = trimmed;
+  for (const e of STYLE_EMOJI) bare = bare.split(e).join(' ');
+  const verdict = sanitizeLine(bare.replace(/\s+/g, ' '), usernames);
+  return verdict.ok ? { ok: true, line: trimmed } : verdict;
+}
+
+/** The mood a styled line is typed in, for the emoji a horse reaches for. */
+export function moodOf(event: TalkEvent): Mood {
+  switch (event) {
+    case 'pot_won':
+    case 'big_pot_won':
+      return 'won';
+    case 'all_in':
+      return 'luck';
+    case 'arrival':
+      return 'greet';
+    default:
+      return 'lost';
+  }
+}
+
+let voiceStyling = true;
+
+/** Test hook: the write-path tests read the plain line; the style has its own tests. */
+export function _setVoiceStylingForTests(on: boolean): void {
+  voiceStyling = on;
 }
 
 /**
@@ -1056,11 +1104,25 @@ async function say(req: SayRequest): Promise<TalkOutcome> {
     req.mem
   );
   if (!claim.ok) return claim.reason;
+  // The horse types it its own way: case, punctuation, shorthand, emoji.
+  // A styled line the door refuses falls back to the plain line, which
+  // already passed.
+  let typed = verdict.line;
+  if (voiceStyling) {
+    const styled = styleLine(
+      verdict.line,
+      req.speaker.userId,
+      moodOf(req.event),
+      `${req.handNumber}|${req.event}`
+    );
+    const door = sanitizeStyledLine(styled, req.usernames);
+    if (door.ok) typed = door.line;
+  }
   // A person reads the result, then types: the line lands a beat after the
   // hand, never on the same frame as the pot is pushed. A shove line is short.
   const beatKind = req.event === 'all_in' ? 'quick' : 'typed';
   await humanBeat(humanBeatMs(`${req.speaker.userId}|${req.handNumber}|${req.event}`, beatKind));
-  const wrote = await writeChatRow(req.table.tableId, req.speaker.userId, verdict.line);
+  const wrote = await writeChatRow(req.table.tableId, req.speaker.userId, typed);
   return wrote ? 'spoken' : 'lost_words';
 }
 

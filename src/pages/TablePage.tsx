@@ -26636,6 +26636,11 @@ function LiveTablePage({
                 className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
                   isActingSeat ? ' seat-wrapper--spot' : ''
                 }${pos.y < 20 && !tableState.isTournament ? ' seat-wrapper--top' : ''}${
+                  /* Dan 2026-10-21: every top-cap chair, tournament or cash,
+                     keeps its action tag below the plate on a phone, so it is
+                     never cut off above the head (SeatSlot.css). */
+                  pos.y < 20 ? ' seat-wrapper--cap' : ''
+                }${
                   /* Dan 2026-08-23: "you can never see the hero's stack, it's
                      always cut off by the footer." Hero sits at y:100 in every
                      ring in tableSeatGeometry.ts - avatar CENTRE on the

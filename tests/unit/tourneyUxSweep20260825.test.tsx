@@ -265,7 +265,7 @@ describe('Items 2 and 3 - exactly one, styled, buy-in confirmation', () => {
 
 // ─── 5. THE BOUNTY BADGE ──────────────────────────────────────────────────────
 
-describe('Item 5 - the bounty badge is centered above the action box', () => {
+describe('Item 5 - the bounty badge sits on the avatar corner, clear of the action box', () => {
   const css = read(SEAT_CSS);
 
   const topOf = (selector: string): number => {
@@ -277,20 +277,24 @@ describe('Item 5 - the bounty badge is centered above the action box', () => {
     return Number(m![1]);
   };
 
-  it('is horizontally centered on the seat, not pinned to a corner', () => {
+  // Dan 2026-10-21: "THE BOUNTY AMOUNT NEEDS TO BE FULLY DISPLAYED" and "A FOLD
+  // SHOULD NEVER BLOCK OUT ANOTHER USER'S INFO". The pill used to stack above
+  // the action badge (-56px), which made every seat tall enough to reach into
+  // its neighbour on a phone's side column. It is pinned to the avatar's
+  // top-left corner now, the one corner nothing else on the seat uses.
+  it('is pinned to the avatar corner, adding no height above the seat', () => {
     const start = css.indexOf('.seat__bounty {');
     const block = css.slice(start, css.indexOf('}', start));
-    expect(block).toMatch(/left:\s*50%/);
-    expect(block).toMatch(/translateX\(-50%\)/);
-    expect(block).not.toMatch(/right:\s*-?\d+px/);
+    expect(block).toMatch(/left:\s*0;/);
+    expect(topOf('.seat__bounty')).toBe(0);
+    expect(block).not.toMatch(/translateX\(-50%\)/);
+    expect(css).not.toContain('.seat:has(.seat__action) .seat__bounty');
   });
 
-  it('sits ABOVE the action badge with clear air between them', () => {
-    const bountyTop = topOf('.seat:has(.seat__action) .seat__bounty');
-    const actionTop = topOf('.seat__action');
-    expect(bountyTop).toBeLessThan(actionTop);
-    // The bounty pill is ~22px tall; anything under that would overlap.
-    expect(actionTop - bountyTop).toBeGreaterThanOrEqual(30);
+  it('never shares the action badge lane above the head', () => {
+    // The action badge is above the seat (negative top); the pill is inside it.
+    expect(topOf('.seat__action')).toBeLessThan(0);
+    expect(topOf('.seat__bounty')).toBeGreaterThanOrEqual(0);
   });
 
   // Dan 2026-10-20: keep the amount alone, inside a close solid pill.

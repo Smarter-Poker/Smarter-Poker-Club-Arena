@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { SEAT_LAYOUTS } from '../../src/lib/tableSeatGeometry';
-import { fitSeatToViewport, seatPodPx } from '../../src/components/table/tableGeometry';
+import {
+  fitSeatToViewport,
+  seatPodPx,
+  PORTRAIT_LOW_SIDE_SEAT_LIFT,
+} from '../../src/components/table/tableGeometry';
 
 describe('larger player plates remain visible on the narrow phone', () => {
   for (const width of [320, 375, 393, 430, 784, 1440]) {
@@ -15,7 +19,11 @@ describe('larger player plates remain visible on the narrow phone', () => {
           const centre = left + (fitted.x / 100) * canvas.w;
           expect(centre - pod.w / 2).toBeGreaterThanOrEqual(2 - 1e-8);
           expect(centre + pod.w / 2).toBeLessThanOrEqual(width - 2 + 1e-8);
-          expect(fitted.y).toBe(seat.y);
+          // Phones lift the lower side chair to even the side column
+          // (Dan 2026-10-21); every other chair keeps its height.
+          const portraitPhone = width <= 480 && canvas.h > canvas.w;
+          const lifted = portraitPhone && seat.x !== 50 && seat.y > 50 && seat.y < 70;
+          expect(fitted.y).toBe(lifted ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT : seat.y);
         }
     });
   }

@@ -42,3 +42,22 @@ export function assignProtectedWagers(
   };
   return visit(options.length) ? (result as CardBox[]) : null;
 }
+
+/** Fallback when no joint assignment exists: most-constrained wager first,
+ * each taking its best candidate clear of the wagers already placed. When none
+ * is clear of them, its best candidate still clears every player, the board
+ * and the pot, which beats staying printed over its own player. A wager with
+ * no candidate at all is left where it is (undefined). */
+export function greedyProtectedWagers(
+  options: ReadonlyArray<ReadonlyArray<CardBox>>
+): Array<CardBox | undefined> {
+  const result: Array<CardBox | undefined> = options.map(() => undefined);
+  const order = options.map((_, i) => i).sort((a, b) => options[a].length - options[b].length);
+  for (const index of order) {
+    result[index] =
+      options[index].find((candidate) =>
+        result.every((placed) => !placed || !wagerBoxesOverlap(candidate, placed))
+      ) ?? options[index][0];
+  }
+  return result;
+}

@@ -14,6 +14,8 @@ import {
 } from '../../utils/playerDisplayName';
 import { titleCase } from '../../utils/titleCase';
 import { uuid } from '../../utils/uuid';
+// The record's own sheet: the control is styled there with the Upline Agents card.
+import '../../pages/MemberManagementPage.css';
 
 /**
  * ASSIGN OR TRANSFER A PLAYER TO AN AGENT, FROM THE PLAYER RECORD (Dan 2026-10-22)

@@ -79,6 +79,8 @@ interface Tournament extends TournamentEntryWindowRow {
   type: 'sng' | 'mtt' | 'satellite' | 'spin' | 'bounty' | 'pko' | 'mystery';
   /** The TOTAL a player pays, whole chips. Never the prize half on its own. */
   buyIn: number;
+  /** Exact booked price label supplied from the tournament scope. */
+  buyInLabel?: string;
   prizePool: number;
   maxPlayers: number | null;
   registeredPlayers: number;
@@ -653,7 +655,9 @@ function TournamentLobbyCardInner({
        The recorded fixed format owns this route, including funded legacy
        satellites. */
     primary = {
-      label: isFull ? 'Entry Unavailable' : `Take A Seat (${money(tournament.buyIn)})`,
+      label: isFull
+        ? 'Entry Unavailable'
+        : `Take A Seat (${tournament.buyInLabel ?? money(tournament.buyIn)})`,
       ink: isFull ? 'muted' : 'white',
       disabled: isFull,
       onClick: (e) => {
@@ -678,7 +682,7 @@ function TournamentLobbyCardInner({
           ? 'Entry Status Unavailable'
           : isFull
             ? 'Tournament Full'
-            : `Register (${money(tournament.buyIn)})`,
+            : `Register (${tournament.buyInLabel ?? money(tournament.buyIn)})`,
       ink: isFull || !entryDetailsKnown ? 'muted' : 'white',
       disabled: registering || isFull,
       onClick: (e) => {
@@ -785,7 +789,9 @@ function TournamentLobbyCardInner({
           <span className="sc-label sc-ink--blue">Buy-In</span>
           {/* Whole chips only (Dan 2026-08-20), and EXACT: this is the figure
               the server charges, so it is never abbreviated. */}
-          <span className={`${styles.value} sc-ink--silver`}>{money(tournament.buyIn)}</span>
+          <span className={`${styles.value} sc-ink--silver`}>
+            {tournament.buyInLabel ?? money(tournament.buyIn)}
+          </span>
         </div>
 
         <div className={styles.row}>

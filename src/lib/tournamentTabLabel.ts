@@ -27,7 +27,7 @@
 import { supabase } from './supabase';
 import { compactChips } from '../utils/format';
 import { FREE_BUY_LABEL } from '../utils/freeBuy';
-import { totalBuyIn } from '../utils/buyIn';
+import { totalBuyIn, moneyExact } from '../utils/buyIn';
 import { formatGameTitle } from '../utils/formatGameTitle';
 
 /** The longest sub-line a tournament pill can ever print, in glyphs. */
@@ -41,10 +41,14 @@ export const TOURNAMENT_TAB_LABEL_MAX_GLYPHS = 8;
  * falls back to blinds or a pot: an absent figure is better than a wrong one.
  * A known total of 0 is a freeroll and reads the lobby's own word for it.
  */
-export function tournamentTabBuyInLabel(total: number | null | undefined): string {
+export function tournamentTabBuyInLabel(
+  total: number | null | undefined,
+  exactLabel?: string
+): string {
   if (total === null || total === undefined) return '';
   const n = Number(total);
   if (!Number.isFinite(n) || n < 0) return '';
+  if (n === 5.5 && exactLabel === '5.50') return exactLabel;
   const whole = Math.round(n);
   if (whole <= 0) return FREE_BUY_LABEL;
   return compactChips(whole);
@@ -80,8 +84,8 @@ export function tournamentTabEventName(name: string | null | undefined): string 
  */
 export async function readTournamentTabInfo(
   tableIds: ReadonlyArray<string>
-): Promise<Map<string, { name: string; buyIn: number }>> {
-  const out = new Map<string, { name: string; buyIn: number }>();
+): Promise<Map<string, { name: string; buyIn: number; buyInLabel?: string }>> {
+  const out = new Map<string, { name: string; buyIn: number; buyInLabel?: string }>();
   const ids = Array.from(new Set((tableIds || []).filter(Boolean)));
   if (ids.length === 0) return out;
 
@@ -103,21 +107,25 @@ export async function readTournamentTabInfo(
 
   const { data: tours, error: tourErr } = await supabase
     .from('tournaments')
-    .select('id, name, buy_in_amount, buy_in_fee')
+    .select('id, name, club_id, union_id, buy_in_amount, buy_in_fee')
     .in('id', tournamentIds);
   if (tourErr) throw tourErr;
   if (!tours) return out;
 
-  const totalOf = new Map<string, { name: string; buyIn: number }>();
+  const totalOf = new Map<string, { name: string; buyIn: number; buyInLabel?: string }>();
   for (const t of tours as Array<{
     id: string;
     name: string | null;
+    club_id?: string | null;
+    union_id?: string | null;
     buy_in_amount: number | string | null;
     buy_in_fee: number | string | null;
   }>) {
+    const buyIn = totalBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0, t);
     totalOf.set(String(t.id), {
       name: t.name?.trim() || '',
-      buyIn: totalBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0),
+      buyIn,
+      ...(buyIn === 5.5 ? { buyInLabel: moneyExact(buyIn) } : {}),
     });
   }
   for (const [tableId, tournamentId] of tournamentOf) {

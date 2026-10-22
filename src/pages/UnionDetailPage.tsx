@@ -1425,7 +1425,7 @@ export default function UnionDetailPage() {
                       </span>
                       {/* The advertised buy-in is the TOTAL (prize + fee), in
                           whole chips - never the prize half on its own. */}
-                      <span> {formatBuyInShort(t.buy_in_amount || 0, t.buy_in_fee)}</span>
+                      <span> {formatBuyInShort(t.buy_in_amount || 0, t.buy_in_fee, t)}</span>
                       <span>
                         {' '}
                         {t.current_players || 0}

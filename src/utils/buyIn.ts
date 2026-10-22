@@ -382,9 +382,34 @@ export function moneyExact(n: number): string {
   });
 }
 
-/** The total a player pays, from the two stored columns. Always whole. */
-export function totalBuyIn(prize: number, fee: number | null | undefined): number {
-  return Math.round(cents((Number(prize) || 0) + (Number(fee) || 0)));
+/** Scope for the owner's two explicitly priced 5.50 Midway fixed bounties. */
+export interface BookedBuyInContext {
+  name?: string | null;
+  club_id?: string | null;
+  union_id?: string | null;
+  clubId?: string | null;
+  unionId?: string | null;
+}
+function exactMidwayEntry(prize: number, fee: number, context?: BookedBuyInContext): boolean {
+  const midway = 'fade0000-0000-0000-0000-000000000001';
+  return (
+    !!context &&
+    [context.club_id, context.union_id, context.clubId, context.unionId].includes(midway) &&
+    ['Sunrise Bounty (NLH)', 'Midnight Bounty (NLH)'].includes(String(context.name)) &&
+    prize === 5 &&
+    fee === 0.5
+  );
+}
+/** Stored total; the owner's named Midway exceptions retain their exact cents. */
+export function totalBuyIn(
+  prize: number,
+  fee: number | null | undefined,
+  context?: BookedBuyInContext
+): number {
+  const p = Number(prize) || 0;
+  const f = Number(fee) || 0;
+  const total = cents(p + f);
+  return exactMidwayEntry(p, f, context) ? total : Math.round(total);
 }
 
 /**
@@ -395,10 +420,14 @@ export function totalBuyIn(prize: number, fee: number | null | undefined): numbe
  * question, not the first — which is the mistake the old card made when it
  * showed `Buy In 19.8` with no breakdown at all.
  */
-export function formatBuyIn(prize: number, fee: number | null | undefined): string {
+export function formatBuyIn(
+  prize: number,
+  fee: number | null | undefined,
+  context?: BookedBuyInContext
+): string {
   const p = Number(prize) || 0;
   const f = Number(fee) || 0;
-  const total = totalBuyIn(p, f);
+  const total = totalBuyIn(p, f, context);
   // FREEROLLS ARE FREE BUY (Dan 2026-09-02): the cell says what the event
   // IS - free to enter, 1-chip rebuys and add-ons - not just "free".
   if (total <= 0) return FREE_BUY_LABEL;
@@ -406,11 +435,15 @@ export function formatBuyIn(prize: number, fee: number | null | undefined): stri
   // Entry totals stay whole chips; their disclosed components retain cents.
   // Derive the remainder from the displayed total so the split still adds up.
   const shownFee = Math.min(total, Math.max(0, round2(f)));
-  return `${money(total)} (${moneyExact(total - shownFee)} + ${moneyExact(shownFee)})`;
+  return `${moneyExact(total)} (${moneyExact(total - shownFee)} + ${moneyExact(shownFee)})`;
 }
 
 /** Compact form for a narrow lobby card: just the total. */
-export function formatBuyInShort(prize: number, fee: number | null | undefined): string {
-  const total = totalBuyIn(Number(prize) || 0, fee);
-  return total <= 0 ? FREE_BUY_LABEL : money(total);
+export function formatBuyInShort(
+  prize: number,
+  fee: number | null | undefined,
+  context?: BookedBuyInContext
+): string {
+  const total = totalBuyIn(Number(prize) || 0, fee, context);
+  return total <= 0 ? FREE_BUY_LABEL : moneyExact(total);
 }

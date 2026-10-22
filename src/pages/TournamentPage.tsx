@@ -76,7 +76,7 @@ import {
 // A figure that is a TERM OF WHAT THE SERVER CHARGES (buy-in, rebuy, add-on,
 // bounty) stays exact; browsing figures - pools, stacks, prize previews - go
 // through compactChips, which is the lobby rule Dan set on 2026-09-08.
-import { formatBuyIn, money, totalBuyIn } from '../utils/buyIn';
+import { formatBuyIn, money, moneyExact, totalBuyIn } from '../utils/buyIn';
 import { compactChips, ordinal } from '../utils/format';
 import { SpadeConsole, type ConsoleInk } from '../components/console/SpadeConsole';
 import PageBar from '../components/help/PageBar';
@@ -989,15 +989,12 @@ export default function TournamentPage() {
   };
 
   const filteredTournaments = useMemo(() => {
-    return (
-      tournaments
-        .filter((t) => {
-          if (filter === 'freeroll') return t.buy_in_amount === 0;
-          if (filter === 'micro') return t.buy_in_amount > 0 && t.buy_in_amount <= 1000;
-          if (filter === 'highroller') return t.buy_in_amount >= 10000;
-          return true;
-        })
-    );
+    return tournaments.filter((t) => {
+      if (filter === 'freeroll') return t.buy_in_amount === 0;
+      if (filter === 'micro') return t.buy_in_amount > 0 && t.buy_in_amount <= 1000;
+      if (filter === 'highroller') return t.buy_in_amount >= 10000;
+      return true;
+    });
   }, [tournaments, filter]);
   /* Featured first, same rule as the main lobby board: a nightly event floats
      only on its own day (Dan 2026-10-19, src/lib/featuredOnItsDay.ts). */
@@ -1304,12 +1301,7 @@ export default function TournamentPage() {
   if (isLoading) {
     return (
       <div className="tournament-page">
-        <SpadeConsole
-          as="div"
-          className="tournament-console"
-          title="Tournaments"
-          foot="foot"
-        >
+        <SpadeConsole as="div" className="tournament-console" title="Tournaments" foot="foot">
           <div className="tourn-skeleton" aria-hidden="true">
             {['60%', '40%', '75%', '55%'].map((w) => (
               <div key={w} className="skel-line" style={{ width: w }} />
@@ -1336,7 +1328,7 @@ export default function TournamentPage() {
           : isTournamentEntryUnavailable(t, t.current_players)
             ? { label: 'Entry Unavailable', ink: 'muted' as const, disabled: true }
             : {
-                label: `Register (${money(totalBuyIn(t.buy_in_amount, t.buy_in_fee))})`,
+                label: `Register (${moneyExact(totalBuyIn(t.buy_in_amount, t.buy_in_fee, t))})`,
                 ink: 'white' as const,
                 onClick: handleRegister,
               },
@@ -1426,12 +1418,7 @@ export default function TournamentPage() {
 
       {/* ── The tournaments ──────────────────────────────────────────────── */}
       {filteredTournaments.length === 0 ? (
-        <SpadeConsole
-          as="div"
-          className="tournament-console"
-          title="No Tournaments"
-          foot="foot"
-        >
+        <SpadeConsole as="div" className="tournament-console" title="No Tournaments" foot="foot">
           <p className="sc-copy sc-copy--center">No Tournaments Match Your Filters</p>
         </SpadeConsole>
       ) : (
@@ -1465,7 +1452,7 @@ export default function TournamentPage() {
                   <span className="sc-label sc-ink--blue">Buy-In</span>
                   {/* Whole chips, and EXACT: this is what the server charges. */}
                   <span className="tourn-value sc-ink--silver">
-                    {formatBuyIn(tourn.buy_in_amount, tourn.buy_in_fee)}
+                    {formatBuyIn(tourn.buy_in_amount, tourn.buy_in_fee, tourn)}
                   </span>
                 </div>
                 <div className="tourn-row">
@@ -1522,7 +1509,11 @@ export default function TournamentPage() {
             <div className="tourn-row">
               <span className="sc-label sc-ink--blue">Buy-In</span>
               <span className="tourn-value sc-ink--silver">
-                {formatBuyIn(selectedTournament.buy_in_amount, selectedTournament.buy_in_fee)}
+                {formatBuyIn(
+                  selectedTournament.buy_in_amount,
+                  selectedTournament.buy_in_fee,
+                  selectedTournament
+                )}
               </span>
             </div>
             <div className="tourn-row">

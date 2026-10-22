@@ -46,9 +46,13 @@ jobs:
           mkdir -p access-proof
           run="$ACCESS_RUN"
           if [ -z "$run" ]; then
-            run=$(gh api "repos/${{ github.repository }}/actions/workflows/lightning-pilot-stage.yml/runs?branch=main&status=success&per_page=30" \
-              -q '.workflow_runs[].id' | while read -r id; do
-                if gh api "repos/${{ github.repository }}/actions/runs/$id/artifacts" -q '.artifacts[].name' | grep -qx 'lightning-pilot-stage-access'; then echo "$id"; break; fi
+            # The runs endpoint's status/branch filters return nothing for this
+            # workflow; filter client side. Each inner gh reads /dev/null so it
+            # cannot consume the id list on stdin.
+            run=$(gh api "repos/${{ github.repository }}/actions/workflows/lightning-pilot-stage.yml/runs?per_page=50" \
+              -q '.workflow_runs[] | select(.head_branch == "main" and .status == "completed" and .conclusion == "success" and .event == "workflow_dispatch") | .id' |
+              while read -r id; do
+                if gh api "repos/${{ github.repository }}/actions/runs/$id/artifacts" -q '.artifacts[] | select(.expired == false) | .name' </dev/null | grep -qx 'lightning-pilot-stage-access'; then echo "$id"; break; fi
               done)
           fi
           if ! printf '%s' "$run" | grep -Eq '^[0-9]{1,20}$'; then

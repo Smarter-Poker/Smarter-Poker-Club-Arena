@@ -124,6 +124,14 @@ export interface TabInfo {
    * and the pill then shows its code alone rather than fall back to blinds.
    */
   tournamentBuyIn?: number;
+  /**
+   * The tournament's own event name, read from its `tournaments` row. Dan
+   * 2026-10-21: "FOR MTT'S IT SHOULD SAY THE TOURNAMENT NAME AS WELL AS THE BUY
+   * IN INSIDE THE ACTION TAB. NOT JUST 35". An MTT pill prints this name over
+   * its buy-in. Undefined or '' means not known yet, and the pill keeps its
+   * code ("MTT") on the top line until it is.
+   */
+  tournamentName?: string;
 }
 
 /** What a pending decision is called on the pill. Short: it shares ~100px. */
@@ -867,6 +875,17 @@ export function TableTabBar({
              moments before that page has reported anything. */
           const isTournamentTab = tab.isTournament === true || isTournamentGameCode(tab.gameCode);
           const tournamentSub = isTournamentTab ? tournamentTabBuyInLabel(tab.tournamentBuyIn) : '';
+          /* Dan 2026-10-21: "FOR MTT'S IT SHOULD SAY THE TOURNAMENT NAME AS
+             WELL AS THE BUY IN INSIDE THE ACTION TAB. NOT JUST 35". A multi-
+             table tournament's top line is its event name (the buy-in stays
+             under it); SNG and SPIN keep their code. While the name is not
+             known the top line stays "MTT", never blank. The pill's width
+             caps and the name ellipsises, so a long title cannot break it. */
+          const isMttTab = isTournamentTab && tab.gameCode !== 'SNG' && tab.gameCode !== 'SPIN';
+          const mttName =
+            isMttTab && tab.tournamentName?.trim()
+              ? formatGameTitle(tab.tournamentName.trim())
+              : '';
           const isDragging = dragState?.id === tab.id;
 
           return (
@@ -977,8 +996,13 @@ export function TableTabBar({
                       The code wins; the table name is the fallback for a
                       table whose variant we genuinely do not know yet.
                       Dan 2026-08-20: variants are acronyms - NLH, not nlh. */}
-                  <span className="table-tab-bar__tab-name">
-                    {tab.gameCode || formatGameTitle(tab.name)}
+                  <span
+                    className={`table-tab-bar__tab-name${
+                      mttName ? ' table-tab-bar__tab-name--event' : ''
+                    }`}
+                    {...(mttName ? { title: mttName } : {})}
+                  >
+                    {mttName || tab.gameCode || formatGameTitle(tab.name)}
                   </span>
                   {/* Sub-line: the live pot while a hand runs without the
                       hero, otherwise the stakes - which is what tells two

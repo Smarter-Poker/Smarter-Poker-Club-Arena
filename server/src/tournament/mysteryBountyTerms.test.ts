@@ -35,11 +35,13 @@ const midweekMystery = () => ({
 });
 
 describe('a mystery bounty is chests only, at the money, split 50/50', () => {
-  it('halves the entry contribution into the bounty and scales the advertised range', () => {
+  it('puts half of the whole entry in the bounty; the fee comes out of the prize half', () => {
+    // A 20 entry (18 + 2 fee): 10 to the bounty pool, 8 to the prize pool.
     const row = withMysteryBountyTerms(midweekMystery());
-    expect(row.bounty_amount).toBe(9);
-    expect(row.mystery_bounty_min).toBe(4.5);
-    expect(row.mystery_bounty_max).toBe(90);
+    expect(row.bounty_amount).toBe(10);
+    expect(Number(row.buy_in_amount) - Number(row.bounty_amount)).toBe(8);
+    expect(row.mystery_bounty_min).toBe(5);
+    expect(row.mystery_bounty_max).toBe(100);
   });
 
   it('seals the whole bounty pool into chests and opens them at the money', () => {
@@ -55,16 +57,18 @@ describe('a mystery bounty is chests only, at the money, split 50/50', () => {
 
   it('says so in its description', () => {
     expect(withMysteryBountyTerms(midweekMystery()).short_description).toBe(
-      '50% Of Each Entry Funds The Prize Pool And 50% Funds The Mystery Bounty Pool. ' +
-        'No Bounties Are Paid Before The Money. Once The Tournament Reaches The Money, ' +
-        'Every Knockout Picks 1 Of 3 Mystery Chests.'
+      '50% Of Each Entry Funds The Mystery Bounty Pool. The Prize Pool Is The Rest, ' +
+        'After The Fee. No Bounties Are Paid Before The Money. Once The Tournament Reaches ' +
+        'The Money, Every Knockout Picks 1 Of 3 Mystery Chests.'
     );
-    expect(mysteryBountyDescription(8, 20)).toMatch(/^60% Of Each Entry .* 40% Funds/);
+    expect(mysteryBountyDescription(8, 20)).toMatch(/^40% Of Each Entry Funds The Mystery/);
   });
 
-  it('keeps the half on the event grid: cents for chips, whole Diamonds at the arena', () => {
-    expect(halfEntryBounty(13.5, 1)).toBe(6.75);
-    expect(halfEntryBounty(225, 100)).toBe(112);
+  it('keeps the bounty to whole chips, never a fraction', () => {
+    // A 15 entry (13.50 + 1.50): 7 whole chips, not 7.50.
+    expect(halfEntryBounty(13.5, 1.5)).toBe(7);
+    expect(halfEntryBounty(225, 25)).toBe(125);
+    expect(halfEntryBounty(4.5, 0.5)).toBe(2);
   });
 
   it('leaves PKOs, satellites, freerolls, Sit & Gos and plain bounties alone', () => {

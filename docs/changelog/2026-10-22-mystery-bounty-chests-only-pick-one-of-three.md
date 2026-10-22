@@ -34,12 +34,23 @@ or fewer never opened chests at all.
   field of ten or fewer opens its chests at the money (otherwise its knockouts
   would pay nothing). Events created under the old terms keep the old rules.
 
-### 50/50 Entry Split
+### 50/50 Entry Split, Rake From The Prize Half, Whole Chips
 
-A NEW mystery event's `bounty_amount` is half its entry contribution (a whole
-Diamond at the Diamond Arena), set by the trigger on insert and by
-`mysteryBountyTerms.ts` at spawn. The 14 events already taking registrations
-keep the split their entrants paid (56/44); their descriptions say so.
+Dan, 11:53 CT: "YOU ALSO NEED TO ACCOUNT FOR THE RAKE, SO RAKE COMES OUT OF THE
+TOP 12.5% PAYOUT, 50% GOES INTO THE BOUNTY POOL. MYSTERY BOUNTIES ARE ALWAYS
+FULL CHIP AMOUNTS, NEVER FRACTIONS."
+
+- A NEW mystery event's `bounty_amount` is half of the WHOLE entry (buy-in plus
+  fee) in whole chips (whole Diamonds at the arena); the fee comes out of the
+  prize-pool half. A 20 entry with a 2 fee: 10 bounty, 8 prize pool. Set by the
+  trigger on insert and by `mysteryBountyTerms.ts` at spawn.
+- Every chest is a whole chip: `fn_mystery_bounty_seed` accepts the serving
+  engine's cent-cut inventory or the new engine's whole-chip one and seals it
+  on whole chips by largest remainder (cents under one chip stay in the bounty
+  pool for the champion's residual); `fn_mystery_bounty_reserve` splits a shared
+  chest in whole chips; the engine and the lobby projection cut whole chips.
+- The 14 events already taking registrations keep the split their entrants paid
+  (40% of the entry to the bounty); their descriptions say so.
 
 ### Pick 1 Of 3
 
@@ -70,6 +81,7 @@ the small-field note.
 ## Migrations
 
 `20261022162651` (functions and offers), `20261022162714` (triggers),
-`20261022162733` (events on the board and schedules). The first combined
+`20261022162733` (events on the board and schedules), and the follow-up for half
+of the whole entry and whole-chip chests. The first combined
 attempt timed out twice on `DROP TRIGGER IF EXISTS`, whose ACCESS EXCLUSIVE
 lock queues behind every reader; new triggers need no drop.

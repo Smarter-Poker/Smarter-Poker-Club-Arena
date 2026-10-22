@@ -69,6 +69,13 @@ describe('the mystery bounty ladder before the mystery phase opens', () => {
     expect(small!.tiers.reduce((n, t) => n + t.count * t.amountCents, 0)).toBe(9000);
   });
 
+  it('cuts every chip chest in whole chips, never a fraction', () => {
+    const p = projectMysteryBountyLadder({ ...midweekMystery, bountyPool: '2083.57' });
+    expect(p).not.toBeNull();
+    expect(p!.poolCents % 100).toBe(0);
+    for (const t of p!.tiers) expect(t.amountCents % 100).toBe(0);
+  });
+
   it('keeps a Diamond ladder on whole Diamonds', () => {
     const p = projectMysteryBountyLadder({ ...midweekMystery, bountyPool: '20800.00', unitCents: 100 });
     expect(p).not.toBeNull();

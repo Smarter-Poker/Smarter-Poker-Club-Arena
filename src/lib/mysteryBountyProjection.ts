@@ -116,8 +116,11 @@ export function projectedDrawCount(
 export function projectMysteryBountyLadder(
   input: MysteryBountyProjectionInputs
 ): MysteryBountyProjection | null {
-  const unit = Math.floor(num(input.unitCents));
-  if (!(unit > 0)) return null;
+  const moneyUnit = Math.floor(num(input.unitCents));
+  if (!(moneyUnit > 0)) return null;
+  // Chests are whole chips, never fractions (Dan 2026-10-22), exactly as the
+  // engine and fn_mystery_bounty_seed cut them; a Diamond is already whole.
+  const unit = Math.max(100, moneyUnit);
   // A chests-only event (regular half 0, Dan 2026-10-22) opens its chests at
   // the money whatever the field size; an older event keeps the small-field rule.
   const chestsOnly = input.regularPercent != null && num(input.regularPercent) === 0;

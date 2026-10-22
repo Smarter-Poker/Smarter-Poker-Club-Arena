@@ -238,7 +238,11 @@ CREATE TABLE IF NOT EXISTS public.tournament_bounty_award_offers (
     CHECK (jsonb_typeof(companions) = 'array' AND jsonb_array_length(companions) <= 2)
 );
 ALTER TABLE public.tournament_bounty_award_offers ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.tournament_bounty_award_offers FROM anon, authenticated;
+-- Every read and write goes through the SECURITY DEFINER doors below
+-- (fn_mystery_bounty_pick / fn_mystery_bounty_offer and the award trigger), so
+-- no role is granted the table itself. (Applied as one REVOKE after this file's
+-- first install, which revoked anon and authenticated only.)
+REVOKE ALL ON public.tournament_bounty_award_offers FROM PUBLIC, anon, authenticated, service_role;
 COMMENT ON TABLE public.tournament_bounty_award_offers IS
   'Dan 2026-10-22 pick 1 of 3: the two companion chests offered beside each mystery award (real chests, left available in the pool) and the slot the player picked.';
 

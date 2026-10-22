@@ -7,9 +7,14 @@
  * BOUNTIES ARE MYSTERY BOUNTY PRIZES ONLY" and "CHANGE IT TO THE 50/50 HALF
  * PAYOUT, HALF BOUNTY POOL."
  *
+ * Dan, 11:53 CT: "YOU ALSO NEED TO ACCOUNT FOR THE RAKE, SO RAKE COMES OUT OF
+ * THE TOP 12.5% PAYOUT, 50% GOES INTO THE BOUNTY POOL. MYSTERY BOUNTIES ARE
+ * ALWAYS FULL CHIP AMOUNTS, NEVER FRACTIONS."
+ *
  * Every paid mystery MTT the spawner writes leaves here with:
- *   - half its entry contribution as the bounty (a whole Diamond at the
- *     Diamond Arena), the advertised mystery range scaled with it;
+ *   - half of the WHOLE entry (buy-in plus fee) as the bounty, in whole chips;
+ *     the fee comes out of the prize-pool half; the advertised mystery range
+ *     scales with it;
  *   - 100% of the bounty pool sealed into chests and nothing in a "regular"
  *     half, so no knockout pays before the chests open;
  *   - the chests opening at the money;
@@ -20,21 +25,25 @@
  * other door agree. Pure; returns a new row and never mutates its input.
  */
 
-import { DIAMOND_UNIT_CENTS } from './tournamentUnit.js';
+/** Mystery chests and bounties are whole chips (or whole Diamonds): 100 cents. */
+export const MYSTERY_WHOLE_UNIT_CENTS = 100;
 
 function num(v: unknown): number {
   const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN;
   return Number.isFinite(n) ? n : 0;
 }
 
-/** The description every chests-only mystery event carries. */
-export function mysteryBountyDescription(bountyAmount: number, buyInAmount: number): string {
+/**
+ * The description every chests-only mystery event carries. `entryTotal` is the
+ * whole entry (buy-in plus fee); the database trigger writes the same words.
+ */
+export function mysteryBountyDescription(bountyAmount: number, entryTotal: number): string {
   const bountyPct =
-    buyInAmount > 0 && bountyAmount > 0 ? Math.round((bountyAmount * 100) / buyInAmount) : 50;
+    entryTotal > 0 && bountyAmount > 0 ? Math.round((bountyAmount * 100) / entryTotal) : 50;
   return (
-    `${100 - bountyPct}% Of Each Entry Funds The Prize Pool And ${bountyPct}% Funds The Mystery ` +
-    'Bounty Pool. No Bounties Are Paid Before The Money. Once The Tournament Reaches The Money, ' +
-    'Every Knockout Picks 1 Of 3 Mystery Chests.'
+    `${bountyPct}% Of Each Entry Funds The Mystery Bounty Pool. The Prize Pool Is The Rest, ` +
+    'After The Fee. No Bounties Are Paid Before The Money. Once The Tournament Reaches The ' +
+    'Money, Every Knockout Picks 1 Of 3 Mystery Chests.'
   );
 }
 
@@ -48,22 +57,20 @@ export function isPaidMysteryMttRow(row: Record<string, unknown>): boolean {
 }
 
 /**
- * Half of the entry contribution, floored to the event's grid: a cent for a
- * chip event, a whole Diamond (100 cents) at the Diamond Arena.
+ * Half of the whole entry (buy-in plus fee), floored to a whole chip, and never
+ * more than the buy-in after the fee: the fee comes out of the prize-pool half.
  */
-export function halfEntryBounty(buyInAmount: number, unitCents: number): number {
-  const unit = unitCents > 0 ? Math.floor(unitCents) : 1;
-  const cents = Math.round(buyInAmount * 100);
-  return (Math.floor(cents / 2 / unit) * unit) / 100;
+export function halfEntryBounty(buyInAmount: number, buyInFee: number): number {
+  const totalCents = Math.round((buyInAmount + buyInFee) * 100);
+  const half = Math.floor(totalCents / 2 / MYSTERY_WHOLE_UNIT_CENTS) * MYSTERY_WHOLE_UNIT_CENTS;
+  return Math.min(half, Math.round(buyInAmount * 100)) / 100;
 }
 
-export function withMysteryBountyTerms(
-  row: Record<string, unknown>,
-  opts: { diamonds?: boolean } = {}
-): Record<string, unknown> {
+export function withMysteryBountyTerms(row: Record<string, unknown>): Record<string, unknown> {
   if (!isPaidMysteryMttRow(row)) return row;
   const buyIn = num(row.buy_in_amount);
-  const half = halfEntryBounty(buyIn, opts.diamonds ? DIAMOND_UNIT_CENTS : 1);
+  const fee = num(row.buy_in_fee);
+  const half = halfEntryBounty(buyIn, fee);
   const oldBounty = num(row.bounty_amount);
   const bounty = half > 0 ? half : oldBounty;
   const scale = oldBounty > 0 && bounty > 0 ? bounty / oldBounty : 1;
@@ -77,6 +84,6 @@ export function withMysteryBountyTerms(
     mystery_bounty_regular_pool_percent: 0,
     mystery_bounty_activation: 'at_the_money',
     mystery_bounty_activation_value: null,
-    short_description: mysteryBountyDescription(bounty, buyIn),
+    short_description: mysteryBountyDescription(bounty, buyIn + fee),
   };
 }

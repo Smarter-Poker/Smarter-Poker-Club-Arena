@@ -4577,6 +4577,12 @@ export abstract class TournamentManagerBase {
       );
       return;
     }
+    /* MYSTERY CHESTS ARE WHOLE CHIPS (Dan 2026-10-22: "MYSTERY BOUNTIES ARE
+       ALWAYS FULL CHIP AMOUNTS, NEVER FRACTIONS"). A chip event's money unit is
+       a cent, but its chests are built on whole chips (100 cents); a Diamond
+       event's unit is already a whole Diamond. fn_mystery_bounty_seed floors
+       the pool and checks every chest on the same grid. */
+    const chestUnitCents = Math.max(100, unitCents);
 
     let poolCents = 0;
     try {
@@ -4589,7 +4595,7 @@ export abstract class TournamentManagerBase {
         // the inventory sum; not subtracting it here is what refused every
         // seed this platform has ever attempted. See mysteryPoolCents.
         poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0),
-        unitCents
+        chestUnitCents
       );
     } catch (err) {
       // A bounty pool that is not a whole number of cents means something
@@ -4697,7 +4703,7 @@ export abstract class TournamentManagerBase {
           fresh.mystery_bounty_pool_percent,
           fresh.mystery_bounty_regular_pool_percent,
           poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents,
-          unitCents
+          chestUnitCents
         );
       } catch (err) {
         reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
@@ -4718,7 +4724,7 @@ export abstract class TournamentManagerBase {
           ? DEFAULT_TOP_BOUNTY_PERCENT
           : Number(fresh.mystery_bounty_top_percent);
       const chests = shuffleChests(
-        buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, unitCents)
+        buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, chestUnitCents)
       ).map((c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq }));
 
       const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {

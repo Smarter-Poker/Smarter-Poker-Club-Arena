@@ -41,3 +41,12 @@ Dan, the same day, with three more phone screenshots: "That 50 cents to my left 
 - **Guarded:** the `table-proportions` occupied-ring beat now fails if any bet or the dealer button reads as another player's at 375px and wider. Run against the previous placer, it fails on five players' bets.
 
 Verified headless at 375x667, 375x812, 390x844, 393x852 and 430x932 with real insets, six and nine handed, with the button on every seat: every bet and the button are nearer their own player, with no overlaps. The one exception is the synthetic worst case (three all-ins with bounties on one side of a nine-handed table), where one bet still lands nearer the folded player below it, because the only free felt in front of its owner is the printed table name, which bets may not cover. At 320x568 (first-generation SE) the felt is too small to promise ownership, but no two bets share a spot.
+
+## Follow Up: Shown Hands Are Clearly Displayed
+
+Dan, the same day: "Make sure that when a player is all in and or the cards are shown down, that they are clearly displayed. A player said they could not see the players cards they lost to in PLO6."
+
+- **Root cause:** on a phone, a villain's tabled row was sized to fit every card side by side inside the width of that player's name plate. A PLO6 hand came out as six cards about 12px wide, and even a two-card hand was 14 to 20px wide (top seats 14px).
+- **Fix (`SeatSlot.css`, phones):** every tabled card is one readable size at every seat: 8.8 percent of the table's width, 27 to 31px on current phones, at least 24px. A hand of four or more cards overlaps like a held hand, half a card apart. Each card is stacked over the one to its left, so every rank and suit corner stays in view. On the 320px first-generation SE the cards are 8 percent of the table's width.
+- **Placement (`useProtectedCardLayout`):** on phones the tabled hands are placed before the wagers and the dealer button, which are then placed around them. A hand may cover its own player's art, action tag and chips, but never their plate. If a long hand still cannot stay at its own player, it closes up to 0.4 and then 0.32 of a card before it is allowed to move away. Every hand stays nearer its own player than any other.
+- **Guarded:** the occupied-ring beat now also runs a PLO6 showdown on six- and nine-handed tables at 375px and up. It fails if any tabled card is under 22px wide, any card's corner is hidden, two tabled hands overlap, or a hand stands nearer another player.

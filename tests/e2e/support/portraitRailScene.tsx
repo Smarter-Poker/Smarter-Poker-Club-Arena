@@ -43,6 +43,24 @@ export function Review() {
   useProtectedCardLayout(ref, JSON.stringify(size));
   const jackpot = document.documentElement.dataset.jackpot || 'mini';
   const revealed = document.documentElement.dataset.revealed !== 'false';
+  // A tabled PLO6 hand at every seat (Dan 2026-10-22: a player could not see
+  // the PLO6 hand he lost to).
+  const villainCards = Number(document.documentElement.dataset.villainCards || 2);
+  const villainHand = (
+    villainCards > 2
+      ? [
+          { rank: 'A', suit: 'hearts' },
+          { rank: 'A', suit: 'diamonds' },
+          { rank: 'Q', suit: 'clubs' },
+          { rank: 'J', suit: 'hearts' },
+          { rank: '9', suit: 'diamonds' },
+          { rank: '8', suit: 'clubs' },
+        ].slice(0, villainCards)
+      : [
+          { rank: 'K', suit: 'spades' },
+          { rank: '4', suit: 'spades' },
+        ]
+  ) as Card[];
   const width = innerWidth;
   const markerSize = { ...size, railBets: width <= 480 };
   const seats = seatLayoutFor(n).map((p) =>
@@ -198,7 +216,7 @@ export function Review() {
                           avatar: 'https://smarter.poker/avatars/table/vip_wolf@2x.webp',
                           stack: 93.23,
                           status: 'active',
-                          holeCards: cards.slice(0, i === 0 ? heroCards : 2),
+                          holeCards: i === 0 ? cards.slice(0, heroCards) : villainHand,
                           showCards: i === 0 || revealed,
                           isHero: i === 0,
                         }}

@@ -25,11 +25,152 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         for (const name of ['--bet-offset-x', '--bet-offset-y', '--collect-dx', '--collect-dy'])
           bet.style.removeProperty(name);
       });
+    /* The tabled hands. On a phone they are placed BEFORE the wagers and the
+       dealer button (Dan 2026-10-22: a shown hand must be clearly displayed at
+       its own player), which are then placed round them; elsewhere, after. */
+    const placeRows = (withMarkers: boolean) => {
+      const rows = Array.from(scaler.querySelectorAll<HTMLElement>('.seat__cards--revealed'));
+      const scale = scaler.getBoundingClientRect().width / scaler.offsetWidth || 1;
+      const visibleBox = (element: Element): CardBox | null => {
+        const box = element.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 ? box : null;
+      };
+      const protectedBoxes = Array.from(
+        page.querySelectorAll(
+          (withMarkers ? '.seat__bet-chips, ' : '') +
+          '.community-area, .table-brand, .seat__avatar-img, .pot-area, .pot-display, .seat__info, .seat__strength, .seat__action, .seat__bounty, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-mini-plate, .cch-column, .chat-collapsed'
+        )
+      )
+        .map(visibleBox)
+        .filter((box): box is CardBox => box !== null);
+      const dealer = withMarkers ? scaler.querySelector<HTMLElement>('.dealer-button') : null;
+      if (dealer) {
+        const settled = dealerSettledBox(scaler, dealer);
+        if (settled) protectedBoxes.push(settled);
+      }
+      const bounds = page.getBoundingClientRect();
+      for (const row of rows) {
+        // Hero containers span the reserved bottom strip; only the painted
+        // cards are obstacles, not that transparent flex alignment space.
+        const cards = Array.from(row.querySelectorAll('.seat__card'))
+          .map(visibleBox)
+          .filter((box): box is CardBox => box !== null);
+        if (!cards.length) continue;
+        const left = Math.min(...cards.map((card) => card.left));
+        const top = Math.min(...cards.map((card) => card.top));
+        const box = {
+          left,
+          top,
+          width: Math.max(...cards.map((card) => card.left + card.width)) - left,
+          height: Math.max(...cards.map((card) => card.top + card.height)) - top,
+        };
+        // Dan 2026-10-22: a tabled hand must be clearly shown, and shown at
+        // its own player. A villain's tabled row is drawn over that player's
+        // own art (the bust, the action tag, the bounty and position chips),
+        // never its plate, so a full-size PLO5 or PLO6 row stays beside its
+        // owner instead of being pushed across the table to the first empty
+        // patch of felt.
+        const seat = row.classList.contains('seat__cards--opponent') ? row.closest('.seat') : null;
+        const own = seat
+          ? Array.from(
+              seat.querySelectorAll(
+                '.seat__avatar-img, .seat__action, .seat__bounty, .seat__position-badge'
+              )
+            )
+              .map(visibleBox)
+              .filter((mine): mine is CardBox => mine !== null)
+          : [];
+        const others = own.length
+          ? protectedBoxes.filter(
+              (other) =>
+                !own.some(
+                  (mine) =>
+                    mine.left === other.left &&
+                    mine.top === other.top &&
+                    mine.width === other.width &&
+                    mine.height === other.height
+                )
+            )
+          : protectedBoxes;
+        let natural = box;
+        let next = placeProtectedCardRow(box, others, bounds);
+        // A long tabled row (four to six cards) that cannot stay at its own
+        // player at full spacing closes up, a step at a time, before it is
+        // allowed to leave: every card keeps its size and its rank and suit
+        // corner, the row just overlaps more. Widths are computed from the
+        // spacing rather than measured, because the cards glide to a new
+        // spacing over 0.2s.
+        const count = cards.length;
+        if (seat && count >= 4) {
+          const cardW = Math.max(...cards.map((card) => card.width));
+          const inline = parseFloat(row.style.getPropertyValue('--vh-step-f'));
+          if (!Number.isFinite(inline)) {
+            row.dataset.baseStep = getComputedStyle(row).getPropertyValue('--vh-step-f').trim();
+          }
+          const base = parseFloat(row.dataset.baseStep ?? '') || 0.5;
+          const current = Number.isFinite(inline) ? inline : base;
+          const anchor = row.closest('.seat-wrapper--top')
+            ? 'centre'
+            : seat.classList.contains('seat--cards-right')
+              ? 'right'
+              : 'left';
+          const shown = box;
+          const at = (step: number): CardBox => {
+            const width = cardW * (1 + (count - 1) * step);
+            const left =
+              anchor === 'left'
+                ? shown.left
+                : anchor === 'right'
+                  ? shown.left + shown.width - width
+                  : shown.left + (shown.width - width) / 2;
+            return { left, top: shown.top, width, height: shown.height };
+          };
+          const far = (from: CardBox, to: CardBox | null) =>
+            !to || Math.hypot(to.left - from.left, to.top - from.top) > cardW * 1.5;
+          let chosen = base;
+          natural = at(base);
+          next = placeProtectedCardRow(natural, others, bounds);
+          for (const step of [0.4, 0.32]) {
+            if (!far(natural, next) || step >= base) break;
+            const tight = at(step);
+            const placed = placeProtectedCardRow(tight, others, bounds);
+            if (placed && (far(natural, next) || !far(tight, placed))) {
+              const better =
+                !next ||
+                Math.hypot(placed.left - tight.left, placed.top - tight.top) <
+                  Math.hypot(next.left - natural.left, next.top - natural.top);
+              if (better) {
+                chosen = step;
+                natural = tight;
+                next = placed;
+              }
+            }
+          }
+          if (chosen !== current) {
+            if (chosen === base) row.style.removeProperty('--vh-step-f');
+            else row.style.setProperty('--vh-step-f', String(chosen));
+          }
+        }
+        if (next) {
+          // translate is independent of the deal/flip transform and preserves animations.
+          row.style.translate = `${(next.left - natural.left) / scale}px ${(next.top - natural.top) / scale}px`;
+          protectedBoxes.push(next);
+        }
+      }
+    };
     const place = () => {
       resetWagers();
       scaler.querySelector<HTMLElement>('.dealer-button')?.style.removeProperty('translate');
       const rows = Array.from(scaler.querySelectorAll<HTMLElement>('.seat__cards--revealed'));
       rows.forEach((row) => row.style.removeProperty('translate'));
+      // A closed-up spacing belongs to one tabled hand; the same element holds
+      // the next hand face down.
+      scaler
+        .querySelectorAll<HTMLElement>('.seat__cards:not(.seat__cards--revealed)')
+        .forEach((cluster) => {
+          cluster.style.removeProperty('--vh-step-f');
+          delete cluster.dataset.baseStep;
+        });
       const scale = scaler.getBoundingClientRect().width / scaler.offsetWidth || 1;
       topPods().forEach((pod) => {
         pod.style.removeProperty('translate');
@@ -69,7 +210,9 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         const box = element.getBoundingClientRect();
         return box.width > 0 && box.height > 0 ? box : null;
       };
-      if (window.innerWidth <= 480 && window.innerHeight > window.innerWidth) {
+      const phoneMarkers = window.innerWidth <= 480 && window.innerHeight > window.innerWidth;
+      if (phoneMarkers) {
+        placeRows(false);
         const canvas = scaler.getBoundingClientRect();
         const size = { w: canvas.width, h: canvas.height };
         const inset = (chipRadiusWidthPct(size) * canvas.width) / 100 + 3;
@@ -135,7 +278,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         }
         const obstacles = Array.from(
           page.querySelectorAll(
-            '.community-area, .table-brand, .pot-display, .pot-display__pile, .seat__avatar-img, .seat__info, .seat__action, .seat__bounty, .seat__position-badge, .seat__cards--hero .seat__card, .bbj-widget, .bbj-mini-plate'
+            '.community-area, .table-brand, .pot-display, .pot-display__pile, .seat__avatar-img, .seat__info, .seat__action, .seat__bounty, .seat__position-badge, .seat__cards--hero .seat__card, .seat__cards--revealed .seat__card, .bbj-widget, .bbj-mini-plate'
           )
         )
           .map(visibleBox)
@@ -323,41 +466,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         // move, so it takes a spot beside its own player that the wagers left.
         placeDealerButton(scaler, canvas, scale, points, obstacles, hardObstacles, placedWagers);
       }
-      const protectedBoxes = Array.from(
-        page.querySelectorAll(
-          '.community-area, .table-brand, .seat__avatar-img, .pot-area, .pot-display, .seat__info, .seat__bet-chips, .seat__strength, .seat__action, .seat__bounty, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-mini-plate, .cch-column, .chat-collapsed'
-        )
-      )
-        .map(visibleBox)
-        .filter((box): box is CardBox => box !== null);
-      const dealer = scaler.querySelector<HTMLElement>('.dealer-button');
-      if (dealer) {
-        const settled = dealerSettledBox(scaler, dealer);
-        if (settled) protectedBoxes.push(settled);
-      }
-      const bounds = page.getBoundingClientRect();
-      for (const row of rows) {
-        // Hero containers span the reserved bottom strip; only the painted
-        // cards are obstacles, not that transparent flex alignment space.
-        const cards = Array.from(row.querySelectorAll('.seat__card'))
-          .map(visibleBox)
-          .filter((box): box is CardBox => box !== null);
-        if (!cards.length) continue;
-        const left = Math.min(...cards.map((card) => card.left));
-        const top = Math.min(...cards.map((card) => card.top));
-        const box = {
-          left,
-          top,
-          width: Math.max(...cards.map((card) => card.left + card.width)) - left,
-          height: Math.max(...cards.map((card) => card.top + card.height)) - top,
-        };
-        const next = placeProtectedCardRow(box, protectedBoxes, bounds);
-        if (next) {
-          // translate is independent of the deal/flip transform and preserves animations.
-          row.style.translate = `${(next.left - box.left) / scale}px ${(next.top - box.top) / scale}px`;
-          protectedBoxes.push(next);
-        }
-      }
+      if (!phoneMarkers) placeRows(true);
     };
     place();
     let frame: number | null = null;

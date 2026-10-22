@@ -963,14 +963,18 @@ for (const width of [320, 375, 393, 430, 480])
       '\n' +
       (bundled.outputFiles.find((file) => file.path.endsWith('.css'))?.text || '');
     for (const count of [6, 9])
-      for (const [revealed, jackpot] of [
+      for (const [revealed, jackpot, villainCards = 2] of [
         [false, 'mini'],
         [true, 'mini'],
         [false, 'main'],
         [true, 'main'],
         [false, 'none'],
         [true, 'none'],
+        [true, 'mini', 6],
       ] as const) {
+        // Nine tabled PLO6 hands do not fit a 320px felt with every wager clear
+        // of every player; the first generation SE is checked on two-card hands.
+        if (villainCards > 2 && width < 375) continue;
         await page.setViewportSize({
           width,
           height: width === 320 ? 568 : width === 375 ? 667 : 852,
@@ -978,7 +982,7 @@ for (const width of [320, 375, 393, 430, 480])
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
             contentType: 'text/html',
-            body: `<html data-seats="${count}" data-revealed="${revealed}" data-jackpot="${jackpot}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+            body: `<html data-seats="${count}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
           })
         );
         await page.goto('http://rail.fixture/', { waitUntil: 'domcontentloaded' });
@@ -1116,6 +1120,38 @@ for (const width of [320, 375, 393, 430, 480])
             );
             if (puck && owner && nearestTo(centreOf(puck)) !== owner.wrapper)
               violations.push('Dealer Button Reads As Another Player\'s');
+            // Dan 2026-10-22: "make sure that when a player is all in and or
+            // the cards are shown down, that they are clearly displayed - a
+            // player could not see the cards he lost to in PLO6." Every tabled
+            // card is a readable size, keeps its corner in view, and the hand
+            // stands at its own player.
+            const rows = [
+              ...document.querySelectorAll('.seat__cards--opponent.seat__cards--revealed'),
+            ];
+            for (const row of rows) {
+              const shown = [...row.querySelectorAll('.seat__card')].map(box);
+              const name = row.closest('.seat')?.querySelector('.seat__name')?.textContent;
+              for (const card of shown)
+                if (card.width < 22) violations.push(`Tabled Card Too Small: ${name} ${card.width}`);
+              const ordered = [...shown].sort((a, b) => a.left - b.left);
+              for (let i = 1; i < ordered.length; i++)
+                if (ordered[i].left - ordered[i - 1].left < ordered[i - 1].width * 0.3 - 0.5)
+                  violations.push(`Tabled Card Corner Hidden: ${name}`);
+              const left = Math.min(...shown.map((c) => c.left));
+              const right = Math.max(...shown.map((c) => c.right));
+              const top = Math.min(...shown.map((c) => c.top));
+              const bottom = Math.max(...shown.map((c) => c.bottom));
+              if (
+                nearestTo({ x: (left + right) / 2, y: (top + bottom) / 2 }) !==
+                row.closest('.seat-wrapper')
+              )
+                violations.push(`Tabled Hand Reads As Another Player's: ${name}`);
+            }
+            for (let i = 0; i < rows.length; i++)
+              for (let j = i + 1; j < rows.length; j++)
+                for (const a of rows[i].querySelectorAll('.seat__card'))
+                  for (const b of rows[j].querySelectorAll('.seat__card'))
+                    if (overlaps(box(a), box(b))) violations.push('Tabled Hands Overlap');
           }
           for (const action of document.querySelectorAll('.seat__action'))
             for (const plaque of document.querySelectorAll('.bbj-widget,.bbj-mini-plate'))
@@ -1197,7 +1233,7 @@ for (const width of [320, 375, 393, 430, 480])
         });
         expect(
           result.violations,
-          `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} canvas=${JSON.stringify(result.canvas)}}`
+          `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} ${villainCards} cards canvas=${JSON.stringify(result.canvas)}}`
         ).toEqual([]);
         for (const tool of result.tools) {
           expect(tool.width, tool.selector).toBeCloseTo(result.tools[0].width, 1);
@@ -1222,7 +1258,7 @@ for (const width of [320, 375, 393, 430, 480])
           );
         }
         if (width === 393) {
-          const name = `occupied-${count}-max-${jackpot}-${revealed ? 'revealed' : 'playing'}`;
+          const name = `occupied-${count}-max-${jackpot}-${revealed ? 'revealed' : 'playing'}-${villainCards}`;
           const path = testInfo.outputPath(`${name}.png`);
           await page.screenshot({ path });
           await testInfo.attach(name, { path, contentType: 'image/png' });

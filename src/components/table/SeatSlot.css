@@ -4704,6 +4704,37 @@
   --vh-card-h: calc(var(--vh-card-w) * 1.4);
 }
 
+/* Dan 2026-10-22: "make sure that when a player is all in and or the cards
+   are shown down, that they are clearly displayed - a player said they could
+   not see the players cards they lost to in PLO6." The rule above fits every
+   tabled card SIDE BY SIDE inside the plate's width, so on a phone a PLO6
+   hand was six cards about 12px wide, and even a two-card hand was 14 to 20px:
+   unreadable. On a phone every tabled card is now one readable size (a fixed
+   share of the table's width, the same at every seat), and a hand of four or
+   more OVERLAPS like a held hand, stepped half a card apart, and each card is stacked over the one to
+   its left, so every card's rank and suit corner stays in view. A PLO6 row is
+   3.5 cards wide. The painted-layout pass (useProtectedCardLayout) still moves
+   the row clear of the board, the pot and every player. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .seat .seat__cards--opponent.seat__cards--revealed {
+    --vh-card-w: max(24px, calc(var(--table-w, 320px) * 0.088));
+    --vh-card-h: calc(var(--vh-card-w) * 1.4);
+  }
+  .seat .seat__cards--opponent.seat__cards--revealed:has(> :nth-child(4)) {
+    --vh-step-f: 0.5;
+  }
+  .seat .seat__cards--opponent.seat__cards--revealed:has(> :nth-child(4)) > .seat__card {
+    z-index: calc(1 + var(--vh-i, 0));
+  }
+}
+/* The first generation SE (320px): six tabled PLO6 hands at the readable
+   size leave no felt for the wagers, so its cards are a little smaller. */
+@media (max-width: 340px) and (orientation: portrait) {
+  .seat .seat__cards--opponent.seat__cards--revealed {
+    --vh-card-w: calc(var(--table-w, 262px) * 0.08);
+  }
+}
+
 /* The top pod clears Mini BBJ and spends less of the centre pot lane. */
 .seat-wrapper--top .seat {
   --seat-plate-min-width: clamp(62px, calc(var(--table-w, 360px) * 0.2), 96px);

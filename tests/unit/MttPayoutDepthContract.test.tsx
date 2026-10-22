@@ -64,6 +64,7 @@ function Form({ initial = 'payout3' }: { initial?: string }) {
 
 describe('manual MTT paid depth reaches the database creation contract', () => {
   it.each([
+    ['payout2', 12.5],
     ['payout1', 10],
     ['payout3', 15],
     ['payout20', 20],
@@ -92,17 +93,17 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
     ).toThrow('Choose A Sit And Go Payout Structure');
   });
   it.each([
+    ['payout2', 12.5, 'Top 12.5% Of Field (Standard)'],
     ['payout1', 10, 'Top 10% Of Field'],
-    ['payout3', 15, 'Top 15% Of Field (Standard)'],
+    ['payout3', 15, 'Top 15% Of Field'],
     ['payout20', 20, 'Top 20% Of Field'],
   ] as const)(
-    'selecting %s persists %i percent through the actual mapper and serializer',
+    'selecting %s persists %s percent through the actual mapper and serializer',
     (choice, percent, label) => {
-      /* 2026-09-20, owner requirement: a NEW MTT pays 10 to 15 percent of the
-         field, so 20 percent is offered only to an event already saved with it.
-         The 20 percent row therefore starts from a saved 20; the engine
-         contract it pins (payoutPercent 20 reaches the payload) is unchanged. */
-      render(<Form initial={choice === 'payout20' ? 'payout20' : undefined} />);
+      /* Dan, 2026-10-21: every MTT pays the top 12.5% by default and a
+         standalone club may choose any depth, so every depth is offered to a
+         new event (the 2026-09-20 10-15% ceiling is superseded). */
+      render(<Form />);
       expect(screen.getByRole('option', { name: label })).toBeTruthy();
       fireEvent.change(screen.getByRole('combobox'), { target: { value: choice } });
       fireEvent.click(screen.getByRole('button'));
@@ -113,7 +114,7 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
     }
   );
 
-  it.each(['payout2', 'winner_take_all', '', 'standard', 'retired-preset'])(
+  it.each(['winner_take_all', '', 'standard', 'retired-preset'])(
     'refuses unsupported restored MTT choice %s before creating a misleading event',
     (payoutStructure) => {
       const input = Object.freeze({ ...draft, payoutStructure });
@@ -165,6 +166,7 @@ describe('manual MTT paid depth reaches the database creation contract', () => {
   });
 
   it.each([
+    ['payout2', 12.5],
     ['payout1', 10],
     ['payout3', 15],
     ['payout20', 20],

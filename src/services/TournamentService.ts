@@ -568,7 +568,7 @@ export interface TournamentConfig {
   blindStructure: BlindLevel[];
   payoutStructure: PayoutStructure[];
   /** Share of actual entrants paid at entry close; the database owns the ladder. */
-  payoutPercent?: 10 | 15 | 20;
+  payoutPercent?: number;
   lateRegistrationLevels: number;
   startTime?: Date;
 

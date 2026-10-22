@@ -110,9 +110,9 @@ afterEach(() => {
 });
 
 describe('MTT creation publishes a selected paid field', () => {
-  // Owner requirement 2026-09-20: paid places are 10 to 15 percent of the final
-  // field, so this creator no longer offers 20 (it was it.each([10, 15, 20])).
-  it('offers 10 and 15 percent only for a new event', () => {
+  // Dan 2026-10-21: every MTT pays the top 12.5% by default; a standalone club
+  // may choose any depth (supersedes the 2026-09-20 10-15% ceiling).
+  it('defaults to 12.5 percent and offers every supported depth', () => {
     render(
       <CreateTournamentModal
         clubId="synthetic-club"
@@ -122,11 +122,16 @@ describe('MTT creation publishes a selected paid field', () => {
       />
     );
     const options = within(screen.getByLabelText('Field Paid')).getAllByRole('option');
-    expect(options.map((option) => (option as HTMLOptionElement).value)).toEqual(['10', '15']);
-    expect(screen.queryByRole('option', { name: /20 Percent/ })).toBeNull();
+    expect(options.map((option) => (option as HTMLOptionElement).value)).toEqual([
+      '12.5',
+      '10',
+      '15',
+      '20',
+    ]);
+    expect((screen.getByLabelText('Field Paid') as HTMLSelectElement).value).toBe('12.5');
   });
 
-  it.each([10, 15])('submits %i percent with a bounded provisional ladder', async (depth) => {
+  it.each([12.5, 10, 15, 20])('submits %s percent with a bounded provisional ladder', async (depth) => {
     const { container } = render(
       <CreateTournamentModal
         clubId="synthetic-club"

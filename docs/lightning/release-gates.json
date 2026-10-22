@@ -337,7 +337,8 @@
       "qualificationFiles": [
         "server/src/lightning/LightningPhase12LoadChaos.test.ts",
         "server/src/lightning/LightningLatencyLedger.ts",
-        "scripts/dev/test-lightning-phase12-operator-alerts.sh"
+        "scripts/dev/test-lightning-phase12-operator-alerts.sh",
+        "scripts/ops/lightning-latency-qualification.mjs"
       ]
     },
     {
@@ -346,7 +347,8 @@
       "qualificationFiles": [
         "server/src/lightning/LightningPhase12LoadChaos.test.ts",
         "server/src/lightning/LightningLatencyLedger.ts",
-        "scripts/dev/test-lightning-phase12-operator-alerts.sh"
+        "scripts/dev/test-lightning-phase12-operator-alerts.sh",
+        "scripts/ops/lightning-latency-qualification.mjs"
       ]
     },
     {

@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verify Evidence Semantics Before Collection
-        run: node --test scripts/ops/lightning-pilot-qualification.test.mjs
+        run: node --test scripts/ops/lightning-pilot-qualification.test.mjs scripts/ops/lightning-latency-qualification.test.mjs
       - run: npm ci --ignore-scripts
       - name: Collect Read-Only Observations; No Launch Certificate Or Activation
         env:

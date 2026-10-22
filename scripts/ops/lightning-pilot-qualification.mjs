@@ -2,6 +2,7 @@
  * funds, synthesizes play, installs, publishes, or issues a launch certificate. */
 import { writeFileSync } from 'node:fs';
 import { collectReplaySample } from './lightning-pilot-replay-sample.mjs';
+import { qualifyClusterLatency } from './lightning-latency-qualification.mjs';
 import { pathToFileURL } from 'node:url';
 import {
   LIGHTNING_PILOT_TABLE_SIZE,
@@ -624,6 +625,15 @@ export async function collectQualification({
           },
           object
         );
+        // R19: the production-telemetry verdict over the engine's own closed
+        // windows. The browser latency witness is a supplementary sample only.
+        target.latencyQualification = await qualifyClusterLatency({
+          admin,
+          clusterId,
+          target: target.templateName,
+          queryTime: observedAt,
+          bindTarget: false,
+        });
         const tables = await observe(
           'tables:nondeleted_pilot_scope',
           () =>
@@ -730,6 +740,10 @@ export async function collectQualification({
       if (t.configurationAuditEvents?.status !== 'known')
         blockers.push('CONFIGURATION_AUDIT_UNKNOWN');
       if (t.telemetry?.status !== 'known') blockers.push('TELEMETRY_EVIDENCE_UNKNOWN');
+      const latency = t.latencyQualification?.verdict;
+      if (latency === 'FAIL') blockers.push('R19_LATENCY_CEILING_EXCEEDED');
+      else if (latency === 'INSUFFICIENT') blockers.push('R19_LATENCY_EVIDENCE_INSUFFICIENT');
+      else if (latency !== 'PASS') blockers.push('R19_LATENCY_EVIDENCE_UNKNOWN');
       const a = t.databaseAccess;
       if (a?.tables?.status !== 'known') blockers.push('PRIVATE_TABLE_SCOPE_UNKNOWN');
       else if (a.tables.data.length === 0) blockers.push('PRIVATE_PILOT_TABLES_NOT_ESTABLISHED');

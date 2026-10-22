@@ -84,7 +84,7 @@ The same pilot Cluster, now forming real hands with the live SQL matcher (m1), i
 **Exit Criteria (Required For Stage 3)**
 
 - At least 5,000 actual completed Lightning hands on the pilot Cluster with: zero `LIGHTNING_*_MOVED_MONEY`, zero unexplained freeze, zero orphan reservation on the dashboard, zero open `lightning_alerts` page older than its resolution, every settled hand's replay check passing (`fn_lightning_operator_hand_replay`).
-- Actual hand-latency windows cover every configured leg with nonzero samples; p95 stays under every ceiling over the last `alert_latency_windows` windows during the tested workloads. An absent leg is missing evidence, never a zero or a pass.
+- Actual hand-latency windows cover every configured leg with nonzero samples; p95 stays under every ceiling over the last `alert_latency_windows` windows during the tested workloads. An absent leg is missing evidence, never a zero or a pass. The verdict of record is the read-only `Lightning Latency Qualification` workflow (`scripts/ops/lightning-latency-qualification.mjs`): per leg, the most recent `alert_latency_windows` consecutive closed windows each with at least `alert_latency_min_samples` samples and p95 under the ceiling, with no later measured breach; PASS on all eight legs is required.
 - No high-severity integrity signal left open.
 - Readiness `go`.
 

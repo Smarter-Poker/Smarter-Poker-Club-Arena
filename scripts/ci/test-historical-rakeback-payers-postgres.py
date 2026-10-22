@@ -153,6 +153,21 @@ try:
   for sig,n in zip(signatures,[2,1]):
    repaired=sql("SELECT pg_get_functiondef('"+sig+"'::regprocedure)")
    assert repaired.count(replacement)==n and repaired.replace(replacement,old)==original[sig],sig
+  # 20261022025039 reads the same foreign-certificate predicate once as a set.
+  # Every refusal case and the zero close below run on the set form.
+  set_candidate=next((root/'supabase/migrations').glob('20261022025039_*')).read_text()
+  scoped={sig:sql("SELECT pg_get_functiondef('"+sig+"'::regprocedure)")for sig in signatures}
+  sql(set_candidate)
+  set_old=re.search(r'old text:=\$old\$(.*?)\$old\$;',set_candidate,re.S).group(1)
+  set_new=re.search(r'replacement text:=\$new\$(.*?)\$new\$;',set_candidate,re.S).group(1)
+  assert set_old==replacement
+  for sig,n in zip(signatures,[2,1]):
+   repaired=sql("SELECT pg_get_functiondef('"+sig+"'::regprocedure)")
+   assert repaired.count(set_new)==n and repaired.replace(set_new,set_old)==scoped[sig],sig
+   assert 'accounting_payable_earning_sources all_foreign' not in repaired and 'own_source' not in repaired,sig
+  set_postimages={sig:sql("SELECT md5(pg_get_functiondef('"+sig+"'::regprocedure))")for sig in signatures}
+  for m in re.findall(r"^-- @live-proof: (.*)$",set_candidate,re.M):assert sql('SELECT '+m)=='t',m
+  sql(set_candidate,'already exists')
   def no_money():
    assert sql('SELECT count(*)FROM rakeback_period_payouts')=='0'
    assert sql('SELECT count(*)FROM chip_ledger')=='0'

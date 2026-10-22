@@ -29,6 +29,38 @@ import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 import { resolveCosmetic } from '../cosmetics/avatarCosmetics';
 
+/**
+ * A header read that never reached the server: the phone dropped its radio, the
+ * tab was frozen in the background, or the read was aborted on navigation.
+ * supabase-js and fetch surface these as "TypeError: Failed to fetch" (Chrome),
+ * "Load failed" (Safari), "NetworkError when attempting to fetch resource"
+ * (Firefox) or an AbortError, with no PostgREST code. Nothing is wrong with the
+ * header: the cached badge stays on screen and the next visibility/online read
+ * refreshes it. On 2026-10-21 three Android players on flaky networks filed
+ * ~1,100 of these (avatar, notification and message reads together), a third of
+ * the day's client errors. Real refusals (a 42501, a missing grant) still carry
+ * a code and are still reported.
+ */
+export function isHeaderTransportFailure(error: unknown): boolean {
+  try {
+    if (!error || typeof error !== 'object') return false;
+    const e = error as { code?: unknown; name?: unknown; message?: unknown };
+    if (typeof e.code === 'string' && e.code !== '' && e.code !== '20') return false;
+    if (e.name === 'AbortError') return true;
+    const message = typeof e.message === 'string' ? e.message : '';
+    return /failed to fetch|load failed|networkerror when attempting|network connection was lost|fetch is aborted|signal is aborted/i.test(
+      message
+    );
+  } catch {
+    return false;
+  }
+}
+
+function reportHeaderError(error: unknown, context: string): void {
+  if (isHeaderTransportFailure(error)) return;
+  reportError(error, context);
+}
+
 interface HeaderDataState {
   // Data
   /** Resolved portrait shown by the global header. */
@@ -202,7 +234,7 @@ export async function fetchMessengerUnreadCount(): Promise<number | null> {
     const json = await res.json();
     return json?.success && typeof json.unreadMessages === 'number' ? json.unreadMessages : null;
   } catch (error) {
-    reportError(error, 'useHeaderDataStore.messenger_unread_fetch');
+    reportHeaderError(error, 'useHeaderDataStore.messenger_unread_fetch');
     return null;
   }
 }
@@ -413,7 +445,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         get().setCosmetics(data.equipped_frame ?? null, data.equipped_aura ?? null);
       } catch (error) {
         if (get().refreshAppearance === refreshAppearance)
-          reportError(error, 'useHeaderDataStore.appearance_refresh');
+          reportHeaderError(error, 'useHeaderDataStore.appearance_refresh');
       } finally {
         clearTimeout(deadline);
         appearanceReading = false;
@@ -467,10 +499,10 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         // Surface each failure on its own; a broken avatar must not look like a
         // user who simply has none.
         if (profileResult.error) {
-          reportError(profileResult.error, 'useHeaderDataStore.avatar_fetch');
+          reportHeaderError(profileResult.error, 'useHeaderDataStore.avatar_fetch');
         }
         if (notifResult.error) {
-          reportError(notifResult.error, 'useHeaderDataStore.notification_count_fetch');
+          reportHeaderError(notifResult.error, 'useHeaderDataStore.notification_count_fetch');
         }
 
         const notifCount = notifResult.count || 0;
@@ -497,7 +529,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: notifCount });
         masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId, count: msgCount });
       } catch (e) {
-        reportError(e, 'useHeaderDataStore.Initial_load_failed');
+        reportHeaderError(e, 'useHeaderDataStore.Initial_load_failed');
         // Retry once after 2s — transient network failures are common on mobile
         setTimeout(async () => {
           if (get()._userId !== userId || get().refreshAppearance !== refreshAppearance) return; // User switched — abort retry
@@ -519,9 +551,9 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
               fetchMessengerUnreadCount(),
             ]);
             if (get()._userId !== userId || get().refreshAppearance !== refreshAppearance) return;
-            if (pR.error) reportError(pR.error, 'useHeaderDataStore.avatar_fetch_retry');
+            if (pR.error) reportHeaderError(pR.error, 'useHeaderDataStore.avatar_fetch_retry');
             if (nR.error)
-              reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
+              reportHeaderError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
             if (
               !pR.error &&
               pendingPlayerAppearance.size === 0 &&

@@ -43,3 +43,19 @@ a silence inside the persisted `break_started_at` / `break_ends_at` window as
 an authoritative hold (reselecting another board within the same deadline),
 with the same before-break and after-break silence limits as the add-on hold.
 Pinned by `tests/unit/synchronizedBreakHold.test.ts`.
+
+## Follow-Up: Client Browser Lane Fixtures (2026-10-22)
+
+Post-deploy runs 39694814807 and 39699204267 failed the isolated-identity
+steps before any page loaded:
+
+- **Agent removal timed out.** `rake_attributions.agent_id` (ON DELETE SET
+  NULL) had no index, so deleting the certification agent row seq-scanned
+  9.2M rows and hit the 8s service timeout (00:47:26Z). The agent boundary
+  step failed, the template staff fixture was skipped (table management and
+  club news then had no fixture) and the account could not be deleted.
+  Migration `20261022010024` adds a concurrent partial index on non-null
+  `agent_id`; the same delete serves a club removing an agent.
+- **Cashier canary drift.** `20261021172828` replaced
+  `fn_club_cashier_members(uuid)`; main already accepts the installed successor
+  fingerprint, so no change was needed here.

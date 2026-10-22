@@ -54,8 +54,10 @@ import { SpadeConsole } from '../console/SpadeConsole';
 import { confirmDialog } from '../common/confirmDialog';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import {
+  MTT_DEFAULT_PAYOUT_DEPTH,
   MTT_PAYOUT_DEPTH_CHOICES,
   provisionalMttPayoutStructure,
+  type MttPayoutDepth,
 } from '../../../server/src/tournament/mttPayoutDepth';
 import {
   MTT_CREATION_PROFILES,
@@ -106,12 +108,12 @@ type MttPrizeStyle = 'regular' | 'bounty' | 'progressive_bounty' | 'mystery_boun
 type Recurrence = 'none' | 'daily' | 'weekly' | 'monthly';
 const EVERY_DAY_OF_WEEK = [0, 1, 2, 3, 4, 5, 6];
 const DAYS_OF_MONTH = Array.from({ length: 31 }, (_, index) => index + 1);
-/* PAID PLACES ARE 10 TO 15 PERCENT OF THE FINAL FIELD (owner requirement,
-   2026-09-20). The depths come from the database's own contract, capped at 15:
-   the contract still accepts 20 for events that already carry it, but this
-   creator only ever makes a new event, so it no longer offers it. */
-const CREATOR_PAID_FIELD_PERCENTS = MTT_PAYOUT_DEPTH_CHOICES.map((choice) => choice.percent).filter(
-  (percent): percent is 10 | 15 => percent <= 15
+/* EVERY MTT PAYS THE TOP 12.5 PERCENT OF THE FIELD BY DEFAULT (Dan,
+   2026-10-21; supersedes the 2026-09-20 10-15% ceiling). A standalone club may
+   choose any listed depth; the database (ca_mtt_payout_depth_guard) pays 12.5
+   for every union and Diamond Arena event whatever this form sends. */
+const CREATOR_PAID_FIELD_PERCENTS: readonly MttPayoutDepth[] = MTT_PAYOUT_DEPTH_CHOICES.map(
+  (choice) => choice.percent
 );
 
 const VARIANT_OPTIONS: { value: TournamentGameVariant; label: string }[] = [
@@ -181,9 +183,8 @@ export default function CreateTournamentModal({
   const [buyIn, setBuyIn] = useState('10');
   const [startingChips, setStartingChips] = useState('1500');
   const [maxPlayers, setMaxPlayers] = useState('6');
-  // See CREATOR_PAID_FIELD_PERCENTS. There is no edit or clone path through
-  // this modal (its props carry no existing event), so no stored 20 can arrive.
-  const [payoutPercent, setPayoutPercent] = useState<10 | 15>(10);
+  // See CREATOR_PAID_FIELD_PERCENTS. 12.5 is the default for every new MTT.
+  const [payoutPercent, setPayoutPercent] = useState<MttPayoutDepth>(MTT_DEFAULT_PAYOUT_DEPTH);
   const isSngOrSpin = format === 'sng' || format === 'spin';
   const fieldCap = isSngOrSpin ? fieldCapFor(maxPlayers) : null;
   const [blindSpeed, setBlindSpeed] = useState<'turbo' | 'regular' | 'deepStack' | 'custom'>(
@@ -1718,7 +1719,8 @@ export default function CreateTournamentModal({
                   ))}
                 </select>
                 <span className={styles.helperText}>
-                  Paid Places Follow Actual Entries When Registration Closes, Rounded Up.
+                  Paid Places Follow Actual Entries When Registration Closes, Rounded Up. Union
+                  Tournaments Always Pay The Top 12.5 Percent.
                 </span>
               </div>
             )}

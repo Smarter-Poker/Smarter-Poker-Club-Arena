@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mttSpeedColumns, mttPayoutPercent, MTT_BLIND_PRESETS } from './mttStructurePolicy.js';
+import {
+  mttSpeedColumns,
+  mttPayoutPercent,
+  mttPayoutDepthPercent,
+  MTT_BLIND_PRESETS,
+} from './mttStructurePolicy.js';
 import {
   ScheduledTournamentService,
   SCHEDULE_BLIND_PRESETS,
@@ -100,7 +105,7 @@ describe('engine MTT structure policy', () => {
     }
   );
 
-  it.each([10, 15, 20, '15', null, '', false, 'bad', '1.5e1', 25])(
+  it.each([10, 12.5, '12.5', 15, 20, '15', null, '', false, 'bad', '1.5e1', 25])(
     'the scheduled row retains supported paid depth or the database default (%j)',
     async (payoutPercent) => {
       const service = new ScheduledTournamentService();
@@ -122,11 +127,29 @@ describe('engine MTT structure policy', () => {
         payoutPercent === 15 || payoutPercent === '15' ? 15 : payoutPercent === 20 ? 20 : 10;
       expect(row.payout_percent).toBe(expected);
       expect(mttPayoutPercent(payoutPercent)).toBe(expected);
+      // Dan 2026-10-21: the paid depth itself defaults to 12.5; a requested
+      // depth in (0,100] is carried (the database forces 12.5 for unions).
+      const depth =
+        typeof payoutPercent === 'number' && payoutPercent > 0 && payoutPercent <= 100
+          ? payoutPercent
+          : typeof payoutPercent === 'string' && /^\d+(\.\d+)?$/.test(payoutPercent)
+            ? Number(payoutPercent)
+            : 12.5;
+      expect(row.payout_depth_percent).toBe(depth);
+      expect(mttPayoutDepthPercent(payoutPercent)).toBe(depth);
     }
   );
 
+  it('defaults every new MTT to paying the top 12.5 percent', () => {
+    expect(mttPayoutDepthPercent(undefined)).toBe(12.5);
+    expect(mttPayoutDepthPercent(0)).toBe(12.5);
+    expect(mttPayoutDepthPercent(101)).toBe(12.5);
+    expect(mttPayoutPercent(12.5)).toBe(10);
+  });
+
   it('manual repeats copy paid depth with their advertised configuration', () => {
     expect((ScheduledTournamentService as any).RESTART_COPY_COLUMNS).toContain('payout_percent');
+    expect((ScheduledTournamentService as any).RESTART_COPY_COLUMNS).toContain('payout_depth_percent');
   });
 
   it('preserves an explicitly priced fractional bounty within the entry contribution', async () => {

@@ -57,6 +57,7 @@ import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
+  mttPayoutDepthPercent,
   mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
@@ -133,7 +134,7 @@ interface TournamentConfig extends MysteryBountyCreationInput {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
-  payoutPercent?: 10 | 15 | 20;
+  payoutPercent?: number;
   bountyPercent?: number;
   bountyAmount?: number;
   /**
@@ -160,7 +161,7 @@ interface SNGConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
-  payoutPercent?: 10 | 15 | 20;
+  payoutPercent?: number;
 }
 
 interface SpinConfig {
@@ -204,7 +205,7 @@ interface XMTTConfig extends MysteryBountyCreationInput {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
-  payoutPercent?: 10 | 15 | 20;
+  payoutPercent?: number;
   bountyPercent?: number;
   bountyAmount?: number;
   /**
@@ -3067,6 +3068,7 @@ export function recurringMttRow(
     ...mttSpeedColumns(config.blindStructure),
     payout_structure: config.payoutStructure || [],
     payout_percent: mttPayoutPercent(config.payoutPercent),
+    payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
     start_time: startTime.toISOString(),
     late_reg_levels: lateRegLevels,
     late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, lateRegLevels),
@@ -4644,6 +4646,7 @@ export class TournamentRecurringService {
             ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
             payout_percent: mttPayoutPercent(config.payoutPercent),
+            payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 10, // Level-based late reg for XMTT
             late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, 10),
@@ -4893,6 +4896,7 @@ export class TournamentRecurringService {
             ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
             payout_percent: mttPayoutPercent(config.payoutPercent),
+            payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 8, // Level-based late reg
             late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, 8),
@@ -5065,7 +5069,12 @@ export class TournamentRecurringService {
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure || [],
         // Heads-up has a fixed payout contract; paid depth belongs to fields.
-        ...(!seatFirstSng ? { payout_percent: mttPayoutPercent(config.payoutPercent) } : {}),
+        ...(!seatFirstSng
+          ? {
+              payout_percent: mttPayoutPercent(config.payoutPercent),
+              payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
+            }
+          : {}),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,

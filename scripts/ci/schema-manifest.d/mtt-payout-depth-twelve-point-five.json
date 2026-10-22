@@ -1,0 +1,15 @@
+{
+  "_owner": "mtt-pays-top-twelve-point-five-percent, migrations 20261022014607 + 20261022014651 (applied 2026-10-22 01:46 UTC)",
+  "functions": [
+    "fn_ca_payout_structure",
+    "fn_ca_effective_payout_depth",
+    "fn_ca_requested_payout_depth",
+    "fn_ca_mtt_payout_depth_guard",
+    "fn_finalize_tournament_entry_pool_locked",
+    "fn_ca_fund_overlay_on_lock",
+    "fn_create_tournament",
+    "fn_poker_diamond_create_tournament_core",
+    "fn_club_welcome_package_config"
+  ],
+  "columns": { "tournaments": ["payout_depth_percent"] }
+}

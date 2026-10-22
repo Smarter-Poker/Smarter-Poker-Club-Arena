@@ -9083,9 +9083,9 @@ export class GameServer {
   static readonly STUCK_TOURNAMENT_TABLE_MAX_HANDOFFS = 3;
   /** A tournament is handed on at most once in this window. */
   static readonly STUCK_TOURNAMENT_HANDOFF_SPACING_MS = 10 * 60_000;
-  private readonly stuckTournamentTableSince = new Map<string, number>();
-  private readonly stuckTournamentTableHandoffs = new Map<string, number>();
-  private readonly stuckTournamentLastHandoffAt = new Map<string, number>();
+  private stuckTournamentTableSince?: Map<string, number>;
+  private stuckTournamentTableHandoffs?: Map<string, number>;
+  private stuckTournamentLastHandoffAt?: Map<string, number>;
 
   /**
    * A TOURNAMENT TABLE WITH NO DEALER IS HANDED ON, NOT LEFT (2026-10-22).
@@ -9111,38 +9111,38 @@ export class GameServer {
    * stalled one and paged "Tables Have Stopped Dealing".
    */
   private escalateStuckTournamentTables(now: number): void {
+    if (!this.tournamentEngines || !this.tableEngines) return;
+    const since$ = (this.stuckTournamentTableSince ??= new Map());
+    const handoffs$ = (this.stuckTournamentTableHandoffs ??= new Map());
+    const lastAt$ = (this.stuckTournamentLastHandoffAt ??= new Map());
     const owned = new Set<string>();
     const seen = new Set<string>();
     for (const [tournamentId, manager] of this.tournamentEngines) {
       const failing = new Map(
         (manager.getTablesFailingAdmission?.(now) ?? []).map((t) => [t.tableId, t.msFailing])
       );
-      const tableIds = new Set([...manager.getTableIds(), ...failing.keys()]);
+      const tableIds = new Set([...(manager.getTableIds?.() ?? []), ...failing.keys()]);
       for (const tableId of tableIds) {
         owned.add(tableId);
         const engine = this.tableEngines.get(tableId);
         const dealerless = !engine || !engine.isRunning() || failing.has(tableId);
         if (!dealerless) {
           // A dealer that is running again ends the table's hand-off budget.
-          if (engine && engine.msSinceProgress() < 120_000)
-            this.stuckTournamentTableHandoffs.delete(tableId);
+          if (engine && engine.msSinceProgress() < 120_000) handoffs$.delete(tableId);
           continue;
         }
         seen.add(tableId);
-        const since = Math.min(
-          this.stuckTournamentTableSince.get(tableId) ?? now,
-          now - (failing.get(tableId) ?? 0)
-        );
-        this.stuckTournamentTableSince.set(tableId, since);
+        const since = Math.min(since$.get(tableId) ?? now, now - (failing.get(tableId) ?? 0));
+        since$.set(tableId, since);
         if (now - since < GameServer.STUCK_TOURNAMENT_TABLE_MS) continue;
-        const handoffs = this.stuckTournamentTableHandoffs.get(tableId) ?? 0;
+        const handoffs = handoffs$.get(tableId) ?? 0;
         if (handoffs >= GameServer.STUCK_TOURNAMENT_TABLE_MAX_HANDOFFS) continue;
-        const last = this.stuckTournamentLastHandoffAt.get(tournamentId);
+        const last = lastAt$.get(tournamentId);
         if (last !== undefined && now - last < GameServer.STUCK_TOURNAMENT_HANDOFF_SPACING_MS)
           continue;
-        if (!manager.requestSuccessorForStuckTable(tableId)) continue;
-        this.stuckTournamentTableHandoffs.set(tableId, handoffs + 1);
-        this.stuckTournamentLastHandoffAt.set(tournamentId, now);
+        if (!manager.requestSuccessorForStuckTable?.(tableId)) continue;
+        handoffs$.set(tableId, handoffs + 1);
+        lastAt$.set(tournamentId, now);
         reportError(
           new Error(
             `Tournament ${tournamentId} table ${tableId} had no running dealer for ` +
@@ -9154,24 +9154,23 @@ export class GameServer {
         );
       }
     }
-    for (const tableId of [...this.stuckTournamentTableSince.keys()]) {
-      if (!seen.has(tableId)) this.stuckTournamentTableSince.delete(tableId);
+    for (const tableId of [...since$.keys()]) {
+      if (!seen.has(tableId)) since$.delete(tableId);
     }
     // Hand-off counts outlive the manager generation they replaced (the next
     // generation owns the same table), so a durable refusal cannot reset its
     // own budget. Bounded: only tables that were handed on are kept, and the
     // engine process restarts daily.
-    if (this.stuckTournamentTableHandoffs.size > 500) this.stuckTournamentTableHandoffs.clear();
-    for (const tournamentId of [...this.stuckTournamentLastHandoffAt.keys()]) {
+    if (handoffs$.size > 500) handoffs$.clear();
+    for (const tournamentId of [...lastAt$.keys()]) {
       if (
         !this.tournamentEngines.has(tournamentId) &&
-        now - (this.stuckTournamentLastHandoffAt.get(tournamentId) ?? 0) >
-          GameServer.STUCK_TOURNAMENT_HANDOFF_SPACING_MS
+        now - (lastAt$.get(tournamentId) ?? 0) > GameServer.STUCK_TOURNAMENT_HANDOFF_SPACING_MS
       )
-        this.stuckTournamentLastHandoffAt.delete(tournamentId);
+        lastAt$.delete(tournamentId);
     }
     for (const [tableId, engine] of [...this.tableEngines]) {
-      if (!this.tournamentOwnedTables.has(tableId) && !engine.isTournament()) continue;
+      if (!this.tournamentOwnedTables?.has(tableId) && !engine.isTournament()) continue;
       if (owned.has(tableId) || engine.isRunning()) continue;
       if (this.unregisterTableEngine(tableId, engine)) {
         console.info(

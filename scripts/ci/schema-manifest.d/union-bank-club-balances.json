@@ -1,0 +1,7 @@
+{
+  "_owner": "feat/union-bank-club-balances",
+  "_comment": "Union Bank club directory balances for the union owner and union leads (20261022032422).",
+  "tables": [],
+  "functions": ["fn_union_club_bank_balances"],
+  "columns": {}
+}

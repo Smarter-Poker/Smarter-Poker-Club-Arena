@@ -291,6 +291,17 @@ supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS`, and each
    `SELECT version, name FROM supabase_migrations.schema_migrations` through
    `execute_sql` - it reads the same history with no DDL.
    `docs/changelog/2026-09-10-the-database-refuses-migrations-inside-the-break-window.md`.
+9. **A MIGRATION NEVER HOLDS THE LIVE TABLES HOSTAGE (2026-10-22).** Never
+   retry `LOCK TABLE` in a loop. A queued ACCESS EXCLUSIVE request blocks every
+   new reader and writer behind it, so a 300 s loop of 200 ms tries on
+   clubs/tables/hand_history (Midway rake-cap migration, 02:34 and 02:48 UTC)
+   timed out hand commits and killed 32 table engines in 15 minutes. Take the
+   lock once with a short `lock_timeout`; if refused, apply again later. The
+   database enforces it: `fn_ca_writer_lock_sentinel` (cron every 5 s) cancels
+   any direct session older than 15 s that queues or holds a writer-blocking
+   lock on a public table while it is queued or blocking someone, and records
+   it in `ca_writer_lock_sentinel_cancels`. Pinned by
+   `tests/a-migration-never-holds-the-live-tables-hostage.law.test.ts`.
 
 ---
 

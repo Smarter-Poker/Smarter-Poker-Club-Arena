@@ -115,6 +115,8 @@ BEGIN
 END $function$
 ;
 
+REVOKE ALL ON FUNCTION smarter_private.f06_assert_movement(uuid) FROM PUBLIC, anon, authenticated, service_role;
+
 DO $post$
 DECLARE s text := (SELECT prosrc FROM pg_proc WHERE oid = 'smarter_private.f06_assert_movement(uuid)'::regprocedure);
 BEGIN

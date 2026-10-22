@@ -68,7 +68,7 @@ describe('Midway standard structures through the actual scheduled creator', () =
       if (row.free_buy) {
         expect(row.starting_chips).toBe(3000);
         expect(row.late_reg_mins).toBe(60);
-        expect(row.late_reg_levels).toBe(5);
+        expect(row.late_reg_levels).toBe(12);
         expect(row.rebuy_cost).toBe(1);
         expect(row.addon_cost).toBe(1);
         expect(row.addon_chips).toBe(10000);

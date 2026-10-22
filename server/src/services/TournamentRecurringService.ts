@@ -292,11 +292,12 @@ export const BLIND_STRUCTURES = {
    * chip in play worth under three big blinds. A Free Buy on TURBO would have
    * joined them by design rather than by accident.
    */
+  // Dan 2026-10-21: freerolls run locked 5-minute levels, every level.
   FREE_BUY: buildLadder({
     startBigBlind: 25,
     speed: 'STANDARD',
     levels: 30,
-    openingMinutes: 6,
+    openingMinutes: 5,
     floorMinutes: 5,
     anteFromLevel: 1,
   }),
@@ -390,6 +391,7 @@ import {
 } from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import { HorseEntryRefusalBackoff, databaseDidNotAnswer } from './horseEntryRefusalBackoff.js';
+import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 
 /**
  * THE ONE MAP FROM A CONFIG'S VARIANT KEY TO THE `tournaments.game_type` VALUE.
@@ -3584,7 +3586,7 @@ export class TournamentRecurringService {
 
           const { data, error } = await supabase
             .from('tournaments')
-            .insert(row)
+            .insert(withLockedLevelClock(row))
             .select('id')
             .maybeSingle();
 

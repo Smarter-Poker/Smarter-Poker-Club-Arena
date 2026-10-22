@@ -53,3 +53,14 @@ refuses now that the certification club's union band is 0.20 to 0.70
 (03:05:48Z). That failure skipped the template staff fixture, so table
 management and club news failed behind it. The proof now reads the club's
 union band and uses its minimum (inert: these identities never play).
+
+## Follow-Up: Club Data Export Helpers Count Cash Players Once
+
+The last browser failure (Club Data games list, run 39723279476) was the
+correlated per-table player count added in `20261021202610`; #7686 fixes the
+page core. The same count remained in the three helpers behind the games CSV
+export (`fn_ca_club_games_searched`, `fn_ca_club_games_unsearched`,
+`fn_ca_club_game_rows_filtered`), measured at 28.6 s and 51.2 s for KINGS
+CLUB's 14-day window. Migration `20261022061936` counts cash players once per
+window in a grouped CTE; a pg_temp copy returned a byte-identical closed-window
+result in 1.3 s.

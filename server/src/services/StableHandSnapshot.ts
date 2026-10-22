@@ -223,7 +223,7 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
         let q = supabase
           .from('tables')
           .select(
-            'id, game_variant, small_blind, big_blind, max_players, status, current_players, cluster_id, lifecycle'
+            'id, game_variant, small_blind, big_blind, max_players, status, lifecycle, current_players, cluster_id'
           )
           .eq('club_id', hostId)
           .is('tournament_id', null)

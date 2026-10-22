@@ -1,0 +1,57 @@
+name: Mini jackpot operator rates read the pool index
+
+# fn_bbj_mini_for_club (migration 20261022041710). Runs
+# scripts/ci/test-bbj-mini-operator-rates.py against a throwaway PostgreSQL 17
+# cluster, never production: the exact predecessor (md5 equal to production's
+# definition captured 2026-10-22) and the new definition must return identical
+# rows for every caller and club in one snapshot, non-operators must still get
+# NULL rates, and the operator income sum must be an index scan bounded by the
+# pool's reporting start. No timer (CLAUDE.md 10.85): pull_request only,
+# scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20261015042155_the_mini_jackpot_read_answers_players_in_milliseconds.sql
+      - supabase/migrations/20261022041710_the_mini_jackpot_operator_rates_read_contributions_by_pool_i.sql
+      - scripts/ci/test-bbj-mini-operator-rates.py
+      - .github/workflows/bbj-mini-operator-rates.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bbj-mini-operator-rates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bbj-mini-operator-rates:
+    name: Mini jackpot operator rates read the pool index
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Mini jackpot operator rates return identical rows through the pool index
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-bbj-mini-operator-rates.py

@@ -348,15 +348,13 @@ BEGIN
   IF FOUND THEN
     v_slots := 1 + jsonb_array_length(v_offer.companions);
     v_pick := v_offer.picked_slot;
-    -- Nobody picked before the reveal: the chest opened itself, so the slot it
-    -- stands in is chosen at random and kept.
+    -- Nobody picked before the reveal: the chest opened itself. The slot it
+    -- stands in comes from the award's own random id, so every viewer sees the
+    -- same order and reading the offer writes nothing. (As first applied this
+    -- drew a random slot and wrote it; 20261022180735 replaced that, and this
+    -- file states the body that is live so a rebuild matches production.)
     IF v_revealed AND v_pick IS NULL THEN
-      v_pick := 1 + (get_byte(uuid_send(gen_random_uuid()), 0) % v_slots);
-      UPDATE public.tournament_bounty_award_offers
-         SET picked_slot = v_pick, picked_at = now()
-       WHERE award_id = p_award_id AND picked_slot IS NULL;
-      SELECT picked_slot INTO v_pick FROM public.tournament_bounty_award_offers
-       WHERE award_id = p_award_id;
+      v_pick := 1 + (get_byte(uuid_send(p_award_id), 15) % v_slots);
     END IF;
   ELSE
     v_pick := 1;

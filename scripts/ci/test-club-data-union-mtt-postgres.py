@@ -102,6 +102,35 @@ try:
     run(psql("live"), correction, expect_fail="Club Data correction already installed")
     p=run(psql("live"), "DO $test$"+assertions)
     require("UNION MTT SCENARIO PASSED" in p.stdout+p.stderr, "MTT classification, union deduplication, exact fees, payouts, felt, pages, export and authorization")
+
+    # Chicago days at the source (20261022103651), the one-time history load
+    # (20261022120109/13/17) and the readers (20261022120121).
+    M = ROOT / "supabase/migrations"
+    run(psql("live"), (M / "20261022061048_the_club_game_page_counts_cash_players_for_visible_rows_only.sql").read_text())
+    run(psql("live"), (M / "20261022061936_club_data_export_counts_cash_players_in_one_grouped_pass.sql").read_text())
+    chicago_a = (M / "20261022103651_club_data_chicago_day_facts_and_writer.sql").read_text()
+    readers = (M / "20261022120121_club_data_reads_chicago_days_and_separates_running_mtts.sql").read_text()
+    loads = [(M / f).read_text() for f in ("20261022120109_club_data_chicago_days_load_september.sql",
+                                           "20261022120113_club_data_chicago_days_load_early_october.sql",
+                                           "20261022120117_club_data_chicago_days_load_through_the_cutover.sql")]
+    run(psql("live"), readers, expect_fail="Club Data Chicago facts (20261022103651) are not installed")
+    run(psql("live"), loads[0], expect_fail="Club Data Chicago facts (20261022103651) are not installed")
+    run(psql("live"), "SET ROLE authenticated;\n" + chicago_a, expect_fail="maintained installer")
+    run(psql("live"), chicago_a)
+    run(psql("live"), chicago_a, expect_fail="Club Data Chicago facts already installed")
+    before_load, after_load = (ROOT / "tests/fixtures/club-data-report-db/chicago-days-scenario.sql").read_text().split("-- @@ AFTER THE HISTORY LOAD @@", 1)
+    run(psql("live"), before_load)
+    require(True, "live writer fills the Chicago bucket only from its cutover, and the load refuses a live day")
+    run(psql("live"), readers, expect_fail="Club Data Chicago history is not fully loaded")
+    for load in loads:
+        run(psql("live"), load)
+    run(psql("live"), loads[2], expect_fail="already loaded")
+    p = run(psql("live"), after_load.split("\n", 1)[1])
+    require("CHICAGO SEED SCENARIO PASSED" in p.stdout, "history load preserves every UTC total and moves only the day")
+    run(psql("live"), "BEGIN; ALTER FUNCTION public.fn_ca_rake_felt_v2(uuid[],date,date) SET work_mem='1MB';\n" + readers[readers.index("BEGIN;\n") + 7:], expect_fail="Club Data reader preimage changed: fn_ca_rake_felt_v2")
+    run(psql("live"), readers)
+    p = run(psql("live"), (ROOT / "tests/fixtures/club-data-report-db/chicago-readers-scenario.sql").read_text())
+    require("CHICAGO READERS SCENARIO PASSED" in p.stdout, "Club Data and Union Data read Chicago days and separate running MTTs, reconciled to the cent")
     evidence=os.environ.get('CLUB_DATA_CONTRACT_EVIDENCE')
     if evidence:
         import re

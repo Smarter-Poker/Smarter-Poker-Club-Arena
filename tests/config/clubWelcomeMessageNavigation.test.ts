@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   clubWelcomeSetupMissing,
   clubWelcomeTemplate,
@@ -84,13 +84,14 @@ it('ends the setup nudge as soon as the user has saved any custom message', () =
 
 it('remembers the setup toast across page loads so it shows at most once per club', () => {
   const store = new Map<string, string>();
-  (globalThis as any).localStorage = {
+  vi.stubGlobal('localStorage', {
     getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => void store.set(k, v),
-  };
+  });
   expect(welcomeNudgeAlreadyShown('user-1', 'club-a')).toBe(false);
   markWelcomeNudgeShown('user-1', 'club-a');
   expect(welcomeNudgeAlreadyShown('user-1', 'club-a')).toBe(true);
   expect(welcomeNudgeAlreadyShown('user-1', 'club-b')).toBe(false);
   expect(welcomeNudgeAlreadyShown('user-2', 'club-a')).toBe(false);
+  vi.unstubAllGlobals();
 });

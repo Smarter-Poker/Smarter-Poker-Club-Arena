@@ -88,6 +88,16 @@ export function useToast(): ToastContextValue {
   return context;
 }
 
+/**
+ * The same toast layer, for a surface that may also render outside the
+ * provider (an isolated test, a portal mounted before the app shell). Returns
+ * null there instead of throwing; callers skip the toast. Never a second toast
+ * system: it reads the one ToastContext.
+ */
+export function useOptionalToast(): ToastContextValue | null {
+  return useContext(ToastContext) ?? null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOAST ITEM COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -94,9 +94,13 @@ counts() {
                       WHERE table_schema = 'public' AND column_name LIKE 'window_fixture_%')"
 }
 
-# 1. The ordinary applier refuses it as queued.
+# 1. The ordinary applier refuses it as queued. Its own clock is moved to
+# minute :20 of this hour, so the run does not depend on landing outside the
+# :50-:03 refusal that would otherwise answer first.
+OUTSIDE_BREAK_MINUTE="$(node -e 'const h=Math.floor(Date.now()/3600000)*3600000; process.stdout.write(String(h+20*60000))')"
 set +e
-out="$(apply "$FIRST" 2>&1)"; code=$?
+out="$(cd "$CASE" && FAKE_NOW_MS="$OUTSIDE_BREAK_MINUTE" node --import "$FIXTURES/shift-clock.mjs" \
+  "$ROOT/scripts/ci/apply-recorded-migration.mjs" --ssl-root-cert "$CA" --migration "$FIRST" 2>&1)"; code=$?
 set -e
 echo "$out" > "$EVIDENCE/1-ordinary-applier.log"
 [ "$code" = 1 ] || fail "ordinary applier exit $code, expected 1"

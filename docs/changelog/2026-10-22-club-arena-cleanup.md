@@ -25,3 +25,9 @@ The obsolete CasinoPlaque component and stylesheet are retired after removing
 their final caller. Aggregate player-count and hidden Spin-multiplier checks
 now exercise the live card adapter. Production lobby checks require the new
 card-first review followed by explicit tournament Details navigation.
+
+Full-suite qualification also found a crash-drill fixture with only two
+seconds of setup time before its unchanged ten-second leadership reserve.
+On the loaded Mac, subprocess startup exhausted it before the intended
+delayed-adoption assertion. Its isolated test budget is now 30 seconds;
+production limits and every refusal/failure/success assertion are unchanged.

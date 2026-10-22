@@ -90,6 +90,7 @@
  *   ... --require-proof      an unverifiable migration also fails
  * Exit: 0 every migration in the window is live · 1 one is not · 2 could not ask
  */
+import { declaresMaintenanceWindow } from './maintenance-window-migrations.mjs';
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -122,6 +123,7 @@ const DAYS = Number(flag('days', '21'));
  * The scheduled audit passes no flag and is exactly as strict as before.
  */
 const MIN_AGE_HOURS = Number(flag('min-age-hours', '0'));
+const WINDOW_QUEUE_GRACE_HOURS = 7 * 24;
 
 /**
  * RECORDED UNDER ITS OWN FILE NAME (2026-10-03). An apply can record the
@@ -734,12 +736,27 @@ function main() {
   // ── the verdict ────────────────────────────────────────────────────────────
   const notApplied = [];
   const inFlight = [];
+  const windowQueued = [];
   const unverifiable = [];
   for (const m of unmatched) {
     const gone = m.objects.filter((o) => missing.has(`${o.kind}\t${o.name}`));
     const bad = falseProofs.get(m.file) || [];
     if (gone.length > 0 || bad.length > 0) {
       const at = stampedAt(m.file);
+      // QUEUED FOR THE DAILY BREAK (2026-10-22). A file declaring
+      // "-- @install-window: daily-maintenance" is refused by the ordinary
+      // applier and installed by the daily 04:00 America/Chicago window
+      // (maintenance-window-migrations.mjs). Not live yet is its expected
+      // state until that window; a week past its stamp it has missed seven
+      // windows and is MERGED BUT NOT LIVE like any other file.
+      if (
+        declaresMaintenanceWindow(m.sql) &&
+        at !== null &&
+        Date.now() - at < WINDOW_QUEUE_GRACE_HOURS * 3600000
+      ) {
+        windowQueued.push(m);
+        continue;
+      }
       if (MIN_AGE_HOURS > 0 && at !== null && Date.now() - at < MIN_AGE_HOURS * 3600000) {
         inFlight.push({ ...m, gone, bad });
         continue;
@@ -771,6 +788,12 @@ function main() {
       console.error(`    ${file}`);
       for (const w of why) console.error(`        ${w}`);
     }
+  }
+
+  for (const m of windowQueued) {
+    console.log(
+      `[migrations-are-live] queued for the daily 04:00 America/Chicago maintenance window (not failed): ${m.file}`
+    );
   }
 
   for (const m of inFlight) {

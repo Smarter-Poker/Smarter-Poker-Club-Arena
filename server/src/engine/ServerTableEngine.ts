@@ -33,7 +33,11 @@ import {
   isFixedLimitCapped,
 } from './BettingStructure.js';
 import type { GameState } from '../types.js';
-import { projectLiveHandState, projectResyncHandState } from './presentation/projectHandState.js';
+import {
+  projectLiveHandState,
+  projectResyncHandState,
+  type PostedBlindSeats,
+} from './presentation/projectHandState.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SERVER TABLE ENGINE
@@ -264,6 +268,19 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
     return seated ? seated.stack : fallback;
   }
 
+  /**
+   * The seats the current hand posted its blinds from, for the position badges
+   * (positionLabelsFor labels a dead-button hand from them). Null when there is
+   * no hand, or the controller cannot say: the labels then walk from the button.
+   */
+  private postedBlindSeatsForLabels(): PostedBlindSeats | null {
+    const hc = this.handController as
+      | { getBlindSeatsSnapshot?: () => PostedBlindSeats | null }
+      | null
+      | undefined;
+    return typeof hc?.getBlindSeatsSnapshot === 'function' ? hc.getBlindSeatsSnapshot() : null;
+  }
+
   public getTableState(requestingUserId: string): Record<string, any> | null {
     if (!this.handController || !this.tableInfo) return null;
 
@@ -281,6 +298,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
         table_id: this.tableId,
         hand_number: this.handCount,
         dealerSeatFallback: this.currentHandDealerSeat,
+        blindSeats: this.postedBlindSeatsForLabels(),
         // VARIANT OVERRIDE 2026-08-28 (spec §10.1): what game THIS hand is.
         hand_variant: this.activeHandVariant(),
         // Bomb pot countdown, kill pots, and THE REGULAR ANTE (Dan 2026-09-04).
@@ -384,6 +402,7 @@ export class ServerTableEngine extends ServerTableEngineHandEvents {
       table_id: this.tableId,
       hand_number: this.handCount,
       dealerSeatFallback: this.currentHandDealerSeat,
+      blindSeats: this.postedBlindSeatsForLabels(),
       hand_variant: this.activeHandVariant(),
       boardExtras: {
         ...this.bombPotSnapshotFields(),

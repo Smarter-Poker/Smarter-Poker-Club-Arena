@@ -871,3 +871,20 @@ test('unknown add-on acknowledgment or unexpected baseline remains unknown after
     assert.ok(!JSON.stringify(r).includes('SECRET'));
   }
 });
+
+test('Sit Out diagnostics keep only maintained status and classification', async () => {
+  const { sitoutResponse } = await import('./lightning-pilot-financial.mjs');
+  assert.deepEqual(
+    sitoutResponse(400, {
+      success: false,
+      error: 'You Must Play At Least One Hand Before You Can Sit Out',
+      secret: 'never retain',
+    }),
+    { httpStatus: 400, success: false, code: 'SITOUT_HAND_REQUIRED' }
+  );
+  assert.deepEqual(sitoutResponse(500, { error: 'sensitive arbitrary body' }), {
+    httpStatus: 500,
+    success: null,
+    code: 'UNCLASSIFIED',
+  });
+});

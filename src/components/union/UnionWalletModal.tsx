@@ -73,11 +73,17 @@ import {
   readUnionClubBalances,
   type UnionClubBalance,
 } from '../../services/unionClubBalances';
+import { useOptionalToast } from '../common/Toast';
 import './UnionWalletModal.css';
 
 // Keep this union explicit at the UI boundary. Static release certification
 // verifies that the reserve wallet remains a first-class, read-only modal key.
 export type UnionWalletKey = 'chips' | 'rake' | 'bbj' | 'promo' | 'spin_reserve';
+
+/** "The Felt Society" stays "The Felt Society", never "The The Felt Society". */
+export function theClub(name: string): string {
+  return /^the\s/i.test(name.trim()) ? name.trim() : `The ${name.trim()}`;
+}
 
 export interface UnionWalletModalProps {
   isOpen: boolean;
@@ -239,6 +245,7 @@ export function UnionWalletModal({
   /** Synchronous guard for two taps that arrive before React paints `busy`. */
   const busyRef = useRef(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const toast = useOptionalToast();
   const [liveBalance, setLiveBalance] = useState(balance);
   const [reserveLedger, setReserveLedger] = useState<
     Array<{
@@ -633,6 +640,14 @@ export function UnionWalletModal({
         sourceWallet: mode === 'pull' ? selectedRoute.kind : kind === 'chips' ? chipSource : kind,
       }),
     };
+    /* A confirmed movement toasts and closes the wallet (Dan, 2026-10-22):
+       the operator never has to X off a finished pull or send. Refusals and
+       unknown outcomes stay on screen with their reason. */
+    const outcome: { confirmed: string | null } = { confirmed: null };
+    const succeed = (text: string) => {
+      outcome.confirmed = text;
+      setNotice({ ok: true, text });
+    };
     busyRef.current = true;
     setBusy(true);
     setNotice(null);
@@ -680,10 +695,9 @@ export function UnionWalletModal({
                 : res.destination === 'player_wallet'
                   ? ' Into Their Player Wallet'
                   : '';
-          setNotice({
-            ok: true,
-            text: `Sent ${fmt(amt)} ${kind === 'chips' ? 'Chips' : kind === 'diamonds' ? 'Diamonds' : 'Promo Chips'} To ${who}.${landed ? landed + '.' : ''}`,
-          });
+          succeed(
+            `Sent ${fmt(amt)} ${kind === 'chips' ? 'Chips' : kind === 'diamonds' ? 'Diamonds' : 'Promo Chips'} To ${who}.${landed ? landed + '.' : ''}`,
+          );
           if (res.wallet_after != null) setLiveBalance(res.wallet_after);
         } else {
           const r = clubSendRoute(walletKey, kind);
@@ -700,10 +714,9 @@ export function UnionWalletModal({
               apiNote(`${walletLabel} To ${target.data.name} Promo Wallet`),
               opId
             )) as { promoAfter?: number | null };
-            setNotice({
-              ok: true,
-              text: `Sent ${fmt(amt)} Promo Chips Into The ${target.data.name} Promo Wallet.`,
-            });
+            succeed(
+              `Sent ${fmt(amt)} Promo Chips Into ${theClub(target.data.name)} Promo Wallet.`,
+            );
             // The wallet's figure after the send, from the row that moved it,
             // rather than a subtraction on this screen.
             if (typeof sent?.promoAfter === 'number') setLiveBalance(sent.promoAfter);
@@ -716,10 +729,9 @@ export function UnionWalletModal({
               apiNote(`${walletLabel} To ${target.data.name} Club Bank`),
               opId
             )) as { unionBalanceAfter?: number | null };
-            setNotice({
-              ok: true,
-              text: `Sent ${fmt(amt)} Chips Into The ${target.data.name} Club Bank.`,
-            });
+            succeed(
+              `Sent ${fmt(amt)} Chips Into ${theClub(target.data.name)} Club Bank.`,
+            );
             if (typeof sent?.unionBalanceAfter === 'number') setLiveBalance(sent.unionBalanceAfter);
             else setLiveBalance((prev) => prev - amt);
           }
@@ -763,10 +775,9 @@ export function UnionWalletModal({
             if (cb.duplicate) {
               await acknowledge();
               setAmount('');
-              setNotice({
-                ok: true,
-                text: 'This Money Move Was Already Processed. The Wallet Is Refreshing.',
-              });
+              succeed(
+                'This Money Move Was Already Processed. The Wallet Is Refreshing.',
+              );
               try {
                 onSent?.();
               } catch (callbackError) {
@@ -783,12 +794,11 @@ export function UnionWalletModal({
                   : msg
             );
           }
-          setNotice({
-            ok: true,
-            text: isPromoPull
-              ? `Pulled ${fmt(amt)} Promo Chips Back From The ${target.data.name} Promo Wallet.`
-              : `Pulled ${fmt(amt)} Chips Back From The ${target.data.name} Club Bank.`,
-          });
+          succeed(
+            isPromoPull
+              ? `Pulled ${fmt(amt)} Promo Chips Back From ${theClub(target.data.name)} Promo Wallet.`
+              : `Pulled ${fmt(amt)} Chips Back From ${theClub(target.data.name)} Club Bank.`,
+          );
           const after = isPromoPull ? cb.promo_after : cb.union_balance;
           if (typeof after === 'number') setLiveBalance(after);
           else setLiveBalance((prev) => prev + amt);
@@ -817,7 +827,13 @@ export function UnionWalletModal({
       busyRef.current = false;
       setBusy(false);
     }
+    if (outcome.confirmed) {
+      toast?.success(outcome.confirmed);
+      onClose();
+    }
   }, [
+    toast,
+    onClose,
     amount,
     target,
     busy,

@@ -41,6 +41,7 @@ function fixture() {
         queries.push({ text, values });
         if (text.startsWith('SELECT current_user')) return { rows: [{ ok: true }] };
         if (queryWork) return queryWork(text, values);
+        if (text === 'COMMIT') return { rows: [], command: 'COMMIT' };
         return { rows: [{ result: { ok: true, receipt: 'original' } }] };
       }),
       release: vi.fn(),
@@ -139,7 +140,7 @@ describe('dedicated original Lightning fold session', () => {
   it('does not return a successful result before COMMIT completes', async () => {
     const f = fixture();
     await f.session.start();
-    const commit = deferred<{ rows: Array<Record<string, unknown>> }>();
+    const commit = deferred<{ rows: Array<Record<string, unknown>>; command?: string }>();
     f.setQuery(async (text) =>
       text === 'COMMIT' ? commit.promise : { rows: [{ result: { ok: true } }] }
     );
@@ -150,7 +151,7 @@ describe('dedicated original Lightning fold session', () => {
     });
     await vi.waitFor(() => expect(f.queries.some((q) => q.text === 'COMMIT')).toBe(true));
     expect(answered).toBe(false);
-    commit.resolve({ rows: [] });
+    commit.resolve({ rows: [], command: 'COMMIT' });
     expect(await call).toEqual({ data: { ok: true }, error: null });
     await f.session.stop();
   });
@@ -196,7 +197,28 @@ describe('dedicated original Lightning fold session', () => {
     await f.session.stop();
   });
 
-  it('never dispatches a delayed BEGIN after its local deadline has already admitted fallback', async () => {
+  it('sends BEGIN, the original wrapper and COMMIT together in one round trip', async () => {
+    const f = fixture();
+    await f.session.start();
+    const begin = deferred<{ rows: Array<Record<string, unknown>> }>();
+    f.setQuery(async (text) => {
+      if (text.startsWith('BEGIN')) return begin.promise;
+      if (text === 'COMMIT') return { rows: [], command: 'COMMIT' };
+      return { rows: [{ result: { ok: true } }] };
+    });
+    const call = f.session.call(args);
+    // All three are on the wire before the first reply arrives.
+    await vi.waitFor(() =>
+      expect(
+        f.queries.filter((q) => !q.text.startsWith('SELECT current_user')).map((q) => q.text)
+      ).toEqual([expect.stringContaining('BEGIN'), LIGHTNING_FOLD_SQL, 'COMMIT'])
+    );
+    begin.resolve({ rows: [] });
+    expect(await call).toEqual({ data: { ok: true }, error: null });
+    await f.session.stop();
+  });
+
+  it('never falls back to a second route once the pipelined original is on the wire', async () => {
     vi.useFakeTimers();
     const f = fixture();
     await f.session.start();
@@ -204,11 +226,27 @@ describe('dedicated original Lightning fold session', () => {
     f.setQuery(async (text) => (text.startsWith('BEGIN') ? begin.promise : { rows: [] }));
     const call = f.session.call(args);
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(await call).toBeNull();
+    expect((await call)?.error?.code).toBe('LIGHTNING_FOLD_UNKNOWN');
     begin.resolve({ rows: [] });
     await Promise.resolve();
     await Promise.resolve();
-    expect(f.queries.filter((q) => q.text === LIGHTNING_FOLD_SQL)).toHaveLength(0);
+    expect(f.queries.filter((q) => q.text === LIGHTNING_FOLD_SQL)).toHaveLength(1);
+    expect(f.session.toPrometheus()).toContain('poker_lightning_fold_session_committed_total 0');
+    expect(f.clients.at(-1)?.release).toHaveBeenCalledWith(true);
+    await f.session.stop();
+  });
+
+  it('acknowledges nothing when the queued COMMIT answers ROLLBACK', async () => {
+    const f = fixture();
+    await f.session.start();
+    f.setQuery(async (text) =>
+      text === 'COMMIT' ? { rows: [], command: 'ROLLBACK' } : { rows: [{ result: { ok: true } }] }
+    );
+    expect(await f.session.call(args)).toEqual({
+      data: null,
+      error: { message: 'lightning_fold_outcome_unknown', code: 'LIGHTNING_FOLD_UNKNOWN' },
+    });
+    expect(f.session.toPrometheus()).toContain('poker_lightning_fold_session_committed_total 0');
     expect(f.clients.at(-1)?.release).toHaveBeenCalledWith(true);
     await f.session.stop();
   });
@@ -217,14 +255,14 @@ describe('dedicated original Lightning fold session', () => {
     vi.useFakeTimers();
     const f = fixture();
     await f.session.start();
-    const commit = deferred<{ rows: Array<Record<string, unknown>> }>();
+    const commit = deferred<{ rows: Array<Record<string, unknown>>; command?: string }>();
     f.setQuery(async (text) =>
       text === 'COMMIT' ? commit.promise : { rows: [{ result: { ok: true } }] }
     );
     const call = f.session.call(args);
     await vi.advanceTimersByTimeAsync(1_000);
     expect((await call)?.error?.code).toBe('LIGHTNING_FOLD_UNKNOWN');
-    commit.resolve({ rows: [] });
+    commit.resolve({ rows: [], command: 'COMMIT' });
     await Promise.resolve();
     await Promise.resolve();
     expect(f.session.toPrometheus()).toContain('poker_lightning_fold_session_committed_total 0');

@@ -50,6 +50,7 @@ import { bindToProcessRoot } from './supabase/dataActorContext.js';
 import { personaHash } from '../engine/HorsePersona.js';
 import { readHorsePostModeGate, TABLE_GESTURES_MODE } from './HorseTableTalkGate.js';
 import { humanBeat, humanBeatMs } from './horsePacing.js';
+import { personalPool, personalThrowChance } from './horseVoiceStyle.js';
 import type { SeatedPlayer, TableInfo } from '../types.js';
 import {
   speakAsTheyShove,
@@ -176,7 +177,7 @@ export function rollsGesture(
 ): boolean {
   return (
     personaHash(`${tableId}|${handNumber}|${moment}|${horseId}|gesture`) % 100 <
-    GESTURE_CHANCE_PCT[moment]
+    personalThrowChance(horseId, GESTURE_CHANCE_PCT[moment])
   );
 }
 
@@ -186,7 +187,8 @@ export function pickItem(
   horseId: string,
   handNumber: number
 ): string {
-  const pool = THROW_POOLS[moment][voice];
+  // Each horse has its own favourites (Dan 2026-10-22: every horse different).
+  const pool = personalPool(horseId, THROW_POOLS[moment][voice]);
   return pool[personaHash(`${horseId}|${handNumber}|${moment}|item`) % pool.length];
 }
 

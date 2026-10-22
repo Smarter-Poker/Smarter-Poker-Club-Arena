@@ -72,6 +72,7 @@ import {
   TABLE_MIN_HANDS_BETWEEN_LINES,
   _resetTableTalkForTests,
   _setSpeakChanceForTests,
+  _setVoiceStylingForTests,
   speaksThisTime,
   chooseLine,
   detectEvents,
@@ -182,6 +183,7 @@ beforeEach(() => {
   // human beat; the roll and the beat have their own tests below.
   _setSpeakChanceForTests(100);
   _setHumanPacingForTests(false);
+  _setVoiceStylingForTests(false);
   h.state.calls = [];
   h.state.answers = {};
   h.state.gate = { engine: true, mode: true };
@@ -190,6 +192,7 @@ beforeEach(() => {
 afterEach(() => {
   _setSpeakChanceForTests(null);
   _setHumanPacingForTests(true);
+  _setVoiceStylingForTests(true);
   vi.useRealTimers();
 });
 
@@ -746,19 +749,31 @@ describe('a horse speaks sometimes, never every time (Dan 2026-10-21)', () => {
     ]);
   });
 
-  it('the roll is a hash: the same hand answers the same way, and the rate is near the table', () => {
+  it('the roll is a hash: the same hand answers the same way, and across the fleet the rate is near the table', () => {
     _setSpeakChanceForTests(null);
     for (const event of ['pot_lost', 'pot_won', 'all_in'] as const) {
       let yes = 0;
-      for (let hand = 1; hand <= 4000; hand++) {
-        const a = speaksThisTime(event, HORSE_A, TABLE, hand);
-        expect(speaksThisTime(event, HORSE_A, TABLE, hand)).toBe(a);
-        if (a) yes++;
+      let n = 0;
+      const perHorse: number[] = [];
+      for (let h = 0; h < 200; h++) {
+        const horse = `horse-${h}`;
+        let mine = 0;
+        for (let hand = 1; hand <= 200; hand++) {
+          const a = speaksThisTime(event, horse, TABLE, hand);
+          expect(speaksThisTime(event, horse, TABLE, hand)).toBe(a);
+          if (a) {
+            yes++;
+            mine++;
+          }
+          n++;
+        }
+        perHorse.push(mine);
       }
-      const pct = (yes / 4000) * 100;
-      expect(Math.abs(pct - SPEAK_CHANCE_PCT[event])).toBeLessThan(4);
-      expect(pct).toBeLessThan(100);
-      expect(pct).toBeGreaterThan(0);
+      const pct = (yes / n) * 100;
+      // chattiness averages near 1, so the fleet rate sits near the base
+      expect(Math.abs(pct - SPEAK_CHANCE_PCT[event])).toBeLessThan(SPEAK_CHANCE_PCT[event] * 0.3);
+      // and horses differ: the chattiest speaks far more than the quietest
+      expect(Math.max(...perHorse)).toBeGreaterThan(2 * Math.min(...perHorse) + 1);
     }
   });
 

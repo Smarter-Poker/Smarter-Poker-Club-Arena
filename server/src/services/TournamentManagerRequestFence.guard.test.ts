@@ -224,10 +224,13 @@ describe('Stage-A tournament-manager Data API request fence', () => {
     );
     expect(fold).toContain('JSON.stringify(actorHeaders)');
     expect(fold).toContain('notifyTournamentManagerFenced(authority)');
-    expect(fold).toContain("await connection.query('COMMIT')");
-    expect(fold.indexOf("await connection.query('COMMIT')")).toBeLessThan(
+    // Pipelined in one round trip; only the COMMIT command tag acknowledges.
+    expect(fold).toContain("const commit = connection.query('COMMIT')");
+    expect(fold).toContain("if (done.command !== 'COMMIT') throw new Error('fold_not_committed')");
+    expect(fold.indexOf('const done = await commit')).toBeLessThan(
       fold.indexOf('return { data: result.rows[0]?.result')
     );
+    expect(fold).toContain('pipeline: true');
     expect(fold).toContain("code: 'LIGHTNING_FOLD_UNKNOWN'");
     expect(fold).toMatch(/if \(!dispatched\)\s*\{\s*admissionRefused\+\+;\s*return null;\s*\}/);
     expect(fold).toContain('client?.release(destroy)');

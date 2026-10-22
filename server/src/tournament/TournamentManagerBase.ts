@@ -113,7 +113,6 @@ import {
   mysteryBountyThresholdReached,
   mysteryPoolCents,
   mysteryBountyFieldTooSmall,
-  isChestsOnlyMysteryRow,
   shouldActivateMysteryBounty,
   totalEntriesFromRows,
   type MysteryBountyActivationMode,
@@ -4412,9 +4411,15 @@ export abstract class TournamentManagerBase {
        its 50/30/20 ladder would otherwise read as "at the money" at three
        players left. Unread after the close holds and lets the sweep read it. */
     if (totalEntries == null) return this.prizePoolFinalized;
-    // A chests-only event (Dan 2026-10-22) opens its chests at the money
-    // whatever the field size; see isChestsOnlyMysteryRow.
-    if (!isChestsOnlyMysteryRow(t) && mysteryBountyFieldTooSmall(totalEntries)) return false;
+    // A chests-only event (Dan 2026-10-22: regular half 0, no bounty before the
+    // money) opens its chests at the money whatever the field size; the same
+    // test as isChestsOnlyMysteryRow, written inline so this method needs no
+    // new collaborator.
+    const chestsOnly =
+      t.mystery_bounty_regular_pool_percent != null &&
+      t.mystery_bounty_regular_pool_percent !== '' &&
+      Number(t.mystery_bounty_regular_pool_percent) === 0;
+    if (!chestsOnly && mysteryBountyFieldTooSmall(totalEntries)) return false;
     return mysteryBountyThresholdReached(
       mode,
       t.mystery_bounty_activation_value,
@@ -4638,7 +4643,11 @@ export abstract class TournamentManagerBase {
       mode: activationMode,
       modeValue: fresh.mystery_bounty_activation_value,
       mysteryPoolCents: poolCents,
-      chestsOnly: isChestsOnlyMysteryRow(fresh),
+      // Chests only (Dan 2026-10-22): see isChestsOnlyMysteryRow.
+      chestsOnly:
+        fresh.mystery_bounty_regular_pool_percent != null &&
+        String(fresh.mystery_bounty_regular_pool_percent) !== '' &&
+        Number(fresh.mystery_bounty_regular_pool_percent) === 0,
     });
     // True only for the one transient refusal: the caller keeps the
     // activation boundary armed so the tables park and the sweep re-asks.

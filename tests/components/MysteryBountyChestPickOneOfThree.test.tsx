@@ -96,7 +96,8 @@ describe('pick 1 of 3', () => {
   it('opens by itself if the player never picks, leaving the slot to the server', () => {
     const onRequestReveal = vi.fn();
     render(view(offered, 'winner', { onRequestReveal }));
-    act(() => vi.advanceTimersByTime(700 + 9_000));
+    act(() => vi.advanceTimersByTime(700));
+    act(() => vi.advanceTimersByTime(9_000));
     expect(onRequestReveal).toHaveBeenCalledWith(undefined);
   });
 

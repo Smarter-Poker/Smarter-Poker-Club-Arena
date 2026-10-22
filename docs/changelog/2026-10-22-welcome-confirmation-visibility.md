@@ -4,7 +4,7 @@ The welcome agreement and other console checkboxes used an almost-black well wit
 
 The broader control inventory also found and corrected:
 
-- Create Union hid its native controls with display:none, removing keyboard access. They remain in the tab order and mirror focus onto the visible box/track. The unchecked control edge is blue and the page now defines its missing accent tokens, which previously made its checked black tick and other black-on-accent states unreadable.
+- Create Union hid its native controls with display:none, removing keyboard access. They remain in the tab order and mirror focus onto the visible box/track. The unchecked control edge is blue and the page now defines its missing accent, background and muted-text tokens, which previously made its checked black tick and other black-on-accent states unreadable.
 - Cashier Trade hid both filter checkboxes and indicated selection only through text color. Assigned To Me and Group By Role now show the shared native checkbox.
 - Cashier recipient-wallet radio choices had no selected styling. The selected destination now uses white text and a blue underline. Its malformed button focus-offset declaration is corrected.
 - Hero Hub and Table Settings Off labels used dark gunmetal on black. They now use readable muted silver while retaining the existing On treatment.

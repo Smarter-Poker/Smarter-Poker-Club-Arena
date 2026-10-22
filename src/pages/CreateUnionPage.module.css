@@ -10,6 +10,9 @@
   --accent: #45adff;
   --accent-dark: #1877f2;
   --accent-rgb: 69, 173, 255;
+  --bg-darker: #050607;
+  --bg-dark: #0a0b0d;
+  --text-muted: #9aa5b3;
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   width: 100%;

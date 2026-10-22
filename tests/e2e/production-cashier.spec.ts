@@ -16,16 +16,6 @@ import {
 
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const CASHIER_ROLES = ['Owner', 'Co Owner', 'Admin', 'Super Agent', 'Agent', 'Sub Agent'] as const;
-// Production account membership is intentionally mutable. Exact wallet names
-// are an optional environment contract; the maintained certificate below
-// always proves the durable behavior: all wallets this account is eligible to
-// see, at least two club wallets, alternate-club navigation, keyboard opening,
-// right-click and hold. Union navigation is exercised when it owns a union.
-const EXPECTED_WALLETS = (process.env.E2E_CASHIER_WALLETS || '')
-  .split('|')
-  .map((name) => name.trim())
-  .filter(Boolean);
-
 // The batch preview's status line is owed by the wallet that FUNDS the action:
 // Send Out spends the agent wallet, Send Ticket the caller's own chips. The
 // maintained read-only identity holds neither (it is never funded), so the
@@ -384,135 +374,27 @@ test.describe('Production Cashier Certification', () => {
     await attachCashierScreenshot(page, testInfo, 'trade-wallet-picker');
   });
 
-  test('opens the complete wallet directory by right-click and mobile hold', async ({
+  test('keeps the Arena home free of bottom cards on mobile and desktop', async ({
     page,
   }, testInfo) => {
     test.setTimeout(90_000);
+    await page.setViewportSize({ width: 393, height: 852 });
     await page.goto('.', { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await expect(page).not.toHaveURL(/\/auth(?:\/|\?|$)/, { timeout: 30_000 });
-    const quickActions = page.getByRole('navigation', { name: 'Quick Actions' });
-    await expect(quickActions).toBeVisible({ timeout: 60_000 });
-    const cashierTile = quickActions.getByRole('button', { name: /^Cashier\b/ });
-    await expect(cashierTile).toBeVisible();
-    // The shell can paint before the wallet directory exposes its menu.
-    await expect(cashierTile).toHaveAttribute('aria-haspopup', 'menu', { timeout: 30_000 });
+    const home = page.getByRole('main', { name: 'Poker Arena Home', exact: true });
+    await expect(home).toBeVisible({ timeout: 60_000 });
+    const clubCard = home.getByRole('button', { name: /Click To Enter Lobby/ }).first();
+    await expect(clubCard).toBeVisible({ timeout: 60_000 });
 
-    await cashierTile.click({ button: 'right' });
-    const desktopMenu = page.getByRole('menu', { name: 'Open Cashier For' });
-    await expect(desktopMenu).toBeVisible();
-    const desktopItems = desktopMenu.getByRole('menuitem');
-    await expect(desktopItems.first()).toBeVisible();
-    const desktopLabels = (await desktopItems.allInnerTexts()).map((label) =>
-      label.replace(/\s+/g, ' ').trim()
-    );
-    for (const wallet of EXPECTED_WALLETS) {
-      expect(
-        desktopLabels.some((label) => label.includes(wallet)),
-        `maintained Cashier fixture is missing ${wallet}`
-      ).toBe(true);
-    }
-    const unionIndex = desktopLabels.findIndex((label) => /Union Wallet/.test(label));
-    expect(
-      desktopLabels.filter((label) => !/Union Wallet/.test(label)).length,
-      'maintained Cashier fixture needs at least two club wallets for navigation proof'
-    ).toBeGreaterThanOrEqual(2);
-    await testInfo.attach('cashier-wallet-directory.json', {
-      body: JSON.stringify(
-        {
-          configuredExpected: EXPECTED_WALLETS,
-          observed: desktopLabels,
-          observedCounts: {
-            ownedUnionWallets: desktopLabels.filter((label) => /Union Wallet/.test(label)).length,
-            clubWallets: desktopLabels.filter((label) => !/Union Wallet/.test(label)).length,
-          },
-          structuralContract: {
-            clubWallets: 'at least two maintained memberships',
-            ownedUnionWallets: 'every owned union, when the account owns one',
-          },
-        },
-        null,
-        2
-      ),
-      contentType: 'application/json',
-    });
-
-    await page.keyboard.press('Escape');
-    await expect(desktopMenu).toBeHidden();
-    await cashierTile.focus();
-    await page.keyboard.press('ArrowDown');
-    await expect(desktopMenu).toBeVisible();
-    // Opening by keyboard focuses the current wallet, which is not required
-    // to be the first directory row. Prove focus entered exactly one wallet
-    // item instead of coupling the certificate to mutable list ordering.
-    await expect(desktopMenu.locator('[role="menuitem"]:focus')).toHaveCount(1);
-    await page.keyboard.press('Escape');
-    await expect(desktopMenu).toBeHidden();
-    await page.setViewportSize({ width: 393, height: 852 });
-    await cashierTile.scrollIntoViewIfNeeded();
-    await cashierTile.dispatchEvent('pointerdown', { pointerType: 'touch', button: 0 });
-    await page.waitForTimeout(550);
-    const mobileMenu = page.getByRole('menu', { name: 'Open Cashier For' });
-    await expect(mobileMenu).toBeVisible();
-    await cashierTile.dispatchEvent('pointerup', { pointerType: 'touch', button: 0 });
-
-    const bounds = await mobileMenu.evaluate((menu) => {
-      const box = menu.parentElement?.getBoundingClientRect() ?? menu.getBoundingClientRect();
-      return {
-        left: box.left,
-        right: box.right,
-        top: box.top,
-        bottom: box.bottom,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-        documentWidth: document.documentElement.scrollWidth,
-      };
-    });
-    expect(bounds.left).toBeGreaterThanOrEqual(0);
-    expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth);
-    expect(bounds.top).toBeGreaterThanOrEqual(0);
-    expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight);
-    expect(bounds.documentWidth).toBeLessThanOrEqual(bounds.viewportWidth);
-    await expectCashierAxeClean(page, testInfo, '[role="menu"]', 'mobile-wallet-directory');
-    await attachCashierScreenshot(page, testInfo, 'mobile-wallet-directory');
-
-    // Navigation is read-only. Choose a club other than the tile's current target.
-    const tileLabel = (await cashierTile.getAttribute('aria-label')) || '';
-    const targetName = tileLabel.match(/^Cashier For (.+?) \(Press/)?.[1] || '';
-    const mobileLabels = (await mobileMenu.getByRole('menuitem').allInnerTexts()).map((label) =>
-      label.replace(/\s+/g, ' ').trim()
-    );
-    const alternateClubIndex = mobileLabels.findIndex(
-      (label) => !/Union Wallet/.test(label) && !label.includes(targetName)
-    );
-    expect(
-      alternateClubIndex,
-      'no deterministic alternate club wallet exists'
-    ).toBeGreaterThanOrEqual(0);
-    const beforeClubNavigation = page.url();
-    await mobileMenu.getByRole('menuitem').nth(alternateClubIndex).click();
-    await expect(page).toHaveURL(/\/clubs\/[^/]+\/cashier(?:[/?#]|$)/, { timeout: 30_000 });
-    expect(page.url()).not.toBe(beforeClubNavigation);
-
-    await page.goto('.', { waitUntil: 'domcontentloaded', timeout: 60_000 });
-    const returnedTile = page
-      .getByRole('navigation', { name: 'Quick Actions' })
-      .getByRole('button', { name: /^Cashier\b/ });
-    await expect(returnedTile).toHaveAttribute('aria-haspopup', 'menu', { timeout: 30_000 });
-    await returnedTile.click({ button: 'right' });
-    const returnedMenu = page.getByRole('menu', { name: 'Open Cashier For' });
-    await expect(returnedMenu).toBeVisible();
-    // Union wallets are conditional by product contract: owners see every
-    // union they own, while club-only staff must not need a synthetic union
-    // merely to use the Cashier. Exercise the live union route whenever this
-    // maintained account owns one; deterministic unit coverage proves owned
-    // unions are included and non-owned unions are excluded.
-    if (unionIndex >= 0) {
-      const union = returnedMenu.getByRole('menuitem').filter({ hasText: 'Union Wallet' }).first();
-      await expect(union).toBeVisible();
-      await union.click();
-      await expect(page).toHaveURL(/\/unions\/[^/]+\/operations\?tab=wallet(?:&|$)/, {
-        timeout: 30_000,
-      });
+    for (const viewport of [
+      { width: 393, height: 852 },
+      { width: 1440, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect(home.getByRole('navigation', { name: 'Quick Actions' })).toHaveCount(0);
+      await expect(home.getByRole('button', { name: 'Open Menu', exact: true })).toBeVisible();
+      await expect(clubCard).toBeVisible();
+      await attachCashierScreenshot(page, testInfo, `arena-home-clean-${viewport.width}`);
     }
   });
 

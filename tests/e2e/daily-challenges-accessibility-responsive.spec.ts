@@ -2,6 +2,11 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { DailyMissionsPage } from './support/DailyMissionsPage';
 
+// useUnreadTabTitle prefixes the tab with the unread count, "(4) ...", for
+// any account holding notifications. The page title itself must still match.
+const challengeTitle = (title: string): RegExp =>
+  new RegExp(`^(?:\\(\\d+\\+?\\) )?${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+
 type ChallengeTier = 'daily' | 'weekly' | 'monthly';
 
 const CHALLENGE_LOAD_TIMEOUT = 60_000;
@@ -102,7 +107,7 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
       await openChallengeTier(page, testInfo, tier);
 
       await expect(page).toHaveURL(new RegExp(`/challenges/${tier}(?:[?#]|$)`));
-      await expect(page).toHaveTitle(`${label} Challenges | Smarter Poker`);
+      await expect(page).toHaveTitle(challengeTitle(`${label} Challenges | Smarter Poker`));
       await expect(
         page.getByRole('heading', { name: `${label} Challenges`, level: 1, exact: true })
       ).toHaveCount(1);
@@ -160,20 +165,20 @@ test.describe('Daily Challenges accessibility and responsive certification', () 
     await page.keyboard.press('ArrowRight');
     await expect(weekly).toBeFocused();
     await expect(page).toHaveURL(/\/challenges\/weekly(?:[?#]|$)/);
-    await expect(page).toHaveTitle('Weekly Challenges | Smarter Poker');
+    await expect(page).toHaveTitle(challengeTitle('Weekly Challenges | Smarter Poker'));
     await expect(page.getByRole('heading', { name: 'Weekly Challenges', level: 1 })).toBeVisible();
     await expectExclusiveTier(page, 'weekly', 'Weekly');
 
     await page.keyboard.press('End');
     await expect(monthly).toBeFocused();
     await expect(page).toHaveURL(/\/challenges\/monthly(?:[?#]|$)/);
-    await expect(page).toHaveTitle('Monthly Challenges | Smarter Poker');
+    await expect(page).toHaveTitle(challengeTitle('Monthly Challenges | Smarter Poker'));
     await expectExclusiveTier(page, 'monthly', 'Monthly');
 
     await page.keyboard.press('Home');
     await expect(daily).toBeFocused();
     await expect(page).toHaveURL(/\/challenges\/daily(?:[?#]|$)/);
-    await expect(page).toHaveTitle('Daily Challenges | Smarter Poker');
+    await expect(page).toHaveTitle(challengeTitle('Daily Challenges | Smarter Poker'));
     await expectExclusiveTier(page, 'daily', 'Daily');
     economy.assertNone();
   });

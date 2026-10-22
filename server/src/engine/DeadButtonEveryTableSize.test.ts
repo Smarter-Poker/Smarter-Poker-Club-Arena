@@ -175,16 +175,17 @@ const SCENARIOS: Scenario[] = [
     ],
   },
   {
-    name: 'a new arrival into the dead small blind seat posts it, then the big blind',
+    name: 'a new arrival into the dead small blind seat posts it and owes nothing more',
     last: OPENING,
     hands: [
       { seats: [1, 2, 3, 4, 5, 6], expect: [2, 3, 4] },
       // The big blind (seat 4) busts and a moved-in player takes seat 4. The
-      // small blind is owed at that seat, so the arrival posts it live (the
-      // arrival rule leaves a small-blind seat on the hook for the big blind
-      // next hand, which they post from the button as a live entry post).
+      // small blind is owed at that seat, so the arrival posts it live and is
+      // dealt in. Dan 2026-10-21: that small blind is their entry. The seat is
+      // the button next hand and is NOT billed a big blind there (it used to
+      // be: "paid small blind, were dealt in and then had to pay ... again").
       { seats: [1, 2, 3, 4, 5, 6], arrival: 4, expect: [3, 4, 5], postsToEnter: [] },
-      { seats: [1, 2, 3, 4, 5, 6], expect: [4, 5, 6], postsToEnter: [4] },
+      { seats: [1, 2, 3, 4, 5, 6], expect: [4, 5, 6], postsToEnter: [] },
       { seats: [1, 2, 3, 4, 5, 6], expect: [5, 6, 1] },
       { seats: [1, 2, 3, 4, 5, 6], expect: [6, 1, 2] },
     ],

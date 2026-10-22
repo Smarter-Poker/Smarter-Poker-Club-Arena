@@ -24,6 +24,8 @@ Use configured authenticated GitHub tools. Repository Actions may use the config
 
 Use `node scripts/ci/pr-status.mjs <PR-number>` or the authenticated Actions API for the exact head revision. `GET /commits/:sha/status` reports legacy commit statuses and can say pending with zero results even when Actions has failed. A denied `/commits/:sha/check-runs` read is UNKNOWN, never proof that no check failed. Read `/actions/runs?head_sha=<sha>` and its jobs to identify the actual result. On this Mac `/opt/homebrew/bin` must be on PATH for the configured `gh` executable; check the current environment before declaring it unavailable. A green check still requires the authorized agent to complete protected merge and publication under PUBLISHING.md.
 
+To read why a job failed, read its log: `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs`, or `gh run view <run-id> --log-failed`. The API answers with a redirect to Actions log storage (`*.blob.core.windows.net`), and a cloud session's egress allowlist or the desktop Linux sandbox may refuse that host (403 at CONNECT, checked 2026-10-21), while check-run annotations carry only the exit code. When the session is linked to this Mac, run the same `gh` command in the host terminal, which reaches log storage directly. A log you could not read is UNKNOWN, never a pass.
+
 ## Complete the assigned result
 
 Do not stop at a push when authorized delivery is unfinished. Find or create the PR, pass applicable checks, complete protected merge, and verify the actual publication and behavior. Reuse a remote commit or PR already present. If its PR has merged, a new follow-up needs an owned branch and PR; pushing into a closed PR does not deliver it.

@@ -1,0 +1,7 @@
+{
+  "_owner": "fix/real-time-tournament-payouts-and-moved-blind",
+  "_comment": "A tournament finisher in the money is paid at the commit that records the bust (20261021234526).",
+  "tables": [],
+  "functions": ["fn_ca_pay_tournament_finishers_now", "trg_ca_pay_tournament_finishers_at_commit"],
+  "columns": {}
+}

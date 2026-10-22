@@ -120,6 +120,88 @@ describe('a tournament tab with no live hand', () => {
   });
 });
 
+describe('an MTT tab names its event over its buy-in', () => {
+  /* Dan 2026-10-21, verbatim: "FOR MTT'S IT SHOULD SAY THE TOURNAMENT NAME AS
+     WELL AS THE BUY IN INSIDE THE ACTION TAB. NOT JUST 35". */
+  it('prints the tournament name on top and the buy-in under it', () => {
+    const el = pill(
+      tab({
+        gameCode: 'MTT',
+        isTournament: true,
+        tournamentBuyIn: 35,
+        tournamentName: 'Midway Nightly Bounty',
+      })
+    );
+    expect(nameOf(el)).toBe('Midway Nightly Bounty');
+    expect(subOf(el)).toBe('35');
+    expect(el.querySelector('.table-tab-bar__tab-name')?.getAttribute('title')).toBe(
+      'Midway Nightly Bounty'
+    );
+    expect(el.textContent).not.toContain('200/400');
+  });
+
+  it('a freeroll names its event over the freeroll word', () => {
+    const el = pill(
+      tab({
+        gameCode: 'MTT',
+        isTournament: true,
+        tournamentBuyIn: 0,
+        tournamentName: 'Daily Freeroll',
+      })
+    );
+    expect(nameOf(el)).toBe('Daily Freeroll');
+    expect(subOf(el)).toBe(FREE_BUY_LABEL);
+  });
+
+  it('keeps MTT on top while the name is unknown or empty, never a blank line', () => {
+    for (const tournamentName of [undefined, '', '   ']) {
+      const el = pill(
+        tab({ gameCode: 'MTT', isTournament: true, tournamentBuyIn: 35, tournamentName })
+      );
+      expect(nameOf(el)).toBe('MTT');
+      expect(subOf(el)).toBe('35');
+      cleanup();
+    }
+  });
+
+  it('SNG and SPIN keep their code', () => {
+    for (const code of ['SNG', 'SPIN']) {
+      const el = pill(
+        tab({
+          id: `n-${code}`,
+          gameCode: code,
+          isTournament: true,
+          tournamentBuyIn: 11,
+          tournamentName: 'Some Event',
+        })
+      );
+      expect(nameOf(el)).toBe(code);
+      cleanup();
+    }
+  });
+
+  it('a cash tab ignores a stray name', () => {
+    const el = pill(
+      tab({ stakes: '1/2', gameCode: 'NLH', isTournament: false, tournamentName: 'X' })
+    );
+    expect(nameOf(el)).toBe('NLH');
+    expect(subOf(el)).toBe('1/2');
+  });
+
+  it('the container hands the bar the event name', () => {
+    const multi = read('src/pages/MultiTablePage.tsx');
+    expect(multi).toMatch(/tournamentName: t\.tournamentName,/);
+  });
+
+  it('a long name ellipsises on one line inside the pill', () => {
+    const css = read('src/components/table/TableTabBar.css');
+    const rule = sliceCssRule(css, '\n.table-tab-bar__tab-label .table-tab-bar__tab-name--event {');
+    expect(rule).toMatch(/white-space:\s*nowrap/);
+    expect(rule).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule).toMatch(/max-width:\s*100%/);
+  });
+});
+
 describe('hole cards win', () => {
   it('a tournament tab holding live cards shows the cards and nothing else', () => {
     const el = pill(

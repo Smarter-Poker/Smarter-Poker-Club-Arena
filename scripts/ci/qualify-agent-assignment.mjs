@@ -61,6 +61,15 @@ async function membership(id) {const rows=await req(member(id)+'&select=*');asse
 const actor=await membership(staff.id);assert.equal(actor.role,'admin');assert.equal(actor.status,'active');
 const actorProfile=await req(`/rest/v1/profiles?id=eq.${staff.id}&select=email,role,is_admin,is_horse`);
 assert.equal(actorProfile.length,1);assert.equal(actorProfile[0].email,staff.email);assert.equal(actorProfile[0].role,'user');assert.ok(!actorProfile[0].is_admin && !actorProfile[0].is_horse);
+// The certification club belongs to a union whose agent commission band is
+// enforced by fn_enforce_agent_commission_bounds. A zero-rate earning agent is
+// refused (P0001), so the fixture takes the band's own minimum. No money moves.
+const [clubRow]=await req(`/rest/v1/clubs?id=eq.${club}&select=union_id`);
+const [unionLink]=await req(`/rest/v1/union_clubs?club_id=eq.${club}&select=union_id&limit=1`);
+const unionId=unionLink?.union_id || clubRow?.union_id || null;
+const [unionRow]=unionId?await req(`/rest/v1/unions?id=eq.${unionId}&select=settings`):[];
+const fixtureCommission=Number(unionRow?.settings?.min_agent_commission ?? 0);
+assert.ok(Number.isFinite(fixtureCommission) && fixtureCommission>=0 && fixtureCommission<=1,'Union agent commission minimum is unreadable');
 let passed=false;
 try {
  const token=await login(staff);
@@ -72,7 +81,7 @@ try {
   const current=await membership(account.id);assert.equal(current.agent_id,null);
   if(item.agentId) {
    await req(member(account.id),{method:'PATCH',body:{role:'agent'}});
-   await req('/rest/v1/agents',{method:'POST',body:{id:item.agentId,user_id:account.id,club_id:club,role:'agent',status:'active',commission_rate:0,player_rakeback_rate:0}});
+   await req('/rest/v1/agents',{method:'POST',body:{id:item.agentId,user_id:account.id,club_id:club,role:'agent',status:'active',commission_rate:fixtureCommission,player_rakeback_rate:0}});
   }
  }
  const [source,destination,player]=owned;

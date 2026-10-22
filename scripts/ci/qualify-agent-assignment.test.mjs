@@ -23,6 +23,9 @@ async function fixture(failure) {
   let data,status=200;
   if(u.pathname==='/auth/v1/token') {assert.equal(init.headers.Authorization,undefined);const account=[...accounts.values()].find(a=>a.email===body.email);data={access_token:account.id,user:{id:account.id}};}
   else if(u.pathname==='/auth/v1/logout') {status=204;data=null;}
+  else if(u.pathname==='/rest/v1/clubs') data=[{union_id:'union-fixture'}];
+  else if(u.pathname==='/rest/v1/union_clubs') data=[];
+  else if(u.pathname==='/rest/v1/unions') data=[{settings:{min_agent_commission:'0.20'}}];
   else if(u.pathname==='/rest/v1/profiles') data=[{alias:'Fixture Player',username:'Fixture Player',email:staff.email,role:'user',is_admin:false,is_horse:false}];
   else if(u.pathname==='/rest/v1/club_members') {
    if(method==='PATCH') Object.assign(members.get(user),body);
@@ -30,7 +33,7 @@ async function fixture(failure) {
    else if(u.searchParams.has('agent_id')) data=[...members.values()].filter(r=>r.agent_id===u.searchParams.get('agent_id').slice(3));
    else {const caller=init.headers.Authorization.slice(7);data=[...members.values()].filter(r=>r.user_id===caller || r.agent_id===caller);}
   } else if(u.pathname==='/rest/v1/agents') {
-   if(method==='POST') {agents.set(body.id,{parent_agent_id:null,credit_used:0,credit_limit:0,business_balance:0,player_balance:0,promo_balance:0,agent_wallet_balance:0,player_wallet_balance:0,promo_wallet_balance:0,weekly_rake_generated:0,lifetime_earnings:0,lifetime_rake_generated:0,...body});if(failure==='unknown-agent') throw new Error('unknown agent response');}
+   if(method==='POST') {assert.equal(body.commission_rate,0.2,'fixture agent takes the union band minimum');agents.set(body.id,{parent_agent_id:null,credit_used:0,credit_limit:0,business_balance:0,player_balance:0,promo_balance:0,agent_wallet_balance:0,player_wallet_balance:0,promo_wallet_balance:0,weekly_rake_generated:0,lifetime_earnings:0,lifetime_rake_generated:0,...body});if(failure==='unknown-agent') throw new Error('unknown agent response');}
    if(method==='DELETE') agents.delete(id);
    data=u.searchParams.has('parent_agent_id')?[]:id?(agents.has(id)?[agents.get(id)]:[]):[];
   } else if(u.pathname==='/rest/v1/rpc/fn_preview_club_assignment') data={selected_count:1,affected_count:1,review_token:'a'.repeat(32)};

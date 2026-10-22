@@ -1228,6 +1228,17 @@ BEGIN
  RETURN result;
 END $function$;
 
+-- Access is unchanged and stated explicitly: the stages are engine-only
+-- (postgres), the deleted-wallet helpers are service_role only.
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION smarter_private.split_rakeback_payout_complete(uuid,bigint) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_deleted_wallet_bank_return(uuid,uuid,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_deleted_wallet_bank_return(uuid,uuid,text) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_ca_deleted_wallet_credit() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_deleted_wallet_credit() TO service_role;
+
 DO $verify$
 BEGIN
  IF NOT (md5(pg_get_functiondef('smarter_private.split_rakeback_payout_complete(uuid,bigint)'::regprocedure))='501d4a3187573289db69d6d7ec286406' AND md5(pg_get_functiondef('public.fn_ca_deleted_wallet_bank_return(uuid,uuid,text)'::regprocedure))='b1938403621af2397590c6ce004faf3b' AND md5(pg_get_functiondef('public.fn_ca_deleted_wallet_credit()'::regprocedure))='38381e35aa9804fb1e109c20855e4854' AND md5(pg_get_functiondef('public.fn_settle_accounting_commission_stage_v3(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='76807aa6c2534cc5a89b1af136039838' AND md5(pg_get_functiondef('public.fn_settle_accounting_commission_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='c9a28a0a12e117fd7a8539e5aca54e82' AND md5(pg_get_functiondef('public.fn_settle_accounting_rakeback_stage(text,uuid,timestamp with time zone,timestamp with time zone)'::regprocedure))='f1dc7ad2a540edc392cf2e5fcbc1378c') THEN RAISE EXCEPTION 'commission_agent_wallet_postimage_changed'; END IF;

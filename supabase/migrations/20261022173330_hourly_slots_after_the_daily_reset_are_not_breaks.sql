@@ -12,6 +12,8 @@
 -- 2. The digest counts only scheduled breaks (verdict pass or fail).
 -- 3. The stored Oct 20 and Oct 21 digest metrics are re-counted the same way.
 
+-- @live-proof: (SELECT count(*) FROM public.ca_break_scorecards WHERE verdict = 'not_scheduled') = 18 AND position('FILTER (WHERE verdict IN (''pass'',''fail''))' IN pg_get_functiondef('public.fn_sp_daily_metrics_compute'::regproc)) > 0
+
 UPDATE public.ca_break_scorecards
    SET verdict = 'not_scheduled',
        detail = detail || jsonb_build_object(

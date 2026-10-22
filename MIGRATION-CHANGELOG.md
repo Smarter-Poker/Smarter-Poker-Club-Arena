@@ -1,7 +1,3 @@
-## 2026-10-22: Faithful isolated PokerIQ schema reconstruction
-
-Refreshed the complete native schema and independent catalog from one read-only exported snapshot. Historical SQL remains immutable and is fingerprinted, with known source/ledger mismatches explicitly recorded; no financial history is replayed. Local fidelity repairs preserve extension shared ownership dependencies, provider schema ACLs, and inherited partition constraints. Native parser comparisons retain semantic checks with negative predicate/bound/view regressions. Focused PostgreSQL17 qualification passed; complete pinned Supabase image comparison remains required before merge. No production schema changes are delivered by this bootstrap.
-
 ## 2026-09-17: Production Alerts database installation
 
 The restored GitHub PG17 job qualified the exact source files with 48 hand-index, 57 hand-stat and 90 rake-attribution checks (run `35174375620`). The restoration owner applied them in order through Supabase migrations and independently verified all eight final function hashes and unchanged owners, permissions and configuration at `2026-09-17T02:41:02Z`.

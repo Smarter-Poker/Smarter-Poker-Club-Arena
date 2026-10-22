@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify both exact retirement indexes on disposable PostgreSQL17."""
+"""Qualify all three exact retirement indexes on disposable PostgreSQL17."""
 import argparse,hashlib,json,os,shutil,subprocess,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
@@ -51,3 +51,6 @@ finally:
 
 # The maintained CI entrypoint covers both retirement verification indexes.
 run([os.sys.executable,ROOT/'scripts/ci/test-adaptive-ledger-digest-probe.py','--scratch',a.scratch,'--output',a.output.with_name(a.output.stem+'-digest-probe'+a.output.suffix)])
+
+# The same directly triggered CI entrypoint qualifies the journal metadata cover.
+run([os.sys.executable,ROOT/'scripts/ci/test-adaptive-journal-metadata-cover.py','--scratch',a.scratch,'--output',a.output.with_name(a.output.stem+'-journal-cover'+a.output.suffix)])

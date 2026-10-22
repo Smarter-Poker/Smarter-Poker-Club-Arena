@@ -1141,7 +1141,7 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
   public sitOut(
     userId: string,
     sitOut: boolean,
-    proof?: { completedLightningOccupancyId?: string }
+    proof?: { completedLightningOccupancyId?: string; requestedByClient?: boolean }
   ): { success: boolean; error?: string; code?: string; willFoldNextHand: boolean } {
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) {
@@ -1195,6 +1195,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // If a hand is in progress, defer the sit-out until after the hand completes.
       // The player continues playing the current hand normally.
       this.returnedFromSitOutAtMs.delete(userId);
+      /* THE PLAYER'S OWN SIT OUT (2026-10-22). Marked before it is applied, so
+         a deferred (mid-hand) request is already the player's when it lands.
+         A horse controller reads isClientSitOut() and never sits this seat
+         back in; only the client's own I'm Back (sitBack) clears it. */
+      if (proof?.requestedByClient === true) {
+        this.disconnectEngine.markClientSitOut(this.tableId, userId);
+      }
       if (this.handController !== null) {
         this.pendingSitOut.add(userId);
       } else {
@@ -1231,6 +1238,15 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     }
 
     return { success: true, willFoldNextHand };
+  }
+
+  /**
+   * True while a Sit Out this account's own authenticated client requested
+   * still stands (applied or deferred to the hand end). The horse rotator
+   * asks this before any automatic sit-back-in (2026-10-22).
+   */
+  public isClientSitOut(userId: string): boolean {
+    return this.disconnectEngine.isClientSitOut(this.tableId, userId);
   }
 
   /**

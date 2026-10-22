@@ -18,7 +18,7 @@ export interface SitoutDeps {
           sitOut(
             userId: string,
             sitOut: boolean,
-            proof?: { completedLightningOccupancyId?: string }
+            proof?: { completedLightningOccupancyId?: string; requestedByClient?: boolean }
           ): { success: boolean; [k: string]: unknown };
         }
       | null
@@ -71,7 +71,9 @@ export async function handleSitout(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    let result = engine.sitOut(userId, sitOut);
+    // This door is the account's own authenticated client. Its Sit Out is the
+    // player's, and no horse controller may sit it back in (2026-10-22).
+    let result = engine.sitOut(userId, sitOut, { requestedByClient: true });
     if (sitOut && anchorTableId && result.code === 'SITOUT_HAND_REQUIRED') {
       // The first refusal made no state change. Only a settled hand of this
       // exact open pool can supplement a restarted feeder's empty local set.
@@ -86,6 +88,7 @@ export async function handleSitout(
       ) {
         result = engine.sitOut(userId, sitOut, {
           completedLightningOccupancyId: proof.completedHandOccupancyId,
+          requestedByClient: true,
         });
       }
     }

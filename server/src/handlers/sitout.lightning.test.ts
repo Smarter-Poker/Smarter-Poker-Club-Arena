@@ -34,7 +34,7 @@ describe('Lightning room sit out and return', () => {
     lightningAnchorFor.mockResolvedValue({ anchorTableId: table });
     expect(await request(room, wanted)).toMatchObject({ status: 200, body: { success: true } });
     expect(lightningAnchorFor).toHaveBeenCalledWith(room, 'owner', { requireOpen: true });
-    expect(sitOut.mock.calls).toEqual([['owner', wanted]]);
+    expect(sitOut.mock.calls).toEqual([['owner', wanted, { requestedByClient: true }]]);
   });
 
   it.each(['foreign', 'closed'])('refuses a %s pool without touching an engine', async () => {
@@ -54,7 +54,7 @@ describe('Lightning room sit out and return', () => {
       body: { success: false, error: 'You Must Play At Least One Hand Before You Can Sit Out' },
     });
     expect(lightningAnchorFor).not.toHaveBeenCalled();
-    expect(sitOut.mock.calls).toEqual([['owner', true]]);
+    expect(sitOut.mock.calls).toEqual([['owner', true, { requestedByClient: true }]]);
   });
 
   it('refuses an anchor whose engine is unavailable', async () => {
@@ -87,8 +87,8 @@ describe('restarted Lightning feeder eligibility continuation', () => {
       [room, 'owner', { requireOpen: true, requireCompletedHand: true }],
     ]);
     expect(sitOut.mock.calls).toEqual([
-      ['owner', true],
-      ['owner', true, { completedLightningOccupancyId: 'current' }],
+      ['owner', true, { requestedByClient: true }],
+      ['owner', true, { completedLightningOccupancyId: 'current', requestedByClient: true }],
     ]);
   });
   it('keeps no-hand refusal when the exact current pool has no settled participation', async () => {

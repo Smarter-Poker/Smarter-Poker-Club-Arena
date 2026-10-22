@@ -106,6 +106,11 @@ CREATE TRIGGER a3_bounty_mtt_rebuys_until_registration_closes
   FOR EACH ROW
   EXECUTE FUNCTION public.fn_ca_bounty_mtt_rebuys_until_registration_closes();
 
+INSERT INTO public.ca_declared_money_triggers(table_name,trigger_name,note)
+VALUES ('tournaments','a3_bounty_mtt_rebuys_until_registration_closes',
+  'Dan 2026-10-21: a paid pre-start bounty, PKO or mystery bounty MTT is never a freezeout; sets is_rebuy and is_reentry, rebuy_levels = late_reg_levels, rebuy cost and chips defaults and no count cap. Moves no money.')
+ON CONFLICT DO NOTHING;
+
 -- A registered event's contract is guarded by fn_guard_managed_game_lifecycle.
 -- Root may GRANT a pre-start bounty event its rebuy (and only the rebuy keys),
 -- in this transaction, the same narrow way 20261021222049 let it lock the

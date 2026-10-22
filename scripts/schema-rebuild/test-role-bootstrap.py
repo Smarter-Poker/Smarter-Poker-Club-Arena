@@ -33,7 +33,10 @@ for correct in [False,True]:
    except Rejected as exc:
     assert exc.diagnostic['sqlstate']=='42501',exc.diagnostic
     assert exc.diagnostic['phase']=='role-membership',exc.diagnostic
-    assert exc.diagnostic['context']=={'role':'pg_monitor','member':'postgres','grantor':bootstrap},exc.diagnostic
+    first=contract['memberships'][0]
+    expected_context={key:first[key] for key in ['role','member','grantor']}
+    assert expected_context['grantor']==bootstrap,expected_context
+    assert exc.diagnostic['context']==expected_context,exc.diagnostic
    else:raise AssertionError('Wrong bootstrap principal unexpectedly accepted captured grantor')
    try:v.require_builtin_extension(sql,next(x for x in contract['extensions'] if x['name']=='plpgsql'))
    except v.Refused:pass

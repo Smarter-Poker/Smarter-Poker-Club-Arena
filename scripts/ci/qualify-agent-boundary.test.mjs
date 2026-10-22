@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {supabaseServerHeaders} from './supabase-auth-headers.mjs';
+import {retryTransient} from './transient-retry.mjs';
 const source=readFileSync(new URL('./qualify-agent-boundary.mjs',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@example.invalid') {
@@ -38,8 +39,8 @@ async function fixture(failure,email='ca-customization-cert-postdeploy-fixture@e
   if(u.pathname==='/rest/v1/agents' && u.searchParams.has('parent_agent_id')) data=[];
   return {status,ok:status<400,async text(){return status===204?'':JSON.stringify(data)}};
  };
- const run=new AsyncFunction('assert','readFileSync','randomUUID','join','supabaseServerHeaders','process','fetch','console',source);
- const pending=run(assert,()=>JSON.stringify(account),randomUUID,join,supabaseServerHeaders,{env:{RUNNER_TEMP:'/fixture',SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_test_fixture',VITE_SUPABASE_ANON_KEY:'sb_publishable_fixture'}},fetch,{log(text){state.results=JSON.parse(text)}});
+ const run=new AsyncFunction('assert','readFileSync','randomUUID','join','supabaseServerHeaders','retryTransient','process','fetch','console',source);
+ const pending=run(assert,()=>JSON.stringify(account),randomUUID,join,supabaseServerHeaders,retryTransient,{env:{RUNNER_TEMP:'/fixture',SUPABASE_URL:'https://fixture.invalid',SUPABASE_SERVICE_ROLE_KEY:'sb_secret_test_fixture',VITE_SUPABASE_ANON_KEY:'sb_publishable_fixture'}},fetch,{log(text){state.results=JSON.parse(text)}});
  return {state,pending};
 }
 test('all three ranks are exercised and zero-balance fixture restores before completion',async()=>{

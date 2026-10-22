@@ -57,6 +57,7 @@ import {
   postflopBluffMod,
   reRaiseLineWidth,
   reRaiseWidth,
+  shortDeckStrengthBarForTopShare,
   strengthBarForTopShare,
   valueThinMod as readValueThinMod,
   type ExploitCounters,
@@ -1546,13 +1547,16 @@ export class HorseMind {
       // the score scale is not a percentile: score 0.19 is the top ~60%, not
       // the top 81%, so `1 - width` read a 100% shover as a top-60% range and
       // priced every call against it far too tight. Hold'em-family bands take
-      // the score bar for that share; the Omaha reservoir maps a band through
-      // its own percentile CDF, where `1 - width` is already the share.
+      // the score bar for that share (Short Deck its own combo scale); the
+      // Omaha reservoir maps a band through its own percentile CDF, where
+      // `1 - width` is already the share.
       if (width !== null)
         lo =
           this.decisionScope === null || this.decisionScope.startsWith('holdem:')
             ? strengthBarForTopShare(width)
-            : 1 - width;
+            : this.decisionScope.startsWith('sixplus:')
+              ? shortDeckStrengthBarForTopShare(width)
+              : 1 - width;
     }
 
     // V5/V7: every postflop street they bet or raised narrows the read

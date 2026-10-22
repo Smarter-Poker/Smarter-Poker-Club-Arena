@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceBetween } from './helpers/sourceWindow';
 
 const ROOT = join(__dirname, '..');
 const SQL = readFileSync(
@@ -105,7 +106,8 @@ describe('the hourly sweep reads each ledger leg once', () => {
     const advance = sweep.indexOf('PERFORM public.fn_ca_ledger_audit_checkpoint_advance();');
     expect(advance).toBeGreaterThan(-1);
     expect(advance).toBeLessThan(sweep.indexOf('FOR c IN'));
-    expect(sweep.slice(advance, advance + 200)).toContain('EXCEPTION WHEN OTHERS THEN');
+    const ownBlock = sliceBetween(sweep, 'PERFORM public.fn_ca_ledger_audit_checkpoint_advance();', 'END;');
+    expect(ownBlock).toContain('EXCEPTION WHEN OTHERS THEN');
     expect(sweep.match(/\('fn_[a-z_]+',\s*\n?\s*'select/g)?.length ?? 0).toBeGreaterThanOrEqual(25);
     for (const check of ['fn_chip_integrity_report', 'fn_bbj_conservation_check', 'fn_ca_payout_rows_without_money',
       'fn_tournament_prize_disbursement_audit', 'fn_bbj_promo_bank_check', 'fn_tournament_guarantee_check',

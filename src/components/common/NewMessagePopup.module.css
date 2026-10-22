@@ -47,7 +47,6 @@
   font: inherit;
 }
 
-.body:hover,
 .body:focus-visible {
   background: rgba(70, 130, 220, 0.12);
   outline: none;
@@ -113,7 +112,6 @@
   cursor: pointer;
 }
 
-.close:hover,
 .close:focus-visible {
   color: #ffffff;
   outline: none;

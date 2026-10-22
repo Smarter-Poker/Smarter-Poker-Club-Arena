@@ -17,6 +17,7 @@ import { parse } from 'yaml';
 import {
   classifyChangedPaths,
   classifyGitChanges,
+  cssBeatJobInputs,
   gitEnvironmentForCwd,
 } from '../../scripts/ci/classify-ci-changes.mjs';
 
@@ -187,6 +188,78 @@ describe('cash lobby verification reaches the existing browser gate', () => {
     expect(classifyChangedPaths(['tests/unit/unrelated.test.ts']).src).toBe(false);
     expect(classifyChangedPaths(['tests/e2e/support/cashLobbyOverlays.ts.md']).src).toBe(false);
     expect(classifyChangedPaths(['tests/e2e/live-animations.spec.ts.md']).src).toBe(false);
+  });
+});
+
+describe('every input the CSS Beat job runs admits that job (2026-10-21)', () => {
+  // Read independently of the classifier: the job's own steps, parsed as YAML.
+  const beatSteps: string[] = (ci.jobs['css-beats-e2e'].steps as Array<{ run?: string }>)
+    .map((step) => step.run || '')
+    .filter(Boolean);
+  const namedSpecs = [
+    ...new Set(beatSteps.join('\n').match(/tests\/e2e\/[A-Za-z0-9_./-]+\.spec\.ts/g) || []),
+  ];
+  const scripts = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).scripts;
+  const configSpecs = [...beatSteps.join('\n').matchAll(/npm run (test:e2e:[a-z0-9-]+)/g)].map(
+    ([, name]) => {
+      const config = /--config=([^\s]+)/.exec(scripts[name])![1];
+      const text = readFileSync(join(root, config), 'utf8');
+      const dir = /testDir:\s*['"]\.\/([^'"]+)['"]/.exec(text)![1];
+      const match = /testMatch:\s*\/(.+)\/[a-z]*,/.exec(text)![1];
+      return `${dir}/${match.replace(/\\/g, '').replace(/\$$/, '')}`;
+    }
+  );
+
+  it('finds the job and its specs (a parse that finds nothing is not a pass)', () => {
+    expect(namedSpecs.length).toBeGreaterThanOrEqual(20);
+    expect(namedSpecs).toContain('tests/e2e/table-proportions.spec.ts');
+    expect(configSpecs).toEqual(
+      expect.arrayContaining([
+        'tests/e2e/customization-studios.spec.ts',
+        'tests/e2e/financial-decision-human-path.spec.ts',
+        'tests/push-browser/push-enrollment-optin.spec.ts',
+      ])
+    );
+  });
+
+  it.each([
+    'tests/e2e/table-proportions.spec.ts',
+    'tests/e2e/top-rail-seat.spec.ts',
+    'tests/e2e/pot-above-chips.spec.ts',
+    'tests/e2e/hero-card-row.spec.ts',
+    'tests/e2e/fixtures/table-art/vip_wolf@2x.webp',
+    'tests/e2e/fixtures/TablePage.before.css',
+    'tests/e2e/support/feltHarness.mjs',
+  ])('the PR #7627 inputs that skipped the job now admit it: %s', (path) => {
+    expect(classifyChangedPaths([path]).src).toBe(true);
+  });
+
+  it('admits the job for every spec it names or selects through a config', () => {
+    const skipped = [...namedSpecs, ...configSpecs].filter(
+      (path) => !classifyChangedPaths([path]).src
+    );
+    expect(skipped).toEqual([]);
+  });
+
+  it('still keeps production-only specs, unit tests and notes off the browser build', () => {
+    expect(classifyChangedPaths(['tests/e2e/production-mobile-lobby-chrome.spec.ts']).src).toBe(
+      false
+    );
+    expect(classifyChangedPaths(['tests/unit/unrelated.test.ts']).src).toBe(false);
+    expect(classifyChangedPaths(['tests/e2e/fixtures/table-art/README.md']).src).toBe(false);
+  });
+
+  it('answers could-not-tell when the workflow is unreadable, never an empty list', () => {
+    const empty = mkdtempSync(join(tmpdir(), 'css-beat-inputs-'));
+    try {
+      expect(cssBeatJobInputs(empty)).toBeNull();
+      mkdirSync(join(empty, '.github/workflows'), { recursive: true });
+      writeFileSync(join(empty, '.github/workflows/ci.yml'), 'jobs:\n  other:\n    steps: []\n');
+      writeFileSync(join(empty, 'package.json'), '{"scripts":{}}');
+      expect(cssBeatJobInputs(empty)).toBeNull();
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
   });
 });
 

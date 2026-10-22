@@ -21,7 +21,7 @@ on:
           ]
         required: true
       accept_player_terms:
-        description: 'Explicit owner-authorized normal TOS and Privacy acceptance only for named players 0097309f-2864-4d09-b02b-56bca012a9c3 or Samantha a23ca5c9-b748-482f-9b59-9db35f7aa996'
+        description: 'Explicit owner-authorized normal TOS and Privacy acceptance only for named players 0097309f-2864-4d09-b02b-56bca012a9c3, Samantha a23ca5c9-b748-482f-9b59-9db35f7aa996 or milehigh 09dd202d-115b-49ae-afa8-cb528c7b8f72'
         type: boolean
         default: false
       cluster_id:

@@ -82,3 +82,28 @@ owner has not authorized acceptance for anyone else and no roster horse other
 than 009 and Samantha has accepted, milehigh cannot run a browser witness until
 its own Terms are accepted under a separate owner authorization. The assignment
 manifest is unchanged: milehigh is already in it.
+
+## Follow-up: milehigh's Terms
+
+The coordinator relayed that the owner's approval of a third test player
+authorizes accepting that player's Terms. `THIRD_WITNESS_PLAYER` therefore joins
+`CONSENT_PLAYERS`, so it can accept exactly once in the existing `player`
+witness mode (`accept_player_terms=true`, exact matching browser identity) through
+the normal UI Terms dialog, the same door 009 and Samantha used. No other roster
+horse can accept, and no mode other than `player`/`admission` may opt in.
+
+## Standing pilot assignment (2026-10-22 07:09 UTC)
+
+The 72 are 7.7% of the 938 active horses and held 4.0% of horse registrations in
+Midway Union and Diamond Arena tournaments over the past 24 hours. Of the 157
+events scheduled in the next 24 hours, removing pilot registrations takes no field
+below its minimum (Midway 95 of 2,356 horse registrations, Diamond 90 of 2,275).
+The coordinator relayed the owner's approval, so the assignment was activated as
+a **standing** assignment with no release date: operation
+`1da604dd-40a2-4fa1-8d1a-6cea05fb179b`, request `4128d6b1-d71e-44a4-a892-98325afc74a8`,
+run 39738268038 (verified, active, exact 72, manifest `121f80d2...`). It blocks only
+new automated tournament entries for the 72. Existing entries and seats, caps, rest
+days and activity windows are untouched. No withdrawal was run, nothing was
+funded and no new consent was needed. It stays active until an owner decision
+releases it through `lightning-pilot-assignment.yml phase=release` with this
+operation id.

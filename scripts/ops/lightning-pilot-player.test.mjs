@@ -429,7 +429,7 @@ test('a horse/action race refuses honestly, stops further action and cleans its 
 
 test('Samantha consent requires exact authorized pin and matching browser identity', async () => {
   const samantha = { ...pin, playerId: 'a23ca5c9-b748-482f-9b59-9db35f7aa996' };
-  assert.deepEqual(CONSENT_PLAYERS, [pin.playerId, samantha.playerId]);
+  assert.deepEqual(CONSENT_PLAYERS.slice(0, 2), [pin.playerId, samantha.playerId]);
   assert.equal(Object.isFrozen(CONSENT_PLAYERS), true);
   const f = termsPage();
   const result = await acceptPlayerTerms(
@@ -811,17 +811,40 @@ test('another restored pool never receives a player fold gesture', async () => {
   assert.equal(b.actionDevices.length, 0);
 });
 
-test('the third witness actor is pinned beside the consent players but never gains consent', async () => {
+test('the third witness actor is an owner-authorized consent player with matching browser identity', async () => {
   assert.equal(THIRD_WITNESS_PLAYER, '09dd202d-115b-49ae-afa8-cb528c7b8f72');
-  assert.deepEqual(WITNESS_PLAYERS, [...CONSENT_PLAYERS, THIRD_WITNESS_PLAYER]);
+  assert.deepEqual(CONSENT_PLAYERS, [
+    pin.playerId,
+    'a23ca5c9-b748-482f-9b59-9db35f7aa996',
+    THIRD_WITNESS_PLAYER,
+  ]);
+  assert.deepEqual(WITNESS_PLAYERS, CONSENT_PLAYERS);
   assert.equal(Object.isFrozen(WITNESS_PLAYERS), true);
-  assert.equal(CONSENT_PLAYERS.includes(THIRD_WITNESS_PLAYER), false);
   const third = { ...pin, playerId: THIRD_WITNESS_PLAYER };
+  const ok = await acceptPlayerTerms(
+    termsPage().page,
+    { user: { id: third.playerId } },
+    third,
+    'https://example.invalid',
+    true
+  );
+  assert.equal(ok.acceptedNow, true);
   await assert.rejects(
     acceptPlayerTerms(
       termsPage().page,
-      { user: { id: third.playerId } },
+      { user: { id: pin.playerId } },
       third,
+      'https://example.invalid',
+      true
+    ),
+    /Player Consent Authorization Mismatch/
+  );
+  const other = { ...pin, playerId: '032b7ef6-ef40-4eb7-9a44-21605be733c8' };
+  await assert.rejects(
+    acceptPlayerTerms(
+      termsPage().page,
+      { user: { id: other.playerId } },
+      other,
       'https://example.invalid',
       true
     ),

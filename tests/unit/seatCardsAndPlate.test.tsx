@@ -482,6 +482,36 @@ describe("the hero's row opens out only when the table can see it", () => {
       />
     );
 
+  it('prints ALL IN only on the felt puck, including streets with no new wager', () => {
+    const { container, rerender } = renderHero(
+      { lastAction: 'all_in', lastBetAmount: 120 },
+      { status: 'all_in' }
+    );
+    expect(container.querySelector('.seat__action')).toBeNull();
+    expect(container.querySelectorAll('.seat__bet-chips .seat__allin-puck')).toHaveLength(1);
+    expect(container.querySelector('.seat__allin-puck')?.getAttribute('aria-label')).toBe(
+      'HERO: All In'
+    );
+    rerender(
+      <SeatSlot
+        seatNumber={1}
+        player={hero({ status: 'all_in', stack: 0 })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+        lastBetAmount={0}
+      />
+    );
+    expect(container.querySelector('.seat__action')).toBeNull();
+    expect(container.querySelectorAll('.seat__bet-chips .seat__allin-puck')).toHaveLength(1);
+  });
+
+  it('does not turn a stale all-in action into a head label or an active all-in marker', () => {
+    const { container } = renderHero({ lastAction: 'all_in' });
+    expect(container.querySelector('.seat__action')).toBeNull();
+    expect(container.querySelector('.seat__allin-puck')).toBeNull();
+  });
+
   it('stays compact while the hand is private', () => {
     const { container } = renderHero();
     expect(container.querySelector('.seat__cards--hero')).not.toBeNull();

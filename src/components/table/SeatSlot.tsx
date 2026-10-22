@@ -2860,12 +2860,13 @@ export const SeatSlot = memo(
     // Eligible art (VIP bust, not broken, not rigged) AND on the clock. Never
     // an idle seat, never a seat the action is not on.
     const showHolo = holoEligible && holoOnClockDelayMs !== null;
-    // Dan 2026-10-21: ALL IN above the head and an ALL IN puck on the felt
-    // in front of the player, for the whole time the player is all in.
+    // Dan 2026-10-22: ALL IN belongs on the felt in front of its player,
+    // never above the avatar. Keep the marker for the whole all-in runout.
     // Only while the hand is still being played out: not once a result is on
     // the table (winner presentation), when "all in" no longer means anything.
     const showAllInPuck = player.status === 'all_in' && !isWinner && !winnerDisplayActive;
-    const shownAction: LastAction = showAllInPuck ? 'all_in' : lastAction;
+    const shownAction: LastAction =
+      player.status === 'all_in' || lastAction === 'all_in' ? null : lastAction;
 
     return (
       <div
@@ -2885,10 +2886,8 @@ export const SeatSlot = memo(
         aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stack}`}
         aria-live={isActingNow ? 'polite' : 'off'}
       >
-        {/* Last Action Badge - floats ABOVE the seat (premium style).
-            Dan 2026-10-21: a player who is all in shows ALL IN above the head
-            for as long as they are all in, not only on the street they shoved,
-            so the tag and the felt puck below always agree. */}
+        {/* Ordinary actions stay above the avatar. ALL IN is printed only on
+            the felt puck below, in front of its own player. */}
         {shownAction && (
           <div
             className={`seat__action seat__action--${shownAction}`}
@@ -2903,21 +2902,19 @@ export const SeatSlot = memo(
             when the parent flips `isCollectingChips` (on COMMUNITY_CARDS_DEALT
             or HAND_COMPLETE), these chips animate into the pot before being
             cleared. Otherwise the chip stack slides in on fresh bets/raises. */}
-        {(lastBetAmount && lastBetAmount > 0) || showAllInPuck ? (
-          <div className="seat__bet-chips">
-            {/* Dan 2026-10-21: "an ALL IN button should appear in front of that
-                user, like a dealer button". It rides in the wager slot, so it
-                sits on the felt in front of the player wherever their chips
-                rest, and the felt placement treats puck and chips as one. It is
-                not part of ChipPhysics, so a street's collect flies the chips
-                to the pot and leaves the puck in front of the player. */}
-            {showAllInPuck && (
-              <div className="seat__allin-puck" aria-hidden="true">
+        <div className="seat__wager-group">
+          {showAllInPuck && (
+            <div className="seat__bet-chips">
+              {/* Its own felt slot keeps the marker in front of this player
+                even when a six-card hand leaves a narrow gap for the chips. */}
+              <div className="seat__allin-puck" role="status" aria-label={`${player.name}: All In`}>
                 <span>ALL</span>
                 <span>IN</span>
               </div>
-            )}
-            {lastBetAmount && lastBetAmount > 0 ? (
+            </div>
+          )}
+          {lastBetAmount && lastBetAmount > 0 ? (
+            <div className="seat__bet-chips">
               <ChipPhysics
                 amount={lastBetAmount}
                 animate={
@@ -2929,9 +2926,9 @@ export const SeatSlot = memo(
                 }
                 compact={true}
               />
-            ) : null}
-          </div>
-        ) : null}
+            </div>
+          ) : null}
+        </div>
 
         {/* Hole Cards — opponents: ONE small rotational cluster for every hand
             size (Dan 2026-08-26, PokerBros reference). The count comes from
@@ -3722,7 +3719,7 @@ export const SeatSlot = memo(
 
         {/* All-In Badge: retired 2026-10-21. It hung below the plate, in the
             next seat's airspace, and printed over that player's bounty and
-            action tag. ALL IN is now the tag above the head and the puck on
+            action tag. ALL IN is now only the puck on
             the felt in front of the player (see `.seat__allin-puck`). */}
 
         {/* The per-seat "BOMB" pill that used to sit here is gone (Dan

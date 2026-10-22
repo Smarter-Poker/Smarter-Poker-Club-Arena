@@ -1067,6 +1067,18 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7653",
       "refusedBy": [],
       "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: schema_migrations holds this version with ONE statement (1200 bytes). It inserts the ca_declared_money_triggers row for tournaments.ca_mtt_payout_depth_guard after proving the trigger is installed and enabled and that its function contains no INSERT INTO / UPDATE SET / DELETE FROM. The register row exists; fn_undeclared_money_triggers() returns 0 rows. It creates no object and no trigger."
+    },
+    {
+      "version": "20261022031908",
+      "name": "fn_ca_payout_structure_has_one_door",
+      "file": "supabase/migrations/20261022031908_fn_ca_payout_structure_has_one_door.sql",
+      "md5": "4931ee3280e619832f8943e37d5fbcdb",
+      "appliedToProductionAt": "2026-10-22T03:19:08Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7653",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 03:20 UTC: schema_migrations holds this version with ONE statement. It dropped fn_ca_payout_structure(integer,integer) after proving its pinned pre-image (md5 320527cd...), that the (integer,numeric) door exists, and that no public function calls the generator with one argument; exactly one fn_ca_payout_structure overload remains. No pg_depend dependents existed. Its live callers (fn_finalize_tournament_entry_pool_locked, fn_ca_fund_overlay_on_lock, fn_ca_provisional_payout_structure) pass a numeric depth and resolve to the remaining door; fn_ca_provisional_payout_structure read back a 16-place ladder for a 125-entrant registering MTT. Creates no trigger."
     }
   ]
 }

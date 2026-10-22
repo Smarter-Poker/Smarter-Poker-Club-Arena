@@ -103,7 +103,11 @@ import {
 } from './LightningMetrics.js';
 import { RateLimitedLog } from './RateLimitedLog.js';
 import type { LightningFormedHand } from './LightningHandHost.js';
-import { LightningShadowRunner, type LightningDecidedGroup } from './LightningShadowRunner.js';
+import {
+  LIGHTNING_SHADOW_RPC_RETRY_MS,
+  LightningShadowRunner,
+  type LightningDecidedGroup,
+} from './LightningShadowRunner.js';
 import type { LightningPresenceSnapshot } from './LightningPresence.js';
 import { LightningLatencyLedger } from './LightningLatencyLedger.js';
 import {
@@ -126,6 +130,15 @@ export const LIGHTNING_SURGE_MAX_BACK_TO_BACK = 8;
  * whole pass interval later.
  */
 export const LIGHTNING_IDLE_DEADLINE_MARGIN_MS = 50;
+/**
+ * A/A CALIBRATION IN FORM MODE (2026-10-22). With the shadow matcher on, a
+ * forming worker also reads `fn_lightning_match` (STABLE, writes nothing) at
+ * most this often, off the pass's path, so the live plan and the shadow plan
+ * are compared on the database's authoritative snapshot under its matcher
+ * binding, exactly as worker 'shadow' mode compares them, while hands are
+ * dealt. The read never gates, delays or changes a formation.
+ */
+export const LIGHTNING_FORM_AA_INTERVAL_MS = 5_000;
 /** A pass the database skipped (another pass held the Cluster) is asked again this soon. */
 export const LIGHTNING_BUSY_RETRY_MS = 150;
 /** Released players are remembered this long at most (a stale entry only costs one early pass). */
@@ -259,6 +272,18 @@ export class LightningClusterWorker {
   private lastPassBusy = false;
   /** Freed players not yet seen in a formed hand: their idle moment (process clock). */
   private readonly idleSince = new Map<string, number>();
+  /** Form-mode A/A read in flight (one at a time), when it started, and its state. */
+  private aaInFlight: Promise<void> | null = null;
+  private aaLastStartMs = Number.NEGATIVE_INFINITY;
+  private aaUnavailableUntilMs = 0;
+  /**
+   * Form passes are history only while the A/A reads supply authoritative
+   * evidence: true after a read that carried a snapshot, false after one that
+   * failed or carried none. It starts false, so until the first read answers
+   * form passes are scored as before; the window that holds that switch mixes
+   * the two, records no binding and is not counted (one window per start).
+   */
+  private aaEvidence = false;
 
   constructor(
     readonly clusterId: string,
@@ -403,7 +428,9 @@ export class LightningClusterWorker {
     const inFlight = this.inFlight;
     let drainTimer: ReturnType<typeof setTimeout> | null = null;
     const stopObservers = () =>
-      Promise.all([this.shadow.stop(), this.latency.stop()]).then(() => undefined);
+      Promise.resolve(this.aaInFlight)
+        .then(() => Promise.all([this.shadow.stop(), this.latency.stop()]))
+        .then(() => undefined);
     await Promise.race([
       (inFlight ?? Promise.resolve()).then(stopObservers, stopObservers),
       new Promise<void>((resolve) => {
@@ -635,6 +662,7 @@ export class LightningClusterWorker {
       legality?: ReadonlyMap<string, string | null> | null;
       authoritativeSnapshot?: import('./LightningMatcherModel.js').LightningPoolSnapshot | null;
       snapshotBinding?: string | null;
+      historyOnly?: boolean;
     } = {}
   ): void {
     if (!this.shadow.active) return;
@@ -781,7 +809,10 @@ export class LightningClusterWorker {
       playerPlatforms: this.platformsToSend(platforms),
     });
     this.notePlatformsDelivery(out.platforms);
-    if (out.status !== 'ok') this.observeShadow(passNow, snap, 'form', false, null, []);
+    // A/A CALIBRATION (2026-10-22): after the formation answered, never before it.
+    this.maybeSampleAa(snap, platforms);
+    if (out.status !== 'ok')
+      this.observeShadow(passNow, snap, 'form', false, null, [], { historyOnly: this.aaEvidence });
     if (out.status === 'error') {
       // Unknown outcome: the next pass asks again under the same id.
       if (out.timedOut !== true) this.gate.close(this.clusterId, requestId, true, this.nowMs());
@@ -868,6 +899,7 @@ export class LightningClusterWorker {
       {
         epoch: typeof result.cluster_epoch === 'number' ? result.cluster_epoch : null,
         legalCount: typeof result.legal_count === 'number' ? result.legal_count : null,
+        historyOnly: this.aaEvidence,
       }
     );
     if (result.frozen === true || result.stopped_reason === 'frozen') {
@@ -890,6 +922,88 @@ export class LightningClusterWorker {
 
   private nowMs(): number {
     return this.now().getTime();
+  }
+
+  /**
+   * A/A CALIBRATION IN FORM MODE (2026-10-22). fn_lightning_match_and_form
+   * returns the hands it formed, not the plan's authoritative snapshot, so a
+   * form pass cannot be compared under the matcher binding the shadow report
+   * and fn_lightning_rollout_readiness require. With the shadow matcher on,
+   * the worker therefore reads fn_lightning_match - the live matcher's plan
+   * and the snapshot it planned on, from one STABLE statement - at most once
+   * per LIGHTNING_FORM_AA_INTERVAL_MS, one read in flight, never awaited by
+   * a pass, and hands it to the shadow runner exactly as worker 'shadow' mode
+   * does. While those reads answer with evidence, form passes are history
+   * only (a window carries one binding; see aaEvidence). A read that fails or carries no
+   * snapshot leaves form passes scored as before; a matcher that is not
+   * deployed is not asked again for ten minutes.
+   */
+  private maybeSampleAa(
+    snap: LightningPresenceSnapshot,
+    platforms: Record<string, LightningDevicePlatform>
+  ): void {
+    if (this.stopped || this.aaInFlight || !this.shadow.comparing) return;
+    const aaNow = this.now();
+    const startMs = aaNow.getTime();
+    if (startMs < this.aaUnavailableUntilMs) return;
+    if (startMs - this.aaLastStartMs < LIGHTNING_FORM_AA_INTERVAL_MS) return;
+    this.aaLastStartMs = startMs;
+    const run: Promise<void> = lightningMatch(this.deps.rpc, {
+      clusterId: this.clusterId,
+      now: aaNow,
+      disconnected: snap.pDisconnected,
+      matcherVersion: this.config.matcherVersion,
+      playerPlatforms: this.platformsToSend(platforms),
+    })
+      .then((out) => {
+        this.notePlatformsDelivery(out.platforms);
+        if (out.status === 'unavailable') {
+          this.aaEvidence = false;
+          this.aaUnavailableUntilMs = this.now().getTime() + LIGHTNING_SHADOW_RPC_RETRY_MS;
+          if (this.failureLog.shouldLog('aa_unavailable')) {
+            this.logger.warn(
+              `[Lightning:${this.clusterId}] fn_lightning_match is not deployed; form-mode A/A reads paused`
+            );
+          }
+          return;
+        }
+        if (out.status !== 'ok') {
+          this.aaEvidence = false;
+          if (this.failureLog.shouldLog('aa_' + out.status)) {
+            this.logger.error(
+              `[Lightning:${this.clusterId}] form-mode A/A read ${out.status}; live play unaffected`,
+              out.status === 'error' ? out.error : out.reason
+            );
+          }
+          return;
+        }
+        const r = out.value;
+        if (!r.authoritativeSnapshot || !r.snapshotBinding) {
+          this.aaEvidence = false;
+          return;
+        }
+        if (this.stopped) return;
+        this.aaEvidence = true;
+        this.observeShadow(aaNow, snap, 'match', true, r.matcherVersion, r.groups, {
+          legalCount: r.legalCount,
+          legality: new Map(r.diagnosis.map((d) => [d.playerId, d.reasonCode])),
+          authoritativeSnapshot: r.authoritativeSnapshot,
+          snapshotBinding: r.snapshotBinding,
+        });
+      })
+      .catch((err: unknown) => {
+        this.aaEvidence = false;
+        if (this.failureLog.shouldLog('aa_threw')) {
+          this.logger.error(
+            `[Lightning:${this.clusterId}] form-mode A/A read threw; live play unaffected`,
+            err
+          );
+        }
+      })
+      .finally(() => {
+        if (this.aaInFlight === run) this.aaInFlight = null;
+      });
+    this.aaInFlight = run;
   }
 
   /**

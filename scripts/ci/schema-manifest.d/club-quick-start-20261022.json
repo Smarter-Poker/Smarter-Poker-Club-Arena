@@ -1,0 +1,4 @@
+{
+  "_owner": "codex/club-quick-start-20261022 - capability for default opening after funded-reserve reuse repair",
+  "functions": ["fn_club_opening_defaults_ready"]
+}

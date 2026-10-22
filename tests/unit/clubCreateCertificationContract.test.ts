@@ -229,45 +229,15 @@ describe('Create Club production certification contract', () => {
     expect(spec).not.toContain('getByText(/99\\.7K/).first()');
   });
 
-  it('dismisses the Diamond Spins interruption before opening setup', () => {
+  it('certifies default setup without another wizard or unconfirmed allocation', () => {
     const spec = read('tests/e2e/production-create-club.spec.ts');
-    const diamondSpins = spec.indexOf(
-      "const diamondSpins = page.getByRole('dialog', { name: /Diamond Spins/i })"
-    );
-    const visible = spec.indexOf('if (await diamondSpins.isVisible())', diamondSpins);
-    const dismiss = spec.indexOf(
-      "diamondSpins.getByRole('button', { name: 'Not Now', exact: true }).click()",
-      visible
-    );
-    const hidden = spec.indexOf('await expect(diamondSpins).toBeHidden()', dismiss);
-    const start = spec.indexOf(
-      "getByRole('button', { name: 'Start Setup', exact: true }).click()",
-      hidden
-    );
-    const wizard = spec.indexOf("const wizard = page.getByRole('dialog'", start);
-    const assertion = spec.indexOf('await expect(wizard).toBeVisible()', start);
-
-    expect(diamondSpins).toBeGreaterThan(-1);
-    expect(visible).toBeGreaterThan(diamondSpins);
-    expect(dismiss).toBeGreaterThan(visible);
-    expect(hidden).toBeGreaterThan(dismiss);
-    expect(start).toBeGreaterThan(hidden);
-    expect(wizard).toBeGreaterThan(start);
-    expect(assertion).toBeGreaterThan(wizard);
-  });
-
-  it('targets the tag-line textbox by its stable accessible-name prefix', () => {
-    const spec = read('tests/e2e/production-create-club.spec.ts');
-
-    expect(spec).toContain("getByRole('textbox', { name: /^Club Tag Line\\b/i })");
-    expect(spec).not.toContain("getByLabel('Club Tag Line', { exact: true })");
-  });
-
-  it('proves the package-funded BBJ decision by its stable accessible-name prefix', () => {
-    const spec = read('tests/e2e/production-create-club.spec.ts');
-
-    expect(spec).toContain("getByRole('button', { name: /^Not Now\\b/i })");
-    expect(spec).not.toContain("wizard.getByRole('button', { name: 'Not Now', exact: true })");
+    expect(spec).toContain("name: 'Your Club Is Created'");
+    expect(spec).toContain("name: 'Send Link'");
+    expect(spec).toContain('p_promo_budget: 0');
+    expect(spec).toContain('p_leaderboard_prize_budget: 0');
+    expect(spec).toContain('Number(openingReceipt.club_bank_after)).toBe(99700)');
+    expect(spec).toContain("getByLabel('Your Invite Link'");
+    expect(spec).toContain("clubLocation.searchParams.delete('invite')");
   });
 
   it('retires the created club through the published owner controls before cleanup', () => {

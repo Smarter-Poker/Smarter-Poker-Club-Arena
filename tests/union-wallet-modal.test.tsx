@@ -74,7 +74,7 @@ vi.mock('../src/services/UnionApiService', () => ({
   },
 }));
 
-import UnionWalletModal from '../src/components/union/UnionWalletModal';
+import UnionWalletModal, { theClub } from '../src/components/union/UnionWalletModal';
 
 const roster = [
   {
@@ -699,6 +699,46 @@ describe('UnionWalletModal', () => {
     await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
     expect(screen.queryByText('Could Not Load Club Wallets.')).toBeNull();
     expect(screen.queryByText('0.00')).toBeNull();
+  });
+
+  /* Dan, 2026-10-22: a confirmed pull or send toasts and closes the Union
+     Bank by itself, and a club named "The ..." is never "The The ...". */
+  it('closes itself after a confirmed pull, naming a "The" club once', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
+      if (fn === 'fn_union_clawback_from_club')
+        return Promise.resolve({ data: { success: true, union_balance: 70000 }, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
+    fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from shark club/i }));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
+    await waitFor(() => expect(base.onClose).toHaveBeenCalledTimes(1));
+    expect(theClub('The Felt Society')).toBe('The Felt Society');
+    expect(theClub('KINGS CLUB')).toBe('The KINGS CLUB');
+  });
+
+  it('stays open with the reason when a pull is refused', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
+      if (fn === 'fn_union_clawback_from_club')
+        return Promise.resolve({
+          data: { success: false, error: 'insufficient treasury' },
+          error: null,
+        });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
+    fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from shark club/i }));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
+    expect(await screen.findByText('Club Has Insufficient Treasury Balance')).toBeTruthy();
+    expect(base.onClose).not.toHaveBeenCalled();
   });
 
   it('reuses the clawback operation id after an ambiguous transport failure', async () => {

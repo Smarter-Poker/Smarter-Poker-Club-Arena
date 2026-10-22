@@ -2385,6 +2385,7 @@
     "fn_ca_browser_reachable_telemetry",
     "fn_ca_burn",
     "fn_ca_burnin_gate_tick",
+    "fn_ca_bust_backlog_page",
     "fn_ca_bust_backlog_stalled",
     "fn_ca_caller_is_management",
     "fn_ca_can_manage_agents",

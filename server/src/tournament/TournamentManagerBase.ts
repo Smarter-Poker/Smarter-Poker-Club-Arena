@@ -2090,6 +2090,60 @@ export abstract class TournamentManagerBase {
    * Returns true only when the hand-off was requested. Until every other table
    * is between hands, GameServer asks again on its next sweep.
    */
+  /**
+   * A STALLED BUST SWEEP HANDS THE EVENT TO A FRESH GENERATION (2026-10-22).
+   *
+   * Coffee Break Freeroll (PLO4) f5a98d7e, 16:17:04-16:40:33 UTC: one admitted
+   * elimination sweep never settled. The scheduler deliberately keeps a live
+   * sweep's slot (no concurrent writes), so for 23 minutes this manager
+   * recorded no bust at all. 308 zero-chip players stayed `playing`, every
+   * table break refused (source_roster_disagrees:bust_unrecorded) and every
+   * re-admission refused (F06_MOVEMENT_ELIMINATION_UNPROVEN), six tables lost
+   * their dealer and the SLO paged "Tables Have Stopped Dealing". Only the
+   * stuck-table watchdog, ten minutes after the first table died, handed the
+   * event on; the successor recorded the whole backlog within seconds.
+   *
+   * The stalled sweep is the defect, so it is now the trigger. GameServer asks
+   * for this once a sweep has been in flight past
+   * GameServer.STALLED_ELIMINATION_SWEEP_MS. Every table finishes the hand in
+   * front of its players and parks, then the event goes to a successor
+   * generation (fenced by lease generation, so the abandoned promise can never
+   * write again), exactly as a stuck table does.
+   *
+   * Returns true only when the hand-off was requested.
+   */
+  getStalledEliminationSweep(
+    now = Date.now()
+  ): { msInFlight: number; msBustWaiting: number; stage: number } | null {
+    const msInFlight =
+      this.isProcessingEliminations && this.eliminationSweepStartedAt > 0
+        ? now - this.eliminationSweepStartedAt
+        : 0;
+    const msBustWaiting = this.bustAwaitingSinceMs > 0 ? now - this.bustAwaitingSinceMs : 0;
+    if (msInFlight <= 0 && msBustWaiting <= 0) return null;
+    return { msInFlight, msBustWaiting, stage: this.currentEliminationSweepStage() };
+  }
+
+  /** The stage the in-flight sweep is in; the eliminations layer knows it. */
+  protected currentEliminationSweepStage(): number {
+    return -1;
+  }
+
+  requestSuccessorForStalledEliminationSweep(): boolean {
+    if (!this.isProcessingEliminations && this.bustAwaitingSinceMs <= 0) return false;
+    for (const table of this.tableEngines.values()) {
+      if (table.isRunning()) table.pauseAfterHand(undefined, { untilResumed: true });
+    }
+    for (const table of this.tableEngines.values()) {
+      if (table.isRunning() && !table.isBetweenHands()) return false;
+    }
+    console.info(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Elimination sweep stalled - no bust can be recorded; handing the event to a successor generation`
+    );
+    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
+    return true;
+  }
+
   requestSuccessorForStuckTable(tableId: string): boolean {
     if (!this.tableEngines.has(tableId) && !this.tableAdmissionFailingSince.has(tableId))
       return false;
@@ -2980,6 +3034,7 @@ export abstract class TournamentManagerBase {
           this.holdSatelliteQualifierBoundary();
         }
         if (this.mysteryActivationMayOpenOnBust(finalStacks)) this.holdMysteryActivationBoundary();
+        if (this.bustAwaitingSinceMs === 0) this.bustAwaitingSinceMs = Date.now();
         this.declareFieldDecidedIfOneStackRemains(finalStacks);
         this.bustAwaitsItsStage();
         this.requestEliminationSweep();
@@ -4411,7 +4466,15 @@ export abstract class TournamentManagerBase {
        its 50/30/20 ladder would otherwise read as "at the money" at three
        players left. Unread after the close holds and lets the sweep read it. */
     if (totalEntries == null) return this.prizePoolFinalized;
-    if (mysteryBountyFieldTooSmall(totalEntries)) return false;
+    // A chests-only event (Dan 2026-10-22: regular half 0, no bounty before the
+    // money) opens its chests at the money whatever the field size; the same
+    // test as isChestsOnlyMysteryRow, written inline so this method needs no
+    // new collaborator.
+    const chestsOnly =
+      t.mystery_bounty_regular_pool_percent != null &&
+      t.mystery_bounty_regular_pool_percent !== '' &&
+      Number(t.mystery_bounty_regular_pool_percent) === 0;
+    if (!chestsOnly && mysteryBountyFieldTooSmall(totalEntries)) return false;
     return mysteryBountyThresholdReached(
       mode,
       t.mystery_bounty_activation_value,
@@ -4569,6 +4632,12 @@ export abstract class TournamentManagerBase {
       );
       return;
     }
+    /* MYSTERY CHESTS ARE WHOLE CHIPS (Dan 2026-10-22: "MYSTERY BOUNTIES ARE
+       ALWAYS FULL CHIP AMOUNTS, NEVER FRACTIONS"). A chip event's money unit is
+       a cent, but its chests are built on whole chips (100 cents); a Diamond
+       event's unit is already a whole Diamond. fn_mystery_bounty_seed floors
+       the pool and checks every chest on the same grid. */
+    const chestUnitCents = Math.max(100, unitCents);
 
     let poolCents = 0;
     try {
@@ -4581,7 +4650,7 @@ export abstract class TournamentManagerBase {
         // the inventory sum; not subtracting it here is what refused every
         // seed this platform has ever attempted. See mysteryPoolCents.
         poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0),
-        unitCents
+        chestUnitCents
       );
     } catch (err) {
       // A bounty pool that is not a whole number of cents means something
@@ -4635,6 +4704,11 @@ export abstract class TournamentManagerBase {
       mode: activationMode,
       modeValue: fresh.mystery_bounty_activation_value,
       mysteryPoolCents: poolCents,
+      // Chests only (Dan 2026-10-22): see isChestsOnlyMysteryRow.
+      chestsOnly:
+        fresh.mystery_bounty_regular_pool_percent != null &&
+        String(fresh.mystery_bounty_regular_pool_percent) !== '' &&
+        Number(fresh.mystery_bounty_regular_pool_percent) === 0,
     });
     // True only for the one transient refusal: the caller keeps the
     // activation boundary armed so the tables park and the sweep re-asks.
@@ -4684,7 +4758,7 @@ export abstract class TournamentManagerBase {
           fresh.mystery_bounty_pool_percent,
           fresh.mystery_bounty_regular_pool_percent,
           poolCentsFromNumeric(fresh.bounty_pool_paid ?? 0) + unrecordedCents,
-          unitCents
+          chestUnitCents
         );
       } catch (err) {
         reportError(err, 'Tournament.mystery_bounty_pool_not_in_cents');
@@ -4705,7 +4779,7 @@ export abstract class TournamentManagerBase {
           ? DEFAULT_TOP_BOUNTY_PERCENT
           : Number(fresh.mystery_bounty_top_percent);
       const chests = shuffleChests(
-        buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, unitCents)
+        buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, chestUnitCents)
       ).map((c) => ({ tier: c.tier, amount_cents: c.amountCents, seq: c.seq }));
 
       const { data: seeded, error: seedErr } = await supabase.rpc('fn_mystery_bounty_seed', {
@@ -11903,6 +11977,15 @@ export abstract class TournamentManagerBase {
 
   /** Local belt; process-wide admission guarantees no concurrent generation. */
   protected isProcessingEliminations = false;
+  /** Wall clock the admitted elimination sweep began at; 0 while none is in flight. */
+  protected eliminationSweepStartedAt = 0;
+  /**
+   * When the oldest bust the bust stage has not yet completed a pass over was
+   * first seen (a hand ended with a zero stack); 0 when none is waiting. Reset
+   * only by a COMPLETED bust stage, so a sweep that hangs, returns early on
+   * every pass, or fails in a loop all leave it running.
+   */
+  protected bustAwaitingSinceMs = 0;
 
   // ── Implemented by TournamentManagerEliminations (layer 2/3) ──
   protected abstract startEliminationChecker(): void;

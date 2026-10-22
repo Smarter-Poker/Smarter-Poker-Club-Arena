@@ -70,23 +70,47 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P10.3 maniac pressure (2026-10-22) requires a fresh PLO4 qualification', () => {
+describe('P10.3 maniac pressure (2026-10-22): PLO4 generation 5 requalified the new source', () => {
   const committed = PREVIOUS_PHASE10_SELECTION;
   const retired = RETIRED_2026_10_16_PHASE10_SELECTION;
   const generation3 = RETIRED_2026_10_17_PHASE10_SELECTION;
   const generation4 = RETIRED_2026_10_22_PHASE10_SELECTION;
   const retainedGenerations = [committed!, retired, generation3, generation4] as const;
 
-  it('nothing is selected; generations 1 (c8bfc617), 2 (c92768c8), 3 (d9190c9e) and 4 (da94e437) are retained under the unchanged contract', () => {
-    // 2026-10-22: maniac pressure moved every hashed policy digest; PLO4 plays
-    // shadow (the reference brain executes) until the locked P10.2 matrix
-    // requalifies the exact new source as generation 5.
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toBeNull();
-    expect(admitHorsePhase10ReleaseAuthority()).toEqual({
-      status: 'refused',
-      reason: 'unselected',
-      transient: false,
+  it('generation 5 (8ea7564b) is selected; generations 1 (c8bfc617), 2 (c92768c8), 3 (d9190c9e) and 4 (da94e437) are retained under the unchanged contract', () => {
+    // 2026-10-22: maniac pressure moved every hashed policy digest; the locked
+    // P10.2 matrix requalified the exact new source (run 39757485267).
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION).toMatchObject({
+      schema: 'horse-qualified-authority-selection-v1',
+      phase: 'phase10',
+      sourceSha: '8ea7564bc44ddead3189e76dd0b4c00d5dbcc3d8',
+      packVersion: PLO4_POLICY_PACK.version,
+      contractDigest: PHASE10_RUNNING_CONTRACT_DIGEST,
+      domain: HORSE_PHASE10_DOMAIN,
+      qualificationPath: 'docs/evidence/phase10/8ea7564b/phase10-qualification-2026-10-22.json',
+      approvalGeneration: 5,
+      expiresAt: null,
+      withdrawn: null,
     });
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION!.approvalGeneration).toBeGreaterThan(
+      generation4.approvalGeneration
+    );
+    const live = admitHorsePhase10ReleaseAuthority();
+    expect(live.status).toBe('admitted');
+    expect(selectedHorsePhase10Authority(live)).not.toBeNull();
+    for (const root of ['../../../', '../../release-evidence/']) {
+      const bytes = readFileSync(
+        fileURLToPath(
+          new URL(
+            `${root}${PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath}`,
+            import.meta.url
+          )
+        )
+      );
+      expect(createHash('sha256').update(bytes).digest('hex'), root).toBe(
+        PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationSha256
+      );
+    }
     expect(generation4).toMatchObject({
       schema: 'horse-qualified-authority-selection-v1',
       phase: 'phase10',
@@ -194,9 +218,9 @@ describe('P10.3 maniac pressure (2026-10-22) requires a fresh PLO4 qualification
     expect(unwired).toMatchObject({ status: 'refused', reason: 'contract_unavailable' });
   });
 
-  it('the live main-scheduler gate is unselected until a new generation is committed', () => {
+  it('the live main-scheduler gate is usable with the committed generation 5', () => {
     liveHorsePhase10Authority.refresh();
-    expect(liveHorsePhase10Authority.mainState()).toBe('unselected');
+    expect(liveHorsePhase10Authority.mainState()).toBe('usable');
   });
 
   it('withdrawal is a committed record: the same selection with withdrawn set is a withdrawal, never a selection', () => {
@@ -220,7 +244,7 @@ describe('P10.3 maniac pressure (2026-10-22) requires a fresh PLO4 qualification
     expect(gate.mainState()).toBe('withdrawn');
   });
 
-  it('no qualified file is on the running policy; every retained generation is on an old digest', () => {
+  it('the only qualified file on the running policy is the selected generation 5; every retained generation is on an old digest', () => {
     const dir = fileURLToPath(new URL('../../../docs/evidence/phase10/', import.meta.url));
     const files = existsSync(dir)
       ? readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.json'))
@@ -229,6 +253,10 @@ describe('P10.3 maniac pressure (2026-10-22) requires a fresh PLO4 qualification
       const parsed = JSON.parse(readFileSync(`${dir}${file}`, 'utf8')) as Record<string, unknown>;
       if (parsed.schema === 'horse-phase10-qualification-v1' && parsed.qualified === true) {
         const path = `docs/evidence/phase10/${file}`;
+        if (path === PHASE10_PROTECTED_RELEASE_SELECTION!.qualificationPath) {
+          expect(parsed.policyDigest, path).toBe(horsePhase10PolicyDigest());
+          continue;
+        }
         expect(retainedGenerations.map((g) => g.qualificationPath)).toContain(path);
         expect(parsed.policyDigest, path).not.toBe(horsePhase10PolicyDigest());
       }

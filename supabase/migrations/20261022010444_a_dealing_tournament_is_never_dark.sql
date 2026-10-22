@@ -99,4 +99,9 @@ AS $function$
    ORDER BY d.last_activity
 $function$;
 
+-- Engine and cron telemetry only (production already holds exactly these
+-- grants; stated here so the file says what the database holds).
+REVOKE ALL ON FUNCTION public.fn_ca_tournament_dark_candidates(integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_tournament_dark_candidates(integer) TO service_role;
+
 COMMIT;

@@ -30,7 +30,7 @@ Prize and bounty pools were paid in full; no money correction is owed.
    from 30 seconds, so a refusal that heals quickly costs the parked seats nothing.
    Past ten minutes the table has paged as critical and the field plays on,
    announced once per table.
-2. Migration `20261022004756`: `fn_ca_tournament_dark_candidates` counts the
+2. Migration `20261022010444`: `fn_ca_tournament_dark_candidates` counts the
    event's latest `hand_history` row as activity (one index-only probe on
    `idx_hand_history_tournament_created`; 33 ms for 161 running events).
 

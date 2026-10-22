@@ -4,7 +4,7 @@ import importlib.util,json,os,re,shutil,subprocess,sys,tempfile
 from pathlib import Path
 import forward
 spec=importlib.util.spec_from_file_location('rebuild',Path(__file__).with_name('verify.py'));v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)
-forward.validate(v.ROOT,[dict(path=forward.PATH,sha256=forward.SOURCE_SHA,state='pending-at-capture')]);source=(v.ROOT/forward.PATH).read_text()
+forward.validate(v.ROOT,forward.entries());source=(v.ROOT/forward.PATH).read_text()
 pg=Path(os.environ.get('PG_BIN','/opt/homebrew/opt/postgresql@17/bin'));parent=v.validate_parent(os.environ.get('SCHEMA_TEST_SCRATCH',str(v.ROOT.parent)));work=Path(tempfile.mkdtemp(prefix='delta-',dir=parent));sock=work/'s';sock.mkdir();started=False;env={k:x for k,x in os.environ.items() if not k.startswith('PG')}
 def run(args,source=None):
  r=subprocess.run([str(x) for x in args],input=source,text=True,capture_output=True,env=env,timeout=40)

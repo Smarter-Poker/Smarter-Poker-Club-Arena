@@ -8,23 +8,24 @@ class Boundaries(unittest.TestCase):
   entries=json.loads((v.BASE/'forward-schema.json').read_text())['arena']
   self.assertFalse(any(check_history.check(v.ROOT,'arena',inventory,entries).values()))
   self.assertTrue(check_history.check(v.ROOT,'arena',inventory,[])['unadmittedNew'])
-  for altered in [entries+entries,[dict(entries[0],sha256='0'*64)],[dict(entries[0],state='unknown')]]:
+  for altered in [list(reversed(entries)),entries[:1],entries+entries,[dict(entries[0],sha256='0'*64)],[dict(entries[0],state='unknown')]]:
    with self.assertRaises(ValueError):forward.validate(v.ROOT,altered)
   with self.assertRaises(ValueError):check_history.check(v.ROOT,'arena',inventory,[{'path':'unreviewed.sql','sha256':'0'*64}])
  def test_pending_psql_file_is_visible_only_inside_mounted_scratch(self):
   parent=Path(os.environ.get('SCHEMA_TEST_SCRATCH',v.ROOT.parent))
-  entry=json.loads((v.BASE/'forward-schema.json').read_text())['arena'][0]
+  entries=json.loads((v.BASE/'forward-schema.json').read_text())['arena']
   with tempfile.TemporaryDirectory(prefix='pending-path-',dir=parent) as folder:
    work=Path(folder);calls=[]
    def mounted_only(args,**context):
     source=Path(args[args.index('-f')+1]);self.assertEqual(source.parent,work)
+    entry=entries[len(calls)]
     self.assertEqual(source.read_bytes(),(v.ROOT/entry['path']).read_bytes())
     self.assertEqual(source.stat().st_mode&0o777,0o600)
     self.assertEqual(context['phase'],'pending-schema-restore');calls.append(args)
-   v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,[entry])
-   self.assertEqual(len(calls),1)
-   with self.assertRaises(FileExistsError):v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,[entry])
-   with self.assertRaises(ValueError):v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,[dict(entry,sha256='0'*64)])
+   v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,entries)
+   self.assertEqual(len(calls),2)
+   with self.assertRaises(FileExistsError):v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,entries)
+   with self.assertRaises(ValueError):v.apply_pending_schema(mounted_only,['psql'],v.ROOT,work,[dict(entries[0],sha256='0'*64),entries[1]])
  def test_event_triggers_restore_as_captured_owners(self):
   source=(v.BASE/'pokeriq-20261020.sql').read_text();reference=json.loads((v.BASE/'pokeriq-catalog-reference.json').read_text());contract=json.loads((v.BASE/'pokeriq-role-contract.json').read_text())
   rendered=v.render_event_trigger_owners(source,reference,contract)

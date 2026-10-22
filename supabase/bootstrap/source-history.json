@@ -6596,7 +6596,7 @@
       ]
     },
     "arena": {
-      "revision": "d8f05943096cf0ad62a54ef75d43bfd295eca848",
+      "revision": "a18ab3ebc61a5f45ce5dab05d7da28d2f6ed99bb",
       "files": [
         {
           "path": "supabase/migrations/001_club_arena_schema.sql",
@@ -29917,6 +29917,10 @@
         {
           "path": "supabase/migrations/20261022173156_mystery_bounty_definer_grants_restated.sql",
           "sha256": "fe45d6b3278daaa9be6eecd6a6bb8021248cc0edd86a08df908f15d5fb3fc7d3"
+        },
+        {
+          "path": "supabase/migrations/20261022173330_hourly_slots_after_the_daily_reset_are_not_breaks.sql",
+          "sha256": "56afec70901f1a93f8f501a8396fb725ad6247e9cb5bde82bcdb29dfddafbfd8"
         },
         {
           "path": "supabase/migrations/20261022180857_mystery_bounty_offer_reads_without_writing.sql",

@@ -39,8 +39,8 @@ independent baseline catalog equality, the runner executes its unchanged SQL as
 transaction. It never calls the created business routines. An independently
 retained native metadata fixture specifies three new tables, three explicit
 indexes, seven routine postimages and three comments; every other catalog field,
-role capability and membership must remain equal. No other forward SQL is
-admitted. The seven installed mystery-bounty source/ledger discrepancies are
+role capability and membership must remain equal. The second exact post-capture opening transition is described below; no other
+forward SQL is admitted. The seven installed mystery-bounty source/ledger discrepancies are
 recorded separately and never replayed.
 
 Native PostgreSQL parses independently captured and restored CHECK, trigger, and
@@ -58,3 +58,5 @@ table, descriptor and unconstrained ready state, then atomically preserves
 `indisvalid=false`. It remains unavailable to the planner, as captured. Negative
 fixtures reject changed definitions, readiness and unique constraint indexes.
 This preserves observed metadata; it does not repair a production index.
+
+The frozen a18ab3ebc61a5f45ce5dab05d7da28d2f6ed99bb source audit adds the already captured hourly-slot schema postimage without replaying its historical updates. The exact 20261022201306 opening reserve-reuse migration was installed after the snapshot and is applied locally as the second hash-bound DDL transition after 162545. Independent two-routine postmetadata and every other catalog field, role and membership are compared; no business routine is called. The prior 672c full-image pass remains evidence for its earlier inputs; the expanded candidate needs its own full-image qualification.

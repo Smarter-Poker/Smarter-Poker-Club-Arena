@@ -142,11 +142,11 @@ def require_builtin_extension(sql,expected):
 def apply_pending_schema(run,cmd,root,work,entries):
  forward.validate(root,entries)
  if not work.is_dir() or work.resolve()!=work:raise Refused('Pending schema requires real owned scratch')
- for entry in entries:
+ for index,entry in enumerate(entries):
   source=(root/entry['path']).read_bytes()
   if hashlib.sha256(source).hexdigest()!=entry['sha256']:raise Refused('Pending schema changed before staging')
   # PostgreSQL wrappers see only the bind-mounted scratch, never host sources.
-  staged=work/'pending.sql'
+  staged=work/('pending-'+str(index)+'.sql')
   fd=os.open(staged,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
   with os.fdopen(fd,'wb') as output:output.write(source)
   run(cmd+['-c','SET ROLE postgres;','-f',staged,'-c','RESET ROLE;'],limit=300,phase='pending-schema-restore',context={'sourceFile':entry['path']})
@@ -244,11 +244,11 @@ def main():
   if differences:
    output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',phase='baseline-catalog-comparison',differences=differences))+'\n')
    raise Refused('Independent source catalog comparison differs before pending schema application: '+json.dumps(differences))
-  # One exact reviewed pending DDL file follows baseline fidelity; none of its
-  # business routines is invoked. Original concurrent-index preamble remains
-  # outside its original BEGIN/COMMIT transaction, byte-for-byte.
+  # Two exact reviewed DDL files follow baseline fidelity; no business routine
+  # is invoked. The hourly-sweep concurrent-index preamble stays outside its
+  # original transaction, followed by the exact post-capture opening DDL.
   pending=forward.validate(ROOT,json.loads((BASE/'forward-schema.json').read_text())['arena'])
-  proposed=forward.expected_catalog(expected,forward.load_delta(BASE))
+  proposed=forward.opening_expected(forward.expected_catalog(expected,forward.load_delta(BASE)),BASE)
   apply_pending_schema(run,cmd,ROOT,work,pending)
   finalroles=json.loads(sql(rolequery))
   for role in finalroles:role['config']=sorted(role.get('config') or [])

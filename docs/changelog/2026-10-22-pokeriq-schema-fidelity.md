@@ -11,3 +11,5 @@ pending hourly-sweep schema input. Only the exact pending file is applied after
 baseline equality and checked against independently retained metadata; no
 business routine, historical data transformation or production DDL is executed.
 Full pinned-image acceptance remains pending for this candidate.
+
+Frozen a18 source reconciliation retains historical daily-slot data exclusions and adds only the exact post-capture opening DDL transition after the already qualified hourly-sweep transition. Independent two-routine metadata, exact old preimage, new-function absence, security metadata and full remaining catalog/role equality stay mandatory. Native metadata-only qualification proves fail-before/pass-after and drift refusal without business calls or rows.

@@ -1808,5 +1808,62 @@
       }
     ],
     "scope": "All four source schema postimages already independently captured. Receipt-only/NULL/different ledger source bytes are explicitly not installed-byte identity proof. No business, registry, cron or historical SQL replay; no new forward entry."
+  },
+  "frozenDailySlotReconciliation": {
+    "revision": "a18ab3ebc61a5f45ce5dab05d7da28d2f6ed99bb",
+    "path": "supabase/migrations/20261022173330_hourly_slots_after_the_daily_reset_are_not_breaks.sql",
+    "sourceSHA256": "56afec70901f1a93f8f501a8396fb725ad6247e9cb5bde82bcdb29dfddafbfd8",
+    "sourceMD5": "9f1c293370fb112c82ab1dafb6f487ba",
+    "sameSnapshotLedger": {
+      "name": "hourly_slots_after_the_daily_reset_are_not_breaks",
+      "sqlMD5": "62f0eb88491311606a3940ff9ef374b7",
+      "version": "20261022173330",
+      "statementCount": 1
+    },
+    "schemaPostimageCount": 1,
+    "oldExpressionCount": 0,
+    "snapshotRoutine": {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "p_day date",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_sp_daily_metrics_compute",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "jsonb",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "v",
+      "definition_md5": "c645ef360362af071301561e9bfd753b"
+    },
+    "classification": "Exact unique source replacement postimage exists in independent same-snapshot function; migration idempotent catalog-DDL branch would CONTINUE. Historical sourcebyte identity not claimed. Both data UPDATE statements are excluded from schema reconstruction and never replayed or certified."
+  },
+  "postCaptureOpeningScope": {
+    "revision": "a18ab3ebc61a5f45ce5dab05d7da28d2f6ed99bb",
+    "path": "supabase/migrations/20261022201306_restore_welcome_reserve_reuse_for_quick_club_opening.sql",
+    "sourceSHA256": "c3be2d8375c2aa0c2c20718e4a9a01361b09635c63546b73ef20bfd9a2832a67",
+    "installedAfterSnapshot": true,
+    "independentCatalogContract": "post-capture-opening-catalog.json",
+    "scope": "Exact source function-only DDL installed after20:08snapshot; applied only in isolated reconstruction after hourly-sweep delta. No business functions/data/cron invoked."
   }
 }

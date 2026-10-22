@@ -437,7 +437,9 @@ describe('the game lobby panel says players and tables', () => {
       join(__dirname, '..', 'src/components/lobby/GameLobbyPanel.tsx'),
       'utf8'
     );
-    expect(PANEL).toMatch(/gameTables=\{entry\.game \? entry\.game\.tables : null\}/);
+    expect(PANEL).toContain('arenaGameCardDataFromEntry(entry)');
+    expect(PANEL).toContain('{entry.players.toLocaleString()}');
+    expect(PANEL).toContain('{entry.game.tables.toLocaleString()}');
     expect(PANEL).toMatch(/<dt>Tables<\/dt>/);
   });
 });

@@ -136,8 +136,8 @@ describe('approved premium cash-table machine contract', () => {
     // Gate 6 (2026-09-05): a game says Join Game, a manual table Join Table.
     expect(GAME_PANEL).toContain("label: game ? 'Join Game' : 'Join Table'");
     expect(GAME_PANEL).toContain('onJoinTable(entry.id)');
-    expect(GAME_PANEL).toContain('to={`/table/${entry.id}`}');
-    expect(GAME_PANEL).toContain('Observe Table');
+    expect(GAME_PANEL).toContain('isCash ? `/table/${entry.id}`');
+    expect(GAME_PANEL).toContain("entry.game ? 'View Game' : 'View Table'");
   });
 
   it('keeps the table machine vertically scrollable', () => {

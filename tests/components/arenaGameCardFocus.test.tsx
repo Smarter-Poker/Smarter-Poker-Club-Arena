@@ -62,11 +62,11 @@ function mount(variant = 'nlh', cluster = false) {
       />
     </MemoryRouter>
   );
-  const card = result.getByTestId('arena-lobby-game-card');
+  const card = result.getByTestId('lobby-game-row');
   return { ...result, entry, card, select, view, join };
 }
 
-describe('mobile game-card focus preserves the selected action', () => {
+describe('compact game-row focus preserves the detail step', () => {
   it('keeps the desktop row details action available', () => {
     const { container, entry, select, view, join } = mount();
     const row = container.querySelector(`tr[data-id="${entry.id}"]`)!;
@@ -77,38 +77,34 @@ describe('mobile game-card focus preserves the selected action', () => {
   });
 
   it.each(['nlh', 'plo4', 'plo5', 'plo6', 'plo8', 'flh', 'flo8', 'pineapple', 'short_deck'])(
-    '%s focuses and clicks View without opening the details panel first',
+    '%s focuses without selection, then opens details without joining',
     (variant) => {
       const { card, entry, select, view, join } = mount(variant);
-      const button = within(card).getByRole('button', { name: 'View Table' });
+      const button = within(card).getByRole('button', { name: /^Details:/ });
       fireEvent.pointerDown(button);
       act(() => button.focus());
       expect(button).toHaveFocus();
       expect(select).not.toHaveBeenCalled();
       expect(view).not.toHaveBeenCalled();
       expect(join).not.toHaveBeenCalled();
-      expect(warmTable).toHaveBeenCalledWith(entry.id);
+
       fireEvent.pointerUp(button);
       fireEvent.click(button);
-      expect(view).toHaveBeenCalledExactlyOnceWith(entry);
-      expect(select).not.toHaveBeenCalled();
+      expect(select).toHaveBeenCalledExactlyOnceWith(entry);
+      expect(view).not.toHaveBeenCalled();
       expect(join).not.toHaveBeenCalled();
     }
   );
 
-  it('cluster View Game preserves the same table and keeps joining a separate action', () => {
+  it('cluster details preserve game identity and keep joining a separate action', () => {
     const { card, entry, select, view, join } = mount('nlh', true);
-    const button = within(card).getByRole('button', { name: 'View Game' });
+    const button = within(card).getByRole('button', { name: /^Details:/ });
     act(() => button.focus());
     expect(select).not.toHaveBeenCalled();
     fireEvent.click(button);
-    expect(view).toHaveBeenCalledExactlyOnceWith(entry);
+    expect(select).toHaveBeenCalledExactlyOnceWith(entry);
+    expect(view).not.toHaveBeenCalled();
     expect(join).not.toHaveBeenCalled();
-    const joinButton = within(card).getByRole('button', { name: 'Join Game' });
-    act(() => joinButton.focus());
-    expect(join).not.toHaveBeenCalled();
-    expect(select).not.toHaveBeenCalled();
-    fireEvent.click(joinButton);
-    expect(join).toHaveBeenCalledExactlyOnceWith(entry);
+    expect(within(card).queryByRole('button', { name: 'Join Game' })).toBeNull();
   });
 });

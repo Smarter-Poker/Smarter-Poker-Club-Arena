@@ -151,7 +151,10 @@ BEGIN
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_cashier_members(uuid)',
-      'hash', '052a7ade475196368af0e465417f23eb'
+      'hash', '052a7ade475196368af0e465417f23eb',
+      -- 20261021172828 lets an agent fund their own player wallet; its exact
+      -- committed definition is the only accepted successor.
+      'replacement_hash', '946866fcc1e0dc2e402acb514dfe86f6'
     ),
     jsonb_build_object(
       'signature', 'public.fn_club_trade_ledger(uuid,integer,integer)',

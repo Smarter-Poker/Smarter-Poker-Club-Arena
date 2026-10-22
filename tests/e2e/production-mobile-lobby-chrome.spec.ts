@@ -273,7 +273,24 @@ test.describe('the mobile lobby chrome on production', () => {
       await page.mouse.wheel(0, -64);
     } catch (error) {
       if (!/Mouse wheel is not supported/i.test(String(error))) throw error;
-      await page.evaluate(() => window.scrollBy(0, -64));
+      // A bare programmatic scroll carries no input evidence, so the hook
+      // rightly reads a coincident lobby re-render as the page keeping its
+      // place (WebKit run 39699204267). Supply the finger: an upward touch
+      // in the same frame as the scroll it produces.
+      await page.evaluate(() => {
+        const target = document.documentElement;
+        const touch = (type: string, y: number | null) => {
+          const event = new Event(type, { bubbles: true });
+          Object.defineProperty(event, 'touches', {
+            value: y === null ? [] : [{ clientY: y }],
+          });
+          target.dispatchEvent(event);
+        };
+        touch('touchstart', window.innerHeight / 2);
+        touch('touchmove', window.innerHeight / 2 + 64);
+        window.scrollBy(0, -64);
+        touch('touchend', null);
+      });
     }
     await expect
       .poll(

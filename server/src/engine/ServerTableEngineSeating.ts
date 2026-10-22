@@ -2100,11 +2100,24 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const rotationSize = this.seatedPlayers.filter((p) => p.stack > 0).length;
     if (rotationSize < 3) return;
 
-    const sbSeatIndex = this.getSBSeatIndex();
+    /* A SMALL BLIND IS A BLIND (Dan, 2026-10-21): "GOT MOVED INTO THE SMALL
+       BLIND, PAID SMALL BLIND WERE DEALT IN AND THEN HAD TO PAY THE SMALL AND
+       BB AGAIN. THIS BUG NEEDS TO BE FIXED."
+
+       An arrival in the small blind seat posts that small blind on its first
+       hand. Under the tournament dead-button rule (TDA Rule 30) that seat is
+       the BUTTON on the next hand, never the big blind, so the old "keep the
+       small blind seat on the hook for the big blind" charged them a second,
+       live big blind from the button straight after the small blind they had
+       already paid. A player who has paid a blind to be dealt in owes nothing
+       more. Only the button seat, which would otherwise be dealt in for free,
+       carries the one live big blind. */
     const buttonSeatIndex = this.getButtonSeatIndex();
+    const sbSeatIndex = this.getSBSeatIndex();
     if (
-      (sbSeatIndex > 0 && seatNumber === sbSeatIndex) ||
-      (buttonSeatIndex > 0 && seatNumber === buttonSeatIndex)
+      buttonSeatIndex > 0 &&
+      seatNumber === buttonSeatIndex &&
+      !(sbSeatIndex > 0 && seatNumber === sbSeatIndex)
     ) {
       this.mustPostBB.add(userId);
       console.log(

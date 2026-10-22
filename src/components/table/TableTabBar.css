@@ -1105,6 +1105,26 @@
   }
 }
 
+/* An MTT pill's top line is its EVENT NAME (Dan 2026-10-21: "FOR MTT'S IT
+   SHOULD SAY THE TOURNAMENT NAME AS WELL AS THE BUY IN INSIDE THE ACTION TAB").
+   A name is longer than a code, so it sets a touch smaller, stays on one line
+   and ellipsises inside the pill's existing max-width; the full name is on the
+   element's title. */
+.table-tab-bar__tab-label .table-tab-bar__tab-name--event {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+@media (max-width: 480px) {
+  .table-tab-bar__tab-label .table-tab-bar__tab-name--event {
+    font-size: 0.5625rem;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    FIVE-SECOND FLASH + PENDING DECISION (Dan 2026-08-21)
    "THE TABLE BOX AT THE TOP OF A PAGE SHOULD START FLASHING AND HAPTICS KICK

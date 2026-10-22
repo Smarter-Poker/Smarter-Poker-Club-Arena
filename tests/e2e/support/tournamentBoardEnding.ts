@@ -254,6 +254,66 @@ export function classifyAddOnBreakHold(input: {
   };
 }
 
+/**
+ * The hourly synchronized tournament break is an authoritative hold too.
+ *
+ * Since the October 20, 2026 owner change the ENGINE resets once a day at
+ * 04:00 America/Chicago, so the old hourly platform freeze no longer stops the
+ * post-deploy lanes at :55. Tournaments that take the synchronized break still
+ * park at :55 and persist `break_started_at` / `break_ends_at` (five minutes).
+ * Measured on post-deploy run 39694814807: MTT table 0260b54a dealt its last
+ * hand at 23:54:27Z, `break_started_at` was 23:55:00Z, and the case failed at
+ * 45 s of silence inside that break. The same bounds as the add-on hold apply:
+ * silence before the break began and after it ended must each still fit the
+ * ordinary gameplay silence limit, so a stall into or out of a break still fails.
+ */
+export const SYNCHRONIZED_BREAK_MS = 5 * 60_000;
+
+export function classifySynchronizedBreakHold(input: {
+  breakStartedAt: string | null | undefined;
+  breakEndsAt: string | null | undefined;
+  silenceStartedAt: number;
+  observedAt: number;
+  maxSilenceMs: number;
+}): AddOnBreakHold {
+  const startedAt = Date.parse(String(input.breakStartedAt ?? ''));
+  if (!Number.isFinite(startedAt))
+    return { held: false, reason: 'no persisted synchronized break' };
+  const persistedEnd = Date.parse(String(input.breakEndsAt ?? ''));
+  const endsAt =
+    Number.isFinite(persistedEnd) && persistedEnd > startedAt
+      ? persistedEnd
+      : startedAt + SYNCHRONIZED_BREAK_MS;
+  if (
+    !Number.isFinite(input.silenceStartedAt) ||
+    !Number.isFinite(input.observedAt) ||
+    !(input.maxSilenceMs > 0)
+  )
+    return { held: false, reason: 'the observed silence is not measurable' };
+  if (input.silenceStartedAt >= endsAt || input.observedAt <= startedAt)
+    return { held: false, reason: 'the silence does not overlap the persisted synchronized break' };
+  const beforeBreakMs = Math.max(0, startedAt - input.silenceStartedAt);
+  if (beforeBreakMs > input.maxSilenceMs)
+    return {
+      held: false,
+      reason: `the table was silent ${beforeBreakMs}ms before the synchronized break began`,
+    };
+  const afterBreakMs = Math.max(0, input.observedAt - endsAt);
+  if (afterBreakMs > input.maxSilenceMs)
+    return {
+      held: false,
+      reason: `the table did not resume within ${input.maxSilenceMs}ms after the synchronized break ended`,
+    };
+  return {
+    held: true,
+    breakStartedAt: startedAt,
+    breakEndsAt: endsAt,
+    reason:
+      `the silence lies inside the persisted synchronized tournament break ` +
+      `(${new Date(startedAt).toISOString()} to ${new Date(endsAt).toISOString()})`,
+  };
+}
+
 /** A re-selection needs room for a whole case: selection, one hand, an outage, one more hand. */
 export const MIN_RESELECTION_BUDGET_MS = 150_000;
 export const MAX_NATURAL_COMPLETION_RESELECTIONS = 2;

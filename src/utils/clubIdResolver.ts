@@ -28,7 +28,7 @@ export function isUUID(value: string): boolean {
  *
  * @example
  *   const { column, value } = resolveClubIdFilter(clubId);
- *   supabase.from('clubs').select('*').eq(column, value).maybeSingle();
+ *   supabase.from('clubs').select('id, name').eq(column, value).maybeSingle();
  */
 export function resolveClubIdFilter(clubIdParam: string): {
   column: 'id' | 'club_id' | 'slug';

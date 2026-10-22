@@ -239,6 +239,20 @@ test.describe('the mobile lobby chrome on production', () => {
     expect(m.offCentreByPct, `${printed} is off the painted title's centre`).toBeLessThan(1);
   });
 
+  test('Play Poker opens an eligible club without opening setup options', async ({ page }) => {
+    await openLobby(page);
+    await page.goto('./', { waitUntil: 'domcontentloaded' });
+    const play = page.getByRole('button', { name: /^Play Poker In / });
+    await expect(play).toBeVisible({ timeout: 45_000 });
+    const options = page
+      .locator('details')
+      .filter({ has: page.getByText('Club Options', { exact: true }) });
+    await expect(options).not.toHaveAttribute('open', '');
+    await play.click();
+    await expect(page).toHaveURL(/\/clubs\/[^/?#]+/);
+    await expect(page.locator('.club-home')).toBeVisible({ timeout: 30_000 });
+  });
+
   test('compact rows open details and filters stay at their original position', async ({
     page,
   }) => {

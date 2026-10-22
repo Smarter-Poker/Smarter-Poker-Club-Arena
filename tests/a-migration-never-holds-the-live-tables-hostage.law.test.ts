@@ -20,7 +20,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const DIR = resolve(process.cwd(), 'supabase/migrations');
-const SELF = '20261022025441_a_migration_never_holds_the_live_tables_hostage.sql';
+const SELF = '20261022030326_a_migration_never_holds_the_live_tables_hostage.sql';
 const MIG = readFileSync(resolve(DIR, SELF), 'utf8');
 const code = MIG.replace(/--[^\n]*/g, ' ');
 

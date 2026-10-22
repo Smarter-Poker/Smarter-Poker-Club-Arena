@@ -50,7 +50,9 @@ export function mttPayoutDepthColumn(value: unknown): number {
  * it cannot hold is stored as 10 and the real depth lives in the new column. */
 export function legacyPayoutPercentColumn(value: unknown): 10 | 15 | 20 {
   const n = typeof value === 'string' ? Number(value.trim()) : value;
-  return n === 15 || n === 20 ? n : 10;
+  if (n === 15) return 15;
+  if (n === 20) return 20;
+  return 10;
 }
 
 /** A new MTT has no final field yet. Capacity must never become a prize

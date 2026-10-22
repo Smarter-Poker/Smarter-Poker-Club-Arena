@@ -1005,6 +1005,32 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7620",
       "refusedBy": [],
       "liveVerdict": "Read-only production check 2026-10-21 22:40 UTC: schema_migrations holds this version with ONE statement (8305 bytes, sha256 e0a46ce7...). It created tournaments_lock_level_clock BEFORE INSERT OR UPDATE OF blind_structure ON public.tournaments -> fn_ca_tournament_lock_level_clock(), which rewrites only unstarted MTT/satellite blind_structure durations and derived late_reg_mins; it moves no money. It did not declare the trigger, which fired UndeclaredTriggerOnAMoneyTable at about 22:21 UTC. The register row now exists (declared 22:24:13 by hand, then recorded by migration 20261021223220_the_locked_level_clock_trigger_is_declared); fn_undeclared_money_triggers() returns 0 rows."
+    },
+    {
+      "version": "20261022014819",
+      "name": "ca_orphaned_certification_account_sweep",
+      "file": "supabase/migrations/20261022014819_ca_orphaned_certification_account_sweep.sql",
+      "md5": "b1b97841ab9537535a4e02427c24d73a",
+      "appliedToProductionAt": "2026-10-22T01:48:19Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7652",
+      "refusedBy": [
+        "check-no-new-band-aids"
+      ],
+      "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: this version created fn_ca_sweep_orphaned_certification_accounts() and pg_cron job ca-orphaned-certification-account-sweep, a periodic sweep that CLAUDE.md 10.12 refuses. It was withdrawn 24 minutes later by 20261022021302_remove_ca_orphaned_certification_account_sweep: cron.job has no row of that name and pg_proc has no function of that name. The root cause (a single-attempt teardown DELETE in scripts/ci/qualify-agent-boundary.mjs) is fixed in the same pull request."
+    },
+    {
+      "version": "20261022021302",
+      "name": "remove_ca_orphaned_certification_account_sweep",
+      "file": "supabase/migrations/20261022021302_remove_ca_orphaned_certification_account_sweep.sql",
+      "md5": "5de5faf1737e132bdcf7791101a9f6c5",
+      "appliedToProductionAt": "2026-10-22T02:13:02Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7652",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: cron.unschedule('ca-orphaned-certification-account-sweep') and DROP FUNCTION public.fn_ca_sweep_orphaned_certification_accounts() both took effect; zero matching cron.job rows and zero matching pg_proc rows."
     }
   ]
 }

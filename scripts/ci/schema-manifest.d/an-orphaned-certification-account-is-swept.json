@@ -1,5 +1,0 @@
-{
-  "_owner": "Owner instruction 2026-10-21: no post-deploy test account may linger in a real club; installed once as 20261022014819 on 2026-10-22.",
-  "_comment": "Service-only fallback that calls cleanup_reserved_certification_account on certification identities older than the 112-minute certificate ownership window; scheduled by pg_cron job ca-orphaned-certification-account-sweep.",
-  "functions": ["fn_ca_sweep_orphaned_certification_accounts"]
-}

@@ -8,6 +8,7 @@
  * declarations for the hooks each layer calls on the layer below.
  */
 
+import { buildAllInGestureInput, gestureBeforeAllIn } from '../services/HorseTableGestures.js';
 import { HandController } from './HandController.js';
 import { captureHorseHandJournalContext } from './HorseDecisionHandBinding.js';
 import {
@@ -4233,6 +4234,34 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // check if free, else fold. A seat must never be left unacted.
           // Same clock rule as the human path (2026-09-05): armed BEFORE the
           // action, because the broadcast happens inside performAction.
+          // Dan 2026-10-21: a horse moving all in sometimes says good luck,
+          // throws something at the player it faces, or taps a reaction, the
+          // way a person does as they shove. Never every time (the roll is in
+          // HorseTableGestures), never awaited, never in the action's way.
+          {
+            const horseStack = Number(
+              currentState.players.find((p: { seat: number }) => p.seat === seat)?.stack ?? 0
+            );
+            const movesAllIn =
+              action === 'all_in' ||
+              ((action === 'call' || action === 'raise' || action === 'bet') &&
+                horseStack > 0 &&
+                (typeof amount === 'number' ? amount : toCall) >= horseStack);
+            if (movesAllIn && !promotedShoveIsIllegal) {
+              void gestureBeforeAllIn(
+                buildAllInGestureInput(
+                  this.tableInfo,
+                  this.seatedPlayers,
+                  player.user_id,
+                  this.handCount,
+                  this.isTournamentTable(),
+                  currentState.players,
+                  currentState.lastAggressorSeat,
+                  toCall
+                )
+              );
+            }
+          }
           let applied = false;
           let intendedApplied = false;
           let executedAction: ActionType | null = null;

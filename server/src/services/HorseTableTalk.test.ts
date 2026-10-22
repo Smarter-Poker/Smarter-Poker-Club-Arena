@@ -65,7 +65,14 @@ vi.mock('./errorReporter.js', () => ({
 import {
   BIG_POT_BB,
   GREETER_MIN_HANDS_SEATED,
+  HORSE_LINES_PER_HOUR,
+  HORSE_MIN_HANDS_BETWEEN_LINES,
+  PHRASE_TABLE_WINDOW_MS,
+  SPEAK_CHANCE_PCT,
+  TABLE_MIN_HANDS_BETWEEN_LINES,
   _resetTableTalkForTests,
+  _setSpeakChanceForTests,
+  speaksThisTime,
   chooseLine,
   detectEvents,
   fillLine,
@@ -83,6 +90,7 @@ import {
   type TalkTable,
 } from './HorseTableTalk.js';
 import { _resetTableTalkGateForTests } from './HorseTableTalkGate.js';
+import { _setHumanPacingForTests, humanBeatMs } from './horsePacing.js';
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
 
@@ -170,12 +178,18 @@ beforeEach(() => {
   vi.useFakeTimers({ now: new Date(NOW) });
   _resetTableTalkForTests();
   _resetTableTalkGateForTests();
+  // The write path is tested with every qualifying horse speaking and no
+  // human beat; the roll and the beat have their own tests below.
+  _setSpeakChanceForTests(100);
+  _setHumanPacingForTests(false);
   h.state.calls = [];
   h.state.answers = {};
   h.state.gate = { engine: true, mode: true };
 });
 
 afterEach(() => {
+  _setSpeakChanceForTests(null);
+  _setHumanPacingForTests(true);
   vi.useRealTimers();
 });
 
@@ -478,12 +492,15 @@ describe('speakAtTheFelt', () => {
     expect(inserts('table_chat')[0].payload!.user_id).toBe(who);
   });
 
-  it('three lines in the last hour is the hourly cap: no claim', async () => {
+  it('the hourly cap: that many lines in the last hour, no claim', async () => {
     h.state.answers.horse_table_talk_ledger = (call) => {
       if (call.filters.some((f) => f[0] === 'eq' && f[1] === 'horse_id')) {
         const recent = (m: number) =>
           ledgerRow({ said_at: new Date(NOW - m * 60_000).toISOString(), table_id: 'other' });
-        return { data: [recent(5), recent(20), recent(50)], error: null };
+        return {
+          data: Array.from({ length: HORSE_LINES_PER_HOUR }, (_, i) => recent(5 + i * 8)),
+          error: null,
+        };
       }
       return { data: [], error: null };
     };
@@ -492,34 +509,42 @@ describe('speakAtTheFelt', () => {
     expect(inserts('table_chat')).toHaveLength(0);
   });
 
-  it('two lines in the hour and one older is not the cap', async () => {
+  it('one short of the cap in the hour and one older is not the cap', async () => {
     h.state.answers.horse_table_talk_ledger = (call) => {
       if (call.filters.some((f) => f[0] === 'eq' && f[1] === 'horse_id')) {
         const at = (m: number) =>
           ledgerRow({ said_at: new Date(NOW - m * 60_000).toISOString(), table_id: 'other' });
-        return { data: [at(5), at(20), at(70)], error: null };
+        return {
+          data: [
+            ...Array.from({ length: HORSE_LINES_PER_HOUR - 1 }, (_, i) => at(5 + i * 8)),
+            at(70),
+          ],
+          error: null,
+        };
       }
       return { data: [], error: null };
     };
     expect(await speakAtTheFelt(bigPotHand(34))).toBe('spoken');
   });
 
-  it('fewer than 12 hands since this horse last spoke at this table: no claim', async () => {
+  it('fewer than the minimum hands since this horse last spoke at this table: no claim', async () => {
     h.state.answers.horse_table_talk_ledger = (call) =>
       call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
         ? { data: [ledgerRow({ hand_number: 1000, horse_id: HORSE_A })], error: null }
         : { data: [], error: null };
-    // the table dealt hands 1001..1005 since; this hand is 1006 -> 6 hands since
+    // the table dealt (minimum - 2) hands since; this hand makes (minimum - 1)
+    const between = HORSE_MIN_HANDS_BETWEEN_LINES - 2;
+    const thisHand = 1000 + between + 1;
     h.state.answers.hand_history = () => ({
-      data: [1005, 1004, 1003, 1002, 1001].map((n) => ({ hand_number: n })),
+      data: Array.from({ length: between }, (_, i) => ({ hand_number: 1000 + between - i })),
       error: null,
     });
-    expect(await speakAtTheFelt(bigPotHand(1006))).toBe('horse_too_soon');
+    expect(await speakAtTheFelt(bigPotHand(thisHand))).toBe('horse_too_soon');
     expect(inserts('horse_table_talk_ledger')).toHaveLength(0);
     const dealt = callsTo('hand_history')[0];
     expect(dealt.filters).toContainEqual(['eq', 'table_id', TABLE]);
     expect(dealt.filters).toContainEqual(['gt', 'hand_number', 1000]);
-    expect(dealt.filters).toContainEqual(['lt', 'hand_number', 1006]);
+    expect(dealt.filters).toContainEqual(['lt', 'hand_number', thisHand]);
   });
 
   it('twelve hands since this horse last spoke here is enough', async () => {
@@ -534,16 +559,17 @@ describe('speakAtTheFelt', () => {
     expect(await speakAtTheFelt(bigPotHand(1050))).toBe('spoken');
   });
 
-  it('the table cadence: a line by ANY horse within the last 4 hands at this table: no claim', async () => {
+  it('the table cadence: a line by ANY horse within the table minimum: no claim', async () => {
     h.state.answers.horse_table_talk_ledger = (call) =>
       call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
         ? { data: [ledgerRow({ hand_number: 2000, horse_id: HORSE_B })], error: null }
         : { data: [], error: null };
+    const between = TABLE_MIN_HANDS_BETWEEN_LINES - 2;
     h.state.answers.hand_history = () => ({
-      data: [2002, 2001].map((n) => ({ hand_number: n })),
+      data: Array.from({ length: between }, (_, i) => ({ hand_number: 2000 + between - i })),
       error: null,
     });
-    expect(await speakAtTheFelt(bigPotHand(2003))).toBe('table_too_soon');
+    expect(await speakAtTheFelt(bigPotHand(2000 + between + 1))).toBe('table_too_soon');
     expect(inserts('horse_table_talk_ledger')).toHaveLength(0);
   });
 
@@ -552,8 +578,9 @@ describe('speakAtTheFelt', () => {
       call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
         ? { data: [ledgerRow({ hand_number: 2000, horse_id: HORSE_B })], error: null }
         : { data: [], error: null };
-    // the whole fleet dealt 9,000 hands; this table dealt one
-    h.state.answers.hand_history = () => ({ data: [{ hand_number: 7000 }], error: null });
+    // the whole fleet dealt 9,000 hands; this table dealt none in between
+    h.state.answers.hand_history = () => ({ data: [], error: null });
+    expect(TABLE_MIN_HANDS_BETWEEN_LINES).toBeGreaterThan(1);
     expect(await speakAtTheFelt(bigPotHand(11000))).toBe('table_too_soon');
   });
 
@@ -569,7 +596,7 @@ describe('speakAtTheFelt', () => {
     expect(inserts('horse_table_talk_ledger')).toHaveLength(0);
   });
 
-  it('a phrase anyone used at this table within 2 h is not said again here', async () => {
+  it('a phrase anyone used at this table inside the table window is not said again here', async () => {
     h.state.answers.horse_table_talk_ledger = (call) =>
       call.op === 'select' && call.filters.some((f) => f[0] === 'eq' && f[1] === 'table_id')
         ? {
@@ -578,7 +605,7 @@ describe('speakAtTheFelt', () => {
                 phrase_norm: 'nice pot potbb bb gg',
                 horse_id: HORSE_B,
                 hand_number: 5,
-                said_at: new Date(NOW - 90 * 60_000).toISOString(),
+                said_at: new Date(NOW - PHRASE_TABLE_WINDOW_MS / 2).toISOString(),
               }),
             ],
             error: null,
@@ -610,14 +637,17 @@ describe('speakAtTheFelt', () => {
   it('after a line, this process refuses the next hands at that table without a read', async () => {
     expect(await speakAtTheFelt(bigPotHand(50))).toBe('spoken');
     h.state.calls = [];
-    expect(await speakAtTheFelt(bigPotHand(51))).toBe('table_too_soon');
-    expect(h.state.calls).toEqual([]);
     // the gate is cached, so not even that is re-read inside the TTL
-    for (const n of [52, 53]) expect(await speakAtTheFelt(bigPotHand(n))).toBe('table_too_soon');
-    // the fourth hand after the line may speak again at the table, but the
-    // same horse must wait twelve: the other horse takes it
+    let n = 51;
+    for (; n < 50 + TABLE_MIN_HANDS_BETWEEN_LINES; n++) {
+      expect(await speakAtTheFelt(bigPotHand(n))).toBe('table_too_soon');
+    }
+    expect(h.state.calls).toEqual([]);
+    // the same horse must wait its own minimum
+    expect(await speakAtTheFelt(bigPotHand(n))).toBe('horse_too_soon');
+    // and the table may hear the other horse
     expect(
-      await speakAtTheFelt(bigPotHand(54, { winners: [{ userId: HORSE_B, amount: 120 }] }))
+      await speakAtTheFelt(bigPotHand(n + 1, { winners: [{ userId: HORSE_B, amount: 120 }] }))
     ).toBe('spoken');
     expect(inserts('table_chat')[0].payload!.user_id).toBe(HORSE_B);
   });
@@ -691,5 +721,77 @@ describe('greetArrival', () => {
       'tournament'
     );
     expect(h.state.calls).toEqual([]);
+  });
+});
+
+describe('a horse speaks sometimes, never every time (Dan 2026-10-21)', () => {
+  it('ordinary hands qualify: any showdown loss is pot_lost, any won pot is pot_won', () => {
+    const lost = quietHand(70, {
+      winners: [{ userId: HUMAN, amount: 10 }],
+      showdownResults: [
+        { userId: HUMAN, handRanking: 2, handName: 'Pair' },
+        { userId: HORSE_A, handRanking: 1, handName: 'High Card' },
+      ],
+    });
+    const c = detectEvents(lost);
+    expect(c).toContainEqual({
+      event: 'pot_lost',
+      speakerId: HORSE_A,
+      facts: { street: 'flop', seat: 3 },
+    });
+    const won = quietHand(71, { winners: [{ userId: HORSE_B, amount: 10 }] });
+    expect(detectEvents(won).map((x) => [x.event, x.speakerId])).toContainEqual([
+      'pot_won',
+      HORSE_B,
+    ]);
+  });
+
+  it('the roll is a hash: the same hand answers the same way, and the rate is near the table', () => {
+    _setSpeakChanceForTests(null);
+    for (const event of ['pot_lost', 'pot_won', 'all_in'] as const) {
+      let yes = 0;
+      for (let hand = 1; hand <= 4000; hand++) {
+        const a = speaksThisTime(event, HORSE_A, TABLE, hand);
+        expect(speaksThisTime(event, HORSE_A, TABLE, hand)).toBe(a);
+        if (a) yes++;
+      }
+      const pct = (yes / 4000) * 100;
+      expect(Math.abs(pct - SPEAK_CHANCE_PCT[event])).toBeLessThan(4);
+      expect(pct).toBeLessThan(100);
+      expect(pct).toBeGreaterThan(0);
+    }
+  });
+
+  it('with the real roll most ordinary losses stay silent, and nothing is read for them', async () => {
+    _setSpeakChanceForTests(null);
+    let spoke = 0;
+    let silent = 0;
+    for (let hand = 100; hand < 160; hand++) {
+      const input = quietHand(hand, {
+        winners: [{ userId: HUMAN, amount: 10 }],
+        showdownResults: [
+          { userId: HUMAN, handRanking: 2, handName: 'Pair' },
+          { userId: HORSE_A, handRanking: 1, handName: 'High Card' },
+        ],
+        seated: [seat(HORSE_A, 1, true), seat(HUMAN, 3, false)],
+      });
+      if (speaksThisTime('pot_lost', HORSE_A, TABLE, hand)) spoke++;
+      else {
+        silent++;
+        h.state.calls = [];
+        expect(await speakAtTheFelt(input)).toBe('no_event');
+        expect(h.state.calls).toEqual([]);
+      }
+    }
+    expect(silent).toBeGreaterThan(spoke);
+  });
+
+  it('a line lands a human beat after the hand, spread across a range', () => {
+    const typed = Array.from({ length: 200 }, (_, i) => humanBeatMs(`k${i}`, 'typed'));
+    expect(Math.min(...typed)).toBeGreaterThanOrEqual(1_400);
+    expect(Math.max(...typed)).toBeLessThan(5_200);
+    expect(new Set(typed).size).toBeGreaterThan(150);
+    const quick = Array.from({ length: 200 }, (_, i) => humanBeatMs(`k${i}`, 'quick'));
+    expect(Math.max(...quick)).toBeLessThan(900);
   });
 });

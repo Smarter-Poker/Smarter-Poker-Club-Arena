@@ -60,8 +60,16 @@ const FILL = { potBB: 52, street: 'river' as const, hand: 'full house', seat: 7 
 const SEATED = ['danny', 'Plate4', 'gg_master', 'seat7'];
 
 describe('LAW: the horse says nothing it was not told', () => {
-  it('the pool is four events by three voices, keyed lines, with at least one line per cell', () => {
-    expect(TALK_EVENTS).toEqual(['big_pot_won', 'showdown_loss', 'big_hand_shown', 'arrival']);
+  it('the pool is seven events by three voices, keyed lines, with at least one line per cell', () => {
+    expect(TALK_EVENTS).toEqual([
+      'big_pot_won',
+      'showdown_loss',
+      'big_hand_shown',
+      'arrival',
+      'pot_lost',
+      'pot_won',
+      'all_in',
+    ]);
     expect(TALK_VOICES).toEqual(['quiet', 'needler', 'friendly']);
     for (const event of TALK_EVENTS) {
       for (const voice of TALK_VOICES) {

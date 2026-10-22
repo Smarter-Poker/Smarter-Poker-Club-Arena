@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -587,7 +587,10 @@ BEGIN EXECUTE v_ddl; END $component$;`;
 
 /** A throwaway git repository with supabase/migrations and, optionally, a recordings manifest. */
 function repo() {
-  const root = mkdtempSync(join(tmpdir(), 'sender-addressing-git-'));
+  // realpath: on macOS the temp directory sits behind a symlink (/tmp ->
+  // /private/tmp, /var -> /private/var), and git resolves the repository to
+  // its real path, so a symlinked root reads every child as outside it.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'sender-addressing-git-')));
   const dir = join(root, 'supabase', 'migrations');
   mkdirSync(dir, { recursive: true });
   mkdirSync(join(root, 'scripts', 'ci'), { recursive: true });

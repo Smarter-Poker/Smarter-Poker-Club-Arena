@@ -77,3 +77,20 @@ every reader's day, union and club totals reconcile to the Chicago facts to
 the cent; Club Data and Union Data agree figure for figure; union = sum of its
 clubs; a running MTT's entries are Running MTT Entries and not MTT Winnings.
 The law is `tests/club-data-counts-chicago-days.law.test.ts`.
+
+## Follow-up: Union Data reads count each thing once (20261022134523)
+
+Measured as the Midway Union owner right after the readers installed:
+
+- Union Data for a week took 31.2 s: the per-club list ran each club's window four times (a flattened LATERAL).
+- The union window joined every SNG and Spin fact to `tournaments` to find the MTTs.
+- The union game page called the hand counter once per cash table (1,528 tables in a fortnight) and timed out.
+
+All three are older than the Chicago change. `20261022134523` fixes each one:
+
+- the window is read once per club;
+- the window sums per game and finds MTTs from `tournaments`;
+- union hands are counted per table in one grouped pass;
+- the report reads its hand count directly instead of through two more screens.
+
+The native test compares every reader's output before and after and requires them to be identical.

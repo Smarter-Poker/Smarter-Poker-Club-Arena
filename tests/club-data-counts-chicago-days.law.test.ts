@@ -61,8 +61,12 @@ describe('the live writer files every event under its Chicago day', () => {
 
   it('the rake trigger counts the raked hand for every club that shares it', () => {
     const b = squash(latest('trg_ca_club_data_fact_rake'));
-    expect(b).toContain('PERFORM public.fn_ca_club_data_hand_put(r.club_id, NEW.table_id, NEW.created_at);');
-    expect(b).toContain('PERFORM public.fn_ca_club_data_hand_put(v_table_club, NEW.table_id, NEW.created_at);');
+    expect(b).toContain(
+      'PERFORM public.fn_ca_club_data_hand_put(r.club_id, NEW.table_id, NEW.created_at);'
+    );
+    expect(b).toContain(
+      'PERFORM public.fn_ca_club_data_hand_put(v_table_club, NEW.table_id, NEW.created_at);'
+    );
   });
 });
 
@@ -71,7 +75,9 @@ describe('every Club Data and Union Data reader counts Chicago days', () => {
     const b = latest(fn);
     expect(b).not.toMatch(/AT TIME ZONE 'UTC'/);
     expect(b).not.toMatch(/public\.ca_club_data_fact\b(?!_ct)/);
-    expect(b).not.toMatch(/club_table_daily|ca_club_tournament_daily|ca_club_tournament_player_daily/);
+    expect(b).not.toMatch(
+      /club_table_daily|ca_club_tournament_daily|ca_club_tournament_player_daily/
+    );
   });
 
   it('"today" is the Chicago calendar day', () => {
@@ -83,7 +89,9 @@ describe('every Club Data and Union Data reader counts Chicago days', () => {
       'ca_rake_snapshot_v2',
       'ca_rake_export_start_v2',
     ]) {
-      expect(latest(fn)).toMatch(/v_today date ?:= ?\(now\(\) AT TIME ZONE 'America\/Chicago'\)::date;/);
+      expect(latest(fn)).toMatch(
+        /v_today date ?:= ?\(now\(\) AT TIME ZONE 'America\/Chicago'\)::date;/
+      );
     }
   });
 
@@ -99,14 +107,38 @@ describe('MTT Winnings are finished MTTs; running MTT entries are their own figu
     expect(b).toContain("COALESCE(tr.status IN ('COMPLETED','CANCELLED'),false)");
     expect(b).toContain("'running_mtt_entries', round(v_run_win, 2)");
     expect(b).toContain("'tournament_winnings', round(v_tour_win,2)");
-    expect(b).toContain("mt.tournament_type='MTT' AND NOT COALESCE(mt.status IN ('COMPLETED','CANCELLED'),false)");
+    expect(b).toContain(
+      "mt.tournament_type='MTT' AND NOT COALESCE(mt.status IN ('COMPLETED','CANCELLED'),false)"
+    );
   });
 
-  it('the Union Data window does the same', () => {
+  it('the Union Data window does the same, finding MTTs from tournaments', () => {
     const b = squash(latest('fn_ca_rake_window_v2'));
-    expect(b).toContain("tournament_type='MTT' AND finished");
-    expect(b).toContain("tournament_type='MTT' AND NOT finished");
+    expect(b).toContain("bool_or(COALESCE(tr.status IN ('COMPLETED','CANCELLED'),false)) finished");
+    expect(b).toContain("WHERE tr.tournament_type='MTT' GROUP BY d.game_id");
+    expect(b).toContain('sum(fee) FILTER(WHERE finished)');
+    expect(b).toContain('sum(winnings) FILTER(WHERE NOT finished)');
     expect(b).toContain("'running_mtt_entries',round(a.rw,2)");
+  });
+});
+
+describe('the union reads count each thing once (20261022134523)', () => {
+  it('the per-club list reads each club window once', () => {
+    expect(squash(latest('fn_ca_rake_by_club_v2'))).toContain(
+      'CROSS JOIN LATERAL(SELECT public.fn_ca_rake_window_v2(ARRAY[c.id],p_start,p_end) s OFFSET 0) w)'
+    );
+  });
+
+  it('the union game page and game lists count hands in one grouped pass', () => {
+    for (const fn of [
+      'ca_club_game_page_core_20261006',
+      'fn_ca_club_games_searched',
+      'fn_ca_club_games_unsearched',
+    ]) {
+      const b = latest(fn);
+      expect(b).toContain('union_hands AS MATERIALIZED');
+      expect(b).not.toContain('public.fn_ca_club_data_hand_count($1');
+    }
   });
 
   it('the legacy open-client contract still maps MTT to every tournament', () => {

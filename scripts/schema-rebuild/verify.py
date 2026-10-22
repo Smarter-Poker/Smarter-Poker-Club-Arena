@@ -4,7 +4,7 @@ No URL/credential input or existing database target is supported.
 """
 import argparse,hashlib,json,os,re,shutil,subprocess,sys,tempfile
 from pathlib import Path
-import forward as pending
+import fidelity
 ROOT=Path(__file__).resolve().parents[2]
 BASE=ROOT/'supabase/bootstrap'
 class Refused(RuntimeError):pass
@@ -214,22 +214,18 @@ def main():
   if sorted(actualroles,key=lambda x:x['name'])!=sorted(expectedroles,key=lambda x:x['name']):raise Refused('Source role capability/configuration comparison differs')
   actualmembers=json.loads(sql("SELECT coalesce(jsonb_agg(jsonb_build_object('role',pg_get_userbyid(roleid),'member',pg_get_userbyid(member),'grantor',pg_get_userbyid(grantor),'admin',admin_option,'inherit',inherit_option,'set',set_option)),'[]'::jsonb) FROM pg_auth_members;"))
   if {json.dumps(x,sort_keys=True) for x in actualmembers}!={json.dumps(x,sort_keys=True) for x in contract['memberships']}:raise Refused('Source role membership comparison differs')
+  fidelity.restore_provider_metadata(sql,expected)
   catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()));
+  inherited_restored=fidelity.restore_inherited_primary_keys(sql,expected,catalog)
+  if inherited_restored:catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()))
+  semantic_expected,semantic_actual,expressions_parsed=fidelity.normalize_expressions(sql,expected,catalog)
+
   if any(x['count'] for x in catalog['unsupported_objects']):raise Refused('Catalog contains unsupported object families')
-  differences=compare(expected,catalog)
+  differences=compare(semantic_expected,semantic_actual)
   if differences:
    output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',phase='baseline-catalog-comparison',differences=differences))+'\n')
    raise Refused('Independent source catalog comparison differs before pending schema application: '+json.dumps(differences))
-  entries=json.loads((BASE/'forward-schema.json').read_text())['arena']
-  if entries:
-   entries=pending.validate(ROOT,entries)
-   expected=pending.expected_catalog(expected)
-   for entry in entries:
-    sql('SET ROLE postgres;\n'+(ROOT/entry['path']).read_text()+'\nRESET ROLE;',phase='forward-schema-apply',sourceFile=entry['path'])
-   catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()))
-   differences=compare(expected,catalog)
-
-  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'pendingSchemaInputsApplied':[x['path'] for x in entries],'pendingExpectedCatalog':'Reviewed exact nine routine postimages, metadata/ACLs, one constraint enum change; every other captured field unchanged','noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
+  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'pendingSchemaInputsApplied':[],'nativeExpressionsParsed':expressions_parsed,'inheritedPrimaryKeysRestored':inherited_restored,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
   output.write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt))
   if differences:raise Refused('Independent source catalog comparison differs')
  finally:

@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "purpose": "Captured source lineage; pending-at-capture schema inputs are separately pinned and actually applied by the finite local forward runner. Historical financial data transformations are never replayed.",
+  "purpose": "Immutable source bytes at the named revisions, not a claim every historical file was installed byte-identically or a financial-data replay. The independent current-snapshot native schema is authoritative reconstruction input; historical ledger discrepancies are preserved separately.",
   "repositories": {
     "hub": {
-      "revision": "73ce1b5c2f343857013124263ad4542d0e6ac615",
+      "revision": "d318a16c9fbdd8d71e68d0d9fcfc30acdd17e00d",
       "files": [
         {
           "path": "supabase/migrations/.template.sql",
@@ -5226,6 +5226,30 @@
           "sha256": "607e4e147a74039bac8737bf5cd2072b8aeca83e5612079f6fb9973bc516d661"
         },
         {
+          "path": "supabase/migrations/20261020195500_grounded_hand_bounded_profile_lock.sql",
+          "sha256": "3271dfadf0609608668c0b806b7ebfe83f786d38c5b9a589b1592ec102d1ecd4"
+        },
+        {
+          "path": "supabase/migrations/20261022004839_remove_horse_grounded_hand_posts.sql",
+          "sha256": "1a37896c1a00178d848ba753370030056a1c79c6353630be8c532fb18b5e33e5"
+        },
+        {
+          "path": "supabase/migrations/20261022014053_purge_all_horse_hand_and_session_recap_posts.sql",
+          "sha256": "c8b09499692cb8cb10b95f30a09bc277812359887a9a3a23af27ef4d68c1b922"
+        },
+        {
+          "path": "supabase/migrations/20261022163125_signup_location_reaches_profiles.sql",
+          "sha256": "225311c538bd3840b699a1b04589065d203dbbd3b407ed2906c832897526cd46"
+        },
+        {
+          "path": "supabase/migrations/20261022164326_missing_player_wallets_backfill.sql",
+          "sha256": "f14a950dd977445b52d0be36e0680767c30ae2f3c11e0c9b44d942141bac2f84"
+        },
+        {
+          "path": "supabase/migrations/20261022171756_daily_reports_fit_their_budgets.sql",
+          "sha256": "2fbd0e27b1b2bbde2cfb4d0f2ed57d83875c05e10c7837bd39cec4b93e3931ab"
+        },
+        {
           "path": "supabase/migrations/ZZZZ_snapshot_home_games_schema.sql",
           "sha256": "1088c2a8d92a0c24d03d517569388e3fe9d6fc357bfb1227ed0f366ebe66f917"
         },
@@ -6572,7 +6596,7 @@
       ]
     },
     "arena": {
-      "revision": "18ee8e3102454a53bc06bd3267a77f13df4c5284",
+      "revision": "00628a2d868b2e53f26ea3f8dfb4033e5409778c",
       "files": [
         {
           "path": "supabase/migrations/001_club_arena_schema.sql",
@@ -29496,7 +29520,7 @@
         },
         {
           "path": "supabase/migrations/20261020145408_resolved_financial_alert_storms_close_with_their_exact_membe.sql",
-          "sha256": "80ea09a91a125b3662d892a8152790c46224c50695cbd98b98c97a7af858a8bc"
+          "sha256": "b7701f4ee3d7f28d94afd0361985c1b042057bb417eefb4857007cb40e1f8af3"
         },
         {
           "path": "supabase/migrations/20261020145913_lightning_keepalive_preserves_covered_deadlines.sql",
@@ -29543,8 +29567,316 @@
           "sha256": "5b8f96522c5615a25eda180257779ab04c6802ce513bc79d9f2135d2e534e782"
         },
         {
+          "path": "supabase/migrations/20261020182843_native_weekly_hand_outcomes_use_original_bounded_parts.sql",
+          "sha256": "0ec1002c063f2f18c664cefd944c1993287e71607b00f252ac465c67128e7031"
+        },
+        {
+          "path": "supabase/migrations/20261020184651_statement_provenance_stays_out_of_messenger.sql",
+          "sha256": "540577870c6ae11d73548d20b4cc97625671623b12208ca8a2e016c46eeee1c0"
+        },
+        {
           "path": "supabase/migrations/20261020190723_weekly_count_incomplete_joins_use_original_source_keys.sql",
           "sha256": "325d91776bf409744303207ad29794e9e576f6c0fa07716c4569f16dddcdb58f"
+        },
+        {
+          "path": "supabase/migrations/20261020194921_midway_non_freezeouts_allow_rebuys_and_addons.sql",
+          "sha256": "8a5c5d82b82685acf4171d06e6e1eadba22c90c2e391430b38eb7737412073ad"
+        },
+        {
+          "path": "supabase/migrations/20261020201931_unattended_cash_game_offers.sql",
+          "sha256": "7b4cd9c9fe6c8a912f4e18c182dd5bf1bf8099d4c06700c6a01435d1c41c0b91"
+        },
+        {
+          "path": "supabase/migrations/20261020201951_fee_detector_uses_original_close_plan.sql",
+          "sha256": "979e50ba5617c47b5d619f72c657f9492643933a042a27e70d764cd093ae464d"
+        },
+        {
+          "path": "supabase/migrations/20261020203346_historical_rakeback_preserves_departed_financial_wallets.sql",
+          "sha256": "36b842b5ace0d3a5ec1008295cd4073fe96f312079d0f2cba9065e45cf4a3707"
+        },
+        {
+          "path": "supabase/migrations/20261020203733_add_agent_assignment_transaction_before_client_publication.sql",
+          "sha256": "d92d8b0ef1993bf2124d3ddad1ed2d9b021c49461118e786de6b64fcebe71e47"
+        },
+        {
+          "path": "supabase/migrations/20261020204148_midway_half_one_cash_games.sql",
+          "sha256": "56f1b3af1a1d62c31e74dc865deeb88aa0c430265c24afcfe31519e94e6b4568"
+        },
+        {
+          "path": "supabase/migrations/20261020210238_restrict_agent_banks_and_authorize_downline_reassignment.sql",
+          "sha256": "494d18590ac921bbf9bdc4578136f650ee4cd23e99b6b150398d9b06edb299a4"
+        },
+        {
+          "path": "supabase/migrations/20261020210313_daily_chicago_maintenance_observation.sql",
+          "sha256": "b6806a69f263a4a6110265ea806c4acf3abf3454a645e9ab757cd6e5220c12e6"
+        },
+        {
+          "path": "supabase/migrations/20261021172727_union_wallet_intents_survive_unavailable_browser_storage.sql",
+          "sha256": "d94a339b8763c12c329bdd556e1a8fedb98657e291046675ee44afa5c63179ab"
+        },
+        {
+          "path": "supabase/migrations/20261021172828_agent_wallet_can_fund_own_player_wallet.sql",
+          "sha256": "2b973b8bf5d4753a0d37569f2a4f9bf6cfcf02cdfc34922aae239b5b62c869ef"
+        },
+        {
+          "path": "supabase/migrations/20261021172832_never_dealt_arrivals_keep_their_committed_move.sql",
+          "sha256": "26973ab66826c2c0da4c2ade117695e0b31b5b751ecd31b06622fe0162b7452e"
+        },
+        {
+          "path": "supabase/migrations/20261021172837_weekly_hand_witnesses_follow_original_window_sources.sql",
+          "sha256": "55f5cdee20fb26b7e4633e9845d67fe5b9fa4cebf1721909cfcc9700f81769cc"
+        },
+        {
+          "path": "supabase/migrations/20261021173101_tournament_levels_have_a_five_minute_floor.sql",
+          "sha256": "e4d875ec3e622d901f029e06973c4934e8cfcc9271b0a04bd5fbef4c18ee2696"
+        },
+        {
+          "path": "supabase/migrations/20261021173355_member_role_panel_edits_individual_rakeback_agreements.sql",
+          "sha256": "cc32a7488d62e11a74e8c9b18e601bcb999dbd6b09a833ce12c6a053f76a61c6"
+        },
+        {
+          "path": "supabase/migrations/20261021173509_late_seat_preserves_callers_money_path.sql",
+          "sha256": "51b71a3de7036b5b39ade057c1a78d41c57f8bbb258ab8f8401d93afd575a851"
+        },
+        {
+          "path": "supabase/migrations/20261021173708_standalone_rakeback_only_admits_its_original_coordinator_obl.sql",
+          "sha256": "3fdea807aa693df584820bd072c61337e384c1cb586554aca93663b2de4b8088"
+        },
+        {
+          "path": "supabase/migrations/20261021173713_daily_metrics_health_materializes_original_human_classifier.sql",
+          "sha256": "ac0d2ef847ec759b3510e44a34effcc83f2a652baf5c7795c749a5ba301e48fa"
+        },
+        {
+          "path": "supabase/migrations/20261021174252_daily_maintenance_circulation_marks_follow_chicago_boundarie.sql",
+          "sha256": "cacfb4a177052dd5db0bf14091b9eb393f4c24fd2bba6db36c2d2655626b052c"
+        },
+        {
+          "path": "supabase/migrations/20261021174448_midway_cash_rake_policy_two_point_five_bb.sql",
+          "sha256": "825db5b3221157be827fad66aa63184b801df5167b38a9b600a1b2ee39ea5172"
+        },
+        {
+          "path": "supabase/migrations/20261021174637_roster_club_join_date_sorting.sql",
+          "sha256": "e1d299ad5c8f4081240908ee2619f7c3d3357cc023ea5932e9d30c864949ce07"
+        },
+        {
+          "path": "supabase/migrations/20261021175019_individual_player_rates_cannot_bypass_agreement_authorizatio.sql",
+          "sha256": "ee5b588a7d543982dac9bdc0b73b3850d35ad9aef7b761f86c3e904f790695eb"
+        },
+        {
+          "path": "supabase/migrations/20261021180032_agent_transfer_review_history_and_scope_events.sql",
+          "sha256": "057b672b1d7c05fe701a461c6672863442a3418bd8eac2489a8f770696dac669"
+        },
+        {
+          "path": "supabase/migrations/20261021180210_rename_shark_club_to_kings_club.sql",
+          "sha256": "5e38db1584d01f73fab9776f51588b04ac730a3eff7644bbf73534981ff66b22"
+        },
+        {
+          "path": "supabase/migrations/20261021180854_club_entry_news_automatically_shown_once.sql",
+          "sha256": "7a541c2c8f4e944f770d3e4377d746e76ff08f63cd49238fa0a897e151e9492d"
+        },
+        {
+          "path": "supabase/migrations/20261021181050_club_entry_news_explicit_service_access.sql",
+          "sha256": "88bec001358ca1cef22b249ebd608fb9c80002e259d3c69a5afe68bcf719e490"
+        },
+        {
+          "path": "supabase/migrations/20261021182053_serialize_club_news_claims_across_edits.sql",
+          "sha256": "b0525b6db416f45c125daa78c2fdb405c4a45d4c0317df1c7542427db8b8914c"
+        },
+        {
+          "path": "supabase/migrations/20261021182432_cashier_recovery_survives_unavailable_browser_storage.sql",
+          "sha256": "d07c5e023a2adfc99ac2b3a7e3aa2d3c5483dd0324b0721b77f1b35e3df7a630"
+        },
+        {
+          "path": "supabase/migrations/20261021183705_bind_private_club_helper_reads_to_the_caller.sql",
+          "sha256": "1e2132f5ee5dc72e08f4173fb91f1c3f7602bf3127a07aa1c1dfe366819230fe"
+        },
+        {
+          "path": "supabase/migrations/20261021193318_confirmed_rakeback_certificates_retain_historical_payer_rece.sql",
+          "sha256": "be4102d1bf23613712f83b44b320de2e871332f3688fe87f2d7e8633b7e47e4b"
+        },
+        {
+          "path": "supabase/migrations/20261021202610_club_data_totals_use_exact_game_types_and_union_scope.sql",
+          "sha256": "a37fa925f73299999cd9f01a17ff0e6b178adf000b6ec0a5d97bb63bfa0a284d"
+        },
+        {
+          "path": "supabase/migrations/20261021204534_mutual_friends_are_unique_players.sql",
+          "sha256": "2b60afaf77558bd2b4791718f905dc11a71b6d9433a7abccfc243b6f62ef473f"
+        },
+        {
+          "path": "supabase/migrations/20261021222049_lock_tournament_level_clocks.sql",
+          "sha256": "e0a46ce70435a65cb0872adbb96a6b0007d3f07af6b468293d540f983d55a5dc"
+        },
+        {
+          "path": "supabase/migrations/20261021222550_the_arena_active_count_reads_only_public_club_columns.sql",
+          "sha256": "f364961bf54fbdbc2b430ed5549df6a8c8c4231924e86140203fd4233298efcb"
+        },
+        {
+          "path": "supabase/migrations/20261021223220_the_locked_level_clock_trigger_is_declared.sql",
+          "sha256": "060f2104d857e6e399c154ba76adb424388996c9f816c41a37e9e0ca3bd1ac95"
+        },
+        {
+          "path": "supabase/migrations/20261021224043_an_alert_recovery_is_found_by_its_fingerprint.sql",
+          "sha256": "7fcff45d3fb4d9fbdd7dd18a22aeb773ee2b3dd2aa19e09600711a99d1621829"
+        },
+        {
+          "path": "supabase/migrations/20261021231028_tournament_close_custody_locks_owners_in_id_order.sql",
+          "sha256": "f830168d4620cf9fde948cbf8aa8b263e8792a72da4c99f2088e7cd2f093d8b2"
+        },
+        {
+          "path": "supabase/migrations/20261021234526_tournament_finishers_are_paid_the_moment_they_bust.sql",
+          "sha256": "1aeacab0ad5a2359d9b7b3511a6b7a5a1fbd006d1cc8b681209fee198f7a8024"
+        },
+        {
+          "path": "supabase/migrations/20261022000330_a_diamond_wallet_lock_never_blocks_a_foreign_key_check.sql",
+          "sha256": "50db7098eb0911c6104513453c2aa255d796bcf1044c7ed7d4ac228c8bd06df3"
+        },
+        {
+          "path": "supabase/migrations/20261022000503_free_buy_hour_on_locked_clock.sql",
+          "sha256": "d90a149657bd35aca59453235dccbcac390a5afd771016bdadcb73e3e927092b"
+        },
+        {
+          "path": "supabase/migrations/20261022010444_a_dealing_tournament_is_never_dark.sql",
+          "sha256": "fc32ae4305bb6b04d99b1f00cc0e2c1a935499123fcac66a9e985a0705b1d4b9"
+        },
+        {
+          "path": "supabase/migrations/20261022010659_an_agent_row_deletes_without_scanning_every_rake_attribution.sql",
+          "sha256": "46a167c09f9a895b4b62d68aef6a1ad80782a0571f1d71cbcde7f4ca98209082"
+        },
+        {
+          "path": "supabase/migrations/20261022013120_tournament_places_are_true_from_the_first_bust_and_cashing_p.sql",
+          "sha256": "f74aa743bf8ef90e45bea7c2081d3e15d6105ebd4d93573bd113f7b9c0a4f1a7"
+        },
+        {
+          "path": "supabase/migrations/20261022014607_every_mtt_pays_the_top_twelve_point_five_percent_of_the_fiel.sql",
+          "sha256": "662070eb2960d5c191b3ca3317b7731b6dce8a12183dcbda5cfc655d64921cb9"
+        },
+        {
+          "path": "supabase/migrations/20261022014651_live_mtts_move_to_the_twelve_point_five_percent_depth.sql",
+          "sha256": "d5f8c02bc5f1d8978120d9f34a7b43f701a2cb5d8c0f1a92e752dfc2799b0aca"
+        },
+        {
+          "path": "supabase/migrations/20261022014819_ca_orphaned_certification_account_sweep.sql",
+          "sha256": "36e9f425e2e7471ab06a8a78504552f7eb6e30df82cb4d0c1ee30c5f42e648af"
+        },
+        {
+          "path": "supabase/migrations/20261022020721_the_provisional_payout_ladder_follows_the_field_during_late_.sql",
+          "sha256": "81faf19573650100f7fdf82a910d57e7a632652687c68fb0026c3838a78c8238"
+        },
+        {
+          "path": "supabase/migrations/20261022021302_remove_ca_orphaned_certification_account_sweep.sql",
+          "sha256": "7eaba89df9c243430d7d44fedbd90d07857c8bf82c722b18c3a36d29e739f88c"
+        },
+        {
+          "path": "supabase/migrations/20261022021443_declare_the_mtt_payout_depth_guard.sql",
+          "sha256": "a931643f94e6619bc1e2de93b520162c6c74a73dc2e6f5adc2546a2d2cfdf5ab"
+        },
+        {
+          "path": "supabase/migrations/20261022025039_standalone_foreign_certificates_are_read_once_per_close.sql",
+          "sha256": "b48366a1553bd521f2f04aed78303909bd1c0360eb6f31b47a8d32ef2924c401"
+        },
+        {
+          "path": "supabase/migrations/20261022030326_a_migration_never_holds_the_live_tables_hostage.sql",
+          "sha256": "edd4348f3fae68707a097d471b2f77666728b7a00c677756e6086c51fdae1a5e"
+        },
+        {
+          "path": "supabase/migrations/20261022030638_a_registering_player_refreshes_the_provisional_ladder_and_a_.sql",
+          "sha256": "f1aa20d1c505f4f64a4897f44e8178f5313c4902f8bd93bbddb3dc2a499332ce"
+        },
+        {
+          "path": "supabase/migrations/20261022031908_fn_ca_payout_structure_has_one_door.sql",
+          "sha256": "1b83313cb172d105f32184f0e0282b322af77234f78922e77e533788d0288f0f"
+        },
+        {
+          "path": "supabase/migrations/20261022032302_a_settled_finishing_place_is_not_a_changed_elimination.sql",
+          "sha256": "aa323dcc98bf78bf9995d47a34de46a778eb20b3a9eb0eacb82a2d5e984426d6"
+        },
+        {
+          "path": "supabase/migrations/20261022032422_union_bank_reads_its_club_balances.sql",
+          "sha256": "c7211c7642a017e1b329694080b0f80bb6d2fccad278e91acc8fd21c0ed65007"
+        },
+        {
+          "path": "supabase/migrations/20261022034135_horse_observation_snapshot_finds_hands_through_the_player_in.sql",
+          "sha256": "16d0460920fff6f5a338237a03bffc79bacecf5dba9227ca3a897dd067946814"
+        },
+        {
+          "path": "supabase/migrations/20261022041710_the_mini_jackpot_operator_rates_read_contributions_by_pool_i.sql",
+          "sha256": "66ee10135a60cb05317018548f886fb7dead5df12fda61ec74557b3b1f9fa6ac"
+        },
+        {
+          "path": "supabase/migrations/20261022042102_lightning_timing_correlation_scores_its_confidence_bound.sql",
+          "sha256": "ddd356cf7884219685b353d40c4dcfca83e90206c5aa6f7b1ce205f8723d9202"
+        },
+        {
+          "path": "supabase/migrations/20261022044423_bounty_mtts_rebuy_until_registration_closes.sql",
+          "sha256": "cabaf4d912bd3f88bb9b22fb5f9d4824d828b235ad910a675a8f70790659e289"
+        },
+        {
+          "path": "supabase/migrations/20261022044452_player_record_shows_the_full_upline_agent_chain.sql",
+          "sha256": "eef030aa1b6320f03116d34c6933d9d365a4aabdefe2a1993c1da529a4d9b656"
+        },
+        {
+          "path": "supabase/migrations/20261022050713_horse_table_talk_and_gestures_on.sql",
+          "sha256": "5409e0665865519bb1d98751f6d081810b67c4bc65461e0b966c25d52d623178"
+        },
+        {
+          "path": "supabase/migrations/20261022052324_lightning_pilots_switch_at_six_seat_pool_math.sql",
+          "sha256": "96dfbd3aab933047791c4d84aace12f08335ce570e5c6c86b5e3ea076bfe65a7"
+        },
+        {
+          "path": "supabase/migrations/20261022054023_horse_observation_snapshot_refuses_an_overflowing_window_fro.sql",
+          "sha256": "542c61b5100157759a8d806e84766017ba3925e449153618503d8611e914e8df"
+        },
+        {
+          "path": "supabase/migrations/20261022061048_the_club_game_page_counts_cash_players_for_visible_rows_only.sql",
+          "sha256": "47204556cdbd94d6f65702c90acaa8705d3056a1f10737c088dcab42e49b91de"
+        },
+        {
+          "path": "supabase/migrations/20261022061936_club_data_export_counts_cash_players_in_one_grouped_pass.sql",
+          "sha256": "3a1479b98b95e51c61a371cd29f34700af9008dfbf673c26deb6af1664473192"
+        },
+        {
+          "path": "supabase/migrations/20261022062934_the_hourly_audits_read_only_what_changed_since_they_last_loo.sql",
+          "sha256": "7c13ab8ca5fc7eb3abd482a4f3630a1b91846b778de43007e11f9e82184afa53"
+        },
+        {
+          "path": "supabase/migrations/20261022063749_a_bounty_bust_waits_for_its_tournament_lane.sql",
+          "sha256": "363cd307799b145d91ddd5d5c25bef8b26a5a18659e1c75e1d04363c647b6ea8"
+        },
+        {
+          "path": "supabase/migrations/20261022091134_a_deadlocked_bust_payment_yields_to_its_partner_instead_of_r.sql",
+          "sha256": "82b03730a2a47c625fecba01b2590404d744fee08e07ca1b63eb0021deb9dba6"
+        },
+        {
+          "path": "supabase/migrations/20261022103651_club_data_chicago_day_facts_and_writer.sql",
+          "sha256": "764dddc67aa3f0941b4bfa5f5d8296f006b78b842b0b4025d76eb8f742ed5e32"
+        },
+        {
+          "path": "supabase/migrations/20261022120109_club_data_chicago_days_load_september.sql",
+          "sha256": "3a8a9b453391c8b1c30ff3a867bcfd14e48461e41ee8967c28a98d2dc63d7f11"
+        },
+        {
+          "path": "supabase/migrations/20261022120113_club_data_chicago_days_load_early_october.sql",
+          "sha256": "25f40173e6800a14d35ac2e8dd5443a0c94d2e3f9656f2bc9ac5c5eae9ff4d96"
+        },
+        {
+          "path": "supabase/migrations/20261022120117_club_data_chicago_days_load_through_the_cutover.sql",
+          "sha256": "4e900b8b228b3274ba3b2de4580810979f59ffd92e695a1f0a136270f831e2ff"
+        },
+        {
+          "path": "supabase/migrations/20261022120121_club_data_reads_chicago_days_and_separates_running_mtts.sql",
+          "sha256": "88794bad4255d1b3128eb37dfe45329ce68d645073c242b7446ceaf8f2b362a9"
+        },
+        {
+          "path": "supabase/migrations/20261022134523_club_data_union_reads_count_once.sql",
+          "sha256": "bd252c35fe9a7125ed6f8e27e4967012402a19c5d2cebdcbf5c16328bd477ec2"
+        },
+        {
+          "path": "supabase/migrations/20261022145452_a_diamond_bounty_paid_during_a_rebuy_reaches_the_winner_s_wa.sql",
+          "sha256": "13086e27d13a98ae6d01446c4e05c52ccf5d5e236a4748eed48fd02e19d1794a"
+        },
+        {
+          "path": "supabase/migrations/20261022150614_the_weekly_scheduler_scan_reads_standalone_tournament_earnin.sql",
+          "sha256": "4ce1b56c022601b434406994f06e369e527fe758e10cca04d9c999158cf2d509"
         }
       ]
     }

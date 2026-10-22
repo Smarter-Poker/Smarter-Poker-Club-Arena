@@ -1,22 +1,12 @@
 import importlib.util,json,tempfile,unittest,os,subprocess,sys
 from pathlib import Path
-import forward
+import check_history
 p=Path(__file__).with_name('verify.py');spec=importlib.util.spec_from_file_location('rebuild',p);v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)
 class Boundaries(unittest.TestCase):
- def test_only_reviewed_forward_bytes_are_admitted(self):
-  entries=json.loads((v.BASE/'forward-schema.json').read_text())['arena']
-  self.assertEqual(len(forward.validate(v.ROOT,entries)),2)
-  for altered in [entries[:1],entries+[dict(entries[0],path='unreviewed.sql')],[dict(entries[0],sha256='0'*64),entries[1]]]:
-   with self.assertRaises(ValueError):forward.validate(v.ROOT,altered)
- def test_forward_semantics_are_independent_and_finite(self):
-  reference=json.loads((v.BASE/'pokeriq-catalog-reference.json').read_text());expected=forward.expected_catalog(reference)
-  self.assertEqual(len(expected['routines']),len(reference['routines'])+3)
-  differences=v.compare(reference,expected)
-  self.assertEqual({x['category'] for x in differences},{'relations','routines'})
-  self.assertEqual(next(x for x in differences if x['category']=='routines')['missingOrChanged'],6)
-  routine=next(r for r in reference['routines'] if r['name']=='fn_deliver_accounting_invoice')
-  routine['definition_md5']='0'*32
-  with self.assertRaises(ValueError):forward.expected_catalog(reference)
+ def test_current_snapshot_refuses_any_unexecuted_forward(self):
+  inventory=json.loads((v.BASE/'source-history.json').read_text())
+  self.assertFalse(any(check_history.check(v.ROOT,'arena',inventory,[]).values()))
+  with self.assertRaises(ValueError):check_history.check(v.ROOT,'arena',inventory,[{'path':'unreviewed.sql','sha256':'0'*64}])
  def test_event_triggers_restore_as_captured_owners(self):
   source=(v.BASE/'pokeriq-20261020.sql').read_text();reference=json.loads((v.BASE/'pokeriq-catalog-reference.json').read_text());contract=json.loads((v.BASE/'pokeriq-role-contract.json').read_text())
   rendered=v.render_event_trigger_owners(source,reference,contract)

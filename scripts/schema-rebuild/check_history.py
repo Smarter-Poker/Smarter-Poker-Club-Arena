@@ -2,11 +2,8 @@
 """Fingerprint immutable history; never execute historical financial SQL."""
 import argparse,hashlib,json,sys
 from pathlib import Path
-import forward as pending
 def check(root,repo,inventory,forward):
- if forward:
-  if repo!='arena':raise ValueError('No Hub forward runner exists')
-  pending.validate(root,forward)
+ if forward:raise ValueError('No forward schema is admitted by this current-snapshot baseline; refresh independently qualified capture')
  expected={x['path']:x['sha256'] for x in inventory['repositories'][repo]['files']};actual={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'supabase/migrations').rglob('*.sql')};admitted={x['path']:x['sha256'] for x in forward}
  missing=sorted(set(expected)-set(actual));changed=sorted(p for p in expected.keys()&actual.keys() if expected[p]!=actual[p]);new=sorted(set(actual)-set(expected));unadmitted=[p for p in new if admitted.get(p)!=actual[p]];stale=sorted(set(admitted)-set(new))
  return {'missing':missing,'changed':changed,'unadmittedNew':unadmitted,'staleForwardEntries':stale}

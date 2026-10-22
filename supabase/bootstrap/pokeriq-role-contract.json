@@ -487,6 +487,264 @@
       "connectionlimit": -1
     }
   ],
+  "memberships": [
+    {
+      "set": true,
+      "role": "pg_read_all_settings",
+      "admin": false,
+      "member": "pg_monitor",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_read_all_stats",
+      "admin": false,
+      "member": "pg_monitor",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_stat_scan_tables",
+      "admin": false,
+      "member": "pg_monitor",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_read_all_data",
+      "admin": false,
+      "member": "supabase_etl_admin",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_read_all_data",
+      "admin": false,
+      "member": "supabase_read_only_user",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "anon",
+      "admin": false,
+      "member": "authenticator",
+      "grantor": "supabase_admin",
+      "inherit": false
+    },
+    {
+      "set": true,
+      "role": "authenticated",
+      "admin": false,
+      "member": "authenticator",
+      "grantor": "supabase_admin",
+      "inherit": false
+    },
+    {
+      "set": true,
+      "role": "service_role",
+      "admin": false,
+      "member": "authenticator",
+      "grantor": "supabase_admin",
+      "inherit": false
+    },
+    {
+      "set": true,
+      "role": "anon",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "authenticated",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "service_role",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_monitor",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "authenticator",
+      "admin": false,
+      "member": "supabase_storage_admin",
+      "grantor": "supabase_admin",
+      "inherit": false
+    },
+    {
+      "set": true,
+      "role": "pg_read_all_data",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_signal_backend",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_create_subscription",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "authenticator",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_monitor",
+      "admin": false,
+      "member": "supabase_etl_admin",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_monitor",
+      "admin": false,
+      "member": "supabase_read_only_user",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "postgres",
+      "admin": false,
+      "member": "cli_login_postgres",
+      "grantor": "supabase_admin",
+      "inherit": false
+    },
+    {
+      "set": true,
+      "role": "supabase_privileged_role",
+      "admin": false,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "supabase_privileged_role",
+      "admin": false,
+      "member": "supabase_etl_admin",
+      "grantor": "supabase_admin",
+      "inherit": true
+    },
+    {
+      "set": false,
+      "role": "supabase_backup_admin",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": false
+    },
+    {
+      "set": true,
+      "role": "pg_read_all_data",
+      "admin": false,
+      "member": "supabase_backup_admin",
+      "grantor": "postgres",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "pg_monitor",
+      "admin": false,
+      "member": "supabase_backup_admin",
+      "grantor": "postgres",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "service_role",
+      "admin": false,
+      "member": "supabase_backup_admin",
+      "grantor": "postgres",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "authenticated",
+      "admin": false,
+      "member": "supabase_backup_admin",
+      "grantor": "postgres",
+      "inherit": true
+    },
+    {
+      "set": true,
+      "role": "anon",
+      "admin": false,
+      "member": "supabase_backup_admin",
+      "grantor": "postgres",
+      "inherit": true
+    },
+    {
+      "set": false,
+      "role": "ca_ledger_refusal_recorder",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": false
+    },
+    {
+      "set": false,
+      "role": "engine_lease_heartbeat",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": false
+    },
+    {
+      "set": true,
+      "role": "supabase_read_only_user",
+      "admin": false,
+      "member": "cli_login_supabase_read_only_user",
+      "grantor": "supabase_admin",
+      "inherit": false
+    },
+    {
+      "set": false,
+      "role": "engine_lightning_fold",
+      "admin": true,
+      "member": "postgres",
+      "grantor": "supabase_admin",
+      "inherit": false
+    }
+  ],
   "extensions": [
     {
       "name": "dblink",
@@ -571,264 +829,6 @@
       "owner": "supabase_admin",
       "schema": "public",
       "version": "0.8.0"
-    }
-  ],
-  "memberships": [
-    {
-      "set": true,
-      "role": "pg_monitor",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_monitor",
-      "admin": false,
-      "member": "supabase_etl_admin",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_monitor",
-      "admin": false,
-      "member": "supabase_read_only_user",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_monitor",
-      "admin": false,
-      "member": "supabase_backup_admin",
-      "grantor": "postgres",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_read_all_settings",
-      "admin": false,
-      "member": "pg_monitor",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_read_all_stats",
-      "admin": false,
-      "member": "pg_monitor",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_stat_scan_tables",
-      "admin": false,
-      "member": "pg_monitor",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_signal_backend",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_read_all_data",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_read_all_data",
-      "admin": false,
-      "member": "supabase_etl_admin",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_read_all_data",
-      "admin": false,
-      "member": "supabase_read_only_user",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_read_all_data",
-      "admin": false,
-      "member": "supabase_backup_admin",
-      "grantor": "postgres",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "pg_create_subscription",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "postgres",
-      "admin": false,
-      "member": "cli_login_postgres",
-      "grantor": "supabase_admin",
-      "inherit": false
-    },
-    {
-      "set": true,
-      "role": "supabase_read_only_user",
-      "admin": false,
-      "member": "cli_login_supabase_read_only_user",
-      "grantor": "supabase_admin",
-      "inherit": false
-    },
-    {
-      "set": true,
-      "role": "anon",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "anon",
-      "admin": false,
-      "member": "authenticator",
-      "grantor": "supabase_admin",
-      "inherit": false
-    },
-    {
-      "set": true,
-      "role": "anon",
-      "admin": false,
-      "member": "supabase_backup_admin",
-      "grantor": "postgres",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "authenticated",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "authenticated",
-      "admin": false,
-      "member": "authenticator",
-      "grantor": "supabase_admin",
-      "inherit": false
-    },
-    {
-      "set": true,
-      "role": "authenticated",
-      "admin": false,
-      "member": "supabase_backup_admin",
-      "grantor": "postgres",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "service_role",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "service_role",
-      "admin": false,
-      "member": "authenticator",
-      "grantor": "supabase_admin",
-      "inherit": false
-    },
-    {
-      "set": true,
-      "role": "service_role",
-      "admin": false,
-      "member": "supabase_backup_admin",
-      "grantor": "postgres",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "authenticator",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "authenticator",
-      "admin": false,
-      "member": "supabase_storage_admin",
-      "grantor": "supabase_admin",
-      "inherit": false
-    },
-    {
-      "set": true,
-      "role": "supabase_privileged_role",
-      "admin": false,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": true,
-      "role": "supabase_privileged_role",
-      "admin": false,
-      "member": "supabase_etl_admin",
-      "grantor": "supabase_admin",
-      "inherit": true
-    },
-    {
-      "set": false,
-      "role": "supabase_backup_admin",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": false
-    },
-    {
-      "set": false,
-      "role": "ca_ledger_refusal_recorder",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": false
-    },
-    {
-      "set": false,
-      "role": "engine_lease_heartbeat",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": false
-    },
-    {
-      "set": false,
-      "role": "engine_lightning_fold",
-      "admin": true,
-      "member": "postgres",
-      "grantor": "supabase_admin",
-      "inherit": false
     }
   ]
 }

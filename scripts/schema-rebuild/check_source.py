@@ -6,7 +6,7 @@ BASE=Path(__file__).resolve().parents[2]/'supabase/bootstrap'
 def main():
  manifest=json.loads((BASE/'pokeriq-baseline.json').read_text());source=(BASE/manifest['schemaFile']).read_bytes()
  if len(source)!=manifest['bytes'] or hashlib.sha256(source).hexdigest()!=manifest['schemaSHA256']:raise ValueError('Native baseline bytes differ from provenance')
- for name,expected in [('pokeriq-catalog-reference.json',manifest['catalogSHA256']),('source-history.json',manifest['sourceHistorySHA256']),('pokeriq-platform-contract.json',manifest['platformContractSHA256']),('pokeriq-extension-runtime.json',manifest['extensionRuntimeSHA256'])]:
+ for name,expected in [('pokeriq-catalog-reference.json',manifest['catalogSHA256']),('source-history.json',manifest['sourceHistorySHA256']),('pokeriq-platform-contract.json',manifest['platformContractSHA256']),('pokeriq-extension-runtime.json',manifest['extensionRuntimeSHA256']),('pokeriq-role-contract.json',manifest['roleContractSHA256']),('historical-ledger-reconciliation.json',manifest['historicalLedgerReconciliationSHA256'])]:
   if hashlib.sha256((BASE/name).read_bytes()).hexdigest()!=expected:raise ValueError('Baseline evidence checksum differs: '+name)
  semantic=hashlib.sha256(json.dumps(json.loads((BASE/'pokeriq-catalog-reference.json').read_text()),sort_keys=True,separators=(',',':')).encode()).hexdigest()
  if semantic!=manifest['catalogSemanticSHA256']:raise ValueError('Published catalog differs semantically from independently captured source')
@@ -22,7 +22,10 @@ def main():
  'data_copy':rb'(?m)^COPY [^\n]+ FROM stdin;'}
  findings={name:len(re.findall(pattern,source)) for name,pattern in patterns.items()}
  if any(findings.values()):raise ValueError('Baseline literal review required: '+json.dumps(findings))
+ catalog=json.loads((BASE/'pokeriq-catalog-reference.json').read_text());captured_extensions=[{k:v for k,v in e.items() if k!='owner_dependencies'} for e in catalog['extensions']]
+ if captured_extensions!=manifest['extensions']:raise ValueError('Extension manifest differs from independent catalog')
  contract=json.loads((BASE/'pokeriq-role-contract.json').read_text());allowed={'default_transaction_read_only','idle_in_transaction_session_timeout','lock_timeout','log_statement','pgrst.db_pre_request','search_path','session_preload_libraries','statement_timeout','synchronous_commit'}
+ if contract['extensions']!=captured_extensions:raise ValueError('Role contract extensions differ from independent catalog')
  for role in contract['roles']:
   if any(x.split('=',1)[0] not in allowed for x in role.get('config') or []):raise ValueError('Unreviewed role configuration key')
  print(json.dumps({'nativeSHA256Verified':True,'recognizedSecretLiterals':findings,'roleSettingKeysReviewed':True,'limitation':'Pattern scanning complements source review; it is not a universal secret detector.'}))

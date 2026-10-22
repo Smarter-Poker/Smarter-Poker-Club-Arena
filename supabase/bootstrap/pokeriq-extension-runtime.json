@@ -1,6 +1,6 @@
 {
   "sourceProject": "kuklfnapbkmacvwxktbh",
-  "source": "read-only pg_settings four nonsecret provider extension authorization settings",
+  "source": "Same exported read-only snapshot; four reviewed provider authorization settings",
   "settings": [
     {
       "name": "supautils.privileged_extensions",

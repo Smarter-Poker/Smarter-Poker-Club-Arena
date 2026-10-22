@@ -25,14 +25,21 @@ provides the managed extensions unavailable on the Mac. Its execution uses no
 network and receives no production secrets. The workflow must pass on the actual
 image before calling a full rebuild verified.
 
-`source-history.json` fingerprints both source repositories at capture. New,
-modified, or missing historical SQL refuses qualification. Exactly two reviewed migrations were pending at the refreshed capture:
-`20261020182843` and `20261020184651`. The finite forward runner applies their
-unchanged guarded DDL as `postgres` only after the full independent baseline
-comparison passes. It then compares six existing routine postimage hashes,
-three new private routines with exact metadata/ACLs, the constraint enum addition,
-and every other catalog field unchanged. These migrations contain no top-level
-business-data writes; embedded accounting routines are created but never called.
-All other new SQL remains refused until independently qualified. Hash admission
-alone never proves new SQL was applied. Historical data transformations are not executed against an
-empty database to simulate financial history.
+`source-history.json` fingerprints immutable SQL bytes in both repositories at
+named capture revisions. New, modified, or missing source SQL refuses qualification.
+It is an audit of source history, not a claim that every historical file was
+installed byte-for-byte. `historical-ledger-reconciliation.json` preserves the
+known source/ledger differences and descriptive aliases. The independently
+captured native schema is the authoritative current-snapshot reconstruction.
+Historical financial transformations and trigger-registry rows are not replayed.
+The former two pending schema migrations are now installed; no forward SQL is
+admitted or executed by this baseline.
+
+Native PostgreSQL parses independently captured and restored CHECK, trigger, and
+view definitions before comparison, preserving all other metadata. Regression
+cases reject changed predicates, bounds, and view expressions. The isolated
+restore supplements exact captured GraphQL schema ACLs omitted by the provider
+export and atomically restores three extension owners together with their shared
+OWNER dependencies. Supported partition detach/reattach DDL restores inherited
+primary-key flags changed by native dump round trips. Full catalog comparison
+still checks every captured field; these repairs never run against production.

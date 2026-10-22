@@ -219,7 +219,7 @@ export function Review() {
                   heroPos={{ x: 50, y: 100 }}
                 />
                 <DealerButton
-                  dealerVisualIndex={2}
+                  dealerVisualIndex={Number(document.documentElement.dataset.dealer ?? 2)}
                   seatPositions={seats}
                   isVisible={true}
                   playSounds={false}

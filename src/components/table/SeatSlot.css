@@ -4207,6 +4207,26 @@
   --hero-lift: 0px;
 }
 
+/* Dan 2026-10-22, from a real phone: "lower the hero avatar down so it's not
+   messing with the table layout for buttons, chips etc." The hero's bust is
+   scaled up from its feet, so its crown reached a third of the way up the
+   bottom of the felt and the hero's own bet and the dealer button had nowhere
+   to land in front of it (the bet was being parked in front of the next
+   player). The block drops up to 22px, and only into SLACK: a phone's felt is
+   width-bound, and the scaler is pinned to the top of its box, so the
+   difference between the height the felt was allowed (--sp-table-h) and the
+   height it painted (--table-h, measured) is empty page below the felt and
+   above the reserved strip (~50px on every phone measured, 375x667 to
+   430x932). A height-bound felt has none, and its hero does not move, so the
+   strip still holds the plate and the hand read on every device. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .seat-wrapper.seat-wrapper--hero {
+    --hero-lift: calc(
+      -1 * clamp(0px, calc(var(--sp-table-h) - var(--table-h, var(--sp-table-h))), 22px)
+    );
+  }
+}
+
 /* 2026-08-26: the revealed row's separate over-the-plate anchor was DELETED
    here. A showdown reveal now flips in place at the fan's one anchor beside
    the avatar (scale 1.25x, step 0.55 — see the reveal override near the base

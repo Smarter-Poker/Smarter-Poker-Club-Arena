@@ -1075,6 +1075,48 @@ for (const width of [320, 375, 393, 430, 480])
                 violations.push(
                   `Bets Overlap: ${wagers[i].closest('.seat')?.querySelector('.seat__name')?.textContent} / ${wagers[j].closest('.seat')?.querySelector('.seat__name')?.textContent}`
                 );
+          // Dan 2026-10-22: "that 50 cents to my left is actually my bet, it's
+          // sitting in front of the other player" and "I'm one behind the button
+          // and the button is right in front of me". A wager and the dealer
+          // button each stand nearer their own player than any other. The first
+          // generation SE (320px) is the one felt too small to promise it.
+          if (innerWidth >= 375) {
+            const centreOf = (e: Element) => {
+              const r = box(e);
+              return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+            };
+            const players = [...document.querySelectorAll<HTMLElement>('.seat-wrapper')]
+              .map((wrapper) => ({
+                wrapper,
+                art: wrapper.querySelector('.seat:not(.seat--empty) .seat__avatar-img'),
+              }))
+              .filter((p): p is { wrapper: HTMLElement; art: Element } => p.art !== null);
+            const nearestTo = (point: { x: number; y: number }) =>
+              players.reduce((best, p) => {
+                const c = centreOf(p.art);
+                const b = centreOf(best.art);
+                return Math.hypot(point.x - c.x, point.y - c.y) <
+                  Math.hypot(point.x - b.x, point.y - b.y)
+                  ? p
+                  : best;
+              }).wrapper;
+            for (const wager of wagers)
+              if (nearestTo(centreOf(wager)) !== wager.closest('.seat-wrapper'))
+                violations.push(
+                  `Bet Reads As Another Player's: ${wager.closest('.seat')?.querySelector('.seat__name')?.textContent}`
+                );
+            const puck = document.querySelector<HTMLElement>('.dealer-button');
+            const owner = players.find(
+              (p) =>
+                puck &&
+                Math.abs(parseFloat(p.wrapper.style.left) - parseFloat(puck.dataset.ownerX ?? '')) <
+                  0.01 &&
+                Math.abs(parseFloat(p.wrapper.style.top) - parseFloat(puck.dataset.ownerY ?? '')) <
+                  0.01
+            );
+            if (puck && owner && nearestTo(centreOf(puck)) !== owner.wrapper)
+              violations.push('Dealer Button Reads As Another Player\'s');
+          }
           for (const action of document.querySelectorAll('.seat__action'))
             for (const plaque of document.querySelectorAll('.bbj-widget,.bbj-mini-plate'))
               if (overlaps(box(action), box(plaque)))

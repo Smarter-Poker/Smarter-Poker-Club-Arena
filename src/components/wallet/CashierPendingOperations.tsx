@@ -7,6 +7,7 @@ import {
   readCashierWalletRecoveryState,
   readDurableCashierWalletOperations,
 } from '../../services/CashierWalletRecovery';
+import { isEntityId } from '../../utils/entityId';
 
 /** Explicit receipt lookup moves no chips and survives withdrawn club access. */
 export default function CashierPendingOperations({
@@ -22,10 +23,7 @@ export default function CashierPendingOperations({
   useEffect(() => {
     let live = true;
     setClubId(null);
-    if (
-      routeClubId &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(routeClubId)
-    ) {
+    if (routeClubId && isEntityId(routeClubId)) {
       setClubId(routeClubId);
     } else if (routeClubId)
       void resolveClubUUIDStrict(routeClubId)

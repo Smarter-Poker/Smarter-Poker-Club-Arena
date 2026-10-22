@@ -3,9 +3,9 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { ClubEntryTrustService } from './ClubEntryTrustService';
 import { isJoinableClubCode } from '../utils/clubCode';
+import { isEntityId } from '../utils/entityId';
 
 const PENDING_JOIN_KEY = 'club-arena:pending-join:v1';
-const CLUB_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLUB_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/i;
 
 export interface ClubJoinPreview {
@@ -39,7 +39,7 @@ export interface ClubJoinResult {
 export function isClubJoinIdentifier(value: string | null | undefined): value is string {
   const normalized = value?.trim() || '';
   return (
-    isJoinableClubCode(normalized) || CLUB_UUID_RE.test(normalized) || CLUB_SLUG_RE.test(normalized)
+    isJoinableClubCode(normalized) || isEntityId(normalized) || CLUB_SLUG_RE.test(normalized)
   );
 }
 

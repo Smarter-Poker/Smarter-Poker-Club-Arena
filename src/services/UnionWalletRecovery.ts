@@ -1,5 +1,6 @@
 import { uuid } from '../utils/uuid';
 import { UNION_WALLET_RECOVERY_PREFIX } from '../utils/clearUserCaches';
+import { isEntityId } from '../utils/entityId';
 
 export { UNION_WALLET_RECOVERY_PREFIX };
 
@@ -73,8 +74,8 @@ const storageKey = (scope: UnionWalletIntentScope) =>
   `${UNION_WALLET_RECOVERY_PREFIX}:${scope.userId}:${scope.unionId}:${scope.walletKey}:${encodeURIComponent(scope.signature)}`;
 
 const isValidScope = (scope: UnionWalletIntentScope): boolean =>
-  UUID_PATTERN.test(scope.userId) &&
-  UUID_PATTERN.test(scope.unionId) &&
+  isEntityId(scope.userId) &&
+  isEntityId(scope.unionId) &&
   WALLET_KEYS.has(scope.walletKey) &&
   scope.signature.length > 0 &&
   scope.signature.length <= MAX_SIGNATURE_LENGTH;

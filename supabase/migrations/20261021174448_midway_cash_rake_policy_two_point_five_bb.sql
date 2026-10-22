@@ -13,21 +13,29 @@ SET LOCAL statement_timeout = '60s';
 -- off first: no live request is ever chosen as a deadlock victim and none
 -- waits more than 200 ms behind it. A failed try rolls back its subtransaction,
 -- releasing anything it took, then sleeps briefly and tries again.
+-- 100 tries (about 38 s) were refused at 01:05 UTC on 2026-10-22: scheduled
+-- readers hold AccessShare on clubs for up to four minutes and one starts
+-- nearly every minute. The same short tries now continue for up to 300 s,
+-- longer than the longest such reader, under a matching statement budget.
+SET LOCAL statement_timeout = '360s';
 DO $locks$
-DECLARE i int;
+DECLARE v_deadline constant timestamptz := clock_timestamp() + interval '300 seconds';
 BEGIN
- FOR i IN 1..100 LOOP
+ LOOP
   BEGIN
    PERFORM set_config('lock_timeout','200ms',true);
    LOCK TABLE public.clubs, public.tables, public.hand_history IN ACCESS EXCLUSIVE MODE;
    PERFORM set_config('lock_timeout','3s',true);
    RETURN;
   EXCEPTION WHEN lock_not_available OR deadlock_detected THEN
+   IF clock_timestamp() >= v_deadline THEN
+    RAISE EXCEPTION 'clubs/tables/hand_history locks not obtained in 300 s of short tries';
+   END IF;
    PERFORM pg_sleep(0.1 + random()*0.15);
   END;
  END LOOP;
- RAISE EXCEPTION 'clubs/tables/hand_history locks not obtained in 100 short tries';
 END $locks$;
+SET LOCAL statement_timeout = '60s';
 
 -- These four pricing readers/setup functions are not watched guards. Do not
 -- declare unrelated guard changes. If that authority changes before install,
@@ -143,7 +151,7 @@ DO $patch$
 DECLARE v_before text; v_owner oid; v_acl aclitem[]; v_settings text[]; v_secdef boolean;
 BEGIN
   v_before := pg_get_functiondef('public.fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure);
-  IF md5(v_before) <> 'af3dc9e20983b85167bd126451a57e1c' THEN RAISE EXCEPTION 'fn_complete_club_opening_setup preimage mismatch'; END IF;
+  IF md5(v_before) <> 'd766ceb87faf2f9a689bbf022d01a952' THEN RAISE EXCEPTION 'fn_complete_club_opening_setup preimage mismatch'; END IF;
   SELECT proowner,proacl,proconfig,prosecdef INTO v_owner,v_acl,v_settings,v_secdef
     FROM pg_proc WHERE oid='public.fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure;
   EXECUTE $definition$CREATE OR REPLACE FUNCTION public.fn_complete_club_opening_setup(p_club_id uuid, p_operation_id uuid, p_tagline text, p_rake_percent numeric, p_rake_cap_bb numeric, p_bbj_enabled boolean, p_bbj_seed numeric, p_spins_enabled boolean, p_spin_seed numeric, p_spin_max_stake numeric, p_promo_enabled boolean, p_promo_type text, p_promo_name text, p_promo_description text, p_promo_budget numeric, p_leaderboard_rewards_enabled boolean, p_leaderboard_metric text, p_leaderboard_prize_budget numeric, p_leaderboard_overlay_enabled boolean DEFAULT false)
@@ -211,7 +219,7 @@ BEGIN
   END IF;
   IF v_tagline ILIKE '%all fish of all shapes and sizes are welcome%'
      AND v_club.club_id <> 25450 THEN
-    RAISE EXCEPTION 'That Tag Line Belongs To Shark Club';
+    RAISE EXCEPTION 'That Tag Line Belongs To Kings Club';
   END IF;
 
   SELECT * INTO v_existing
@@ -469,7 +477,7 @@ BEGIN
 END;
 $function$
 $definition$;
-  IF md5(pg_get_functiondef('public.fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure)) <> 'aee7b2ccf1627d2e26f86f663c559648' THEN
+  IF md5(pg_get_functiondef('public.fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure)) <> '0f9d094f015b0ab7dab000f217c29bf2' THEN
     RAISE EXCEPTION 'fn_complete_club_opening_setup postimage mismatch';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid='public.fn_complete_club_opening_setup(uuid,uuid,text,numeric,numeric,boolean,numeric,boolean,numeric,numeric,boolean,text,text,text,numeric,boolean,text,numeric,boolean)'::regprocedure

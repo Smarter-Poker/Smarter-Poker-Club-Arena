@@ -30,7 +30,9 @@ describe('welcome-aware club opening UI', () => {
 
   it('discloses the package before create and keeps Diamond acceptance explicit', () => {
     expect(create).toContain('First-Club Opening Package');
-    expect(create).toContain('Diamond Spins Still Require The Owner To Read And Accept');
+    expect(create.replace(/\s+/g, ' ')).toContain(
+      'Diamond Spins Still Require The Owner To Read And Accept'
+    );
     expect(create).toContain('aria-describedby="discoverable-help"');
     expect(create).toContain('aria-describedby="approval-help"');
     expect(welcome).toContain('<DiamondSpinsOwnerTerms clubId={clubId}');

@@ -39,7 +39,7 @@ const welcomePackage: ClubWelcomePackageState = {
 };
 
 function mount(props: Partial<React.ComponentProps<typeof ClubOpeningWizard>> = {}) {
-  return render(
+  const view = render(
     <ClubOpeningWizard
       clubId="club-1"
       clubName="River Kings"
@@ -49,6 +49,8 @@ function mount(props: Partial<React.ComponentProps<typeof ClubOpeningWizard>> = 
       {...props}
     />
   );
+  fireEvent.click(screen.getByRole('button', { name: 'Customize Club Setup' }));
+  return view;
 }
 
 const primary = () =>
@@ -624,7 +626,7 @@ describe('dialog behavior and tag line', () => {
       </>
     );
     const dialog = screen.getByRole('dialog');
-    const plate = screen.getByRole('button', { name: 'Continue Opening Setup' });
+    const plate = screen.getByRole('button', { name: 'Use Default Club Setup' });
     expect(dialog).toContainElement(plate);
     const focusable = dialog.querySelectorAll<HTMLElement>('button:not([disabled])');
     const last = focusable[focusable.length - 1];
@@ -800,5 +802,64 @@ describe('the final plate', () => {
     // and the accessible name starts with it.
     expect(finish).toHaveTextContent(/^Open Club$/);
     expect(finish).toHaveAccessibleName('Open Club And Complete Opening Setup');
+  });
+});
+
+describe('default opening replaces the required step walk', () => {
+  it('opens from one summary with no new treasury allocations', async () => {
+    mocks.rpc.mockImplementation(async (name, args) =>
+      name === 'fn_club_opening_defaults_ready'
+        ? { data: true, error: null }
+        : okReceipt(args.p_operation_id, { club_bank_after: 99700 })
+    );
+    render(
+      <ClubOpeningWizard
+        clubId="club-1"
+        clubName="River Kings"
+        clubBank={99700}
+        welcomePackage={welcomePackage}
+        onClose={onClose}
+        onComplete={onComplete}
+      />
+    );
+    expect(
+      screen.queryByRole('navigation', { name: 'Club Opening Steps' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Use Default Club Setup' }));
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith({
+        clubBankAfter: 99700,
+        spinsEnabled: true,
+        tagline: 'Good Friends. Great Poker.',
+      })
+    );
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'fn_complete_club_opening_setup',
+      expect.objectContaining({
+        p_bbj_seed: 100,
+        p_spin_seed: 200,
+        p_promo_enabled: false,
+        p_promo_budget: 0,
+        p_leaderboard_rewards_enabled: false,
+        p_leaderboard_prize_budget: 0,
+      })
+    );
+  });
+  it('does not submit opening setup when the capability read fails', async () => {
+    mocks.rpc.mockResolvedValue({ data: false, error: null });
+    render(
+      <ClubOpeningWizard
+        clubId="club-1"
+        clubName="River Kings"
+        clubBank={99700}
+        welcomePackage={welcomePackage}
+        onClose={onClose}
+        onComplete={onComplete}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Use Default Club Setup' }));
+    await waitFor(() => expect(mocks.toast.error).toHaveBeenCalled());
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(onComplete).not.toHaveBeenCalled();
   });
 });

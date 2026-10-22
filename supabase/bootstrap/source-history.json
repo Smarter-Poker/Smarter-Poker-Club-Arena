@@ -6596,7 +6596,7 @@
       ]
     },
     "arena": {
-      "revision": "c149fd531d5f84e6a391dff5043061e255aa21c8",
+      "revision": "d8f05943096cf0ad62a54ef75d43bfd295eca848",
       "files": [
         {
           "path": "supabase/migrations/001_club_arena_schema.sql",
@@ -29875,6 +29875,14 @@
           "sha256": "13086e27d13a98ae6d01446c4e05c52ccf5d5e236a4748eed48fd02e19d1794a"
         },
         {
+          "path": "supabase/migrations/20261022145803_an_unreachable_hand_alert_resolves_once_the_hand_has_landed.sql",
+          "sha256": "829fe83d83d9be49d3025c5d9e0759ccc04e0208bc3496ec91398da6b0631271"
+        },
+        {
+          "path": "supabase/migrations/20261022150431_upline_chain_shows_the_club_owner_only_when_the_player_has_n.sql",
+          "sha256": "e97c5a561879e44299412ce5ce69156a45f4f0be0353d685375625048790bb06"
+        },
+        {
           "path": "supabase/migrations/20261022150614_the_weekly_scheduler_scan_reads_standalone_tournament_earnin.sql",
           "sha256": "4ce1b56c022601b434406994f06e369e527fe758e10cca04d9c999158cf2d509"
         },
@@ -29889,6 +29897,10 @@
         {
           "path": "supabase/migrations/20261022162733_mystery_bounty_chests_only_board_and_schedules.sql",
           "sha256": "99f7f6118212c158879af942ff835196a71ae16cee8e737418e75931af3d6536"
+        },
+        {
+          "path": "supabase/migrations/20261022164439_weekly_commission_lands_in_agent_wallets_and_the_owner_share.sql",
+          "sha256": "efedba2f988b597363d096e24df64efb6922edc1c2e296a5ad824ca740fdfa96"
         },
         {
           "path": "supabase/migrations/20261022170421_mystery_bounty_half_of_the_whole_entry_in_whole_chip_chests.sql",
@@ -29909,6 +29921,10 @@
         {
           "path": "supabase/migrations/20261022180857_mystery_bounty_offer_reads_without_writing.sql",
           "sha256": "df767ffa36b48b936171ef1ebad2edc67d3b7c89b24c93f97bde57ed94cc0178"
+        },
+        {
+          "path": "supabase/migrations/20261022195542_a_club_joining_a_union_stops_every_club_game_first.sql",
+          "sha256": "ebc500b35b2cf6508019f0825fddf689340baffbfc59f51e7e46260eda4f092a"
         }
       ]
     }

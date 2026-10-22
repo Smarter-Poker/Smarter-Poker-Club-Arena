@@ -1450,5 +1450,363 @@
       }
     ],
     "scope": "All7 same-snapshot ledger records proven;6comments-only, first historical offer/ACL differs but final180857 readonly deterministic postimage and owner-onlytableACL captured. No replay or installation-byte identity claim."
+  },
+  "frozenFourReconciliation": {
+    "revision": "d8f05943096cf0ad62a54ef75d43bfd295eca848",
+    "independentSnapshot": "consistent-20261022-owner-deps (20:08 UTC)",
+    "schemaRecaptureRequired": false,
+    "reviewerProof": [
+      {
+        "version": "20261022145803",
+        "sourceMD5": "5d542cc95e784a49138132a3a4f3fdc0",
+        "ledgerMD5": "41d80a3fae8c1a6ab20dab7e5e4613e6",
+        "ledgerKind": "132character nonexecutable applied receipt",
+        "routine": "public.fn_ca_resolve_landed_unreachable_hand_alerts()",
+        "sourceAndNativeBodyMD5": "3ad1f6f45fe7c69ce13acb9cd89c3376",
+        "nativeDefinitionMD5": "17a8c8394a603699ee6b9353b2daf347",
+        "owner": "postgres",
+        "executeRoles": ["postgres", "service_role"],
+        "securityDefiner": true,
+        "searchPath": "public, pg_temp",
+        "limits": "Routine intent captured exactly; cron.job command/data and historical one-shot alert resolution are not included in schema-only snapshot and are not claimed verified or replayed."
+      },
+      {
+        "version": "20261022150431",
+        "sourceMD5": "ec312df8847fcd25aa2b47ac6a513213",
+        "ledgerMD5": null,
+        "ledgerKind": "NULLstatements",
+        "routine": "public.ca_club_member_upline_chain(uuid,uuid)",
+        "sourceAndNativeBodyMD5": "3e4f23a4f134430a05addc0ee6241cb9",
+        "nativeDefinitionMD5": "a4f5a9300a997fda7f61605a648659e0",
+        "owner": "postgres",
+        "executeRoles": ["authenticated", "postgres", "service_role"],
+        "securityDefiner": true,
+        "stable": true,
+        "searchPath": "public, pg_temp",
+        "limits": "Whole historical source-byte identity unproven; exact current routine business body and metadata independently captured."
+      }
+    ],
+    "sourceCatalogProof": [
+      {
+        "path": "supabase/migrations/20261022164439_weekly_commission_lands_in_agent_wallets_and_the_owner_share.sql",
+        "sourceSHA256": "efedba2f988b597363d096e24df64efb6922edc1c2e296a5ad824ca740fdfa96",
+        "sourceMD5": "ccf3c1645e383531a5565bb371358069",
+        "sameSnapshotLedger": {
+          "name": "weekly_commission_lands_in_agent_wallets_and_the_owner_share",
+          "sqlMD5": null,
+          "version": "20261022164439",
+          "statementCount": null
+        },
+        "classification": "All source routine bodies exactly equal independent native snapshot; owner/SECDEF/settings/ACL preserved. Historical ledger bytes not claimed identical. Business/registry data SQL never replayed.",
+        "routines": [
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_payout uuid, p_calculation bigint",
+            "cost": 100,
+            "kind": "f",
+            "name": "split_rakeback_payout_complete",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "boolean",
+            "schema": "smarter_private",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=pg_catalog, public"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "s",
+            "definition_md5": "501d4a3187573289db69d6d7ec286406",
+            "sourceAndSnapshotBodyMD5": "2440b414772d2902d738f884bfcc1178"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_club uuid, p_user uuid, p_source text",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_deleted_wallet_bank_return",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "jsonb",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp", "lock_timeout=4s"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "b1938403621af2397590c6ce004faf3b",
+            "sourceAndSnapshotBodyMD5": "ddf28f3a8358d1c0d1a32a7b41953da6"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_deleted_wallet_credit",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "trigger",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "38381e35aa9804fb1e109c20855e4854",
+            "sourceAndSnapshotBodyMD5": "e71ccd5e2c465b0b41aa887ad28da9dd"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_scope_kind text, p_scope_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_settle_accounting_commission_stage_v3",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "jsonb",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "76807aa6c2534cc5a89b1af136039838",
+            "sourceAndSnapshotBodyMD5": "79bf83d2bd1b35561e071eb1640c8c2c"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_scope_kind text, p_scope_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_settle_accounting_commission_stage",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "jsonb",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "c9a28a0a12e117fd7a8539e5aca54e82",
+            "sourceAndSnapshotBodyMD5": "002acd618ad4cb6f71e3ec58857abc24"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "p_scope_kind text, p_scope_id uuid, p_period_start timestamp with time zone, p_period_end timestamp with time zone",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_settle_accounting_rakeback_stage",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "jsonb",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "f1dc7ad2a540edc392cf2e5fcbc1378c",
+            "sourceAndSnapshotBodyMD5": "325b078e74e8d1537d0d20d4509138f2"
+          }
+        ]
+      },
+      {
+        "path": "supabase/migrations/20261022195542_a_club_joining_a_union_stops_every_club_game_first.sql",
+        "sourceSHA256": "ebc500b35b2cf6508019f0825fddf689340baffbfc59f51e7e46260eda4f092a",
+        "sourceMD5": "c97e4b1ad94c895d2479578feb33da1f",
+        "sameSnapshotLedger": {
+          "name": "a_club_joining_a_union_stops_every_club_game_first",
+          "sqlMD5": "d97a1efad2c6294ec6718934390fb384",
+          "version": "20261022195542",
+          "statementCount": 1
+        },
+        "classification": "All source routine bodies exactly equal independent native snapshot; owner/SECDEF/settings/ACL preserved. Historical ledger bytes not claimed identical. Business/registry data SQL never replayed.",
+        "routines": [
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_union_member_schedule_cannot_spawn",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "trigger",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "3aa3bf02e7e3029aa84defd44541e72c",
+            "sourceAndSnapshotBodyMD5": "14c9950af053796978e4aa46a6f635e5"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_union_member_schedule_stays_off",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "trigger",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "a81048d5f0e4f0bce8b5970f83a75b1a",
+            "sourceAndSnapshotBodyMD5": "1e8013b61950342f91a67d024cdb3bcd"
+          },
+          {
+            "acl": [
+              {
+                "grantee": "postgres",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              },
+              {
+                "grantee": "service_role",
+                "grantor": "postgres",
+                "grantable": false,
+                "privilege": "EXECUTE"
+              }
+            ],
+            "args": "",
+            "cost": 100,
+            "kind": "f",
+            "name": "fn_ca_union_join_removes_club_games",
+            "rows": 0,
+            "owner": "postgres",
+            "result": "trigger",
+            "schema": "public",
+            "strict": false,
+            "definer": true,
+            "support": null,
+            "language": "plpgsql",
+            "parallel": "u",
+            "settings": ["search_path=public, pg_temp"],
+            "aggregate": null,
+            "leakproof": false,
+            "volatility": "v",
+            "definition_md5": "854e044e7726e9009b5115254bfce9e2",
+            "sourceAndSnapshotBodyMD5": "bb07b1c70a2950d4168cc3630b52ba3d"
+          }
+        ]
+      }
+    ],
+    "scope": "All four source schema postimages already independently captured. Receipt-only/NULL/different ledger source bytes are explicitly not installed-byte identity proof. No business, registry, cron or historical SQL replay; no new forward entry."
   }
 }

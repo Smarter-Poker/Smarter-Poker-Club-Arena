@@ -70,6 +70,7 @@ import {
 } from '../../config/mysteryBountyTiers';
 import { moneyAdjectiveAtUnit } from '../../utils/format';
 import { SpadeConsole } from '../console/SpadeConsole';
+import { useMysteryBountyProjection } from '../../hooks/useMysteryBountyProjection';
 import styles from './MysteryBountyPanel.module.css';
 
 export interface MysteryBountyPanelProps {
@@ -105,8 +106,6 @@ export interface MysteryBountyPanelProps {
   unitCents: number;
 }
 
-/** How many low tiers to show before the collapse control takes over. */
-const COLLAPSED_TIER_LIMIT = 4;
 /** How many awards to list before "Show All". */
 const COLLAPSED_AWARD_LIMIT = 8;
 
@@ -141,7 +140,6 @@ export default function MysteryBountyPanel({
 }: MysteryBountyPanelProps) {
   const { inventory, awards, leaderboard, isLoading, pendingReveals } = data;
 
-  const [showAllTiers, setShowAllTiers] = useState(false);
   const [showAllAwards, setShowAllAwards] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [playerPayout, setPlayerPayout] = useState<PlayerPayout | null>(null);
@@ -162,6 +160,19 @@ export default function MysteryBountyPanel({
     }
     return map;
   }, [awards]);
+
+  /* Dan 2026-10-21: "ALL MYSTERY BOUNTY TOURNAMENTS NEED TO HAVE THE 'MYSTERY
+     BOUNTY' AMOUNTS DISPLAYED IN THE REWARDS". Before the chests are sealed
+     the ladder is projected from the pool so far by the engine's own
+     builders (src/lib/mysteryBountyProjection.ts). */
+  const projected = useMysteryBountyProjection(
+    tournamentId,
+    isMysteryBounty &&
+      !isLoading &&
+      (inventory?.tiers?.length ?? 0) === 0 &&
+      (inventory?.stage ?? 'pending') === 'pending',
+    unitCents
+  );
 
   const perPlayer = useMemo(() => playerTotalsFromAwards(awards), [awards]);
   const biggest = useMemo(() => largestAward(awards), [awards]);
@@ -209,19 +220,13 @@ export default function MysteryBountyPanel({
   const stage = inventory?.stage ?? 'pending';
 
   /**
-   * Section 33 in one expression. A headline tier ALWAYS renders. Everything
-   * else renders while it still has chests, and otherwise only once the player
-   * has asked to see the whole ladder.
+   * Dan 2026-10-21: "SHOW WHICH 'BOUNTIES' ARE STILL AVAILABLE IN THAT
+   * TOURNAMENT, AND WHICH ONES WERE PAID OUT OR SELECTED ALREADY." Every tier
+   * is listed for the whole event, exhausted ones included (they read muted,
+   * with who won them). Nothing collapses behind a control any more.
    */
-  const alwaysVisible = tiers.filter((t) => isHeadlineTier(t.tier) || t.remaining > 0);
-  const collapsible = tiers.filter((t) => !isHeadlineTier(t.tier) && t.remaining === 0);
-  const visibleTiers = showAllTiers
-    ? tiers
-    : [
-        ...alwaysVisible,
-        ...collapsible.slice(0, Math.max(0, COLLAPSED_TIER_LIMIT - alwaysVisible.length)),
-      ];
-  const hiddenTierCount = tiers.length - visibleTiers.length;
+  const visibleTiers = tiers;
+  const showProjection = tiers.length === 0 && stage === 'pending' && projected !== null;
 
   const visibleAwards = showAllAwards ? awards : awards.slice(0, COLLAPSED_AWARD_LIMIT);
 
@@ -290,7 +295,10 @@ export default function MysteryBountyPanel({
           <div className={styles.figure}>
             <span className="sc-label sc-ink--blue">Bounty Pool</span>
             <span className={`${styles.figureValue} sc-ink--silver`}>
-              {formatCents(inventory.poolCents, unitCents)}
+              {formatCents(
+                showProjection && projected ? projected.poolCents : inventory.poolCents,
+                unitCents
+              )}
             </span>
           </div>
           <div className={styles.figure}>
@@ -302,14 +310,22 @@ export default function MysteryBountyPanel({
           <div className={styles.figure}>
             <span className="sc-label sc-ink--blue">Still In Play</span>
             <span className={`${styles.figureValue} sc-ink--silver`}>
-              {formatCents(remainingCents(inventory), unitCents)}
+              {formatCents(
+                showProjection && projected ? projected.poolCents : remainingCents(inventory),
+                unitCents
+              )}
             </span>
           </div>
           <div className={styles.figure}>
             <span className="sc-label sc-ink--blue">Chests Left</span>
             <span className={`${styles.figureValue} sc-ink--silver`}>
-              {counts.remaining.toLocaleString('en-US')} Of{' '}
-              {counts.original.toLocaleString('en-US')}
+              {(showProjection && projected ? projected.drawCount : counts.remaining).toLocaleString(
+                'en-US'
+              )}{' '}
+              Of{' '}
+              {(showProjection && projected ? projected.drawCount : counts.original).toLocaleString(
+                'en-US'
+              )}
             </span>
           </div>
         </div>
@@ -319,12 +335,45 @@ export default function MysteryBountyPanel({
       <section className={styles.section}>
         <div className={styles.sectionHead}>
           <h4 className={`${styles.sectionTitle} sc-ink--silver`}>Mystery Bounty Prizes</h4>
-          {pendingReveals > 0 && (
+          {pendingReveals > 0 ? (
             <span className={`${styles.sectionNote} sc-ink--blue`}>Updating</span>
+          ) : (
+            showProjection && (
+              <span className={`${styles.sectionNote} sc-ink--blue`}>Projected</span>
+            )
           )}
         </div>
         <div className={styles.rows}>
-          {tiers.length === 0 ? (
+          {showProjection && projected ? (
+            <>
+              <div className={`${styles.empty} sc-copy sc-copy--center`}>
+                {projected.drawCount.toLocaleString('en-US')} Mystery Bounties From The Pool So
+                Far. Amounts Grow With Every Entry, Rebuy And Add-On Until The Ladder Is Sealed
+              </div>
+              {projected.tiers.map((t) => (
+                <div key={`${t.tier}:${t.amountCents}`} className={styles.tierRow}>
+                  <span className={styles.tierMain}>
+                    <span
+                      className={`${styles.tierAmount} ${
+                        isHeadlineTier(t.tier) ? 'sc-ink--gold' : 'sc-ink--silver'
+                      }`}
+                    >
+                      {formatCents(t.amountCents, unitCents)} x{t.count.toLocaleString('en-US')}
+                    </span>
+                    <span className={`${styles.tierName} sc-label sc-ink--blue`}>
+                      {mysteryBountyTierLabel(t.tier)}
+                    </span>
+                  </span>
+                  <span className={styles.tierCounts}>
+                    <span className={`${styles.tierRemaining} sc-ink--silver`}>
+                      {t.count.toLocaleString('en-US')} Available
+                    </span>
+                    <span className={`${styles.tierOriginal} sc-ink--muted`}>0 Paid Out</span>
+                  </span>
+                </div>
+              ))}
+            </>
+          ) : tiers.length === 0 ? (
             <div className={`${styles.empty} sc-copy sc-copy--center`}>
               {isLoading
                 ? 'Loading The Mystery Bounty Ladder'
@@ -368,10 +417,10 @@ export default function MysteryBountyPanel({
                         exhausted ? 'sc-ink--muted' : 'sc-ink--silver'
                       }`}
                     >
-                      {t.remaining.toLocaleString('en-US')} Remaining
+                      {t.remaining.toLocaleString('en-US')} Available
                     </span>
                     <span className={`${styles.tierOriginal} sc-ink--muted`}>
-                      {t.awarded.toLocaleString('en-US')} Awarded Of{' '}
+                      {t.awarded.toLocaleString('en-US')} Paid Out Of{' '}
                       {t.original.toLocaleString('en-US')}
                     </span>
                   </span>
@@ -380,17 +429,6 @@ export default function MysteryBountyPanel({
             })
           )}
         </div>
-        {(hiddenTierCount > 0 || showAllTiers) && tiers.length > 0 && (
-          <button
-            type="button"
-            className={`${styles.collapseBtn} sc-ink--blue`}
-            onClick={() => setShowAllTiers((v) => !v)}
-          >
-            {showAllTiers
-              ? 'Show Fewer Tiers'
-              : `Show All ${tiers.length.toLocaleString('en-US')} Tiers`}
-          </button>
-        )}
       </section>
 
       {/* ══ B. AWARDED (sections 34, 35) ══ */}

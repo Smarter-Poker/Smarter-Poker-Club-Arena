@@ -172,10 +172,10 @@ describe('MysteryBountyPanel', () => {
 
   it('shows remaining quantities per tier (section 35)', () => {
     renderPanel();
-    expect(screen.getByText('0 Remaining')).toBeInTheDocument();
-    expect(screen.getByText('3 Remaining')).toBeInTheDocument();
-    expect(screen.getByText('10 Remaining')).toBeInTheDocument();
-    expect(screen.getByText('20 Remaining')).toBeInTheDocument();
+    expect(screen.getByText('0 Available')).toBeInTheDocument();
+    expect(screen.getByText('3 Available')).toBeInTheDocument();
+    expect(screen.getByText('10 Available')).toBeInTheDocument();
+    expect(screen.getByText('20 Available')).toBeInTheDocument();
   });
 
   it('does NOT hide an exhausted major bounty, and names who won it (section 33)', () => {
@@ -183,7 +183,7 @@ describe('MysteryBountyPanel', () => {
     /* The 5,000 has zero remaining. It must still be on screen, with its
        original count, its zero, and the name of the player who took it. */
     expect(screen.getByText('5,000 x1')).toBeInTheDocument();
-    expect(screen.getByText('0 Remaining')).toBeInTheDocument();
+    expect(screen.getByText('0 Available')).toBeInTheDocument();
     expect(screen.getByText('Won By Bob')).toBeInTheDocument();
   });
 

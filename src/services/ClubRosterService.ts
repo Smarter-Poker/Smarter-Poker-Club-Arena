@@ -255,6 +255,15 @@ export function isoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** One level of a player's upline, closest agent first (depth 1). */
+export interface MemberUplineLevel {
+  depth: number;
+  user_id: string;
+  name: string;
+  player_number: string | null;
+  role: ClubRole | null;
+}
+
 export interface MemberDetail {
   identity: {
     user_id: string | null;
@@ -507,6 +516,41 @@ export const ClubRosterService = {
    * (ca_club_member_win_loss). Null when the viewer may not see this member's
    * financials - the same rule that hides the record's wallets.
    */
+  /**
+   * Every agent above the player, closest first (Dan 2026-10-21). NULL from
+   * SQL means the viewer may not see the record's financial view.
+   */
+  async getMemberUplineChain(
+    clubId: string,
+    userId: string,
+    signal?: AbortSignal
+  ): Promise<MemberUplineLevel[] | null> {
+    const data = await readMemberRpc(
+      'ca_club_member_upline_chain',
+      { p_club_id: clubId, p_user_id: userId },
+      signal
+    );
+    if (data === null || data === undefined) return null;
+    if (!Array.isArray(data)) throw new Error('The Upline Response Was Incomplete');
+    return data
+      .filter(
+        (row): row is Record<string, unknown> =>
+          !!row && typeof row === 'object' && typeof (row as any).user_id === 'string'
+      )
+      .map((row) => ({
+        depth: num(row.depth),
+        user_id: row.user_id as string,
+        name:
+          typeof row.name === 'string' && row.name.trim() !== '' ? row.name : 'Unnamed Agent',
+        player_number:
+          row.player_number === null || row.player_number === undefined
+            ? null
+            : String(row.player_number),
+        role: row.role ? normaliseRole(row.role) : null,
+      }))
+      .sort((a, b) => a.depth - b.depth);
+  },
+
   async getMemberWinLoss(
     clubId: string,
     userId: string,

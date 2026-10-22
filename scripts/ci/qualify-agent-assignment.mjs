@@ -61,9 +61,23 @@ async function membership(id) {const rows=await req(member(id)+'&select=*');asse
 const actor=await membership(staff.id);assert.equal(actor.role,'admin');assert.equal(actor.status,'active');
 const actorProfile=await req(`/rest/v1/profiles?id=eq.${staff.id}&select=email,role,is_admin,is_horse`);
 assert.equal(actorProfile.length,1);assert.equal(actorProfile[0].email,staff.email);assert.equal(actorProfile[0].role,'user');assert.ok(!actorProfile[0].is_admin && !actorProfile[0].is_horse);
+// The certification club sits in a union whose policy band bounds an earning
+// agent's commission (fn_enforce_agent_commission_bounds). These identities
+// never play, so the rate is inert; use the band's own minimum, never 0.
+async function earningAgentCommission() {
+ const links=await req(`/rest/v1/union_clubs?club_id=eq.${club}&select=union_id`);
+ const clubRows=await req(`/rest/v1/clubs?id=eq.${club}&select=union_id`);
+ const unionId=links[0]?.union_id || clubRows[0]?.union_id || null;
+ if(!unionId) return 0;
+ const unions=await req(`/rest/v1/unions?id=eq.${unionId}&select=settings`);
+ const min=Number(unions[0]?.settings?.min_agent_commission ?? 0);
+ assert.ok(Number.isFinite(min) && min>=0 && min<=1,'Unreadable union agent commission band');
+ return min;
+}
 let passed=false;
 try {
  const token=await login(staff);
+ const commissionRate=await earningAgentCommission();
  for(let index=0;index<3;index++) {
   const childEnv={...env,E2E_TEST_ACCOUNT_FILE:join(root,`agent-assignment-${index}.json`),GITHUB_ENV:join(root,`agent-assignment-${index}.env`),E2E_CLUB_ID:club};
   const account=await createProductionE2EAccount({environment:childEnv});
@@ -72,7 +86,7 @@ try {
   const current=await membership(account.id);assert.equal(current.agent_id,null);
   if(item.agentId) {
    await req(member(account.id),{method:'PATCH',body:{role:'agent'}});
-   await req('/rest/v1/agents',{method:'POST',body:{id:item.agentId,user_id:account.id,club_id:club,role:'agent',status:'active',commission_rate:0,player_rakeback_rate:0}});
+   await req('/rest/v1/agents',{method:'POST',body:{id:item.agentId,user_id:account.id,club_id:club,role:'agent',status:'active',commission_rate:commissionRate,player_rakeback_rate:0}});
   }
  }
  const [source,destination,player]=owned;

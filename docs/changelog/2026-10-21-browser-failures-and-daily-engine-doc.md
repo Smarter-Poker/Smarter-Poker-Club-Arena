@@ -43,3 +43,13 @@ a silence inside the persisted `break_started_at` / `break_ends_at` window as
 an authoritative hold (reselecting another board within the same deadline),
 with the same before-break and after-break silence limits as the add-on hold.
 Pinned by `tests/unit/synchronizedBreakHold.test.ts`.
+
+## Follow-Up: Agent Assignment Proof Respects The Union Commission Band
+
+With the agent-row index live (#7647) the isolated identity got further and
+then failed in `qualify-agent-assignment.mjs`: its earning test agents were
+inserted with `commission_rate: 0`, which `fn_enforce_agent_commission_bounds`
+refuses now that the certification club's union band is 0.20 to 0.70
+(03:05:48Z). That failure skipped the template staff fixture, so table
+management and club news failed behind it. The proof now reads the club's
+union band and uses its minimum (inert: these identities never play).

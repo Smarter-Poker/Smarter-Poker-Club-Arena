@@ -159,6 +159,9 @@ describe('an add-on bought after a movement proof is not a changed roster', () =
           'FUNCTION smarter_private.f06_assert_movement('
         )
       );
-    expect(later).toEqual([]);
+    // 20261022032302 ignores an eliminated player's settled place/prize/close.
+    expect(later).toEqual([
+      '20261022032302_a_settled_finishing_place_is_not_a_changed_elimination.sql',
+    ]);
   });
 });

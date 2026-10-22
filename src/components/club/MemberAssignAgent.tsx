@@ -48,11 +48,18 @@ export default function MemberAssignAgent({
   clubId,
   userId,
   currentAgentId,
+  shownUplineId = currentAgentId,
+  underOwner = !currentAgentId,
   onAssigned,
 }: {
   clubId: string;
   userId: string;
+  /** The stored club_members.agent_id (null = no agent, under the club owner). */
   currentAgentId: string | null;
+  /** Who the record shows as Direct Upline; never offered as the destination. */
+  shownUplineId?: string | null;
+  /** The player sits with the club owner (no agent, or the owner directly). */
+  underOwner?: boolean;
   onAssigned?: () => void;
 }) {
   const toast = useToast();
@@ -211,14 +218,14 @@ export default function MemberAssignAgent({
 
   if (!allowed) return null;
 
-  const choices = agents.filter((a) => a.user_id !== currentAgentId);
+  const choices = agents.filter((a) => a.user_id !== currentAgentId && a.user_id !== shownUplineId);
   const destination = preview?.destination.name;
   const source = preview?.members[0]?.source_name;
 
   return (
     <div className="mm-assign" aria-label="Assign To Agent">
       <label className="mm-info__label mm-assign__label" htmlFor="mm-assign-target">
-        {currentAgentId ? 'Transfer To Another Agent' : 'Assign To An Agent'}
+        {underOwner ? 'Assign To An Agent' : 'Transfer To Another Agent'}
       </label>
       <div className="mm-assign__row">
         <select

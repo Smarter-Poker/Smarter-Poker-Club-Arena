@@ -104,14 +104,20 @@ export default function MemberUplineCard({
               <span className="mm-info__value">{uplineValue(level)}</span>
             </div>
           ))}
-          <p className="mm-winloss__note">Closest Agent First, Up To The Top Of The Chain.</p>
+          <p className="mm-winloss__note">
+            {data[0]?.assigned === false
+              ? 'No Agent Assigned. This Player Sits Directly Under The Club Owner.'
+              : 'Closest Agent First, Up To The Top Agent.'}
+          </p>
         </>
       )}
       {state === 'ready' && data && (
         <MemberAssignAgent
           clubId={clubId}
           userId={userId}
-          currentAgentId={data[0]?.user_id ?? null}
+          currentAgentId={data[0] && data[0].assigned !== false ? data[0].user_id : null}
+          shownUplineId={data[0]?.user_id ?? null}
+          underOwner={!data[0] || data[0].role === 'owner'}
           onAssigned={() => setMoved((value) => value + 1)}
         />
       )}

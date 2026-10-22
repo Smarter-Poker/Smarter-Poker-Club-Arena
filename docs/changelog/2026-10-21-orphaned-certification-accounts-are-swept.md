@@ -45,6 +45,14 @@ cron job and the function 24 minutes later. Both files are byte-exact recordings
 what production ran, listed in `scripts/ci/recorded-migrations.manifest.json`;
 production holds neither the job nor the function.
 
+The periodic-work rule in `scripts/ci/check-no-new-band-aids.mjs` (read by
+`tests/no-band-aids.law.test.ts`) refused the recorded `20261022014819` file, and a
+byte-exact record cannot gain a justification comment. The rule now excuses a NAMED
+job only when a LATER migration on disk unschedules that same name, the job
+equivalent of the existing "declared then dropped" exemption for functions. An
+unnamed schedule, an earlier unschedule, a different name, or a file that is not in
+the tree is judged exactly as before; new law cases pin each of those.
+
 ## Cleanup done
 
 PostDeployf3622 was removed through `cleanup_reserved_certification_account` after

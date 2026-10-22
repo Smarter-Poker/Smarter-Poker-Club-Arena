@@ -3052,12 +3052,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       );
     }
 
-    const { data: result, error } = await supabase.rpc('fn_collect_bounty', {
-      p_tournament_id: this.tournamentId,
-      p_eliminated_user_id: eliminatedUserId,
-      p_collector_user_id: knockerUserId,
-      p_claimants: claimants.map((c) => ({ user_id: c.userId, weight: c.weight })),
-    });
+    /**
+     * COLLECT THE EXACT HAND'S OBLIGATION BY ID (2026-10-22).
+     *
+     * A player who busts, rebuys and busts again holds one bounty obligation
+     * per bust, and fn_collect_bounty - which names the player, not the hand -
+     * then refuses with bounty_generation_identity_required rather than guess.
+     * Union PKO Afternoon (PLO4) b5b75469 and 8ac85cdd, 20:45-20:53 UTC: every
+     * such bust paid that refusal plus the proof reads after it, each bust
+     * stage spent its whole 5 s budget recording 20 players, and 35 zero-chip
+     * players per event waited up to 7 minutes while every table break was
+     * refused on unrecorded busts. fn_collect_bounty_obligation collects one
+     * obligation by id with the knocker and claimants stored on it at the
+     * bust; it is idempotent and returns fn_collect_bounty's own answer.
+     */
+    let exactObligationId: string | null = null;
+    if (handId) {
+      const { data: exactObligation, error: exactObligationErr } = await supabase
+        .from('tournament_bounty_obligations')
+        .select('id')
+        .eq('tournament_id', this.tournamentId)
+        .eq('eliminated_user_id', eliminatedUserId)
+        .eq('hand_id', handId)
+        .neq('mode', 'mystery_chest')
+        .maybeSingle();
+      if (!exactObligationErr && exactObligation?.id)
+        exactObligationId = String(exactObligation.id);
+    }
+    const { data: result, error } = exactObligationId
+      ? await supabase.rpc('fn_collect_bounty_obligation', { p_obligation_id: exactObligationId })
+      : await supabase.rpc('fn_collect_bounty', {
+          p_tournament_id: this.tournamentId,
+          p_eliminated_user_id: eliminatedUserId,
+          p_collector_user_id: knockerUserId,
+          p_claimants: claimants.map((c) => ({ user_id: c.userId, weight: c.weight })),
+        });
 
     let res = (result ?? {}) as {
       ok?: boolean;

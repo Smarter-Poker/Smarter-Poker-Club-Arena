@@ -9083,6 +9083,14 @@ export class GameServer {
   static readonly STUCK_TOURNAMENT_TABLE_MAX_HANDOFFS = 3;
   /** A tournament is handed on at most once in this window. */
   static readonly STUCK_TOURNAMENT_HANDOFF_SPACING_MS = 10 * 60_000;
+  /**
+   * An admitted elimination sweep normally settles inside its 5 s work budget
+   * plus one 15 s Supabase attempt. Two minutes in flight means it is stalled
+   * and no bust of that event can be recorded (see
+   * TournamentManagerBase.requestSuccessorForStalledEliminationSweep).
+   */
+  static readonly STALLED_ELIMINATION_SWEEP_MS = 2 * 60_000;
+  private stalledSweepLastHandoffAt?: Map<string, number>;
   private stuckTournamentTableSince?: Map<string, number>;
   private stuckTournamentTableHandoffs?: Map<string, number>;
   private stuckTournamentLastHandoffAt?: Map<string, number>;
@@ -9153,6 +9161,45 @@ export class GameServer {
           { tournamentId, tableId }
         );
       }
+    }
+    // A stalled elimination sweep is handed on directly, before any table
+    // has to die of it (Coffee Break Freeroll f5a98d7e, 2026-10-22).
+    const sweepLastAt$ = (this.stalledSweepLastHandoffAt ??= new Map());
+    for (const [tournamentId, manager] of this.tournamentEngines) {
+      const stalled = manager.getStalledEliminationSweep?.(now);
+      if (
+        !stalled ||
+        (stalled.msInFlight < GameServer.STALLED_ELIMINATION_SWEEP_MS &&
+          stalled.msBustWaiting < GameServer.STALLED_ELIMINATION_SWEEP_MS)
+      )
+        continue;
+      const last = sweepLastAt$.get(tournamentId) ?? lastAt$.get(tournamentId);
+      if (last !== undefined && now - last < GameServer.STALLED_ELIMINATION_SWEEP_MS) continue;
+      if (!manager.requestSuccessorForStalledEliminationSweep?.()) continue;
+      sweepLastAt$.set(tournamentId, now);
+      lastAt$.set(tournamentId, now);
+      reportError(
+        new Error(
+          `Tournament ${tournamentId} bust stage stalled (sweep in flight ` +
+            `${Math.round(stalled.msInFlight / 1000)}s, oldest bust waiting ` +
+            `${Math.round(stalled.msBustWaiting / 1000)}s, stage ${stalled.stage}) - no bust ` +
+            `could be recorded; handed the event to a successor generation`
+        ),
+        'GameServer.stalled_elimination_sweep_handed_on',
+        {
+          tournamentId,
+          stage: stalled.stage,
+          msInFlight: stalled.msInFlight,
+          msBustWaiting: stalled.msBustWaiting,
+        }
+      );
+    }
+    for (const tournamentId of [...sweepLastAt$.keys()]) {
+      if (
+        now - (sweepLastAt$.get(tournamentId) ?? 0) >
+        GameServer.STUCK_TOURNAMENT_HANDOFF_SPACING_MS
+      )
+        sweepLastAt$.delete(tournamentId);
     }
     for (const tableId of [...since$.keys()]) {
       if (!seen.has(tableId)) since$.delete(tableId);

@@ -1215,6 +1215,7 @@ export default function WalletCashierModal({
     setSending(true);
     setSendError(null);
     setSendReceipt(null);
+    let closeAfterSuccess = false;
     try {
       const action =
         tab === 'claim'
@@ -1337,6 +1338,10 @@ export default function WalletCashierModal({
       setHolderNonce((n) => n + 1);
       setUnconfirmed(null);
       refresh();
+      /* Dan, 2026-10-22: a confirmed send or claim toasts and closes the
+         cashier. The operator never has to X off a finished movement. Refusals
+         and unknown outcomes keep the cashier open with their reason. */
+      closeAfterSuccess = true;
     } catch (e) {
       if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.send');
@@ -1356,6 +1361,7 @@ export default function WalletCashierModal({
       busyRef.current = false;
       if (isMounted.current) setSending(false);
     }
+    if (closeAfterSuccess && isMounted.current) onClose();
   };
 
   const onSendPressed = () => {
@@ -1385,6 +1391,7 @@ export default function WalletCashierModal({
     const owningView = actionView.current;
     busyRef.current = true;
     setClaimingId(row.transaction_id);
+    let closeAfterSuccess = false;
     try {
       const operation = await reserveCashierWalletOperation(
         user?.id || '',
@@ -1436,6 +1443,8 @@ export default function WalletCashierModal({
       claimOpIdsRef.current.delete(row.transaction_id);
       setUnconfirmed(null);
       refresh();
+      // A confirmed claim back toasts and closes the cashier (Dan, 2026-10-22).
+      closeAfterSuccess = true;
     } catch (e) {
       if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.claimBack');
@@ -1448,6 +1457,7 @@ export default function WalletCashierModal({
       busyRef.current = false;
       if (isMounted.current) setClaimingId(null);
     }
+    if (closeAfterSuccess && isMounted.current) onClose();
   };
 
   const reverse = async (row: LedgerRow) => {

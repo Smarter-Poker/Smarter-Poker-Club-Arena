@@ -606,10 +606,11 @@ export class LightningSupervisor {
               hosting.startHand(
                 hand,
                 worker.currentConfig,
-                () => worker.wake(),
+                (playerId) => worker.wake(playerId),
                 (id) => onFrozen(id),
                 // LIGHTNING PHASE 13: the fold flags are read live, at the action door.
-                () => worker.currentConfig
+                () => worker.currentConfig,
+                (playerId) => worker.noteIdle(playerId)
               );
             },
             hasInstance: (id) => hosting.hasInstance(id),

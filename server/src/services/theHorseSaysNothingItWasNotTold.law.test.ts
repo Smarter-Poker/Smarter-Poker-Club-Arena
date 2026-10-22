@@ -79,6 +79,8 @@ describe('LAW: the horse says nothing it was not told', () => {
       }
     }
     expect(everyLine().length).toBeGreaterThanOrEqual(12);
+    // Dan 2026-10-22: "there should be like 100+ different short phrases"
+    expect(new Set(everyLine().map((l) => l.line.toLowerCase())).size).toBeGreaterThanOrEqual(100);
     // the Title Case gate inspects these keys; the pool must never grow one
     expect(LINES_SRC).not.toMatch(
       /\b(label|title|description|caption|placeholder|hint|tooltip|subtitle)\s*:/

@@ -828,14 +828,17 @@ export class LightningHosting {
   startHand(
     hand: LightningFormedHand,
     config: LightningConfig,
-    wake: () => void,
+    /** Run a pass now; a named player was just freed (the idle-deadline pass remembers them). */
+    wake: (playerId?: string) => void,
     onClusterFrozen?: (clusterId: string) => void,
     /**
      * LIGHTNING PHASE 13: the worker's CURRENT config, read at the action door
      * so an operator's flag change reaches a hand already being dealt. Absent,
      * the config the hand was formed under stands.
      */
-    liveConfig?: () => LightningConfig
+    liveConfig?: () => LightningConfig,
+    /** A player freed at the hand's end (no pass now; onFinished wakes once). */
+    noteIdle?: (playerId: string) => void
   ): LightningHandHost {
     let ledger = this.timeBanks.get(hand.clusterId);
     if (!ledger) {
@@ -863,7 +866,9 @@ export class LightningHosting {
         // wakes only for a settled hand - never for an abandon.
         if (why === 'fast' || why === 'normal') {
           registry.releaseRoom(host, playerId);
-          wake();
+          wake(playerId);
+        } else if (why === 'hand_end') {
+          noteIdle?.(playerId);
         }
       },
       onDealing: (h) => registry.register(h),

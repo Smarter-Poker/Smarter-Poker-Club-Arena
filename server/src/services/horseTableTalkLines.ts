@@ -11,6 +11,12 @@
  * pots: pot_lost (any showdown it lost), pot_won (any pot it won) and all_in
  * (a good luck line as it moves in, never every time).
  *
+ * Dan 2026-10-22: "100+ different short phrases ... every horse should be
+ * different and say different things, in different styles". The pool holds
+ * well over 100 distinct lines; each horse uses only its own share of it and
+ * types it in its own style (case, punctuation, shorthand, emoji), all in
+ * horseVoiceStyle.ts. Lines here stay plain and emoji free.
+ *
  * The register is deliberately lowercase chat: a typed line at a poker table,
  * not UI copy. The Title Case gate inspects labels, titles and descriptions,
  * and this file carries none of those keys on purpose: every cell is keyed
@@ -91,7 +97,28 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
   // Event E: the horse lost a pot at showdown, any hand.
   pot_lost: {
     quiet: {
-      lines: ['nh', 'nice hand', 'ugh', 'ok', 'wow', 'fair', 'sigh', 'cant win one', 'gg'],
+      lines: [
+        'nh',
+        'nice hand',
+        'ugh',
+        'ok',
+        'wow',
+        'fair',
+        'sigh',
+        'cant win one',
+        'gg',
+        'card dead all night',
+        'figures',
+        'yep',
+        'oh well',
+        'next',
+        'thought i had it',
+        'knew it',
+        'that hurts',
+        'not my night',
+        'rough',
+        'unlucky',
+      ],
     },
     needler: {
       lines: [
@@ -107,6 +134,18 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'unreal',
         'hit your card huh',
         'gotta be kidding',
+        'gift from the poker gods',
+        'nice catch',
+        'wow you really called',
+        'runner runner, classic',
+        'that was a reach',
+        'enjoy it while it lasts',
+        'ok i see how it is',
+        'rigged lol',
+        'you play like that every hand?',
+        'the deck loves you',
+        'bold call',
+        'cant believe that got there',
       ],
     },
     friendly: {
@@ -123,21 +162,92 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'too good',
         'well played sir',
         'nh, you had me',
+        'good call',
+        'you earned that one',
+        'great read',
+        'nicely done',
+        'had it all the way huh',
+        'gg, my bad',
+        'good stuff',
+        'respect',
+        'you got me',
+        'cant be mad at that',
       ],
     },
   },
   // Event F: the horse won a pot, any size.
   pot_won: {
-    quiet: { lines: ['ty', 'thx', 'gg', 'finally'] },
-    needler: {
-      lines: ['ty for the chips', 'thanks', 'ship it', 'needed that', 'thank you very much', 'lol'],
+    quiet: {
+      lines: ['ty', 'thx', 'gg', 'finally', 'nice', 'about time', 'ok then', 'phew', 'needed it', 'one'],
     },
-    friendly: { lines: ['ty', 'gg', 'thanks all', 'phew', 'finally a hand', 'gg wp'] },
+    needler: {
+      lines: [
+        'ty for the chips',
+        'thanks',
+        'ship it',
+        'needed that',
+        'thank you very much',
+        'lol',
+        'too easy',
+        'appreciate it',
+        'keep calling',
+        'knew you had nothing',
+        'come again',
+        'tip your dealer',
+        'stack those for me',
+        'read you like a book',
+        'love when that happens',
+      ],
+    },
+    friendly: {
+      lines: [
+        'ty',
+        'gg',
+        'thanks all',
+        'phew',
+        'finally a hand',
+        'gg wp',
+        'that was close',
+        'lucky me',
+        'sorry about that',
+        'ty ty',
+        'whew, got there',
+        'needed that one bad',
+        'ill take it',
+        'good hand though',
+      ],
+    },
   },
   // Event G: the horse is moving all in. Said as it shoves, and only sometimes.
   all_in: {
-    quiet: { lines: ['gl', 'good luck', 'here we go'] },
-    needler: { lines: ['lets go', 'one time', 'lets dance', 'you sure?', 'run it'] },
-    friendly: { lines: ['good luck', 'gl', 'gl gl', 'good luck to you', 'may the best hand win'] },
+    quiet: { lines: ['gl', 'good luck', 'here we go', 'ok lets see', 'all in', 'gl both'] },
+    needler: {
+      lines: [
+        'lets go',
+        'one time',
+        'lets dance',
+        'you sure?',
+        'run it',
+        'call it',
+        'prove it',
+        'your move',
+        'dont be scared',
+        'lets gamble',
+      ],
+    },
+    friendly: {
+      lines: [
+        'good luck',
+        'gl',
+        'gl gl',
+        'good luck to you',
+        'may the best hand win',
+        'here goes nothing',
+        'pray for me',
+        'gl sir',
+        'fingers crossed',
+        'no regrets',
+      ],
+    },
   },
 };

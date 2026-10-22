@@ -991,7 +991,6 @@ describe('required CI owns native fixture verification', () => {
       'watermark-refusals.sql',
     ].map((file) => `scripts/dev/fixtures/causal-pko-predecessors/${file}`),
     'scripts/dev/probe-terminal-bounty-candidate-coverage-pg17.sh',
-    'scripts/dev/fixtures/terminal-bounty-candidate-coverage/chests-only-pre-money.sql',
     'scripts/dev/probe-committed-payout-terms-pg17.py',
     'scripts/dev/probe-tournament-create-payout-depth-pg17.py',
     'tests/operations/pko-probe-cleanup.test.py',

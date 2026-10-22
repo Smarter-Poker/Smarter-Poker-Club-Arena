@@ -52,6 +52,13 @@ class Boundaries(unittest.TestCase):
    expected={category:[{'name':'actual','acl':'{anon=r/postgres,service_role=arw/postgres}'}]}
    self.assertTrue(v.compare(expected,{category:[]}))
    self.assertTrue(v.compare(expected,{category:[{'name':'actual','acl':'{anon=arw/postgres}'}]}))
+ def test_comments_are_exact_multisets_with_nested_order_preserved(self):
+  first={'object':'a','comment':'first','nested':[1,2]};second={'object':'Z','comment':'second'}
+  expected={'comments':[first,second,first]}
+  self.assertEqual(v.compare(expected,{'comments':[second,first,first]}),[])
+  for changed in [[first,second],[first,second,first,first],[first,dict(second,comment='changed'),first],[dict(first,nested=[2,1]),second,first]]:
+   self.assertTrue(v.compare(expected,{'comments':changed}))
+  self.assertTrue(v.compare({'relations':[first,second]},{'relations':[second,first]}))
  def test_normalized_acl_tuple_loss_detected(self):
   expected={'x':[{'acl':[{'grantor':'p','grantee':'a','privilege':'SELECT','grantable':False}]}]}
   self.assertEqual(v.compare(expected,expected),[])

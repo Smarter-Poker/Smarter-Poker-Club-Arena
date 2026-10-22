@@ -55,6 +55,12 @@ def compare(expected,actual):
  differences=[];remaining=100
  for category in sorted(set(expected)|set(actual)):
   e=canonical(expected.get(category));a=canonical(actual.get(category))
+  # Comments are an unordered catalog collection; retain duplicates and every
+  # field while avoiding Python versus database ICU collation differences.
+  if category=='comments':
+   key=lambda value:json.dumps(value,sort_keys=True,separators=(',',':'))
+   if isinstance(e,list):e=sorted(e,key=key)
+   if isinstance(a,list):a=sorted(a,key=key)
   if e!=a:
    es={json.dumps(x,sort_keys=True) for x in e or []};as_={json.dumps(x,sort_keys=True) for x in a or []}
    em={object_identity(x):x for x in e or []};am={object_identity(x):x for x in a or []};details=[];changed=0

@@ -90,6 +90,11 @@ repair job, no sweep, no new cron.
   ledger anti-join run first in a materialized CTE, so the Diamond and entrant
   tests run only for unbooked Spins. Same rows, order, limit and result.
   Measured 1.3 s for the same window.
+- **And its multiplier repair.** The sweep first calls
+  `fn_spin_repair_missing_multiplier` with the same lookback, which read and
+  discarded all 479,711 RUNNING/COMPLETED Spins (1.15 s warm). Migration
+  `20261022202409` adds a partial index holding exactly the rows that scan
+  admits (empty in normal operation): 0.08 ms.
 
 ## 6. Horses were sent to tournaments they had no wallet to pay for
 

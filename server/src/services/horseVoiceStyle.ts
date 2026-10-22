@@ -89,6 +89,8 @@ export interface VoiceStyle {
   chattiness: number;
   /** Independent gesture habit: zero means no throws/reactions; otherwise 0.15..1.0. */
   throwiness: number;
+  /** percent of lines with a slip of the thumb: 0 for most horses */
+  typoPct: number;
 }
 
 const pick = <T>(items: readonly T[], seed: string): T => items[personaHash(seed) % items.length];
@@ -178,6 +180,11 @@ export function voiceStyleFor(horseId: string): VoiceStyle {
     },
     chattiness: pct(k('talks')) < 25 ? 0 : (15 + (personaHash(k('chatty')) % 81)) / 100,
     throwiness: pct(k('gestures')) < 45 ? 0 : (15 + (personaHash(k('throwy')) % 86)) / 100,
+    typoPct: weighted<number>(k('typo'), [
+      [0, 60],
+      [6, 25],
+      [14, 15],
+    ]),
   };
   if (cache.size > 5_000) cache.clear();
   cache.set(horseId, style);
@@ -271,6 +278,45 @@ function applyPunct(line: string, mode: PunctMode): string {
 }
 
 /**
+ * Dan 2026-10-22: "never always use 3 emoji's it should be 1-5 and always
+ * randomly choses, never ever always 3". How many: 1 to 5, weighted toward
+ * fewer (40/25/17/11/7 percent) and rolled per line. Which: sometimes the
+ * same favourite repeated, sometimes a mix of the horse's favourites.
+ */
+export const EMOJI_COUNT_WEIGHTS: ReadonlyArray<readonly [number, number]> = [
+  [1, 40],
+  [2, 25],
+  [3, 17],
+  [4, 11],
+  [5, 7],
+];
+
+export function emojiRun(favourites: readonly string[], seed: (what: string) => string): string {
+  const count = weighted<number>(seed('emoji-count'), EMOJI_COUNT_WEIGHTS);
+  const mixed = favourites.length > 1 && pct(seed('emoji-mix')) < 45;
+  const first = favourites[personaHash(seed('emoji')) % favourites.length];
+  let run = '';
+  for (let i = 0; i < count; i++) {
+    run += mixed ? favourites[personaHash(seed(`emoji-${i}`)) % favourites.length] : first;
+  }
+  return run;
+}
+
+/** A slip of the thumb: two neighbouring letters swapped in one longer word. */
+function typo(line: string, seed: string): string {
+  const re = /[a-z]{4,}/gi;
+  const words: Array<{ word: string; index: number }> = [];
+  for (let m = re.exec(line); m !== null; m = re.exec(line)) {
+    words.push({ word: m[0], index: m.index });
+  }
+  if (words.length === 0) return line;
+  const { word, index } = words[personaHash(seed) % words.length];
+  const at = 1 + (personaHash(`${seed}|at`) % (word.length - 2));
+  const swapped = word.slice(0, at) + word[at + 1] + word[at] + word.slice(at + 2);
+  return line.slice(0, index) + swapped + line.slice(index + word.length);
+}
+
+/**
  * The line as this horse types it. `key` makes the per-line choices (stretch,
  * sign off, emoji count) vary from line to line while the habits stay fixed.
  */
@@ -283,13 +329,12 @@ export function styleLine(line: string, horseId: string, mood: Mood, key: string
   if (s.signOff && pct(seed('signoff')) < s.signOffPct && !out.includes(s.signOff)) {
     out = `${out} ${s.signOff}`;
   }
+  if (s.typoPct > 0 && pct(seed('typo?')) < s.typoPct) out = typo(out, seed('typo'));
   out = applyPunct(applyCase(out, s.caseMode), s.punct);
   const favourites = s.emoji[mood];
   const emojiChance = s.emojiMode === 'often' ? 65 : s.emojiMode === 'rare' ? 22 : 0;
   if (favourites.length > 0 && pct(seed('emoji?')) < emojiChance) {
-    const e = favourites[personaHash(seed('emoji')) % favourites.length];
-    const count = 1 + (pct(seed('emoji-n')) < 25 ? 1 + (personaHash(seed('emoji-x')) % 2) : 0);
-    out = `${out} ${e.repeat(count)}`;
+    out = `${out} ${emojiRun(favourites, seed)}`;
   }
   return out;
 }
@@ -322,6 +367,7 @@ export function styleFingerprint(horseId: string, pool: readonly string[]): stri
       .join('/'),
     s.chattiness,
     s.throwiness,
+    s.typoPct,
   ].join('|');
 }
 

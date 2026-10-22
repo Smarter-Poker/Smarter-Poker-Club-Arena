@@ -73,6 +73,8 @@ import {
   _resetTableTalkForTests,
   _setSpeakChanceForTests,
   _setVoiceStylingForTests,
+  _setAudienceForTests,
+  STREAK_HANDS,
   speaksThisTime,
   chooseLine,
   detectEvents,
@@ -185,6 +187,7 @@ beforeEach(() => {
   _setSpeakChanceForTests(100);
   _setHumanPacingForTests(false);
   _setVoiceStylingForTests(false);
+  _setAudienceForTests(() => true);
   h.state.calls = [];
   h.state.answers = {};
   h.state.gate = { engine: true, mode: true };
@@ -194,6 +197,7 @@ afterEach(() => {
   _setSpeakChanceForTests(null);
   _setHumanPacingForTests(true);
   _setVoiceStylingForTests(true);
+  _setAudienceForTests(null);
   vi.useRealTimers();
 });
 
@@ -820,6 +824,8 @@ describe('a horse speaks sometimes, never every time (Dan 2026-10-21)', () => {
       if (speaksThisTime('pot_lost', HORSE_A, TABLE, hand)) spoke++;
       else {
         silent++;
+        // a fresh table each hand, so no losing streak turns this into tilt
+        _resetTableTalkForTests();
         h.state.calls = [];
         expect(await speakAtTheFelt(input)).toBe('no_event');
         expect(h.state.calls).toEqual([]);
@@ -835,5 +841,44 @@ describe('a horse speaks sometimes, never every time (Dan 2026-10-21)', () => {
     expect(new Set(typed).size).toBeGreaterThan(150);
     const quick = Array.from({ length: 200 }, (_, i) => humanBeatMs(`k${i}`, 'quick'));
     expect(Math.max(...quick)).toBeLessThan(900);
+  });
+});
+
+describe('who is listening, and how the night is going', () => {
+  it('with nobody watching, most hands that would have a line stay silent and read nothing', async () => {
+    _setAudienceForTests(() => false);
+    let silent = 0;
+    let spoken = 0;
+    for (let n = 3000; n < 3100; n++) {
+      _resetTableTalkForTests();
+      h.state.calls = [];
+      const out = await speakAtTheFelt(bigPotHand(n));
+      if (out === 'no_audience') {
+        silent++;
+        expect(inserts('table_chat')).toHaveLength(0);
+      } else spoken++;
+    }
+    expect(silent).toBeGreaterThan(75);
+    expect(spoken).toBeGreaterThan(0);
+  });
+
+  it('a horse that loses showdown after showdown says it as tilt', async () => {
+    const lost = (n: number) =>
+      quietHand(n, {
+        winners: [{ userId: HUMAN, amount: 10 }],
+        showdownResults: [
+          { userId: HUMAN, handRanking: 2, handName: 'Pair' },
+          { userId: HORSE_A, handRanking: 1, handName: 'High Card' },
+        ],
+        seated: [seat(HORSE_A, 1, true), seat(HUMAN, 3, false)],
+      });
+    // the first hands build the streak; the gate and limits are not the point here
+    h.state.gate = { engine: true, mode: false };
+    for (let n = 1; n < STREAK_HANDS; n++) await speakAtTheFelt(lost(4000 + n));
+    _resetTableTalkGateForTests();
+    h.state.gate = { engine: true, mode: true };
+    h.state.calls = [];
+    expect(await speakAtTheFelt(lost(4000 + STREAK_HANDS))).toBe('spoken');
+    expect(inserts('horse_table_talk_ledger')[0].payload).toMatchObject({ event: 'tilt' });
   });
 });

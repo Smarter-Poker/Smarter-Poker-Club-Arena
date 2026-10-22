@@ -11,6 +11,8 @@ import { LINES, TALK_EVENTS, TALK_VOICES } from './horseTableTalkLines.js';
 import { chooseLine, fillLine, moodOf, sanitizeStyledLine } from './HorseTableTalk.js';
 import {
   EMOJI_BY_MOOD,
+  EMOJI_COUNT_WEIGHTS,
+  emojiRun,
   STYLE_EMOJI,
   personalChance,
   personalThrowChance,
@@ -163,5 +165,31 @@ describe('what a styled line may carry', () => {
     }
     const mine = personalPool(HORSES[3], LINES.pot_lost.friendly.lines);
     for (const t of counts.keys()) expect(mine).toContain(t);
+  });
+});
+
+describe('emoji counts and typos (Dan 2026-10-22: "1-5 and always randomly choses, never ever always 3")', () => {
+  it('a run is 1 to 5 emoji, every count occurs, fewer is likelier, and none dominates', () => {
+    const favs = EMOJI_BY_MOOD.won.slice(0, 3);
+    const byCount = new Map<number, number>();
+    let mixed = 0;
+    for (let i = 0; i < 4000; i++) {
+      const run = [...emojiRun(favs, (w) => `k${i}|${w}`)];
+      byCount.set(run.length, (byCount.get(run.length) ?? 0) + 1);
+      if (new Set(run).size > 1) mixed++;
+    }
+    expect([...byCount.keys()].sort()).toEqual([1, 2, 3, 4, 5]);
+    for (const [n, c] of byCount) expect(c / 4000, `count ${n}`).toBeLessThan(0.5);
+    expect(byCount.get(1)!).toBeGreaterThan(byCount.get(5)!);
+    expect(mixed).toBeGreaterThan(400);
+    expect(EMOJI_COUNT_WEIGHTS.map(([n]) => n)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('most horses never typo; the ones that do, do it on a few lines', () => {
+    const styles = HORSES.map(voiceStyleFor);
+    const clean = styles.filter((s) => s.typoPct === 0).length;
+    expect(clean).toBeGreaterThan(450);
+    expect(clean).toBeLessThan(HORSES.length);
+    for (const s of styles) expect(s.typoPct).toBeLessThanOrEqual(15);
   });
 });

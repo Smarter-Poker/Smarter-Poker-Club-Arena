@@ -53,6 +53,13 @@ import {
   applyInsets,
 } from './support/feltHarness.mjs';
 
+// Approved table artwork used by the occupied-ring renders, bundled so these
+// layout checks never depend on production being reachable or unchanged.
+// Sources: smarter.poker/avatars/table/vip_wolf@2x.webp and the Supabase
+// assets/buttons/black/icon-*.webp objects, copied byte for byte 2026-10-21.
+const tableArtFixture = (name: string) =>
+  resolve(process.cwd(), 'tests/e2e/fixtures/table-art', name);
+
 /* process.cwd(), not __dirname: importing the .mjs harness puts this file in ES
    module scope, where __dirname does not exist. hero-card-row.spec.ts resolves
    the same way, and Playwright runs from the project root. */
@@ -871,11 +878,7 @@ for (const width of [320, 375, 393, 430, 480])
       })
     );
 
-    const avatarResponse = await page.request.get(
-      'https://smarter.poker/avatars/table/vip_wolf@2x.webp'
-    );
-    expect(avatarResponse.ok()).toBe(true);
-    const avatarBytes = await avatarResponse.body();
+    const avatarBytes = readFileSync(tableArtFixture('vip_wolf@2x.webp'));
     await page.route('**/avatars/table/**', (route) =>
       route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
     );
@@ -897,11 +900,7 @@ for (const width of [320, 375, 393, 430, 480])
     const toolAlpha: Record<string, { left: number; top: number; right: number; bottom: number }> =
       {};
     for (const icon of ['chat', 'timebank', 'rabbit']) {
-      const response = await page.request.get(
-        `https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/assets/buttons/black/icon-${icon}.webp`
-      );
-      expect(response.ok()).toBe(true);
-      const bytes = await response.body();
+      const bytes = readFileSync(tableArtFixture(`icon-${icon}.webp`));
       toolAlpha[icon] = await page.evaluate(async (base64) => {
         const image = new Image();
         image.src = `data:image/webp;base64,${base64}`;
@@ -1252,20 +1251,12 @@ for (const [width, height] of [
             json: { ok: true, seated: true, required: 50, vpip: 38, hands: 12, window: 10 },
           })
         );
-        const avatarResponse = await page.request.get(
-          'https://smarter.poker/avatars/table/vip_wolf@2x.webp'
-        );
-        expect(avatarResponse.ok()).toBe(true);
-        const avatarBytes = await avatarResponse.body();
+        const avatarBytes = readFileSync(tableArtFixture('vip_wolf@2x.webp'));
         await page.route('**/avatars/table/**', (route) =>
           route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
         );
         for (const icon of ['chat', 'timebank', 'rabbit', 'prevhand']) {
-          const response = await page.request.get(
-            `https://kuklfnapbkmacvwxktbh.supabase.co/storage/v1/object/public/assets/buttons/black/icon-${icon}.webp`
-          );
-          expect(response.ok()).toBe(true);
-          const bytes = await response.body();
+          const bytes = readFileSync(tableArtFixture(`icon-${icon}.webp`));
           await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
             route.fulfill({ body: bytes, contentType: 'image/webp' })
           );

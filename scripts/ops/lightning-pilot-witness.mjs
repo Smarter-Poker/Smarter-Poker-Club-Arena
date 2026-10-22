@@ -3,7 +3,12 @@ import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 import { PILOT, pilotServiceFetch } from './prepare-lightning-private-pilot.mjs';
-import { assertPlayerPin, witnessPlayer, CONSENT_PLAYERS } from './lightning-pilot-player.mjs';
+import {
+  assertPlayerPin,
+  witnessPlayer,
+  CONSENT_PLAYERS,
+  WITNESS_PLAYERS,
+} from './lightning-pilot-player.mjs';
 import { witnessFinancial } from './lightning-pilot-financial.mjs';
 import { witnessAdmission, ADMISSION_PLAYER } from './lightning-pilot-admission.mjs';
 import { witnessLatencyWorkload } from './lightning-pilot-latency-workload.mjs';
@@ -62,11 +67,11 @@ export async function runPilotWitness(env = process.env, dependencies = {}) {
       if (mode === 'admission') {
         if (pin.playerId !== ADMISSION_PLAYER) throw new Error();
       } else assertPlayerPin(pin);
-      if (['latency', 'financial'].includes(mode) && !CONSENT_PLAYERS.includes(pin.playerId))
+      if (['latency', 'financial'].includes(mode) && !WITNESS_PLAYERS.includes(pin.playerId))
         throw new Error();
       if (
         mode === 'recovery' &&
-        (!CONSENT_PLAYERS.includes(pin.playerId) ||
+        (!WITNESS_PLAYERS.includes(pin.playerId) ||
           !UUID.test(env.PILOT_SECOND_POOL_SESSION_ID) ||
           env.PILOT_SECOND_POOL_SESSION_ID === pin.poolSessionId)
       )

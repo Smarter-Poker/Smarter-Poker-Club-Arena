@@ -31,6 +31,7 @@ function fixture({
   unknownControl = false,
   cleanupError = false,
   drift = false,
+  departed = [],
 } = {}) {
   let active = false,
     last_request_id = null;
@@ -92,7 +93,10 @@ function fixture({
                       user_id,
                       status: drift ? 'pending' : 'active',
                       role: 'player',
+                      membership_lifecycle_status: 'active',
+                      is_active: true,
                     })),
+                    ...departed,
                   ]
                 : scope.participants.map((id) => ({ id, is_horse: true, status: 'active' })),
         }),
@@ -238,4 +242,39 @@ test('actual preparation helper accepts caller budget and retains exact empty-sc
   assert.equal(r.baselineDigest, baseline.digest);
   assert.equal(r.noRegistrationOrMoneyWrites, true);
   assert.deepEqual(f.calls, [['signOut', { scope: 'local' }]]);
+});
+
+const departedRow = (user_id, patch = {}) => ({
+  user_id,
+  status: 'suspended',
+  role: 'player',
+  membership_lifecycle_status: 'departed',
+  is_active: false,
+  ...patch,
+});
+test('departed historical-rakeback memberships are not roster drift; anything else still is', async () => {
+  // 2026-10-22 00:05 UTC: 47 departed rows retained for historical rakeback
+  // receipts landed in the pilot club and the exact-73 roster check refused
+  // every assign/prepare/withdraw.
+  const outsiders = Array.from({ length: 47 }, (_, i) =>
+    departedRow(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`)
+  );
+  const ok = fixture({ departed: outsiders });
+  assert.equal((await assignmentMain(envFor('assign'), ok.deps)).status, 'verified');
+  for (const bad of [
+    [departedRow(scope.participants[0])],
+    [departedRow(PILOT.ownerId)],
+    [departedRow('00000000-0000-4000-8000-0000000000aa', { is_active: true })],
+    [departedRow('00000000-0000-4000-8000-0000000000ab', { status: 'active' })],
+    [
+      departedRow('00000000-0000-4000-8000-0000000000ac', {
+        membership_lifecycle_status: 'active',
+      }),
+    ],
+  ]) {
+    const f = fixture({ departed: bad }),
+      r = await assignmentMain(envFor('assign'), f.deps);
+    assert.equal(r.status, 'stopped');
+    assert.equal(f.calls.filter((c) => c[0] === 'fn_lightning_pilot_assignment_set').length, 0);
+  }
 });

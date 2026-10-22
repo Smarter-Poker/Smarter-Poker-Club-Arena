@@ -55,15 +55,29 @@ const data = (r) => {
 };
 export async function assertAssignmentRoster(admin) {
   const scope = assignmentScope();
-  const rows = data(
+  const all = data(
     await admin
       .from('club_members')
-      .select('user_id,status,role')
+      .select('user_id,status,role,membership_lifecycle_status,is_active')
       .eq('club_id', scope.clubId)
-      .limit(74)
+      .limit(1001)
   );
+  // A DEPARTED MEMBERSHIP IS NOT A MEMBER (2026-10-22). Historical rakeback
+  // retention keeps a departed horse's row (status suspended, lifecycle
+  // departed, inactive) so its payer receipts survive; 47 such rows landed in
+  // the pilot club at 2026-10-22 00:05 UTC. They can play nothing, so they are
+  // set aside - but only rows that are exactly that shape and belong to no
+  // participant or owner. Anything else is roster drift, as before.
+  if (!Array.isArray(all) || all.length > 1000) throw new Error('Assignment Roster Changed');
+  const departed = (r) =>
+    r.status === 'suspended' &&
+    r.membership_lifecycle_status === 'departed' &&
+    r.is_active === false;
+  const rows = all.filter((r) => !departed(r));
   if (
-    !Array.isArray(rows) ||
+    all.some(
+      (r) => departed(r) && (scope.participants.includes(r.user_id) || r.user_id === PILOT.ownerId)
+    ) ||
     rows.length !== 73 ||
     !rows.some((r) => r.user_id === PILOT.ownerId && r.role === 'owner') ||
     !isDeepStrictEqual(

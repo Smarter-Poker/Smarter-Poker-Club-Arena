@@ -8,6 +8,8 @@ import {
   witnessPlayer,
   acceptPlayerTerms,
   CONSENT_PLAYERS,
+  WITNESS_PLAYERS,
+  THIRD_WITNESS_PLAYER,
   PLAYER_DEVICES,
   foldControlDiagnostics,
 } from './lightning-pilot-player.mjs';
@@ -807,4 +809,22 @@ test('another restored pool never receives a player fold gesture', async () => {
   });
   assert.equal(r.status, 'unknown');
   assert.equal(b.actionDevices.length, 0);
+});
+
+test('the third witness actor is pinned beside the consent players but never gains consent', async () => {
+  assert.equal(THIRD_WITNESS_PLAYER, '09dd202d-115b-49ae-afa8-cb528c7b8f72');
+  assert.deepEqual(WITNESS_PLAYERS, [...CONSENT_PLAYERS, THIRD_WITNESS_PLAYER]);
+  assert.equal(Object.isFrozen(WITNESS_PLAYERS), true);
+  assert.equal(CONSENT_PLAYERS.includes(THIRD_WITNESS_PLAYER), false);
+  const third = { ...pin, playerId: THIRD_WITNESS_PLAYER };
+  await assert.rejects(
+    acceptPlayerTerms(
+      termsPage().page,
+      { user: { id: third.playerId } },
+      third,
+      'https://example.invalid',
+      true
+    ),
+    /Player Consent Authorization Mismatch/
+  );
 });

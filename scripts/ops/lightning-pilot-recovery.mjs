@@ -2,7 +2,7 @@ import { selectPoolTab } from './lightning-pilot-selected-pool.mjs';
 /** Finite existing-player recovery observations. No joins, wagers, consent or fabricated frames. */
 import { recoveryWireObservation, recoveryUiInPage } from './recovery-wire-observation.mjs';
 import {
-  CONSENT_PLAYERS,
+  WITNESS_PLAYERS,
   openPlayerSession,
   validatePlayer,
   renderHand,
@@ -306,7 +306,7 @@ export async function witnessRecovery({
       timeoutMs > 240000 ||
       !Array.isArray(pins) ||
       pins.length !== 2 ||
-      !CONSENT_PLAYERS.includes(pins[0].playerId) ||
+      !WITNESS_PLAYERS.includes(pins[0].playerId) ||
       pins.some((p) => p.playerId !== pins[0].playerId) ||
       new Set(pins.map((p) => p.poolSessionId)).size !== 2 ||
       new Set(pins.map((p) => p.clusterId)).size !== 2 ||

@@ -6,7 +6,7 @@ import {
 import { servingIdentities, servingStable } from './lightning-pilot-qualification.mjs';
 /** One normal UI intent. No financial RPC writes, consent writes or retries. */
 import {
-  CONSENT_PLAYERS,
+  WITNESS_PLAYERS,
   assertPlayerPin,
   validatePlayer,
   openPlayerSession,
@@ -510,7 +510,7 @@ export async function witnessFinancial({
   if (
     typeof pauseForTopUp !== 'boolean' ||
     (pauseForTopUp && action !== 'top_up') ||
-    !CONSENT_PLAYERS.includes(pin.playerId) ||
+    !WITNESS_PLAYERS.includes(pin.playerId) ||
     !['top_up', 'cash_out', 'auto_top_up', 'stop_playing'].includes(action) ||
     !Number.isInteger(timeoutMs) ||
     timeoutMs < 30000 ||

@@ -122,8 +122,11 @@ describe('derivePositions on the seating this platform actually uses', () => {
     });
   });
 
-  it('returns nothing rather than guessing when the button is not seated', () => {
-    expect(derivePositions([1, 3, 5], 7)).toEqual({});
+  it('labels a dead button from its empty seat, never guessing a BTN', () => {
+    // The button on an empty seat is the tournament dead button (TDA Rule 30):
+    // the seat after it posted the small blind. Unknown (null) stays empty.
+    expect(derivePositions([1, 3, 5], 7)).toEqual({ 1: 'SB', 3: 'BB', 5: 'CO' });
+    expect(derivePositions([1, 3, 5], null)).toEqual({});
   });
 
   it('gives the button the small blind heads up, as the real rule does', () => {

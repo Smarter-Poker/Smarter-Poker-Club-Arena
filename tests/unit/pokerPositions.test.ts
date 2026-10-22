@@ -68,8 +68,22 @@ describe('derivePositions', () => {
     // A missing badge is honest. A wrong one is not.
     expect(derivePositions([1, 2, 3], null)).toEqual({});
     expect(derivePositions([1, 2, 3], undefined)).toEqual({});
-    expect(derivePositions([1, 2, 3], 7)).toEqual({});
     expect(derivePositions([], 1)).toEqual({});
+  });
+
+  it('a dead button keeps its empty seat in the order (hand #43306703, Dan 2026-10-21)', () => {
+    // Button on the empty seat 8: seat 9 posted the small blind, seat 1 the big blind.
+    const pos = derivePositions([1, 2, 4, 5, 6, 7, 9], 8);
+    expect(pos[9]).toBe('SB');
+    expect(pos[1]).toBe('BB');
+    expect(pos[2]).toBe('UTG');
+    expect(pos[7]).toBe('CO');
+    expect(Object.values(pos)).not.toContain('BTN');
+    expect(Object.keys(pos)).toHaveLength(7);
+    // The button past the last seat wraps to the first.
+    expect(derivePositions([1, 2, 3], 7)).toEqual({ 1: 'SB', 2: 'BB', 3: 'CO' });
+    // Heads-up never plays a dead button: still nothing rather than a guess.
+    expect(derivePositions([1, 2], 5)).toEqual({});
   });
 
   it('never assigns the same position twice', () => {

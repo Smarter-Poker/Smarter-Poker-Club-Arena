@@ -33,6 +33,22 @@
 BEGIN;
 SET LOCAL lock_timeout='2s';
 SET LOCAL statement_timeout='15s';
+-- The native weekly scheduler holds its lock for most of every five-minute
+-- visit while this standalone book keeps failing (the failure this migration
+-- removes), and the first installation was refused on a busy instant
+-- (foreign_set_scheduler_owned, 2026-10-22 04:40 UTC, nothing written). The
+-- lock is therefore awaited first, alone, in short bounded attempts, before
+-- any DDL; the guard below still requires it and still refuses without it.
+SET LOCAL statement_timeout='300s';
+DO $await$
+BEGIN
+ FOR attempt IN 1..1100 LOOP
+  IF pg_try_advisory_xact_lock(hashtextextended('union-accounting-scheduler',0)) THEN RETURN; END IF;
+  PERFORM pg_sleep(0.25);
+ END LOOP;
+ RAISE EXCEPTION 'foreign_set_scheduler_owned';
+END $await$;
+SET LOCAL statement_timeout='15s';
 CREATE FUNCTION public.fn_standalone_foreign_certificate_periods(
  p_scope_kind text,p_club uuid,p_from_date date,p_to_date date,p_period_start timestamptz,p_period_end timestamptz)
 RETURNS TABLE(period_id uuid) LANGUAGE sql STABLE SET search_path=public AS $set$

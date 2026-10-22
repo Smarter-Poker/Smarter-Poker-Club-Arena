@@ -22,7 +22,6 @@ import { arenaDisplayText } from '../arenaDisplay/text';
 
 /* The worker's labels, without the emoji it prefixed them with (10.7). */
 const TITLES: Record<string, string> = {
-  BALANCE_UPDATED: 'Balance Updated',
   CLUB_JOINED: 'Club Joined',
   CLUB_LEFT: 'Left Club',
   TABLE_SEATED: 'Seated At Table',
@@ -42,8 +41,6 @@ function titleCase(raw: string): string {
 /** Pure: the worker's body rules, kept identical. Exported for tests. */
 export function notificationBody(eventType: string, payload: unknown): string {
   const p = (payload && typeof payload === 'object' ? payload : {}) as Record<string, unknown>;
-  if (eventType === 'BALANCE_UPDATED')
-    return arenaDisplayText(`Source: ${String(p.source || 'unknown')}`);
   if (eventType === 'CLUB_JOINED' || eventType === 'CLUB_LEFT') {
     return titleCase(String(p.clubName || p.clubId || ''));
   }
@@ -65,6 +62,8 @@ export async function notifyInBackground(eventType: string, payload: unknown): P
     import('@capacitor/app'),
     import('@capacitor/local-notifications'),
   ]);
+  // Internal balance refresh is never a banner (Dan, 2026-10-21).
+  if (eventType === 'BALANCE_UPDATED') return false;
   const { isActive } = await App.getState();
   if (isActive) return false;
   const { display } = await LocalNotifications.checkPermissions();

@@ -55,6 +55,7 @@ import {
 } from './diamondScheduledSpawn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { withMidwayStructure } from '../tournament/midwayStructurePolicy.js';
+import { withBountyRebuyUntilRegistrationCloses } from '../tournament/bountyRebuyPolicy.js';
 import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import {
@@ -1324,7 +1325,9 @@ export class ScheduledTournamentService {
     // instead of being burned forever.
     // Dan 2026-10-21: every MTT and satellite runs one locked clock per level.
     const built = await this.buildInsertRow(schedule, cfg, startTime);
-    const row = built ? withLockedLevelClock(built) : built;
+    // Dan 2026-10-21: no bounty, PKO or mystery bounty MTT is a freezeout;
+    // each rebuys until registration closes (bountyRebuyPolicy.ts).
+    const row = built ? withBountyRebuyUntilRegistrationCloses(withLockedLevelClock(built)) : built;
     if (!row) {
       // A satellite whose target event does not exist yet is not a missed
       // event: a daily satellite feeding a weekly target only runs once that

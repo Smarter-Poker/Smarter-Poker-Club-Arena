@@ -130,6 +130,7 @@ import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
+import { tournamentTabBuyInLabel } from '../lib/tournamentTabLabel';
 import {
   accessRefusalFromClose,
   isTournamentTablePausedClose,
@@ -1322,128 +1323,9 @@ interface TablePageProps {
 /* MastheadLevelClock removed 2026-08-30: the round-end countdown left the
    masthead with it - MastheadNextInfo below carries the felt's clock now. */
 
-/**
- * Dan 2026-08-30: "REMOVE THE ROUND END TIMER ON THE TABLE, AND REPLACE THAT
- * WITH 'NEXT BLINDS' AND A 'BREAK STARTS IN' CLOCK INSTEAD."
- *
- * Two lines under the tournament masthead:
- *   - NEXT BLINDS <sb>/<bb>   (the next playing level, breaks skipped)
- *   - BREAK STARTS IN m:ss    (only when the structure has a break ahead -
- *     the remainder of this level plus every full level until the break)
- * The per-second tick stays inside this component, exactly like the
- * MastheadLevelClock it replaces, so the page never re-renders for a clock.
- */
-function MastheadNextInfo({
-  startedAtMs,
-  durationSec,
-  struct,
-  levelIdx,
-  onBreak = false,
-  breakEndsAtMs = null,
-}: {
-  startedAtMs: number;
-  durationSec: number;
-  /** Dan 2026-08-30: while the tournament is ON BREAK the clock flips from
-      "Break Starts In" to "Break Over In", counting to the break's real end. */
-  onBreak?: boolean;
-  breakEndsAtMs?: number | null;
-  struct: Array<{
-    level?: number;
-    smallBlind?: number;
-    small_blind?: number;
-    bigBlind?: number;
-    big_blind?: number;
-    isBreak?: boolean;
-    is_break?: boolean;
-    duration?: number;
-    duration_minutes?: number;
-    durationMinutes?: number;
-  }>;
-  levelIdx: number;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  type Entry = (typeof struct)[number];
-  const sb = (l: Entry) => Number(l.smallBlind ?? l.small_blind ?? 0);
-  const bbOf = (l: Entry) => Number(l.bigBlind ?? l.big_blind ?? 0);
-  const isBreakLevel = (l: Entry) => !!(l.isBreak ?? l.is_break) || (sb(l) === 0 && bbOf(l) === 0);
-  const durOf = (l: Entry) =>
-    Number(l.duration) || (Number(l.duration_minutes ?? l.durationMinutes) || 0) * 60;
-
-  const remaining = Math.max(0, durationSec - Math.floor((now - startedAtMs) / 1000));
-
-  // The next PLAYING level's blinds, breaks skipped.
-  let nextBlinds: string | null = null;
-  for (let i = levelIdx + 1; i < struct.length; i++) {
-    if (!isBreakLevel(struct[i])) {
-      nextBlinds = formatBlindPair(sb(struct[i]), bbOf(struct[i]));
-      break;
-    }
-  }
-
-  // Seconds until the next BREAK entry, when one exists ahead of us.
-  let breakInSec: number | null = null;
-  if (levelIdx >= 0 && levelIdx < struct.length && !isBreakLevel(struct[levelIdx])) {
-    let acc = remaining;
-    for (let i = levelIdx + 1; i < struct.length; i++) {
-      if (isBreakLevel(struct[i])) {
-        breakInSec = acc;
-        break;
-      }
-      acc += durOf(struct[i]);
-    }
-  }
-
-  const fmtSecs = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const ss2 = String(secs % 60).padStart(2, '0');
-    return `${m}:${ss2}`;
-  };
-
-  /* ON BREAK: the story is when play resumes, not when the next break is. */
-  if (onBreak) {
-    const overIn =
-      breakEndsAtMs && breakEndsAtMs > now ? Math.round((breakEndsAtMs - now) / 1000) : null;
-    return (
-      <>
-        {nextBlinds !== null && (
-          <span className="table-brand__line table-brand__line--round">
-            Next Blinds <span className="table-brand__clock">{nextBlinds}</span>
-          </span>
-        )}
-        <span className="table-brand__line table-brand__line--round">
-          {overIn !== null ? (
-            <>
-              Break Over In <span className="table-brand__clock">{fmtSecs(overIn)}</span>
-            </>
-          ) : (
-            'On Break - Last Hand Finishing'
-          )}
-        </span>
-      </>
-    );
-  }
-
-  if (nextBlinds === null && breakInSec === null) return null;
-  return (
-    <>
-      {nextBlinds !== null && (
-        <span className="table-brand__line table-brand__line--round">
-          Next Blinds <span className="table-brand__clock">{nextBlinds}</span>
-        </span>
-      )}
-      {breakInSec !== null && (
-        <span className="table-brand__line table-brand__line--round">
-          Break Starts In <span className="table-brand__clock">{fmtSecs(breakInSec)}</span>
-        </span>
-      )}
-    </>
-  );
-}
+/* MastheadNextInfo removed 2026-10-21 (Dan: "REMOVE LEVEL... AND UNDER
+   THAT"): the tournament masthead no longer carries Next Blinds or the
+   Break Starts In clock under the event line. */
 
 /**
  * Dan 2026-08-23: "you should never ask if they want to show cards."
@@ -5455,6 +5337,11 @@ function LiveTablePage({
      the tab pill - "MTT AND BUY IN AMOUNT UNDER IT FOR QUICK REFERENCE".
      undefined until the tournament row has been read. */
   const [tournamentBuyInTotal, setTournamentBuyInTotal] = useState<number | undefined>(undefined);
+  /* Dan 2026-10-21: the felt masthead's second line under the club and union
+     is the tournament's NAME and BUY-IN ("UNDER KINGS CLUB - MIDWAY UNION IT
+     SHOULD SAY THE TOURNAMENT NAME AND BUY IN, NOT JUST NLH POKER
+     TOURNAMENT"). '' until the tournament row has been read. */
+  const [tournamentEventName, setTournamentEventName] = useState('');
   const headsUpAnnouncedRef = useRef<Set<string>>(new Set());
   const [spinHeadsUpNote, setSpinHeadsUpNote] = useState(false);
   const spinPlayersRemaining = tableState.players.filter(
@@ -13763,7 +13650,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
+              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -13891,6 +13778,9 @@ function LiveTablePage({
             setTournamentFormat(fmt);
             setTournamentBuyInTotal(
               Math.round(Number(tournData.buy_in_amount ?? 0) + Number(tournData.buy_in_fee ?? 0))
+            );
+            setTournamentEventName(
+              formatGameTitle(String((tournData as { name?: unknown }).name ?? '').trim())
             );
             // Seat-first = a Spin (3 seats) or a Heads-Up (2 seats) that has
             // not started. Once it is RUNNING the seats are no longer for
@@ -25666,10 +25556,26 @@ function LiveTablePage({
                               </>
                             ) : (
                               <>
+                                {/* Dan 2026-10-21: "UNDER KINGS CLUB - MIDWAY UNION IT
+                                    SHOULD SAY THE TOURNAMENT NAME AND BUY IN, NOT JUST
+                                    NLH POKER TOURNAMENT ... REMOVE LEVEL... AND UNDER
+                                    THAT." Line 2 is the event name and its buy-in, then
+                                    the hand number. The level, blinds and the Next
+                                    Blinds / Break line beneath it are gone from the
+                                    felt (the tournament lobby's Blinds tab carries
+                                    the structure). */}
                                 <span className="table-brand__line table-brand__line--level">
                                   <span className="table-brand__game">
-                                    {gameShort} {formatWord} · Level {tableState.currentLevel || 1}{' '}
-                                    · {tableState.blinds || '10/20'}
+                                    {tournamentEventName || `${gameShort} ${formatWord}`}
+                                    {tournamentBuyInTotal !== undefined &&
+                                      tournamentTabBuyInLabel(tournamentBuyInTotal) !== '' && (
+                                        <>
+                                          {' · '}
+                                          {tournamentBuyInTotal > 0
+                                            ? `${tournamentTabBuyInLabel(tournamentBuyInTotal)} Buy-In`
+                                            : tournamentTabBuyInLabel(tournamentBuyInTotal)}
+                                        </>
+                                      )}
                                   </span>
                                   {(tableState.handNumber ?? 0) > 0 && (
                                     <span className="table-brand__hand">
@@ -25678,19 +25584,6 @@ function LiveTablePage({
                                     </span>
                                   )}
                                 </span>
-                                {(levelClock || tournamentBreak?.active) && (
-                                  <MastheadNextInfo
-                                    startedAtMs={levelClock?.startedAtMs ?? 0}
-                                    durationSec={levelClock?.durationSec ?? 0}
-                                    struct={blindStructRef.current}
-                                    levelIdx={(tableState.currentLevel || 1) - 1}
-                                    onBreak={!!tournamentBreak?.active}
-                                    breakEndsAtMs={
-                                      (tournamentBreak as { breakEndsAtMs?: number | null })
-                                        ?.breakEndsAtMs ?? null
-                                    }
-                                  />
-                                )}
                               </>
                             )}
                           </>

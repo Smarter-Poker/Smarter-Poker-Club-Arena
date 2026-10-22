@@ -76,7 +76,7 @@ describe('the box is not on the felt', () => {
 
   it('the action bar and the pre-action bar stand on top of it', () => {
     expect(DOCK_CSS).toMatch(
-      /\.table-page--tournament \.action-panel,\s*\.table-page--tournament \.pre-action-bar,\s*\.table-page--tournament \.action-panel-wrapper \{\s*padding-bottom: calc\(var\(--sp-bar-inset, env\(safe-area-inset-bottom, 0px\)\) \+ var\(--sp-tdock-now\)\) !important;/
+      /\.table-page--tournament \.action-panel,\s*\.table-page--tournament \.pre-action-bar,\s*\.table-page--tournament \.action-panel-wrapper \{\s*padding-bottom:\s*calc\(\s*var\(--sp-bar-inset, env\(safe-area-inset-bottom, 0px\)\)\s*\+\s*var\(--sp-tdock-now\)\s*\) !important;/
     );
   });
 });
@@ -100,7 +100,7 @@ describe('it is collapsible, and collapsing it never resizes the felt', () => {
       /--sp-tdock-reserve:\s*calc\(var\(--sp-tdock-line-h\) \+ var\(--sp-tdock-row-h\)\)/
     );
     expect(base).toMatch(
-      /--sp-action-reserve:\s*calc\(\s*var\(--sp-bottom-row-h, 96px\) \+ var\(--sp-bar-inset, env\(safe-area-inset-bottom, 0px\)\) \+ var\(--sp-tdock-reserve\)\s*\)/
+      /--sp-action-reserve:\s*calc\(\s*var\(--sp-bottom-row-h, 96px\) \+ var\(--sp-bar-inset, env\(safe-area-inset-bottom, 0px\)\)\s*\+\s*var\(--sp-tdock-reserve\)\s*\)/
     );
     const collapsed = rule(DOCK_CSS, ".table-page--tournament[data-tdock='collapsed'] {");
     expect(collapsed).toMatch(/--sp-tdock-now:/);

@@ -4709,15 +4709,18 @@
    not see the players cards they lost to in PLO6." The rule above fits every
    tabled card SIDE BY SIDE inside the plate's width, so on a phone a PLO6
    hand was six cards about 12px wide, and even a two-card hand was 14 to 20px:
-   unreadable. On a phone every tabled card is now one readable size (a fixed
-   share of the table's width, the same at every seat), and a hand of four or
-   more OVERLAPS like a held hand, stepped half a card apart, and each card is stacked over the one to
+   unreadable. Dan, the same day: "villain cards shown at showdown must be the
+   same size as the board cards, overlapped but not covered so all are clearly
+   readable." On a phone every tabled card is now the board's painted card
+   width (--sp-board-card-w, measured by useProtectedCardLayout; a share of the
+   table's width before a board is out), the same at every seat, and a hand of
+   four or more OVERLAPS like a held hand, stepped half a card apart, and each card is stacked over the one to
    its left, so every card's rank and suit corner stays in view. A PLO6 row is
    3.5 cards wide. The painted-layout pass (useProtectedCardLayout) still moves
    the row clear of the board, the pot and every player. */
 @media (max-width: 480px) and (orientation: portrait) {
   .seat .seat__cards--opponent.seat__cards--revealed {
-    --vh-card-w: max(24px, calc(var(--table-w, 320px) * 0.088));
+    --vh-card-w: var(--sp-board-card-w, max(24px, calc(var(--table-w, 320px) * 0.088)));
     --vh-card-h: calc(var(--vh-card-w) * 1.4);
   }
   .seat .seat__cards--opponent.seat__cards--revealed:has(> :nth-child(4)) {
@@ -4727,13 +4730,15 @@
     z-index: calc(1 + var(--vh-i, 0));
   }
 }
-/* The first generation SE (320px): six tabled PLO6 hands at the readable
-   size leave no felt for the wagers, so its cards are a little smaller. */
+/* The first generation SE (320px) is the one felt too small for board-size
+   tabled hands beside nine players' wagers; its tabled cards are 8 percent of
+   the table's width (about 21px), every corner still in view. */
 @media (max-width: 340px) and (orientation: portrait) {
   .seat .seat__cards--opponent.seat__cards--revealed {
     --vh-card-w: calc(var(--table-w, 262px) * 0.08);
   }
 }
+
 
 /* The top pod clears Mini BBJ and spends less of the centre pot lane. */
 .seat-wrapper--top .seat {

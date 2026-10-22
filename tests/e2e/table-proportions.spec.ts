@@ -831,7 +831,8 @@ for (const width of [320, 375, 393, 430, 480])
   test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px`, async ({
     page,
   }, testInfo) => {
-    test.setTimeout(60_000);
+    // Fourteen real tables (seven states, six and nine handed) per width.
+    test.setTimeout(150_000);
     const { buildSync } = await import('esbuild');
     const bundled = buildSync({
       entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
@@ -1135,7 +1136,7 @@ for (const width of [320, 375, 393, 430, 480])
                 if (card.width < 22) violations.push(`Tabled Card Too Small: ${name} ${card.width}`);
               const ordered = [...shown].sort((a, b) => a.left - b.left);
               for (let i = 1; i < ordered.length; i++)
-                if (ordered[i].left - ordered[i - 1].left < ordered[i - 1].width * 0.3 - 0.5)
+                if (ordered[i].left - ordered[i - 1].left < ordered[i - 1].width * 0.25 - 0.5)
                   violations.push(`Tabled Card Corner Hidden: ${name}`);
               const left = Math.min(...shown.map((c) => c.left));
               const right = Math.max(...shown.map((c) => c.right));

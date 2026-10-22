@@ -38,7 +38,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
       const protectedBoxes = Array.from(
         page.querySelectorAll(
           (withMarkers ? '.seat__bet-chips, ' : '') +
-          '.community-area, .table-brand, .seat__avatar-img, .pot-area, .pot-display, .seat__info, .seat__strength, .seat__action, .seat__bounty, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-mini-plate, .cch-column, .chat-collapsed'
+          '.community-area, .table-brand, .seat__avatar-img, .pot-area, .pot-display, .seat__info, .seat__strength, .seat__action, .seat__bounty, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-widget, .bbj-mini-plate, .cch-column, .chat-collapsed'
         )
       )
         .map(visibleBox)
@@ -92,63 +92,96 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
                 )
             )
           : protectedBoxes;
+        // The hand stands nearer its own player than any other (avatar
+        // centres), whenever any such spot exists.
+        const mineAt = seat?.querySelector('.seat__avatar-img')?.getBoundingClientRect();
+        const centres = Array.from(scaler.querySelectorAll('.seat:not(.seat--empty) .seat__avatar-img'))
+          .map((img) => img.getBoundingClientRect())
+          .filter((r) => r.width > 0 && r !== mineAt)
+          .map((r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 }));
+        const ownsIt = (candidate: CardBox) => {
+          if (!mineAt || !mineAt.width) return true;
+          const x = candidate.left + candidate.width / 2;
+          const y = candidate.top + candidate.height / 2;
+          const own = Math.hypot(x - (mineAt.left + mineAt.width / 2), y - (mineAt.top + mineAt.height / 2));
+          return centres.every(
+            (c) =>
+              Math.hypot(c.x - (mineAt.left + mineAt.width / 2), c.y - (mineAt.top + mineAt.height / 2)) < 1 ||
+              own < Math.hypot(x - c.x, y - c.y)
+          );
+        };
+        const place = (candidate: CardBox) =>
+          placeProtectedCardRow(candidate, others, bounds, 4, ownsIt) ??
+          placeProtectedCardRow(candidate, others, bounds);
         let natural = box;
-        let next = placeProtectedCardRow(box, others, bounds);
-        // A long tabled row (four to six cards) that cannot stay at its own
-        // player at full spacing closes up, a step at a time, before it is
-        // allowed to leave: every card keeps its size and its rank and suit
-        // corner, the row just overlaps more. Widths are computed from the
-        // spacing rather than measured, because the cards glide to a new
-        // spacing over 0.2s.
+        let next = place(box);
+        // A tabled row (two to six cards) that cannot stay at its own player
+        // at full spacing closes up, a step at a time, before it is allowed to
+        // leave: every card keeps the board's size and its rank and suit
+        // corner, the row just overlaps more. Only when no spacing is this
+        // player's does it drop to 85 percent of the board's size. Widths are
+        // computed rather than measured, because cards glide over 0.2s.
         const count = cards.length;
-        if (seat && count >= 4) {
-          const cardW = Math.max(...cards.map((card) => card.width));
-          const inline = parseFloat(row.style.getPropertyValue('--vh-step-f'));
-          if (!Number.isFinite(inline)) {
+        if (seat && count >= 2) {
+          // The spacing and card size this hand was drawn at, and the ones the
+          // stylesheet gives it, so a closed-up hand can be judged at full size.
+          const inlineStep = parseFloat(row.style.getPropertyValue('--vh-step-f'));
+          const inlineWidth = row.style.getPropertyValue('--vh-card-w');
+          const drawnW = Math.max(...cards.map((card) => card.width));
+          if (!Number.isFinite(inlineStep)) {
             row.dataset.baseStep = getComputedStyle(row).getPropertyValue('--vh-step-f').trim();
           }
+          if (!inlineWidth) row.dataset.baseCardW = String(drawnW / scale);
           const base = parseFloat(row.dataset.baseStep ?? '') || 0.5;
-          const current = Number.isFinite(inline) ? inline : base;
+          const fullW = (parseFloat(row.dataset.baseCardW ?? '') || drawnW / scale) * scale;
           const anchor = row.closest('.seat-wrapper--top')
             ? 'centre'
             : seat.classList.contains('seat--cards-right')
               ? 'right'
               : 'left';
-          const shown = box;
-          const at = (step: number): CardBox => {
+          // The row's own anchors: its bottom edge, and its outboard edge (or
+          // its centre on a top-cap chair).
+          const anchorX =
+            anchor === 'left' ? box.left : anchor === 'right' ? box.left + box.width : box.left + box.width / 2;
+          const bottom = box.top + box.height;
+          const heightPerW = box.height / drawnW;
+          const at = (step: number, size: number): CardBox => {
+            const cardW = fullW * size;
             const width = cardW * (1 + (count - 1) * step);
+            const height = cardW * heightPerW;
             const left =
-              anchor === 'left'
-                ? shown.left
-                : anchor === 'right'
-                  ? shown.left + shown.width - width
-                  : shown.left + (shown.width - width) / 2;
-            return { left, top: shown.top, width, height: shown.height };
+              anchor === 'left' ? anchorX : anchor === 'right' ? anchorX - width : anchorX - width / 2;
+            return { left, top: bottom - height, width, height };
           };
-          const far = (from: CardBox, to: CardBox | null) =>
-            !to || Math.hypot(to.left - from.left, to.top - from.top) > cardW * 1.5;
-          let chosen = base;
-          natural = at(base);
-          next = placeProtectedCardRow(natural, others, bounds);
-          for (const step of [0.4, 0.32]) {
-            if (!far(natural, next) || step >= base) break;
-            const tight = at(step);
-            const placed = placeProtectedCardRow(tight, others, bounds);
-            if (placed && (far(natural, next) || !far(tight, placed))) {
-              const better =
-                !next ||
-                Math.hypot(placed.left - tight.left, placed.top - tight.top) <
-                  Math.hypot(next.left - natural.left, next.top - natural.top);
-              if (better) {
-                chosen = step;
-                natural = tight;
-                next = placed;
-              }
-            }
+          const shifted = (from: CardBox, to: CardBox) =>
+            Math.hypot(to.left - from.left, to.top - from.top);
+          // Board size first, at its own spacing, then closing up, then (only
+          // when nothing else is this player's) 85 percent of the board's size.
+          const tries: Array<[number, number]> = [];
+          for (const size of [1, 0.85])
+            for (const step of [base, 0.6, 0.5, 0.4, 0.32, 0.27])
+              if (step <= base && !tries.some(([a, b]) => a === step && b === size))
+                tries.push([step, size]);
+          let pick: { step: number; size: number; from: CardBox; to: CardBox } | null = null;
+          for (const [step, size] of tries) {
+            const from = at(step, size);
+            const to = placeProtectedCardRow(from, others, bounds, 4, ownsIt);
+            if (!to) continue;
+            if (!pick || shifted(from, to) < shifted(pick.from, pick.to)) pick = { step, size, from, to };
+            if (shifted(from, to) <= fullW * size * 1.5) break;
           }
-          if (chosen !== current) {
-            if (chosen === base) row.style.removeProperty('--vh-step-f');
-            else row.style.setProperty('--vh-step-f', String(chosen));
+          if (!pick) {
+            const from = at(base, 1);
+            const to = placeProtectedCardRow(from, others, bounds);
+            if (to) pick = { step: base, size: 1, from, to };
+          }
+          if (pick) {
+            if (pick.step === base) row.style.removeProperty('--vh-step-f');
+            else row.style.setProperty('--vh-step-f', String(pick.step));
+            if (pick.size === 1) row.style.removeProperty('--vh-card-w');
+            else row.style.setProperty('--vh-card-w', `${(fullW * pick.size) / scale}px`);
+            natural = pick.from;
+            next = pick.to;
           }
         }
         if (next) {
@@ -169,7 +202,9 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         .querySelectorAll<HTMLElement>('.seat__cards:not(.seat__cards--revealed)')
         .forEach((cluster) => {
           cluster.style.removeProperty('--vh-step-f');
+          cluster.style.removeProperty('--vh-card-w');
           delete cluster.dataset.baseStep;
+          delete cluster.dataset.baseCardW;
         });
       const scale = scaler.getBoundingClientRect().width / scaler.offsetWidth || 1;
       topPods().forEach((pod) => {
@@ -212,6 +247,15 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
       };
       const phoneMarkers = window.innerWidth <= 480 && window.innerHeight > window.innerWidth;
       if (phoneMarkers) {
+        // Dan 2026-10-22: a tabled hand is the SAME SIZE AS THE BOARD's cards,
+        // overlapped but never covered. The board is drawn through the felt's
+        // perspective, so its painted card width is measured, not derived.
+        const boardCard = Array.from(
+          scaler.querySelectorAll('.community-cards__card:not(.community-cards__card--rabbit)')
+        )
+          .map((card) => card.getBoundingClientRect().width)
+          .find((width) => width > 0);
+        if (boardCard) scaler.style.setProperty('--sp-board-card-w', `${boardCard / scale}px`);
         placeRows(false);
         const canvas = scaler.getBoundingClientRect();
         const size = { w: canvas.width, h: canvas.height };

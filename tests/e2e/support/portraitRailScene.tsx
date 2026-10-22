@@ -217,7 +217,12 @@ export function Review() {
                           stack: 93.23,
                           status: 'active',
                           holeCards: i === 0 ? cards.slice(0, heroCards) : villainHand,
-                          showCards: i === 0 || revealed,
+                          showCards:
+                            i === 0 ||
+                            (revealed &&
+                              // A PLO6 showdown tables three opponents' hands, as an
+                              // all-in hand does, spread round the ring.
+                              (villainCards <= 2 || [1, Math.floor(n / 2), n - 1].includes(i))),
                           isHero: i === 0,
                         }}
                         position={i === 1 ? 'SB' : null}

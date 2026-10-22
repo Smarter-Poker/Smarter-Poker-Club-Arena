@@ -856,6 +856,14 @@ export default function ActionPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raiseIntentNonce]);
 
+  /* Dan 2026-10-22: "RAISING, WHEN YOU CAN'T RAISE AND CAN 'ONLY CALL' SHOULD
+     NEVER BE AN OPTION." A sizing slider left open when the wager stops being
+     legal (a short all-in that does not reopen the betting) closes. */
+  const noWager = !canRaise && !canAllIn;
+  useEffect(() => {
+    if (noWager && isRaiseMode) setIsRaiseMode(false);
+  }, [noWager, isRaiseMode]);
+
   useEffect(() => {
     if (isMyTurn && !prevTurnRef.current) {
       setTurnPulse(true);
@@ -1521,8 +1529,10 @@ export default function ActionPanel({
           </button>
         )}
 
-        {/* RAISE — Amber/Orange, Right */}
-        {canAllIn && !canRaise ? (
+        {/* RAISE — Amber/Orange, Right. Dan 2026-10-22: when no wager is
+            legal (a short all-in that did not reopen the betting, a capped
+            round) the bar is Fold and Call only - no disabled Raise. */}
+        {noWager ? null : canAllIn && !canRaise ? (
           <button
             className="action-btn action-btn--allin"
             onClick={handleAllIn}

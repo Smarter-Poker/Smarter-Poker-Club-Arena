@@ -126,6 +126,22 @@ export function portraitBoardWidthOfFeltPct(): number {
   const boardY = (FELT_WINDOW.top + FELT_WINDOW.height * 0.425) / 100;
   return (95 * (1 + PORTRAIT_TABLE_TAPER * boardY)) / (1 + PORTRAIT_TABLE_TAPER);
 }
+
+/**
+ * The width of one community card on the felt, in px (Dan 2026-10-22: a shown
+ * hand is "the same size as the board cards"). The same arithmetic the
+ * stylesheet uses for the board row: `.community-area` is 95% of the felt
+ * (the tapered share on a portrait phone), five cards share it with four gaps
+ * (2px on a phone, 4px to 1024px, 6px above - TablePage.css), and the felt is
+ * FELT_WINDOW.width of the scaler.
+ */
+export function boardCardWidthPx(scalerW: number, viewportW: number, portraitTaper: boolean): number {
+  if (!(scalerW > 0)) return 0;
+  const felt = (scalerW * FELT_WINDOW.width) / 100;
+  const rowPct = portraitTaper ? portraitBoardWidthOfFeltPct() : 95;
+  const gap = viewportW <= 480 ? 2 : viewportW <= 1024 ? 4 : 6;
+  return Math.max(0, Math.round((((felt * rowPct) / 100 - 4 * gap) / 5) * 10) / 10);
+}
 export function portraitTableTransform(size: Size): string {
   if (!(size.w > 0 && size.h > 0)) return 'none';
   const k = PORTRAIT_TABLE_TAPER;

@@ -189,17 +189,34 @@ describe('what a horse throws is what a person can throw', () => {
 });
 
 describe('sometimes, never every time', () => {
-  it.each(['lost', 'won', 'all_in'] as const)('%s rolls near its rate, and the same way twice', (moment) => {
-    let yes = 0;
-    for (let n = 1; n <= 5000; n++) {
-      const a = rollsGesture(moment, HORSE_A, TABLE, n);
-      expect(rollsGesture(moment, HORSE_A, TABLE, n)).toBe(a);
-      if (a) yes++;
+  it.each(['lost', 'won', 'all_in'] as const)(
+    '%s rolls the same way twice, near its rate across the fleet, and differently per horse',
+    (moment) => {
+      let yes = 0;
+      let n = 0;
+      const perHorse: number[] = [];
+      for (let h = 0; h < 200; h++) {
+        const horse = `horse-${h}`;
+        let mine = 0;
+        for (let hand = 1; hand <= 200; hand++) {
+          const a = rollsGesture(moment, horse, TABLE, hand);
+          expect(rollsGesture(moment, horse, TABLE, hand)).toBe(a);
+          if (a) {
+            yes++;
+            mine++;
+          }
+          n++;
+        }
+        perHorse.push(mine);
+      }
+      const pct = (yes / n) * 100;
+      expect(Math.abs(pct - GESTURE_CHANCE_PCT[moment])).toBeLessThan(
+        GESTURE_CHANCE_PCT[moment] * 0.3
+      );
+      expect(pct).toBeLessThan(50);
+      expect(Math.max(...perHorse)).toBeGreaterThan(2 * Math.min(...perHorse) + 1);
     }
-    const pct = (yes / 5000) * 100;
-    expect(Math.abs(pct - GESTURE_CHANCE_PCT[moment])).toBeLessThan(3);
-    expect(pct).toBeLessThan(50);
-  });
+  );
 
   it('an all-in gesture is not always the same form: chat, a throw and a reaction all occur', () => {
     const forms = new Set<string>();

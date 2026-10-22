@@ -480,7 +480,6 @@ import { resolveDisplayRake } from '../lib/rakeOverride';
 import { LeaderboardService } from '../services/LeaderboardService';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
 // REPLACE_ME from '../services/AchievementTriggerService';
-import { notificationService } from '../services/NotificationService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
@@ -10774,26 +10773,10 @@ function LiveTablePage({
         });
         showLobbyNow();
 
-        // Phase E: Route session end to Notifications tab for async review
-        if (userId && userId !== 'guest' && tableState.arenaAsset !== 'diamonds') {
-          const pl = sessionPLRef.current;
-          const plText = pl >= 0 ? `+${pl.toLocaleString()}` : pl.toLocaleString();
-          notificationService
-            .create({
-              userId,
-              type: 'system',
-              title: 'Session Complete',
-              message: `Session ended at ${tableState.tableName}. P/L: ${plText} chips over ${handsPlayedRef.current} hands.`,
-              metadata: {
-                tableId: tableId || '',
-                plChips: pl,
-                hands: handsPlayedRef.current,
-              },
-            })
-            .catch(() => {
-              /* non-critical — don't block leave flow */
-            });
-        }
+        // The client-side "Session Complete" notification that sat here is gone
+        // (2026-10-22). public.notifications admits INSERT from service_role only,
+        // so every leave from a chip table answered 42501 and filed
+        // NotificationService.Failed_to_create; no player ever received it.
       } else {
         // Non-success leave is expected when: player is mid-hand (leave_pending is set),
         // seat already cleared, or double-tap. Not a error reporting-worthy production bug.

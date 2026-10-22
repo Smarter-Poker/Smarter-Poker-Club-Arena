@@ -3971,13 +3971,20 @@ function ClubHomePageContent({
      embed passes clubIdOverride and must never rewrite its host URL. */
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
-    if (searchParams.get('invite') !== '1' || !club || !isOwner) return;
+    if (
+      clubIdOverride ||
+      searchParams.get('invite') !== '1' ||
+      !club ||
+      club.id !== clubId ||
+      !isOwner
+    )
+      return;
     setQuickStartInvite(true);
     setShowShareSheet(true);
     const next = new URLSearchParams(searchParams);
     next.delete('invite');
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, club, isOwner]);
+  }, [searchParams, setSearchParams, club, clubId, clubIdOverride, isOwner]);
 
   const urlSyncEnabled = !clubIdOverride;
   // Captured at first render, before the sync effect below can strip it.

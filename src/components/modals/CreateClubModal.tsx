@@ -352,7 +352,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
   useEffect(() => {
     const sequence = ++availabilitySequenceRef.current;
-    if (!isOpen || effectiveName.length < 3) {
+    if (!isOpen || !user?.id || effectiveName.length < 3) {
       setNameStatus('idle');
       return;
     }
@@ -369,7 +369,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       }
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [effectiveName, isOpen, isMounted]);
+  }, [effectiveName, isOpen, user?.id, isMounted]);
 
   useEffect(() => {
     if (!isOpen || !user?.id) return;

@@ -48,6 +48,7 @@ import {
   selectableWhileRunning,
   type TournamentBoardFacts,
   classifyAddOnBreakHold,
+  classifySynchronizedBreakHold,
 } from './support/tournamentBoardEnding';
 import { remainingInitialTableReadinessMs } from './support/initialTableReadiness';
 import {
@@ -1099,7 +1100,7 @@ async function certifyReadOnlyTournamentFormat(
               `${gameFormat.toUpperCase()} candidates became unavailable before qualification completed and no ` +
                 `further board could be observed: ${decision.reason}. Endings: ${JSON.stringify(endings)}. ` +
                 `Pre-HUD attrition: ${JSON.stringify(attritions)}. ` +
-                `Add-on break holds: ${JSON.stringify(holds)}`
+                `Break holds: ${JSON.stringify(holds)}`
             ),
             { cause: error }
           );
@@ -1730,7 +1731,7 @@ async function observeTournamentBoard(
       lastGameplayEventType,
     });
     /* Only a gameplay-silence failure on a board the database still shows
-       running can be an add-on break hold; every other failure keeps its
+       running can be an add-on or synchronized break hold; every other failure keeps its
        existing classification. */
     let addOnBreakHold: ReturnType<typeof classifyAddOnBreakHold> | null = null;
     const tournamentId = atFailure?.tournamentId ?? selected.boardFacts?.tournamentId ?? null;
@@ -1742,13 +1743,26 @@ async function observeTournamentBoard(
     ) {
       try {
         const window = await boardReader.addOnBreakWindow(tournamentId);
+        const observedAt = Date.now();
         addOnBreakHold = classifyAddOnBreakHold({
           addonPeriodEndsAt: window?.addonPeriodEndsAt,
           addonBreakMinutes: window?.addonBreakMinutes,
           silenceStartedAt: lastGameplayAt ?? Number.NaN,
-          observedAt: Date.now(),
+          observedAt,
           maxSilenceMs: MAX_GAMEPLAY_SILENCE_MS,
         });
+        // With the engine resetting once daily, the hourly synchronized
+        // tournament break is no longer masked by a platform freeze.
+        if (!addOnBreakHold.held) {
+          const synchronized = classifySynchronizedBreakHold({
+            breakStartedAt: window?.breakStartedAt,
+            breakEndsAt: window?.breakEndsAt,
+            silenceStartedAt: lastGameplayAt ?? Number.NaN,
+            observedAt,
+            maxSilenceMs: MAX_GAMEPLAY_SILENCE_MS,
+          });
+          if (synchronized.held) addOnBreakHold = synchronized;
+        }
       } catch {
         // An unreadable window cannot excuse a continuity failure.
         addOnBreakHold = null;

@@ -32,3 +32,14 @@ CLAUDE.md, AGENTS.md, AGENT-PLAYBOOK.md, PUBLISHING.md, AGENTS-PUSH-GUIDE.md,
 docs/HANDOFF_CURRENT_STATE.md and .env.example now state that the engine resets
 once a day at 04:00 America/Chicago, with no hourly engine reset or cash-game
 freeze. The 4 AM schedule itself is unchanged.
+
+## Follow-Up: Synchronized Tournament Break In The Live-Table Lane
+
+With the engine resetting once a day, the hourly platform freeze no longer
+masks the hourly synchronized tournament break at :55. Post-deploy run
+39694814807 failed the MTT live-table case at 45 s of silence because table
+0260b54a had parked for its tournament's 23:55Z break. The case now classifies
+a silence inside the persisted `break_started_at` / `break_ends_at` window as
+an authoritative hold (reselecting another board within the same deadline),
+with the same before-break and after-break silence limits as the add-on hold.
+Pinned by `tests/unit/synchronizedBreakHold.test.ts`.

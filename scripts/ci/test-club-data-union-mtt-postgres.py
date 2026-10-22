@@ -131,6 +131,28 @@ try:
     run(psql("live"), readers)
     p = run(psql("live"), (ROOT / "tests/fixtures/club-data-report-db/chicago-readers-scenario.sql").read_text())
     require("CHICAGO READERS SCENARIO PASSED" in p.stdout, "Club Data and Union Data read Chicago days and separate running MTTs, reconciled to the cent")
+
+    # 20261022134523 reads each thing once; every figure must be unchanged.
+    once = (M / "20261022134523_club_data_union_reads_count_once.sql").read_text()
+    probe = (
+        "SELECT set_config('test.uid','00000000-0000-0000-0000-0000000000a1',false);"
+        "SELECT jsonb_build_object("
+        "'w', public.fn_ca_rake_window_v2(public.fn_ca_club_data_clubs(u), a, b) - 'generated_at',"
+        "'wj', public.fn_ca_rake_window_v2(ARRAY['a0000000-0000-0000-0000-000000000001'::uuid], a, b),"
+        "'c', public.fn_ca_rake_by_club_v2(public.fn_ca_club_data_clubs(u), a, b, 50, 0, NULL, 'rake'),"
+        "'g', public.ca_club_game_page_core_20261006(u, a, b, 'ALL', 'ALL', NULL, 'fee', NULL, 200) - 'generated_at',"
+        "'gj', public.ca_club_game_page_core_20261006('a0000000-0000-0000-0000-000000000001', a, b, 'ALL', 'ALL', NULL, 'fee', NULL, 200) - 'generated_at',"
+        "'l', (SELECT jsonb_agg(to_jsonb(x) ORDER BY x.kind, x.id) FROM public.fn_ca_club_games(u, a, b, 'ALL', 'ALL', NULL) x),"
+        "'ls', (SELECT jsonb_agg(to_jsonb(x) ORDER BY x.kind, x.id) FROM public.fn_ca_club_games(u, a, b, 'ALL', 'ALL', 'c1') x),"
+        "'r', public.ca_club_data_snapshot_v2(u, a, b, 'ALL', 'ALL', NULL, 200) - 'generated_at'"
+        ")::text FROM (VALUES ('fade0000-0000-0000-0000-000000000001'::uuid)) v(u),"
+        " (VALUES (date '2026-10-19', date '2026-10-22'), (date '2026-10-20', date '2026-10-20'), (date '2026-10-21', date '2026-10-21')) d(a, b) ORDER BY a, b;"
+    )
+    before = q("live", probe)
+    run(psql("live"), "BEGIN; ALTER FUNCTION public.fn_ca_rake_window_v2(uuid[],date,date) SET work_mem='1MB';\n" + once[once.index("BEGIN;\n") + 7:], expect_fail="Club Data reader preimage changed: fn_ca_rake_window_v2")
+    run(psql("live"), once)
+    after = q("live", probe)
+    require(before == after and before.count('"fee"') > 0, "union reads counted once return exactly the figures they replaced")
     evidence=os.environ.get('CLUB_DATA_CONTRACT_EVIDENCE')
     if evidence:
         import re

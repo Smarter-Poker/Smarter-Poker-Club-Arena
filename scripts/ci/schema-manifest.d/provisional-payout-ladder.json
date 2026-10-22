@@ -1,0 +1,7 @@
+{
+  "_owner": "feat/cash-notice-engine-place-satellite-residual",
+  "_comment": "The provisional payout ladder follows the field during late registration (20261022020721).",
+  "tables": [],
+  "functions": ["fn_ca_provisional_payout_structure", "fn_ca_refresh_provisional_payout_structure", "trg_ca_refresh_provisional_payout_structure"],
+  "columns": {}
+}

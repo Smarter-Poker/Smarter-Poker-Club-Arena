@@ -2070,6 +2070,46 @@ export abstract class TournamentManagerBase {
    * Returns true only when the hand-off was requested. While another table
    * still has cards in the air the ordinary causal retry asks again.
    */
+  /**
+   * A STUCK TABLE HANDS THE EVENT TO A FRESH GENERATION (2026-10-22).
+   *
+   * Midweek Bounty ec53ac10, table 9ca9c3a8: the 02:48 UTC database stall
+   * (a migration looping on ACCESS EXCLUSIVE locks) killed the table with a
+   * prepared hand whose cancellation it never heard back about. The database
+   * did record the cancellation (permit never_started, cancellation row
+   * present), but this generation's recovery never replaced the stopped
+   * engine and never raised another error: eight players sat at a dead table
+   * for over half an hour while the other tables dealt and the level held.
+   *
+   * GameServer asks for this when one of this manager's tables has had no
+   * running dealer for several minutes. Every other table finishes the hand in
+   * front of its players and parks; then the event is handed to a successor
+   * generation, whose admission reads every table back from the database. It
+   * is the same hand-off an unproved hand already uses.
+   *
+   * Returns true only when the hand-off was requested. Until every other table
+   * is between hands, GameServer asks again on its next sweep.
+   */
+  requestSuccessorForStuckTable(tableId: string): boolean {
+    if (!this.tableEngines.has(tableId) && !this.tableAdmissionFailingSince.has(tableId))
+      return false;
+    const stuck = this.tableEngines.get(tableId);
+    if (stuck?.isRunning()) return false;
+    for (const other of this.tableEngines.values()) {
+      if (other !== stuck && other.isRunning())
+        other.pauseAfterHand(undefined, { untilResumed: true });
+    }
+    for (const other of this.tableEngines.values()) {
+      if (other === stuck || !other.isRunning()) continue;
+      if (!other.isBetweenHands()) return false;
+    }
+    console.info(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${tableId.slice(0, 8)} has had no dealer for too long - handing the event to a successor generation`
+    );
+    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
+    return true;
+  }
+
   private handUnprovedOriginalToSuccessorGeneration(engine: ServerTableEngine): boolean {
     if (
       !unprovedHandNeedsSuccessorGeneration({

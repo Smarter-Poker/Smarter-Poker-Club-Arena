@@ -22,6 +22,9 @@
 -- rows_filtered returned a byte-identical result for a closed 14-day window,
 -- and its read fell from 28.6 s to 1.3 s. No money, permission, owner or
 -- grant changes; CREATE OR REPLACE keeps every ACL.
+-- @live-proof: position('LEFT JOIN cash_players cp' IN pg_get_functiondef('public.fn_ca_club_game_rows_filtered(uuid,date,date,text,text,text,integer)'::regprocedure))>0
+-- @live-proof: position('LEFT JOIN cash_players cp' IN pg_get_functiondef('public.fn_ca_club_games_unsearched(uuid,date,date,text,text)'::regprocedure))>0
+-- @live-proof: position('LEFT JOIN cash_players cp' IN pg_get_functiondef('public.fn_ca_club_games_searched(uuid,date,date,text,text,text)'::regprocedure))>0
 BEGIN;
 SET LOCAL lock_timeout='3s';
 SET LOCAL statement_timeout='30s';

@@ -3839,6 +3839,11 @@ jobs:
         if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
+      # Azure's Ubuntu mirror exhausted this job's budget before tests began.
+      # Keep the signed Ubuntu archive and exact browser dependencies unchanged.
+      - name: Use Ubuntu primary HTTPS mirror for browser dependencies
+        run: sudo python3 scripts/ci/ubuntu-apt-mirror.py
+
       - name: Install Chromium and WebKit
         run: npx playwright install chromium webkit --with-deps
 

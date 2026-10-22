@@ -24,3 +24,10 @@ tournament fees were 20,483.45, totaling 63,860.86 to the cent. These are
 time-specific live observations, not a reconstruction of historical seat stacks.
 The screenshot's K abbreviations omit digits; exact amounts remain in the
 accessible names and title attributes. No money was changed by this fix.
+
+The required CSS browser job exhausted its 30-minute budget fetching Ubuntu
+packages from the hosted image's Azure mirror before any tests ran. That job
+now selects Ubuntu's primary HTTPS archive before the unchanged Chromium and
+WebKit installer. Fixture tests cover both APT source formats, unchanged signing
+keys and other repositories, idempotence, and refusal of absent sources. Browser
+versions, test assertions and job limits remain unchanged.

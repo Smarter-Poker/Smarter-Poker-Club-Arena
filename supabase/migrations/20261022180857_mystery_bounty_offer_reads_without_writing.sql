@@ -1,4 +1,4 @@
--- 20261022180735_mystery_bounty_offer_reads_without_writing.sql
+-- 20261022180857_mystery_bounty_offer_reads_without_writing.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

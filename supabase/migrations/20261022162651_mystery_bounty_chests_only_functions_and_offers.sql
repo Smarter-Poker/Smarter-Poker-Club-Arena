@@ -351,7 +351,7 @@ BEGIN
     -- Nobody picked before the reveal: the chest opened itself. The slot it
     -- stands in comes from the award's own random id, so every viewer sees the
     -- same order and reading the offer writes nothing. (As first applied this
-    -- drew a random slot and wrote it; 20261022180735 replaced that, and this
+    -- drew a random slot and wrote it; 20261022180857 replaced that (applied as 20261022180857), and this
     -- file states the body that is live so a rebuild matches production.)
     IF v_revealed AND v_pick IS NULL THEN
       v_pick := 1 + (get_byte(uuid_send(p_award_id), 15) % v_slots);

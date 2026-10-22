@@ -61,7 +61,7 @@ FULL CHIP AMOUNTS, NEVER FRACTIONS."
 - `fn_mystery_bounty_pick(award, slot)`: the designated revealer's choice,
   recorded once, before the reveal.
 - `fn_mystery_bounty_offer(award)`: before the reveal, only how many chests and
-  the pick; after it, every chest's amount (a random slot if nobody picked).
+  the pick; after it, every chest's amount (a slot from the award id if nobody picked).
 - The award's own chest is the prize in the picked slot. The chest order was
   shuffled with a CSPRNG when the inventory was sealed, so the prize is a
   uniformly random chest whichever slot is picked, the same odds as three
@@ -84,7 +84,9 @@ the small-field note.
 `20261022162733` (events on the board and schedules), `20261022170421` (half of
 the whole entry, whole-chip chests, the offer table's grants) and
 `20261022170611` (the seed reports the whole-chip pool it sealed) and `20261022173156` (states the
-grants of the two re-created definer functions). Proved in
+grants of the two re-created definer functions) and `20261022180857` (the offer
+read writes nothing; a chest that opened itself stands in a slot taken from the
+award id, the same for every viewer). Proved in
 rolled-back probes on production: a 27 + 3 entry is created with a 15 bounty,
 pool 100/0, at the money and the new description; a 1,000.37 pool cut at the
 cent by the serving engine is sealed as 500 + 500 and reported as 1,000.00; a

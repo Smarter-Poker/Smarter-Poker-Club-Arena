@@ -202,7 +202,7 @@ BEGIN
     SELECT m.through_at INTO v_through FROM public.ca_ledger_audit_marks m
      WHERE m.metric = 'chip_drift' AND m.from_at = v_from FOR UPDATE;
     IF NOT FOUND THEN
-      DELETE FROM public.ca_ledger_audit_member_net;
+      DELETE FROM public.ca_ledger_audit_member_net WHERE true;  -- a reset: the baseline moved, every remembered net is void
       INSERT INTO public.ca_ledger_audit_marks AS m (metric, from_at, through_at, legs, advanced_at)
       VALUES ('chip_drift', v_from, v_from, 0, now())
       ON CONFLICT (metric) DO UPDATE
@@ -244,7 +244,7 @@ BEGIN
     SELECT m.through_at INTO v_through FROM public.ca_ledger_audit_marks m
      WHERE m.metric = 'bbj_epoch' AND m.from_at = v_from FOR UPDATE;
     IF NOT FOUND THEN
-      DELETE FROM public.ca_ledger_audit_bbj_pool;
+      DELETE FROM public.ca_ledger_audit_bbj_pool WHERE true;  -- a reset: the epoch moved, every remembered pool total is void
       INSERT INTO public.ca_ledger_audit_marks AS m (metric, from_at, through_at, legs, advanced_at)
       VALUES ('bbj_epoch', v_from, v_from, 0, now())
       ON CONFLICT (metric) DO UPDATE

@@ -27,6 +27,9 @@ import { installPlayerSessionRevocationEvents } from './lib/sessionRevoked';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
+// Lazy: the message alerts host (tab title count, alerts ask) is not needed
+// for first paint. Live message pop-ups are the Messenger dock's.
+const MessageAlertsHost = lazyWithRetry(() => import('./components/common/MessageAlertsHost'));
 import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
@@ -689,6 +692,9 @@ function FullApp() {
             </Suspense>
           )}
           <GlobalWaitlistListener />
+          <Suspense fallback={null}>
+            <MessageAlertsHost />
+          </Suspense>
           <WaitlistBanner />
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false.
               2026-09-04 (disconnect audit item 7): NOT over a table. Dan: "all

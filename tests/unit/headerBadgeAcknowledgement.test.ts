@@ -78,7 +78,7 @@ describe('header unread badges are acknowledged by their destinations', () => {
     ]);
   });
 
-  it('zeros Messages immediately and persists every received message as read', async () => {
+  it('zeros Messages immediately without writing the retired legacy messages table', async () => {
     const store = await freshStore();
     store.setState({ unreadMessages: 7, _userId: USER });
 
@@ -87,23 +87,9 @@ describe('header unread badges are acknowledged by their destinations', () => {
     expect(localStorage.getItem('ca-msg-count')).toBe('0');
     await expect(pending).resolves.toBe(true);
 
-    expect(database.table).toBe('messages');
-    expect(database.update).toHaveBeenCalledWith({ is_read: true });
-    expect(database.filters).toEqual([
-      ['receiver_id', USER],
-      ['is_read', false],
-    ]);
-  });
-
-  it('restores the visible count and reports the failure when acknowledgement fails', async () => {
-    const store = await freshStore();
-    store.setState({ unreadMessages: 3, _userId: USER });
-    database.error = { code: '42501', message: 'permission denied' };
-
-    await expect(store.getState().clearUnreadMessages(USER)).resolves.toBe(false);
-
-    expect(store.getState().unreadMessages).toBe(3);
-    expect(localStorage.getItem('ca-msg-count')).toBe('3');
-    expect(reported.calls.at(-1)?.[1]).toBe('useHeaderDataStore.clear_unread_messages');
+    // The messenger marks each conversation read itself. The legacy
+    // `messages` table has no rows and must never be written again.
+    expect(database.table).not.toBe('messages');
+    expect(database.update).not.toHaveBeenCalled();
   });
 });

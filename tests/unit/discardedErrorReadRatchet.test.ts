@@ -145,7 +145,7 @@ const BASELINE = new Map<string, number>([
   // the dropped column it was reading, and its replacement binds the error.
   ['src/components/agent/AgentCommissionDashboard.tsx', 0],
   ['src/utils/settlementLock.ts', 2],
-  ['src/stores/useHeaderDataStore.ts', 2],
+  ['src/stores/useHeaderDataStore.ts', 1],
   ['src/services/WalletService.ts', 2],
   // TournamentTimerService now binds and reports both observer read errors.
   ['src/services/TournamentTimerService.ts', 0],

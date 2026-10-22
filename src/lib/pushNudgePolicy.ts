@@ -33,6 +33,7 @@ export const NUDGE_MOMENTS = [
   'club_joined',
   'rakeback_receipt',
   'invoice_workspace',
+  'message_received',
 ] as const;
 export type NudgeMoment = (typeof NUDGE_MOMENTS)[number];
 const RECEIPT_MOMENTS = new Set<string>(['rakeback_receipt', 'invoice_workspace']);

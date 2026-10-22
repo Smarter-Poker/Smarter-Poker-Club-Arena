@@ -190,6 +190,10 @@
 #     meter's 600 s timeout on 2026-10-14 rolled that night's ledger replay
 #     back with it. Nothing new runs: the meter ran nightly inside job 286
 #     before and runs nightly on its own now. The argument is in that header.
+# 2026-10-22: active unchanged at 137. union-integrity-sweep moves from :35 to
+# :33 (migration 20261022062934, the hourly audits stop holding the hot tables),
+# clear of ca-diamond-health-watch-hourly and ca-escrow-shadow-hourly at :35.
+# Its command is unchanged; no job added or removed.
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
 ca-bbj-threshold-notify-5m	*/5 * * * *
@@ -323,7 +327,7 @@ tourney_money_conservation_hourly	12 * * * *
 tourney_payout_sweep_detect_daily	40 2 * * *
 training_leaderboard_refresh_every_5m	*/5 * * * *
 ungated-money-rpc-check	15 4 * * *
-union-integrity-sweep	35 * * * *
+union-integrity-sweep	33 * * * *
 union-law-selftest	20 0 * * *
 union-rake-rollup-catchup	55 * * * *
 union-weekly-rakeback-close	*/5 * * * *

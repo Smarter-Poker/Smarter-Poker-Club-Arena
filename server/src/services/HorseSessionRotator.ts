@@ -122,6 +122,11 @@ export interface RotatorEngine {
   ): Promise<{ success: boolean; error?: string; queued?: boolean; applied?: number }>;
   /** V8: hand-boundary-safe sit-out/sit-back (folds deferred to hand end). */
   sitOut?(userId: string, sitOut: boolean): { success: boolean; error?: string };
+  /**
+   * True while a Sit Out the account's own authenticated client requested
+   * still stands. The rotator never sits such a seat back in (2026-10-22).
+   */
+  isClientSitOut?(userId: string): boolean;
 }
 
 export class HorseSessionRotator {
@@ -261,6 +266,21 @@ export class HorseSessionRotator {
    */
   private static isLeaving(seat: { leave_pending?: unknown }): boolean {
     return seat.leave_pending === true;
+  }
+
+  /**
+   * A Sit Out the account's own authenticated client requested stands until
+   * that client says I'm Back; no horse controller sits it back in. An engine
+   * whose answer throws is treated as "it stands": an automatic sit-back-in is
+   * never worth overriding a player's own pause.
+   */
+  private static clientSitOutStands(engine: RotatorEngine | undefined, userId: string): boolean {
+    if (typeof engine?.isClientSitOut !== 'function') return false;
+    try {
+      return engine.isClientSitOut(userId) !== false;
+    } catch {
+      return true;
+    }
   }
 
   constructor(private getEngine: (tableId: string) => RotatorEngine | undefined) {}
@@ -743,7 +763,11 @@ export class HorseSessionRotator {
       if (Date.now() < info.sitBackAt) continue;
       this.breaks.delete(key);
       try {
-        this.getEngine(info.tableId)?.sitOut?.(info.userId, false);
+        const breakEngine = this.getEngine(info.tableId);
+        /* The account's own client sat out during the break: the pause is the
+           player's now, and ending the break must not end it (2026-10-22). */
+        if (HorseSessionRotator.clientSitOutStands(breakEngine, info.userId)) continue;
+        breakEngine?.sitOut?.(info.userId, false);
       } catch (err) {
         reportError(err, 'HorseSessionRotator.sitBack');
       }
@@ -772,9 +796,18 @@ export class HorseSessionRotator {
         if (!userId || !horseIds.has(userId)) continue;
         const key = HorseSessionRotator.breakKey(tableId, userId);
         if (this.breaks.has(key) || this.sitBackRestoredKeys.has(key)) continue;
+        /* A SIT OUT THE PLAYER ASKED FOR IS NOT A FORGOTTEN BREAK (2026-10-22).
+           Lightning witness run 39771149895: horse account 009 sat out from
+           its own client at 11:32:00Z and this pass sat it back in at
+           11:33:11Z, so the matcher dealt it Lightning hands again and the
+           pause the player asked for was silently undone. A seat whose engine
+           holds a client-requested Sit Out is left alone, and is not marked as
+           handled: once the client says I'm Back it is an ordinary seat. */
+        const engine = this.getEngine(tableId);
+        if (HorseSessionRotator.clientSitOutStands(engine, userId)) continue;
         this.sitBackRestoredKeys.add(key);
         try {
-          const res = this.getEngine(tableId)?.sitOut?.(userId, false);
+          const res = engine?.sitOut?.(userId, false);
           if (res?.success) sitBackRestored++;
         } catch (err) {
           reportError(err, 'HorseSessionRotator.sitBackRestored');

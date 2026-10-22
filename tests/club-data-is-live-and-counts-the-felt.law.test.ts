@@ -125,7 +125,8 @@ describe('the everyday screen lists what was played, live first', () => {
     const b = latest('ca_club_data_screen');
     expect(b).toContain('fn_ca_club_data_scope(p_club_id)');
     expect(b).toContain('ORDER BY live DESC, activity_at DESC NULLS LAST');
-    expect(b).toContain('FROM public.ca_club_data_fact d');
+    // 20261022120121: the Chicago-day bucket of the same facts.
+    expect(b).toContain('FROM public.ca_club_data_fact_ct d');
     // the felt is still part of the result
     expect(b).toContain('COALESCE(gg.winnings, 0) + COALESCE(fe.felt, 0)');
   });

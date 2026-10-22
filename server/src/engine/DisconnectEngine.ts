@@ -71,6 +71,14 @@ export interface PlayerConnectionState {
    */
   sitOutReason?: 'voluntary' | 'forced' | null;
   /**
+   * 2026-10-22: the account's own authenticated client asked for this Sit Out
+   * (POST /sitout). A horse controller never sits such a seat back in: only
+   * the client's I'm Back (or the ordinary eviction) ends it. Cleared by
+   * sitBack(). Carried through the presence park and crash snapshot so a
+   * restart does not turn the player's pause into a "forgotten break".
+   */
+  sitOutByClient?: boolean;
+  /**
    * Dan 2026-08-23: BLIND CAP WHILE AWAY.
    * "You can't keep blinding out a player who has disconnected." An away
    * player at a CASH table may be charged at most one small blind and one
@@ -169,6 +177,8 @@ export interface DisconnectFsmEntry {
   sitOutSinceMs?: number | null;
   sitOutOrbits?: number;
   sitOutReason?: 'voluntary' | 'forced' | null;
+  /** The account's own client requested the current Sit Out (2026-10-22). */
+  sitOutByClient?: boolean;
   /** consecutiveTimeouts - the strikes toward a forced sit-out. */
   strikes?: number;
   awayBlindSbCharged?: boolean;
@@ -331,6 +341,7 @@ export class DisconnectEngine {
       isSittingOut: false,
       sitOutSince: null,
       sitOutOrbits: 0,
+      sitOutByClient: false,
       awayBlindSbCharged: false,
       awayBlindBbCharged: false,
       pageLeftAt: null,
@@ -1049,6 +1060,7 @@ export class DisconnectEngine {
     state.sitOutSince = null;
     state.sitOutOrbits = 0;
     state.sitOutReason = null;
+    state.sitOutByClient = false;
     // Sitting back in is a return to the game — the away-blind budget resets
     // with everything else. Without this, a player who went away, paid a
     // blind, sat out and sat back in would carry the charge into their next
@@ -1062,6 +1074,28 @@ export class DisconnectEngine {
       tableId,
       playerId,
     });
+  }
+
+  /**
+   * THE PLAYER'S OWN SIT OUT IS THE PLAYER'S TO END (2026-10-22).
+   *
+   * Recorded when the account's authenticated client asks to sit out, whether
+   * the sit-out applies now or is deferred to the hand end. Lightning pilot
+   * witness run 39771149895: horse account 009 sat out from its own client at
+   * 11:32:00Z and HorseSessionRotator, finding a sitting-out horse with no
+   * break in its memory, sat it back in at 11:33:11Z ("a restart forgot it"),
+   * so the matcher dealt it Lightning hands again. Only sitBack() clears this.
+   */
+  markClientSitOut(tableId: string, playerId: string): void {
+    const key = `${tableId}:${playerId}`;
+    if (!this.playerStates.has(key)) this.registerPlayer(tableId, playerId);
+    const state = this.playerStates.get(key);
+    if (state) state.sitOutByClient = true;
+  }
+
+  /** True while a Sit Out the player's own client requested still stands. */
+  isClientSitOut(tableId: string, playerId: string): boolean {
+    return this.playerStates.get(`${tableId}:${playerId}`)?.sitOutByClient === true;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1206,6 +1240,7 @@ export class DisconnectEngine {
       sitOutSinceMs: s.sitOutSince ?? null,
       sitOutOrbits: s.sitOutOrbits ?? 0,
       sitOutReason: s.sitOutReason ?? null,
+      sitOutByClient: s.sitOutByClient === true,
       strikes: s.consecutiveTimeouts,
       awayBlindSbCharged: s.awayBlindSbCharged === true,
       awayBlindBbCharged: s.awayBlindBbCharged === true,
@@ -1305,6 +1340,8 @@ export class DisconnectEngine {
         // them. A restart used to be a free reset of all four.
         consecutiveTimeouts: Number.isFinite(entry.strikes) ? (entry.strikes as number) : 0,
         sitOutReason: sittingOut ? (entry.sitOutReason ?? 'voluntary') : null,
+        // The player's own pause survives the restart as the player's own.
+        sitOutByClient: sittingOut && entry.sitOutByClient === true,
         isSittingOut: sittingOut,
         disconnectedAt: connected || sittingOut ? undefined : entry.sinceMs || Date.now(),
         // These five were omitted, and one of them mattered. Dan's rule is "a

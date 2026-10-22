@@ -1,11 +1,15 @@
 import importlib.util,json,tempfile,unittest,os,subprocess,sys
 from pathlib import Path
-import check_history
+import check_history,forward
 p=Path(__file__).with_name('verify.py');spec=importlib.util.spec_from_file_location('rebuild',p);v=importlib.util.module_from_spec(spec);spec.loader.exec_module(v)
 class Boundaries(unittest.TestCase):
  def test_current_snapshot_refuses_any_unexecuted_forward(self):
   inventory=json.loads((v.BASE/'source-history.json').read_text())
-  self.assertFalse(any(check_history.check(v.ROOT,'arena',inventory,[]).values()))
+  entries=json.loads((v.BASE/'forward-schema.json').read_text())['arena']
+  self.assertFalse(any(check_history.check(v.ROOT,'arena',inventory,entries).values()))
+  self.assertTrue(check_history.check(v.ROOT,'arena',inventory,[])['unadmittedNew'])
+  for altered in [entries+entries,[dict(entries[0],sha256='0'*64)],[dict(entries[0],state='unknown')]]:
+   with self.assertRaises(ValueError):forward.validate(v.ROOT,altered)
   with self.assertRaises(ValueError):check_history.check(v.ROOT,'arena',inventory,[{'path':'unreviewed.sql','sha256':'0'*64}])
  def test_event_triggers_restore_as_captured_owners(self):
   source=(v.BASE/'pokeriq-20261020.sql').read_text();reference=json.loads((v.BASE/'pokeriq-catalog-reference.json').read_text());contract=json.loads((v.BASE/'pokeriq-role-contract.json').read_text())

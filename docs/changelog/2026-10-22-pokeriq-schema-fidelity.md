@@ -1,3 +1,13 @@
 ## 2026-10-22: Faithful isolated PokerIQ schema reconstruction
 
 Refreshed the complete native schema and independent catalog from one read-only exported snapshot. Historical SQL remains immutable and is fingerprinted, with known source/ledger mismatches explicitly recorded; no financial history is replayed. Local fidelity repairs preserve extension shared ownership dependencies, provider schema ACLs, and inherited partition constraints. Native parser comparisons retain semantic checks with negative predicate/bound/view regressions. Focused PostgreSQL17 qualification passed; complete pinned Supabase image comparison remains required before merge. No production schema changes are delivered by this bootstrap.
+
+The real image subsequently isolated one omitted invalid index. A guarded local
+restore now preserves its exact invalid/ready metadata; the native regression
+proves the dump omission, missing-index failure and exact repair, with negative
+state/definition cases. Frozen source revision c149 includes seven already
+captured mystery-bounty migrations with explicit ledger discrepancies and one
+pending hourly-sweep schema input. Only the exact pending file is applied after
+baseline equality and checked against independently retained metadata; no
+business routine, historical data transformation or production DDL is executed.
+Full pinned-image acceptance remains pending for this candidate.

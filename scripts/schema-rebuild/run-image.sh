@@ -15,7 +15,7 @@ container=$(docker run -d --rm --network none --platform linux/amd64 \
   -v "$scratch:$scratch:rw" "$image" infinity)
 trap 'docker stop "$container" >/dev/null' EXIT
 export SCHEMA_REBUILD_CONTAINER="$container"
-for command in postgres initdb pg_ctl psql; do
+for command in postgres initdb pg_ctl psql pg_dump; do
   cat > "$tools/$command" <<'WRAPPER'
 #!/bin/sh
 exec docker exec -i "$SCHEMA_REBUILD_CONTAINER" "/usr/lib/postgresql/bin/$(basename "$0")" "$@"
@@ -25,6 +25,8 @@ done
 "$tools/postgres" --version
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-catalog.py"
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-fidelity.py"
+PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-forward-schema.py"
+PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-invalid-index.py"
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" SCHEMA_PROVIDER_TEST=1 python3 "$root/scripts/schema-rebuild/test-role-bootstrap.py"
 PG_BIN="$tools" SCHEMA_TEST_SCRATCH="$scratch" python3 "$root/scripts/schema-rebuild/test-lock-budget.py"
 python3 "$root/scripts/schema-rebuild/verify.py" --scratch "$scratch" \

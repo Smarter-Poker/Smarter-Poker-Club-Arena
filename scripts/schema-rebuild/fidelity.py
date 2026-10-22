@@ -92,3 +92,24 @@ def restore_inherited_primary_keys(sql,reference,actual):
    sql('BEGIN;ALTER TABLE '+parent+' DETACH PARTITION '+child+';ALTER TABLE '+child+' DROP CONSTRAINT '+q(constraint['name'])+';ALTER TABLE '+parent+' ATTACH PARTITION '+child+' '+relation['partition_bound']+';COMMIT;',phase='inherited-primary-key-restore',relation=relation['schema']+'.'+relation['name'])
    changed+=1
  return changed
+
+def restore_omitted_invalid_index(sql,reference,actual):
+ # Native pg_dump deliberately omits invalid indexes. Preserve this one
+ # captured planner-denied, write-maintained index only in the owned cluster.
+ name='idx_chip_tx_bbj_promo_sweep_amount';table='chip_transactions'
+ definition="CREATE INDEX idx_chip_tx_bbj_promo_sweep_amount ON public.chip_transactions USING btree (transaction_type) INCLUDE (amount) WHERE (transaction_type = 'bbj_promo_sweep'::text)"
+ relation=next(r for r in reference['relations'] if r['schema']=='public' and r['name']==table)
+ indexes=[i for i in relation['indexes'] if i['name']==name]
+ if len(indexes)!=1:raise ValueError('Captured invalid index contract is absent or ambiguous')
+ expected=dict(name=name,definition=definition,valid=False,ready=True,clustered=False,replica_identity=False,options=[],tablespace=None)
+ if indexes[0]!=expected or relation['owner']!='postgres' or relation['kind']!='r':raise ValueError('Unreviewed invalid index source descriptor')
+ target=next(r for r in actual['relations'] if r['schema']=='public' and r['name']==table)
+ existing=[i for i in target['indexes'] or [] if i['name']==name]
+ if existing:
+  if existing!=[expected]:raise ValueError('Existing invalid index descriptor differs')
+  return 0
+ if target['owner']!='postgres' or target['kind']!='r':raise ValueError('Invalid index target table differs')
+ if sql("SELECT to_regclass('public."+name+"') IS NULL;",phase='invalid-index-absence')!='t':raise ValueError('Invalid index name is already occupied')
+ descriptor="jsonb_build_object('name',ic.relname,'definition',pg_get_indexdef(i.indexrelid),'valid',i.indisvalid,'ready',i.indisready,'clustered',i.indisclustered,'replica_identity',i.indisreplident,'options',ARRAY(SELECT x FROM unnest(ic.reloptions) x ORDER BY x),'tablespace',CASE WHEN ic.reltablespace=0 THEN NULL ELSE (SELECT spcname FROM pg_tablespace WHERE oid=ic.reltablespace) END)"
+ sql("BEGIN;SET LOCAL ROLE postgres;"+definition+";RESET ROLE;DO $index_restore$ DECLARE v_oid oid;v_rows int;v_descriptor jsonb;BEGIN v_oid:='public."+name+"'::regclass;SELECT "+descriptor+" INTO v_descriptor FROM pg_index i JOIN pg_class ic ON ic.oid=i.indexrelid WHERE i.indexrelid=v_oid AND i.indrelid='public.chip_transactions'::regclass AND ic.relowner='postgres'::regrole;IF v_descriptor IS DISTINCT FROM "+lit(json.dumps(dict(expected,valid=True)))+"::jsonb OR EXISTS(SELECT FROM pg_constraint WHERE conindid=v_oid) THEN RAISE EXCEPTION 'invalid_index_restore_descriptor_changed';END IF;UPDATE pg_catalog.pg_index SET indisvalid=false WHERE indexrelid=v_oid AND indrelid='public.chip_transactions'::regclass AND indisvalid AND indisready AND indislive AND NOT(indisunique OR indisprimary OR indisexclusion);GET DIAGNOSTICS v_rows=ROW_COUNT;IF v_rows<>1 THEN RAISE EXCEPTION 'invalid_index_restore_state_changed';END IF;END $index_restore$;COMMIT;",phase='invalid-index-exact-restore',index=name)
+ return 1

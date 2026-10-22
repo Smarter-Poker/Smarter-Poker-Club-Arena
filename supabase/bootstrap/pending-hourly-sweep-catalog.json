@@ -1,0 +1,796 @@
+{
+  "sourceSHA256": "79dd6ab3923df1c5a85825c4153385a0a79b66235efdacdf61264784fe3da3d3",
+  "relations": [
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "kind": "r",
+      "name": "ca_ledger_audit_bbj_pool",
+      "view": null,
+      "owner": "postgres",
+      "rules": null,
+      "schema": "public",
+      "columns": [
+        {
+          "acl": [],
+          "name": "pool_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "options": [],
+          "storage": "p",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "seeded",
+          "type": "numeric",
+          "default": "0",
+          "notnull": true,
+          "options": [],
+          "storage": "m",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "burned",
+          "type": "numeric",
+          "default": "0",
+          "notnull": true,
+          "options": [],
+          "storage": "m",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "absorbed",
+          "type": "numeric",
+          "default": null,
+          "notnull": false,
+          "options": [],
+          "storage": "m",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "absorbed_to",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": false,
+          "options": [],
+          "storage": "p",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ca_ledger_audit_bbj_pool_pkey",
+          "ready": true,
+          "valid": true,
+          "options": [],
+          "clustered": false,
+          "definition": "CREATE UNIQUE INDEX ca_ledger_audit_bbj_pool_pkey ON public.ca_ledger_audit_bbj_pool USING btree (pool_id)",
+          "tablespace": null,
+          "replica_identity": false
+        }
+      ],
+      "options": [],
+      "parents": [],
+      "policies": null,
+      "triggers": null,
+      "force_rls": false,
+      "tablespace": null,
+      "constraints": [
+        {
+          "name": "ca_ledger_audit_bbj_pool_pkey",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (pool_id)",
+          "no_inherit": true
+        }
+      ],
+      "partitioned": false,
+      "persistence": "p",
+      "access_method": "heap",
+      "partition_key": null,
+      "partition_bound": null,
+      "replica_identity": "d"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "kind": "r",
+      "name": "ca_ledger_audit_marks",
+      "view": null,
+      "owner": "postgres",
+      "rules": null,
+      "schema": "public",
+      "columns": [
+        {
+          "acl": [],
+          "name": "metric",
+          "type": "text",
+          "default": null,
+          "notnull": true,
+          "options": [],
+          "storage": "x",
+          "identity": "",
+          "collation": "\"default\"",
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "from_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "options": [],
+          "storage": "p",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "through_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "notnull": true,
+          "options": [],
+          "storage": "p",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "to_total",
+          "type": "numeric",
+          "default": "0",
+          "notnull": true,
+          "options": [],
+          "storage": "m",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "from_total",
+          "type": "numeric",
+          "default": "0",
+          "notnull": true,
+          "options": [],
+          "storage": "m",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "legs",
+          "type": "bigint",
+          "default": "0",
+          "notnull": true,
+          "options": [],
+          "storage": "p",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "advanced_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "notnull": true,
+          "options": [],
+          "storage": "p",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ca_ledger_audit_marks_pkey",
+          "ready": true,
+          "valid": true,
+          "options": [],
+          "clustered": false,
+          "definition": "CREATE UNIQUE INDEX ca_ledger_audit_marks_pkey ON public.ca_ledger_audit_marks USING btree (metric)",
+          "tablespace": null,
+          "replica_identity": false
+        }
+      ],
+      "options": [],
+      "parents": [],
+      "policies": null,
+      "triggers": null,
+      "force_rls": false,
+      "tablespace": null,
+      "constraints": [
+        {
+          "name": "ca_ledger_audit_marks_check",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((through_at >= from_at))",
+          "no_inherit": false
+        },
+        {
+          "name": "ca_ledger_audit_marks_metric_check",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "CHECK ((metric = ANY (ARRAY['chip_drift'::text, 'bbj_epoch'::text])))",
+          "no_inherit": false
+        },
+        {
+          "name": "ca_ledger_audit_marks_pkey",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (metric)",
+          "no_inherit": true
+        }
+      ],
+      "partitioned": false,
+      "persistence": "p",
+      "access_method": "heap",
+      "partition_key": null,
+      "partition_bound": null,
+      "replica_identity": "d"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "DELETE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "INSERT"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "MAINTAIN"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "REFERENCES"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "SELECT"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRIGGER"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "TRUNCATE"
+        },
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "UPDATE"
+        }
+      ],
+      "rls": true,
+      "kind": "r",
+      "name": "ca_ledger_audit_member_net",
+      "view": null,
+      "owner": "postgres",
+      "rules": null,
+      "schema": "public",
+      "columns": [
+        {
+          "acl": [],
+          "name": "club_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "options": [],
+          "storage": "p",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "notnull": true,
+          "options": [],
+          "storage": "p",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        },
+        {
+          "acl": [],
+          "name": "net",
+          "type": "numeric",
+          "default": null,
+          "notnull": true,
+          "options": [],
+          "storage": "m",
+          "identity": "",
+          "collation": null,
+          "generated": "",
+          "statistics": null,
+          "compression": ""
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ca_ledger_audit_member_net_pkey",
+          "ready": true,
+          "valid": true,
+          "options": [],
+          "clustered": false,
+          "definition": "CREATE UNIQUE INDEX ca_ledger_audit_member_net_pkey ON public.ca_ledger_audit_member_net USING btree (club_id, user_id)",
+          "tablespace": null,
+          "replica_identity": false
+        }
+      ],
+      "options": [],
+      "parents": [],
+      "policies": null,
+      "triggers": null,
+      "force_rls": false,
+      "tablespace": null,
+      "constraints": [
+        {
+          "name": "ca_ledger_audit_member_net_pkey",
+          "deferred": false,
+          "validated": true,
+          "deferrable": false,
+          "definition": "PRIMARY KEY (club_id, user_id)",
+          "no_inherit": true
+        }
+      ],
+      "partitioned": false,
+      "persistence": "p",
+      "access_method": "heap",
+      "partition_key": null,
+      "partition_bound": null,
+      "replica_identity": "d"
+    }
+  ],
+  "indexes": [
+    {
+      "name": "idx_ca_bbj_pool_snapshots_baseline",
+      "ready": true,
+      "valid": true,
+      "options": [],
+      "clustered": false,
+      "definition": "CREATE INDEX idx_ca_bbj_pool_snapshots_baseline ON public.ca_bbj_pool_snapshots USING btree (pool_id, taken_at) INCLUDE (main, backup, promo) WHERE is_baseline",
+      "tablespace": null,
+      "replica_identity": false
+    },
+    {
+      "name": "idx_tournament_escrow_overlay_in",
+      "ready": true,
+      "valid": true,
+      "options": [],
+      "clustered": false,
+      "definition": "CREATE INDEX idx_tournament_escrow_overlay_in ON public.tournament_escrow USING btree (tournament_id) INCLUDE (overlay_in) WHERE ((overlay_in > (0)::numeric) AND (overlay_in < 'Infinity'::numeric))",
+      "tablespace": null,
+      "replica_identity": false
+    },
+    {
+      "name": "idx_wallet_tx_credit_user_created_amount",
+      "ready": true,
+      "valid": true,
+      "options": [],
+      "clustered": false,
+      "definition": "CREATE INDEX idx_wallet_tx_credit_user_created_amount ON public.wallet_transactions USING btree (user_id, created_at) INCLUDE (amount) WHERE (type = 'credit'::text)",
+      "tablespace": null,
+      "replica_identity": false
+    }
+  ],
+  "routines": [
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_bbj_conservation_check",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "jsonb",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public", "plan_cache_mode=force_custom_plan"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "s",
+      "definition_md5": "45166a61fd8b0f36a4bed1127b075e83"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_ca_conservation_sweep",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "jsonb",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "v",
+      "definition_md5": "a063974f039c9ace7dc5df907a8707c2"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_ca_ledger_audit_checkpoint_advance",
+      "rows": 0,
+      "owner": "postgres",
+      "result": "jsonb",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "v",
+      "definition_md5": "dbb5a1efc418461bfd190e5fdeb204e4"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "p_days integer",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_ca_payout_rows_without_money",
+      "rows": 1000,
+      "owner": "postgres",
+      "result": "TABLE(tournament_id uuid, tournament_name text, player_id uuid, finish_position integer, source text, amount numeric, paid_at timestamp with time zone, idempotency_key text)",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp", "plan_cache_mode=force_custom_plan"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "s",
+      "definition_md5": "aaf8602574698907a0ebd89ea082906c"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_chip_drift_since_baseline",
+      "rows": 1000,
+      "owner": "postgres",
+      "result": "TABLE(club_id uuid, user_id uuid, opening_balance numeric, movements_since numeric, expected numeric, actual numeric, drift numeric)",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "sql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "s",
+      "definition_md5": "9b9a4a9408b962c740e8e9a4e0dec027"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_chip_integrity_report",
+      "rows": 1000,
+      "owner": "postgres",
+      "result": "TABLE(check_name text, severity text, detail text)",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public, pg_temp"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "s",
+      "definition_md5": "18569efca33ebf543b5b588bd389e43c"
+    },
+    {
+      "acl": [
+        {
+          "grantee": "postgres",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        },
+        {
+          "grantee": "service_role",
+          "grantor": "postgres",
+          "grantable": false,
+          "privilege": "EXECUTE"
+        }
+      ],
+      "args": "p_hours integer",
+      "cost": 100,
+      "kind": "f",
+      "name": "fn_tournament_prize_disbursement_audit",
+      "rows": 1000,
+      "owner": "postgres",
+      "result": "TABLE(tournament_id uuid, name text, variant text, prize_pool numeric, disbursed numeric, acknowledged numeric, excess numeric, ended_at timestamp with time zone)",
+      "schema": "public",
+      "strict": false,
+      "definer": true,
+      "support": null,
+      "language": "plpgsql",
+      "parallel": "u",
+      "settings": ["search_path=public", "plan_cache_mode=force_custom_plan"],
+      "aggregate": null,
+      "leakproof": false,
+      "volatility": "s",
+      "definition_md5": "1ccdd0662ff19849977048c9b643ef34"
+    }
+  ],
+  "comments": [
+    {
+      "object": "table public.ca_ledger_audit_bbj_pool",
+      "comment": "Per BBJ pool opened after the epoch: journalled seeds (into the pool, not a contribution) and burns (out of the pool, not a payout or promo) over the bbj_epoch range of ca_ledger_audit_marks, and the legs its opening absorbed (epoch, absorbed_to], once absorbed_to (the opening) is older than the range, as fn_bbj_conservation_check counts them. Migration 20261022162545."
+    },
+    {
+      "object": "table public.ca_ledger_audit_marks",
+      "comment": "How far the hourly conservation sweep has summed chip_ledger. chip_drift: player wallet legs with from_at <= created_at < through_at, per member in ca_ledger_audit_member_net (from_at = min(ca_chip_baseline.taken_at)). bbj_epoch: BBJ pool legs with from_at < created_at < through_at, to_total/from_total over every pool and per later pool in ca_ledger_audit_bbj_pool (from_at = the BBJ epoch). Written only by fn_ca_ledger_audit_checkpoint_advance. Migration 20261022162545."
+    },
+    {
+      "object": "table public.ca_ledger_audit_member_net",
+      "comment": "Each member's net player_wallet movement over the chip_drift range of ca_ledger_audit_marks (both sides of every leg, as fn_chip_drift_since_baseline counts them). Migration 20261022162545."
+    }
+  ]
+}

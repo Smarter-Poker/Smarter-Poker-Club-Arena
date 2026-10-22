@@ -1395,5 +1395,60 @@
         "topLevelBusinessWritesReplayed": false
       }
     ]
+  },
+  "frozenMysterySevenReconciliation": {
+    "revision": "c149fd531d5f84e6a391dff5043061e255aa21c8",
+    "files": [
+      {
+        "path": "supabase/migrations/20261022162651_mystery_bounty_chests_only_functions_and_offers.sql",
+        "sourceMD5": "b019380de5e81cb89a98dfa862043e95",
+        "ledgerMD5": "381b38b67421c8a6de411a66edc070bb",
+        "sameSnapshotLedgerHash": true,
+        "classification": "substantive historical offer selection+ACL difference; final offer superseded by180857 captured deterministic readonly; captured table owner-only ACL"
+      },
+      {
+        "path": "supabase/migrations/20261022162714_mystery_bounty_chests_only_triggers.sql",
+        "sourceMD5": "21176da613efad7afab7c0674f3cae64",
+        "ledgerMD5": "533a73ac39c102e8d7078fc099638fb8",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022162733_mystery_bounty_chests_only_board_and_schedules.sql",
+        "sourceMD5": "4565c0f0b406978f0d299504e37054eb",
+        "ledgerMD5": "b9d32dced71784b2dabbd66d0d19ace1",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022170421_mystery_bounty_half_of_the_whole_entry_in_whole_chip_chests.sql",
+        "sourceMD5": "60e5c657892aab76465c7c84f86c93b3",
+        "ledgerMD5": "083cfae535e1e4962c0b7986361a7bb5",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022170611_mystery_bounty_seed_reports_the_whole_chip_pool_it_sealed.sql",
+        "sourceMD5": "54b2758e8814b2c4d38fb369e9645339",
+        "ledgerMD5": "c5e1dd4a742bbe9abc6aee2185074555",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022173156_mystery_bounty_definer_grants_restated.sql",
+        "sourceMD5": "8294015f9910a3a29d39cbad37f0261c",
+        "ledgerMD5": "5027b7a24b83c25a1f9ccec32125d58d",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      },
+      {
+        "path": "supabase/migrations/20261022180857_mystery_bounty_offer_reads_without_writing.sql",
+        "sourceMD5": "4979058250b8d48b883f1358ca049474",
+        "ledgerMD5": "e9511ccd7f85c8c73c3b89a6295a876b",
+        "sameSnapshotLedgerHash": true,
+        "classification": "comments/blank-lines only"
+      }
+    ],
+    "scope": "All7 same-snapshot ledger records proven;6comments-only, first historical offer/ACL differs but final180857 readonly deterministic postimage and owner-onlytableACL captured. No replay or installation-byte identity claim."
   }
 }

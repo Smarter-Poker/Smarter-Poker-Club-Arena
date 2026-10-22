@@ -1,4 +1,10 @@
 {
-  "hub": [],
-  "arena": []
+  "arena": [
+    {
+      "path": "supabase/migrations/20261022162545_the_hourly_sweep_reads_each_ledger_leg_once.sql",
+      "sha256": "79dd6ab3923df1c5a85825c4153385a0a79b66235efdacdf61264784fe3da3d3",
+      "state": "pending-at-capture"
+    }
+  ],
+  "hub": []
 }

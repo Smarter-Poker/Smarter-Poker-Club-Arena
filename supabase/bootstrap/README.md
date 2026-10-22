@@ -32,8 +32,16 @@ installed byte-for-byte. `historical-ledger-reconciliation.json` preserves the
 known source/ledger differences and descriptive aliases. The independently
 captured native schema is the authoritative current-snapshot reconstruction.
 Historical financial transformations and trigger-registry rows are not replayed.
-The former two pending schema migrations are now installed; no forward SQL is
-admitted or executed by this baseline.
+The former two pending schema migrations are now installed. Exactly one new
+pending input, `20261022162545`, is admitted by its fixed path and SHA256. After
+independent baseline catalog equality, the runner executes its unchanged SQL as
+`postgres`, preserving the concurrent-index preamble outside its original
+transaction. It never calls the created business routines. An independently
+retained native metadata fixture specifies three new tables, three explicit
+indexes, seven routine postimages and three comments; every other catalog field,
+role capability and membership must remain equal. No other forward SQL is
+admitted. The seven installed mystery-bounty source/ledger discrepancies are
+recorded separately and never replayed.
 
 Native PostgreSQL parses independently captured and restored CHECK, trigger, and
 view definitions before comparison, preserving all other metadata. Regression
@@ -43,3 +51,10 @@ export and atomically restores three extension owners together with their shared
 OWNER dependencies. Supported partition detach/reattach DDL restores inherited
 primary-key flags changed by native dump round trips. Full catalog comparison
 still checks every captured field; these repairs never run against production.
+
+Native `pg_dump` omits one captured invalid index on `chip_transactions`. The
+isolated restore recreates that exact nonunique definition, checks its owner,
+table, descriptor and unconstrained ready state, then atomically preserves
+`indisvalid=false`. It remains unavailable to the planner, as captured. Negative
+fixtures reject changed definitions, readiness and unique constraint indexes.
+This preserves observed metadata; it does not repair a production index.

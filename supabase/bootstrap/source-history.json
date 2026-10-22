@@ -6596,7 +6596,7 @@
       ]
     },
     "arena": {
-      "revision": "3900433d0b90cc9bfa0f87f4f040108a737f5c91",
+      "revision": "c149fd531d5f84e6a391dff5043061e255aa21c8",
       "files": [
         {
           "path": "supabase/migrations/001_club_arena_schema.sql",
@@ -29879,10 +29879,41 @@
           "sha256": "4ce1b56c022601b434406994f06e369e527fe758e10cca04d9c999158cf2d509"
         },
         {
+          "path": "supabase/migrations/20261022162651_mystery_bounty_chests_only_functions_and_offers.sql",
+          "sha256": "4ce80c2b4eb7f2386990b3df84623d8f44e7b0998f16bd036314267f4fe160ce"
+        },
+        {
+          "path": "supabase/migrations/20261022162714_mystery_bounty_chests_only_triggers.sql",
+          "sha256": "7b539c72b751193c119c3bad512e9541f672a06b7c141e37bffc7d710f518a88"
+        },
+        {
+          "path": "supabase/migrations/20261022162733_mystery_bounty_chests_only_board_and_schedules.sql",
+          "sha256": "99f7f6118212c158879af942ff835196a71ae16cee8e737418e75931af3d6536"
+        },
+        {
+          "path": "supabase/migrations/20261022170421_mystery_bounty_half_of_the_whole_entry_in_whole_chip_chests.sql",
+          "sha256": "67b91f75e77e452297054aba1422de73b61b082bd922e167627e2956706a8a18"
+        },
+        {
+          "path": "supabase/migrations/20261022170611_mystery_bounty_seed_reports_the_whole_chip_pool_it_sealed.sql",
+          "sha256": "7b97203cec2af3a84d8c7af1cc8754cd6ed295dfc8e17a5fd98db6262938f4b5"
+        },
+        {
           "path": "supabase/migrations/20261022172522_a_bust_backlog_pages_within_four_minutes.sql",
           "sha256": "c8d2fd1a24ae20141356dd7042fe3ebd4494d8ab9bfe816f3c600623de1a3863"
+        },
+        {
+          "path": "supabase/migrations/20261022173156_mystery_bounty_definer_grants_restated.sql",
+          "sha256": "fe45d6b3278daaa9be6eecd6a6bb8021248cc0edd86a08df908f15d5fb3fc7d3"
+        },
+        {
+          "path": "supabase/migrations/20261022180857_mystery_bounty_offer_reads_without_writing.sql",
+          "sha256": "df767ffa36b48b936171ef1ebad2edc67d3b7c89b24c93f97bde57ed94cc0178"
         }
       ]
     }
-  }
+  },
+  "pendingSourceExcludedFromHistoricalInventory": [
+    "supabase/migrations/20261022162545_the_hourly_sweep_reads_each_ledger_leg_once.sql"
+  ]
 }

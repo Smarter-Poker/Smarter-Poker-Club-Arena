@@ -4,7 +4,7 @@ No URL/credential input or existing database target is supported.
 """
 import argparse,hashlib,json,os,re,shutil,subprocess,sys,tempfile
 from pathlib import Path
-import fidelity
+import fidelity,forward
 ROOT=Path(__file__).resolve().parents[2]
 BASE=ROOT/'supabase/bootstrap'
 class Refused(RuntimeError):pass
@@ -216,6 +216,8 @@ def main():
   if {json.dumps(x,sort_keys=True) for x in actualmembers}!={json.dumps(x,sort_keys=True) for x in contract['memberships']}:raise Refused('Source role membership comparison differs')
   fidelity.restore_provider_metadata(sql,expected)
   catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()));
+  invalid_restored=fidelity.restore_omitted_invalid_index(sql,expected,catalog)
+  if invalid_restored:catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()))
   inherited_restored=fidelity.restore_inherited_primary_keys(sql,expected,catalog)
   if inherited_restored:catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()))
   semantic_expected,semantic_actual,expressions_parsed=fidelity.normalize_expressions(sql,expected,catalog)
@@ -225,7 +227,25 @@ def main():
   if differences:
    output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',phase='baseline-catalog-comparison',differences=differences))+'\n')
    raise Refused('Independent source catalog comparison differs before pending schema application: '+json.dumps(differences))
-  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'pendingSchemaInputsApplied':[],'nativeExpressionsParsed':expressions_parsed,'inheritedPrimaryKeysRestored':inherited_restored,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
+  # One exact reviewed pending DDL file follows baseline fidelity; none of its
+  # business routines is invoked. Original concurrent-index preamble remains
+  # outside its original BEGIN/COMMIT transaction, byte-for-byte.
+  pending=forward.validate(ROOT,json.loads((BASE/'forward-schema.json').read_text())['arena'])
+  proposed=forward.expected_catalog(expected,forward.load_delta(BASE))
+  for entry in pending:
+   run(cmd+['-c','SET ROLE postgres;','-f',ROOT/entry['path'],'-c','RESET ROLE;'],limit=300,phase='pending-schema-restore',context={'sourceFile':entry['path']})
+  finalroles=json.loads(sql(rolequery))
+  for role in finalroles:role['config']=sorted(role.get('config') or [])
+  if sorted(finalroles,key=lambda x:x['name'])!=sorted(expectedroles,key=lambda x:x['name']):raise Refused('Pending DDL changed source role capabilities/configuration')
+  finalmembers=json.loads(sql("SELECT coalesce(jsonb_agg(jsonb_build_object('role',pg_get_userbyid(roleid),'member',pg_get_userbyid(member),'grantor',pg_get_userbyid(grantor),'admin',admin_option,'inherit',inherit_option,'set',set_option)),'[]'::jsonb) FROM pg_auth_members;"))
+  if {json.dumps(x,sort_keys=True) for x in finalmembers}!={json.dumps(x,sort_keys=True) for x in contract['memberships']}:raise Refused('Pending DDL changed source role memberships')
+  catalog=json.loads(sql((ROOT/'scripts/schema-rebuild/catalog.sql').read_text()))
+  semantic_expected,semantic_actual,parsed=fidelity.normalize_expressions(sql,proposed,catalog);expressions_parsed+=parsed
+  differences=compare(semantic_expected,semantic_actual)
+  if differences:
+   output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',phase='pending-catalog-comparison',differences=differences))+'\n')
+   raise Refused('Independent pending schema catalog comparison differs: '+json.dumps(differences))
+  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'pendingSchemaInputsApplied':pending,'independentBaselineCatalogPassed':True,'nativeExpressionsParsed':expressions_parsed,'inheritedPrimaryKeysRestored':inherited_restored,'omittedInvalidIndexesRestored':invalid_restored,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
   output.write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt))
   if differences:raise Refused('Independent source catalog comparison differs')
  finally:

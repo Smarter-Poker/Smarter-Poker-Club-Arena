@@ -7,7 +7,7 @@ import {
 } from './lightning-pilot-selected-pool.mjs';
 const pin = { poolSessionId: '10000000-0000-4000-8000-000000000001' };
 const left = () => 1000;
-function fixture({ matches = 1, visible = true, selected = false } = {}) {
+function fixture({ matches = 1, visible = true, selected = false, touch = true } = {}) {
   const calls = [];
   const tab = {
     waitFor: async ({ state, timeout }) => {
@@ -19,7 +19,12 @@ function fixture({ matches = 1, visible = true, selected = false } = {}) {
     count: async () => matches,
     isVisible: async () => visible,
     tap: async () => {
+      if (!touch) throw Error('hasTouch must be enabled on the browser context');
       calls.push('tap');
+      selected = true;
+    },
+    click: async () => {
+      calls.push('click');
       selected = true;
     },
     getAttribute: async (name) => {
@@ -44,7 +49,7 @@ function fixture({ matches = 1, visible = true, selected = false } = {}) {
 test('one normal selection waits for the exact visible pool and verifies selection', async () => {
   const f = fixture(),
     progress = {};
-  await selectPoolTab(f.page, pin, left, progress);
+  await selectPoolTab(f.page, pin, left, progress, { input: 'tap' });
   await clickSelectedPoolControl(f.page, pin, f.control, left);
   assert.deepEqual(f.calls, ['wait', 'tap', 'action']);
   assert.equal(progress.selected, true);
@@ -68,4 +73,21 @@ test('malformed pool identity refuses before touching UI', async () => {
   };
   await assert.rejects(selectPoolTab(page, {}, left, {}), /Explicit Pool/);
   await assert.rejects(assertSelectedPoolTab(page, {}, left), /Explicit Pool/);
+});
+
+test('non-touch witnesses select with the ordinary click; only an explicit touch context taps', async () => {
+  const f = fixture({ touch: false }),
+    progress = {};
+  await selectPoolTab(f.page, pin, left, progress);
+  assert.equal(progress.input, 'click');
+  assert.equal(progress.selected, true);
+  await clickSelectedPoolControl(f.page, pin, f.control, left);
+  assert.deepEqual(f.calls, ['wait', 'click', 'action']);
+  // A tap in a non-touch context is refused by the browser, never silently passed.
+  const g = fixture({ touch: false });
+  await assert.rejects(selectPoolTab(g.page, pin, left, {}, { input: 'tap' }));
+  await assert.rejects(
+    selectPoolTab(g.page, pin, left, {}, { input: 'press' }),
+    /Pool Tab Input Unknown/
+  );
 });

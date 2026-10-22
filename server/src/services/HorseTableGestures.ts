@@ -53,6 +53,7 @@ import { humanBeat, humanBeatMs } from './horsePacing.js';
 import { personalPool, personalThrowChance } from './horseVoiceStyle.js';
 import type { SeatedPlayer, TableInfo } from '../types.js';
 import {
+  hasAudience,
   speakAsTheyShove,
   tableRefusal,
   talkSeatsFrom,
@@ -315,6 +316,7 @@ export type GestureOutcome =
   | 'reacted'
   | 'spoken'
   | 'no_gesture'
+  | 'no_audience'
   | 'gate_closed'
   | 'limited'
   | 'refused'
@@ -365,6 +367,9 @@ export const gestureAfterHand = bindToProcessRoot(
   async (input: TableTalkInput | null): Promise<GestureOutcome> => {
     if (!input) return 'no_gesture';
     try {
+      // A throw is an animation with no history: with nobody watching it is
+      // only writes. Measured 2026-10-22: 1,470 horse throws in one hour.
+      if (!hasAudience(input.table.tableId)) return 'no_audience';
       const pick = detectAfterHand(input);
       if (!pick) return 'no_gesture';
       const now = Date.now();
@@ -401,6 +406,7 @@ export const gestureBeforeAllIn = bindToProcessRoot(
     if (!input) return 'no_gesture';
     try {
       const { table, horse, handNumber } = input;
+      if (!hasAudience(table.tableId)) return 'no_audience';
       if (!rollsGesture('all_in', horse.userId, table.tableId, handNumber)) return 'no_gesture';
       const now = Date.now();
       const form = allInForm(horse.userId, handNumber, tableRefusal(table) === null);

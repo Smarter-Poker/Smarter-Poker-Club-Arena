@@ -84,6 +84,7 @@ import {
   type AllInGestureInput,
 } from './HorseTableGestures.js';
 import { _resetTableTalkGateForTests } from './HorseTableTalkGate.js';
+import { _setAudienceForTests } from './HorseTableTalk.js';
 import { _setHumanPacingForTests } from './horsePacing.js';
 import type { TableTalkInput, TalkSeat, TalkTable } from './HorseTableTalk.js';
 import type { SeatedPlayer, TableInfo } from '../types.js';
@@ -147,6 +148,7 @@ beforeEach(() => {
   _resetGesturesForTests();
   _resetTableTalkGateForTests();
   _setHumanPacingForTests(false);
+  _setAudienceForTests(() => true);
   h.state.rpcCalls = [];
   h.state.sends = [];
   h.state.removed = 0;
@@ -157,6 +159,7 @@ beforeEach(() => {
 
 afterEach(() => {
   _setHumanPacingForTests(true);
+  _setAudienceForTests(null);
 });
 
 describe('what a horse throws is what a person can throw', () => {
@@ -354,5 +357,14 @@ describe('before an all in', () => {
     const body = h.state.sends[0].payload.payload as { message: string; throwId: string };
     expect(body.message).toBe('[THROW:horseshoe:4]');
     expect(body.throwId).toBe(h.state.rpcCalls[0].args.p_request_id);
+  });
+});
+
+describe('nobody watching', () => {
+  it('throws nothing and charges nothing at a table nobody has open', async () => {
+    _setAudienceForTests(() => false);
+    expect(await gestureAfterHand(lostHand(handThatRolls('lost')))).toBe('no_audience');
+    expect(h.state.rpcCalls).toHaveLength(0);
+    expect(h.state.sends).toHaveLength(0);
   });
 });

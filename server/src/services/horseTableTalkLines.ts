@@ -48,7 +48,9 @@ export type TalkEvent =
   | 'arrival'
   | 'pot_lost'
   | 'pot_won'
-  | 'all_in';
+  | 'all_in'
+  | 'tilt'
+  | 'heater';
 export type TalkVoice = 'quiet' | 'needler' | 'friendly';
 
 export const TALK_EVENTS: readonly TalkEvent[] = [
@@ -59,6 +61,8 @@ export const TALK_EVENTS: readonly TalkEvent[] = [
   'pot_lost',
   'pot_won',
   'all_in',
+  'tilt',
+  'heater',
 ];
 export const TALK_VOICES: readonly TalkVoice[] = ['quiet', 'needler', 'friendly'];
 
@@ -141,9 +145,8 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'that was a reach',
         'enjoy it while it lasts',
         'ok i see how it is',
-        'rigged lol',
         'you play like that every hand?',
-        'the deck loves you',
+        'deck must love you',
         'bold call',
         'cant believe that got there',
       ],
@@ -247,6 +250,48 @@ export const LINES: Record<TalkEvent, Record<TalkVoice, TalkPool>> = {
         'gl sir',
         'fingers crossed',
         'no regrets',
+      ],
+    },
+  },
+  // Event H: the horse lost again, three showdowns or more in a row at this table.
+  tilt: {
+    quiet: {
+      lines: ['again', 'cant hit anything', 'card dead for an hour', 'this is getting old', 'ok im tilted', 'not again'],
+    },
+    needler: {
+      lines: [
+        'every hand, every single hand',
+        'unreal, again',
+        'you guys are on a heater',
+        'third time now',
+        'cant make this up',
+        'ok this is getting silly',
+      ],
+    },
+    friendly: {
+      lines: [
+        'rough stretch for me',
+        'cant catch a break tonight',
+        'one of those nights',
+        'deck is cold over here',
+        'ill turn it around',
+        'gg again, wow',
+      ],
+    },
+  },
+  // Event I: the horse won again, three pots or more in a row at this table.
+  heater: {
+    quiet: { lines: ['running good', 'ill take it again', 'cards coming', 'nice run', 'again'] },
+    needler: {
+      lines: ['cant stop wont stop', 'whos next', 'on a heater', 'keep em coming', 'too hot right now'],
+    },
+    friendly: {
+      lines: [
+        'running lucky tonight',
+        'sorry guys, cards are hitting',
+        'cant miss right now',
+        'thanks again all',
+        'ill cool off eventually',
       ],
     },
   },

@@ -74,6 +74,11 @@ export interface HandStateHeader {
   hand_number: number;
   /** The dealer seat to publish when the hand state carries none. */
   dealerSeatFallback: number;
+  /**
+   * The seats this hand posted its blinds from, when the dealer knows them.
+   * Anchors the position badges on a dead-button hand (positionLabelsFor).
+   */
+  blindSeats?: PostedBlindSeats | null;
   hand_variant: string;
   /** Bomb pot, kill pot and ante snapshot fields, spread in that order. */
   boardExtras: Record<string, unknown>;
@@ -110,20 +115,67 @@ export interface ResyncHandStateContext extends HandStateHeader {
   reveal: HandRevealContext;
 }
 
+/** The seats a hand posted its blinds from (HandController.getBlindSeatsSnapshot). */
+export interface PostedBlindSeats {
+  /** The seat that posted the small blind, or null when it is DEAD. */
+  smallBlind: number | null;
+  /** The seat that posted the big blind. */
+  bigBlind: number;
+}
+
+/** Bible V8 Appendix B names for the seats between the big blind and the button, by count. */
+const MIDDLE_POSITION_NAMES: Record<number, string[]> = {
+  1: ['UTG'],
+  2: ['UTG', 'CO'],
+  3: ['UTG', 'MP', 'CO'],
+  4: ['UTG', 'UTG+1', 'MP', 'CO'],
+  5: ['UTG', 'UTG+1', 'MP', 'MP+1', 'CO'],
+  6: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'HJ', 'CO'],
+  7: ['UTG', 'UTG+1', 'UTG+2', 'MP', 'MP+1', 'HJ', 'CO'],
+};
+
+function middleNames(count: number): string[] {
+  if (MIDDLE_POSITION_NAMES[count]) return MIDDLE_POSITION_NAMES[count];
+  // Wider than any named table: UTG, UTG+1 ... then MP, HJ, CO.
+  const out = ['UTG'];
+  for (let i = 1; i < count - 3; i++) out.push(`UTG+${i}`);
+  return [...out, 'MP', 'HJ', 'CO'].slice(0, count);
+}
+
 /**
  * Seat position labels for the felt: BTN, SB, BB, then the named positions.
  * Moved verbatim from ServerTableEngineBase.getPositionLabels, which delegates here.
+ *
+ * THE DEAD BUTTON (Dan, 2026-10-21, screenshots of hand #43306703): under the
+ * tournament dead-button rule (TDA Rule 30, deadButton.ts) the button can sit
+ * on an EMPTY seat. The old code could not find that seat among the players
+ * and fell back to "the lowest seat is the button", which shifted every badge
+ * at the table: seat 9 posted the small blind and wore CO, seat 1 posted the
+ * big blind and wore BTN, and the two players who were not blinds wore SB and
+ * BB. A badge is a statement about who pays what; it must be anchored on the
+ * seats that actually posted. So when the button seat is empty the labels
+ * come from the posted blinds (`blindSeats`, the hand's own record), or, when
+ * those are not known, from the same walk the hand uses (small blind = next
+ * occupied seat clockwise of the button, big blind = the one after). No seat
+ * is labelled BTN on a dead-button hand, and the seats between the big blind
+ * and the small blind take the middle names, the last of them CO.
  */
-export function positionLabelsFor(dealerSeat: number, players: SeatPlayer[]): Map<number, string> {
+export function positionLabelsFor(
+  dealerSeat: number,
+  players: SeatPlayer[],
+  blindSeats?: PostedBlindSeats | null
+): Map<number, string> {
   const labels = new Map<number, string>();
-  const seats = players.map((p) => p.seat).sort((a, b) => a - b);
+  const seats = [...new Set(players.map((p) => p.seat))].sort((a, b) => a - b);
   const n = seats.length;
   if (n === 0) return labels;
 
-  // Find dealer seat index in sorted seats
   let dealerIdx = seats.indexOf(dealerSeat);
+  if (dealerIdx === -1 && n >= 3) {
+    return deadButtonPositionLabels(dealerSeat, seats, blindSeats);
+  }
   if (dealerIdx === -1) {
-    // Dealer seat not found in active players — use first seat
+    // One or two seats and no dealer among them: use first seat
     dealerIdx = 0;
   }
 
@@ -159,6 +211,46 @@ export function positionLabelsFor(dealerSeat: number, players: SeatPlayer[]): Ma
       labels.set(seats[(dealerIdx + 3 + i) % n], names[i]);
     }
   }
+  return labels;
+}
+
+/** Labels for a hand whose button sits on an empty seat. `seats` is sorted, three or more. */
+function deadButtonPositionLabels(
+  dealerSeat: number,
+  seats: number[],
+  blindSeats: PostedBlindSeats | null | undefined
+): Map<number, string> {
+  const labels = new Map<number, string>();
+  const n = seats.length;
+  const nextAfter = (seat: number): number => seats.find((s) => s > seat) ?? seats[0];
+
+  let sb: number | null;
+  let bb: number;
+  if (blindSeats && seats.includes(blindSeats.bigBlind)) {
+    bb = blindSeats.bigBlind;
+    sb =
+      blindSeats.smallBlind !== null && seats.includes(blindSeats.smallBlind)
+        ? blindSeats.smallBlind
+        : null;
+  } else {
+    sb = nextAfter(dealerSeat);
+    bb = nextAfter(sb);
+  }
+
+  if (sb !== null) labels.set(sb, 'SB');
+  labels.set(bb, 'BB');
+
+  // Everyone from the seat after the big blind round to the seat before the
+  // small blind (or before the big blind when the small blind is dead).
+  const middle: number[] = [];
+  const bbIdx = seats.indexOf(bb);
+  for (let i = 1; i < n; i++) {
+    const seat = seats[(bbIdx + i) % n];
+    if (seat === sb) break;
+    middle.push(seat);
+  }
+  const names = middleNames(middle.length);
+  middle.forEach((seat, i) => labels.set(seat, names[i] ?? 'UTG'));
   return labels;
 }
 
@@ -235,7 +327,8 @@ export function projectLiveHandState(
     players: (() => {
       const positionLabels = positionLabelsFor(
         state.dealerSeat ?? ctx.dealerSeatFallback,
-        state.players ?? []
+        state.players ?? [],
+        ctx.blindSeats ?? null
       );
       const reveal = ctx.reveal;
       return (state.players ?? []).map((p) => {
@@ -321,7 +414,8 @@ export function projectResyncHandState(
     players: (() => {
       const positionLabels = positionLabelsFor(
         state.dealerSeat ?? ctx.dealerSeatFallback,
-        state.players ?? []
+        state.players ?? [],
+        ctx.blindSeats ?? null
       );
       const reveal = ctx.reveal;
       return (state.players ?? []).map((p) => {

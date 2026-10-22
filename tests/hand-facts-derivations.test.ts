@@ -208,10 +208,15 @@ describe('derivePosition — from the button, not from action order', () => {
     expect(derivePosition(2, 5, seats)).toBe('BB');
   });
 
-  it('falls back to the next occupied seat when the button seat was not dealt in', () => {
-    // Button on seat 3, but seat 3 is empty this hand.
-    const pos = derivePosition(4, 3, [1, 4, 6]);
-    expect(pos).toBe('BTN');
+  it('a dead button keeps its empty seat in the order: the next seat is the small blind', () => {
+    // Button on seat 3, but seat 3 is empty this hand (TDA Rule 30 dead button).
+    // Seat 4 posts the small blind and seat 6 the big blind; seat 1 is the last
+    // to act before the blinds. Calling seat 4 the button (the old fallback)
+    // recorded the small blind as BTN and shifted every position by one
+    // (Dan, 2026-10-21, hand #43306703).
+    expect(derivePosition(4, 3, [1, 4, 6])).toBe('SB');
+    expect(derivePosition(6, 3, [1, 4, 6])).toBe('BB');
+    expect(derivePosition(1, 3, [1, 4, 6])).toBe('CO');
   });
 
   it('never returns a duplicate position at any table size from 2 to 9', () => {

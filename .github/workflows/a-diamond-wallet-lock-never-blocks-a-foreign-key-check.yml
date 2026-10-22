@@ -12,7 +12,7 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - supabase/migrations/20261021234940_a_diamond_wallet_lock_never_blocks_a_foreign_key_check.sql
+      - supabase/migrations/20261022000330_a_diamond_wallet_lock_never_blocks_a_foreign_key_check.sql
       - scripts/ci/fixtures/diamond-wallet-locks/**
       - scripts/ci/test-a-diamond-wallet-lock-never-blocks-a-foreign-key-check.py
       - .github/workflows/a-diamond-wallet-lock-never-blocks-a-foreign-key-check.yml

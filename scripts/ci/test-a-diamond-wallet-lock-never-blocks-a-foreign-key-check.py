@@ -36,7 +36,7 @@ import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-MIGRATION = ROOT / 'supabase/migrations/20261021234940_a_diamond_wallet_lock_never_blocks_a_foreign_key_check.sql'
+MIGRATION = ROOT / 'supabase/migrations/20261022000330_a_diamond_wallet_lock_never_blocks_a_foreign_key_check.sql'
 FX = ROOT / 'scripts/ci/fixtures/diamond-wallet-locks'
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--output', type=pathlib.Path,

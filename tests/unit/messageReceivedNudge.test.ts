@@ -13,8 +13,8 @@ describe('a received message asks the player to turn on alerts', () => {
     );
   });
 
-  it('the live message pop-up raises the moment for every new message', () => {
-    expect(read('src/components/common/NewMessagePopup.tsx')).toMatch(
+  it('the message alerts host raises the moment for every new message', () => {
+    expect(read('src/components/common/MessageAlertsHost.tsx')).toMatch(
       /requestPushNudge\('message_received'\)/
     );
   });

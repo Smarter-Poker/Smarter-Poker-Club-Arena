@@ -164,7 +164,7 @@ export function Review() {
                   return (
                     <div
                       key={i}
-                      className={`seat-wrapper${i === 0 ? ' seat-wrapper--hero' : ''}${p.y < 20 ? ' seat-wrapper--top' : ''}`}
+                      className={`seat-wrapper${i === 0 ? ' seat-wrapper--hero' : ''}${p.y < 20 ? ' seat-wrapper--top seat-wrapper--cap' : ''}`}
                       style={
                         {
                           left: `${p.x}%`,

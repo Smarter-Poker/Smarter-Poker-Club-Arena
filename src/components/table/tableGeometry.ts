@@ -424,20 +424,61 @@ export function fitSeatToViewport(
   if (minX > maxX) return seat;
   // Side pods belong in the screen's outboard lanes, independently of the
   // narrower art. Top caps retain their own rail positions.
+  //
+  // Dan 2026-10-21: "SPREAD THE PLAYERS OUT SO THEY ARE SPREAD AROUND THE
+  // TABLE EQUALLY AND NOT ON TOP OF EACH OTHER." Top diagonal caps used to be
+  // pushed out to x 15/85, which on a phone is the same column the side pods
+  // occupy, so a top player's plate and tag landed on the high side player's
+  // tag and bounty. They now keep their ring x (27/73 on 7-9 max), which puts
+  // them over the top of the rail, clear of both side columns.
   const portraitPhone = viewportWidthPx <= 480 && canvas.h > canvas.w;
+  // A top cap also stays inboard of the side column, which on a phone is a
+  // pod pinned to the screen edge: its far edge is at 2 + pod.w px, and the
+  // cap keeps 4px of air beyond it (only binds on the narrowest phones).
+  const capClearX = ((2 + pod.w + 4 + pod.w / 2 - canvasLeftPx) / canvas.w) * 100;
   const targetX =
-    portraitPhone && seat.x !== 50 && seat.y < 20
+    portraitPhone && seat.y >= 20 && seat.y < 100
       ? seat.x < 50
-        ? 15
-        : 85
-      : portraitPhone && seat.y >= 20 && seat.y < 100
+        ? minX
+        : maxX
+      : portraitPhone && seat.y < 20 && seat.x !== 50 && canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX
         ? seat.x < 50
-          ? minX
-          : maxX
-        : seat.x;
+          ? 15
+          : 85
+        : portraitPhone && seat.y < 20 && seat.x !== 50
+          ? seat.x < 50
+            ? Math.min(50, Math.max(seat.x, capClearX))
+            : Math.max(50, Math.min(seat.x, 100 - capClearX))
+          : seat.x;
   const x = Math.max(minX, Math.min(maxX, targetX));
-  return x === seat.x ? seat : { ...seat, x };
+  // Dan 2026-10-21, same report: on a phone the side column is a stack of
+  // whole pods (tag, avatar, plate), and the lower side chair sat 24.5 points
+  // above the bottom corner but 33 below the upper side chair, so on a short
+  // phone the corner player's tag landed on the lower side player's plate.
+  // On a phone the side pods live in the screen's outboard lanes, clear of the
+  // board, so the board's band does not bind there and the chair can move up
+  // to even the column.
+  const y =
+    portraitPhone &&
+    canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
+    seat.x !== 50 &&
+    seat.y > 50 &&
+    seat.y < 70
+      ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
+      : seat.y;
+  return x === seat.x && y === seat.y ? seat : { ...seat, x, y };
 }
+
+/** How far a phone lifts the lower side chair to even its column (points of
+ * the scaler's height). See `fitSeatToViewport`. */
+export const PORTRAIT_LOW_SIDE_SEAT_LIFT = 4;
+
+/** The smallest phone felts (an iPhone SE table is about 262 x 324px) need
+ * every wager slot the original layout gives them: nine bets only fit around
+ * the outer lanes there. Below these sizes the top caps keep the outboard
+ * 15/85 lanes and the lower side chair is not lifted. */
+export const INBOARD_TOP_CAP_MIN_CANVAS_PX = 290;
+export const LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX = 400;
 
 /**
  * Clear felt between a chip's edge and its own pod, as a percentage of the

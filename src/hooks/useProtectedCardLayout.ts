@@ -1,9 +1,14 @@
 import { useLayoutEffect, type RefObject } from 'react';
 import { placeProtectedCardRow, type CardBox } from '../lib/protectedCardPlacement';
-import { assignProtectedWagers, wagerBoxesOverlap } from '../lib/protectedWagerPlacement';
+import {
+  assignProtectedWagers,
+  greedyProtectedWagers,
+  wagerBoxesOverlap,
+} from '../lib/protectedWagerPlacement';
 import {
   FELT_WINDOW,
   projectPortraitTable,
+  unprojectPortraitTable,
   chipRadiusWidthPct,
 } from '../components/table/tableGeometry';
 
@@ -81,7 +86,32 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             depth,
           });
         };
-        for (const extra of [0, 10, 20]) {
+        /* Dan 2026-10-21: "MAKE SURE WHEN CHIPS ARE PUT IN THE POT THEY ARE
+           ACTUALLY ON THE TABLE, AND NOT ON THE RAIL ... THEY NEED TO BE
+           FARTHER IN." The bands are CENTRES, and a wager is a disc with its
+           amount printed beside it (plus the ALL IN puck when the player is
+           all in), so a centre a few pixels inside the felt still printed half
+           the stack on the rail. Candidates now walk further in, and one is
+           only eligible when the WHOLE wager box is on the painted felt with
+           daylight to spare (see `wagerOnFelt`). */
+        const feltMarginPx = Math.max(8, canvas.width * 0.025);
+        const wagerOnFelt = (box: CardBox): boolean =>
+          [
+            [box.left, box.top],
+            [box.left + box.width, box.top],
+            [box.left, box.top + box.height],
+            [box.left + box.width, box.top + box.height],
+          ].every(([x, y]) => {
+            const flat = unprojectPortraitTable({
+              x: ((x - canvas.left) / canvas.width) * 100,
+              y: ((y - canvas.top) / canvas.height) * 100,
+            });
+            const px = (flat.x * canvas.width) / 100;
+            const py = (flat.y * canvas.height) / 100;
+            const spineY = Math.min(Math.max(py, upper), lower);
+            return Math.hypot(px - cx, py - spineY) <= radius + inset - feltMarginPx;
+          });
+        for (const extra of [0, 10, 20, 28, 36, 44, 52, 64, 76, 88, 100]) {
           depth = extra;
           const band = radius - extra;
           for (let angle = 0; angle < 360; angle += 2) {
@@ -98,7 +128,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         }
         const obstacles = Array.from(
           page.querySelectorAll(
-            '.community-area, .table-brand, .pot-display, .pot-display__pile, .seat__avatar-img, .seat__info, .seat__action, .seat__position-badge, .dealer-button, .seat__cards--hero .seat__card, .bbj-widget, .bbj-mini-plate'
+            '.community-area, .table-brand, .pot-display, .pot-display__pile, .seat__avatar-img, .seat__info, .seat__action, .seat__bounty, .seat__position-badge, .dealer-button, .seat__cards--hero .seat__card, .bbj-widget, .bbj-mini-plate'
           )
         )
           .map(visibleBox)
@@ -111,37 +141,62 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             ?.getBoundingClientRect();
           if (!box || !owner) return [];
           const desired = { x: owner.left + owner.width / 2, y: owner.top + owner.height / 2 };
-          const candidates = points
-            .map((point) => ({
-              left: point.x - box.width / 2,
-              top: point.y - box.height / 2,
-              width: box.width,
-              height: box.height,
-              depth: point.depth,
-            }))
-            .filter(
-              (candidate) => !obstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
-            )
-            .sort(
-              (a, b) =>
-                Math.hypot(a.left + a.width / 2 - desired.x, a.top + a.height / 2 - desired.y) +
-                2 * a.depth -
-                (Math.hypot(b.left + b.width / 2 - desired.x, b.top + b.height / 2 - desired.y) +
-                  2 * b.depth)
-            );
-          const distinct: CardBox[] = [];
-          for (const candidate of candidates) {
-            if (
-              distinct.every(
-                (other) => Math.hypot(candidate.left - other.left, candidate.top - other.top) >= 4
+          const placed = points.map((point) => ({
+            left: point.x - box.width / 2,
+            top: point.y - box.height / 2,
+            width: box.width,
+            height: box.height,
+            depth: point.depth,
+          }));
+          const clearOfTable = placed.filter(
+            (candidate) => !obstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
+          );
+          // Wholly on the felt whenever every wager fits there together. On a
+          // small, crowded phone they may not, and then the nearest spots that
+          // still clear every player, the board, the pot and each other are
+          // used, rail band included, rather than leaving a wager on a player.
+          const byCost = (a: (typeof clearOfTable)[number], b: (typeof clearOfTable)[number]) =>
+            Math.hypot(a.left + a.width / 2 - desired.x, a.top + a.height / 2 - desired.y) +
+            2 * a.depth -
+            (Math.hypot(b.left + b.width / 2 - desired.x, b.top + b.height / 2 - desired.y) +
+              2 * b.depth);
+          const distinct = (list: typeof clearOfTable, cap: number): CardBox[] => {
+            const kept: CardBox[] = [];
+            for (const candidate of list) {
+              if (
+                kept.every(
+                  (other) => Math.hypot(candidate.left - other.left, candidate.top - other.top) >= 4
+                )
               )
-            )
-              distinct.push(candidate);
-            if (distinct.length >= 96) break;
-          }
-          return [{ bet, box, candidates: distinct }];
+                kept.push(candidate);
+              if (kept.length >= cap) break;
+            }
+            return kept;
+          };
+          const nearest = [...clearOfTable].sort(byCost);
+          return [
+            {
+              bet,
+              box,
+              felt: distinct(nearest.filter(wagerOnFelt), 96),
+              // Exactly the rail-band slots this placer has always offered.
+              candidates: distinct(
+                nearest.filter((candidate) => candidate.depth <= 20),
+                96
+              ),
+              wide: distinct(nearest, 160),
+            },
+          ];
         });
-        const placements = assignProtectedWagers(entries.map((entry) => entry.candidates));
+        // Every wager on the felt at once when the table allows it. A crowded
+        // short phone (three players all in on one side) can leave no joint
+        // solution; then each wager still takes its own best clear spot in
+        // turn, instead of every wager staying wherever it first landed.
+        const placements =
+          assignProtectedWagers(entries.map((entry) => entry.felt)) ??
+          assignProtectedWagers(entries.map((entry) => entry.candidates)) ??
+          assignProtectedWagers(entries.map((entry) => entry.wide)) ??
+          greedyProtectedWagers(entries.map((entry) => entry.wide));
         for (let i = 0; i < entries.length; i++) {
           const { bet, box } = entries[i];
           const next = placements?.[i];
@@ -165,7 +220,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
       }
       const protectedBoxes = Array.from(
         page.querySelectorAll(
-          '.community-area, .table-brand, .seat__avatar-img, .dealer-button, .pot-area, .pot-display, .seat__info, .seat__bet-chips, .seat__strength, .seat__action, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-mini-plate, .cch-column, .chat-collapsed'
+          '.community-area, .table-brand, .seat__avatar-img, .dealer-button, .pot-area, .pot-display, .seat__info, .seat__bet-chips, .seat__strength, .seat__action, .seat__bounty, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-mini-plate, .cch-column, .chat-collapsed'
         )
       )
         .map(visibleBox)

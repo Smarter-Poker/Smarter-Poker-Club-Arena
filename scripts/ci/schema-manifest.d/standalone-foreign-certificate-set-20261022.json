@@ -1,0 +1,9 @@
+{
+  "_owner": "standalone-foreign-certificate-set-20261022",
+  "_comment": "Promised by 20261022025039, installed after merge through the apply-merged-migration installer; not yet observed in production when written. Owner postgres, SECURITY INVOKER, search_path public, EXECUTE revoked from PUBLIC/anon/authenticated and granted to service_role.",
+  "tables": [],
+  "functions": [
+    "fn_standalone_foreign_certificate_periods"
+  ],
+  "columns": {}
+}

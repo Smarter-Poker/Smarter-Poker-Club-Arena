@@ -213,7 +213,7 @@ export interface GameWaitersRead {
 export async function loadGameWaitersByTable(
   tables: readonly GameWaitTable[],
   alreadyServed: ReadonlySet<string>,
-  opts: { label: string; shouldContinue?: () => boolean; nowMs?: number }
+  opts: { source: string; shouldContinue?: () => boolean; nowMs?: number }
 ): Promise<GameWaitersRead> {
   const closed: GameWaitersRead = { complete: false, byTable: new Map() };
   const page = await fetchAllRows<GameWaitRow & Record<string, unknown>>(
@@ -227,7 +227,11 @@ export async function loadGameWaitersByTable(
       if (cursor) q = q.gt('id', cursor);
       return q;
     },
-    { label: `${opts.label}.gameWaitlist`, maxRows: 50_000, shouldContinue: opts.shouldContinue }
+    {
+      label: opts.source + '.GameWaitlist',
+      maxRows: 50_000,
+      shouldContinue: opts.shouldContinue,
+    }
   );
   if (opts.shouldContinue?.() === false || !page.complete) return closed;
   if (page.rows.length === 0) return { complete: true, byTable: new Map() };
@@ -236,7 +240,7 @@ export async function loadGameWaitersByTable(
     page.rows.map((r) => r.game_id),
     (batch) =>
       supabase.from('cash_games').select('id, must_move, cluster_mode, enabled').in('id', batch),
-    `${opts.label}.gameWaitlistGames`
+    opts.source + '.GameWaitlistGames'
   );
   if (opts.shouldContinue?.() === false || !games.complete) return closed;
   if (!games.rows.some(gameListNeedsYield)) return { complete: true, byTable: new Map() };
@@ -244,7 +248,7 @@ export async function loadGameWaitersByTable(
   const horses = await selectInChunks<{ id: string }>(
     page.rows.map((r) => r.user_id),
     (batch) => supabase.from('profiles').select('id').eq('is_horse', true).in('id', batch),
-    `${opts.label}.gameWaitlistHorses`
+    opts.source + '.GameWaitlistHorses'
   );
   if (opts.shouldContinue?.() === false || !horses.complete) return closed;
 

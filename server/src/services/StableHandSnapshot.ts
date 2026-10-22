@@ -337,7 +337,7 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
       gameTables,
       servedKeys([...waits, ...seats], gameTables),
       {
-        label: 'StableHand.waitlist',
+        source: 'StableHand.waitlist',
       }
     );
     if (!game.complete) {

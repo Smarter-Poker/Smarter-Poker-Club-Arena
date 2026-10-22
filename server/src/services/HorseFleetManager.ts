@@ -840,7 +840,7 @@ export class HorseFleetManager {
       if (gameTables && gameTables.length > 0) {
         const served = servedKeys([...page.rows, ...(seatedRows ?? [])], gameTables);
         const game = await loadGameWaitersByTable(gameTables, served, {
-          label: 'HorseFleet.humansWaiting',
+          source: 'HorseFleet.humansWaiting',
           shouldContinue,
         });
         if (shouldContinue?.() === false) return out;

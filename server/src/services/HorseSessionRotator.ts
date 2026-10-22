@@ -723,7 +723,7 @@ export class HorseSessionRotator {
       }
       const served = servedKeys([...page.rows, ...seats], gameTables);
       const game = await loadGameWaitersByTable(gameTables, served, {
-        label: 'HorseSessionRotator.humansWaiting',
+        source: 'HorseSessionRotator.humansWaiting',
         shouldContinue: () => this.lifecycleIsCurrent(generation),
       });
       if (!this.lifecycleIsCurrent(generation)) return;

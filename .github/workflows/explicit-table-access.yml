@@ -4,6 +4,13 @@ on:
     branches: [main]
   push:
     branches: [main]
+# Pull request runs are pure checks on refs/pull/N/merge: a newer push
+# supersedes the older run, so it is cancelled. A push to main checks its own
+# before..after range, which a later main push does not re-read, so each main
+# run keeps a per-SHA group and is never cancelled.
+concurrency:
+  group: explicit-table-access-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:

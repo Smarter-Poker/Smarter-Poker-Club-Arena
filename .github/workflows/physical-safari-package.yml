@@ -5,6 +5,11 @@ on:
     paths:
       - 'tests/physical-safari/**'
       - '.github/workflows/physical-safari-package.yml'
+# A newer push to the same pull request supersedes this macOS package build.
+# A manual dispatch is never cancelled by a later one.
+concurrency:
+  group: physical-safari-package-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:

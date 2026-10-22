@@ -59,6 +59,7 @@ export interface ShareInviteSheetProps {
   inviterAlias: string;
   /** Owners, co-owners, admins and agents get the stats table. */
   canSeeClubStats: boolean;
+  quickStart?: boolean;
 }
 
 export function ShareInviteSheet({
@@ -69,6 +70,7 @@ export function ShareInviteSheet({
   clubNumber,
   inviterAlias,
   canSeeClubStats,
+  quickStart = false,
 }: ShareInviteSheetProps) {
   const [link, setLink] = useState<InviteLink | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -78,6 +80,8 @@ export function ShareInviteSheet({
   const [showClubStats, setShowClubStats] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
+  const [shareError, setShareError] = useState(false);
+  const [linkAttempt, setLinkAttempt] = useState(0);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dialogRef = useFocusTrap(isOpen);
 
@@ -114,9 +118,11 @@ export function ShareInviteSheet({
   useEffect(() => {
     if (!isOpen || !clubId) return;
     let alive = true;
+    setLink(null);
     setLinkError(null);
     setCopied(false);
     setCopyError(false);
+    setShareError(false);
     setShowClubStats(false);
     getMyInviteLink(clubId)
       .then((l) => {
@@ -126,15 +132,16 @@ export function ShareInviteSheet({
         reportError(err, 'ShareInviteSheet.link');
         if (alive) setLinkError('Your Invite Link Could Not Be Created. Please Try Again.');
       });
-    getMyInviteStats(clubId)
-      .then((s) => {
-        if (alive) setStats(s);
-      })
-      .catch((err) => reportError(err, 'ShareInviteSheet.myStats'));
+    if (!quickStart)
+      getMyInviteStats(clubId)
+        .then((s) => {
+          if (alive) setStats(s);
+        })
+        .catch((err) => reportError(err, 'ShareInviteSheet.myStats'));
     return () => {
       alive = false;
     };
-  }, [isOpen, clubId]);
+  }, [isOpen, clubId, linkAttempt, quickStart]);
 
   const loadClubStats = useCallback(async () => {
     setShowClubStats(true);
@@ -170,6 +177,7 @@ export function ShareInviteSheet({
 
   const handleShare = async () => {
     if (!link) return;
+    setShareError(false);
     try {
       if (await shareInviteOnNative(clubName, shareText, link.shortUrl)) return;
       if (navigator.share) {
@@ -179,7 +187,10 @@ export function ShareInviteSheet({
       }
     } catch (err) {
       // AbortError is the player closing the share sheet, not a failure.
-      if ((err as Error)?.name !== 'AbortError') reportError(err, 'ShareInviteSheet.share');
+      if ((err as Error)?.name !== 'AbortError') {
+        reportError(err, 'ShareInviteSheet.share');
+        setShareError(true);
+      }
     }
   };
 
@@ -207,22 +218,48 @@ export function ShareInviteSheet({
         <SpadeConsole
           onClose={onClose}
           eyebrow={clubName}
-          title="Share & Invite"
+          title={quickStart ? 'Your Club Is Created' : 'Share & Invite'}
           titleId="share-invite-title"
           pill="Your Link"
           pillInk="blue"
-          foot="foot"
+          foot={quickStart ? 'plates' : 'foot'}
+          plates={
+            quickStart
+              ? {
+                  secondary: { label: 'Open Club', onClick: onClose },
+                  primary: {
+                    label: copied ? 'Link Copied' : 'Send Link',
+                    onClick: handleShare,
+                    disabled: !link,
+                  },
+                }
+              : undefined
+          }
           className="rfc__console"
         >
           <p className="sc-copy sc-copy--center">
-            Everyone Who Joins With Your Link Is Credited To You And Placed In Your Downline.
+            {quickStart
+              ? 'Send Your Link To Invite Friends. Branding And Advanced Settings Can Wait.'
+              : 'Everyone Who Joins With Your Link Is Credited To You And Placed In Your Downline.'}
           </p>
 
           {linkError ? (
             <p className="sc-copy sc-ink--red" role="alert">
               {linkError}
+              <button
+                type="button"
+                className="rfc-word sc-ink--blue"
+                onClick={() => setLinkAttempt((attempt) => attempt + 1)}
+              >
+                Retry Link
+              </button>
             </p>
           ) : null}
+          {shareError && (
+            <p className="sc-copy sc-ink--red" role="alert">
+              The Share Sheet Could Not Open. Copy Your Link To Send It.
+            </p>
+          )}
           {copyError ? (
             <p className="sc-copy sc-ink--red" role="alert">
               The Link Could Not Be Copied. Select It And Copy Manually.
@@ -251,29 +288,33 @@ export function ShareInviteSheet({
             </div>
           </div>
 
-          <div className="sis__qr-row">
-            <div className="sis__qr" aria-label="Invite QR Code">
-              {link ? (
-                <QRCodeSVG value={link.shortUrl} size={168} level="M" marginSize={2} />
-              ) : (
-                <span className="sc-label sc-ink--silver">Preparing...</span>
-              )}
-            </div>
-            <p className="sc-copy sis__qr-note">Friend Next To You? Have Them Scan This Code.</p>
-          </div>
-
-          <div className="sis__figures" aria-label="Your Invite Results">
-            {figures.map(([label, value]) => (
-              <div className="sis__figure" key={label}>
-                <span className="rfc__figure sc-ink--silver">
-                  {value == null ? '-' : value.toLocaleString()}
-                </span>
-                <span className="sc-label sc-ink--blue">{label}</span>
+          {!quickStart && (
+            <div className="sis__qr-row">
+              <div className="sis__qr" aria-label="Invite QR Code">
+                {link ? (
+                  <QRCodeSVG value={link.shortUrl} size={168} level="M" marginSize={2} />
+                ) : (
+                  <span className="sc-label sc-ink--silver">Preparing...</span>
+                )}
               </div>
-            ))}
-          </div>
+              <p className="sc-copy sis__qr-note">Friend Next To You? Have Them Scan This Code.</p>
+            </div>
+          )}
 
-          {canSeeClubStats ? (
+          {!quickStart && (
+            <div className="sis__figures" aria-label="Your Invite Results">
+              {figures.map(([label, value]) => (
+                <div className="sis__figure" key={label}>
+                  <span className="rfc__figure sc-ink--silver">
+                    {value == null ? '-' : value.toLocaleString()}
+                  </span>
+                  <span className="sc-label sc-ink--blue">{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {canSeeClubStats && !quickStart ? (
             <div className="sis__club">
               {!showClubStats ? (
                 <button type="button" className="rfc-word sc-ink--blue" onClick={loadClubStats}>
@@ -315,19 +356,21 @@ export function ShareInviteSheet({
             </div>
           ) : null}
 
-          <div className="rfc__actions">
-            <button
-              type="button"
-              className="rfc-word sc-ink--blue"
-              onClick={handleShare}
-              disabled={!link}
-            >
-              Share
-            </button>
-            <button type="button" className="rfc-word sc-ink--white" onClick={onClose}>
-              Close
-            </button>
-          </div>
+          {!quickStart && (
+            <div className="rfc__actions">
+              <button
+                type="button"
+                className="rfc-word sc-ink--blue"
+                onClick={handleShare}
+                disabled={!link}
+              >
+                Share
+              </button>
+              <button type="button" className="rfc-word sc-ink--white" onClick={onClose}>
+                Close
+              </button>
+            </div>
+          )}
         </SpadeConsole>
       </div>
     </div>,

@@ -1,7 +1,14 @@
-# Welcome Confirmation Visibility
+# Confirmation And Selection Control Visibility
 
-The welcome agreement used an almost-black checkbox with an 8% inset highlight, making the unchecked control difficult to find against the modal glass. Its welcome-specific styling now gives the box a solid 2px brand-blue edge and a 26px minimum size. The agreement label uses silver ink before selection. The existing selected green core now has a matching green edge, and keyboard focus gives the box a white edge alongside the existing row focus outline.
+The welcome agreement and other console checkboxes used an almost-black well with an 8% inset highlight. The shared sc-check control now has a solid 2px brand-blue edge and a 26px minimum size. The selected state has a green edge/core, and keyboard focus has a white edge and a visible outline. Native inputs paint their selected core directly rather than relying on pseudo-elements. The welcome-only override was removed in favor of the shared fix. This reaches welcome and club-creation agreements, club-opening confirmations, terms acceptance, cash/tournament configuration switches, ticker controls and club-message settings.
 
-The full-row button, checkbox role, aria-checked state, keyboard toggle, initial unchecked state, disabled Enter guard, portal layer and acceptance persistence remain intact. Shared console checkbox styling and legal copy are unchanged.
+The broader control inventory also found and corrected:
 
-Verified rendered unchecked and selected states at 393px, unchecked at 375px and desktop, plus keyboard Space returning the checkbox to unchecked and disabling Enter. Existing popup, compliance and footer contracts and the client compiler are required before submission. Client-only static publication; no engine dependency.
+- Create Union hid its native controls with display:none, removing keyboard access. They remain in the tab order and mirror focus onto the visible box/track. The unchecked control edge is blue and the page now defines its missing accent tokens, which previously made its checked black tick and other black-on-accent states unreadable.
+- Cashier Trade hid both filter checkboxes and indicated selection only through text color. Assigned To Me and Group By Role now show the shared native checkbox.
+- Cashier recipient-wallet radio choices had no selected styling. The selected destination now uses white text and a blue underline. Its malformed button focus-offset declaration is corrected.
+- Hero Hub and Table Settings Off labels used dark gunmetal on black. They now use readable muted silver while retaining the existing On treatment.
+
+The audit covered checkbox, radio, switch and menu-checkbox markup and its owning styles. Standard visible native controls and switches with clear tracks/statuses were retained. The intentionally invisible TapHaptic input is an input overlay on an already visible control, and is not a missing confirmation box. Unused common Input controls, the unused legacy ReportPlayerModal and the unrouted ClubDetailPage were excluded from live-surface edits.
+
+Consent handlers, legal copy, selected values, disabled guards, transaction handlers, table-setting behavior, portal layers and persistence are unchanged. This is client presentation and keyboard accessibility only; no engine API or engine replacement is required. Browser previews use the actual owning styles and shared controls with local-only state; production delivery and live verification are recorded separately in the task checkpoint.

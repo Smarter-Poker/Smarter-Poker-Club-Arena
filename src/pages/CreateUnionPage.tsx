@@ -266,7 +266,7 @@ export default function CreateUnionPage() {
                   checked={form.isPublic}
                   onChange={(e) => updateForm({ isPublic: e.target.checked })}
                 />
-                <span className={styles.checkmark} />
+                <span className={styles.checkmark} aria-hidden="true" />
                 <div>
                   <strong>Public Union</strong>
                   <p>Other Clubs Can Discover And Request To Join</p>
@@ -337,7 +337,7 @@ export default function CreateUnionPage() {
                     checked={form.sharedPlayerPool}
                     onChange={(e) => updateForm({ sharedPlayerPool: e.target.checked })}
                   />
-                  <span className={styles.toggleSlider} />
+                  <span className={styles.toggleSlider} aria-hidden="true" />
                   <div>
                     <strong>Shared Player Pool</strong>
                     <p>Players Can Move Between Clubs In The Union</p>
@@ -350,7 +350,7 @@ export default function CreateUnionPage() {
                     checked={form.crossClubTournaments}
                     onChange={(e) => updateForm({ crossClubTournaments: e.target.checked })}
                   />
-                  <span className={styles.toggleSlider} />
+                  <span className={styles.toggleSlider} aria-hidden="true" />
                   <div>
                     <strong>Cross-Club Tournaments</strong>
                     <p>Host Tournaments Across All Member Clubs</p>

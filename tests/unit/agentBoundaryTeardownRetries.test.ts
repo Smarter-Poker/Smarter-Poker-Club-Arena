@@ -76,8 +76,8 @@ function run(deleteFailure: { status: number; code: string }) {
     env: {
       PATH: process.env.PATH,
       SUPABASE_URL: 'https://fake-database.invalid',
-      SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_fake',
-      VITE_SUPABASE_ANON_KEY: 'sb_publishable_fake',
+      SUPABASE_SERVICE_ROLE_KEY: 'fake-service-key',
+      VITE_SUPABASE_ANON_KEY: 'fake-anon-key',
       E2E_TEST_ACCOUNT_FILE: accountFile,
       E2E_CLUB_ID: CLUB,
     },

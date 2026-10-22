@@ -19,6 +19,7 @@ import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOve
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
 import { WaitlistCallToAction } from '../components/table/WaitlistCallToAction';
+import { TournamentLateRegCallToAction } from '../components/table/TournamentLateRegCallToAction';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -23972,8 +23973,16 @@ function LiveTablePage({
   useEffect(() => {
     if (spectatorSeatState !== 'no-seats-here') return;
     if (tableState.heroSeat > 0) return;
+    // A tournament table has no waiting list (Dan 2026-10-21).
+    if (tableState.isTournament) return;
     void loadWaitlist();
-  }, [spectatorSeatState, tableState.heroSeat, tableState.handNumber, loadWaitlist]);
+  }, [
+    spectatorSeatState,
+    tableState.heroSeat,
+    tableState.handNumber,
+    tableState.isTournament,
+    loadWaitlist,
+  ]);
 
   // P2-1 FIX: Pre-action auto-execution is server-owned (Bible V8 §4.15). The
   // client's delayed executor was removed: it ran ~100ms after the turn
@@ -27311,7 +27320,23 @@ function LiveTablePage({
             data-state={spectatorSeatState}
             data-testid="spectator-footer-bar"
           >
-            {spectatorSeatState === 'no-seats-here' ? (
+            {/* Dan 2026-10-21: "THIS 'TABLE FULL JOIN THE WAITING LIST' SHOULD
+                NEVER BE DISPLAYED WHEN WATCHING A TOURNAMENT." A tournament
+                has no waiting list; a spectator there can only enter the event
+                while late registration is open, so an MTT table prints the
+                time left before registration closes and a register button
+                (TournamentLateRegCallToAction), and nothing else. */}
+            {tableState.isTournament && tableState.tournamentId && !seatFirstBuyIn ? (
+              <TournamentLateRegCallToAction
+                tournamentId={tableState.tournamentId}
+                refreshKey={tableState.handNumber}
+                hidden={!isVisible}
+                onRegister={() => navigate(`/tournaments/${tableState.tournamentId}`)}
+                fallback={<span className="spectator-footer-bar__label">Spectating</span>}
+              />
+            ) : tableState.isTournament && spectatorSeatState === 'no-seats-here' ? (
+              <span className="spectator-footer-bar__label">Spectating · All Seats Taken</span>
+            ) : spectatorSeatState === 'no-seats-here' ? (
               /* A button, not a sentence: "join the waiting list" is an
                  action he asked for, and the waitlist modal is already
                  built and wired (handleOpenWaitlist). Telling a player a

@@ -127,7 +127,16 @@ describe('4: a break the process forgot is sat back in from the row', () => {
     expect(ROT).toMatch(
       /if \(this\.breaks\.has\(key\) \|\| this\.sitBackRestoredKeys\.has\(key\)\) continue;/
     );
-    expect(ROT).toMatch(/this\.getEngine\(tableId\)\?\.sitOut\?\.\(userId, false\)/);
+    expect(ROT).toMatch(/const res = engine\?\.sitOut\?\.\(userId, false\)/);
+  });
+
+  it("but never a Sit Out the account's own client asked for (2026-10-22)", () => {
+    expect(ROT).toMatch(
+      /if \(HorseSessionRotator\.clientSitOutStands\(engine, userId\)\) continue;\s*this\.sitBackRestoredKeys\.add\(key\);/
+    );
+    expect(ROT).toMatch(
+      /if \(HorseSessionRotator\.clientSitOutStands\(breakEngine, info\.userId\)\) continue;\s*breakEngine\?\.sitOut\?\.\(info\.userId, false\);/
+    );
   });
 });
 

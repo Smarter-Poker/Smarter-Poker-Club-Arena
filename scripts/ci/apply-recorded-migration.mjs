@@ -610,9 +610,10 @@ let transactionSQL;
 try {
   admittedSQL = MAINTENANCE_THAW_REPAIR
     ? thawRepairSQL(atomicSQL)
-    : MAINTENANCE_WINDOW
-      ? windowTransactionSQL(file, atomicSQL)
-      : accountingAdmissionSQL(file, sql, atomicSQL);
+    : accountingAdmissionSQL(file, sql, atomicSQL);
+  // A window file is never an accounting-admission file (validated above), so
+  // the line before returned atomicSQL unchanged; wrap it in the window.
+  if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL);
   transactionSQL = bindMigrationSession(SETTLEMENT_LANE ? atomicSQL : admittedSQL);
 } catch (e) {
   await client.end().catch(() => {});

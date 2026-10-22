@@ -208,7 +208,9 @@ describe('the ordinary applier refuses it; only the window route installs it', (
     expect(applier).toContain('if (!MAINTENANCE_WINDOW && (minute >= 50 || minute <= 3)) {');
     expect(applier).toContain('state = (await client.query(WINDOW_STATE_QUERY)).rows[0];');
     expect(applier).toContain('refused(\n        `the daily maintenance window is not open');
-    expect(applier).toContain('? windowTransactionSQL(file, atomicSQL)');
+    expect(applier).toContain(
+      'if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL);'
+    );
     expect(applier).toContain('the window route installs only declared files');
   });
 

@@ -110,6 +110,12 @@ describe('every tournament level is a locked, defined clock', () => {
     expect(sql).toContain("n ~ 'bounty|pko|knockout') THEN RETURN 8");
     expect(sql).toContain('IF opening <= 5 THEN RETURN 5');
     expect(sql).toContain('IF opening >= 12 OR (uniform AND opening = 10) THEN RETURN 10');
+    // The lock also carries the Free Buy hour: twelve 5-minute levels, 60 minutes.
+    const hour = readdirSync(dir).find((f) => f.endsWith('_free_buy_hour_on_locked_clock.sql'));
+    expect(hour).toBeDefined();
+    const hourSql = readFileSync(new URL(hour!, dir), 'utf8');
+    expect(hourSql).toContain('NEW.late_reg_levels := 12;');
+    expect(hourSql).toContain('NEW.late_reg_mins := 60;');
     // Sorts before tournaments_new_mtt_blind_contract, which derives blind_speed.
     expect('tournaments_lock_level_clock' < 'tournaments_new_mtt_blind_contract').toBe(true);
   });

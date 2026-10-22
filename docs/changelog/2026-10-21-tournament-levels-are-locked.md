@@ -24,3 +24,12 @@ fixed clocks but at 12 minutes for Free Buys and deep stacks.
   not-yet-started MTT and satellite and every schedule config with an explicit
   ladder was rewritten through it.
 - Law: `server/src/tournament/TournamentLevelsAreLocked.law.test.ts`.
+
+## Follow-up: The Free Buy Hour Lives In The Lock (20261022000503)
+
+Until the engine release carrying lockedLevelClock.ts is serving, the previous
+engine still writes Midway Free Buys with 5 late-registration levels and Diamond
+Free Buys with 11, which on a locked 5-minute clock is 25 and 55 minutes. The
+database lock now also writes every free Free Buy with twelve 5-minute levels,
+60 minutes, and rebuys through the same level. Proven by a rolled-back insert of
+a 12-minute, 5-level Midway row: stored as 5-minute levels, 12/12/60.

@@ -20,3 +20,8 @@ bytes from that existing public asset, SHA-256
 10e21c24e5d628c00b6b7f2d2cbc487a087fce7c8f218352245922d59c1d7b72,
 and retained a regression asserting every declared NLH layer exists locally.
 No approved artwork was repainted.
+
+The obsolete CasinoPlaque component and stylesheet are retired after removing
+their final caller. Aggregate player-count and hidden Spin-multiplier checks
+now exercise the live card adapter. Production lobby checks require the new
+card-first review followed by explicit tournament Details navigation.

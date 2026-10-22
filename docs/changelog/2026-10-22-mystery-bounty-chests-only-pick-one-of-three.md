@@ -81,7 +81,12 @@ the small-field note.
 ## Migrations
 
 `20261022162651` (functions and offers), `20261022162714` (triggers),
-`20261022162733` (events on the board and schedules), and the follow-up for half
-of the whole entry and whole-chip chests. The first combined
+`20261022162733` (events on the board and schedules), `20261022170421` (half of
+the whole entry, whole-chip chests, the offer table's grants) and
+`20261022170611` (the seed reports the whole-chip pool it sealed). Proved in
+rolled-back probes on production: a 27 + 3 entry is created with a 15 bounty,
+pool 100/0, at the money and the new description; a 1,000.37 pool cut at the
+cent by the serving engine is sealed as 500 + 500 and reported as 1,000.00; a
+whole-chip cut is sealed as given. The first combined
 attempt timed out twice on `DROP TRIGGER IF EXISTS`, whose ACCESS EXCLUSIVE
 lock queues behind every reader; new triggers need no drop.

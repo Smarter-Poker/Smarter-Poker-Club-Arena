@@ -21,7 +21,7 @@
  *   - a description that says exactly that.
  *
  * The database writes the same terms on every creation path (trigger
- * a4_mystery_mtt_terms, migration 20261022160327), so the spawner and every
+ * a4_mystery_mtt_terms, migrations 20261022162651 and 20261022170421), so the spawner and every
  * other door agree. Pure; returns a new row and never mutates its input.
  */
 

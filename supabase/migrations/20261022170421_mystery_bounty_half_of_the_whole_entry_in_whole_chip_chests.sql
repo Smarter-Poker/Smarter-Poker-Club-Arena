@@ -1,4 +1,4 @@
--- 20261022165520_mystery_bounty_half_of_the_whole_entry_in_whole_chip_chests.sql
+-- 20261022170421_mystery_bounty_half_of_the_whole_entry_in_whole_chip_chests.sql
 --
 -- Version reserved by scripts/new-migration.mjs against origin/main and every
 -- remote branch, so it cannot collide with another agent's in-flight work.

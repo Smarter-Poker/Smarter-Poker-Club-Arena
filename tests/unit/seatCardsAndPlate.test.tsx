@@ -139,17 +139,18 @@ describe('a revealed hand reads left to right at every seat', () => {
     );
   });
 
-  it('shows every card whole - the step never tapers by card count', () => {
-    // The regression: 1.06 for a pair but 0.48 at 3-4 cards and 0.40 at 5-6,
-    // which covers 52-60% of every card after the first. Dan asked for "every
-    // single card in the hand" to be clearly shown, so the step is one number.
+  it('keeps every corner index readable - the step never tapers by card count', () => {
+    // Dan 2026-10-22: shown hands are board-sized, "overlapped but not covered
+    // so all cards are CLEARLY READABLE". The deck's corner index (rank over
+    // suit) reaches 38% of a card at its widest, so a step under 0.42 cuts a
+    // suit; one step for every hand size, never tapered by a :has() guard.
     const revealed = rulesFor('.seat__cards--opponent.seat__cards--revealed');
     const step = /--vh-step-f:\s*([\d.]+)/.exec(revealed[0].body);
     expect(step, 'the revealed cluster must set its own step').toBeTruthy();
     expect(
       Number(step![1]),
-      'a step under 1 means one card covers part of the next'
-    ).toBeGreaterThanOrEqual(1);
+      "a step under 0.42 covers part of the next card's rank and suit"
+    ).toBeGreaterThanOrEqual(0.42);
 
     const taperers = RULES.filter(
       (r) =>

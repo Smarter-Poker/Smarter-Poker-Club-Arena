@@ -440,7 +440,8 @@ export function fitSeatToViewport(
   canvas: Size,
   viewportWidthPx: number,
   pod: Size,
-  canvasLeftPx = (viewportWidthPx - canvas.w) / 2
+  canvasLeftPx = (viewportWidthPx - canvas.w) / 2,
+  maxPlayers = 0
 ): Pos {
   if (!Number.isFinite(canvas.w) || canvas.w <= 0 || viewportWidthPx <= 0) return seat;
   const edge = pod.w / 2 + 2;
@@ -461,12 +462,18 @@ export function fitSeatToViewport(
   // pod pinned to the screen edge: its far edge is at 2 + pod.w px, and the
   // cap keeps 4px of air beyond it (only binds on the narrowest phones).
   const capClearX = ((2 + pod.w + 4 + pod.w / 2 - canvasLeftPx) / canvas.w) * 100;
+  // The 320px nine-seat ring needs separate cap and side lanes.
+  const compactNine = portraitPhone && viewportWidthPx <= 340 && maxPlayers === 9;
   const targetX =
     portraitPhone && seat.y >= 20 && seat.y < 100
       ? seat.x < 50
         ? minX
         : maxX
-      : portraitPhone && seat.y < 20 && seat.x !== 50 && canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX
+      : portraitPhone &&
+          seat.y < 20 &&
+          seat.x !== 50 &&
+          canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX &&
+          !compactNine
         ? seat.x < 50
           ? 15
           : 85
@@ -483,14 +490,22 @@ export function fitSeatToViewport(
   // On a phone the side pods live in the screen's outboard lanes, clear of the
   // board, so the board's band does not bind there and the chair can move up
   // to even the column.
+  // Equal 29.75-point gaps between the three side chairs leave room for
+  // each existing avatar, plate and action label on the 324px canvas.
   const y =
-    portraitPhone &&
-    canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
-    seat.x !== 50 &&
-    seat.y > 50 &&
-    seat.y < 70
-      ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
-      : seat.y;
+    compactNine && canvas.h <= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX && seat.y >= 20 && seat.y < 100
+      ? seat.y < 35
+        ? 23
+        : seat.y < 70
+          ? 52.75
+          : 82.5
+      : portraitPhone &&
+          canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
+          seat.x !== 50 &&
+          seat.y > 50 &&
+          seat.y < 70
+        ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
+        : seat.y;
   return x === seat.x && y === seat.y ? seat : { ...seat, x, y };
 }
 

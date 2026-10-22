@@ -20459,7 +20459,8 @@ function LiveTablePage({
           seats: seatRotationMap.length,
           canvasHeightPx: scalerSize.h,
         }),
-        canvasLeft
+        canvasLeft,
+        seatRotationMap.length
       )
     );
   }, [seatRotationMap, scalerSize, seatViewportWidth]);

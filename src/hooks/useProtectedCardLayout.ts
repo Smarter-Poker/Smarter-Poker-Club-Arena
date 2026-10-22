@@ -38,7 +38,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
       const protectedBoxes = Array.from(
         page.querySelectorAll(
           (withMarkers ? '.seat__bet-chips, ' : '') +
-          '.community-area, .table-brand, .seat__avatar-img, .pot-area, .pot-display, .seat__info, .seat__strength, .seat__action, .seat__bounty, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-widget, .bbj-mini-plate, .cch-column, .chat-collapsed'
+            '.community-area, .table-brand, .seat__avatar-img, .pot-area, .pot-display, .seat__info, .seat__strength, .seat__action, .seat__bounty, .seat__position-badge, .pot-display__pile, .action-panel, .bbj-widget, .bbj-mini-plate, .cch-column, .chat-collapsed'
         )
       )
         .map(visibleBox)
@@ -95,7 +95,9 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         // The hand stands nearer its own player than any other (avatar
         // centres), whenever any such spot exists.
         const mineAt = seat?.querySelector('.seat__avatar-img')?.getBoundingClientRect();
-        const centres = Array.from(scaler.querySelectorAll('.seat:not(.seat--empty) .seat__avatar-img'))
+        const centres = Array.from(
+          scaler.querySelectorAll('.seat:not(.seat--empty) .seat__avatar-img')
+        )
           .map((img) => img.getBoundingClientRect())
           .filter((r) => r.width > 0 && r !== mineAt)
           .map((r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 }));
@@ -103,11 +105,16 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
           if (!mineAt || !mineAt.width) return true;
           const x = candidate.left + candidate.width / 2;
           const y = candidate.top + candidate.height / 2;
-          const own = Math.hypot(x - (mineAt.left + mineAt.width / 2), y - (mineAt.top + mineAt.height / 2));
+          const own = Math.hypot(
+            x - (mineAt.left + mineAt.width / 2),
+            y - (mineAt.top + mineAt.height / 2)
+          );
           return centres.every(
             (c) =>
-              Math.hypot(c.x - (mineAt.left + mineAt.width / 2), c.y - (mineAt.top + mineAt.height / 2)) < 1 ||
-              own < Math.hypot(x - c.x, y - c.y)
+              Math.hypot(
+                c.x - (mineAt.left + mineAt.width / 2),
+                c.y - (mineAt.top + mineAt.height / 2)
+              ) < 1 || own < Math.hypot(x - c.x, y - c.y)
           );
         };
         const place = (candidate: CardBox) =>
@@ -142,7 +149,11 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
           // The row's own anchors: its bottom edge, and its outboard edge (or
           // its centre on a top-cap chair).
           const anchorX =
-            anchor === 'left' ? box.left : anchor === 'right' ? box.left + box.width : box.left + box.width / 2;
+            anchor === 'left'
+              ? box.left
+              : anchor === 'right'
+                ? box.left + box.width
+                : box.left + box.width / 2;
           const bottom = box.top + box.height;
           const heightPerW = box.height / drawnW;
           const at = (step: number, size: number): CardBox => {
@@ -150,7 +161,11 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             const width = cardW * (1 + (count - 1) * step);
             const height = cardW * heightPerW;
             const left =
-              anchor === 'left' ? anchorX : anchor === 'right' ? anchorX - width : anchorX - width / 2;
+              anchor === 'left'
+                ? anchorX
+                : anchor === 'right'
+                  ? anchorX - width
+                  : anchorX - width / 2;
             return { left, top: bottom - height, width, height };
           };
           const shifted = (from: CardBox, to: CardBox) =>
@@ -167,7 +182,8 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             const from = at(step, size);
             const to = placeProtectedCardRow(from, others, bounds, 4, ownsIt);
             if (!to) continue;
-            if (!pick || shifted(from, to) < shifted(pick.from, pick.to)) pick = { step, size, from, to };
+            if (!pick || shifted(from, to) < shifted(pick.from, pick.to))
+              pick = { step, size, from, to };
             if (shifted(from, to) <= fullW * size * 1.5) break;
           }
           if (!pick) {
@@ -374,6 +390,34 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             height: box.height,
             depth: point.depth,
           }));
+          // The 320px PLO6 cap lane is narrower than a sampled oval band.
+          // Include exact obstacle-edge intersections so a clear 23px slot
+          // between two plates is not missed by the radial sampling grid.
+          if (
+            page.getAttribute('data-seats') === '9' &&
+            window.innerWidth <= 340 &&
+            page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(6)')
+          ) {
+            const xs = new Set([desired.x - box.width / 2]);
+            const ys = new Set([desired.y - box.height / 2]);
+            for (const obstacle of hardObstacles) {
+              xs.add(obstacle.left - box.width - 3);
+              xs.add(obstacle.left + obstacle.width + 3);
+              ys.add(obstacle.top - box.height - 3);
+              ys.add(obstacle.top + obstacle.height + 3);
+            }
+            for (const left of xs)
+              for (const top of ys) {
+                const candidate = { left, top, width: box.width, height: box.height, depth: 20 };
+                if (
+                  left >= pageBox.left &&
+                  top >= chromeBottom &&
+                  left + box.width <= pageBox.right &&
+                  top + box.height <= canvas.bottom
+                )
+                  placed.push(candidate);
+              }
+          }
           const clearOfTable = placed.filter(
             (candidate) => !obstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
           );
@@ -454,11 +498,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
                       0
                     ),
                   }))
-                  .sort(
-                    (a, b) =>
-                      a.covered - b.covered ||
-                      byCost(a.candidate, b.candidate)
-                  )
+                  .sort((a, b) => a.covered - b.covered || byCost(a.candidate, b.candidate))
                   .map((entry) => entry.candidate),
                 160
               ),
@@ -469,6 +509,12 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         // short phone (three players all in on one side) can leave no joint
         // solution; then each wager still takes its own best clear spot in
         // turn, instead of every wager staying wherever it first landed.
+        const compactNine =
+          page.getAttribute('data-seats') === '9' &&
+          window.innerWidth <= 340 &&
+          Boolean(
+            page.querySelector('.seat__cards--opponent.seat__cards--revealed > :nth-child(6)')
+          );
         const placements =
           assignProtectedWagers(entries.map((entry) => entry.felt)) ??
           assignProtectedWagers(entries.map((entry) => entry.candidates)) ??
@@ -476,12 +522,18 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
           // The exact search has a fixed budget; a crowded ring can exhaust it
           // while each player's own spots still fit side by side greedily.
           cleanGreedyWagers(entries.map((entry) => entry.wide)) ??
-          assignProtectedWagers(entries.map((entry) => entry.any)) ??
+          assignProtectedWagers(
+            entries.map((entry) => (compactNine ? entry.printing : entry.any))
+          ) ??
           // The smallest felts: over the felt's own lettering before two
           // players' wagers are stacked in one spot.
           assignProtectedWagers(entries.map((entry) => entry.printing)) ??
           greedyProtectedWagers(
-            entries.map((entry) => [...entry.wide, ...entry.any, ...entry.least])
+            entries.map((entry) => [
+              ...entry.wide,
+              ...(compactNine ? entry.printing : entry.any),
+              ...entry.least,
+            ])
           );
         const placedWagers: CardBox[] = [];
         for (let i = 0; i < entries.length; i++) {
@@ -670,8 +722,14 @@ function placeDealerButton(
       hardObstacles.reduce(
         (sum, o) =>
           sum +
-          Math.max(0, Math.min(box.left + box.width, o.left + o.width) - Math.max(box.left, o.left)) *
-            Math.max(0, Math.min(box.top + box.height, o.top + o.height) - Math.max(box.top, o.top)),
+          Math.max(
+            0,
+            Math.min(box.left + box.width, o.left + o.width) - Math.max(box.left, o.left)
+          ) *
+            Math.max(
+              0,
+              Math.min(box.top + box.height, o.top + o.height) - Math.max(box.top, o.top)
+            ),
         0
       );
     // Never on a wager: this player's spot first, anyone's only if not.

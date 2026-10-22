@@ -69,7 +69,8 @@ export function Review() {
       size,
       width,
       seatPodPx(width, p.y === 100, size.w, { seats: n, canvasHeightPx: size.h }),
-      ref.current?.getBoundingClientRect().left
+      ref.current?.getBoundingClientRect().left,
+      n
     )
   );
   const cards = [
@@ -215,14 +216,22 @@ export function Review() {
                           ][i],
                           avatar: 'https://smarter.poker/avatars/table/vip_wolf@2x.webp',
                           stack: 93.23,
-                          status: 'active',
-                          holeCards: i === 0 ? cards.slice(0, heroCards) : villainHand,
+                          status:
+                            document.documentElement.dataset.allIn === 'true' && i % 3 === 0
+                              ? 'all_in'
+                              : 'active',
+                          holeCards:
+                            i === 0
+                              ? [...cards, { rank: '10', suit: 'diamonds' }].slice(0, heroCards)
+                              : villainHand,
                           showCards:
                             i === 0 ||
                             (revealed &&
                               // A PLO6 showdown tables three opponents' hands, as an
                               // all-in hand does, spread round the ring.
-                              (villainCards <= 2 || [1, Math.floor(n / 2), n - 1].includes(i))),
+                              (document.documentElement.dataset.showAll === 'true' ||
+                                villainCards <= 2 ||
+                                [1, Math.floor(n / 2), n - 1].includes(i))),
                           isHero: i === 0,
                         }}
                         position={i === 1 ? 'SB' : null}

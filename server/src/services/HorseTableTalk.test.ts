@@ -797,6 +797,8 @@ describe('a horse speaks sometimes, never every time (Dan 2026-10-21)', () => {
       if (speaksThisTime('pot_lost', HORSE_A, TABLE, hand)) spoke++;
       else {
         silent++;
+        // a fresh table each hand, so no losing streak turns this into tilt
+        _resetTableTalkForTests();
         h.state.calls = [];
         expect(await speakAtTheFelt(input)).toBe('no_event');
         expect(h.state.calls).toEqual([]);

@@ -24,6 +24,10 @@ import { confirmDialog } from '../components/common/confirmDialog';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, formatWalletChips, timeAgo } from '../utils/format';
+import {
+  UNION_DASHBOARD_CLUB_COLUMNS,
+  clubWithMoneyPanel,
+} from '../services/unionDashboardClubs';
 import UnionWalletModal, { type UnionWalletKey } from '../components/union/UnionWalletModal';
 import UnionTreasuryDetailModal, {
   type TreasuryDetailMode,
@@ -516,19 +520,38 @@ export default function UnionDashboardPage() {
       setAdminRole(authorizedRole);
     }
 
-    // Load clubs in union
+    // Load clubs in union.
+    // Identity columns only: clubs carries column-level grants, and its money
+    // columns (chip_treasury, total_rake, ...) are withheld from browser reads.
+    // PostgREST expands an embedded `(*)` to every column, withheld ones
+    // included, so the old wildcard failed the whole read with "permission
+    // denied for table clubs" and this page loaded no clubs at all.
     const { data: unionClubs, error: unionClubsError } = await supabase
       .from('union_clubs')
-      .select('*, clubs:club_id(*)')
+      .select(`*, clubs:club_id(${UNION_DASHBOARD_CLUB_COLUMNS})`)
       .eq('union_id', uid);
     if (unionClubsError) throw unionClubsError;
-    const enrichedClubs = (unionClubs || []).map((uc: UnionClubRow) => ({
+    const baseClubs: EnrichedClub[] = (unionClubs || []).map((uc: UnionClubRow) => ({
       id: uc.club_id,
       ...uc.clubs,
       // UNION AUDIT FIX 2026-07-21: live column is club_commission_rate
-      // (commission_rate never existed on union_clubs — reads were undefined).
+      // (commission_rate never existed on union_clubs - reads were undefined).
       club_commission_rate: uc.club_commission_rate || 0.9,
     }));
+    // Club money comes from the SECURITY DEFINER panel, which checks union
+    // staff on the server. A refused or failed read leaves the figure
+    // undefined (shown as unknown), never a made-up 0.
+    const panels = await Promise.all(
+      baseClubs.map((c) =>
+        supabase
+          .rpc('fn_club_money_panel', { p_club_id: c.id })
+          .then(
+            (r) => (r.error ? null : Array.isArray(r.data) ? r.data[0] : r.data),
+            () => null
+          )
+      )
+    );
+    const enrichedClubs = baseClubs.map((c, i) => clubWithMoneyPanel(c, panels[i]));
     if (isCurrent()) setClubs(enrichedClubs);
 
     // Load agents across clubs
@@ -1535,7 +1558,9 @@ export default function UnionDashboardPage() {
                     >
                       <span>{fmt(club.member_count)} Members</span>
                       <span>{fmt(club.active_tables)} Tables</span>
-                      <span>{fmt(club.total_rake)} Rake</span>
+                      <span>
+                        {club.total_rake === undefined ? '-' : fmt(club.total_rake)} Rake This Week
+                      </span>
                     </div>
                     {isLead && (
                       <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
@@ -2405,18 +2430,21 @@ export default function UnionDashboardPage() {
                     </thead>
                     <tbody>
                       {clubs.map((c) => {
-                        const treasury = c.chip_treasury || 0;
+                        const known = typeof c.chip_treasury === 'number';
+                        const treasury = known ? (c.chip_treasury as number) : 0;
                         const agentCount = agents.filter((a) => a.club_id === c.id).length;
-                        const health =
-                          treasury > 100000
+                        const health = !known
+                          ? 'Unknown'
+                          : treasury > 100000
                             ? 'Excellent'
                             : treasury > 10000
                               ? 'Good'
                               : treasury > 0
                                 ? 'Low'
                                 : 'Empty';
-                        const healthColor =
-                          treasury > 100000
+                        const healthColor = !known
+                          ? 'var(--text-secondary)'
+                          : treasury > 100000
                             ? '#31A24C'
                             : treasury > 10000
                               ? '#4599FF'
@@ -2426,7 +2454,9 @@ export default function UnionDashboardPage() {
                         return (
                           <tr key={c.id}>
                             <td style={{ fontWeight: 600 }}>{c.name}</td>
-                            <td style={{ fontWeight: 700, color: '#31A24C' }}>{fmt(treasury)}</td>
+                            <td style={{ fontWeight: 700, color: '#31A24C' }}>
+                              {known ? fmt(treasury) : '-'}
+                            </td>
                             <td>{agentCount}</td>
                             <td>{fmt(c.member_count)}</td>
                             <td>

@@ -1,7 +1,12 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { HandController } from '../HandController.js';
 import { HorseMind, readScopeOf } from '../HorseMind.js';
-import { openerRangeWidth, reRaiseWidth } from '../HorseOpponentExploit.js';
+import {
+  maniacRaiseWidth,
+  openerRangeWidth,
+  reRaiseWidth,
+  strengthBarForTopShare,
+} from '../HorseOpponentExploit.js';
 import {
   defaultHorseDecisionWorkerDependencies as defaults,
   HorseDecisionWorkerRuntime,
@@ -119,7 +124,10 @@ it.each(['open', 'limp_reraise'] as const)(
     // seat band (and the lifetime -0.1 PFR widening that read it).
     const read = HorseMind.opponentRead(opponent);
     expect(read).not.toBeNull();
-    const width = line === 'open' ? openerRangeWidth(read) : reRaiseWidth(read);
+    // 2026-10-22 MANIAC PRESSURE: a re-raise from a maniac is read at its
+    // whole raising width, not its 3-bet statistic alone.
+    const width =
+      line === 'open' ? openerRangeWidth(read) : (maniacRaiseWidth(read) ?? reRaiseWidth(read));
     const legacy = (() => {
       const real = HorseMind.opponentRead;
       (HorseMind as unknown as { opponentRead: () => null }).opponentRead = () => null;
@@ -136,7 +144,12 @@ it.each(['open', 'limp_reraise'] as const)(
     expect(legacy![0]).toBeCloseTo(prior![0] - 0.1, 10);
     if (width === null) expect(learned![0]).toBeCloseTo(prior![0] - 0.1, 10);
     else {
-      expect(learned![0]).toBeCloseTo(Math.max(0, Math.min(0.9, 1 - width)), 10);
+      // A width is a share of hands; a hold'em band is a score bar
+      // (2026-10-22: `1 - width` read a 100% raiser as a top-60% range).
+      expect(learned![0]).toBeCloseTo(
+        Math.max(0, Math.min(0.9, strengthBarForTopShare(width))),
+        10
+      );
       expect(learned![0]).toBeLessThan(legacy![0]);
     }
   }

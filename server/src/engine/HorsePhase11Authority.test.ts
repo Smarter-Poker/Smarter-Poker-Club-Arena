@@ -8,6 +8,7 @@ import {
   PREVIOUS_PHASE11_SELECTIONS,
   RETIRED_2026_10_16_PHASE11_SELECTIONS,
   RETIRED_2026_10_17_PHASE11_SELECTIONS,
+  RETIRED_2026_10_22_PHASE11_SELECTIONS,
 } from './HorsePreviousSelections.test-support.js';
 import {
   admitHorsePhase11QualifiedAuthority,
@@ -110,26 +111,32 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P11.3 the VPIP floor call-down (2026-10-17) requires a fresh qualification of every pack', () => {
+describe('P11.3 maniac pressure (2026-10-22) requires a fresh qualification of every pack', () => {
   const selected = HORSE_PHASE11_VARIANTS.filter((v) => PREVIOUS_PHASE11_SELECTIONS[v] !== null);
 
-  it('every Phase 11 pack is selected on da94e437 (PLO5 and PLO8 generation 4, PLO6 generation 3); PLO8 and PLO5 generation 3 (d9190c9e) are refused by policy digest, and every retained generation 1 and 2 by contract', () => {
+  it('nothing is selected; the da94e437 generations (PLO5 and PLO8 4, PLO6 3) and generation 3 (d9190c9e) are refused by policy digest, and every retained generation 1 and 2 by contract', () => {
     expect(Object.isFrozen(PHASE11_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(selected.length).toBeGreaterThan(0);
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toBe(omahaVariantStrengthContractDigest());
     expect(PHASE11_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     expect(Object.keys(RETIRED_2026_10_17_PHASE11_SELECTIONS).sort()).toEqual(['plo5', 'plo8']);
-    // 2026-10-19/20: PLO5 and PLO8 generation 4 and PLO6 generation 3
-    // requalified the VPIP-floor source and are admitted from their shipped
-    // evidence.
-    const selectedNow = ['plo5', 'plo6', 'plo8'] as const;
-    const expectedGeneration = { plo5: 4, plo6: 3, plo8: 4 } as const;
+    // 2026-10-22: maniac pressure moved every hashed policy digest. Every
+    // pack plays shadow until its locked matrix requalifies the new source;
+    // the da94e437 generations are retained and refused by policy digest.
+    const selectedNow: readonly string[] = [];
     expect(
       HORSE_PHASE11_VARIANTS.filter((v) => PHASE11_PROTECTED_RELEASE_SELECTIONS[v] !== null)
-    ).toEqual([...selectedNow]);
-    for (const variant of selectedNow) {
-      const live = PHASE11_PROTECTED_RELEASE_SELECTIONS[variant]!;
-      expect(live, variant).toMatchObject({
+    ).toEqual([]);
+    expect(Object.keys(RETIRED_2026_10_22_PHASE11_SELECTIONS).sort()).toEqual([
+      'plo5',
+      'plo6',
+      'plo8',
+    ]);
+    const expectedGeneration = { plo5: 4, plo6: 3, plo8: 4 } as const;
+    for (const variant of HORSE_PHASE11_VARIANTS) {
+      const retained = RETIRED_2026_10_22_PHASE11_SELECTIONS[variant];
+      expect(Object.isFrozen(retained)).toBe(true);
+      expect(retained, variant).toMatchObject({
         schema: 'horse-qualified-authority-selection-v1',
         phase: 'phase11',
         variant,
@@ -144,13 +151,17 @@ describe('P11.3 the VPIP floor call-down (2026-10-17) requires a fresh qualifica
         RETIRED_2026_10_17_PHASE11_SELECTIONS[variant] ??
         RETIRED_2026_10_16_PHASE11_SELECTIONS[variant] ??
         PREVIOUS_PHASE11_SELECTIONS[variant]!;
-      expect(live.approvalGeneration).toBeGreaterThan(previous.approvalGeneration);
-      const liveRelease = admitHorsePhase11ReleaseAuthority(variant);
-      expect(liveRelease.status, variant).toBe('admitted');
-      expect(selectedHorsePhase11Authority(variant, liveRelease)).not.toBeNull();
+      expect(retained.approvalGeneration).toBeGreaterThan(previous.approvalGeneration);
+      const release = admitHorsePhase11ReleaseAuthority(variant, Date.now(), retained);
+      expect(release, variant).toEqual({
+        status: 'refused',
+        reason: 'policy_digest_mismatch',
+        transient: false,
+      });
+      expect(selectedHorsePhase11Authority(variant, release)).toBeNull();
       for (const [path, digest] of [
-        [live.qualificationPath, live.qualificationSha256],
-        [live.completionPath!, live.completionSha256!],
+        [retained.qualificationPath, retained.qualificationSha256],
+        [retained.completionPath!, retained.completionSha256!],
       ])
         for (const root of ['../../../', '../../release-evidence/']) {
           const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
@@ -306,6 +317,7 @@ describe('P11.3 the VPIP floor call-down (2026-10-17) requires a fresh qualifica
               PREVIOUS_PHASE11_SELECTIONS[variant]?.qualificationPath,
               RETIRED_2026_10_16_PHASE11_SELECTIONS[variant].qualificationPath,
               RETIRED_2026_10_17_PHASE11_SELECTIONS[variant]?.qualificationPath,
+              RETIRED_2026_10_22_PHASE11_SELECTIONS[variant]?.qualificationPath,
             ],
             file
           ).toContain(path);

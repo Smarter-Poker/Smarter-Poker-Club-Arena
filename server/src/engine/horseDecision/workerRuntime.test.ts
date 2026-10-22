@@ -4824,7 +4824,11 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
     }
   );
 
-  it('the committed PLO8 selection reaches an applied natural worker path on two boards', async () => {
+  // 2026-10-22: maniac pressure moved every hashed policy digest, so the
+  // committed PLO8 selection is null until it requalifies: the live release is
+  // shadow, and the applied natural path is pinned with a genuinely qualified
+  // generation-1 admission instead.
+  it('the PLO8 joint owner is shadow while unselected and reaches an applied natural worker path on two boards once qualified', async () => {
     const r = changedCash(975, 'plo8');
     const live = await decideThrough(
       r,
@@ -4832,16 +4836,34 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
       false,
       changedSeed('plo8')
     );
+    expect(PHASE13_PROTECTED_RELEASE_SELECTIONS.plo8).toBeNull();
     expect(live.decision.jointPolicy).toMatchObject({
+      variant: 'plo8',
+      mode: 'shadow',
+      applied: false,
+      authority: { state: 'unselected' },
+    });
+    expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo8')).toBe(true);
+    const qualified = await decideThrough(
+      changedCash(975, 'plo8'),
+      (v) => qualifiedPhase13TestAdmission(v),
+      false,
+      changedSeed('plo8')
+    );
+    expect(qualified.decision.jointPolicy).toMatchObject({
       variant: 'plo8',
       mode: 'candidate',
       applied: true,
       authority: { state: 'usable', approvalGeneration: 1 },
     });
-    expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo8')).toBe(true);
+    expect(horseDecisionReceiptIsValid(structuredClone(qualified.decision), 'plo8')).toBe(true);
   });
 
-  it('the committed PLO4 selection reaches an applied natural worker path on two boards', async () => {
+  // 2026-10-22: maniac pressure moved every hashed policy digest, so the
+  // committed PLO4 selection is null until it requalifies: the live release is
+  // shadow, and the applied natural path is pinned with a genuinely qualified
+  // generation-1 admission instead.
+  it('the PLO4 joint owner is shadow while unselected and reaches an applied natural worker path on two boards once qualified', async () => {
     const r = changedCash(976, 'plo4');
     const live = await decideThrough(
       r,
@@ -4849,13 +4871,27 @@ describe('P13.3 worker-owned joint multiway authority (the Phase 8 path, reused 
       false,
       changedSeed('plo4')
     );
+    expect(PHASE13_PROTECTED_RELEASE_SELECTIONS.plo4).toBeNull();
     expect(live.decision.jointPolicy).toMatchObject({
+      variant: 'plo4',
+      mode: 'shadow',
+      applied: false,
+      authority: { state: 'unselected' },
+    });
+    expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
+    const qualified = await decideThrough(
+      changedCash(976, 'plo4'),
+      (v) => qualifiedPhase13TestAdmission(v),
+      false,
+      changedSeed('plo4')
+    );
+    expect(qualified.decision.jointPolicy).toMatchObject({
       variant: 'plo4',
       mode: 'candidate',
       applied: true,
       authority: { state: 'usable', approvalGeneration: 1 },
     });
-    expect(horseDecisionReceiptIsValid(structuredClone(live.decision), 'plo4')).toBe(true);
+    expect(horseDecisionReceiptIsValid(structuredClone(qualified.decision), 'plo4')).toBe(true);
   });
 
   const refused = (overrides: {

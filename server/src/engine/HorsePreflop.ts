@@ -124,6 +124,16 @@ export interface PreflopCtx {
   /** 2026-10-16: the last re-raiser's read (preflopVsReRaiser), facing a
    *  3-bet or more. Undefined = unchanged. */
   exploitReRaiser?: { fourBetBar: number; callBar: number };
+  /**
+   * 2026-10-22 MANIAC PRESSURE (HorseOpponentExploit.maniacBehindOpenBar): a
+   * maniac is still to act behind this unopened pot, so the open is raised
+   * only with a hand that continues when the maniac comes over the top - a
+   * hand opened to be folded is not opened. Undefined = unchanged.
+   */
+  maniacOpenBar?: number;
+  /** 2026-10-22: a maniac raised, or is still to act: no bluff 3-bets,
+   *  squeezes or 4-bet bluffs (a raise made to fold). Undefined = unchanged. */
+  maniacNoBluff?: boolean;
   /** V20 M-ZONES (2026-08-27): ante cost of ONE ORBIT in BB units, already
    *  resolved for the table's ante style by AnteMath.anteOrbitCostBB (0 = no
    *  ante). NOT per-player: multiplying this by the seat count is the bug of
@@ -1046,6 +1056,10 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
         t(trueHu ? 0.24 : 0.3) + depthTighten - anteWiden + vs35.open + phase6Shift('open');
     }
     openThresh = phase6CapBar(openThresh);
+    // MANIAC PRESSURE: never open a hand that has to fold to the maniac's
+    // re-raise. Not tightness-shifted: the bar is the continuing share
+    // against the maniac's measured width, already a price.
+    if (ctx.maniacOpenBar !== undefined) openThresh = Math.max(openThresh, ctx.maniacOpenBar);
 
     if (strength >= openThresh) {
       // V20 ORANGE ZONE (M 6-10): there is no raise-fold — a standard open
@@ -1259,6 +1273,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       strength < threeBetThresh &&
       !ctx.isOmaha &&
       !noBluff3 &&
+      ctx.maniacNoBluff !== true &&
       rand() < bluffBudget * 0.3 * blockerMult
     ) {
       // V28 AUDIT FIX: the bluff squeeze was sized 4.0-5.5x with no IP/OOP
@@ -1291,6 +1306,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       strength >= t(bluffFloor) &&
       strength < threeBetThresh &&
       !noBluff3 &&
+      ctx.maniacNoBluff !== true &&
       rand() < bluffFreqHere
     ) {
       if (ctx.isPotLimit) {
@@ -1471,6 +1487,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       !ctx.isOmaha &&
       raises === 2 &&
       callers === 0 &&
+      ctx.maniacNoBluff !== true &&
       strength >= t(0.72) &&
       strength < fourBetThresh &&
       currentBet * 2.3 < stack * 0.35 &&

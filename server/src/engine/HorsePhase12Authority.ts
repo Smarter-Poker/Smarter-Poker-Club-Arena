@@ -506,65 +506,25 @@ export interface HorsePhase12AuthoritySelection {
  * (river 320 of 320, lowest Wilson bound 0.9797). Crazy Pineapple has no
  * tournament format, so the selection is cash only. Short Deck and FLO8 stay
  * null.
+ *
+ * October 22: MANIAC PRESSURE (docs/changelog/2026-10-22-horses-adjust-to-maniacs.md,
+ * Dan: "IF A PLAYER IS MOVING ALL IN ON EVERY HAND THE HORSES NEED TO RECOGNIZE
+ * THIS IN REAL TIME ... FOR ALL GAMES, LEVELS AND STAKES") changes HorseLogic.ts,
+ * HorseMind.ts, HorsePreflop.ts and HorseOpponentExploit.ts, hashed policy
+ * files, so every qualified policy digest moves again. Following the
+ * 2026-10-17 precedent the fix ships now and every pack requalifies: every
+ * selection is explicitly null until its locked matrix requalifies the exact
+ * new source (and, where the pack has one, fresh natural completion is read);
+ * a renewal is the next generation. The da94e437 generations stay committed
+ * with their evidence and are retained for refusal in
+ * HorsePreviousSelections.test-support.ts as RETIRED_2026_10_22_*.
  */
 export const PHASE12_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<RemainingPolicyVariant, HorsePhase12AuthoritySelection | null>
 > = Object.freeze({
-  short_deck: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase12',
-    variant: 'short_deck',
-    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-    packVersion: 'short-deck-round4-v1',
-    contractVersion: 'remaining-variant-strength-contract-v2',
-    contractDigest: '0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2',
-    domain: 'short_deck-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase12/phase12-qualification-2026-10-20-short_deck.json',
-    qualificationSha256: 'ac82168403f0dcd7843a373e42c9dff27f57235c2a83b538182f4b017ec7137d',
-    completionPath: 'docs/evidence/phase12/da94e437/phase12-completion-2026-10-18-short_deck.json',
-    completionSha256: '021458012fe61c50a3b0f54ccf724929fe215757a5486ac8c0dba5723a29f590',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-20T14:45:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  pineapple: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase12',
-    variant: 'pineapple',
-    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-    packVersion: 'crazy-pineapple-round4-v1',
-    contractVersion: 'remaining-variant-strength-contract-v2',
-    contractDigest: '0abc9fa4e6e850989e0007a8f5be682ac1a14725c11a6272641533a2000884e2',
-    domain: 'pineapple-cash-single-board-after-rake-horse-population',
-    qualificationPath:
-      'docs/evidence/phase12/da94e437/phase12-qualification-2026-10-20-pineapple.json',
-    qualificationSha256: '486e10c30f91608f2edffaca0eedd0c90934dd6ea23d0b0d6895d1e7b236bb4b',
-    completionPath: 'docs/evidence/phase12/da94e437/phase12-completion-2026-10-18-pineapple.json',
-    completionSha256: 'a418ca7168fc5c19462b43a42acbc79743ed867b631dd757bcf0fa599d1f7d98',
-    approvalGeneration: 2,
-    issuedAt: '2026-10-20T01:10:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  flh: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase12',
-    variant: 'flh',
-    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-    packVersion: 'fixed-limit-holdem-round3-v1',
-    contractVersion: 'remaining-variant-strength-contract-v1',
-    contractDigest: 'fafbba8dc23ebc59b5aadf78fdcc47cd6f504baf9bcd10b07970ad7fbea501c0',
-    domain: 'flh-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase12/da94e437/phase12-qualification-2026-10-19-flh.json',
-    qualificationSha256: 'f73fc3a73d22d7d054896aa87bea4f12a61de26d4933d7e9ba8f51ee21105d27',
-    completionPath: 'docs/evidence/phase12/da94e437/phase12-completion-2026-10-18-flh.json',
-    completionSha256: 'ebcfe429ba70a20377f51716154ca908b556a9e9e0eb77630edec41be1ef589e',
-    approvalGeneration: 5,
-    issuedAt: '2026-10-19T00:25:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  short_deck: null,
+  pineapple: null,
+  flh: null,
   flo8: null,
 });
 

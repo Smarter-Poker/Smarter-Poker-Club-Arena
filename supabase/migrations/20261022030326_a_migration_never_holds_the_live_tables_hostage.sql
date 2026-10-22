@@ -46,6 +46,7 @@ COMMENT ON TABLE public.ca_writer_lock_sentinel_cancels IS
   'Every session fn_ca_writer_lock_sentinel cancelled for holding the live tables behind a writer-blocking lock (incident 2026-10-22 02:34 UTC).';
 ALTER TABLE public.ca_writer_lock_sentinel_cancels ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.ca_writer_lock_sentinel_cancels FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.ca_writer_lock_sentinel_cancels FROM service_role;
 GRANT SELECT ON public.ca_writer_lock_sentinel_cancels TO service_role;
 
 CREATE FUNCTION public.fn_ca_writer_lock_sentinel(p_max_xact_seconds integer DEFAULT 15)

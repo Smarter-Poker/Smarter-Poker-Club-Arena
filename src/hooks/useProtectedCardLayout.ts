@@ -111,7 +111,7 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
             const spineY = Math.min(Math.max(py, upper), lower);
             return Math.hypot(px - cx, py - spineY) <= radius + inset - feltMarginPx;
           });
-        for (const extra of [0, 8, 16, 24, 32, 40, 48, 60, 72, 84, 96]) {
+        for (const extra of [0, 10, 20, 28, 36, 44, 52, 64, 76, 88, 100]) {
           depth = extra;
           const band = radius - extra;
           for (let angle = 0; angle < 360; angle += 2) {
@@ -133,10 +133,6 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         )
           .map(visibleBox)
           .filter((box): box is CardBox => box !== null);
-        const wordmarks = Array.from(page.querySelectorAll('.table-brand'))
-          .map(visibleBox)
-          .filter((box): box is CardBox => box !== null)
-          .map((box) => obstacles.find((o) => o.left === box.left && o.top === box.top) ?? box);
         const entries = wagers().flatMap((bet) => {
           const box = visibleBox(bet);
           const owner = bet
@@ -155,48 +151,52 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
           const clearOfTable = placed.filter(
             (candidate) => !obstacles.some((obstacle) => wagerBoxesOverlap(candidate, obstacle))
           );
-          // Last resort on the smallest felt: the printed wordmark is the one
-          // thing a wager may rest on, never a player, the board or the pot.
-          const overWordmark = placed.filter(
-            (candidate) =>
-              !obstacles.some(
-                (obstacle) =>
-                  !wordmarks.includes(obstacle) && wagerBoxesOverlap(candidate, obstacle)
-              ) && wordmarks.some((mark) => wagerBoxesOverlap(candidate, mark))
-          );
-          // Wholly on the felt whenever the felt has room. On a small, crowded
-          // phone it may not, and then a spot near the rail that clears every
-          // player and every other wager beats one printed over either, so
-          // those come after every on-felt spot rather than not at all.
+          // Wholly on the felt whenever every wager fits there together. On a
+          // small, crowded phone they may not, and then the nearest spots that
+          // still clear every player, the board, the pot and each other are
+          // used, rail band included, rather than leaving a wager on a player.
           const byCost = (a: (typeof clearOfTable)[number], b: (typeof clearOfTable)[number]) =>
             Math.hypot(a.left + a.width / 2 - desired.x, a.top + a.height / 2 - desired.y) +
             2 * a.depth -
             (Math.hypot(b.left + b.width / 2 - desired.x, b.top + b.height / 2 - desired.y) +
               2 * b.depth);
-          const candidates = [
-            ...clearOfTable.filter(wagerOnFelt).sort(byCost),
-            ...clearOfTable.filter((candidate) => !wagerOnFelt(candidate)).sort(byCost),
-            ...overWordmark.filter(wagerOnFelt).sort(byCost),
-          ];
-          const distinct: CardBox[] = [];
-          for (const candidate of candidates) {
-            if (
-              distinct.every(
-                (other) => Math.hypot(candidate.left - other.left, candidate.top - other.top) >= 4
+          const distinct = (list: typeof clearOfTable, cap: number): CardBox[] => {
+            const kept: CardBox[] = [];
+            for (const candidate of list) {
+              if (
+                kept.every(
+                  (other) => Math.hypot(candidate.left - other.left, candidate.top - other.top) >= 4
+                )
               )
-            )
-              distinct.push(candidate);
-            if (distinct.length >= 800) break;
-          }
-          return [{ bet, box, candidates: distinct }];
+                kept.push(candidate);
+              if (kept.length >= cap) break;
+            }
+            return kept;
+          };
+          const nearest = [...clearOfTable].sort(byCost);
+          return [
+            {
+              bet,
+              box,
+              felt: distinct(nearest.filter(wagerOnFelt), 96),
+              // Exactly the rail-band slots this placer has always offered.
+              candidates: distinct(
+                nearest.filter((candidate) => candidate.depth <= 20),
+                96
+              ),
+              wide: distinct(nearest, 160),
+            },
+          ];
         });
         // Every wager on the felt at once when the table allows it. A crowded
         // short phone (three players all in on one side) can leave no joint
         // solution; then each wager still takes its own best clear spot in
         // turn, instead of every wager staying wherever it first landed.
         const placements =
+          assignProtectedWagers(entries.map((entry) => entry.felt)) ??
           assignProtectedWagers(entries.map((entry) => entry.candidates)) ??
-          greedyProtectedWagers(entries.map((entry) => entry.candidates));
+          assignProtectedWagers(entries.map((entry) => entry.wide)) ??
+          greedyProtectedWagers(entries.map((entry) => entry.wide));
         for (let i = 0; i < entries.length; i++) {
           const { bet, box } = entries[i];
           const next = placements?.[i];

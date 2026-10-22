@@ -441,11 +441,15 @@ export function fitSeatToViewport(
       ? seat.x < 50
         ? minX
         : maxX
-      : portraitPhone && seat.y < 20 && seat.x !== 50
+      : portraitPhone && seat.y < 20 && seat.x !== 50 && canvas.w < INBOARD_TOP_CAP_MIN_CANVAS_PX
         ? seat.x < 50
-          ? Math.min(50, Math.max(seat.x, capClearX))
-          : Math.max(50, Math.min(seat.x, 100 - capClearX))
-        : seat.x;
+          ? 15
+          : 85
+        : portraitPhone && seat.y < 20 && seat.x !== 50
+          ? seat.x < 50
+            ? Math.min(50, Math.max(seat.x, capClearX))
+            : Math.max(50, Math.min(seat.x, 100 - capClearX))
+          : seat.x;
   const x = Math.max(minX, Math.min(maxX, targetX));
   // Dan 2026-10-21, same report: on a phone the side column is a stack of
   // whole pods (tag, avatar, plate), and the lower side chair sat 24.5 points
@@ -455,7 +459,11 @@ export function fitSeatToViewport(
   // board, so the board's band does not bind there and the chair can move up
   // to even the column.
   const y =
-    portraitPhone && seat.x !== 50 && seat.y > 50 && seat.y < 70
+    portraitPhone &&
+    canvas.h >= LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX &&
+    seat.x !== 50 &&
+    seat.y > 50 &&
+    seat.y < 70
       ? seat.y - PORTRAIT_LOW_SIDE_SEAT_LIFT
       : seat.y;
   return x === seat.x && y === seat.y ? seat : { ...seat, x, y };
@@ -464,6 +472,13 @@ export function fitSeatToViewport(
 /** How far a phone lifts the lower side chair to even its column (points of
  * the scaler's height). See `fitSeatToViewport`. */
 export const PORTRAIT_LOW_SIDE_SEAT_LIFT = 4;
+
+/** The smallest phone felts (an iPhone SE table is about 262 x 324px) need
+ * every wager slot the original layout gives them: nine bets only fit around
+ * the outer lanes there. Below these sizes the top caps keep the outboard
+ * 15/85 lanes and the lower side chair is not lifted. */
+export const INBOARD_TOP_CAP_MIN_CANVAS_PX = 290;
+export const LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX = 400;
 
 /**
  * Clear felt between a chip's edge and its own pod, as a percentage of the

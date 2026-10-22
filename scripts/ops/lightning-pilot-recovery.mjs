@@ -143,7 +143,7 @@ async function openOtherPool(page, admin, pin, remaining, progress) {
       progress.step = 'existing_pool_tab_hidden';
       throw new Error('Manual Pool Tab Hidden');
     }
-    await selectPoolTab(page, pin, remaining, progress);
+    await selectPoolTab(page, pin, remaining, progress, { input: 'tap' });
     return;
   }
   progress.step = 'open_another_table';
@@ -380,7 +380,7 @@ export async function witnessRecovery({
             waitUntil: 'domcontentloaded',
             timeout: remaining(),
           });
-          await selectPoolTab(page, pin, remaining, progress);
+          await selectPoolTab(page, pin, remaining, progress, { input: 'tap' });
         } else await openOtherPool(page, admin, pin, remaining, progress);
         progress.step = 'first_render';
         await evidence.wait(() => evidence.lastHand(pin.poolSessionId) !== null);
@@ -472,7 +472,7 @@ export async function witnessRecovery({
         waitUntil: 'domcontentloaded',
         timeout: remaining(),
       });
-      await selectPoolTab(duplicate.page, pin, remaining, duplicateProgress);
+      await selectPoolTab(duplicate.page, pin, remaining, duplicateProgress, { input: 'tap' });
       duplicateProgress.step = 'first_render';
       await duplicate.evidence.wait(() => duplicate.evidence.lastHand(pin.poolSessionId) !== null);
       duplicateProgress.step = 'rendered';
@@ -516,7 +516,7 @@ export async function witnessRecovery({
         waitUntil: 'domcontentloaded',
         timeout: remaining(),
       });
-      await selectPoolTab(recovered.page, pin, remaining, recoveredProgress);
+      await selectPoolTab(recovered.page, pin, remaining, recoveredProgress, { input: 'tap' });
       recoveredProgress.step = 'first_render';
       await recovered.evidence.wait(() => recovered.evidence.lastHand(pin.poolSessionId) !== null);
       recoveredProgress.step = 'rendered';

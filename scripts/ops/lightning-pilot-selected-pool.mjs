@@ -4,7 +4,8 @@ const poolTab = (page, pin) => {
   return page.locator(`[data-tabid="${pin.poolSessionId}"]`);
 };
 /** A document route does not prove which restored game is active. Select normally. */
-export async function selectPoolTab(page, pin, remaining, progress) {
+export async function selectPoolTab(page, pin, remaining, progress, { input = 'click' } = {}) {
+  if (!['tap', 'click'].includes(input)) throw new Error('Pool Tab Input Unknown');
   const tab = poolTab(page, pin);
   progress.step = 'wait_for_pool_tab';
   await tab.waitFor({ state: 'visible', timeout: Math.min(15000, remaining()) });
@@ -17,7 +18,11 @@ export async function selectPoolTab(page, pin, remaining, progress) {
     throw new Error('Manual Pool Tab Hidden');
   }
   progress.step = 'select_existing_pool_tab';
-  await tab.tap({ timeout: Math.min(5000, remaining()) });
+  // A tap needs a touch context (Playwright refuses it otherwise): only a
+  // witness that built its context with hasTouch passes input 'tap'; every
+  // other witness selects with the ordinary click of the same control.
+  progress.input = input;
+  await tab[input]({ timeout: Math.min(5000, remaining()) });
   progress.step = 'verify_pool_selection';
   progress.selected = (await tab.getAttribute('aria-current', { timeout: remaining() })) === 'true';
   if (!progress.selected) throw new Error('Manual Selection');

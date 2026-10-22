@@ -521,6 +521,10 @@ function fixture(
               actions.push('select_pool');
               selected = true;
             },
+            click: async () => {
+              actions.push('select_pool');
+              selected = true;
+            },
             getAttribute: async () => {
               if (selectionLostAfter !== undefined && ++selectionReads > selectionLostAfter)
                 selected = false;

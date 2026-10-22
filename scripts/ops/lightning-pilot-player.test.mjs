@@ -313,6 +313,7 @@ function fakeBrowser(
             count: async () => 1,
             isVisible: async () => true,
             tap: async () => {},
+            click: async () => {},
             getAttribute: async () => (broken === 'wrong_pool' ? 'false' : 'true'),
           }
         : { getAttribute: async () => 'accepted' },

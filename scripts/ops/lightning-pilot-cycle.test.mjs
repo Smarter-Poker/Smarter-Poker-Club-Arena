@@ -276,6 +276,7 @@ test('partial browser failure retains bounded live phases and requested hand ide
           count: async () => 1,
           isVisible: async () => true,
           tap: async () => {},
+          click: async () => {},
           getAttribute: async () => 'true',
         };
       selectors.push(selector);

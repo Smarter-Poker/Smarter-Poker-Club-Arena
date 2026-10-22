@@ -133,6 +133,17 @@ def require_builtin_extension(sql,expected):
  actual=json.loads(sql("SELECT jsonb_build_object('name',e.extname,'owner',pg_get_userbyid(e.extowner),'schema',n.nspname,'version',e.extversion) FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname="+lit(expected['name'])+';',phase='extension-initial-contract',extension=expected['name'],owner=expected['owner']))
  if actual!=expected:raise Refused('Initial builtin extension differs from captured metadata: '+json.dumps(actual))
  return actual
+def apply_pending_schema(run,cmd,root,work,entries):
+ forward.validate(root,entries)
+ if not work.is_dir() or work.resolve()!=work:raise Refused('Pending schema requires real owned scratch')
+ for entry in entries:
+  source=(root/entry['path']).read_bytes()
+  if hashlib.sha256(source).hexdigest()!=entry['sha256']:raise Refused('Pending schema changed before staging')
+  # PostgreSQL wrappers see only the bind-mounted scratch, never host sources.
+  staged=work/'pending.sql'
+  fd=os.open(staged,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+  with os.fdopen(fd,'wb') as output:output.write(source)
+  run(cmd+['-c','SET ROLE postgres;','-f',staged,'-c','RESET ROLE;'],limit=300,phase='pending-schema-restore',context={'sourceFile':entry['path']})
 def main():
  ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('--scratch',required=True);ap.add_argument('--result',required=True);ap.add_argument('--pg-bin',default=os.environ.get('PG_BIN','/usr/lib/postgresql/17/bin'));args=ap.parse_args()
  parent=validate_parent(args.scratch);output=Path(args.result).absolute()
@@ -232,8 +243,7 @@ def main():
   # outside its original BEGIN/COMMIT transaction, byte-for-byte.
   pending=forward.validate(ROOT,json.loads((BASE/'forward-schema.json').read_text())['arena'])
   proposed=forward.expected_catalog(expected,forward.load_delta(BASE))
-  for entry in pending:
-   run(cmd+['-c','SET ROLE postgres;','-f',ROOT/entry['path'],'-c','RESET ROLE;'],limit=300,phase='pending-schema-restore',context={'sourceFile':entry['path']})
+  apply_pending_schema(run,cmd,ROOT,work,pending)
   finalroles=json.loads(sql(rolequery))
   for role in finalroles:role['config']=sorted(role.get('config') or [])
   if sorted(finalroles,key=lambda x:x['name'])!=sorted(expectedroles,key=lambda x:x['name']):raise Refused('Pending DDL changed source role capabilities/configuration')

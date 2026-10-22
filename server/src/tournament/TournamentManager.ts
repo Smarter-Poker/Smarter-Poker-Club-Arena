@@ -4427,6 +4427,18 @@ export class TournamentManager extends TournamentManagerEliminations {
           engine.setHub(tableStateHub); // Phase 1.1 PR-2
           this.wireEliminationWake(engine);
           this.tableEngines.set(tableId, engine);
+          /* A TABLE OPENED DURING THE :55 BREAK TAKES THE BREAK (Dan 2026-10-21:
+             "ALL TOURNAMENTS TAKE A 5 MIN BREAK EVERY HOUR").
+             This was the one dealer path that never inherited the break hold.
+             Late registration and rebalancing open capacity tables inside the
+             break window, and every such table dealt straight through it: 11
+             tables across 7 of 34 hours on 2026-10-20/22, e.g. Nightly 10K
+             table 2c4ebadf opened at 00:55:27 and dealt six hands before 01:00,
+             holding the platform's last-hand wait to its 300s ceiling. The
+             same preparation every other path uses (replacement, resume,
+             re-admission) arms the synchronized break, an add-on break, a
+             stage-end pause and hand-for-hand before the dealer can start. */
+          this.prepareManagedTableEngineForPlay(engine);
           this.admitManagedTableEngine(tableId, engine);
           this.startManagedTableEngine(engine, 'Tournament.dynamic_expansion_table_engine_error', {
             tableId,

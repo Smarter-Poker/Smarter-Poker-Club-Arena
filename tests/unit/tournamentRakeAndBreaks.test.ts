@@ -87,7 +87,7 @@ describe('synchronized breaks run :55 -> :00', () => {
   });
 
   it('a causal replacement inherits the active break before it can deal', () => {
-    const prepare = sliceMethod(BASE, 'private prepareManagedTableEngineForPlay');
+    const prepare = sliceMethod(BASE, 'protected prepareManagedTableEngineForPlay');
     expect(prepare).toMatch(/if \(this\.onBreak\)/);
     expect(prepare).toMatch(
       /pauseAfterHand\(TournamentManagerBase\.MAX_HEALTHY_PAUSE_MS,\s*\{\s*beforeNextHand:\s*true/

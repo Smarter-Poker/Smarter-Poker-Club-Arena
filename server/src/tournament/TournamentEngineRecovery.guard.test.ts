@@ -69,7 +69,7 @@ describe('tournament table engines recover from their causal generation signal',
   });
 
   it('inherits break and hand-for-hand holds before a replacement can start', () => {
-    const prepare = sliceMethod(BASE, 'private prepareManagedTableEngineForPlay(');
+    const prepare = sliceMethod(BASE, 'protected prepareManagedTableEngineForPlay(');
     expect(prepare).toContain('if (this.onBreak)');
     expect(prepare).toContain('beforeNextHand: true');
     expect(prepare).toContain('if (this.handForHandActive) engine.pauseAfterHand()');

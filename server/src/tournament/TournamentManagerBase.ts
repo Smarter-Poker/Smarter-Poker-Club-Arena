@@ -1811,7 +1811,7 @@ export abstract class TournamentManagerBase {
   }
 
   /** A replacement inherits every pause authority before it can deal. */
-  private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
+  protected prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
     // The day is ending: a replacement dealer inherits the stage-end pause
     // before it can deal, exactly as it inherits a synchronized break.

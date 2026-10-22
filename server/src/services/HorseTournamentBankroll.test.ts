@@ -100,6 +100,16 @@ describe('WIRING - the registration pool actually consults it', () => {
     expect(TOURNEY).toMatch(/if \(roll === undefined\) return true;/);
   });
 
+  it('a complete read with no active wallet removes the horse, as the database would', () => {
+    // 2026-10-22: suspended members were treated as "unread" and sent to
+    // atomic_deduct_wallet_and_log, which refused every one of them.
+    expect(TOURNEY).toMatch(/\.in\('status', \['active', 'approved'\]\)/);
+    expect(TOURNEY).toMatch(/walletHolders\.add\(r\.user_id\);/);
+    expect(TOURNEY).toMatch(
+      /if \(!diamondEvent && !walletHolders\.has\(h\.id\)\) return false;/
+    );
+  });
+
   it('an incomplete page leaves the pool untouched', () => {
     expect(TOURNEY).toMatch(/if \(rollPage\.complete\) \{/);
   });

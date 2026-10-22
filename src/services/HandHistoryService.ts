@@ -62,6 +62,8 @@ export const HAND_HISTORY_COLUMNS = [
  * club/table/order/page in PostgreSQL before returning replay rows.
  */
 export const HAND_HISTORY_ARENA_RPC = 'ca_own_hand_history_by_club';
+/** One page of the cross-table archive's hand ids, read by the player's own index. */
+export const HAND_HISTORY_PAGE_IDS_RPC = 'fn_player_hand_history_page_ids';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -443,15 +445,42 @@ class HandHistoryServiceClass {
       );
     }
 
-    const floor =
-      opts.indexedArchive && !opts.tableId
-        ? await this.archiveHandNumberFloor(userId, offset + limit, containmentJson)
-        : null;
+    /* THE ARCHIVE READS BY THE PLAYER'S OWN INDEX (2026-10-22). The cross-
+       table archive used to send the ordered containment read below. Under
+       the hand_history RLS policy Postgres answers it by walking the global
+       hand_number index and filtering every row, so for a player with fewer
+       retained hands than the page asks for it read the whole table and hit
+       the statement timeout (about five 57014s an hour). The page ids now
+       come from fn_player_hand_history_page_ids, which picks an index-bounded
+       read for the player's actual history, and the hands are resolved by id
+       through the same RLS door and the one column list. */
+    if (opts.indexedArchive && !opts.tableId) {
+      try {
+        const { data: page, error: pageError } = await supabase.rpc(
+          HAND_HISTORY_PAGE_IDS_RPC,
+          {
+            p_user_id: userId,
+            // getHandsByIds resolves at most 100 ids per call.
+            p_limit: Math.max(1, Math.min(100, Math.floor(limit))),
+            p_offset: offset,
+          }
+        );
+        if (pageError) throw pageError;
+        const ids = ((page as Array<{ id?: unknown }> | null) || [])
+          .map((row) => row?.id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0);
+        return await this.getHandsByIds(ids);
+      } catch (error) {
+        if (opts.throwOnError) throw error;
+        reportError(error, 'HandHistoryService.getPlayerHands_archive_page');
+        return [];
+      }
+    }
+
     let query = supabase
       .from('hand_history')
       .select(HAND_HISTORY_COLUMNS)
       .contains('players', containmentJson);
-    if (floor !== null) query = query.or(`hand_number.gte.${floor},hand_number.is.null`);
     if (opts.tableId) query = query.eq('table_id', opts.tableId);
     /* PLAY ORDER, NOT INSERT ORDER (Dan 2026-09-04: "un organized"). This
        sorted by created_at, which is when the ROW landed: the writer's retry
@@ -472,77 +501,6 @@ class HandHistoryServiceClass {
     }
 
     return this.mapPlayerHandRows(data as any[]);
-  }
-
-  /**
-   * Any N distinct retained owned hands establish a conservative lower bound
-   * for the globally newest N hand numbers. The index's insert-time order is
-   * only a way to find seeds; the final query still orders by hand_number and
-   * includes unindexed hands and nullable legacy numbers. Insufficient seeds
-   * or an unavailable optimization retain the original authoritative read.
-   */
-  private async archiveHandNumberFloor(
-    userId: string,
-    required: number,
-    containmentJson: string
-  ): Promise<number | null> {
-    if (!Number.isSafeInteger(required) || required < 1) return null;
-    const chunkSize = 1000;
-    try {
-      const seedIds = new Set<string>();
-      // Each request respects PostgREST's row ceiling; page depth is not capped.
-      for (let start = 0; start < required; start += chunkSize) {
-        const end = Math.min(start + chunkSize, required) - 1;
-        const { data: indexed, error: indexError } = await supabase
-          .from('ca_hand_player_idx')
-          .select('hand_id')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .order('hand_id', { ascending: true })
-          .range(start, end);
-        if (indexError) {
-          reportError(indexError, 'HandHistoryService.archive_seed_index');
-          return null;
-        }
-        for (const row of indexed || []) {
-          if (typeof row.hand_id === 'string' && row.hand_id.length > 0) seedIds.add(row.hand_id);
-        }
-        if ((indexed || []).length < end - start + 1) return null;
-      }
-      if (seedIds.size < required) return null;
-      const ids = [...seedIds];
-      const eligible = new Map<string, number>();
-      for (let start = 0; start < ids.length; start += chunkSize) {
-        const chunk = ids.slice(start, start + chunkSize);
-        const { data: retained, error: seedError } = await supabase
-          .from('hand_history')
-          .select('id, hand_number')
-          .in('id', chunk)
-          .contains('players', containmentJson);
-        if (seedError) {
-          reportError(seedError, 'HandHistoryService.archive_seed_hands');
-          return null;
-        }
-        for (const row of retained || []) {
-          if (!chunk.includes(row.id) || row.hand_number === null || row.hand_number === undefined)
-            continue;
-          if (
-            typeof row.hand_number !== 'number' &&
-            (typeof row.hand_number !== 'string' || !/^-?\d+$/.test(row.hand_number))
-          )
-            continue;
-          const number = Number(row.hand_number);
-          if (Number.isSafeInteger(number)) eligible.set(row.id, number);
-        }
-      }
-      const numbers = [...new Set(eligible.values())];
-      return eligible.size >= required && numbers.length >= required
-        ? numbers.reduce((floor, number) => Math.min(floor, number), Number.POSITIVE_INFINITY)
-        : null;
-    } catch (error) {
-      reportError(error, 'HandHistoryService.archive_seed_read');
-      return null;
-    }
   }
 
   private async mapPlayerHandRows(data: any[]): Promise<HandRecord[]> {

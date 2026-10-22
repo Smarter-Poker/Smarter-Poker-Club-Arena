@@ -7362,7 +7362,18 @@ export class TournamentRecurringService {
                   'TournamentRecurring.bankrolls'
                 );
           if (rollPage.complete) {
+            /* A COMPLETE READ WITH NO ACTIVE WALLET IS AN ANSWER (2026-10-22).
+               A horse absent from a complete page holds no active or approved
+               wallet in any club this event charges, so
+               atomic_deduct_wallet_and_log refuses it exactly as it refuses a
+               human ("has no active wallet at club"). Treating that absence as
+               "unread" sent 966 doomed registrations a day at Lightning
+               Internal Pilot, every one a suspended member. The fail-open rule
+               still holds for what it was written for: an incomplete page, a
+               thrown read, or a row whose balance cannot be read. */
+            const walletHolders = new Set<string>();
             for (const r of rollPage.rows) {
+              walletHolders.add(r.user_id);
               const v = Number(r.chip_balance);
               if (!Number.isFinite(v)) continue;
               const prev = rolls.get(r.user_id);
@@ -7373,6 +7384,7 @@ export class TournamentRecurringService {
               const before = pool.length;
               pool = pool.filter((h) => {
                 if (ticketHintIds.has(h.id)) return true;
+                if (!diamondEvent && !walletHolders.has(h.id)) return false; // no active wallet
                 const roll = rolls.get(h.id);
                 if (roll === undefined) return true; // unread -> fail open
                 return canEnterTournament(roll, cost, bankrollPolicyFor(h.id));

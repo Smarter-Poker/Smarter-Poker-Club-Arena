@@ -49,7 +49,7 @@ vi.mock('../../src/lib/supabase', () => ({
 }));
 
 vi.mock('../../src/stores/useUserStore', () => ({
-  useUserStore: { getState: () => ({ currentClubId: 'club-1' }) },
+  useUserStore: { getState: () => ({ currentClubId: '00000000-0000-4000-8000-0000000000c1' }) },
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../../src/core/MasterBus', () => ({ masterBus: { emit: vi.fn() } }));
@@ -117,7 +117,7 @@ describe('readPlayerBalance degrades to unknown, not to a stale number', () => {
 
   it('returns the RPC answer when the spendable RPC responds', async () => {
     mockRpc.mockResolvedValue({ data: { balance: 250 }, error: null });
-    const res = await WalletService.readPlayerBalance('u1');
+    const res = await WalletService.readPlayerBalance('00000000-0000-4000-8000-0000000000a1');
     expect(res).toEqual({ balance: 250, source: 'rpc' });
   });
 
@@ -129,7 +129,7 @@ describe('readPlayerBalance degrades to unknown, not to a stale number', () => {
       })
       .mockResolvedValueOnce({ data: { balance: 375 }, error: null });
 
-    const res = await WalletService.readPlayerBalance('u1');
+    const res = await WalletService.readPlayerBalance('00000000-0000-4000-8000-0000000000a1');
 
     expect(res).toEqual({ balance: 375, source: 'rpc' });
     expect(mockRpc).toHaveBeenCalledTimes(2);
@@ -143,7 +143,7 @@ describe('readPlayerBalance degrades to unknown, not to a stale number', () => {
       data: null,
       error: { code: '42501', message: 'permission denied' },
     });
-    const res = await WalletService.readPlayerBalance('u1');
+    const res = await WalletService.readPlayerBalance('00000000-0000-4000-8000-0000000000a1');
     expect(res.balance).toBeNull();
     expect(res.source).toBe('failed');
     expect(tableReads).not.toContain('wallets');
@@ -155,5 +155,23 @@ describe('ensureWalletsExist no longer provisions rows in the frozen pool', () =
     tableReads.length = 0;
     await WalletService.ensureWalletsExist('u1', ['BUSINESS', 'PROMO']);
     expect(tableReads).toEqual([]);
+  });
+});
+
+describe('readPlayerBalance never sends a placeholder id', () => {
+  beforeEach(() => mockRpc.mockReset());
+
+  it('a guest placeholder or slug is unknown, and the RPC is never asked', async () => {
+    mockRpc.mockResolvedValue({ data: { balance: 250 }, error: null });
+    expect(await WalletService.readPlayerBalance('guest')).toEqual({
+      balance: null,
+      source: 'failed',
+    });
+    expect(
+      await WalletService.readPlayerBalance('00000000-0000-4000-8000-0000000000a1', {
+        tableId: 'demo',
+      })
+    ).toEqual({ balance: null, source: 'failed' });
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });

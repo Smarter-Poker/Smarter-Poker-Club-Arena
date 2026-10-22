@@ -11,6 +11,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import ClubRosterService, { type MemberUplineLevel } from '../../src/services/ClubRosterService';
 import MemberUplineCard from '../../src/components/club/MemberUplineCard';
 
+// The assignment control has its own suite (PlayerAssignAgent.test.tsx).
+vi.mock('../../src/components/club/MemberAssignAgent', () => ({
+  default: ({ currentAgentId }: { currentAgentId: string | null }) => (
+    <div data-testid="assign-agent" data-current={currentAgentId ?? ''} />
+  ),
+}));
+
 const ROOT = resolve(__dirname, '../..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
 const MIGRATION = read(
@@ -41,10 +48,19 @@ describe('Player Record: Upline Agents card', () => {
     );
   });
 
+  it('offers Assign To Agent with the direct upline as the current agent', async () => {
+    vi.spyOn(ClubRosterService, 'getMemberUplineChain').mockResolvedValue(chain);
+    render(<MemberUplineCard clubId="club-1" userId="player-1" />);
+    const control = await screen.findByTestId('assign-agent');
+    expect(control.getAttribute('data-current')).toBe('a1');
+  });
+
   it('says so when the player has no upline', async () => {
     vi.spyOn(ClubRosterService, 'getMemberUplineChain').mockResolvedValue([]);
     render(<MemberUplineCard clubId="club-1" userId="player-1" />);
-    expect(await screen.findByText('This Player Has No Upline Agent.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('No Agent Assigned. This Player Sits Directly Under The Club Owner.')
+    ).toBeInTheDocument();
   });
 
   it('renders nothing for a viewer the RPC denies', async () => {

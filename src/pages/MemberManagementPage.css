@@ -352,6 +352,80 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   ASSIGN TO AGENT (player record, under Upline Agents)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.mm-assign {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mm-assign__label {
+  font-size: 0.8rem;
+}
+
+.mm-assign__row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.mm-assign__select {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 2.25rem;
+  padding: 0 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--ca-text-dim);
+  font-size: 0.85rem;
+}
+
+.mm-assign__button {
+  flex: 0 0 auto;
+  min-height: 2.25rem;
+  padding: 0 0.9rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ca-cyan);
+  background: rgba(0, 212, 255, 0.12);
+  color: var(--ca-cyan);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mm-assign__button--ghost {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: var(--ca-text-dim);
+}
+
+.mm-assign__button:disabled,
+.mm-assign__select:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.mm-assign__button:focus-visible,
+.mm-assign__select:focus-visible {
+  outline: 2px solid var(--ca-cyan);
+  outline-offset: 2px;
+}
+
+.mm-assign__review .mm-assign__row {
+  justify-content: flex-end;
+}
+
+.mm-assign__error {
+  color: #ff6b6b;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    RANGE
    ───────────────────────────────────────────────────────────────────────────── */
 

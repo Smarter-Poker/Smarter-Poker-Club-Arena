@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import ClubRosterService, { type MemberUplineLevel } from '../../services/ClubRosterService';
 import { roleLabel } from '../../types/clubRoles';
 import { reportError } from '../../utils/errorReporter';
+import MemberAssignAgent from './MemberAssignAgent';
 // The record's own sheet: the card is drawn from its info rows.
 import '../../pages/MemberManagementPage.css';
 
@@ -42,6 +43,8 @@ export default function MemberUplineCard({
     data: MemberUplineLevel[] | null;
   };
   const [result, setResult] = useState<Result>({ scope, state: 'loading', data: null });
+  // Bumped after an assignment so the chain re-reads the new upline.
+  const [moved, setMoved] = useState(0);
   const current: Result = result.scope === scope ? result : { scope, state: 'loading', data: null };
   const { data, state } = current;
 
@@ -68,7 +71,7 @@ export default function MemberUplineCard({
         );
       });
     return () => controller.abort();
-  }, [clubId, userId, scope, refreshKey]);
+  }, [clubId, userId, scope, refreshKey, moved]);
 
   if (state === 'hidden') return null;
 
@@ -90,7 +93,9 @@ export default function MemberUplineCard({
           Loading Upline Agents...
         </p>
       ) : data.length === 0 ? (
-        <p className="mm-winloss__note">This Player Has No Upline Agent.</p>
+        <p className="mm-winloss__note">
+          No Agent Assigned. This Player Sits Directly Under The Club Owner.
+        </p>
       ) : (
         <>
           {data.map((level) => (
@@ -101,6 +106,14 @@ export default function MemberUplineCard({
           ))}
           <p className="mm-winloss__note">Closest Agent First, Up To The Top Of The Chain.</p>
         </>
+      )}
+      {state === 'ready' && data && (
+        <MemberAssignAgent
+          clubId={clubId}
+          userId={userId}
+          currentAgentId={data[0]?.user_id ?? null}
+          onAssigned={() => setMoved((value) => value + 1)}
+        />
       )}
     </section>
   );

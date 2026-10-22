@@ -1,4 +1,5 @@
 import { readCommittedSeatStacks } from './committedSeatStackRead.js';
+import { publishSettledTournamentHand } from './settledTournamentStandings.js';
 import { assertDiamondAcceptedHand } from '../domain/DiamondCashBoundary.js';
 import { diamondCashJackpotVerdict } from './diamondCashJackpot.js';
 import { diamondCashRakeFactsFor } from './diamondCashRakeFacts.js';
@@ -2821,6 +2822,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       throw new Error(
         `authoritative hand commit was not proved for ${this.tableId}#${snap.handNumber}`
       );
+    }
+
+    // The field's chip mirror committed with this exact hand, not with its
+    // earlier animation event. Fan out to the whole MTT, including viewers
+    // at other tables. This carries no cards or player-private state.
+    const standingsTournamentId = this.tableInfo?.tournament_id;
+    if (standingsTournamentId && this.lifecycleCanMutate()) {
+      publishSettledTournamentHand(standingsTournamentId, this.tableId, snap.handNumber);
     }
 
     /* The exact settlement committed an immutable post-commit envelope before

@@ -68,6 +68,11 @@ import { WalletDesk, WalletDeskHeading, WalletDeskRow } from '../wallet/WalletDe
 import '../wallet/WalletDesk.css';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
+import {
+  pullableFrom,
+  readUnionClubBalances,
+  type UnionClubBalance,
+} from '../../services/unionClubBalances';
 import './UnionWalletModal.css';
 
 // Keep this union explicit at the UI boundary. Static release certification
@@ -216,6 +221,11 @@ export function UnionWalletModal({
   const [loading, setLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [directoryReload, setDirectoryReload] = useState(0);
+  /** Club Bank / Promo balances by club id (union owner and union leads only). */
+  const [clubBalances, setClubBalances] = useState<Map<string, UnionClubBalance>>(
+    () => new Map()
+  );
+  const [balanceReload, setBalanceReload] = useState(0);
   const directoryLoadVersion = useRef(0);
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<
@@ -425,6 +435,33 @@ export function UnionWalletModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, unionId, walletKey, user?.id, directoryReload]);
 
+  /* CLUB BALANCES (Dan, 2026-10-21). Read separately from the directory so a
+     refused or failed balance read never hides the clubs themselves: the rows
+     still load and the figure is simply left off, never shown as 0. */
+  useEffect(() => {
+    if (!isOpen || readOnly || !unionId) {
+      setClubBalances(new Map());
+      return;
+    }
+    let live = true;
+    readUnionClubBalances(unionId)
+      .then((map) => {
+        if (live) setClubBalances(map);
+      })
+      .catch((error) => {
+        reportError(error, 'UnionWalletModal.club_balances_load_failed');
+        if (live) setClubBalances(new Map());
+      });
+    return () => {
+      live = false;
+    };
+  }, [isOpen, readOnly, unionId, directoryReload, balanceReload]);
+
+  /* A confirmed movement changes a club's balance: read it again. */
+  useEffect(() => {
+    if (notice?.ok) setBalanceReload((value) => value + 1);
+  }, [notice]);
+
   /**
    * THE LEDGER TAB. fn_promo_wallet_ledger scope 'union' reads
    * union_wallet_transactions for the open wallet's column, newest first, with
@@ -536,8 +573,21 @@ export function UnionWalletModal({
     }
     if (mode === 'send' && amt > liveBalance)
       return `This Wallet Only Holds ${formatWalletChips(liveBalance)}.`;
+    if (mode === 'pull' && target.type === 'club') {
+      const held = clubBalances.get(target.data.id);
+      if (held) {
+        const promo = clubPullRoute(walletKey).kind === 'promo';
+        const most = pullableFrom(held, promo);
+        if (amt > most)
+          return promo
+            ? `This Club Promo Wallet Only Holds ${formatWalletChips(most)}.`
+            : held.floor > 0
+              ? `At Most ${formatWalletChips(most)} Can Be Pulled. The ${formatWalletChips(held.floor)} Opening Grant Stays In The Club.`
+              : `This Club Bank Only Holds ${formatWalletChips(most)}.`;
+      }
+    }
     return null;
-  }, [amount, target, mode, kind, liveBalance]);
+  }, [amount, target, mode, kind, liveBalance, clubBalances, walletKey]);
 
   const send = useCallback(async () => {
     const text = amount.trim();
@@ -912,6 +962,30 @@ export function UnionWalletModal({
                     </span>
                   </div>
 
+                  {target?.type === 'club' &&
+                    (() => {
+                      const held = clubBalances.get(target.data.id);
+                      if (!held) return null;
+                      const promo =
+                        mode === 'pull' ? pullRoute.kind === 'promo' : route.kind === 'promo';
+                      const pullable = pullableFrom(held, promo);
+                      return (
+                        <div className="uwm-field">
+                          <span className="uwm-label sc-ink--blue">
+                            {promo ? 'Club Promo Wallet' : 'Club Bank Balance'}
+                          </span>
+                          <span className="uwm-target-name sc-ink--silver">
+                            {formatWalletChips(promo ? held.promo : held.bank)}
+                          </span>
+                          {mode === 'pull' && !promo && held.floor > 0 && (
+                            <div className="uwm-blurb">
+                              {`Pullable ${formatWalletChips(pullable)}. The ${formatWalletChips(held.floor)} Opening Grant Stays In The Club.`}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                   {mode === 'send' && (
                     <div className="uwm-field">
                       <span className="uwm-label sc-ink--blue">Send</span>
@@ -1137,6 +1211,15 @@ export function UnionWalletModal({
                                 ? 'Club Promo Wallet'
                                 : 'Club Bank'
                             }
+                            figure={(() => {
+                              const held = clubBalances.get(c.id);
+                              if (!held) return undefined;
+                              return formatWalletChips(
+                                route.kind === 'promo' || pullRoute.kind === 'promo'
+                                  ? held.promo
+                                  : held.bank
+                              );
+                            })()}
                             selected={on}
                             disabled={clubsBlocked}
                             title={

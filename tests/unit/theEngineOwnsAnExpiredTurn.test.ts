@@ -72,7 +72,8 @@ describe('TablePage submits only what the player chose', () => {
   it('the timer expiring asks for a time bank and submits nothing', () => {
     const timer = sliceCall(PAGE, 'useTableTimer({');
     const code = blankNonCode(timer);
-    expect(code).toMatch(/GameServerAPI\.activateTimeBank\(tableId, userId\)/);
+    expect(code).toMatch(/GameServerAPI\.activateTimeBank\(tableId, userId, request\.decision\)/);
+    expect(code).toMatch(/if \(!request\.isCurrent\(\)\) return;/);
     expect(code).not.toMatch(/submitAction/);
     expect(code).not.toMatch(/Fold\(/);
     // A refused bank still takes the borrowed time off the clock.

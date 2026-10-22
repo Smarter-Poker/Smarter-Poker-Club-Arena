@@ -719,7 +719,11 @@ export function __resetActionSpacingForTests(): void {
  * @param _userId - DEPRECATED: Server uses JWT auth. Kept for backward compatibility.
  * @returns ActionResult with success status and optional error message
  */
-export async function activateTimeBank(tableId: string, _userId?: string): Promise<ActionResult> {
+export async function activateTimeBank(
+  tableId: string,
+  _userId?: string,
+  decision?: { handId: string; actionContext: string }
+): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
     // No client deadline (2026-10-05): this call carries no idempotency key,
@@ -728,10 +732,29 @@ export async function activateTimeBank(tableId: string, _userId?: string): Promi
     const response = await engineFetch(`${GAME_SERVER_URL}/timebank`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ tableId }),
+      body: JSON.stringify({ tableId, ...decision }),
     });
 
     if (!response.ok) {
+      // A concurrent automatic grant answers "already running". Preserve that
+      // maintained refusal so the existing caller keeps its granted clock.
+      try {
+        const refused: unknown = await response.json();
+        if (
+          refused &&
+          typeof refused === 'object' &&
+          'success' in refused &&
+          refused.success === false &&
+          'error' in refused &&
+          typeof refused.error === 'string' &&
+          refused.error.length > 0 &&
+          refused.error.length <= 256
+        ) {
+          return { success: false, error: refused.error };
+        }
+      } catch {
+        /* Non-JSON HTTP failures retain the generic refusal. */
+      }
       return { success: false, error: `Server error (${response.status})` };
     }
 

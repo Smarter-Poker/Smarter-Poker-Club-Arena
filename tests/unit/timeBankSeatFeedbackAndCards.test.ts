@@ -141,10 +141,12 @@ describe('an already-granted bank must not be auto-folded away', () => {
      Already Running' — a refusal meaning the OPPOSITE of what the branch
      assumed: the bank was granted and ~20 fresh seconds are on the clock.
      The client folded. Only a 6-second failsafe grace hid how often. */
-  const start = TABLE_PAGE.indexOf('void GameServerAPI.activateTimeBank(tableId, userId).then');
+  const start = TABLE_PAGE.indexOf(
+    'void GameServerAPI.activateTimeBank(tableId, userId, request.decision).then'
+  );
   const onTimeout = sliceEnclosingBlock(
     TABLE_PAGE,
-    'void GameServerAPI.activateTimeBank(tableId, userId).then'
+    'void GameServerAPI.activateTimeBank(tableId, userId, request.decision).then'
   );
 
   it('treats "already running" as a grant rather than a refusal', () => {

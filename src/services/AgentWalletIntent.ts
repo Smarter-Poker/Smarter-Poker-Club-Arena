@@ -5,6 +5,7 @@ import {
   type AdmittedOperation,
 } from '../lib/DurableOperationCoordinator';
 import { uuid } from '../utils/uuid';
+import { isEntityId } from '../utils/entityId';
 
 // No payload or account data is persisted: only a SHA-256 scope and operation UUID.
 // Keep uncertain identities across logout/reload; never expire an unknown outcome.
@@ -58,7 +59,7 @@ export async function reserveAgentWalletOperation(
     throw new Error('Prepare The Cashout Before Starting It');
   }
   assertChipAmount(intent.amount);
-  if (![intent.userId, intent.clubId, intent.targetId].every((id) => UUID.test(id))) {
+  if (![intent.userId, intent.clubId, intent.targetId].every((id) => isEntityId(id))) {
     throw new Error('The Transfer Account Could Not Be Verified');
   }
   if (!globalThis.crypto?.subtle || typeof navigator === 'undefined' || !navigator.locks) {

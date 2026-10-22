@@ -35,6 +35,7 @@ export interface Notification {
     | 'your_turn_reminder' // Bible V8 5.19: reminder after 5s inaction
     | 'time_bank_active' // Bible V8 5.20: time bank activated
     | 'tournament_starting' // PokerBros: tournament about to start
+    | 'tournament_cash' // a place, bubble refund, seat or satellite cash was paid
     | 'hand_won'; // Bible V8 5.21: you won the pot
   title: string;
   message: string;
@@ -399,6 +400,10 @@ class NotificationServiceClass {
       case 'time_bank_active':
       case 'hand_won':
         return metadata.tableId ? `/table/${metadata.tableId}` : '/';
+      case 'tournament_cash':
+        return metadata.tournament_id || metadata.tournamentId
+          ? `/tournaments/${String(metadata.tournament_id ?? metadata.tournamentId)}`
+          : '/tournaments';
       case 'tournament_starting':
         return metadata.tournamentId
           ? `/tournament/${metadata.tournamentId}`

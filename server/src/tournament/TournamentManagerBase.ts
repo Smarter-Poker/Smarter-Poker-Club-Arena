@@ -1062,6 +1062,14 @@ export abstract class TournamentManagerBase {
    * See A_LEVEL_IS_NOT_SPENT_WHILE_PART_OF_THE_FIELD_HAS_NO_DEALER.
    */
   static readonly FIELD_WITHOUT_DEALER_HOLD_MS = 30 * 1000;
+  /**
+   * The longest one table without a dealer may hold the level clock for the
+   * whole field. Past this the table has already been paged as critical
+   * (TABLE_ADMISSION_PAGE_AFTER_MS, the same ten minutes) and the rest of the
+   * field plays on: one stuck table never stops a tournament. See
+   * A_STUCK_TABLE_DOES_NOT_STOP_THE_FIELD in advanceBlindLevel.
+   */
+  static readonly FIELD_WITHOUT_DEALER_HOLD_MAX_MS = 10 * 60_000;
   protected savedBlindTimerRemaining: number = 0;
   protected blindTimerStartedAt: number = 0;
   /**
@@ -1087,6 +1095,8 @@ export abstract class TournamentManagerBase {
   private readonly stalledLevelHoldAnnouncedFor = new Set<number>();
   /** One line per level held for a table with no dealer, not one per recheck. */
   private readonly fieldWithoutDealerHoldAnnouncedFor = new Set<number>();
+  /** One line per stuck table the field stopped waiting for, not one per level. */
+  private readonly fieldWithoutDealerReleaseAnnouncedFor = new Set<string>();
   /**
    * Levels whose escalation past the end of the authored structure was held
    * for an unproven chip supply. Announced once per level, for the same
@@ -1600,6 +1610,7 @@ export abstract class TournamentManagerBase {
       this.tableEngineRecoveryAttempts.delete(tableId);
       this.tableAdmissionFailingSince.delete(tableId);
       this.tableAdmissionLastRefusal?.delete(tableId);
+      this.fieldWithoutDealerReleaseAnnouncedFor?.delete(tableId);
     }
   }
 
@@ -1612,6 +1623,7 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryAttempts.clear();
     this.tableAdmissionFailingSince.clear();
     this.tableAdmissionLastRefusal?.clear();
+    this.fieldWithoutDealerReleaseAnnouncedFor?.clear();
     this.tableRestartBackoffStore?.clear();
   }
 
@@ -1625,6 +1637,7 @@ export abstract class TournamentManagerBase {
     if (!this.tableEngineRecoveryTimers.has(tableId)) {
       this.tableAdmissionFailingSince.delete(tableId);
       this.tableAdmissionLastRefusal?.delete(tableId);
+      this.fieldWithoutDealerReleaseAnnouncedFor?.delete(tableId);
     }
   }
 
@@ -10065,11 +10078,41 @@ export abstract class TournamentManagerBase {
        * holding an ordinary level. Announced once per level, like the hold
        * above, so a hold that never ends is a line somebody can read.
        */
+      /*
+       * ═══════════════════════════════════════════════════════════════════
+       *  A STUCK TABLE DOES NOT STOP THE FIELD (2026-10-21)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The hold below had no end. Turbo Tuesday PKO bc8e3d86, 2026-10-21:
+       * table cc98f791 seated two players at 03:17 and never dealt (its
+       * admission was refused F06_MOVEMENT_NEVER_DEALT_ENTRY_UNPROVEN, fixed
+       * at the source by #7588). Every other table dealt all day, and the
+       * hold kept about 170 players at one blind level for 19 hours: big
+       * blind 150 from 03:20 to 11:00 and 250 from 11:00 to 22:14, until the
+       * two were moved and the owed levels ran in the last hour. A turbo
+       * scheduled to take a few hours finished at 23:12, and the brain read
+       * every one of those decisions as a stale clock.
+       *
+       * Holding for a refusal that heals in minutes still protects the
+       * parked seats (the 10-16 case). Past FIELD_WITHOUT_DEALER_HOLD_MAX_MS
+       * the table is a defect that has already paged as critical, and its
+       * repair belongs to admission, not to everyone else's clock: the field
+       * plays on, announced once per table so the release is readable.
+       */
       // Read inline from the table's own recovery record: no wake, no query.
       const fieldCheckedAt = Date.now();
       let stoppedTable: { tableId: string; failingMs: number } | null = null;
       for (const [tableId, since] of this.tableAdmissionFailingSince ?? []) {
         const failingMs = fieldCheckedAt - since;
+        if (failingMs > TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS) {
+          if (!this.fieldWithoutDealerReleaseAnnouncedFor?.has(tableId)) {
+            this.fieldWithoutDealerReleaseAnnouncedFor?.add(tableId);
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${tableId.slice(0, 8)} has had no dealer for ${Math.round(failingMs / 60_000)} min - the field no longer waits for it; levels resume`
+            );
+          }
+          continue;
+        }
         if (
           failingMs >= TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MS &&
           (!stoppedTable || failingMs > stoppedTable.failingMs)

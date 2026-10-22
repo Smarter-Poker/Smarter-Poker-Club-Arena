@@ -198,8 +198,10 @@ describe('the ordinary applier refuses it; only the window route installs it', (
     const at = applier.indexOf('if (windowMigration && !MAINTENANCE_WINDOW) {');
     expect(at).toBeGreaterThan(applier.indexOf('if (already.length > 0) {'));
     expect(at).toBeLessThan(applier.indexOf('async function refusalNow'));
-    expect(applier.slice(at, at + 700)).toContain('refused(');
-    expect(applier.slice(at, at + 700)).toContain('It is QUEUED, not lost');
+    // The refusal block ends where the send begins: the "[apply] <file>" line.
+    const block = applier.slice(at, applier.indexOf('console.log(`[apply] ${file}`);', at));
+    expect(block).toContain('refused(');
+    expect(block).toContain('It is QUEUED, not lost');
   });
 
   it('skips the :50-:03 refusal only on the window route, which asks the database instead', () => {

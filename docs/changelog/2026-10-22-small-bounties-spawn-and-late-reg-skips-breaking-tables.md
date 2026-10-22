@@ -116,3 +116,35 @@ repair job, no sweep, no new cron.
 - **Fix.** `WalletService.readPlayerBalance` answers "unknown" (its documented
   failure value) for any id that is not a UUID, without asking the server.
 - **Pin.** `tests/unit/BalancesComeFromTheLivePool.test.ts`.
+
+## 8. A certification cleanup froze entry platform-wide for 10-22 seconds
+
+- **Symptom.** 8 s timeouts on `fn_publish_tournament_blind_level`, buy-ins,
+  registrations and late seats, all waiting on the platform gate
+  `pg_advisory_xact_lock_shared(530090,1)`, at exactly the minutes the CI
+  certification cleanup ran (16:03, 16:29, 16:53, 17:16, 18:02, 18:21, 19:15).
+- **Cause.** `fn_ca_retire_welcome_certification_club` takes that gate
+  exclusively in its first step and keeps it to commit, and the work under it
+  took 10-22 s: `tournaments.schedule_id` had no index (five full reads of 819k
+  rows), the board-games lock statement read the whole primary key through an
+  OR, and deleting the fixture's tables, tournaments and cash games checked
+  eight child tables whose foreign key columns had no usable index.
+- **Fix.** Migration `20261022200334`: the nine indexes (built concurrently,
+  recorded with IF NOT EXISTS) and the lock statement rewritten as three
+  index-served id sets. The gate, its scope and its order are unchanged.
+  Measured: the lock statement 1,985 ms to 19 ms. The indexes also serve every
+  ordinary table, tournament and cash-game deletion on the platform.
+
+## 9. The club Data dashboard timed out for the large clubs
+
+- **Symptom.** `ca_club_data_snapshot_v2` hit 8 s 31 times after 06:00 UTC;
+  successful calls averaged about 4 s (KINGS CLUB, Deep Stack Society).
+- **Cause.** `data_updated_at` read every game row in the range to return one
+  timestamp (364,697 rows, 7.3 s cold); the cash page read game facts through
+  an index whose leading columns were not the date; the screen probed facts
+  by a date array, which defeated per-game index probes.
+- **Fix.** Migration `20261022200354`: `data_updated_at` reads each club's
+  latest day in the range (identical for every club, checked), a partial
+  covering index for the cash page, and `BETWEEN v_start AND v_end` in place
+  of the identical `= ANY (v_days)`. `VACUUM (ANALYZE)` on both fact tables
+  (195k dead tuples on `ca_club_data_game_ct`).

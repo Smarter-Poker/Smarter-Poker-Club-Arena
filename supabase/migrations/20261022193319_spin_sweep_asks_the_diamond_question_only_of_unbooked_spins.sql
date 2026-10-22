@@ -120,4 +120,9 @@ BEGIN
 END;
 $function$;
 
+-- Unchanged grants, restated so the file says what production holds: the
+-- sweep is engine/cron telemetry, never reachable before login.
+REVOKE ALL ON FUNCTION public.fn_spin_sweep_unbooked(integer, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_spin_sweep_unbooked(integer, integer) TO service_role;
+
 COMMIT;

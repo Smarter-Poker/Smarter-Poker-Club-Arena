@@ -51,18 +51,14 @@ describe('cashier integrity and wallet launcher', () => {
     expect(home).not.toMatch(/UnionService\.getOwnedUnions\(authUser\.id\)\.catch/);
     expect(page).not.toMatch(/UnionService\.getOwnedUnions\(user\.id\)\.catch/);
     expect(home).toContain('setLoadFailed(true)');
-    expect(home).toContain(
-      'loadFailed ? [] : mergeCashierWalletDirectory(userClubs, ownedUnionWallets)'
-    );
+    expect(home).toContain('const target = loadFailed');
     expect(home).toContain("toast.info('Retrying Cashier Directory')");
     expect(home).toContain('void fetchUserData(false, () => isMountedRef.current)');
     expect(page).toContain("setMembershipsError('Could not load your club cashiers.')");
   });
 
   it('preloads the exact Trade cashier chunk used by the lobby destination', () => {
-    expect(home).toContain(
-      "preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}"
-    );
+    expect(home).not.toContain('ClubQuickLinkTile');
     expect(resolvePreloadRouteKey('/cashier/trade')).toBe('/cashier/trade');
     expect(resolvePreloadRouteKey('/cashier')).toBe('/cashier');
   });

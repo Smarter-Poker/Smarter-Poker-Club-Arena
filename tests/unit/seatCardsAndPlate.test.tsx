@@ -149,7 +149,7 @@ describe('a revealed hand reads left to right at every seat', () => {
     expect(step, 'the revealed cluster must set its own step').toBeTruthy();
     expect(
       Number(step![1]),
-      'a step under 0.42 covers part of the next card\'s rank and suit'
+      "a step under 0.42 covers part of the next card's rank and suit"
     ).toBeGreaterThanOrEqual(0.42);
 
     const taperers = RULES.filter(
@@ -736,5 +736,33 @@ describe('the dealer button never stands on a name plate', () => {
     // dealerButtonPosition itself (tableGeometry.overlapsBoard) and the module
     // never hands the wrapper a puck on the cards to move.
     expect(moved, 'exactly the 84 measured overlaps move, and nothing else').toBe(84);
+  });
+});
+
+describe('chip contributions do not animate a negative amount', () => {
+  it.each([false, true])('updates the stack without a deduction float (hero=%s)', (isHero) => {
+    const seat = (stack: number, id = 'v1') => (
+      <SeatSlot
+        seatNumber={3}
+        player={villain({ id, stack, isHero })}
+        position={null}
+        isActive={false}
+        lastAction={null}
+      />
+    );
+    const { container, rerender } = render(seat(100));
+    rerender(seat(98));
+    expect(container.querySelector('.seat__stack-delta')).toBeNull();
+    expect(container.querySelector('.seat__stack--down')).toBeNull();
+    expect(container.querySelector('.seat__stack')?.textContent).toContain('98');
+    // A gain is still shown, and a following contribution clears it.
+    rerender(seat(110));
+    expect(container.querySelector('.seat__stack-delta--win')?.textContent).toContain('+12');
+    rerender(seat(108));
+    expect(container.querySelector('.seat__stack-delta')).toBeNull();
+    rerender(seat(120));
+    expect(container.querySelector('.seat__stack-delta--win')).not.toBeNull();
+    rerender(seat(500, 'new-occupant'));
+    expect(container.querySelector('.seat__stack-delta')).toBeNull();
   });
 });

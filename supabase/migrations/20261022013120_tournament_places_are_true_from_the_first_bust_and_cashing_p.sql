@@ -341,6 +341,9 @@ BEGIN
 END;
 $function$;
 
+REVOKE ALL ON FUNCTION public.fn_ca_pay_tournament_finishers_now(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_pay_tournament_finishers_now(uuid) TO service_role;
+
 CREATE OR REPLACE FUNCTION public.fn_ca_ordinal(p_n integer)
  RETURNS text
  LANGUAGE sql

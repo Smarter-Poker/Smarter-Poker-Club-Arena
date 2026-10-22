@@ -42,8 +42,13 @@ export function derivePositions(
   const out: Record<number, string> = {};
   if (seats.length === 0) return out;
 
+  if (buttonSeat === null || buttonSeat === undefined || !Number.isFinite(Number(buttonSeat))) {
+    return out;
+  }
   const btnIndex = seats.indexOf(Number(buttonSeat));
-  if (btnIndex < 0) return out;
+  if (btnIndex < 0) {
+    return deadButtonPositions(seats, Number(buttonSeat));
+  }
 
   const n = seats.length;
   const at = (offset: number) => seats[(btnIndex + offset) % n];
@@ -71,6 +76,32 @@ export function derivePositions(
     out[at(3 + i)] = labels ? labels[i] : i === 0 ? 'UTG' : `UTG+${i}`;
   }
 
+  return out;
+}
+
+/**
+ * A DEAD BUTTON (TDA Rule 30; server/src/engine/deadButton.ts): the button sits
+ * on a seat nobody was dealt from. Returning nothing here left a hand like
+ * #43306703 (Dan, 2026-10-21) with no SB or BB badge in Hand History and the
+ * replay, although the hand plainly had both. The empty seat keeps its place
+ * in the order, so the seat after it posts the small blind and the next the
+ * big blind; nobody is labelled BTN. Heads-up never plays a dead button, so
+ * fewer than three seats still comes back empty.
+ */
+function deadButtonPositions(seats: number[], buttonSeat: number): Record<number, string> {
+  const out: Record<number, string> = {};
+  const n = seats.length;
+  if (n < 3 || buttonSeat <= 0) return out;
+  const firstAfter = seats.findIndex((s) => s > buttonSeat);
+  const sbIndex = firstAfter < 0 ? 0 : firstAfter;
+  const at = (offset: number) => seats[(sbIndex + offset) % n];
+  out[at(0)] = 'SB';
+  out[at(1)] = 'BB';
+  const middleCount = n - 2;
+  const labels = MIDDLE_LABELS[middleCount];
+  for (let i = 0; i < middleCount; i += 1) {
+    out[at(2 + i)] = labels ? labels[i] : i === 0 ? 'UTG' : `UTG+${i}`;
+  }
   return out;
 }
 

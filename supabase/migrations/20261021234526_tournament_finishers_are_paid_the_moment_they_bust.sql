@@ -426,4 +426,10 @@ CREATE CONSTRAINT TRIGGER zzz_pay_finishers_when_pool_finalizes
   WHEN (NEW.prize_pool_finalized IS TRUE AND OLD.prize_pool_finalized IS DISTINCT FROM TRUE)
   EXECUTE FUNCTION public.trg_ca_pay_tournament_finishers_at_commit();
 
+-- Both triggers sit on money tables, so they are declared in this migration.
+INSERT INTO public.ca_declared_money_triggers (table_name, trigger_name, note) VALUES
+ ('tournament_players','zzz_pay_finisher_at_bust','Dan 2026-10-21: real-time tournament payouts. DEFERRABLE INITIALLY DEFERRED AFTER UPDATE OF status (playing -> eliminated): at the commit of the bust runs fn_ca_pay_tournament_finishers_now, which pays finishers in the money of a RUNNING finalized non-satellite event only through fn_ca_settle_tournament_place_raw / fn_ca_settle_tournament_bubble_raw (idempotent, escrow-capped obligations). Never blocks the bust: failures roll back only the payment and are written to financial_alerts.'),
+ ('tournaments','zzz_pay_finishers_when_pool_finalizes','Dan 2026-10-21: real-time tournament payouts. DEFERRABLE INITIALLY DEFERRED AFTER UPDATE OF prize_pool_finalized (to true): pays, at that commit, any finisher already in the money through fn_ca_pay_tournament_finishers_now. Same gates and same obligation doors; never blocks the finalization.')
+ON CONFLICT (table_name, trigger_name) DO UPDATE SET note = EXCLUDED.note;
+
 COMMIT;

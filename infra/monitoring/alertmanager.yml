@@ -12,6 +12,15 @@
 # homepage. Resend is already this platform's transactional email provider.
 # Both secrets are mounted as files; neither appears in this YAML.
 #
+# 2026-10-21: smtp_from moved from alerts@smarter.poker to
+# alerts@alerts.smarter.poker. The Resend key mounted as resend_key belongs to
+# a Resend account that does not own smarter.poker, so every alert email was
+# rejected with 403 "Domain not verified" (about 1,600 in 15 days). That
+# account has alerts.smarter.poker verified (DNS: resend._domainkey.alerts,
+# send.alerts, rsend.alerts). Do NOT add the bare smarter.poker domain to that
+# account: its DKIM record would collide with the one the Supabase auth
+# emails depend on.
+#
 # Routing:
 #   all operational severities → durable Codex inbox, including recovery
 #   critical → email immediately, repeat hourly until resolved ("players
@@ -23,7 +32,7 @@
 global:
   resolve_timeout: 5m
   smtp_smarthost: 'smtp.resend.com:587'
-  smtp_from: 'alerts@smarter.poker'
+  smtp_from: 'alerts@alerts.smarter.poker'
   smtp_auth_username: 'resend'
   smtp_auth_password_file: /etc/alertmanager/resend_key
   smtp_require_tls: true

@@ -40,7 +40,10 @@ import { act, cleanup, render } from '@testing-library/react';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-vi.mock('../src/hooks/useButtonImage', () => ({ useButtonImage: () => '/rabbit.webp' }));
+vi.mock('../src/hooks/useButtonImage', () => ({
+  useButtonImage: () => '/rabbit.webp',
+  useTimebankIcon: () => '/time-bank.webp',
+}));
 vi.mock('../src/services/VIPService', () => ({
   FEATURE_PRICING: { rabbit_hunt: { cost: 5 } },
   vipService: { checkVIPStatus: vi.fn() },

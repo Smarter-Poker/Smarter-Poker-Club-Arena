@@ -1,0 +1,74 @@
+name: Daily maintenance window migrations
+# Native qualification of the daily-maintenance window route: a migration that
+# declares "-- @install-window: daily-maintenance" is refused as queued by the
+# ordinary applier and installed, once, only inside the 04:00 America/Chicago
+# freeze (scripts/ci/maintenance-window-migrations.mjs). The real applier and
+# installer run against PostgreSQL 17 (production's major) carrying
+# production's break-window guard and freeze predicates, over verified TLS.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/ci/maintenance-window-migrations.mjs'
+      - 'scripts/ci/install-window-migrations.mjs'
+      - 'scripts/ci/apply-recorded-migration.mjs'
+      - 'scripts/ci/migration-session-identity.mjs'
+      - 'scripts/ci/migration-concurrent-preamble.mjs'
+      - 'scripts/ci/accounting-migration-admission.mjs'
+      - 'scripts/ci/test-maintenance-window-migrations.sh'
+      - 'scripts/ci/fixtures/maintenance-window-migrations/**'
+      - '.github/workflows/stage-engine-release.yml'
+      - '.github/workflows/maintenance-window-migrations.yml'
+# A newer push to the same pull request fully supersedes this pure check
+# (pull_request runs on refs/pull/N/merge), and the job mutates nothing
+# outside its runner. Cancel the stale run instead of queueing it.
+concurrency:
+  group: maintenance-window-migrations-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  qualify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use the production Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install the Postgres client library
+        run: npm i pg@8 --no-save --no-audit --no-fund
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Qualify the window route against a native database
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+          WINDOW_WORK: ${{ runner.temp }}/pg-window
+        run: bash scripts/ci/test-maintenance-window-migrations.sh
+      - name: Retain native evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maintenance-window-migrations
+          path: artifacts/maintenance-window-migrations/
+          if-no-files-found: error

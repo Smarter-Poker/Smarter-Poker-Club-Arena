@@ -77,12 +77,25 @@ import {
   THAW_REPAIR_ADMISSION,
   thawRepairSQL,
 } from './maintenance-thaw-repair.mjs';
+import {
+  windowDeclaration,
+  validateWindowMigration,
+  windowTransactionSQL,
+  WINDOW_STATE_QUERY,
+  TRANSACTION_BUDGET_SECONDS,
+} from './maintenance-window-migrations.mjs';
+import { ACCOUNTING_ADMISSION_SOURCES } from './accounting-migration-admission.mjs';
 
 const DIR = 'supabase/migrations';
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const SETTLEMENT_LANE = args.includes('--settlement-lane');
 const MAINTENANCE_THAW_REPAIR = args.includes('--maintenance-thaw-repair');
+// The daily-maintenance window route (maintenance-window-migrations.mjs). Only
+// scripts/ci/install-window-migrations.mjs passes it, from the daily 03:30
+// America/Chicago run of stage-engine-release.yml; the database decides
+// whether the window is really open, inside the transaction it sends.
+const MAINTENANCE_WINDOW = args.includes('--maintenance-window');
 const argValue = (n) => {
   const i = args.indexOf(n);
   return i === -1 ? null : args[i + 1] || null;
@@ -191,6 +204,35 @@ if (!/^\s*BEGIN\s*;/im.test(sql) || !/COMMIT\s*;\s*$/i.test(sql.trim())) {
 const shape = splitConcurrentPreamble(sql);
 if (!shape.ok) refused(`${file}: ${shape.reason}`);
 const preamble = shape.indexes;
+
+// A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
+// (2026-10-22). A file that declares "-- @install-window: daily-maintenance"
+// is installed only by the window route, and only after these static rules.
+let windowMigration = false;
+try {
+  windowMigration = windowDeclaration(sql) === 'daily-maintenance';
+} catch (e) {
+  refused(`${file}: ${e.message}`);
+}
+if (MAINTENANCE_WINDOW && !windowMigration)
+  refused(
+    `${file} does not declare "-- @install-window: daily-maintenance"; the window route installs only declared files`
+  );
+if (windowMigration) {
+  try {
+    validateWindowMigration(file, sql, {
+      preamble,
+      recovery,
+      batches,
+      settlementLane: SETTLEMENT_LANE,
+      thawRepair: MAINTENANCE_THAW_REPAIR,
+      rakeHistory,
+      accountingAdmission: Object.hasOwn(ACCOUNTING_ADMISSION_SOURCES, file),
+    });
+  } catch (e) {
+    refused(e.message);
+  }
+}
 if (MAINTENANCE_THAW_REPAIR) {
   try {
     validateThawRepair(file, sql, {
@@ -224,8 +266,10 @@ const PREAMBLE_MINUTES_NEEDED = 12;
 // maintenance break window (section 13). The event trigger is the real guard;
 // this is the polite half, so a refusal reads as a sentence here rather than
 // an aborted transaction there.
+// The window route runs exactly inside that window, under the documented
+// override; its admission is the database's window predicate instead.
 const minute = new Date().getUTCMinutes();
-if (minute >= 50 || minute <= 3) {
+if (!MAINTENANCE_WINDOW && (minute >= 50 || minute <= 3)) {
   refused(
     `it is :${String(minute).padStart(2, '0')} UTC and the break window is :50-:03. Dispatch again after :03. Do not loop.`
   );
@@ -331,6 +375,16 @@ if (already.length > 0) {
   process.exit(EXIT_OK);
 }
 
+if (windowMigration && !MAINTENANCE_WINDOW) {
+  await client.end().catch(() => {});
+  refused(
+    `${file} declares "-- @install-window: daily-maintenance": it needs exclusive locks the live tables ` +
+      'cannot give during play. It is QUEUED, not lost: it stays on main and absent from ' +
+      'schema_migrations until the daily 03:30 America/Chicago run of stage-engine-release.yml installs it ' +
+      'inside the 04:00 maintenance freeze. Nothing was sent. Do not loop, and do not apply it by hand.'
+  );
+}
+
 console.log(`[apply] ${file}`);
 console.log(`[apply]   version ${version}, slug ${slug}, ${Buffer.byteLength(sql)} bytes`);
 if (preamble.length > 0) {
@@ -359,8 +413,25 @@ async function refusalNow() {
   }
 }
 {
-  const refusal = await refusalNow();
-  if (MAINTENANCE_THAW_REPAIR) {
+  const refusal = MAINTENANCE_WINDOW ? null : await refusalNow();
+  if (MAINTENANCE_WINDOW) {
+    let state;
+    try {
+      state = (await client.query(WINDOW_STATE_QUERY)).rows[0];
+    } catch (e) {
+      await client.end().catch(() => {});
+      unknown(`could not read the maintenance window state: ${e.message}`);
+    }
+    if (!state || state.open !== true) {
+      await client.end().catch(() => {});
+      refused(
+        `the daily maintenance window is not open (frozen=${state?.frozen}, break=${state?.break_row ?? 'none'}). Nothing was sent; the file stays queued.`
+      );
+    }
+    console.log(
+      `[apply]   daily maintenance window open at ${state.observed_at}: ${state.break_row}`
+    );
+  } else if (MAINTENANCE_THAW_REPAIR) {
     const { rows } = await client.query(THAW_REPAIR_ADMISSION);
     if (rows.length !== 1 || rows[0].admitted !== true) {
       await client.end().catch(() => {});
@@ -540,10 +611,29 @@ try {
   admittedSQL = MAINTENANCE_THAW_REPAIR
     ? thawRepairSQL(atomicSQL)
     : accountingAdmissionSQL(file, sql, atomicSQL);
+  // A window file is never an accounting-admission file (validated above), so
+  // the line before returned atomicSQL unchanged; wrap it in the window.
+  if (MAINTENANCE_WINDOW) admittedSQL = windowTransactionSQL(file, atomicSQL);
   transactionSQL = bindMigrationSession(SETTLEMENT_LANE ? atomicSQL : admittedSQL);
 } catch (e) {
   await client.end().catch(() => {});
   refused(e.message);
+}
+if (MAINTENANCE_WINDOW) {
+  // PostgreSQL 17 also bounds the whole transaction server-side, a few seconds
+  // past the closing assertion's budget and still under the 15 s age at which
+  // fn_ca_writer_lock_sentinel would cancel it; on older servers the closing
+  // assertion and the per-statement timeout are the bound.
+  try {
+    const { rows } = await client.query(
+      "SELECT current_setting('server_version_num')::int >= 170000 AS has_transaction_timeout"
+    );
+    if (rows[0]?.has_transaction_timeout === true)
+      await client.query(`SET transaction_timeout = '${TRANSACTION_BUDGET_SECONDS + 4}s'`);
+  } catch (e) {
+    await client.end().catch(() => {});
+    unknown(`could not bound the window transaction: ${e.message}`);
+  }
 }
 const started = Date.now();
 try {

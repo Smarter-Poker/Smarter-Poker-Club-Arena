@@ -17,3 +17,7 @@ Nothing about launch certification changes: `publicLaunch` stays `NOT_CERTIFIED`
 ## Tests
 
 `scripts/ops/lightning-pilot-access-proof.test.mjs` (8 cases) and a report-level case in `scripts/ops/lightning-pilot-qualification.test.mjs`; both run in the workflow's semantics step before collection.
+
+## Follow-Up: Default Run Discovery
+
+The first merged default lookup asked the runs endpoint for `status=success&branch=main`, which returns zero runs for this workflow (total_count 0, while 75 runs exist), so qualification run 39812377819 reported `ACCESS_PROOF_NOT_SUPPLIED` and correctly kept the blocker. The lookup now filters client side (main, completed, success, workflow_dispatch, unexpired `lightning-pilot-stage-access` artifact) and each inner `gh` call reads `/dev/null` so it cannot consume the id list.

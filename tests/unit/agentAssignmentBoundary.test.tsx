@@ -122,7 +122,11 @@ describe('assignment access and safe retry', () => {
     fireEvent.change(screen.getByLabelText('Search Transfers'), {
       target: { value: 'Player One' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Search History' }));
+    // Search is disabled while the first history page loads; a click on the
+    // disabled submit is dropped, so wait for the control like a player would.
+    const searchHistory = screen.getByRole('button', { name: 'Search History' });
+    await waitFor(() => expect(searchHistory).toBeEnabled());
+    fireEvent.click(searchHistory);
     await waitFor(() =>
       expect(state.history).toHaveBeenLastCalledWith('club', 'Player One', undefined)
     );

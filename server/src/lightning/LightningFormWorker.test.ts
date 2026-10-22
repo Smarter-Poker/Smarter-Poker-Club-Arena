@@ -18,7 +18,9 @@ vi.mock('../services/supabase/client.js', () => ({
 }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
 const { MetricsRegistry } = await import('../observability/Metrics.js');
-const { LightningClusterWorker } = await import('./LightningClusterWorker.js');
+const { LightningClusterWorker, LIGHTNING_IDLE_DEADLINE_MARGIN_MS, LIGHTNING_BUSY_RETRY_MS } =
+  await import('./LightningClusterWorker.js');
+const { LIGHTNING_FORMATION_MAX_WAIT_MS } = await import('./LightningMatcherModel.js');
 const { LightningPresence } = await import('./LightningPresence.js');
 const { LightningMetrics } = await import('./LightningMetrics.js');
 const { LightningRegistry, LightningHosting } = await import('./LightningRegistry.js');
@@ -324,5 +326,75 @@ describe('an ended pool session', () => {
       reason: 'table_not_found',
     });
     expect(registry.isRoom(room)).toBe(false);
+  });
+});
+
+describe('the idle-deadline pass (2026-10-22 latency fix)', () => {
+  it('runs a pass when a freed player\u2019s full-ring wait expires, not a pass interval later', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const t0 = Date.now();
+    const at: number[] = [];
+    const started: LightningFormedHand[] = [];
+    const { w } = worker(() => {
+      at.push(Date.now() - t0);
+      return { data: formReply([]), error: null };
+    }, started);
+    w.start();
+    await vi.advanceTimersByTimeAsync(400);
+    // t=400: a folder is freed; the wake pass runs at once (cannot fill a ring yet).
+    w.wake(uid(77));
+    await vi.advanceTimersByTimeAsync(5_000);
+    const deadline = 400 + LIGHTNING_FORMATION_MAX_WAIT_MS + LIGHTNING_IDLE_DEADLINE_MARGIN_MS;
+    // Routine passes every interval after the wake (1400, 2400, 3400), and one
+    // exactly at the deadline (3450) instead of waiting for 4400.
+    expect(at).toEqual([0, 400, 1400, 2400, 3400, deadline, deadline + 1_000]);
+    await w.stop();
+  });
+
+  it('never runs passes more often than the interval once nobody is waiting on a deadline', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const started: LightningFormedHand[] = [];
+    const row = handRow(2, 900);
+    let n = 0;
+    const { w, rpc } = worker(
+      () => ({ data: formReply(++n === 2 ? [row] : []), error: null }),
+      started
+    );
+    w.start();
+    await vi.advanceTimersByTimeAsync(1);
+    // The freed players are formed into a hand by the wake pass: no deadline is left.
+    for (const p of row.players as string[]) w.noteIdle(p);
+    w.wake();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(started).toHaveLength(1);
+    const after = rpc.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(rpc.mock.calls.length - after).toBe(5);
+    await w.stop();
+  });
+
+  it('asks again shortly when the database skipped the pass because the Cluster was busy', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const started: LightningFormedHand[] = [];
+    let n = 0;
+    const { w, rpc } = worker(
+      () => ({
+        data:
+          ++n === 1
+            ? { ok: true, formed: 0, skipped: true, reason: 'cluster_row_busy', hands: [] }
+            : formReply([]),
+        error: null,
+      }),
+      started
+    );
+    w.start();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(rpc).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(LIGHTNING_BUSY_RETRY_MS);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    // A normal pass afterwards returns to the interval.
+    await vi.advanceTimersByTimeAsync(500);
+    expect(rpc).toHaveBeenCalledTimes(2);
+    await w.stop();
   });
 });

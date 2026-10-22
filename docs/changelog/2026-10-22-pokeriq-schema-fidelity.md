@@ -13,3 +13,5 @@ business routine, historical data transformation or production DDL is executed.
 Full pinned-image acceptance remains pending for this candidate.
 
 Frozen a18 source reconciliation retains historical daily-slot data exclusions and adds only the exact post-capture opening DDL transition after the already qualified hourly-sweep transition. Independent two-routine metadata, exact old preimage, new-function absence, security metadata and full remaining catalog/role equality stay mandatory. Native metadata-only qualification proves fail-before/pass-after and drift refusal without business calls or rows.
+
+The actual full image exposed the omitted money-RPC governance row required to replace the opening function. The local reconstruction now restores only that exact source-proven authorization before the opening DDL, with captured guards enabled and exact row readback. A native guard regression refuses missing/wrong authorization and accepts the original DDL after restoration; no business routines or application rows are used.

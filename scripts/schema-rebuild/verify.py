@@ -4,7 +4,7 @@ No URL/credential input or existing database target is supported.
 """
 import argparse,hashlib,json,os,re,shutil,subprocess,sys,tempfile
 from pathlib import Path
-import fidelity,forward
+import fidelity,forward,governance
 ROOT=Path(__file__).resolve().parents[2]
 BASE=ROOT/'supabase/bootstrap'
 class Refused(RuntimeError):pass
@@ -139,10 +139,11 @@ def require_builtin_extension(sql,expected):
  actual=json.loads(sql("SELECT jsonb_build_object('name',e.extname,'owner',pg_get_userbyid(e.extowner),'schema',n.nspname,'version',e.extversion) FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname="+lit(expected['name'])+';',phase='extension-initial-contract',extension=expected['name'],owner=expected['owner']))
  if actual!=expected:raise Refused('Initial builtin extension differs from captured metadata: '+json.dumps(actual))
  return actual
-def apply_pending_schema(run,cmd,root,work,entries):
+def apply_pending_schema(run,cmd,root,work,entries,before_apply=None):
  forward.validate(root,entries)
  if not work.is_dir() or work.resolve()!=work:raise Refused('Pending schema requires real owned scratch')
  for index,entry in enumerate(entries):
+  if before_apply:before_apply(entry)
   source=(root/entry['path']).read_bytes()
   if hashlib.sha256(source).hexdigest()!=entry['sha256']:raise Refused('Pending schema changed before staging')
   # PostgreSQL wrappers see only the bind-mounted scratch, never host sources.
@@ -249,7 +250,12 @@ def main():
   # original transaction, followed by the exact post-capture opening DDL.
   pending=forward.validate(ROOT,json.loads((BASE/'forward-schema.json').read_text())['arena'])
   proposed=forward.opening_expected(forward.expected_catalog(expected,forward.load_delta(BASE)),BASE)
-  apply_pending_schema(run,cmd,ROOT,work,pending)
+  restored_governance=[]
+  def prepare(entry):
+   if entry['path']==forward.OPENING_PATH:restored_governance.append(governance.restore(sql,BASE,ROOT))
+  apply_pending_schema(run,cmd,ROOT,work,pending,before_apply=prepare)
+  if len(restored_governance)!=1:raise Refused('Exactly one governance authorization required')
+  governance.verify(sql,restored_governance[0])
   finalroles=json.loads(sql(rolequery))
   for role in finalroles:role['config']=sorted(role.get('config') or [])
   if sorted(finalroles,key=lambda x:x['name'])!=sorted(expectedroles,key=lambda x:x['name']):raise Refused('Pending DDL changed source role capabilities/configuration')
@@ -261,7 +267,7 @@ def main():
   if differences:
    output.write_text(json.dumps(dict(schemaRebuilt=False,status='failed',phase='pending-catalog-comparison',differences=differences))+'\n')
    raise Refused('Independent pending schema catalog comparison differs: '+json.dumps(differences))
-  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'pendingSchemaInputsApplied':pending,'independentBaselineCatalogPassed':True,'nativeExpressionsParsed':expressions_parsed,'inheritedPrimaryKeysRestored':inherited_restored,'omittedInvalidIndexesRestored':invalid_restored,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
+  receipt={'schemaRebuilt':not differences,'baselineSHA256':manifest['schemaSHA256'],'counts':{k:len(v or []) for k,v in catalog.items()},'differences':differences,'pendingSchemaInputsApplied':pending,'independentBaselineCatalogPassed':True,'nativeExpressionsParsed':expressions_parsed,'inheritedPrimaryKeysRestored':inherited_restored,'omittedInvalidIndexesRestored':invalid_restored,'noHistoricalDataReplay':True,'remoteConnections':False,'applicationFixtureRowsInserted':False,'governanceConfigurationRowsInserted':1,'extensionVersionsExact':True,'databasePlatformExact':True,'bootstrapPrincipal':platform['bootstrap_role'],'isolatedLockBudget':lock_budget,'roleLoginContainment':'all source roles NOLOGIN; local Unix-only bootstrap owner','roleCapabilitiesAndMembershipsCompared':True,'defaultGrantBoundary':'Fresh empty-cluster probe denies API rights before baseline; fidelity restore retains captured default ACLs. Existing caller grant fixtures separately qualify withdrawal.'}
   output.write_text(json.dumps(receipt,indent=2)+'\n');print(json.dumps(receipt))
   if differences:raise Refused('Independent source catalog comparison differs')
  finally:

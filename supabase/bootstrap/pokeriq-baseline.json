@@ -116,5 +116,6 @@
   "pendingCatalogSHA256": "1073170e13e3966564d60ad63d861fa87793ddeca588daa7d39af531f8fafacb",
   "forwardSchemaSHA256": "01eacea72f8e8c170c28b0b1ece420ea0dca5dc07af67e0cb17921f1ca73f19f",
   "postCaptureInstalledSchemaVersions": ["20261022201306"],
-  "openingCatalogSHA256": "5fe7191aa269effeb7916c9343f39c905225ae748e768dbe5340dda58eff88d4"
+  "openingCatalogSHA256": "5fe7191aa269effeb7916c9343f39c905225ae748e768dbe5340dda58eff88d4",
+  "openingGovernanceSHA256": "702886e7df8b14465714321ffdb8ab5b93cf9f72e85610da484674e98914c834"
 }

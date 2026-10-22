@@ -1,0 +1,3 @@
+# tests/a-diamond-tournament-close-locks-wallets-in-id-order.law.test.ts
+
+A Diamond tournament close locks every owner wallet in id order: on 2026-10-21 Turbo Tuesday PKO bc8e3d86 (351 Diamond entries) was decided at 23:03 UTC and every terminal finish deadlocked (40P01) because `fn_poker_diamond_tournament_close_custody` locked owner profiles in registration order while live hand commits lock them in id order. This pins that the close takes all releasable owner locks once, in id order, before its first release, replacing only the exact installed predecessor, and that no amount, receipt, custody state or release order changes.

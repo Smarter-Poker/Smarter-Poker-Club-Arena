@@ -14,6 +14,7 @@ import {
   splitBuyIn,
   totalBuyIn,
   formatBuyIn,
+  formatBuyInShort,
   DEFAULT_RAKE_RATE,
   clampRakeToCap,
   isRakeWithinCap,
@@ -147,5 +148,33 @@ describe('the displayed entry split retains the charged fee', () => {
     [0, 0, 'Free Buy'],
   ])('shows %s plus %s as %s', (prize, fee, displayed) => {
     expect(formatBuyIn(prize, fee)).toBe(displayed);
+  });
+});
+
+describe('the owner-priced Midway fixed bounty exceptions', () => {
+  const midway = 'fade0000-0000-0000-0000-000000000001';
+  it.each(['Sunrise Bounty (NLH)', 'Midnight Bounty (NLH)'])(
+    'quotes the stored 5.50 charge for %s',
+    (name) => {
+      for (const context of [
+        { name, club_id: midway },
+        { name, union_id: midway },
+        { name, clubId: midway },
+      ]) {
+        expect(totalBuyIn(5, 0.5, context)).toBe(5.5);
+        expect(formatBuyIn(5, 0.5, context)).toBe('5.50 (5 + 0.50)');
+        expect(formatBuyInShort(5, 0.5, context)).toBe('5.50');
+      }
+    }
+  );
+  it('keeps unrelated historical rounding and other booked prices unchanged', () => {
+    expect(formatBuyIn(5, 0.5)).toBe('6 (5.50 + 0.50)');
+    expect(formatBuyIn(5, 0.5, { name: 'Sunrise Bounty (NLH)', club_id: 'another-club' })).toBe(
+      '6 (5.50 + 0.50)'
+    );
+    expect(formatBuyIn(5, 0.5, { name: 'Other Event', union_id: midway })).toBe('6 (5.50 + 0.50)');
+    expect(formatBuyIn(4.5, 0.5, { name: 'Sunrise Bounty (NLH)', union_id: midway })).toBe(
+      '5 (4.50 + 0.50)'
+    );
   });
 });

@@ -1229,7 +1229,11 @@ export default function SearchPage() {
                             <b className={styles.variant}>
                               {tournament.tournament_type && tournament.tournament_type !== 'MTT'
                                 ? tournament.tournament_type
-                                : formatBuyInShort(tournament.buy_in_amount, tournament.buy_in_fee)}
+                                : formatBuyInShort(
+                                    tournament.buy_in_amount,
+                                    tournament.buy_in_fee,
+                                    tournament
+                                  )}
                             </b>
                           </span>
                           <span className={styles.copy}>
@@ -1252,7 +1256,8 @@ export default function SearchPage() {
                                 <strong>
                                   {formatBuyInShort(
                                     tournament.buy_in_amount,
-                                    tournament.buy_in_fee
+                                    tournament.buy_in_fee,
+                                    tournament
                                   )}
                                 </strong>{' '}
                                 Buy-In

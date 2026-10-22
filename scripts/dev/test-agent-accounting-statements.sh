@@ -19,3 +19,7 @@ started=1
   -f "$root/tests/fixtures/agent-accounting-statements/baseline.sql" \
   -f "$root/supabase/migrations/20260914120403_agent_statements_scope_each_club_and_read_posted_evidence.sql" \
   -f "$root/tests/fixtures/agent-accounting-statements/regression.sql"
+# AGENT COMMISSION LANDS IN AGENT WALLETS (2026-10-22): the weekly round 2 and
+# round 3 owner rules behind every agent statement, on the exact live stages.
+python3 -B "$root/scripts/ci/test-commission-agent-wallet-postgres.py" --pg-bin "$pgbin" \
+  --scratch-root "${RUNNER_TEMP:-${TMPDIR:-/tmp}}"

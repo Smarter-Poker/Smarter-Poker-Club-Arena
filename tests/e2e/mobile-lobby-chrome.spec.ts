@@ -866,7 +866,16 @@ test.describe('mobile lobby chrome on the narrowest phone', () => {
     await page.evaluate(() => window.scrollTo(0, 700));
     const m = await measureChrome(page);
     expect(Math.abs(m.viewportBottom - m.frameBottom), 'strip under the frame').toBeLessThan(1);
-    expect(Math.abs(m.sortbarTop - m.deckBottom), 'gap between deck and row').toBeLessThan(1);
+    const gap = await page
+      .locator('.compact-lobby')
+      .evaluate(
+        (el) =>
+          el.getBoundingClientRect().top -
+          document.querySelector('.club-lobby-command-top__campaign')!.getBoundingClientRect()
+            .bottom -
+          parseFloat(getComputedStyle(document.querySelector('.club-home__games')!).paddingTop)
+      );
+    expect(Math.abs(gap), 'gap before compact games').toBeLessThan(1);
   });
 });
 

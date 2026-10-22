@@ -31,6 +31,7 @@ import {
 } from './lobbyEntries';
 import { cashTemplateNote } from '../../config/cashGames';
 import { prefetchIntent } from '../../utils/ChunkPreloader';
+import { observeLobbyScrollClearance } from './lobbyScrollClearance';
 import { observeLobbyTableWarmups, warmTable } from '../../services/tableWarmup';
 import { useSpinTierAvailability } from '../../hooks/useSpinTierAvailability';
 import {
@@ -1868,6 +1869,13 @@ export default function LobbyTable({
   );
 
   const warmLayoutKey = sorted.map((entry) => `${entry.kind}:${entry.id}`).join(',');
+  useEffect(() => {
+    const rows = mobileCardsRef.current;
+    const heading = rows?.querySelector('thead');
+    if (!rows || !heading) return;
+    return observeLobbyScrollClearance(heading, rows);
+  }, []);
+
   useEffect(() => {
     const roots = [bodyRef.current, mobileCardsRef.current].filter(
       (root): root is HTMLTableSectionElement | HTMLDivElement => root !== null

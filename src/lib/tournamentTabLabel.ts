@@ -28,6 +28,7 @@ import { supabase } from './supabase';
 import { compactChips } from '../utils/format';
 import { FREE_BUY_LABEL } from '../utils/freeBuy';
 import { totalBuyIn } from '../utils/buyIn';
+import { formatGameTitle } from '../utils/formatGameTitle';
 
 /** The longest sub-line a tournament pill can ever print, in glyphs. */
 export const TOURNAMENT_TAB_LABEL_MAX_GLYPHS = 8;
@@ -47,6 +48,25 @@ export function tournamentTabBuyInLabel(total: number | null | undefined): strin
   const whole = Math.round(n);
   if (whole <= 0) return FREE_BUY_LABEL;
   return compactChips(whole);
+}
+
+/**
+ * The event name an MTT pill prints on its top line (Dan 2026-10-21: "FOR
+ * MTT'S IT SHOULD SAY THE TOURNAMENT NAME AS WELL AS THE BUY IN INSIDE THE
+ * ACTION TAB").
+ *
+ * Scheduled event names carry a trailing game tag - "Prime Time Main Event
+ * (NLH)", "Late Night PKO (PLO4)", "Mid-Morning Turbo (6-Max NLH)" - which on
+ * a pill capped at a few dozen pixels is what pushes the name itself into the
+ * ellipsis. The tag is dropped here (the felt already shows the game, and the
+ * pill keeps the full name on its title); a name that is ONLY a parenthetical
+ * is kept whole. '' means no usable name, and the pill then says "MTT".
+ */
+export function tournamentTabEventName(name: string | null | undefined): string {
+  const full = formatGameTitle(typeof name === 'string' ? name.trim() : '').trim();
+  if (!full) return '';
+  const short = full.replace(/\s*\([^()]*\)\s*$/, '').trim();
+  return short || full;
 }
 
 /**

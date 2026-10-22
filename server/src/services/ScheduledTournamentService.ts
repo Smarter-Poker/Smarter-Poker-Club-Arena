@@ -56,6 +56,7 @@ import {
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { withMidwayStructure } from '../tournament/midwayStructurePolicy.js';
 import { withBountyRebuyUntilRegistrationCloses } from '../tournament/bountyRebuyPolicy.js';
+import { withMysteryBountyTerms } from '../tournament/mysteryBountyTerms.js';
 import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import {
@@ -1328,7 +1329,14 @@ export class ScheduledTournamentService {
     const built = await this.buildInsertRow(schedule, cfg, startTime);
     // Dan 2026-10-21: no bounty, PKO or mystery bounty MTT is a freezeout;
     // each rebuys until registration closes (bountyRebuyPolicy.ts).
-    const row = built ? withBountyRebuyUntilRegistrationCloses(withLockedLevelClock(built)) : built;
+    // Dan 2026-10-22: a mystery bounty seals its whole bounty pool into chests
+    // opened at the money and splits its entry 50/50 (mysteryBountyTerms.ts).
+    // The row is in chips here; the Diamond door scales it to whole Diamonds.
+    const row = built
+      ? withMysteryBountyTerms(
+          withBountyRebuyUntilRegistrationCloses(withLockedLevelClock(built))
+        )
+      : built;
     if (!row) {
       // A satellite whose target event does not exist yet is not a missed
       // event: a daily satellite feeding a weekly target only runs once that

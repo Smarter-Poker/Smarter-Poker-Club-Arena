@@ -262,6 +262,21 @@ describe('mystery activation uses the closed entry pool', () => {
     expect(f.subject.mysteryBountyStage).toBe('active');
   });
 
+  it('seeds a chip event with chests in whole chips, never fractions (Dan 2026-10-22)', async () => {
+    const f = fixture({ finalized: true });
+    await f.subject.maybeActivateMysteryBounty(27);
+    const [, args] = f.seedCalls()[0] as unknown as [
+      string,
+      { p_chests: { amount_cents: number }[] },
+    ];
+    expect(args.p_chests).toHaveLength(26);
+    expect(args.p_chests.reduce((sum, c) => sum + c.amount_cents, 0)).toBe(50_000);
+    for (const c of args.p_chests) {
+      expect(c.amount_cents % 100).toBe(0);
+      expect(c.amount_cents).toBeGreaterThanOrEqual(100);
+    }
+  });
+
   it('does not seed an event whose unit it has not read (Diamond Phase 9)', async () => {
     const f = fixture({ finalized: true, unit: null });
     await f.subject.maybeActivateMysteryBounty(27);

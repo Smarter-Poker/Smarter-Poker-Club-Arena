@@ -1,39 +1,9 @@
--- ═══════════════════════════════════════════════════════════════════════════
--- DAN, 2026-10-21: "STARTING TOMORROW ALL MTT TOURNAMENTS MUST PAY OUT THE TOP
--- 12.5% OF THE FIELD. ANYTHING LESS IS WRONG. CORRECT THIS AND MAKE SURE ALL
--- FUTURE TOURNAMENTS HAVE THIS IMPLEMENTED. (STAND ALONE CLUBS CAN SET IT TO
--- WHAT EVER THEY WANT, BUT THE DEFAULT SHOULD BE 12.5%)"
---
--- Before this migration every MTT paid ceil(field * payout_percent / 100) with
--- payout_percent a smallint restricted to 10/15/20, and every live event held
--- 10. 12.5 cannot be stored in that column, and changing its type rewrites a
--- 1.25 GB hot table under ACCESS EXCLUSIVE. So the paid depth gets its own
--- column, added as metadata only:
---
---   payout_depth_percent numeric(5,2)   the share of the field paid, (0,100]
---
--- One trigger is the single authority for every write path (creation RPC,
--- scheduled spawner, recurring templates, Diamond creator, restarts):
---   * MTTs in the Midway Union, any union, or the Diamond Arena: 12.5, always.
---   * Standalone club MTTs: whatever the club set; 12.5 when it set nothing.
---     A legacy explicit 15/20 in payout_percent is honoured; legacy 10 was the
---     old default and becomes 12.5.
---   * Satellites, Spins and Sit & Gos: untouched (NULL; they keep their terms).
---   * Once an event's prize pool is finalized its depth is frozen.
---
--- The two ladder builders (entry close and start lock) now read
--- COALESCE(payout_depth_percent, payout_percent). Completed and committed
--- events are never rewritten. Live MTTs whose payout terms are not yet
--- committed are moved to 12.5 by the DML-only companion migration
--- 20261022014651 (row locks only, kept out of this ACCESS EXCLUSIVE window).
--- ═══════════════════════════════════════════════════════════════════════════
--- @live-proof: (SELECT md5(pg_get_functiondef('public.fn_finalize_tournament_entry_pool_locked(uuid,text,text)'::regprocedure)) = 'b753df26912528d468e2dd71c7eb03ad' AND md5(pg_get_functiondef('public.fn_ca_fund_overlay_on_lock()'::regprocedure)) = 'e979db46832dfeec050164ab02eeb5d2' AND EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.tournaments'::regclass AND tgname = 'ca_mtt_payout_depth_guard'))
+-- DAN, 2026-10-21: every MTT pays the top 12.5% of the field; standalone clubs choose, default 12.5.
+-- Full reasoning in supabase/migrations/20261022014223_every_mtt_pays_the_top_twelve_point_five_percent_of_the_fiel.sql
 BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '120s';
 
--- Short, backing-off lock on the hot table (pattern from 20261021174448): never
--- queue live writers behind this transaction for more than 200 ms per try.
 DO $locks$
 DECLARE i int;
 BEGIN
@@ -50,7 +20,6 @@ BEGIN
  RAISE EXCEPTION 'tournaments lock not obtained in 100 short tries';
 END $locks$;
 
--- None of the functions changed here may be a watched guard.
 DO $watchlist$
 BEGIN
  IF public.fn_ca_guard_watchlist() && ARRAY[
@@ -62,7 +31,6 @@ BEGIN
  END IF;
 END $watchlist$;
 
--- ── 1. The column (metadata-only: nullable, no default) ────────────────────
 ALTER TABLE public.tournaments ADD COLUMN payout_depth_percent numeric(5,2);
 ALTER TABLE public.tournaments ADD CONSTRAINT tournaments_payout_depth_percent_range
   CHECK (payout_depth_percent IS NULL
@@ -70,7 +38,6 @@ ALTER TABLE public.tournaments ADD CONSTRAINT tournaments_payout_depth_percent_r
 COMMENT ON COLUMN public.tournaments.payout_depth_percent IS
   'Share of the field an MTT pays, in percent (Dan 2026-10-21). 12.5 for every Midway, union and Diamond Arena MTT; standalone clubs choose, default 12.5. NULL for Spins, Sit & Gos and satellites, which keep payout_percent. Paid places = ceil(entrants * depth / 100), minimum 1. Set by trg ca_mtt_payout_depth_guard; frozen once the prize pool is finalized.';
 
--- ── 2. The ladder generator at any depth ───────────────────────────────────
 CREATE FUNCTION public.fn_ca_payout_structure(p_entrants integer, p_percent numeric)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -116,7 +83,6 @@ COMMENT ON FUNCTION public.fn_ca_payout_structure(integer, numeric) IS
 REVOKE ALL ON FUNCTION public.fn_ca_payout_structure(integer, numeric) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fn_ca_payout_structure(integer, numeric) TO service_role;
 
--- The one place the depth an event pays is read.
 CREATE FUNCTION public.fn_ca_effective_payout_depth(p_depth numeric, p_legacy_percent smallint)
 RETURNS numeric LANGUAGE sql IMMUTABLE SET search_path = public, pg_temp AS $fn$
   SELECT COALESCE(p_depth, p_legacy_percent::numeric, 12.5);
@@ -124,7 +90,6 @@ $fn$;
 REVOKE ALL ON FUNCTION public.fn_ca_effective_payout_depth(numeric, smallint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fn_ca_effective_payout_depth(numeric, smallint) TO service_role;
 
--- A creator's requested depth: any number in (0,100], otherwise none.
 CREATE FUNCTION public.fn_ca_requested_payout_depth(p_value text)
 RETURNS numeric LANGUAGE plpgsql IMMUTABLE SET search_path = public, pg_temp AS $fn$
 DECLARE v numeric;
@@ -136,7 +101,6 @@ END $fn$;
 REVOKE ALL ON FUNCTION public.fn_ca_requested_payout_depth(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fn_ca_requested_payout_depth(text) TO service_role;
 
--- ── 3. The write boundary ──────────────────────────────────────────────────
 CREATE FUNCTION public.fn_ca_mtt_payout_depth_guard() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO public, pg_temp AS $fn$
 DECLARE
@@ -194,9 +158,6 @@ CREATE TRIGGER ca_mtt_payout_depth_guard
   BEFORE INSERT OR UPDATE OF payout_depth_percent, payout_percent
   ON public.tournaments FOR EACH ROW EXECUTE FUNCTION public.fn_ca_mtt_payout_depth_guard();
 
--- ── 4. The ladder builders read the depth ──────────────────────────────────
--- Exact, asserted text substitutions on the live definitions, so nothing else
--- in these long functions can drift.
 DO $patch$
 DECLARE
   r record;

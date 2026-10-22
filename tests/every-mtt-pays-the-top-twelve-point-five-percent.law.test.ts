@@ -79,11 +79,19 @@ describe('every MTT pays the top 12.5 percent of the field', () => {
     expect(legacyPayoutPercentColumn(12.5)).toBe(10);
   });
 
-  it('is one transaction each, with live proofs', () => {
-    for (const sql of [DDL, BACKFILL]) {
+  it('is one transaction each, recorded byte for byte and declared', () => {
+    const DECLARE = read('20261022021443_declare_the_mtt_payout_depth_guard');
+    for (const sql of [DDL, BACKFILL, DECLARE]) {
       expect(sql.match(/^BEGIN;$/gm)).toHaveLength(1);
       expect(sql.match(/^COMMIT;$/gm)).toHaveLength(1);
-      expect(sql).toMatch(/^-- @live-proof: \(SELECT /m);
+    }
+    expect(DECLARE).toContain("VALUES ('tournaments', 'ca_mtt_payout_depth_guard',");
+    const manifest = JSON.parse(
+      readFileSync(join(process.cwd(), 'scripts/ci/recorded-migrations.manifest.json'), 'utf8')
+    ) as { recordings: Array<{ version: string }> };
+    const versions = manifest.recordings.map((r) => r.version);
+    for (const v of ['20261022014607', '20261022014651', '20261022021443']) {
+      expect(versions).toContain(v);
     }
   });
 });

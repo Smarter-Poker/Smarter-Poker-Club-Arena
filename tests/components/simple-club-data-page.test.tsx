@@ -1,9 +1,25 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Club Data counts America/Chicago days (20261022120121): today is the Chicago date.
+const chicagoToday = (): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+/** The instant `hhmmss` on the Chicago clock on calendar date `day` (DST aware). */
+function chicagoInstant(day: string, hhmmss: string): Date {
+  const guess = new Date(`${day}T${hhmmss}Z`);
+  const shown = new Date(guess.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+  const asUtc = new Date(guess.toLocaleString('en-US', { timeZone: 'UTC' }));
+  return new Date(guess.getTime() + (asUtc.getTime() - shown.getTime()));
+}
+
 const CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
-const TEST_END_DATE = new Date().toISOString().slice(0, 10);
+const TEST_END_DATE = chicagoToday();
 const testRangeStart = new Date(`${TEST_END_DATE}T00:00:00Z`);
 testRangeStart.setUTCDate(testRangeStart.getUTCDate() - 13);
 const TEST_START_DATE = testRangeStart.toISOString().slice(0, 10);
@@ -403,7 +419,7 @@ describe('Simple Club Data', () => {
   it('routes the calendar and simple game/stakes controls into the authoritative query', async () => {
     render(<ClubDataPage />);
     await screen.findByText('Shark Table One');
-    const calendar = screen.getByLabelText('Period Ending (UTC)');
+    const calendar = screen.getByLabelText('Period Ending (Chicago Time)');
     const callsBefore = rpcMock.mock.calls.length;
     fireEvent.change(calendar, { target: { value: '2999-12-31' } });
     expect(calendar).toHaveValue(TEST_END_DATE);
@@ -489,13 +505,13 @@ for (const advanced of [false, true]) {
 }
 
 for (const historical of [false, true]) {
-  it(`rolls the current UTC day at midnight while preserving ${historical ? 'historical' : 'current'} intent`, async () => {
+  it(`rolls the current Chicago day at midnight while preserving ${historical ? 'historical' : 'current'} intent`, async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date(`${TEST_END_DATE}T23:59:50Z`));
+    vi.setSystemTime(chicagoInstant(TEST_END_DATE, '23:59:50'));
     try {
       render(<ClubDataPage />);
       await screen.findByText('Shark Table One');
-      const calendar = screen.getByLabelText('Period Ending (UTC)');
+      const calendar = screen.getByLabelText('Period Ending (Chicago Time)');
       const chosen = historical ? TEST_START_DATE : TEST_END_DATE;
       if (historical) fireEvent.change(calendar, { target: { value: chosen } });
       await act(async () => {
@@ -548,15 +564,16 @@ for (const advanced of [false, true]) {
 for (const intent of ['calendar', 'previous period']) {
   it(`preserves an explicit ${intent} choice made after midnight before the next poll`, async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date(`${TEST_END_DATE}T23:59:50Z`));
+    vi.setSystemTime(chicagoInstant(TEST_END_DATE, '23:59:50'));
     try {
       render(<ClubDataPage />);
       await screen.findByText('Shark Table One');
-      const tomorrow = new Date(`${TEST_END_DATE}T00:00:10Z`);
-      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      const tomorrowDay = new Date(`${TEST_END_DATE}T00:00:00Z`);
+      tomorrowDay.setUTCDate(tomorrowDay.getUTCDate() + 1);
+      const tomorrow = chicagoInstant(tomorrowDay.toISOString().slice(0, 10), '00:00:10');
       vi.setSystemTime(tomorrow);
-      const calendar = screen.getByLabelText('Period Ending (UTC)');
-      fireEvent.change(calendar, { target: { value: tomorrow.toISOString().slice(0, 10) } });
+      const calendar = screen.getByLabelText('Period Ending (Chicago Time)');
+      fireEvent.change(calendar, { target: { value: tomorrowDay.toISOString().slice(0, 10) } });
       if (intent === 'calendar') fireEvent.change(calendar, { target: { value: TEST_END_DATE } });
       else {
         fireEvent.click(screen.getByRole('button', { name: '1 Day', exact: true }));

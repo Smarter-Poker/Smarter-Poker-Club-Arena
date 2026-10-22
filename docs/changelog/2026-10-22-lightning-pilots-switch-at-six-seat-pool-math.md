@@ -82,3 +82,12 @@ owner has not authorized acceptance for anyone else and no roster horse other
 than 009 and Samantha has accepted, milehigh cannot run a browser witness until
 its own Terms are accepted under a separate owner authorization. The assignment
 manifest is unchanged: milehigh is already in it.
+
+## Follow-up: milehigh's Terms
+
+The coordinator relayed that the owner's approval of a third test player
+authorizes accepting that player's Terms. `THIRD_WITNESS_PLAYER` therefore joins
+`CONSENT_PLAYERS`, so it can accept exactly once in the existing `player`
+witness mode (`accept_player_terms=true`, exact matching browser identity) through
+the normal UI Terms dialog, the same door 009 and Samantha used. No other roster
+horse can accept, and no mode other than `player`/`admission` may opt in.

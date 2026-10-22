@@ -650,10 +650,24 @@ test('the third pinned actor is accepted by player, latency, financial and recov
   assert.equal(rr.status, 'observed');
   assert.equal(rr.cleanup, 'local_sessions_and_browser_closed');
 });
-test('the third actor is never a consent player and still needs its own prior accepted terms', async () => {
-  for (const mode of ['player', 'admission']) {
-    const f = fixture({ consent: false, playerId: MILEHIGH });
-    const r = await runPilotWitness(
+test('the third actor may accept terms only in player mode for its exact identity; other roster horses may not', async () => {
+  const f = fixture({ consent: false, playerId: MILEHIGH });
+  const r = await runPilotWitness(
+    {
+      ...env,
+      PILOT_WITNESS_MODE: 'player',
+      PILOT_PLAYER_ID: MILEHIGH,
+      PILOT_POOL_SESSION_ID: POOL,
+      PILOT_ACCEPT_PLAYER_TERMS: 'true',
+    },
+    f
+  );
+  assert.equal(r.status, 'observed');
+  assert.equal(f.calls.at(-1).acceptTerms, true);
+  assert.equal(f.calls.at(-1).pin.playerId, MILEHIGH);
+  for (const mode of ['latency', 'financial_cash_out', 'cycle']) {
+    const b = fixture({ consent: false, playerId: MILEHIGH });
+    const x = await runPilotWitness(
       {
         ...env,
         PILOT_WITNESS_MODE: mode,
@@ -661,34 +675,30 @@ test('the third actor is never a consent player and still needs its own prior ac
         PILOT_POOL_SESSION_ID: POOL,
         PILOT_ACCEPT_PLAYER_TERMS: 'true',
       },
-      f
+      b
     );
-    assert.equal(r.status, 'unknown');
-    assert.equal(f.calls.length, 0);
+    assert.equal(x.status, 'unknown');
+    assert.equal(b.calls.length, 0);
   }
-  for (const mode of ['player', 'latency', 'financial_cash_out']) {
-    const f = fixture({ consent: false, playerId: MILEHIGH });
-    f.witnessLatencyWorkload = async () => assert.fail('unaccepted latency reached');
-    f.witnessFinancial = async () => assert.fail('unaccepted financial reached');
-    const r = await runPilotWitness(
+  for (const mode of ['player', 'latency']) {
+    const b = fixture({ consent: false, playerId: MILEHIGH });
+    const x = await runPilotWitness(
       { ...env, PILOT_WITNESS_MODE: mode, PILOT_PLAYER_ID: MILEHIGH, PILOT_POOL_SESSION_ID: POOL },
-      f
+      b
     );
-    assert.equal(r.status, 'unknown');
-    assert.equal(f.calls.length, 1);
+    assert.equal(x.status, 'unknown');
   }
-  // Any other roster horse is still refused by the latency/financial pins.
-  const other = fixture({ playerId: '032b7ef6-ef40-4eb7-9a44-21605be733c8' });
-  other.witnessFinancial = async () => assert.fail('unpinned financial reached');
-  const r = await runPilotWitness(
+  const other = fixture({ consent: false, playerId: '032b7ef6-ef40-4eb7-9a44-21605be733c8' });
+  const y = await runPilotWitness(
     {
       ...env,
-      PILOT_WITNESS_MODE: 'financial_top_up',
+      PILOT_WITNESS_MODE: 'player',
       PILOT_PLAYER_ID: '032b7ef6-ef40-4eb7-9a44-21605be733c8',
       PILOT_POOL_SESSION_ID: POOL,
+      PILOT_ACCEPT_PLAYER_TERMS: 'true',
     },
     other
   );
-  assert.equal(r.status, 'unknown');
+  assert.equal(y.status, 'unknown');
   assert.equal(other.calls.length, 0);
 });

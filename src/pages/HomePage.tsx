@@ -59,6 +59,7 @@ import {
 import CarouselSection from '../components/home/CarouselSection';
 import { savedPinnedClubIds } from '../components/home/arenaSelection';
 import ClubEntryActionBar from '../components/home/ClubEntryActionBar';
+import { WatchAtTableButton } from '../components/club/WatchAtTableButton';
 import { getClubLevelFromMembers } from '../utils/clubLevels';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -1388,36 +1389,51 @@ function HomePageInner() {
             ═══════════════════════════════════════════════════════════════════════ */}
       <div className={styles.mainContent}>
         <h1 className={`${styles.arenaTitle} sc-ink--silver`}>Poker Arena</h1>
+        {!directoryPending && !loadFailed && quickLinkClub && (
+          <WatchAtTableButton
+            socket="Play"
+            title="Play Poker"
+            eyebrow={quickLinkClub.name || 'Your Club'}
+            ariaLabel={`Play Poker In ${quickLinkClub.name || 'Your Club'}`}
+            onClick={() => {
+              rememberLastClub(quickLinkClub.id);
+              navigate(`/clubs/${quickLinkClub.slug || quickLinkClub.id}`);
+            }}
+          />
+        )}
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <ClubEntryActionBar
-          flags={entryFlags}
-          onCreate={() => {
-            haptic.light();
-            ClubEntryTrustService.track('action_bar', 'opened', {
-              outcome: 'viewed',
-              metadata: { source: 'create' },
-            });
-            setShowCreateClubModal(true);
-          }}
-          onFind={() => {
-            haptic.medium();
-            ClubEntryTrustService.track('action_bar', 'opened', {
-              outcome: 'viewed',
-              metadata: { source: 'find' },
-            });
-            setShowFindPlayerModal(true);
-          }}
-          onJoin={() => {
-            haptic.light();
-            ClubEntryTrustService.track('action_bar', 'opened', {
-              outcome: 'viewed',
-              metadata: { source: 'join' },
-            });
-            setShowJoinModal(true);
-          }}
-        />
+        <details className={styles.clubOptions} open={!quickLinkClub}>
+          <summary>Club Options</summary>
+          <ClubEntryActionBar
+            flags={entryFlags}
+            onCreate={() => {
+              haptic.light();
+              ClubEntryTrustService.track('action_bar', 'opened', {
+                outcome: 'viewed',
+                metadata: { source: 'create' },
+              });
+              setShowCreateClubModal(true);
+            }}
+            onFind={() => {
+              haptic.medium();
+              ClubEntryTrustService.track('action_bar', 'opened', {
+                outcome: 'viewed',
+                metadata: { source: 'find' },
+              });
+              setShowFindPlayerModal(true);
+            }}
+            onJoin={() => {
+              haptic.light();
+              ClubEntryTrustService.track('action_bar', 'opened', {
+                outcome: 'viewed',
+                metadata: { source: 'join' },
+              });
+              setShowJoinModal(true);
+            }}
+          />
+        </details>
 
         {/* ═══════════════════════════════════════════════════════════════════════
                     CLUB CAROUSEL — Swipeable: [User Clubs ← SHARK CLUB (center) → User Clubs]

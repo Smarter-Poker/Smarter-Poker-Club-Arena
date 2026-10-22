@@ -1,4 +1,5 @@
 import { DiamondJackpotReadout } from '../components/bbj/DiamondJackpotReadout';
+import { capture } from '../lib/analytics';
 import { subscribeDiamondJackpot, type DiamondJackpotSnapshot } from '../lib/diamondJackpotFeed';
 import { isNamedReferralId, referralIdFor } from '../lib/referralId';
 import { isDiamondJackpotAdvertTarget } from '../components/bbj/diamondJackpotAdvertDoor';
@@ -1091,6 +1092,31 @@ function ClubHomePageContent({
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
+  const browseScope = `${currentUserId ?? 'guest'}:${clubId}`;
+  const browseJourney = useRef({
+    scope: browseScope,
+    start: Date.now(),
+    ready: false,
+    selected: false,
+  });
+  if (browseJourney.current.scope !== browseScope) {
+    browseJourney.current = {
+      scope: browseScope,
+      start: Date.now(),
+      ready: false,
+      selected: false,
+    };
+  }
+  useEffect(() => {
+    const journey = browseJourney.current;
+    return () => {
+      if (currentUserId)
+        capture('lobby_browse_ended', {
+          duration_ms: Math.max(0, Date.now() - journey.start),
+          selected_game: journey.selected,
+        });
+    };
+  }, [browseScope, currentUserId]);
   const [openingBankError, setOpeningBankError] = useState(false);
   const [openingBankRead, setOpeningBankRead] = useState(0);
   useEffect(() => {
@@ -4167,12 +4193,12 @@ function ClubHomePageContent({
   const openEntry = useCallback(
     (entry: LobbyEntry) => {
       haptic.selection();
-      // Kind alone decides, never status. Cash, Spin and Sit & Go keep the
-      // pre-commit drawer: their buy-in is chosen there.
-      if (entry.kind === 'mtt') {
-        openTournamentLobby(entry.id);
-        return;
-      }
+      browseJourney.current.selected = true;
+      capture('lobby_game_details_opened', {
+        kind: entry.kind,
+        duration_ms: Math.max(0, Date.now() - browseJourney.current.start),
+      });
+      // Every row opens its game card before an explicit participation action.
       setSelectedId(entry.id);
       setPanelOpen(true);
       // Perf pass 2026-08-24: opening the game lobby panel is the strongest
@@ -4577,6 +4603,15 @@ function ClubHomePageContent({
     resolvedClubId,
     toast,
   ]);
+
+  useEffect(() => {
+    if (loading || !currentUserId || browseJourney.current.ready) return;
+    browseJourney.current.ready = true;
+    capture('lobby_list_ready', {
+      duration_ms: Math.max(0, Date.now() - browseJourney.current.start),
+      game_count: lobbyEntries.length,
+    });
+  }, [loading, currentUserId, lobbyEntries.length, browseScope]);
 
   const selectedEntry = useMemo(
     () => (selectedId ? lobbyEntries.find((e) => e.id === selectedId) || null : null),

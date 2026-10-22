@@ -16,11 +16,12 @@ function card({
   disabled = false,
   hidden = false,
   width = 44,
+  compact = false,
 } = {}) {
   const wrapper = document.createElement('div');
   wrapper.className = 'club-home__games';
   const entry = document.createElement('div');
-  entry.dataset.testid = 'arena-lobby-game-card';
+  entry.dataset.testid = compact ? 'lobby-game-row' : 'arena-lobby-game-card';
   entry.dataset.id = TABLE;
   entry.dataset.kind = kind;
   entry.dataset.target = target;
@@ -28,6 +29,7 @@ function card({
   entry.dataset.players = String(players);
   const button = document.createElement('button');
   button.setAttribute('aria-label', label);
+  if (compact) button.className = 'compact-lobby__open';
   button.disabled = disabled;
   if (hidden) button.style.display = 'none';
   button.getBoundingClientRect = () => ({
@@ -53,6 +55,9 @@ function card({
 afterEach(() => document.body.replaceChildren());
 
 describe('production cash spectator candidate selection', () => {
+  it('accepts read-only Details on a compact row before the separate View action', () => {
+    expect(card({ compact: true, label: 'Details: NLH 1/2' })).toHaveLength(1);
+  });
   it.each(['View Game', 'Watch Game'])('accepts the published cluster %s control', (label) => {
     expect(card({ label })).toEqual([{ id: TABLE, name: TABLE, players: 4 }]);
   });

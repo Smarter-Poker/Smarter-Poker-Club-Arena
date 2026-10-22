@@ -20,7 +20,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import CasinoPlaque, { PlaqueSeats } from './CasinoPlaque';
 import ArenaGameCard from './game-cards/ArenaGameCard';
 import { arenaGameCardDataFromEntry } from './game-cards/arenaGameCardAdapter';
 import type { ArenaGameCardActions } from './game-cards/arenaGameCardTypes';
@@ -588,11 +587,11 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
      CSS plaque here, so the player moved from real machined artwork into a
      cheaper imitation after one click. Keep one live data adapter and one
      hardware renderer; only the action handlers belong to this dialog. */
-  const cashMachineData = useMemo(
-    () => ({ ...arenaGameCardDataFromEntry(entry), registeredByViewer: seated }),
-    [entry, seated]
+  const gameCardData = useMemo(
+    () => ({ ...arenaGameCardDataFromEntry(entry), registeredByViewer: seated || registered }),
+    [entry, seated, registered]
   );
-  const cashMachineActions = useMemo<ArenaGameCardActions>(() => {
+  const gameCardActions = useMemo<ArenaGameCardActions>(() => {
     const primaryTone =
       cta.kind === 'gold'
         ? 'green'
@@ -610,10 +609,13 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         if (cta.link) navigate(cta.link);
         else cta.run?.();
       },
-      secondaryLabel: entry.game ? 'View Game' : 'View Table',
-      onSecondary: () => navigate(`/table/${entry.id}`),
+      secondaryLabel: isCash ? (entry.game ? 'View Game' : 'View Table') : 'Details',
+      onSecondary: () =>
+        navigate(
+          isCash ? `/table/${entry.id}` : withClubContext(`/tournaments/${entry.id}`, clubId)
+        ),
     };
-  }, [busy, cta, ctaDisabled, entry.id, entry.game, navigate]);
+  }, [busy, cta, ctaDisabled, entry.id, entry.game, navigate, isCash, clubId]);
 
   // ── Right zone of the plaque ──
   /* The lobby row is the fallback for the two figures the table now prints
@@ -723,77 +725,6 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   const cashMoney = (n: number): string =>
     cashRange && cashRange.unknown ? '-' : n.toLocaleString();
 
-  const joinZone = (
-    <>
-      <span className="cplaque__join-label">
-        {isCash ? 'BUY-IN' : entry.kind === 'mtt' ? 'ENTRY' : 'BUY-IN'}
-      </span>
-      <div className="cplaque__join-figures">
-        {isCash ? (
-          <>
-            <span className="cplaque__join-figure">
-              <b>{cashMoney(minBuy)}</b>
-              <span>Min</span>
-            </span>
-            <span className="cplaque__join-figure">
-              <b>{cashMoney(maxBuy)}</b>
-              <span>Max</span>
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="cplaque__join-figure">
-              <b>{entry.buyInLabel}</b>
-              <span>Buy-In</span>
-            </span>
-            {entry.guaranteeValue > 0 && (
-              <span className="cplaque__join-figure">
-                <b>{entry.guaranteeValue.toLocaleString()}</b>
-                <span>Guaranteed</span>
-              </span>
-            )}
-          </>
-        )}
-      </div>
-      <PlaqueSeats
-        players={entry.players}
-        capacity={entry.capacity}
-        bareCount={entry.kind === 'mtt' || entry.kind === 'unknown'}
-        gameTables={entry.game ? entry.game.tables : null}
-      />
-      {cta.link && !busy ? (
-        <Link
-          className={`cplaque__cta${cta.kind !== 'primary' && cta.kind !== 'disabled' ? ` cplaque__cta--${cta.kind}` : ''}`}
-          to={cta.link}
-        >
-          {cta.label}
-        </Link>
-      ) : (
-        <button
-          type="button"
-          className={`cplaque__cta${cta.kind !== 'primary' && cta.kind !== 'disabled' ? ` cplaque__cta--${cta.kind}` : ''}`}
-          /* When an action is in flight the link CTA renders as this button
-             instead, so "Return To Tournament" cannot be tapped a second time
-             mid-registration and shows the same One Moment state every other
-             CTA shows. */
-          disabled={ctaDisabled}
-          onClick={() => cta.run?.()}
-        >
-          {busy ? 'One Moment' : cta.label}
-        </button>
-      )}
-      {cta.needsAuth && !currentUserId && (
-        <span className="cplaque__cta-note">Sign In To Play</span>
-      )}
-      {cta.note && <span className="cplaque__cta-note">{cta.note}</span>}
-      {isCash && (
-        <Link className="cplaque__observe-link" to={`/table/${entry.id}`}>
-          Observe Table
-        </Link>
-      )}
-    </>
-  );
-
   // ── Detailed rules list (complete explanations under the plaque) ──
   const settings = isCash ? parseTableSettings(cashRaw?.settings) : null;
 
@@ -823,15 +754,17 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         </header>
 
         <div className="glp__scroll">
-          {isCash ? (
-            <ArenaGameCard
-              data={cashMachineData}
-              actions={cashMachineActions}
-              presentation="auto"
-              className="glp__arena-card"
-            />
-          ) : (
-            <CasinoPlaque entry={entry}>{joinZone}</CasinoPlaque>
+          <ArenaGameCard
+            data={gameCardData}
+            actions={gameCardActions}
+            presentation="auto"
+            className="glp__arena-card"
+          />
+          {cta.needsAuth && !currentUserId && <p className="sc-copy">Sign In To Play</p>}
+          {cta.note && (
+            <p className="sc-copy" role="status">
+              {cta.note}
+            </p>
           )}
 
           {/* ── CASH GAME LOBBY ── */}

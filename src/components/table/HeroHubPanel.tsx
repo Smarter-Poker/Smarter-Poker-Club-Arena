@@ -3,7 +3,10 @@
  *  HERO HUB — the tabbed panel behind the hero's own avatar
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Dan 2026-08-28, verbatim: "REMOVE THE STATS BUTTON FROM THE UPPER LEFT HAND
+ * Owner October 22: Stats is the default; optional Throwables stay secondary.
+ * Table Settings now has one entry through the table menu.
+ *
+ * Historical August instruction: "REMOVE THE STATS BUTTON FROM THE UPPER LEFT HAND
  * CORNER, AND MOVE IT TO THE HERO AVATAR. WHEN YOU CLICK THE AVATAR ... YOU
  * SHOULD SEE MULTIPLE TABS: THE THROWABLE, STATS, PROFILE SETTINGS, AND TABLE
  * SETTINGS."
@@ -52,18 +55,18 @@ import type { Throwable } from '../../services/ThrowableService';
 import { SpadeConsole } from '../console/SpadeConsole';
 import './HeroHubPanel.css';
 
-export type HeroHubTab = 'throwables' | 'stats' | 'profile' | 'settings';
+export type HeroHubTab = 'throwables' | 'stats' | 'profile';
 
 /**
  * 2026-08-29 hardening pass: the hub reopens on the tab the player last used,
- * for this session. A grinder who lives in Stats stops paying one extra tap
- * per open; a fresh session still lands on Throwables, the most-tapped tab.
+ * for this session. A fresh session lands on Stats; Throwables are an optional
+ * secondary tab under the October 22 cleanup instruction.
  * sessionStorage on purpose — a preference this light should not follow the
  * player across devices or outlive the session, and it must never throw the
  * panel (private mode, blocked storage), hence the try/catch on both sides.
  */
 export const HERO_HUB_TAB_KEY = 'ca_hero_hub_tab';
-const TAB_IDS: readonly HeroHubTab[] = ['throwables', 'stats', 'profile', 'settings'];
+const TAB_IDS: readonly HeroHubTab[] = ['stats', 'profile', 'throwables'];
 
 export function readInitialHubTab(): HeroHubTab {
   try {
@@ -72,7 +75,7 @@ export function readInitialHubTab(): HeroHubTab {
   } catch {
     /* storage unavailable — land on the default */
   }
-  return 'throwables';
+  return 'stats';
 }
 
 export function rememberHubTab(tab: HeroHubTab): void {
@@ -116,7 +119,6 @@ export interface HeroHubPanelProps {
   onOpenProfileView: () => void;
   onOpenAvatarPicker: () => void;
   onOpenIdentity: () => void;
-  onOpenTableSettings: () => void;
   /** Identity header — who this hub belongs to. */
   heroName?: string;
   heroAvatarUrl?: string;
@@ -146,15 +148,6 @@ export interface HeroHubPanelProps {
    * by tests/unit/heroHubDialogBehaviour.test.tsx.
    */
   isHeroTurn?: boolean;
-  /**
-   * The high-frequency table settings, shown inline on the Table tab
-   * (2026-08-30). Sourced from TABLE_SETTINGS_META's `quick` flag and written
-   * through the SAME `toggleSetting` the full panel uses — the hub adds a
-   * surface, never a second owner or a second persisted copy (the rule
-   * `tests/unit/settingsHaveOneOwner.test.ts` exists to defend).
-   */
-  quickSettings?: Array<{ key: string; label: string; description: string; value: boolean }>;
-  onToggleQuickSetting?: (key: string) => void;
 }
 
 /**
@@ -193,10 +186,9 @@ function statFigure(
 }
 
 const TABS: Array<{ id: HeroHubTab; label: string }> = [
-  { id: 'throwables', label: 'Throwables' },
   { id: 'stats', label: 'Stats' },
   { id: 'profile', label: 'Profile' },
-  { id: 'settings', label: 'Table' },
+  { id: 'throwables', label: 'Throwables' },
 ];
 
 export function HeroHubPanel({
@@ -211,12 +203,9 @@ export function HeroHubPanel({
   onOpenProfileView,
   onOpenAvatarPicker,
   onOpenIdentity,
-  onOpenTableSettings,
   heroName,
   stats,
   isHeroTurn = false,
-  quickSettings,
-  onToggleQuickSetting,
 }: HeroHubPanelProps) {
   const [tab, setTab] = useState<HeroHubTab>(readInitialHubTab);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -452,50 +441,6 @@ export function HeroHubPanel({
               {item('View Profile', 'Your Table Identity And Session', onOpenProfileView)}
               {item('Change Avatar', 'Pick A New Table Avatar', onOpenAvatarPicker)}
               {item('Display Name', 'Real Name Or Alias At The Table', onOpenIdentity)}
-            </div>
-          )}
-
-          {tab === 'settings' && (
-            <div
-              className="hero-hub__menu"
-              role="tabpanel"
-              id="hero-hub-panel-settings"
-              aria-labelledby="hero-hub-tab-settings"
-            >
-              {/* THE SWITCHES YOU REACH FOR MID-SESSION, HERE (2026-08-30).
-                  This tab used to be one button that closed the hub and opened
-                  SettingsPanel — the same weakness the Stats tab had. These
-                  write through the settings' single owner; the full panel is
-                  still one tap below for everything else. */}
-              {quickSettings && quickSettings.length > 0 && (
-                <div className="hero-hub__toggles">
-                  {quickSettings.map((s) => (
-                    <button
-                      key={s.key}
-                      type="button"
-                      role="switch"
-                      aria-checked={s.value}
-                      className={`hero-hub__toggle${s.value ? ' is-on' : ''}`}
-                      onClick={() => onToggleQuickSetting?.(s.key)}
-                      title={s.description}
-                    >
-                      <span className="hero-hub__toggle-label">{s.label}</span>
-                      {/* The state is a word. The master paints no switch, and
-                          a 999px track with a round thumb is the drawn control
-                          the standard exists to delete; `aria-checked` above
-                          carries the semantics either way. */}
-                      <span className="hero-hub__toggle-state" aria-hidden="true">
-                        {s.value ? 'On' : 'Off'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {item(
-                'All Table Settings',
-                'Gameplay, Display, Sound And Customization',
-                onOpenTableSettings
-              )}
             </div>
           )}
 

@@ -411,7 +411,7 @@ async function selectOccupiedRunningCashTables(
 
   await page
     .locator(
-      '.club-home__games [data-testid="arena-lobby-game-card"], .club-home__games .empty-tables'
+      '.club-home__games [data-testid="arena-lobby-game-card"], .club-home__games [data-testid="lobby-game-row"], .club-home__games .empty-tables'
     )
     .first()
     .waitFor({ state: 'visible', timeout: 30_000 });
@@ -1962,10 +1962,16 @@ test.describe('production mobile WebKit live-table realtime continuity', () => {
     // The engine-progress wait above can outlast the optional invitation's
     // arrival. Own its dismissal before the unchanged View visibility check.
     await prepareCashLobbyActions(page, { retainInvitationHandler: false });
+    const row = page.locator(`[data-testid="lobby-game-row"][data-id="${candidate.id}"]`);
+    if (await row.isVisible()) {
+      await row.getByRole('button', { name: /^Details:/ }).click();
+    }
     const card = page.locator(
       `[data-testid="arena-lobby-game-card"][data-kind="cash"][data-id="${candidate.id}"]`
     );
-    const view = card.getByRole('button', { name: CASH_SPECTATOR_ACTION });
+    const view = (await row.isVisible())
+      ? page.getByRole('dialog').getByRole('button', { name: CASH_SPECTATOR_ACTION })
+      : card.getByRole('button', { name: CASH_SPECTATOR_ACTION });
     await expect(
       view,
       `occupied table ${candidate.name} lost its visible read-only View/Watch Table or Game action`

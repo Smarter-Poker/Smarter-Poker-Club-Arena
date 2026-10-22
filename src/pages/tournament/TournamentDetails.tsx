@@ -2091,7 +2091,7 @@ export default function TournamentDetails({
             {/* Whole chips only (Dan 2026-08-20) - formatBuyIn leads with the
                 total the player actually pays and never prints a decimal. */}
             <p className="tournament-buyin">
-              {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)}{' '}
+              {formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee, tournament)}{' '}
               {tournamentRowUnitCents(tabProps.tournament) === DIAMOND_UNIT_CENTS
                 ? 'Diamonds'
                 : 'Chips'}{' '}

@@ -1002,7 +1002,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                       <dt>Buy-In</dt>
                       <dd className="glp__mono">
                         {tournament
-                          ? formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)
+                          ? formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee, tournament)
                           : entry.buyInLabel}
                       </dd>
                     </div>

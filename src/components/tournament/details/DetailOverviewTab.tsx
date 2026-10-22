@@ -466,7 +466,8 @@ export default function DetailOverviewTab({
           label: 'Buy-In',
           value: formatBuyIn(
             Number(tournament?.buy_in_amount) || 0,
-            Number(tournament?.buy_in_fee) || 0
+            Number(tournament?.buy_in_fee) || 0,
+            tournament
           ),
         },
         { key: 'state', label: 'Status', value: 'Cancelled', tone: 'warn' },
@@ -607,7 +608,7 @@ export default function DetailOverviewTab({
       {
         key: 'buyin',
         label: 'Buy-In',
-        value: formatBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0),
+        value: formatBuyIn(Number(t.buy_in_amount) || 0, Number(t.buy_in_fee) || 0, t),
       },
       {
         key: 'stack',

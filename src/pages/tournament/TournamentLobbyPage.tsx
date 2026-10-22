@@ -38,7 +38,7 @@ import styles from './TournamentLobbyPage.module.css';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { reportError } from '../../utils/errorReporter';
 // Whole-number tournament money (Dan 2026-08-20).
-import { totalBuyIn } from '../../utils/buyIn';
+import { totalBuyIn, formatBuyInShort } from '../../utils/buyIn';
 import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
 import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 import { ClubPageSection as SpadeConsole } from '../../components/club/ClubPageSection';
@@ -60,6 +60,7 @@ interface Tournament extends TournamentEntryWindowRow {
   id: string;
   name: string;
   clubId: string;
+  unionId?: string | null;
   clubName: string;
   buyIn: number;
   /* The two halves behind `buyIn`, kept so the Sign Up card can print the
@@ -296,7 +297,7 @@ export default function TournamentLobbyPage() {
                     format_contract,
                     id,
                     name,
-                    club_id,
+                    club_id, union_id,
                     buy_in_amount,
                     buy_in_fee,
                     prize_pool,
@@ -518,13 +519,14 @@ export default function TournamentLobbyPage() {
           format_contract: readTournamentFormat(t),
           name: t.name,
           clubId: t.club_id,
+          unionId: t.union_id,
           // hide_club_name (2026-08-22): the owner chose to keep the club off
           // the lobby card and out of club-name search.
           clubName: t.hide_club_name ? '' : (t.clubs as any)?.name || 'Club',
           // The card advertises and charges the TOTAL, not the prize half of
           // the split - buy_in_amount alone understated every price by the fee.
           // totalBuyIn also rounds, so no decimal reaches the lobby.
-          buyIn: totalBuyIn(t.buy_in_amount || 0, t.buy_in_fee),
+          buyIn: totalBuyIn(t.buy_in_amount || 0, t.buy_in_fee, t),
           buyInPrize: Number(t.buy_in_amount) || 0,
           buyInFee: Number(t.buy_in_fee) || 0,
           prizePool: Math.round(Number(t.prize_pool) || 0),
@@ -629,6 +631,7 @@ export default function TournamentLobbyPage() {
         is_mystery_bounty: !!t.isMysteryBounty,
         start_time: t.startTime,
         club_id: t.clubId ?? null,
+        union_id: t.unionId ?? null,
         // The hook derives late-registration from status — one definition for
         // every surface, because five hand-rolled copies all missed LATE_REG.
         status: t.status,
@@ -942,6 +945,11 @@ export default function TournamentLobbyPage() {
                                   ? 'bounty'
                                   : 'mtt',
                       buyIn: tournament.buyIn,
+                      buyInLabel: formatBuyInShort(
+                        tournament.buyInPrize,
+                        tournament.buyInFee,
+                        tournament
+                      ),
                       prizePool: tournament.prizePool,
                       maxPlayers: tournament.maxPlayers,
                       registeredPlayers: tournament.currentPlayers,

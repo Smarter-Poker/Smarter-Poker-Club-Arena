@@ -79,6 +79,37 @@ const nameOf = (el: HTMLElement) => el.querySelector('.table-tab-bar__tab-name')
 const subOf = (el: HTMLElement) => el.querySelector('.table-tab-bar__tab-sub')?.textContent ?? null;
 
 describe('a tournament tab with no live hand', () => {
+  it('reads the approved Midway scope and renders the exact booked price', async () => {
+    metadata.read
+      .mockResolvedValueOnce({ data: [{ id: 'table-1', tournament_id: 'event-1' }], error: null })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            id: 'event-1',
+            name: 'Sunrise Bounty (NLH)',
+            club_id: 'member-club',
+            union_id: 'fade0000-0000-0000-0000-000000000001',
+            buy_in_amount: 5,
+            buy_in_fee: 0.5,
+          },
+        ],
+        error: null,
+      });
+    const info = (await readTournamentTabInfo(['table-1'])).get('table-1')!;
+    expect(info.buyIn).toBe(5.5);
+    const el = pill(
+      tab({
+        gameCode: 'MTT',
+        isTournament: true,
+        tournamentBuyIn: info.buyIn,
+        tournamentBuyInLabel: info.buyInLabel,
+      })
+    );
+    expect(subOf(el)).toBe('5.50');
+    expect(tournamentTabBuyInLabel(5.5)).toBe('6');
+    metadata.read.mockClear();
+  });
+
   it('prints the code over the buy-in total, and neither blinds nor a pot', () => {
     const el = pill(tab({ gameCode: 'MTT', isTournament: true, tournamentBuyIn: 55, pot: 51115 }));
     expect(nameOf(el)).toBe('MTT');
@@ -500,7 +531,7 @@ describe('return banner tournament identity', () => {
     expect(metadata.read).toHaveBeenNthCalledWith(
       2,
       'tournaments',
-      'id, name, buy_in_amount, buy_in_fee',
+      'id, name, club_id, union_id, buy_in_amount, buy_in_fee',
       'id',
       ['event']
     );

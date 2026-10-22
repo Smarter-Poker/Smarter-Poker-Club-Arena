@@ -149,7 +149,7 @@ export function mapSatelliteRowToCard(sat: Record<string, unknown>) {
        field. `sat.buy_in` is not a column, so `Number(undefined) || 0` made
        every satellite card advertise a buy-in of ZERO alongside its prize pool
        of zero. `totalBuyIn` is the one place that adds the two halves. */
-    buyIn: totalBuyIn(num(sat.buy_in_amount), num(sat.buy_in_fee)),
+    buyIn: totalBuyIn(num(sat.buy_in_amount), num(sat.buy_in_fee), sat),
     /* The advertised guarantee where there is one, otherwise the pool actually
        collected. The old mapper read a column that does not exist and so always
        showed zero. */

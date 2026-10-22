@@ -15,6 +15,12 @@ on:
       - 'scripts/ci/test-midway-cash-rake-policy.py'
       - 'supabase/migrations/20261021174448_midway_cash_rake_policy_two_point_five_bb.sql'
       - '.github/workflows/midway-cash-rake-policy.yml'
+# A newer push to the same pull request fully supersedes this pure check
+# (pull_request runs on refs/pull/N/merge), and the job mutates nothing
+# outside its runner. Cancel the stale run instead of queueing it.
+concurrency:
+  group: midway-cash-rake-policy-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

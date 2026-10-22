@@ -5,6 +5,8 @@ export interface MessageCard {
   sender: string;
   preview: string;
   path: string;
+  /** Sender's photo when the notification carries one; null shows the messenger icon. */
+  avatarUrl: string | null;
 }
 
 /** Pure: turn a `new_message` notification row into a popup card. */
@@ -23,5 +25,11 @@ export function toMessageCard(row: Record<string, any> | null | undefined): Mess
     (conversationId
       ? `/hub/messenger?c=${encodeURIComponent(String(conversationId))}`
       : '/hub/messenger');
-  return { id: String(row.id), sender, preview, path: link };
+  const rawAvatar =
+    row.data && typeof row.data.senderAvatarUrl === 'string' ? row.data.senderAvatarUrl.trim() : '';
+  // Only an https image or a same-origin path is shown; anything else falls
+  // back to the messenger icon rather than loading an arbitrary scheme.
+  const avatarUrl =
+    /^https:\/\//i.test(rawAvatar) || /^\/(?!\/)/.test(rawAvatar) ? rawAvatar : null;
+  return { id: String(row.id), sender, preview, path: link, avatarUrl };
 }

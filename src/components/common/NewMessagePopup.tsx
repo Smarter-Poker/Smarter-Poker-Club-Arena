@@ -23,6 +23,8 @@ import { MEDIA_BASE } from '../../utils/mediaBase';
 import { formatPopupText } from '../../utils/popupStyle';
 import { NEW_MESSAGE_EVENT, useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { toMessageCard, type MessageCard } from './newMessageCard';
+import { requestPushNudge } from '../../lib/pushNudgePolicy';
+import { useUnreadTabTitle } from './useUnreadTabTitle';
 import styles from './NewMessagePopup.module.css';
 
 const MAX_CARDS = 3;
@@ -36,6 +38,10 @@ export default function NewMessagePopup() {
   const [cards, setCards] = useState<MessageCard[]>([]);
   const [overTable, setOverTable] = useState(false);
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const unreadMessages = useHeaderDataStore((state) => state.unreadMessages);
+  // "(3) Club Arena" in the browser tab while messages wait, so a player on
+  // another tab still sees them.
+  useUnreadTabTitle(unreadMessages);
 
   const dismiss = useCallback((id: string) => {
     const timer = timers.current.get(id);
@@ -48,6 +54,11 @@ export default function NewMessagePopup() {
     const onMessage = (event: Event) => {
       const card = toMessageCard((event as CustomEvent).detail);
       if (!card) return;
+      // A received message is the moment an alert is most obviously useful.
+      // The shared policy decides whether the ask may appear: never when this
+      // device already has push, the player turned it off or blocked it, or
+      // they were asked within the last day.
+      requestPushNudge('message_received');
       setOverTable(liveTablesOpen());
       setCards((list) => {
         if (list.some((existing) => existing.id === card.id)) return list;
@@ -105,7 +116,17 @@ export default function NewMessagePopup() {
             onClick={() => open(card)}
             aria-label={`Open Message From ${card.sender}`}
           >
-            <img className={styles.icon} src={MESSENGER_ICON} alt="" />
+            <img
+              className={card.avatarUrl ? styles.avatar : styles.icon}
+              src={card.avatarUrl || MESSENGER_ICON}
+              alt=""
+              onError={(event) => {
+                const img = event.currentTarget;
+                if (img.src.endsWith('messenger.png')) return;
+                img.src = MESSENGER_ICON;
+                img.className = styles.icon;
+              }}
+            />
             <span className={styles.text}>
               <span className={styles.sender}>
                 {formatPopupText(`Message From ${card.sender}`)}

@@ -16,6 +16,7 @@ describe('live new message popup cards', () => {
       sender: 'DarthBayter',
       preview: 'How do I take a seat',
       path: '/hub/messenger?c=c-1',
+      avatarUrl: null,
     });
   });
 
@@ -34,5 +35,22 @@ describe('live new message popup cards', () => {
   it('ignores every other notification type', () => {
     expect(toMessageCard({ id: 'n3', type: 'club_invite_joined', title: 'Joined' })).toBeNull();
     expect(toMessageCard(null)).toBeNull();
+  });
+
+  it('shows the sender photo the Hub records, and only from a safe source', () => {
+    const base = { id: 'n4', type: 'new_message', title: 'Message from Donkey', message: 'hi' };
+    expect(
+      toMessageCard({ ...base, data: { senderAvatarUrl: 'https://cdn.example/a.png' } })?.avatarUrl
+    ).toBe('https://cdn.example/a.png');
+    expect(toMessageCard({ ...base, data: { senderAvatarUrl: '/avatars/b.png' } })?.avatarUrl).toBe(
+      '/avatars/b.png'
+    );
+    expect(
+      toMessageCard({ ...base, data: { senderAvatarUrl: 'javascript:alert(1)' } })?.avatarUrl
+    ).toBeNull();
+    expect(
+      toMessageCard({ ...base, data: { senderAvatarUrl: '//evil.example/x' } })?.avatarUrl
+    ).toBeNull();
+    expect(toMessageCard(base)?.avatarUrl).toBeNull();
   });
 });

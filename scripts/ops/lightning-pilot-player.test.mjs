@@ -304,7 +304,16 @@ function fakeBrowser(
       if (++waits > 200) throw new Error('Player Witness Deadline');
       if (frame) emit();
     },
-    locator: () => ({ getAttribute: async () => 'accepted' }),
+    locator: (selector) =>
+      selector.includes('data-tabid')
+        ? {
+            waitFor: async () => {},
+            count: async () => 1,
+            isVisible: async () => true,
+            tap: async () => {},
+            getAttribute: async () => (broken === 'wrong_pool' ? 'false' : 'true'),
+          }
+        : { getAttribute: async () => 'accepted' },
     on: (type, fn) => {
       assert.equal(type, 'websocket');
       openSocket = () =>
@@ -785,3 +794,17 @@ for (const patch of [
     assert.deepEqual(f.calls, []);
   });
 }
+
+test('another restored pool never receives a player fold gesture', async () => {
+  const f = fixture(),
+    b = fakeBrowser(false, false, 'wrong_pool');
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  assert.equal(r.status, 'unknown');
+  assert.equal(b.actionDevices.length, 0);
+});

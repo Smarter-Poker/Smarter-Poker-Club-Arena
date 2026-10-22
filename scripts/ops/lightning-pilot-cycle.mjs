@@ -1,3 +1,4 @@
+import { selectPoolTab, clickSelectedPoolControl } from './lightning-pilot-selected-pool.mjs';
 /** Explicit finite R08 observation. Horses keep their normal input device.
  * Never submits a wager, joins, funds, forges telemetry or accepts new consent.
  */
@@ -285,6 +286,7 @@ export async function witnessCycle({
     report.subphase = 'consent';
     report.cause = 'existing_consent_unverified';
     await bound(acceptPlayerTerms(page, session, pin, url, false, remaining));
+    await selectPoolTab(page, pin, remaining, (report.poolSelection = {}));
     report.subphase = 'first_render';
     report.cause = 'first_render_unobserved';
     while (!rendered) await page.waitForTimeout(Math.min(100, remaining()));
@@ -327,7 +329,7 @@ export async function witnessCycle({
       report.cause = 'optional_action_unverified';
       const response = await clickCycleControlOnce(
         page,
-        control,
+        { click: (options) => clickSelectedPoolControl(page, pin, control, remaining, options) },
         (r) => {
           if (r.request().method() !== 'POST' || new URL(r.url()).pathname !== path) return false;
           try {

@@ -270,6 +270,14 @@ test('partial browser failure retains bounded live phases and requested hand ide
     },
     waitForFunction: async () => {},
     locator: (selector) => {
+      if (selector.includes('data-tabid'))
+        return {
+          waitFor: async () => {},
+          count: async () => 1,
+          isVisible: async () => true,
+          tap: async () => {},
+          getAttribute: async () => 'true',
+        };
       selectors.push(selector);
       return {
         getAttribute: async () => 'accepted',

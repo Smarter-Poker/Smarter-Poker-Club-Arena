@@ -232,6 +232,7 @@ function fixture(
     returnError = false,
     returnReadError = false,
     baselineDrift = 0,
+    selectionLostAfter,
   } = {}
 ) {
   const actions = [],
@@ -245,7 +246,9 @@ function fixture(
     paused = false,
     pauseReads = 0,
     handReads = 0,
-    returned = false;
+    returned = false,
+    selected = false,
+    selectionReads = 0;
   const target = PILOT_TARGETS[0];
   const game = {
     id: pin.clusterId,
@@ -508,7 +511,23 @@ function fixture(
     },
     goto: async () => {},
     waitForFunction: async () => {},
-    locator: () => loc('gate', 'gate'),
+    locator: (selector) =>
+      selector.includes('data-tabid')
+        ? {
+            waitFor: async () => {},
+            count: async () => (selector.includes(pin.poolSessionId) ? 1 : 0),
+            isVisible: async () => true,
+            tap: async () => {
+              actions.push('select_pool');
+              selected = true;
+            },
+            getAttribute: async () => {
+              if (selectionLostAfter !== undefined && ++selectionReads > selectionLostAfter)
+                selected = false;
+              return String(selected);
+            },
+          }
+        : loc('gate', 'gate'),
     getByTestId: (n) => loc('testid', n),
     getByRole: (r, o) => loc(r, o.name),
     waitForResponse: () => new Promise((r) => (resolveResponse = r)),
@@ -887,4 +906,15 @@ test('Sit Out diagnostics keep only maintained status and classification', async
     success: null,
     code: 'UNCLASSIFIED',
   });
+});
+
+test('a pool selection lost before the money gesture refuses it without switching back', async () => {
+  const f = fixture('top_up', { selectionLostAfter: 2 }),
+    r = await witnessFinancial(f.args);
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.intent, null);
+  assert.equal(f.actions.filter((a) => a === 'select_pool').length, 1);
+  assert.ok(!f.actions.some((a) => Array.isArray(a) && String(a[1]).startsWith('/^Add')));
+  assert.ok(f.actions.includes('local_signout'));
+  assert.ok(f.actions.includes('browser_close'));
 });

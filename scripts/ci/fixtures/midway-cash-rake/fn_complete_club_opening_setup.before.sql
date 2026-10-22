@@ -63,7 +63,7 @@ BEGIN
   END IF;
   IF v_tagline ILIKE '%all fish of all shapes and sizes are welcome%'
      AND v_club.club_id <> 25450 THEN
-    RAISE EXCEPTION 'That Tag Line Belongs To Shark Club';
+    RAISE EXCEPTION 'That Tag Line Belongs To Kings Club';
   END IF;
 
   SELECT * INTO v_existing

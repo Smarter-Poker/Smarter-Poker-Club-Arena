@@ -237,6 +237,7 @@ describe('Create Club production certification contract', () => {
     expect(spec).toContain('p_leaderboard_prize_budget: 0');
     expect(spec).toContain('Number(openingReceipt.club_bank_after)).toBe(99700)');
     expect(spec).toContain("getByLabel('Your Invite Link'");
+    expect(spec).toContain("clubLocation.searchParams.delete('invite')");
   });
 
   it('retires the created club through the published owner controls before cleanup', () => {

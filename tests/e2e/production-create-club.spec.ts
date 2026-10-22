@@ -102,7 +102,10 @@ test.describe('Production Create A Club Certificate', () => {
       new RegExp(`/clubs/${escapeRegExp(createdClubRef)}(?:[/?#]|$)`, 'i'),
       { timeout: 60_000 }
     );
-    const createdClubUrl = page.url();
+    // Returning from optional tools must not replay the one-shot invite intent.
+    const clubLocation = new URL(page.url());
+    clubLocation.searchParams.delete('invite');
+    const createdClubUrl = clubLocation.toString();
     const defaults = await defaultResponse;
     expect(defaults.ok(), 'default opening RPC must succeed').toBe(true);
     expect(defaults.request().postDataJSON()).toMatchObject({

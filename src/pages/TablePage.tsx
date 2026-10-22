@@ -179,7 +179,7 @@ import { FaceDeckContext } from '../components/table/faceDeckContext';
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import lobbyButtonArt from '../assets/lobby-button.webp';
-import { useButtonImage } from '../hooks/useButtonImage';
+import { useButtonImage, useTimebankIcon } from '../hooks/useButtonImage';
 
 import { cashBuyInRange, cashBuyInRefusalText, cashBuyInSeatConflictText } from '../lib/cashBuyIn';
 import {
@@ -1593,7 +1593,7 @@ function LiveTablePage({
   muted = false,
 }: TablePageProps = {}) {
   const addScreenIcon = useButtonImage('icon-addscreen');
-  const timebankIconPage = useButtonImage('icon-timebank');
+  const timebankIconPage = useTimebankIcon();
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const requestedTableId = embeddedTableId || routeTableId;
   // Every table effect receives a database ID or no scope. A URL segment
@@ -20455,7 +20455,10 @@ function LiveTablePage({
         pos,
         scalerSize,
         seatViewportWidth,
-        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w),
+        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w, {
+          seats: seatRotationMap.length,
+          canvasHeightPx: scalerSize.h,
+        }),
         canvasLeft
       )
     );
@@ -25374,6 +25377,9 @@ function LiveTablePage({
           style={
             {
               '--table-w': `${scalerSize.w}px`,
+              /* The dense-ring pods (SeatSlot.css) size from the felt's
+                 height as well as its width. */
+              '--table-h': `${scalerSize.h}px`,
               '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
               '--sp-table-taper':
                 seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
@@ -26473,7 +26479,8 @@ function LiveTablePage({
             const seatPod = seatPodPx(
               typeof window === 'undefined' ? Infinity : window.innerWidth,
               pos.y >= 100 && pos.x === 50,
-              scalerSize.w
+              scalerSize.w,
+              { seats: seatPositions.length, canvasHeightPx: scalerSize.h }
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;

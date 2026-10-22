@@ -385,7 +385,32 @@ export const SEAT_POD_LADDER: ReadonlyArray<{
  * `outboardCardSide` gives in tableSeatGeometry.ts: an index means a different
  * chair on every ring.
  */
-export function seatPodPx(viewportWidthPx: number, isHero: boolean, canvasWidthPx?: number): Size {
+export function seatPodPx(
+  viewportWidthPx: number,
+  isHero: boolean,
+  canvasWidthPx?: number,
+  ring?: { seats?: number; canvasHeightPx?: number }
+): Size {
+  /* DENSE RINGS ON A PHONE (Dan 2026-10-22) - mirrors the rule of the same
+     name at the foot of SeatSlot.css: a 7-9 max villain pod on a portrait
+     phone is sized from the smaller of the felt's width and its height. */
+  if (
+    !isHero &&
+    viewportWidthPx <= 480 &&
+    canvasWidthPx &&
+    Number.isFinite(canvasWidthPx) &&
+    (ring?.seats ?? 0) >= 7
+  ) {
+    const h = ring?.canvasHeightPx && ring.canvasHeightPx > 0 ? ring.canvasHeightPx : 600;
+    const avatar = Math.min(52, Math.max(34, Math.min(canvasWidthPx * 0.14, h * 0.085)));
+    const minWidth = Math.min(112, Math.max(66, canvasWidthPx * 0.235));
+    // 11px name + 13px stack at 1.3 line height, 2px pads, 1.5px borders.
+    const plateHeight = Math.max(36, (11 + 13) * 1.3 + 4 + 3);
+    return {
+      w: Math.max(minWidth, avatar * 1.143),
+      h: avatar + plateHeight - Math.max(3, avatar * 0.0714),
+    };
+  }
   const rung =
     SEAT_POD_LADDER.find((r) => viewportWidthPx <= r.maxViewportWidthPx) ??
     SEAT_POD_LADDER[SEAT_POD_LADDER.length - 1];
@@ -476,9 +501,11 @@ export const PORTRAIT_LOW_SIDE_SEAT_LIFT = 4;
 /** The smallest phone felts (an iPhone SE table is about 262 x 324px) need
  * every wager slot the original layout gives them: nine bets only fit around
  * the outer lanes there. Below these sizes the top caps keep the outboard
- * 15/85 lanes and the lower side chair is not lifted. */
-export const INBOARD_TOP_CAP_MIN_CANVAS_PX = 290;
-export const LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX = 400;
+ * 15/85 lanes and the lower side chair is not lifted. Every notched iPhone
+ * (a 375px-wide felt is ~307 x 450 after the safe areas) is above both, so
+ * gets the spread-out ring (Dan 2026-10-22). */
+export const INBOARD_TOP_CAP_MIN_CANVAS_PX = 270;
+export const LOW_SIDE_SEAT_LIFT_MIN_CANVAS_PX = 360;
 
 /**
  * Clear felt between a chip's edge and its own pod, as a percentage of the

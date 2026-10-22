@@ -50,7 +50,13 @@ export function useProtectedCardLayout(root: RefObject<HTMLDivElement | null>, r
         for (const pod of topPods()) {
           const image = pod.querySelector('.seat__avatar-img')?.getBoundingClientRect();
           if (image && image.height > 0) {
-            const shift = (chromeBottom + 4 * scale - image.top) / scale;
+            // Dan 2026-10-22: "pull the table down so the top player isn't
+            // scrunched up." The pod's highest painted part (the art, or the
+            // position chip on its corner) keeps 8px of air below the jackpot
+            // plate rather than 4px against it.
+            const badge = pod.querySelector('.seat__position-badge')?.getBoundingClientRect();
+            const highest = Math.min(image.top, badge && badge.height > 0 ? badge.top : Infinity);
+            const shift = (chromeBottom + 8 * scale - highest) / scale;
             pod.style.translate = `0px ${shift}px`;
             // Bets use the scaler's rail coordinates. Moving the top avatar
             // within its lane must not carry its bet onto the player plate.

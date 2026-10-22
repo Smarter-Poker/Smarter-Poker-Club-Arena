@@ -1110,6 +1110,108 @@ export const SeatSlot = memo(
     }, [hasPlayer]);
 
     /**
+     * HOW FAR THE ART RISES ABOVE THE SEAT BOX (Dan 2026-10-22: "the raise,
+     * fold and other actions should be slightly higher, above the avatar, not
+     * overlapping the top of them").
+     *
+     * Bust art is scaled up from its bottom edge (`--sp-bust-effective-scale`,
+     * per character), so its visible top sits above the seat box by an amount
+     * no stylesheet can know: it depends on the character's own gain. The
+     * action tag and the bounty pill stand on `--sp-art-rise` (SeatSlot.css),
+     * which is computed here from LAYOUT offsets plus the art's own resolved
+     * transform (`translateY(clip) scale(s)` about `50% (100% - clip)`), never
+     * from getBoundingClientRect, so a transform on an ancestor (a tab slide,
+     * a scaled tab strip) cannot skew it, and nothing is read while an
+     * animation is moving the art.
+     */
+    const artRiseRef = useRef<{ seat: HTMLElement; stop: () => void } | null>(null);
+    useLayoutEffect(() => {
+      // Bound to whichever element is the seat NOW: the root is re-created on
+      // some state changes without any prop this component could key on, and
+      // observers left on a detached node measure nothing.
+      const seat = seatRef.current;
+      if (artRiseRef.current?.seat === seat) return;
+      artRiseRef.current?.stop();
+      artRiseRef.current = null;
+      if (!seat) return;
+      let frame: number | null = null;
+      let watched: HTMLElement | null = null;
+      const measure = () => {
+        frame = null;
+        // The rig (`.seat__avatar-rive`) is mounted alongside the image and is
+        // empty until it plays, so take whichever of the two is actually drawn.
+        const candidates = Array.from(
+          seat.querySelectorAll<HTMLElement>('.seat__avatar-img, .seat__avatar-rive')
+        );
+        const art = candidates.find((el) => el.offsetHeight > 0) ?? candidates[0] ?? null;
+        if (art && art !== watched) {
+          // The art is laid out (or swapped) after the seat; its own size
+          // change is the signal that its resting geometry exists.
+          if (watched) resized.unobserve(watched);
+          resized.observe(art);
+          watched = art;
+        }
+        if (!art || !art.offsetHeight) return;
+        let top = 0;
+        for (let el: HTMLElement | null = art; el && el !== seat; ) {
+          top += el.offsetTop;
+          const parent = el.offsetParent as HTMLElement | null;
+          if (!parent || !seat.contains(parent)) break;
+          el = parent;
+        }
+        const style = getComputedStyle(art);
+        // `--sp-bust-effective-scale` resolves to e.g. "calc(1.45 * 0.915)":
+        // a product, so the product of its numbers is the scale. Read from the
+        // declaration rather than the live transform, which an idle or gesture
+        // animation may be driving at this instant.
+        const factors = (style.getPropertyValue('--sp-bust-effective-scale').match(
+          /-?\d*\.?\d+/g
+        ) ?? ['1']).map(Number);
+        const scale = factors.reduce((a, b) => a * b, 1) || 1;
+        const clip = (parseFloat(style.getPropertyValue('--sp-bust-clip')) || 0) / 100;
+        const h = art.offsetHeight;
+        // translateY(clip) scale(s) about 50% (100% - clip): the art's visual
+        // top, relative to its own layout box.
+        const artTop = clip * h + (1 - clip) * h * (1 - scale);
+        const rise = Math.max(0, Math.round(-(top + artTop)));
+        const value = `${rise}px`;
+        if (seat.style.getPropertyValue('--sp-art-rise') !== value)
+          seat.style.setProperty('--sp-art-rise', value);
+        // The tag's width, so a bounty can share its row (SeatSlot.css).
+        const tag = seat.querySelector<HTMLElement>(':scope > .seat__action');
+        const tagWidth = `${tag ? tag.offsetWidth : 0}px`;
+        if (seat.style.getPropertyValue('--sp-tag-w') !== tagWidth)
+          seat.style.setProperty('--sp-tag-w', tagWidth);
+      };
+      const schedule = () => {
+        if (frame === null) frame = requestAnimationFrame(measure);
+      };
+      const resized = new ResizeObserver(schedule);
+      resized.observe(seat);
+      measure();
+      // The art mounts after the seat and swaps on a skin change.
+      const changed = new MutationObserver(schedule);
+      changed.observe(seat, { childList: true, subtree: true, characterData: true });
+      seat.addEventListener('load', schedule, true);
+      artRiseRef.current = {
+        seat,
+        stop: () => {
+          resized.disconnect();
+          changed.disconnect();
+          seat.removeEventListener('load', schedule, true);
+          if (frame !== null) cancelAnimationFrame(frame);
+        },
+      };
+    });
+    useEffect(
+      () => () => {
+        artRiseRef.current?.stop();
+        artRiseRef.current = null;
+      },
+      []
+    );
+
+    /**
      * Animated stack change — flash green/red when the stack moves.
      *
      * AUDIT 2026-08-25: the effect keyed on `player?.stack` ALONE while its
@@ -2758,7 +2860,9 @@ export const SeatSlot = memo(
     const showHolo = holoEligible && holoOnClockDelayMs !== null;
     // Dan 2026-10-21: ALL IN above the head and an ALL IN puck on the felt
     // in front of the player, for the whole time the player is all in.
-    const showAllInPuck = player.status === 'all_in' && !isWinner;
+    // Only while the hand is still being played out: not once a result is on
+    // the table (winner presentation), when "all in" no longer means anything.
+    const showAllInPuck = player.status === 'all_in' && !isWinner && !winnerDisplayActive;
     const shownAction: LastAction = showAllInPuck ? 'all_in' : lastAction;
 
     return (

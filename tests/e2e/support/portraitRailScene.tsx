@@ -50,7 +50,7 @@ export function Review() {
       p,
       size,
       width,
-      seatPodPx(width, p.y === 100, size.w),
+      seatPodPx(width, p.y === 100, size.w, { seats: n, canvasHeightPx: size.h }),
       ref.current?.getBoundingClientRect().left
     )
   );
@@ -123,6 +123,7 @@ export function Review() {
                 style={
                   {
                     '--table-w': `${size.w}px`,
+                    '--table-h': `${size.h}px`,
                     '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
                     '--sp-table-taper': portraitTableTransform(size),
                   } as any
@@ -158,7 +159,10 @@ export function Review() {
                   <PotDisplay mainPot={82.01} bigBlind={2} />
                 </div>
                 {seats.map((p, i) => {
-                  const pod = seatPodPx(width, i === 0, size.w);
+                  const pod = seatPodPx(width, i === 0, size.w, {
+                    seats: n,
+                    canvasHeightPx: size.h,
+                  });
                   const bet = betChipOffsetPx(p, markerSize, pod);
                   const collect = chipCollectOffsetPx(p, markerSize, pod);
                   return (

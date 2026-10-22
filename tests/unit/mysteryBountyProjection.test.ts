@@ -55,6 +55,20 @@ describe('the mystery bounty ladder before the mystery phase opens', () => {
     expect(projectMysteryBountyLadder({ ...midweekMystery, paidPlaces: 0 })).toBeNull();
   });
 
+  it('projects a chests-only event: the whole bounty pool, small fields included', () => {
+    const chestsOnly = { ...midweekMystery, mysteryPercent: '100', regularPercent: '0' };
+    expect(projectMysteryBountyLadder(chestsOnly)!.poolCents).toBe(208000);
+    const small = projectMysteryBountyLadder({
+      ...chestsOnly,
+      bountyPool: '90.00',
+      totalEntries: 10,
+      paidPlaces: 3,
+    });
+    expect(small).not.toBeNull();
+    expect(small!.drawCount).toBe(2);
+    expect(small!.tiers.reduce((n, t) => n + t.count * t.amountCents, 0)).toBe(9000);
+  });
+
   it('keeps a Diamond ladder on whole Diamonds', () => {
     const p = projectMysteryBountyLadder({ ...midweekMystery, bountyPool: '20800.00', unitCents: 100 });
     expect(p).not.toBeNull();

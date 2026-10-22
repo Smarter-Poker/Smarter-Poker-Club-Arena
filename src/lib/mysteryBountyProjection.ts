@@ -118,7 +118,11 @@ export function projectMysteryBountyLadder(
 ): MysteryBountyProjection | null {
   const unit = Math.floor(num(input.unitCents));
   if (!(unit > 0)) return null;
-  if (input.totalEntries > 0 && mysteryBountyFieldTooSmall(input.totalEntries)) return null;
+  // A chests-only event (regular half 0, Dan 2026-10-22) opens its chests at
+  // the money whatever the field size; an older event keeps the small-field rule.
+  const chestsOnly = input.regularPercent != null && num(input.regularPercent) === 0;
+  if (!chestsOnly && input.totalEntries > 0 && mysteryBountyFieldTooSmall(input.totalEntries))
+    return null;
 
   const bountyCents = Math.round(num(input.bountyPool) * 100);
   const paidCents = Math.round(num(input.bountyPoolPaid) * 100);

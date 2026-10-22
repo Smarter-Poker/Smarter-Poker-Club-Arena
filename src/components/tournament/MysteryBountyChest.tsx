@@ -97,6 +97,56 @@ export interface MysteryChestData {
    * between. Absent or single-entry on an ordinary knockout.
    */
   recipients?: { userId: string; name: string; amount: number }[];
+  /**
+   * PICK 1 OF 3 (Dan 2026-10-22). How many sealed chests the knockout picks
+   * from. Absent or 1 is the single chest it always was.
+   */
+  offerSlots?: number;
+  /** The slot the revealer picked (1-based), once the server has it. */
+  pickedSlot?: number | null;
+  /**
+   * Every chest that was on offer, with what it held. Only present once the
+   * award is revealed: the picked one is the prize, the others are real chests
+   * of this event that stay in the pool.
+   */
+  choices?: MysteryChestChoice[];
+}
+
+/** One chest of a pick-1-of-3 offer, after the reveal. */
+export interface MysteryChestChoice {
+  slot: number;
+  /** Whole currency units, like `MysteryChestData.amount`. */
+  amount: number;
+  tier?: string;
+  tierLabel?: string;
+  picked: boolean;
+}
+
+/**
+ * Read `fn_mystery_bounty_offer`. Null for anything that is not a well-formed
+ * answer, so a caller never shows chests the server did not describe.
+ */
+export function parseMysteryChestOffer(
+  raw: unknown
+): { slots: number; pickedSlot: number | null; choices?: MysteryChestChoice[] } | null {
+  const o = (raw ?? {}) as Record<string, unknown>;
+  if (o.ok !== true) return null;
+  const slots = Math.floor(Number(o.slots));
+  if (!Number.isFinite(slots) || slots < 1 || slots > 3) return null;
+  const pick = o.picked_slot == null ? null : Math.floor(Number(o.picked_slot));
+  const pickedSlot = pick != null && pick >= 1 && pick <= slots ? pick : null;
+  const raws = Array.isArray(o.choices) ? (o.choices as Array<Record<string, unknown>>) : [];
+  const choices: MysteryChestChoice[] = raws
+    .map((c) => ({
+      slot: Math.floor(Number(c?.slot)),
+      amount: Math.round(Number(c?.amount_cents)) / 100,
+      tier: typeof c?.tier === 'string' ? c.tier : undefined,
+      tierLabel: formatBountyTierLabel(typeof c?.tier === 'string' ? c.tier : null),
+      picked: c?.picked === true,
+    }))
+    .filter((c) => c.slot >= 1 && c.slot <= slots && Number.isFinite(c.amount) && c.amount > 0)
+    .sort((a, b) => a.slot - b.slot);
+  return { slots, pickedSlot, choices: choices.length === slots ? choices : undefined };
 }
 
 export interface MysteryBountyChestProps {
@@ -121,8 +171,9 @@ export interface MysteryBountyChestProps {
   /**
    * Tell the rest of the table the chest was opened. Supplied by TablePage,
    * which owns the realtime channel. Absent -> local-only (still works).
+   * Carries the slot the revealer picked when the knockout chose from three.
    */
-  onBroadcastOpen?: () => void;
+  onBroadcastOpen?: (slot?: number) => void;
   /**
    * The designated revealer is opening the chest — go and get the amount.
    *
@@ -136,7 +187,7 @@ export interface MysteryBountyChestProps {
    * Called at most ONCE per chest, from the tap and from the auto-open alike,
    * so section 54's failsafe cannot re-roll or double-pay.
    */
-  onRequestReveal?: () => void;
+  onRequestReveal?: (slot?: number) => void;
   /** Set when another client's broadcast says the chest is open. */
   remoteOpened?: boolean;
   /** How many more chests are waiting behind this one. */
@@ -360,6 +411,11 @@ export default function MysteryBountyChest({
   onDoneRef.current = onDone;
 
   const isWinner = !!data && !!viewerUserId && data.knockerUserId === viewerUserId;
+  /** PICK 1 OF 3: how many chests are on offer, and whether to show the choice. */
+  const offerSlots = Math.max(1, Math.min(3, Math.floor(Number(data?.offerSlots) || 1)));
+  const choosing = offerSlots > 1;
+  /** The slot this client picked, so the chest it tapped is the one marked. */
+  const [localPick, setLocalPick] = useState<number | null>(null);
   /**
    * SECTION 50 — the tier is the SERVER'S when it sends one.
    *
@@ -412,7 +468,7 @@ export default function MysteryBountyChest({
   /** One reveal request per chest — section 54: the tap and the failsafe are
    *  the same request, never two. */
   const revealRequestedRef = useRef<string | null>(null);
-  const requestReveal = useCallback(() => {
+  const requestReveal = useCallback((slot?: number) => {
     if (!chestKey) return;
     // SECTIONS 52/53: only the designated revealer opens the chest. Everyone
     // else — the rest of the table and every spectator — watches, and their
@@ -424,7 +480,7 @@ export default function MysteryBountyChest({
     if (revealRequestedRef.current === chestKey) return;
     revealRequestedRef.current = chestKey;
     try {
-      onRequestReveal?.();
+      onRequestReveal?.(slot);
     } catch {
       // The engine reveals this award authoritatively on its own deadline, so
       // a failed request costs the tapper their head start and nothing else.
@@ -450,7 +506,7 @@ export default function MysteryBountyChest({
   playSoundsRef.current = playSounds;
 
   /** Run the open -> explosion -> reveal sequence. Idempotent. */
-  const runOpen = useCallback(() => {
+  const runOpen = useCallback((slot?: number) => {
     if (openedRef.current || !chestKey) return;
     openedRef.current = true;
     // 2026-08-27: cancel the landing phase's pending `toLocked` — remote
@@ -463,7 +519,7 @@ export default function MysteryBountyChest({
     // the TAP path and the AUTO-OPEN path in one line, which is what makes
     // "manual tap plus timeout cannot double-reveal" (section 80/31) true by
     // construction rather than by two guards that have to agree.
-    requestReveal();
+    requestReveal(slot);
 
     const speed = getAnimationSpeed();
     const reduced = prefersReducedMotion();
@@ -578,6 +634,25 @@ export default function MysteryBountyChest({
     runOpen();
   }, [isWinner, phase, runOpen, onBroadcastOpen]);
 
+  /**
+   * PICK 1 OF 3 (Dan 2026-10-22). The revealer taps one of the sealed chests.
+   * That chest is the one that opens, its slot is recorded before the reveal,
+   * and the table is told which one was chosen.
+   */
+  const handlePick = useCallback(
+    (slot: number) => {
+      if (!isWinner || openedRef.current || phase !== 'locked') return;
+      setLocalPick(slot);
+      try {
+        onBroadcastOpen?.(slot);
+      } catch {
+        // A failed broadcast must not stop the winner seeing their own prize.
+      }
+      runOpen(slot);
+    },
+    [isWinner, phase, runOpen, onBroadcastOpen]
+  );
+
   // ── Arrival ───────────────────────────────────────────────────────────────
   // KEYED ON chestKey, NOT `data`. See the chestKey comment: the props change
   // while the chest is on screen (the amount arrives), and depending on the
@@ -587,6 +662,7 @@ export default function MysteryBountyChest({
     openedRef.current = false;
     revealRequestedRef.current = null;
     setDisplayAmount(0);
+    setLocalPick(null);
 
     if (!chestKey) {
       setPhase('idle');
@@ -698,7 +774,7 @@ export default function MysteryBountyChest({
     <div
       className={`mbc mbc--${phase}${isJackpot ? ' mbc--jackpot' : ''}${
         pressed ? ' mbc--pressed' : ''
-      }`}
+      }${choosing && (phase === 'landing' || phase === 'locked') ? ' mbc--choosing' : ''}`}
       style={{ ['--mbc-tension' as string]: tension, ['--mbc-tier' as string]: tier.color }}
       role="dialog"
       aria-modal="true"
@@ -871,18 +947,53 @@ export default function MysteryBountyChest({
           </>
         )}
 
+        {/* ── PICK 1 OF 3 (Dan 2026-10-22) ── the sealed chests on offer. The
+            revealer taps one; everyone else watches. The big chest above
+            opens with the one that was picked. */}
+        {choosing && (phase === 'landing' || phase === 'locked') && (
+          <div className="mbc__picks" role="group" aria-label="Pick A Mystery Chest">
+            {Array.from({ length: offerSlots }, (_, i) => i + 1).map((slot) => (
+              <button
+                key={slot}
+                type="button"
+                className={`mbc__pick${canTap ? ' mbc__pick--tappable' : ''}${
+                  localPick === slot ? ' mbc__pick--picked' : ''
+                }`}
+                onClick={() => handlePick(slot)}
+                disabled={!canTap}
+                aria-label={canTap ? `Pick Chest ${slot}` : `Mystery Chest ${slot}`}
+                style={{ ['--mbc-p' as string]: slot - 1 }}
+              >
+                <span className="mbc__pick-glow" aria-hidden="true" />
+                {artOk ? (
+                  <img className="mbc__pick-img" src={CHEST_IMG} alt="" draggable={false} />
+                ) : (
+                  <span className="mbc__pick-css" aria-hidden="true" />
+                )}
+                <span className="mbc__pick-num">{slot}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ── Prompt / status ── */}
         {phase === 'locked' && (
           <div className="mbc__prompt">
             {isWinner ? (
               <>
-                <span className="mbc__prompt-main">Tap The Chest To Open</span>
-                <span className="mbc__prompt-sub">Your Bounty Is Inside</span>
+                <span className="mbc__prompt-main">
+                  {choosing ? `Pick 1 Of ${offerSlots} Chests` : 'Tap The Chest To Open'}
+                </span>
+                <span className="mbc__prompt-sub">
+                  {choosing ? 'Your Bounty Is Inside The One You Pick' : 'Your Bounty Is Inside'}
+                </span>
               </>
             ) : (
               <>
                 <span className="mbc__prompt-main mbc__prompt-main--waiting">
-                  {data.knockerName} Is Opening The Chest
+                  {choosing
+                    ? `${data.knockerName} Is Picking A Chest`
+                    : `${data.knockerName} Is Opening The Chest`}
                   <span className="mbc__dots">
                     <i />
                     <i />
@@ -923,6 +1034,24 @@ export default function MysteryBountyChest({
             ) : (
               <div className="mbc__won-by">
                 Won By <strong>{data.knockerName}</strong>
+              </div>
+            )}
+            {/* PICK 1 OF 3: what the chests that were not picked held. Real
+                chests of this event; they stay in the pool for the knockouts
+                still to come, each of which gets its own fresh random three. */}
+            {data.choices && data.choices.length > 1 && (
+              <div className="mbc__others">
+                <div className="mbc__others-head">The Other Chests Held</div>
+                <div className="mbc__others-row">
+                  {data.choices
+                    .filter((c) => !c.picked)
+                    .map((c) => (
+                      <span className="mbc__other" key={c.slot}>
+                        <span className="mbc__other-amount">{figure(c.amount)}</span>
+                        {c.tierLabel && <span className="mbc__other-tier">{c.tierLabel}</span>}
+                      </span>
+                    ))}
+                </div>
               </div>
             )}
           </div>

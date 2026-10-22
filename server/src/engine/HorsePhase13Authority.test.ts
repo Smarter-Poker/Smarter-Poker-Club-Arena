@@ -80,6 +80,7 @@ import { jointPolicyFixture } from './multiway/JointRangeFixture.test-support.js
 import { REMAINING_VARIANT_PACKS } from './remainingVariants/RemainingVariantPolicyPack.js';
 import { equityGovernor } from './EquityLoadGovernor.js';
 import { KNOWN_VARIANTS } from './VariantRules.js';
+import { RETIRED_2026_10_22_PHASE13_SELECTIONS } from './HorsePreviousSelections.test-support.js';
 
 const V: JointVariant = 'plo4';
 /** An admitted Phase 13 authority's board-count admission, every board count. */
@@ -132,8 +133,8 @@ function expectedKey(identity: Record<string, unknown>): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
 }
 
-describe('P13.3 protected PLO4/PLO8 selections and unselected variant boundaries', () => {
-  it('PLO4 and PLO8 are selected and admit precisely the proven board counts', () => {
+describe('P13.3 maniac pressure (2026-10-22): every selection is null and the PLO4/PLO8 generation 1 is retained', () => {
+  it('nothing is selected; the da94e437 PLO4 and PLO8 generation 1 is retained and refused by policy digest', () => {
     expect([...HORSE_PHASE13_VARIANTS].sort()).toEqual([...KNOWN_VARIANTS].sort());
     // The load-time literals are the joint owner's own values.
     expect([...HORSE_PHASE13_VARIANTS]).toEqual([...JOINT_VARIANTS]);
@@ -142,21 +143,50 @@ describe('P13.3 protected PLO4/PLO8 selections and unselected variant boundaries
     expect(Object.keys(PHASE13_PROTECTED_RELEASE_SELECTIONS).sort()).toEqual(
       [...KNOWN_VARIANTS].sort()
     );
+    // 2026-10-22: maniac pressure moved every hashed policy digest; the joint
+    // owner plays shadow until its locked matrix requalifies the new source.
     expect(
       HORSE_PHASE13_VARIANTS.filter((v) => PHASE13_PROTECTED_RELEASE_SELECTIONS[v] !== null)
-    ).toEqual(['plo4', 'plo8']);
+    ).toEqual([]);
+    expect(Object.keys(RETIRED_2026_10_22_PHASE13_SELECTIONS).sort()).toEqual(['plo4', 'plo8']);
+    for (const variant of ['plo4', 'plo8'] as const) {
+      const retained = RETIRED_2026_10_22_PHASE13_SELECTIONS[variant]!;
+      expect(Object.isFrozen(retained)).toBe(true);
+      expect(retained, variant).toMatchObject({
+        schema: 'horse-qualified-authority-selection-v1',
+        phase: 'phase13',
+        variant,
+        sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
+        packVersion: HORSE_PHASE13_PACK_VERSION,
+        contractDigest: PHASE13_RUNNING_CONTRACT_DIGEST,
+        approvalGeneration: 1,
+        expiresAt: null,
+        withdrawn: null,
+      });
+      const refused = admitHorsePhase13ReleaseAuthority(variant, Date.now(), retained);
+      expect(refused, variant).toEqual({
+        status: 'refused',
+        reason: 'policy_digest_mismatch',
+        transient: false,
+      });
+      expect(selectedHorsePhase13Authority(variant, refused)).toBeNull();
+      for (const [path, digest] of [
+        [retained.qualificationPath, retained.qualificationSha256],
+        [retained.completionPath!, retained.completionSha256!],
+      ])
+        for (const root of ['../../../', '../../release-evidence/']) {
+          const bytes = readFileSync(fileURLToPath(new URL(`${root}${path}`, import.meta.url)));
+          expect(createHash('sha256').update(bytes).digest('hex'), `${root}${path}`).toBe(digest);
+        }
+    }
     expect(Object.isFrozen(PHASE13_PROTECTED_RELEASE_SELECTIONS)).toBe(true);
     expect(PHASE13_RUNNING_CONTRACT_DIGEST).toBe(jointStrengthContractDigest());
     expect(PHASE13_RUNNING_CONTRACT_DIGEST).toMatch(/^[0-9a-f]{64}$/);
     for (const variant of HORSE_PHASE13_VARIANTS) {
       const release = admitHorsePhase13ReleaseAuthority(variant);
-      if (variant === 'plo4' || variant === 'plo8') {
-        expect(release.status).toBe('admitted');
-        const authority = selectedHorsePhase13Authority(variant, release);
-        expect(authority?.admittedBoardCounts).toEqual([1, 2]);
-        expect(horsePhase13BoardCountAdmitted(authority, 3)).toBe(false);
-        continue;
-      }
+      expect(
+        horsePhase13BoardCountAdmitted(selectedHorsePhase13Authority(variant, release), 1)
+      ).toBe(false);
       expect(release, variant).toEqual({
         status: 'refused',
         reason: 'unselected',
@@ -208,10 +238,7 @@ describe('P13.3 protected PLO4/PLO8 selections and unselected variant boundaries
     for (const variant of HORSE_PHASE13_VARIANTS) {
       const gate = liveHorsePhase13Authorities[variant];
       gate.refresh();
-      expect(gate.mainState(), variant).toBe(
-        ['plo4', 'plo8'].includes(variant) ? 'usable' : 'unselected'
-      );
-      if (variant === 'plo4' || variant === 'plo8') continue;
+      expect(gate.mainState(), variant).toBe('unselected');
       const worker = new HorseQualifiedAuthorityHolder(
         `p133-null-${variant}`,
         horsePhase13ContinuationVersion(variant)
@@ -259,9 +286,16 @@ describe('P13.3 protected PLO4/PLO8 selections and unselected variant boundaries
         const variant = parsed.variant as JointVariant;
         // (i) nothing is promoted for the variant this record measured.
         expect(HORSE_PHASE13_VARIANTS as readonly string[], file).toContain(variant);
-        const selected = PHASE13_PROTECTED_RELEASE_SELECTIONS[variant];
-        if (selected?.qualificationPath === `docs/evidence/phase13/${file}`) {
-          expect(admitHorsePhase13ReleaseAuthority(variant).status).toBe('admitted');
+        expect(PHASE13_PROTECTED_RELEASE_SELECTIONS[variant], file).toBeNull();
+        // 2026-10-22: a retained generation's own qualification is refused by
+        // the running policy digest through its own committed selection.
+        const retained = RETIRED_2026_10_22_PHASE13_SELECTIONS[variant];
+        if (retained?.qualificationPath === `docs/evidence/phase13/${file}`) {
+          expect(admitHorsePhase13ReleaseAuthority(variant, Date.now(), retained), file).toEqual({
+            status: 'refused',
+            reason: 'policy_digest_mismatch',
+            transient: false,
+          });
           continue;
         }
         // (ii) it names the unmet requirement admission honours, verbatim.

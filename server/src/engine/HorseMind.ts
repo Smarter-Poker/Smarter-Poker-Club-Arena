@@ -49,12 +49,15 @@ import {
   callDownRespectShift,
   exploitHandIncrements,
   looseCallerWidth,
+  maniacRaiseWidth,
   mergeExploitRows,
   observeExploitRow,
   openerRangeWidth,
   opponentExploitRead,
   postflopBluffMod,
+  reRaiseLineWidth,
   reRaiseWidth,
+  strengthBarForTopShare,
   valueThinMod as readValueThinMod,
   type ExploitCounters,
   type OpponentExploitRead,
@@ -1517,20 +1520,39 @@ export class HorseMind {
     // nearly any hand; a nit's is the top of the deck. Null read = no change.
     const read = this.opponentRead(userId);
     if (read) {
+      // 2026-10-22 MANIAC PRESSURE: a seat that shoves or pots every hand
+      // re-raises with the same range it opens with. Its 3-bet is read at its
+      // whole raising width (a jammer seldom faces a raise, so its 3-bet
+      // statistic alone never engages), and its 4-bet keeps that width
+      // instead of halving it (reRaiseLineWidth).
+      const maniac = maniacRaiseWidth(read);
       const width =
         line === 'open'
           ? openerRangeWidth(read)
           : line === 'threebet'
-            ? reRaiseWidth(read)
+            ? (maniac ?? reRaiseWidth(read))
             : line === 'fourbet'
-              ? (() => {
-                  const w = reRaiseWidth(read);
-                  return w === null ? null : w * 0.5;
-                })()
+              ? maniac !== null
+                ? reRaiseLineWidth(maniac, 3)
+                : (() => {
+                    const w = reRaiseWidth(read);
+                    return w === null ? null : w * 0.5;
+                  })()
               : line === 'limp' || line === 'call'
                 ? looseCallerWidth(read)
                 : null;
-      if (width !== null) lo = 1 - width;
+      // 2026-10-22: a width is a SHARE of hands. The two-card sampler matches
+      // a band against hold'em score VALUES (HorseEval placeBandCombo), and
+      // the score scale is not a percentile: score 0.19 is the top ~60%, not
+      // the top 81%, so `1 - width` read a 100% shover as a top-60% range and
+      // priced every call against it far too tight. Hold'em-family bands take
+      // the score bar for that share; the Omaha reservoir maps a band through
+      // its own percentile CDF, where `1 - width` is already the share.
+      if (width !== null)
+        lo =
+          this.decisionScope === null || this.decisionScope.startsWith('holdem:')
+            ? strengthBarForTopShare(width)
+            : 1 - width;
     }
 
     // V5/V7: every postflop street they bet or raised narrows the read

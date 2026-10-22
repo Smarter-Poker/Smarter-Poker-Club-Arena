@@ -1506,6 +1506,27 @@ export const HORSE_DATA_LEDGER: LedgerEntry[] = [
   // 2026-10-16 opponent exploit (HorseOpponentExploit). No floor: these fire
   // only against an opponent whose decayed read is credibly outside the
   // horse-population envelope, which horse-versus-horse play almost never is.
+  // 2026-10-22 maniac pressure (HorseOpponentExploit.maniacRaiseWidth). No
+  // floor: these fire only against an opponent read as a maniac, which no
+  // horse-like read ever is.
+  receipt(
+    'maniac_pressure_preflop',
+    'HorseLogic (maniac pressure)',
+    "a maniac raised or is still to act: its shoves and re-raises priced by equity, opens capped to what continues, no bluff raises (Dan: 'NOT RAISE A HAND WITH THE INTENTION OF FOLDING')",
+    'OPPX'
+  ),
+  receipt(
+    'maniac_call_down_checked',
+    'HorseLogic (maniac pressure)',
+    "a fold facing a maniac's bet was re-checked against equity versus its preflop range",
+    'OPPX'
+  ),
+  receipt(
+    'maniac_call_down',
+    'HorseLogic (maniac pressure)',
+    "a fold facing a maniac's bet became the call its equity pays for (Dan: 'CALL OFF LIGHTER')",
+    'OPPX'
+  ),
   receipt(
     'opponent_exploit_preflop',
     'HorseLogic (opponent exploit)',

@@ -224,23 +224,20 @@ export interface HorsePhase10AuthoritySelection {
  * qualifies with no reasons: +6.93 [+6.25, +7.62] bb/100 cash after rake
  * against the horse population, at policy digest 4c52572f.... Phase 10 has no
  * completion stage of its own (generation 2 precedent, #6901). Cash only.
+ *
+ * October 22: MANIAC PRESSURE (docs/changelog/2026-10-22-horses-adjust-to-maniacs.md,
+ * Dan: "IF A PLAYER IS MOVING ALL IN ON EVERY HAND THE HORSES NEED TO RECOGNIZE
+ * THIS IN REAL TIME ... FOR ALL GAMES, LEVELS AND STAKES") changes HorseLogic.ts,
+ * HorseMind.ts, HorsePreflop.ts and HorseOpponentExploit.ts, hashed policy
+ * files, so every qualified policy digest moves again. Following the
+ * 2026-10-17 precedent the fix ships now and every pack requalifies: every
+ * selection is explicitly null until its locked matrix requalifies the exact
+ * new source (and, where the pack has one, fresh natural completion is read);
+ * a renewal is the next generation. The da94e437 generations stay committed
+ * with their evidence and are retained for refusal in
+ * HorsePreviousSelections.test-support.ts as RETIRED_2026_10_22_*.
  */
-export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null =
-  Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase10',
-    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-    packVersion: 'plo4-policy-round3-v2',
-    contractVersion: 'plo4-strength-contract-v1',
-    contractDigest: '83ab185b2a2df72876b73d61ece6ea8c2f03f364ce252deecbfcde392ae5f838',
-    domain: 'plo4-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase10/da94e437/phase10-qualification-2026-10-19.json',
-    qualificationSha256: '927a604127800a8b36352f8d48ce616c308e351367c847789e18492eac85fcc4',
-    approvalGeneration: 4,
-    issuedAt: '2026-10-19T02:56:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const);
+export const PHASE10_PROTECTED_RELEASE_SELECTION: HorsePhase10AuthoritySelection | null = null;
 
 const HEX40 = /^[0-9a-f]{40}$/;
 const HEX64 = /^[0-9a-f]{64}$/;

@@ -77,8 +77,7 @@ BEGIN
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION public.fn_horse_use_throwable(uuid, text, uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.fn_horse_use_throwable(uuid, text, uuid) FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.fn_horse_use_throwable(uuid, text, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_horse_use_throwable(uuid, text, uuid) TO service_role;
 
 COMMENT ON FUNCTION public.fn_horse_use_throwable(uuid, text, uuid) IS

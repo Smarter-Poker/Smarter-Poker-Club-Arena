@@ -257,7 +257,7 @@ describe('D-01: Escape belongs to the top sheet', () => {
 });
 
 describe('D-02: the corner X respects the in-flight lock', () => {
-  it('is absent while a send is travelling and back once it lands', async () => {
+  it('is absent while a send is travelling, and the cashier closes itself once it lands', async () => {
     const send = deferred<{ data: unknown; error: null }>();
     fx.rpc.mockImplementation(async (name: string) => {
       if (name === 'fn_club_cashier_members') return { data: [member(PLAYER, 1000)], error: null };
@@ -279,9 +279,9 @@ describe('D-02: the corner X respects the in-flight lock', () => {
       send.resolve({ data: { success: true }, error: null });
       await settle();
     });
-    await waitFor(() => expect(screen.getByTestId('sc-close')).toBeTruthy());
-    fireEvent.click(screen.getByTestId('sc-close'));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // Dan, 2026-10-22: a confirmed send toasts and closes the cashier by
+    // itself; nobody has to X off a finished movement.
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });
 

@@ -80,6 +80,22 @@ describe('member drift counts both sides of a leg', () => {
     expect(MIG).toContain(
       'GRANT EXECUTE ON FUNCTION public.fn_chip_drift_since_baseline() TO service_role;'
     );
-    expect(newestFile()).toBe('20261003131341_member_drift_counts_both_sides_of_a_leg.sql');
+    // 20261022162545 restated the reader to add the hourly sweep's kept
+    // per-member nets to the legs after them; it still counts each side for
+    // its own member (pinned below and natively by
+    // scripts/ci/test-the-hourly-sweep-reads-each-leg-once.py).
+    expect(newestFile()).toBe('20261022162545_the_hourly_sweep_reads_each_ledger_leg_once.sql');
+  });
+
+  it('the newest declaration still counts the to side and the from side each for its own member', () => {
+    const newest = declaration(readFileSync(resolve(MIGS, newestFile()), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, ' ');
+    expect(newest).toMatch(
+      /SELECT cl\.club_id, cl\.to_entity_id, cl\.amount[\s\S]*?AND cl\.to_type = 'player_wallet'/
+    );
+    expect(newest).toMatch(
+      /SELECT cl\.club_id, cl\.from_entity_id, -cl\.amount[\s\S]*?AND cl\.from_type = 'player_wallet'/
+    );
+    expect(newest).not.toMatch(/CASE WHEN cl\.to_type = 'player_wallet' THEN cl\.to_entity_id/);
+    expect(newest).not.toMatch(/COALESCE\(\s*cl\.to_entity_id\s*,\s*cl\.from_entity_id\s*\)/i);
   });
 });

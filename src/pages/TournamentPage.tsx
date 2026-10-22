@@ -783,7 +783,7 @@ export default function TournamentPage() {
       const { data, error } = await supabase
         .from('tournaments')
         .select(
-          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, start_time, started_at, variant, tournament_type, spin_multiplier, payout_structure'
+          'id, name, status, current_players, max_players, prize_pool, buy_in_amount, buy_in_fee, starting_chips, current_level, late_reg_levels, late_reg_mins, rebuy_levels, prize_pool_finalized, start_time, started_at, variant, tournament_type, spin_multiplier, payout_structure, payout_depth_percent, payout_percent'
         )
         .eq('id', id)
         .maybeSingle();

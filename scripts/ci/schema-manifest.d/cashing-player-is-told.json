@@ -1,0 +1,7 @@
+{
+  "_owner": "feat/cash-notice-engine-place-satellite-residual",
+  "_comment": "Tournament cash notices and true places from the first bust after the field is fixed (20261022013120).",
+  "tables": [],
+  "functions": ["trg_ca_notify_tournament_cash", "fn_ca_ordinal"],
+  "columns": {}
+}

@@ -87,11 +87,14 @@ describe('a Diamond mystery chest holds whole Diamonds', () => {
     expect(site).toContain('if (unitCents == null) {');
     expect(site).toContain("'Tournament.mystery_bounty_unit_unknown'");
     // drawCount is the decision's count net of busts already played
-    // (2026-10-05); the unit it is built at is unchanged.
+    // (2026-10-05). Dan 2026-10-22: "MYSTERY BOUNTIES ARE ALWAYS FULL CHIP
+    // AMOUNTS, NEVER FRACTIONS", so the chest unit is the event's unit but
+    // never less than one whole chip (a Diamond unit is already whole).
+    expect(site).toContain('const chestUnitCents = Math.max(100, unitCents);');
     expect(site).toContain(
-      'buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, unitCents)'
+      'buildInventoryAtUnit(poolCents, drawCount, profile, topPercent, chestUnitCents)'
     );
-    expect((site.match(/\bunitCents\n\s*\);/g) ?? []).length).toBe(2);
+    expect((site.match(/\bchestUnitCents\n\s*\);/g) ?? []).length).toBe(2);
     expect(site).not.toContain('UNIT_CENTS_ASSET_NOT_READ');
     expect(manager).not.toMatch(
       /import \{[^}]*UNIT_CENTS_ASSET_NOT_READ[^}]*\} from '\.\/tournamentUnit\.js'/

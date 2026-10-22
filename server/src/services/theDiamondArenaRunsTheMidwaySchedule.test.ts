@@ -35,6 +35,7 @@ import { MIDWAY_UNION_ID, overlayHostsFrom } from './HorseOverlayGuard.js';
 import { gameLaneFor } from './HorseBehavior.js';
 import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 import { withBountyRebuyUntilRegistrationCloses } from '../tournament/bountyRebuyPolicy.js';
+import { withMysteryBountyTerms } from '../tournament/mysteryBountyTerms.js';
 
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => false }));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
@@ -356,8 +357,10 @@ describe('a chip schedule is untouched', () => {
     vi.spyOn(supabase, 'from');
     // Dan 2026-10-21: the spawn path locks every level to one clock first,
     // and a bounty MTT rebuys until registration closes (never a freezeout).
-    const expected = withBountyRebuyUntilRegistrationCloses(
-      withLockedLevelClock(await built(cfg, START, CHIP_CLUB))
+    const expected = withMysteryBountyTerms(
+      withBountyRebuyUntilRegistrationCloses(
+        withLockedLevelClock(await built(cfg, START, CHIP_CLUB))
+      )
     );
     expect(expected.is_rebuy).toBe(true);
     vi.restoreAllMocks();

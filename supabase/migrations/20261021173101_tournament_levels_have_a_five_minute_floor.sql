@@ -1,3 +1,4 @@
+-- SUPERSEDED BY 20261021222049: never installed. Owner 2026-10-21 locked every MTT and satellite level to one fixed clock (turbos and freerolls 5 min, standard and bounty 8, deep stack 10) and excluded Spins and Sit & Gos; 20261021222049_lock_tournament_level_clocks implements that and is live. This file would also have forced Spin levels up to 300 s, against that rule.
 -- 20261021173101_tournament_levels_have_a_five_minute_floor
 --
 -- Reserved by scripts/reserve-migration-version.sh on 2026-10-21 17:31:01 UTC.

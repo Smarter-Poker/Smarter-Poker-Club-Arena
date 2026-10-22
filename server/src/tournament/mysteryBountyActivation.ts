@@ -65,6 +65,16 @@ export interface MysteryBountyActivationInputs {
   readonly modeValue: number | null | undefined;
   /** The mystery half of the bounty pool, in cents. Nothing to draw if zero. */
   readonly mysteryPoolCents: number;
+  /**
+   * A CHESTS-ONLY EVENT (Dan 2026-10-22: "DON'T PAY ANY BOUNTIES UNTIL PLAYERS
+   * ARE IN THE MONEY, ALL BOUNTIES ARE MYSTERY BOUNTY PRIZES ONLY"). Its whole
+   * bounty pool is sealed into chests (regular half 0) and nothing is paid
+   * before the money, so a field of ten or fewer opens chests at the money too:
+   * otherwise its knockouts would pay nothing at all. Events created under the
+   * older 50/50 regular/mystery terms leave this false and keep the 2026-10-05
+   * small-field rule.
+   */
+  readonly chestsOnly?: boolean;
 }
 
 export interface MysteryBountyActivationDecision {
@@ -188,7 +198,7 @@ export function shouldActivateMysteryBounty(
   if (!Number.isSafeInteger(input.totalEntries) || input.totalEntries < 1) {
     return no('entry_count_unknown');
   }
-  if (mysteryBountyFieldTooSmall(input.totalEntries)) return no('small_field');
+  if (!input.chestsOnly && mysteryBountyFieldTooSmall(input.totalEntries)) return no('small_field');
   /* <= 1, not <= 0. With N-1 chests a heads-up field would ask for one chest
      and a one-player field for zero, and an event that is already down to its
      champion has no eliminations left to pay for. Refuse rather than seed an
@@ -320,4 +330,14 @@ export function mysteryPoolCents(
   // need not leave a whole unit behind, and a cap that is not on the grid is
   // not a cap the inventory can be built against.
   return unitFloorCents(Math.max(0, Math.min(half, bountyPoolCents - paid)), unitCents);
+}
+
+/** Is this a chests-only mystery event (no regular half, Dan 2026-10-22)? */
+export function isChestsOnlyMysteryRow(row: {
+  mystery_bounty_regular_pool_percent?: unknown;
+} | null | undefined): boolean {
+  const raw = row?.mystery_bounty_regular_pool_percent;
+  if (raw === null || raw === undefined || raw === '') return false;
+  const n = Number(raw);
+  return Number.isFinite(n) && n === 0;
 }

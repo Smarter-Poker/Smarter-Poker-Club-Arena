@@ -25,7 +25,8 @@
  * caller emits that telemetry where it acts on the verdict, so a horse judged
  * once for the count and once for the chair is counted once.
  */
-import { canOpenAnotherTable, bankrollPolicyFor } from './HorseBankroll.js';
+import { canOpenAnotherTable } from './HorseBankroll.js';
+import { seatPolicyFor } from './LightningPilotSeatScope.js';
 import type { BankrollEvent } from './HorseBankrollTelemetry.js';
 import { evaluateSit, gameKey, TWO_HOUR_WINDOW_MS, type SitRejection } from './StableHand.js';
 import {
@@ -211,7 +212,7 @@ export function sitVerdictFor(
         bankroll: roll,
         liveExposure: exposureFor(ctx, seatClub).get(horseId) ?? 0,
         nextBuyIn: buyIn,
-        policy: bankrollPolicyFor(horseId),
+        policy: seatPolicyFor(horseId, seatClub),
       })
     ) {
       telemetry.push('seat_refused_aggregate_exposure');

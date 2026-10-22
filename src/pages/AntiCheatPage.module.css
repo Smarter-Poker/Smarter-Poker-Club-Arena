@@ -263,9 +263,6 @@
 .reasonLink {
   color: var(--realism-gold);
   font-weight: 600;
-  text-decoration: none;
-}
-.reasonLink:hover {
   text-decoration: underline;
 }
 .reasonHands {

@@ -1371,5 +1371,29 @@
       "classification": "comment-only-ledger-receipt",
       "description": "Source additionally creates standalone-club index and DO-patches weekly scope function; ledger comment receipt."
     }
-  ]
+  ],
+  "postSnapshotSourceReconciliation": {
+    "revision": "3900433d0b90cc9bfa0f87f4f040108a737f5c91",
+    "schemaRecaptureRequired": false,
+    "files": [
+      {
+        "path": "supabase/migrations/20261021173101_tournament_levels_have_a_five_minute_floor.sql",
+        "classification": "comment-only supersession annotation; executable SQL unchanged; historical ledger installation-byte claim remains unproven"
+      },
+      {
+        "path": "supabase/migrations/20261022172522_a_bust_backlog_pages_within_four_minutes.sql",
+        "classification": "already present in independent same-snapshot schema; ledger SQL bytes differ; cron schedule rows intentionally excluded from schema-only reconstruction",
+        "sourceMD5": "cfa062f6e3d0d4dd0eca4021c92cde4e",
+        "ledgerSQLMD5": "b95dbe637fbd2ff33c0f6b45959eeb19",
+        "sourceAndSnapshotBodyMD5": "3e48626f43beb09603f7d389494397e0",
+        "independentFunctionDefinitionMD5": "cc53fb1b3aa6b7f10d8b1c02f72e5764",
+        "owner": "postgres",
+        "securityDefiner": true,
+        "settings": ["search_path=public, pg_temp"],
+        "executeGrantees": ["postgres", "service_role"],
+        "defaultMinutes": 4,
+        "topLevelBusinessWritesReplayed": false
+      }
+    ]
+  }
 }

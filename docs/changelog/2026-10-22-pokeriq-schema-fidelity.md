@@ -1,4 +1,3 @@
 ## 2026-10-22: Faithful isolated PokerIQ schema reconstruction
 
 Refreshed the complete native schema and independent catalog from one read-only exported snapshot. Historical SQL remains immutable and is fingerprinted, with known source/ledger mismatches explicitly recorded; no financial history is replayed. Local fidelity repairs preserve extension shared ownership dependencies, provider schema ACLs, and inherited partition constraints. Native parser comparisons retain semantic checks with negative predicate/bound/view regressions. Focused PostgreSQL17 qualification passed; complete pinned Supabase image comparison remains required before merge. No production schema changes are delivered by this bootstrap.
-

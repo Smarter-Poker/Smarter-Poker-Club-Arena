@@ -95,23 +95,22 @@
     }
   ],
   "sameExportedSnapshot": true,
-  "catalogSHA256": "e889898e539b2f223e16929af4f59dfcdb9c08b507a96bbc139b200b0328b192",
+  "catalogSHA256": "447fb08f07daa4d0f0f34b8e9af55cd3e28c1c43a3e52e2fbc28b40989a5bd5f",
   "captureCompletedAt": "2026-10-22T20:08:31.099472+00:00",
   "captureTimingSource": "private capture receipt filesystem completion timestamp",
   "catalogQuerySHA256": "3a9bc044cd645bfc10fc2281dd6eb016b9824e32d2c2bbc7f1960a53018e9eea",
-  "sourceHistorySHA256": "76400f9ed4225b1a3a33c22990b77d408f137c08b8e66e41d435a2866efe0161",
+  "sourceHistorySHA256": "0c026abc72698d382bdd7fee311459f75cdad18abf1292b588007f74a263779f",
   "platformContractSHA256": "b58f710b8881acb8ed7f8985aa94be1ffd5acfc04ceb11d92fa5bd5d07708bd3",
   "extensionRuntimeSHA256": "3dffab9312555e8256fb2ef7b60b47b4157a3901ba9492a71d81ac7a670843b4",
-  "sourceRevisionArena": "00628a2d868b2e53f26ea3f8dfb4033e5409778c",
+  "sourceRevisionArena": "3900433d0b90cc9bfa0f87f4f040108a737f5c91",
   "pendingSchemaVersions": [],
-  "installedNewVersions": [
-    "20261020182843",
-    "20261020184651"
-  ],
+  "installedNewVersions": ["20261020182843", "20261020184651"],
   "rawCapturedCatalogSHA256": "0730c9e8b2460f5289677b319ab7343dfacf3730529d97ed3ddf0ff8a1c06d80",
   "catalogRepresentation": "Ordinary repository formatter indentation only; parsed JSON verified equal to raw same-snapshot capture.",
   "catalogSemanticSHA256": "1caaef056934116fd1a5b23e7711465f75ec8c8cdca53ee34327a62f23817278",
   "historicalSourceScope": "Immutable source bytes at the named revisions, not a claim every historical file was installed byte-identically or a financial-data replay. The independent current-snapshot native schema is authoritative reconstruction input; historical ledger discrepancies are preserved separately.",
-  "roleContractSHA256": "2160a64be628e6e35c64e20c0ab3f82aa780438bd02fe1d5277ba30f03c3c4e1",
-  "historicalLedgerReconciliationSHA256": "00f5a9a5071cf75c499a02c10bb0aa53762e6b86999ff0db05643639f9d50c38"
+  "roleContractSHA256": "b081c51fe9597f8d825437f036cdd7360fa9c87f712f844fe1860dc5074ca2e8",
+  "historicalLedgerReconciliationSHA256": "48f5faf17e9bb129af01375b9d01b7eda879cef25b0bf5c309d55376d79dfc7a",
+  "sourceHistoryReconciledAt": "2026-10-22T20:22:28.637555+00:00",
+  "sourceHistoryRevisionScope": "Source audit revision after independent schema snapshot; exact two-file reconciliation preserved in historical-ledger-reconciliation.json. Capture time and schema bytes unchanged."
 }

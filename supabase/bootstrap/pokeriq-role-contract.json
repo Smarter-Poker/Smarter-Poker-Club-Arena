@@ -2,9 +2,7 @@
   "roles": [
     {
       "name": "anon",
-      "config": [
-        "statement_timeout=3s"
-      ],
+      "config": ["statement_timeout=3s"],
       "inherit": true,
       "canlogin": false,
       "createdb": false,
@@ -16,9 +14,7 @@
     },
     {
       "name": "authenticated",
-      "config": [
-        "statement_timeout=8s"
-      ],
+      "config": ["statement_timeout=8s"],
       "inherit": true,
       "canlogin": false,
       "createdb": false,
@@ -326,10 +322,7 @@
     },
     {
       "name": "postgres",
-      "config": [
-        "search_path=\"\\$user\", public, extensions",
-        "statement_timeout=2min"
-      ],
+      "config": ["search_path=\"\\$user\", public, extensions", "statement_timeout=2min"],
       "inherit": true,
       "canlogin": true,
       "createdb": true,
@@ -341,9 +334,7 @@
     },
     {
       "name": "service_role",
-      "config": [
-        "statement_timeout=8s"
-      ],
+      "config": ["statement_timeout=8s"],
       "inherit": true,
       "canlogin": false,
       "createdb": false,
@@ -435,9 +426,7 @@
     },
     {
       "name": "supabase_read_only_user",
-      "config": [
-        "default_transaction_read_only=on"
-      ],
+      "config": ["default_transaction_read_only=on"],
       "inherit": true,
       "canlogin": true,
       "createdb": false,
@@ -473,10 +462,7 @@
     },
     {
       "name": "supabase_storage_admin",
-      "config": [
-        "search_path=storage",
-        "log_statement=none"
-      ],
+      "config": ["search_path=storage", "log_statement=none"],
       "inherit": false,
       "canlogin": true,
       "createdb": false,

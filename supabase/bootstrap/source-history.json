@@ -6596,7 +6596,7 @@
       ]
     },
     "arena": {
-      "revision": "00628a2d868b2e53f26ea3f8dfb4033e5409778c",
+      "revision": "3900433d0b90cc9bfa0f87f4f040108a737f5c91",
       "files": [
         {
           "path": "supabase/migrations/001_club_arena_schema.sql",
@@ -29628,7 +29628,7 @@
         },
         {
           "path": "supabase/migrations/20261021173101_tournament_levels_have_a_five_minute_floor.sql",
-          "sha256": "e4d875ec3e622d901f029e06973c4934e8cfcc9271b0a04bd5fbef4c18ee2696"
+          "sha256": "195c27cbcb58e79b1e95e65a0890a970441f7263ee1f883e6c3088d3cefbfeed"
         },
         {
           "path": "supabase/migrations/20261021173355_member_role_panel_edits_individual_rakeback_agreements.sql",
@@ -29877,6 +29877,10 @@
         {
           "path": "supabase/migrations/20261022150614_the_weekly_scheduler_scan_reads_standalone_tournament_earnin.sql",
           "sha256": "4ce1b56c022601b434406994f06e369e527fe758e10cca04d9c999158cf2d509"
+        },
+        {
+          "path": "supabase/migrations/20261022172522_a_bust_backlog_pages_within_four_minutes.sql",
+          "sha256": "c8d2fd1a24ae20141356dd7042fe3ebd4494d8ab9bfe816f3c600623de1a3863"
         }
       ]
     }

@@ -42,6 +42,8 @@
 -- ROLLBACK: re-apply both functions without the added NOT EXISTS clause
 -- (each edit below is a single inserted predicate).
 
+-- @live-proof: (SELECT bool_and(p.prosrc LIKE '%o.source_table_id = tb.id%' AND p.prosrc LIKE '%withdrawn_before_manifest%') FROM pg_proc p WHERE p.oid IN ('public.fn_seat_late_registrant_before_maintenance_gate(uuid,uuid)'::regprocedure, 'public.fn_ensure_late_registration_capacity(uuid,integer)'::regprocedure))
+
 BEGIN;
 
 DO $m$

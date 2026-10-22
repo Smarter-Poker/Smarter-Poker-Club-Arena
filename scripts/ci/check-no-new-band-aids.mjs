@@ -46,7 +46,7 @@
  *   node scripts/ci/check-no-new-band-aids.mjs --all    # sweep every migration
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { partitionMigrations, reportRecorded } from './recording-only.mjs';
@@ -215,12 +215,57 @@ export function carriesPeriodicWorkJustification(sql) {
  * Takes the FILE, because this rule binds by version; every other rule in this
  * script judges content alone.
  */
-export function unjustifiedPeriodicWork(file, sql) {
+export function unjustifiedPeriodicWork(file, sql, unscheduledLater = onDisk(file) ? laterUnscheduledJobs(file) : new Set()) {
   if (migrationVersion(file) < PERIODIC_WORK_BINDS_FROM) return null;
   if (!schedulesPeriodicWork(sql)) return null;
   if (carriesPeriodicWorkJustification(sql)) return null;
   const { added } = scheduledJobs(sql);
+  // SCHEDULED, THEN UNSCHEDULED (2026-10-22). Deleting a band-aid is the point
+  // (header), and a function declared then dropped already passes. The same
+  // holds for a job: 20261022014819 scheduled ca-orphaned-certification-account-
+  // sweep and 20261022021302 unscheduled it 24 minutes later, once the root cause
+  // was found. Both are byte-exact recordings that must stay on disk, and the
+  // record cannot carry a comment it did not have. Only a NAMED job that a LATER
+  // migration on disk unschedules is excused; an unnamed or still-running
+  // schedule is judged exactly as before.
+  if (added.length && added.every((name) => unscheduledLater.has(name))) return null;
   return { kind: 'periodic work', name: added.join(', ') || 'cron.schedule(...)' };
+}
+
+/** Only a migration that is really in the tree is judged against the tree. */
+function onDisk(file) {
+  const base = String(file).split('/').pop() || '';
+  return existsSync(join(REPO, DIR, base));
+}
+
+let unscheduleCache = null;
+/** Each migration on disk with the job names it unschedules, read once. */
+function migrationUnschedules() {
+  if (unscheduleCache) return unscheduleCache;
+  unscheduleCache = [];
+  try {
+    for (const name of readdirSync(join(REPO, DIR))) {
+      if (!name.endsWith('.sql')) continue;
+      const sql = readFileSync(join(REPO, DIR, name), 'utf8');
+      if (!/cron\.unschedule/i.test(sql)) continue;
+      const jobs = [...sql.matchAll(/cron\.unschedule\s*\(\s*'([^']+)'/gi)].map((m) => m[1].toLowerCase());
+      if (jobs.length) unscheduleCache.push({ version: migrationVersion(name), jobs });
+    }
+  } catch {
+    /* No directory, no excuse: an empty set judges every schedule as before. */
+  }
+  return unscheduleCache;
+}
+
+/** Job names that a migration with a LATER version than `file` unschedules. */
+export function laterUnscheduledJobs(file, unschedules = migrationUnschedules()) {
+  const after = migrationVersion(file);
+  const names = new Set();
+  for (const { version, jobs } of unschedules) {
+    if (!(version > after)) continue;
+    for (const job of jobs) names.add(job);
+  }
+  return names;
 }
 
 /**

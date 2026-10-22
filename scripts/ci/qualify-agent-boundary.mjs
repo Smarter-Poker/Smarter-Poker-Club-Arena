@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {supabaseServerHeaders} from './supabase-auth-headers.mjs';
+import {retryTransient} from './transient-retry.mjs';
 
 const env=process.env;
 const account=JSON.parse(readFileSync(env.E2E_TEST_ACCOUNT_FILE || join(env.RUNNER_TEMP,'club-arena-production-e2e-account.json'),'utf8'));
@@ -23,7 +24,11 @@ async function request(path,{method='GET',body,key=service,jwt=service,allowFail
   : {...common,apikey:key,Authorization:`Bearer ${jwt}`};
  const r=await fetch(base+path,{method,headers,...(body===undefined?{}:{body:JSON.stringify(body)})});
  const text=await r.text();const data=text?JSON.parse(text):null;
- if(!allowFailure && !r.ok) throw new Error(`Boundary qualification ${method} ${path.split('?')[0]} refused: HTTP ${r.status}, code ${data?.code || 'unknown'}`);
+ if(!allowFailure && !r.ok) {
+  const error=new Error(`Boundary qualification ${method} ${path.split('?')[0]} refused: HTTP ${r.status}, code ${data?.code || 'unknown'}`);
+  error.status=r.status;error.code=data?.code;error.body=data;
+  throw error;
+ }
  return {data,status:r.status,ok:r.ok};
 }
 const membership=`/rest/v1/club_members?club_id=eq.${club}&user_id=eq.${account.id}`;
@@ -99,25 +104,39 @@ try {
 } finally {
  if(mutationStarted) {
   // Read after any unknown response; restore only this job's exact reserved identity.
-  const current=await member();
-  if(current.role!=='admin') {
-   assert.ok(['super_agent','agent','sub_agent'].includes(current.role));
-   const restored=await request(membership+`&role=eq.${current.role}`,{method:'PATCH',body:{role:'admin'}});
-   assert.equal(restored.data.length,1);
-  }
-  const owned=await request(agent+'&select=*');
-  if(owned.data.length) {
-   assert.equal(owned.data.length,1);
-   const row=owned.data[0];assert.equal(row.parent_agent_id,null);
-   zero(row,['credit_used','credit_limit','business_balance','player_balance','promo_balance','agent_wallet_balance','player_wallet_balance','promo_wallet_balance','total_players','active_player_count','sub_agent_count','weekly_rake_generated','lifetime_earnings','lifetime_rake_generated']);
-   const children=await request(`/rest/v1/club_members?club_id=eq.${club}&agent_id=eq.${account.id}&select=user_id`);
-   assert.equal(children.data.length,0);
-   const agentChildren=await request(`/rest/v1/agents?club_id=eq.${club}&parent_agent_id=eq.${agentId}&select=id`);
-   assert.equal(agentChildren.data.length,0);
-   await request(agent,{method:'DELETE'});
-  }
-  assert.equal((await request(agent+'&select=id')).data.length,0);
-  assert.equal((await member()).role,'admin');
+  // TEARDOWN RETRIES A BUSY DATABASE (2026-10-21). Run 39694814807 lost this
+  // DELETE to "canceling statement due to statement timeout" (57014, the 8 s
+  // service_role cap) with one attempt, so the agent row stayed, the account
+  // cleanup door correctly refused CERTIFICATION_PROTECTED_MEMBERSHIP_HAS_
+  // AUTHORITY_OR_CUSTODY, and PostDeployf3622 sat as an admin in KINGS CLUB and
+  // Deep Stack Society for two hours. A timed-out statement rolled back, so each
+  // step below re-reads state and is safe to repeat; only transient failures retry.
+  const teardown=(label,operation)=>retryTransient(operation,{label:`agent boundary teardown: ${label}`});
+  await teardown('restore admin role',async()=>{
+   const current=await member();
+   if(current.role!=='admin') {
+    assert.ok(['super_agent','agent','sub_agent'].includes(current.role));
+    const restored=await request(membership+`&role=eq.${current.role}`,{method:'PATCH',body:{role:'admin'}});
+    assert.equal(restored.data.length,1);
+   }
+  });
+  await teardown('remove agent fixture',async()=>{
+   const owned=await request(agent+'&select=*');
+   if(owned.data.length) {
+    assert.equal(owned.data.length,1);
+    const row=owned.data[0];assert.equal(row.parent_agent_id,null);
+    zero(row,['credit_used','credit_limit','business_balance','player_balance','promo_balance','agent_wallet_balance','player_wallet_balance','promo_wallet_balance','total_players','active_player_count','sub_agent_count','weekly_rake_generated','lifetime_earnings','lifetime_rake_generated']);
+    const children=await request(`/rest/v1/club_members?club_id=eq.${club}&agent_id=eq.${account.id}&select=user_id`);
+    assert.equal(children.data.length,0);
+    const agentChildren=await request(`/rest/v1/agents?club_id=eq.${club}&parent_agent_id=eq.${agentId}&select=id`);
+    assert.equal(agentChildren.data.length,0);
+    await request(agent,{method:'DELETE'});
+   }
+  });
+  await teardown('verify teardown',async()=>{
+   assert.equal((await request(agent+'&select=id')).data.length,0);
+   assert.equal((await member()).role,'admin');
+  });
  }
  if(token) await request('/auth/v1/logout?scope=local',{...caller,method:'POST',allowFailure:true}).catch(()=>{});
 }

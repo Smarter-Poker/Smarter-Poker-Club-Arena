@@ -7,6 +7,7 @@ import type {
   RakeSnapshot,
   RakeSortKey,
 } from '../services/ClubRakeSnapshotService';
+import { chicagoDay } from '../lib/clubDataDay';
 import {
   fetchClubDataExport,
   type ClubDataExportProgress,
@@ -145,12 +146,13 @@ function shiftUtcDate(value: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Mirrors the Rake start door's UTC/two-year date normalization. */
+/** Mirrors the Rake start door's Chicago-day/two-year date normalization
+ *  (ca_rake_export_start_v2 clamps to the America/Chicago date, 20261022120121). */
 function normalizeRakeExportRange(start: string, end: string): { start: string; end: string } {
   if (!isIsoDate(start) || !isIsoDate(end)) {
     throw new Error('The Rake export date range is invalid.');
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = chicagoDay();
   const normalizedEnd = end > today ? today : end;
   const earliest = shiftUtcDate(normalizedEnd, -730);
   let normalizedStart = start < earliest ? earliest : start;

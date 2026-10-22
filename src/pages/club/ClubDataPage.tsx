@@ -26,11 +26,19 @@
  *
  * The client gate below is cosmetic. The RPCs raise 42501 on their own.
  *
- * Dates are UTC end to end, because the rollup the cash figures come from is
- * keyed on UTC days. The range chip says UTC rather than showing a bare date
- * that disagrees with the reader's own calendar late in their evening.
+ * Dates are America/Chicago calendar days end to end, daylight saving
+ * included (Dan, 2026-10-22), because the facts every figure comes from are
+ * keyed on Chicago days (20261022103651, 20261022120121). The range chip says
+ * Chicago Time rather than showing a bare date. MTT Winnings are finished MTTs
+ * only; a running MTT's entries are shown as Running MTT Entries.
  */
 
+import {
+  CLUB_DATA_TIME_ZONE,
+  CLUB_DATA_ZONE_LABEL,
+  chicagoClock,
+  chicagoDay,
+} from '../../lib/clubDataDay';
 import {
   useCallback,
   useEffect,
@@ -124,6 +132,9 @@ interface SnapshotSummary {
   games: number;
   total_winnings: number;
   mtt_winnings: number;
+  /** Entries and payouts so far of MTTs that have not finished (20261022120121). */
+  running_mtt_entries?: number;
+  running_mtt_fee?: number;
   tournament_winnings?: number;
   tournament_fee?: number;
   cash_winnings: number;
@@ -391,15 +402,13 @@ function coldRead<T>(
 }
 
 /**
- * Every other timestamp on this page is UTC and the range chip is badged UTC.
- * This one was the browser's local zone with no marker, so "updated 19:42"
- * could look like it preceded a range ending "today". No isNaN guard either -
- * a malformed value rendered "Invalid Date".
+ * Every timestamp on this page is Chicago time and the range chip is badged
+ * Chicago Time. A bare local time with no marker made "updated 19:42" look
+ * like it preceded a range ending "today". A malformed value reads "Unknown".
  */
-function utcTime(iso: string): string {
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return 'Unknown';
-  return `${d.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })} UTC`;
+function zonedTime(iso: string): string {
+  const clock = chicagoClock(iso);
+  return clock ? `${clock} ${CLUB_DATA_ZONE_LABEL}` : 'Unknown';
 }
 
 function recentCursor(rows: SnapshotRow[]): PageCursor | null {
@@ -876,7 +885,7 @@ export default function ClubDataPage() {
   const [clubName, setClubName] = useState<string>('');
   const gameHost = useClubGameHost(clubUuid, !!userId && !isHydrating);
   const [preset, setPreset] = useState<PresetId>(14);
-  const [endDate, setEndDate] = useState<string>(() => toISODate(new Date()));
+  const [endDate, setEndDate] = useState<string>(() => chicagoDay());
   const [game, setGame] = useState<GameFilter>('ALL');
   const [stakes, setStakes] = useState<StakesFilter>('ALL');
   const [gameSort, setGameSort] = useState<GameSort>('recent');
@@ -1017,7 +1026,7 @@ export default function ClubDataPage() {
   const mountedRef = useRef(false);
   const manualRefreshingRef = useRef(false);
   const manualRefreshVersion = useRef(0);
-  const observedUtcDayRef = useRef(toISODate(new Date()));
+  const observedUtcDayRef = useRef(chicagoDay());
   const gamesTabRef = useRef<HTMLButtonElement>(null);
   const playersTabRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -1068,7 +1077,7 @@ export default function ClubDataPage() {
     [startDate, endDate]
   );
 
-  const isToday = endDate >= toISODate(new Date());
+  const isToday = endDate >= chicagoDay();
 
   const gameCacheKey = useMemo(
     () =>
@@ -2201,12 +2210,12 @@ export default function ClubDataPage() {
   // near-real-time: re-poll on an interval and whenever the tab regains focus
   useEffect(() => {
     if (!clubUuid || isHydrating || !userId) return;
-    // Roll `endDate` forward across UTC midnight. It was set once at mount, so
+    // Roll `endDate` forward across Chicago midnight. It was set once at mount, so
     // a page left open overnight polled YESTERDAY's window forever: the owner
     // watched live rake stop growing and the forward arrow silently arm itself.
     // Only for someone still pinned to today - a deliberate step back stays.
     const pinToToday = () => {
-      const today = toISODate(new Date());
+      const today = chicagoDay();
       const previousToday = observedUtcDayRef.current;
       observedUtcDayRef.current = today;
       setEndDate((cur) => (cur === previousToday || cur > today ? today : cur));
@@ -2529,7 +2538,7 @@ export default function ClubDataPage() {
       const d = new Date(`${endDate}T00:00:00Z`);
       d.setUTCDate(d.getUTCDate() + direction * preset);
       const next = toISODate(d);
-      const today = toISODate(new Date());
+      const today = chicagoDay();
       observedUtcDayRef.current = today;
       setEndDate(next > today ? today : next);
     },
@@ -3075,7 +3084,7 @@ export default function ClubDataPage() {
               <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Cash Updated</span>
               <span className={`sc-ink--silver ${styles.dataValue}`}>
                 {snapshot?.data_updated_at
-                  ? utcTime(snapshot.data_updated_at)
+                  ? zonedTime(snapshot.data_updated_at)
                   : loading
                     ? 'Loading Live Records'
                     : 'Live Records Ready'}
@@ -3217,7 +3226,9 @@ export default function ClubDataPage() {
               <span>{startDate}</span>
               <span className={`sc-ink--muted ${styles.rangeDivider}`}>-</span>
               <span>{endDate}</span>
-              <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>UTC</span>
+              <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>
+                {CLUB_DATA_ZONE_LABEL}
+              </span>
             </span>
             <button
               type="button"
@@ -3231,15 +3242,15 @@ export default function ClubDataPage() {
           </div>
 
           <label className={styles.calendarField}>
-            <span>Period Ending (UTC)</span>
+            <span>Period Ending ({CLUB_DATA_ZONE_LABEL})</span>
             <input
               type="date"
-              aria-label="Period Ending (UTC)"
+              aria-label={`Period Ending (${CLUB_DATA_ZONE_LABEL})`}
               value={endDate}
-              max={toISODate(new Date())}
+              max={chicagoDay()}
               onChange={(event) => {
                 const value = event.target.value;
-                const today = toISODate(new Date());
+                const today = chicagoDay();
                 if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value <= today) {
                   observedUtcDayRef.current = today;
                   setEndDate(value);
@@ -3296,6 +3307,13 @@ export default function ClubDataPage() {
             >
               {summary ? money(summary.mtt_winnings) : NO_VALUE}
             </dd>
+            {summary &&
+              summary.running_mtt_entries !== undefined &&
+              Number.isFinite(Number(summary.running_mtt_entries)) && (
+                <dd className={`sc-ink--muted ${styles.figureMeta}`}>
+                  Running MTT Entries {money(summary.running_mtt_entries)}
+                </dd>
+              )}
           </div>
           <div className={`${styles.dataRow} ${styles.figureRow}`}>
             <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Fee</dt>
@@ -3736,20 +3754,20 @@ export default function ClubDataPage() {
                 gameVirtual.visibleItems.map((row, virtualIndex) => {
                   // Intl, not padStart (CLAUDE.md §5.5) - and padStart could not
                   // see an Invalid Date, so a malformed started_at rendered
-                  // "NaN:NaN". en-GB + timeZone UTC gives the same 24h HH:MM and
-                  // DD/MM this was hand-rolling, with the guard for free.
+                  // "NaN:NaN". en-GB + the Club Data zone gives the same 24h HH:MM
+                  // and DD/MM this was hand-rolling, with the guard for free.
                   const started = row.started_at ? new Date(row.started_at) : null;
                   const validStart = started && Number.isFinite(started.getTime()) ? started : null;
                   const hhmm = validStart
                     ? validStart.toLocaleTimeString('en-GB', {
-                        timeZone: 'UTC',
+                        timeZone: CLUB_DATA_TIME_ZONE,
                         hour: '2-digit',
                         minute: '2-digit',
                       })
                     : '--:--';
                   const ddmm = validStart
                     ? validStart.toLocaleDateString('en-GB', {
-                        timeZone: 'UTC',
+                        timeZone: CLUB_DATA_TIME_ZONE,
                         day: '2-digit',
                         month: '2-digit',
                       })
@@ -3866,7 +3884,7 @@ export default function ClubDataPage() {
                 {clubLabel ? `${clubLabel} - ` : ''}
                 Loaded {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
                 {snapshot.data_updated_at
-                  ? ` - Cash Data Updated ${utcTime(snapshot.data_updated_at)}`
+                  ? ` - Cash Data Updated ${zonedTime(snapshot.data_updated_at)}`
                   : ''}
               </p>
             )}

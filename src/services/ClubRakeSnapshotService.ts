@@ -11,6 +11,7 @@
  * are a convenience so an operator is not shown a chip that will refuse them.
  */
 
+import { chicagoDay } from '../lib/clubDataDay';
 import { supabase } from '../lib/supabase';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 
@@ -31,6 +32,9 @@ export interface RakeSnapshotSummary {
   cash_winnings?: number | null;
   mtt_winnings: number | null;
   tournament_winnings?: number | null;
+  /** Entries and payouts so far of MTTs that have not finished (20261022120121). */
+  running_mtt_entries?: number | null;
+  running_mtt_fee?: number | null;
   /** agent scope only */
   members?: number;
   active?: number;
@@ -139,7 +143,7 @@ export interface RakeDownlineRow {
 export type RakeBreakdownRow = RakeClubRow | RakeAgentRow | RakeDownlineRow;
 
 export interface RakeSnapshot {
-  accounting_basis?: 'utc_net_money_flow';
+  accounting_basis?: 'utc_net_money_flow' | 'chicago_net_money_flow';
   scope: RakeScope;
   scope_label: string;
   club_id: string | null;
@@ -275,23 +279,29 @@ function toISODate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-function utcToday(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+/**
+ * Today on the Club Data clock, as a calendar date held at UTC midnight so the
+ * arithmetic below is pure calendar math. The DATE is the America/Chicago day
+ * (Dan, 2026-10-22): the server buckets every Union Data figure by it.
+ */
+function clubDataToday(now: Date = new Date()): Date {
+  return new Date(`${chicagoDay(now)}T00:00:00Z`);
 }
 
 /**
  * Calendar periods, not rolling ones. An owner asking "this month" means the
  * month on the wall, not the last thirty days — the two disagree by up to a
  * third of the figure on the third of the month, and the wall calendar is what
- * the union settles against. UTC throughout, because the rollup these figures
- * come from is keyed on UTC days.
+ * the union settles against. America/Chicago calendar days throughout
+ * (daylight saving included), because the facts these figures come from are
+ * keyed on Chicago days (20261022103651, 20261022120121).
  */
 export function periodToRange(
   key: PeriodKey,
-  custom?: { start: string; end: string }
+  custom?: { start: string; end: string },
+  now: Date = new Date()
 ): { start: string; end: string } {
-  const today = utcToday();
+  const today = clubDataToday(now);
   const end = toISODate(today);
 
   if (key === 'custom') {

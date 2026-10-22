@@ -1,6 +1,15 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Club Data counts America/Chicago days (20261022120121): today is the Chicago date.
+const chicagoToday = (): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+
 const CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 
 const { rpcMock, authState, clubRow, unionRow } = vi.hoisted(() => ({
@@ -44,7 +53,7 @@ import ClubDataSimplePage, {
   refreshIntervalMs,
 } from '../../src/pages/club/ClubDataSimplePage';
 
-const today = new Date().toISOString().slice(0, 10);
+const today = chicagoToday();
 
 const live = {
   range: { start: today, end: today, days: 1 },
@@ -94,7 +103,7 @@ describe('helpers', () => {
     expect(formatMoney(undefined)).toBe('-');
   });
 
-  it('steps UTC days without drifting across a month', () => {
+  it('steps calendar days without drifting across a month', () => {
     expect(addDays('2026-10-01', -1)).toBe('2026-09-30');
     expect(addDays('2026-10-14', 0)).toBe('2026-10-14');
   });
@@ -120,14 +129,43 @@ describe('helpers', () => {
 });
 
 describe('ClubDataSimplePage', () => {
-  it('identifies an authorized union aggregate and its UTC money-flow basis', async () => {
+  it('identifies an authorized union aggregate and its Chicago money-flow basis', async () => {
     rpcMock.mockResolvedValue({
-      data: { ...live, reporting_scope: 'union', accounting_basis: 'utc_net_money_flow' },
+      data: { ...live, reporting_scope: 'union', accounting_basis: 'chicago_net_money_flow' },
       error: null,
     });
     render(<ClubDataSimplePage />);
     expect(await screen.findByText('All Member Clubs And Union Account')).toBeTruthy();
-    expect(screen.getByText(/Unfinished Event Entries Included/)).toBeTruthy();
+    expect(screen.getByText(/Net Entries And Payouts In Chicago Time/)).toBeTruthy();
+    expect(screen.getByText(/MTT Winnings Count Finished MTTs Only/)).toBeTruthy();
+    expect(screen.getAllByText('Chicago Time').length).toBeGreaterThan(0);
+  });
+
+  it('a page served by the old database still says what it counts', async () => {
+    rpcMock.mockResolvedValue({
+      data: { ...live, accounting_basis: 'utc_net_money_flow' },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    expect(await screen.findByText(/Unfinished Event Entries Included/)).toBeTruthy();
+  });
+
+  it('shows Running MTT Entries beside finished MTT Winnings', async () => {
+    rpcMock.mockResolvedValue({
+      data: { ...live, summary: { ...live.summary, running_mtt_entries: -3_570 } },
+      error: null,
+    });
+    render(<ClubDataSimplePage />);
+    expect(await screen.findByText('Running MTT Entries')).toBeTruthy();
+    expect(screen.getByText('-3,570.00')).toBeTruthy();
+    expect(screen.getByText('210.00')).toBeTruthy();
+  });
+
+  it('asks for the Chicago day, not the UTC day', async () => {
+    rpcMock.mockResolvedValue({ data: live, error: null });
+    render(<ClubDataSimplePage />);
+    await screen.findByText('987.25');
+    expect(rpcMock.mock.calls[0][1]).toMatchObject({ p_start: today, p_end: today });
   });
 
   it('attributes games to the union even when the creator is missing or named', async () => {

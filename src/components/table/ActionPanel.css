@@ -168,7 +168,9 @@
    because the height is the one part of the wrapper that has to agree with two
    rows this file owns. */
 .table-page .action-panel-wrapper {
-  min-height: calc(var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)));
+  min-height: calc(
+    var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -210,7 +212,9 @@
    on its own `.table-page` ancestor now. 0,3,0 still beats the 0,2,0 floor rule
    above, which is the comparison that has to hold. */
 .table-page.ca-raising .action-panel-wrapper {
-  height: calc(var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)));
+  height: calc(
+    var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════

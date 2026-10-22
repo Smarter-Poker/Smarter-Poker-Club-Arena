@@ -79,7 +79,10 @@ describe('the new-club opening grant is never drift', () => {
     // operator funding; every clause below still holds in its body.
     expect(velocity.file).toBe('20261003131810_an_operators_declared_funding_is_not_a_mint_loop.sql');
     expect(reconcile.file).toBe(MIGRATION);
-    expect(integrity.file).toBe(MIGRATION);
+    // 20261022162545 restated the integrity report (its liveness line asks
+    // whether any hand was dealt instead of counting them); every clause
+    // below still holds in its body.
+    expect(integrity.file).toBe('20261022162545_the_hourly_sweep_reads_each_ledger_leg_once.sql');
   });
 
   it('the velocity watch leaves out the declared grant in its exact shape, never on a key prefix', () => {

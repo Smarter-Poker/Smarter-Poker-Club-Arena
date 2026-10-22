@@ -34,6 +34,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { formatBuyIn, formatBuyInShort } from '../../src/utils/buyIn';
 
 import {
   FREE_BUY_ADDON_COST,
@@ -270,10 +271,18 @@ describe('3. the client applies the rule and the form says so', () => {
 
   it('the lobby and every buy-in cell read "Free Buy" for a freeroll', () => {
     expect(FREE_BUY_LABEL).toBe('Free Buy');
+    expect(formatBuyIn(0, 0)).toBe(FREE_BUY_LABEL);
+    expect(formatBuyInShort(0, 0)).toBe(FREE_BUY_LABEL);
+    const booked = {
+      name: 'Sunrise Bounty (NLH)',
+      union_id: 'fade0000-0000-0000-0000-000000000001',
+    };
+    expect(formatBuyIn(0, 0, booked)).toBe(FREE_BUY_LABEL);
+    expect(formatBuyInShort(0, 0, booked)).toBe(FREE_BUY_LABEL);
     expect(LOBBY).toMatch(/label: FREE_BUY_LABEL, tip: FREE_BUY_HELPER/);
     expect(LOBBY).toMatch(/buyInLabel: total <= 0 \? FREE_BUY_LABEL/);
     expect(BUYIN).toMatch(/if \(total <= 0\) return FREE_BUY_LABEL;/);
-    expect(BUYIN).toMatch(/total <= 0 \? FREE_BUY_LABEL : money\(total\)/);
+    expect(BUYIN).toMatch(/total <= 0 \? FREE_BUY_LABEL : moneyExact\(total\)/);
   });
 
   it('the copy is Title Case Every Word with no em dash', () => {

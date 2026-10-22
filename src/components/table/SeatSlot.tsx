@@ -1164,9 +1164,9 @@ export const SeatSlot = memo(
         // a product, so the product of its numbers is the scale. Read from the
         // declaration rather than the live transform, which an idle or gesture
         // animation may be driving at this instant.
-        const factors = (style.getPropertyValue('--sp-bust-effective-scale').match(
-          /-?\d*\.?\d+/g
-        ) ?? ['1']).map(Number);
+        const factors = (
+          style.getPropertyValue('--sp-bust-effective-scale').match(/-?\d*\.?\d+/g) ?? ['1']
+        ).map(Number);
         const scale = factors.reduce((a, b) => a * b, 1) || 1;
         const clip = (parseFloat(style.getPropertyValue('--sp-bust-clip')) || 0) / 100;
         const h = art.offsetHeight;

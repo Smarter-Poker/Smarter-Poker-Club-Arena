@@ -7,6 +7,7 @@ vi.mock('../../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: null
 vi.mock('../../src/lib/supabase', () => ({ supabase: { from: vi.fn() } }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 
+import { formatBuyInShort } from '../../src/utils/buyIn';
 import TournamentLobbyCard from '../../src/components/tournament/TournamentLobbyCard';
 import { mapSatelliteRowToCard } from '../../src/components/tournament/details/useSatellites';
 import { describeStoredMttStructure } from '../../server/src/tournament/mttStructureDescription';
@@ -27,6 +28,37 @@ const value = (label: string) =>
   screen.getByText(label).parentElement!.lastElementChild!.textContent;
 
 describe('tournament cards display the same engine structure facts as details', () => {
+  it.each(['Sunrise Bounty (NLH)', 'Midnight Bounty (NLH)'])(
+    'renders the scoped exact price and registration CTA for %s',
+    (name) => {
+      const booked = {
+        name,
+        club_id: 'fade0000-0000-0000-0000-000000000001',
+        buy_in_amount: 5,
+        buy_in_fee: 0.5,
+      };
+      const card = mapSatelliteRowToCard({
+        ...row([]),
+        ...booked,
+        tournament_type: 'MTT',
+        start_time: '2099-10-23T13:00:00Z',
+      });
+      render(
+        <TournamentLobbyCard
+          tournament={{
+            ...card,
+            type: 'bounty',
+            buyInLabel: formatBuyInShort(booked.buy_in_amount, booked.buy_in_fee, booked),
+          }}
+          knownRegistration={false}
+        />
+      );
+      expect(value('Buy-In')).toBe('5.50');
+      expect(screen.getByRole('button', { name: 'Register (5.50)' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Register (6)' })).toBeNull();
+    }
+  );
+
   it.each(['mtt', 'satellite', 'bounty', 'pko', 'mystery'] as const)(
     '%s still offers registration beyond every legacy entry cap',
     (type) => {

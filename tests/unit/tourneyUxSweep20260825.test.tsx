@@ -306,7 +306,9 @@ describe('Item 5 - the bounty badge sits on the avatar corner, clear of the acti
     expect(lane).toMatch(
       /\.seat__action \{\s*top: auto;\s*bottom: calc\(100% \+ var\(--sp-art-rise, 12px\) \+ var\(--sp-tag-gap, 3px\)\);/
     );
-    expect(lane).toMatch(/\.seat:has\(> \.seat__action\) \.seat__bounty \{[^}]*var\(--sp-tag-h, 20px\)/);
+    expect(lane).toMatch(
+      /\.seat:has\(> \.seat__action\) \.seat__bounty \{[^}]*var\(--sp-tag-h, 20px\)/
+    );
     const tsx = read('src/components/table/SeatSlot.tsx');
     expect(tsx).toContain("'--sp-art-rise'");
   });

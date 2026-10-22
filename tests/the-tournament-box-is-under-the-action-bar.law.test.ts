@@ -61,7 +61,9 @@ describe('the box is not on the felt', () => {
     const dock = rule(DOCK_CSS, '.tournament-dock {');
     expect(dock).toMatch(/position:\s*fixed/);
     expect(dock).toMatch(/bottom:\s*0/);
-    expect(dock).toMatch(/padding-bottom:\s*var\(--sp-bar-inset, env\(safe-area-inset-bottom, 0px\)\)/);
+    expect(dock).toMatch(
+      /padding-bottom:\s*var\(--sp-bar-inset, env\(safe-area-inset-bottom, 0px\)\)/
+    );
     expect(dock).toContain(
       'height: calc(var(--sp-tdock-now, 50px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)))'
     );

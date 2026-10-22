@@ -101,6 +101,7 @@ import {
 } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
+import { heroMayReopenBetting } from '../lib/raiseReopen';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
 import {
   readMySatelliteQualifierResult,
@@ -344,6 +345,7 @@ import {
   fitSeatToViewport,
   portraitTableTransform,
   portraitBoardWidthOfFeltPct,
+  boardCardWidthPx,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
@@ -445,6 +447,8 @@ import SeatKnockoutLayer, {
 } from '../components/table/SeatKnockout';
 import MysteryBountyChest, {
   formatBountyTierLabel,
+  parseMysteryChestOffer,
+  type MysteryChestChoice,
   type MysteryChestData,
 } from '../components/tournament/MysteryBountyChest';
 import { useAnimationQueue } from '../hooks/useAnimationQueue';
@@ -1792,6 +1796,26 @@ function LiveTablePage({
    * snapshot and enqueue the chest twice.
    */
   const chestSeenRef = useRef<Set<string>>(new Set());
+  /* PICK 1 OF 3 (Dan 2026-10-22). How many sealed chests the knockout chooses
+     from, which one was picked, and, once the award is revealed, what every
+     one of them held. Read from fn_mystery_bounty_offer, never inferred. */
+  const [chestOffers, setChestOffers] = useState<
+    Record<string, { slots: number; pickedSlot: number | null; choices?: MysteryChestChoice[] }>
+  >({});
+  const loadChestOffer = useCallback(async (awardId: string) => {
+    if (!awardId) return;
+    try {
+      const { data, error } = await supabase.rpc('fn_mystery_bounty_offer', {
+        p_award_id: awardId,
+      });
+      if (error) return;
+      const offer = parseMysteryChestOffer(data);
+      if (!offer) return;
+      setChestOffers((prev) => ({ ...prev, [awardId]: offer }));
+    } catch (err) {
+      reportError(err, 'TablePage.loadChestOffer');
+    }
+  }, []);
   /* THE CHESTS ARE LIVE (2026-10-05). Read from the tournament row on load and
      flipped by the engine's `mystery_bounty_activated`; drives the seat badges
      and the one popup per event per table. See utils/mysteryBountyTable. */
@@ -1813,10 +1837,19 @@ function LiveTablePage({
   const queuedChest = chestQueue.current;
   const mysteryChest = useMemo<MysteryChestData | null>(() => {
     if (!queuedChest) return null;
+    const offer = queuedChest.awardId ? chestOffers[queuedChest.awardId] : undefined;
+    const offered: MysteryChestData = offer
+      ? {
+          ...queuedChest,
+          offerSlots: offer.slots,
+          pickedSlot: offer.pickedSlot,
+          choices: offer.choices,
+        }
+      : queuedChest;
     const revealed = queuedChest.awardId ? chestReveals[queuedChest.awardId] : undefined;
-    if (!revealed) return queuedChest;
+    if (!revealed) return offered;
     return {
-      ...queuedChest,
+      ...offered,
       amount: revealed.amount,
       amountPending: false,
       tier: revealed.tier ?? queuedChest.tier,
@@ -1824,7 +1857,7 @@ function LiveTablePage({
       isJackpot: revealed.isJackpot ?? queuedChest.isJackpot,
       recipients: revealed.recipients ?? queuedChest.recipients,
     };
-  }, [queuedChest, chestReveals]);
+  }, [queuedChest, chestReveals, chestOffers]);
   // The Spin multiplier draw. Server-decided, shown once per tournament.
   const [spinDraw, setSpinDraw] = useState<SpinWheelData | null>(null);
   /**
@@ -1883,21 +1916,24 @@ function LiveTablePage({
    * locally the instant they tap, so their tap feels immediate. This send
    * exists purely so the other seats open at the same moment.
    */
-  const broadcastChestOpen = useCallback(() => {
-    const chan = chestChannelRef.current;
-    if (!chan) return;
-    try {
-      chan.send({
-        type: 'broadcast',
-        event: 'mystery_chest_opened',
-        payload: { tableId, at: Date.now() },
-      });
-    } catch (err) {
-      // A failed broadcast degrades to each spectator's own failsafe timer.
-      // It must never stop the winner from seeing their prize.
-      reportError(err, 'TablePage.broadcastChestOpen');
-    }
-  }, [tableId]);
+  const broadcastChestOpen = useCallback(
+    (slot?: number) => {
+      const chan = chestChannelRef.current;
+      if (!chan) return;
+      try {
+        chan.send({
+          type: 'broadcast',
+          event: 'mystery_chest_opened',
+          payload: { tableId, at: Date.now(), slot: slot ?? null },
+        });
+      } catch (err) {
+        // A failed broadcast degrades to each spectator's own failsafe timer.
+        // It must never stop the winner from seeing their prize.
+        reportError(err, 'TablePage.broadcastChestOpen');
+      }
+    },
+    [tableId]
+  );
 
   /**
    * THE TAP (Dan sections 19, 51-54).
@@ -1922,9 +1958,19 @@ function LiveTablePage({
    * tapper simply loses their head start.
    */
   const revealMysteryBounty = useCallback(
-    async (awardId: string) => {
+    async (awardId: string, slot?: number) => {
       if (!awardId || !userId || userId === 'guest') return;
       try {
+        /* PICK 1 OF 3: the chosen slot is recorded BEFORE the reveal, so the
+           chest the player tapped is the one the prize is shown in. A refused
+           or failed pick still reveals; the offer then places the prize. */
+        if (typeof slot === 'number' && slot >= 1) {
+          try {
+            await supabase.rpc('fn_mystery_bounty_pick', { p_award_id: awardId, p_slot: slot });
+          } catch (err) {
+            reportError(err, 'TablePage.pickMysteryChest');
+          }
+        }
         const { data, error } = await supabase.rpc('fn_mystery_bounty_reveal', {
           p_award_id: awardId,
           p_actor_user_id: userId,
@@ -1938,6 +1984,7 @@ function LiveTablePage({
           recipients?: Array<{ user_id: string; amount_cents: number }>;
         };
         if (error || !res.ok || typeof res.amount_cents !== 'number') return;
+        void loadChestOffer(awardId);
         setChestReveals((prev) => ({
           ...prev,
           [awardId]: {
@@ -1965,7 +2012,7 @@ function LiveTablePage({
         reportError(err, 'TablePage.revealMysteryBounty');
       }
     },
-    [userId]
+    [userId, loadChestOffer]
   );
 
   /**
@@ -2029,6 +2076,7 @@ function LiveTablePage({
               },
             }));
           }
+          void loadChestOffer(awardKey);
           chestQueue.enqueue({
             awardId: awardKey,
             knockerUserId: String(a?.designated_revealer || ''),
@@ -6653,7 +6701,16 @@ function LiveTablePage({
       : isPotLimit
         ? Math.min(allInTo, potLimitRaiseTo)
         : allInTo;
-    const canRaise = heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped;
+    const mayReopen = heroMayReopenBetting({
+      heroLastAction: tableState.lastActions?.[tableState.heroSeat - 1],
+      currentBet: serverCurrentBet,
+      heroBet,
+      raiseIncrement,
+      bigBlind: bb,
+      isFixedLimit,
+      fixedBetSize: flBetSize,
+    });
+    const canRaise = heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
     if (!canRaise || maxRaiseTo < minRaiseTo) return '';
     const r = (n: number) => Math.round(n * 100) / 100;
     return `${r(minRaiseTo)}:${r(maxRaiseTo)}:${r(bb)}`;
@@ -6673,6 +6730,7 @@ function LiveTablePage({
     tableState.killHand,
     tableState.boardStage,
     tableState.wagersCapped,
+    tableState.lastActions,
   ]);
 
   /** Dan 2026-08-21: the tab's game label. Primitive memo, same reason as
@@ -15033,6 +15091,7 @@ function LiveTablePage({
                 const awardKey = String(p.awardId || '');
                 if (!awardKey || chestSeenRef.current.has(awardKey)) return;
                 chestSeenRef.current.add(awardKey);
+                void loadChestOffer(awardKey);
                 chestQueue.enqueue({
                   awardId: awardKey,
                   // SECTIONS 52/53: exactly one player may tap. Everyone else
@@ -15125,6 +15184,7 @@ function LiveTablePage({
                       }))
                     : [];
                   if (b.awardId) {
+                    void loadChestOffer(String(b.awardId));
                     // Keyed by award: a duplicate broadcast (section 80/33)
                     // overwrites the same entry instead of queueing a second
                     // chest or crediting anything twice.
@@ -24707,7 +24767,9 @@ function LiveTablePage({
         /* THE TAP (section 19). Fired once per chest, by the designated
            revealer's client only, from the tap and the auto-open alike. */
         onRequestReveal={
-          mysteryChest?.awardId ? () => void revealMysteryBounty(mysteryChest.awardId!) : undefined
+          mysteryChest?.awardId
+            ? (slot?: number) => void revealMysteryBounty(mysteryChest.awardId!, slot)
+            : undefined
         }
         queuedBehind={chestQueue.pending}
         onDone={() => {
@@ -25382,6 +25444,13 @@ function LiveTablePage({
                  height as well as its width. */
               '--table-h': `${scalerSize.h}px`,
               '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
+              /* A shown hand is drawn at the board's own card size (Dan
+                 2026-10-22). SeatSlot.css reads it on the revealed row. */
+              '--sp-board-card-w': `${boardCardWidthPx(
+                scalerSize.w,
+                seatViewportWidth,
+                seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
+              )}px`,
               '--sp-table-taper':
                 seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
                   ? portraitTableTransform(scalerSize)
@@ -27836,6 +27905,18 @@ function LiveTablePage({
                   // Raise-TO floor. When currentBet===0 (first bet of a street)
                   // this is the min bet (= one increment = BB).
                   const minRaise = isFixedLimit ? flWagerTo : serverCurrentBet + raiseIncrement;
+                  /* Dan 2026-10-22: a short all-in does not reopen the betting.
+                     A player it does not reopen for may call or fold, never
+                     raise and never shove past the call. src/lib/raiseReopen.ts */
+                  const mayReopen = heroMayReopenBetting({
+                    heroLastAction: tableState.lastActions?.[tableState.heroSeat - 1],
+                    currentBet: serverCurrentBet,
+                    heroBet,
+                    raiseIncrement,
+                    bigBlind: bb,
+                    isFixedLimit,
+                    fixedBetSize: flBetSize,
+                  });
                   const maxRaise = isFixedLimit
                     ? flWagerTo
                     : isPotLimit
@@ -27862,7 +27943,12 @@ function LiveTablePage({
                            raises) takes no further wager — fold or call only.
                            The engine refuses a raise there; the button must not
                            offer one. */
-                        canRaise={heroStack > callAmount && allInTo >= minRaise && !wagersCapped}
+                        canRaise={
+                          heroStack > callAmount &&
+                          allInTo >= minRaise &&
+                          !wagersCapped &&
+                          mayReopen
+                        }
                         /* Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO
                            ALL IN IF THE POT IS LESS THAN THE CHIPS YOU HAVE."
                            The engine refuses it; the button must not offer it.
@@ -27871,6 +27957,7 @@ function LiveTablePage({
                            and not at all once the round is capped. */
                         canAllIn={
                           heroStack > 0 &&
+                          (mayReopen || allInTo <= serverCurrentBet + 0.005) &&
                           (!isPotLimit || allInTo <= maxRaise + 0.005) &&
                           (!isFixedLimit || (!wagersCapped && allInTo <= maxRaise + 0.005))
                         }

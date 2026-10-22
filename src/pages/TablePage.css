@@ -109,7 +109,9 @@
   /* Seated: the action bar's own floor, plus the home-indicator strip its
      wrapper pads itself by. Identical to the wrapper's `min-height`
      (ActionPanel.css), which is what it is standing in for. */
-  --sp-action-reserve: calc(var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px)));
+  --sp-action-reserve: calc(
+    var(--sp-bottom-row-h, 96px) + var(--sp-bar-inset, env(safe-area-inset-bottom, 0px))
+  );
   position: fixed;
   inset: 0;
   z-index: 1100;

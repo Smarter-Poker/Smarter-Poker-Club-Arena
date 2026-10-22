@@ -2112,12 +2112,16 @@ export abstract class TournamentManagerBase {
    *
    * Returns true only when the hand-off was requested.
    */
-  getStalledEliminationSweep(now = Date.now()): { msInFlight: number; stage: number } | null {
-    if (!this.isProcessingEliminations || this.eliminationSweepStartedAt <= 0) return null;
-    return {
-      msInFlight: now - this.eliminationSweepStartedAt,
-      stage: this.currentEliminationSweepStage(),
-    };
+  getStalledEliminationSweep(
+    now = Date.now()
+  ): { msInFlight: number; msBustWaiting: number; stage: number } | null {
+    const msInFlight =
+      this.isProcessingEliminations && this.eliminationSweepStartedAt > 0
+        ? now - this.eliminationSweepStartedAt
+        : 0;
+    const msBustWaiting = this.bustAwaitingSinceMs > 0 ? now - this.bustAwaitingSinceMs : 0;
+    if (msInFlight <= 0 && msBustWaiting <= 0) return null;
+    return { msInFlight, msBustWaiting, stage: this.currentEliminationSweepStage() };
   }
 
   /** The stage the in-flight sweep is in; the eliminations layer knows it. */
@@ -2126,7 +2130,7 @@ export abstract class TournamentManagerBase {
   }
 
   requestSuccessorForStalledEliminationSweep(): boolean {
-    if (!this.isProcessingEliminations) return false;
+    if (!this.isProcessingEliminations && this.bustAwaitingSinceMs <= 0) return false;
     for (const table of this.tableEngines.values()) {
       if (table.isRunning()) table.pauseAfterHand(undefined, { untilResumed: true });
     }
@@ -3030,6 +3034,7 @@ export abstract class TournamentManagerBase {
           this.holdSatelliteQualifierBoundary();
         }
         if (this.mysteryActivationMayOpenOnBust(finalStacks)) this.holdMysteryActivationBoundary();
+        if (this.bustAwaitingSinceMs === 0) this.bustAwaitingSinceMs = Date.now();
         this.declareFieldDecidedIfOneStackRemains(finalStacks);
         this.bustAwaitsItsStage();
         this.requestEliminationSweep();
@@ -11955,6 +11960,13 @@ export abstract class TournamentManagerBase {
   protected isProcessingEliminations = false;
   /** Wall clock the admitted elimination sweep began at; 0 while none is in flight. */
   protected eliminationSweepStartedAt = 0;
+  /**
+   * When the oldest bust the bust stage has not yet completed a pass over was
+   * first seen (a hand ended with a zero stack); 0 when none is waiting. Reset
+   * only by a COMPLETED bust stage, so a sweep that hangs, returns early on
+   * every pass, or fails in a loop all leave it running.
+   */
+  protected bustAwaitingSinceMs = 0;
 
   // ── Implemented by TournamentManagerEliminations (layer 2/3) ──
   protected abstract startEliminationChecker(): void;

@@ -21,8 +21,9 @@ function eng(running: boolean, betweenHands: boolean) {
   };
 }
 
-function manager(engines: [string, any][], processing: boolean, startedAt: number) {
+function manager(engines: [string, any][], processing: boolean, startedAt: number, bustSince = 0) {
   const m = Object.create(TournamentManagerBase.prototype) as any;
+  m.bustAwaitingSinceMs = bustSince;
   m.tournamentId = 'eeeeeeee-0000-4000-8000-000000000001';
   m.tableEngines = new Map(engines);
   m.isProcessingEliminations = processing;
@@ -34,7 +35,11 @@ function manager(engines: [string, any][], processing: boolean, startedAt: numbe
 describe('a stalled elimination sweep hands the event to a fresh generation', () => {
   it('reports how long the in-flight sweep has been running', () => {
     const m = manager([], true, 1_000);
-    expect(m.getStalledEliminationSweep(181_000)).toEqual({ msInFlight: 180_000, stage: -1 });
+    expect(m.getStalledEliminationSweep(181_000)).toEqual({
+      msInFlight: 180_000,
+      msBustWaiting: 0,
+      stage: -1,
+    });
   });
 
   it('reports nothing while no sweep is in flight', () => {
@@ -68,6 +73,24 @@ describe('a stalled elimination sweep hands the event to a fresh generation', ()
     expect(m.requestSuccessorForStalledEliminationSweep()).toBe(false);
     expect(a.pauseAfterHand).toHaveBeenCalled();
     expect(m.gameServer.handTournamentToSuccessorGeneration).not.toHaveBeenCalled();
+  });
+
+  it('times a bust the bust stage never completed, even with no sweep in flight', () => {
+    // A sweep that returns early on every pass leaves no promise in flight;
+    // the waiting bust is what proves the event is stuck.
+    const m = manager([], false, 0, 10_000);
+    expect(m.getStalledEliminationSweep(130_000)).toEqual({
+      msInFlight: 0,
+      msBustWaiting: 120_000,
+      stage: -1,
+    });
+  });
+
+  it('hands off an event whose busts are waiting though no sweep is in flight', () => {
+    const a = eng(true, true);
+    const m = manager([[A, a]], false, 0, 1);
+    expect(m.requestSuccessorForStalledEliminationSweep()).toBe(true);
+    expect(m.gameServer.handTournamentToSuccessorGeneration).toHaveBeenCalled();
   });
 
   it('does nothing once the sweep has settled', () => {

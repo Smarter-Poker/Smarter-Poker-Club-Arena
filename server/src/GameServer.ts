@@ -9167,7 +9167,12 @@ export class GameServer {
     const sweepLastAt$ = (this.stalledSweepLastHandoffAt ??= new Map());
     for (const [tournamentId, manager] of this.tournamentEngines) {
       const stalled = manager.getStalledEliminationSweep?.(now);
-      if (!stalled || stalled.msInFlight < GameServer.STALLED_ELIMINATION_SWEEP_MS) continue;
+      if (
+        !stalled ||
+        (stalled.msInFlight < GameServer.STALLED_ELIMINATION_SWEEP_MS &&
+          stalled.msBustWaiting < GameServer.STALLED_ELIMINATION_SWEEP_MS)
+      )
+        continue;
       const last = sweepLastAt$.get(tournamentId) ?? lastAt$.get(tournamentId);
       if (last !== undefined && now - last < GameServer.STALLED_ELIMINATION_SWEEP_MS) continue;
       if (!manager.requestSuccessorForStalledEliminationSweep?.()) continue;
@@ -9175,12 +9180,18 @@ export class GameServer {
       lastAt$.set(tournamentId, now);
       reportError(
         new Error(
-          `Tournament ${tournamentId} elimination sweep in flight for ` +
-            `${Math.round(stalled.msInFlight / 1000)}s at stage ${stalled.stage} - no bust could be ` +
-            `recorded; handed the event to a successor generation`
+          `Tournament ${tournamentId} bust stage stalled (sweep in flight ` +
+            `${Math.round(stalled.msInFlight / 1000)}s, oldest bust waiting ` +
+            `${Math.round(stalled.msBustWaiting / 1000)}s, stage ${stalled.stage}) - no bust ` +
+            `could be recorded; handed the event to a successor generation`
         ),
         'GameServer.stalled_elimination_sweep_handed_on',
-        { tournamentId, stage: stalled.stage, msInFlight: stalled.msInFlight }
+        {
+          tournamentId,
+          stage: stalled.stage,
+          msInFlight: stalled.msInFlight,
+          msBustWaiting: stalled.msBustWaiting,
+        }
       );
     }
     for (const tournamentId of [...sweepLastAt$.keys()]) {

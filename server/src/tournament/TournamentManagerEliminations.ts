@@ -630,6 +630,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (!(await this.checkFinalTableDeal())) return;
         if (sweepStopped()) return;
         if (this.finalTableDealHandled || this.tournamentFinished) {
+          this.bustAwaitingSinceMs = 0;
           await acknowledgeCapturedWakes();
           return;
         }
@@ -1380,6 +1381,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.requestEliminationSweep();
         }
 
+        // The bust stage ran to its end: restart the wait clock from now for
+        // any bust still inside its rebuy decision grace, or stop it.
+        this.bustAwaitingSinceMs = (busted?.length ?? 0) > 0 ? Date.now() : 0;
         if (completedStage(2)) return;
       }
 
@@ -3084,7 +3088,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       .eq('hand_id', handId)
       .maybeSingle();
 
-    if (error) {
+    /**
+     * The exact-hand obligation is the money record. When it is already
+     * settled with its complete marker, the knockout is paid whatever this
+     * call's own answer was: a lost response (transport error), or
+     * `bounty_generation_identity_required` - a player who busted, rebought
+     * and busted again holds one obligation per bust, and this call names the
+     * player rather than the hand, so the database will not guess which one
+     * it means (2026-10-22: 342 such refusals in nine hours on the PKOs,
+     * every one of them already settled on its first attempt).
+     */
+    const proveSettledExactHandObligation = async (): Promise<void> => {
       if (!settledObligationErr && settledObligation?.state === 'settled') {
         const { data: markerComplete, error: markerCompleteErr } = await supabase.rpc(
           'fn_bounty_obligation_has_complete_marker',
@@ -3124,6 +3138,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           };
         }
       }
+    };
+
+    if (error) {
+      await proveSettledExactHandObligation();
       if (res.ok !== true) {
         reportError(
           new Error(
@@ -3133,6 +3151,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         );
         return false;
       }
+    }
+
+    if (!error && !res.ok && res.reason === 'bounty_generation_identity_required') {
+      await proveSettledExactHandObligation();
     }
 
     if (!res.ok) {

@@ -43,6 +43,24 @@ export function Review() {
   useProtectedCardLayout(ref, JSON.stringify(size));
   const jackpot = document.documentElement.dataset.jackpot || 'mini';
   const revealed = document.documentElement.dataset.revealed !== 'false';
+  // A tabled PLO6 hand at every seat (Dan 2026-10-22: a player could not see
+  // the PLO6 hand he lost to).
+  const villainCards = Number(document.documentElement.dataset.villainCards || 2);
+  const villainHand = (
+    villainCards > 2
+      ? [
+          { rank: 'A', suit: 'hearts' },
+          { rank: 'A', suit: 'diamonds' },
+          { rank: 'Q', suit: 'clubs' },
+          { rank: 'J', suit: 'hearts' },
+          { rank: '9', suit: 'diamonds' },
+          { rank: '8', suit: 'clubs' },
+        ].slice(0, villainCards)
+      : [
+          { rank: 'K', suit: 'spades' },
+          { rank: '4', suit: 'spades' },
+        ]
+  ) as Card[];
   const width = innerWidth;
   const markerSize = { ...size, railBets: width <= 480 };
   const seats = seatLayoutFor(n).map((p) =>
@@ -50,8 +68,9 @@ export function Review() {
       p,
       size,
       width,
-      seatPodPx(width, p.y === 100, size.w),
-      ref.current?.getBoundingClientRect().left
+      seatPodPx(width, p.y === 100, size.w, { seats: n, canvasHeightPx: size.h }),
+      ref.current?.getBoundingClientRect().left,
+      n
     )
   );
   const cards = [
@@ -123,6 +142,7 @@ export function Review() {
                 style={
                   {
                     '--table-w': `${size.w}px`,
+                    '--table-h': `${size.h}px`,
                     '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
                     '--sp-table-taper': portraitTableTransform(size),
                   } as any
@@ -158,7 +178,10 @@ export function Review() {
                   <PotDisplay mainPot={82.01} bigBlind={2} />
                 </div>
                 {seats.map((p, i) => {
-                  const pod = seatPodPx(width, i === 0, size.w);
+                  const pod = seatPodPx(width, i === 0, size.w, {
+                    seats: n,
+                    canvasHeightPx: size.h,
+                  });
                   const bet = betChipOffsetPx(p, markerSize, pod);
                   const collect = chipCollectOffsetPx(p, markerSize, pod);
                   return (
@@ -193,9 +216,22 @@ export function Review() {
                           ][i],
                           avatar: 'https://smarter.poker/avatars/table/vip_wolf@2x.webp',
                           stack: 93.23,
-                          status: 'active',
-                          holeCards: cards.slice(0, i === 0 ? heroCards : 2),
-                          showCards: i === 0 || revealed,
+                          status:
+                            document.documentElement.dataset.allIn === 'true' && i % 3 === 0
+                              ? 'all_in'
+                              : 'active',
+                          holeCards:
+                            i === 0
+                              ? [...cards, { rank: '10', suit: 'diamonds' }].slice(0, heroCards)
+                              : villainHand,
+                          showCards:
+                            i === 0 ||
+                            (revealed &&
+                              // A PLO6 showdown tables three opponents' hands, as an
+                              // all-in hand does, spread round the ring.
+                              (document.documentElement.dataset.showAll === 'true' ||
+                                villainCards <= 2 ||
+                                [1, Math.floor(n / 2), n - 1].includes(i))),
                           isHero: i === 0,
                         }}
                         position={i === 1 ? 'SB' : null}
@@ -215,7 +251,7 @@ export function Review() {
                   heroPos={{ x: 50, y: 100 }}
                 />
                 <DealerButton
-                  dealerVisualIndex={2}
+                  dealerVisualIndex={Number(document.documentElement.dataset.dealer ?? 2)}
                   seatPositions={seats}
                   isVisible={true}
                   playSounds={false}

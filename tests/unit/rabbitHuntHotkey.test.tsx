@@ -16,7 +16,10 @@ import React from 'react';
 import { cleanup, render, renderHook, waitFor } from '@testing-library/react';
 import { useTableKeyboard } from '../../src/hooks/useTableKeyboard';
 
-vi.mock('../../src/hooks/useButtonImage', () => ({ useButtonImage: () => '/rabbit.webp' }));
+vi.mock('../../src/hooks/useButtonImage', () => ({
+  useButtonImage: () => '/rabbit.webp',
+  useTimebankIcon: () => '/time-bank.webp',
+}));
 vi.mock('../../src/services/VIPService', () => ({
   FEATURE_PRICING: { rabbit_hunt: { cost: 5 } },
   vipService: {

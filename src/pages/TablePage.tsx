@@ -180,7 +180,7 @@ import { FaceDeckContext } from '../components/table/faceDeckContext';
 
 import smarterPokerLetterLogo from '../assets/smarter-poker-letter-logo.png';
 import lobbyButtonArt from '../assets/lobby-button.webp';
-import { useButtonImage } from '../hooks/useButtonImage';
+import { useButtonImage, useTimebankIcon } from '../hooks/useButtonImage';
 
 import { cashBuyInRange, cashBuyInRefusalText, cashBuyInSeatConflictText } from '../lib/cashBuyIn';
 import {
@@ -1597,7 +1597,7 @@ function LiveTablePage({
   muted = false,
 }: TablePageProps = {}) {
   const addScreenIcon = useButtonImage('icon-addscreen');
-  const timebankIconPage = useButtonImage('icon-timebank');
+  const timebankIconPage = useTimebankIcon();
   const { tableId: routeTableId } = useParams<{ tableId: string }>();
   const requestedTableId = embeddedTableId || routeTableId;
   // Every table effect receives a database ID or no scope. A URL segment
@@ -1916,21 +1916,24 @@ function LiveTablePage({
    * locally the instant they tap, so their tap feels immediate. This send
    * exists purely so the other seats open at the same moment.
    */
-  const broadcastChestOpen = useCallback((slot?: number) => {
-    const chan = chestChannelRef.current;
-    if (!chan) return;
-    try {
-      chan.send({
-        type: 'broadcast',
-        event: 'mystery_chest_opened',
-        payload: { tableId, at: Date.now(), slot: slot ?? null },
-      });
-    } catch (err) {
-      // A failed broadcast degrades to each spectator's own failsafe timer.
-      // It must never stop the winner from seeing their prize.
-      reportError(err, 'TablePage.broadcastChestOpen');
-    }
-  }, [tableId]);
+  const broadcastChestOpen = useCallback(
+    (slot?: number) => {
+      const chan = chestChannelRef.current;
+      if (!chan) return;
+      try {
+        chan.send({
+          type: 'broadcast',
+          event: 'mystery_chest_opened',
+          payload: { tableId, at: Date.now(), slot: slot ?? null },
+        });
+      } catch (err) {
+        // A failed broadcast degrades to each spectator's own failsafe timer.
+        // It must never stop the winner from seeing their prize.
+        reportError(err, 'TablePage.broadcastChestOpen');
+      }
+    },
+    [tableId]
+  );
 
   /**
    * THE TAP (Dan sections 19, 51-54).
@@ -6707,8 +6710,7 @@ function LiveTablePage({
       isFixedLimit,
       fixedBetSize: flBetSize,
     });
-    const canRaise =
-      heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
+    const canRaise = heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
     if (!canRaise || maxRaiseTo < minRaiseTo) return '';
     const r = (n: number) => Math.round(n * 100) / 100;
     return `${r(minRaiseTo)}:${r(maxRaiseTo)}:${r(bb)}`;
@@ -20513,8 +20515,12 @@ function LiveTablePage({
         pos,
         scalerSize,
         seatViewportWidth,
-        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w),
-        canvasLeft
+        seatPodPx(seatViewportWidth, pos.y >= 100 && pos.x === 50, scalerSize.w, {
+          seats: seatRotationMap.length,
+          canvasHeightPx: scalerSize.h,
+        }),
+        canvasLeft,
+        seatRotationMap.length
       )
     );
   }, [seatRotationMap, scalerSize, seatViewportWidth]);
@@ -25421,6 +25427,9 @@ function LiveTablePage({
           style={
             {
               '--table-w': `${scalerSize.w}px`,
+              /* The dense-ring pods (SeatSlot.css) size from the felt's
+                 height as well as its width. */
+              '--table-h': `${scalerSize.h}px`,
               '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
               /* A shown hand is drawn at the board's own card size (Dan
                  2026-10-22). SeatSlot.css reads it on the revealed row. */
@@ -26527,7 +26536,8 @@ function LiveTablePage({
             const seatPod = seatPodPx(
               typeof window === 'undefined' ? Infinity : window.innerWidth,
               pos.y >= 100 && pos.x === 50,
-              scalerSize.w
+              scalerSize.w,
+              { seats: seatPositions.length, canvasHeightPx: scalerSize.h }
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
@@ -27921,7 +27931,10 @@ function LiveTablePage({
                            The engine refuses a raise there; the button must not
                            offer one. */
                         canRaise={
-                          heroStack > callAmount && allInTo >= minRaise && !wagersCapped && mayReopen
+                          heroStack > callAmount &&
+                          allInTo >= minRaise &&
+                          !wagersCapped &&
+                          mayReopen
                         }
                         /* Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO
                            ALL IN IF THE POT IS LESS THAN THE CHIPS YOU HAVE."

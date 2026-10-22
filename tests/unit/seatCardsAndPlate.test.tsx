@@ -149,7 +149,7 @@ describe('a revealed hand reads left to right at every seat', () => {
     expect(step, 'the revealed cluster must set its own step').toBeTruthy();
     expect(
       Number(step![1]),
-      'a step under 0.42 covers part of the next card\'s rank and suit'
+      "a step under 0.42 covers part of the next card's rank and suit"
     ).toBeGreaterThanOrEqual(0.42);
 
     const taperers = RULES.filter(

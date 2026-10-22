@@ -831,7 +831,8 @@ for (const width of [320, 375, 393, 430, 480])
   test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px`, async ({
     page,
   }, testInfo) => {
-    test.setTimeout(60_000);
+    // Fourteen real tables (seven states, six and nine handed) per width.
+    test.setTimeout(150_000);
     const { buildSync } = await import('esbuild');
     const bundled = buildSync({
       entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
@@ -963,14 +964,21 @@ for (const width of [320, 375, 393, 430, 480])
       '\n' +
       (bundled.outputFiles.find((file) => file.path.endsWith('.css'))?.text || '');
     for (const count of [6, 9])
-      for (const [revealed, jackpot] of [
+      for (const [revealed, jackpot, villainCards = 2, state = 'normal'] of [
         [false, 'mini'],
         [true, 'mini'],
         [false, 'main'],
         [true, 'main'],
         [false, 'none'],
         [true, 'none'],
+        [true, 'mini', 6],
+        [true, 'mini', 6, 'all-in'],
+        [true, 'mini', 6, 'all-shown'],
       ] as const) {
+        // The narrow nine-seat PLO6 ring is a required regression, not an
+        // exception. Six-seat presentation is unchanged in this repair.
+        if (villainCards > 2 && width < 375 && count !== 9) continue;
+        if (state !== 'normal' && (width !== 320 || count !== 9)) continue;
         await page.setViewportSize({
           width,
           height: width === 320 ? 568 : width === 375 ? 667 : 852,
@@ -978,7 +986,7 @@ for (const width of [320, 375, 393, 430, 480])
         await page.route('http://rail.fixture/', (route) =>
           route.fulfill({
             contentType: 'text/html',
-            body: `<html data-seats="${count}" data-revealed="${revealed}" data-jackpot="${jackpot}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+            body: `<html data-seats="${count}" data-cards="${villainCards === 6 ? 6 : 4}" data-all-in="${state === 'all-in'}" data-show-all="${state === 'all-shown'}" data-revealed="${revealed}" data-jackpot="${jackpot}" data-villain-cards="${villainCards}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
           })
         );
         await page.goto('http://rail.fixture/', { waitUntil: 'domcontentloaded' });
@@ -1040,6 +1048,13 @@ for (const width of [320, 375, 393, 430, 480])
             a.bottom > b.top + 0.5;
           const board = box(document.querySelector('.community-area')!);
           const violations: string[] = [];
+          const compactPlo6 =
+            innerWidth <= 340 &&
+            document.querySelector('.table-page')?.getAttribute('data-seats') === '9' &&
+            Number(document.documentElement.dataset.villainCards) > 2;
+          // On the 320px PLO6 showdown only, the existing narrow-felt
+          // printing fallback may use the watermark lane. Player facts,
+          // shown cards, the board and the pot remain protected.
           for (const e of document.querySelectorAll(
             '.seat__info,.seat__avatar-img,.seat__action,.seat__bet-chips,.seat__cards--opponent .seat__card,.dealer-button'
           )) {
@@ -1049,7 +1064,10 @@ for (const width of [320, 375, 393, 430, 480])
             for (const pod of document.querySelectorAll(
               '.seat__info,.seat__avatar-img,.seat__action,.seat__cards--revealed .seat__card,.table-brand,.pot-display,.pot-display__pile,.dealer-button'
             ))
-              if (overlaps(box(bet), box(pod)))
+              if (
+                !(compactPlo6 && pod.classList.contains('table-brand')) &&
+                overlaps(box(bet), box(pod))
+              )
                 violations.push(
                   `Bet ${bet.closest('.seat')?.querySelector('.seat__name')?.textContent} Covers Player ${pod.closest('.seat')?.querySelector('.seat__name')?.textContent} ${pod.className} bet=${JSON.stringify(box(bet))} player=${JSON.stringify(box(pod))}`
                 );
@@ -1075,6 +1093,100 @@ for (const width of [320, 375, 393, 430, 480])
                 violations.push(
                   `Bets Overlap: ${wagers[i].closest('.seat')?.querySelector('.seat__name')?.textContent} / ${wagers[j].closest('.seat')?.querySelector('.seat__name')?.textContent}`
                 );
+          // Dan 2026-10-22: "that 50 cents to my left is actually my bet, it's
+          // sitting in front of the other player" and "I'm one behind the button
+          // and the button is right in front of me". A wager and the dealer
+          // button each stand nearer their own player than any other. The first
+          // generation SE now carries the same ownership guarantee in PLO6.
+          if (innerWidth >= 375 || compactPlo6) {
+            const centreOf = (e: Element) => {
+              const r = box(e);
+              return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+            };
+            const players = [...document.querySelectorAll<HTMLElement>('.seat-wrapper')]
+              .map((wrapper) => ({
+                wrapper,
+                art: wrapper.querySelector('.seat:not(.seat--empty) .seat__avatar-img'),
+              }))
+              .filter((p): p is { wrapper: HTMLElement; art: Element } => p.art !== null);
+            const nearestTo = (point: { x: number; y: number }) =>
+              players.reduce((best, p) => {
+                const c = centreOf(p.art);
+                const b = centreOf(best.art);
+                return Math.hypot(point.x - c.x, point.y - c.y) <
+                  Math.hypot(point.x - b.x, point.y - b.y)
+                  ? p
+                  : best;
+              }).wrapper;
+            for (const wager of wagers)
+              if (nearestTo(centreOf(wager)) !== wager.closest('.seat-wrapper'))
+                violations.push(
+                  `Bet Reads As Another Player's: ${wager.closest('.seat')?.querySelector('.seat__name')?.textContent}`
+                );
+            const puck = document.querySelector<HTMLElement>('.dealer-button');
+            const owner = players.find(
+              (p) =>
+                puck &&
+                Math.abs(parseFloat(p.wrapper.style.left) - parseFloat(puck.dataset.ownerX ?? '')) <
+                  0.01 &&
+                Math.abs(parseFloat(p.wrapper.style.top) - parseFloat(puck.dataset.ownerY ?? '')) <
+                  0.01
+            );
+            if (puck && owner && nearestTo(centreOf(puck)) !== owner.wrapper)
+              violations.push("Dealer Button Reads As Another Player's");
+            // Dan 2026-10-22: "make sure that when a player is all in and or
+            // the cards are shown down, that they are clearly displayed - a
+            // player could not see the cards he lost to in PLO6." Every tabled
+            // card is a readable size, keeps its corner in view, and the hand
+            // stands at its own player.
+            const rows = [
+              ...document.querySelectorAll('.seat__cards--opponent.seat__cards--revealed'),
+            ];
+            for (const row of rows) {
+              const shown = [...row.querySelectorAll('.seat__card')].map(box);
+              const name = row.closest('.seat')?.querySelector('.seat__name')?.textContent;
+              for (const card of shown)
+                if (card.width < (compactPlo6 ? 20 : 22))
+                  violations.push(`Tabled Card Too Small: ${name} ${card.width}`);
+              const ordered = [...shown].sort((a, b) => a.left - b.left);
+              for (let i = 1; i < ordered.length; i++)
+                if (ordered[i].left - ordered[i - 1].left < ordered[i - 1].width * 0.25 - 0.5)
+                  violations.push(`Tabled Card Corner Hidden: ${name}`);
+              const left = Math.min(...shown.map((c) => c.left));
+              const right = Math.max(...shown.map((c) => c.right));
+              const top = Math.min(...shown.map((c) => c.top));
+              const bottom = Math.max(...shown.map((c) => c.bottom));
+              if (
+                nearestTo({ x: (left + right) / 2, y: (top + bottom) / 2 }) !==
+                row.closest('.seat-wrapper')
+              )
+                violations.push(`Tabled Hand Reads As Another Player's: ${name}`);
+            }
+            for (let i = 0; i < rows.length; i++)
+              for (let j = i + 1; j < rows.length; j++)
+                for (const a of rows[i].querySelectorAll('.seat__card'))
+                  for (const b of rows[j].querySelectorAll('.seat__card'))
+                    if (overlaps(box(a), box(b))) violations.push('Tabled Hands Overlap');
+          }
+          if (compactPlo6) {
+            const wrappers = [...document.querySelectorAll('.seat-wrapper')];
+            for (const wrapper of wrappers) {
+              for (const other of wrappers) {
+                if (other === wrapper) continue;
+                for (const a of wrapper.querySelectorAll(
+                  '.seat__info,.seat__avatar-img,.seat__action'
+                ))
+                  for (const b of other.querySelectorAll(
+                    '.seat__info,.seat__avatar-img,.seat__action'
+                  ))
+                    if (overlaps(box(a), box(b)))
+                      violations.push('Neighbouring Player Lanes Overlap');
+              }
+            }
+            for (const action of document.querySelectorAll('.seat__action'))
+              for (const pot of document.querySelectorAll('.pot-display,.pot-display__pile'))
+                if (overlaps(box(action), box(pot))) violations.push('Action Covers Pot');
+          }
           for (const action of document.querySelectorAll('.seat__action'))
             for (const plaque of document.querySelectorAll('.bbj-widget,.bbj-mini-plate'))
               if (overlaps(box(action), box(plaque)))
@@ -1155,7 +1267,7 @@ for (const width of [320, 375, 393, 430, 480])
         });
         expect(
           result.violations,
-          `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} canvas=${JSON.stringify(result.canvas)}}`
+          `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} ${villainCards} cards ${state} canvas=${JSON.stringify(result.canvas)}}`
         ).toEqual([]);
         for (const tool of result.tools) {
           expect(tool.width, tool.selector).toBeCloseTo(result.tools[0].width, 1);
@@ -1180,7 +1292,7 @@ for (const width of [320, 375, 393, 430, 480])
           );
         }
         if (width === 393) {
-          const name = `occupied-${count}-max-${jackpot}-${revealed ? 'revealed' : 'playing'}`;
+          const name = `occupied-${count}-max-${jackpot}-${revealed ? 'revealed' : 'playing'}-${villainCards}`;
           const path = testInfo.outputPath(`${name}.png`);
           await page.screenshot({ path });
           await testInfo.attach(name, { path, contentType: 'image/png' });

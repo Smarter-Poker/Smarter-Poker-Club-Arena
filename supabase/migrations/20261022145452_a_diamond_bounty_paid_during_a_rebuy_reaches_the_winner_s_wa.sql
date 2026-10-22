@@ -1,3 +1,4 @@
+-- @live-proof: position('fn_poker_diamond_tournament_pay[(]' in pg_get_functiondef('public.fn_guard_profile_privileged_columns()'::regprocedure)) > 0
 -- A Diamond bounty MTT rebuy settles the bounty owed for the bust before it
 -- re-enters the player (process_tournament_rebuy -> fn_ca_settle_bounty_rebuy_generation_v1
 -- -> fn_collect_bounty -> fn_credit_and_log -> fn_poker_diamond_tournament_pay

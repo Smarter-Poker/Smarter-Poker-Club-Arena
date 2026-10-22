@@ -124,6 +124,7 @@ export interface TabInfo {
    * and the pill then shows its code alone rather than fall back to blinds.
    */
   tournamentBuyIn?: number;
+  tournamentBuyInLabel?: string;
   /**
    * The tournament's own event name, read from its `tournaments` row. Dan
    * 2026-10-21: "FOR MTT'S IT SHOULD SAY THE TOURNAMENT NAME AS WELL AS THE BUY
@@ -874,7 +875,9 @@ export function TableTabBar({
              The page's own `isTournament` is the authority; the code covers the
              moments before that page has reported anything. */
           const isTournamentTab = tab.isTournament === true || isTournamentGameCode(tab.gameCode);
-          const tournamentSub = isTournamentTab ? tournamentTabBuyInLabel(tab.tournamentBuyIn) : '';
+          const tournamentSub = isTournamentTab
+            ? tournamentTabBuyInLabel(tab.tournamentBuyIn, tab.tournamentBuyInLabel)
+            : '';
           /* Dan 2026-10-21: "FOR MTT'S IT SHOULD SAY THE TOURNAMENT NAME AS
              WELL AS THE BUY IN INSIDE THE ACTION TAB. NOT JUST 35". A multi-
              table tournament's top line is its event name (the buy-in stays

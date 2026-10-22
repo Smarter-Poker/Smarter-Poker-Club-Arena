@@ -217,6 +217,7 @@ interface TableInstance {
    * Undefined means not known yet.
    */
   tournamentBuyIn?: number;
+  tournamentBuyInLabel?: string;
   tournamentName?: string;
   /** TablePage's `seatCanAddFunds` answer; the tab bar drops its Top Up items
    *  on `false`. Reported, never derived here: this page cannot see the arena. */
@@ -1459,6 +1460,7 @@ export default function MultiTablePage() {
                         /* One tournament, one price: it moves with the chair
                            here exactly as it does on the socket path. */
                         tournamentBuyIn: t.tournamentBuyIn,
+                        tournamentBuyInLabel: t.tournamentBuyInLabel,
                         tournamentName: t.tournamentName,
                       }
                     : t
@@ -1981,6 +1983,7 @@ export default function MultiTablePage() {
              blinds or a pot. The bar decides; it only needs to be told. */
           isTournament: t.isTournament,
           tournamentBuyIn: t.tournamentBuyIn,
+          tournamentBuyInLabel: t.tournamentBuyInLabel,
           /* Dan 2026-10-21: an MTT pill names its event over the buy-in. */
           tournamentName: t.tournamentName,
           // TablePage's value is authoritative; until it lands, recover what
@@ -3500,6 +3503,7 @@ export default function MultiTablePage() {
                with the chair. Without this the tab would drop to a bare code
                until the buy-in was read again. */
             tournamentBuyIn: current.tournamentBuyIn,
+            tournamentBuyInLabel: current.tournamentBuyInLabel,
             tournamentName: current.tournamentName,
             /* Only a TOURNAMENT move is something done to the player without
                their asking; the table page reads this to say so on the felt. */
@@ -3563,7 +3567,7 @@ export default function MultiTablePage() {
           const info = totals.get(tableId);
           updateTableInfo(tableId, {
             tournamentName: info?.name || '',
-            ...(info ? { tournamentBuyIn: info.buyIn } : {}),
+            ...(info ? { tournamentBuyIn: info.buyIn, tournamentBuyInLabel: info.buyInLabel } : {}),
           });
         }
       })
@@ -4072,7 +4076,7 @@ export default function MultiTablePage() {
     if (!takeSeatTarget) return null;
     const { target, isUrgent, seconds, liveCount } = takeSeatTarget;
     const tournament = tabIsTournament(target);
-    const buyIn = tournamentTabBuyInLabel(target.tournamentBuyIn);
+    const buyIn = tournamentTabBuyInLabel(target.tournamentBuyIn, target.tournamentBuyInLabel);
     return (
       <div
         className={`multi-table-page__take-seat${isUrgent ? ' multi-table-page__take-seat--urgent' : ''}`}

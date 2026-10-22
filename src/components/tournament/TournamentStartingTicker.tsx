@@ -454,7 +454,7 @@ function TickerHost() {
           ? supabase
               .from('tournaments')
               .select(
-                'format_contract, id, name, start_time, club_id, buy_in_amount, buy_in_fee, current_players, status, tournament_type'
+                'format_contract, id, name, start_time, club_id, union_id, buy_in_amount, buy_in_fee, current_players, status, tournament_type'
               )
               .in('club_id', clubIds)
               /* Dan 2026-08-21: "WE DON'T ANNOUNCE SPINS OR HEADS UP, ONLY MTT
@@ -556,6 +556,7 @@ function TickerHost() {
               name: String(t.name || 'Tournament'),
               startsAt: new Date(String(t.start_time)).getTime(),
               clubId: (t.club_id as string) || null,
+              unionId: (t.union_id as string) || null,
               buyIn: Number(t.buy_in_amount) || 0,
               buyInFee: Number(t.buy_in_fee) || 0,
               registered: Number(t.current_players) || 0,

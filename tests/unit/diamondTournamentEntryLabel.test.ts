@@ -7,7 +7,9 @@ const panel = readFileSync('src/components/lobby/GameLobbyPanel.tsx', 'utf8');
 describe('Diamond tournament entry denomination and return context', () => {
   it('labels the buy-in from the same authoritative arena unit as its prize consumer', () => {
     const header = details.match(/<p className="tournament-buyin">([\s\S]*?)<\/p>/)?.[1] ?? '';
-    expect(header).toContain('formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee)');
+    expect(header).toContain(
+      'formatBuyIn(tournament.buy_in_amount, tournament.buy_in_fee, tournament)'
+    );
     expect(header).toMatch(
       /tournamentRowUnitCents\(tabProps\.tournament\)\s*===\s*DIAMOND_UNIT_CENTS/
     );

@@ -129,6 +129,8 @@ export interface SignUpDialogOptions {
    * wrong wallet for a global-lobby, XMTT or union-games entry.
    */
   clubId?: string | null;
+  /** Actual tournament union scope, independent of the selected wallet club. */
+  unionId?: string | null;
   /**
    * The tournament being entered. When set, the balance row reads the wallet
    * the ENTRY will be charged to (2026-10-12): a union event charges one of
@@ -401,7 +403,7 @@ export function SignUpHost() {
 
   const o = current.opts;
   const id = current.id;
-  const cost = totalBuyIn(o.buyInAmount, o.buyInFee ?? 0);
+  const cost = totalBuyIn(o.buyInAmount, o.buyInFee ?? 0, o);
   const startLabel = formatStart(o.startTime);
   const short = !usesTournamentTicket && balance !== null && balance < cost;
   /* The head, at the entry's unit. `--` is this card's own unknown mark, the
@@ -486,7 +488,7 @@ export function SignUpHost() {
             <div className="signup-row total">
               <span className="signup-label sc-label sc-ink--blue">Entry Fee</span>
               <span className="signup-value sc-ink--silver">
-                {formatBuyIn(o.buyInAmount, o.buyInFee ?? 0)}
+                {formatBuyIn(o.buyInAmount, o.buyInFee ?? 0, o)}
               </span>
             </div>
           )}

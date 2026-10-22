@@ -1,3 +1,4 @@
+import { selectPoolTab } from './lightning-pilot-selected-pool.mjs';
 /** Finite existing-player recovery observations. No joins, wagers, consent or fabricated frames. */
 import { recoveryWireObservation, recoveryUiInPage } from './recovery-wire-observation.mjs';
 import {
@@ -130,25 +131,6 @@ export function recoveryJournal(page, rooms, remaining, playerId) {
       );
     },
   };
-}
-/** A document route does not prove which restored game is active. Select normally. */
-async function selectPoolTab(page, pin, remaining, progress) {
-  const tab = page.locator(`[data-tabid="${pin.poolSessionId}"]`);
-  progress.step = 'wait_for_pool_tab';
-  await tab.waitFor({ state: 'visible', timeout: Math.min(15000, remaining()) });
-  progress.step = 'find_existing_pool_tab';
-  progress.matches = Math.min(2, await tab.count());
-  if (progress.matches !== 1) throw new Error('Manual Pool Tab Missing Or Ambiguous');
-  progress.visible = await tab.isVisible();
-  if (!progress.visible) {
-    progress.step = 'existing_pool_tab_hidden';
-    throw new Error('Manual Pool Tab Hidden');
-  }
-  progress.step = 'select_existing_pool_tab';
-  await tab.tap({ timeout: Math.min(5000, remaining()) });
-  progress.step = 'verify_pool_selection';
-  progress.selected = (await tab.getAttribute('aria-current', { timeout: remaining() })) === 'true';
-  if (!progress.selected) throw new Error('Manual Selection');
 }
 /** One existing manual SPA route. No join control, scripted navigation or tab eviction. */
 async function openOtherPool(page, admin, pin, remaining, progress) {

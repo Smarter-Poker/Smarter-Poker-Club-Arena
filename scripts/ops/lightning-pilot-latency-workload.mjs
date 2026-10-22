@@ -1,3 +1,4 @@
+import { selectPoolTab, clickSelectedPoolControl } from './lightning-pilot-selected-pool.mjs';
 /** One bounded actual-action workload for the already authorized existing player.
  * Reports sample observations, never a latency pass or manufactured percentile. */
 import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
@@ -80,7 +81,10 @@ export async function attemptLatencyFold({
       },
       { timeout: remaining() }
     );
-    const [response] = await Promise.all([responseP, control.click({ timeout: remaining() })]);
+    const [response] = await Promise.all([
+      responseP,
+      clickSelectedPoolControl(page, pin, control, remaining),
+    ]);
     const answer = await response.json();
     remaining();
     record.outcome = response.ok() && answer.success === true ? 'accepted' : 'refused';
@@ -284,6 +288,7 @@ export async function witnessLatencyWorkload({
       timeout: remaining(),
     });
     await bounded(acceptPlayerTerms(page, opened.session, pin, url, false, remaining), remaining());
+    await selectPoolTab(page, pin, remaining, (report.poolSelection = {}));
     for (const kind of plan) {
       report.phase = 'fresh_hand';
       if (!latestHand || seen.has(latestHand))

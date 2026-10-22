@@ -94,6 +94,11 @@ test('one ordinary click records actual accepted/refused response and never retr
         json: async () => ({ success: accepted, secret: SECRET }),
       };
       const page = {
+        locator: () => ({
+          count: async () => 1,
+          isVisible: async () => true,
+          getAttribute: async () => 'true',
+        }),
         getByTestId: (selector) => {
           calls.push(selector);
           return {
@@ -353,38 +358,98 @@ test('Samantha uses her own prior-consent profile; no new consent is written', a
 });
 
 function anchorReader(stack, patch = {}) {
-  return { from: (table) => {
-    const q = { select: () => q, eq: () => q, maybeSingle: async () => ({ data:
-      table === 'lightning_pool_session'
-        ? { id: ROOM, anchor_seat_id: HAND }
-        : { id: HAND, user_id: PLAYER, stack, left_at: null, is_sitting_out: false, leave_pending: false, ...patch }
-    }) };
-    return q;
-  } };
+  return {
+    from: (table) => {
+      const q = {
+        select: () => q,
+        eq: () => q,
+        maybeSingle: async () => ({
+          data:
+            table === 'lightning_pool_session'
+              ? { id: ROOM, anchor_seat_id: HAND }
+              : {
+                  id: HAND,
+                  user_id: PLAYER,
+                  stack,
+                  left_at: null,
+                  is_sitting_out: false,
+                  leave_pending: false,
+                  ...patch,
+                },
+        }),
+      };
+      return q;
+    },
+  };
 }
 test('latency eligibility requires a positive live anchor without changing wallet/top-up eligibility', async () => {
   const { validateLatencyPlayer } = await import('./lightning-pilot-latency-workload.mjs');
   let baseChecks = 0;
-  await validateLatencyPlayer(anchorReader('0.01'), pin, async () => { baseChecks++; });
+  await validateLatencyPlayer(anchorReader('0.01'), pin, async () => {
+    baseChecks++;
+  });
   assert.equal(baseChecks, 1);
   for (const [stack, patch] of [
-    ['0.00', {}], ['-1', {}], ['NaN', {}], ['Infinity', {}],
-    ['1.00', { left_at: '2026-10-18' }], ['1.00', { is_sitting_out: true }],
-    ['1.00', { leave_pending: true }], ['1.00', { user_id: ROOM }],
-  ]) await assert.rejects(validateLatencyPlayer(anchorReader(stack, patch), pin, async () => {}), /Playable Pilot Anchor Unavailable/);
+    ['0.00', {}],
+    ['-1', {}],
+    ['NaN', {}],
+    ['Infinity', {}],
+    ['1.00', { left_at: '2026-10-18' }],
+    ['1.00', { is_sitting_out: true }],
+    ['1.00', { leave_pending: true }],
+    ['1.00', { user_id: ROOM }],
+  ])
+    await assert.rejects(
+      validateLatencyPlayer(anchorReader(stack, patch), pin, async () => {}),
+      /Playable Pilot Anchor Unavailable/
+    );
 });
 test('zero-stack latency stops before opening a browser or creating a session', async () => {
   const { validateLatencyPlayer } = await import('./lightning-pilot-latency-workload.mjs');
   let sessions = 0;
   const admin = anchorReader('0.00');
   const result = await witnessLatencyWorkload({
-    admin, pin, url: 'https://supabase.invalid', timeoutMs: 30000,
+    admin,
+    pin,
+    url: 'https://supabase.invalid',
+    timeoutMs: 30000,
     validate: (a, p) => validateLatencyPlayer(a, p, async () => {}),
-    openSession: async () => { sessions++; throw Error('must not authenticate'); },
+    openSession: async () => {
+      sessions++;
+      throw Error('must not authenticate');
+    },
   });
   assert.equal(sessions, 0);
   assert.equal(result.phase, 'preflight');
   assert.equal(result.cause, 'player_anchor_not_playable');
   assert.equal(result.cleanup, 'no_local_session_created');
   assert.deepEqual(result.attempts, []);
+});
+
+test('latency refuses a fold gesture after selection changes despite an own-pool render', async () => {
+  let clicks = 0;
+  const r = await attemptLatencyFold({
+    page: {
+      locator: () => ({
+        count: async () => 1,
+        isVisible: async () => true,
+        getAttribute: async () => 'false',
+      }),
+      getByTestId: () => ({
+        waitFor: async () => {},
+        click: async (o) => {
+          if (!o.trial) clicks++;
+        },
+      }),
+      waitForResponse: async () => ({ ok: () => true, json: async () => ({ success: true }) }),
+    },
+    pin,
+    kind: 'fast_fold',
+    handId: HAND,
+    currentHand: () => HAND,
+    seen: new Set(),
+    remaining: () => 1000,
+  });
+  assert.equal(clicks, 0);
+  assert.equal(r.outcome, 'unknown');
 });

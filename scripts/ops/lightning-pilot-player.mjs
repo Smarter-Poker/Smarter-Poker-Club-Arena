@@ -1,3 +1,4 @@
+import { selectPoolTab, clickSelectedPoolControl } from './lightning-pilot-selected-pool.mjs';
 /** Finite browser witness for an explicitly pinned, already seated pilot horse.
  * No join, buy-in, funding, identity creation or forged telemetry.
  * Consent requires explicit opt-in for the separately owner-authorized exact identity.
@@ -399,6 +400,7 @@ export async function witnessPlayer({
       acceptPlayerTerms(page, session, pin, url, acceptTerms, remaining),
       remaining()
     );
+    await selectPoolTab(page, pin, remaining, (report.poolSelection = {}));
     for (const [deviceIndex, device] of PLAYER_DEVICES.entries()) {
       await bounded(validatePlayablePlayer(admin, pin), remaining());
       await bounded(
@@ -414,6 +416,7 @@ export async function witnessPlayer({
         latestHand = null;
         await page.reload({ waitUntil: 'domcontentloaded', timeout: remaining() });
         await bounded(acceptPlayerTerms(page, session, pin, url, false, remaining), remaining());
+        await selectPoolTab(page, pin, remaining, report.poolSelection);
       }
       const row = { device: device.name, render: 'unknown', layout: 'unknown', actions: [] };
       report.devices.push(row);
@@ -484,7 +487,7 @@ export async function witnessPlayer({
         );
         const [response] = await Promise.all([
           responsePromise,
-          button.click({ timeout: remaining() }),
+          clickSelectedPoolControl(page, pin, button, remaining),
         ]);
         const answer = await bounded(response.json(), remaining());
         const action = {

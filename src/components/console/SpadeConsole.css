@@ -555,9 +555,8 @@
    to a screen reader and invisible to everybody else. A person being asked to
    agree to something has to SEE the box they are ticking.
 
-   So it is cut into the glass rather than drawn on top of it: the same black
-   top rule and 8% inner light as every engraved row, closed into a square.
-   Ticked, its core lights in the master's own green - no glyph, no tick
+   The empty well has a blue edge that stays visible on black glass, including
+   on a phone. Ticked, its core lights in the master's own green - no glyph, no tick
    character, nothing that needs a font to arrive before it reads.
    ───────────────────────────────────────────────────────────────────────── */
 .sc-check {
@@ -572,15 +571,49 @@
 .sc-check__box {
   position: relative;
   flex: 0 0 auto;
+  box-sizing: border-box;
   width: 5.4cqw;
   height: 5.4cqw;
-  min-width: 18px;
-  min-height: 18px;
+  min-width: 26px;
+  min-height: 26px;
+  border: 2px solid #45adff;
   background: #05070b;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 8%),
-    inset 0 0 0 1px rgb(0 0 0 / 88%),
-    inset 0 -1px 0 rgb(255 255 255 / 4%);
+  box-shadow: none;
+}
+
+/* Native inputs cannot rely on generated content for their selected state. */
+input.sc-check__box {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 5px;
+  background-clip: content-box;
+  cursor: pointer;
+}
+
+input.sc-check__box::after {
+  content: none;
+}
+
+.sc-check--on .sc-check__box,
+input.sc-check__box:checked {
+  border-color: #c8ffd2;
+}
+
+input.sc-check__box:checked {
+  background-color: #c8ffd2;
+}
+
+.sc-check:focus-visible .sc-check__box,
+.sc-check__box:focus-visible {
+  border-color: #f4f7fb;
+  outline: 2px solid #8fd4ff;
+  outline-offset: 3px;
+}
+
+input.sc-check__box:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* The lit core. Inset far enough that the groove's own edge still reads. */

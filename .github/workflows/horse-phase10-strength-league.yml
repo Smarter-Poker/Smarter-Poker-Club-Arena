@@ -207,3 +207,107 @@ jobs:
           path: ${{ runner.temp }}/p102/
           retention-days: 30
           if-no-files-found: error
+
+  # Scores the run itself, so nobody downloads a hundred artifacts by hand.
+  # It downloads every attempt this run uploaded (one directory per artifact,
+  # exactly as `gh run download` writes them), runs the existing assembler at
+  # the evaluated commit, and pushes the qualification and strength record to
+  # a new horse-evidence/* branch. It never pushes to main and never opens or
+  # merges a pull request. An assembler refusal (exit 2) pushes nothing and
+  # fails this job; a not-qualified verdict is evidence and is pushed.
+  assemble:
+    name: Assemble the evidence
+    needs: [plan, league]
+    if: always() && github.ref == 'refs/heads/main' && needs.plan.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the evaluated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+
+      - name: Setup Node 22 (the engine image's Node)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+
+      - name: Install Dependencies
+        run: |
+          npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
+          npm ci --prefix server --prefer-offline --no-audit --no-fund
+
+      - name: Download every attempt of this run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: p102-*
+          path: ${{ runner.temp }}/runs
+          merge-multiple: false
+
+      - name: Run the assembler
+        id: assemble
+        working-directory: server
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VARIANT: plo4
+        run: |
+          RUNS="$RUNNER_TEMP/runs"
+          mkdir -p "$RUNS"
+          SHA8="${SOURCE_SHA:0:8}"
+          DAY="$(date -u +%Y-%m-%d)"
+          BASE="docs/evidence/phase10/$SHA8"
+          OUT="$BASE/strength-$DAY"
+          QUAL="$BASE/phase10-qualification-$DAY.json"
+          set +e
+          npx tsx scripts/phase10-strength-assemble.mjs \
+            --runs="$RUNS" --out="../$OUT" --qualification="../$QUAL" \
+            > "$RUNNER_TEMP/verdict.json" 2> "$RUNNER_TEMP/refusal.log"
+          code=$?
+          set -e
+          {
+            echo "## phase10 $VARIANT assembly at $SOURCE_SHA"
+            echo
+            echo '```json'
+            if [ "$code" -eq 0 ]; then cat "$RUNNER_TEMP/verdict.json"; else cat "$RUNNER_TEMP/refusal.log"; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::assembler exited $code; nothing pushed"
+            cat "$RUNNER_TEMP/refusal.log"
+            exit "$code"
+          fi
+          cat "$RUNNER_TEMP/verdict.json"
+          {
+            echo "out=$OUT"
+            echo "qualification=$QUAL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Push the evidence to its own branch
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VARIANT: plo4
+          OUT: ${{ steps.assemble.outputs.out }}
+          QUAL: ${{ steps.assemble.outputs.qualification }}
+        run: |
+          SHA8="${SOURCE_SHA:0:8}"
+          BRANCH="horse-evidence/phase10-$VARIANT-$SHA8-run$GITHUB_RUN_ID"
+          if [ "$GITHUB_RUN_ATTEMPT" != "1" ]; then BRANCH="$BRANCH-a$GITHUB_RUN_ATTEMPT"; fi
+          case "$BRANCH" in horse-evidence/*) ;; *) echo "::error::refusing $BRANCH"; exit 1 ;; esac
+          MIRROR="server/release-evidence"
+          mkdir -p "$MIRROR/$OUT" "$MIRROR/$(dirname "$QUAL")"
+          cp "$QUAL" "$MIRROR/$QUAL"
+          cp "$OUT/strength.json" "$MIRROR/$OUT/strength.json"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add -- "$OUT" "$QUAL" "$MIRROR/$OUT/strength.json" "$MIRROR/$QUAL"
+          git commit -m "evidence(horses): phase10 $VARIANT league at $SHA8" \
+            -m "Assembled in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID (attempt $GITHUB_RUN_ATTEMPT)."
+          git push origin "HEAD:refs/heads/$BRANCH"
+          echo "Evidence branch: \`$BRANCH\`" >> "$GITHUB_STEP_SUMMARY"

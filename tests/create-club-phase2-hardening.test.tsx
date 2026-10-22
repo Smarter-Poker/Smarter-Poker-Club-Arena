@@ -33,6 +33,10 @@ const state = vi.hoisted(() => ({
   clubRows: [] as Record<string, unknown>[],
 }));
 
+vi.mock('../src/services/ClubQuickStartService', () => ({
+  completeDefaultClubOpening: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../src/utils/clubLogoImage', () => ({ optimizeClubLogo: state.optimizeLogo }));
 
 vi.mock('../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: state.user }) }));
@@ -106,10 +110,17 @@ const closePlate = () => {
 const consoleCloseX = () =>
   within(screen.getByRole('dialog', { name: 'Create A Club' })).getByTestId('sc-close');
 
+// Existing detailed coverage exercises the optional editor explicitly.
+function renderCreate(ui: React.ReactElement) {
+  const view = render(ui);
+  fireEvent.click(screen.getByRole('button', { name: 'Customize Club (Optional)' }));
+  return view;
+}
+
 describe('the focus trap holds the whole console, plates included', () => {
   it('tabs forward from the last form field onto the painted plates, then wraps', async () => {
     const user = userEvent.setup();
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     await makeCreatable(user, 'Alpha Room');
 
     const terms = screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ });
@@ -127,15 +138,15 @@ describe('the focus trap holds the whole console, plates included', () => {
     await user.tab();
     expect(document.activeElement).toBe(consoleCloseX());
     await user.tab();
-    expect(document.activeElement).toBe(screen.getByLabelText('Club Name'));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Hide Customization' }));
   });
 
   it('shift-tabs from the first field back onto a plate', async () => {
     const user = userEvent.setup();
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     await screen.findByText('3 Club Slots Remaining');
 
-    screen.getByLabelText('Club Name').focus();
+    screen.getByRole('button', { name: 'Hide Customization' }).focus();
     await user.tab({ shift: true });
     // Create Club is disabled on a pristine form, so the final stop is the
     // console X; one more reverse tab reaches the painted Close plate.
@@ -150,7 +161,7 @@ describe('the focus trap holds the whole console, plates included', () => {
   it('keeps the invisible file input out of the tab order', () => {
     // #4696 takes it out with display: none (Upload A Custom Logo is its
     // keyboard route), which no browser can tab to.
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     const fileInput = document.querySelector('input[type="file"]');
     expect(fileInput).not.toBeNull();
     expect(modalSource).toMatch(/type="file"[\s\S]{0,120}className=\{styles\.hiddenInput\}/);
@@ -160,7 +171,7 @@ describe('the focus trap holds the whole console, plates included', () => {
 
 describe('the painted foot never scrolls', () => {
   it('scrolls the console body between the head and the plates', () => {
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     const dialog = screen.getByRole('dialog', { name: 'Create A Club' });
     const consoleEl = dialog.querySelector('.sc') as HTMLElement;
     const part = (name: string) =>
@@ -200,7 +211,7 @@ describe('the unsaved-changes guard is the kit confirm, not a native dialog', ()
     // happy-dom ships no native confirm, so one is planted to prove it is never asked.
     const nativeConfirm = vi.fn(() => true);
     vi.stubGlobal('confirm', nativeConfirm);
-    render(<CreateClubModal isOpen onClose={onClose} />);
+    renderCreate(<CreateClubModal isOpen onClose={onClose} />);
 
     await user.type(screen.getByLabelText('Club Name'), 'Alpha Room');
     await user.keyboard('{Escape}');
@@ -238,7 +249,7 @@ describe('the unsaved-changes guard is the kit confirm, not a native dialog', ()
 
   it('holds the focus trap on the guard while it is up', async () => {
     const user = userEvent.setup();
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     await user.type(screen.getByLabelText('Club Name'), 'Alpha Room');
     await user.click(closePlate());
     const guard = guardDialog() as HTMLElement;
@@ -255,7 +266,7 @@ describe('the unsaved-changes guard is the kit confirm, not a native dialog', ()
   it('closes a pristine form at once, with no guard', async () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
-    render(<CreateClubModal isOpen onClose={onClose} />);
+    renderCreate(<CreateClubModal isOpen onClose={onClose} />);
     await user.keyboard('{Escape}');
     expect(guardDialog()).not.toBeInTheDocument();
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -270,7 +281,7 @@ describe('the unsaved-changes guard is the kit confirm, not a native dialog', ()
         settle = resolvePromise;
       })
     );
-    render(<CreateClubModal isOpen onClose={onClose} />);
+    renderCreate(<CreateClubModal isOpen onClose={onClose} />);
     await makeCreatable(user, 'Alpha Room');
     await user.click(screen.getByRole('button', { name: 'Create Club' }));
 
@@ -300,7 +311,7 @@ describe('a draft belongs to one account', () => {
         requestId: '11111111-1111-4111-8111-111111111111',
       })
     );
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     await screen.findByText('3 Club Slots Remaining');
     expect(screen.getByLabelText('Club Name')).toHaveValue('');
     expect(screen.queryByText('Draft Restored')).not.toBeInTheDocument();
@@ -309,7 +320,7 @@ describe('a draft belongs to one account', () => {
 
   it('never hands one account the draft, or the request id, of another', async () => {
     const user = userEvent.setup();
-    const view = render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    const view = renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     await user.type(screen.getByLabelText('Club Name'), 'Alpha Room');
 
     const savedA = JSON.parse(window.localStorage.getItem(`${DRAFT_PREFIX}:user-a`) || 'null');
@@ -343,7 +354,7 @@ describe('a draft belongs to one account', () => {
     );
     const user = userEvent.setup();
     state.create.mockResolvedValue({ id: 'club-a', name: 'Alpha Room' });
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     await waitFor(() => expect(screen.getByLabelText('Club Name')).toHaveValue('Alpha Room'));
     expect(screen.getByText('Draft Restored')).toBeVisible();
 
@@ -361,7 +372,7 @@ describe('the server names the club that was created', () => {
     const user = userEvent.setup();
     const onSuccess = vi.fn();
     state.create.mockResolvedValue({ id: 'club-original', name: 'Original Room' });
-    render(<CreateClubModal isOpen onClose={vi.fn()} onSuccess={onSuccess} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} onSuccess={onSuccess} />);
     await makeCreatable(user, 'Renamed Room');
     await user.click(screen.getByRole('button', { name: 'Create Club' }));
 
@@ -380,7 +391,7 @@ describe('name checks and a second creation never inherit stale state', () => {
     state.checkNameAvailability.mockImplementation(
       () => new Promise<boolean>((resolve) => replies.push(resolve))
     );
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
 
     await user.type(screen.getByLabelText('Club Name'), 'Alpha Room');
     await waitFor(() => expect(replies).toHaveLength(1), { timeout: 3000 });
@@ -398,7 +409,7 @@ describe('name checks and a second creation never inherit stale state', () => {
 
   it('treats switch-only changes as a saved draft and guards closing them', async () => {
     const user = userEvent.setup();
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     await screen.findByText('3 Club Slots Remaining');
     await user.click(screen.getByRole('switch', { name: 'Review Join Requests' }));
     await waitFor(() => {
@@ -414,7 +425,7 @@ describe('name checks and a second creation never inherit stale state', () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     state.create.mockResolvedValue({ id: 'club-1', name: 'Alpha Room' });
-    const view = render(<CreateClubModal isOpen onClose={onClose} />);
+    const view = renderCreate(<CreateClubModal isOpen onClose={onClose} />);
     await user.click(screen.getByRole('switch', { name: 'Discoverable In Club Arena' }));
     await user.click(screen.getByRole('switch', { name: 'Review Join Requests' }));
     await user.click(screen.getByRole('radio', { name: 'Royal Crown' }));
@@ -434,7 +445,7 @@ describe('Launch Settings are switches that say On or Off', () => {
   it('prints On or Off and carries the choice into the create call', async () => {
     const user = userEvent.setup();
     state.create.mockResolvedValue({ id: 'club-1', name: 'Alpha Room' });
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
 
     const discoverable = screen.getByRole('switch', { name: 'Discoverable In Club Arena' });
     const review = screen.getByRole('switch', { name: 'Review Join Requests' });
@@ -461,7 +472,7 @@ describe('Launch Settings are switches that say On or Off', () => {
 
   it('shows the agreement as the kit tick well, and keeps no bare checkbox', async () => {
     const user = userEvent.setup();
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     const agreement = screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ });
     expect(agreement.classList.contains('sc-check')).toBe(true);
     expect(agreement.querySelector('.sc-check__box')).not.toBeNull();
@@ -567,7 +578,7 @@ describe('custom logo selection', () => {
     state.optimizeLogo.mockResolvedValue(preview);
     state.create.mockResolvedValue({ id: 'created-club', name: 'Savage Room' });
     const user = userEvent.setup();
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     fireEvent.change(input(), { target: { files: [file()] } });
     expect(await screen.findByRole('img', { name: 'Custom Club Logo Preview' })).toHaveAttribute(
       'src',
@@ -585,7 +596,7 @@ describe('custom logo selection', () => {
       .mockResolvedValueOnce(preview)
       .mockRejectedValueOnce(new Error('That File Is Not A Valid Image.'))
       .mockResolvedValueOnce(preview);
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     const source = file();
     fireEvent.change(input(), { target: { files: [source] } });
     await screen.findByRole('img', { name: 'Custom Club Logo Preview' });
@@ -610,7 +621,7 @@ describe('custom logo selection', () => {
         })
     );
     const user = userEvent.setup();
-    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    renderCreate(<CreateClubModal isOpen onClose={vi.fn()} />);
     fireEvent.change(input(), { target: { files: [file()] } });
     await user.click(screen.getByRole('radio', { name: 'Royal Crown' }));
     complete(preview);
@@ -623,5 +634,42 @@ describe('custom logo selection', () => {
       'aria-checked',
       'true'
     );
+  });
+});
+
+describe('quick club creation', () => {
+  it('creates with no typing and keeps customization out of the default path', async () => {
+    const user = userEvent.setup();
+    state.create.mockResolvedValue({ id: 'club-default', name: 'Server Default' });
+    const onSuccess = vi.fn();
+    render(<CreateClubModal isOpen onClose={vi.fn()} onSuccess={onSuccess} />);
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Club Name')).toHaveValue('');
+    await screen.findByText('Name Available');
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('club-default'));
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: expect.stringMatching(/^Poker Club [0-9a-f]{8}$/),
+        requires_approval: false,
+      })
+    );
+  });
+  it('keeps one creation request when a response is lost and the owner retries', async () => {
+    const user = userEvent.setup();
+    state.create
+      .mockRejectedValueOnce(new Error('Connection Lost'))
+      .mockResolvedValueOnce({ id: 'club-default', name: 'Original Default' });
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    await screen.findByText('Name Available');
+    await user.click(screen.getByRole('checkbox', { name: /I Confirm I Can Manage This Club/ }));
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(state.toast.error).toHaveBeenCalledWith('Connection Lost'));
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    await waitFor(() => expect(state.create).toHaveBeenCalledTimes(2));
+    expect(state.create.mock.calls[0][0].request_id).toBe(state.create.mock.calls[1][0].request_id);
+    expect(state.create.mock.calls[0][0].name).toBe(state.create.mock.calls[1][0].name);
   });
 });

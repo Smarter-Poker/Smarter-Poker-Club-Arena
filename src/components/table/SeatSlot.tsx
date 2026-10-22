@@ -1212,7 +1212,7 @@ export const SeatSlot = memo(
     );
 
     /**
-     * Animated stack change — flash green/red when the stack moves.
+     * Animate stack gains only. Contributions update the stack without a delta float.
      *
      * AUDIT 2026-08-25: the effect keyed on `player?.stack` ALONE while its
      * "have we seen this player before" latch only reset when the seat rendered
@@ -1237,8 +1237,9 @@ export const SeatSlot = memo(
       const diff = player.stack - prevStackRef.current;
       prevStackRef.current = player.stack;
       seatedIdRef.current = player.id;
-      // Only animate for a player who was already sitting here.
-      if (diff !== 0 && sameOccupant) {
+      // Dan 2026-10-22: bets and blinds do not need a negative amount pop-up.
+      // Only gains for the existing occupant start animation state and a timer.
+      if (diff > 0 && sameOccupant) {
         setStackDelta(diff);
         /* 2026-08-28: scaled, because the keyframe is. `stackDeltaFloat` became
            `calc(2s * var(--animation-speed, 1))` in SeatSlot.css and this window
@@ -1256,8 +1257,9 @@ export const SeatSlot = memo(
         const t = setTimeout(() => setStackDelta(0), 2000 * getAnimationSpeed() + 50);
         return () => clearTimeout(t);
       }
-      // A new occupant must not inherit the last one's floating delta.
-      if (!sameOccupant) setStackDelta(0);
+      // A contribution or new occupant clears any previous gain. The effect
+      // cleanup cancelled its timer, so do not leave stale animation state.
+      setStackDelta(0);
     }, [player?.stack, playerId]);
 
     /**
@@ -3348,7 +3350,7 @@ export const SeatSlot = memo(
               what renders is what fits, whole characters, no dots. */}
           <span className="seat__name">{limitSeatName(player.name)}</span>
           <span
-            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : stackDelta < 0 ? ' seat__stack--down' : ''} ${getStackDepthClass(player.stack, bigBlind)}`}
+            className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : ''} ${getStackDepthClass(player.stack, bigBlind)}`}
           >
             {showStackInBB ? formatStackAsBB(player.stack, bigBlind) : formatStack(player.stack)}
           </span>
@@ -3387,13 +3389,9 @@ export const SeatSlot = memo(
           )}
 
           {/* Stack Change Delta */}
-          {stackDelta !== 0 && (
-            <span
-              className={`seat__stack-delta ${stackDelta > 0 ? 'seat__stack-delta--win' : 'seat__stack-delta--loss'}`}
-            >
-              {stackDelta > 0 ? '+' : ''}
-              {/* A change of stack is a wager or a win, not a stack: "-4",
-                  never "-4.00" (Dan 2026-09-23, item 9's rule). */}
+          {stackDelta > 0 && (
+            <span className="seat__stack-delta seat__stack-delta--win">
+              +{/* A stack gain uses wager precision (Dan 2026-09-23, item 9). */}
               {showStackInBB ? formatStackAsBB(stackDelta, bigBlind) : formatWager(stackDelta)}
             </span>
           )}

@@ -4,6 +4,12 @@ name: Stage Exact Club Arena Engine Release
 # as it reaches protected main. The owning deploy workflow still builds, tests,
 # waits for the certified table break, cuts over, and proves the release. This
 # signal has no SSH, environment, source-write, or restart authority.
+#
+# The window-migrations job (2026-10-22) is the one database writer here: on
+# the admitted daily 03:30 America/Chicago run only, it installs migrations
+# that declare "-- @install-window: daily-maintenance" inside the 04:00 freeze
+# (scripts/ci/install-window-migrations.mjs). It adds no schedule, sends no
+# event, and never touches the engine or the host.
 on:
   push:
     branches: [main]
@@ -212,6 +218,46 @@ jobs:
           echo "Engine runtime release required: $RELEASE_REQUIRED ($OFFER_REASON)"
           echo "Exact engine component SHA: $LATEST_REQUIRED"
           echo "Offered server tree SHA: $TARGET_SHA"
+
+  # A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
+  # (2026-10-22). Migrations that need ACCESS EXCLUSIVE on clubs, tables or
+  # hand_history cannot install during play (20261022030326). Such a file
+  # declares the window, the ordinary applier refuses it as queued, and this
+  # job installs every queued one inside the 04:00 freeze: one transaction
+  # per file, one attempt, 1 s lock_timeout, 8 s budget, the documented
+  # break-window override recorded, and the first refusal stops the run with
+  # the rest still queued. Nothing queued: it exits at once. Its reader is the
+  # job summary and the red-main detector (CLAUDE.md 10.83).
+  window-migrations:
+    name: Install Queued Daily-Maintenance Migrations
+    needs: detect
+    if: github.event_name == 'schedule' && needs.detect.outputs.admission_allowed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    concurrency:
+      group: daily-maintenance-window-migrations
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout protected main
+        uses: actions/checkout@v4
+
+      - name: Use the production Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install the Postgres client library
+        run: npm i pg@8 --no-save --no-audit --no-fund
+
+      - name: Install every queued window migration inside the 04:00 break
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          node scripts/ci/install-window-migrations.mjs \
+            --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt
 
   signal:
     name: Dispatch The Exact Main SHA

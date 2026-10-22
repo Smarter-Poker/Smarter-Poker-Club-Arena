@@ -302,6 +302,31 @@ supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS`, and each
    lock on a public table while it is queued or blocking someone, and records
    it in `ca_writer_lock_sentinel_cancels`. Pinned by
    `tests/a-migration-never-holds-the-live-tables-hostage.law.test.ts`.
+10. **A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
+    (2026-10-22).** clubs, tables and hand_history are held by some
+    transaction in effectively every instant of play, so a migration that
+    needs ACCESS EXCLUSIVE (or SHARE / SHARE ROW EXCLUSIVE / EXCLUSIVE) on a
+    hot table is never applied during play. Put
+    `-- @install-window: daily-maintenance` on a line of its own in its
+    header. Apply Merged Migration then refuses it as QUEUED (nothing sent),
+    and the daily 03:30 America/Chicago run of `stage-engine-release.yml`
+    (job `window-migrations`, `scripts/ci/install-window-migrations.mjs`)
+    installs every queued file inside the 04:00 freeze: one transaction and
+    one attempt per file through the same applier, the documented override
+    reason recorded in `ca_break_window_migration_overrides`, 1 s
+    `lock_timeout`, 5 s statements and an 8 s budget asserted before COMMIT
+    (well under the sentinel's 15 s), started only while the break is
+    counting down with a confirmed freeze and at least 150 s before its end,
+    committed only with 100 s to spare before the thaw. A refusal rolls back,
+    stops the run, leaves the file queued for the next day and turns the run
+    red. "Queued" is simply "on main and not in schema_migrations"; never
+    apply a declared file by hand or through the MCP. Window files may not
+    set their own override, freeze bypass, longer timeouts, sleeps, blocking
+    advisory locks or CONCURRENTLY preambles, and the freeze still refuses
+    writes to money and seat rows, so keep them to DDL. Pinned by
+    `tests/a-window-migration-waits-for-the-daily-break.law.test.ts`; native
+    proof `scripts/ci/test-maintenance-window-migrations.sh`.
+    `docs/changelog/2026-10-22-a-migration-that-needs-the-live-tables-waits-for-the-daily-break.md`.
 
 ---
 

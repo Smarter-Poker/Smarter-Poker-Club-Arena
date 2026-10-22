@@ -6,6 +6,12 @@ on:
       - supabase/migrations/**
       - scripts/ci/test-retired-wallet-transfer-postgres.py
       - .github/workflows/retired-wallet-transfer.yml
+# A newer push to the same pull request fully supersedes this pure check
+# (pull_request runs on refs/pull/N/merge), and the job mutates nothing
+# outside its runner. Cancel the stale run instead of queueing it.
+concurrency:
+  group: retired-wallet-transfer-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

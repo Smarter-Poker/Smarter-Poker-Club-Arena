@@ -7,6 +7,12 @@ on:
       - scripts/ci/fixtures/mutual-friends-baseline.sql
       - scripts/ci/test-mutual-friends-unique-postgres.py
       - .github/workflows/mutual-friends-unique.yml
+# A newer push to the same pull request fully supersedes this pure check
+# (pull_request runs on refs/pull/N/merge), and the job mutates nothing
+# outside its runner. Cancel the stale run instead of queueing it.
+concurrency:
+  group: mutual-friends-unique-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

@@ -151,3 +151,20 @@ describe('Lightning is only available on six-seat games (owner, 2026-10-19)', ()
       expect(read(path), path).toContain('LIGHTNING_PILOT_TABLE_SIZE');
   });
 });
+
+describe('the private pilot six-seat thresholds', () => {
+  it('are qualified natively in the required chain and written only for the two pilots', () => {
+    expect(read('scripts/dev/test-lightning-six-seat-boundary.sh')).toContain(
+      'scripts/dev/test-lightning-pilot-thresholds.sh'
+    );
+    const mig = read(
+      'supabase/migrations/20261022052324_lightning_pilots_switch_at_six_seat_pool_math.sql'
+    );
+    expect(mig).toContain("'on_threshold', v_on, 'off_threshold', v_off");
+    expect(mig).toMatch(/v_on constant integer := 12;/);
+    expect(mig).toMatch(/v_off constant integer := 8;/);
+    expect(mig).toContain("'56d5d6f0-23e9-41b0-b407-852aa1026c2a'");
+    expect(mig).toContain("'681eb9e8-e9fd-4026-8ec6-64075b911d33'");
+    expect(mig).toContain('IF v_on < 12 OR v_off < 8 OR v_on - v_off < 4 THEN');
+  });
+});

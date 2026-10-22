@@ -1,3 +1,4 @@
+import { selectPoolTab, clickSelectedPoolControl } from './lightning-pilot-selected-pool.mjs';
 /** Finite browser witness for an explicitly pinned, already seated pilot horse.
  * No join, buy-in, funding, identity creation or forged telemetry.
  * Consent requires explicit opt-in for the separately owner-authorized exact identity.
@@ -197,10 +198,21 @@ function refusalEvidence(answer) {
 }
 
 export const CONSENT_PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
+/** Third browser actor (owner approval 2026-10-22: one more private-pilot test
+ *  player, which authorizes accepting its Terms once through the normal UI):
+ *  milehigh, an existing funded horse of the exact 72-player pilot roster
+ *  (assignment manifest 121f80d2...), active pilot member, no integrity finding. */
+export const THIRD_WITNESS_PLAYER = '09dd202d-115b-49ae-afa8-cb528c7b8f72';
+/** The only players whose normal Terms/Privacy acceptance the owner authorized
+ *  by name: 009 and Samantha (2026-10-16), milehigh (2026-10-22). */
 export const CONSENT_PLAYERS = Object.freeze([
   CONSENT_PLAYER,
   'a23ca5c9-b748-482f-9b59-9db35f7aa996',
+  THIRD_WITNESS_PLAYER,
 ]);
+/** Every pinned browser actor the latency, financial and recovery witnesses
+ *  accept. Each still needs its own accepted Terms on its profile. */
+export const WITNESS_PLAYERS = Object.freeze([...CONSENT_PLAYERS]);
 export async function acceptPlayerTerms(
   page,
   session,
@@ -399,6 +411,7 @@ export async function witnessPlayer({
       acceptPlayerTerms(page, session, pin, url, acceptTerms, remaining),
       remaining()
     );
+    await selectPoolTab(page, pin, remaining, (report.poolSelection = {}));
     for (const [deviceIndex, device] of PLAYER_DEVICES.entries()) {
       await bounded(validatePlayablePlayer(admin, pin), remaining());
       await bounded(
@@ -414,6 +427,7 @@ export async function witnessPlayer({
         latestHand = null;
         await page.reload({ waitUntil: 'domcontentloaded', timeout: remaining() });
         await bounded(acceptPlayerTerms(page, session, pin, url, false, remaining), remaining());
+        await selectPoolTab(page, pin, remaining, report.poolSelection);
       }
       const row = { device: device.name, render: 'unknown', layout: 'unknown', actions: [] };
       report.devices.push(row);
@@ -484,7 +498,7 @@ export async function witnessPlayer({
         );
         const [response] = await Promise.all([
           responsePromise,
-          button.click({ timeout: remaining() }),
+          clickSelectedPoolControl(page, pin, button, remaining),
         ]);
         const answer = await bounded(response.json(), remaining());
         const action = {

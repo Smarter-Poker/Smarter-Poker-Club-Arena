@@ -1052,4 +1052,16 @@ run moments-after "$F/lightning-integrity-moments.sql"
 moments_proof=$(sed -n 's/^-- @live-proof: //p' "$M/20261015213334_lightning_correlation_counts_only_measured_paired_hands.sql")
 [ "$(Q "SELECT ($moments_proof)")" = t ] || { echo 'FAIL: pooled-moments live proof'; exit 1; }
 echo 'PASS: pooled paired-hand moments and function authority in isolated PostgreSQL 17'
+# 2026-10-22: five short-sample findings were HIGH and decayed with more
+# data. Reproduce on the installed body, then score by the 99% lower bound.
+confidence=$M/20261022042102_lightning_timing_correlation_scores_its_confidence_bound.sql
+fn_before=$(Q "SELECT md5(pg_get_functiondef('public.fn_lightning_integrity_report(uuid,jsonb,timestamptz)'::regprocedure))")
+run confidence-before "$F/lightning-integrity-confidence.sql"
+run confidence-apply "$confidence"
+run confidence-after "$F/lightning-integrity-confidence.sql"
+confidence_proof=$(sed -n 's/^-- @live-proof: //p' "$confidence")
+[ "$(Q "SELECT ($confidence_proof)")" = t ] || { echo 'FAIL: confidence-bound live proof'; exit 1; }
+[ "$(Q "SELECT md5(pg_get_functiondef('public.fn_lightning_integrity_report(uuid,jsonb,timestamptz)'::regprocedure))")" != "$fn_before" ] \
+  || { echo 'FAIL: the confidence-bound file did not change the body'; exit 1; }
+echo 'PASS: timing correlation scores its 99% lower confidence bound; detection, follow share and authority unchanged'
 echo "PASS: Lightning Phase 11 remediation (DB), 20 sections, over the real chain through 20261009151825 under production's default ACLs and live autorevoke trigger, humans and horses in every pool: every finding reproduced on the production bodies first (a Cluster flipping ON and OFF three times, random-seating pools of 18, 25 and 50, no-edge pairs at 10 → 15 opposed hands, six hourly rolling rescans, the sweep's rolling window, twelve five-minute engine windows, unscored shadow windows and a one-sided component, a 90-high marathon) and gone after the file, while the planted colluders, the dumping pair, the coordinated pair and the engine-timed pair and players are still found; one finding per subject that extends with the operator's review carried, one mirror per finding under overlapping runs; no predecessor proof falsified; every own proof true; re-appliable"

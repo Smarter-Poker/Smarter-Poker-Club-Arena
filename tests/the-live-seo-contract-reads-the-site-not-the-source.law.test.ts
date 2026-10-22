@@ -31,6 +31,34 @@ const HEAD = `<html><head><title>Help Center | Smarter.Poker</title>
 </head><body><style>.x{}</style><script>var a=1</script><!-- c --><div id="root"><h1>Help Center</h1><p>${'word '.repeat(150)}</p></div></body></html>`;
 
 describe('the live SEO contract checker', () => {
+  it('reads the actual published shell JSON-LD, including its route id', () => {
+    const shell = readFileSync(join(ROOT, 'index.html'), 'utf8');
+    expect(ldTypes(inspectHead(shell).ld)).toContain('SoftwareApplication');
+  });
+
+  it.each([
+    'id="route-jsonld" type="application/ld+json"',
+    "nonce='published' type = 'application/ld+json' id='route-jsonld'",
+    'ID="route-jsonld"\nTYPE = application/ld+json',
+    'data-label="a > b" type="application/ld+json" nonce="published"',
+  ])('reads JSON-LD regardless of attribute order and HTML quoting: %s', (attributes) => {
+    const html = HEAD.replace('type="application/ld+json"', attributes);
+    expect(ldTypes(inspectHead(html).ld)).toEqual(['BreadcrumbList', 'FAQPage']);
+    const malformed = inspectHead(html.replace('{"@context"', '{"@context'));
+    expect(malformed.ld).toBeNull();
+    expect(malformed.ldError).toBeTruthy();
+  });
+
+  it.each([
+    '<script data-type="application/ld+json">{"@type":"FAQPage"}</script>',
+    '<script data-label=\' type="application/ld+json"\'>{"@type":"FAQPage"}</script>',
+    '<!-- <script type="application/ld+json">{"@type":"FAQPage"}</script> -->',
+    '<script type="text/javascript">{"@type":"FAQPage"}</script>',
+    '',
+  ])('does not accept an absent or falsely labelled JSON-LD block: %s', (html) => {
+    expect(inspectHead(html).ld).toBeNull();
+  });
+
   it('reads title, robots, canonical, description and a @graph from a prerendered page', () => {
     const head = inspectHead(HEAD);
     expect(head.title).toBe('Help Center | Smarter.Poker');
@@ -40,6 +68,17 @@ describe('the live SEO contract checker', () => {
     expect(head.h1).toBe(true);
     expect(ldTypes(head.ld)).toEqual(['BreadcrumbList', 'FAQPage']);
     expect(head.ogImage).toBe('https://smarter.poker/images/og-poker-arena.jpg');
+  });
+
+  it('reads the maintained route schema with attributes before or after its type', () => {
+    for (const tag of [
+      '<script id="route-jsonld" type="application/ld+json">',
+      '<script type="application/ld+json" id="route-jsonld">',
+    ]) {
+      const html = HEAD.replace('<script type="application/ld+json">', tag);
+      expect(ldTypes(inspectHead(html).ld)).toEqual(['BreadcrumbList', 'FAQPage']);
+      expect(inspectHead(html.replace('{"@context"', '{"@context')).ldError).toBeTruthy();
+    }
   });
 
   it('proves the share card the landing names is a real image on the live site (phase 6)', () => {

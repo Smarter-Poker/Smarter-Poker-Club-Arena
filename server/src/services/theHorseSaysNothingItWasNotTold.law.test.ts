@@ -60,8 +60,16 @@ const FILL = { potBB: 52, street: 'river' as const, hand: 'full house', seat: 7 
 const SEATED = ['danny', 'Plate4', 'gg_master', 'seat7'];
 
 describe('LAW: the horse says nothing it was not told', () => {
-  it('the pool is four events by three voices, keyed lines, with at least one line per cell', () => {
-    expect(TALK_EVENTS).toEqual(['big_pot_won', 'showdown_loss', 'big_hand_shown', 'arrival']);
+  it('the pool is seven events by three voices, keyed lines, with at least one line per cell', () => {
+    expect(TALK_EVENTS).toEqual([
+      'big_pot_won',
+      'showdown_loss',
+      'big_hand_shown',
+      'arrival',
+      'pot_lost',
+      'pot_won',
+      'all_in',
+    ]);
     expect(TALK_VOICES).toEqual(['quiet', 'needler', 'friendly']);
     for (const event of TALK_EVENTS) {
       for (const voice of TALK_VOICES) {
@@ -71,6 +79,8 @@ describe('LAW: the horse says nothing it was not told', () => {
       }
     }
     expect(everyLine().length).toBeGreaterThanOrEqual(12);
+    // Dan 2026-10-22: "there should be like 100+ different short phrases"
+    expect(new Set(everyLine().map((l) => l.line.toLowerCase())).size).toBeGreaterThanOrEqual(100);
     // the Title Case gate inspects these keys; the pool must never grow one
     expect(LINES_SRC).not.toMatch(
       /\b(label|title|description|caption|placeholder|hint|tooltip|subtitle)\s*:/

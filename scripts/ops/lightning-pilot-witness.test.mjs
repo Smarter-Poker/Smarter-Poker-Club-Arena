@@ -592,3 +592,113 @@ test('manual paused top-up is an explicit choice and does not alter the existing
   );
   assert.ok(source.includes('financial_top_up_sitout,'));
 });
+
+const MILEHIGH = '09dd202d-115b-49ae-afa8-cb528c7b8f72';
+test('the third pinned actor is accepted by player, latency, financial and recovery exactly like the existing two', async () => {
+  const base = { ...env, PILOT_PLAYER_ID: MILEHIGH, PILOT_POOL_SESSION_ID: POOL };
+  // player
+  const p = fixture({ playerId: MILEHIGH });
+  assert.equal(
+    (await runPilotWitness({ ...base, PILOT_WITNESS_MODE: 'player' }, p)).status,
+    'observed'
+  );
+  assert.equal(p.calls.at(-1).pin.playerId, MILEHIGH);
+  assert.equal(p.calls.at(-1).acceptTerms, false);
+  // latency
+  const l = fixture({ playerId: MILEHIGH });
+  l.witnessLatencyWorkload = async (a) => {
+    assert.equal(a.pin.playerId, MILEHIGH);
+    return {
+      status: 'partial_observed',
+      cleanup: 'local_session_and_browser_closed',
+      counts: { accepted: 1 },
+      qualification: 'not_asserted',
+    };
+  };
+  assert.equal(
+    (await runPilotWitness({ ...base, PILOT_WITNESS_MODE: 'latency' }, l)).status,
+    'partial_observed'
+  );
+  // financial
+  const f = fixture({ playerId: MILEHIGH });
+  f.witnessFinancial = async (a) => {
+    assert.equal(a.pin.playerId, MILEHIGH);
+    return { status: 'observed', action: 'top_up', cleanup: 'local_session_and_browser_closed' };
+  };
+  assert.equal(
+    (await runPilotWitness({ ...base, PILOT_WITNESS_MODE: 'financial_top_up' }, f)).status,
+    'observed'
+  );
+  // recovery
+  const r = fixture({ playerId: MILEHIGH });
+  r.WebSocket = {};
+  r.witnessRecovery = async (a) => {
+    assert.deepEqual(
+      a.pins.map((x) => x.playerId),
+      [MILEHIGH, MILEHIGH]
+    );
+    return { status: 'observed', cleanup: 'local_sessions_and_browser_closed' };
+  };
+  const rr = await runPilotWitness(
+    {
+      ...base,
+      PILOT_WITNESS_MODE: 'recovery',
+      PILOT_SECOND_POOL_SESSION_ID: '0097309f-0000-4000-8000-000000000003',
+    },
+    r
+  );
+  assert.equal(rr.status, 'observed');
+  assert.equal(rr.cleanup, 'local_sessions_and_browser_closed');
+});
+test('the third actor may accept terms only in player mode for its exact identity; other roster horses may not', async () => {
+  const f = fixture({ consent: false, playerId: MILEHIGH });
+  const r = await runPilotWitness(
+    {
+      ...env,
+      PILOT_WITNESS_MODE: 'player',
+      PILOT_PLAYER_ID: MILEHIGH,
+      PILOT_POOL_SESSION_ID: POOL,
+      PILOT_ACCEPT_PLAYER_TERMS: 'true',
+    },
+    f
+  );
+  assert.equal(r.status, 'observed');
+  assert.equal(f.calls.at(-1).acceptTerms, true);
+  assert.equal(f.calls.at(-1).pin.playerId, MILEHIGH);
+  for (const mode of ['latency', 'financial_cash_out', 'cycle']) {
+    const b = fixture({ consent: false, playerId: MILEHIGH });
+    const x = await runPilotWitness(
+      {
+        ...env,
+        PILOT_WITNESS_MODE: mode,
+        PILOT_PLAYER_ID: MILEHIGH,
+        PILOT_POOL_SESSION_ID: POOL,
+        PILOT_ACCEPT_PLAYER_TERMS: 'true',
+      },
+      b
+    );
+    assert.equal(x.status, 'unknown');
+    assert.equal(b.calls.length, 0);
+  }
+  for (const mode of ['player', 'latency']) {
+    const b = fixture({ consent: false, playerId: MILEHIGH });
+    const x = await runPilotWitness(
+      { ...env, PILOT_WITNESS_MODE: mode, PILOT_PLAYER_ID: MILEHIGH, PILOT_POOL_SESSION_ID: POOL },
+      b
+    );
+    assert.equal(x.status, 'unknown');
+  }
+  const other = fixture({ consent: false, playerId: '032b7ef6-ef40-4eb7-9a44-21605be733c8' });
+  const y = await runPilotWitness(
+    {
+      ...env,
+      PILOT_WITNESS_MODE: 'player',
+      PILOT_PLAYER_ID: '032b7ef6-ef40-4eb7-9a44-21605be733c8',
+      PILOT_POOL_SESSION_ID: POOL,
+      PILOT_ACCEPT_PLAYER_TERMS: 'true',
+    },
+    other
+  );
+  assert.equal(y.status, 'unknown');
+  assert.equal(other.calls.length, 0);
+});

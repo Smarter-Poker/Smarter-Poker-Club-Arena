@@ -1,7 +1,12 @@
+import {
+  selectPoolTab,
+  assertSelectedPoolTab,
+  clickSelectedPoolControl,
+} from './lightning-pilot-selected-pool.mjs';
 import { servingIdentities, servingStable } from './lightning-pilot-qualification.mjs';
 /** One normal UI intent. No financial RPC writes, consent writes or retries. */
 import {
-  CONSENT_PLAYERS,
+  WITNESS_PLAYERS,
   assertPlayerPin,
   validatePlayer,
   openPlayerSession,
@@ -49,6 +54,20 @@ function addonResponse(status, reply) {
     ['Already at the maximum buy-in for this table', 'MAX_BUY_IN'],
     ['Player not seated', 'NOT_SEATED'],
     ['Insufficient wallet balance', 'INSUFFICIENT_BALANCE'],
+  ]);
+  return {
+    httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+    success: typeof reply?.success === 'boolean' ? reply.success : null,
+    code: reply?.success === true ? 'SUCCESS' : (codes.get(reply?.error) ?? 'UNCLASSIFIED'),
+  };
+}
+export function sitoutResponse(status, reply) {
+  const codes = new Map([
+    ['You Must Play At Least One Hand Before You Can Sit Out', 'SITOUT_HAND_REQUIRED'],
+    ['Table engine not found', 'NOT_FOUND'],
+    ['Player not found at this table', 'NOT_SEATED'],
+    ['Authentication required', 'AUTH_REQUIRED'],
+    ['Scheduled maintenance is in progress', 'MAINTENANCE'],
   ]);
   return {
     httpStatus: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
@@ -491,7 +510,7 @@ export async function witnessFinancial({
   if (
     typeof pauseForTopUp !== 'boolean' ||
     (pauseForTopUp && action !== 'top_up') ||
-    !CONSENT_PLAYERS.includes(pin.playerId) ||
+    !WITNESS_PLAYERS.includes(pin.playerId) ||
     !['top_up', 'cash_out', 'auto_top_up', 'stop_playing'].includes(action) ||
     !Number.isInteger(timeoutMs) ||
     timeoutMs < 30000 ||
@@ -527,6 +546,13 @@ export async function witnessFinancial({
     cleanup: 'pending',
     scope: pauseForTopUp ? 'one_normal_ui_topup_with_sitout_and_return' : 'one_normal_ui_intent',
     intent: null,
+    cleanupStages: {
+      autoPreference: 'not_required',
+      autoStep: 'not_started',
+      autoOffGestures: 0,
+      browser: 'not_created',
+      localSession: 'not_created',
+    },
   };
   let auth,
     opening,
@@ -537,7 +563,26 @@ export async function witnessFinancial({
     pauseAttempted = false,
     pauseRestored = true,
     pauseInitial,
-    pauseAnchor;
+    pauseAnchor,
+    autoAnchor,
+    autoOriginal,
+    cleanupSelectionAttempted = false;
+  const click = (control, ms = remaining()) =>
+    bound(
+      clickSelectedPoolControl(page, pin, control, () =>
+        Math.max(1, Math.min(ms, end - Date.now()))
+      ),
+      ms
+    );
+  const cleanupSelection = async (left) => {
+    try {
+      await bound(assertSelectedPoolTab(page, pin, left), left());
+      return;
+    } catch {}
+    if (cleanupSelectionAttempted) throw Error('cleanup_selection_unknown');
+    cleanupSelectionAttempted = true;
+    await bound(selectPoolTab(page, pin, left, (report.cleanupPoolSelection = {})), left());
+  };
   const pauseRequests = { pause: 0, return: 0 };
   const acceptsPause = (req, wanted) => {
     try {
@@ -570,17 +615,16 @@ export async function witnessFinancial({
       pauseRestored = true;
       return;
     }
+    await cleanupSelection(left);
     // Exactly one normal return gesture, including after a refused/unknown add-on.
     const responsePromise = page.waitForResponse((r) => acceptsPause(r.request(), false), {
       timeout: left(),
     });
     responsePromise.catch(() => {});
-    await bound(
-      page.getByRole('button', { name: "I'm Back", exact: true }).click({ timeout: left() }),
-      left()
-    );
+    await bound(click(page.getByRole('button', { name: "I'm Back", exact: true }), left()), left());
     const response = await bound(responsePromise, left());
     const reply = await bound(response.json(), left());
+    report.sitout.returnResponse = sitoutResponse(response.status(), reply);
     if (!response.ok() || reply?.success !== true) throw Error('sitout_return_unknown');
     const safeRefusal =
       report.addonResponse?.success === false &&
@@ -625,33 +669,51 @@ export async function witnessFinancial({
     )
       throw Error('sitout_return_unknown');
   };
+  const openMenu = async (left) => {
+    const button = page.getByRole('button', { name: 'Table Menu', exact: true });
+    const expanded = await bound(button.getAttribute('aria-expanded'), left());
+    if (!['true', 'false'].includes(expanded)) throw Error('restore_unknown');
+    if (expanded === 'false') await click(button, left());
+  };
   const restorePreference = async (ms) => {
-    await bound(
-      page.getByRole('button', { name: 'Table Menu', exact: true }).click({ timeout: ms }),
-      ms
-    );
-    const toggle = page.getByRole('menuitem', { name: /^Auto Top Up(?: ON)?$/ });
-    if (!/\bON\b/.test(await bound(toggle.innerText(), ms))) throw Error('restore_unknown');
-    await bound(toggle.click({ timeout: ms }), ms);
-    await bound(
-      page.getByRole('button', { name: 'Table Menu', exact: true }).click({ timeout: ms }),
-      ms
-    );
+    const stop = Date.now() + ms;
+    const left = () => Math.max(1, stop - Date.now());
+    report.cleanupStages.autoStep = 'verify_identity';
+    const current = await bound(financialPauseState(admin, pin, autoAnchor), left());
     if (
-      /\bON\b/.test(
-        await bound(page.getByRole('menuitem', { name: /^Auto Top Up(?: ON)?$/ }).innerText(), ms)
-      )
+      current.cashPlayerSessionId !== autoOriginal.cashPlayerSessionId ||
+      current.openedAt !== autoOriginal.openedAt ||
+      current.occupancyId !== autoOriginal.occupancyId
     )
+      throw Error('auto_identity_unknown');
+    report.cleanupStages.autoStep = 'select_pool';
+    await cleanupSelection(left);
+    report.cleanupStages.autoStep = 'open_menu';
+    await openMenu(left);
+    const toggle = page.getByRole('menuitem', { name: /^Auto Top Up(?: ON)?$/ });
+    report.cleanupStages.autoStep = 'read_preference';
+    const initial = (await bound(toggle.innerText(), left())).trim();
+    if (!/^Auto Top Up(?:\s+ON)?$/.test(initial)) throw Error('restore_unknown');
+    if (/\bON\b/.test(initial)) {
+      if (report.cleanupStages.autoOffGestures !== 0) throw Error('restore_unknown');
+      report.cleanupStages.autoStep = 'toggle_off';
+      report.cleanupStages.autoOffGestures++;
+      await click(toggle, left());
+      report.cleanupStages.autoStep = 'reopen_menu';
+      await openMenu(left);
+    }
+    report.cleanupStages.autoStep = 'verify_off';
+    if ((await bound(toggle.innerText(), left())).trim() !== 'Auto Top Up')
       throw Error('restore_unknown');
     autoRestored = true;
+    report.cleanupStages.autoPreference = 'off_verified';
+    report.cleanupStages.autoStep = 'complete';
   };
   // The last normal step reached, recorded on failure (no message, no data).
   let step = 'preflight';
   const menu = async () => {
     step = 'table_menu';
-    await page
-      .getByRole('button', { name: 'Table Menu', exact: true })
-      .click({ timeout: remaining() });
+    await openMenu(remaining);
   };
   try {
     await bound(validatePlayer(admin, pin));
@@ -711,6 +773,8 @@ export async function witnessFinancial({
     });
     step = 'player_terms';
     await bound(acceptPlayerTerms(page, auth.session, pin, url, false, remaining));
+    step = 'select_pool';
+    await bound(selectPoolTab(page, pin, remaining, (report.poolSelection = {})));
     step = 'room_tools';
     await page
       .getByTestId('lightning-room-tools')
@@ -763,11 +827,10 @@ export async function witnessFinancial({
       step = 'sitout_submit';
       pauseAttempted = true;
       pauseRestored = false;
-      await page
-        .getByRole('menuitem', { name: 'Sit Out', exact: true })
-        .click({ timeout: remaining() });
+      await click(page.getByRole('menuitem', { name: 'Sit Out', exact: true }));
       const response = await bound(pauseResponse);
       const out = await bound(response.json());
+      report.sitout.pauseResponse = sitoutResponse(response.status(), out);
       if (!response.ok() || out?.success !== true) throw Error('sitout_refused_or_unknown');
       let countAtPause;
       step = 'sitout_settlement';
@@ -835,30 +898,24 @@ export async function witnessFinancial({
       timeout: remaining(),
     });
     responsePromise.catch(() => {});
-    if (action === 'stop_playing')
-      await page.getByTestId('lightning-stop-playing').click({ timeout: remaining() });
+    if (action === 'stop_playing') await click(page.getByTestId('lightning-stop-playing'));
     else if (action === 'cash_out') {
       await menu();
-      await page
-        .getByRole('menuitem', { name: 'Leave Table', exact: true })
-        .click({ timeout: remaining() });
-      await page
-        .getByRole('alertdialog', { name: 'Leave Table?', exact: true })
-        .getByRole('button', { name: 'Leave Table', exact: true })
-        .click({ timeout: remaining() });
+      await click(page.getByRole('menuitem', { name: 'Leave Table', exact: true }));
+      await click(
+        page
+          .getByRole('alertdialog', { name: 'Leave Table?', exact: true })
+          .getByRole('button', { name: 'Leave Table', exact: true })
+      );
     } else if (action === 'top_up') {
       await menu();
       step = 'top_up_item';
-      await page
-        .getByRole('menuitem', { name: 'Top Up', exact: true })
-        .click({ timeout: remaining() });
+      await click(page.getByRole('menuitem', { name: 'Top Up', exact: true }));
       step = 'addon_dialog';
       const dialog = page.getByRole('dialog', { name: 'Add-On Available', exact: true });
       await dialog.waitFor({ state: 'visible', timeout: remaining() });
       step = 'addon_25';
-      await dialog
-        .getByRole('button', { name: '25%', exact: true })
-        .click({ timeout: remaining() });
+      await click(dialog.getByRole('button', { name: '25%', exact: true }));
       const amount = Number(await dialog.getByLabel('Amount To Add', { exact: true }).inputValue());
       if (cents(amount) <= 0) throw Error('no_topup_headroom');
       step = 'addon_submit';
@@ -874,16 +931,19 @@ export async function witnessFinancial({
         )
           throw Error('sitout_not_quiescent');
       }
-      await dialog.getByRole('button', { name: /^Add [\d,.]+$/ }).click({ timeout: remaining() });
+      await click(dialog.getByRole('button', { name: /^Add [\d,.]+$/ }));
     } else {
       await menu();
       const toggle = page.getByRole('menuitem', { name: /^Auto Top Up(?: ON)?$/ });
       const initial = await toggle.innerText();
       if (/\bON\b/.test(initial)) throw Error('auto_already_armed');
       // Restore through the same normal control even after unknown observation.
+      autoAnchor = anchor;
+      autoOriginal = await bound(financialPauseState(admin, pin, anchor));
       restoreAuto = true;
       autoRestored = false;
-      await toggle.click({ timeout: remaining() });
+      report.cleanupStages.autoPreference = 'pending';
+      await click(toggle);
       report.autoArmed = true;
     }
     report.cause = 'response_unknown';
@@ -1025,6 +1085,7 @@ export async function witnessFinancial({
         await restorePreference(Math.max(1, end - Date.now() - 12000));
       } catch {
         autoRestored = false;
+        report.cleanupStages.autoPreference = 'unknown';
       }
     }
     if (restoreAuto) report.autoPreferenceRestored = autoRestored;
@@ -1035,12 +1096,15 @@ export async function witnessFinancial({
         auth = await bound(opening, Math.max(1, end - Date.now() - 10000));
       } catch {
         local = false;
+        report.cleanupStages.localSession = 'unknown';
       }
     if (browser)
       try {
         await bound(browser.close(), Math.max(1, end - Date.now() - 7000));
+        report.cleanupStages.browser = 'closed';
       } catch {
         closed = false;
+        report.cleanupStages.browser = 'unknown';
       }
     if (auth?.client)
       try {
@@ -1049,8 +1113,10 @@ export async function witnessFinancial({
           Math.max(1, end - Date.now())
         );
         if (out?.error) local = false;
+        report.cleanupStages.localSession = out?.error ? 'unknown' : 'closed';
       } catch {
         local = false;
+        report.cleanupStages.localSession = 'unknown';
       }
     report.cleanup =
       closed && local && autoRestored && pauseRestored

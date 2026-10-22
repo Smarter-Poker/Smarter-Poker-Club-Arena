@@ -85,6 +85,7 @@ import {
   type LightningConfig,
 } from './LightningConfig.js';
 import { randomUUID } from 'node:crypto';
+import { LIGHTNING_FORMATION_MAX_WAIT_MS } from './LightningMatcherModel.js';
 import {
   isUuid,
   lightningMatch,
@@ -117,6 +118,19 @@ export const LIGHTNING_PLATFORMS_RETRY_MS = 10 * 60_000;
 export const LIGHTNING_ADMISSION_COALESCE_MS = 250;
 /** A saturated pass is followed at once by another, at most this many times in a row. */
 export const LIGHTNING_SURGE_MAX_BACK_TO_BACK = 8;
+/**
+ * IDLE-DEADLINE PASS (2026-10-22 latency fix). A freed player who cannot yet
+ * fill a full ring waits at most LIGHTNING_FORMATION_MAX_WAIT_MS (the
+ * matcher's own rule); the pass that may then deal the smaller legal hand runs
+ * this long after that deadline (engine/database clock margin), not up to a
+ * whole pass interval later.
+ */
+export const LIGHTNING_IDLE_DEADLINE_MARGIN_MS = 50;
+/** A pass the database skipped (another pass held the Cluster) is asked again this soon. */
+export const LIGHTNING_BUSY_RETRY_MS = 150;
+/** Released players are remembered this long at most (a stale entry only costs one early pass). */
+const LIGHTNING_IDLE_TRACK_MS = 60_000;
+const LIGHTNING_IDLE_TRACK_MAX = 2_000;
 /**
  * LIGHTNING PHASE 13: why a worker is not forming. `pending_off` is the
  * automatic reversion, `switched_off` Lightning disabled on a live Cluster,
@@ -241,6 +255,10 @@ export class LightningClusterWorker {
   /** Back-to-back passes run because the previous one was saturated. */
   private surgeStreak = 0;
   private lastPassSaturated = false;
+  /** The last pass was skipped because another pass held the Cluster. */
+  private lastPassBusy = false;
+  /** Freed players not yet seen in a formed hand: their idle moment (process clock). */
+  private readonly idleSince = new Map<string, number>();
 
   constructor(
     readonly clusterId: string,
@@ -419,7 +437,7 @@ export class LightningClusterWorker {
           const surge =
             this.lastPassSaturated && this.surgeStreak < LIGHTNING_SURGE_MAX_BACK_TO_BACK;
           this.surgeStreak = surge ? this.surgeStreak + 1 : 0;
-          this.arm(woken || surge ? 0 : this.config.passIntervalMs);
+          this.arm(woken || surge ? 0 : this.nextPassDelayMs());
         });
     }, delayMs);
     (this.timer as { unref?: () => void }).unref?.();
@@ -443,10 +461,49 @@ export class LightningClusterWorker {
   }
 
   /**
+   * The delay before the next routine pass: the pass interval, shortened to
+   * the earliest moment a waiting freed player's full-ring wait expires (the
+   * pass that can then deal the smaller legal hand), or to a short retry when
+   * the database skipped this pass because another held the Cluster. Never
+   * longer than the pass interval; nothing about who is matched changes.
+   */
+  private nextPassDelayMs(): number {
+    const interval = this.config.passIntervalMs;
+    if (this.config.workerMode !== 'form' || this.isDraining) return interval;
+    if (this.lastPassBusy) return Math.min(interval, LIGHTNING_BUSY_RETRY_MS);
+    const nowMs = Date.now();
+    // The earliest deadline still ahead: one already behind us was asked about
+    // by the pass that just ran (and released sizing for the whole pool).
+    let next = Number.POSITIVE_INFINITY;
+    for (const [id, at] of this.idleSince) {
+      if (nowMs - at > LIGHTNING_IDLE_TRACK_MS) {
+        this.idleSince.delete(id);
+        continue;
+      }
+      const due = at + LIGHTNING_FORMATION_MAX_WAIT_MS + LIGHTNING_IDLE_DEADLINE_MARGIN_MS;
+      if (due > nowMs && due < next) next = due;
+    }
+    return Number.isFinite(next) ? Math.min(interval, next - nowMs) : interval;
+  }
+
+  /** A freed player is idle from now (process clock), until a formed hand names them. */
+  noteIdle(playerId: string): void {
+    if (typeof playerId !== 'string' || playerId.length === 0) return;
+    this.idleSince.delete(playerId);
+    this.idleSince.set(playerId, Date.now());
+    while (this.idleSince.size > LIGHTNING_IDLE_TRACK_MAX) {
+      const first = this.idleSince.keys().next().value as string;
+      this.idleSince.delete(first);
+    }
+  }
+
+  /**
    * A player was freed or a hand ended: run the next pass now rather than a
    * pass interval from now. A pass in flight is followed at once by another.
+   * The freed player (when named) is remembered for the idle-deadline pass.
    */
-  wake(): void {
+  wake(playerId?: string): void {
+    if (playerId) this.noteIdle(playerId);
     if (!this.running || this.stopped || this.config.workerMode !== 'form') return;
     // A draining (or held) Cluster forms nothing, so a freed player is no reason to run.
     if (this.isDraining) return;
@@ -465,6 +522,11 @@ export class LightningClusterWorker {
     this.passes++;
     const result = await this.runPass();
     this.lastPassSaturated = result.outcome === 'formed' && result.saturated === true;
+    this.lastPassBusy =
+      result.outcome === 'skipped' &&
+      (result.reason === 'cluster_row_busy' ||
+        result.reason === 'pass_in_progress' ||
+        result.reason === 'formation_in_flight');
     this.metrics.recordPass(result.outcome);
     // LIGHTNING PHASE 12: the ledger's clock, after the pass decided everything.
     try {
@@ -780,6 +842,7 @@ export class LightningClusterWorker {
       }
       if (this.deps.hasInstance?.(h.instance_id)) continue; // a replay naming a hand already dealt
       this.metrics.noteMatched(players, formedAtMs, this.clusterId);
+      for (const p of players) this.idleSince.delete(p);
       decided.push({ players, bb: h.bb, sb: h.sb, btn: h.btn, handId: h.hand_id });
       for (const p of players)
         if (!this.knownPoolPlayers.includes(p)) this.knownPoolPlayers.push(p);

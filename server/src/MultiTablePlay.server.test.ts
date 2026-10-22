@@ -363,7 +363,8 @@ describe('rotator break bookkeeping for a multi-tabling horse', () => {
       'this.breaks.delete(HorseSessionRotator.breakKey(tableId, best.seat.user_id))'
     );
     // The sit-back pass reads the userId from the VALUE, not the key:
-    expect(src).toContain('this.getEngine(info.tableId)?.sitOut?.(info.userId, false)');
+    expect(src).toContain('const breakEngine = this.getEngine(info.tableId);');
+    expect(src).toContain('breakEngine?.sitOut?.(info.userId, false)');
     // And the old user-keyed set is gone:
     expect(src).not.toContain('this.breaks.set(best.seat.user_id');
   });

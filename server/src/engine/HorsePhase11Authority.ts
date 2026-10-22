@@ -453,64 +453,25 @@ export interface HorsePhase11AuthoritySelection {
  * completed every eligible PLO6 decision on every street (river 765 of 765,
  * lowest Wilson bound 0.9914). Cash only. All three Phase 11 packs are now
  * selected.
+ *
+ * October 22: MANIAC PRESSURE (docs/changelog/2026-10-22-horses-adjust-to-maniacs.md,
+ * Dan: "IF A PLAYER IS MOVING ALL IN ON EVERY HAND THE HORSES NEED TO RECOGNIZE
+ * THIS IN REAL TIME ... FOR ALL GAMES, LEVELS AND STAKES") changes HorseLogic.ts,
+ * HorseMind.ts, HorsePreflop.ts and HorseOpponentExploit.ts, hashed policy
+ * files, so every qualified policy digest moves again. Following the
+ * 2026-10-17 precedent the fix ships now and every pack requalifies: every
+ * selection is explicitly null until its locked matrix requalifies the exact
+ * new source (and, where the pack has one, fresh natural completion is read);
+ * a renewal is the next generation. The da94e437 generations stay committed
+ * with their evidence and are retained for refusal in
+ * HorsePreviousSelections.test-support.ts as RETIRED_2026_10_22_*.
  */
 export const PHASE11_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<'plo5' | 'plo6' | 'plo8', HorsePhase11AuthoritySelection | null>
 > = Object.freeze({
-  plo5: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo5',
-    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-    packVersion: 'plo5-high-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
-    domain: 'plo5-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/da94e437/phase11-qualification-2026-10-19-plo5.json',
-    qualificationSha256: 'ddd51c436feff9833c7a62f4e52858ba890a51a01068285f6ebe5fbe7e0b2dd0',
-    completionPath: 'docs/evidence/phase11/da94e437/phase11-completion-2026-10-18-plo5.json',
-    completionSha256: 'f3a67c8bba9c6d915a4e4e946cddcb9a3a3fdfbf2f1f3bdd8e71d63064ed346b',
-    approvalGeneration: 4,
-    issuedAt: '2026-10-19T14:58:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  plo6: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo6',
-    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-    packVersion: 'plo6-high-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
-    domain: 'plo6-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/da94e437/phase11-qualification-2026-10-20-plo6.json',
-    qualificationSha256: '6588eb2e99b33f9c7c6597c6cb223612b4a23aacd44c018629cf713e14e751db',
-    completionPath: 'docs/evidence/phase11/da94e437/phase11-completion-2026-10-18-plo6.json',
-    completionSha256: 'f4a91ae0ced6e07f937cec2bce897b181dba805d72da01a38e407f15f8ffe37a',
-    approvalGeneration: 3,
-    issuedAt: '2026-10-20T00:50:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
-  plo8: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase11',
-    variant: 'plo8',
-    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-    packVersion: 'plo8-split-round3-v2',
-    contractVersion: 'omaha-variant-strength-contract-v1',
-    contractDigest: '0716bb254de73014914ca086aa26b6ffe499bb2e50897432de6a9e855da5ee05',
-    domain: 'plo8-cash-single-board-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase11/da94e437/phase11-qualification-2026-10-19-plo8.json',
-    qualificationSha256: '4d7530d0ee7438d2f114cd031c99f9afe1119e00478c3c4d793e2a5d2fc7b502',
-    completionPath: 'docs/evidence/phase11/da94e437/phase11-completion-2026-10-18-plo8.json',
-    completionSha256: 'dfb058688e44a25710420d07ab706599794e3ee3b06ff10e2ce3efcf407fa1c9',
-    approvalGeneration: 4,
-    issuedAt: '2026-10-19T05:15:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  plo5: null,
+  plo6: null,
+  plo8: null,
 });
 
 const HEX40 = /^[0-9a-f]{40}$/;

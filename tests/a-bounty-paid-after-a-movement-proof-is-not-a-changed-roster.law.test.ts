@@ -147,7 +147,11 @@ describe('a bounty paid after a movement proof is not a changed roster', () => {
           'FUNCTION smarter_private.f06_assert_movement('
         )
       );
-    expect(later).toEqual([NEVER_DEALT, ADD_ON]);
+    expect(later).toEqual([
+      NEVER_DEALT,
+      ADD_ON,
+      '20261022032302_a_settled_finishing_place_is_not_a_changed_elimination.sql',
+    ]);
     expect(readFileSync(join(MIGRATIONS, NEVER_DEALT), 'utf8')).toContain(
       `md5(p.prosrc) = '${POST_MD5}'`
     );

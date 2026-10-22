@@ -4,7 +4,7 @@ import ts from 'typescript';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spinPostRevealMs, spinRevealTotalMs } from '../config/spinSpec.js';
 import { TableStateHub, type HubSubscriber } from '../transport/TableStateHub.js';
-import { readFundedSpinDraw, spinRuleManifest } from './SpinDrawReceipt.js';
+import { playableSpinBlinds, readFundedSpinDraw, spinRuleManifest } from './SpinDrawReceipt.js';
 import {
   SPIN_LAUNCH_PARKED_ALERT_SOURCE,
   SpinLaunchParkRegistry,
@@ -61,6 +61,7 @@ const execute = new Function(
   'spinPostRevealMs',
   'proveSpinDrawWithParking',
   'raiseFinancialAlert',
+  'playableSpinBlinds',
   compiled
 );
 
@@ -144,7 +145,8 @@ function start(
     { emitEvent },
     spinPostRevealMs,
     proveWithFreshRegistry,
-    raiseFinancialAlert
+    raiseFinancialAlert,
+    playableSpinBlinds
   );
   return { emitEvent, outcome, context, reportError, raiseFinancialAlert };
 }
@@ -222,7 +224,7 @@ describe('a Spin reveals its immutable funded rule receipt', () => {
     ]);
   });
 
-  it('uses the booked payout and blind rules after a specification change', async () => {
+  it('preserves booked stakes and payouts while projecting the minimum playable clock', async () => {
     const booked = receipt(10);
     const tier = booked.rule_manifest.tiers.find((candidate) => candidate.multiplier === 10)!;
     tier.blind_structure = tier.blind_structure.map((blind) => ({ ...blind, duration: 240 }));
@@ -236,9 +238,11 @@ describe('a Spin reveals its immutable funded rule receipt', () => {
 
     const patch = await run.outcome;
 
-    expect(
-      patch.blind_structure.every((blind: { duration: number }) => blind.duration === 240)
-    ).toBe(true);
+    expect(patch.blind_structure).toEqual(
+      booked.blind_structure.map((blind) => ({ ...blind, duration: 300, durationMinutes: 5 }))
+    );
+    expect(booked.blind_structure.every((blind) => blind.duration === 240)).toBe(true);
+    expect(tier.blind_structure.every((blind) => blind.duration === 240)).toBe(true);
     expect(patch.payout_structure).toEqual(tier.payout_structure);
     expect(patch).not.toHaveProperty('starting_chips');
   });
@@ -320,6 +324,7 @@ describe('a Spin reveals its immutable funded rule receipt', () => {
 
   it('does not replay a wheel and preserves historical reveal timing for played recovery', async () => {
     const booked = receipt(10);
+    for (const blind of booked.blind_structure) blind.duration = 180;
     const historicalRevealAt = '2026-09-09T11:22:33.444Z';
     const run = start(
       vi.fn(async () => ({ data: booked, error: null })),
@@ -334,7 +339,10 @@ describe('a Spin reveals its immutable funded rule receipt', () => {
     expect(run.emitEvent).not.toHaveBeenCalled();
     expect(patch.spin_reveal_lag_ms).toBe(915);
     expect(patch.spin_reveal_at).toBe(historicalRevealAt);
-    expect(patch.blind_structure).toEqual(booked.blind_structure);
+    expect(patch.blind_structure).toEqual(
+      booked.blind_structure.map((blind) => ({ ...blind, duration: 300, durationMinutes: 5 }))
+    );
+    expect(booked.blind_structure.every((blind) => blind.duration === 180)).toBe(true);
     expect(patch.payout_structure).toEqual(booked.payout_structure);
   });
 });

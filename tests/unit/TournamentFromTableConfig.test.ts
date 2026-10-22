@@ -113,9 +113,9 @@ describe('blind structure', () => {
       expect(description).toMatchObject({
         startingDepthBB: 50,
         speedLabel: 'Turbo',
-        openingMinutes: 3,
-        minimumMinutes: 3,
-        maximumMinutes: 3,
+        openingMinutes: 5,
+        minimumMinutes: 5,
+        maximumMinutes: 5,
       });
       expect(config.startingStack).toBe(1000);
       expect(JSON.stringify(input)).toBe(before);

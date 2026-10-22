@@ -47,6 +47,63 @@ describe('GameServerAPI', () => {
     );
   });
 
+  it('sends the Lightning hand and decision without changing the ordinary Time Bank body', async () => {
+    mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
+    await GameServerAPI.activateTimeBank('pool', 'ignored', {
+      handId: 'hand',
+      actionContext: 'decision',
+    });
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({
+      tableId: 'pool',
+      handId: 'hand',
+      actionContext: 'decision',
+    });
+    await GameServerAPI.activateTimeBank('cash', 'ignored');
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body)).toEqual({ tableId: 'cash' });
+  });
+
+  it('preserves the already-running Time Bank refusal after an automatic grant wins the race', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ success: false, error: 'Your Time Bank Is Already Running' }),
+    });
+    expect(
+      await GameServerAPI.activateTimeBank('pool', 'ignored', {
+        handId: 'hand',
+        actionContext: 'decision',
+      })
+    ).toEqual({ success: false, error: 'Your Time Bank Is Already Running' });
+  });
+
+  it.each([
+    null,
+    { error: 123 },
+    { other: 'not an error' },
+    { success: true, error: 'unexpected' },
+    { success: false, error: 'x'.repeat(257) },
+  ])('retains the generic HTTP refusal for an invalid Time Bank error payload', async (payload) => {
+    mockFetch.mockResolvedValue({ ok: false, status: 400, json: async () => payload });
+    expect(await GameServerAPI.activateTimeBank('cash')).toEqual({
+      success: false,
+      error: 'Server error (400)',
+    });
+  });
+
+  it('retains the HTTP refusal when the Time Bank response is not JSON', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: async () => {
+        throw new Error('not json');
+      },
+    });
+    expect(await GameServerAPI.activateTimeBank('cash')).toEqual({
+      success: false,
+      error: 'Server error (502)',
+    });
+  });
+
   it('sends the admin occupancy contract to the configured engine origin', async () => {
     mockFetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ success: true }) });
     await GameServerAPI.notifyServerKickOccupancy('table', 'player', 2, 'occupancy', 'reason');

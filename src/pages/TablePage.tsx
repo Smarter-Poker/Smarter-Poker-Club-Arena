@@ -19,6 +19,7 @@ import { TableLoadFailureOverlay } from '../components/table/TableLoadFailureOve
 import { SpadeConsole } from '../components/console/SpadeConsole';
 import { ButtonImagePreloader } from '../components/table/ButtonImagePreloader';
 import { WaitlistCallToAction } from '../components/table/WaitlistCallToAction';
+import { TournamentLateRegCallToAction } from '../components/table/TournamentLateRegCallToAction';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
@@ -129,6 +130,7 @@ import { TableRouteBoundary } from '../components/table/TableRouteBoundary';
 import { hubMarketplaceDestination } from '../utils/hubMarketplace';
 import { cachedAuthUserId, hydrateIdentity, persistIdentity } from '../lib/cachedIdentity';
 import { formatGameTitle } from '../utils/formatGameTitle';
+import { tournamentTabBuyInLabel } from '../lib/tournamentTabLabel';
 import {
   accessRefusalFromClose,
   isTournamentTablePausedClose,
@@ -296,12 +298,14 @@ import {
   type ArenaIdentity,
 } from '../../server/src/domain/ArenaContext';
 import { useLightningSitOut } from '../lightning/useLightningSitOut';
+import { useLightningAutoTopUp } from '../lightning/useLightningAutoTopUp';
 import { useLightningFundingArena } from '../lightning/useLightningFundingArena';
+import { lightningTimeBankRequest } from '../utils/lightningTimeBankRequest';
 import { arenaAssetUnitCents, arenaAssetUnitCentsIfRead } from '../lib/arenaUnitCents';
 import { topUpCashierPath } from '../utils/topUpCashierPath';
 import { mergeSessionFacts, sessionBuyInTotal } from '../utils/sessionBuyInTotal';
 import { bustPromptMustWait } from '../utils/bustPromptGate';
-import { bootExplanation, seatCopy } from '../components/table/seatExitCopy';
+import { bootExplanation, seatCopy, seatUnits } from '../components/table/seatExitCopy';
 import { readTableFundingBalance } from '../services/TableFundingService';
 import { soundService, haptic } from '../services/SoundService';
 import {
@@ -338,6 +342,8 @@ import {
   POT_ANCHOR_PCT,
   seatPodPx,
   fitSeatToViewport,
+  portraitTableTransform,
+  portraitBoardWidthOfFeltPct,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
@@ -474,7 +480,6 @@ import { resolveDisplayRake } from '../lib/rakeOverride';
 import { LeaderboardService } from '../services/LeaderboardService';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
 // REPLACE_ME from '../services/AchievementTriggerService';
-import { notificationService } from '../services/NotificationService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
@@ -1317,128 +1322,9 @@ interface TablePageProps {
 /* MastheadLevelClock removed 2026-08-30: the round-end countdown left the
    masthead with it - MastheadNextInfo below carries the felt's clock now. */
 
-/**
- * Dan 2026-08-30: "REMOVE THE ROUND END TIMER ON THE TABLE, AND REPLACE THAT
- * WITH 'NEXT BLINDS' AND A 'BREAK STARTS IN' CLOCK INSTEAD."
- *
- * Two lines under the tournament masthead:
- *   - NEXT BLINDS <sb>/<bb>   (the next playing level, breaks skipped)
- *   - BREAK STARTS IN m:ss    (only when the structure has a break ahead -
- *     the remainder of this level plus every full level until the break)
- * The per-second tick stays inside this component, exactly like the
- * MastheadLevelClock it replaces, so the page never re-renders for a clock.
- */
-function MastheadNextInfo({
-  startedAtMs,
-  durationSec,
-  struct,
-  levelIdx,
-  onBreak = false,
-  breakEndsAtMs = null,
-}: {
-  startedAtMs: number;
-  durationSec: number;
-  /** Dan 2026-08-30: while the tournament is ON BREAK the clock flips from
-      "Break Starts In" to "Break Over In", counting to the break's real end. */
-  onBreak?: boolean;
-  breakEndsAtMs?: number | null;
-  struct: Array<{
-    level?: number;
-    smallBlind?: number;
-    small_blind?: number;
-    bigBlind?: number;
-    big_blind?: number;
-    isBreak?: boolean;
-    is_break?: boolean;
-    duration?: number;
-    duration_minutes?: number;
-    durationMinutes?: number;
-  }>;
-  levelIdx: number;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  type Entry = (typeof struct)[number];
-  const sb = (l: Entry) => Number(l.smallBlind ?? l.small_blind ?? 0);
-  const bbOf = (l: Entry) => Number(l.bigBlind ?? l.big_blind ?? 0);
-  const isBreakLevel = (l: Entry) => !!(l.isBreak ?? l.is_break) || (sb(l) === 0 && bbOf(l) === 0);
-  const durOf = (l: Entry) =>
-    Number(l.duration) || (Number(l.duration_minutes ?? l.durationMinutes) || 0) * 60;
-
-  const remaining = Math.max(0, durationSec - Math.floor((now - startedAtMs) / 1000));
-
-  // The next PLAYING level's blinds, breaks skipped.
-  let nextBlinds: string | null = null;
-  for (let i = levelIdx + 1; i < struct.length; i++) {
-    if (!isBreakLevel(struct[i])) {
-      nextBlinds = formatBlindPair(sb(struct[i]), bbOf(struct[i]));
-      break;
-    }
-  }
-
-  // Seconds until the next BREAK entry, when one exists ahead of us.
-  let breakInSec: number | null = null;
-  if (levelIdx >= 0 && levelIdx < struct.length && !isBreakLevel(struct[levelIdx])) {
-    let acc = remaining;
-    for (let i = levelIdx + 1; i < struct.length; i++) {
-      if (isBreakLevel(struct[i])) {
-        breakInSec = acc;
-        break;
-      }
-      acc += durOf(struct[i]);
-    }
-  }
-
-  const fmtSecs = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const ss2 = String(secs % 60).padStart(2, '0');
-    return `${m}:${ss2}`;
-  };
-
-  /* ON BREAK: the story is when play resumes, not when the next break is. */
-  if (onBreak) {
-    const overIn =
-      breakEndsAtMs && breakEndsAtMs > now ? Math.round((breakEndsAtMs - now) / 1000) : null;
-    return (
-      <>
-        {nextBlinds !== null && (
-          <span className="table-brand__line table-brand__line--round">
-            Next Blinds <span className="table-brand__clock">{nextBlinds}</span>
-          </span>
-        )}
-        <span className="table-brand__line table-brand__line--round">
-          {overIn !== null ? (
-            <>
-              Break Over In <span className="table-brand__clock">{fmtSecs(overIn)}</span>
-            </>
-          ) : (
-            'On Break - Last Hand Finishing'
-          )}
-        </span>
-      </>
-    );
-  }
-
-  if (nextBlinds === null && breakInSec === null) return null;
-  return (
-    <>
-      {nextBlinds !== null && (
-        <span className="table-brand__line table-brand__line--round">
-          Next Blinds <span className="table-brand__clock">{nextBlinds}</span>
-        </span>
-      )}
-      {breakInSec !== null && (
-        <span className="table-brand__line table-brand__line--round">
-          Break Starts In <span className="table-brand__clock">{fmtSecs(breakInSec)}</span>
-        </span>
-      )}
-    </>
-  );
-}
+/* MastheadNextInfo removed 2026-10-21 (Dan: "REMOVE LEVEL... AND UNDER
+   THAT"): the tournament masthead no longer carries Next Blinds or the
+   Break Starts In clock under the event line. */
 
 /**
  * Dan 2026-08-23: "you should never ask if they want to show cards."
@@ -5450,6 +5336,11 @@ function LiveTablePage({
      the tab pill - "MTT AND BUY IN AMOUNT UNDER IT FOR QUICK REFERENCE".
      undefined until the tournament row has been read. */
   const [tournamentBuyInTotal, setTournamentBuyInTotal] = useState<number | undefined>(undefined);
+  /* Dan 2026-10-21: the felt masthead's second line under the club and union
+     is the tournament's NAME and BUY-IN ("UNDER KINGS CLUB - MIDWAY UNION IT
+     SHOULD SAY THE TOURNAMENT NAME AND BUY IN, NOT JUST NLH POKER
+     TOURNAMENT"). '' until the tournament row has been read. */
+  const [tournamentEventName, setTournamentEventName] = useState('');
   const headsUpAnnouncedRef = useRef<Set<string>>(new Set());
   const [spinHeadsUpNote, setSpinHeadsUpNote] = useState(false);
   const spinPlayersRemaining = tableState.players.filter(
@@ -5701,6 +5592,8 @@ function LiveTablePage({
       tableState.communityCards3,
       tableState.pot,
       tableState.heroSeat,
+      tableState.lastActions,
+      tableState.lastBetAmounts,
     ])
   );
 
@@ -8394,8 +8287,9 @@ function LiveTablePage({
   const handleAddChips = async (
     amount: number,
     opId?: string,
-    opts?: { source?: 'manual' | 'auto' }
+    opts?: { source?: 'manual' | 'auto'; isCurrent?: () => boolean; isScopeCurrent?: () => boolean }
   ): Promise<boolean> => {
+    if (opts?.isCurrent && !opts.isCurrent()) return false;
     /* A Diamond seat tops up too, through the same engine call. What differs is
        the door underneath it (fn_poker_diamond_top_up, whole units, the seat's
        own custody row) and the word for what moved. */
@@ -8440,7 +8334,11 @@ function LiveTablePage({
         }
         addOnTableId = anchor.anchorTableId;
       }
+      if (opts?.isCurrent && !opts.isCurrent()) return false;
       const res = await GameServerAPI.addChips(addOnTableId, amount, opId);
+      // Opting out prevents the next debit; an already committed response still
+      // updates this same player/pool's ordinary balance and session records.
+      if (opts?.isScopeCurrent && !opts.isScopeCurrent()) return false;
       if (!res.success) {
         /* The AUTOMATIC top-up sizes itself from the stack it can see, and
            it cannot see a queued mid-hand add-on that already fills the seat
@@ -10875,26 +10773,10 @@ function LiveTablePage({
         });
         showLobbyNow();
 
-        // Phase E: Route session end to Notifications tab for async review
-        if (userId && userId !== 'guest' && tableState.arenaAsset !== 'diamonds') {
-          const pl = sessionPLRef.current;
-          const plText = pl >= 0 ? `+${pl.toLocaleString()}` : pl.toLocaleString();
-          notificationService
-            .create({
-              userId,
-              type: 'system',
-              title: 'Session Complete',
-              message: `Session ended at ${tableState.tableName}. P/L: ${plText} chips over ${handsPlayedRef.current} hands.`,
-              metadata: {
-                tableId: tableId || '',
-                plChips: pl,
-                hands: handsPlayedRef.current,
-              },
-            })
-            .catch(() => {
-              /* non-critical — don't block leave flow */
-            });
-        }
+        // The client-side "Session Complete" notification that sat here is gone
+        // (2026-10-22). public.notifications admits INSERT from service_role only,
+        // so every leave from a chip table answered 42501 and filed
+        // NotificationService.Failed_to_create; no player ever received it.
       } else {
         // Non-success leave is expected when: player is mid-hand (leave_pending is set),
         // seat already cleared, or double-tap. Not a error reporting-worthy production bug.
@@ -13751,7 +13633,7 @@ function LiveTablePage({
           const { data: tournData, error: tournError } = await supabase
             .from('tournaments')
             .select(
-              'format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
+              'name, format_contract, is_bounty, is_pko, is_mystery_bounty, mystery_bounty_stage, bounty_amount, spin_multiplier, spin_locked_tiers, spin_reveal_at, prize_pool, buy_in_amount, buy_in_fee, max_players, starting_chips, status, blind_structure, current_level, level_started_at, started_at, variant, tournament_type, satellite_target_id, satellite_target, final_table_triggered, add_on_available, addon_cost, addon_chips, addon_period_triggered, addon_period_started_at, addon_period_ends_at, prize_pool_finalized, start_time'
             )
             .eq('id', table.tournament_id)
             .maybeSingle();
@@ -13879,6 +13761,9 @@ function LiveTablePage({
             setTournamentFormat(fmt);
             setTournamentBuyInTotal(
               Math.round(Number(tournData.buy_in_amount ?? 0) + Number(tournData.buy_in_fee ?? 0))
+            );
+            setTournamentEventName(
+              formatGameTitle(String((tournData as { name?: unknown }).name ?? '').trim())
             );
             // Seat-first = a Spin (3 seats) or a Heads-Up (2 seats) that has
             // not started. Once it is RUNNING the seats are no longer for
@@ -22838,6 +22723,29 @@ function LiveTablePage({
      `actionClock` is a store whose identity never changes; the leaves subscribe
      to it. Measured across one 20 second turn: 20 renders of this page before,
      zero after. See src/hooks/actionClockStore.ts. */
+  const timeBankScopeRef = useRef({ scope: '', generation: 0, mounted: true });
+  const timeBankScope = `${tableId ?? ''}:${userId ?? ''}`;
+  if (timeBankScopeRef.current.scope !== timeBankScope) {
+    timeBankScopeRef.current.scope = timeBankScope;
+    timeBankScopeRef.current.generation++;
+  }
+  useEffect(() => {
+    timeBankScopeRef.current.mounted = true;
+    return () => {
+      timeBankScopeRef.current.mounted = false;
+    };
+  }, []);
+  const captureTimeBankRequest = useCallback(
+    () =>
+      lightningTimeBankRequest(() => ({
+        ...timeBankScopeRef.current,
+        scope: `${timeBankScopeRef.current.scope}:${timeBankScopeRef.current.generation}`,
+        lightning: Boolean(lightningRoomRef.current),
+        handId: lightningHandId(engineSnapshotRef.current as LightningSnapshotFields),
+        actionContext: tableStateRef.current.actionContext,
+      })),
+    []
+  );
   const { clock: actionClock, resetTimer } = useTableTimer({
     isActiveTurn: tableState.currentPlayerSeat > 0 && tableState.isHandInProgress,
     /* Dan 2026-08-23: `&& !timeBankActive` used to be here, and it did more harm
@@ -22868,7 +22776,9 @@ function LiveTablePage({
         userId &&
         (timeBankUnlimited || (timeBanksRemaining ?? 0) > 0)
       ) {
-        setTimeBankActive(true);
+        const request = captureTimeBankRequest();
+        if (!request.mayDispatch) return;
+        if (!lightningRoomRef.current) setTimeBankActive(true);
         // 2026-08-20: this was a `.catch(...)` that could NEVER run.
         // GameServerAPI.activateTimeBank does not throw: every failure
         // (non-OK status, unreachable server, a thrown fetch) is converted
@@ -22877,7 +22787,8 @@ function LiveTablePage({
         // So on the one path where the player is by definition not watching —
         // their shot clock just expired — a refused time bank left the client
         // showing borrowed time it did not have. Check the result.
-        void GameServerAPI.activateTimeBank(tableId, userId).then((result) => {
+        void GameServerAPI.activateTimeBank(tableId, userId, request.decision).then((result) => {
+          if (!request.isCurrent()) return;
           if (result?.success) return;
           /* NOT every refusal means "no time left".
 
@@ -22931,7 +22842,10 @@ function LiveTablePage({
     if (!tableId || !userId || (!timeBankUnlimited && (timeBanksRemaining ?? 0) <= 0)) {
       return;
     }
-    const result = await GameServerAPI.activateTimeBank(tableId, userId);
+    const request = captureTimeBankRequest();
+    if (!request.mayDispatch) return;
+    const result = await GameServerAPI.activateTimeBank(tableId, userId, request.decision);
+    if (!request.isCurrent()) return;
     if (!result?.success) {
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
       return;
@@ -22983,7 +22897,15 @@ function LiveTablePage({
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-  }, [tableId, userId, timeBanksRemaining, timeBankUnlimited, toast, heroPineappleCards]);
+  }, [
+    tableId,
+    userId,
+    timeBanksRemaining,
+    timeBankUnlimited,
+    toast,
+    heroPineappleCards,
+    captureTimeBankRequest,
+  ]);
 
   /* An arm belongs to ONE turn. Hero acts, folds, times out or the hand moves
      on, and a leftover `true` would keep the pending indicator lit on a seat
@@ -23968,8 +23890,16 @@ function LiveTablePage({
   useEffect(() => {
     if (spectatorSeatState !== 'no-seats-here') return;
     if (tableState.heroSeat > 0) return;
+    // A tournament table has no waiting list (Dan 2026-10-21).
+    if (tableState.isTournament) return;
     void loadWaitlist();
-  }, [spectatorSeatState, tableState.heroSeat, tableState.handNumber, loadWaitlist]);
+  }, [
+    spectatorSeatState,
+    tableState.heroSeat,
+    tableState.handNumber,
+    tableState.isTournament,
+    loadWaitlist,
+  ]);
 
   // P2-1 FIX: Pre-action auto-execution is server-owned (Bible V8 §4.15). The
   // client's delayed executor was removed: it ran ~100ms after the turn
@@ -24280,7 +24210,26 @@ function LiveTablePage({
     // see heroPromptedToAct.
     !suppressPanelForPreAction;
 
-  // Guards the auto top-up against re-entry while a debit is still in flight.
+  // A Lightning idle room intentionally has no hand seat. Its normal opt-in
+  // top-up is triggered by the committed receipt, including after an early fold.
+  useLightningAutoTopUp({
+    room: lightningRoom,
+    userId,
+    enabled: isAutoRebuyEnabled,
+    balance: accountBalance,
+    event: engineLastEvent,
+    add: (amount, opId, isCurrent, isScopeCurrent) =>
+      handleAddChipsRef.current(amount, opId, { source: 'auto', isCurrent, isScopeCurrent }),
+    onAdded: (requested) => {
+      const result = lastAddChipsResultRef.current;
+      if (result && !result.queued && result.applied >= requested)
+        toast.success(
+          `Auto Top Up: Added ${result.applied.toFixed(2)} ${seatUnits(tableStateRef.current.arenaAsset)}`
+        );
+    },
+  });
+
+  // Guards the ordinary-table auto top-up against re-entry while a debit is still in flight.
   const autoTopUpInFlightRef = useRef(false);
   /* ONE IDEMPOTENCY KEY PER AUTO TOP-UP, REUSED ACROSS RETRIES (Realtime
      Phase 3 audit, 2026-09-05). Same shape as `bustRebuyKeyRef` above and as
@@ -24380,6 +24329,7 @@ function LiveTablePage({
       // authoritative, atomic debit, and it rejects anything over the table's
       // real cap without charging the wallet.
       if (
+        !lightningRoomRef.current &&
         isAutoRebuyEnabled &&
         /* A CASH SEAT WITH A FUNDED WRITER, WHICHEVER ASSET FUNDS IT
            (2026-09-12). This read `=== 'chips'`, so a Diamond cash seat could
@@ -25421,7 +25371,16 @@ function LiveTablePage({
         <div
           className="table-scaler"
           ref={tableScalerRef}
-          style={{ '--table-w': `${scalerSize.w}px` } as React.CSSProperties}
+          style={
+            {
+              '--table-w': `${scalerSize.w}px`,
+              '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
+              '--sp-table-taper':
+                seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
+                  ? portraitTableTransform(scalerSize)
+                  : 'none',
+            } as React.CSSProperties
+          }
         >
           {/* Table Felt */}
           <div className="table-felt">
@@ -25580,10 +25539,26 @@ function LiveTablePage({
                               </>
                             ) : (
                               <>
+                                {/* Dan 2026-10-21: "UNDER KINGS CLUB - MIDWAY UNION IT
+                                    SHOULD SAY THE TOURNAMENT NAME AND BUY IN, NOT JUST
+                                    NLH POKER TOURNAMENT ... REMOVE LEVEL... AND UNDER
+                                    THAT." Line 2 is the event name and its buy-in, then
+                                    the hand number. The level, blinds and the Next
+                                    Blinds / Break line beneath it are gone from the
+                                    felt (the tournament lobby's Blinds tab carries
+                                    the structure). */}
                                 <span className="table-brand__line table-brand__line--level">
                                   <span className="table-brand__game">
-                                    {gameShort} {formatWord} · Level {tableState.currentLevel || 1}{' '}
-                                    · {tableState.blinds || '10/20'}
+                                    {tournamentEventName || `${gameShort} ${formatWord}`}
+                                    {tournamentBuyInTotal !== undefined &&
+                                      tournamentTabBuyInLabel(tournamentBuyInTotal) !== '' && (
+                                        <>
+                                          {' · '}
+                                          {tournamentBuyInTotal > 0
+                                            ? `${tournamentTabBuyInLabel(tournamentBuyInTotal)} Buy-In`
+                                            : tournamentTabBuyInLabel(tournamentBuyInTotal)}
+                                        </>
+                                      )}
                                   </span>
                                   {(tableState.handNumber ?? 0) > 0 && (
                                     <span className="table-brand__hand">
@@ -25592,19 +25567,6 @@ function LiveTablePage({
                                     </span>
                                   )}
                                 </span>
-                                {(levelClock || tournamentBreak?.active) && (
-                                  <MastheadNextInfo
-                                    startedAtMs={levelClock?.startedAtMs ?? 0}
-                                    durationSec={levelClock?.durationSec ?? 0}
-                                    struct={blindStructRef.current}
-                                    levelIdx={(tableState.currentLevel || 1) - 1}
-                                    onBreak={!!tournamentBreak?.active}
-                                    breakEndsAtMs={
-                                      (tournamentBreak as { breakEndsAtMs?: number | null })
-                                        ?.breakEndsAtMs ?? null
-                                    }
-                                  />
-                                )}
                               </>
                             )}
                           </>
@@ -25695,32 +25657,6 @@ function LiveTablePage({
                                 (tableState.anteMode === 'big_blind' ? ' + BB Ante' : ' + Ante')}
                             </MastheadGameLine>
                           </span>
-                          {/* \u2500\u2500 LINE 3: THE ONE HOUSE RULE THAT CHANGES PLAY \u2500
-                              Dan 2026-09-07, 7C: "YOU HAVE WEIRD TEXT WHERE
-                              THE GAME DYNAMICS ARE, VPIP 30% (FOR ACTION AND
-                              50% FOR MADNESS) IS ALL THAT SHOULD BE THERE (NO
-                              NEED FOR ANYTHING ELSE ABOUT HANDS)"
-
-                              Three things left this row. The ante moved up to
-                              the stakes on line 2 where he asked for it, so
-                              printing it twice is out. The measurement window
-                              ("\u00B7 10 Hands") is an implementation detail of how
-                              the floor is enforced, not a rule anyone plays
-                              differently for. And "Min" stays because the
-                              number is a FLOOR, not the table average - a
-                              player who reads it as a stat has misread the
-                              game they just sat in.
-
-                              A Classic table has no VPIP floor and so prints
-                              no row at all, which is what makes the row mean
-                              something on the tables that do. */}
-                          {tableState.vpipFloor != null && (
-                            <span className="table-brand__line table-brand__line--rules">
-                              <span className="table-brand__vpip">
-                                VPIP {tableState.vpipFloor}% Min
-                              </span>
-                            </span>
-                          )}
                           {/* THE JACKPOT ROW IS GONE (Dan 2026-09-07, item 6).
                               "YOU'VE ADDED THE BOMBPOT TOTAL TO ALL OF THE
                               TABLES, THAT SHOULD NEVER BE THERE."
@@ -26541,21 +26477,26 @@ function LiveTablePage({
             );
             const dx = 50 - pos.x;
             const dy = 50 - pos.y;
-            const betOffset = betChipOffsetPx(pos, scalerSize, seatPod);
+            const markerSize = {
+              ...scalerSize,
+              railBets: seatViewportWidth <= 480 && scalerSize.h > scalerSize.w,
+            };
+            const betOffset = betChipOffsetPx(pos, markerSize, seatPod);
             const betOffsetX = betOffset.x;
             const betOffsetY = betOffset.y;
             // Bible V8 §1.16 — on collect, bet chips fly from their resting
             // spot the rest of the way toward the pot. Expressed as the
             // remainder to a common endpoint, so chips from every seat
             // converge on the same place however far out they started.
-            const collectOffset = chipCollectOffsetPx(pos, scalerSize, seatPod);
+            const collectOffset = chipCollectOffsetPx(pos, markerSize, seatPod);
             const collectDx = collectOffset.x;
             /* Dan 2026-08-28: the HERO's bet chips render 30px above their
                geometry rest point (SeatSlot.css `.seat--hero .seat__bet-chips`
                — the badge/chips swap), so their remaining flight to the pot is
                30px shorter. Without this term the collect animation overshoots
                the pot pill by exactly that lift. */
-            const collectDy = collectOffset.y + (pos.y >= 100 && pos.x === 50 ? 30 : 0);
+            const collectDy =
+              collectOffset.y + (!markerSize.railBets && pos.y >= 100 && pos.x === 50 ? 30 : 0);
 
             return (
               <div
@@ -26571,6 +26512,11 @@ function LiveTablePage({
                 className={`seat-wrapper${seatDimmed ? ' seat-wrapper--dim' : ''}${
                   isActingSeat ? ' seat-wrapper--spot' : ''
                 }${pos.y < 20 && !tableState.isTournament ? ' seat-wrapper--top' : ''}${
+                  /* Dan 2026-10-21: every top-cap chair, tournament or cash,
+                     keeps its action tag below the plate on a phone, so it is
+                     never cut off above the head (SeatSlot.css). */
+                  pos.y < 20 ? ' seat-wrapper--cap' : ''
+                }${
                   /* Dan 2026-08-23: "you can never see the hero's stack, it's
                      always cut off by the footer." Hero sits at y:100 in every
                      ring in tableSeatGeometry.ts - avatar CENTRE on the
@@ -27319,7 +27265,23 @@ function LiveTablePage({
             data-state={spectatorSeatState}
             data-testid="spectator-footer-bar"
           >
-            {spectatorSeatState === 'no-seats-here' ? (
+            {/* Dan 2026-10-21: "THIS 'TABLE FULL JOIN THE WAITING LIST' SHOULD
+                NEVER BE DISPLAYED WHEN WATCHING A TOURNAMENT." A tournament
+                has no waiting list; a spectator there can only enter the event
+                while late registration is open, so an MTT table prints the
+                time left before registration closes and a register button
+                (TournamentLateRegCallToAction), and nothing else. */}
+            {tableState.isTournament && tableState.tournamentId && !seatFirstBuyIn ? (
+              <TournamentLateRegCallToAction
+                tournamentId={tableState.tournamentId}
+                refreshKey={tableState.handNumber}
+                hidden={!isVisible}
+                onRegister={() => navigate(`/tournaments/${tableState.tournamentId}`)}
+                fallback={<span className="spectator-footer-bar__label">Spectating</span>}
+              />
+            ) : tableState.isTournament && spectatorSeatState === 'no-seats-here' ? (
+              <span className="spectator-footer-bar__label">Spectating · All Seats Taken</span>
+            ) : spectatorSeatState === 'no-seats-here' ? (
               /* A button, not a sentence: "join the waiting list" is an
                  action he asked for, and the waitlist modal is already
                  built and wired (handleOpenWaitlist). Telling a player a

@@ -55,6 +55,8 @@ import {
 } from './diamondScheduledSpawn.js';
 import { mttBountyAmount } from '../tournament/mttBountyAllocation.js';
 import { withMidwayStructure } from '../tournament/midwayStructurePolicy.js';
+import { withBountyRebuyUntilRegistrationCloses } from '../tournament/bountyRebuyPolicy.js';
+import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 import { mysteryBountyCreationColumns } from '../domain/mysteryBountyCreation.js';
 import {
   TournamentRecurringService,
@@ -70,6 +72,7 @@ import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
+  mttPayoutDepthPercent,
   mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
 import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
@@ -751,7 +754,7 @@ export function fixedBoardRow(
     unionId,
     label: schedule.name,
   });
-  if (freeBuy) return withMidwayStructure({ ...freeBuy, schedule_id: schedule.id });
+  if (freeBuy) return withMidwayStructure({ ...freeBuy, schedule_id: schedule.id }, cfg);
   const template = fixedBoardTemplate(name);
   if (!template) return null;
   const row = recurringMttRow(template.config, startTime, {
@@ -759,7 +762,7 @@ export function fixedBoardRow(
     unionId,
     xmtt: template.kind === 'union_mtt',
   });
-  return withMidwayStructure({ ...row, schedule_id: schedule.id });
+  return withMidwayStructure({ ...row, schedule_id: schedule.id }, { ...template.config, ...cfg });
 }
 
 export class ScheduledTournamentService {
@@ -1321,7 +1324,11 @@ export class ScheduledTournamentService {
     // Resolve everything that can fail BEFORE claiming the spawn key, so a
     // skipped spawn (e.g. satellite target not found yet) is retried next poll
     // instead of being burned forever.
-    const row = await this.buildInsertRow(schedule, cfg, startTime);
+    // Dan 2026-10-21: every MTT and satellite runs one locked clock per level.
+    const built = await this.buildInsertRow(schedule, cfg, startTime);
+    // Dan 2026-10-21: no bounty, PKO or mystery bounty MTT is a freezeout;
+    // each rebuys until registration closes (bountyRebuyPolicy.ts).
+    const row = built ? withBountyRebuyUntilRegistrationCloses(withLockedLevelClock(built)) : built;
     if (!row) {
       // A satellite whose target event does not exist yet is not a missed
       // event: a daily satellite feeding a weekly target only runs once that
@@ -2196,6 +2203,7 @@ export class ScheduledTournamentService {
       ...mttSpeedColumns(blinds),
       payout_structure: payouts,
       payout_percent: mttPayoutPercent(cfg.payoutPercent),
+      payout_depth_percent: mttPayoutDepthPercent(cfg.payoutPercent),
       start_time: startTime.toISOString(),
       late_reg_levels: lateRegLevels,
       late_reg_mins: mttLateRegistrationMinutes(blinds, lateRegLevels),
@@ -2319,7 +2327,7 @@ export class ScheduledTournamentService {
       row.table_size = 3;
     }
 
-    return withMidwayStructure(row);
+    return withMidwayStructure(row, cfg);
   }
 
   /**
@@ -2423,6 +2431,7 @@ export class ScheduledTournamentService {
     'blind_structure',
     'payout_structure',
     'payout_percent',
+    'payout_depth_percent',
     'guaranteed_prize',
     'late_reg_levels',
     'late_reg_mins',
@@ -2657,7 +2666,7 @@ export class ScheduledTournamentService {
 
     const { data: created, error: insertErr } = await supabase
       .from('tournaments')
-      .insert(withMidwayStructure(row))
+      .insert(withLockedLevelClock(withMidwayStructure(row)))
       .select('id')
       .maybeSingle();
     if (insertErr || !created) {

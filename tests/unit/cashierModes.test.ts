@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   cashierTabs,
+  cashierRefusesSelfSend,
   cashierDestinations,
   canUseCashier,
   claimNeedsConfirm,
@@ -50,7 +51,7 @@ describe('the default wallet', () => {
       expect(opened).not.toBe('club_bank');
       // And a role that may not stand at the club bank must still not be able
       // to use it even if something hands it that wallet type explicitly.
-      if (!['owner', 'co_owner', 'admin', 'super_agent'].includes(role)) {
+      if (!['owner', 'co_owner', 'admin'].includes(role)) {
         expect(canUseCashier('club_bank', role)).toBe(false);
       }
     }
@@ -112,7 +113,7 @@ describe('cashierDestinations', () => {
 });
 
 describe('canUseCashier', () => {
-  const bankRoles = ['owner', 'co_owner', 'admin', 'super_agent'];
+  const bankRoles = ['owner', 'co_owner', 'admin'];
   const agentRoles = ['agent', 'sub_agent', 'super_agent'];
 
   it('club bank admits exactly the four bank roles', () => {
@@ -151,5 +152,15 @@ describe('claimNeedsConfirm', () => {
 
   it('a zero or empty amount has nothing to confirm', () => {
     expect(claimNeedsConfirm(0)).toBe(false);
+  });
+});
+
+// Owner October 21: an agent may fund their own playable wallet.
+describe('agent self funding uses distinct wallets', () => {
+  it('allows agent-wallet to own player wallet and retains the other self refusals', () => {
+    expect(cashierRefusesSelfSend('agent_wallet', 'own_float', 'player_wallet')).toBe(false);
+    expect(cashierRefusesSelfSend('agent_wallet', 'own_float', 'agent_wallet')).toBe(true);
+    expect(cashierRefusesSelfSend('agent_wallet', 'own_float', 'promo_wallet')).toBe(true);
+    expect(cashierRefusesSelfSend('promo_wallet', 'own_float', 'player_wallet')).toBe(true);
   });
 });

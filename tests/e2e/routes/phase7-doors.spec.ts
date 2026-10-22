@@ -20,7 +20,8 @@ import { expect, test } from '@playwright/test';
 import { expectRoute } from './utils';
 
 const DEFAULT_E2E_CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
-const DEFAULT_E2E_CLUB_SLUG = 'shark-club';
+// 20261021180210 renamed this club; its canonical slug is now kings-club.
+const DEFAULT_E2E_CLUB_SLUG = 'kings-club';
 const CLUB_ID = process.env.E2E_CLUB_ID || DEFAULT_E2E_CLUB_ID;
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

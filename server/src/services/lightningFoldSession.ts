@@ -1,5 +1,5 @@
-/** A separate, bounded socket lane for the ORIGINAL Lightning fold transaction.
- * The fixed private wrapper runs the ordinary data actor/manager pre-request guard
+/** A separate, bounded socket lane for the ORIGINAL Lightning fold transaction,
+ * sent as one pipelined round trip (BEGIN, wrapper, COMMIT). The fixed private wrapper runs the ordinary data actor/manager pre-request guard
  * in the same transaction. Raw sockets do not create an authorization exception.
  */
 import pg from 'pg';
@@ -30,7 +30,10 @@ export type LightningFoldSessionResult = {
   error: null | { message: 'lightning_fold_outcome_unknown'; code: 'LIGHTNING_FOLD_UNKNOWN' };
 };
 export interface LightningFoldClient {
-  query(text: string, values?: unknown[]): Promise<{ rows: Array<Record<string, unknown>> }>;
+  query(
+    text: string,
+    values?: unknown[]
+  ): Promise<{ rows: Array<Record<string, unknown>>; command?: string | null }>;
   release(destroy?: boolean): void;
 }
 export interface LightningFoldPool {
@@ -198,22 +201,37 @@ export function createLightningFoldSession(deps: {
         return null;
       }
       const connection = client;
+      if (expired || stopped) throw new Error('fold_admission_closed');
+      // ONE ROUND TRIP (2026-10-22 latency fix). The engine sits ~80 ms from the
+      // session pooler, and awaiting BEGIN, the wrapper and COMMIT one after the
+      // other cost three round trips per fold (ack_to_idle p50 ~260 ms against
+      // ~130 ms before this lane). The pool runs pg's pipeline mode, so all three
+      // messages go out together and the server still runs them strictly in
+      // order inside the one transaction. A wrapper error aborts the
+      // transaction and the queued COMMIT answers ROLLBACK, so only a COMMIT
+      // command tag proves durability; nothing is acknowledged before it.
+      dispatched = true;
+      const begun = connection.query(BEGIN_SQL);
+      const statement = connection.query(LIGHTNING_FOLD_SQL, [
+        args.p_hand_id,
+        args.p_player_id,
+        args.p_request_id,
+        args.p_fold_type,
+        args.p_committed,
+        JSON.stringify(actorHeaders),
+      ]);
+      const commit = connection.query('COMMIT');
+      // Every reply is observed, so a failure earlier in the pipeline never
+      // leaves a later one unhandled.
+      for (const reply of [begun, statement, commit]) reply.catch(() => undefined);
       const transaction = (async () => {
-        await connection.query(BEGIN_SQL);
-        if (expired || stopped) throw new Error('fold_admission_closed');
-        dispatched = true;
-        const result = await connection.query(LIGHTNING_FOLD_SQL, [
-          args.p_hand_id,
-          args.p_player_id,
-          args.p_request_id,
-          args.p_fold_type,
-          args.p_committed,
-          JSON.stringify(actorHeaders),
-        ]);
+        await begun;
+        const result = await statement;
         // The original money/reservation result cannot become an acknowledgement before durable COMMIT.
+        const done = await commit;
+        if (done.command !== 'COMMIT') throw new Error('fold_not_committed');
         if (expired) throw new Error('fold_request_boundary');
-        await connection.query('COMMIT');
-        if (!expired) committed++;
+        committed++;
         return { data: result.rows[0]?.result ?? null, error: null };
       })();
       const boundary = new Promise<never>((_, reject) => {
@@ -285,6 +303,8 @@ const session = createLightningFoldSession({
       connectionTimeoutMillis: 5_000,
       idleTimeoutMillis: 0,
       keepAlive: true,
+      // One round trip per fold: BEGIN, the wrapper and COMMIT are pipelined.
+      pipeline: true,
       ssl: enginePgSsl(),
       query_timeout: DB_TIMEOUT_MS,
       statement_timeout: DB_TIMEOUT_MS,

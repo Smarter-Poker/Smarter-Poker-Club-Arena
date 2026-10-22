@@ -11,6 +11,10 @@ const pg = process.env.HORSE_PROOF_PG_BIN;
 if (!pg || !process.argv[2])
   throw Error('Set HORSE_PROOF_PG_BIN to an existing PostgreSQL bin and pass a new output path');
 const migration = 'supabase/migrations/20260912193321_horse_committed_observation_snapshot.sql';
+// 20261022: candidates are found through the per-player index (written by the
+// projector for every seated player) and qualified on the history row.
+const finder =
+  'supabase/migrations/20261022034135_horse_observation_snapshot_finds_hands_through_the_player_in.sql';
 const dir = mkdtempSync('/tmp/horse-snapshot-native-'),
   data = dir + '/data',
   socket = dir + '/socket';
@@ -60,7 +64,7 @@ try {
   await c.connect();
   await writer.connect();
   await c.query(
-    "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE TABLE hand_history(table_id uuid NOT NULL DEFAULT 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',hand_number bigint GENERATED ALWAYS AS IDENTITY (START WITH 1000000),id uuid PRIMARY KEY,created_at timestamptz NOT NULL,players jsonb,actions jsonb,hole_cards jsonb); CREATE INDEX roster ON hand_history USING gin(players jsonb_path_ops); GRANT SELECT ON hand_history TO service_role; CREATE TABLE hand_atomic_commits(hand_id uuid UNIQUE NOT NULL,table_id uuid NOT NULL,hand_number bigint UNIQUE NOT NULL,payload_hash text NOT NULL); GRANT SELECT ON hand_atomic_commits TO service_role;"
+    "CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role; CREATE TABLE hand_history(table_id uuid NOT NULL DEFAULT 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',hand_number bigint GENERATED ALWAYS AS IDENTITY (START WITH 1000000),id uuid PRIMARY KEY,created_at timestamptz NOT NULL,players jsonb,actions jsonb,hole_cards jsonb); CREATE INDEX roster ON hand_history USING gin(players jsonb_path_ops); GRANT SELECT ON hand_history TO service_role; CREATE TABLE hand_atomic_commits(hand_id uuid UNIQUE NOT NULL,table_id uuid NOT NULL,hand_number bigint UNIQUE NOT NULL,payload_hash text NOT NULL); GRANT SELECT ON hand_atomic_commits TO service_role; CREATE TABLE ca_hand_player_idx(user_id uuid NOT NULL,created_at timestamptz NOT NULL,hand_id uuid NOT NULL,PRIMARY KEY(user_id,hand_id)); CREATE INDEX ON ca_hand_player_idx(user_id,created_at DESC); CREATE TABLE hand_projection_outbox(hand_id uuid PRIMARY KEY,table_id uuid,hand_number bigint); CREATE TABLE ca_hand_fact_revisions(hand_id uuid,user_id uuid,kind text); GRANT SELECT ON ca_hand_player_idx,hand_projection_outbox,ca_hand_fact_revisions TO service_role;"
   );
   await c.query(readFileSync(root + '/' + migration, 'utf8'));
   await c.query(
@@ -69,6 +73,7 @@ try {
       'utf8'
     )
   );
+  await c.query(readFileSync(root + '/' + finder, 'utf8'));
   const fn = 'public.fn_horse_committed_observation_snapshot($1::uuid,$2::bigint,$3::bigint)';
   const now = Number(
     (await c.query('SELECT floor(extract(epoch FROM clock_timestamp())*1000)::bigint n')).rows[0].n
@@ -92,6 +97,10 @@ try {
     await client.query(
       "INSERT INTO hand_atomic_commits SELECT id,table_id,hand_number,repeat('a',64) FROM hand_history WHERE id=$1",
       [id(n)]
+    );
+    await client.query(
+      'INSERT INTO ca_hand_player_idx SELECT ($2)::uuid,created_at,id FROM hand_history WHERE id=$1',
+      [id(n), user]
     );
   };
   await c.query('SET ROLE service_role');
@@ -158,7 +167,7 @@ try {
     case: 'missing, wrong-table and wrong-number atomic receipts refuse entire source; matching receipt metadata binds each returned hand',
     passed: true,
   });
-  await c.query('TRUNCATE hand_history,hand_atomic_commits');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits,ca_hand_player_idx');
   for (let n = 0; n < 512; n++)
     await insert(n, [{ action: 'bb', cards: ['As'], secret: 'private' }]);
   await insert(9999, [], other);
@@ -181,34 +190,63 @@ try {
     overflow: 513,
     privateTopLevelFieldsRemoved: true,
   });
-  await c.query('TRUNCATE hand_history,hand_atomic_commits');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits,ca_hand_player_idx');
   await insert(1);
   await c.query(
-    "UPDATE hand_history SET created_at=to_timestamp($1::double precision/1000)+interval '1 microsecond' WHERE id=$2",
+    "WITH h AS (UPDATE hand_history SET created_at=to_timestamp($1::double precision/1000)+interval '1 microsecond' WHERE id=$2 RETURNING id,created_at) UPDATE ca_hand_player_idx i SET created_at=h.created_at FROM h WHERE i.hand_id=h.id",
     [from, id(1)]
   );
   const edge = await get();
   assert.equal(edge.handCount, 1);
   assert.equal(edge.hands[0].createdAt.slice(23, 26), '001');
   await c.query(
-    'UPDATE hand_history SET created_at=to_timestamp($1::double precision/1000) WHERE id=$2',
+    'WITH h AS (UPDATE hand_history SET created_at=to_timestamp($1::double precision/1000) WHERE id=$2 RETURNING id,created_at) UPDATE ca_hand_player_idx i SET created_at=h.created_at FROM h WHERE i.hand_id=h.id',
     [from, id(1)]
   );
   assert.equal((await get()).handCount, 0);
   results.push({ case: 'one microsecond above the exclusive lower bound', passed: true });
-  await c.query('TRUNCATE hand_history,hand_atomic_commits');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits,ca_hand_player_idx');
+  // The player index only narrows the search. A committed hand still in the
+  // projection outbox has no index row yet; a voided stat fact removed one
+  // player's index row but not the roster entry; an index row that names the
+  // actor for a hand whose roster does not is never trusted.
+  await insert(1);
+  await insert(2);
+  await insert(3);
+  await insert(4, [], other);
+  await c.query('DELETE FROM ca_hand_player_idx WHERE hand_id IN ($1,$2)', [id(2), id(3)]);
+  await c.query(
+    'INSERT INTO hand_projection_outbox SELECT id,table_id,hand_number FROM hand_history WHERE id=$1',
+    [id(2)]
+  );
+  await c.query("INSERT INTO ca_hand_fact_revisions VALUES($1,$2,'void')", [id(3), actor]);
+  await c.query('INSERT INTO ca_hand_player_idx SELECT $1,created_at,id FROM hand_history WHERE id=$2', [
+    actor,
+    id(4),
+  ]);
+  const found = await get();
+  assert.equal(found.status, 'snapshot');
+  assert.deepEqual(
+    found.hands.map((h) => h.id),
+    [id(1), id(2), id(3)]
+  );
+  results.push({
+    case: 'outbox-pending and voided-index hands found; roster decides membership over the index',
+    passed: true,
+  });
+  await c.query('TRUNCATE hand_history,hand_atomic_commits,ca_hand_player_idx');
   await insert(1, [{ action: 'bb', oversized: 'x'.repeat(1_048_577) }]);
   assert.equal((await get()).reason, 'invalid_or_oversized_hand');
-  await c.query('TRUNCATE hand_history,hand_atomic_commits');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits,ca_hand_player_idx');
   for (let n = 0; n < 9; n++) await insert(n, [{ action: 'bb', payload: 'x'.repeat(1_000_000) }]);
   const bytes = await get();
   assert.equal(bytes.reason, 'byte_budget_exceeded');
   assert.deepEqual(bytes.hands, []);
-  await c.query('TRUNCATE hand_history,hand_atomic_commits');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits,ca_hand_player_idx');
   await insert(1, null);
   assert.equal((await get()).reason, 'invalid_or_oversized_hand');
   results.push({ case: 'row, whole-response and malformed payload budgets', passed: true });
-  await c.query('TRUNCATE hand_history,hand_atomic_commits');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits,ca_hand_player_idx');
   for (let n = 0; n < 5; n++)
     await insert(
       n,
@@ -230,7 +268,7 @@ try {
     accepted: 20000,
     rejected: 20001,
   });
-  await c.query('TRUNCATE hand_history,hand_atomic_commits');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits,ca_hand_player_idx');
   await insert(1);
   await writer.query('BEGIN');
   await insert(2, [], actor, writer);
@@ -258,7 +296,7 @@ try {
   assert.equal(during.handCount, 1);
   assert.equal(after.handCount, 2);
   results.push({ case: 'late commit during stable statement', before: 1, during: 1, nextRead: 2 });
-  await c.query('TRUNCATE hand_history,hand_atomic_commits');
+  await c.query('TRUNCATE hand_history,hand_atomic_commits,ca_hand_player_idx');
   const { HandController } = await import(
     pathToFileURL(root + '/server/dist/engine/HandController.js')
   );
@@ -418,6 +456,7 @@ try {
   });
   const bindings = [
     migration,
+    finder,
     'server/src/services/HorseCommittedObservationSnapshot.ts',
     runtimePath,
     'server/src/engine/HorseAdaptiveObservation.ts',

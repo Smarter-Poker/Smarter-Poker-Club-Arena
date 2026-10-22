@@ -11,6 +11,8 @@ import {
   observeRevokedConsumer,
   observeRevokedSocket,
   witnessRecovery,
+  recoveryJournal,
+  recoveryDiagnosticBudget,
 } from './lightning-pilot-recovery.mjs';
 import { observeRecoveryPhaseBracket } from './recovery-phase-observation.mjs';
 const SECRET = 'TEST_PRIVATE_FRAME_AND_TOKEN';
@@ -226,6 +228,10 @@ test('normal revoked consumer must redirect itself with its session cleared afte
   };
   const evidence = {
     sockets: [socket],
+    socketsFor: (room) => {
+      assert.equal(room, ROOM);
+      return [socket];
+    },
     wait: async (predicate) => assert.equal(predicate(), true),
   };
   const page = {
@@ -242,7 +248,7 @@ test('normal revoked consumer must redirect itself with its session cleared afte
     },
     evaluate: async () => true,
   };
-  assert.deepEqual(await observeRevokedConsumer(page, context, evidence, () => 1000), {
+  assert.deepEqual(await observeRevokedConsumer(page, context, evidence, () => 1000, ROOM), {
     redirect: 'observed',
     localSessionCleared: true,
   });
@@ -250,7 +256,7 @@ test('normal revoked consumer must redirect itself with its session cleared afte
   socket.closed = false;
   page.evaluate = async () => false;
   await assert.rejects(
-    observeRevokedConsumer(page, context, evidence, () => 1000),
+    observeRevokedConsumer(page, context, evidence, () => 1000, ROOM),
     /Session Remains/
   );
 });
@@ -410,3 +416,358 @@ test('two distinct UUIDs resolving to the same target category refuse before pro
   assert.equal(report.status, 'unknown');
   assert.equal(authReads, 0);
 });
+
+function manualRecoveryFixture({
+  missingAdd = false,
+  duplicateChosen = false,
+  existingOther = false,
+  ambiguousTab = false,
+  hiddenTab = false,
+  initialTabState = 'visible',
+} = {}) {
+  const events = new EventEmitter(),
+    tabs = new Set(),
+    calls = [];
+  const table = '10000000-0000-4000-8000-000000000009';
+  let active,
+    phaseReads = 0,
+    lobby = false;
+  const publish = (room) => {
+    const ws = new EventEmitter();
+    ws.url = () => 'wss://engine.smarter.poker/ws';
+    events.emit('websocket', ws);
+    for (const [name, type] of [
+      ['framesent', 'SUBSCRIBE'],
+      ['framereceived', 'SUBSCRIBED'],
+      ['framereceived', 'SNAPSHOT'],
+      ['framesent', 'RENDER_ACK'],
+    ])
+      ws.emit(name, { payload: JSON.stringify({ type, tableId: room, hand_id: HAND }) });
+  };
+  const initial = (selector) => selector.includes('data-tabid') && selector.includes(ROOM);
+  const loc = (selector) => ({
+    first: () => loc(selector),
+    count: async () =>
+      initial(selector) && initialTabState !== 'visible'
+        ? initialTabState === 'ambiguous'
+          ? 2
+          : initialTabState === 'missing'
+            ? 0
+            : 1
+        : selector === 'add' && missingAdd
+          ? 0
+          : selector.includes('data-tabid')
+            ? ambiguousTab && selector.includes(OTHER)
+              ? 2
+              : Number(tabs.has(selector.match(/"([^"]+)"/)[1]))
+            : 1,
+    isVisible: async () =>
+      !(initial(selector) && initialTabState === 'hidden') &&
+      !(hiddenTab && selector.includes(OTHER)),
+    waitFor: async () => {
+      if (initial(selector) && ['missing', 'hidden'].includes(initialTabState))
+        throw Error('Tab Not Visible');
+    },
+    evaluateAll: async () => [table],
+    getAttribute: async () => (selector.includes(active) ? 'true' : null),
+    getByRole: (_role, options) => loc(options.name === 'Open Lobby' ? 'open_lobby' : 'view'),
+    click: async (options) => {
+      calls.push([selector, options?.button]);
+      if (selector === 'add') assert.equal(options.button, 'right');
+      if (selector === 'open_lobby') lobby = true;
+      if (selector === 'view') {
+        assert.equal(lobby, true);
+        tabs.add(OTHER);
+        active = OTHER;
+        publish(OTHER);
+        if (duplicateChosen) publish(OTHER);
+      }
+    },
+    tap: async () => {
+      const room = selector.match(/"([^"]+)"/)[1];
+      if (!tabs.has(room)) throw Error('Missing Tab');
+      active = room;
+    },
+  });
+  const page = {
+    on: (...args) => events.on(...args),
+    goto: async (url) => {
+      calls.push(['goto']);
+      tabs.clear();
+      const room = url.includes(pins[0].clusterId) ? ROOM : OTHER;
+      tabs.add(room);
+      active = room;
+      publish(room);
+      if (existingOther) {
+        tabs.add(OTHER);
+        publish(OTHER);
+      }
+    },
+    locator: loc,
+    getByRole: (_role, options) => loc(options.name === 'Open Another Table' ? 'add' : 'menu'),
+    setViewportSize: async () => {},
+    evaluate: async () => ({ route: 'table', layer: 'none' }),
+  };
+  const admin = {
+    from: (tableName) => {
+      const q = {
+        select: () => q,
+        eq: () => q,
+        in: () => q,
+        limit: () => q,
+        maybeSingle: async () => ({
+          data: { id: PLAYER, club_arena_tos_accepted_at: '2026-01-01' },
+        }),
+        then: (resolve) =>
+          Promise.resolve({
+            data:
+              tableName === 'tables'
+                ? [{ id: table, cluster_id: pins[1].clusterId, club_id: pins[1].clubId }]
+                : [],
+          }).then(resolve),
+      };
+      return q;
+    },
+  };
+  return {
+    calls,
+    phaseReads: () => phaseReads,
+    args: {
+      admin,
+      pins,
+      validate: async (_a, pin) => validatedTarget(pin),
+      openSession: async () => ({
+        session: {},
+        client: {
+          rpc: async () => ({
+            data: pins.map((p) => ({ pool_session_id: p.poolSessionId, cluster_id: p.clusterId })),
+          }),
+          auth: { signOut: async () => ({}) },
+        },
+      }),
+      chromium: {
+        launch: async () => ({
+          newContext: async () => ({ addInitScript: async () => {}, newPage: async () => page }),
+          close: async () => {},
+        }),
+      },
+      capturePhase: async () => {
+        phaseReads++;
+        throw Error('Stop After Scoped Transport');
+      },
+    },
+  };
+}
+test('one initial document plus normal secondary lobby View Game preserves both tabs and scopes two sockets', async () => {
+  const f = manualRecoveryFixture();
+  const report = await witnessRecovery(f.args);
+  assert.equal(f.calls.filter(([kind]) => kind === 'goto').length, 1);
+  assert.equal(report.touch.length, 4);
+  assert.equal(f.phaseReads(), 1);
+  assert.equal(report.phase, 'disconnect');
+  assert.equal(report.status, 'unknown');
+  assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
+  assert.doesNotMatch(JSON.stringify(report), /token|PRIVATE|cards/);
+});
+test('absent add control refuses without a second navigation, join or closing any game', async () => {
+  const f = manualRecoveryFixture({ missingAdd: true });
+  const report = await witnessRecovery(f.args);
+  assert.equal(f.calls.filter(([kind]) => kind === 'goto').length, 1);
+  assert.equal(f.calls.length, 1);
+  assert.equal(report.navigation.at(-1).step, 'open_another_table_unavailable');
+  assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
+});
+test('already restored target pool uses its normal tab even when add control is absent at capacity', async () => {
+  const f = manualRecoveryFixture({ existingOther: true, missingAdd: true });
+  const report = await witnessRecovery(f.args);
+  assert.equal(f.calls.length, 1);
+  assert.equal(report.touch.length, 4);
+  assert.equal(f.phaseReads(), 1);
+  assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
+});
+test('ambiguous target tab refuses before another menu or navigation gesture', async () => {
+  const f = manualRecoveryFixture({ existingOther: true, ambiguousTab: true });
+  const report = await witnessRecovery(f.args);
+  assert.equal(f.calls.length, 1);
+  assert.equal(report.touch.length, 0);
+  assert.equal(report.navigation.at(-1).step, 'find_existing_pool_tab');
+  assert.equal(report.status, 'unknown');
+});
+test('a hidden existing target tab refuses without opening another lobby or changing capacity', async () => {
+  const f = manualRecoveryFixture({ existingOther: true, hiddenTab: true });
+  const report = await witnessRecovery(f.args);
+  assert.equal(f.calls.length, 1);
+  assert.equal(report.touch.length, 0);
+  assert.equal(report.navigation.at(-1).step, 'existing_pool_tab_hidden');
+  assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
+});
+test('two simultaneous owners of chosen pool still refuse despite legitimate other pool socket', async () => {
+  const f = manualRecoveryFixture({ duplicateChosen: true });
+  const report = await witnessRecovery(f.args);
+  assert.equal(report.touch.length, 4);
+  assert.equal(f.phaseReads(), 0);
+  assert.equal(report.reconnect, 'unknown');
+});
+test('multiplexed socket retains each independently subscribed room and unacknowledged rooms are not owners', () => {
+  const page = new EventEmitter();
+  const evidence = recoveryJournal(page, [ROOM, OTHER], () => 1000, PLAYER);
+  const socket = new EventEmitter();
+  socket.url = () => 'wss://engine.smarter.poker/ws?token=SECRET';
+  page.emit('websocket', socket);
+  const frame = (direction, type, tableId) =>
+    socket.emit(direction, { payload: JSON.stringify({ type, tableId }) });
+  frame('framesent', 'SUBSCRIBE', ROOM);
+  assert.equal(evidence.socketsFor(ROOM).length, 0);
+  frame('framereceived', 'SUBSCRIBED', ROOM);
+  frame('framesent', 'SUBSCRIBE', OTHER);
+  frame('framereceived', 'SUBSCRIBED', OTHER);
+  assert.equal(evidence.socketsFor(ROOM).length, 1);
+  assert.equal(evidence.socketsFor(OTHER).length, 1);
+  assert.equal(evidence.socketsFor(ROOM)[0], evidence.socketsFor(OTHER)[0]);
+  frame('framesent', 'UNSUBSCRIBE', ROOM);
+  assert.equal(evidence.socketsFor(ROOM).length, 0);
+  assert.equal(evidence.socketsFor(OTHER).length, 1);
+  socket.emit('close');
+  assert.equal(evidence.socketsFor(ROOM).length, 0);
+  assert.doesNotMatch(JSON.stringify(evidence.frames), /SECRET|token/);
+});
+test('failure UI diagnostics use only the existing cleanup reserve and retain a signout margin', () => {
+  assert.equal(recoveryDiagnosticBudget(1000, 240000, 221001), 1500);
+  assert.equal(recoveryDiagnosticBudget(1000, 240000, 230500), 500);
+  assert.equal(recoveryDiagnosticBudget(1000, 240000, 241000), 1);
+});
+
+test('initial, duplicate and replacement contexts manually select their restored pool before scoped render', async () => {
+  const base = manualRecoveryFixture();
+  const pages = [],
+    sessions = [];
+  class RefusedSocket extends EventEmitter {
+    constructor() {
+      super();
+      queueMicrotask(() => this.emit('close', 4401));
+    }
+    terminate() {}
+  }
+  const report = await witnessRecovery({
+    ...base.args,
+    timeoutMs: 30000,
+    WebSocket: RefusedSocket,
+    openSession: async () => {
+      const session = { revoked: false };
+      sessions.push(session);
+      return {
+        session,
+        client: {
+          rpc: async () => ({
+            data: pins.map((p) => ({ pool_session_id: p.poolSessionId, cluster_id: p.clusterId })),
+          }),
+          auth: {
+            signOut: async () => {
+              session.revoked = true;
+              return {};
+            },
+          },
+        },
+      };
+    },
+    capturePhase: async () => ({ status: 'unknown', phase: 'unknown' }),
+    chromium: {
+      launch: async () => ({
+        close: async () => {},
+        newContext: async () => {
+          const events = new EventEmitter(),
+            sockets = [];
+          let session,
+            active = HAND;
+          const taps = [],
+            waits = [];
+          const publish = (room) => {
+            const ws = new EventEmitter();
+            sockets.push(ws);
+            ws.url = () => 'wss://engine.smarter.poker/ws';
+            events.emit('websocket', ws);
+            for (const [name, type] of [
+              ['framesent', 'SUBSCRIBE'],
+              ['framereceived', 'SUBSCRIBED'],
+              ['framereceived', 'SNAPSHOT'],
+              ['framesent', 'RENDER_ACK'],
+            ])
+              ws.emit(name, { payload: JSON.stringify({ type, tableId: room, hand_id: HAND }) });
+          };
+          const page = {
+            on: (...a) => events.on(...a),
+            goto: async () => {
+              active = HAND;
+            },
+            locator: (selector) => {
+              const room = selector.match(/"([^"]+)"/)[1];
+              return {
+                waitFor: async (options) => {
+                  assert.equal(options.state, 'visible');
+                  waits.push(room);
+                },
+                count: async () => Number([ROOM, OTHER].includes(room)),
+                isVisible: async () => true,
+                getAttribute: async () => String(active === room),
+                tap: async () => {
+                  assert.ok(waits.includes(room), 'actual visibility awaited before tap');
+                  taps.push(room);
+                  active = room;
+                  if (
+                    !sockets.length ||
+                    (room === OTHER && taps.filter((r) => r === OTHER).length === 1)
+                  )
+                    publish(room);
+                },
+              };
+            },
+            setViewportSize: async () => {},
+            waitForURL: async () => {
+              assert.equal(session.revoked, true);
+            },
+            evaluate: async () => session.revoked,
+          };
+          const context = {
+            addInitScript: async (_fn, args) => {
+              session = args.session;
+            },
+            newPage: async () => page,
+            close: async () => {
+              for (const ws of sockets.splice(0)) ws.emit('close');
+            },
+            setOffline: async (offline) => {
+              if (offline) {
+                for (const ws of sockets.splice(0)) ws.emit('close');
+                // Distinct actual outage times keep old subscription receipts outside reconnect.
+                await new Promise((resolve) => setTimeout(resolve, 2));
+              } else if (!session.revoked) publish(active);
+            },
+          };
+          pages.push({ taps, waits });
+          return context;
+        },
+      }),
+    },
+  });
+  assert.equal(report.status, 'observed', JSON.stringify({ report, pages }));
+  assert.equal(report.duplicate, 'second_connection_rendered_same_pool');
+  assert.equal(report.recovery, 'new_local_session_same_pool_rendered');
+  assert.equal(pages.length, 3);
+  assert.equal(pages[0].taps[0], ROOM);
+  assert.equal(pages[1].taps[0], OTHER);
+  assert.equal(pages[2].taps[0], OTHER);
+  assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
+});
+
+for (const initialTabState of ['missing', 'hidden', 'ambiguous']) {
+  test(`initial ${initialTabState} pool tab remains unknown before menus or render claims`, async () => {
+    const fixture = manualRecoveryFixture({ initialTabState });
+    const report = await witnessRecovery(fixture.args);
+    assert.equal(report.status, 'unknown');
+    assert.equal(report.touch.length, 0);
+    assert.notEqual(report.navigation[0].step, 'rendered');
+    assert.equal(fixture.calls.length, 1);
+    assert.equal(fixture.phaseReads(), 0);
+    assert.equal(report.cleanup, 'local_sessions_and_browser_closed');
+  });
+}

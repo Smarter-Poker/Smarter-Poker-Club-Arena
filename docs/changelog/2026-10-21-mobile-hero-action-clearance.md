@@ -1,0 +1,9 @@
+# Mobile Gameplay And Hero Clearance
+
+The phone layout now reserves the ticker band and a fixed hero clearance before sizing the felt. Six-seat portrait tables use the full available table height, with a compact upper player on the empty top rail, as permitted in the owner's October 21 correction. The phone canvas grows from 78% to 82% of the viewport, so community cards gain room. The six-seat phone ring removes its old 18px top drop. The regenerated 15-device baseline changes only five portrait-phone rows; desktop and tablet measurements remain identical. Mobile felt text is smaller, club and union share a line, and the duplicate felt VPIP minimum is removed; the personal tracker and enforcement remain.
+
+Preselection and decision rows share compact 44px controls and the same exact bottom reserve. The smaller personal VPIP readout sits beside the hero and clears the previous-hand button. Rail wagers avoid the board, masthead and pot, including the hero and constrained-cap fallbacks; dealer placement also avoids neighbouring wager labels. The existing measured card-layout hook allocates the actual wager rectangles along nearby rail bands, avoiding player artwork and other wagers. Its finite placement pass adjusts collection offsets by the opposite amount, preserving the pot endpoint and existing animations.
+
+Successful assigned-seat admission opens the existing buy-in flow without the informational reservation toast. Error, waitlist and already-seated notices and all purchase/seat guards remain unchanged.
+
+Regression coverage uses actual table components and the multi-table shell, including the ticker, safe area, transformed swipe container, hero cards, balance and both action rows. Occupied six/nine-seat cases retain board, wager, tool-size and player clearances. These are isolated presentation tests; production publication and live-table proof are recorded separately in the task checkpoint.

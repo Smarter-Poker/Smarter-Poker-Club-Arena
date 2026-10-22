@@ -413,7 +413,7 @@ const DEFAULT_CONFIG: TableConfig = {
   blindStructure: 'standard',
   payoutStructure: 'payout3',
   startingChips: 1000,
-  blindsUpMinutes: 3,
+  blindsUpMinutes: 10,
   sngPlayerCount: 9,
   isSpins: false,
   nextStepSatellite: false,
@@ -554,9 +554,9 @@ export default function TableConfigPage({
   const [templates, setTemplates] = useState<TableTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [savingTemplate, setSavingTemplate] = useState(false);
-  /* The payout depth the loaded template was saved with. A new MTT is offered
-     10 to 15 percent only; a template saved at 20 keeps 20 on its own list, so
-     loading it never changes it and the owner can put it back. */
+  /* The payout depth the loaded template was saved with. Every depth is now
+     offered (Dan 2026-10-21: 12.5 percent default, standalone clubs choose),
+     so this is kept only so a loaded template's own choice stays visible. */
   const [savedPayoutChoice, setSavedPayoutChoice] = useState<string | undefined>(undefined);
   // Next Step (Satellite): upcoming non-satellite tournaments in this club
   // that a satellite here can feed seats into.
@@ -1248,7 +1248,15 @@ export default function TableConfigPage({
               type="button"
               aria-pressed={config.gameMode === 'mtt'}
               className={`mode-tab ${config.gameMode === 'mtt' ? 'active' : ''}`}
-              onClick={() => updateConfig('gameMode', 'mtt')}
+              onClick={() =>
+                // Every MTT defaults to paying the top 12.5% of the field (Dan
+                // 2026-10-21); entering MTT mode starts from that depth.
+                setConfig((prev) =>
+                  prev.gameMode === 'mtt'
+                    ? prev
+                    : { ...prev, gameMode: 'mtt', payoutStructure: 'payout2' }
+                )
+              }
             >
               MTT
             </button>
@@ -1602,7 +1610,7 @@ export default function TableConfigPage({
               label="Blinds Up"
               value={config.blindsUpMinutes}
               onChange={(v) => updateConfig('blindsUpMinutes', v)}
-              min={1}
+              min={5}
               max={15}
               suffix=" min"
               tooltip="Minutes Each Blind Level Lasts Before The Blinds Go Up"

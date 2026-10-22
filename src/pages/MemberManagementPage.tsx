@@ -50,11 +50,13 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useOnlineNow } from '../hooks/useProfilePresence';
 import { useToast } from '../components/common/Toast';
 import PageSkeleton from '../components/common/PageSkeleton';
+import MemberRakebackEditor from '../components/club/MemberRakebackEditor';
 import RoleBadge, { roleColor } from '../components/club/RoleBadge';
 import PlayerChangeHistory from '../components/club/PlayerChangeHistory';
 import ChipTransferModal from '../components/agent/ChipTransferModal';
 import MemberWatchAtTable from '../components/club/MemberWatchAtTable';
 import MemberWinLossCard from '../components/club/MemberWinLossCard';
+import MemberUplineCard from '../components/club/MemberUplineCard';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
@@ -781,6 +783,17 @@ export default function MemberManagementPage() {
       </section>
 
       <div className="mm-ledger-grid" key={`ledger:${clubId}:${userId}:${user?.id}`}>
+        {/* ── Upline agents (Dan 2026-10-21): every agent above the player ─── */}
+
+        {detail!.capabilities.can_view_financials && resolvedClubId && identity!.user_id && (
+          <MemberUplineCard
+            key={`upline:${resolvedClubId}:${identity!.user_id}`}
+            clubId={resolvedClubId}
+            userId={identity!.user_id}
+            refreshKey={recordRevision}
+          />
+        )}
+
         {/* ── Win / loss (Dan 2026-10-16) ──────────────────────────────────── */}
 
         {detail!.capabilities.can_view_financials && resolvedClubId && identity!.user_id && (
@@ -1046,17 +1059,20 @@ export default function MemberManagementPage() {
 
         {/* ── Role ─────────────────────────────────────────────────────────── */}
 
-        {detail!.capabilities.can_manage_role && myRoleLoaded && identity!.home_club_id && (
-          <RoleSection
-            key={`roles:${identity!.home_club_id}:${identity!.user_id!}`}
-            resolvedClubId={identity!.home_club_id}
-            targetUserId={identity!.user_id!}
-            targetName={alias}
-            targetRole={identity!.role}
-            myRole={myRole}
-            onRoleChanged={reload}
-          />
-        )}
+        {(detail!.capabilities.can_manage_role ||
+          (detail!.capabilities.can_view_financials && isAgentRole(myRole))) &&
+          myRoleLoaded &&
+          identity!.home_club_id && (
+            <RoleSection
+              key={`roles:${identity!.home_club_id}:${identity!.user_id!}`}
+              resolvedClubId={identity!.home_club_id}
+              targetUserId={identity!.user_id!}
+              targetName={alias}
+              targetRole={identity!.role}
+              myRole={myRole}
+              onRoleChanged={reload}
+            />
+          )}
 
         {resolvedClubId && user?.id && detail!.capabilities.access === 'staff' && (
           <section className="mm-card">
@@ -1389,7 +1405,7 @@ function NotesEditor({
    container is - it is a section of the page now, not a bottom sheet.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-function RoleSection({
+export function RoleSection({
   resolvedClubId,
   targetUserId,
   targetName,
@@ -1407,6 +1423,7 @@ function RoleSection({
   const toast = useToast();
   const isMountedRef = useIsMounted();
   const [promoting, setPromoting] = useState(false);
+  const [editingRakeback, setEditingRakeback] = useState(false);
   const [confirmRole, setConfirmRole] = useState<ClubRole | null>(null);
   const roleConfirmationRef = useRef<HTMLDivElement>(null);
   const roleButtonsRef = useRef(new Map<ClubRole, HTMLButtonElement>());
@@ -1424,7 +1441,7 @@ function RoleSection({
       roleButtonsRef.current.get(cancelledRoleRef.current)?.focus();
       cancelledRoleRef.current = null;
     }
-  }, [confirmRole]);
+  }, [confirmRole, editingRakeback]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   // A percentage, not a fraction. Blank on purpose: a rate that arrives
@@ -1671,7 +1688,24 @@ function RoleSection({
       {/* The offer. It takes the place of the role controls while it is up,
           because the promotion is already done and the only question left is
           whether to fund it now. */}
-      {fundPrompt ? (
+      {editingRakeback ? (
+        <MemberRakebackEditor
+          key={targetRole}
+          clubId={resolvedClubId}
+          userId={targetUserId}
+          role={targetRole}
+          onClose={() => {
+            cancelledRoleRef.current = targetRole;
+            setEditingRakeback(false);
+          }}
+          onSaved={() => {
+            setEditingRakeback(false);
+            setSuccess('Rakeback Updated');
+            toast.success('Rakeback Updated');
+            onRoleChanged();
+          }}
+        />
+      ) : fundPrompt ? (
         <div className="mm-roles__fund">
           <p className="mm-roles__fund-title">
             {targetName} Is Now {roleLabel(fundPrompt.role)}
@@ -1703,6 +1737,25 @@ function RoleSection({
         <p className="mm-roles__note">Checking What You May Grant...</p>
       ) : !canManage ? (
         <>
+          <button
+            type="button"
+            className="mm-roles__option mm-roles__option--current"
+            aria-current="true"
+            ref={(button) => {
+              if (button) roleButtonsRef.current.set(targetRole, button);
+              else roleButtonsRef.current.delete(targetRole);
+            }}
+            disabled={rolesLoadFailed || !(targetRole === 'player' || isAgentRole(targetRole))}
+            onClick={() => setEditingRakeback(true)}
+          >
+            <RoleBadge role={targetRole} size="sm" />
+            <span className="mm-roles__option-main">
+              <span className="mm-roles__option-name">{roleLabel(targetRole)} (Current)</span>
+              <span className="mm-roles__option-desc">
+                {toTitleCase(ROLE_DESCRIPTION[targetRole])}
+              </span>
+            </span>
+          </button>
           <p className="mm-roles__note">{noRolesReason}</p>
           {rolesLoadFailed && (
             <button
@@ -1784,7 +1837,7 @@ function RoleSection({
         </div>
       ) : (
         <div className="mm-roles__list">
-          {promotableRoles.map((role) => (
+          {Array.from(new Set([...promotableRoles, targetRole])).map((role) => (
             <button
               key={role}
               type="button"
@@ -1795,15 +1848,23 @@ function RoleSection({
               className={`mm-roles__option${role === targetRole ? ' mm-roles__option--current' : ''}`}
               onClick={() => {
                 setError('');
+                if (role === targetRole) {
+                  setEditingRakeback(true);
+                  return;
+                }
                 setCommissionPct('');
                 setConfirmRole(role);
               }}
-              disabled={role === targetRole || promoting}
+              aria-current={role === targetRole ? 'true' : undefined}
+              disabled={
+                promoting || (role === targetRole && !(role === 'player' || isAgentRole(role)))
+              }
             >
               <RoleBadge role={role} size="sm" />
               <span className="mm-roles__option-main">
                 <span className="mm-roles__option-name" style={{ color: roleColor(role) }}>
                   {roleLabel(role)}
+                  {role === targetRole ? ' (Current)' : ''}
                 </span>
                 <span className="mm-roles__option-desc">{toTitleCase(ROLE_DESCRIPTION[role])}</span>
               </span>

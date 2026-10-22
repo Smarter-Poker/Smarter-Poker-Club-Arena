@@ -34,6 +34,12 @@ import {
   dealerButtonPosition,
   feltCenter,
   feltEdgeClearanceWidthPct,
+  fitSeatToViewport,
+  overlapsBoard,
+  overlapsPortraitPot,
+  projectPortraitTable,
+  unprojectPortraitTable,
+  portraitTableTransform,
   feltRadialFraction,
   isInsideFelt,
   isOnFeltText,
@@ -711,5 +717,88 @@ describe('the dealer button and the printing on the felt', () => {
         }
       }
     }
+  });
+});
+
+describe('portrait mobile bets follow the actual rail instead of walking toward the centre', () => {
+  it('keeps every fitted six/nine-max bet just inside the rail, off the board, and collects from that same rest point', async () => {
+    const { seatLayoutFor } = await import('../../src/lib/tableSeatGeometry');
+    for (const width of [320, 375, 393, 430, 480])
+      for (const count of [6, 9]) {
+        const size = { w: width * 0.78, h: 560, railBets: true };
+        for (const raw of seatLayoutFor(count)) {
+          const pod = seatPodPx(width, isHeroSeat(raw), size.w);
+          const seat = fitSeatToViewport(raw, size, width, pod);
+          const rest = chipRestPosition(seat, size, pod);
+          const clearance = (feltEdgeClearanceWidthPct(rest, size) * size.w) / 100;
+          expect(clearance).toBeGreaterThanOrEqual(
+            (chipRadiusWidthPct(size) * size.w) / 100 + MARKER_INSET_PX - 0.01
+          );
+          expect(clearance).toBeLessThanOrEqual(20.01);
+          expect(overlapsBoard(rest, size)).toBe(false);
+          const offset = betChipOffsetPx(seat, size, pod);
+          const collect = chipCollectOffsetPx(seat, size, pod);
+          expect(offset.x + collect.x).toBeCloseTo(
+            (((POT_ANCHOR_PCT.x - seat.x) * size.w) / 100) * CHIP_COLLECT_FRACTION,
+            0
+          );
+          expect(offset.y + collect.y).toBeCloseTo(
+            (((POT_ANCHOR_PCT.y - seat.y) * size.h) / 100) * CHIP_COLLECT_FRACTION,
+            0
+          );
+        }
+      }
+  });
+});
+
+describe('short phone rail bets clear the complete felt masthead', () => {
+  it('checks hero and side wagers with the complete amount footprint', async () => {
+    const { seatLayoutFor } = await import('../../src/lib/tableSeatGeometry');
+    for (const height of [300, 340, 400, 560]) {
+      const size = { w: 320 * 0.82, h: height, railBets: true };
+      for (const count of [6, 9]) {
+        for (const raw of seatLayoutFor(count)) {
+          const pod = seatPodPx(320, isHeroSeat(raw), size.w);
+          const seat = fitSeatToViewport(raw, size, 320, pod);
+          const rest = chipRestPosition(seat, size, pod);
+          expect(overlapsPortraitPot(rest, size, (20 / size.w) * 100, (11 / size.w) * 100)).toBe(
+            false
+          );
+          expect(
+            isOnFeltText(rest, size, (20 / size.w) * 100),
+            `${count}/${height}/${raw.x},${raw.y}`
+          ).toBe(false);
+          expect(overlapsBoard(rest, size, (20 / size.w) * 100)).toBe(false);
+        }
+      }
+    }
+  });
+});
+
+describe('the mobile painted chassis and marker projection share one perspective', () => {
+  it('keeps the near rail unchanged and narrows the far rail to eighty percent', () => {
+    expect(projectPortraitTable({ x: 0, y: 0 })).toEqual({ x: 10, y: 0 });
+    expect(projectPortraitTable({ x: 100, y: 0 })).toEqual({ x: 90, y: 0 });
+    expect(projectPortraitTable({ x: 0, y: 100 })).toEqual({ x: 0, y: 100 });
+    expect(projectPortraitTable({ x: 100, y: 100 })).toEqual({ x: 100, y: 100 });
+  });
+  it('the CSS matrix paints exactly the same points, and inverse projection recovers them', () => {
+    const size = { w: 306.54, h: 600 };
+    const matrix = portraitTableTransform(size).slice(9, -1).split(',').map(Number);
+    for (const x of [0, 13.3, 50, 86.5, 100])
+      for (const y of [0, 8.9, 25, 58, 82.5, 100]) {
+        const px = (x * size.w) / 100,
+          py = (y * size.h) / 100;
+        const denominator = matrix[3] * px + matrix[7] * py + matrix[15];
+        const painted = {
+          x: ((matrix[0] * px + matrix[4] * py + matrix[12]) / denominator / size.w) * 100,
+          y: ((matrix[1] * px + matrix[5] * py + matrix[13]) / denominator / size.h) * 100,
+        };
+        const projected = projectPortraitTable({ x, y });
+        expect(painted.x).toBeCloseTo(projected.x, 8);
+        expect(painted.y).toBeCloseTo(projected.y, 8);
+        expect(unprojectPortraitTable(projected).x).toBeCloseTo(x, 8);
+        expect(unprojectPortraitTable(projected).y).toBeCloseTo(y, 8);
+      }
   });
 });

@@ -17,6 +17,7 @@ import {
   isOnFeltText,
   overlapsTopSeatBox,
   overlapsBoard,
+  overlapsPortraitPot,
   clampIntoFelt,
   feltCenter,
   BUTTON_FELT_MARGIN_WIDTH_PCT,
@@ -196,6 +197,27 @@ export function dealerButtonPositionClearOfSeat(
 
   const chips = chipRestPosition(seat, size, pod);
   const puck = buttonRadiusWidthPct(size);
+  // Portrait rail wagers may pass a neighbouring chair on a compact cap.
+  // Protect the complete wager label for every seat, not only our own chip.
+  const railWagers = size.railBets
+    ? (allSeats ?? [seat]).map((other) =>
+        chipRestPosition(
+          other,
+          size,
+          seatPodPx(
+            typeof window === 'undefined' ? size.w / 0.82 : window.innerWidth,
+            other.y >= 100 && other.x === 50,
+            size.w
+          )
+        )
+      )
+    : [];
+  const clearsRailWagers = (p: Pos) =>
+    railWagers.every(
+      (wager) =>
+        (Math.abs(p.x - wager.x) * size.w) / 100 >= 20 + (puck * size.w) / 100 + 3 ||
+        (Math.abs(p.y - wager.y) * size.h) / 100 >= 11 + (puck * size.w) / 100 + 3
+    );
   const sv = sq(seat, size);
 
   /**
@@ -218,13 +240,15 @@ export function dealerButtonPositionClearOfSeat(
     });
   };
 
-  const clear = (p: Pos) =>
+  const clearsObstacles = (p: Pos) =>
+    clearsRailWagers(p) &&
     markerGapWidthPct(p, chips, size) >= MARKER_MIN_GAP_WIDTH_PCT &&
     !isOnFeltText(p, size, puck) &&
     !overlapsTopSeatBox(p, seat, size) &&
     !overlapsSeatPlate(p, seat, size, pod) &&
     !overlapsBoard(p, size) &&
-    ownedByThisSeat(p);
+    !overlapsPortraitPot(p, size, puck);
+  const clear = (p: Pos) => clearsObstacles(p) && ownedByThisSeat(p);
 
   if (clear(placed)) return placed;
 
@@ -338,6 +362,35 @@ export function dealerButtonPositionClearOfSeat(
       }
     }
   }
+  if (size.railBets) {
+    // Exhaust the compact felt before accepting an obstructed fallback. Keep
+    // every ownership and keep-out predicate, selecting the point nearest to
+    // the dealer's own chair when a short cap closes the local rail search.
+    let nearest: Pos | null = null;
+    let distance = Infinity;
+    let unobstructed: Pos | null = null;
+    let unobstructedDistance = Infinity;
+    for (let x = 0; x <= 100; x += 1) {
+      for (let y = 0; y <= 100; y += 1) {
+        const candidate = clampIntoFelt({ x, y }, size, BUTTON_FELT_MARGIN_WIDTH_PCT);
+        const point = sq(candidate, size);
+        const next = Math.hypot(point.x - sv.x, point.y - sv.y);
+        if (next < distance && clear(candidate)) {
+          nearest = candidate;
+          distance = next;
+        }
+        if (next < unobstructedDistance && clearsObstacles(candidate)) {
+          unobstructed = candidate;
+          unobstructedDistance = next;
+        }
+      }
+    }
+    if (nearest) return nearest;
+    // When every unobstructed point crosses a seat's Voronoi boundary on a
+    // short phone, visible cards and wagers take priority over that heuristic.
+    // Still choose the closest clear position to the dealer's own chair.
+    if (unobstructed) return unobstructed;
+  }
   return placed;
 }
 
@@ -403,7 +456,12 @@ export function DealerButton({
       const w = host.offsetWidth;
       const h = host.offsetHeight;
       if (w <= 0 || h <= 0) return;
-      setScalerSize((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+      const railBets = window.innerWidth <= 480 && h > w;
+      setScalerSize((prev) =>
+        prev && prev.w === w && prev.h === h && prev.railBets === railBets
+          ? prev
+          : { w, h, railBets }
+      );
     };
     read();
     if (typeof ResizeObserver === 'undefined') return;

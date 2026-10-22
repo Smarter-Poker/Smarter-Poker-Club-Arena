@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/union-pullback-intent - Dan 2026-10-21: Union Bank pull back failed with \"Invalid Union Wallet Intent\". src/utils/entityId.ts is the shared shape check for database ids (Midway Union fade0000-..., The Felt Society a0000000-..., horses 00000000-...), replacing four copies of a uuid-version regex that refused real rows. It is one regular expression and one function with no imports; it reaches first paint only because ClubJoinService and CashierPendingOperations, already in the entry chunk, now call it instead of carrying their own copy of the pattern.",
+  "modules": ["src/utils/entityId.ts"]
+}

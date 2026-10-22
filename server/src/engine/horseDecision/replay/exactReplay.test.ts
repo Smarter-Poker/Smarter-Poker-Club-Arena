@@ -198,10 +198,10 @@ afterEach(() => {
 });
 
 describe('P15-A exact historical replay', () => {
-  it('records a PLO4 decision under the selected generation 4 and replays it exactly', async () => {
-    // Generation 4 (2026-10-19) requalified the VPIP-floor source, so the
+  it('records a PLO4 decision under the selected generation 5 and replays it exactly', async () => {
+    // Generation 5 (2026-10-22) requalified the maniac-pressure source, so the
     // round-3 PLO4 pack is the cash candidate again and its receipt replays.
-    expect(PHASE10_PROTECTED_RELEASE_SELECTION?.approvalGeneration).toBe(4);
+    expect(PHASE10_PROTECTED_RELEASE_SELECTION?.approvalGeneration).toBe(5);
     const { record, result } = await liveOriginal(IDS.cashPlo4Preflop);
     expect(result.phase10Authority?.state).toBe('usable');
     expect(JSON.parse(record.body).replayState.admission.phase10Plo4).toBe('candidate');
@@ -254,7 +254,7 @@ describe('P15-A exact historical replay', () => {
     expect(verdict.isolation.networkAttempts).toEqual({ fetch: 0, socket: 0 });
     // A record claiming a usable owner receipt (well formed, from a genuine
     // test qualification of another generation) cannot stand in for the
-    // release's generation 4: ordinary qualification refuses it by name.
+    // release's generation 5: ordinary qualification refuses it by name.
     const holder = new HorseQualifiedAuthorityHolder(randomUUID(), PLO4_POLICY_PACK.version);
     holder.apply(qualifiedPhase10TestAdmission());
     const receipt = holder.receipt();

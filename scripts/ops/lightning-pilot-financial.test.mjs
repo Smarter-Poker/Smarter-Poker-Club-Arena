@@ -221,6 +221,8 @@ function fixture(
     gate = 'accepted',
     cleanupError = false,
     restoreError = false,
+    autoOffBeforeRestore = false,
+    menuInitiallyOpen = false,
     replyError,
     httpStatus = 200,
     sitoutFlow = false,
@@ -230,6 +232,7 @@ function fixture(
     returnError = false,
     returnReadError = false,
     baselineDrift = 0,
+    selectionLostAfter,
   } = {}
 ) {
   const actions = [],
@@ -238,11 +241,14 @@ function fixture(
     c = cashout();
   let issued = false,
     auto = false,
+    menuOpen = menuInitiallyOpen,
     resolveResponse,
     paused = false,
     pauseReads = 0,
     handReads = 0,
-    returned = false;
+    returned = false,
+    selected = false,
+    selectionReads = 0;
   const target = PILOT_TARGETS[0];
   const game = {
     id: pin.clusterId,
@@ -453,14 +459,18 @@ function fixture(
   };
   const loc = (role, name, nested = false) => ({
     waitFor: async () => {},
-    getAttribute: async () => gate,
+    getAttribute: async () => (name === 'Table Menu' ? String(menuOpen) : gate),
     inputValue: async () => '1',
     innerText: async () => `Auto Top Up${auto ? ' ON' : ''}`,
     getByRole: (r, o) => loc(r, o.name, true),
     getByLabel: () => loc('input', 'amount'),
     click: async () => {
       actions.push([role, String(name)]);
-      if (name === 'Table Menu') return;
+      if (name === 'Table Menu') {
+        menuOpen = !menuOpen;
+        return;
+      }
+      if (role === 'menuitem') assert.equal(menuOpen, true, 'normal menu must be open');
       if (name === 'Sit Out') {
         triggerPause(true);
         return;
@@ -478,6 +488,8 @@ function fixture(
         if (auto && restoreError) throw Error('SECRET_RESTORE');
         auto = !auto;
         if (auto) trigger();
+        menuOpen = false;
+        if (autoOffBeforeRestore) auto = false;
         return;
       }
       if (
@@ -499,7 +511,27 @@ function fixture(
     },
     goto: async () => {},
     waitForFunction: async () => {},
-    locator: () => loc('gate', 'gate'),
+    locator: (selector) =>
+      selector.includes('data-tabid')
+        ? {
+            waitFor: async () => {},
+            count: async () => (selector.includes(pin.poolSessionId) ? 1 : 0),
+            isVisible: async () => true,
+            tap: async () => {
+              actions.push('select_pool');
+              selected = true;
+            },
+            click: async () => {
+              actions.push('select_pool');
+              selected = true;
+            },
+            getAttribute: async () => {
+              if (selectionLostAfter !== undefined && ++selectionReads > selectionLostAfter)
+                selected = false;
+              return String(selected);
+            },
+          }
+        : loc('gate', 'gate'),
     getByTestId: (n) => loc('testid', n),
     getByRole: (r, o) => loc(r, o.name),
     waitForResponse: () => new Promise((r) => (resolveResponse = r)),
@@ -627,8 +659,31 @@ test('auto preference restoration failure is not success, and scope refuses befo
     r = await witnessFinancial(f.args);
   assert.equal(r.cleanup, 'unknown');
   assert.equal(r.status, 'unknown');
+  assert.equal(r.cleanupStages.autoPreference, 'unknown');
+  assert.equal(r.cleanupStages.browser, 'closed');
+  assert.equal(r.cleanupStages.localSession, 'closed');
+  assert.equal(r.cleanupStages.autoOffGestures, 1);
+  assert.equal(r.cleanupStages.autoStep, 'read_preference');
   assert.ok(f.actions.includes('local_signout'));
   await assert.rejects(witnessFinancial({ ...f.args, pin: { ...pin, playerId: id(99) } }), /Scope/);
+});
+test('already-open normal menu is not toggled closed before the single intent', async () => {
+  const f = fixture('auto_top_up', { menuInitiallyOpen: true });
+  const r = await witnessFinancial(f.args);
+  assert.equal(r.status, 'observed');
+  assert.equal(r.matchingRequests, 1);
+  assert.equal(r.cleanupStages.autoOffGestures, 1);
+});
+test('already OFF preference is verified without a second toggle', async () => {
+  const f = fixture('auto_top_up', { autoOffBeforeRestore: true });
+  const r = await witnessFinancial(f.args);
+  assert.equal(r.autoPreferenceRestored, true);
+  assert.equal(r.cleanupStages.autoPreference, 'off_verified');
+  assert.equal(r.cleanupStages.autoOffGestures, 0);
+  assert.equal(
+    f.actions.filter((x) => Array.isArray(x) && String(x[1]).includes('Auto Top Up')).length,
+    1
+  );
 });
 test('selectors and receipts are pinned to maintained product producers', () => {
   const menu = readFileSync(
@@ -838,4 +893,32 @@ test('unknown add-on acknowledgment or unexpected baseline remains unknown after
     assert.equal(r.intent.opId, intent.opId);
     assert.ok(!JSON.stringify(r).includes('SECRET'));
   }
+});
+
+test('Sit Out diagnostics keep only maintained status and classification', async () => {
+  const { sitoutResponse } = await import('./lightning-pilot-financial.mjs');
+  assert.deepEqual(
+    sitoutResponse(400, {
+      success: false,
+      error: 'You Must Play At Least One Hand Before You Can Sit Out',
+      secret: 'never retain',
+    }),
+    { httpStatus: 400, success: false, code: 'SITOUT_HAND_REQUIRED' }
+  );
+  assert.deepEqual(sitoutResponse(500, { error: 'sensitive arbitrary body' }), {
+    httpStatus: 500,
+    success: null,
+    code: 'UNCLASSIFIED',
+  });
+});
+
+test('a pool selection lost before the money gesture refuses it without switching back', async () => {
+  const f = fixture('top_up', { selectionLostAfter: 2 }),
+    r = await witnessFinancial(f.args);
+  assert.equal(r.status, 'unknown');
+  assert.equal(r.intent, null);
+  assert.equal(f.actions.filter((a) => a === 'select_pool').length, 1);
+  assert.ok(!f.actions.some((a) => Array.isArray(a) && String(a[1]).startsWith('/^Add')));
+  assert.ok(f.actions.includes('local_signout'));
+  assert.ok(f.actions.includes('browser_close'));
 });

@@ -4,6 +4,7 @@ import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import { ErrorState } from '../common/EmptyState';
 import PageSkeleton from '../common/PageSkeleton';
 import ClubCapabilityGuard from './ClubCapabilityGuard';
+import ClubPrivateDataBoundary from './ClubPrivateDataBoundary';
 import { useAutomaticArenaMembership } from '../arena/arenaAccess';
 const ArenaAccessBoundary = lazy(() => import('../arena/ArenaAccessBoundary'));
 
@@ -43,7 +44,11 @@ function ChipMemberGuard({ children }: { children: ReactNode }) {
 
   if (!workspace.isMember) return <PageSkeleton variant="default" />;
 
-  return <ClubCapabilityGuard>{children}</ClubCapabilityGuard>;
+  return (
+    <ClubCapabilityGuard>
+      <ClubPrivateDataBoundary>{children}</ClubPrivateDataBoundary>
+    </ClubCapabilityGuard>
+  );
 }
 
 /** Resolve global entitlement before the private-club guard can redirect to Join. */

@@ -1,0 +1,14 @@
+{
+  "_owner": "bank-downline-20261020",
+  "_comment": "Observed installed history20261021182211 exact SQL MD5 274d312792131d0cd8650d128e470661; functions owner postgres SECURITY DEFINER public,pg_temp, anon denied; internal recipient helper service only. Review column and index read back.",
+  "tables": [],
+  "functions": [
+    "fn_publish_club_member_scope",
+    "fn_preview_club_assignment",
+    "fn_apply_reviewed_club_assignment",
+    "fn_club_assignment_history"
+  ],
+  "columns": {
+    "club_assignment_operations": ["review_snapshot"]
+  }
+}

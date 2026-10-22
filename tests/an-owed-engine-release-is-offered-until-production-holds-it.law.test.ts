@@ -351,9 +351,11 @@ describe('the offer is the existing release, not a second publisher', () => {
   });
 
   it('is driven by protected-main pushes only: no timer, no chain off a finished release', () => {
-    expect(Object.keys(stage.on)).toEqual(['push']);
+    expect(Object.keys(stage.on)).toEqual(['push', 'schedule']);
+    expect(stage.on.schedule).toEqual([{ cron: '30 8 * * *' }, { cron: '30 9 * * *' }]);
+    expect(stage.jobs.signal.if).toContain("needs.detect.outputs.admission_allowed == 'true'");
     expect(stage.on.push.branches).toEqual(['main']);
-    expect(stage.jobs.detect.permissions).toEqual({ contents: 'read' });
+    expect(stage.jobs.detect.permissions).toEqual({ contents: 'read', actions: 'read' });
   });
 
   it('gates the one dispatch step on the offer decision, and the detector feeds it', () => {

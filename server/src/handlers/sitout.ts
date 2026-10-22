@@ -15,7 +15,11 @@ export interface SitoutDeps {
   gameServer: {
     getTableEngine(tableId: string):
       | {
-          sitOut(userId: string, sitOut: boolean): { success: boolean; [k: string]: unknown };
+          sitOut(
+            userId: string,
+            sitOut: boolean,
+            proof?: { completedLightningOccupancyId?: string; requestedByClient?: boolean }
+          ): { success: boolean; [k: string]: unknown };
         }
       | null
       | undefined;
@@ -23,8 +27,8 @@ export interface SitoutDeps {
     lightningAnchorFor?(
       roomId: string,
       userId: string,
-      opts?: { requireOpen?: boolean }
-    ): Promise<{ anchorTableId: string } | null>;
+      opts?: { requireOpen?: boolean; requireCompletedHand?: boolean }
+    ): Promise<{ anchorTableId: string; completedHandOccupancyId?: string } | null>;
   };
 }
 
@@ -50,6 +54,7 @@ export async function handleSitout(
       });
     }
 
+    let anchorTableId: string | undefined;
     let engine = deps.gameServer.getTableEngine(tableId);
     if (!engine && typeof tableId === 'string' && deps.gameServer.lightningAnchorFor) {
       // The room owns no physical engine. Both directions use the existing
@@ -57,13 +62,36 @@ export async function handleSitout(
       const anchor = await deps.gameServer.lightningAnchorFor(tableId, userId, {
         requireOpen: true,
       });
-      if (anchor) engine = deps.gameServer.getTableEngine(anchor.anchorTableId);
+      if (anchor) {
+        engine = deps.gameServer.getTableEngine(anchor.anchorTableId);
+        anchorTableId = anchor.anchorTableId;
+      }
     }
     if (!engine) {
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    const result = engine.sitOut(userId, sitOut);
+    // This door is the account's own authenticated client. Its Sit Out is the
+    // player's, and no horse controller may sit it back in (2026-10-22).
+    let result = engine.sitOut(userId, sitOut, { requestedByClient: true });
+    if (sitOut && anchorTableId && result.code === 'SITOUT_HAND_REQUIRED') {
+      // The first refusal made no state change. Only a settled hand of this
+      // exact open pool can supplement a restarted feeder's empty local set.
+      const proof = await deps.gameServer.lightningAnchorFor!(tableId, userId, {
+        requireOpen: true,
+        requireCompletedHand: true,
+      });
+      if (
+        proof?.completedHandOccupancyId &&
+        proof.anchorTableId === anchorTableId &&
+        deps.gameServer.getTableEngine(anchorTableId) === engine
+      ) {
+        result = engine.sitOut(userId, sitOut, {
+          completedLightningOccupancyId: proof.completedHandOccupancyId,
+          requestedByClient: true,
+        });
+      }
+    }
     return sendJSON(res, result.success ? 200 : 400, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.sitout_error');

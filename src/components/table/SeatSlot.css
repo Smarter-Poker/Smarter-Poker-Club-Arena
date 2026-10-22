@@ -2435,6 +2435,17 @@
   pointer-events: none;
 }
 
+/* Dan 2026-10-21: "A FOLD SHOULD NEVER BLOCK OUT ANOTHER USER'S INFO." On a
+   short phone the side chairs are less than a whole pod apart, and a tag
+   floating a full 26px above the head reached the plate of the chair above.
+   There the tag overlaps the avatar's crown instead, the way the PokerBros
+   reference draws it, so the pod adds no height above the head. */
+@media (max-width: 480px) and (max-height: 760px) and (orientation: portrait) {
+  .seat__action {
+    top: -12px;
+  }
+}
+
 @keyframes actionPopIn {
   0% {
     opacity: 0;
@@ -2829,32 +2840,45 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   ALL-IN BADGE
-   ═══════════════════════════════════════════════════════════════════════════════ */
+   ALL-IN PUCK (Dan 2026-10-21)
+   ═══════════════════════════════════════════════════════════════════════════════
+   "WHEN A PLAYER IS ALL IN THEIR CHIPS NEED TO BE ON THE TABLE AND AN ALL IN
+   BUTTON SHOULD APPEAR IN FRONT OF THAT USER (LIKE A DEALER BUTTON, BUT FOR ALL
+   INS) AS WELL AS IT APPEARING ABOVE THEIR HEAD."
 
-.seat__allin-badge {
-  /* Dan 2026-08-18 (screenshot review): -4px printed the pill over the
-     name/stack text. Below the plate, like the stack delta. */
-  position: absolute;
-  bottom: -22px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 2px 10px;
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 50%, #b91c1c 100%);
-  color: #fff;
-  border-radius: 8px;
-  font-size: 0.5625rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+   A puck the size of the dealer button, carried in the player's wager slot on
+   the felt. The old `.seat__allin-badge` hung below the plate, in the next
+   seat's airspace, and is retired. */
+.seat__allin-puck {
+  --allin-puck-size: var(--dealer-btn-size, 28px);
+  width: var(--allin-puck-size);
+  height: var(--allin-puck-size);
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 35% 30%, #f87171 0%, #dc2626 55%, #991b1b 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
   box-shadow:
-    0 2px 8px rgba(239, 68, 68, 0.5),
-    0 0 20px rgba(239, 68, 68, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  z-index: 5;
-  white-space: nowrap;
-  animation: allinBadgePulse 1.5s ease-in-out infinite;
-  border: 1px solid rgba(255, 100, 100, 0.3);
+    0 3px 8px rgba(0, 0, 0, 0.55),
+    0 0 10px rgba(239, 68, 68, 0.45);
+  color: #ffffff;
+  font-weight: 900;
+  font-size: calc(var(--allin-puck-size) * 0.27);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  flex: none;
+}
+
+/* Puck and chips side by side, so the wager slot grows across the felt rather
+   than up it: a side player's slot has far more width than height between the
+   board, the masthead and the rail. */
+.seat__bet-chips:has(.seat__allin-puck) {
+  flex-direction: row;
+  gap: 3px;
 }
 
 /* The `.seat__bombpot-badge` magenta pill and its `bombpotBadgeIn` keyframe
@@ -2862,39 +2886,34 @@
    UNDER THE PLAYERS"). The bomb pot is marked once, on the felt:
    `.bomb-pot-live` in TablePage.css. */
 
-@keyframes allinBadgePulse {
-  0%,
-  100% {
-    box-shadow:
-      0 2px 8px rgba(239, 68, 68, 0.5),
-      0 0 20px rgba(239, 68, 68, 0.2);
-  }
-  50% {
-    box-shadow:
-      0 2px 12px rgba(239, 68, 68, 0.7),
-      0 0 32px rgba(239, 68, 68, 0.35);
-  }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    BOUNTY BADGE
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* Dan 2026-10-20: a solid pill attached closely to each player's avatar.
- * When an action label is present, reserve a separate lane above it. */
+ *
+ * Dan 2026-10-21: "THE BOUNTY AMOUNT NEEDS TO BE FULLY DISPLAYED" and "A FOLD
+ * SHOULD NEVER BLOCK OUT ANOTHER USER'S INFO". The pill used to stack ABOVE
+ * the action tag (-56px), so every seat was a tower of bounty + tag + avatar
+ * + plate + all-in badge, and on a phone's side column the tower reached into
+ * the next seat: a bet stack printed over the hero's pill, and one seat's tag
+ * printed over the next seat's bounty. It is now pinned to the avatar's
+ * top-left corner, the one corner nothing else uses (the position chip owns
+ * top-right, the hole-card fan the bottom), so it adds no height to the seat
+ * and nothing from a neighbouring seat can reach it. */
 .seat__bounty {
   position: absolute;
-  top: -28px;
-  left: 50%;
-  transform: translateX(-50%) translateZ(0);
-  padding: 3px 9px;
-  min-width: 36px;
-  min-height: 20px;
+  top: 0px;
+  left: 0;
+  transform: translateZ(0);
+  padding: 2px 7px;
+  min-width: 28px;
+  min-height: 18px;
   justify-content: center;
   border-radius: 999px;
   background: #1877f2;
   border: none;
-  box-shadow: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
   color: #ffffff;
   font-size: 0.72rem;
   font-weight: 800;
@@ -2904,10 +2923,6 @@
   display: flex;
   align-items: center;
   pointer-events: none;
-}
-
-.seat:has(.seat__action) .seat__bounty {
-  top: -56px;
 }
 
 .seat__bounty-val {
@@ -4639,4 +4654,63 @@
 .seat-wrapper--top .seat__info {
   min-height: clamp(30px, calc(var(--table-w, 360px) * 0.09), 42px);
   padding-block: 3px;
+}
+
+/* Keep rail bets fixed when the top pod clears the actual jackpot frame. */
+.seat-wrapper--top .seat__bet-chips {
+  translate: 0 calc(-1 * var(--sp-top-seat-shift, 0px));
+}
+/* A top player's action stays with its plate, below the jackpot banner.
+   Dan 2026-10-21: every top-cap chair, tournaments included (whose full-size
+   top pods carry no `--top` tag), so a tag above a top player's head can
+   never be cut off by the top of the screen. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .seat-wrapper--top .seat__action,
+  .seat-wrapper--cap .seat__action {
+    top: calc(100% + 2px);
+  }
+}
+
+/* The upper player uses a compact rail pod instead of consuming a full
+   avatar lane above the phone table. Cards and stack remain upright. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page .seat-wrapper--top .seat {
+    --seat-avatar-base: 36px;
+    --seat-avatar-full: 36px;
+    --seat-plate-min-width: 58px;
+    width: 58px;
+  }
+  .table-page .seat-wrapper--top .seat__info {
+    min-height: 30px;
+    padding: 2px 3px;
+  }
+  .table-page .seat-wrapper--top .seat__name {
+    font-size: 10px;
+  }
+  .table-page .seat-wrapper--top .seat__stack {
+    font-size: 12px;
+  }
+}
+
+/* Dan 2026-10-21: the smallest phones (an iPhone SE is 320 x 568) cannot fit a
+   nine-handed side column of full pods without one player's plate covering the
+   next. Below 620px of height the villain avatars shrink to the compact top-pod
+   size, so every player stays fully readable instead of overlapping. */
+@media (max-width: 480px) and (max-height: 620px) and (orientation: portrait) {
+  .table-page .seat-wrapper:not(.seat-wrapper--hero) .seat {
+    --seat-avatar-base: 40px;
+    --seat-avatar-full: 40px;
+  }
+  /* A full-size top pod's tag below its plate reaches the pot pill on a felt
+     this short; its crown is well clear of the screen top, so it rides there. */
+  .table-page .seat-wrapper--cap:not(.seat-wrapper--top) .seat__action {
+    top: -12px;
+  }
+  /* Three all-in pucks have to share a very small felt. */
+  .seat__allin-puck {
+    --allin-puck-size: 20px;
+  }
+  .seat__bet-chips:has(.seat__allin-puck) {
+    gap: 1px;
+  }
 }

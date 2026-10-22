@@ -1,0 +1,7 @@
+{
+  "_owner": "perf/cron-audit-footprint. Migration 20261022062934_the_hourly_audits_read_only_what_changed_since_they_last_loo: public.club_table_daily_refresh_marks holds the fingerprint of each complete reporting day fn_club_table_daily_catchup last rebuilt.",
+  "tables": ["club_table_daily_refresh_marks"],
+  "columns": {
+    "club_table_daily_refresh_marks": ["stat_date", "facts_fingerprint", "refreshed_at"]
+  }
+}

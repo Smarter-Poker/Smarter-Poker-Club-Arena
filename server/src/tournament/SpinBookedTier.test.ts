@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { spinPostRevealMs } from '../config/spinSpec.js';
-import { readFundedSpinDraw, spinRuleManifest } from './SpinDrawReceipt.js';
+import { playableSpinBlinds, readFundedSpinDraw, spinRuleManifest } from './SpinDrawReceipt.js';
 import { SpinLaunchParkRegistry, proveSpinDrawWithParking } from './spinLaunchParking.js';
 
 // Execute the real start fragment, including the RPC loop and the presentation
@@ -37,6 +37,7 @@ const execute = new Function(
   'spinPostRevealMs',
   'proveSpinDrawWithParking',
   'raiseFinancialAlert',
+  'playableSpinBlinds',
   compiled
 );
 
@@ -93,7 +94,8 @@ async function run(drawn: number, booked: number) {
     { emitEvent: vi.fn() },
     spinPostRevealMs,
     proveWithFreshRegistry,
-    vi.fn(async () => ({ persisted: true, alertId: 'alert' }))
+    vi.fn(async () => ({ persisted: true, alertId: 'alert' })),
+    playableSpinBlinds
   );
   return { patch, rpc };
 }
@@ -116,7 +118,7 @@ describe('the booked Spin tier determines the presentation patch', () => {
       );
       expect(patch.blind_structure).toHaveLength(12);
       expect(
-        patch.blind_structure.every((level: { duration: number }) => level.duration === 180)
+        patch.blind_structure.every((level: { duration: number }) => level.duration === 300)
       ).toBe(true);
       expect(patch).not.toHaveProperty('spin_multiplier');
       expect(patch).not.toHaveProperty('prize_pool');

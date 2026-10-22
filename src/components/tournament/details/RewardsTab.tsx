@@ -223,6 +223,8 @@ interface RewardColumns {
   guaranteed_prize?: number | null;
   prize_pool_finalized?: boolean | null;
   payout_structure?: unknown;
+  payout_depth_percent?: number | string | null;
+  payout_percent?: number | string | null;
   spin_multiplier?: number | null;
   is_bounty?: boolean | null;
   is_pko?: boolean | null;
@@ -388,6 +390,18 @@ export default function RewardsTab({
   const parsedPlaces = useMemo(() => resolvePayoutStructure(tournament), [tournament]);
   const bands = useMemo(() => (parsedPlaces ? toBands(parsedPlaces) : []), [parsedPlaces]);
   const paidPlaces = parsedPlaces ? parsedPlaces.length : 0;
+  /* The MTT's paid depth, as the database applies it
+     (fn_ca_effective_payout_depth: the stored depth, else the legacy percent). */
+  const paidDepth = useMemo(() => {
+    const isMtt =
+      String(t.tournament_type ?? '').toUpperCase() === 'MTT' &&
+      !['spin', 'sng', 'satellite'].includes(String(t.variant ?? '').toLowerCase());
+    if (!isMtt) return null;
+    const depth = Number(t.payout_depth_percent);
+    const legacy = Number(t.payout_percent);
+    const value = depth > 0 && depth <= 100 ? depth : legacy > 0 && legacy <= 100 ? legacy : NaN;
+    return Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
+  }, [t.payout_depth_percent, t.payout_percent, t.tournament_type, t.variant]);
 
   const isSatellite =
     String(t.variant ?? '').toLowerCase() === 'satellite' ||
@@ -679,11 +693,22 @@ export default function RewardsTab({
               paid places against two early entries printed "450% Of The Field
               Paid", and against none, "900%". No field can be more than
               entirely paid; until it outgrows the ladder the line says nothing. */}
-          {!isSatellite && effectivePool > 0 && paidPlaces > 0 && entryCount >= paidPlaces && (
-            <span className="tl-section-note">
-              {Math.round((paidPlaces / Math.max(1, entryCount)) * 1000) / 10}% Of The Field Paid
-            </span>
+          {/* THE PAID DEPTH IS A RULE, NOT A RATIO (Dan 2026-10-21): "it should
+              100% always display it as 12.5% payout". An MTT pays its stored
+              depth of the field; places over entries rounds up a place and
+              drifts with every registration, so the line states the depth. */}
+          {!isSatellite && effectivePool > 0 && paidPlaces > 0 && paidDepth !== null && (
+            <span className="tl-section-note">{paidDepth}% Of The Field Paid</span>
           )}
+          {!isSatellite &&
+            effectivePool > 0 &&
+            paidPlaces > 0 &&
+            paidDepth === null &&
+            entryCount >= paidPlaces && (
+              <span className="tl-section-note">
+                {Math.round((paidPlaces / Math.max(1, entryCount)) * 1000) / 10}% Of The Field Paid
+              </span>
+            )}
         </div>
 
         {isSatellite ? (

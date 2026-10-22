@@ -67,6 +67,8 @@ import { useInTabLobbyActive, useInTabLobbyClubId } from '../club/inTabLobbySurf
 import {
   readClubWelcomeSettings,
   clubWelcomeSetupMissing,
+  welcomeNudgeAlreadyShown,
+  markWelcomeNudgeShown,
 } from '../../services/ClubWelcomeMessageService';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
@@ -298,12 +300,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         if (live && welcomeActor.current === accountId) {
           const missing = rows.filter(clubWelcomeSetupMissing).map((row) => row.club_id);
           setWelcomeAccess({ actorId: accountId, clubs: rows.map((row) => row.club_id), missing });
-          const key = `${accountId}:${workspace.clubUUID || 'all'}`;
+          const clubKey = workspace.clubUUID || 'all';
+          const key = `${accountId}:${clubKey}`;
           if (
             (workspace.clubUUID ? missing.includes(workspace.clubUUID) : missing.length > 0) &&
-            !welcomeNudged.current.has(key)
+            !welcomeNudged.current.has(key) &&
+            !welcomeNudgeAlreadyShown(accountId, clubKey)
           ) {
             welcomeNudged.current.add(key);
+            markWelcomeNudgeShown(accountId, clubKey);
             toast.info(
               'Finish Setting Up Your Custom Messages. Tap To Open Custom Messages.',
               undefined,

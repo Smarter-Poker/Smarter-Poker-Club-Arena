@@ -300,9 +300,9 @@ describe('the live-table certificate does not start into the next scheduled brea
   const at = (iso: string) => Date.parse(iso);
 
   it('measures the time to the next :53 announcement', () => {
-    expect(msUntilNextAnnouncement(at('2026-10-04T22:47:00Z'))).toBe(6 * 60_000);
-    expect(msUntilNextAnnouncement(at('2026-10-04T22:53:00Z'))).toBe(60 * 60_000);
-    expect(msUntilNextAnnouncement(at('2026-10-04T23:01:00Z'))).toBe(52 * 60_000);
+    expect(msUntilNextAnnouncement(at('2026-10-04T22:47:00Z'))).toBe(611 * 60_000);
+    expect(msUntilNextAnnouncement(at('2026-10-04T22:53:00Z'))).toBe(605 * 60_000);
+    expect(msUntilNextAnnouncement(at('2026-10-04T23:01:00Z'))).toBe(597 * 60_000);
   });
 
   it('reads the announcement minute from the engine that schedules it', () => {
@@ -321,7 +321,7 @@ describe('the live-table certificate does not start into the next scheduled brea
         fetchImpl: async () => reply(health(idle)),
         pause,
         report,
-        wallClock: () => at('2026-10-04T22:47:00Z'),
+        wallClock: () => at('2026-10-05T08:52:00Z'),
       })
     ).toEqual(resumed);
     expect(pause).toHaveBeenCalledTimes(1);

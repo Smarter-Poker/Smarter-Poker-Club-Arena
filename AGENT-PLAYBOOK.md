@@ -1,6 +1,8 @@
 # Agent playbook
 
-**Non-engine delivery: push, publish, verify and finish without waiting for `:55`.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
+**ENGINE RESETS ONCE A DAY (owner update October 20, 2026).** Routine game-engine updates and restarts happen only once daily at 04:00 America/Chicago (DST aware): 03:58 last-hand notice, 04:00-04:05 maintenance window. There is no hourly engine reset and no hourly cash-game or platform freeze. Hourly tournament breaks (:55-:00) still run and are separate from engine maintenance. Only an explicit urgent or degraded-engine emergency may restart outside 04:00. See CLAUDE.md section 13.
+
+**Non-engine delivery: push, publish, verify and finish immediately; never wait for an engine window.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
 
 Read [AGENTS.md](AGENTS.md) first, then the full references in [the reference index](docs/agent-policy/REFERENCE-INDEX.md). [The operating law](docs/agent-policy/OPERATING-LAW.md) owns scope, resumption, blocker recovery and productive waiting. [The hardening standard](docs/agent-policy/HARDENING.md) owns implementation and regression protection. [PUBLISHING.md](PUBLISHING.md) owns the approved delivery route. Product and financial rules in `CLAUDE.md`, where present, still apply.
 
@@ -21,6 +23,10 @@ Use configured authenticated GitHub tools. Repository Actions may use the config
 ## Read the actual check result
 
 Use `node scripts/ci/pr-status.mjs <PR-number>` or the authenticated Actions API for the exact head revision. `GET /commits/:sha/status` reports legacy commit statuses and can say pending with zero results even when Actions has failed. A denied `/commits/:sha/check-runs` read is UNKNOWN, never proof that no check failed. Read `/actions/runs?head_sha=<sha>` and its jobs to identify the actual result. On this Mac `/opt/homebrew/bin` must be on PATH for the configured `gh` executable; check the current environment before declaring it unavailable. A green check still requires the authorized agent to complete protected merge and publication under PUBLISHING.md.
+
+To read why a job failed, read its log: `gh api repos/<owner>/<repo>/actions/jobs/<job-id>/logs`, or `gh run view <run-id> --log-failed`. The API answers with a redirect to Actions log storage (`*.blob.core.windows.net`), and a cloud session's egress allowlist or the desktop Linux sandbox may refuse that host (403 at CONNECT, checked 2026-10-21), while check-run annotations carry only the exit code. When the session is linked to this Mac, run the same `gh` command in the host terminal, which reaches log storage directly. A log you could not read is UNKNOWN, never a pass.
+
+Never fetch Actions artifacts or logs through a browser pane or Chrome on the owner's Mac. Every browser download opens a Save dialog on his screen, and on 2026-10-22 a session pulling `p102-*` benchmark artifacts this way raised one every four seconds (53 files). Use `gh run download <run-id> -n <artifact> -D <scratch dir>` in the host terminal instead, write into the task's own scratch folder rather than `~/Downloads`, and read logs with `gh` as above.
 
 ## Complete the assigned result
 

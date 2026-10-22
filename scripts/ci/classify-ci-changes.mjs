@@ -1,7 +1,66 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { appendFileSync, readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { pathToFileURL } from 'node:url';
+
+// THE CSS BEAT JOB NAMES ITS OWN INPUTS (2026-10-21).
+//
+// `cashLobbyBrowser` below was a hand-typed list of the browser specs whose
+// change admits css-beats-e2e. It had rotted exactly as its own comment warned
+// a basename list would: 21 of the 26 specs that job runs were missing from it,
+// among them table-proportions, top-rail-seat, pot-above-chips and
+// hero-card-row, and so was tests/e2e/fixtures/. PR #7627 changed
+// table-proportions.spec.ts and its bundled artwork, classified src: false, and
+// merged with the browser job SKIPPED - its own regression never ran in CI.
+//
+// So the job is read instead of restated: every tests/e2e spec named in the
+// css-beats-e2e block of ci.yml, plus the spec each `npm run test:e2e:*` there
+// selects through its Playwright config (testDir + testMatch), plus the
+// directories those specs read at run time. Adding a spec to the job admits it
+// here with no second list to forget.
+//
+// FAILS OPEN (CLAUDE.md 10.86 rule 1). If the workflow, package.json or a
+// config cannot be read, or the block yields no spec at all, every tests/e2e/
+// change admits the job. `src` only ADMITS jobs, so a wider answer can cost a
+// run but never withhold a check.
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const CSS_BEAT_SHARED_INPUTS =
+  /^tests\/e2e\/(?:global-setup\.ts|support\/|fixtures\/|helpers\/[^/]+\.mjs$|__screenshots__\/)|^playwright(?:\.[a-z-]+)?\.config\.ts$/;
+export function cssBeatJobInputs(root = REPO_ROOT) {
+  const read = (file) => readFileSync(resolve(root, file), 'utf8');
+  try {
+    const workflow = read('.github/workflows/ci.yml');
+    const start = workflow.search(/^  css-beats-e2e:\s*$/m);
+    if (start < 0) return null;
+    const rest = workflow.slice(start + 1);
+    const next = rest.search(/^  [A-Za-z0-9_-]+:\s*$/m);
+    const block = next < 0 ? rest : rest.slice(0, next);
+    const specs = new Set(block.match(/tests\/e2e\/[A-Za-z0-9_./-]+\.spec\.ts/g) || []);
+    const matchers = [];
+    const scripts = JSON.parse(read('package.json')).scripts || {};
+    for (const [, name] of block.matchAll(/npm run (test:e2e:[a-z0-9-]+)/g)) {
+      const config = /--config=([^\s]+)/.exec(scripts[name] || '')?.[1];
+      if (!config) return null;
+      const text = read(config);
+      const dir = /testDir:\s*['"]\.\/([^'"]+)['"]/.exec(text)?.[1];
+      const match = /testMatch:\s*\/(.+)\/[a-z]*,/.exec(text)?.[1];
+      if (!dir || !match) return null;
+      const pattern = new RegExp(match);
+      const prefix = dir.replace(/\/+$/, '') + '/';
+      matchers.push((p) => p.startsWith(prefix) && pattern.test(p.slice(prefix.length)));
+      specs.add(config);
+    }
+    if (specs.size === 0) return null;
+    // A `.md` companion is documentation and admits nothing (see below).
+    return (p) =>
+      !p.endsWith('.md') &&
+      (specs.has(p) || matchers.some((m) => m(p)) || CSS_BEAT_SHARED_INPUTS.test(p));
+  } catch {
+    return null;
+  }
+}
+const cssBeatInput = cssBeatJobInputs() || ((p) => /^tests\/e2e\//.test(p) && !p.endsWith('.md'));
 
 const all = () => ({ src: true, server: true, tests: true, phase4: true, fixture: true });
 const wide =
@@ -41,7 +100,7 @@ const nativeRecovery =
 // wrapper, its wiring test, and every fixture are executable inputs; a change
 // to any one of them must select that job even without a migration beside it.
 const dataConsolePostgres =
-  /^(scripts\/ci\/test-data-console-postgres-contracts\.sh$|tests\/(?:data-console-postgres-contracts-wired|rake-agent-report-native-contract)\.test\.ts$|tests\/fixtures\/(?:rake-agent-report|financial-admin-revenue|union-ops-financial-admin|union-statement-availability|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
+  /^(scripts\/ci\/(?:test-data-console-postgres-contracts\.sh|test-club-data-(?:union-mtt|fact-db|report-db)-postgres\.py)$|tests\/(?:data-console-postgres-contracts-wired|rake-agent-report-native-contract)\.test\.ts$|tests\/fixtures\/(?:club-data-(?:fact-db|report-db)|rake-agent-report|financial-admin-revenue|union-ops-financial-admin|union-statement-availability|stats-(?:cash-opportunities|club-scope|evidence-session|exact-cash-sessions|facts-phase2|financial-reports|operational-quality|owner-workspace))\/)/;
 // Every input to the managed-game one-door fixture must select the hosted
 // PostgreSQL job, including a fixture-only correction.
 const managedGameOneDoor =
@@ -312,8 +371,9 @@ export function classifyChangedPaths(paths) {
   );
   const devMatches = (pattern) => devPaths.some((p) => pattern.test(p));
   return {
-    src: broad || cashLobbyBrowser || buildProvenance || matches(/^src\//),
+    src: broad || cashLobbyBrowser || paths.some(cssBeatInput) || buildProvenance || matches(/^src\//),
     server:
+      matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
       playerHistoryQualification ||
       broad ||
@@ -369,6 +429,7 @@ export function classifyChangedPaths(paths) {
       matches(satelliteLedgerAuditIndex) ||
       matches(certificationPlayerIndex),
     tests:
+      matches(/^scripts\/ci\/test-club-entry-news-postgres\.py$/) ||
       onTimeMaintenance ||
       playerHistoryQualification ||
       bbjFixture ||

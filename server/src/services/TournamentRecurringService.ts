@@ -57,6 +57,7 @@ import {
   MTT_BLIND_PRESETS,
   mttSpeedColumns,
   mttPayoutPercent,
+  mttPayoutDepthPercent,
   mttLateRegistrationMinutes,
 } from '../tournament/mttStructurePolicy.js';
 import { clampSeatsForVariant } from '../config/tableSeating.js';
@@ -133,7 +134,7 @@ interface TournamentConfig extends MysteryBountyCreationInput {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
-  payoutPercent?: 10 | 15 | 20;
+  payoutPercent?: number;
   bountyPercent?: number;
   bountyAmount?: number;
   /**
@@ -160,7 +161,7 @@ interface SNGConfig {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
-  payoutPercent?: 10 | 15 | 20;
+  payoutPercent?: number;
 }
 
 interface SpinConfig {
@@ -204,7 +205,7 @@ interface XMTTConfig extends MysteryBountyCreationInput {
   horsesToRegister: number;
   blindStructure: any[];
   payoutStructure: any[];
-  payoutPercent?: 10 | 15 | 20;
+  payoutPercent?: number;
   bountyPercent?: number;
   bountyAmount?: number;
   /**
@@ -292,11 +293,12 @@ export const BLIND_STRUCTURES = {
    * chip in play worth under three big blinds. A Free Buy on TURBO would have
    * joined them by design rather than by accident.
    */
+  // Dan 2026-10-21: freerolls run locked 5-minute levels, every level.
   FREE_BUY: buildLadder({
     startBigBlind: 25,
     speed: 'STANDARD',
     levels: 30,
-    openingMinutes: 6,
+    openingMinutes: 5,
     floorMinutes: 5,
     anteFromLevel: 1,
   }),
@@ -307,8 +309,8 @@ export const BLIND_STRUCTURES = {
     startBigBlind: 20,
     speed: 'TURBO',
     levels: 20,
-    openingMinutes: 3,
-    floorMinutes: 2,
+    openingMinutes: 5,
+    floorMinutes: 5,
     anteFromLevel: 3,
   }),
   /**
@@ -390,6 +392,7 @@ import {
 } from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 import { HorseEntryRefusalBackoff, databaseDidNotAnswer } from './horseEntryRefusalBackoff.js';
+import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
 
 /**
  * THE ONE MAP FROM A CONFIG'S VARIANT KEY TO THE `tournaments.game_type` VALUE.
@@ -3065,6 +3068,7 @@ export function recurringMttRow(
     ...mttSpeedColumns(config.blindStructure),
     payout_structure: config.payoutStructure || [],
     payout_percent: mttPayoutPercent(config.payoutPercent),
+    payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
     start_time: startTime.toISOString(),
     late_reg_levels: lateRegLevels,
     late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, lateRegLevels),
@@ -3584,7 +3588,7 @@ export class TournamentRecurringService {
 
           const { data, error } = await supabase
             .from('tournaments')
-            .insert(row)
+            .insert(withLockedLevelClock(row))
             .select('id')
             .maybeSingle();
 
@@ -4642,6 +4646,7 @@ export class TournamentRecurringService {
             ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
             payout_percent: mttPayoutPercent(config.payoutPercent),
+            payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 10, // Level-based late reg for XMTT
             late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, 10),
@@ -4891,6 +4896,7 @@ export class TournamentRecurringService {
             ...mttSpeedColumns(config.blindStructure),
             payout_structure: config.payoutStructure || [],
             payout_percent: mttPayoutPercent(config.payoutPercent),
+            payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
             start_time: startTime.toISOString(),
             late_reg_levels: 8, // Level-based late reg
             late_reg_mins: mttLateRegistrationMinutes(config.blindStructure, 8),
@@ -5063,7 +5069,12 @@ export class TournamentRecurringService {
         blind_structure: config.blindStructure,
         payout_structure: config.payoutStructure || [],
         // Heads-up has a fixed payout contract; paid depth belongs to fields.
-        ...(!seatFirstSng ? { payout_percent: mttPayoutPercent(config.payoutPercent) } : {}),
+        ...(!seatFirstSng
+          ? {
+              payout_percent: mttPayoutPercent(config.payoutPercent),
+              payout_depth_percent: mttPayoutDepthPercent(config.payoutPercent),
+            }
+          : {}),
         start_time: startTime.toISOString(),
         late_reg_levels: 0,
         late_reg_mins: 0,

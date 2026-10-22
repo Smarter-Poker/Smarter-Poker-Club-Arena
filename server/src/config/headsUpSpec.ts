@@ -59,7 +59,7 @@ export const HEADS_UP_STACKS = {
 export type HeadsUpBand = keyof typeof HEADS_UP_STACKS;
 
 /** Every level is this long, at every buy-in, in both bands. */
-export const HEADS_UP_LEVEL_MINUTES = 3;
+export const HEADS_UP_LEVEL_MINUTES = 5;
 
 /**
  * The published ladder. Twelve levels, and a duel that outruns them continues

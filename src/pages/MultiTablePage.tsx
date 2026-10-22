@@ -1981,6 +1981,8 @@ export default function MultiTablePage() {
              blinds or a pot. The bar decides; it only needs to be told. */
           isTournament: t.isTournament,
           tournamentBuyIn: t.tournamentBuyIn,
+          /* Dan 2026-10-21: an MTT pill names its event over the buy-in. */
+          tournamentName: t.tournamentName,
           // TablePage's value is authoritative; until it lands, recover what
           // the table NAME says so the box is never unlabeled.
           gameCode: isTableTab(t) ? t.gameCode || gameCodeFromName(t.name) : '',

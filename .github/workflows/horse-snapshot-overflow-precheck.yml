@@ -1,0 +1,59 @@
+name: Horse observation snapshot refuses an overflowing window from the index
+
+# fn_horse_committed_observation_snapshot (migration 20261022054023). Runs
+# scripts/ci/test-horse-snapshot-overflow-precheck.py against a throwaway
+# PostgreSQL 17 cluster, never production: the migration chain must reproduce
+# production's predecessor (md5 d1df5793...), and the predecessor and the new
+# definition must give identical snapshots in one statement for every
+# scenario, the same 513-hand refusal, and no refusal from orphan or
+# out-of-window index rows. No timer (CLAUDE.md 10.85): pull_request only,
+# scoped to the paths it proves.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - supabase/migrations/20260912193321_horse_committed_observation_snapshot.sql
+      - supabase/migrations/20260913195856_require_atomic_horse_observation_sources.sql
+      - supabase/migrations/20261022034135_horse_observation_snapshot_finds_hands_through_the_player_in.sql
+      - supabase/migrations/20261022054023_horse_observation_snapshot_refuses_an_overflowing_window_fro.sql
+      - scripts/ci/test-horse-snapshot-overflow-precheck.py
+      - .github/workflows/horse-snapshot-overflow-precheck.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: horse-snapshot-overflow-precheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  horse-snapshot-overflow-precheck:
+    name: Horse observation snapshot refuses an overflowing window from the index
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL 17 from the signed PGDG source only
+        run: |
+          set -euo pipefail
+          pg_sources="$(mktemp -d "$RUNNER_TEMP/ca-postgres-apt.XXXXXX")"
+          chmod 755 "$pg_sources"
+          test -f /etc/apt/sources.list.d/ubuntu.sources
+          cp /etc/apt/sources.list.d/ubuntu.sources "$pg_sources/ubuntu.sources"
+          pg_apt=(-o "Dir::Etc::sourcelist=/dev/null" -o "Dir::Etc::sourceparts=$pg_sources")
+          sudo apt-get "${pg_apt[@]}" update
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-common curl ca-certificates
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          codename="$(. /etc/os-release && printf '%s' "$VERSION_CODENAME")"
+          printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' \
+            "$codename" > "$pg_sources/pgdg.sources"
+          sudo apt-get "${pg_apt[@]}" update
+          printf 'create_main_cluster = false\n' | sudo tee /etc/postgresql-common/createcluster.conf >/dev/null
+          sudo apt-get "${pg_apt[@]}" install -y --no-install-recommends postgresql-17
+      - name: Old and new snapshot definitions agree; overflow is refused from the index
+        env:
+          PG_BIN: /usr/lib/postgresql/17/bin
+        run: python3 scripts/ci/test-horse-snapshot-overflow-precheck.py

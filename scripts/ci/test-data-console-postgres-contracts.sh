@@ -60,3 +60,22 @@ echo 'DATA_CONSOLE_POSTGRES PASS Member Record'
 PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
   TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
   python3 -B "$repo/scripts/ci/test-a-long-outside-snapshot-does-not-stall-the-tables.py"
+
+# Agent banks, private data boundaries, and atomic hierarchy assignment.
+node --test "$repo/scripts/ci/qualify-agent-boundary.test.mjs" "$repo/scripts/ci/qualify-agent-assignment.test.mjs" "$repo/scripts/ci/cleanup-agent-assignment-fixtures.test.mjs" "$repo/scripts/ci/qualify-agent-assignment-browser.test.mjs"
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
+  AGENT_BOUNDARY_SCRATCH="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
+  python3 -B "$repo/scripts/ci/test-agent-data-boundary-postgres.py"
+
+# Indexed parent traversal must match the captured predicate and measured budget.
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" RUNNER_TEMP="$DATA_CONSOLE_PG_SCRATCH_PARENT" python3 -B "$repo/scripts/ci/test-agent-downline-performance-postgres.py"
+
+# Player Management ordering must cover the complete server-paged roster.
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
+  TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
+  bash "$repo/scripts/dev/test-roster-join-sort-postgres.sh"
+
+# Exact MTT types and union-wide Club Data reporting share the required verdict.
+PG_BIN="${PG_BIN:-${PG17_BINDIR:-/usr/lib/postgresql/17/bin}}" \
+  TMPDIR="$DATA_CONSOLE_PG_SCRATCH_PARENT" \
+  python3 -B "$repo/scripts/ci/test-club-data-union-mtt-postgres.py"

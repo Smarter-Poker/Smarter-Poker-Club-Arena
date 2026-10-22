@@ -1,3 +1,4 @@
+import { cashierRecoveryRpc } from '../helpers/cashierRecoveryRpc';
 import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +28,7 @@ const deferred = <T,>(): Deferred<T> => {
   return { promise, resolve };
 };
 
+const recovery = cashierRecoveryRpc();
 const fx = vi.hoisted(() => ({
   rpc: vi.fn(),
   tables: vi.fn(),
@@ -77,7 +79,8 @@ vi.mock('../../src/components/arena/DiamondCustodyBalance', () => ({
 }));
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    rpc: (...args: unknown[]) => fx.rpc(...args),
+    rpc: (name: string, args: Record<string, unknown> = {}) =>
+      recovery.answer(name, args) ?? fx.rpc(name, args),
     from: (table: string) => {
       const filters: Record<string, unknown> = {};
       const q: Record<string, unknown> = {
@@ -159,6 +162,7 @@ const settle = () =>
   });
 
 beforeEach(() => {
+  recovery.clear();
   fx.downloads.length = 0;
   fx.rpc.mockReset();
   fx.tables.mockReset();
@@ -253,7 +257,7 @@ describe('D-01: Escape belongs to the top sheet', () => {
 });
 
 describe('D-02: the corner X respects the in-flight lock', () => {
-  it('is absent while a send is travelling and back once it lands', async () => {
+  it('is absent while a send is travelling, and the cashier closes itself once it lands', async () => {
     const send = deferred<{ data: unknown; error: null }>();
     fx.rpc.mockImplementation(async (name: string) => {
       if (name === 'fn_club_cashier_members') return { data: [member(PLAYER, 1000)], error: null };
@@ -275,9 +279,9 @@ describe('D-02: the corner X respects the in-flight lock', () => {
       send.resolve({ data: { success: true }, error: null });
       await settle();
     });
-    await waitFor(() => expect(screen.getByTestId('sc-close')).toBeTruthy());
-    fireEvent.click(screen.getByTestId('sc-close'));
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // Dan, 2026-10-22: a confirmed send toasts and closes the cashier by
+    // itself; nobody has to X off a finished movement.
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });
 

@@ -7,7 +7,9 @@ import {
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Page, type Request, type TestInfo } from '@playwright/test';
 
-const MEMBERS_PATH = 'clubs/shark-club/members';
+// Canonical slug since the Kings Club rebrand (2026-10-21); the legacy
+// shark-club path redirects here and is covered by ClubBrandRedirect tests.
+const MEMBERS_PATH = 'clubs/kings-club/members';
 
 type MembersProbe = {
   startedAt: number;
@@ -287,7 +289,7 @@ async function expectContainedControls(page: Page, frameSelector: string, select
   ).toBeLessThanOrEqual(1);
 }
 
-test.describe('Production Shark Club Players', () => {
+test.describe('Production Kings Club Players', () => {
   // Each case receives its own browser context. Only the roster export creates
   // its established audit receipt; no financial or member changes are submitted.
   // Keep one worker, but report every case when a sibling fails.
@@ -466,7 +468,7 @@ test.describe('Production Shark Club Players', () => {
     await history.locator('summary').click();
 
     await directory.getByRole('listitem').first().getByRole('button').click();
-    await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
+    await expect(page).toHaveURL(/\/clubs\/kings-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
     expect(probe.responseFailures).toEqual([]);
     expect(probe.requestFailureCount).toBe(0);
     expect(
@@ -594,7 +596,6 @@ test.describe('Production Shark Club Players', () => {
         '.members-view-filter',
         '.members-view-filter select',
         '.members-sort',
-        '.members-refresh',
         '.members-toolbar',
       ]) {
         const elements = await page.locator(selector).all();
@@ -617,7 +618,7 @@ test.describe('Production Shark Club Players', () => {
       expect(consoleFrame).not.toBeNull();
       for (const control of await page
         .locator(
-          '.members-search input, .members-view-filter select, .members-sort select, .members-refresh, .members-columns, .members-export, .members-select-loaded'
+          '.members-search input, .members-view-filter select, .members-sort select, .members-columns, .members-export, .members-select-loaded'
         )
         .all()) {
         const box = await control.boundingBox();
@@ -630,7 +631,7 @@ test.describe('Production Shark Club Players', () => {
         ).toBe(true);
       }
       // Permission-specific controls are checked whenever the actual viewer
-      // can see them; the required search/sort/refresh checks always execute.
+      // can see them; the required search and sort checks always execute.
       for (const control of await page
         .locator('.members-export, .members-select-loaded, .members-columns, .member-row__open')
         .all()) {
@@ -668,7 +669,8 @@ test.describe('Production Shark Club Players', () => {
 
     for (const control of [
       page.getByRole('combobox', { name: 'Filter Players', exact: true }),
-      page.getByRole('button', { name: 'Refresh', exact: true }),
+      // The manual Refresh button was removed in #7600; the roster syncs live.
+      page.getByRole('combobox', { name: 'Sort Players', exact: true }),
     ]) {
       const box = await control.boundingBox();
       expect(box, 'a primary Players control has no rendered box').not.toBeNull();
@@ -726,7 +728,7 @@ test.describe('Production Shark Club Players', () => {
 
     const directory = page.getByRole('list', { name: 'Club Member Directory' });
     await directory.getByRole('listitem').first().getByRole('button').click();
-    await expect(page).toHaveURL(/\/clubs\/shark-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
+    await expect(page).toHaveURL(/\/clubs\/kings-club\/members\/[0-9a-f-]{36}(?:[/?#]|$)/i);
     await expect(page.getByRole('heading', { name: 'Player Record', exact: true })).toBeVisible({
       timeout: 45_000,
     });

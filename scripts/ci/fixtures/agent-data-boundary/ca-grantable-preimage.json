@@ -1,0 +1,7 @@
+{
+  "signature": "ca_club_grantable_roles(uuid,uuid)",
+  "md5": "d5f256cf7396f9758c956a824d608aa8",
+  "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+  "definition": "CREATE OR REPLACE FUNCTION public.ca_club_grantable_roles(p_club_id uuid, p_target_user_id uuid)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nDECLARE v_roles text[];\nBEGIN\n  IF auth.uid() IS NULL THEN RETURN jsonb_build_object('roles', '[]'::jsonb); END IF;\n  v_roles := fn_club_grantable_roles(p_club_id, auth.uid(), p_target_user_id);\n  RETURN jsonb_build_object(\n    'roles', COALESCE(to_jsonb(v_roles), '[]'::jsonb),\n    'target_role', (SELECT role FROM club_members\n                     WHERE club_id = p_club_id AND user_id = p_target_user_id\n                       AND status IN ('active','approved')),\n    'actor_role', (SELECT role FROM club_members\n                    WHERE club_id = p_club_id AND user_id = auth.uid()\n                      AND status IN ('active','approved')));\nEND;\n$function$\n",
+  "watchlist": null
+}

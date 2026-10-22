@@ -229,7 +229,7 @@ describe('the editor prints on the glass', () => {
   });
 });
 
-describe('MTT paid places: 10 to 15 percent for a new event', () => {
+describe('MTT paid places: 12.5 percent by default, every depth offered', () => {
   const labels = (currentChoice: string, savedChoice?: string) => {
     render(
       <select aria-label="Payout" defaultValue={currentChoice}>
@@ -243,9 +243,15 @@ describe('MTT paid places: 10 to 15 percent for a new event', () => {
     return out;
   };
 
-  it('does not offer 20 percent to a new event', () => {
-    expect(labels('payout3')).toEqual(['Top 10% Of Field', 'Top 15% Of Field (Standard)']);
-    expect(labels('payout1')).toEqual(['Top 10% Of Field', 'Top 15% Of Field (Standard)']);
+  it('offers every supported depth with 12.5 percent as the standard', () => {
+    const all = [
+      'Top 12.5% Of Field (Standard)',
+      'Top 10% Of Field',
+      'Top 15% Of Field',
+      'Top 20% Of Field',
+    ];
+    expect(labels('payout3')).toEqual(all);
+    expect(labels('payout2')).toEqual(all);
   });
 
   it('keeps a saved 20 percent selectable for that event, even after moving off it', () => {

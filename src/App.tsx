@@ -10,6 +10,7 @@ import { DIAMOND_GAME_TITLES } from './utils/diamondGameTitles';
 
 import { Suspense, lazy, useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import ClubBrandRedirect from './components/common/ClubBrandRedirect';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 // LIGHTNING PHASE 8: lazy, so the Lightning component tree stays out of the
 // entry chunk every player downloads before first paint (entry-chunk gate).
@@ -26,6 +27,9 @@ import { installPlayerSessionRevocationEvents } from './lib/sessionRevoked';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
+// Lazy: the message alerts host (tab title count, alerts ask) is not needed
+// for first paint. Live message pop-ups are the Messenger dock's.
+const MessageAlertsHost = lazyWithRetry(() => import('./components/common/MessageAlertsHost'));
 import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
@@ -688,6 +692,9 @@ function FullApp() {
             </Suspense>
           )}
           <GlobalWaitlistListener />
+          <Suspense fallback={null}>
+            <MessageAlertsHost />
+          </Suspense>
           <WaitlistBanner />
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false.
               2026-09-04 (disconnect audit item 7): NOT over a table. Dan: "all
@@ -2563,5 +2570,10 @@ export default function App() {
     return <ClubFooterProbe />;
   }
 
-  return <FullApp />;
+  return (
+    <>
+      <ClubBrandRedirect />
+      <FullApp />
+    </>
+  );
 }

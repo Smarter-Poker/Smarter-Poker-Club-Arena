@@ -29,6 +29,38 @@ import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 import { resolveCosmetic } from '../cosmetics/avatarCosmetics';
 
+/**
+ * A header read that never reached the server: the phone dropped its radio, the
+ * tab was frozen in the background, or the read was aborted on navigation.
+ * supabase-js and fetch surface these as "TypeError: Failed to fetch" (Chrome),
+ * "Load failed" (Safari), "NetworkError when attempting to fetch resource"
+ * (Firefox) or an AbortError, with no PostgREST code. Nothing is wrong with the
+ * header: the cached badge stays on screen and the next visibility/online read
+ * refreshes it. On 2026-10-21 three Android players on flaky networks filed
+ * ~1,100 of these (avatar, notification and message reads together), a third of
+ * the day's client errors. Real refusals (a 42501, a missing grant) still carry
+ * a code and are still reported.
+ */
+export function isHeaderTransportFailure(error: unknown): boolean {
+  try {
+    if (!error || typeof error !== 'object') return false;
+    const e = error as { code?: unknown; name?: unknown; message?: unknown };
+    if (typeof e.code === 'string' && e.code !== '' && e.code !== '20') return false;
+    if (e.name === 'AbortError') return true;
+    const message = typeof e.message === 'string' ? e.message : '';
+    return /failed to fetch|load failed|networkerror when attempting|network connection was lost|fetch is aborted|signal is aborted/i.test(
+      message
+    );
+  } catch {
+    return false;
+  }
+}
+
+function reportHeaderError(error: unknown, context: string): void {
+  if (isHeaderTransportFailure(error)) return;
+  reportError(error, context);
+}
+
 interface HeaderDataState {
   // Data
   /** Resolved portrait shown by the global header. */
@@ -51,7 +83,6 @@ interface HeaderDataState {
   equippedAura: string | null;
   notificationCount: number;
   unreadMessages: number;
-  isMessengerPageActive: boolean;
 
   // Loading guards
   _loaded: boolean;
@@ -67,7 +98,6 @@ interface HeaderDataState {
   setCosmetics: (frame: string | null, aura: string | null) => void;
   setNotificationCount: (count: number) => void;
   setUnreadMessages: (count: number) => void;
-  setMessengerPageActive: (active: boolean) => void;
   clearUnreadNotifications: (userId: string) => Promise<boolean>;
   clearUnreadMessages: (userId: string) => Promise<boolean>;
   teardown: () => void;
@@ -180,6 +210,38 @@ function scheduleCount(kind: string, run: () => void | Promise<void>): void {
   }, COUNT_DEBOUNCE_MS);
 }
 
+/*
+ * UNREAD MESSAGES (fixed 2026-10-21). The badge used to count unread rows in
+ * the legacy `messages` table. Nothing has written that table since the
+ * messenger moved to `social_messages`, so the count was always 0 and the
+ * Messages icon never lit. The Hub's /api/user/get-header-stats returns the
+ * messenger's own unread summary (the same number the Hub badge shows, with
+ * the same visibility rules), so Club Arena reads that instead.
+ * Resolves to null when the count could not be read, so a failed read never
+ * clears a badge that is showing real unread messages.
+ */
+export async function fetchMessengerUnreadCount(): Promise<number | null> {
+  if (typeof fetch !== 'function' || !supabase.auth?.getSession) return null;
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    const token = data?.session?.access_token;
+    if (error || !token) return null;
+    const res = await fetch('/api/user/get-header-stats', {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json?.success && typeof json.unreadMessages === 'number' ? json.unreadMessages : null;
+  } catch (error) {
+    reportHeaderError(error, 'useHeaderDataStore.messenger_unread_fetch');
+    return null;
+  }
+}
+
+/** Event fired on window for every new direct message notification. */
+export const NEW_MESSAGE_EVENT = 'ca:new-message';
+
 export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   avatarUrl: null,
   profilePhotoUrl: null,
@@ -197,7 +259,6 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   equippedAura: null,
   notificationCount: hydrateCount('ca-notif-count'),
   unreadMessages: hydrateCount('ca-msg-count'),
-  isMessengerPageActive: false,
 
   _loaded: false,
   _userId: null,
@@ -271,8 +332,6 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
     masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId: get()._userId || '', count });
   },
 
-  setMessengerPageActive: (active) => set({ isMessengerPageActive: active }),
-
   /* Opening either destination acknowledges the count the player just acted
      on. Zero it synchronously so the badge disappears on the click, then make
      the database authoritative before Messenger performs its full-page
@@ -297,24 +356,13 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
     }
   },
 
-  clearUnreadMessages: async (userId) => {
-    const previous = get().unreadMessages;
+  clearUnreadMessages: async (_userId) => {
+    // Opening Messages hides the badge right away. The messenger marks each
+    // conversation read as it is opened, and the next refresh (new message,
+    // tab focus or the minute poll) restores the badge for anything left
+    // unread. There is no Club Arena side table to write.
     get().setUnreadMessages(0);
-    try {
-      const { error } = await supabase
-        .from('messages')
-        .update({ is_read: true })
-        .eq('receiver_id', userId)
-        .eq('is_read', false);
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      reportError(error, 'useHeaderDataStore.clear_unread_messages');
-      if (get().unreadMessages === 0 && (!get()._userId || get()._userId === userId)) {
-        get().setUnreadMessages(previous);
-      }
-      return false;
-    }
+    return true;
   },
 
   /**
@@ -397,7 +445,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         get().setCosmetics(data.equipped_frame ?? null, data.equipped_aura ?? null);
       } catch (error) {
         if (get().refreshAppearance === refreshAppearance)
-          reportError(error, 'useHeaderDataStore.appearance_refresh');
+          reportHeaderError(error, 'useHeaderDataStore.appearance_refresh');
       } finally {
         clearTimeout(deadline);
         appearanceReading = false;
@@ -437,11 +485,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             .select('*', { count: 'exact', head: true })
             .eq('user_id', userId)
             .eq('read', false),
-          supabase
-            .from('messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('receiver_id', userId)
-            .eq('is_read', false),
+          fetchMessengerUnreadCount(),
         ]);
 
         // Guard: if user switched while fetch was in-flight, discard stale result
@@ -455,17 +499,14 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         // Surface each failure on its own; a broken avatar must not look like a
         // user who simply has none.
         if (profileResult.error) {
-          reportError(profileResult.error, 'useHeaderDataStore.avatar_fetch');
+          reportHeaderError(profileResult.error, 'useHeaderDataStore.avatar_fetch');
         }
         if (notifResult.error) {
-          reportError(notifResult.error, 'useHeaderDataStore.notification_count_fetch');
-        }
-        if (msgResult.error) {
-          reportError(msgResult.error, 'useHeaderDataStore.message_count_fetch');
+          reportHeaderError(notifResult.error, 'useHeaderDataStore.notification_count_fetch');
         }
 
         const notifCount = notifResult.count || 0;
-        const msgCount = msgResult.count || 0;
+        const msgCount = msgResult ?? get().unreadMessages;
 
         // A FAILED avatar read must not overwrite the cached one with null.
         // Only a query that actually came back gets to say the player has no
@@ -488,7 +529,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         masterBus.emit('NOTIFICATION_COUNT_CHANGED', { count: notifCount });
         masterBus.emit('UNREAD_DM_COUNT_CHANGED', { userId, count: msgCount });
       } catch (e) {
-        reportError(e, 'useHeaderDataStore.Initial_load_failed');
+        reportHeaderError(e, 'useHeaderDataStore.Initial_load_failed');
         // Retry once after 2s — transient network failures are common on mobile
         setTimeout(async () => {
           if (get()._userId !== userId || get().refreshAppearance !== refreshAppearance) return; // User switched — abort retry
@@ -507,17 +548,12 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
                 .select('*', { count: 'exact', head: true })
                 .eq('user_id', userId)
                 .eq('read', false),
-              supabase
-                .from('messages')
-                .select('*', { count: 'exact', head: true })
-                .eq('receiver_id', userId)
-                .eq('is_read', false),
+              fetchMessengerUnreadCount(),
             ]);
             if (get()._userId !== userId || get().refreshAppearance !== refreshAppearance) return;
-            if (pR.error) reportError(pR.error, 'useHeaderDataStore.avatar_fetch_retry');
+            if (pR.error) reportHeaderError(pR.error, 'useHeaderDataStore.avatar_fetch_retry');
             if (nR.error)
-              reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
-            if (mR.error) reportError(mR.error, 'useHeaderDataStore.message_count_fetch_retry');
+              reportHeaderError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
             if (
               !pR.error &&
               pendingPlayerAppearance.size === 0 &&
@@ -528,10 +564,10 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             }
             set({
               notificationCount: nR.count || 0,
-              unreadMessages: mR.count || 0,
+              unreadMessages: mR ?? get().unreadMessages,
             });
             persistCount('ca-notif-count', nR.count || 0);
-            persistCount('ca-msg-count', mR.count || 0);
+            persistCount('ca-msg-count', mR ?? get().unreadMessages);
           } catch (retryErr) {
             reportError(retryErr, 'useHeaderDataStore.Retry_also_failed');
             masterBus.emit('SHOW_TOAST', {
@@ -558,7 +594,21 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           table: 'notifications',
           filter: `user_id=eq.${userId}`,
         },
-        () => {
+        (payload) => {
+          // A direct message arrives as a `new_message` notification. Refresh
+          // the Messages badge and hand the row to the live message popup.
+          const row = (payload?.new ?? null) as Record<string, any> | null;
+          if (payload?.eventType === 'INSERT' && row?.type === 'new_message') {
+            try {
+              window.dispatchEvent(new CustomEvent(NEW_MESSAGE_EVENT, { detail: row }));
+            } catch (e) {
+              reportError(e, 'useHeaderDataStore.new_message_event');
+            }
+            scheduleCount('messages', async () => {
+              const count = await fetchMessengerUnreadCount();
+              if (count !== null && get()._userId === userId) get().setUnreadMessages(count);
+            });
+          }
           // PERF 2026-08-24: this used to run a `count: 'exact'` query
           // SYNCHRONOUSLY ON EVERY EVENT. This channel lives on the global
           // header, so it is mounted for every user for the whole session, and
@@ -574,42 +624,6 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
                 .eq('user_id', userId)
                 .eq('read', false);
               get().setNotificationCount(count || 0);
-            } catch (e) {
-              reportError(e, 'useHeaderDataStore.async');
-              /* silent */
-            }
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-          filter: `receiver_id=eq.${userId}`,
-        },
-        async () => {
-          // If the premium iframe messenger is currently active in the view,
-          // it owns the unread count authoritatively. Skip the database query
-          // and manual count calculation to avoid a race condition + wasted query.
-          if (get().isMessengerPageActive) {
-            console.debug(
-              '[HeaderDataStore] Skipping RT messages query because iframe messenger is active.'
-            );
-            return;
-          }
-          // Coalesced for the same reason as the notifications handler above -
-          // an active conversation delivers many rows in quick succession and
-          // each one used to trigger its own exact count.
-          scheduleCount('messages', async () => {
-            try {
-              const { count } = await supabase
-                .from('messages')
-                .select('*', { count: 'exact', head: true })
-                .eq('receiver_id', userId)
-                .eq('is_read', false);
-              get().setUnreadMessages(count || 0);
             } catch (e) {
               reportError(e, 'useHeaderDataStore.async');
               /* silent */
@@ -704,8 +718,30 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       }
     });
 
+    // Messages badge drift correction: a conversation read in the Hub (another
+    // tab or device) lowers the count without any Club Arena event, so poll
+    // once a minute while the tab is visible and again when it regains focus.
+    const refreshMessageBadge = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      scheduleCount('messages', async () => {
+        const count = await fetchMessengerUnreadCount();
+        if (count !== null && get()._userId === userId) get().setUnreadMessages(count);
+      });
+    };
+    const messageBadgeTimer = setInterval(refreshMessageBadge, 60_000);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', refreshMessageBadge);
+    }
+    const stopMessageBadgePoll = () => {
+      clearInterval(messageBadgeTimer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', refreshMessageBadge);
+      }
+    };
+
     set({
       _busUnsubscribers: [
+        stopMessageBadgePoll,
         stopAppearanceReads,
         unsubNotifRead,
         unsubDmCount,

@@ -10,12 +10,17 @@ on:
         description: Optional comma-separated populated Must-Move Cluster UUIDs (at most 4) to observe read-only
         required: false
         type: string
+      access_proof_run_id:
+        description: Optional Lightning Pilot Stage (stage=access) run id whose retained artifact proves outsider browser/socket refusal; defaults to the newest successful one on main
+        required: false
+        type: string
       report_from:
         description: Optional ISO start time within the supported 90-day evidence window; defaults to pilot creation
         required: false
         type: string
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: lightning-pilot-qualification-report
   cancel-in-progress: false
@@ -30,8 +35,33 @@ jobs:
         with:
           node-version: '22'
       - name: Verify Evidence Semantics Before Collection
-        run: node --test scripts/ops/lightning-pilot-qualification.test.mjs
+        run: node --test scripts/ops/lightning-pilot-qualification.test.mjs scripts/ops/lightning-latency-qualification.test.mjs scripts/ops/lightning-pilot-access-proof.test.mjs
       - run: npm ci --ignore-scripts
+      - name: Fetch The Retained Access Stage Proof (Read Only; Verified In The Report)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACCESS_RUN: ${{ inputs.access_proof_run_id }}
+        run: |
+          set -u
+          mkdir -p access-proof
+          run="$ACCESS_RUN"
+          if [ -z "$run" ]; then
+            # The runs endpoint's status/branch filters return nothing for this
+            # workflow; filter client side. Each inner gh reads /dev/null so it
+            # cannot consume the id list on stdin.
+            run=$(gh api "repos/${{ github.repository }}/actions/workflows/lightning-pilot-stage.yml/runs?per_page=50" \
+              -q '.workflow_runs[] | select(.head_branch == "main" and .status == "completed" and .conclusion == "success" and .event == "workflow_dispatch") | .id' |
+              while read -r id; do
+                if gh api "repos/${{ github.repository }}/actions/runs/$id/artifacts" -q '.artifacts[] | select(.expired == false) | .name' </dev/null | grep -qx 'lightning-pilot-stage-access'; then echo "$id"; break; fi
+              done)
+          fi
+          if ! printf '%s' "$run" | grep -Eq '^[0-9]{1,20}$'; then
+            echo "No access stage run found; the report keeps the proof blocker."; exit 0
+          fi
+          gh api "repos/${{ github.repository }}/actions/runs/$run" \
+            -q '{id:.id,path:.path,headBranch:.head_branch,event:.event,status:.status,conclusion:.conclusion}' > access-proof/run.json || exit 0
+          gh run download "$run" -R "${{ github.repository }}" -n lightning-pilot-stage-access -D access-proof/artifact || exit 0
+          echo "Access stage run $run retained for verification."
       - name: Collect Read-Only Observations; No Launch Certificate Or Activation
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -42,6 +72,8 @@ jobs:
           PILOT_REPORT_FROM: ${{ inputs.report_from }}
           PILOT_POPULATED_CLUSTER_IDS: ${{ inputs.populated_cluster_ids }}
           PILOT_REPORT_PATH: lightning-pilot-qualification.json
+          PILOT_ACCESS_PROOF_RUN_PATH: access-proof/run.json
+          PILOT_ACCESS_PROOF_PATH: access-proof/artifact/lightning-pilot-stage.json
         run: node scripts/ops/lightning-pilot-qualification.mjs
       - uses: actions/upload-artifact@v4
         if: always()

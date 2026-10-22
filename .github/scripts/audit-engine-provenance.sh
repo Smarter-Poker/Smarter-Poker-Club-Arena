@@ -78,8 +78,22 @@ if git merge-base --is-ancestor "$SERVED" "$MAIN_SHA" && \
   exit 0
 fi
 
+# A daily engine may intentionally queue daytime merges. Only the OLDEST
+# unserved runtime commit determines the deadline, so a fresh merge cannot
+# conceal a missed overnight update. Unknown/foreign ancestry still refuses.
+if git merge-base --is-ancestor "$SERVED" "$MAIN_SHA"; then
+  FIRST_UNSERVED_TIME=$(git log --reverse --format=%cI "$SERVED..$REQ_SHA" -- \
+    'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' ':(exclude)server/qualification/**' | sed -n '1p')
+  if QUEUE_DUE=$(printf '%s' "$HEALTH" | node scripts/ci/daily-engine-provenance.mjs "$FIRST_UNSERVED_TIME"); then
+    say "::notice title=ENGINE RELEASE QUEUED::Protected engine changes are queued for the daily 04:00 America/Chicago release; proof is due by $QUEUE_DUE."
+    summary '### Engine provenance: QUEUED (not deployed)'
+    summary "Hetzner serves \`$SERVED\`; required \`$REQ_SHORT\` is queued until $QUEUE_DUE."
+    exit 0
+  fi
+fi
+
 say "::error title=ENGINE PROVENANCE MISMATCH::Hetzner serves $SERVED but protected main requires $REQ_SHORT and must contain the served commit."
-say 'stage-engine-release.yml offers the owed engine SHA again on the next protected-main push (at most once per window, never beside a running receiver); this audit does not create a competing delivery path.'
+say 'stage-engine-release.yml prepares routine changes at 03:30 Chicago for the 04:00 certified window; urgent/degraded emergencies retain their own admission. This audit never dispatches or retries.'
 summary '### Engine provenance: BEHIND'
 summary ''
 summary "Hetzner serves \`$SERVED\`; protected main requires \`$REQ_SHORT\`."

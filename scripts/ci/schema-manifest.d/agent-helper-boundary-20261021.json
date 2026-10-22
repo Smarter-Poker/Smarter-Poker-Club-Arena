@@ -1,0 +1,12 @@
+{
+  "_owner": "bank-downline-20261020",
+  "_comment": "Observed installed history20261021184621 exact SQL MD5 a4e0e85c11cdd5b006cf57495c9cea96; four caller-bound helpers owner postgres SECURITY DEFINER public,pg_temp, anon denied. Four raw helper grants revoked; seven policy consumers preserved.",
+  "tables": [],
+  "functions": [
+    "fn_club_viewer_cashier_scope",
+    "fn_club_viewer_can_transact",
+    "fn_club_viewer_is_in_downline",
+    "fn_club_viewer_bank_role"
+  ],
+  "columns": {}
+}

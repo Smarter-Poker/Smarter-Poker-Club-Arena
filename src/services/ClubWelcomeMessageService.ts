@@ -103,10 +103,36 @@ export function clubWelcomeTemplate(row: ClubWelcomeSettings, kind: ClubWelcomeK
       }
     : { content: row.content, enabled: row.enabled, revision: row.revision };
 }
+/* SETUP IS MISSING ONLY UNTIL THE USER HAS SAVED ANY CUSTOM MESSAGE (Dan,
+   2026-10-21: "this pop up has to stop appearing, especially after the user
+   has updated their messaging"). This used to demand that every template be
+   enabled AND nonempty, so an owner who saved their downline message, or who
+   deliberately switched one off, was nagged forever. A saved revision on any
+   template is the user's decision, enabled or not, and ends the nudge. */
 export function clubWelcomeSetupMissing(row: ClubWelcomeSettings): boolean {
-  return (
-    !row.enabled ||
-    !row.content.trim() ||
-    (row.role === 'owner' && (!row.owner_enabled || !row.owner_content?.trim()))
-  );
+  return row.revision < 1 && !(row.role === 'owner' && Number(row.owner_revision) >= 1);
+}
+
+/* The setup toast is shown at most once per account per club, ever, and that
+   memory survives page navigation and reloads. The menu's in-memory set was
+   rebuilt every time the header remounted, which is every page. */
+const NUDGE_KEY = 'ca:welcome-setup-nudged:v2';
+export function welcomeNudgeAlreadyShown(accountId: string, clubKey: string): boolean {
+  try {
+    const seen = JSON.parse(localStorage.getItem(NUDGE_KEY) || '[]');
+    return Array.isArray(seen) && seen.includes(`${accountId}:${clubKey}`);
+  } catch {
+    return false;
+  }
+}
+export function markWelcomeNudgeShown(accountId: string, clubKey: string): void {
+  try {
+    const seen = JSON.parse(localStorage.getItem(NUDGE_KEY) || '[]');
+    const list: string[] = Array.isArray(seen) ? seen : [];
+    const key = `${accountId}:${clubKey}`;
+    if (!list.includes(key)) list.push(key);
+    localStorage.setItem(NUDGE_KEY, JSON.stringify(list.slice(-200)));
+  } catch {
+    /* storage unavailable: the in-memory guard still covers this page */
+  }
 }

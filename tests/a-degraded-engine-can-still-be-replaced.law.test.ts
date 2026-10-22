@@ -246,6 +246,7 @@ exit 88
         liveness: 'ok',
         instanceId,
         maintenance: {
+          reason: 'Deployment Recovery',
           active: true,
           phase: 'counting_down',
           durableConfirmed: true,
@@ -362,6 +363,8 @@ exit 91
         [join(generation, 'engine-release-transaction.sh'), '--run-id', runKey],
         {
           encoding: 'utf8',
+          timeout: 30_000,
+          killSignal: 'SIGKILL',
           env: {
             ...process.env,
             PATH: `${bin}:${process.env.PATH ?? ''}`,

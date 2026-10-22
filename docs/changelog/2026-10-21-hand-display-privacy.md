@@ -1,0 +1,7 @@
+# Hand Display Privacy
+
+Owner request: remove rake and jackpot rake from hand details, shares and every connected player-facing hand display. Remove the summary/detail deductions, personal rake footer and fetch, history row labels, copied text and exported text. New shares omit deduction fields at both model and codec boundaries. Legacy links remain decodable, with deduction-free rendering. Preserve pot totals, actual winnings and all accounting records/calculations.
+
+Client-only delivery; no engine or database change. Regression coverage renders both modal tabs and the shared rundown with positive deductions, checks new wire payloads, exports and history output, and retains corpus comparisons for pot/action/winner fidelity. Export text intentionally omits the previous rake suffix; external tracker ingestion is not certified.
+
+Required build blocker: removing the last hand-detail import of StatsFactsService made Vite fold that service into PlayerStatsPage (23.50 KB gzip against the unchanged 23 KB limit; overview 25.82 KB against 25 KB). The comparison build with the old hand import passes. Load the remaining stats reads through a dynamic module boundary, preserving request arguments, error states and stale-result guards, with cancellation checked before starting a deferred read. This keeps the hand disclosure removed and restores the existing build budgets without changing the limits or manual chunk rules.

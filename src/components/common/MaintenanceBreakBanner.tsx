@@ -17,6 +17,7 @@
 import React, { useEffect, useState } from 'react';
 import { useMaintenanceBreak } from '../../hooks/useMaintenanceBreak';
 import { serverNow } from '../../utils/serverClock';
+import { isRoutineMaintenanceUpcoming } from '../../utils/maintenanceSchedule';
 /* The banner prints in the console's own inks, so it loads the console's sheet
    itself rather than trusting the chunk to carry it. */
 import '../console/SpadeConsole.css';
@@ -43,30 +44,25 @@ export function MaintenanceBreakBanner() {
     return () => clearInterval(t);
   }, [maintenanceBreak.active, countingDown, maintenanceBreak.breakEndsAtMs]);
 
-  /**
-   * THE HEADS-UP BEFORE THE BREAK (to-do #2563 item 15). Poker rooms have
-   * taken synchronized breaks before the hour for decades - it reads as
-   * professional exactly when players are told it is COMING rather than
-   * discovering it. From :50 the lobby says so. Minute-of-hour is the same
-   * in every whole-hour timezone, so no server round trip is needed; the
-   * engine's own announcement takes over at :53.
-   */
-  const [minuteOfHour, setMinuteOfHour] = useState(() => new Date().getMinutes());
+  // Daily Chicago heads-up; actual engine events still own every active break.
+  const [upcoming, setUpcoming] = useState(() => isRoutineMaintenanceUpcoming(serverNow()));
   useEffect(() => {
     if (maintenanceBreak.active) return;
-    const t = setInterval(() => setMinuteOfHour(new Date().getMinutes()), 15_000);
+    const refresh = () => setUpcoming(isRoutineMaintenanceUpcoming(serverNow()));
+    refresh();
+    const t = setInterval(refresh, 15_000);
     return () => clearInterval(t);
   }, [maintenanceBreak.active]);
 
   if (!maintenanceBreak.active) {
-    if (minuteOfHour >= 50 && minuteOfHour < 55) {
+    if (upcoming) {
       return (
         <div className="maintenance-banner maintenance-banner--upcoming" role="status">
           <span className="maintenance-banner__dot sc-ink--blue" aria-hidden="true">
             &bull;
           </span>
           <span className="maintenance-banner__text">
-            Hourly Break At :55. Play Is Expected To Resume On The Hour.
+            Daily Maintenance At 4 AM Chicago Time. Expected Resume At 4:05 AM.
           </span>
         </div>
       );

@@ -1,3 +1,4 @@
+import { cashRakeScope } from '../config/cashRakePolicy.js';
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  ONE LIGHTNING HAND, DEALT (Lightning Phase 6, 2026-09-27)
@@ -686,15 +687,15 @@ export class LightningHandHost {
     const club = rules.club_rake_defaults as {
       rakePercent: number | null;
       rakeCapBB: number | null;
+      unionId?: string | null;
     } | null;
     const rakePercent = pick(rules.rake_percent, club?.rakePercent);
     const rakeCapBB = pick(rules.rake_cap_bb, club?.rakeCapBB);
-    const full = getFullRakeConfig(
-      sb,
-      bb,
-      variant,
-      rakePercent === undefined && rakeCapBB === undefined ? undefined : { rakePercent, rakeCapBB }
-    );
+    const full = getFullRakeConfig(sb, bb, variant, {
+      rakePercent,
+      rakeCapBB,
+      scope: cashRakeScope(rules.union_id, club?.unionId),
+    });
     return {
       asset: rules.arena?.asset ?? 'chips',
       tableId: this.hostTableId,
@@ -716,6 +717,7 @@ export class LightningHandHost {
       // THE BARRIER'S BLINDS, never re-derived from the button.
       blindSeats: { smallBlind: sbSeat, bigBlind: bbSeat },
       rakeConfig: {
+        cashPolicy: { version: 1, scope: cashRakeScope(rules.union_id, club?.unionId) },
         percent: full.rakePercent,
         cap: full.rakeCap,
         noFlopNoDrop: true,
@@ -1364,6 +1366,72 @@ export class LightningHandHost {
     return { success: true };
   }
 
+  /** A manual request belongs to exactly one authenticated player's live decision. */
+  async activateTimeBank(
+    userId: string,
+    actionContext?: string,
+    handId?: string
+  ): Promise<{
+    success: boolean;
+    armed?: boolean;
+    error?: string;
+  }> {
+    const current = () =>
+      this.state === 'dealing' &&
+      !!this.hc &&
+      this.watching.has(userId) &&
+      this.turnUser === userId &&
+      handId === this.handId &&
+      typeof actionContext === 'string' &&
+      playerActionContext(this.hc) === actionContext;
+    if (!current()) return { success: false, error: 'That decision is no longer active' };
+    if (this.timeBank.getPlayerBank(this.timerKey, userId)?.isActive) {
+      return { success: false, error: 'Your Time Bank Is Already Running' };
+    }
+    // As at a physical table, cached Lifetime status is never authority for a
+    // manual grant. Finite seconds retain the original hand ledger/debit owner.
+    if (this.timeBank.isUnlimited(this.timerKey, userId)) {
+      let unlimited = false;
+      try {
+        const allowance = await this.deps.backend.timeBankAllowance([userId]);
+        unlimited = allowance.get(userId)?.unlimitedActivations === true;
+      } catch {
+        /* Unknown entitlement cannot grant unlimited time. */
+      }
+      if (!current()) return { success: false, error: 'That decision is no longer active' };
+      this.timeBank.setUnlimitedActivations(this.timerKey, userId, unlimited);
+    }
+    if (!current()) return { success: false, error: 'That decision is no longer active' };
+    if (this.timeBank.getPlayerBank(this.timerKey, userId)?.isActive) {
+      return { success: false, error: 'Your Time Bank Is Already Running' };
+    }
+    const remaining = Math.max(0, this.turnDurationSec - (this.now() - this.turnStartMs) / 1000);
+    if (remaining > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
+      return this.timeBank.arm(this.timerKey, userId)
+        ? { success: true, armed: true }
+        : { success: false, error: 'No Time Bank available' };
+    }
+    const previousStart = this.turnStartMs;
+    const previousDuration = this.turnDurationSec;
+    // TIME_BANK_ACTIVATED adds the granted allocation and announces this exact
+    // new deadline. The existing bank countdown remains the sole expiry owner.
+    this.turnStartMs = this.now();
+    this.turnDurationSec = 0;
+    const result = this.timeBank.tryActivate(
+      this.timerKey,
+      userId,
+      () => this.timeoutAct(userId, actionContext!),
+      remaining
+    );
+    if (result !== 'activated') {
+      this.turnStartMs = previousStart;
+      this.turnDurationSec = previousDuration;
+      return { success: false, error: 'No Time Bank available' };
+    }
+    this.timer.cancelTimer(this.timerKey, userId);
+    return { success: true };
+  }
+
   private onClockExpired(userId: string, context: string | null): void {
     if (this.isTerminal() || !this.hc || playerActionContext(this.hc) !== context) return;
     const banked = this.timeBank.onPrimaryTimerExpired(this.timerKey, userId, () =>
@@ -1406,6 +1474,8 @@ export class LightningHandHost {
           type: e.type,
           tableId: r,
           playerId: e.playerId,
+          secondsGranted: e.secondsGranted,
+          unlimitedActivations: e.unlimitedActivations,
           secondsUsed: e.secondsUsed,
           remainingSeconds: e.remainingSeconds,
           usesRemaining: e.usesRemaining,
@@ -2004,6 +2074,7 @@ export class LightningHandHost {
       big_blind: Number(rules.big_blind),
       pot_size: state.pot,
       rake_amount: rake,
+      cash_rake_policy: this.hc?.getRakeConfigSnapshot(),
       bbj_amount: bbj,
       community_cards: this.boards[0],
       community_cards2: null,
@@ -2081,13 +2152,20 @@ export class LightningHandHost {
       if (out.ok) {
         this.state = 'complete';
         await this.drainPostCommit(out.value.handHistoryId);
-        this.emitAll({
-          type: 'hand_history_saved',
-          table_id: '',
-          hand_number: this.handNumber,
-          hand_id: out.value.handHistoryId,
-          timestamp: this.now(),
-        });
+        // This is the committed hand's receipt, including for a player freed
+        // by an earlier fold. Gameplay frames still go only to watching rooms.
+        const savedAt = this.now();
+        for (const participant of this.participants.values())
+          this.deps.hub.emitEvent(participant.poolSessionId, {
+            type: 'hand_history_saved',
+            table_id: participant.poolSessionId,
+            hand_number: this.handNumber,
+            hand_id: out.value.handHistoryId,
+            lightning_hand_id: this.handId,
+            pool_session_id: participant.poolSessionId,
+            player_id: participant.playerId,
+            timestamp: savedAt,
+          });
         this.metrics.recordHand('settled');
         // Captured before finish() clears who is watching: the jackpot is
         // every participant's, folded or not (the table share is the dealt-in).

@@ -24,6 +24,16 @@ import { reportError } from '../services/errorReporter.js';
 
 export interface TimebankDeps {
   gameServer: {
+    getTimeBankEngine?(tableId: string):
+      | {
+          activateTimeBank(
+            userId: string,
+            actionContext?: string,
+            handId?: string
+          ): Promise<{ success: boolean; [k: string]: unknown }>;
+        }
+      | null
+      | undefined;
     getTableEngine(tableId: string):
       | {
           activateTimeBank(userId: string): Promise<{ success: boolean; [k: string]: unknown }>;
@@ -45,19 +55,24 @@ export async function handleTimebank(
     }
 
     const body = JSON.parse(await readBody(req));
-    const { tableId } = body;
+    const { tableId, actionContext, handId } = body;
     const userId = auth.userId;
 
     if (!tableId) {
       return sendJSON(res, 400, { success: false, error: 'Missing tableId' });
     }
 
-    const engine = deps.gameServer.getTableEngine(tableId);
+    const engine = deps.gameServer.getTimeBankEngine
+      ? deps.gameServer.getTimeBankEngine(tableId)
+      : deps.gameServer.getTableEngine(tableId);
     if (!engine) {
       return sendJSON(res, 404, { success: false, error: 'Table Not Ready' });
     }
 
-    const result = await engine.activateTimeBank(userId);
+    const result =
+      actionContext !== undefined || handId !== undefined
+        ? await engine.activateTimeBank(userId, actionContext, handId)
+        : await engine.activateTimeBank(userId);
     return sendJSON(res, result.success ? 200 : 400, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.timebank_error');

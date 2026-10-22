@@ -41,7 +41,7 @@ describe('a suspended agent stops reading the club finances', () => {
   });
 
   it('admits a staff membership only when the cashier calls it active', () => {
-    expect(MEMBER_BRANCH).toContain("cm.role IN ('owner', 'co_owner', 'admin', 'super_agent')");
+    expect(MEMBER_BRANCH).toContain("cm.role IN ('owner', 'co_owner', 'admin')");
     expect(MEMBER_BRANCH).toContain(
       'AND public.fn_cashier_member_is_active(cm.club_id, cm.user_id)'
     );

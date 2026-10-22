@@ -1,4 +1,6 @@
-**Non-engine delivery: push, publish, verify and finish without waiting for `:55`.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
+**ENGINE RESETS ONCE A DAY (owner update October 20, 2026).** Routine game-engine updates and restarts happen only once daily at 04:00 America/Chicago (DST aware): 03:58 last-hand notice, 04:00-04:05 maintenance window. There is no hourly engine reset and no hourly cash-game or platform freeze. Hourly tournament breaks (:55-:00) still run and are separate from engine maintenance. Only an explicit urgent or degraded-engine emergency may restart outside 04:00. See CLAUDE.md section 13.
+
+**Non-engine delivery: push, publish, verify and finish immediately; never wait for an engine window.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
 
 > **Current owner instruction (September 17):** Use [PUBLISHING.md](PUBLISHING.md) for the active push, protected merge, publication and live-verification procedure. Each authorized agent owns its delivery independently and may work and publish in parallel. There is no restoration-owner approval or numbered release queue. This later owner instruction supersedes conflicting historical release directions below. Retired local/custom publishers, autopilot, watchdog/repair release paths and external error telemetry remain inactive. Preserve required technical checks, production safeguards and other agents’ work. The human-only approval restriction is revoked; Silent Revert Guard reports findings for review and is not a merge gate.
 
@@ -6,8 +8,9 @@
 
 ## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`
 
-If you are picking up the hourly `:55` maintenance break / platform freeze /
-engine restart work, the current state, every measured baseline, the open
+The hourly `:55` engine break and platform freeze are RETIRED (October 20,
+2026): the engine resets once a day at 04:00 America/Chicago (section 13).
+If you are picking up the historical engine-restart work, the state, every measured baseline, the open
 defects and the exact next actions are in
 [`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md) - a 9-phase
 programme; phases 1-3 built (phase 1 merged + live, phases 2+3 in PR #2715),
@@ -259,7 +262,9 @@ TABLE ... REFERENCES public.tournaments(id)` followed by ~10 s of function
    `tournaments` is not.
    `docs/changelog/2026-09-08-deep-sweep-two-and-the-probe-that-took-the-database-down.md`.
 8. **THE DATABASE REFUSES MIGRATIONS INSIDE THE HOURLY BREAK WINDOW
-   (2026-09-10).** The window is minute-of-hour :50-:03 UTC. A migration at
+   (2026-09-10).** This is now a DDL-only guard; it never freezes players and is
+   not an engine reset (the engine resets once daily at 04:00 Chicago,
+   section 13). The window is minute-of-hour :50-:03 UTC. A migration at
    23:52:36 UTC on 2026-09-09 landed on the :53 announcement and cancelled
    the 00:00 break (section 13). Event triggers `ca_break_window_refuses_ddl`
    and `ca_break_window_refuses_drops` now abort any non-temporary DDL from a
@@ -286,6 +291,42 @@ supabase_migrations.schema_migrations ADD COLUMN IF NOT EXISTS`, and each
    `SELECT version, name FROM supabase_migrations.schema_migrations` through
    `execute_sql` - it reads the same history with no DDL.
    `docs/changelog/2026-09-10-the-database-refuses-migrations-inside-the-break-window.md`.
+9. **A MIGRATION NEVER HOLDS THE LIVE TABLES HOSTAGE (2026-10-22).** Never
+   retry `LOCK TABLE` in a loop. A queued ACCESS EXCLUSIVE request blocks every
+   new reader and writer behind it, so a 300 s loop of 200 ms tries on
+   clubs/tables/hand_history (Midway rake-cap migration, 02:34 and 02:48 UTC)
+   timed out hand commits and killed 32 table engines in 15 minutes. Take the
+   lock once with a short `lock_timeout`; if refused, apply again later. The
+   database enforces it: `fn_ca_writer_lock_sentinel` (cron every 5 s) cancels
+   any direct session older than 15 s that queues or holds a writer-blocking
+   lock on a public table while it is queued or blocking someone, and records
+   it in `ca_writer_lock_sentinel_cancels`. Pinned by
+   `tests/a-migration-never-holds-the-live-tables-hostage.law.test.ts`.
+10. **A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
+    (2026-10-22).** clubs, tables and hand_history are held by some
+    transaction in effectively every instant of play, so a migration that
+    needs ACCESS EXCLUSIVE (or SHARE / SHARE ROW EXCLUSIVE / EXCLUSIVE) on a
+    hot table is never applied during play. Put
+    `-- @install-window: daily-maintenance` on a line of its own in its
+    header. Apply Merged Migration then refuses it as QUEUED (nothing sent),
+    and the daily 03:30 America/Chicago run of `stage-engine-release.yml`
+    (job `window-migrations`, `scripts/ci/install-window-migrations.mjs`)
+    installs every queued file inside the 04:00 freeze: one transaction and
+    one attempt per file through the same applier, the documented override
+    reason recorded in `ca_break_window_migration_overrides`, 1 s
+    `lock_timeout`, 5 s statements and an 8 s budget asserted before COMMIT
+    (well under the sentinel's 15 s), started only while the break is
+    counting down with a confirmed freeze and at least 150 s before its end,
+    committed only with 100 s to spare before the thaw. A refusal rolls back,
+    stops the run, leaves the file queued for the next day and turns the run
+    red. "Queued" is simply "on main and not in schema_migrations"; never
+    apply a declared file by hand or through the MCP. Window files may not
+    set their own override, freeze bypass, longer timeouts, sleeps, blocking
+    advisory locks or CONCURRENTLY preambles, and the freeze still refuses
+    writes to money and seat rows, so keep them to DDL. Pinned by
+    `tests/a-window-migration-waits-for-the-daily-break.law.test.ts`; native
+    proof `scripts/ci/test-maintenance-window-migrations.sh`.
+    `docs/changelog/2026-10-22-a-migration-that-needs-the-live-tables-waits-for-the-daily-break.md`.
 
 ---
 
@@ -647,6 +688,13 @@ are welcome; moving `activeIndex` without a user gesture is forbidden, no
 matter what setting, however opt-in, is proposed to gate it. Enforced by
 `tests/no-auto-table-switch.law.test.ts`.
 
+Owner update, October 20, 2026: joining a cash-game waiting list authorizes
+the resulting live seat offer to open its assigned table and buy-in without
+another Join Game click. This completes that explicit admission request;
+it never purchases chips. Duplicate offers, thawed deadlines and expired
+holds must not move the view. Turn-clock and action-queue switching remain
+forbidden.
+
 ---
 
 ---
@@ -996,7 +1044,7 @@ somebody stops watching the thing it claimed to watch.
 
 ### Scheduled business work
 
-Preserve unrelated existing scheduled business behavior. New scheduled functionality requires explicit task-specific owner instruction and its owning approved platform. No timer, watcher, scheduler or recurring agent may initiate, advance, retry or certify a release. Use the operating law for pending provider work and failure recovery.
+Preserve unrelated existing scheduled business behavior. New scheduled functionality requires explicit task-specific owner instruction and its owning approved platform. No timer, watcher, scheduler or recurring agent may initiate, advance, retry or certify a release, except the explicitly owner-requested daily engine preparation in section 13. Use the operating law for pending provider work and failure recovery.
 
 ### The one thing this does NOT forbid
 
@@ -1495,48 +1543,35 @@ World Hub has its own tracked hooks. Verify the actual configured hooks in the o
 
 ---
 
-## 13. THE HOURLY MAINTENANCE BREAK AND THE PLATFORM FREEZE (Dan 2026-09-01, BINDING)
+## 13. DAILY ENGINE MAINTENANCE (owner update October 20, 2026)
 
-**The engine restarts at :55 of EVERY hour, inside an announced five-minute
-break, and the whole platform freezes for it.** If you read anything - in this
-repo, another repo, or a stale worktree - saying the engine restarts at 7am
-and 7pm, or in five Chicago windows, that text is OLD. This section wins.
-(That is exactly how the hamburger revert war ran for two days: a stale copy
-taught the next agent to "fix" the current behaviour back.)
+Routine server updates activate at **04:00 America/Chicago only**, with a
+03:58 last-hand announcement, a five-minute 04:00-04:05 maintenance countdown,
+and the existing certified drain/freeze/thaw/rollback transaction. Use IANA
+Chicago rules across DST. There is no hourly cash-game or platform freeze.
+Tournament synchronized breaks remain hourly at :55 through :00; their pause
+and blind-clock authority stays independent of global engine maintenance.
 
-Owner update, October 4 (supersedes the September 17 update): there is ONE
-scheduled break an hour. Dan: "THERE ARE CURRENTLY TWO SCHEDULED MAINTENANCE
-BREAKS, ONE AT THE :55 AND THE NEXT ONE STARTS AT THE :11 FIGURE OUT WHAT THE
-2ND ONE IS FOR, AND REMOVE IT IF ITS NOT NECESSARY." The second one was the
-off-cycle "Deployment Recovery" window, which a failed or missed engine release
-could request so its fix shipped before the next :55. That is no longer a
-cause: a failed or missed release waits for the next hourly break. The window
-survives only for a named emergency the hourly break cannot wait for - the
-serving engine is dead, stalled or wedged (`engine-degraded`), the commit
-carries the `Engine-Release: urgent` trailer, or no scheduled break can admit
-the release before its certificate deadline - still at most one per rolling
-hour, with the same two-minute last-hand lead, five-minute countdown, durable
-ownership, full cutover/rollback reserve and v3 thaw. See
-`docs/changelog/2026-10-04-one-scheduled-break-an-hour.md` (and, for the
-mechanism, `docs/changelog/2026-09-17-event-owned-engine-recovery.md`).
+The owner explicitly requested scheduled daily server updates on October 20.
+This is a narrow exception to the former no-release-timer rule: the existing
+stage-engine-release.yml prepares protected main at 03:30 Chicago (UTC twin
+triggers guarded by Chicago hour), through the existing receiver only. It
+must not add a second publisher, watcher, retry agent or repair loop. Routine
+pushes queue for that daily preparation; urgent releases and degraded-engine
+recovery retain explicit, bounded emergency admission. A request deadline or
+a missed daily window is never an emergency reason.
 
-Dan, verbatim: "program the engine restart to be every hour on the :55 ...
-THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES, NO BUY INS, NO CHIP
-MOVEMENTS ... HORSES SHOULD NOT STAND UP OR ROTATE, EVERYTHING JUST FREEZES,
-THEN PICKS BACK UP EXACTLY AS IT WAS."
-
-The timeline: :53 every table is told to finish its hand (`MaintenanceBreak`
-announces, `pauseForMaintenance` parks each engine at the top of its loop).
-:55 every table is parked, the 5:00 countdown starts, `/health` opens
-`maintenance.readyForRestart`, and the deploy workflow - which built the
-image BEFORE the gate, while play continued - cuts over. ~:58 the new engine
-boots, adopts the persisted break row and re-parks its fleet. :00 the thaw
-(`fn_thaw_platform`) gives every in-flight deadline back the frozen minutes,
-then every table resumes together.
-
-Push, run checks, protected-merge, build and stage throughout the hour as soon as ready. Only engine activation waits for a certified maintenance window; client publication has no hourly dependency. Verify the new runtime immediately after activation, with the full rollback reserve intact.
-
-This section describes the existing hourly safety contract, not a mandatory delay for diagnosing or fixing a failed release. The operating law requires prompt recovery and a connected implementation for any additional certified cutover opportunity. Until that implementation is verified, preserve this contract.
+The release transaction refuses routine hourly certificates even while an old
+engine is still serving during transition. Owner approved one final existing :55 window for this initial installation.
+The exact `Engine-Release: daily-maintenance-transition` commit trailer admits
+only an old engine's existing hourly certificate; it cannot request an extra
+break and is refused once the serving engine exposes its daily schedule.
+Never mark routine work urgent just to avoid waiting. Builds/checks/merge proceed now.
+The database's conservative :50-:03 UTC DDL-only exclusion remains installed;
+it never freezes players. Its durable entry/release-boundary predicate also
+protects the actual 04:00-04:05 window and its finalization, or an emergency.
+The observation-only scorecard migration stops grading nonexistent hourly
+global freezes; it preserves the daily missing-break and emergency evidence.
 
 Required invariants (verify their actual execution for the assigned change):
 
@@ -1559,7 +1594,7 @@ Required invariants (verify their actual execution for the assigned change):
    (`unless max_over_time(poker_maintenance_break_active[6m]) == 1`), or they
    page hourly about a stop we scheduled.
 7. **The constants are law**: `tests/the-break-clocks-agree.law.test.ts` pins
-   the :55 minute, the deploy's break-gate minute, freeze ceiling and windows
+   the daily Chicago boundary, deployment gate, freeze ceiling and windows
    across all five surfaces. (The deploy has no cron since 2026-09-10: every
    engine-affecting push is classified by `stage-engine-release.yml`, which
    sends one exact-SHA event to `auto-deploy-hetzner.yml`; that single receiver

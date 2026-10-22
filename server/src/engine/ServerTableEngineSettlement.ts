@@ -60,6 +60,7 @@ import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import { buildTableTalkInput, speakAtTheFelt } from '../services/HorseTableTalk.js';
+import { gestureAfterHand } from '../services/HorseTableGestures.js';
 import {
   buildDailyMissionHandEvents,
   handRecordsDailyMissionEvents,
@@ -1593,6 +1594,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       variant: this.currentHandVariant,
       potSize: this.currentHandPotSize,
       rake: this.currentHandRake,
+      cashRakePolicy: this.currentHandCashRakePolicy,
       bbjFee: this.currentHandBBJFee,
       communityCards: [...this.currentHandCommunityCards],
       communityCards2: [...this.currentHandCommunityCards2],
@@ -2396,6 +2398,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             bigBlind: tableInfo.big_blind,
             potSize: snap.potSize,
             rakeAmount: snap.rake,
+            cashRakePolicy: snap.cashRakePolicy,
             bbjAmount: snap.bbjFee,
             communityCards: snap.communityCards,
             communityCards2: snap.communityCards2,
@@ -3884,8 +3887,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // step; diamond cash and tournaments are skipped like the horse steps
     // above it.
     await runStep('horse_table_talk', false, async () => {
-      if (isDiamondCash || this.isTournamentTable()) return;
       if (!this.lifecycleCanMutate()) return;
+      // Dan 2026-10-21: a horse beaten at showdown sometimes throws something
+      // at the winner (and a winner, now and then, at someone it beat), on any
+      // table a person could throw at. Chat stays cash only, as for a person.
+      void gestureAfterHand(buildTableTalkInput(snap, players, this.tableInfo));
+      if (isDiamondCash || this.isTournamentTable()) return;
       void speakAtTheFelt(buildTableTalkInput(snap, players, this.tableInfo));
     });
     if (!this.lifecycleCanMutate()) return;

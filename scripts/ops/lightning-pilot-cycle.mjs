@@ -1,3 +1,4 @@
+import { selectPoolTab, clickSelectedPoolControl } from './lightning-pilot-selected-pool.mjs';
 /** Explicit finite R08 observation. Horses keep their normal input device.
  * Never submits a wager, joins, funds, forges telemetry or accepts new consent.
  */
@@ -98,6 +99,20 @@ export function recordCycleEvent(hands, e, armedHandNumber = null) {
   if (e.kind === 'hand_history_saved') row.historyId = e.historyId;
   else row[e.kind] = true;
   hands.set(e.handNumber, row);
+}
+
+/** A disappearing optional control cannot consume the remaining natural-cycle witness.
+ * One click only. An unknown acknowledgment is retained and never re-clicked.
+ */
+export async function clickCycleControlOnce(page, control, matches, remaining) {
+  const timeout = Math.min(5000, remaining());
+  const responseP = page.waitForResponse(matches, { timeout });
+  const [response] = await Promise.allSettled([
+    responseP,
+    control.click({ timeout: Math.min(2500, remaining()) }),
+  ]);
+  if (response.status !== 'fulfilled') return null;
+  return response.value;
 }
 
 export async function witnessCycle({
@@ -271,6 +286,7 @@ export async function witnessCycle({
     report.subphase = 'consent';
     report.cause = 'existing_consent_unverified';
     await bound(acceptPlayerTerms(page, session, pin, url, false, remaining));
+    await selectPoolTab(page, pin, remaining, (report.poolSelection = {}));
     report.subphase = 'first_render';
     report.cause = 'first_render_unobserved';
     while (!rendered) await page.waitForTimeout(Math.min(100, remaining()));
@@ -311,7 +327,9 @@ export async function witnessCycle({
       }
       report.subphase = key;
       report.cause = 'optional_action_unverified';
-      const responseP = page.waitForResponse(
+      const response = await clickCycleControlOnce(
+        page,
+        { click: (options) => clickSelectedPoolControl(page, pin, control, remaining, options) },
         (r) => {
           if (r.request().method() !== 'POST' || new URL(r.url()).pathname !== path) return false;
           try {
@@ -333,9 +351,12 @@ export async function witnessCycle({
             return false;
           }
         },
-        { timeout: remaining() }
+        remaining
       );
-      const [response] = await Promise.all([responseP, control.click({ timeout: remaining() })]);
+      if (!response) {
+        report[key] = 'click_or_response_unknown';
+        continue;
+      }
       const answer = await bound(response.json());
       report[key] = response.ok() && answer.success === true ? 'accepted' : 'refused';
       if (key === 'preaction' && report[key] === 'accepted') report.preaction = 'armed';

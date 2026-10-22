@@ -14,6 +14,7 @@
  *   G-03  the Mint field reads grouped thousands like every other amount
  *   G-04  a failed club read says the club, not the role
  */
+import { cashierRecoveryRpc } from '../helpers/cashierRecoveryRpc';
 import { webcrypto } from 'node:crypto';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { readFileSync } from 'fs';
@@ -111,6 +112,8 @@ function playerRead(): Promise<RoleRead> {
   return Promise.resolve({ data: { role: 'player' }, error: null });
 }
 
+const recoveries = cashierRecoveryRpc();
+
 function installSupabase() {
   vi.mocked(supabase.from).mockImplementation((table: string) => {
     const filters: Record<string, unknown> = {};
@@ -175,6 +178,8 @@ function installSupabase() {
   });
   vi.mocked(supabase.rpc).mockImplementation(((name: string, args: Record<string, unknown>) => {
     rpcCalls.push([name, args]);
+    const recovery = recoveries.answer(name, args);
+    if (recovery) return Promise.resolve(recovery);
     if (name === 'fn_ca_bridge_rate') return Promise.resolve({ data: MINT_RATE, error: null });
     if (name === 'fn_mint_chips_from_diamonds') {
       const next = mintResponses.shift();
@@ -209,6 +214,7 @@ describe('Cashier Classic launch audit', () => {
     Object.defineProperty(globalThis, 'crypto', { configurable: true, value: webcrypto });
     mocks.walletProps.length = 0;
     rpcCalls = [];
+    recoveries.clear();
     mintResponses = [];
     recipientProfiles = [];
     recipientProfileError = null;
@@ -272,7 +278,7 @@ describe('Cashier Classic launch audit', () => {
     start();
     await screen.findByRole('tab', { name: 'Send', selected: true });
     const recipient = await screen.findByLabelText('Send To Recipient');
-    await waitFor(() => expect((recipient as HTMLSelectElement).options.length).toBe(2));
+    await waitFor(() => expect((recipient as HTMLSelectElement).options.length).toBe(3));
     fireEvent.change(recipient, { target: { value: PLAYER_ONE } });
     const field = screen.getByRole('textbox', { name: 'Amount', exact: true });
     fireEvent.change(field, { target: { value: '10.005' } });
@@ -293,7 +299,7 @@ describe('Cashier Classic launch audit', () => {
     expect(screen.getByRole('button', { name: '100', exact: true })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '1K', exact: true })).toBeInTheDocument();
     const recipient = await screen.findByLabelText('Send To Recipient');
-    await waitFor(() => expect((recipient as HTMLSelectElement).options.length).toBe(2));
+    await waitFor(() => expect((recipient as HTMLSelectElement).options.length).toBe(3));
     fireEvent.change(recipient, { target: { value: PLAYER_ONE } });
     expect(
       await screen.findByRole('region', { name: 'Selected Player Wallet Context' })
@@ -414,14 +420,14 @@ describe('Cashier Classic launch audit', () => {
   });
 
   // ── P-07 / P-04 / P-15 / P-19 ────────────────────────────────────────────
-  it('P-07: the viewer is not a Send recipient, and still a Distribute one', async () => {
+  it('P-07: the viewer is discoverable for own-player funding in Send and Distribute', async () => {
     start();
     expect(await screen.findByRole('tab', { name: 'Send', selected: true })).toBeInTheDocument();
     const sendSelect = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
-    await waitFor(() => expect(sendSelect.options.length).toBe(2));
+    await waitFor(() => expect(sendSelect.options.length).toBe(3));
     const sendIds = Array.from(sendSelect.options).map((o) => o.value);
     expect(sendIds).toContain(PLAYER_ONE);
-    expect(sendIds).not.toContain(OWNER);
+    expect(sendIds).toContain(OWNER);
     expect(screen.getByLabelText('Search Recipients')).toHaveAttribute(
       'placeholder',
       'Search Name, Number, Handle, Or Role...'
@@ -469,7 +475,7 @@ describe('Cashier Classic launch audit', () => {
   it('clears an already selected recipient when a fresh recipient read reports deletion', async () => {
     start();
     const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
-    await waitFor(() => expect(select.options.length).toBe(2));
+    await waitFor(() => expect(select.options.length).toBe(3));
     fireEvent.change(select, { target: { value: PLAYER_ONE } });
     recipientProfiles = [{ id: PLAYER_ONE, status: 'deleted' }];
     nowMs += 61_000;
@@ -492,7 +498,7 @@ describe('Cashier Classic launch audit', () => {
       ];
       start();
       const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
-      await waitFor(() => expect(select.options.length).toBe(2));
+      await waitFor(() => expect(select.options.length).toBe(3));
       fireEvent.change(screen.getByLabelText('Search Recipients'), { target: { value: query } });
       expect(Array.from(select.options).map((o) => o.value)).toContain(PLAYER_ONE);
     }
@@ -509,7 +515,7 @@ describe('Cashier Classic launch audit', () => {
     ];
     start();
     const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
-    await waitFor(() => expect(select.options.length).toBe(3));
+    await waitFor(() => expect(select.options.length).toBe(4));
     fireEvent.change(screen.getByLabelText('Search Recipients'), {
       target: { value: 'Super Agent' },
     });
@@ -522,9 +528,10 @@ describe('Cashier Classic launch audit', () => {
     ];
     start();
     const select = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
-    await waitFor(() => expect(select.options.length).toBe(3));
+    await waitFor(() => expect(select.options.length).toBe(4));
     expect(select.options[1].value).toBe('agent-recipient');
-    expect(select.options[2].value).toBe(PLAYER_ONE);
+    expect(select.options[2].value).toBe(OWNER);
+    expect(select.options[3].value).toBe(PLAYER_ONE);
   });
 
   it('does not offer unverified recipients when the authoritative profile status read fails', async () => {
@@ -657,7 +664,7 @@ describe('Cashier Classic launch audit', () => {
     start();
     await screen.findByRole('tab', { name: 'Send', selected: true });
     const sendSelect = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
-    await waitFor(() => expect(sendSelect.options.length).toBe(2));
+    await waitFor(() => expect(sendSelect.options.length).toBe(3));
     fireEvent.change(sendSelect, { target: { value: PLAYER_ONE } });
     fireEvent.change(document.getElementById('cashier-send-amount')!, {
       target: { value: '10000' },
@@ -723,7 +730,7 @@ describe('Cashier Classic launch audit', () => {
     start();
     await screen.findByRole('tab', { name: 'Send', selected: true });
     const sendSelect = (await screen.findByLabelText('Send To Recipient')) as HTMLSelectElement;
-    await waitFor(() => expect(sendSelect.options.length).toBe(2));
+    await waitFor(() => expect(sendSelect.options.length).toBe(3));
     fireEvent.change(sendSelect, { target: { value: PLAYER_ONE } });
     const field = document.getElementById('cashier-send-amount') as HTMLInputElement;
     fireEvent.change(field, { target: { value: text } });
@@ -868,7 +875,7 @@ describe('Cashier Classic launch audit', () => {
   it('Phase 4: hides no selected destination behind search and clearing restores results with focus', async () => {
     start();
     const select = await screen.findByLabelText('Send To Recipient');
-    await waitFor(() => expect((select as HTMLSelectElement).options.length).toBe(2));
+    await waitFor(() => expect((select as HTMLSelectElement).options.length).toBe(3));
     fireEvent.change(select, { target: { value: PLAYER_ONE } });
     expect(
       screen.getByRole('region', { name: 'Selected Player Wallet Context' })
@@ -878,7 +885,7 @@ describe('Cashier Classic launch audit', () => {
     expect(screen.queryByRole('region', { name: 'Selected Player Wallet Context' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Clear Search' }));
     expect(screen.getByLabelText('Search Recipients')).toHaveFocus();
-    expect((select as HTMLSelectElement).options.length).toBe(2);
+    expect((select as HTMLSelectElement).options.length).toBe(3);
   });
   it('Phase 4: never projects an agent send onto the recipient player wallet', async () => {
     extraRecipients = [
@@ -886,7 +893,7 @@ describe('Cashier Classic launch audit', () => {
     ];
     start();
     const select = await screen.findByLabelText('Send To Recipient');
-    await waitFor(() => expect((select as HTMLSelectElement).options.length).toBe(3));
+    await waitFor(() => expect((select as HTMLSelectElement).options.length).toBe(4));
     fireEvent.change(select, { target: { value: 'agent-recipient' } });
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '10' } });
     expect(
@@ -896,7 +903,7 @@ describe('Cashier Classic launch audit', () => {
     expect(screen.queryByText('123 → 133')).toBeNull();
   });
 
-  it('Phase 4: switching from self funding to Send clears the undisplayed self recipient', async () => {
+  it('Phase 4: switching from self funding to Send retains the visible own-player recipient', async () => {
     start();
     await screen.findByLabelText('Send To Recipient');
     fireEvent.click(screen.getByRole('tab', { name: 'Distribute' }));
@@ -906,11 +913,24 @@ describe('Cashier Classic launch audit', () => {
     fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '10' } });
     fireEvent.click(screen.getByRole('tab', { name: 'Send', exact: true }));
     const send = await screen.findByLabelText('Send To Recipient');
-    await waitFor(() => expect(send).toHaveValue(''));
+    await waitFor(() => expect(send).toHaveValue(OWNER));
     expect(
       screen.getByRole('button', { name: 'Send 10 Chips To Selected Recipient' })
-    ).toBeDisabled();
-    expect(screen.queryByRole('region', { name: 'Selected Player Wallet Context' })).toBeNull();
+    ).toBeEnabled();
+    expect(
+      screen.getByRole('region', { name: 'Selected Player Wallet Context' })
+    ).toHaveTextContent('Player Wallet');
+    fireEvent.click(screen.getByRole('button', { name: 'Send 10 Chips To Selected Recipient' }));
+    await waitFor(() =>
+      expect(
+        rpcCalls.some(
+          ([name, args]) =>
+            name === 'fn_agent_wallet_send' &&
+            args.p_to_user_id === OWNER &&
+            args.p_destination === 'player_wallet'
+        )
+      ).toBe(true)
+    );
   });
 });
 

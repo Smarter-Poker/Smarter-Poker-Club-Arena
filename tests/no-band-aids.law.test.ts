@@ -41,7 +41,15 @@ let offenders: (
   allowed?: Set<string>,
   droppedElsewhere?: Set<string>
 ) => Array<{ kind: string; name: string }>;
-let unjustifiedPeriodicWork: (file: string, sql: string) => { kind: string; name: string } | null;
+let unjustifiedPeriodicWork: (
+  file: string,
+  sql: string,
+  unscheduledLater?: Set<string>
+) => { kind: string; name: string } | null;
+let laterUnscheduledJobs: (
+  file: string,
+  unschedules?: Array<{ version: string; jobs: string[] }>
+) => Set<string>;
 let schedulesPeriodicWork: (sql: string) => boolean;
 let carriesPeriodicWorkJustification: (sql: string) => boolean;
 
@@ -53,6 +61,7 @@ beforeAll(async () => {
   scheduledJobs = mod.scheduledJobs;
   offenders = mod.offenders;
   unjustifiedPeriodicWork = mod.unjustifiedPeriodicWork;
+  laterUnscheduledJobs = mod.laterUnscheduledJobs;
   schedulesPeriodicWork = mod.schedulesPeriodicWork;
   carriesPeriodicWorkJustification = mod.carriesPeriodicWorkJustification;
 });
@@ -130,6 +139,36 @@ describe('a new migration may not schedule periodic work in silence', () => {
         'the product; if it exists because something upstream can fail, it is ' +
         'the thing CLAUDE.md 10.12 refuses and the comment does not make it legal.'
     ).toEqual([]);
+  });
+
+  it('a named job a LATER migration unschedules is excused, and nothing else is', () => {
+    // 20261022014819 scheduled ca-orphaned-certification-account-sweep, a sweep
+    // 10.12 refuses; 20261022021302 unscheduled it 24 minutes later. Both are
+    // byte-exact recordings that must stay on disk. Deleting the band-aid is
+    // the point, exactly as a function declared then dropped already passes.
+    const gone = new Set(['diamond-spin-daily-settlement']);
+    expect(unjustifiedPeriodicWork(NEW, SCHED, gone)).toBeNull();
+    expect(unjustifiedPeriodicWork(NEW, SCHED, new Set(['some-other-job']))).not.toBeNull();
+    const unnamed = 'SELECT cron.schedule($s$* * * * *$s$, $$SELECT 1$$);';
+    expect(unjustifiedPeriodicWork(NEW, unnamed, gone)).not.toBeNull();
+  });
+
+  it('only an unschedule written AFTER the schedule counts', () => {
+    const job = ['diamond-spin-daily-settlement'];
+    expect(laterUnscheduledJobs(NEW, [{ version: '20260920080000', jobs: job }]).size).toBe(0);
+    expect(laterUnscheduledJobs(NEW, [{ version: '20260920090000', jobs: job }]).size).toBe(0);
+    expect(laterUnscheduledJobs(NEW, [{ version: '20260920100000', jobs: job }])).toEqual(
+      new Set(job)
+    );
+  });
+
+  it('the withdrawn orphan sweep is excused only by the migration that removed it', () => {
+    const file = '20261022014819_ca_orphaned_certification_account_sweep.sql';
+    const later = laterUnscheduledJobs(file);
+    expect(later.has('ca-orphaned-certification-account-sweep')).toBe(true);
+    const sql = readFileSync(resolve(ROOT, 'supabase/migrations', file), 'utf8');
+    expect(schedulesPeriodicWork(sql)).toBe(true);
+    expect(unjustifiedPeriodicWork(file, sql, new Set())).not.toBeNull();
   });
 
   it('a commented-out schedule IS still flagged, and that is deliberate', () => {

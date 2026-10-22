@@ -44,6 +44,7 @@ import { resolve } from 'node:path';
 
 const ROOT = resolve(__dirname, '..');
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/CashierTradePage.tsx'), 'utf8');
+const RECOVERY = readFileSync(resolve(ROOT, 'src/services/CashierResilience.ts'), 'utf8');
 
 /** The body of runTransfers, where every batched chip movement happens. */
 const RUN_TRANSFERS = PAGE.slice(
@@ -154,10 +155,22 @@ describe('one op id per target, held across a failure', () => {
 
   it('is retained across a failure, which is what makes a retry safe', () => {
     expect(RUN_TRANSFERS).toContain('if (ok === targets.length) {');
+    expect(RUN_TRANSFERS).toContain('await clearDurableCashierTransfer(uncertainRecovery)');
+    expect(RUN_TRANSFERS).toContain('await updateDurableCashierTransfer(recovery)');
+    expect(RUN_TRANSFERS).toContain('submissionId = uncertainRecovery.submissionId');
     expect(RUN_TRANSFERS).toContain(
-      'clearCashierTransferRecovery(user.id, clubUuid, submissionId)'
+      'opIdsRef.current = new Map(Object.entries(uncertainRecovery.opIds))'
     );
-    expect(RUN_TRANSFERS).toContain('writeCashierTransferRecovery(recovery)');
+    const ack = RECOVERY.slice(
+      RECOVERY.indexOf('export async function clearDurableCashierTransfer('),
+      RECOVERY.indexOf('export function readCashierTransferRecoveryBySubmission(')
+    );
+    expect(ack).toMatch(
+      /await durableRecovery\([\s\S]*?'ack',[\s\S]*?await transferIntentKey\(row\),\s*undefined,\s*row.submissionId/
+    );
+    expect(ack.indexOf("typeof acknowledged !== 'boolean'")).toBeLessThan(
+      ack.indexOf('clearCashierTransferRecovery(row.userId, row.clubId, row.submissionId)')
+    );
     expect(RUN_TRANSFERS).toContain('opIds: Object.fromEntries(opIdsRef.current)');
   });
 

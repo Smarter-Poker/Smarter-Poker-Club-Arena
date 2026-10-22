@@ -43,7 +43,7 @@ describe('the engine deploy has one fail-closed Hetzner authority', () => {
     expect(transactionCode).toContain('target $SHA does not contain the sealed high-water release');
   });
 
-  it('immediately sends every protected-main server SHA into the owning release lane', () => {
+  it('detects protected-main server SHAs and gates routine dispatch on daily admission', () => {
     const triggers = engineSignal.slice(
       engineSignal.indexOf('\non:'),
       engineSignal.indexOf('\npermissions:')
@@ -52,8 +52,12 @@ describe('the engine deploy has one fail-closed Hetzner authority', () => {
     expect(triggers).toContain('branches: [main]');
     expect(triggers).not.toMatch(/^\s+paths(?:-ignore)?:/m);
     expect(triggers).not.toMatch(
-      /^\s{2}(?:schedule|workflow_dispatch|repository_dispatch|pull_request|pull_request_target|workflow_run):/m
+      /^\s{2}(?:workflow_dispatch|repository_dispatch|pull_request|pull_request_target|workflow_run):/m
     );
+    expect(triggers).toContain("cron: '30 8 * * *'");
+    expect(triggers).toContain("cron: '30 9 * * *'");
+    expect(engineSignalCode).toContain('RUN_CREATED_AT=$(gh api');
+    expect(engineSignalCode).toContain('local = nominal.astimezone(ZoneInfo("America/Chicago"))');
     expect(engineSignal).toMatch(/^permissions:\s*\{\}\s*$/m);
     expect(engineSignal).toMatch(/^\s{2}detect:\s*$/m);
     expect(engineSignal).toContain('fetch-depth: 0');
@@ -61,7 +65,9 @@ describe('the engine deploy has one fail-closed Hetzner authority', () => {
     expect(engineSignalCode).toContain('git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" --');
     expect(engineSignalCode).toContain('RELEASE_REQUIRED=true');
     expect(engineSignalCode).toContain('Previous commit is missing or unreadable; failing closed');
-    expect(engineSignal).toContain("if: needs.detect.outputs.release_required == 'true'");
+    expect(engineSignal).toContain(
+      "if: needs.detect.outputs.release_required == 'true' && needs.detect.outputs.admission_allowed == 'true'"
+    );
     expect(engineSignal).toMatch(/^\s{6}contents:\s*write\s*$/m);
     expect(engineSignalCode).toContain('GH_TOKEN: ${{ github.token }}');
     expect(engineSignalCode).toContain('REF_SHA: ${{ needs.detect.outputs.target_sha }}');

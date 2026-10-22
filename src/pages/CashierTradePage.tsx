@@ -90,13 +90,15 @@ import { cashierReasonCode, recordCashierOperation } from '../services/CashierOp
 import {
   cashierReceiptText,
   clearCashierChipRequestOperation,
-  clearCashierTransferRecovery,
   copyCashierText,
   readCashierTransferRecovery,
   readCashierTransferRecoveryBySubmission,
   readCashierOnlineState,
   reserveCashierChipRequestOperation,
-  writeCashierTransferRecovery,
+  reserveDurableCashierTransfer,
+  restoreDurableCashierTransfers,
+  updateDurableCashierTransfer,
+  clearDurableCashierTransfer,
   type CashierTransferRecovery,
 } from '../services/CashierResilience';
 import { masterBus } from '../core/MasterBus';
@@ -1973,11 +1975,18 @@ function CashierTradeWorkspace() {
 
   useEffect(() => {
     if (!user?.id || !clubUuid) return;
-    const saved = readCashierTransferRecovery(user.id, clubUuid);
-    if (!saved) return;
-    // Hydrate the recovery prompt only. Restore its immutable identifiers
-    // together with the reviewed inputs when Review And Retry is selected.
-    setTransferRecovery(saved);
+    let live = true;
+    const view = transferView.current;
+    setTransferRecovery(readCashierTransferRecovery(user.id, clubUuid));
+    void restoreDurableCashierTransfers(user.id, clubUuid)
+      .then((rows) => {
+        if (live && isMounted.current && transferView.current === view)
+          setTransferRecovery(rows[0] ?? null);
+      })
+      .catch((error) => reportError(error, 'CashierTradePage.Recovery_read'));
+    return () => {
+      live = false;
+    };
   }, [user?.id, clubUuid]);
 
   /** Chips the selected players are holding right now. */
@@ -2131,23 +2140,30 @@ function CashierTradeWorkspace() {
         setTransferFailures([]);
       }}
     >
-      {recipientSendWallets(target.role).map((wallet) => (
-        <option key={wallet} value={wallet}>
-          {SEND_DESTINATION_LABELS[wallet]}:{' '}
-          {targetBalances[target.userId]?.[wallet] === undefined
-            ? 'Unavailable'
-            : formatWalletChips(targetBalances[target.userId][wallet]!)}
-        </option>
-      ))}
+      {recipientSendWallets(target.role)
+        .filter(
+          (wallet) =>
+            !(target.isSelf && sendSource === 'agent_wallet') || wallet === 'player_wallet'
+        )
+        .map((wallet) => (
+          <option key={wallet} value={wallet}>
+            {SEND_DESTINATION_LABELS[wallet]}:{' '}
+            {targetBalances[target.userId]?.[wallet] === undefined
+              ? 'Unavailable'
+              : formatWalletChips(targetBalances[target.userId][wallet]!)}
+          </option>
+        ))}
     </select>
   );
 
   const transferDestination = (target: DownlineRow): SendDestination =>
-    (transferRecovery?.submissionId === submissionIdRef.current
-      ? transferRecovery.destinations?.[target.userId]
-      : undefined) ||
-    recipientWallets[target.userId] ||
-    (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
+    target.isSelf && sendSource === 'agent_wallet'
+      ? 'player_wallet'
+      : (transferRecovery?.submissionId === submissionIdRef.current
+          ? transferRecovery.destinations?.[target.userId]
+          : undefined) ||
+        recipientWallets[target.userId] ||
+        (canHoldAgentWallet(target.role) ? 'agent_wallet' : 'player_wallet');
 
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
@@ -2210,11 +2226,12 @@ function CashierTradeWorkspace() {
     const selfTargeted = targets.some((target) => target.isSelf || target.userId === user.id);
     if (
       selfTargeted &&
-      (kind !== 'send' || !['club_promo_wallet', 'player_wallet'].includes(sendSource))
+      (kind !== 'send' ||
+        !['club_promo_wallet', 'player_wallet', 'agent_wallet'].includes(sendSource))
     ) {
       /* SENDING TO YOURSELF (Dan 2026-10-15: "INCLUDING OWNERS, I CURRENTLY
-         CAN'T SEND CHIPS TO MYSELF"). An agent wallet cannot pay its own
-         holder (fn_agent_wallet_send refuses it), so an owner or co owner's
+         CAN'T SEND CHIPS TO MYSELF"). An agent wallet now funds its holder's player
+         wallet directly. When the chosen source is Club Bank, the owner's
          own player wallet is funded from the Club Bank, the account that
          already pays them through Fund Me. On its own, so a batch never
          mixes two funding accounts. */
@@ -2300,7 +2317,7 @@ function CashierTradeWorkspace() {
     if (!submissionIdRef.current) {
       submissionIdRef.current = newOpId();
     }
-    const submissionId = submissionIdRef.current;
+    let submissionId = submissionIdRef.current;
     transferRecoveryScopeRef.current = { userId: user.id, clubId: clubUuid, submissionId };
     /** The op_id for one target, minted once and reused by every retry. */
     const opIdFor = (userId: string) => {
@@ -2318,7 +2335,7 @@ function CashierTradeWorkspace() {
     if (kind === 'send') targets.forEach((target) => opIdFor(target.userId));
     const recoveryCreatedAt =
       transferRecovery?.submissionId === submissionId ? transferRecovery.createdAt : Date.now();
-    const uncertainRecovery: CashierTransferRecovery = {
+    let uncertainRecovery: CashierTransferRecovery = {
       version: 1,
       userId: user.id,
       clubId: clubUuid,
@@ -2361,22 +2378,35 @@ function CashierTradeWorkspace() {
             ),
       createdAt: recoveryCreatedAt,
     };
-    if (!writeCashierTransferRecovery(uncertainRecovery)) {
-      // Fail closed. If the server commits and the response is lost, only this
-      // preflight journal lets a reload replay the SAME operation ids instead
-      // of minting a second money movement. Continuing without it turns a
-      // storage quota/private-mode failure into a double-send risk.
-      reportError(
-        new Error('The transfer recovery journal could not be persisted'),
-        'CashierTradePage.Transfer_recovery_write_failed'
-      );
-      toast?.error?.('Cashier Safety Storage Is Unavailable. Free Browser Storage And Try Again');
-      return;
-    }
-    // No await occurs before this point, so the journal and the in-memory lock
-    // become visible atomically to a second click in the browser event loop.
+    // Own the click before the durable reservation awaits. Another tab receives
+    // the original envelope; it never allocates a second set of money keys.
     busyRef.current = true;
     setBusy(true);
+    const reservationView = transferView.current;
+    const reservationEpoch = transferAuthorityEpoch.current;
+    try {
+      uncertainRecovery = await reserveDurableCashierTransfer(uncertainRecovery);
+      if (
+        !isMounted.current ||
+        transferView.current !== reservationView ||
+        transferAuthorityEpoch.current !== reservationEpoch
+      ) {
+        busyRef.current = false;
+        if (isMounted.current) setBusy(false);
+        return;
+      }
+      submissionId = uncertainRecovery.submissionId;
+      submissionIdRef.current = submissionId;
+      opIdsRef.current = new Map(Object.entries(uncertainRecovery.opIds));
+      transferRecoveryScopeRef.current = { userId: user.id, clubId: clubUuid, submissionId };
+    } catch (error) {
+      busyRef.current = false;
+      if (isMounted.current) setBusy(false);
+      reportError(error, 'CashierTradePage.Transfer_recovery_reserve_failed');
+      if (isMounted.current && transferView.current === reservationView)
+        toast?.error?.('Cashier Recovery Is Unavailable. Try Again');
+      return;
+    }
     setBatchProgress({ processed: 0, total: targets.length });
     let ok = 0;
     const receiptRows: CashierBatchReceiptRow[] = targets.map((target) => ({
@@ -2584,13 +2614,12 @@ function CashierTradeWorkspace() {
       // A throw between here and the end used to leave `busy` true forever,
       // and both Confirm and Cancel are disabled on it - the modal became a
       // trap that only a page reload could escape.
-      busyRef.current = false;
       // Retire the nonces ONLY when every target went through. If any one of
       // them failed, keeping them is the whole point: the retry carries the
       // same op_id per target, so whichever targets already committed replay
       // instead of being charged a second time.
       if (ok === targets.length) {
-        clearCashierTransferRecovery(user.id, clubUuid, submissionId);
+        await clearDurableCashierTransfer(uncertainRecovery);
         if (transferView.current === owningView) {
           submissionIdRef.current = null;
           opIdsRef.current = new Map();
@@ -2605,15 +2634,16 @@ function CashierTradeWorkspace() {
               failures: uncertain,
             }
           : null;
-      if (recovery) writeCashierTransferRecovery(recovery);
+      if (recovery) await updateDurableCashierTransfer(recovery);
       else if (ok !== targets.length) {
         // Every item that did not go through was refused outright. Nothing is
         // left to verify, so the journal closes instead of offering a retry
         // that can only be refused again (and eventually filling storage).
-        clearCashierTransferRecovery(user.id, clubUuid, submissionId);
+        await clearDurableCashierTransfer(uncertainRecovery);
         if (isMounted.current && transferView.current === owningView)
           setTransferRecovery(readCashierTransferRecovery(user.id, clubUuid));
       }
+      busyRef.current = false;
       if (isMounted.current) {
         setBusy(false);
         setBatchProgress(null);
@@ -2770,11 +2800,11 @@ function CashierTradeWorkspace() {
       } | null;
       if (res && res.success === false) {
         // A definitive refusal moved nothing, so its journal entry is closed.
-        clearCashierWalletOperation(operation);
+        await clearCashierWalletOperation(operation);
         claimOpIdsRef.current.delete(row.transaction_id);
       }
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
-      clearCashierWalletOperation(operation);
+      await clearCashierWalletOperation(operation);
       if (!current()) return;
       addRecipient(row.to_user_id);
       void loadClub(true);
@@ -2790,6 +2820,8 @@ function CashierTradeWorkspace() {
       claimOpIdsRef.current.delete(row.transaction_id);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_claim', userId: user?.id || '' });
       void loadReversible();
+      // A confirmed claim toasts and closes its sheet (Dan, 2026-10-22).
+      setClaimOpen(false);
     } catch (e) {
       if (!current()) return;
       reportError(e, 'CashierTradePage.claimBack');
@@ -2901,9 +2933,9 @@ function CashierTradeWorkspace() {
         replayed?: boolean;
       } | null;
       // A definitive refusal moved nothing, so its journal entry is closed.
-      if (res && res.success === false) clearCashierWalletOperation(operation);
+      if (res && res.success === false) await clearCashierWalletOperation(operation);
       if (!res?.success) throw new Error(res?.error || 'The Club Bank Refused That Send');
-      clearCashierWalletOperation(operation);
+      await clearCashierWalletOperation(operation);
       if (!isMounted.current || transferView.current !== owningView) return;
       toast?.success?.(
         res.replayed
@@ -2973,9 +3005,9 @@ function CashierTradeWorkspace() {
         replayed?: boolean;
       } | null;
       // A definitive refusal moved nothing, so its journal entry is closed.
-      if (res && res.success === false) clearCashierWalletOperation(operation);
+      if (res && res.success === false) await clearCashierWalletOperation(operation);
       if (!res?.success) throw new Error(res?.error || 'Those Chips Could Not Be Claimed Back');
-      clearCashierWalletOperation(operation);
+      await clearCashierWalletOperation(operation);
       if (!isMounted.current || transferView.current !== owningView) return;
       toast?.success?.(
         res.replayed
@@ -3155,7 +3187,7 @@ function CashierTradeWorkspace() {
             reference: saved.kind === 'send' ? saved.opIds[id] : savedTicketKey(saved, id),
           })),
         });
-        clearCashierTransferRecovery(saved.userId, saved.clubId, saved.submissionId);
+        await clearDurableCashierTransfer(saved);
         setTransferRecovery(readCashierTransferRecovery(saved.userId, saved.clubId));
         toast?.success?.('Original Transfer Receipts Confirmed. No New Transfer Was Submitted');
         return;
@@ -3975,7 +4007,8 @@ function CashierTradeWorkspace() {
                        check behind. Measured by our own clock, because a
                        touch double tap does not reliably fire dblclick. Your
                        own row is selectable when the Club Bank can pay you. */
-                    const selectable = !r.isSelf || selfCanFundPlayerWallet;
+                    const selectable =
+                      !r.isSelf || selfCanFundPlayerWallet || canHoldAgentWallet(myRole);
                     const isSelected = selected.has(r.userId);
                     const toggle = () =>
                       setSelected((previous) => {
@@ -4003,7 +4036,7 @@ function CashierTradeWorkspace() {
                         className={`${styles.row} ${r.isSelf ? styles.rowSelf : ''} ${selectable ? styles.selectableRow : ''} ${isSelected ? styles.rowSelected : ''}`}
                         onClick={onRowTap}
                         title={
-                          r.isSelf && !selfCanFundPlayerWallet
+                          r.isSelf && !selfCanFundPlayerWallet && !canHoldAgentWallet(myRole)
                             ? 'This Is You. Chips Cannot Be Sent To Yourself.'
                             : undefined
                         }

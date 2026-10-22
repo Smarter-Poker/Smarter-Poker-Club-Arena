@@ -1,0 +1,5 @@
+{
+  "_owner": "feat/player-record-upline-chain",
+  "_comment": "Migration 20261022044452 (applied 2026-10-22 04:44 UTC): the Player Record lists every upline agent.",
+  "functions": ["ca_club_member_upline_chain"]
+}

@@ -5026,26 +5026,103 @@ button.post-bb-overlay-button {
   text-transform: uppercase;
 }
 
-/* Portrait phones keep the same edge-to-edge rail as the desktop reference.
-   The tablet roundness cap above otherwise narrows shorter phones (333px on
-   a 375px screen). Safari's small viewport also retains the expanded browser
-   toolbar allowance after the toolbar retracts, leaving unused space below
-   the table. For the October 20 mobile gameplay correction, use the currently
-   visible viewport on phones, just as the page shell does. This intentionally
-   supersedes the small-viewport rule above for portrait phones. Only an actual
-   viewport change can resize the canvas; actions, folds and taking a seat
-   still use the same declared chrome/hero budget. Art and every seat follow
-   that one canvas. */
+/* Portrait gameplay leaves real outboard lanes for player pods. Nine seats
+   retain the full height; six use the shorter ring below. Both fit seats
+   against the screen edges through fitSeatToViewport. */
 @media (max-width: 480px) and (orientation: portrait) {
   .table-container {
     --sp-page-h: 100dvh;
+    --sp-hero-clear: clamp(60px, calc(12vw + 8px), 68px);
+    /* Compact upper pods use the empty rail band below the jackpot. */
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 12px + var(--sp-page-inset-top));
   }
-
   .table-page--embedded .table-container {
-    --sp-page-h: calc(100dvh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))));
+    /* Reserve the ticker's maximum band even when it is absent. A promotion
+       may appear mid-hand; neither the felt nor the hero may jump with it. */
+    --sp-mobile-ticker-reserve: 32px;
+    --sp-page-h: calc(
+      100dvh - var(--sp-tabbar-h, calc(43px + env(safe-area-inset-top, 0px))) -
+        var(--sp-mobile-ticker-reserve)
+    );
   }
-
   .table-scaler {
-    width: 100%;
+    width: 82%;
+  }
+  .table-page[data-seats='6'] .table-scaler {
+    /* Six seats use a visibly shorter ring; center its 12% height saving
+       without scaling the cards, player pods, printing or controls. */
+    --sp-seat-h-scale: 0.88;
+    --sp-short-table-drop: 0px;
+    margin-top: calc(var(--sp-table-h, 100svh) * 0.06);
+  }
+  .table-page .seat--hero .seat__bet-chips {
+    transform: translate(
+      calc(-50% + var(--bet-offset-x, 0px)),
+      calc(-50% + var(--bet-offset-y, 0px))
+    );
+  }
+}
+
+.table-page .add-chips-icon-btn {
+  width: var(--sp-game-tool-size, 40px);
+  height: var(--sp-game-tool-size, 40px);
+  min-width: 0;
+  min-height: 0;
+}
+@media (max-width: 480px) {
+  .table-page {
+    --sp-game-tool-size: 34px;
+  }
+}
+/* Compact viewports still reserve the top pod below the jackpot. */
+@media (max-width: 480px) and (max-height: 650px) and (orientation: portrait) {
+  .table-container {
+    --sp-table-top: calc(var(--sp-bbj-h, 22px) + 18px + var(--sp-page-inset-top));
+  }
+}
+
+/* Taper the painted chassis only. Cards and all live text remain upright. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-art {
+    transform-origin: 0 0;
+    transform: var(--sp-table-taper, none);
+  }
+  .table-surface .community-area {
+    /* 95% of the projected felt at the board's unchanged vertical anchor. */
+    width: var(--sp-taper-board-width, 95%);
+  }
+}
+
+/* Mobile felt printing stays secondary to the cards. The two room names
+   share one line; the hero tracker carries the personal VPIP requirement. */
+@media (max-width: 480px) and (orientation: portrait) {
+  .table-page .table-brand {
+    gap: 3px;
+  }
+  .table-page .table-brand__line--identity {
+    font-size: 7px;
+    white-space: nowrap;
+    line-height: 1.15;
+    letter-spacing: 0.04em;
+  }
+  .table-page:not(.table-page--tournament) .table-brand__line--level {
+    font-size: clamp(7px, 6.5cqw, 10px);
+    letter-spacing: 0.02em;
+  }
+  .table-page .table-brand__line--hand {
+    font-size: 6px;
+  }
+  .table-page .table-brand__line--bomb {
+    font-size: 6px;
+  }
+}
+
+/* Keep the short phone's room label inside its narrower rail lanes. */
+@media (max-width: 340px) and (orientation: portrait) {
+  .table-page .table-brand {
+    width: 50%;
+  }
+  .table-page .table-brand__line--identity {
+    font-size: 6px;
   }
 }

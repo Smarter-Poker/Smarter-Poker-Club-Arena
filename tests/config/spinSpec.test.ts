@@ -276,7 +276,7 @@ describe('the stack belongs to the board, not to the multiplier', () => {
     // Dan 2026-08-20: "change spins to 3 min levels" - FLAT across the ladder.
     // Dan 2026-08-23: "SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK."
     for (const tier of SPIN_TIERS) {
-      expect(tier.levelMinutes, `${tier.multiplier}x level length`).toBe(3);
+      expect(tier.levelMinutes, `${tier.multiplier}x level length`).toBe(5);
     }
   });
 

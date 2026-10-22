@@ -79,6 +79,14 @@ import { personaHash } from '../engine/HorsePersona.js';
 import { resolveHorseStyle } from '../engine/HorseLogic.js';
 import { HAND_RANKINGS } from '../engine/PokerEngine.js';
 import { readTableTalkGate } from './HorseTableTalkGate.js';
+import { humanBeat, humanBeatMs } from './horsePacing.js';
+import {
+  personalChance,
+  personalPool,
+  STYLE_EMOJI,
+  styleLine,
+  type Mood,
+} from './horseVoiceStyle.js';
 import { LINES, TALK_PLACEHOLDERS, type TalkEvent, type TalkVoice } from './horseTableTalkLines.js';
 import type { SeatedPlayer, TableInfo } from '../types.js';
 
@@ -92,16 +100,42 @@ export type { TalkEvent, TalkVoice } from './horseTableTalkLines.js';
 export const BIG_POT_BB = 40;
 /** Event D: a horse greets only once it has been seated this many hands. */
 export const GREETER_MIN_HANDS_SEATED = 10;
+/**
+ * Dan 2026-10-21: horses "need to sometimes say things like nice hand or you
+ * got lucky, or other simple random phrases inside the chat after a hand is
+ * over", and it must "be random and feel genuine". The limits below were
+ * loosened the same day so ordinary hands can produce a line, and
+ * SPEAK_CHANCE_PCT keeps any one hand a coin flip rather than a script.
+ */
 /** At most this many lines per horse per rolling hour, fleet-wide. */
-export const HORSE_LINES_PER_HOUR = 3;
+export const HORSE_LINES_PER_HOUR = 6;
 /** A horse waits this many hands between its lines at one table. */
-export const HORSE_MIN_HANDS_BETWEEN_LINES = 12;
+export const HORSE_MIN_HANDS_BETWEEN_LINES = 5;
 /** A table hears at most one line per this many hands. */
-export const TABLE_MIN_HANDS_BETWEEN_LINES = 4;
+export const TABLE_MIN_HANDS_BETWEEN_LINES = 2;
 /** A horse does not repeat a phrase inside this window. */
-export const PHRASE_HORSE_WINDOW_MS = 24 * 60 * 60_000;
+export const PHRASE_HORSE_WINDOW_MS = 90 * 60_000;
 /** A table does not hear the same phrase twice inside this window. */
-export const PHRASE_TABLE_WINDOW_MS = 2 * 60 * 60_000;
+export const PHRASE_TABLE_WINDOW_MS = 20 * 60_000;
+
+/**
+ * How often a qualifying horse actually speaks, in percent. A person does not
+ * type after every hand they lose; most of the time they say nothing. The
+ * roll is a hash of (table, hand, event, horse), so it is spread evenly and a
+ * replay answers the same way.
+ */
+export const SPEAK_CHANCE_PCT: Readonly<Record<TalkEvent, number>> = {
+  // The four original events each have one line per voice, so they are kept
+  // rarer: a horse that would not take one of them falls through to the
+  // ordinary-hand events below, whose pools are wide.
+  big_pot_won: 20,
+  showdown_loss: 25,
+  big_hand_shown: 20,
+  arrival: 30,
+  pot_lost: 28,
+  pot_won: 14,
+  all_in: 22,
+};
 /** The longest line that may be written. The client's input cap is 200. */
 export const TALK_LINE_MAX_CHARS = 120;
 
@@ -180,7 +214,7 @@ function isTournamentInfo(tableInfo: TableInfo): boolean {
   return !!(tableInfo.tournament_id || tableInfo.game_type === 'tournament');
 }
 
-function talkTableFrom(tableInfo: TableInfo, isTournament: boolean): TalkTable {
+export function talkTableFrom(tableInfo: TableInfo, isTournament: boolean): TalkTable {
   return {
     tableId: tableInfo.id,
     bigBlind: Number(tableInfo.big_blind) || 0,
@@ -192,7 +226,7 @@ function talkTableFrom(tableInfo: TableInfo, isTournament: boolean): TalkTable {
   };
 }
 
-function talkSeatsFrom(players: readonly SeatedPlayer[]): TalkSeat[] {
+export function talkSeatsFrom(players: readonly SeatedPlayer[]): TalkSeat[] {
   return players
     .filter((p) => typeof p.user_id === 'string' && p.user_id.length > 0)
     .map((p) => ({
@@ -382,6 +416,21 @@ export function detectEvents(input: TableTalkInput): TalkCandidate[] {
       });
     }
   }
+
+  // E. any showdown a horse took part in and did not win: "nh", "you got lucky"
+  const firstWinnerSeat = input.winners.length > 0 ? seatOf(input.winners[0].userId) : undefined;
+  const winnerSeat = bestShownWinner ? seatOf(bestShownWinner.userId) : firstWinnerSeat;
+  for (const r of input.showdownResults) {
+    if (winnerIds.has(r.userId)) continue;
+    if (!horses.some((h) => h.userId === r.userId)) continue;
+    out.push({ event: 'pot_lost', speakerId: r.userId, facts: { street, seat: winnerSeat } });
+  }
+
+  // F. any pot a horse won: "ty", "gg"
+  for (const h of horses) {
+    if (!winnerIds.has(h.userId)) continue;
+    out.push({ event: 'pot_won', speakerId: h.userId, facts: { potBB, street } });
+  }
   return out;
 }
 
@@ -389,8 +438,33 @@ const EVENT_ORDER: readonly TalkEvent[] = [
   'big_pot_won',
   'showdown_loss',
   'big_hand_shown',
+  'pot_lost',
+  'pot_won',
   'arrival',
+  'all_in',
 ];
+
+let speakChanceOverride: number | null = null;
+
+/** Test hook: every qualifying horse speaks (100) or none does (0); null restores the table. */
+export function _setSpeakChanceForTests(pct: number | null): void {
+  speakChanceOverride = pct;
+}
+
+/**
+ * Whether this horse speaks this time: SPEAK_CHANCE_PCT of qualifying hands,
+ * by a hash of (table, hand, event, horse). Deterministic, evenly spread, and
+ * never every time.
+ */
+export function speaksThisTime(
+  event: TalkEvent,
+  speakerId: string,
+  tableId: string,
+  handNumber: number
+): boolean {
+  const pct = speakChanceOverride ?? personalChance(speakerId, SPEAK_CHANCE_PCT[event] ?? 0);
+  return personaHash(`${tableId}|${handNumber}|${event}|${speakerId}|speak`) % 100 < pct;
+}
 
 /**
  * One candidate per hand: the first event in order that has any, and among
@@ -499,7 +573,9 @@ export function chooseLine(
   handNumber: number,
   facts: TalkFacts
 ): ChosenLine | null {
-  const pool = LINES[event][voice].lines;
+  // Dan 2026-10-22: every horse says different things. A horse draws only
+  // from its own share of the pool (horseVoiceStyle.personalPool).
+  const pool = personalPool(horseId, LINES[event][voice].lines);
   if (pool.length === 0) return null;
   const start = lineIndexFor(horseId, handNumber, event, pool.length);
   for (let k = 0; k < pool.length; k++) {
@@ -604,6 +680,45 @@ export function sanitizeLine(
     }
   }
   return { ok: true, line: trimmed };
+}
+
+/**
+ * The door for a line AFTER the horse's own style was applied: the same rules
+ * as sanitizeLine, except that an emoji is admitted when it is one the style
+ * layer may write (horseVoiceStyle.STYLE_EMOJI) and no other.
+ */
+export function sanitizeStyledLine(
+  line: string,
+  usernames: readonly (string | null | undefined)[]
+): SanitizeVerdict {
+  const trimmed = line.trim();
+  if (trimmed.length > TALK_LINE_MAX_CHARS) return { ok: false, reason: 'too_long' };
+  let bare = trimmed;
+  for (const e of STYLE_EMOJI) bare = bare.split(e).join(' ');
+  const verdict = sanitizeLine(bare.replace(/\s+/g, ' '), usernames);
+  return verdict.ok ? { ok: true, line: trimmed } : verdict;
+}
+
+/** The mood a styled line is typed in, for the emoji a horse reaches for. */
+export function moodOf(event: TalkEvent): Mood {
+  switch (event) {
+    case 'pot_won':
+    case 'big_pot_won':
+      return 'won';
+    case 'all_in':
+      return 'luck';
+    case 'arrival':
+      return 'greet';
+    default:
+      return 'lost';
+  }
+}
+
+let voiceStyling = true;
+
+/** Test hook: the write-path tests read the plain line; the style has its own tests. */
+export function _setVoiceStylingForTests(on: boolean): void {
+  voiceStyling = on;
 }
 
 /**
@@ -989,7 +1104,25 @@ async function say(req: SayRequest): Promise<TalkOutcome> {
     req.mem
   );
   if (!claim.ok) return claim.reason;
-  const wrote = await writeChatRow(req.table.tableId, req.speaker.userId, verdict.line);
+  // The horse types it its own way: case, punctuation, shorthand, emoji.
+  // A styled line the door refuses falls back to the plain line, which
+  // already passed.
+  let typed = verdict.line;
+  if (voiceStyling) {
+    const styled = styleLine(
+      verdict.line,
+      req.speaker.userId,
+      moodOf(req.event),
+      `${req.handNumber}|${req.event}`
+    );
+    const door = sanitizeStyledLine(styled, req.usernames);
+    if (door.ok) typed = door.line;
+  }
+  // A person reads the result, then types: the line lands a beat after the
+  // hand, never on the same frame as the pot is pushed. A shove line is short.
+  const beatKind = req.event === 'all_in' ? 'quick' : 'typed';
+  await humanBeat(humanBeatMs(`${req.speaker.userId}|${req.handNumber}|${req.event}`, beatKind));
+  const wrote = await writeChatRow(req.table.tableId, req.speaker.userId, typed);
   return wrote ? 'spoken' : 'lost_words';
 }
 
@@ -1008,7 +1141,13 @@ export const speakAtTheFelt = bindToProcessRoot(
       noteHand(mem, input.handNumber, input.seated, true);
       const refusal = tableRefusal(input.table);
       if (refusal) return refusal;
-      const pick = pickCandidate(detectEvents(input), input.table.tableId, input.handNumber);
+      const pick = pickCandidate(
+        detectEvents(input).filter((c) =>
+          speaksThisTime(c.event, c.speakerId, input.table.tableId, input.handNumber)
+        ),
+        input.table.tableId,
+        input.handNumber
+      );
       if (!pick) return 'no_event';
       const gate = await readTableTalkGate(now);
       if (!gate.allowed) return 'gate_closed';
@@ -1054,6 +1193,11 @@ export const greetArrival = bindToProcessRoot(
         )
         .sort((a, b) => a.userId.localeCompare(b.userId));
       if (greeters.length === 0) return 'no_speaker';
+      if (
+        !speaksThisTime('arrival', input.arrivedUserId, input.table.tableId, input.handNumber)
+      ) {
+        return 'no_event';
+      }
       const gate = await readTableTalkGate(now);
       if (!gate.allowed) return 'gate_closed';
       const speaker =
@@ -1072,6 +1216,47 @@ export const greetArrival = bindToProcessRoot(
       });
     } catch (err) {
       reportError(err, 'HorseTableTalk.greetArrival', { tableId: input.table.tableId });
+      return 'unwritable';
+    }
+  }
+);
+
+export interface AllInTalkInput {
+  table: TalkTable;
+  handNumber: number;
+  horse: TalkSeat;
+  seated: readonly TalkSeat[];
+}
+
+/**
+ * A horse is moving all in and may say good luck as it does (Dan 2026-10-21:
+ * "not always just the good luck, and not every time before going all in").
+ * Called only by HorseTableGestures, which has already rolled whether this
+ * shove carries a gesture and chosen chat as its form. Same gate, same claim,
+ * same door as every other line.
+ */
+export const speakAsTheyShove = bindToProcessRoot(
+  async (input: AllInTalkInput | null): Promise<TalkOutcome> => {
+    if (!input) return 'no_event';
+    const now = Date.now();
+    try {
+      const mem = tableMemory(input.table.tableId, now);
+      const refusal = tableRefusal(input.table);
+      if (refusal) return refusal;
+      const gate = await readTableTalkGate(now);
+      if (!gate.allowed) return 'gate_closed';
+      return await say({
+        table: input.table,
+        handNumber: input.handNumber,
+        mem,
+        speaker: input.horse,
+        event: 'all_in',
+        facts: {},
+        usernames: input.seated.map((s) => s.username),
+        now,
+      });
+    } catch (err) {
+      reportError(err, 'HorseTableTalk.speakAsTheyShove', { tableId: input.table.tableId });
       return 'unwritable';
     }
   }

@@ -448,8 +448,12 @@ sw.addEventListener('fetch', (event) => {
 // This worker is standalone; normalize notification display without changing event identity.
 const arenaDisplayText = text => String(text ?? '').replace(/[$＄﹩\u{1F4B2}\u{1F4B0}\u{1F4B5}]/gu, '');
 
+// BALANCE_UPDATED is internal refresh plumbing and is NEVER shown (Dan,
+// 2026-10-21). A tab still running an older bundle may keep posting it until
+// it reloads, so the worker refuses it here as well as the page not sending it.
+const NEVER_NOTIFY = new Set(['BALANCE_UPDATED']);
+
 const EVENT_LABELS = {
-    BALANCE_UPDATED: 'Balance Updated',
     CLUB_JOINED: '♠️ Club Joined',
     CLUB_LEFT: '🚪 Left Club',
     TABLE_SEATED: '🎯 Seated at Table',
@@ -460,6 +464,7 @@ sw.addEventListener('message', (event) => {
     if (event.data?.type !== 'BUS_EVENT') return;
 
     const { type: eventType, payload } = event.data.event || {};
+    if (!eventType || NEVER_NOTIFY.has(eventType)) return;
     const title = EVENT_LABELS[eventType] || `🚌 ${eventType}`;
 
     // Only show notification if page is not visible
@@ -469,9 +474,7 @@ sw.addEventListener('message', (event) => {
         if (anyFocused) return; // Don't notify if user is looking at the app
 
         let body = '';
-        if (eventType === 'BALANCE_UPDATED') {
-            body = `Source: ${payload?.source || 'unknown'}`;
-        } else if (eventType === 'CLUB_JOINED' || eventType === 'CLUB_LEFT') {
+        if (eventType === 'CLUB_JOINED' || eventType === 'CLUB_LEFT') {
             const rawName = payload?.clubName || payload?.clubId || '';
             body = rawName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
         } else if (eventType === 'TABLE_SEATED' || eventType === 'TABLE_LEFT') {

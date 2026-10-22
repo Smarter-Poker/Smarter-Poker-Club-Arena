@@ -1,0 +1,4 @@
+{
+  "_owner": "feat/agent-transfer-controls-20261021: ClubPrivateDataBoundary is the synchronous authorization boundary around private club routes. clubPrivateReadCaches is shared with the already eager ProfileAccountSync so a scope revocation clears private persisted reads before any mounted consumer reauthorizes. Both small modules must be available on the first authenticated route and on the first private account broadcast; no operator UI is imported. Measured integrated entry155KB gzip versus157KB baseline; initial route301KB/320KB budget.",
+  "modules": ["src/components/auth/ClubPrivateDataBoundary.tsx", "src/lib/clubPrivateReadCaches.ts"]
+}

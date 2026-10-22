@@ -1044,18 +1044,16 @@ export default function WalletCashierModal({
   /**
    * NEVER OFFER A RECIPIENT THE SERVER WILL REFUSE.
    *
-   * fn_agent_wallet_send and fn_promo_wallet_send both refuse
-   * `p_to_user_id = auth.uid()` outright ("You Cannot Send Chips To Yourself"),
-   * and fn_club_cashier_members returns the caller in its own list for a staff
-   * viewer (scope 'all'). So the roster rendered the viewer with a "(You)" tag,
-   * let them pick it, and the send failed on tap with no way to understand why.
+   * Owner October 21: agent-wallet to own player-wallet is allowed. Other
+   * agent-wallet destinations and the agent's promo float still refuse self.
+   * Eligibility follows both the selected source and destination.
    *
    * The CLUB BANK is deliberately exempt: fn_club_bank_send has no self guard
    * because an owner funding their OWN agent float out of the treasury is the
    * normal way an owner gets a float at all. Removing themselves from that list
    * would break the funding route the whole hierarchy hangs off.
    */
-  const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource);
+  const excludeSelf = cashierRefusesSelfSend(spendWallet, spendPromoSource, destination);
 
   // Wallet destinations list only members who can hold that wallet. Other
   // refusals (such as self-send) remain visible with their existing reason.
@@ -1217,6 +1215,7 @@ export default function WalletCashierModal({
     setSending(true);
     setSendError(null);
     setSendReceipt(null);
+    let closeAfterSuccess = false;
     try {
       const action =
         tab === 'claim'
@@ -1305,7 +1304,7 @@ export default function WalletCashierModal({
         throw new CashierRefusal(res?.error || 'The Cashier Refused That Movement');
       }
 
-      clearCashierWalletOperation(operation);
+      await clearCashierWalletOperation(operation);
       if (!isMounted.current || actionView.current !== owningView) return;
       const destLabel = destinationLabel(destination) || 'Wallet';
       toast?.success?.(
@@ -1339,6 +1338,10 @@ export default function WalletCashierModal({
       setHolderNonce((n) => n + 1);
       setUnconfirmed(null);
       refresh();
+      /* Dan, 2026-10-22: a confirmed send or claim toasts and closes the
+         cashier. The operator never has to X off a finished movement. Refusals
+         and unknown outcomes keep the cashier open with their reason. */
+      closeAfterSuccess = true;
     } catch (e) {
       if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.send');
@@ -1358,6 +1361,7 @@ export default function WalletCashierModal({
       busyRef.current = false;
       if (isMounted.current) setSending(false);
     }
+    if (closeAfterSuccess && isMounted.current) onClose();
   };
 
   const onSendPressed = () => {
@@ -1387,6 +1391,7 @@ export default function WalletCashierModal({
     const owningView = actionView.current;
     busyRef.current = true;
     setClaimingId(row.transaction_id);
+    let closeAfterSuccess = false;
     try {
       const operation = await reserveCashierWalletOperation(
         user?.id || '',
@@ -1419,7 +1424,7 @@ export default function WalletCashierModal({
       } | null;
       if (!res?.success)
         throw new CashierRefusal(res?.error || 'Those Chips Could Not Be Claimed Back');
-      clearCashierWalletOperation(operation);
+      await clearCashierWalletOperation(operation);
       if (!isMounted.current || actionView.current !== owningView) return;
       toast?.success?.(
         res.replayed
@@ -1438,6 +1443,8 @@ export default function WalletCashierModal({
       claimOpIdsRef.current.delete(row.transaction_id);
       setUnconfirmed(null);
       refresh();
+      // A confirmed claim back toasts and closes the cashier (Dan, 2026-10-22).
+      closeAfterSuccess = true;
     } catch (e) {
       if (!isMounted.current || actionView.current !== owningView) return;
       reportError(e, 'WalletCashierModal.claimBack');
@@ -1450,6 +1457,7 @@ export default function WalletCashierModal({
       busyRef.current = false;
       if (isMounted.current) setClaimingId(null);
     }
+    if (closeAfterSuccess && isMounted.current) onClose();
   };
 
   const reverse = async (row: LedgerRow) => {
@@ -1479,7 +1487,7 @@ export default function WalletCashierModal({
         error?: string;
       } | null;
       if (!res?.success) throw new CashierRefusal(res?.error || 'That Send Could Not Be Reversed');
-      clearCashierWalletOperation(operation);
+      await clearCashierWalletOperation(operation);
       if (!isMounted.current || actionView.current !== owningView) return;
       toast?.success?.(`Reversed ${fmtWhole(row.amount)} Chips Back Into The Club Bank`);
       masterBus.emit('BALANCE_UPDATED', { source: 'club_bank_reverse', userId: user?.id || '' });

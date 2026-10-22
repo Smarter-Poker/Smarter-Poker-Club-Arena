@@ -183,3 +183,6 @@ if __name__=='__main__':
     # authority and runner, so it runs wherever this qualification runs.
     import subprocess, sys
     subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/ci/test-heavy-thaw-releases-on-the-hour.py')], check=True)
+
+    # Daily maintenance observation shares this required maintenance-native lane.
+    subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/ci/test-daily-maintenance-observation.py')], check=True)

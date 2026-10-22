@@ -4,7 +4,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * accelerated_mtt=true halves blind level durations once late registration has
- * closed: ceil(minutes / 2), never below one minute. The rule itself is the
+ * closed: ceil(minutes / 2), never below five minutes. The rule itself is the
  * pure helper; the conditional application inside
  * TournamentManagerBase.levelDurationMs (accelerated_mtt AND late reg closed)
  * is pinned as source text so a rewrite cannot silently drop it.
@@ -18,22 +18,22 @@ import { sliceMethod } from '../helpers/sourceWindow';
 
 const MIN = 60_000;
 
-describe('acceleratedLevelMs — ceil(minutes / 2), floored at one minute', () => {
+describe('acceleratedLevelMs — ceil(minutes / 2), floored at five minutes', () => {
   it('halves even-minute levels exactly', () => {
     expect(acceleratedLevelMs(10 * MIN)).toBe(5 * MIN);
-    expect(acceleratedLevelMs(8 * MIN)).toBe(4 * MIN);
-    expect(acceleratedLevelMs(2 * MIN)).toBe(1 * MIN);
+    expect(acceleratedLevelMs(8 * MIN)).toBe(5 * MIN);
+    expect(acceleratedLevelMs(2 * MIN)).toBe(5 * MIN);
   });
 
   it('rounds odd-minute levels UP', () => {
-    expect(acceleratedLevelMs(5 * MIN)).toBe(3 * MIN);
-    expect(acceleratedLevelMs(3 * MIN)).toBe(2 * MIN);
+    expect(acceleratedLevelMs(5 * MIN)).toBe(5 * MIN);
+    expect(acceleratedLevelMs(3 * MIN)).toBe(5 * MIN);
   });
 
-  it('never collapses a level below one minute', () => {
-    expect(acceleratedLevelMs(1 * MIN)).toBe(1 * MIN);
-    expect(acceleratedLevelMs(90_000)).toBe(1 * MIN); // 1.5 min -> 1 min
-    expect(acceleratedLevelMs(30_000)).toBe(1 * MIN);
+  it('never collapses a level below five minutes', () => {
+    expect(acceleratedLevelMs(1 * MIN)).toBe(5 * MIN);
+    expect(acceleratedLevelMs(90_000)).toBe(5 * MIN); // 1.5 min -> 1 min
+    expect(acceleratedLevelMs(30_000)).toBe(5 * MIN);
   });
 
   it('garbage in, zero out', () => {

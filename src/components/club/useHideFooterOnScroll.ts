@@ -144,11 +144,55 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
     const travel = new Map<ScrollSource, Travel>();
     let frame = 0;
     let pending: ScrollSource = null;
+    let pendingInput = 0;
+    const input = new Map<ScrollSource, number>();
+    let inputFrame = 0;
+    let touchY: number | null = null;
+
+    const sourceOf = (target: ScrollSource): ScrollSource =>
+      isDocumentScroller(target) ? document : target;
+    const inputSourceOf = (target: EventTarget | null, direction: number): ScrollSource => {
+      let element = target instanceof Element ? target : null;
+      while (element && !isDocumentScroller(element)) {
+        const limit = scrollLimitOf(element);
+        const canTravel = direction < 0 ? element.scrollTop > 0 : element.scrollTop < limit - 1;
+        if (/^(auto|scroll)$/.test(getComputedStyle(element).overflowY) && limit > 0 && canTravel)
+          return element;
+        element = element.parentElement;
+      }
+      return document;
+    };
+    const recordInput = (target: EventTarget | null, delta: number) => {
+      if (!delta) return;
+      input.set(inputSourceOf(target, Math.sign(delta)), Math.sign(delta));
+      // Input is evidence only for scroll events from this browser frame.
+      // Capture it in onScroll before clearing, so rAF callback order cannot
+      // erase an actual scroll already waiting to settle.
+      if (!inputFrame)
+        inputFrame = window.requestAnimationFrame(() => {
+          inputFrame = 0;
+          input.clear();
+        });
+    };
+    const onWheel = (event: WheelEvent) => recordInput(event.target, event.deltaY);
+    const onTouchStart = (event: TouchEvent) => {
+      touchY = event.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      const next = event.touches[0]?.clientY ?? null;
+      if (next !== null && touchY !== null) recordInput(event.target, touchY - next);
+      touchY = next;
+    };
+    const onTouchEnd = () => {
+      touchY = null;
+    };
 
     const settle = () => {
       frame = 0;
       const source = pending;
       pending = null;
+      const inputDirection = pendingInput;
+      pendingInput = 0;
 
       const y = scrollTopOf(source);
       const limit = scrollLimitOf(source);
@@ -168,7 +212,12 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
       }
 
       // The first real flick is travel too, not merely an anchor at its end.
-      const state = travel.get(source) ?? { last: 0, anchor: 0, direction: 0, height: 0 };
+      const state = travel.get(source) ?? {
+        last: 0,
+        anchor: 0,
+        direction: 0,
+        height: 0,
+      };
       travel.set(source, state);
 
       /* THE PAGE MOVING IS NOT THE READER MOVING (2026-10-19). When content
@@ -190,7 +239,16 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
       const moved = y - state.last;
       const grew = height - previous;
       state.height = height;
-      if (previous > 0 && grew !== 0 && moved !== 0 && Math.abs(moved - grew) <= 1) {
+      // Matching geometry can also be real travel while a card below the
+      // reader changes size. Same-frame wheel/touch input in the observed
+      // direction distinguishes that travel from the page keeping its place.
+      if (
+        previous > 0 &&
+        grew !== 0 &&
+        moved !== 0 &&
+        Math.abs(moved - grew) <= 1 &&
+        Math.sign(moved) !== inputDirection
+      ) {
         state.last = y;
         state.anchor = y;
         state.direction = 0;
@@ -234,14 +292,40 @@ export function useHideFooterOnScroll(resetKey: string): HideOnScroll {
     };
 
     const onScroll = (event: Event) => {
-      pending = event.target;
+      const source = sourceOf(event.target);
+      if (source !== pending) pendingInput = 0;
+      pending = source;
+      pendingInput = input.get(source) ?? pendingInput;
       if (frame) return;
       frame = window.requestAnimationFrame(settle);
     };
 
-    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    document.addEventListener('wheel', onWheel, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener('touchstart', onTouchStart, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener('touchmove', onTouchMove, {
+      capture: true,
+      passive: true,
+    });
+    document.addEventListener('touchend', onTouchEnd, true);
+    document.addEventListener('touchcancel', onTouchEnd, true);
+    document.addEventListener('scroll', onScroll, {
+      capture: true,
+      passive: true,
+    });
     return () => {
       if (frame) window.cancelAnimationFrame(frame);
+      if (inputFrame) window.cancelAnimationFrame(inputFrame);
+      document.removeEventListener('wheel', onWheel, true);
+      document.removeEventListener('touchstart', onTouchStart, true);
+      document.removeEventListener('touchmove', onTouchMove, true);
+      document.removeEventListener('touchend', onTouchEnd, true);
+      document.removeEventListener('touchcancel', onTouchEnd, true);
       document.removeEventListener('scroll', onScroll, { capture: true });
       travel.clear();
     };

@@ -41,8 +41,8 @@
 
 import { test, expect } from '@playwright/test';
 import { chromium } from 'playwright';
-import { resolve } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 import {
   buildCss,
   buildHtml,
@@ -52,6 +52,13 @@ import {
   measureAll,
   applyInsets,
 } from './support/feltHarness.mjs';
+
+// Approved table artwork used by the occupied-ring renders, bundled so these
+// layout checks never depend on production being reachable or unchanged.
+// Sources: smarter.poker/avatars/table/vip_wolf@2x.webp and the Supabase
+// assets/buttons/black/icon-*.webp objects, copied byte for byte 2026-10-21.
+const tableArtFixture = (name: string) =>
+  resolve(process.cwd(), 'tests/e2e/fixtures/table-art', name);
 
 /* process.cwd(), not __dirname: importing the .mjs harness puts this file in ES
    module scope, where __dirname does not exist. hero-card-row.spec.ts resolves
@@ -362,7 +369,7 @@ test.describe('every device gets the same proportions', () => {
     expect(offenders, 'two different-sized tables drew the same card — that is a rung').toEqual([]);
   });
 
-  test('the felt is edge-to-edge on portrait phones (Dan 2026-08-26, restored 2026-08-29)', async ({
+  test('portrait phones reserve 18 percent for outboard players (owner correction October 21)', async ({
     page,
   }) => {
     /* SHIPPED BUG, twice. #950 removed the 4px side gutters "per Dan --
@@ -401,7 +408,7 @@ test.describe('every device gets the same proportions', () => {
     for (const r of rows) {
       if (!WIDTH_BOUND_PHONES.includes(r.device)) continue;
       const vpW = Number(r.vp.split('x')[0]);
-      if (Math.abs(r.feltW - vpW) > 0.5) {
+      if (Math.abs(r.feltW - vpW * 0.82) > 0.5) {
         offenders.push(
           `${r.device} (${r.vp}): felt is ${r.feltW}px on a ${vpW}px screen -- ` +
             `${(vpW - r.feltW).toFixed(1)}px of gutter came back`
@@ -410,7 +417,7 @@ test.describe('every device gets the same proportions', () => {
     }
     expect(
       offenders,
-      'a width-bound phone is no longer edge-to-edge. The likely cause is a padding ' +
+      'a phone no longer has its approved 82 percent rail width. Check the padding ' +
         'longhand on .table-container reappearing (or being deleted -- deletion ' +
         'resurrects the base 12px, which is how this shipped the first time).'
     ).toEqual([]);
@@ -546,14 +553,17 @@ test.describe('a short ring sits lower and gives up no width (Dan 2026-09-23, it
     const c = document.querySelector('.table-container') as HTMLElement;
     const r = s.getBoundingClientRect();
     const cr = c.getBoundingClientRect();
-    return { w: r.width, top: r.top - cr.top, bottomGap: cr.bottom - r.bottom };
+    return { w: r.width, h: r.height, top: r.top - cr.top, bottomGap: cr.bottom - r.bottom };
   };
 
-  test('6-max starts 18px lower than 9-max, ends inside the container, and is as wide', async ({
+  test('6-max is twelve percent shorter and centered on phones, retains desktop drop, and is as wide', async ({
     page,
   }) => {
     const offenders: string[] = [];
-    for (const [device, width, height, insetTop = 0, insetBottom = 0] of DEVICES) {
+    for (const [device, width, height, insetTop = 0, insetBottom = 0] of [
+      ...DEVICES,
+      ['iPhone 393', 393, 852, 0, 0] as const,
+    ]) {
       await page.setViewportSize({ width, height });
       const html = buildHtml(
         insetTop || insetBottom ? applyInsets(css, insetTop, insetBottom) : css
@@ -563,9 +573,13 @@ test.describe('a short ring sits lower and gives up no width (Dan 2026-09-23, it
       await page.setContent(seatHtml(html, 6));
       const short = await page.evaluate(probeBox);
       const label = `${device} (${width}x${height})`;
-      if (Math.abs(short.top - full.top - SHORT_DROP_PX) > 0.5) {
+      const phonePortrait = width <= 480 && height > width;
+      const expectedDrop = phonePortrait ? full.h * 0.06 : SHORT_DROP_PX;
+      if (phonePortrait && Math.abs(short.h - full.h * 0.88) > 0.5)
+        offenders.push(`${label}: six-max height ${short.h} must be 88% of nine-max ${full.h}`);
+      if (Math.abs(short.top - full.top - expectedDrop) > 0.5) {
         offenders.push(
-          `${label}: 6-max starts ${(short.top - full.top).toFixed(1)}px below 9-max, not ${SHORT_DROP_PX}px`
+          `${label}: 6-max starts ${(short.top - full.top).toFixed(1)}px below 9-max, not ${expectedDrop}px`
         );
       }
       if (short.bottomGap < -0.5) {
@@ -747,7 +761,7 @@ test('the compact profit tracker shares the hand-pill centre beside the rightmos
 
 // Both rings must keep the rail wide even when the phone's height binds.
 // Seating/action state must never change either dimension of that canvas.
-test('portrait phone rings fill the width and keep their height through gameplay states', async ({
+test('portrait phone rings reserve outboard lanes and keep their height through gameplay states', async ({
   page,
 }) => {
   for (const [width, height] of [
@@ -764,7 +778,7 @@ test('portrait phone rings fill the width and keep their height through gameplay
         .locator('.table-page')
         .evaluate((el, count) => el.setAttribute('data-seats', String(count)), seats);
       const initial = await page.locator('.table-scaler').boundingBox();
-      expect(initial!.width, `${seats}-max at ${width}x${height}`).toBeCloseTo(width, 0);
+      expect(initial!.width, `${seats}-max at ${width}x${height}`).toBeCloseTo(width * 0.82, 0);
       expect(
         await page
           .locator('.table-page')
@@ -806,7 +820,591 @@ test('Safari toolbar space is reclaimed by portrait gameplay without narrowing t
         .evaluate((el, seats) => el.setAttribute('data-seats', String(seats)), count);
       boxes.push(await page.locator('.table-scaler').boundingBox());
     }
-    expect(boxes[1]!.width).toBeCloseTo(390, 0);
+    expect(boxes[1]!.width).toBeCloseTo(390 * 0.82, 0);
     expect(boxes[1]!.height).toBeCloseTo(boxes[0]!.height, 1);
   }
 });
+
+// Real occupied components, not placeholder rectangles: this guards the
+// overlap missed by the old containment-only regression.
+for (const width of [320, 375, 393, 430, 480])
+  test(`occupied portrait rings keep the board clear, bets on the rail and tools Lobby-sized at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(60_000);
+    const { buildSync } = await import('esbuild');
+    const bundled = buildSync({
+      entryPoints: ['tests/e2e/support/portraitRailFixture.tsx'],
+      jsx: 'automatic',
+      outfile: 'rail-fixture.js',
+      bundle: true,
+      write: false,
+      metafile: true,
+      format: 'iife',
+      platform: 'browser',
+      loader: {
+        '.css': 'empty',
+        '.png': 'dataurl',
+        '.webp': 'dataurl',
+        '.svg': 'dataurl',
+        '.jpg': 'dataurl',
+      },
+      define: {
+        'import.meta.env': JSON.stringify({
+          VITE_SUPABASE_URL: 'https://kuklfnapbkmacvwxktbh.supabase.co',
+          VITE_SUPABASE_ANON_KEY: 'local-fixture',
+          VITE_MEDIA_BASE: 'https://smarter.poker/hub/club-arena/',
+          DEV: true,
+        }),
+        'process.env.NODE_ENV': '"test"',
+      },
+    });
+    const bundle = bundled.outputFiles.find((file) => file.path.endsWith('.js'))!.text;
+    await page.route('**/cards/**', async (route) => {
+      const path = new URL(route.request().url()).pathname.split('/cards/')[1];
+      const source = resolve(process.cwd(), 'public/cards', path.replace(/\.webp$/, '.png'));
+      const original = resolve(process.cwd(), 'public/cards', path);
+      const file = existsSync(original) ? original : source;
+      expect(file.startsWith(resolve(process.cwd(), 'public/cards') + '/')).toBe(true);
+      expect(existsSync(file), `Local Card Artwork: ${path}`).toBe(true);
+      await route.fulfill({
+        body: readFileSync(file),
+        contentType: file.endsWith('.png') ? 'image/png' : 'image/webp',
+      });
+    });
+    await page.route('**/rest/v1/rpc/fn_cash_vpip_status', (route) =>
+      route.fulfill({
+        json: { ok: true, seated: true, required: 50, vpip: 38, hands: 12, window: 10 },
+      })
+    );
+
+    const avatarBytes = readFileSync(tableArtFixture('vip_wolf@2x.webp'));
+    await page.route('**/avatars/table/**', (route) =>
+      route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
+    );
+    const sheets = [
+      ...new Set([
+        'src/styles/club-engine.css',
+        'src/styles/animations.css',
+        'src/styles/metallic-popups.css',
+        'src/styles/reducedMotion.css',
+        'src/pages/MultiTablePage.css',
+        'src/components/table/TableTabBar.css',
+        'src/pages/TablePage.css',
+        'src/components/table/ActionPanel.css',
+        ...Object.keys(bundled.metafile!.inputs).filter((f) => f.endsWith('.css')),
+        'src/components/table/TableChat.css',
+        'src/components/table/TableVisualHotfix.css',
+      ]),
+    ];
+    const toolAlpha: Record<string, { left: number; top: number; right: number; bottom: number }> =
+      {};
+    for (const icon of ['chat', 'timebank', 'rabbit']) {
+      const bytes = readFileSync(tableArtFixture(`icon-${icon}.webp`));
+      toolAlpha[icon] = await page.evaluate(async (base64) => {
+        const image = new Image();
+        image.src = `data:image/webp;base64,${base64}`;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(image, 0, 0);
+        const pixels = ctx.getImageData(0, 0, image.width, image.height).data;
+        let left = image.width,
+          top = image.height,
+          right = 0,
+          bottom = 0;
+        for (let y = 0; y < image.height; y++)
+          for (let x = 0; x < image.width; x++)
+            if (pixels[(y * image.width + x) * 4 + 3] > 128) {
+              left = Math.min(left, x);
+              top = Math.min(top, y);
+              right = Math.max(right, x + 1);
+              bottom = Math.max(bottom, y + 1);
+            }
+        return {
+          left: left / image.width,
+          top: top / image.height,
+          right: right / image.width,
+          bottom: bottom / image.height,
+        };
+      }, bytes.toString('base64'));
+      await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
+        route.fulfill({ body: bytes, contentType: 'image/webp' })
+      );
+    }
+    const fontSheet = await page.request.get('https://ca-static.smarter.poker/fonts/fonts.css');
+    expect(fontSheet.ok()).toBe(true);
+    const inter = [...(await fontSheet.text()).matchAll(/@font-face\s*\{[^}]+\}/g)]
+      .map((m) => m[0])
+      .find((face) => face.includes("font-family: 'Inter'") && face.includes('U+0000-00FF'))!;
+    expect(inter).toBeTruthy();
+    const fontPath = /url\(([^)]+)\)/.exec(inter)![1];
+    const fontResponse = await page.request.get(
+      new URL(fontPath.replace('/hub/club-arena/', '/'), 'https://ca-static.smarter.poker').href
+    );
+    expect(fontResponse.ok()).toBe(true);
+    const fontFace = inter
+      .replace(/font-weight:\s*\d+;/, 'font-weight: 100 900;')
+      .replace(
+        fontPath,
+        `data:font/woff2;base64,${(await fontResponse.body()).toString('base64')}`
+      );
+    const readStyle = (file: string): string =>
+      readFileSync(resolve(process.cwd(), file), 'utf8').replace(
+        /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
+        (_, imported: string) => readStyle(resolve(dirname(file), imported))
+      );
+    const realCss =
+      fontFace +
+      '\n' +
+      sheets.map(readStyle).join('\n') +
+      '\n' +
+      (bundled.outputFiles.find((file) => file.path.endsWith('.css'))?.text || '');
+    for (const count of [6, 9])
+      for (const [revealed, jackpot] of [
+        [false, 'mini'],
+        [true, 'mini'],
+        [false, 'main'],
+        [true, 'main'],
+        [false, 'none'],
+        [true, 'none'],
+      ] as const) {
+        await page.setViewportSize({
+          width,
+          height: width === 320 ? 568 : width === 375 ? 667 : 852,
+        });
+        await page.route('http://rail.fixture/', (route) =>
+          route.fulfill({
+            contentType: 'text/html',
+            body: `<html data-seats="${count}" data-revealed="${revealed}" data-jackpot="${jackpot}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${realCss}</style></head><body><div id="root"></div></body></html>`,
+          })
+        );
+        await page.goto('http://rail.fixture/', { waitUntil: 'domcontentloaded' });
+        const runtimeErrors: string[] = [];
+        page.on('pageerror', (error) => runtimeErrors.push(error.message));
+        await page.addScriptTag({ content: bundle });
+        expect(runtimeErrors).toEqual([]);
+        await page.waitForFunction(
+          () =>
+            document.querySelectorAll('.seat__info').length ===
+            Number(document.documentElement.dataset.seats)
+        );
+        await page.waitForFunction(() => {
+          const canvas = document.querySelector<HTMLElement>('.table-scaler')!;
+          return (
+            Math.abs(
+              parseFloat(canvas.style.getPropertyValue('--table-w')) -
+                canvas.getBoundingClientRect().width
+            ) < 0.5
+          );
+        });
+        await expect(page.locator('.seat__avatar-img')).toHaveCount(count);
+        await page.waitForFunction(() =>
+          [...document.querySelectorAll<HTMLImageElement>('.seat__avatar-img')].every(
+            (i) => i.complete && i.naturalWidth > 0
+          )
+        );
+        await page.evaluate(async () => {
+          const faces = await document.fonts.load('600 14px Inter');
+          if (!faces.length) throw new Error('Inter Face Missing');
+          await document.fonts.ready;
+        });
+        await expect(page.locator('.card-image__fallback')).toHaveCount(0);
+        await page.waitForFunction(() =>
+          [...document.querySelectorAll<HTMLImageElement>('.card-image__img')].every(
+            (i) => i.complete && i.naturalWidth > 0
+          )
+        );
+        await page.waitForFunction(
+          () =>
+            !document.querySelector(
+              '.community-area [data-rs-animating="true"],.community-cards__card--flop-deal'
+            )
+        );
+        await page.evaluate(async () => {
+          await Promise.all(
+            document
+              .getAnimations()
+              .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
+              .map((a) => a.finished.catch(() => {}))
+          );
+        });
+        const result = await page.evaluate(() => {
+          const box = (e: Element) => e.getBoundingClientRect();
+          const overlaps = (a: DOMRect, b: DOMRect) =>
+            a.left < b.right - 0.5 &&
+            a.right > b.left + 0.5 &&
+            a.top < b.bottom - 0.5 &&
+            a.bottom > b.top + 0.5;
+          const board = box(document.querySelector('.community-area')!);
+          const violations: string[] = [];
+          for (const e of document.querySelectorAll(
+            '.seat__info,.seat__avatar-img,.seat__action,.seat__bet-chips,.seat__cards--opponent .seat__card,.dealer-button'
+          )) {
+            if (overlaps(box(e), board)) violations.push(`${e.className} Covers Board`);
+          }
+          for (const bet of document.querySelectorAll('.seat__bet-chips'))
+            for (const pod of document.querySelectorAll(
+              '.seat__info,.seat__avatar-img,.seat__action,.seat__cards--revealed .seat__card,.table-brand,.pot-display,.pot-display__pile,.dealer-button'
+            ))
+              if (overlaps(box(bet), box(pod)))
+                violations.push(
+                  `Bet ${bet.closest('.seat')?.querySelector('.seat__name')?.textContent} Covers Player ${pod.closest('.seat')?.querySelector('.seat__name')?.textContent} ${pod.className} bet=${JSON.stringify(box(bet))} player=${JSON.stringify(box(pod))}`
+                );
+          const wagers = [...document.querySelectorAll('.seat__bet-chips')];
+          for (const wager of wagers) {
+            const moved = getComputedStyle(wager);
+            const source = getComputedStyle(wager.parentElement!);
+            const number = (style: CSSStyleDeclaration, name: string) =>
+              parseFloat(style.getPropertyValue(name)) || 0;
+            for (const axis of ['x', 'y']) {
+              const restDelta =
+                number(moved, `--bet-offset-${axis}`) - number(source, `--bet-offset-${axis}`);
+              const collectDelta =
+                number(moved, `--collect-d${axis}`) - number(source, `--collect-d${axis}`);
+              if (Math.abs(restDelta + collectDelta) > 0.01)
+                violations.push(`Collection Origin Changed On ${axis}`);
+            }
+          }
+
+          for (let i = 0; i < wagers.length; i++)
+            for (let j = i + 1; j < wagers.length; j++)
+              if (overlaps(box(wagers[i]), box(wagers[j])))
+                violations.push(
+                  `Bets Overlap: ${wagers[i].closest('.seat')?.querySelector('.seat__name')?.textContent} / ${wagers[j].closest('.seat')?.querySelector('.seat__name')?.textContent}`
+                );
+          for (const action of document.querySelectorAll('.seat__action'))
+            for (const plaque of document.querySelectorAll('.bbj-widget,.bbj-mini-plate'))
+              if (overlaps(box(action), box(plaque)))
+                violations.push('Action Badge Covers Jackpot');
+          for (const e of document.querySelectorAll('.seat-wrapper--top .seat__avatar-img'))
+            if (box(e).height > 40.5) violations.push('Top Avatar Is Not Compact');
+          for (const e of document.querySelectorAll('.seat-wrapper--top .seat__info'))
+            if (box(e).width > 64.5) violations.push('Top Plate Is Not Compact');
+          const canvas = box(document.querySelector('.table-scaler')!);
+          const felt = box(document.querySelector('.table-surface')!);
+          // The browser's inverse homography maps a DOM rectangle to a
+          // quadrilateral on the original painted stadium. Distance to its spine
+          // tests the actual felt, including curved caps, rather than its bounding box.
+          const inverse = new DOMMatrixReadOnly(
+            getComputedStyle(document.querySelector('.table-art')!).transform
+          ).inverse();
+          const unpaint = (x: number, y: number) => {
+            const p = new DOMPoint(x - canvas.left, y - canvas.top).matrixTransform(inverse);
+            return { x: p.x / p.w, y: p.y / p.w };
+          };
+          type Point = { x: number; y: number };
+          const radius = felt.width / 2;
+          const spineA = { x: felt.left - canvas.left + radius, y: felt.top - canvas.top + radius };
+          const spineB = { x: spineA.x, y: felt.bottom - canvas.top - radius };
+          const distance = (p: Point, a: Point, b: Point) => {
+            const dx = b.x - a.x,
+              dy = b.y - a.y;
+            const t = Math.max(
+              0,
+              Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy))
+            );
+            return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+          };
+          const cross = (a: Point, b: Point, c: Point) =>
+            (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+          for (const e of document.querySelectorAll(
+            '.seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top) .seat__info,.seat-wrapper:not(.seat-wrapper--hero):not(.seat-wrapper--top) .seat__avatar-img'
+          )) {
+            const r = box(e);
+            const corners = [
+              unpaint(r.left, r.top),
+              unpaint(r.right, r.top),
+              unpaint(r.right, r.bottom),
+              unpaint(r.left, r.bottom),
+            ];
+            const touches = corners.some((a, i) => {
+              const b = corners[(i + 1) % 4];
+              const crosses =
+                cross(a, b, spineA) * cross(a, b, spineB) <= 0 &&
+                cross(spineA, spineB, a) * cross(spineA, spineB, b) <= 0;
+              return (
+                crosses ||
+                Math.min(
+                  distance(a, spineA, spineB),
+                  distance(spineA, a, b),
+                  distance(spineB, a, b)
+                ) <
+                  radius - 0.5
+              );
+            });
+            if (touches) violations.push(`Player On Painted Felt: ${e.className}`);
+          }
+          const contextualTools = ['.tbc-widget', '.rabbit-hunt__button'].filter((selector) =>
+            document.querySelector(selector)
+          );
+          if (contextualTools.length !== 1) violations.push('Expected One Contextual Bottom Tool');
+          const tools = [
+            '.mtp-lobby-btn',
+            '.chat-collapsed',
+            '.prev-hand-card',
+            ...contextualTools,
+          ].map((s) => ({
+            selector: s,
+            width: box(document.querySelector(s)!).width,
+            height: box(document.querySelector(s)!).height,
+          }));
+          return { violations, tools, canvas: { width: canvas.width, height: canvas.height } };
+        });
+        expect(
+          result.violations,
+          `${width}px ${count}-max ${jackpot} ${revealed ? 'revealed' : 'playing'} canvas=${JSON.stringify(result.canvas)}}`
+        ).toEqual([]);
+        for (const tool of result.tools) {
+          expect(tool.width, tool.selector).toBeCloseTo(result.tools[0].width, 1);
+          expect(tool.height, tool.selector).toBeCloseTo(result.tools[0].height, 1);
+        }
+        for (const [selector, icon] of [
+          ['.chat-collapsed', 'chat'],
+          ['.tbc-widget', 'timebank'],
+          ['.rabbit-hunt__button', 'rabbit'],
+        ]) {
+          if (!(await page.locator(selector).count())) continue;
+          const painted = await page.locator(`${selector} img`).evaluate((image, alpha) => {
+            const r = image.getBoundingClientRect();
+            return {
+              width: r.width * (alpha.right - alpha.left),
+              height: r.height * (alpha.bottom - alpha.top),
+            };
+          }, toolAlpha[icon]);
+          expect(Math.max(painted.width, painted.height), `${icon} painted frame`).toBeCloseTo(
+            result.tools[0].width,
+            0
+          );
+        }
+        if (width === 393) {
+          const name = `occupied-${count}-max-${jackpot}-${revealed ? 'revealed' : 'playing'}`;
+          const path = testInfo.outputPath(`${name}.png`);
+          await page.screenshot({ path });
+          await testInfo.attach(name, { path, contentType: 'image/png' });
+          await testInfo.attach(`${name}-geometry`, {
+            body: JSON.stringify(result),
+            contentType: 'application/json',
+          });
+        }
+        await page.unroute('http://rail.fixture/');
+      }
+  });
+
+// The full page has a ticker/tab strip above the embedded gameplay slot.
+// Include them and the real action components so a viewport-only fixture
+// cannot certify a row that covers the hero in production.
+for (const [width, height] of [
+  [375, 667],
+  [393, 852],
+  [430, 932],
+])
+  for (const bottomInset of [0, 34])
+    for (const ticker of [0, 32])
+      test(`mobile preselection and decision rows remain below the hero in the embedded shell at ${width}px inset ${bottomInset}px ticker ${ticker}px`, async ({
+        page,
+      }, testInfo) => {
+        test.setTimeout(60_000);
+
+        const { buildSync } = await import('esbuild');
+        const bundled = buildSync({
+          entryPoints: ['tests/e2e/support/actionRowsFixture.tsx'],
+          bundle: true,
+          write: false,
+          jsx: 'automatic',
+          metafile: true,
+          format: 'iife',
+          platform: 'browser',
+          outfile: 'actions-fixture.js',
+          loader: {
+            '.css': 'empty',
+            '.png': 'dataurl',
+            '.webp': 'dataurl',
+            '.svg': 'dataurl',
+            '.jpg': 'dataurl',
+          },
+          define: {
+            'import.meta.env': JSON.stringify({
+              VITE_SUPABASE_URL: 'https://dummy.supabase.co',
+              VITE_SUPABASE_ANON_KEY: 'fixture',
+              DEV: true,
+            }),
+            'process.env.NODE_ENV': '"test"',
+          },
+        });
+        await page.route('**/cards/**', async (route) => {
+          const path = new URL(route.request().url()).pathname.split('/cards/')[1];
+          const source = resolve(process.cwd(), 'public/cards', path.replace(/\.webp$/, '.png'));
+          const original = resolve(process.cwd(), 'public/cards', path);
+          const file = existsSync(original) ? original : source;
+          expect(file.startsWith(resolve(process.cwd(), 'public/cards') + '/')).toBe(true);
+          expect(existsSync(file), `Local Card Artwork: ${path}`).toBe(true);
+          await route.fulfill({
+            body: readFileSync(file),
+            contentType: file.endsWith('.png') ? 'image/png' : 'image/webp',
+          });
+        });
+        await page.route('**/rest/v1/rpc/fn_cash_vpip_status', (route) =>
+          route.fulfill({
+            json: { ok: true, seated: true, required: 50, vpip: 38, hands: 12, window: 10 },
+          })
+        );
+        const avatarBytes = readFileSync(tableArtFixture('vip_wolf@2x.webp'));
+        await page.route('**/avatars/table/**', (route) =>
+          route.fulfill({ body: avatarBytes, contentType: 'image/webp' })
+        );
+        for (const icon of ['chat', 'timebank', 'rabbit', 'prevhand']) {
+          const bytes = readFileSync(tableArtFixture(`icon-${icon}.webp`));
+          await page.route(`**/buttons/black/icon-${icon}.webp`, (route) =>
+            route.fulfill({ body: bytes, contentType: 'image/webp' })
+          );
+        }
+        const sheets = [
+          ...new Set([
+            'src/styles/club-engine.css',
+            'src/styles/animations.css',
+            'src/styles/metallic-popups.css',
+            'src/styles/reducedMotion.css',
+            'src/pages/MultiTablePage.css',
+            'src/components/table/TableTabBar.css',
+            'src/pages/TablePage.css',
+            'src/components/table/TableChat.css',
+            ...Object.keys(bundled.metafile!.inputs).filter((file) => file.endsWith('.css')),
+            'src/components/table/TableVisualHotfix.css',
+          ]),
+        ];
+        const readStyle = (file: string): string =>
+          readFileSync(resolve(process.cwd(), file), 'utf8').replace(
+            /^\s*@import\s+(?:url\()?['"]([^'"]+)['"]\)?\s*;/gm,
+            (_, imported: string) => readStyle(resolve(dirname(file), imported))
+          );
+        const css =
+          sheets.map(readStyle).join('\n') +
+          '\n' +
+          (bundled.outputFiles.find((file) => file.path.endsWith('.css'))?.text || '');
+        for (const swipe of [false, true]) {
+          await page.setViewportSize({ width, height });
+          const withInsets = css.replace(
+            /env\(safe-area-inset-bottom(?:,\s*[^)]+)?\)/g,
+            `${bottomInset}px`
+          );
+          let stableHeight: number | undefined;
+          for (const state of ['preflop', 'flop', 'facing-bet', 'active']) {
+            await page.route('http://actions.fixture/', (route) =>
+              route.fulfill({
+                contentType: 'text/html',
+                body: `<html data-seats="6" data-revealed="false" data-action="${state}" data-cards="4" data-swipe="${swipe}"><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${withInsets}\n:root{--mtt-ticker-h:${ticker}px;--sp-tabbar-inset:0px}</style></head><body><div id="root"></div></body></html>`,
+              })
+            );
+            await page.goto('http://actions.fixture/', { waitUntil: 'domcontentloaded' });
+            await page.addScriptTag({
+              content: bundled.outputFiles.find((file) => file.path.endsWith('.js'))!.text,
+            });
+            await page.locator('.hero-vpip').waitFor({ timeout: 5000 });
+            await page.waitForFunction(() =>
+              [
+                ...document.querySelectorAll<HTMLImageElement>(
+                  '.card-image__img,.seat__avatar-img'
+                ),
+              ].every((image) => image.complete && image.naturalWidth > 0)
+            );
+            await expect(page.locator('.card-image__fallback')).toHaveCount(0);
+            await page.evaluate(async () => {
+              await document.fonts.ready;
+              await new Promise<void>((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+              );
+            });
+            await page.locator('.pre-action-bar, .action-panel').evaluate(async (row) => {
+              await Promise.all(
+                row
+                  .getAnimations()
+                  .filter(
+                    (animation) => animation.effect?.getComputedTiming().iterations !== Infinity
+                  )
+                  .map((animation) => animation.finished)
+              );
+            });
+            if (state === 'flop')
+              await page.getByRole('button', { name: 'Check', exact: true }).click();
+            const measured = await page.evaluate(() => {
+              const rect = (selector: string) =>
+                document.querySelector(selector)!.getBoundingClientRect();
+              const row = rect('.pre-action-bar, .action-panel');
+              const hero = rect('.seat-wrapper--hero .seat__info');
+              const heroCardBoxes = Array.from(
+                document.querySelectorAll('.seat__cards--hero .seat__card')
+              ).map((card) => card.getBoundingClientRect());
+              const cards = DOMRect.fromRect({
+                x: Math.min(...heroCardBoxes.map((card) => card.left)),
+                y: Math.min(...heroCardBoxes.map((card) => card.top)),
+                width:
+                  Math.max(...heroCardBoxes.map((card) => card.right)) -
+                  Math.min(...heroCardBoxes.map((card) => card.left)),
+                height:
+                  Math.max(...heroCardBoxes.map((card) => card.bottom)) -
+                  Math.min(...heroCardBoxes.map((card) => card.top)),
+              });
+              const scaler = rect('.table-scaler');
+              const vpip = rect('.hero-vpip');
+              const previous = rect('.prev-hand-card');
+              const identity = rect('.table-brand__line--identity');
+              const club = rect('.table-brand__club-name');
+              const union = rect('.table-brand__union');
+              const overlaps = (a: DOMRect, b: DOMRect) =>
+                a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+              return {
+                rowTop: row.top,
+                rowHeight: row.height,
+                rowBottom: row.bottom,
+                heroBottom: hero.bottom,
+                cardsBottom: cards.bottom,
+                scalerHeight: scaler.height,
+                vpipOverlaps:
+                  overlaps(vpip, previous) || overlaps(vpip, hero) || overlaps(vpip, cards),
+                identityFont: parseFloat(
+                  getComputedStyle(document.querySelector('.table-brand__line--identity')!).fontSize
+                ),
+                identityOneLine: Math.abs(club.top - union.top) <= 1,
+              };
+            });
+            expect(measured.vpipOverlaps, 'VPIP clears the previous hand and hero').toBe(false);
+            expect(measured.identityFont).toBeLessThanOrEqual(7);
+            expect(measured.identityOneLine).toBe(true);
+            stableHeight ??= measured.scalerHeight;
+            expect(
+              measured.scalerHeight,
+              'Felt Must Not Resize When The Action Row Changes'
+            ).toBeCloseTo(stableHeight, 1);
+            expect(
+              measured.rowTop,
+              `${width}px inset${bottomInset} ticker${ticker} ${state}: hero plate`
+            ).toBeGreaterThanOrEqual(measured.heroBottom + 1);
+            expect(
+              measured.rowTop,
+              `${width}px inset${bottomInset} ticker${ticker} ${state}: hero cards`
+            ).toBeGreaterThanOrEqual(measured.cardsBottom + 1);
+            expect(measured.rowHeight - bottomInset, `${state}: compact row`).toBeLessThanOrEqual(
+              50
+            );
+            expect(measured.rowBottom).toBeCloseTo(height, 0);
+            if (
+              width === 393 &&
+              bottomInset === 34 &&
+              ticker === 32 &&
+              state === 'flop' &&
+              !swipe
+            ) {
+              const path = testInfo.outputPath('mobile-actions-below-hero.png');
+              await page.screenshot({ path });
+              await testInfo.attach('Mobile Actions Below Hero', {
+                path,
+                contentType: 'image/png',
+              });
+            }
+            await page.unroute('http://actions.fixture/');
+          }
+        }
+      });

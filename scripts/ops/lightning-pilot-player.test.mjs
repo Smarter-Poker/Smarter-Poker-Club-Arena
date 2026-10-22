@@ -8,6 +8,8 @@ import {
   witnessPlayer,
   acceptPlayerTerms,
   CONSENT_PLAYERS,
+  WITNESS_PLAYERS,
+  THIRD_WITNESS_PLAYER,
   PLAYER_DEVICES,
   foldControlDiagnostics,
 } from './lightning-pilot-player.mjs';
@@ -304,7 +306,17 @@ function fakeBrowser(
       if (++waits > 200) throw new Error('Player Witness Deadline');
       if (frame) emit();
     },
-    locator: () => ({ getAttribute: async () => 'accepted' }),
+    locator: (selector) =>
+      selector.includes('data-tabid')
+        ? {
+            waitFor: async () => {},
+            count: async () => 1,
+            isVisible: async () => true,
+            tap: async () => {},
+            click: async () => {},
+            getAttribute: async () => (broken === 'wrong_pool' ? 'false' : 'true'),
+          }
+        : { getAttribute: async () => 'accepted' },
     on: (type, fn) => {
       assert.equal(type, 'websocket');
       openSocket = () =>
@@ -418,7 +430,7 @@ test('a horse/action race refuses honestly, stops further action and cleans its 
 
 test('Samantha consent requires exact authorized pin and matching browser identity', async () => {
   const samantha = { ...pin, playerId: 'a23ca5c9-b748-482f-9b59-9db35f7aa996' };
-  assert.deepEqual(CONSENT_PLAYERS, [pin.playerId, samantha.playerId]);
+  assert.deepEqual(CONSENT_PLAYERS.slice(0, 2), [pin.playerId, samantha.playerId]);
   assert.equal(Object.isFrozen(CONSENT_PLAYERS), true);
   const f = termsPage();
   const result = await acceptPlayerTerms(
@@ -785,3 +797,58 @@ for (const patch of [
     assert.deepEqual(f.calls, []);
   });
 }
+
+test('another restored pool never receives a player fold gesture', async () => {
+  const f = fixture(),
+    b = fakeBrowser(false, false, 'wrong_pool');
+  const r = await witnessPlayer({
+    admin: f.admin,
+    createClient: () => f.client,
+    chromium: b.chromium,
+    url: 'https://example.invalid',
+    pin,
+  });
+  assert.equal(r.status, 'unknown');
+  assert.equal(b.actionDevices.length, 0);
+});
+
+test('the third witness actor is an owner-authorized consent player with matching browser identity', async () => {
+  assert.equal(THIRD_WITNESS_PLAYER, '09dd202d-115b-49ae-afa8-cb528c7b8f72');
+  assert.deepEqual(CONSENT_PLAYERS, [
+    pin.playerId,
+    'a23ca5c9-b748-482f-9b59-9db35f7aa996',
+    THIRD_WITNESS_PLAYER,
+  ]);
+  assert.deepEqual(WITNESS_PLAYERS, CONSENT_PLAYERS);
+  assert.equal(Object.isFrozen(WITNESS_PLAYERS), true);
+  const third = { ...pin, playerId: THIRD_WITNESS_PLAYER };
+  const ok = await acceptPlayerTerms(
+    termsPage().page,
+    { user: { id: third.playerId } },
+    third,
+    'https://example.invalid',
+    true
+  );
+  assert.equal(ok.acceptedNow, true);
+  await assert.rejects(
+    acceptPlayerTerms(
+      termsPage().page,
+      { user: { id: pin.playerId } },
+      third,
+      'https://example.invalid',
+      true
+    ),
+    /Player Consent Authorization Mismatch/
+  );
+  const other = { ...pin, playerId: '032b7ef6-ef40-4eb7-9a44-21605be733c8' };
+  await assert.rejects(
+    acceptPlayerTerms(
+      termsPage().page,
+      { user: { id: other.playerId } },
+      other,
+      'https://example.invalid',
+      true
+    ),
+    /Player Consent Authorization Mismatch/
+  );
+});

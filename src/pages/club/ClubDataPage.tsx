@@ -26,11 +26,19 @@
  *
  * The client gate below is cosmetic. The RPCs raise 42501 on their own.
  *
- * Dates are UTC end to end, because the rollup the cash figures come from is
- * keyed on UTC days. The range chip says UTC rather than showing a bare date
- * that disagrees with the reader's own calendar late in their evening.
+ * Dates are America/Chicago calendar days end to end, daylight saving
+ * included (Dan, 2026-10-22), because the facts every figure comes from are
+ * keyed on Chicago days (20261022103651, 20261022120121). The range chip says
+ * Chicago Time rather than showing a bare date. MTT Winnings are finished MTTs
+ * only; a running MTT's entries are shown as Running MTT Entries.
  */
 
+import {
+  CLUB_DATA_TIME_ZONE,
+  CLUB_DATA_ZONE_LABEL,
+  chicagoClock,
+  chicagoDay,
+} from '../../lib/clubDataDay';
 import {
   useCallback,
   useEffect,
@@ -43,6 +51,7 @@ import {
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { sizedStorageUrl, generateAvatarSvg } from '../../utils/avatarGenerator';
+import { useClubGameHost } from '../../hooks/useClubGameHost';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
@@ -113,6 +122,7 @@ interface SnapshotRow {
   creator_name: string | null;
   creator_avatar: string | null;
   fee: number;
+  fee_exact?: number;
   winnings: number;
   hands: number;
   players: number;
@@ -122,6 +132,11 @@ interface SnapshotSummary {
   games: number;
   total_winnings: number;
   mtt_winnings: number;
+  /** Entries and payouts so far of MTTs that have not finished (20261022120121). */
+  running_mtt_entries?: number;
+  running_mtt_fee?: number;
+  tournament_winnings?: number;
+  tournament_fee?: number;
   cash_winnings: number;
   fee: number;
   cash_fee?: number;
@@ -387,15 +402,13 @@ function coldRead<T>(
 }
 
 /**
- * Every other timestamp on this page is UTC and the range chip is badged UTC.
- * This one was the browser's local zone with no marker, so "updated 19:42"
- * could look like it preceded a range ending "today". No isNaN guard either -
- * a malformed value rendered "Invalid Date".
+ * Every timestamp on this page is Chicago time and the range chip is badged
+ * Chicago Time. A bare local time with no marker made "updated 19:42" look
+ * like it preceded a range ending "today". A malformed value reads "Unknown".
  */
-function utcTime(iso: string): string {
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return 'Unknown';
-  return `${d.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })} UTC`;
+function zonedTime(iso: string): string {
+  const clock = chicagoClock(iso);
+  return clock ? `${clock} ${CLUB_DATA_ZONE_LABEL}` : 'Unknown';
 }
 
 function recentCursor(rows: SnapshotRow[]): PageCursor | null {
@@ -480,6 +493,10 @@ function isSnapshotExportRow(value: unknown): value is SnapshotRow {
     isStringOrNull(value.creator_name) &&
     isStringOrNull(value.creator_avatar) &&
     isExactCent(value.fee) &&
+    (value.fee_exact === undefined ||
+      (typeof value.fee_exact === 'number' &&
+        Number.isFinite(value.fee_exact) &&
+        Number.isSafeInteger(Math.trunc(value.fee_exact * 100)))) &&
     isExactCent(value.winnings) &&
     isNonNegativeInteger(value.hands) &&
     isNonNegativeInteger(value.players)
@@ -833,7 +850,7 @@ function rowsToCsv(rows: SnapshotRow[]): string {
       r.rake_percent,
       r.hands,
       r.players,
-      r.fee,
+      r.fee_exact ?? r.fee,
       r.winnings,
     ]
       .map(esc)
@@ -866,8 +883,9 @@ export default function ClubDataPage() {
 
   const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
   const [clubName, setClubName] = useState<string>('');
+  const gameHost = useClubGameHost(clubUuid, !!userId && !isHydrating);
   const [preset, setPreset] = useState<PresetId>(14);
-  const [endDate, setEndDate] = useState<string>(() => toISODate(new Date()));
+  const [endDate, setEndDate] = useState<string>(() => chicagoDay());
   const [game, setGame] = useState<GameFilter>('ALL');
   const [stakes, setStakes] = useState<StakesFilter>('ALL');
   const [gameSort, setGameSort] = useState<GameSort>('recent');
@@ -1008,7 +1026,7 @@ export default function ClubDataPage() {
   const mountedRef = useRef(false);
   const manualRefreshingRef = useRef(false);
   const manualRefreshVersion = useRef(0);
-  const observedUtcDayRef = useRef(toISODate(new Date()));
+  const observedUtcDayRef = useRef(chicagoDay());
   const gamesTabRef = useRef<HTMLButtonElement>(null);
   const playersTabRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -1059,7 +1077,7 @@ export default function ClubDataPage() {
     [startDate, endDate]
   );
 
-  const isToday = endDate >= toISODate(new Date());
+  const isToday = endDate >= chicagoDay();
 
   const gameCacheKey = useMemo(
     () =>
@@ -1282,7 +1300,7 @@ export default function ClubDataPage() {
         // first 100 rows. Non-recent sorts still use the page RPC in parallel.
         const snapshotRequest = coldRead(
           () =>
-            supabase.rpc('ca_club_data_snapshot', {
+            supabase.rpc('ca_club_data_snapshot_v2', {
               p_club_id: clubUuid,
               p_start: startDate,
               p_end: endDate,
@@ -2192,12 +2210,12 @@ export default function ClubDataPage() {
   // near-real-time: re-poll on an interval and whenever the tab regains focus
   useEffect(() => {
     if (!clubUuid || isHydrating || !userId) return;
-    // Roll `endDate` forward across UTC midnight. It was set once at mount, so
+    // Roll `endDate` forward across Chicago midnight. It was set once at mount, so
     // a page left open overnight polled YESTERDAY's window forever: the owner
     // watched live rake stop growing and the forward arrow silently arm itself.
     // Only for someone still pinned to today - a deliberate step back stays.
     const pinToToday = () => {
-      const today = toISODate(new Date());
+      const today = chicagoDay();
       const previousToday = observedUtcDayRef.current;
       observedUtcDayRef.current = today;
       setEndDate((cur) => (cur === previousToday || cur > today ? today : cur));
@@ -2520,7 +2538,7 @@ export default function ClubDataPage() {
       const d = new Date(`${endDate}T00:00:00Z`);
       d.setUTCDate(d.getUTCDate() + direction * preset);
       const next = toISODate(d);
-      const today = toISODate(new Date());
+      const today = chicagoDay();
       observedUtcDayRef.current = today;
       setEndDate(next > today ? today : next);
     },
@@ -3066,7 +3084,7 @@ export default function ClubDataPage() {
               <span className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Cash Updated</span>
               <span className={`sc-ink--silver ${styles.dataValue}`}>
                 {snapshot?.data_updated_at
-                  ? utcTime(snapshot.data_updated_at)
+                  ? zonedTime(snapshot.data_updated_at)
                   : loading
                     ? 'Loading Live Records'
                     : 'Live Records Ready'}
@@ -3208,7 +3226,9 @@ export default function ClubDataPage() {
               <span>{startDate}</span>
               <span className={`sc-ink--muted ${styles.rangeDivider}`}>-</span>
               <span>{endDate}</span>
-              <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>UTC</span>
+              <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>
+                {CLUB_DATA_ZONE_LABEL}
+              </span>
             </span>
             <button
               type="button"
@@ -3222,15 +3242,15 @@ export default function ClubDataPage() {
           </div>
 
           <label className={styles.calendarField}>
-            <span>Period Ending (UTC)</span>
+            <span>Period Ending ({CLUB_DATA_ZONE_LABEL})</span>
             <input
               type="date"
-              aria-label="Period Ending (UTC)"
+              aria-label={`Period Ending (${CLUB_DATA_ZONE_LABEL})`}
               value={endDate}
-              max={toISODate(new Date())}
+              max={chicagoDay()}
               onChange={(event) => {
                 const value = event.target.value;
-                const today = toISODate(new Date());
+                const today = chicagoDay();
                 if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value <= today) {
                   observedUtcDayRef.current = today;
                   setEndDate(value);
@@ -3287,6 +3307,13 @@ export default function ClubDataPage() {
             >
               {summary ? money(summary.mtt_winnings) : NO_VALUE}
             </dd>
+            {summary &&
+              summary.running_mtt_entries !== undefined &&
+              Number.isFinite(Number(summary.running_mtt_entries)) && (
+                <dd className={`sc-ink--muted ${styles.figureMeta}`}>
+                  Running MTT Entries {money(summary.running_mtt_entries)}
+                </dd>
+              )}
           </div>
           <div className={`${styles.dataRow} ${styles.figureRow}`}>
             <dt className={`sc-label sc-ink--blue ${styles.dataLabel}`}>Fee</dt>
@@ -3302,7 +3329,8 @@ export default function ClubDataPage() {
               Number.isFinite(Number(summary.cash_fee)) &&
               Number.isFinite(Number(summary.mtt_fee)) && (
                 <dd className={`sc-ink--muted ${styles.figureMeta}`}>
-                  {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
+                  {money(summary.cash_fee)} Cash -{' '}
+                  {money(summary.tournament_fee ?? summary.mtt_fee)} Tournaments
                 </dd>
               )}
             {summary && <dd className={styles.figureMeta}>{pctNote(delta?.fee_pct)}</dd>}
@@ -3726,27 +3754,25 @@ export default function ClubDataPage() {
                 gameVirtual.visibleItems.map((row, virtualIndex) => {
                   // Intl, not padStart (CLAUDE.md §5.5) - and padStart could not
                   // see an Invalid Date, so a malformed started_at rendered
-                  // "NaN:NaN". en-GB + timeZone UTC gives the same 24h HH:MM and
-                  // DD/MM this was hand-rolling, with the guard for free.
+                  // "NaN:NaN". en-GB + the Club Data zone gives the same 24h HH:MM
+                  // and DD/MM this was hand-rolling, with the guard for free.
                   const started = row.started_at ? new Date(row.started_at) : null;
                   const validStart = started && Number.isFinite(started.getTime()) ? started : null;
                   const hhmm = validStart
                     ? validStart.toLocaleTimeString('en-GB', {
-                        timeZone: 'UTC',
+                        timeZone: CLUB_DATA_TIME_ZONE,
                         hour: '2-digit',
                         minute: '2-digit',
                       })
                     : '--:--';
                   const ddmm = validStart
                     ? validStart.toLocaleDateString('en-GB', {
-                        timeZone: 'UTC',
+                        timeZone: CLUB_DATA_TIME_ZONE,
                         day: '2-digit',
                         month: '2-digit',
                       })
                     : '';
-                  const creatorLabel = row.creator_name
-                    ? titleCase(row.creator_name)
-                    : 'Creator Name Unavailable';
+                  const hostLabel = gameHost || clubName || 'Club Name Unavailable';
                   const gameName = titleCase(row.name);
 
                   return (
@@ -3763,34 +3789,14 @@ export default function ClubDataPage() {
                       </div>
 
                       <div className={styles.avatarWrap}>
-                        {/* Sized and error-guarded, matching the player rows below.
-                          This rendered the raw URL with no onError, so a dead
-                          storage object showed the browser's broken-image glyph
-                          and pulled a full-size asset into a 40px box. */}
-                        {row.creator_avatar ? (
-                          <img
-                            className={styles.avatar}
-                            src={sizedStorageUrl(row.creator_avatar, 40)}
-                            alt=""
-                            loading="lazy"
-                            onError={(e) => {
-                              e.currentTarget.onerror = null;
-                              e.currentTarget.src = generateAvatarSvg(
-                                row.creator_id || row.id,
-                                row.creator_name || row.name || '?'
-                              );
-                            }}
-                          />
-                        ) : (
-                          <span
-                            className={`sc-ink--silver ${styles.avatarFallback}`}
-                            aria-hidden="true"
-                          >
-                            {(row.name || '?').slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                        <span className={`sc-ink--muted ${styles.rowId}`} title={creatorLabel}>
-                          {creatorLabel}
+                        <span
+                          className={`sc-ink--silver ${styles.avatarFallback}`}
+                          aria-hidden="true"
+                        >
+                          {hostLabel.slice(0, 1).toUpperCase()}
+                        </span>
+                        <span className={`sc-ink--muted ${styles.rowId}`} title={hostLabel}>
+                          By {hostLabel}
                         </span>
                       </div>
 
@@ -3878,7 +3884,7 @@ export default function ClubDataPage() {
                 {clubLabel ? `${clubLabel} - ` : ''}
                 Loaded {compactInt(snapshot.rows.length)} Of {compactInt(snapshot.row_count)} Games
                 {snapshot.data_updated_at
-                  ? ` - Cash Data Updated ${utcTime(snapshot.data_updated_at)}`
+                  ? ` - Cash Data Updated ${zonedTime(snapshot.data_updated_at)}`
                   : ''}
               </p>
             )}

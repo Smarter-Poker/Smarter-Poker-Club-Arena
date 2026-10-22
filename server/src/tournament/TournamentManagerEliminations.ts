@@ -193,6 +193,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
    * the next admission never restarts the same prefix forever.
    */
   private readonly eliminationSweepCursor = new TournamentSweepWorkCursor();
+
+  protected override currentEliminationSweepStage(): number {
+    return this.eliminationSweepCursor.nextStage;
+  }
   /** Exposed for the law test only: where the sweep cursor will resume. */
   get eliminationSweepNextStage(): number {
     return this.eliminationSweepCursor.nextStage;
@@ -559,6 +563,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     if (this.isProcessingEliminations) return;
 
     this.isProcessingEliminations = true;
+    this.eliminationSweepStartedAt = Date.now();
     // A bust that arrived while a later stage held the continuation takes its
     // turn here, before that stage is admitted again (see bustAwaitsItsStage).
     this.eliminationSweepCursor.beginAdmission();
@@ -625,6 +630,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         if (!(await this.checkFinalTableDeal())) return;
         if (sweepStopped()) return;
         if (this.finalTableDealHandled || this.tournamentFinished) {
+          this.bustAwaitingSinceMs = 0;
           await acknowledgeCapturedWakes();
           return;
         }
@@ -1375,6 +1381,9 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           this.requestEliminationSweep();
         }
 
+        // The bust stage ran to its end: restart the wait clock from now for
+        // any bust still inside its rebuy decision grace, or stop it.
+        this.bustAwaitingSinceMs = (busted?.length ?? 0) > 0 ? Date.now() : 0;
         if (completedStage(2)) return;
       }
 
@@ -1970,6 +1979,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       if (this.eliminationSweepSignal === signal) this.eliminationSweepSignal = null;
       this.eliminationSweepDeadlineAt = 0;
       this.isProcessingEliminations = false;
+      this.eliminationSweepStartedAt = 0;
       eliminationSweepsInflight.dec();
       eliminationSweepMs.observe(Date.now() - sweepStartedAt);
       // Multi-day: busts in the day's final hands are recorded before the
@@ -2770,8 +2780,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     } else {
       if (!this.eliminationMutationAllowed()) return false;
       // Result, exact status CAS and tournament-scoped seat release are one
-      // transaction. Place and Bubble money wait for the finalized terminal
-      // batch. A transport failure is ambiguous, so replay the same idempotent
+      // transaction, and its commit pays the place in real time once the pool
+      // is finalized (zzz_pay_finisher_at_bust). A transport failure is ambiguous, so replay the same idempotent
       // RPC once; its locked exact-position/prize and knockout-generation
       // checks turn a lost successful response into `{ already: true }`.
       const eliminationRequest = {
@@ -2846,9 +2856,12 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     /* RESULT, SEAT RELEASE AND BOUNTY OUTBOX SHARE THE ELIMINATION COMMIT.
        The atomic elimination RPC records the provisional place, releases the
        locked seat, and, for bounty events, records the exact knockout outbox.
-       It moves no place or Bubble money. Tournament completion normalizes the
-       final standings and pays the immutable place-plus-Bubble plan in one
-       all-or-none database transaction. */
+       Dan 2026-10-21: the same commit pays the place. A deferred trigger runs
+       fn_ca_pay_tournament_finishers_now at that commit: once the pool is
+       finalized it restamps the true place and credits every finisher in the
+       money (and the Bubble) through the idempotent obligation door. Tournament
+       completion still settles the whole plan in one all-or-none transaction,
+       and finds these places already exactly paid. */
 
     // ── BOUNTY / PKO / MYSTERY BOUNTY COLLECTION ──
     // Determine who knocked this player out by finding the last hand winner at their table
@@ -2901,27 +2914,41 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     // The elimination toast in TournamentDetails/TournamentPage needs a name;
     // the payload previously carried only ids, so the toast could never render
     // even once the payload-key bug was fixed.
+    /* PAID AT THE BUST (Dan, 2026-10-21). Once the pool is finalized the
+       commit that recorded this bust also paid it
+       (fn_ca_pay_tournament_finishers_now, run at that commit), and restamped
+       the place and prize from the locked ladder. The place this sweep
+       proposed is provisional, so the toast reads the row the commit left:
+       the place the player finished in and the amount already credited. */
     let eliminatedName = 'Player';
+    let finishedPosition = position;
+    let finishedPrize = prize;
     try {
       const { data: nameRow } = await supabase
         .from('tournament_players')
-        .select('username')
+        .select('username, position, prize')
         .eq('tournament_id', this.tournamentId)
         .eq('user_id', userId)
         .maybeSingle();
       eliminatedName = nameRow?.username || 'Player';
+      const storedPosition = Number(nameRow?.position);
+      if (Number.isInteger(storedPosition) && storedPosition >= 2) {
+        finishedPosition = storedPosition;
+        const storedPrize = Number(nameRow?.prize);
+        if (Number.isFinite(storedPrize) && storedPrize >= 0) finishedPrize = storedPrize;
+      }
     } catch {
-      /* name lookup is cosmetic */
+      /* the lookup is cosmetic; the proposed place still announces the bust */
     }
     await this.broadcast('player_eliminated', {
       userId,
-      position,
-      prize,
+      position: finishedPosition,
+      prize: finishedPrize,
       playerName: eliminatedName,
     });
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] Eliminated: ${userId.slice(0, 8)} at position ${position} (prize: ${prize})`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Eliminated: ${userId.slice(0, 8)} at position ${finishedPosition} (prize: ${finishedPrize})`
     );
     return true;
   }
@@ -3061,7 +3088,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       .eq('hand_id', handId)
       .maybeSingle();
 
-    if (error) {
+    /**
+     * The exact-hand obligation is the money record. When it is already
+     * settled with its complete marker, the knockout is paid whatever this
+     * call's own answer was: a lost response (transport error), or
+     * `bounty_generation_identity_required` - a player who busted, rebought
+     * and busted again holds one obligation per bust, and this call names the
+     * player rather than the hand, so the database will not guess which one
+     * it means (2026-10-22: 342 such refusals in nine hours on the PKOs,
+     * every one of them already settled on its first attempt).
+     */
+    const proveSettledExactHandObligation = async (): Promise<void> => {
       if (!settledObligationErr && settledObligation?.state === 'settled') {
         const { data: markerComplete, error: markerCompleteErr } = await supabase.rpc(
           'fn_bounty_obligation_has_complete_marker',
@@ -3101,6 +3138,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           };
         }
       }
+    };
+
+    if (error) {
+      await proveSettledExactHandObligation();
       if (res.ok !== true) {
         reportError(
           new Error(
@@ -3110,6 +3151,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         );
         return false;
       }
+    }
+
+    if (!error && !res.ok && res.reason === 'bounty_generation_identity_required') {
+      await proveSettledExactHandObligation();
     }
 
     if (!res.ok) {

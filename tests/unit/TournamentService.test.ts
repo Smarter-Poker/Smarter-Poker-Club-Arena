@@ -237,14 +237,14 @@ describe('TournamentService', () => {
     // 2026-08-30 audit: the ladder is DERIVED from spinSpec SPIN_BLINDS now
     // (one source of truth; the old hand-typed 15-level 2-minute ladder
     // diverged from what the engine actually plays). Pin the derivation.
-    it('mirrors spinSpec SPIN_BLINDS at 3 minutes per level', async () => {
+    it('mirrors spinSpec SPIN_BLINDS at 5 minutes per level', async () => {
       const { SPIN_BLINDS } = await import('../../src/config/spinSpec');
       expect(SPIN_BLIND_STRUCTURE).toHaveLength(SPIN_BLINDS.length);
       SPIN_BLIND_STRUCTURE.forEach((lvl, i) => {
         expect(lvl.smallBlind).toBe(SPIN_BLINDS[i].small);
         expect(lvl.bigBlind).toBe(SPIN_BLINDS[i].big);
         expect(lvl.ante).toBe(0);
-        expect(lvl.durationMinutes).toBe(3);
+        expect(lvl.durationMinutes).toBe(5);
         expect(lvl.level).toBe(i + 1);
       });
     });

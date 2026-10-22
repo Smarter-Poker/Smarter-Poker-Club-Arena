@@ -1,3 +1,4 @@
+import { nearbyMaintenanceWindows } from './maintenance/maintenanceSchedule.js';
 import { readPendingOperatorCashClose } from './services/operatorCashClose.js';
 import { type OperatorCommand, acknowledgeMaintenance } from './maintenance/OperatorCommands.js';
 import {
@@ -532,6 +533,9 @@ const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
 const scheduledPreparationAt = (startAt: number, fieldCount: number): number =>
   scheduledLaunchPreparationAt(startAt, fieldCount, TOURNAMENT_PRESEAT_LEAD_MS, {
     startMinute: MaintenanceBreak.BREAK_START_MINUTE,
+    freezeStartsAt: nearbyMaintenanceWindows(startAt)
+      .map((w) => w.startsAt)
+      .reverse(),
     lastHandLeadMs: MaintenanceBreak.LAST_HAND_LEAD_MS,
     durationMs: MaintenanceBreak.BREAK_DURATION_MS,
   });
@@ -3722,8 +3726,8 @@ export class GameServer {
     return this.maintenanceBreak.snapshot();
   }
 
-  requestMaintenanceRecoveryWindow(announcedAt: number) {
-    return this.maintenanceBreak.requestRecoveryWindow(announcedAt);
+  requestMaintenanceRecoveryWindow(announcedAt: number, cause: 'urgent' | 'engine-degraded') {
+    return this.maintenanceBreak.requestRecoveryWindow(announcedAt, cause);
   }
 
   private readonly maintenanceBreak = new MaintenanceBreak({
@@ -5412,6 +5416,7 @@ export class GameServer {
       // ONE RAKE SPEC (R7): both checksums and whether they last agreed.
       // Informational: a drift alerts, it never holds a table.
       rakeSpec: rakeSpecDriftState(),
+      cashRakePolicyVersion: 1,
       // Public liveness comes from the worker-owned store. The main thread no
       // longer hydrates a second solver artifact whose status could look healthy
       // while the live action path was empty or failed.
@@ -9061,9 +9066,164 @@ export class GameServer {
       } catch (err) {
         reportError(err, 'GameServer.Tournament_discovery_error');
       }
+      try {
+        this.escalateStuckTournamentTables(Date.now());
+      } catch (err) {
+        reportError(err, 'GameServer.stuck_tournament_table_escalation_failed');
+      }
       // A failed pass does not discard its admitted funding operations.
       // Existing lifecycle shutdown joins them through discoveryJobs.
       await this.sleep(TOURNAMENT_DISCOVERY_INTERVAL);
+    }
+  }
+
+  /** How long a tournament table may have no running dealer before its event is handed on. */
+  static readonly STUCK_TOURNAMENT_TABLE_MS = 5 * 60_000;
+  /** At most this many hand-offs per table; past it the table only pages. */
+  static readonly STUCK_TOURNAMENT_TABLE_MAX_HANDOFFS = 3;
+  /** A tournament is handed on at most once in this window. */
+  static readonly STUCK_TOURNAMENT_HANDOFF_SPACING_MS = 10 * 60_000;
+  /**
+   * An admitted elimination sweep normally settles inside its 5 s work budget
+   * plus one 15 s Supabase attempt. Two minutes in flight means it is stalled
+   * and no bust of that event can be recorded (see
+   * TournamentManagerBase.requestSuccessorForStalledEliminationSweep).
+   */
+  static readonly STALLED_ELIMINATION_SWEEP_MS = 2 * 60_000;
+  private stalledSweepLastHandoffAt?: Map<string, number>;
+  private stuckTournamentTableSince?: Map<string, number>;
+  private stuckTournamentTableHandoffs?: Map<string, number>;
+  private stuckTournamentLastHandoffAt?: Map<string, number>;
+
+  /**
+   * A TOURNAMENT TABLE WITH NO DEALER IS HANDED ON, NOT LEFT (2026-10-22).
+   *
+   * 2026-10-22 02:48 UTC: the database stalled (a migration looping on
+   * ACCESS EXCLUSIVE locks) and the zombie reaper killed Midweek Bounty table
+   * 9ca9c3a8 "to rebuild it". Its manager's recovery never replaced the
+   * stopped engine and never raised another error, so eight players sat at a
+   * dead table for over half an hour while the rest of the field dealt. Every
+   * existing recovery waited on that one silent path.
+   *
+   * Each tournament pass now looks at every table a manager owns. A table whose
+   * engine is not running, or which its manager has been failing to admit, for
+   * STUCK_TOURNAMENT_TABLE_MS is a defect the per-table recovery did not cure:
+   * the manager parks its other tables at their next hand boundary and hands
+   * the event to a successor generation, which reads every table back from the
+   * database. Bounded per table and spaced per event, so a durable refusal
+   * pages instead of looping.
+   *
+   * It also drops a stopped tournament engine no manager owns any more (a
+   * closed table whose registration outlived it): such an engine still
+   * reported its last roster as seated players, so a closed table read as a
+   * stalled one and paged "Tables Have Stopped Dealing".
+   */
+  private escalateStuckTournamentTables(now: number): void {
+    if (!this.tournamentEngines || !this.tableEngines) return;
+    const since$ = (this.stuckTournamentTableSince ??= new Map());
+    const handoffs$ = (this.stuckTournamentTableHandoffs ??= new Map());
+    const lastAt$ = (this.stuckTournamentLastHandoffAt ??= new Map());
+    const owned = new Set<string>();
+    const seen = new Set<string>();
+    for (const [tournamentId, manager] of this.tournamentEngines) {
+      const failing = new Map(
+        (manager.getTablesFailingAdmission?.(now) ?? []).map((t) => [t.tableId, t.msFailing])
+      );
+      const tableIds = new Set([...(manager.getTableIds?.() ?? []), ...failing.keys()]);
+      for (const tableId of tableIds) {
+        owned.add(tableId);
+        const engine = this.tableEngines.get(tableId);
+        const dealerless = !engine || !engine.isRunning() || failing.has(tableId);
+        if (!dealerless) {
+          // A dealer that is running again ends the table's hand-off budget.
+          if (engine && engine.msSinceProgress() < 120_000) handoffs$.delete(tableId);
+          continue;
+        }
+        seen.add(tableId);
+        const since = Math.min(since$.get(tableId) ?? now, now - (failing.get(tableId) ?? 0));
+        since$.set(tableId, since);
+        if (now - since < GameServer.STUCK_TOURNAMENT_TABLE_MS) continue;
+        const handoffs = handoffs$.get(tableId) ?? 0;
+        if (handoffs >= GameServer.STUCK_TOURNAMENT_TABLE_MAX_HANDOFFS) continue;
+        const last = lastAt$.get(tournamentId);
+        if (last !== undefined && now - last < GameServer.STUCK_TOURNAMENT_HANDOFF_SPACING_MS)
+          continue;
+        if (!manager.requestSuccessorForStuckTable?.(tableId)) continue;
+        handoffs$.set(tableId, handoffs + 1);
+        lastAt$.set(tournamentId, now);
+        reportError(
+          new Error(
+            `Tournament ${tournamentId} table ${tableId} had no running dealer for ` +
+              `${Math.round((now - since) / 1000)}s - handed the event to a successor generation ` +
+              `(hand-off ${handoffs + 1} of ${GameServer.STUCK_TOURNAMENT_TABLE_MAX_HANDOFFS})`
+          ),
+          'GameServer.stuck_tournament_table_handed_on',
+          { tournamentId, tableId }
+        );
+      }
+    }
+    // A stalled elimination sweep is handed on directly, before any table
+    // has to die of it (Coffee Break Freeroll f5a98d7e, 2026-10-22).
+    const sweepLastAt$ = (this.stalledSweepLastHandoffAt ??= new Map());
+    for (const [tournamentId, manager] of this.tournamentEngines) {
+      const stalled = manager.getStalledEliminationSweep?.(now);
+      if (
+        !stalled ||
+        (stalled.msInFlight < GameServer.STALLED_ELIMINATION_SWEEP_MS &&
+          stalled.msBustWaiting < GameServer.STALLED_ELIMINATION_SWEEP_MS)
+      )
+        continue;
+      const last = sweepLastAt$.get(tournamentId) ?? lastAt$.get(tournamentId);
+      if (last !== undefined && now - last < GameServer.STALLED_ELIMINATION_SWEEP_MS) continue;
+      if (!manager.requestSuccessorForStalledEliminationSweep?.()) continue;
+      sweepLastAt$.set(tournamentId, now);
+      lastAt$.set(tournamentId, now);
+      reportError(
+        new Error(
+          `Tournament ${tournamentId} bust stage stalled (sweep in flight ` +
+            `${Math.round(stalled.msInFlight / 1000)}s, oldest bust waiting ` +
+            `${Math.round(stalled.msBustWaiting / 1000)}s, stage ${stalled.stage}) - no bust ` +
+            `could be recorded; handed the event to a successor generation`
+        ),
+        'GameServer.stalled_elimination_sweep_handed_on',
+        {
+          tournamentId,
+          stage: stalled.stage,
+          msInFlight: stalled.msInFlight,
+          msBustWaiting: stalled.msBustWaiting,
+        }
+      );
+    }
+    for (const tournamentId of [...sweepLastAt$.keys()]) {
+      if (
+        now - (sweepLastAt$.get(tournamentId) ?? 0) >
+        GameServer.STUCK_TOURNAMENT_HANDOFF_SPACING_MS
+      )
+        sweepLastAt$.delete(tournamentId);
+    }
+    for (const tableId of [...since$.keys()]) {
+      if (!seen.has(tableId)) since$.delete(tableId);
+    }
+    // Hand-off counts outlive the manager generation they replaced (the next
+    // generation owns the same table), so a durable refusal cannot reset its
+    // own budget. Bounded: only tables that were handed on are kept, and the
+    // engine process restarts daily.
+    if (handoffs$.size > 500) handoffs$.clear();
+    for (const tournamentId of [...lastAt$.keys()]) {
+      if (
+        !this.tournamentEngines.has(tournamentId) &&
+        now - (lastAt$.get(tournamentId) ?? 0) > GameServer.STUCK_TOURNAMENT_HANDOFF_SPACING_MS
+      )
+        lastAt$.delete(tournamentId);
+    }
+    for (const [tableId, engine] of [...this.tableEngines]) {
+      if (!this.tournamentOwnedTables?.has(tableId) && !engine.isTournament()) continue;
+      if (owned.has(tableId) || engine.isRunning()) continue;
+      if (this.unregisterTableEngine(tableId, engine)) {
+        console.info(
+          `[GameServer] Dropped stopped tournament table ${tableId.slice(0, 8)} that no manager owns`
+        );
+      }
     }
   }
 
@@ -12293,6 +12453,11 @@ export class GameServer {
     return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
   }
 
+  /** POST /timebank follows the same current-hand room authority as actions. */
+  getTimeBankEngine(tableId: string): ServerTableEngine | LightningSeatProxy | undefined {
+    return this.tableEngines.get(tableId) ?? this.lightningRooms.actionEngineFor(tableId);
+  }
+
   /**
    * A Lightning room's anchor seat (Lightning Phase 6 remediation): leave and
    * add chips from a pool_session_id act on the seat the chips sit in. Null
@@ -12302,8 +12467,13 @@ export class GameServer {
   async lightningAnchorFor(
     roomId: string,
     userId: string,
-    opts?: { requireOpen?: boolean }
-  ): Promise<{ anchorTableId: string; seatNumber: number; occupancyId: string } | null> {
+    opts?: { requireOpen?: boolean; requireCompletedHand?: boolean }
+  ): Promise<{
+    anchorTableId: string;
+    seatNumber: number;
+    occupancyId: string;
+    completedHandOccupancyId?: string;
+  } | null> {
     if (this.tableEngines.has(roomId)) return null;
     try {
       return await lightningAnchorSeat(roomId, userId, opts);

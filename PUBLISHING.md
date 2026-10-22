@@ -1,6 +1,8 @@
 # Publishing through the restored providers
 
-**Non-engine delivery: push, publish, verify and finish without waiting for `:55`.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
+**ENGINE RESETS ONCE A DAY (owner update October 20, 2026).** Routine game-engine updates and restarts happen only once daily at 04:00 America/Chicago (DST aware): 03:58 last-hand notice, 04:00-04:05 maintenance window. There is no hourly engine reset and no hourly cash-game or platform freeze. Hourly tournament breaks (:55-:00) still run and are separate from engine maintenance. Only an explicit urgent or degraded-engine emergency may restart outside 04:00. See CLAUDE.md section 13.
+
+**Non-engine delivery: push, publish, verify and finish immediately; never wait for an engine window.** Apply the maintenance cutover only to an actual engine replacement or a specifically identified dependency on new engine behavior. A Club Arena client using existing engine APIs, an unrelated pending engine release, and a generic engine-health check do not create that dependency. Required checks and normal client publication/live proof still apply.
 
 Implementation status: PR #4788 separately delivers the additional engine recovery opportunity, split post-deploy jobs and parallel accounting/engine CI. Verify those capabilities in the current workflow and runtime before using them. Publishing these instructions does not install an engine change.
 
@@ -48,7 +50,7 @@ Verify the jobs and affected behavior applicable to the assigned change. A clien
 
 ## Club Arena engine and other changed components
 
-For engine changes, use the existing **stage-engine-release.yml** followed by **auto-deploy-hetzner.yml**. Preserve the hosted engine checks, production-door checks, Hetzner build, maintenance cutover, concurrency, sealed receipt and applicable post-deployment verification.
+For engine changes, use the existing **stage-engine-release.yml** followed by **auto-deploy-hetzner.yml**. Routine updates prepare at 03:30 and activate at 04:00 America/Chicago (DST aware). Routine daytime pushes queue. Explicit urgent/degraded emergencies retain certified recovery. The owner authorized one final existing :55 window to install this transition; its commit marker closes on a serving engine that exposes the daily schedule. Hourly tournament breaks remain independent; cash games no longer freeze hourly. See CLAUDE.md section13. Preserve the hosted engine checks, production-door checks, Hetzner build, maintenance cutover, concurrency, sealed receipt and applicable post-deployment verification.
 
 Record the staging run, selected runtime component revision and receiving engine release run. The runtime component revision can differ from a later documentation-only main revision. Confirm the expected component revision at **https://engine.smarter.poker/health** together with the existing release proof. A health response alone is not proof that the changed feature works.
 
@@ -74,7 +76,7 @@ Push ready changes, run checks, complete protected merge, build and stage as soo
 
 ### Route by the changed behavior
 
-| Change                                                                                  | Required route                                                                                                                      | Hourly activation gate                                                                       |
+| Change                                                                                  | Required route                                                                                                                      | Engine activation gate (daily 04:00 Chicago only)                                            |
 | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Client pages, buttons, styles, assets or browser behavior with no new engine dependency | Client checks, protected merge, existing static publisher, both public build-info endpoints and affected behavior                   | None                                                                                         |
 | Engine runtime or its release control                                                   | Required engine checks, protected merge, immediate engine staging/build, certified activation and proof                             | Engine activation only                                                                       |

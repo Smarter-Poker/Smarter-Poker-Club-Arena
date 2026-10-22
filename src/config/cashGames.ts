@@ -277,6 +277,24 @@ export interface ExistingCashGame {
   must_move: boolean;
 }
 
+/** Midway's additional half/one rung does not change horse stake bands. */
+export const MIDWAY_CASH_HOST_ID = 'fade0000-0000-0000-0000-000000000001';
+export function cashGameCategoryKey(
+  clubId: string | null | undefined,
+  variant: string,
+  sb: number,
+  bb: number
+): string {
+  if (
+    clubId === MIDWAY_CASH_HOST_ID &&
+    ['nlh', 'plo4', 'plo5', 'plo6', 'plo8'].includes(variant) &&
+    sb === 0.5 &&
+    bb === 1
+  )
+    return 'half_one';
+  return stakeBandForBigBlind(bb);
+}
+
 /**
  * Why a stakes rung cannot be opened for this template and variant, or null.
  * Mirrors the two database refusals: cash_games_one_per_key (a must-move game
@@ -290,12 +308,17 @@ export function stakesRungTaken(
   variant: string,
   sb: number,
   bb: number,
-  mustMove: boolean
+  mustMove: boolean,
+  clubId?: string | null
 ): string | null {
   const same = (a: number, b: number) => Math.abs(a - b) < 1e-9;
   for (const g of existing) {
     if (g.template_name !== template || g.variant !== variant) continue;
-    if (template !== 'classic' && stakeBandForBigBlind(g.bb) === stakeBandForBigBlind(bb)) {
+    if (
+      template !== 'classic' &&
+      cashGameCategoryKey(clubId, variant, g.sb, g.bb) ===
+        cashGameCategoryKey(clubId, variant, sb, bb)
+    ) {
       return `This Club Already Runs ${g.name} As Its ${templateLabel(template)} ${
         STAKE_BAND_LABEL[stakeBandForBigBlind(bb)]
       } Game`;
@@ -387,7 +410,9 @@ export function cashGameCreateRefusalText(raw: unknown): string | null {
   }
   if (/OVERRIDE_INVALID/.test(m)) {
     const which = m.match(/OVERRIDE_INVALID: ([a-z_]+)/);
-    return which ? `The ${ruleFieldLabel(which[1])} Setting Is Not Valid` : 'A Setting Is Not Valid';
+    return which
+      ? `The ${ruleFieldLabel(which[1])} Setting Is Not Valid`
+      : 'A Setting Is Not Valid';
   }
   return null;
 }

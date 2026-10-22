@@ -1140,8 +1140,9 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
    */
   public sitOut(
     userId: string,
-    sitOut: boolean
-  ): { success: boolean; error?: string; willFoldNextHand: boolean } {
+    sitOut: boolean,
+    proof?: { completedLightningOccupancyId?: string; requestedByClient?: boolean }
+  ): { success: boolean; error?: string; code?: string; willFoldNextHand: boolean } {
     const player = this.seatedPlayers.find((p) => p.user_id === userId);
     if (!player) {
       return { success: false, error: 'Player not found at this table', willFoldNextHand: false };
@@ -1170,10 +1171,21 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
      * already committed, they are dealt in and blinded off whether they sit out
      * or not, and a late-registered entrant who has not yet been dealt a hand
      * has an obvious legitimate reason to sit out immediately. */
-    if (sitOut && !this.isTournamentTable() && !this.dealtInUserIds.has(userId)) {
+    const completedLightningHand =
+      this.dealingHaltLock &&
+      !!this.tableInfo?.cluster_id &&
+      !!player.occupancy_id &&
+      proof?.completedLightningOccupancyId === player.occupancy_id;
+    if (
+      sitOut &&
+      !this.isTournamentTable() &&
+      !this.dealtInUserIds.has(userId) &&
+      !completedLightningHand
+    ) {
       return {
         success: false,
         error: 'You Must Play At Least One Hand Before You Can Sit Out',
+        code: 'SITOUT_HAND_REQUIRED',
         willFoldNextHand: false,
       };
     }
@@ -1183,6 +1195,13 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
       // If a hand is in progress, defer the sit-out until after the hand completes.
       // The player continues playing the current hand normally.
       this.returnedFromSitOutAtMs.delete(userId);
+      /* THE PLAYER'S OWN SIT OUT (2026-10-22). Marked before it is applied, so
+         a deferred (mid-hand) request is already the player's when it lands.
+         A horse controller reads isClientSitOut() and never sits this seat
+         back in; only the client's own I'm Back (sitBack) clears it. */
+      if (proof?.requestedByClient === true) {
+        this.disconnectEngine.markClientSitOut(this.tableId, userId);
+      }
       if (this.handController !== null) {
         this.pendingSitOut.add(userId);
       } else {
@@ -1219,6 +1238,15 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     }
 
     return { success: true, willFoldNextHand };
+  }
+
+  /**
+   * True while a Sit Out this account's own authenticated client requested
+   * still stands (applied or deferred to the hand end). The horse rotator
+   * asks this before any automatic sit-back-in (2026-10-22).
+   */
+  public isClientSitOut(userId: string): boolean {
+    return this.disconnectEngine.isClientSitOut(this.tableId, userId);
   }
 
   /**
@@ -2100,11 +2128,24 @@ export abstract class ServerTableEngineSeating extends ServerTableEngineBase {
     const rotationSize = this.seatedPlayers.filter((p) => p.stack > 0).length;
     if (rotationSize < 3) return;
 
-    const sbSeatIndex = this.getSBSeatIndex();
+    /* A SMALL BLIND IS A BLIND (Dan, 2026-10-21): "GOT MOVED INTO THE SMALL
+       BLIND, PAID SMALL BLIND WERE DEALT IN AND THEN HAD TO PAY THE SMALL AND
+       BB AGAIN. THIS BUG NEEDS TO BE FIXED."
+
+       An arrival in the small blind seat posts that small blind on its first
+       hand. Under the tournament dead-button rule (TDA Rule 30) that seat is
+       the BUTTON on the next hand, never the big blind, so the old "keep the
+       small blind seat on the hook for the big blind" charged them a second,
+       live big blind from the button straight after the small blind they had
+       already paid. A player who has paid a blind to be dealt in owes nothing
+       more. Only the button seat, which would otherwise be dealt in for free,
+       carries the one live big blind. */
     const buttonSeatIndex = this.getButtonSeatIndex();
+    const sbSeatIndex = this.getSBSeatIndex();
     if (
-      (sbSeatIndex > 0 && seatNumber === sbSeatIndex) ||
-      (buttonSeatIndex > 0 && seatNumber === buttonSeatIndex)
+      buttonSeatIndex > 0 &&
+      seatNumber === buttonSeatIndex &&
+      !(sbSeatIndex > 0 && seatNumber === sbSeatIndex)
     ) {
       this.mustPostBB.add(userId);
       console.log(

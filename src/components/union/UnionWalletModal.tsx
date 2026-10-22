@@ -52,8 +52,8 @@ import { unionApi } from '../../services/UnionApiService';
 import { classifyCashierRpcFailure } from '../../services/CashierResilience';
 import { isPlatformFrozenError, PLATFORM_FROZEN_MESSAGE } from '../../utils/platformFrozen';
 import {
-  clearUnionWalletOperation,
-  reserveUnionWalletOperation,
+  acknowledgeDurableUnionWalletOperation,
+  reserveDurableUnionWalletOperation,
   unionWalletIntentSignature,
   type UnionWalletIntentScope,
 } from '../../services/UnionWalletRecovery';
@@ -68,11 +68,22 @@ import { WalletDesk, WalletDeskHeading, WalletDeskRow } from '../wallet/WalletDe
 import '../wallet/WalletDesk.css';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { enumToTitleCase, titleCase } from '../../utils/titleCase';
+import {
+  pullableFrom,
+  readUnionClubBalances,
+  type UnionClubBalance,
+} from '../../services/unionClubBalances';
+import { useOptionalToast } from '../common/Toast';
 import './UnionWalletModal.css';
 
 // Keep this union explicit at the UI boundary. Static release certification
 // verifies that the reserve wallet remains a first-class, read-only modal key.
 export type UnionWalletKey = 'chips' | 'rake' | 'bbj' | 'promo' | 'spin_reserve';
+
+/** "The Felt Society" stays "The Felt Society", never "The The Felt Society". */
+export function theClub(name: string): string {
+  return /^the\s/i.test(name.trim()) ? name.trim() : `The ${name.trim()}`;
+}
 
 export interface UnionWalletModalProps {
   isOpen: boolean;
@@ -216,6 +227,11 @@ export function UnionWalletModal({
   const [loading, setLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [directoryReload, setDirectoryReload] = useState(0);
+  /** Club Bank / Promo balances by club id (union owner and union leads only). */
+  const [clubBalances, setClubBalances] = useState<Map<string, UnionClubBalance>>(
+    () => new Map()
+  );
+  const [balanceReload, setBalanceReload] = useState(0);
   const directoryLoadVersion = useRef(0);
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<
@@ -229,6 +245,7 @@ export function UnionWalletModal({
   /** Synchronous guard for two taps that arrive before React paints `busy`. */
   const busyRef = useRef(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const toast = useOptionalToast();
   const [liveBalance, setLiveBalance] = useState(balance);
   const [reserveLedger, setReserveLedger] = useState<
     Array<{
@@ -374,7 +391,8 @@ export function UnionWalletModal({
     void Promise.all([
       /* fn_union_player_directory, read past the API's 1,000-row cap. */
       readUnionDirectory<RosterRow>(unionId),
-      supabase.from('union_clubs').select('*, clubs:club_id(*)').eq('union_id', unionId),
+      // Read identity only: club financial columns are intentionally protected.
+      supabase.from('union_clubs').select('club_id, clubs:club_id(name)').eq('union_id', unionId),
     ])
       .then(([rosterRes, clubsRes]) => {
         if (!isCurrent()) return;
@@ -423,6 +441,33 @@ export function UnionWalletModal({
        from `walletKey`, which is a dependency. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, unionId, walletKey, user?.id, directoryReload]);
+
+  /* CLUB BALANCES (Dan, 2026-10-21). Read separately from the directory so a
+     refused or failed balance read never hides the clubs themselves: the rows
+     still load and the figure is simply left off, never shown as 0. */
+  useEffect(() => {
+    if (!isOpen || readOnly || !unionId) {
+      setClubBalances(new Map());
+      return;
+    }
+    let live = true;
+    readUnionClubBalances(unionId)
+      .then((map) => {
+        if (live) setClubBalances(map);
+      })
+      .catch((error) => {
+        reportError(error, 'UnionWalletModal.club_balances_load_failed');
+        if (live) setClubBalances(new Map());
+      });
+    return () => {
+      live = false;
+    };
+  }, [isOpen, readOnly, unionId, directoryReload, balanceReload]);
+
+  /* A confirmed movement changes a club's balance: read it again. */
+  useEffect(() => {
+    if (notice?.ok) setBalanceReload((value) => value + 1);
+  }, [notice]);
 
   /**
    * THE LEDGER TAB. fn_promo_wallet_ledger scope 'union' reads
@@ -535,8 +580,21 @@ export function UnionWalletModal({
     }
     if (mode === 'send' && amt > liveBalance)
       return `This Wallet Only Holds ${formatWalletChips(liveBalance)}.`;
+    if (mode === 'pull' && target.type === 'club') {
+      const held = clubBalances.get(target.data.id);
+      if (held) {
+        const promo = clubPullRoute(walletKey).kind === 'promo';
+        const most = pullableFrom(held, promo);
+        if (amt > most)
+          return promo
+            ? `This Club Promo Wallet Only Holds ${formatWalletChips(most)}.`
+            : held.floor > 0
+              ? `At Most ${formatWalletChips(most)} Can Be Pulled. The ${formatWalletChips(held.floor)} Opening Grant Stays In The Club.`
+              : `This Club Bank Only Holds ${formatWalletChips(most)}.`;
+      }
+    }
     return null;
-  }, [amount, target, mode, kind, liveBalance]);
+  }, [amount, target, mode, kind, liveBalance, clubBalances, walletKey]);
 
   const send = useCallback(async () => {
     const text = amount.trim();
@@ -582,25 +640,33 @@ export function UnionWalletModal({
         sourceWallet: mode === 'pull' ? selectedRoute.kind : kind === 'chips' ? chipSource : kind,
       }),
     };
-    /* Reserve BEFORE the RPC/fetch. A browser that cannot durably remember
-       the operation id cannot safely recover a committed-but-lost response,
-       so the money door stays closed. */
-    const opId = reserveUnionWalletOperation(intentScope);
-    if (!opId) {
-      const storageError = new Error('Union Wallet operation id could not be stored');
-      reportError(storageError, 'UnionWalletModal.operation_recovery_write_failed');
-      setNotice({
-        ok: false,
-        text: 'Union Wallet Safety Storage Is Unavailable. Free Browser Storage And Try Again.',
-      });
-      return;
-    }
-
+    /* A confirmed movement toasts and closes the wallet (Dan, 2026-10-22):
+       the operator never has to X off a finished pull or send. Refusals and
+       unknown outcomes stay on screen with their reason. */
+    const outcome: { confirmed: string | null } = { confirmed: null };
+    const succeed = (text: string) => {
+      outcome.confirmed = text;
+      setNotice({ ok: true, text });
+    };
     busyRef.current = true;
     setBusy(true);
     setNotice(null);
-
+    let opId: string | null = null;
+    const directoryVersion = directoryLoadVersion.current;
+    const rpc = (name: string, args: Record<string, unknown>) => supabase.rpc(name, args);
+    const acknowledge = async () => {
+      if (!opId) return;
+      try {
+        await acknowledgeDurableUnionWalletOperation(intentScope, opId, rpc);
+      } catch (error) {
+        // Keep the server intent for safe replay. A confirmed movement stays
+        // confirmed even if its acknowledgement response is interrupted.
+        reportError(error, 'UnionWalletModal.intent_acknowledgement_failed');
+      }
+    };
     try {
+      opId = await reserveDurableUnionWalletOperation(intentScope, rpc);
+      if (directoryVersion !== directoryLoadVersion.current) return;
       if (mode === 'send') {
         if (target.type === 'member') {
           const { data, error, status } = await supabase.rpc('fn_union_send_to_member', {
@@ -629,10 +695,9 @@ export function UnionWalletModal({
                 : res.destination === 'player_wallet'
                   ? ' Into Their Player Wallet'
                   : '';
-          setNotice({
-            ok: true,
-            text: `Sent ${fmt(amt)} ${kind === 'chips' ? 'Chips' : kind === 'diamonds' ? 'Diamonds' : 'Promo Chips'} To ${who}.${landed ? landed + '.' : ''}`,
-          });
+          succeed(
+            `Sent ${fmt(amt)} ${kind === 'chips' ? 'Chips' : kind === 'diamonds' ? 'Diamonds' : 'Promo Chips'} To ${who}.${landed ? landed + '.' : ''}`,
+          );
           if (res.wallet_after != null) setLiveBalance(res.wallet_after);
         } else {
           const r = clubSendRoute(walletKey, kind);
@@ -649,10 +714,9 @@ export function UnionWalletModal({
               apiNote(`${walletLabel} To ${target.data.name} Promo Wallet`),
               opId
             )) as { promoAfter?: number | null };
-            setNotice({
-              ok: true,
-              text: `Sent ${fmt(amt)} Promo Chips Into The ${target.data.name} Promo Wallet.`,
-            });
+            succeed(
+              `Sent ${fmt(amt)} Promo Chips Into ${theClub(target.data.name)} Promo Wallet.`,
+            );
             // The wallet's figure after the send, from the row that moved it,
             // rather than a subtraction on this screen.
             if (typeof sent?.promoAfter === 'number') setLiveBalance(sent.promoAfter);
@@ -665,10 +729,9 @@ export function UnionWalletModal({
               apiNote(`${walletLabel} To ${target.data.name} Club Bank`),
               opId
             )) as { unionBalanceAfter?: number | null };
-            setNotice({
-              ok: true,
-              text: `Sent ${fmt(amt)} Chips Into The ${target.data.name} Club Bank.`,
-            });
+            succeed(
+              `Sent ${fmt(amt)} Chips Into ${theClub(target.data.name)} Club Bank.`,
+            );
             if (typeof sent?.unionBalanceAfter === 'number') setLiveBalance(sent.unionBalanceAfter);
             else setLiveBalance((prev) => prev - amt);
           }
@@ -710,12 +773,11 @@ export function UnionWalletModal({
           };
           if (cb.success === false) {
             if (cb.duplicate) {
-              clearUnionWalletOperation(intentScope, opId);
+              await acknowledge();
               setAmount('');
-              setNotice({
-                ok: true,
-                text: 'This Money Move Was Already Processed. The Wallet Is Refreshing.',
-              });
+              succeed(
+                'This Money Move Was Already Processed. The Wallet Is Refreshing.',
+              );
               try {
                 onSent?.();
               } catch (callbackError) {
@@ -732,18 +794,17 @@ export function UnionWalletModal({
                   : msg
             );
           }
-          setNotice({
-            ok: true,
-            text: isPromoPull
-              ? `Pulled ${fmt(amt)} Promo Chips Back From The ${target.data.name} Promo Wallet.`
-              : `Pulled ${fmt(amt)} Chips Back From The ${target.data.name} Club Bank.`,
-          });
+          succeed(
+            isPromoPull
+              ? `Pulled ${fmt(amt)} Promo Chips Back From ${theClub(target.data.name)} Promo Wallet.`
+              : `Pulled ${fmt(amt)} Chips Back From ${theClub(target.data.name)} Club Bank.`,
+          );
           const after = isPromoPull ? cb.promo_after : cb.union_balance;
           if (typeof after === 'number') setLiveBalance(after);
           else setLiveBalance((prev) => prev + amt);
         }
       }
-      clearUnionWalletOperation(intentScope, opId);
+      await acknowledge();
       setAmount('');
       try {
         onSent?.();
@@ -753,7 +814,7 @@ export function UnionWalletModal({
         reportError(callbackError, 'UnionWalletModal.on_sent_failed');
       }
     } catch (err: any) {
-      if (err?.definitive === true) clearUnionWalletOperation(intentScope, opId);
+      if (err?.definitive === true) await acknowledge();
       reportError(err, 'UnionWalletModal.action_failed');
       setNotice({
         ok: false,
@@ -766,7 +827,13 @@ export function UnionWalletModal({
       busyRef.current = false;
       setBusy(false);
     }
+    if (outcome.confirmed) {
+      toast?.success(outcome.confirmed);
+      onClose();
+    }
   }, [
+    toast,
+    onClose,
     amount,
     target,
     busy,
@@ -910,6 +977,30 @@ export function UnionWalletModal({
                           : ''}
                     </span>
                   </div>
+
+                  {target?.type === 'club' &&
+                    (() => {
+                      const held = clubBalances.get(target.data.id);
+                      if (!held) return null;
+                      const promo =
+                        mode === 'pull' ? pullRoute.kind === 'promo' : route.kind === 'promo';
+                      const pullable = pullableFrom(held, promo);
+                      return (
+                        <div className="uwm-field">
+                          <span className="uwm-label sc-ink--blue">
+                            {promo ? 'Club Promo Wallet' : 'Club Bank Balance'}
+                          </span>
+                          <span className="uwm-target-name sc-ink--silver">
+                            {formatWalletChips(promo ? held.promo : held.bank)}
+                          </span>
+                          {mode === 'pull' && !promo && held.floor > 0 && (
+                            <div className="uwm-blurb">
+                              {`Pullable ${formatWalletChips(pullable)}. The ${formatWalletChips(held.floor)} Opening Grant Stays In The Club.`}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                   {mode === 'send' && (
                     <div className="uwm-field">
@@ -1136,6 +1227,15 @@ export function UnionWalletModal({
                                 ? 'Club Promo Wallet'
                                 : 'Club Bank'
                             }
+                            figure={(() => {
+                              const held = clubBalances.get(c.id);
+                              if (!held) return undefined;
+                              return formatWalletChips(
+                                route.kind === 'promo' || pullRoute.kind === 'promo'
+                                  ? held.promo
+                                  : held.bank
+                              );
+                            })()}
                             selected={on}
                             disabled={clubsBlocked}
                             title={

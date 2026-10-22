@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { clearClubPrivateReadCaches } from '../lib/clubPrivateReadCaches';
 import { ownProfile } from '../lib/ownProfile';
 import { readSettingsPageCache, writeSettingsPageCache } from '../lib/settingsPageCache';
 import { PROFILE_PREFERENCE_DEFAULTS as defaults } from '../lib/profilePreferenceDefaults';
@@ -24,6 +25,14 @@ const COLUMNS: Record<Domain, string> = {
 export function ProfileAccountSync() {
   const userId = useUserStore((state) => state.user?.id);
   const refreshRef = useRef<(domains: Domain[], notify?: boolean) => void>(() => {});
+  const announceScope = (clubId?: string) => {
+    if (!userId || useUserStore.getState().user?.id !== userId) return;
+    clearClubPrivateReadCaches(userId, clubId);
+    masterBus.emit('GAME_MANAGEMENT_ACCESS_CHANGED', {
+      userId,
+      ...(clubId ? { clubId, scope: 'club' as const, scopeId: clubId } : {}),
+    });
+  };
 
   useEffect(() => {
     const media =
@@ -171,7 +180,10 @@ export function ProfileAccountSync() {
     };
     refreshRef.current = refresh;
     const visible = () => {
-      if (document.visibilityState !== 'hidden') refresh(DOMAINS);
+      if (document.visibilityState !== 'hidden') {
+        announceScope();
+        refresh(DOMAINS);
+      }
     };
     const off = [
       masterBus.subscribe('PROFILE_UPDATED', ({ payload }) => {
@@ -217,15 +229,30 @@ export function ProfileAccountSync() {
     event: 'account_changed',
     private: true,
     onPayload: (message) => {
-      const payload = (message as { payload?: { user_id?: unknown; domains?: unknown } })?.payload;
+      const payload = (
+        message as {
+          payload?: { user_id?: unknown; domains?: unknown; club_id?: unknown; reason?: unknown };
+        }
+      )?.payload;
       if (!userId || payload?.user_id !== userId || !Array.isArray(payload.domains)) return;
+      if (
+        payload.reason === 'member_scope_changed' &&
+        typeof payload.club_id === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(payload.club_id)
+      )
+        announceScope(payload.club_id);
       const domains = payload.domains.filter((domain): domain is Domain =>
         DOMAINS.includes(domain as Domain)
       );
       if (domains.length) refreshRef.current(domains);
     },
     onSubscriptionStatus: (status) => {
-      if (status === 'SUBSCRIBED') refreshRef.current(DOMAINS);
+      if (status === 'SUBSCRIBED') {
+        // A disconnected channel can miss an assignment. Clear every owned read
+        // cache before mounted private routes recheck their current server scope.
+        announceScope();
+        refreshRef.current(DOMAINS);
+      }
     },
   });
   return null;

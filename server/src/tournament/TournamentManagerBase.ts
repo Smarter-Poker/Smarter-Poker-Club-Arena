@@ -31,6 +31,7 @@ import {
 } from './tournamentEntryCapacity.js';
 import {
   continueBookedSpinBlinds,
+  playableSpinBlinds,
   readFundedSpinDraw,
   spinRuleManifest,
   type FundedSpinDraw,
@@ -1061,6 +1062,14 @@ export abstract class TournamentManagerBase {
    * See A_LEVEL_IS_NOT_SPENT_WHILE_PART_OF_THE_FIELD_HAS_NO_DEALER.
    */
   static readonly FIELD_WITHOUT_DEALER_HOLD_MS = 30 * 1000;
+  /**
+   * The longest one table without a dealer may hold the level clock for the
+   * whole field. Past this the table has already been paged as critical
+   * (TABLE_ADMISSION_PAGE_AFTER_MS, the same ten minutes) and the rest of the
+   * field plays on: one stuck table never stops a tournament. See
+   * A_STUCK_TABLE_DOES_NOT_STOP_THE_FIELD in advanceBlindLevel.
+   */
+  static readonly FIELD_WITHOUT_DEALER_HOLD_MAX_MS = 10 * 60_000;
   protected savedBlindTimerRemaining: number = 0;
   protected blindTimerStartedAt: number = 0;
   /**
@@ -1086,6 +1095,8 @@ export abstract class TournamentManagerBase {
   private readonly stalledLevelHoldAnnouncedFor = new Set<number>();
   /** One line per level held for a table with no dealer, not one per recheck. */
   private readonly fieldWithoutDealerHoldAnnouncedFor = new Set<number>();
+  /** One line per stuck table the field stopped waiting for, not one per level. */
+  private readonly fieldWithoutDealerReleaseAnnouncedFor = new Set<string>();
   /**
    * Levels whose escalation past the end of the authored structure was held
    * for an unproven chip supply. Announced once per level, for the same
@@ -1599,6 +1610,7 @@ export abstract class TournamentManagerBase {
       this.tableEngineRecoveryAttempts.delete(tableId);
       this.tableAdmissionFailingSince.delete(tableId);
       this.tableAdmissionLastRefusal?.delete(tableId);
+      this.fieldWithoutDealerReleaseAnnouncedFor?.delete(tableId);
     }
   }
 
@@ -1611,6 +1623,7 @@ export abstract class TournamentManagerBase {
     this.tableEngineRecoveryAttempts.clear();
     this.tableAdmissionFailingSince.clear();
     this.tableAdmissionLastRefusal?.clear();
+    this.fieldWithoutDealerReleaseAnnouncedFor?.clear();
     this.tableRestartBackoffStore?.clear();
   }
 
@@ -1624,6 +1637,7 @@ export abstract class TournamentManagerBase {
     if (!this.tableEngineRecoveryTimers.has(tableId)) {
       this.tableAdmissionFailingSince.delete(tableId);
       this.tableAdmissionLastRefusal?.delete(tableId);
+      this.fieldWithoutDealerReleaseAnnouncedFor?.delete(tableId);
     }
   }
 
@@ -1797,7 +1811,7 @@ export abstract class TournamentManagerBase {
   }
 
   /** A replacement inherits every pause authority before it can deal. */
-  private prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
+  protected prepareManagedTableEngineForPlay(engine: ServerTableEngine): void {
     this.holdManagedTableUntilBookedStart(engine);
     // The day is ending: a replacement dealer inherits the stage-end pause
     // before it can deal, exactly as it inherits a synchronized break.
@@ -2056,6 +2070,100 @@ export abstract class TournamentManagerBase {
    * Returns true only when the hand-off was requested. While another table
    * still has cards in the air the ordinary causal retry asks again.
    */
+  /**
+   * A STUCK TABLE HANDS THE EVENT TO A FRESH GENERATION (2026-10-22).
+   *
+   * Midweek Bounty ec53ac10, table 9ca9c3a8: the 02:48 UTC database stall
+   * (a migration looping on ACCESS EXCLUSIVE locks) killed the table with a
+   * prepared hand whose cancellation it never heard back about. The database
+   * did record the cancellation (permit never_started, cancellation row
+   * present), but this generation's recovery never replaced the stopped
+   * engine and never raised another error: eight players sat at a dead table
+   * for over half an hour while the other tables dealt and the level held.
+   *
+   * GameServer asks for this when one of this manager's tables has had no
+   * running dealer for several minutes. Every other table finishes the hand in
+   * front of its players and parks; then the event is handed to a successor
+   * generation, whose admission reads every table back from the database. It
+   * is the same hand-off an unproved hand already uses.
+   *
+   * Returns true only when the hand-off was requested. Until every other table
+   * is between hands, GameServer asks again on its next sweep.
+   */
+  /**
+   * A STALLED BUST SWEEP HANDS THE EVENT TO A FRESH GENERATION (2026-10-22).
+   *
+   * Coffee Break Freeroll (PLO4) f5a98d7e, 16:17:04-16:40:33 UTC: one admitted
+   * elimination sweep never settled. The scheduler deliberately keeps a live
+   * sweep's slot (no concurrent writes), so for 23 minutes this manager
+   * recorded no bust at all. 308 zero-chip players stayed `playing`, every
+   * table break refused (source_roster_disagrees:bust_unrecorded) and every
+   * re-admission refused (F06_MOVEMENT_ELIMINATION_UNPROVEN), six tables lost
+   * their dealer and the SLO paged "Tables Have Stopped Dealing". Only the
+   * stuck-table watchdog, ten minutes after the first table died, handed the
+   * event on; the successor recorded the whole backlog within seconds.
+   *
+   * The stalled sweep is the defect, so it is now the trigger. GameServer asks
+   * for this once a sweep has been in flight past
+   * GameServer.STALLED_ELIMINATION_SWEEP_MS. Every table finishes the hand in
+   * front of its players and parks, then the event goes to a successor
+   * generation (fenced by lease generation, so the abandoned promise can never
+   * write again), exactly as a stuck table does.
+   *
+   * Returns true only when the hand-off was requested.
+   */
+  getStalledEliminationSweep(
+    now = Date.now()
+  ): { msInFlight: number; msBustWaiting: number; stage: number } | null {
+    const msInFlight =
+      this.isProcessingEliminations && this.eliminationSweepStartedAt > 0
+        ? now - this.eliminationSweepStartedAt
+        : 0;
+    const msBustWaiting = this.bustAwaitingSinceMs > 0 ? now - this.bustAwaitingSinceMs : 0;
+    if (msInFlight <= 0 && msBustWaiting <= 0) return null;
+    return { msInFlight, msBustWaiting, stage: this.currentEliminationSweepStage() };
+  }
+
+  /** The stage the in-flight sweep is in; the eliminations layer knows it. */
+  protected currentEliminationSweepStage(): number {
+    return -1;
+  }
+
+  requestSuccessorForStalledEliminationSweep(): boolean {
+    if (!this.isProcessingEliminations && this.bustAwaitingSinceMs <= 0) return false;
+    for (const table of this.tableEngines.values()) {
+      if (table.isRunning()) table.pauseAfterHand(undefined, { untilResumed: true });
+    }
+    for (const table of this.tableEngines.values()) {
+      if (table.isRunning() && !table.isBetweenHands()) return false;
+    }
+    console.info(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Elimination sweep stalled - no bust can be recorded; handing the event to a successor generation`
+    );
+    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
+    return true;
+  }
+
+  requestSuccessorForStuckTable(tableId: string): boolean {
+    if (!this.tableEngines.has(tableId) && !this.tableAdmissionFailingSince.has(tableId))
+      return false;
+    const stuck = this.tableEngines.get(tableId);
+    if (stuck?.isRunning()) return false;
+    for (const other of this.tableEngines.values()) {
+      if (other !== stuck && other.isRunning())
+        other.pauseAfterHand(undefined, { untilResumed: true });
+    }
+    for (const other of this.tableEngines.values()) {
+      if (other === stuck || !other.isRunning()) continue;
+      if (!other.isBetweenHands()) return false;
+    }
+    console.info(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${tableId.slice(0, 8)} has had no dealer for too long - handing the event to a successor generation`
+    );
+    this.gameServer.handTournamentToSuccessorGeneration(this.tournamentId, this);
+    return true;
+  }
+
   private handUnprovedOriginalToSuccessorGeneration(engine: ServerTableEngine): boolean {
     if (
       !unprovedHandNeedsSuccessorGeneration({
@@ -2926,6 +3034,7 @@ export abstract class TournamentManagerBase {
           this.holdSatelliteQualifierBoundary();
         }
         if (this.mysteryActivationMayOpenOnBust(finalStacks)) this.holdMysteryActivationBoundary();
+        if (this.bustAwaitingSinceMs === 0) this.bustAwaitingSinceMs = Date.now();
         this.declareFieldDecidedIfOneStackRemains(finalStacks);
         this.bustAwaitsItsStage();
         this.requestEliminationSweep();
@@ -4931,6 +5040,25 @@ export abstract class TournamentManagerBase {
     return Number.isFinite(actualMs) && actualMs === expectedMs;
   }
 
+  private playableSpinPresentation(
+    row: Record<string, unknown> | null
+  ): Record<string, unknown> | null {
+    if (!row) return row;
+    try {
+      const blinds =
+        typeof row.blind_structure === 'string'
+          ? JSON.parse(row.blind_structure)
+          : row.blind_structure;
+      if (!Array.isArray(blinds)) return row;
+      // Before the clock migration, the booked-draw trigger still projects
+      // legacy seconds. Compare the same playable clock projection, keeping
+      // every other blind key, payout and reveal field exact.
+      return { ...row, blind_structure: playableSpinBlinds(blinds) };
+    } catch {
+      return row;
+    }
+  }
+
   private launchRowMatchesPatch(
     row: Record<string, unknown> | null | undefined,
     patch: Record<string, unknown>
@@ -6361,16 +6489,17 @@ export abstract class TournamentManagerBase {
           }
         }
 
-        // Recovery takes every tier-dependent play rule from the immutable
-        // funded receipt. It never substitutes rules from the current binary.
+        // Recovery takes tier-dependent stakes and payouts from the immutable
+        // funded receipt. The owner clock floor is a playable projection only;
+        // it never changes the booked receipt or its manifest/hash.
         // The board-owned stack was already funded and is independently
         // checked below against both the roster and every occupied seat.
-        const spinBlinds = fundedSpin.blinds;
+        const spinBlinds = playableSpinBlinds(fundedSpin.blinds);
 
         // The atomic database authority already owns and stamped
         // prize_pool, spin_multiplier and spin_locked_tiers. This follow-up is
         // presentation/gameplay configuration only: it must never become a
-        // second money-contract writer. It is still read back exactly before
+        // second money-contract writer. Its playable projection is proved before
         // RUNNING because the blinds, payout display and reveal anchor are
         // required by every engine/client copy.
         const spinPresentationPatch = {
@@ -6439,7 +6568,9 @@ export abstract class TournamentManagerBase {
             if (
               !spinPresentationProofErr &&
               this.launchRowMatchesPatch(
-                spinPresentationProof as Record<string, unknown> | null,
+                this.playableSpinPresentation(
+                  spinPresentationProof as Record<string, unknown> | null
+                ),
                 spinPresentationPatch as unknown as Record<string, unknown>
               )
             ) {
@@ -9456,7 +9587,7 @@ export abstract class TournamentManagerBase {
       const secs = Number(levelData?.duration);
       if (Number.isFinite(secs) && secs > 0) baseMs = secs * 1000;
     }
-    return baseMs;
+    return Math.max(5 * 60_000, baseMs);
   }
 
   protected levelDurationMs(levelData: any): number {
@@ -10042,11 +10173,41 @@ export abstract class TournamentManagerBase {
        * holding an ordinary level. Announced once per level, like the hold
        * above, so a hold that never ends is a line somebody can read.
        */
+      /*
+       * ═══════════════════════════════════════════════════════════════════
+       *  A STUCK TABLE DOES NOT STOP THE FIELD (2026-10-21)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * The hold below had no end. Turbo Tuesday PKO bc8e3d86, 2026-10-21:
+       * table cc98f791 seated two players at 03:17 and never dealt (its
+       * admission was refused F06_MOVEMENT_NEVER_DEALT_ENTRY_UNPROVEN, fixed
+       * at the source by #7588). Every other table dealt all day, and the
+       * hold kept about 170 players at one blind level for 19 hours: big
+       * blind 150 from 03:20 to 11:00 and 250 from 11:00 to 22:14, until the
+       * two were moved and the owed levels ran in the last hour. A turbo
+       * scheduled to take a few hours finished at 23:12, and the brain read
+       * every one of those decisions as a stale clock.
+       *
+       * Holding for a refusal that heals in minutes still protects the
+       * parked seats (the 10-16 case). Past FIELD_WITHOUT_DEALER_HOLD_MAX_MS
+       * the table is a defect that has already paged as critical, and its
+       * repair belongs to admission, not to everyone else's clock: the field
+       * plays on, announced once per table so the release is readable.
+       */
       // Read inline from the table's own recovery record: no wake, no query.
       const fieldCheckedAt = Date.now();
       let stoppedTable: { tableId: string; failingMs: number } | null = null;
       for (const [tableId, since] of this.tableAdmissionFailingSince ?? []) {
         const failingMs = fieldCheckedAt - since;
+        if (failingMs > TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS) {
+          if (!this.fieldWithoutDealerReleaseAnnouncedFor?.has(tableId)) {
+            this.fieldWithoutDealerReleaseAnnouncedFor?.add(tableId);
+            console.log(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Table ${tableId.slice(0, 8)} has had no dealer for ${Math.round(failingMs / 60_000)} min - the field no longer waits for it; levels resume`
+            );
+          }
+          continue;
+        }
         if (
           failingMs >= TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MS &&
           (!stoppedTable || failingMs > stoppedTable.failingMs)
@@ -11797,6 +11958,15 @@ export abstract class TournamentManagerBase {
 
   /** Local belt; process-wide admission guarantees no concurrent generation. */
   protected isProcessingEliminations = false;
+  /** Wall clock the admitted elimination sweep began at; 0 while none is in flight. */
+  protected eliminationSweepStartedAt = 0;
+  /**
+   * When the oldest bust the bust stage has not yet completed a pass over was
+   * first seen (a hand ended with a zero stack); 0 when none is waiting. Reset
+   * only by a COMPLETED bust stage, so a sweep that hangs, returns early on
+   * every pass, or fails in a loop all leave it running.
+   */
+  protected bustAwaitingSinceMs = 0;
 
   // ── Implemented by TournamentManagerEliminations (layer 2/3) ──
   protected abstract startEliminationChecker(): void;

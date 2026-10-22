@@ -33,6 +33,8 @@ import {
 } from './diamondScheduledSpawn.js';
 import { MIDWAY_UNION_ID, overlayHostsFrom } from './HorseOverlayGuard.js';
 import { gameLaneFor } from './HorseBehavior.js';
+import { withLockedLevelClock } from '../tournament/lockedLevelClock.js';
+import { withBountyRebuyUntilRegistrationCloses } from '../tournament/bountyRebuyPolicy.js';
 
 vi.mock('../maintenance/freezeState.js', () => ({ isMaintenanceFrozen: () => false }));
 vi.mock('./errorReporter.js', () => ({ reportError: vi.fn() }));
@@ -352,7 +354,12 @@ describe('a chip schedule is untouched', () => {
   it('inserts exactly the row buildInsertRow builds, and never calls the Diamond door', async () => {
     const cfg = midwayBounty();
     vi.spyOn(supabase, 'from');
-    const expected = await built(cfg, START, CHIP_CLUB);
+    // Dan 2026-10-21: the spawn path locks every level to one clock first,
+    // and a bounty MTT rebuys until registration closes (never a freezeout).
+    const expected = withBountyRebuyUntilRegistrationCloses(
+      withLockedLevelClock(await built(cfg, START, CHIP_CLUB))
+    );
+    expect(expected.is_rebuy).toBe(true);
     vi.restoreAllMocks();
 
     const db = fakeDb({ club: chipClub });

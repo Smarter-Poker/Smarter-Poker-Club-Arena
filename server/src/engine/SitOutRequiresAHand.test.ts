@@ -41,7 +41,7 @@ describe('sit-out requires a played hand', () => {
     /* A player must never be trapped in a sit-out they cannot leave. The guard
        is conditioned on `sitOut` being true. */
     expect(sitOutBody).toMatch(
-      /if \(sitOut && !this\.isTournamentTable\(\) && !this\.dealtInUserIds/
+      /if\s*\(\s*sitOut\s*&&\s*!this\.isTournamentTable\(\)\s*&&\s*!this\.dealtInUserIds/
     );
   });
 

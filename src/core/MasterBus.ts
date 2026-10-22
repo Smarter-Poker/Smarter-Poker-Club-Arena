@@ -1304,9 +1304,17 @@ type OnEventCallback = (entry: EventLogEntry) => void;
 let _subscriberIdCounter = 0;
 let _eventLogIdCounter = 0;
 
-// Critical events that trigger SW notification + Supabase log
+// Events the bus surfaces as a background notification (service worker on
+// the web, a local notification in the app).
+//
+// BALANCE_UPDATED IS NEVER ONE (Dan, 2026-10-21: "THIS PUSH NOTIFICATION HAS
+// GOT TO STOP APPEARING"). It is internal refresh plumbing: every realtime
+// reconnect emits it with source 'postgres_sync_connected', so a phone that
+// wakes or changes network got a "Balance Updated / Source:
+// postgres_sync_connected" banner that told the player nothing. Pages still
+// subscribe to it to reload balances; it just never reaches the lock screen.
+// Pinned by tests/balance-sync-is-never-a-notification.law.test.ts.
 const CRITICAL_EVENTS: BusEventType[] = [
-  'BALANCE_UPDATED',
   'CLUB_JOINED',
   'CLUB_LEFT',
   'TABLE_SEATED',

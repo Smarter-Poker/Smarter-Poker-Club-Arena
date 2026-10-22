@@ -4,9 +4,18 @@ name: Stage Exact Club Arena Engine Release
 # as it reaches protected main. The owning deploy workflow still builds, tests,
 # waits for the certified table break, cuts over, and proves the release. This
 # signal has no SSH, environment, source-write, or restart authority.
+#
+# The window-migrations job (2026-10-22) is the one database writer here: on
+# the admitted daily 03:30 America/Chicago run only, it installs migrations
+# that declare "-- @install-window: daily-maintenance" inside the 04:00 freeze
+# (scripts/ci/install-window-migrations.mjs). It adds no schedule, sends no
+# event, and never touches the engine or the host.
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: '30 8 * * *'
+    - cron: '30 9 * * *'
 
 permissions: {}
 
@@ -17,10 +26,12 @@ jobs:
     timeout-minutes: 3
     permissions:
       contents: read
+      actions: read
     outputs:
       release_required: ${{ steps.change.outputs.release_required }}
       target_sha: ${{ steps.change.outputs.target_sha }}
       offer_reason: ${{ steps.change.outputs.offer_reason }}
+      admission_allowed: ${{ steps.admission.outputs.allowed }}
     steps:
       # Do not use push.paths here. GitHub only evaluates a bounded portion of
       # a very large diff for path filters, which can omit a real server change
@@ -38,6 +49,67 @@ jobs:
           # cat-file -e, which are all commit-graph work - so those blobs were paid
           # for on every run and never read.
           filter: blob:none
+
+      # Owner 2026-10-20 explicitly requests daily routine updates. Both UTC
+      # candidates run; only 03:30 Chicago prepares the 04:00 window. No repair
+      # timer, secondary publisher or automatic deadline-emergency exists.
+      - name: Admit daily preparation or an explicit urgent release
+        id: admission
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE_EXPRESSION: ${{ github.event.schedule || '' }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          allowed=false
+          if [ "$EVENT_NAME" = schedule ]; then
+            # Admission belongs to the nominal scheduled instant, not when a
+            # queued runner finally executes. A delayed 03:30 preparation may
+            # still stage; the host certificate independently owns activation.
+            RUN_CREATED_AT=$(gh api "repos/$REPO/actions/runs/$RUN_ID" --jq .created_at)
+            if RUN_CREATED_AT="$RUN_CREATED_AT" python3 - <<'PYTHON'
+          import os
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+          expression = os.environ["SCHEDULE_EXPRESSION"]
+          hours = {"30 8 * * *": 8, "30 9 * * *": 9}
+          if expression not in hours:
+              raise ValueError("unknown daily preparation schedule")
+          created = datetime.fromisoformat(os.environ["RUN_CREATED_AT"].replace("Z", "+00:00"))
+          if created.utcoffset() is None:
+              raise ValueError("daily preparation run creation time has no timezone")
+          nominal = created.astimezone(timezone.utc).replace(hour=hours[expression], minute=30, second=0, microsecond=0)
+          if nominal > created:
+              raise ValueError("daily preparation nominal instant is after run creation")
+          local = nominal.astimezone(ZoneInfo("America/Chicago"))
+          raise SystemExit(0 if (local.hour, local.minute) == (3, 30) else 1)
+          PYTHON
+            then
+              allowed=true
+            fi
+          elif git log -1 --format=%B | grep -Eq '^Engine-Release: (urgent|daily-maintenance-transition)$'; then
+            allowed=true
+          fi
+          if [ "$allowed" = false ]; then
+            HEALTH=$(curl -sS --max-time 15 https://engine.smarter.poker/health) || HEALTH='{}'
+            if printf '%s' "$HEALTH" | python3 -c '
+          import json,sys
+          try:
+              d=json.load(sys.stdin)
+              q=d.get("tournamentManagersQuarantined")
+              degraded=d.get("liveness")=="dead" or d.get("wholeFleetStalled") is True or (type(q) is int and q>=100)
+          except Exception:
+              degraded=False
+          raise SystemExit(0 if degraded else 1)'; then
+              allowed=true
+            fi
+          fi
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+          if [ "$allowed" = false ]; then
+            echo 'Routine engine updates are queued for 04:00 America/Chicago.'
+          fi
 
       - name: Compare the complete server tree
         id: change
@@ -147,10 +219,50 @@ jobs:
           echo "Exact engine component SHA: $LATEST_REQUIRED"
           echo "Offered server tree SHA: $TARGET_SHA"
 
+  # A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
+  # (2026-10-22). Migrations that need ACCESS EXCLUSIVE on clubs, tables or
+  # hand_history cannot install during play (20261022030326). Such a file
+  # declares the window, the ordinary applier refuses it as queued, and this
+  # job installs every queued one inside the 04:00 freeze: one transaction
+  # per file, one attempt, 1 s lock_timeout, 8 s budget, the documented
+  # break-window override recorded, and the first refusal stops the run with
+  # the rest still queued. Nothing queued: it exits at once. Its reader is the
+  # job summary and the red-main detector (CLAUDE.md 10.83).
+  window-migrations:
+    name: Install Queued Daily-Maintenance Migrations
+    needs: detect
+    if: github.event_name == 'schedule' && needs.detect.outputs.admission_allowed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    concurrency:
+      group: daily-maintenance-window-migrations
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout protected main
+        uses: actions/checkout@v4
+
+      - name: Use the production Node major
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install the Postgres client library
+        run: npm i pg@8 --no-save --no-audit --no-fund
+
+      - name: Install every queued window migration inside the 04:00 break
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          node scripts/ci/install-window-migrations.mjs \
+            --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt
+
   signal:
     name: Dispatch The Exact Main SHA
     needs: detect
-    if: needs.detect.outputs.release_required == 'true'
+    if: needs.detect.outputs.release_required == 'true' && needs.detect.outputs.admission_allowed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     permissions:

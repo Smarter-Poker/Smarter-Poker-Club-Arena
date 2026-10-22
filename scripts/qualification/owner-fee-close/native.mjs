@@ -97,7 +97,90 @@ try{
  assert.equal(sql(`SELECT count(*) FROM accounting_tournament_fee_sources WHERE rake_record_id='${id(107)}'`),'0');
  sql(`UPDATE clubs SET owner_id='${owner}' WHERE id='${club}';`);
  refuse(migration,'OWNER_FEE_MIGRATION_ALREADY_INSTALLED');
- const signatures=['fn_accounting_qualify_owner_direct_fee(uuid)','fn_accounting_owner_direct_fee_proof_valid(uuid)','fn_settle_tournament_rake(uuid,text)','fn_accounting_tournament_fee_net_plan(uuid)','fn_accounting_tournament_week_quality(uuid,timestamp with time zone,timestamp with time zone)'];
+  // Current original-close lineage preimages, including satellite source-ledger identity.
+  const detectorPreimages = json('detector-preimages.json');
+  sql(
+    'CREATE SCHEMA smarter_private;' + detectorPreimages.map((x) => x.definition + ';').join('\n')
+  );
+  sql(`CREATE TABLE table_seats(left_at timestamptz,horse_id uuid,table_id uuid);
+ CREATE TABLE tables(id uuid,tournament_id uuid);ALTER TABLE tournaments ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+ ALTER TABLE tournament_players ADD COLUMN IF NOT EXISTS status text;
+ INSERT INTO tournaments(id,club_id,is_private,tournament_type,status) VALUES('${id(800)}','${club}',true,'SNG','RUNNING');`);
+  sql(fixture(20).replaceAll(event, id(800)));
+  const metric = () =>
+    Number(sql('SELECT unbatched_fee_running FROM fn_ca_horse_fleet_metrics(10)'));
+  assert.equal(metric(), 1, 'before: lawful deferred fee is incorrectly counted');
+  const detectorMigration = readFileSync(
+    path.join(root, 'supabase/migrations/20261020201951_fee_detector_uses_original_close_plan.sql'),
+    'utf8'
+  );
+  sql(detectorMigration);
+  const snapshot = () =>
+    sql(`SELECT jsonb_build_object('b',(SELECT jsonb_agg(to_jsonb(x)) FROM accounting_tournament_fee_batches x),
+ 's',(SELECT jsonb_agg(to_jsonb(x)) FROM accounting_tournament_fee_sources x),'p',(SELECT jsonb_agg(to_jsonb(x)) FROM accounting_owner_direct_fee_proofs x),
+ 'l',(SELECT jsonb_agg(to_jsonb(x)) FROM chip_ledger x))`);
+  const noWrites = snapshot();
+  assert.equal(metric(), 0, 'after: exact validated original-close plan is not blocked');
+  assert.equal(snapshot(), noWrites, 'observer writes no accounting, proof, or ledger rows');
+  assert.equal(
+    JSON.parse(sql(`SELECT smarter_private.owner_direct_fee_capture_plan('${id(120)}')`))
+      .rake_credit,
+    0.1
+  );
+  assert.equal(
+    sql(
+      `SELECT provolatile FROM pg_proc WHERE oid='smarter_private.owner_direct_fee_capture_plan(uuid)'::regprocedure`
+    ),
+    's'
+  );
+  refuse(
+    `SET ROLE service_role;SELECT smarter_private.owner_direct_fee_capture_plan('${id(120)}');`,
+    'permission denied'
+  );
+  refuse(
+    `SELECT fn_accounting_qualify_owner_direct_fee('${id(120)}');`,
+    'chip_tournament_fee_required'
+  );
+  sql(`UPDATE chip_ledger SET amount=9 WHERE id='${id(420)}'`);
+  assert.equal(metric(), 1, 'invalid original charge still blocks');
+  sql(`UPDATE chip_ledger SET amount=1.10 WHERE id='${id(420)}'`);
+  sql(`UPDATE clubs SET owner_id='${id(999)}' WHERE id='${club}'`);
+  assert.equal(metric(), 1, 'missing original earning agreement still blocks');
+  sql(`UPDATE clubs SET owner_id='${owner}' WHERE id='${club}'`);
+  assert.equal(metric(), 0);
+  // Unexpected implementation failures must surface, rather than turn into clean metrics.
+  sql('ALTER TABLE accounting_owner_direct_fee_incident RENAME TO hidden_incident');
+  refuse('SELECT * FROM fn_ca_horse_fleet_metrics(10)', 'accounting_owner_direct_fee_incident');
+  sql('ALTER TABLE hidden_incident RENAME TO accounting_owner_direct_fee_incident');
+  const planned = JSON.parse(
+    sql(`SELECT smarter_private.owner_direct_fee_capture_plan('${id(120)}')`)
+  );
+  sql(`UPDATE tournaments SET status='COMPLETING' WHERE id='${id(800)}'`);
+  sql(`SELECT fn_accounting_qualify_owner_direct_fee('${id(120)}')`);
+  const stored = JSON.parse(
+    sql(
+      `SELECT to_jsonb(x)-ARRAY['id','recorded_at'] FROM accounting_tournament_fee_sources x WHERE rake_record_id='${id(120)}'`
+    )
+  );
+  assert.deepEqual(stored, planned.sources[0], 'original writer commits exact shared-plan values');
+  assert.equal(
+    JSON.parse(sql(`SELECT fn_accounting_qualify_owner_direct_fee('${id(120)}')`)).replayed,
+    true
+  );
+  sql(fixture(21).replaceAll(event,id(800)));
+  await Promise.all([concurrent(`BEGIN;SELECT fn_accounting_qualify_owner_direct_fee('${id(121)}');SELECT pg_sleep(.05);COMMIT;`),concurrent(`SELECT fn_accounting_qualify_owner_direct_fee('${id(121)}');`)]);
+  assert.equal(sql(`SELECT count(*) FROM accounting_tournament_fee_sources WHERE rake_record_id='${id(121)}'`),'1');
+  assert.equal(sql(`SELECT count(*) FROM accounting_owner_direct_fee_proofs WHERE rake_record_id='${id(121)}'`),'1');
+  sql(fixture(22,'','2026-10-19T15:42:00Z').replaceAll(event,id(800)));
+  assert.equal(sql(`SELECT smarter_private.owner_direct_fee_close_ready('${id(122)}')`),'f','incident label cannot admit a fee outside its exact time boundary');
+  refuse(detectorMigration, 'fee_detector_source_preimage_changed');
+  console.log(
+    'PASS: fee detector real before/after, no writes, exact original shared plan, invalid evidence and contract, private ACL, unexpected errors visible, completion-only writer and replay refusal.'
+  );
+ const signatures=['smarter_private.owner_direct_fee_capture_plan(uuid)','smarter_private.owner_direct_fee_close_ready(uuid)','fn_ca_horse_fleet_metrics(integer)','fn_accounting_qualify_owner_direct_fee(uuid)','fn_accounting_owner_direct_fee_proof_valid(uuid)','fn_settle_tournament_rake(uuid,text)','fn_accounting_tournament_fee_net_plan(uuid)','fn_accounting_tournament_week_quality(uuid,timestamp with time zone,timestamp with time zone)'];
  console.log('POSTIMAGES '+JSON.stringify(JSON.parse(sql(`SELECT jsonb_object_agg(sig,md5(pg_get_functiondef(sig::regprocedure))) FROM unnest(ARRAY[${signatures.map(x=>"'"+x+"'").join(',')}]) sig`))));
  console.log('PASS: real PG17 baseline failure, original producer dependency, exact charge validation, immutable batches/proofs, canonical net plan, duplicate/concurrent requests, authorization, rollback of terminal refusal, replay refusal.');
 }finally{if(running)run('pg_ctl',['-D',path.join(dir,'db'),'-m','immediate','-w','stop']);rmSync(dir,{recursive:true,force:true});}
+
+// The existing accounting shard also certifies the daily operations reader.
+execFileSync(process.execPath,[path.join(root,'scripts/qualification/daily-metrics-health/native.mjs'),path.join(parent,'daily-metrics-health')],{stdio:'inherit',env:process.env});

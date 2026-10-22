@@ -34,7 +34,7 @@ const A = {
 };
 const B1 = { tournamentId: T, leaseGeneration: 'd3090000-0000-4000-8000-000000000005' };
 const B2 = { tournamentId: T, leaseGeneration: 'd3090000-0000-4000-8000-000000000006' };
-const at = (time: string) => Date.parse(`2026-09-11T${time}.000Z`);
+const at = (time: string) => Date.parse(`2026-09-11T${time}.000Z`) - (3 * 60 + 55) * 60_000;
 const managers: any[] = [];
 const breaks: MaintenanceBreak[] = [];
 const schedulers: DeadlineScheduler[] = [];
@@ -213,7 +213,7 @@ function tournamentTransport() {
     format_contract: 'mtt-v1',
     current_level: 0,
     blind_structure: [{ smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 }],
-    level_started_at: '2026-09-11T12:45:30.000Z',
+    level_started_at: '2026-09-11T08:50:30.000Z',
     prize_pool_finalized: true,
     on_break: false,
     break_started_at: null,

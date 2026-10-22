@@ -160,6 +160,9 @@ const DELIBERATE_OVERLOADS: Record<string, string[]> = {
   // door. The latter requires p_seat_first_internal, with no default: neither
   // named-argument set can match both. Do not drop the compatibility caller.
   fn_register_for_tournament: ['uuid', 'uuid,boolean'],
+  // Existing current-viewer and explicit-user RLS helpers. p_user_id is required
+  // on the explicit helper, absent on the viewer helper, so RPC names disambiguate.
+  is_club_admin: ['uuid', 'uuid,uuid'],
   fn_thaw_platform: [
     'timestamp with time zone,numeric,text',
     'timestamp with time zone,timestamp with time zone,numeric,uuid,text',
@@ -283,6 +286,20 @@ describe('a door the engine calls by name has one overload', () => {
   });
 
   it('a deliberate overload pair really is disjoint by required named arguments', () => {
+    const adminDefinitions = parsed
+      .flatMap(({ creates }) => creates)
+      .filter((c) => c.name === 'is_club_admin');
+    expect(adminDefinitions.some((c) => sig(c.types) === 'uuid')).toBe(true);
+    const explicitAdmins = parsed
+      .flatMap(({ sql }) => [...sql.matchAll(CREATE_RE)])
+      .filter(
+        (match) => match[1].toLowerCase() === 'is_club_admin' && inputTypes(match[2]).length === 2
+      );
+    expect(explicitAdmins.length).toBeGreaterThan(0);
+    for (const definition of explicitAdmins) {
+      expect(definition[2]).toMatch(/p_user_id uuid\s*$/i);
+      expect(definition[2]).not.toMatch(/default|=/i);
+    }
     const registration = parsed
       .flatMap(({ sql }) => [...sql.matchAll(CREATE_RE)])
       .filter((match) => match[1].toLowerCase() === 'fn_register_for_tournament')

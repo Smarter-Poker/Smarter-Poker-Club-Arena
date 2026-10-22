@@ -70,32 +70,23 @@ async function openLobby(page: Page) {
   // The Diamond Spins offer opens on the answer to this read. Listen before
   // navigating: it leaves as soon as the club resolves.
   const offer = diamondEntryRead(page);
-  await page.goto(`clubs/${CLUB_ID}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.goto(`clubs/${CLUB_ID}`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30_000,
+  });
   await page.waitForTimeout(500);
   test.skip(/\/auth(?:\/|$|\?)/.test(page.url()), 'signed out: the club lobby is behind a login');
 
   // Either optional welcome can cover a later tab action. Use the original
   // public dismissals, including the shared handler for a delayed Diamond offer.
   await prepareCashLobbyActions(page);
-  await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({ timeout: 45_000 });
+  await expect(page.locator('.lobby-wallets-trigger')).toBeVisible({
+    timeout: 45_000,
+  });
   // Then settle that offer here, through its real Not Now and with its whole
   // budget, before a 5-second assertion or a scroll measurement can meet it
   // (support/diamondInvitationOffer.ts has the four runs it failed).
   await settleDiamondSpinsOffer(page, offer);
-}
-
-/** Where a fixed element at bottom: 0 lands is the bottom edge. The viewport
- *  height is not: WebKit's mobile emulation reports it taller than the layout
- *  viewport fixed elements attach to. */
-async function bottomEdge(page: Page) {
-  return page.evaluate(() => {
-    const probe = document.createElement('div');
-    probe.style.cssText = 'position:fixed;bottom:0;left:0;width:1px;height:1px;pointer-events:none';
-    document.body.appendChild(probe);
-    const edge = probe.getBoundingClientRect().bottom;
-    probe.remove();
-    return edge;
-  });
 }
 
 test.describe('the mobile lobby chrome on production', () => {
@@ -262,34 +253,67 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(sortbar).toBeVisible({ timeout: 45_000 });
     await expect(sortbar).toHaveCSS('position', 'sticky');
 
-    /* Scroll far enough that an unstuck row would leave the screen. */
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(600);
-    // Down-scroll intentionally tucks the filters away. Reveal them through
-    // the player's upward scroll before measuring their sticky alignment.
-    await page.evaluate(() => window.scrollBy(0, -64));
-    await expect(page.locator('.club-lobby-command-top')).toHaveAttribute(
-      'data-filters-hidden',
-      'false'
-    );
-    const m = await page.evaluate(() => {
-      const row = document.querySelector('.lobby-sortbar')!.getBoundingClientRect();
-      const deck = document
-        .querySelector('.club-lobby-command-top__controls')!
-        .getBoundingClientRect();
-      return {
-        rowTop: row.top,
-        rowBottom: row.bottom,
-        deckBottom: deck.bottom,
-        scrolled: window.scrollY,
-      };
-    });
-    expect(m.scrolled, 'the lobby did not scroll at all').toBeGreaterThan(0);
-    expect(m.rowBottom, 'the filter row scrolled off the top of the page').toBeGreaterThan(0);
-    expect(
-      Math.abs(m.rowTop - m.deckBottom),
-      'gap between Find Your Game and the row'
-    ).toBeLessThan(1);
+    // Reach the end, then use actual upward input. A programmatic scroll
+    // whose distance matches a concurrent height change has no user intent
+    // to distinguish it from the browser preserving its anchor.
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          return window.scrollY >= document.documentElement.scrollHeight - window.innerHeight - 1;
+        })
+      )
+      .toBe(true);
+    const viewport = page.viewportSize()!;
+    await page.mouse.move(viewport.width / 2, viewport.height / 2);
+    // Mobile emulation (WebKit and Chromium) rejects mouse.wheel. There the
+    // same upward user scroll is issued as a relative scroll, which reaches
+    // the hook through the identical document scroll event a finger produces.
+    try {
+      await page.mouse.wheel(0, -64);
+    } catch (error) {
+      if (!/Mouse wheel is not supported/i.test(String(error))) throw error;
+      // A bare programmatic scroll carries no input evidence, so the hook
+      // rightly reads a coincident lobby re-render as the page keeping its
+      // place (WebKit run 39699204267). Supply the finger: an upward touch
+      // in the same frame as the scroll it produces.
+      await page.evaluate(() => {
+        const target = document.documentElement;
+        const touch = (type: string, y: number | null) => {
+          const event = new Event(type, { bubbles: true });
+          Object.defineProperty(event, 'touches', {
+            value: y === null ? [] : [{ clientY: y }],
+          });
+          target.dispatchEvent(event);
+        };
+        touch('touchstart', window.innerHeight / 2);
+        touch('touchmove', window.innerHeight / 2 + 64);
+        window.scrollBy(0, -64);
+        touch('touchend', null);
+      });
+    }
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const controls = document.querySelector('.club-lobby-command-top');
+            const row = document.querySelector('.lobby-sortbar')!.getBoundingClientRect();
+            const deck = document
+              .querySelector('.club-lobby-command-top__controls')!
+              .getBoundingClientRect();
+            if (
+              controls?.getAttribute('data-filters-hidden') !== 'false' ||
+              window.scrollY <= 0 ||
+              row.bottom <= 0
+            )
+              return Number.POSITIVE_INFINITY;
+            return Math.abs(row.top - deck.bottom);
+          }),
+        {
+          message: 'upward input reveals the pinned filters directly under Find Your Game',
+        }
+      )
+      .toBeLessThan(1);
   });
 
   test('the footer frame sits on the bottom edge with nothing under it', async ({ page }) => {
@@ -303,16 +327,18 @@ test.describe('the mobile lobby chrome on production', () => {
     await expect(nav).toHaveCount(1);
     await expect(nav).toBeVisible();
     await expect(nav).toHaveCSS('position', 'fixed');
-    /* Reach the END of the page and stay there. The live lobby refetches and
-       re-renders its game list as it scrolls (run 39232506260: 487 -> 485
-       games inside one second), so a single scrollTo can land on a bottom
-       that the next render moves. In between, useHideFooterOnScroll does
-       exactly what Dan asked for on 2026-09-04 - travelling down drops the
-       bar with translateY(100%) - and a frame measured then is the bar's own
-       height (61px) off the edge, not a floating footer. Re-scroll until the
-       page is at its true end, and require the bar to have come back there
-       (the 2026-09-05 "at the bottom it comes back" rule). A bar stuck hidden
-       at the end of the page still fails here. */
+    // Resolve the approved role-specific artwork before measuring. The live
+    // list can reflow between Playwright calls, so visibility, the actual end
+    // and painted-frame geometry must be read together in one browser turn.
+    const doors = nav.locator('[data-footer-doors]');
+    await expect(doors).toHaveCount(1);
+    await expect(doors).toHaveAttribute('data-footer-doors', /^(member|operator)$/);
+    const kind = await doors.getAttribute('data-footer-doors');
+    const baseFrame =
+      kind === 'member' ? 'club-arena-footer-player-v1.webp' : 'club-arena-footer-v3.webp';
+    const artwork = doors.locator('..');
+    await expect(artwork).toHaveCount(1);
+    await expect(artwork.locator(`picture > img[src$="/${baseFrame}"]`)).toHaveCount(1);
     await expect
       .poll(
         () =>
@@ -320,36 +346,25 @@ test.describe('the mobile lobby chrome on production', () => {
             const root = document.documentElement;
             window.scrollTo(0, root.scrollHeight);
             const atEnd = window.scrollY >= root.scrollHeight - window.innerHeight - 1;
-            return atEnd ? (bar.getAttribute('data-footer-hidden') ?? 'missing') : 'scrolling';
+            const shown = bar.getAttribute('data-footer-hidden') === 'false';
+            const frame = bar.querySelector('[data-footer-doors]')?.parentElement;
+            if (!atEnd || !shown || !frame) return Number.POSITIVE_INFINITY;
+            const probe = document.createElement('div');
+            probe.style.cssText =
+              'position:fixed;bottom:0;left:0;width:1px;height:1px;pointer-events:none';
+            document.body.appendChild(probe);
+            const edge = probe.getBoundingClientRect().bottom;
+            const painted = frame.getBoundingClientRect();
+            probe.remove();
+            return Math.abs(painted.bottom - edge);
           }),
         {
-          message: 'the footer is back on screen at the end of the lobby',
+          message:
+            'visible painted footer frame touches the bottom edge at the actual end of the lobby',
           timeout: 10_000,
           intervals: [300, 300, 500, 1_000],
         }
       )
-      .toBe('false');
-    await expect(nav).toHaveAttribute('data-footer-hidden', 'false');
-
-    const edge = await bottomEdge(page);
-    // Members and operators have different approved base frames. The Diamond
-    // Spins overlay is a second image; never measure that overlay instead.
-    const doors = nav.locator('[data-footer-doors]');
-    await expect(doors).toHaveCount(1);
-    await expect(doors).toHaveAttribute('data-footer-doors', /^(member|operator)$/);
-    const kind = await doors.getAttribute('data-footer-doors');
-    const baseFrame =
-      kind === 'member' ? 'club-arena-footer-player-v1.webp' : 'club-arena-footer-v3.webp';
-    // The responsive picture's absolutely positioned image does not size its
-    // inline parent. Measure the artwork wrapper that owns these exact doors.
-    const artwork = doors.locator('..');
-    await expect(artwork).toHaveCount(1);
-    await expect(artwork.locator(`picture > img[src$="/${baseFrame}"]`)).toHaveCount(1);
-    const frame = await artwork.boundingBox();
-    expect(frame).not.toBeNull();
-    expect(
-      Math.abs(frame!.y + frame!.height - edge),
-      'strip between the painted frame and the bottom edge'
-    ).toBeLessThan(1);
+      .toBeLessThan(1);
   });
 });

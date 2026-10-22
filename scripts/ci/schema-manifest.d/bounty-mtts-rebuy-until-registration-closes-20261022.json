@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/tournament-masthead-bounty-rebuy-mystery-ladder",
+  "functions": ["fn_ca_bounty_mtt_rebuys_until_registration_closes"]
+}

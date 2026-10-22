@@ -875,6 +875,36 @@ export const UnionOpsService = {
     return data as { success: boolean; error?: string; blockers?: ExitBlockers };
   },
 
+  async reassignClubMembers(
+    clubId: string,
+    memberIds: string[],
+    agentId: string,
+    operationId: string,
+    sourceId?: string,
+    reviewToken?: string
+  ) {
+    const { data, error } = await supabase.rpc(
+      reviewToken ? 'fn_apply_reviewed_club_assignment' : 'fn_reassign_club_members',
+      {
+        p_club_id: clubId,
+        p_member_user_ids: memberIds,
+        p_agent_user_id: agentId,
+        p_op_id: operationId,
+        p_expected_agent_user_id: sourceId ?? null,
+        ...(reviewToken ? { p_review_token: reviewToken } : {}),
+      }
+    );
+    if (error) throw error;
+    if (
+      !data ||
+      data.success !== true ||
+      data.operation_id !== operationId ||
+      data.moved !== new Set(memberIds).size
+    )
+      throw new Error('Assignment Receipt Could Not Be Verified');
+    return data as { success: true; operation_id: string; moved: number; replayed?: boolean };
+  },
+
   async assignPlayerToAgent(playerUserId: string, agentUserId: string, clubId: string) {
     const { data, error } = await supabase.rpc('fn_assign_player_to_agent', {
       p_player_user_id: playerUserId,

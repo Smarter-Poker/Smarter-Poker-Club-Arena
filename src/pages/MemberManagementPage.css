@@ -636,7 +636,8 @@
 }
 
 .mm-roles__option--current {
-  border-style: dashed;
+  border: 2px solid var(--ca-cyan);
+  opacity: 1;
 }
 
 .mm-roles__option-main {

@@ -1,3 +1,4 @@
+import { unionWalletIntentRpc } from './helpers/unionWalletIntentRpc';
 /**
  * Union wallets must open and be able to send funds to any union member.
  *
@@ -12,6 +13,7 @@ const UNION_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const sourceState = vi.hoisted(() => ({ clubError: null as null | { message: string } }));
 
 const rpc = vi.fn();
+const durableIntents = unionWalletIntentRpc();
 /** The roster is read in pages (.order().range()); one mocked page holds it all. */
 function pageable(value: unknown) {
   const p: any = Promise.resolve(value);
@@ -27,18 +29,33 @@ const unionClubs = [
 ];
 const fromChain = (table?: string) => {
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'in', 'order', 'limit', 'contains']) {
+  let projection = '';
+  chain.select = (columns: string) => {
+    projection = columns;
+    return chain;
+  };
+  for (const m of ['eq', 'in', 'order', 'limit', 'contains']) {
     chain[m] = () => chain;
   }
-  chain.then = (resolve: (v: { data: unknown[]; error: null | { message: string } }) => void) =>
+  chain.then = (resolve: (v: { data: unknown[]; error: null | { message: string } }) => void) => {
+    // Production grants club identity columns but protects financial columns.
+    // Selecting the embedded clubs wildcard fails before RLS can return rows.
+    const clubError =
+      sourceState.clubError ||
+      (projection.includes('(*)') ? { message: 'permission denied for table clubs' } : null);
     resolve({
-      data: table === 'union_clubs' && !sourceState.clubError ? unionClubs : [],
-      error: table === 'union_clubs' ? sourceState.clubError : null,
+      data: table === 'union_clubs' && !clubError ? unionClubs : [],
+      error: table === 'union_clubs' ? clubError : null,
     });
+  };
   return chain;
 };
 vi.mock('../src/lib/supabase', () => ({
-  supabase: { rpc: (...a: unknown[]) => rpc(...a), from: (t: string) => fromChain(t) },
+  supabase: {
+    rpc: (name: string, args: Record<string, unknown>) =>
+      durableIntents.call(name, args, () => rpc(name, args)),
+    from: (t: string) => fromChain(t),
+  },
 }));
 vi.mock('../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
 vi.mock('../src/hooks/useAuthUser', () => ({
@@ -57,7 +74,7 @@ vi.mock('../src/services/UnionApiService', () => ({
   },
 }));
 
-import UnionWalletModal from '../src/components/union/UnionWalletModal';
+import UnionWalletModal, { theClub } from '../src/components/union/UnionWalletModal';
 
 const roster = [
   {
@@ -92,6 +109,7 @@ const base = {
 };
 
 beforeEach(() => {
+  durableIntents.clear();
   window.localStorage.clear();
   sourceState.clubError = null;
   base.onClose.mockClear();
@@ -352,7 +370,7 @@ describe('UnionWalletModal', () => {
     await screen.findByRole('status');
   });
 
-  it('fails closed before the member RPC when durable safety storage is unavailable', async () => {
+  it('sends safely through server recovery when browser storage is unavailable', async () => {
     const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
       throw new Error('quota exceeded');
     });
@@ -364,8 +382,11 @@ describe('UnionWalletModal', () => {
       fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '250' } });
       fireEvent.click(screen.getByRole('button', { name: /send to fish/i }));
 
-      expect(await screen.findByRole('alert')).toHaveTextContent(/safety storage is unavailable/i);
-      expect(rpc).not.toHaveBeenCalledWith('fn_union_send_to_member', expect.anything());
+      expect(await screen.findByRole('status')).toHaveTextContent(/sent 250/i);
+      expect(rpc).toHaveBeenCalledWith(
+        'fn_union_send_to_member',
+        expect.objectContaining({ p_op_id: expect.stringMatching(/^[0-9a-f-]{36}$/) })
+      );
     } finally {
       setItem.mockRestore();
     }
@@ -629,6 +650,95 @@ describe('UnionWalletModal', () => {
       )
     );
     expect(await screen.findByText('70,000.00')).toBeTruthy();
+  });
+
+  /* Dan, 2026-10-21: in the Union Bank a selected club must show its balance.
+     Club money columns are withheld from the browser, so the balances come
+     from fn_union_club_bank_balances (union owner and union leads only). */
+  it('shows each club bank balance and refuses a pull past the opening grant floor', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
+      if (fn === 'fn_union_club_bank_balances')
+        return Promise.resolve({
+          data: [
+            { club_id: 'c-1', club_bank: 250000, club_promo: 0, pull_floor: 100000 },
+            { club_id: 'c-2', club_bank: 4321.5, club_promo: 12, pull_floor: 0 },
+          ],
+          error: null,
+        });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('250,000.00')).toBeTruthy());
+    expect(screen.getByText('4,321.50')).toBeTruthy();
+    expect(rpc).toHaveBeenCalledWith('fn_union_club_bank_balances', { p_union_id: UNION_ID });
+    fireEvent.click(screen.getByText('Club JAQK'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from club jaqk/i }));
+    expect(screen.getByText('Club Bank Balance')).toBeTruthy();
+    expect(
+      screen.getByText('Pullable 150,000.00. The 100,000.00 Opening Grant Stays In The Club.')
+    ).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '200000' } });
+    expect(
+      await screen.findByText(
+        'At Most 150,000.00 Can Be Pulled. The 100,000.00 Opening Grant Stays In The Club.'
+      )
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /pull from club jaqk/i }));
+    expect(rpc).not.toHaveBeenCalledWith('fn_union_clawback_from_club', expect.anything());
+  });
+
+  it('still lists the clubs, without figures, when the balances are refused', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
+      if (fn === 'fn_union_club_bank_balances')
+        return Promise.resolve({ data: null, error: { message: 'union lead access required' } });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
+    expect(screen.queryByText('Could Not Load Club Wallets.')).toBeNull();
+    expect(screen.queryByText('0.00')).toBeNull();
+  });
+
+  /* Dan, 2026-10-22: a confirmed pull or send toasts and closes the Union
+     Bank by itself, and a club named "The ..." is never "The The ...". */
+  it('closes itself after a confirmed pull, naming a "The" club once', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
+      if (fn === 'fn_union_clawback_from_club')
+        return Promise.resolve({ data: { success: true, union_balance: 70000 }, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
+    fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from shark club/i }));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
+    await waitFor(() => expect(base.onClose).toHaveBeenCalledTimes(1));
+    expect(theClub('The Felt Society')).toBe('The Felt Society');
+    expect(theClub('KINGS CLUB')).toBe('The KINGS CLUB');
+  });
+
+  it('stays open with the reason when a pull is refused', async () => {
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'fn_union_player_directory') return pageable({ data: roster, error: null });
+      if (fn === 'fn_union_clawback_from_club')
+        return Promise.resolve({
+          data: { success: false, error: 'insufficient treasury' },
+          error: null,
+        });
+      return Promise.resolve({ data: null, error: null });
+    });
+    render(<UnionWalletModal {...base} walletKey="chips" walletLabel="Union Bank" />);
+    await waitFor(() => expect(screen.getByText('SHARK CLUB')).toBeTruthy());
+    fireEvent.click(screen.getByText('SHARK CLUB'));
+    fireEvent.click(screen.getByRole('button', { name: /pull back from shark club/i }));
+    fireEvent.change(screen.getByPlaceholderText('Amount'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: /pull from shark club/i }));
+    expect(await screen.findByText('Club Has Insufficient Treasury Balance')).toBeTruthy();
+    expect(base.onClose).not.toHaveBeenCalled();
   });
 
   it('reuses the clawback operation id after an ambiguous transport failure', async () => {

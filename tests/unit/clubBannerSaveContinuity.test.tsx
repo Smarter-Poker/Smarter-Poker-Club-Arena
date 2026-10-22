@@ -17,7 +17,10 @@ vi.mock('../../src/stores/useTableStore', () => ({ useTableStore: {} }));
 vi.mock('../../src/stores/useUnionStore', () => ({ useUnionStore: {} }));
 vi.mock('../../src/stores/useWalletStore', () => ({ useWalletStore: {} }));
 vi.mock('../../src/stores/useSettingsStore', () => ({ useSettingsStore: {} }));
-vi.mock('../../src/stores/useUserStore', () => ({ useUserStore: {} }));
+vi.mock('../../src/stores/useUserStore', () => ({
+  useUserStore: (select: (state: { user: { id: string } }) => unknown) =>
+    select({ user: { id: 'owner' } }),
+}));
 vi.mock('../../src/services/RealtimeChannelService', () => ({ realtimeChannelService: {} }));
 vi.mock('../../src/components/arena/arenaAccess', () => ({
   useAutomaticArenaMembership: () => false,

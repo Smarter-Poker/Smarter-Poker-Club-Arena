@@ -1,6 +1,6 @@
 import { buildLadder, type GeneratedBlindLevel } from './blindLadder.js';
 import { mttSpeedForMinutes, type MttClockSpeed } from './mttStructureDescription.js';
-import { isSupportedMttPayoutDepth } from './mttPayoutDepth.js';
+import { legacyPayoutPercentColumn, mttPayoutDepthColumn } from './mttPayoutDepth.js';
 
 /** One engine-owned definition for both scheduled and recurring MTT creators.
  * Existing advertised ladders are preserved; speed and stack depth are separate.
@@ -11,7 +11,7 @@ export const MTT_BLIND_PRESETS: Record<string, GeneratedBlindLevel[]> = {
     speed: 'SLOW',
     levels: 40,
     openingMinutes: 12,
-    floorMinutes: 6,
+    floorMinutes: 8,
     anteFromLevel: 3,
   }),
   STANDARD: buildLadder({
@@ -19,23 +19,23 @@ export const MTT_BLIND_PRESETS: Record<string, GeneratedBlindLevel[]> = {
     speed: 'STANDARD',
     levels: 40,
     openingMinutes: 10,
-    floorMinutes: 5,
+    floorMinutes: 8,
     anteFromLevel: 2,
   }),
   TURBO: buildLadder({
     startBigBlind: 50,
     speed: 'TURBO',
     levels: 24,
-    openingMinutes: 4,
-    floorMinutes: 2,
+    openingMinutes: 5,
+    floorMinutes: 5,
     anteFromLevel: 1,
   }),
   HYPER_TURBO: buildLadder({
     startBigBlind: 100,
     speed: 'HYPER_TURBO',
     levels: 16,
-    openingMinutes: 2,
-    floorMinutes: 1,
+    openingMinutes: 5,
+    floorMinutes: 5,
     anteFromLevel: 1,
   }),
 };
@@ -67,13 +67,20 @@ export function mttSpeedColumns(structure: readonly unknown[]): {
   return { blind_speed: speed, is_turbo: speed === 'turbo' || speed === 'hyper_turbo' };
 }
 
-/** Matches the creator RPC's 10/15/20 paid-depth selection and 10% fallback.
- * This selects field depth only; the database derives the final funded ladder. */
+/** The legacy payout_percent column value (CHECK 10/15/20). Any other depth,
+ * 12.5 included, is stored as 10 there; the depth an MTT actually pays lives in
+ * payout_depth_percent (see mttPayoutDepthPercent and mttPayoutDepth.ts). */
 export function mttPayoutPercent(value: unknown): 10 | 15 | 20 {
   if (typeof value === 'string' && !/^[+-]?\d+$/.test(value.trim())) return 10;
   if (typeof value !== 'string' && typeof value !== 'number') return 10;
-  const depth = Number(value);
-  return isSupportedMttPayoutDepth(depth) ? depth : 10;
+  return legacyPayoutPercentColumn(Number(value));
+}
+
+/** The payout_depth_percent column value for a new MTT: the requested depth,
+ * or 12.5 when none was requested (Dan 2026-10-21). The database forces 12.5
+ * for every union and Diamond Arena event regardless. */
+export function mttPayoutDepthPercent(value: unknown): number {
+  return mttPayoutDepthColumn(value);
 }
 
 /** Nominal playing minutes through the indexed registration cutoff. The engine

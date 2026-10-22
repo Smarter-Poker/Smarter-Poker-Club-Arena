@@ -58,7 +58,7 @@ describe('the complete Spin rules survive a newer engine', () => {
       level: 21,
       smallBlind: expected.small,
       bigBlind: expected.big,
-      duration: 180,
+      duration: 300,
     });
     expect(futureLocalRule).not.toHaveBeenCalled();
   });

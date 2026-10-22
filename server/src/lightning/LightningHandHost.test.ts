@@ -320,13 +320,41 @@ describe('fast fold and fold & watch', () => {
     expect(t.released).toContainEqual({ playerId: waiting.user_id, why: 'fast' });
     expect(t.host.isWatching(waiting.user_id)).toBe(false);
     const framesAtFold = t.hub.inRoom(room).length;
-    // The hand plays on without them, and their room hears nothing more.
+    // The hand plays on without them; only its durable completion receipt
+    // returns to their own pool room, never another hand/card/action frame.
     await playOut(t.host, mulberry32(7), (u, legal) =>
       legal.includes('check') ? 'check' : 'call'
     );
     await flush();
     expect(t.host.lifecycle).toBe('complete');
-    expect(t.hub.inRoom(room).length).toBe(framesAtFold);
+    const afterFold = t.hub.inRoom(room).slice(framesAtFold);
+    expect(afterFold).toHaveLength(1);
+    expect(afterFold[0].payload).toMatchObject({
+      type: 'hand_history_saved',
+      table_id: room,
+      pool_session_id: room,
+      player_id: waiting.user_id,
+      lightning_hand_id: formed.handId,
+    });
+    const saved = t.hub.frames.filter(
+      (f) => f.kind === 'event' && f.payload.type === 'hand_history_saved'
+    );
+    expect(saved).toHaveLength(formed.players.length);
+    for (const [i, playerId] of formed.players.entries()) {
+      const ownRoom = uid(5000 + i);
+      const receipts = saved.filter((f) => f.room === ownRoom);
+      expect(receipts).toHaveLength(1);
+      expect(receipts[0].payload).toEqual({
+        type: 'hand_history_saved',
+        table_id: ownRoom,
+        pool_session_id: ownRoom,
+        player_id: playerId,
+        lightning_hand_id: formed.handId,
+        hand_id: t.calls.postCommit[0],
+        hand_number: t.calls.settle[0].handRow.hand_number,
+        timestamp: expect.any(Number),
+      });
+    }
     const s = t.calls.settle[0];
     expect(s.results.find((x) => x.playerId === waiting.user_id)!.foldType).toBe('fast');
     expect(s.results.find((x) => x.playerId === waiting.user_id)!.won).toBe(0);
@@ -581,6 +609,7 @@ describe('fencing and settlement', () => {
     await playOut(t.host, mulberry32(12), (_u, legal) => (legal.includes('fold') ? 'fold' : null));
     await flush();
     expect(t.host.lifecycle).toBe('settlement_unknown');
+    expect(t.hub.frames.filter((f) => f.payload.type === 'hand_history_saved')).toEqual([]);
     expect(t.calls.settle.length).toBe(5);
     expect(new Set(t.calls.settle.map((s) => s.requestId)).size).toBe(1);
     expect(t.calls.abandon).toEqual([]);
@@ -594,6 +623,7 @@ describe('fencing and settlement', () => {
     await flush();
     expect(t.host.lifecycle).toBe('abandoned');
     expect(t.calls.abandon).toEqual(['settlement_refused:lease_mismatch']);
+    expect(t.hub.frames.filter((f) => f.payload.type === 'hand_history_saved')).toEqual([]);
   });
 });
 

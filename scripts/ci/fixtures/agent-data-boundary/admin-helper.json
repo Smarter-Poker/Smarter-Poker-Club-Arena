@@ -1,0 +1,4 @@
+{
+  "definition": "CREATE OR REPLACE FUNCTION public.is_club_admin(p_club_id uuid)\n RETURNS boolean\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n  RETURN EXISTS (\n    SELECT 1 FROM public.club_members\n    WHERE club_id = p_club_id\n      AND user_id = auth.uid()\n      AND role IN ('owner', 'co_owner', 'admin', 'manager', 'agent')\n  );\nEND;\n$function$\n",
+  "hash": "8cec4d8f44baaf2af97fb3c1d4229215"
+}

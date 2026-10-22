@@ -166,6 +166,7 @@ export interface DisconnectStateEntry {
   sitOutSinceMs?: number | null;
   sitOutOrbits?: number;
   sitOutReason?: 'voluntary' | 'forced' | null;
+  sitOutByClient?: boolean;
   strikes?: number;
   awayBlindSbCharged?: boolean;
   awayBlindBbCharged?: boolean;

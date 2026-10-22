@@ -166,32 +166,32 @@
   },
   "files": {
     ".github/workflows/ci.yml": {
-      "bytes": 229424,
-      "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
+      "bytes": 229951,
+      "sha256": "53d246ff4d64aee62cab01069a4ea967b20dc7bbdd4f396d25683d5ae5d4b5d6"
     },
     "scripts/ci/build_pg17_cash_pgcron.py": {
       "bytes": 6283,
       "sha256": "fdab007e3ea2e953ca07229476b743c573ff3118e0b11df80d705af4ad431a07"
     },
     "scripts/ci/classify-ci-changes.mjs": {
-      "bytes": 37679,
-      "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
+      "bytes": 41071,
+      "sha256": "9ba084657bf672320088474d29b197abceb5591632ac07949cf7e6c04763fce6"
     },
     "scripts/ci/probes/production-alert-core/cash-checker-preimage.sql": {
       "bytes": 6379,
       "sha256": "21252e49797dc8f43af3c06d9d66b2d57b8c7861d91dd3d503bcf36f4f4ac562"
     },
     "scripts/ci/probes/production-alert-core/notification/manifest.json": {
-      "bytes": 12629,
-      "sha256": "80c993ba196f3fa6595442ecc48a625104e5083c9091fea89de3d435e2a9dd1c"
+      "bytes": 12859,
+      "sha256": "68ae074abcf5f4fd9c330b6c8c1235a319ec6847c81f81807e154cb7c34d197e"
     },
     "scripts/ci/test-cash-failure-pgcron.py": {
       "bytes": 30584,
       "sha256": "e290398eff87db843de3363988c4ee7e5cfa4b48720d57c325611d025a5d4618"
     },
     "scripts/ci/test-production-alert-core-postgres.py": {
-      "bytes": 31483,
-      "sha256": "75379ff9985654eea70a2a5f060798509e851ec3b3223e83e94eef6d8df7d36b"
+      "bytes": 31582,
+      "sha256": "dd38e31fa8a30f73e6ad3d80e79d8290d669c231c0b47588e4ec2661c6c0ae9a"
     },
     "scripts/ci/test_cash_native_pgcron.py": {
       "bytes": 3454,
@@ -270,8 +270,8 @@
       "sha256": "d9fbc730e56bbb5811585045dcc1e0b501c48cdd405e32276ec6165d22835014"
     },
     "tests/unit/fixtureNativeCi.test.ts": {
-      "bytes": 111125,
-      "sha256": "821a94ed8fcbf822dc831479e81b20a724039d85c1311f352d216fd6d1264f76"
+      "bytes": 114286,
+      "sha256": "46c21bc6b7529670ee6fac995890cbe03e5fd986a689157c7a67252475b93894"
     }
   },
   "nativePgCron": {
@@ -3559,6 +3559,9 @@
       }
     }
   },
+  "stormGuardDeclarationOrdering20261020": {
+    "reason": "Refresh only active alert-core runner and manifest input bindings for the exact complete-migration guard-declaration regression; historical records, financial SQL and assertions unchanged. Not production installation evidence."
+  },
   "neverDealtRebuyMatrixRouting20261020": {
     "reason": "Preserve concurrent protected alert qualification inputs and audit. The additive never-dealt rebuy classifier routes native driver, fixtures and guard through required PostgreSQL qualification. Refresh only the active current classifier fingerprint; historical pins and financial assertions/statuses remain unchanged. Source identity is not execution or production proof.",
     "previous": {
@@ -3568,6 +3571,42 @@
     "current": {
       "bytes": 37679,
       "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
+    }
+  },
+  "unattendedOfferWorkflowInput20261020": {
+    "reason": "Adds the native unattended cash offer qualification to accounting shard 2. Updates the current workflow input only; prior receipts and financial source pins remain unchanged.",
+    "previous": {
+      "bytes": 229424,
+      "sha256": "edb0552705c87533aff3089ecc3395f27222b4845f5f3e8e49185eb85097de76"
+    },
+    "current": {
+      "bytes": 229699,
+      "sha256": "7ea63aeacd19295207055a4d2058169c3ecf4ad058bad9140322c06d02c54766"
+    }
+  },
+  "clubDataUnionMttInputRouting20261021": {
+    "reason": "Additive input routing for existing required Data Console native verdict: union/MTT driver and Club Data fixtures. No cash scheduler, financial SQL, assertions, source inventory or qualification status changed. Current classifier identity only, not a native cash certification.",
+    "previous": {
+      "bytes": 37679,
+      "sha256": "b7164be134312dae610d1086e25ec3cd9e5c135db24f22a0a90d0a45e12cd944"
+    },
+    "current": {
+      "bytes": 37775,
+      "sha256": "5a2b0ee1194a06a3a1b8d9bfa93281713010033ba62a418411a6214c89fd6cfd"
+    }
+  },
+  "clubNewsOnceRouting20261021": {
+    "reason": "Reviewed additive news-test workflow step and classifier selector. Refresh current enforcement fingerprints only; existing native/financial fixtures and qualification status are unchanged."
+  },
+  "clubDataCurrentMainIntegration20261021": {
+    "reason": "Preserve both protected Midway cash-policy/news inputs and additive Club Data native qualification routing. Current input identity only; existing financial sources, assertions, inventories and qualification states unchanged.",
+    "prior_classifier": {
+      "bytes": 37775,
+      "sha256": "5a2b0ee1194a06a3a1b8d9bfa93281713010033ba62a418411a6214c89fd6cfd"
+    },
+    "current_classifier": {
+      "bytes": 37913,
+      "sha256": "1325da3a525cd7e3523fdf26a70dddbe4ce62952da4fe7a3a6a5291676c20e40"
     }
   }
 }

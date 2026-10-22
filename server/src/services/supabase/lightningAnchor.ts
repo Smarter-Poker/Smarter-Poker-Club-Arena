@@ -19,6 +19,7 @@ export interface LightningAnchorSeat {
   seatNumber: number;
   occupancyId: string;
   clusterId: string;
+  completedHandOccupancyId?: string;
 }
 
 /**
@@ -29,12 +30,12 @@ export interface LightningAnchorSeat {
 export async function lightningAnchorSeat(
   poolSessionId: string,
   userId: string,
-  opts?: { requireOpen?: boolean }
+  opts?: { requireOpen?: boolean; requireCompletedHand?: boolean }
 ): Promise<LightningAnchorSeat | null> {
   if (!isUuid(poolSessionId) || !isUuid(userId)) return null;
   const { data: session, error } = await supabase
     .from('lightning_pool_session')
-    .select('player_id, cluster_id, anchor_seat_id, exited_at')
+    .select('player_id, cluster_id, anchor_seat_id, exited_at, cash_player_session_id, entered_at')
     .eq('id', poolSessionId)
     .maybeSingle();
   if (error) throw new Error(`lightning_pool_session read failed: ${error.message}`);
@@ -43,6 +44,8 @@ export async function lightningAnchorSeat(
     cluster_id?: unknown;
     anchor_seat_id?: unknown;
     exited_at?: unknown;
+    cash_player_session_id?: unknown;
+    entered_at?: unknown;
   } | null;
   if (
     !s ||
@@ -77,7 +80,71 @@ export async function lightningAnchorSeat(
     !Number.isInteger(Number(row.seat_number))
   )
     return null;
+  let completedHandOccupancyId: string | undefined;
+  if (opts?.requireCompletedHand) {
+    if (
+      !isUuid(s.cash_player_session_id) ||
+      typeof s.entered_at !== 'string' ||
+      !Number.isFinite(Date.parse(s.entered_at))
+    )
+      return null;
+    const cash = await supabase
+      .from('cash_player_session')
+      .select('id, opened_at')
+      .eq('id', s.cash_player_session_id)
+      .eq('player_id', userId)
+      .eq('table_id', row.table_id)
+      .is('closed_at', null)
+      .maybeSingle();
+    if (cash.error) throw new Error('Lightning sit-out cash identity read failed');
+    if (
+      !cash.data ||
+      !Number.isFinite(Date.parse(cash.data.opened_at)) ||
+      Date.parse(cash.data.opened_at) > Date.parse(s.entered_at)
+    )
+      return null;
+    const slots = await supabase
+      .from('lightning_pool_slot')
+      .select('id')
+      .eq('pool_session_id', poolSessionId)
+      .eq('player_id', userId);
+    if (slots.error) throw new Error('Lightning sit-out slot read failed');
+    const slotIds = (slots.data ?? []).map((slot) => slot.id).filter(isUuid);
+    if (!slotIds.length) return null;
+    // stack_after is written only by atomic Lightning settlement, in the same
+    // transaction as settled_at. Formation or a fold alone cannot qualify.
+    const participant = await supabase
+      .from('lightning_hand_player')
+      .select('hand_id')
+      .eq('player_id', userId)
+      .in('pool_slot_id', slotIds)
+      .not('stack_after', 'is', null)
+      .limit(1)
+      .maybeSingle();
+    if (participant.error) throw new Error('Lightning sit-out participation read failed');
+    if (!isUuid(participant.data?.hand_id)) return null;
+    const hand = await supabase
+      .from('lightning_hand')
+      .select('hand_id')
+      .eq('hand_id', participant.data.hand_id)
+      .eq('cluster_id', s.cluster_id)
+      .not('settled_at', 'is', null)
+      .gte('settled_at', s.entered_at)
+      .maybeSingle();
+    if (hand.error) throw new Error('Lightning sit-out completed hand read failed');
+    if (!hand.data) return null;
+    // Fence every awaited proof against a closed pool or replaced occupancy.
+    const current = await lightningAnchorSeat(poolSessionId, userId, { requireOpen: true });
+    if (
+      !current ||
+      current.anchorTableId !== row.table_id ||
+      current.occupancyId !== row.occupancy_id
+    )
+      return null;
+    completedHandOccupancyId = row.occupancy_id;
+  }
   return {
+    ...(completedHandOccupancyId ? { completedHandOccupancyId } : {}),
     anchorTableId: row.table_id,
     seatNumber: Number(row.seat_number),
     occupancyId: row.occupancy_id,

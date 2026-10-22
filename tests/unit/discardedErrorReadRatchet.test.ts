@@ -145,7 +145,7 @@ const BASELINE = new Map<string, number>([
   // the dropped column it was reading, and its replacement binds the error.
   ['src/components/agent/AgentCommissionDashboard.tsx', 0],
   ['src/utils/settlementLock.ts', 2],
-  ['src/stores/useHeaderDataStore.ts', 2],
+  ['src/stores/useHeaderDataStore.ts', 1],
   ['src/services/WalletService.ts', 2],
   // TournamentTimerService now binds and reports both observer read errors.
   ['src/services/TournamentTimerService.ts', 0],
@@ -218,7 +218,8 @@ const BASELINE = new Map<string, number>([
   ['src/pages/CreateUnionPage.tsx', 1],
   ['src/lib/authToken.ts', 1],
   ['src/hooks/useTableChat.ts', 1],
-  ['src/hooks/useEffectiveRake.ts', 1],
+  // 1 -> 0: a failed club-price read stays unknown instead of implying inheritance.
+  ['src/hooks/useEffectiveRake.ts', 0],
   ['src/components/waitlist/WaitlistManager.tsx', 1],
   ['src/components/tournament/TournamentRankingCard.tsx', 1],
   ['src/components/tournament/MysteryBountyPanel.tsx', 1],
@@ -228,7 +229,7 @@ const BASELINE = new Map<string, number>([
   ['src/components/session/SessionSummaryHost.tsx', 1],
   ['src/components/navigation/NotificationDropdown.tsx', 1],
   ['src/components/navigation/HamburgerMenu.tsx', 1],
-  ['src/components/agent/AgentAssignmentPanel.tsx', 1],
+  ['src/components/agent/AgentAssignmentPanel.tsx', 0],
   ['src/components/admin/StatsExport.tsx', 1],
   ['src/components/admin/PlayerSearch.tsx', 1],
   ['src/components/admin/AuditLog.tsx', 1],

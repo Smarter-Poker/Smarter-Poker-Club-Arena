@@ -571,6 +571,17 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
         run: node scripts/ci/production-e2e-account.mjs prepare-staff
 
+      - name: Verify agent bank and private-data boundaries with the isolated identity
+        id: agent_boundary
+        if: steps.live.outputs.ready == 'true' && steps.account.outcome == 'success'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: |
+          node scripts/ci/qualify-agent-boundary.mjs
+          node scripts/ci/qualify-agent-assignment.mjs
+
       # The standalone template builder requires independent club authority.
       # Reuse the reserved zero-balance identity; save no template or game.
       - name: Prepare isolated standalone template access
@@ -1076,6 +1087,13 @@ jobs:
           e2e-report/customization-realtime.json
           e2e-report/gameplay-customization-runtime.json
           e2e-report/customization-commerce.json
+
+      - name: Retire interrupted assignment qualification fixtures
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/cleanup-agent-assignment-fixtures.mjs
 
       - name: Hard-delete the isolated production E2E account
         id: account_cleanup
@@ -1821,6 +1839,75 @@ jobs:
   # neither passing run of 2026-10-06/07, so requiring it meant the seal was
   # never owed. Keep this condition identical to SEAL_OWED in post-deploy-verdict
   # below (tests/unit/phase1CustomizationCertificateCoverage.test.ts).
+  # This proof needs a staff actor for the native settled-departure door.
+  # It must never lend staff authority to the live-table spectator job or add
+  # an engine dependency to the independent client publication certificate.
+  club-channel-lifecycle-e2e:
+    name: Exact engine club channel lifecycle
+    needs: publication-gate
+    if: "needs.publication-gate.outputs.should_run == 'true' && github.event_name == 'repository_dispatch' && github.event.client_payload.engine_sha != ''"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: post-deploy-club-channel-lifecycle-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publication-gate.outputs.verification_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install locked verifier dependencies
+        run: npm ci --ignore-scripts
+      - name: Install maintained Chromium verifier
+        run: npx playwright install --with-deps chromium
+      - name: Provision isolated lifecycle staff account
+        id: account
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs create
+      - name: Prepare native reserved zero-balance staff authority
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+        run: node scripts/ci/production-e2e-account.mjs prepare-staff
+      - name: Certify exact engine club channel lifecycle
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          E2E_REQUIRE_AUTH: '1'
+          EXPECTED_ENGINE_SHA: ${{ github.event.client_payload.engine_sha }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/club-channel-lifecycle.json
+        run: >-
+          npx playwright test tests/e2e/production-club-channel-lifecycle.spec.ts
+          --project=chromium --reporter=line,json --workers=1 --retries=0
+          --output=test-results/club-channel-lifecycle
+      - name: Require the exact club channel case to execute
+        if: always()
+        run: node scripts/ci/assert-e2e-actually-ran.mjs e2e-report/club-channel-lifecycle.json
+      - name: Hard-delete isolated lifecycle staff account
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/ci/production-e2e-account.mjs cleanup
+      - name: Retain exact engine club channel lifecycle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: club-channel-lifecycle
+          path: |
+            e2e-report/club-channel-lifecycle.json
+            test-results/club-channel-lifecycle/
+          if-no-files-found: error
+          retention-days: 14
+
   phase1-customization-cutover-seal:
     needs: [publication-gate, production-e2e, live-table-e2e]
     if: >-

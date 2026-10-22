@@ -1,4 +1,6 @@
+import { cashRakeScope } from '../config/cashRakePolicy.js';
 import { isPreExecutionDbUnavailable } from './committedSeatStackRead.js';
+import { SeatSitOutPersistence } from './SeatSitOutPersistence.js';
 import { randomUUID } from 'node:crypto';
 import { positionLabelsFor } from './presentation/projectHandState.js';
 import { custodyJSON } from '../tournament/mixedF06Custody.js';
@@ -405,6 +407,9 @@ export abstract class ServerTableEngineBase {
    * at engine construction. null in unit tests / until PR-2 wiring lands.
    */
   protected hub: TableStateHub | null = null;
+  private readonly seatSitOutPersistence = new SeatSitOutPersistence((room, event) => {
+    this.hub?.emitEvent(room, { ...event });
+  });
   protected tableInfo: TableInfo | null = null;
   protected seatedPlayers: SeatedPlayer[] = [];
   /** Tracks busted users who explicitly rejected a rebuy in the current hand (Dan 2026-08-24). */
@@ -1899,6 +1904,7 @@ export abstract class ServerTableEngineBase {
    * `cash_rake_no_flop_no_drop` answer reads it. See diamondCashRakeFacts.ts.
    */
   protected currentHandSawFlopForMoney: boolean = false;
+  protected currentHandCashRakePolicy: RakeConfig | undefined;
   /**
    * The owner's Diamond cash rake schedule this hand was DEALT under, read
    * once at the deal from `ca_diamond_economics`. Carried to settlement so
@@ -3065,7 +3071,8 @@ export abstract class ServerTableEngineBase {
       // table_seats subscription both map it to the greyed seat state). A
       // sat-out player — voluntary or forced after 3 timeouts — looked fully
       // active to everyone, including themselves. Persist both transitions;
-      // fire-and-forget, the UI write must never affect gameplay.
+      // Gameplay stays synchronous. The original explicit persistence owns
+      // ordered, exact-occupancy Lightning publication after the database ACK.
       if (event.type === 'PLAYER_SAT_OUT' || event.type === 'PLAYER_SAT_BACK') {
         const sittingOut = event.type === 'PLAYER_SAT_OUT';
         const satPlayer = this.seatedPlayers.find((p) => p.user_id === event.playerId);
@@ -3093,23 +3100,8 @@ export abstract class ServerTableEngineBase {
           }
         }
         if (!occupancyId) return;
-        void Promise.resolve(
-          supabase
-            .from('table_seats')
-            .update({ is_sitting_out: sittingOut })
-            .eq('table_id', this.tableId)
-            .eq('user_id', event.playerId)
-            .eq('occupancy_id', occupancyId)
-            .is('left_at', null)
-        )
-          .then(({ error }) => {
-            if (error) {
-              reportError(
-                new Error(`persist is_sitting_out=${sittingOut} failed: ${error.message}`),
-                'ServerTableEngine.' + this.tableId + '.sitout_persist_failed'
-              );
-            }
-          })
+        void this.seatSitOutPersistence
+          .persist(this.tableId, event.playerId, occupancyId, sittingOut)
           .catch((err) => {
             reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_persist_threw');
           });
@@ -9282,6 +9274,7 @@ export abstract class ServerTableEngineBase {
     const variant = this.tableInfo?.game_variant || 'nlh';
     const fullConfig = getFullRakeConfig(sb, bb, variant, this.getRakeOverride());
     return {
+      cashPolicy: { version: 1, scope: this.getRakeOverride()?.scope ?? 'standard' },
       percent: fullConfig.rakePercent,
       cap: fullConfig.rakeCap,
       noFlopNoDrop: true,
@@ -9325,8 +9318,11 @@ export abstract class ServerTableEngineBase {
     };
     const rakePercent = pick(this.tableInfo?.rake_percent, this.clubRakeDefaults?.rakePercent);
     const rakeCapBB = pick(this.tableInfo?.rake_cap_bb, this.clubRakeDefaults?.rakeCapBB);
-    if (rakePercent === undefined && rakeCapBB === undefined) return undefined;
-    return { rakePercent, rakeCapBB };
+    return {
+      rakePercent,
+      rakeCapBB,
+      scope: cashRakeScope(this.tableInfo?.union_id, this.clubRakeDefaults?.unionId),
+    };
   }
 
   /**
@@ -9335,8 +9331,11 @@ export abstract class ServerTableEngineBase {
    * simply means "no club override yet" — the schedule still applies, so a slow
    * or failed read can never stop a table dealing or change what is taken.
    */
-  protected clubRakeDefaults: { rakePercent: number | null; rakeCapBB: number | null } | null =
-    null;
+  protected clubRakeDefaults: {
+    rakePercent: number | null;
+    rakeCapBB: number | null;
+    unionId?: string | null;
+  } | null = null;
 
   /** Wall-clock of the last rake-config refresh; 0 = never. */
   protected lastRakeRefreshAtMs = 0;
@@ -9738,7 +9737,7 @@ export abstract class ServerTableEngineBase {
           // cash table was refused as 'Diamond Plain Cash Table Required'
           // (about 800 times in six hours) and a permitted straddle or run it
           // twice change never landed without a restart.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, dealing_halted_at, dealing_halted_reason, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds, game_variant, game_type, tournament_id, cluster_id, role, main_index, lifecycle, status, is_template, all_in_or_fold, pineapple_holdem, cap_enabled, bbj_percent, small_blind, big_blind'
+          'union_id, rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending, dealing_halted_at, dealing_halted_reason, ante_enabled, ante, big_blind_ante_enabled, nit_game, maintain_percent_min, maintain_hands, career_percent_min, run_it_mode, run_it_twice, allow_run_it_twice, run_it_twice_enabled, insurance_enabled, seven_deuce_enabled, seven_deuce_amount, straddle_enabled, auto_utg_straddle, voluntary_straddle, min_buy_in, max_buy_in, action_time_seconds, game_variant, game_type, tournament_id, cluster_id, role, main_index, lifecycle, status, is_template, all_in_or_fold, pineapple_holdem, cap_enabled, bbj_percent, small_blind, big_blind'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -9796,6 +9795,7 @@ export abstract class ServerTableEngineBase {
         this.tableInfo.lifecycle = tableRow.lifecycle ?? undefined;
         this.tableInfo.rake_percent = tableRow.rake_percent ?? undefined;
         this.tableInfo.rake_cap_bb = tableRow.rake_cap_bb ?? undefined;
+        this.tableInfo.union_id = tableRow.union_id;
         this.tableInfo.bomb_pot_enabled = (tableRow as any).bomb_pot_enabled ?? false;
         this.tableInfo.bomb_pot_frequency = (tableRow as any).bomb_pot_frequency ?? 0;
         this.tableInfo.bomb_pot_ante_multiplier = (tableRow as any).bomb_pot_ante_multiplier ?? 2;
@@ -9897,13 +9897,14 @@ export abstract class ServerTableEngineBase {
       if (clubId) {
         const { data: clubRow } = await supabase
           .from('clubs')
-          .select('default_rake_percent, rake_cap')
+          .select('default_rake_percent, rake_cap, union_id')
           .eq('id', clubId)
           .maybeSingle();
         if (clubRow) {
           this.clubRakeDefaults = {
             rakePercent: clubRow.default_rake_percent ?? null,
             rakeCapBB: clubRow.rake_cap ?? null,
+            unionId: clubRow.union_id,
           };
         }
       }
@@ -10110,6 +10111,7 @@ export abstract class ServerTableEngineBase {
       rakeConfig: this.isTournamentTable()
         ? { percent: 0, cap: 0, noFlopNoDrop: true }
         : {
+            cashPolicy: { version: 1, scope: this.getRakeOverride()?.scope ?? 'standard' },
             percent: fullRakeConfig.rakePercent,
             cap: fullRakeConfig.rakeCap,
             noFlopNoDrop: true,

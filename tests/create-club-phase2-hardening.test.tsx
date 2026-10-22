@@ -17,7 +17,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sliceCssRule } from './helpers/sourceWindow';
@@ -25,12 +25,15 @@ import { sliceCssRule } from './helpers/sourceWindow';
 const state = vi.hoisted(() => ({
   user: { id: 'user-a' } as { id: string } | null,
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
+  optimizeLogo: vi.fn(),
   create: vi.fn(),
   checkNameAvailability: vi.fn(),
   getCreationEligibility: vi.fn(),
   search: vi.fn(),
   clubRows: [] as Record<string, unknown>[],
 }));
+
+vi.mock('../src/utils/clubLogoImage', () => ({ optimizeClubLogo: state.optimizeLogo }));
 
 vi.mock('../src/hooks/useAuthUser', () => ({ useAuthUser: () => ({ user: state.user }) }));
 vi.mock('../src/components/common/Toast', () => ({ useToast: () => state.toast }));
@@ -71,6 +74,7 @@ beforeEach(() => {
   state.user = { id: 'user-a' };
   state.clubRows = [];
   for (const spy of Object.values(state.toast)) spy.mockReset();
+  state.optimizeLogo.mockReset();
   state.create.mockReset();
   state.search.mockReset();
   state.checkNameAvailability.mockReset().mockResolvedValue(true);
@@ -551,5 +555,73 @@ describe('Club Discovery shows only what a club actually has', () => {
     // Data is Title Cased where it prints, acronyms stay shouted.
     expect(screen.getByText('Nightly Mixed Games')).toBeInTheDocument();
     expect(screen.getByText('PLO')).toBeInTheDocument();
+  });
+});
+
+describe('custom logo selection', () => {
+  const preview = 'data:image/webp;base64,Y3VzdG9tLWxvZ28=';
+  const file = () => new File(['png'], 'Club Savage Logo.png', { type: 'image/png' });
+  const input = () => document.querySelector('input[type="file"]') as HTMLInputElement;
+
+  it('shows the selected custom image and submits it through the custom upload path', async () => {
+    state.optimizeLogo.mockResolvedValue(preview);
+    state.create.mockResolvedValue({ id: 'created-club', name: 'Savage Room' });
+    const user = userEvent.setup();
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    fireEvent.change(input(), { target: { files: [file()] } });
+    expect(await screen.findByRole('img', { name: 'Custom Club Logo Preview' })).toHaveAttribute(
+      'src',
+      preview
+    );
+    await makeCreatable(user, 'Savage Room');
+    await user.click(screen.getByRole('button', { name: 'Create Club' }));
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({ logoPreview: preview, logoUrl: null })
+    );
+  });
+
+  it('keeps a persistent error, retains the last valid logo and allows the same file again', async () => {
+    state.optimizeLogo
+      .mockResolvedValueOnce(preview)
+      .mockRejectedValueOnce(new Error('That File Is Not A Valid Image.'))
+      .mockResolvedValueOnce(preview);
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    const source = file();
+    fireEvent.change(input(), { target: { files: [source] } });
+    await screen.findByRole('img', { name: 'Custom Club Logo Preview' });
+    fireEvent.change(input(), { target: { files: [source] } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('That File Is Not A Valid Image.');
+    expect(screen.getByRole('img', { name: 'Custom Club Logo Preview' })).toHaveAttribute(
+      'src',
+      preview
+    );
+    expect(input().value).toBe('');
+    fireEvent.change(input(), { target: { files: [source] } });
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(state.optimizeLogo).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not replace a newer preset selection with a delayed custom decode', async () => {
+    let complete!: (value: string) => void;
+    state.optimizeLogo.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          complete = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    render(<CreateClubModal isOpen onClose={vi.fn()} />);
+    fireEvent.change(input(), { target: { files: [file()] } });
+    await user.click(screen.getByRole('radio', { name: 'Royal Crown' }));
+    complete(preview);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('img', { name: 'Custom Club Logo Preview' })
+      ).not.toBeInTheDocument()
+    );
+    expect(screen.getByRole('radio', { name: 'Royal Crown' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
   });
 });

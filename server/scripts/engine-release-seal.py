@@ -650,7 +650,7 @@ def cmd_get(args: argparse.Namespace) -> None:
 # minutes because each queued release reserved its own window.
 RECOVERY_WINDOW_MIN_INTERVAL_MS = 3600 * 1000
 RECOVERY_WINDOW_PREFIX = "engine-recovery-window-"
-RECOVERY_CAUSE_RE = re.compile(r"^(urgent|engine-degraded|deadline)$")
+RECOVERY_CAUSE_RE = re.compile(r"^(urgent|engine-degraded)$")
 
 
 def recent_recovery_window(run_id: str, now_ms: int) -> str:

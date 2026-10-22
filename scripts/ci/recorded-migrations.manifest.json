@@ -993,6 +993,92 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7130",
       "refusedBy": [],
       "liveVerdict": "Read-only production check 2026-10-16: schema_migrations holds this version with a NULL name and ONE statement of exactly 73 bytes, the file name itself (MD5 922e8c28f55e49a2c8a88d01fd12071b). This file is that record and nothing else; it is not executable SQL, records no change, and must never be replayed (the installer reports the version ALREADY-APPLIED). The SQL that ran under this version was not stored by production. What is live from it: public.fn_weekly_statement_issue_settled() (prosrc MD5 9a23bbfc5575db47afe7cd9067f65d82, not SECURITY DEFINER, search_path=public) and trg_weekly_statement_issue_settled BEFORE INSERT ON public.settlement_invoices, which issues a new club_weekly_accounting statement as paid. An authored source whose function body matches that live body byte for byte is on branch agent/antigravity/fix/record-missing-installed-migrations-20261016; it is not recorded here because production does not hold it and later migrations replaced its other function bodies."
+    },
+    {
+      "version": "20261021222049",
+      "name": "lock_tournament_level_clocks",
+      "file": "supabase/migrations/20261021222049_lock_tournament_level_clocks.sql",
+      "md5": "cdf37cae555cea6896e877a4b278653c",
+      "appliedToProductionAt": "2026-10-21T22:20:49Z",
+      "recoveredOn": "2026-10-21",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7620",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-21 22:40 UTC: schema_migrations holds this version with ONE statement (8305 bytes, sha256 e0a46ce7...). It created tournaments_lock_level_clock BEFORE INSERT OR UPDATE OF blind_structure ON public.tournaments -> fn_ca_tournament_lock_level_clock(), which rewrites only unstarted MTT/satellite blind_structure durations and derived late_reg_mins; it moves no money. It did not declare the trigger, which fired UndeclaredTriggerOnAMoneyTable at about 22:21 UTC. The register row now exists (declared 22:24:13 by hand, then recorded by migration 20261021223220_the_locked_level_clock_trigger_is_declared); fn_undeclared_money_triggers() returns 0 rows."
+    },
+    {
+      "version": "20261022014819",
+      "name": "ca_orphaned_certification_account_sweep",
+      "file": "supabase/migrations/20261022014819_ca_orphaned_certification_account_sweep.sql",
+      "md5": "b1b97841ab9537535a4e02427c24d73a",
+      "appliedToProductionAt": "2026-10-22T01:48:19Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7652",
+      "refusedBy": [
+        "check-no-new-band-aids"
+      ],
+      "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: this version created fn_ca_sweep_orphaned_certification_accounts() and pg_cron job ca-orphaned-certification-account-sweep, a periodic sweep that CLAUDE.md 10.12 refuses. It was withdrawn 24 minutes later by 20261022021302_remove_ca_orphaned_certification_account_sweep: cron.job has no row of that name and pg_proc has no function of that name. The root cause (a single-attempt teardown DELETE in scripts/ci/qualify-agent-boundary.mjs) is fixed in the same pull request."
+    },
+    {
+      "version": "20261022021302",
+      "name": "remove_ca_orphaned_certification_account_sweep",
+      "file": "supabase/migrations/20261022021302_remove_ca_orphaned_certification_account_sweep.sql",
+      "md5": "5de5faf1737e132bdcf7791101a9f6c5",
+      "appliedToProductionAt": "2026-10-22T02:13:02Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7652",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: cron.unschedule('ca-orphaned-certification-account-sweep') and DROP FUNCTION public.fn_ca_sweep_orphaned_certification_accounts() both took effect; zero matching cron.job rows and zero matching pg_proc rows."
+    },
+    {
+      "version": "20261022014607",
+      "name": "every_mtt_pays_the_top_twelve_point_five_percent_of_the_fiel",
+      "file": "supabase/migrations/20261022014607_every_mtt_pays_the_top_twelve_point_five_percent_of_the_fiel.sql",
+      "md5": "882c744c221ee21b233e361aaf3dc7f0",
+      "appliedToProductionAt": "2026-10-22T01:46:07Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7653",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: schema_migrations holds this version with ONE statement (9641 bytes). It added tournaments.payout_depth_percent numeric(5,2) (nullable, no default, CHECK (0,100] NOT VALID), fn_ca_payout_structure(integer,numeric), fn_ca_effective_payout_depth, fn_ca_requested_payout_depth (service_role only) and trigger ca_mtt_payout_depth_guard BEFORE INSERT OR UPDATE OF payout_depth_percent, payout_percent ON public.tournaments -> fn_ca_mtt_payout_depth_guard(), which sets only NEW.payout_depth_percent (12.5 for Midway/union/Diamond MTTs, standalone choice default 12.5, NULL for Spins/SNGs/satellites, frozen once finalized) and moves no money. Five functions were patched by md5-pinned substitution; read back fn_finalize_tournament_entry_pool_locked b753df26..., fn_ca_fund_overlay_on_lock e979db46..., fn_create_tournament d3585069..., owner/security/grants unchanged. It did not declare the trigger in the same statement; the register row was written by migration 20261022021443_declare_the_mtt_payout_depth_guard and fn_undeclared_money_triggers() returns 0 rows."
+    },
+    {
+      "version": "20261022014651",
+      "name": "live_mtts_move_to_the_twelve_point_five_percent_depth",
+      "file": "supabase/migrations/20261022014651_live_mtts_move_to_the_twelve_point_five_percent_depth.sql",
+      "md5": "e67840b992143e90da94f68d73376f7f",
+      "appliedToProductionAt": "2026-10-22T01:46:51Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7653",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: schema_migrations holds this version with ONE statement (1143 bytes). DML only (no DDL): every live MTT that is not a satellite, Spin or Sit & Go, with an unfinalized pool and uncommitted payout terms, was set to payout_depth_percent 12.5 through the guard; read back, every REGISTERING/RUNNING uncommitted MTT holds 12.50, satellites NULL, committed events untouched. It creates no object and no trigger."
+    },
+    {
+      "version": "20261022021443",
+      "name": "declare_the_mtt_payout_depth_guard",
+      "file": "supabase/migrations/20261022021443_declare_the_mtt_payout_depth_guard.sql",
+      "md5": "ab8bd900867869469ea999e9f8e0f07a",
+      "appliedToProductionAt": "2026-10-22T02:14:43Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7653",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: schema_migrations holds this version with ONE statement (1200 bytes). It inserts the ca_declared_money_triggers row for tournaments.ca_mtt_payout_depth_guard after proving the trigger is installed and enabled and that its function contains no INSERT INTO / UPDATE SET / DELETE FROM. The register row exists; fn_undeclared_money_triggers() returns 0 rows. It creates no object and no trigger."
+    },
+    {
+      "version": "20261022031908",
+      "name": "fn_ca_payout_structure_has_one_door",
+      "file": "supabase/migrations/20261022031908_fn_ca_payout_structure_has_one_door.sql",
+      "md5": "4931ee3280e619832f8943e37d5fbcdb",
+      "appliedToProductionAt": "2026-10-22T03:19:08Z",
+      "recoveredOn": "2026-10-22",
+      "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
+      "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7653",
+      "refusedBy": [],
+      "liveVerdict": "Read-only production check 2026-10-22 03:20 UTC: schema_migrations holds this version with ONE statement. It dropped fn_ca_payout_structure(integer,integer) after proving its pinned pre-image (md5 320527cd...), that the (integer,numeric) door exists, and that no public function calls the generator with one argument; exactly one fn_ca_payout_structure overload remains. No pg_depend dependents existed. Its live callers (fn_finalize_tournament_entry_pool_locked, fn_ca_fund_overlay_on_lock, fn_ca_provisional_payout_structure) pass a numeric depth and resolve to the remaining door; fn_ca_provisional_payout_structure read back a 16-place ladder for a 125-entrant registering MTT. Creates no trigger."
     }
   ]
 }

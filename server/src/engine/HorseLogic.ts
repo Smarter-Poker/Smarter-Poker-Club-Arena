@@ -113,6 +113,8 @@ import { HorseMind, SNAP_MS, TANK_MS, readScopeOf } from './HorseMind.js';
 import {
   isStation,
   isolationWiden,
+  maniacBehindOpenBar,
+  maniacRaiseWidth,
   preflopVsOpener,
   preflopVsReRaiser,
   trapMultiplier,
@@ -272,6 +274,9 @@ const chipStep = (bigBlind: number | undefined): number =>
  * chip-step of deterministic rounding). This helper is exported so the
  * release gate's exact semantics have direct unit coverage.
  */
+/** Preflop records a player makes by choice (forced posts are not here). */
+const MANIAC_VOLUNTARY = new Set(['fold', 'check', 'call', 'bet', 'raise', 'all_in']);
+
 export function gtoV31ExecutionMatches(args: {
   sampledFamily: GtoV31ActionFamily;
   sampledAmount: number | null;
@@ -2170,6 +2175,138 @@ export function vpipFloorCallDown(
 }
 
 /**
+ * ═══ MANIAC CALL-DOWN (Dan 2026-10-22) ═════════════════════════════════════
+ * "IF A PLAYER IS MOVING ALL IN ON EVERY HAND THE HORSES NEED TO RECOGNIZE
+ * THIS IN REAL TIME AND ADJUST ... AND CALL OFF LIGHTER ... SAME GOES IN PLO
+ * WHEN AN AGGRESSIVE PLAYER IS PLAYING 75% + VPIP AND POTTING AND RAISING
+ * EVERY HAND ... FOR ALL GAMES, LEVELS AND STAKES."
+ *
+ * Measured before this (HorseManiacPressure.test-support, heads-up against a
+ * seat that pots every street): of the postflop folds to its bets, 58% in
+ * PLO4, 68% in hold'em and 50% in PLO5 held MORE than the price plus five
+ * points of equity against what that seat actually holds. Every fold path
+ * in the brain prices a bet as information - a solver defence table, a raise
+ * plan made at bet time, a range narrowed by the bettor's line and
+ * conditioned on board contact - and a maniac's bet carries almost none.
+ *
+ * So a FOLD, in any variant, on any street, facing the bet of an opponent
+ * whose read is a maniac (HorseOpponentExploit.maniacRaiseWidth), is checked
+ * once more against arithmetic: equity against the maniac's PREFLOP range
+ * only (no postflop narrowing, no board-contact conditioning), every other
+ * live opponent at its normal read, against the raked price plus the
+ * survival premium plus a realisation margin for the streets still to come.
+ * If the call clears it, the fold becomes the call - an all-in when the call
+ * is the whole stack. When the maniac bets less than every hand it is
+ * checked to, the equity is cut by the share it checks (it is likelier to
+ * bet the hands that connect). Anything else is returned untouched: a
+ * non-maniac aggressor, no read, a check, a call, a raise.
+ */
+const MANIAC_REALISATION: Readonly<Record<string, number>> = {
+  preflop: 0.03,
+  flop: 0.05,
+  turn: 0.03,
+  river: 0,
+};
+function maniacCallDown(
+  decision: HorseDecision,
+  player: SeatPlayer,
+  gs: HorseGameStateV2,
+  vi: VariantInfo,
+  opts: HorseDecideOpts
+): HorseDecision {
+  if (decision.action !== 'fold' || opts.mind === false || gs.allInOrFold === true) return decision;
+  const toCall = Math.max(0, (gs.currentBet || 0) - (player.bet || 0));
+  if (!(toCall > 0) || !(player.stack > 0)) return decision;
+  try {
+    const street = gs.stage;
+    const hist = gs.actionHistory ?? [];
+    let aggressorId: string | null = null;
+    for (const a of hist) {
+      if (a.stage !== street || a.userId === player.user_id) continue;
+      if (
+        a.action === 'bet' ||
+        a.action === 'raise' ||
+        (a.action === 'all_in' && a.isFullRaise !== undefined)
+      )
+        aggressorId = a.userId;
+    }
+    if (!aggressorId) return decision;
+    const read = HorseMind.opponentRead(aggressorId);
+    const width = maniacRaiseWidth(read);
+    if (width === null) return decision;
+    const betRate =
+      street === 'preflop'
+        ? 1
+        : read!.stats.betCheckedTo.engaged === 'high'
+          ? Math.max(0, Math.min(1, read!.stats.betCheckedTo.mean))
+          : 0;
+    // A wide preflop raiser that does NOT bet postflop far more than horses
+    // do is a preflop maniac only; its postflop bets keep their meaning.
+    if (street !== 'preflop' && betRate < 0.55) return decision;
+
+    const live = gs.players.filter(
+      (p) => p.seat !== player.seat && !p.is_folded && (!p.is_sitting_out || p.is_all_in)
+    );
+    const opponentCards = vi.isOmaha ? vi.holeCount : player.cards.length;
+    const deck =
+      (vi.isShortDeck ? 36 : 52) - player.cards.length - (gs.communityCards?.length ?? 0);
+    if (!live.length || opponentCards < 2 || live.length * opponentCards > deck) return decision;
+    const preflopOnly = hist.filter((a) => a.stage === 'preflop');
+    const bb = gs.bigBlind > 0 ? gs.bigBlind : 1;
+    const bands = live.map((p) =>
+      p.user_id === aggressorId
+        ? HorseMind.bandFor(p.user_id, preflopOnly, bb, false, null)
+        : HorseMind.bandFor(p.user_id, hist, bb, true, gs.communityCards ?? null)
+    );
+    const eq =
+      simulateEquity(
+        player.cards,
+        gs.communityCards ?? [],
+        live.length,
+        vi,
+        Math.max(240, Math.floor(vi.iterations * 0.8)),
+        bands,
+        false,
+        undefined,
+        undefined,
+        undefined,
+        player.knownDeadCards ?? []
+      ) -
+      (1 - betRate) * 0.15;
+    const call = Math.min(toCall, player.stack);
+    const pot = Number.isFinite(gs.contestablePot)
+      ? Math.max(0, gs.contestablePot as number)
+      : Math.max(0, gs.pot);
+    const rake =
+      (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs)
+        ? rakeDrag(pot, bb, gs.rakeConfig, dealtHorseTableSize(gs, player.seat))
+        : 0;
+    const risk = icmRisk(
+      gs,
+      player.stack / bb,
+      opts.v16Icm !== false,
+      opts.v23Endgame !== false,
+      player.user_id
+    );
+    const allInCall = call >= player.stack;
+    const required = Math.min(
+      0.99,
+      call / ((pot + call) * (1 - rake)) +
+        Math.max(0, risk) * Math.sqrt(Math.min(1, call / player.stack)) +
+        (allInCall ? 0 : (MANIAC_REALISATION[street] ?? 0))
+    );
+    if (telemetryOn(opts)) noteFire('maniac_call_down_checked');
+    if (!(eq >= required)) return decision;
+    if (telemetryOn(opts)) noteFire('maniac_call_down');
+    return allInCall
+      ? { ...decision, action: 'all_in', amount: undefined }
+      : { ...decision, action: 'call', amount: Math.round(call * 100) / 100 };
+  } catch {
+    return decision;
+  }
+}
+
+/**
  * V9 TIMING — decision-difficulty hint. decidePostflop records how close the
  * MC equity landed to the nearest strategy threshold; computeThinkTime turns
  * closeness into a TANK (humans agonize over close spots and snap the easy
@@ -2823,6 +2960,9 @@ export class HorseLogic {
           opts
         );
       }
+      // MANIAC CALL-DOWN, inside the reference like the floor call-down, so
+      // every later owner sees it as the reference's own choice.
+      decision = maniacCallDown(decision, player, gs, vi, opts);
       return { decision };
     }).decision;
 
@@ -3885,6 +4025,38 @@ export class HorseLogic {
       }
     };
 
+    // ═══ MANIAC PRESSURE (Dan 2026-10-22) ═════════════════════════════════
+    // "IF A PLAYER IS MOVING ALL IN ON EVERY HAND THE HORSES NEED TO RECOGNIZE
+    // THIS IN REAL TIME ... CALL OFF LIGHTER AND NOT RAISE A HAND WITH THE
+    // INTENTION OF FOLDING." The raiser hero faces, and every opponent still
+    // to act behind an unopened pot, is asked whether it is a maniac
+    // (HorseOpponentExploit.maniacRaiseWidth: credibly outside the horse
+    // envelope AND raising at least 35% of hands / re-raising 25%). Null for
+    // every horse-like read, so horse-versus-horse play is unchanged.
+    let maniacRaiserWidth: number | null = null;
+    let maniacBehindWidth: number | null = null;
+    if (opts.mind !== false) {
+      try {
+        const raiserM =
+          lastRaiserSeat >= 0 ? gs.players.find((p) => p.seat === lastRaiserSeat) : undefined;
+        if (raiserM && raiserM.user_id !== player.user_id)
+          maniacRaiserWidth = maniacRaiseWidth(HorseMind.opponentRead(raiserM.user_id));
+        if (raises === 0) {
+          for (const p of gs.players) {
+            if (p.seat === player.seat || p.is_folded || p.is_all_in || p.is_sitting_out) continue;
+            const actedM = history.some((a) => a.seat === p.seat && MANIAC_VOLUNTARY.has(a.action));
+            if (actedM) continue;
+            const w = maniacRaiseWidth(HorseMind.opponentRead(p.user_id));
+            if (w !== null) maniacBehindWidth = Math.max(maniacBehindWidth ?? 0, w);
+          }
+        }
+        if (telemetryOn(opts) && (maniacRaiserWidth !== null || maniacBehindWidth !== null))
+          noteFire('maniac_pressure_preflop');
+      } catch {
+        /* reads are best-effort */
+      }
+    }
+
     // ═══ V27 GTO CHARTS (Dan 2026-08-29) ══════════════════════════════════
     // "THEY'RE NOT JUST GUESSING — THEY HAVE SPECIFIC GTO RENDERED PLAYS."
     // Short-stack hold'em preflop consults the PioSolver charts before any
@@ -4003,7 +4175,15 @@ export class HorseLogic {
       // sb_push chart prices an SB open-jam into an unopened pot, a far wider
       // range than a reshove over a raise, so the BB called those off too
       // wide. The chart answers only the spot it was solved for.
-      if (position === 'bb' && raises === 1 && raiserPosition === 'sb' && oppsLeft === 1) {
+      // MANIAC PRESSURE: the chart prices a SOLVER small blind's jam. A small
+      // blind that jams every hand is priced by the equity path below.
+      if (
+        position === 'bb' &&
+        raises === 1 &&
+        raiserPosition === 'sb' &&
+        oppsLeft === 1 &&
+        maniacRaiserWidth === null
+      ) {
         const raiserAllIn = history.some((a) => a.seat === lastRaiserSeat && a.action === 'all_in');
         if (raiserAllIn && toCall > 0) {
           // currentBet is the SB's total commitment — an all-in, so his stack.
@@ -4035,17 +4215,34 @@ export class HorseLogic {
     // decision uses, on an empty board. Only for a wager that commits a
     // real share of the stack (>= 40%) or comes from a player who is all-in;
     // smaller raises keep the calibrated range play below.
+    //
+    // MANIAC PRESSURE (2026-10-22): in EVERY variant, hold'em included, a
+    // maniac's shove, any maniac re-raise of hero's raise, and any maniac
+    // raise costing a quarter of the stack are decided here too: equity
+    // against what the maniac actually raises (HorseMind reads the width)
+    // against the price. Hero's own raise is never folded to a re-raise its
+    // equity can call - the raise-fold Dan named.
     if (
       (opts.v38Ev ?? true) !== false &&
       toCall > 0 &&
-      (vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit) &&
+      (vi.isOmaha ||
+        vi.isShortDeck ||
+        vi.holeCount !== 2 ||
+        vi.isFixedLimit ||
+        maniacRaiserWidth !== null) &&
       lastRaiserSeat >= 0 &&
       gs.allInOrFold !== true
     ) {
       const raiser38 = gs.players.find((p) => p.seat === lastRaiserSeat);
       const raiserAllIn38 = raiser38?.is_all_in === true;
       const effCall38 = Math.min(toCall, player.stack);
-      if (raiser38 && (raiserAllIn38 || effCall38 >= player.stack * 0.4)) {
+      const maniacPrice38 =
+        maniacRaiserWidth !== null &&
+        (raiserAllIn38 || raises >= 2 || effCall38 >= player.stack * 0.25);
+      const variantPrice38 =
+        (vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit) &&
+        (raiserAllIn38 || effCall38 >= player.stack * 0.4);
+      if (raiser38 && (variantPrice38 || maniacPrice38)) {
         try {
           // Match each sampled range to a player already committed to this
           // price. Other seats still owe a decision and must not donate their
@@ -4122,11 +4319,19 @@ export class HorseLogic {
           // range" in PLO6; against the real one it is nearer 35%). The price
           // carries a margin for that, growing with the hole count.
           const dominationMargin38 = vi.isOmaha ? 0.04 + 0.02 * Math.max(0, vi.holeCount - 4) : 0;
+          // MANIAC PRESSURE: a call that is not all-in still has streets to
+          // play, out of the maniac's way only when hero is all-in or the
+          // maniac is; the equity is realised a little short of the sample.
+          const realization38 =
+            maniacPrice38 && !variantPrice38 && !raiserAllIn38 && effCall38 < player.stack
+              ? 0.03
+              : 0;
           const required38 = Math.min(
             0.99,
             effCall38 / ((pot38 + effCall38) * (1 - rake38)) +
               riskAdd38 * Math.sqrt(share38) +
-              dominationMargin38
+              dominationMargin38 +
+              realization38
           );
           if (telemetryOn(opts)) noteFire('v38_preflop_allin_price');
           const gap38 = eq38 - required38;
@@ -4340,6 +4545,9 @@ export class HorseLogic {
       raiserFoldTo3Bet: raiserF3b,
       exploitOpener,
       exploitReRaiser,
+      maniacOpenBar:
+        maniacBehindWidth !== null ? maniacBehindOpenBar(maniacBehindWidth, vi.isOmaha) : undefined,
+      maniacNoBluff: maniacRaiserWidth !== null || maniacBehindWidth !== null ? true : undefined,
       // V18 STRADDLE: the shape the fallback above detected - hand the
       // truth to the preflop engine so its unopened branch owns the pot.
       // V28: the single source of truth computed above — unopened for EVERY

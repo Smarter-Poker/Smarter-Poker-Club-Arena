@@ -112,7 +112,7 @@ describe('new club opening wizard', () => {
     expect(home).toContain('{club.tagline?.trim() && (');
     expect(settings).toContain('value={settings.tagline}');
     expect(home.toLowerCase()).not.toContain('all fish of all shapes and sizes are welcome');
-    expect(wizard.toLowerCase()).toContain('that tag line belongs to shark club');
+    expect(wizard.toLowerCase()).toContain('that tag line belongs to kings club');
   });
 
   it('commits opening allocations once and never trusts a browser-side debit', () => {
@@ -123,10 +123,9 @@ describe('new club opening wizard', () => {
     expect(openingSql).toContain("'bbj_main'");
     expect(openingSql).toContain("'leaderboard_prizes'");
     expect(openingSql).toContain('leaderboard_seed_remaining');
-    expect(openingSql).toContain("'authenticated:EXECUTE,postgres:EXECUTE,service_role:EXECUTE'");
-    expect(openingSql).toContain(
-      '-- Existing owner and execute ACL retained by CREATE OR REPLACE.'
-    );
+    expect(openingSql).toContain('proacl IS NOT DISTINCT FROM v_acl');
+    expect(openingSql).toContain('proowner=v_owner');
+    expect(openingSql).toContain('prosecdef=v_secdef');
   });
 
   it('ends the launch checklist with a fully configured first agent', () => {

@@ -14,7 +14,7 @@ afterAll(() => vi.unstubAllEnvs());
 async function request(overrides: Record<string, unknown> = {}, outcome?: () => Promise<unknown>) {
   const {
     peer = '127.0.0.1',
-    body = { announcedAt: 123 },
+    body = { announcedAt: 123, cause: 'urgent' },
     method = 'POST',
     headers = { authorization: `Bearer ${key}` },
   } = overrides;
@@ -60,7 +60,10 @@ describe('only the authenticated local release owner requests maintenance recove
     {},
     { announcedAt: '123' },
     { announcedAt: 1.2 },
-    { announcedAt: 123, extend: true },
+    { announcedAt: 123 },
+    { announcedAt: 123, cause: 'deadline' },
+    { announcedAt: 123, cause: 'failed-release' },
+    { announcedAt: 123, cause: 'urgent', extend: true },
   ])('rejects malformed identity %j', async (body) => {
     const result = await request({ body });
     expect(result.status).toBe(400);
@@ -71,7 +74,7 @@ describe('only the authenticated local release owner requests maintenance recove
     expect(result.status).toBe(200);
     expect(result.headers['cache-control']).toBe('no-store');
     expect(result.owner).toHaveBeenCalledOnce();
-    expect(result.owner).toHaveBeenCalledWith(123);
+    expect(result.owner).toHaveBeenCalledWith(123, 'urgent');
   });
   it('returns unknown rather than success when the owning write loses acknowledgment', async () => {
     const result = await request({}, async () => {

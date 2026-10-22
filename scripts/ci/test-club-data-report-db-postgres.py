@@ -62,7 +62,18 @@ def psql(db, user="postgres"):
 
 
 def run(argv, text=None, expect_fail=None):
-    p = subprocess.run(argv, input=text, capture_output=True, text=True, env=ENV, timeout=300)
+    # psql over a pipe can remain waiting after a dynamic-DDL permission error
+    # on the Mac client. A file gives psql a finite source and preserves its
+    # ordinary ON_ERROR_STOP exit; every SQL assertion still runs unchanged.
+    if text is not None:
+        source = cluster / "current-input.sql"
+        source.write_text(text)
+        try:
+            p = subprocess.run([*argv, "-f", str(source)], capture_output=True, text=True, env=ENV, timeout=300)
+        finally:
+            source.unlink(missing_ok=True)
+    else:
+        p = subprocess.run(argv, capture_output=True, text=True, env=ENV, timeout=300)
     if expect_fail is not None:
         if p.returncode == 0 or expect_fail not in p.stderr:
             raise AssertionError(f"expected failure containing {expect_fail!r}\n{p.stdout}\n{p.stderr[-3000:]}")

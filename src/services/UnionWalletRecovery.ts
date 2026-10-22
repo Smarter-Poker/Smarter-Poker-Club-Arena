@@ -1,5 +1,6 @@
 import { uuid } from '../utils/uuid';
 import { UNION_WALLET_RECOVERY_PREFIX } from '../utils/clearUserCaches';
+import { isEntityId } from '../utils/entityId';
 
 export { UNION_WALLET_RECOVERY_PREFIX };
 
@@ -73,8 +74,8 @@ const storageKey = (scope: UnionWalletIntentScope) =>
   `${UNION_WALLET_RECOVERY_PREFIX}:${scope.userId}:${scope.unionId}:${scope.walletKey}:${encodeURIComponent(scope.signature)}`;
 
 const isValidScope = (scope: UnionWalletIntentScope): boolean =>
-  UUID_PATTERN.test(scope.userId) &&
-  UUID_PATTERN.test(scope.unionId) &&
+  isEntityId(scope.userId) &&
+  isEntityId(scope.unionId) &&
   WALLET_KEYS.has(scope.walletKey) &&
   scope.signature.length > 0 &&
   scope.signature.length <= MAX_SIGNATURE_LENGTH;
@@ -198,4 +199,66 @@ export function clearUnionWalletOperation(
     // The committed server result remains authoritative. A stale key can only
     // replay that result; it cannot apply the movement a second time.
   }
+}
+
+/** The server owns recovery even when browser storage is full or disabled.
+ * Carry a readable legacy intent forward so deployment never changes its key.
+ * The RPC is injected for isolated tests and loaded by the mounted cashier. */
+export async function reserveDurableUnionWalletOperation(
+  scope: UnionWalletIntentScope,
+  rpc: (
+    name: string,
+    args: Record<string, unknown>
+  ) => PromiseLike<{ data: unknown; error: unknown }>,
+  storage: UnionWalletRecoveryStorage | null = browserStorage()
+): Promise<string> {
+  if (!isValidScope(scope)) throw new Error('Invalid Union Wallet Intent');
+  let legacy: UnionWalletIntentRecord | null = null;
+  let stored: string | null = null;
+  try {
+    stored = storage?.getItem(storageKey(scope)) ?? null;
+  } catch {
+    /* Server recovery remains available. */
+  }
+  if (stored && storage) {
+    const record = readRecord(scope, storage, Date.now());
+    if (!record) throw new Error('Previous Union Wallet Operation Needs Recovery');
+    legacy = record;
+  }
+  const { data, error } = await rpc('fn_union_wallet_reserve_intent', {
+    p_union_id: scope.unionId,
+    p_wallet_key: scope.walletKey,
+    p_signature: scope.signature,
+    p_legacy_operation_id: legacy?.operationId ?? null,
+    p_actor_id: scope.userId,
+  });
+  if (error && (error as { code?: string }).code === 'PGRST202') {
+    // Protected client publication and the independent migration installer can
+    // overlap. Only a pre-execution missing-function response may use the
+    // previous durable client protocol; transport ambiguity never may.
+    const previous = reserveUnionWalletOperation(scope, storage);
+    if (previous) return previous;
+  }
+  if (error) throw error;
+  if (typeof data !== 'string' || !UUID_PATTERN.test(data))
+    throw new Error('Union Wallet Recovery Could Not Be Confirmed');
+  return data;
+}
+
+export async function acknowledgeDurableUnionWalletOperation(
+  scope: UnionWalletIntentScope,
+  operationId: string,
+  rpc: (
+    name: string,
+    args: Record<string, unknown>
+  ) => PromiseLike<{ data: unknown; error: unknown }>
+): Promise<void> {
+  const { error } = await rpc('fn_union_wallet_acknowledge_intent', {
+    p_union_id: scope.unionId,
+    p_wallet_key: scope.walletKey,
+    p_signature: scope.signature,
+    p_operation_id: operationId,
+  });
+  if (error && (error as { code?: string }).code !== 'PGRST202') throw error;
+  clearUnionWalletOperation(scope, operationId);
 }

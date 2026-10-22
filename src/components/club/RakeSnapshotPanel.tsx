@@ -61,6 +61,7 @@ import {
   rakeSnapshotExportToCsv,
 } from '../../utils/rakeSnapshotExport';
 import { uuid } from '../../utils/uuid';
+import { CLUB_DATA_ZONE_LABEL, chicagoClock } from '../../lib/clubDataDay';
 import { SpadeConsole } from '../console/SpadeConsole';
 import { ClubPageSection } from './ClubPageSection';
 import { titleCase } from '../../utils/titleCase';
@@ -118,7 +119,9 @@ function roleLabel(role: string | null | undefined): string {
 
 function money(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(Number(n))) return NO_VALUE;
-  return compactChips(Number(n));
+  return Math.abs(Number(n)) < 1000
+    ? Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : compactChips(Number(n));
 }
 
 function count(n: number | null | undefined): string {
@@ -126,13 +129,13 @@ function count(n: number | null | undefined): string {
   return Number(n).toLocaleString('en-US');
 }
 
-/** Every timestamp on this page is UTC and badged as such. A bare local time
- *  beside a UTC range is how "updated 19:42" comes to look like it preceded a
+/** Every timestamp on this page is Chicago time and badged as such (Dan,
+ *  2026-10-22: the figures count America/Chicago days). A bare local time
+ *  beside the range is how "updated 19:42" comes to look like it preceded a
  *  window ending today. */
-function utcTime(iso: string): string {
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return 'Unknown';
-  return `${d.toLocaleTimeString('en-GB', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' })} UTC`;
+function zonedTime(iso: string): string {
+  const clock = chicagoClock(iso);
+  return clock ? `${clock} ${CLUB_DATA_ZONE_LABEL}` : 'Unknown';
 }
 
 function bucketLabel(iso: string, unit: 'day' | 'week' | 'month'): string {
@@ -773,7 +776,7 @@ export default function RakeSnapshotPanel({
         className={`${styles.delta} ${cls}`}
         title={
           snapshot
-            ? `Previous Period ${snapshot.previous_range.start} To ${snapshot.previous_range.end} UTC`
+            ? `Previous Period ${snapshot.previous_range.start} To ${snapshot.previous_range.end} ${CLUB_DATA_ZONE_LABEL}`
             : undefined
         }
       >
@@ -1056,14 +1059,14 @@ export default function RakeSnapshotPanel({
               onChange={(e) => setCustom((c) => ({ ...c, end: e.target.value }))}
             />
           </label>
-          <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>UTC</span>
+          <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>{CLUB_DATA_ZONE_LABEL}</span>
         </div>
       ) : (
         <div className={`sc-ink--silver ${styles.rangeChip}`} aria-live="polite">
           <span>{snapshot?.range.start ?? range.start}</span>
           <span className={`sc-ink--muted ${styles.rangeDivider}`}>-</span>
           <span>{snapshot?.range.end ?? range.end}</span>
-          <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>UTC</span>
+          <span className={`sc-label sc-ink--blue ${styles.rangeTz}`}>{CLUB_DATA_ZONE_LABEL}</span>
         </div>
       )}
 
@@ -1073,16 +1076,39 @@ export default function RakeSnapshotPanel({
         </p>
       )}
 
+      {snapshot?.accounting_basis === 'chicago_net_money_flow' && !isAgent ? (
+        <p className={`sc-ink--muted ${styles.meta}`}>
+          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only.
+          {scope === 'union' ? ' All Member Clubs And Union Account.' : ''}
+        </p>
+      ) : null}
+      {snapshot?.accounting_basis === 'utc_net_money_flow' && !isAgent ? (
+        <p className={`sc-ink--muted ${styles.meta}`}>
+          Net Entries And Payouts In UTC. Unfinished Event Entries Included.
+          {scope === 'union' ? ' All Member Clubs And Union Account.' : ''}
+        </p>
+      ) : null}
       <dl className={styles.rows} aria-busy={loading} aria-label="Rake Snapshot Totals">
         <div className={`${styles.tile} ${styles.headline}`}>
           <dt className={`sc-label sc-ink--blue ${styles.label}`}>Rake / Fee</dt>
-          <dd className={`sc-ink--silver ${styles.value} ${styles.valueBig}`}>
+          <dd
+            title={
+              summary
+                ? Number(summary.fee).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })
+                : undefined
+            }
+            className={`sc-ink--silver ${styles.value} ${styles.valueBig}`}
+          >
             {summary ? money(summary.fee) : NO_VALUE}
           </dd>
           <dd className={styles.meta}>
             {summary && !isAgent && summary.cash_fee !== null && summary.mtt_fee !== null ? (
               <span className={`sc-ink--muted ${styles.split}`}>
-                {money(summary.cash_fee)} Cash - {money(summary.mtt_fee)} MTT
+                {money(summary.cash_fee)} Cash - {money(summary.tournament_fee ?? summary.mtt_fee)}{' '}
+                Tournaments
               </span>
             ) : null}
             {deltaNote(delta?.fee_pct, delta?.fee_abs)}
@@ -1131,6 +1157,14 @@ export default function RakeSnapshotPanel({
                 className={`${styles.value} ${
                   summary && Number(summary.total_winnings) < 0 ? 'sc-ink--red' : 'sc-ink--green'
                 }`}
+                title={
+                  summary
+                    ? Number(summary.total_winnings).toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    : undefined
+                }
               >
                 {summary ? money(summary.total_winnings) : NO_VALUE}
               </dd>
@@ -1142,14 +1176,35 @@ export default function RakeSnapshotPanel({
                 className={`${styles.value} ${
                   summary && Number(summary.mtt_winnings) < 0 ? 'sc-ink--red' : 'sc-ink--green'
                 }`}
+                title={
+                  summary
+                    ? Number(summary.mtt_winnings).toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })
+                    : undefined
+                }
               >
                 {summary ? money(summary.mtt_winnings) : NO_VALUE}
               </dd>
               <dd className={`sc-ink--muted ${styles.meta}`}>
                 {summary && summary.mtt_games !== null && summary.mtt_games !== undefined
-                  ? `${compactChips(summary.mtt_games)} Tournaments`
+                  ? `${compactChips(summary.mtt_games)} MTTs`
                   : null}
               </dd>
+              {summary &&
+              summary.running_mtt_entries !== null &&
+              summary.running_mtt_entries !== undefined ? (
+                <dd
+                  className={`sc-ink--muted ${styles.meta}`}
+                  title={Number(summary.running_mtt_entries).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
+                >
+                  Running MTT Entries {money(summary.running_mtt_entries)}
+                </dd>
+              ) : null}
             </div>
             <div className={styles.tile}>
               <dt className={`sc-label sc-ink--blue ${styles.label}`}>Games</dt>
@@ -1530,7 +1585,7 @@ export default function RakeSnapshotPanel({
       {liveAhead && (
         <p className={`sc-copy ${styles.notice}`} role="status">
           This Table Is Live To The Second. The Headline Above Is A Rollup Written Hourly
-          {liveAhead.at ? `, Last At ${utcTime(liveAhead.at)}` : ''}, So The Two Differ Until It
+          {liveAhead.at ? `, Last At ${zonedTime(liveAhead.at)}` : ''}, So The Two Differ Until It
           Runs Again.
         </p>
       )}
@@ -1539,7 +1594,7 @@ export default function RakeSnapshotPanel({
         {loading && !snapshot
           ? 'Reading Rollups'
           : snapshot
-            ? `Compared Against ${snapshot.previous_range.start} - ${snapshot.previous_range.end} UTC`
+            ? `Compared Against ${snapshot.previous_range.start} - ${snapshot.previous_range.end} ${CLUB_DATA_ZONE_LABEL}`
             : 'No Snapshot Loaded'}
       </p>
     </Section>

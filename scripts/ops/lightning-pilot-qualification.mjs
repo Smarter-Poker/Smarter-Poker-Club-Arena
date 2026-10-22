@@ -1,7 +1,9 @@
 /** Explicit, read-only private-pilot evidence collection. Never enables, seats,
  * funds, synthesizes play, installs, publishes, or issues a launch certificate. */
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { collectReplaySample } from './lightning-pilot-replay-sample.mjs';
+import { qualifyClusterLatency } from './lightning-latency-qualification.mjs';
+import { verifyAccessProof } from './lightning-pilot-access-proof.mjs';
 import { pathToFileURL } from 'node:url';
 import {
   LIGHTNING_PILOT_TABLE_SIZE,
@@ -356,6 +358,7 @@ export async function collectQualification({
   outsiderId = null,
   from = null,
   populatedClusterIds = [],
+  accessProof = null,
   now = () => new Date(),
 }) {
   if (outsiderId !== null && !UUID.test(outsiderId))
@@ -624,6 +627,15 @@ export async function collectQualification({
           },
           object
         );
+        // R19: the production-telemetry verdict over the engine's own closed
+        // windows. The browser latency witness is a supplementary sample only.
+        target.latencyQualification = await qualifyClusterLatency({
+          admin,
+          clusterId,
+          target: target.templateName,
+          queryTime: observedAt,
+          bindTarget: false,
+        });
         const tables = await observe(
           'tables:nondeleted_pilot_scope',
           () =>
@@ -709,6 +721,35 @@ export async function collectQualification({
   report.servingIdentityStable = servingStable(report.servingBefore, report.servingAfter);
   report.completedAt = now().toISOString();
   report.consistency = 'Independent Read Observations; Not An Atomic Database Snapshot';
+  // THE AUTHENTICATED OUTSIDER PROOF: the retained access-stage artifact, re-verified
+  // here against this report's designated outsider and its pilot Clusters. Absent,
+  // stale or incomplete evidence stays a blocker; nothing here runs the proof.
+  const pilotClusterIds = report.targets.every((t) => t.observation.status === 'known')
+    ? report.targets.map((t) => t.observation.data.id)
+    : [];
+  report.authenticatedOutsiderProof =
+    outsiderId === null || pilotClusterIds.length === 0
+      ? {
+          status: 'unknown',
+          source: 'lightning-pilot-stage.yml:stage=access:retained_artifact',
+          verdict: outsiderId === null ? 'NO_DESIGNATED_OUTSIDER' : 'PILOT_TARGETS_NOT_ESTABLISHED',
+        }
+      : verifyAccessProof({
+          run: accessProof?.run,
+          proof: accessProof?.proof,
+          outsiderId,
+          clusterIds: pilotClusterIds,
+          observedAt: report.completedAt,
+        });
+  const accessProved = report.authenticatedOutsiderProof.verdict === 'PROVED';
+  for (const t of report.targets)
+    if (t.databaseAccess)
+      t.databaseAccess.authenticatedBrowserAndSocket = accessProved
+        ? `PROVED_BY_ACCESS_STAGE_RUN_${report.authenticatedOutsiderProof.data.runId}`
+        : 'NOT_PROVED';
+  if (accessProved)
+    report.limitations[0] =
+      'The authenticated outsider browser and WebSocket proof is the retained access-stage run named in authenticatedOutsiderProof; database access decisions alone do not prove it.';
   report.blockers = [
     ...(report.club.status !== 'known' ? ['PILOT_CLUB_NOT_ESTABLISHED'] : []),
     ...report.targets
@@ -730,6 +771,10 @@ export async function collectQualification({
       if (t.configurationAuditEvents?.status !== 'known')
         blockers.push('CONFIGURATION_AUDIT_UNKNOWN');
       if (t.telemetry?.status !== 'known') blockers.push('TELEMETRY_EVIDENCE_UNKNOWN');
+      const latency = t.latencyQualification?.verdict;
+      if (latency === 'FAIL') blockers.push('R19_LATENCY_CEILING_EXCEEDED');
+      else if (latency === 'INSUFFICIENT') blockers.push('R19_LATENCY_EVIDENCE_INSUFFICIENT');
+      else if (latency !== 'PASS') blockers.push('R19_LATENCY_EVIDENCE_UNKNOWN');
       const a = t.databaseAccess;
       if (a?.tables?.status !== 'known') blockers.push('PRIVATE_TABLE_SCOPE_UNKNOWN');
       else if (a.tables.data.length === 0) blockers.push('PRIVATE_PILOT_TABLES_NOT_ESTABLISHED');
@@ -774,7 +819,7 @@ export async function collectQualification({
     report.servingAfter.engine.data.fullRevisionEstablished !== true
       ? ['ENGINE_FULL_REVISION_NOT_ESTABLISHED']
       : []),
-    'AUTHENTICATED_OUTSIDER_BROWSER_AND_SOCKET_PROOF_REQUIRED',
+    ...(accessProved ? [] : ['AUTHENTICATED_OUTSIDER_BROWSER_AND_SOCKET_PROOF_REQUIRED']),
     'ALL_54_RELEASE_GATES_NOT_CERTIFIED',
   ];
   report.blockers = [...new Set(report.blockers)];
@@ -823,9 +868,21 @@ export async function runQualification(env = process.env) {
       profile.data.is_horse === true
     )
       throw Object.assign(new Error(), { code: 'SERVICE_AUTHORITY_MISMATCH' });
+    const readJson = (path) => {
+      if (!path) return null;
+      try {
+        return JSON.parse(readFileSync(path, 'utf8'));
+      } catch {
+        return null;
+      }
+    };
     const report = await collectQualification({
       admin,
       player,
+      accessProof: {
+        run: readJson(env.PILOT_ACCESS_PROOF_RUN_PATH),
+        proof: readJson(env.PILOT_ACCESS_PROOF_PATH),
+      },
       outsiderId: env.PILOT_DESIGNATED_OUTSIDER_ID || null,
       from: env.PILOT_REPORT_FROM || null,
       populatedClusterIds,

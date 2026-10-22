@@ -286,17 +286,22 @@ export function createSupabaseLightningHandBackend(): LightningHandBackend {
       // The same rule row the physical engine deals from (loadTable), plus the
       // club rake defaults refreshRakeConfig reads beside it.
       const table = (await loadTable(hostTableId)) as unknown as LightningHostRules;
-      let clubRakeDefaults: { rakePercent: number | null; rakeCapBB: number | null } | null = null;
+      let clubRakeDefaults: {
+        rakePercent: number | null;
+        rakeCapBB: number | null;
+        unionId?: string | null;
+      } | null = null;
       if (table.club_id) {
         const { data: club } = await supabase
           .from('clubs')
-          .select('default_rake_percent, rake_cap')
+          .select('default_rake_percent, rake_cap, union_id')
           .eq('id', table.club_id)
           .maybeSingle();
         if (club) {
           clubRakeDefaults = {
             rakePercent: (club as any).default_rake_percent ?? null,
             rakeCapBB: (club as any).rake_cap ?? null,
+            unionId: (club as any).union_id,
           };
         }
       }

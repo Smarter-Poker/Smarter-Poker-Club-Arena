@@ -213,7 +213,7 @@ describe('a tournament launch crosses maintenance exactly once', () => {
 
 it('every resumed or recovered dealer receives the immutable booked start before admission', () => {
   const startDealer = sliceMethod(source, 'protected startManagedTableEngine(');
-  const prepare = sliceMethod(source, 'private prepareManagedTableEngineForPlay(');
+  const prepare = sliceMethod(source, 'protected prepareManagedTableEngineForPlay(');
   const hold = sliceMethod(source, 'private holdManagedTableUntilBookedStart(');
   expect(startDealer.indexOf('this.holdManagedTableUntilBookedStart(engine)')).toBeLessThan(
     startDealer.indexOf('engine.start()')

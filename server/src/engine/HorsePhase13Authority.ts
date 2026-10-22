@@ -600,49 +600,27 @@ export interface HorsePhase13AuthoritySelection {
  * on 41296ff3 admits boards 1 and 2; board 3 has no eligible sample and remains
  * refused. The other variants remain unselected. Qualification, strength and
  * completion evidence ship byte-identically in the engine image.
+ *
+ * October 22: MANIAC PRESSURE (docs/changelog/2026-10-22-horses-adjust-to-maniacs.md,
+ * Dan: "IF A PLAYER IS MOVING ALL IN ON EVERY HAND THE HORSES NEED TO RECOGNIZE
+ * THIS IN REAL TIME ... FOR ALL GAMES, LEVELS AND STAKES") changes HorseLogic.ts,
+ * HorseMind.ts, HorsePreflop.ts and HorseOpponentExploit.ts, hashed policy
+ * files, so every qualified policy digest moves again. Following the
+ * 2026-10-17 precedent the fix ships now and every pack requalifies: every
+ * selection is explicitly null until its locked matrix requalifies the exact
+ * new source (and, where the pack has one, fresh natural completion is read);
+ * a renewal is the next generation. The da94e437 generations stay committed
+ * with their evidence and are retained for refusal in
+ * HorsePreviousSelections.test-support.ts as RETIRED_2026_10_22_*.
  */
 export const PHASE13_PROTECTED_RELEASE_SELECTIONS: Readonly<
   Record<JointVariant, HorsePhase13AuthoritySelection | null>
 > = Object.freeze({
   nlh: null,
-  plo4: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase13',
-    variant: 'plo4',
-    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-    packVersion: 'joint-multiway-round1-v4',
-    contractVersion: 'joint-strength-contract-v1',
-    contractDigest: '0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8',
-    domain: 'plo4-cash-joint-multiway-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase13/phase13-qualification-2026-10-20-plo4.json',
-    qualificationSha256: '099eea8275df9642c244179c480e94453d8137716d033e3df86eb94ce0f91c00',
-    completionPath: 'docs/evidence/phase13/da94e437/phase13-completion-2026-10-19-plo4.json',
-    completionSha256: '34990e77cb3f59413b209b6d2864f19889e578af0f4e099fe3b17e0be32ccd2c',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-20T18:28:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  plo4: null,
   plo5: null,
   plo6: null,
-  plo8: Object.freeze({
-    schema: 'horse-qualified-authority-selection-v1',
-    phase: 'phase13',
-    variant: 'plo8',
-    sourceSha: 'da94e43740fa4940e7d1f6e4488264c2b6ffb58a',
-    packVersion: 'joint-multiway-round1-v4',
-    contractVersion: 'joint-strength-contract-v1',
-    contractDigest: '0cd88d970c600fb64933337672af349e9d106402d4edfcc3510e1f26374741f8',
-    domain: 'plo8-cash-joint-multiway-after-rake-horse-population',
-    qualificationPath: 'docs/evidence/phase13/phase13-qualification-2026-10-20-plo8.json',
-    qualificationSha256: '2f474919d34ad6dcd69a3a5729743ed38ec6d725e4a4e498c4dab59d785b4db6',
-    completionPath: 'docs/evidence/phase13/da94e437/phase13-completion-2026-10-19-plo8.json',
-    completionSha256: 'ea223f0f4a5604d35c72f6209ebddf34c6c34a2e96fe2870446ddcd3f0a16e83',
-    approvalGeneration: 1,
-    issuedAt: '2026-10-20T14:45:00.000Z',
-    expiresAt: null,
-    withdrawn: null,
-  } as const),
+  plo8: null,
   flo8: null,
   flh: null,
   pineapple: null,

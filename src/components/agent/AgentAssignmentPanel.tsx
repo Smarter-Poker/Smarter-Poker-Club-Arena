@@ -1,13 +1,5 @@
-/**
- * AGENT ASSIGNMENT PANEL
- *
- * Builds the hierarchy: put a player under an agent, or an agent under a
- * super agent. The RPCs validate role rank, club membership and rakeback
- * gaps server side, so this stays a thin, honest form — errors come back
- * from the database and are shown verbatim rather than swallowed.
- */
-
-import { useCallback, useEffect, useState } from 'react';
+/** Club management changes both hierarchy representations atomically. */
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { UnionOpsService } from '../../services/UnionOpsService';
 import { useToast } from '../common/Toast';
@@ -18,229 +10,368 @@ import {
   PLAYER_NAME_COLUMNS,
   type NameableProfile,
 } from '../../utils/playerDisplayName';
+import { titleCase } from '../../utils/titleCase';
+import { uuid } from '../../utils/uuid';
+import { SpadeConsole } from '../console/SpadeConsole';
+import './AgentAssignmentPanel.css';
+import {
+  AgentAssignmentService,
+  type AssignmentPreview,
+} from '../../services/AgentAssignmentService';
+import AgentAssignmentHistory from './AgentAssignmentHistory';
+import { useUserStore } from '../../stores/useUserStore';
+import {
+  readAssignmentIntent,
+  saveAssignmentIntent,
+  clearAssignmentIntent,
+  type AssignmentIntent,
+} from '../../lib/assignmentIntent';
 
 interface Member {
   user_id: string;
   label: string;
   role: string;
+  agent_id: string | null;
+  holds_agent?: boolean;
 }
-
 const AGENT_ROLES = ['super_agent', 'agent', 'sub_agent'];
 
 export default function AgentAssignmentPanel({ clubId }: { clubId: string }) {
   const toast = useToast();
+  const userId = useUserStore((state) => state.user?.id);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
+  const [allowed, setAllowed] = useState(false);
+  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-
-  const [playerId, setPlayerId] = useState('');
-  const [playerAgentId, setPlayerAgentId] = useState('');
-  const [agentId, setAgentId] = useState('');
-  const [superAgentId, setSuperAgentId] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [source, setSource] = useState('');
+  const [target, setTarget] = useState('');
+  const [uncertain, setUncertain] = useState(false);
+  const [preview, setPreview] = useState<AssignmentPreview | null>(null);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const pending = useRef<AssignmentIntent | null>(null);
+  const version = useRef(0);
+  const inFlight = useRef(false);
 
   const load = useCallback(async () => {
+    const mine = ++version.current;
     setLoading(true);
+    setError('');
+    setAllowed(false);
+    setMembers([]);
+    setPreview(null);
     try {
-      // Two steps rather than a PostgREST embed: club_members.user_id carries
-      // two foreign keys (profiles and users), so an embed needs a constraint
-      // hint and silently breaks if either FK is ever renamed. A plain id
-      // lookup has no such coupling.
-      /* Ordering made the missing members predictable; paging makes them
-         present (2026-08-27). Assigning members to agents against a truncated
-         roster silently excludes whoever fell off the end - and on this panel
-         that reads as "that member does not exist" rather than "the list is
-         short". */
-      const memberRows = await fetchAllRows<{ user_id: string; role: string }>(
+      const permission = await supabase.rpc('fn_can_manage_club_assignments', {
+        p_club_id: clubId,
+      });
+      if (permission.error) throw permission.error;
+      if (mine !== version.current) return;
+      if (permission.data !== true) return;
+      setAllowed(true);
+      const rows = await fetchAllRows<{ user_id: string; role: string; agent_id: string | null }>(
         (from, to) =>
           supabase
             .from('club_members')
-            .select('user_id, role')
+            .select('user_id, role, agent_id')
             .eq('club_id', clubId)
-            .order('joined_at', { ascending: true })
+            .in('status', ['active', 'approved'])
+            .order('user_id')
             .range(from, to),
         { label: 'AgentAssignmentPanel.members' }
       );
-
-      const ids = (memberRows ?? []).map((m) => (m as { user_id: string }).user_id);
+      const activeAgents = await fetchAllRows<{ user_id: string }>(
+        (from, to) =>
+          supabase
+            .from('agents')
+            .select('user_id')
+            .eq('club_id', clubId)
+            .eq('status', 'active')
+            .order('user_id')
+            .range(from, to),
+        { label: 'AgentAssignmentPanel.activeAgents' }
+      );
+      const agentIds = new Set(activeAgents.map((row) => row.user_id));
       const names = new Map<string, string>();
-      for (let i = 0; i < ids.length; i += 500) {
-        const { data: profs } = await supabase
+      for (let i = 0; i < rows.length; i += 500) {
+        const result = await supabase
           .from('profiles')
           .select(`id, ${PLAYER_NAME_COLUMNS}`)
-          .in('id', ids.slice(i, i + 500));
-        (profs ?? []).forEach((pr) => {
-          const r = pr as NameableProfile & { id: string };
-          names.set(r.id, playerDisplayName(r));
-        });
+          .in(
+            'id',
+            rows.slice(i, i + 500).map((m) => m.user_id)
+          );
+        if (result.error) throw result.error;
+        for (const p of result.data ?? []) names.set(p.id, playerDisplayName(p as NameableProfile));
       }
-
-      const rows: Member[] = (memberRows ?? []).map((m) => {
-        const uid = (m as { user_id: string }).user_id;
-        return {
-          user_id: uid,
-          role: (m as { role: string }).role ?? 'player',
-          label: names.get(uid) || uid.slice(0, 8),
-        };
-      });
-      rows.sort((a, b) => a.label.localeCompare(b.label));
-      setMembers(rows);
+      if (mine !== version.current) return;
+      setMembers(
+        rows
+          .map((m) => ({
+            ...m,
+            holds_agent: agentIds.has(m.user_id),
+            label: names.get(m.user_id) || m.user_id.slice(0, 8),
+          }))
+          .sort((a, b) => a.label.localeCompare(b.label))
+      );
     } catch (e) {
+      if (mine !== version.current) return;
+      setError('Could Not Load Assignment Controls.');
       reportError(e, 'AgentAssignmentPanel.load');
     } finally {
-      setLoading(false);
+      if (mine === version.current) setLoading(false);
     }
   }, [clubId]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  const assignPlayer = async () => {
-    if (!playerId || !playerAgentId) return;
-    setBusy(true);
     try {
-      const res = await UnionOpsService.assignPlayerToAgent(playerId, playerAgentId, clubId);
-      if (res?.success) {
-        toast.success('Player assigned');
-        setPlayerId('');
-      } else toast.error(res?.error ?? 'Assignment refused');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Assignment failed');
-      reportError(e, 'AgentAssignmentPanel.assignPlayer');
+      pending.current = userId ? readAssignmentIntent(userId, clubId) : null;
+      setUncertain(Boolean(pending.current));
+      setSelected(pending.current?.members || []);
+      setSource(pending.current?.source || '');
+      setTarget(pending.current?.target || '');
+      void load();
+    } catch (cause) {
+      pending.current = null;
+      setAllowed(false);
+      setLoading(false);
+      setError((cause as Error).message);
+      reportError(cause, 'AgentAssignmentPanel.savedIntent');
+    }
+    return () => {
+      ++version.current;
+    };
+  }, [load, userId, clubId]);
+
+  const review = async () => {
+    if (inFlight.current || !selected.length || !target) return;
+    const mine = version.current;
+    inFlight.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const value = await AgentAssignmentService.preview(
+        clubId,
+        selected,
+        target,
+        source || undefined
+      );
+      if (mine === version.current) setPreview(value);
+    } catch (cause) {
+      if (mine !== version.current) return;
+      setError((cause as { message?: string }).message || 'Could Not Preview Assignment.');
+      reportError(cause, 'AgentAssignmentPanel.preview');
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
 
-  const assignAgent = async () => {
-    if (!agentId || !superAgentId) return;
+  const assign = async () => {
+    if (
+      inFlight.current ||
+      !userId ||
+      (!pending.current && (!selected.length || !target || !preview))
+    )
+      return;
+    const request = pending.current ?? {
+      id: uuid(),
+      club: clubId,
+      userId,
+      members: [...selected],
+      target,
+      source: source || undefined,
+      reviewToken: preview!.review_token,
+    };
+    pending.current = request;
+    const mine = version.current;
+    inFlight.current = true;
     setBusy(true);
+    setError('');
     try {
-      const res = await UnionOpsService.assignAgentToSuperAgent(agentId, superAgentId, clubId);
-      if (res?.success) {
-        toast.success('Agent placed under super agent');
-        setAgentId('');
-        await load();
-      } else toast.error(res?.error ?? 'Assignment refused');
+      saveAssignmentIntent(request);
+      const receipt = await UnionOpsService.reassignClubMembers(
+        request.club,
+        request.members,
+        request.target,
+        request.id,
+        request.source,
+        request.reviewToken
+      );
+      if (mine !== version.current) return;
+      clearAssignmentIntent(request);
+      pending.current = null;
+      setUncertain(false);
+      setSelected([]);
+      setPreview(null);
+      setHistoryRevision((value) => value + 1);
+      toast.success(`${receipt.moved.toLocaleString()} Members Reassigned`);
+      await load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Assignment failed');
-      reportError(e, 'AgentAssignmentPanel.assignAgent');
+      if (mine !== version.current) return;
+      const code = (e as { code?: string })?.code;
+      // A database refusal rolls back the complete operation. A transport
+      // failure retains the exact request and id for an explicit safe retry.
+      const refused = typeof code === 'string' && /^(22|23|40|42|P0)/.test(code);
+      if (refused) {
+        clearAssignmentIntent(request);
+        pending.current = null;
+        setPreview(null);
+      }
+      setUncertain(!refused);
+      setError(
+        refused
+          ? (e as { message?: string }).message === 'assignment_review_changed_preview_again'
+            ? 'The Downline Changed. Review The Transfer Again.'
+            : ((e as { message?: string }).message ?? 'Assignment Refused.')
+          : 'Assignment Outcome Unconfirmed. Retry The Same Request To Read Its Receipt.'
+      );
+      reportError(e, 'AgentAssignmentPanel.assign');
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
 
-  if (loading) return <div style={{ color: '#8aa', padding: 12 }}>Loading Members…</div>;
-
-  const agents = members.filter((m) => AGENT_ROLES.includes(m.role));
-  const supers = members.filter((m) => m.role === 'super_agent');
-  const players = members.filter((m) => !AGENT_ROLES.includes(m.role));
-
-  const sel = {
-    width: '100%',
-    padding: '9px 12px',
-    borderRadius: 8,
-    marginBottom: 10,
-    border: '1px solid #2a3a44',
-    background: 'rgba(255,255,255,0.04)',
-    color: '#e6f1f5',
-  } as const;
-  const btn = (enabled: boolean) =>
-    ({
-      padding: '9px 16px',
-      borderRadius: 8,
-      fontWeight: 700,
-      border: '1px solid #37e7c7',
-      background: 'rgba(55,231,199,0.12)',
-      color: '#37e7c7',
-      opacity: enabled ? 1 : 0.4,
-      cursor: enabled ? 'pointer' : 'not-allowed',
-    }) as const;
-
+  if (loading) return <p className="sc-copy">Loading Assignment Controls...</p>;
+  if (!allowed)
+    return error ? (
+      <p role="alert" className="sc-copy">
+        {error}
+      </p>
+    ) : null;
+  const agents = members.filter(
+    (m) => m.holds_agent && ['owner', 'co_owner', 'admin', ...AGENT_ROLES].includes(m.role)
+  );
+  const assignable = members.filter(
+    (m) =>
+      ['member', 'player', ...AGENT_ROLES].includes(m.role) && (!source || m.agent_id === source)
+  );
+  const label = (id: string | null) => members.find((m) => m.user_id === id)?.label ?? 'Unassigned';
+  const locked = busy || uncertain || preview !== null;
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit,minmax(280px,1fr))',
-        gap: 16,
-      }}
-    >
-      <div
-        style={{
-          padding: 14,
-          borderRadius: 10,
-          border: '1px solid #1e2a31',
-          background: 'rgba(255,255,255,0.03)',
-        }}
-      >
-        <h4 style={{ margin: '0 0 10px', color: '#e6f1f5' }}>Assign Player To An Agent</h4>
-        <select value={playerId} onChange={(e) => setPlayerId(e.target.value)} style={sel}>
-          <option value="">Select Player… ({players.length})</option>
-          {players.map((p) => (
-            <option key={p.user_id} value={p.user_id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={playerAgentId}
-          onChange={(e) => setPlayerAgentId(e.target.value)}
-          style={sel}
-        >
-          <option value="">Select Agent… ({agents.length})</option>
-          {agents.map((a) => (
-            <option key={a.user_id} value={a.user_id}>
-              {a.label} - {a.role.replace('_', ' ')}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={() => void assignPlayer()}
-          disabled={busy || !playerId || !playerAgentId}
-          style={btn(!busy && !!playerId && !!playerAgentId)}
-        >
-          {busy ? 'Working…' : 'Assign'}
-        </button>
-      </div>
-
-      <div
-        style={{
-          padding: 14,
-          borderRadius: 10,
-          border: '1px solid #1e2a31',
-          background: 'rgba(255,255,255,0.03)',
-        }}
-      >
-        <h4 style={{ margin: '0 0 10px', color: '#e6f1f5' }}>Place Agent Under A Super Agent</h4>
-        <select value={agentId} onChange={(e) => setAgentId(e.target.value)} style={sel}>
-          <option value="">Select Agent…</option>
-          {members
-            .filter((m) => m.role === 'agent' || m.role === 'sub_agent')
-            .map((a) => (
-              <option key={a.user_id} value={a.user_id}>
-                {a.label} - {a.role.replace('_', ' ')}
+    <SpadeConsole title="Assign And Transfer" pill="Staff" eyebrow="Club Management" foot="foot">
+      <div className="agent-assignment">
+        <p className="sc-copy">
+          Assign Or Reassign Players. Moving An Agent Keeps Their Existing Downline Together.
+        </p>
+        <label className="sc-label">
+          Current Agent
+          <select
+            aria-label="Current Agent"
+            value={source}
+            disabled={locked}
+            onChange={(e) => {
+              setSource(e.target.value);
+              setSelected([]);
+            }}
+          >
+            <option value="">All Active Members</option>
+            {agents.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {titleCase(m.label)}
               </option>
             ))}
-        </select>
-        <select value={superAgentId} onChange={(e) => setSuperAgentId(e.target.value)} style={sel}>
-          <option value="">Select Super Agent… ({supers.length})</option>
-          {supers.map((a) => (
-            <option key={a.user_id} value={a.user_id}>
-              {a.label}
-            </option>
-          ))}
-        </select>
+          </select>
+        </label>
+        <label className="sc-label">
+          Members To Move
+          <select
+            multiple
+            size={Math.min(8, Math.max(3, assignable.length))}
+            aria-label="Members To Move"
+            value={selected}
+            disabled={locked}
+            onChange={(e) => setSelected(Array.from(e.target.selectedOptions, (o) => o.value))}
+          >
+            {assignable.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {titleCase(m.label)} / {titleCase(m.role.replace(/_/g, ' '))} /{' '}
+                {titleCase(label(m.agent_id))}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
-          onClick={() => void assignAgent()}
-          disabled={busy || !agentId || !superAgentId}
-          style={btn(!busy && !!agentId && !!superAgentId)}
+          type="button"
+          className="sc-label sc-ink--blue"
+          disabled={locked || !assignable.length}
+          onClick={() => setSelected(assignable.map((m) => m.user_id))}
         >
-          {busy ? 'Working…' : 'Place'}
+          Select All Shown
         </button>
-        <p style={{ color: '#66787f', fontSize: '0.75rem', marginBottom: 0 }}>
-          A Downline Member's Rakeback Must Stay At Least 10 Points Below Their Upline's.
+        <label className="sc-label">
+          Destination Agent
+          <select
+            aria-label="Destination Agent"
+            value={target}
+            disabled={locked}
+            onChange={(e) => setTarget(e.target.value)}
+          >
+            <option value="">Select Destination Agent</option>
+            {agents
+              .filter((m) => !selected.includes(m.user_id) && m.user_id !== source)
+              .map((m) => (
+                <option key={m.user_id} value={m.user_id}>
+                  {titleCase(m.label)} / {titleCase(m.role.replace(/_/g, ' '))}
+                </option>
+              ))}
+          </select>
+        </label>
+        <p className="sc-copy">
+          {selected.length.toLocaleString()} Members Selected. The Complete Transfer Succeeds Or No
+          Members Move.
         </p>
+        {error && (
+          <p role="alert" className="sc-copy sc-ink--red">
+            {titleCase(error)}
+          </p>
+        )}
+        {preview && (
+          <section aria-label="Transfer Preview" className="agent-assignment-preview">
+            <h3 className="sc-label">Review Transfer</h3>
+            <p className="sc-copy">Destination: {titleCase(preview.destination.name)}</p>
+            <p className="sc-copy">
+              {preview.selected_count.toLocaleString()} Selected /{' '}
+              {preview.affected_count.toLocaleString()} Total Members Including Attached Downlines
+            </p>
+            <ul>
+              {preview.members.map((member) => (
+                <li key={member.user_id} className="sc-copy">
+                  {titleCase(member.name)} / {titleCase(member.source_name)} To{' '}
+                  {titleCase(preview.destination.name)}
+                </li>
+              ))}
+            </ul>
+            <p className="sc-copy">
+              Confirm The Complete Transfer. Changed Hierarchies Require A New Review.
+            </p>
+            <button
+              type="button"
+              className="sc-label sc-ink--blue"
+              disabled={busy || uncertain}
+              onClick={() => setPreview(null)}
+            >
+              Edit Selection
+            </button>
+          </section>
+        )}
+        <button
+          type="button"
+          className="sc-label sc-ink--blue"
+          disabled={busy || (!uncertain && (!selected.length || !target))}
+          onClick={() => void (preview || uncertain ? assign() : review())}
+        >
+          {busy
+            ? 'Saving Assignment...'
+            : uncertain
+              ? 'Retry Same Assignment'
+              : preview
+                ? 'Confirm Transfer'
+                : 'Review Assignment Or Transfer'}
+        </button>
+        <AgentAssignmentHistory clubId={clubId} revision={historyRevision} />
       </div>
-    </div>
+    </SpadeConsole>
   );
 }

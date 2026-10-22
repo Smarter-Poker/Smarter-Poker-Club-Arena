@@ -12,6 +12,11 @@
  * dealer past the grace is held (no database request, one recheck wake), a
  * refusal younger than the grace never holds an ordinary level, and once the
  * table is admitted the owed level goes up.
+ *
+ * 2026-10-21, Turbo Tuesday PKO bc8e3d86: the hold had no end. One table that
+ * never dealt kept about 170 players at one level for 19 hours. Past
+ * FIELD_WITHOUT_DEALER_HOLD_MAX_MS (the table's critical page) the field plays
+ * on, announced once per table.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -52,6 +57,7 @@ function manager(failingSinceMsAgo: number | null) {
   m.lastObservedHandCompletedAtMs = now - 5_000;
   m.stalledLevelHoldAnnouncedFor = new Set<number>();
   m.fieldWithoutDealerHoldAnnouncedFor = new Set<number>();
+  m.fieldWithoutDealerReleaseAnnouncedFor = new Set<string>();
   m.tableAdmissionFailingSince = new Map<string, number>();
   if (failingSinceMsAgo !== null) m.tableAdmissionFailingSince.set(PARKED, now - failingSinceMsAgo);
   m.askForConsolidationIfSpread = vi.fn();
@@ -119,6 +125,49 @@ describe('a level is not spent while part of the field has no dealer', () => {
     await m.advanceBlindLevel(STRUCTURE);
 
     expect(m.publicationReached).toHaveBeenCalledTimes(1);
+  });
+
+  it('a table stuck past the bound no longer holds the field', async () => {
+    const m = manager(TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS + 60_000);
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await m.advanceBlindLevel(STRUCTURE);
+
+    expect(m.publicationReached).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls.flat().join(' ')).toContain('the field no longer waits for it');
+
+    // The release is announced once per table, not once per level.
+    log.mockClear();
+    m.currentLevel = 2;
+    await m.advanceBlindLevel(STRUCTURE).catch(() => undefined);
+    expect(m.publicationReached).toHaveBeenCalledTimes(2);
+    expect(log.mock.calls.flat().join(' ')).not.toContain('the field no longer waits for it');
+  });
+
+  it('a second, younger stuck table still holds while the old one is released', async () => {
+    const m = manager(TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS + 60_000);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    m.tableAdmissionFailingSince.set(
+      'e5000000-0000-4000-8000-000000000003',
+      Date.now() - (TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MS + 5_000)
+    );
+
+    await m.advanceBlindLevel(STRUCTURE);
+
+    expect(m.publicationReached).not.toHaveBeenCalled();
+    expect(m.scheduleBlindLevelWake).toHaveBeenCalledWith(
+      STRUCTURE,
+      TournamentManagerBase.STALLED_LEVEL_RECHECK_MS
+    );
+  });
+
+  it('the bound is the table admission page, and far longer than the grace', () => {
+    expect(TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS).toBe(
+      TournamentManagerBase.TABLE_ADMISSION_PAGE_AFTER_MS
+    );
+    expect(TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MAX_MS).toBeGreaterThan(
+      TournamentManagerBase.FIELD_WITHOUT_DEALER_HOLD_MS * 10
+    );
   });
 
   it('the grace is shorter than any level a structure can run', () => {

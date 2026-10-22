@@ -2820,6 +2820,8 @@ function CashierTradeWorkspace() {
       claimOpIdsRef.current.delete(row.transaction_id);
       masterBus.emit('BALANCE_UPDATED', { source: 'cashier_trade_claim', userId: user?.id || '' });
       void loadReversible();
+      // A confirmed claim toasts and closes its sheet (Dan, 2026-10-22).
+      setClaimOpen(false);
     } catch (e) {
       if (!current()) return;
       reportError(e, 'CashierTradePage.claimBack');

@@ -132,6 +132,41 @@ describe('header avatar resilience', () => {
     });
   });
 
+  it('does not report a header read that never reached the server', async () => {
+    seedCache(USER, AVATAR);
+    const useHeaderDataStore = await freshStore();
+    supabaseMock.profileResult = {
+      data: null,
+      error: { code: '', message: 'TypeError: Failed to fetch' },
+    };
+
+    useHeaderDataStore.getState().loadOnce(USER);
+    await vi.waitFor(() => {
+      expect(useHeaderDataStore.getState().avatarUrl).toBe(AVATAR);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(reported.calls.some(([, ctx]) => ctx === 'useHeaderDataStore.avatar_fetch')).toBe(false);
+  });
+
+  it('classifies only codeless transport failures as transient', async () => {
+    const { isHeaderTransportFailure } = await import('@/stores/useHeaderDataStore');
+    expect(isHeaderTransportFailure({ message: 'TypeError: Failed to fetch', code: '' })).toBe(
+      true
+    );
+    expect(isHeaderTransportFailure(new TypeError('Load failed'))).toBe(true);
+    expect(
+      isHeaderTransportFailure({ name: 'AbortError', message: 'signal is aborted without reason' })
+    ).toBe(true);
+    expect(isHeaderTransportFailure({ code: '42501', message: 'Failed to fetch' })).toBe(false);
+    expect(
+      isHeaderTransportFailure({
+        code: '57014',
+        message: 'canceling statement due to statement timeout',
+      })
+    ).toBe(false);
+    expect(isHeaderTransportFailure(null)).toBe(false);
+  });
+
   it('does not erase a cached avatar when the read is rejected', async () => {
     seedCache(USER, AVATAR);
     const useHeaderDataStore = await freshStore();

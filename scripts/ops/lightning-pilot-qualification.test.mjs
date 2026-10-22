@@ -636,3 +636,108 @@ test('qualification rejects Classic and tampered Action/Madness semantics withou
     }
   }
 });
+
+test('the report keeps the outsider proof blocker unless a retained access stage verifies for this outsider and every pilot', async () => {
+  const designated = '23040e91-e0d0-430d-b18e-f9f67c385d90';
+  const f = fixture({ nine: true });
+  const ids = [gameId, game9];
+  const tables = [tableId];
+  const browser = (clusterId, actor) =>
+    actor === 'owner'
+      ? {
+          clusterId,
+          actor,
+          browserSocket: { opened: true },
+          authenticated: true,
+          discovery: 'visible',
+          entry: 'rendered',
+        }
+      : {
+          clusterId,
+          actor,
+          browserSocket: { opened: false, messages: 0 },
+          authenticated: true,
+          discovery: 'hidden',
+          entry: 'refused',
+        };
+  const state = (name) => ({
+    state: name,
+    browser: ids.map((id) => browser(id, 'outsider')),
+    sockets: tables.map((t) => ({ tableId: t, outcome: 'refused', status: 403 })),
+    joins: ids.map((clusterId) => ({ clusterId, ok: null, refused: true })),
+    poolStatus: ids.map((clusterId) => ({ clusterId, outcome: 'refused' })),
+    approved: false,
+    funded: false,
+  });
+  const op = '9fe8fa4f-399d-4c12-b14e-b6bcfa770d3d';
+  const accessProof = {
+    run: {
+      id: 39803082299,
+      path: '.github/workflows/lightning-pilot-stage.yml',
+      headBranch: 'main',
+      event: 'workflow_dispatch',
+      status: 'completed',
+      conclusion: 'success',
+    },
+    proof: {
+      stage: 'access',
+      operationId: op,
+      completedAt: '2026-10-12T15:00:00.000Z',
+      serviceSessionCleanup: 'local_signout_confirmed',
+      clusters: ids.map((clusterId) => ({ clusterId })),
+      access: {
+        scope: 'designated_private_pilot_only',
+        outsiderId: designated,
+        operationId: op,
+        verdict: 'passed',
+        cleanup: {
+          pendingRequest: 'removed_and_absence_verified',
+          outsiderSession: 'local_signout_confirmed',
+        },
+        poolStatusOwner: ids.map((clusterId) => ({ clusterId, outcome: 'positive' })),
+        browserOwner: ids.map((id) => browser(id, 'owner')),
+        states: [
+          ...tables.map((t) => ({ state: 'owner', tableId: t, socket: { outcome: 'opened' } })),
+          state('nonmember'),
+          state('pending'),
+        ],
+      },
+    },
+  };
+  const none = await collectQualification({ ...fixture({ nine: true }), outsiderId: designated });
+  assert.ok(none.blockers.includes('AUTHENTICATED_OUTSIDER_BROWSER_AND_SOCKET_PROOF_REQUIRED'));
+  assert.equal(none.authenticatedOutsiderProof.verdict, 'ACCESS_PROOF_NOT_SUPPLIED');
+  assert.equal(none.targets[0].databaseAccess.authenticatedBrowserAndSocket, 'NOT_PROVED');
+
+  const proved = await collectQualification({ ...f, outsiderId: designated, accessProof });
+  assert.equal(proved.authenticatedOutsiderProof.verdict, 'PROVED');
+  assert.ok(!proved.blockers.includes('AUTHENTICATED_OUTSIDER_BROWSER_AND_SOCKET_PROOF_REQUIRED'));
+  assert.ok(proved.blockers.includes('ALL_54_RELEASE_GATES_NOT_CERTIFIED'));
+  assert.equal(proved.publicLaunch, 'NOT_CERTIFIED');
+  assert.ok(
+    proved.targets.every(
+      (t) =>
+        t.databaseAccess.authenticatedBrowserAndSocket === 'PROVED_BY_ACCESS_STAGE_RUN_39803082299'
+    )
+  );
+
+  const other = await collectQualification({ ...fixture({ nine: true }), outsiderId, accessProof });
+  assert.ok(other.blockers.includes('AUTHENTICATED_OUTSIDER_BROWSER_AND_SOCKET_PROOF_REQUIRED'));
+  const one = await collectQualification({ ...fixture(), outsiderId: designated, accessProof });
+  // A missing pilot target is never covered by a proof of the other.
+  assert.equal(one.authenticatedOutsiderProof.verdict, 'PILOT_TARGETS_NOT_ESTABLISHED');
+  assert.ok(one.blockers.includes('AUTHENTICATED_OUTSIDER_BROWSER_AND_SOCKET_PROOF_REQUIRED'));
+  const failed = structuredClone(accessProof);
+  failed.proof.access.verdict = 'failed_or_unknown';
+  const r = await collectQualification({
+    ...fixture({ nine: true }),
+    outsiderId: designated,
+    accessProof: failed,
+  });
+  assert.ok(r.blockers.includes('AUTHENTICATED_OUTSIDER_BROWSER_AND_SOCKET_PROOF_REQUIRED'));
+  const noOutsider = await collectQualification({ ...fixture({ nine: true }), accessProof });
+  assert.equal(noOutsider.authenticatedOutsiderProof.verdict, 'NO_DESIGNATED_OUTSIDER');
+  assert.ok(
+    noOutsider.blockers.includes('AUTHENTICATED_OUTSIDER_BROWSER_AND_SOCKET_PROOF_REQUIRED')
+  );
+});

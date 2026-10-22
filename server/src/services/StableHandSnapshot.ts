@@ -55,6 +55,11 @@ import {
   type HostSnapshot,
 } from './StableHandController.js';
 import { WALLETS_FOR_HOST, killed } from './StableHand.js';
+import {
+  loadGameWaitersByTable,
+  servedKeys,
+  type GameWaitTable,
+} from './HorseGameWaitlistYield.js';
 
 /** Membership statuses that make somebody a member of a club. */
 const MEMBER_STATUSES = ['active', 'approved'];
@@ -218,7 +223,7 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
         let q = supabase
           .from('tables')
           .select(
-            'id, game_variant, small_blind, big_blind, max_players, status, current_players, cluster_id'
+            'id, game_variant, small_blind, big_blind, max_players, status, current_players, cluster_id, lifecycle'
           )
           .eq('club_id', hostId)
           .is('tournament_id', null)
@@ -313,6 +318,38 @@ export async function buildFloorSnapshot(): Promise<FloorSnapshot> {
       const prev = oldestWaitByTable.get(k);
       if (prev === undefined || at < prev) oldestWaitByTable.set(k, at);
     });
+
+    /* A PERSON ON A GAME'S LIST (2026-10-22). A game whose tick cannot open a
+       table for its list (a Lightning Cluster stands down) owes that person a
+       chair at ONE of its tables, the one holding the most horses, so the
+       planner's yieldCount applies there once and nowhere else. Their wait
+       clock is their own created_at. An incomplete read leaves the host out,
+       exactly as an unreadable table list does. See HorseGameWaitlistYield.ts. */
+    const gameTables: GameWaitTable[] = tables.map((t: any) => ({
+      id: String(t.id),
+      clusterId: t.cluster_id ? String(t.cluster_id) : null,
+      lifecycle: t.lifecycle ?? null,
+      horses: (seatsByTable.get(String(t.id)) ?? []).filter((r: any) =>
+        horseIds.has(String(r.user_id))
+      ).length,
+    }));
+    const game = await loadGameWaitersByTable(
+      gameTables,
+      servedKeys([...waits, ...seats], gameTables),
+      {
+        label: 'StableHand.waitlist',
+      }
+    );
+    if (!game.complete) {
+      unreadableHosts.push(hostId);
+      continue;
+    }
+    for (const [k, w] of game.byTable) {
+      waitingByTable.set(k, (waitingByTable.get(k) ?? 0) + w.count);
+      if (w.oldestMs === undefined) continue;
+      const prev = oldestWaitByTable.get(k);
+      if (prev === undefined || w.oldestMs < prev) oldestWaitByTable.set(k, w.oldestMs);
+    }
 
     /* EVERY body on this host, human and horse. The occupancy curve is a
        target for how busy the FLOOR is - Dan's words were "there should not be

@@ -100,7 +100,7 @@ CREATE TABLE public.club_table_daily_refresh_marks (
   refreshed_at timestamptz NOT NULL
 );
 ALTER TABLE public.club_table_daily_refresh_marks ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.club_table_daily_refresh_marks FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.club_table_daily_refresh_marks FROM PUBLIC, anon, authenticated, service_role;
 COMMENT ON TABLE public.club_table_daily_refresh_marks IS
   'Fingerprint (facts, raked hands, attributions) of each complete day fn_club_table_daily_catchup last rebuilt; a day is rebuilt again only when it moves. Migration 20261022062934.';
 

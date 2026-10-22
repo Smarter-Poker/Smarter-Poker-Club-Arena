@@ -1913,7 +1913,10 @@
      `--vh-fan-w`) all read `var(--vh-card-h)` and therefore resolve against
      this value, so the whole fan grows with it rather than around it. */
   --vh-card-h: max(17px, calc(var(--seat-avatar-full, 84px) * 0.346 * var(--vh-reveal)));
-  --vh-step-f: 1.06;
+  /* Dan 2026-10-22 supersedes the 1.06 full-separation step: board-sized
+     cards, "overlapped but not covered". 0.45 of a card leaves every corner
+     index whole; see the board-sized rule at the end of this file. */
+  --vh-step-f: 0.45;
   --vh-rot-scale: 0;
   z-index: 14;
 }
@@ -2321,20 +2324,34 @@
    is itself a fixed fraction of the felt, so the row is a fixed fraction of the
    felt for every hand size at every viewport. It fits everywhere because it
    fits anywhere. */
+/* ── EVERY RANK AND SUIT IS READABLE (Dan 2026-10-22, binding) ─────────────
+   "look at the hero cards how they are laid out, they are terrible, you need
+   to be able to see the full card and suit without it being cut off."
+
+   The step used to be 0.42 / 0.34 / 0.30 of a card for PLO4 / 5 / 6, and the
+   deck art's corner index (rank over suit) reaches 30% of the card for a 6
+   and 38% for a 10, so on a PLO6 hand the next card cut every suit in half.
+   Every hand size now steps 0.45 of its own card - the whole index plus a
+   margin - and the card comes down instead, so the row keeps the width the
+   lane beside the hero allows:
+     PLO4  1.00 + 3 x 0.450  = 2.35 x --sp-card2-w
+     PLO5  0.80 + 4 x 0.360  = 2.24
+     PLO6  0.69 + 5 x 0.3105 = 2.24
+   Pinned by tests/every-hole-card-index-is-readable.law.test.ts. */
 .seat__cards--hero:has(> *:nth-child(4)) {
   --sp-hero-card-w: var(--sp-card2-w);
   --sp-hero-card-h: calc(var(--sp-card2-w) * 1.4);
-  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.4167);
+  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.45);
 }
 .seat__cards--hero:has(> *:nth-child(5)) {
-  --sp-hero-card-w: calc(var(--sp-card2-w) * 0.95);
-  --sp-hero-card-h: calc(var(--sp-card2-w) * 1.33);
-  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.325);
+  --sp-hero-card-w: calc(var(--sp-card2-w) * 0.8);
+  --sp-hero-card-h: calc(var(--sp-card2-w) * 1.12);
+  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.36);
 }
 .seat__cards--hero:has(> *:nth-child(6)) {
-  --sp-hero-card-w: calc(var(--sp-card2-w) * 0.9);
-  --sp-hero-card-h: calc(var(--sp-card2-w) * 1.2667);
-  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.27);
+  --sp-hero-card-w: calc(var(--sp-card2-w) * 0.69);
+  --sp-hero-card-h: calc(var(--sp-card2-w) * 0.966);
+  --sp-hero-card-step: calc(var(--sp-card2-w) * 0.3105);
 }
 
 .seat__cards--hero .seat__card--face {
@@ -4637,14 +4654,32 @@
   }
 }
 
-/* Revealed hands own the avatar's lane. Their inboard edge must never grow
-   across a board or pot when four, five or six cards are tabled. */
+/* ═══ A SHOWN HAND IS BOARD-SIZED AND READABLE (Dan 2026-10-22, binding) ═══
+   "look at the way the villains cards are displayed. thats trash! they need
+   to be the same size as the board cards, overlapped but not covered so all
+   cards are CLEARLY READABLE!"
+
+   This rule used to squeeze the whole tabled row into the width of the
+   player's name plate, so a PLO6 showdown drew six 10px cards nobody could
+   read. The card is now the board card itself: `--sp-board-card-w` is
+   published on `.table-scaler` from the same felt arithmetic the board uses
+   (`boardCardWidthPx` in tableGeometry.ts), with the board's own 64:92 shape.
+
+   Overlapped but never covered: every card steps 0.45 of a card, which clears
+   the deck's corner index (rank over suit, 38% of the card at its widest, a
+   10) with margin, and each card paints OVER the one to its left so that
+   corner is the part left showing. The row still anchors on the avatar's
+   outboard edge and grows inboard, and useProtectedCardLayout moves it off
+   the board, the pot and the plates when it would land on them. */
 .seat .seat__cards--opponent.seat__cards--revealed {
-  --vh-card-w: min(
-    calc(var(--seat-avatar-full, 84px) * 0.346 * 1.6 * 0.714),
-    calc(var(--seat-plate-min-width) / (1 + (var(--vh-n) - 1) * 1.06))
+  --vh-card-w: var(
+    --sp-board-card-w,
+    calc(var(--seat-avatar-full, 84px) * 0.346 * 1.6 * 0.714)
   );
-  --vh-card-h: calc(var(--vh-card-w) * 1.4);
+  --vh-card-h: calc(var(--vh-card-w) * 92 / 64);
+}
+.seat .seat__cards--opponent.seat__cards--revealed .seat__card {
+  z-index: calc(1 + var(--vh-i, 0));
 }
 
 /* The top pod clears Mini BBJ and spends less of the centre pot lane. */

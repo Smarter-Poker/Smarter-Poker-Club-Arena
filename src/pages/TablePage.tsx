@@ -101,6 +101,7 @@ import {
 } from 'react';
 import { publishSessionSummary, type TournamentResult } from '../services/pendingSessionSummary';
 import { sitOutMsRemaining, sitOutBadgeLabel } from '../lib/sitOutDeadline';
+import { heroMayReopenBetting } from '../lib/raiseReopen';
 import { awaitTournamentResultEnrichment } from '../utils/tournamentResultEnrichment';
 import {
   readMySatelliteQualifierResult,
@@ -344,6 +345,7 @@ import {
   fitSeatToViewport,
   portraitTableTransform,
   portraitBoardWidthOfFeltPct,
+  boardCardWidthPx,
 } from '../components/table/tableGeometry';
 import PreActionBar from '../components/table/PreActionBar';
 import LightningFoldBar from '../components/table/LightningFoldBar';
@@ -6653,7 +6655,17 @@ function LiveTablePage({
       : isPotLimit
         ? Math.min(allInTo, potLimitRaiseTo)
         : allInTo;
-    const canRaise = heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped;
+    const mayReopen = heroMayReopenBetting({
+      heroLastAction: tableState.lastActions?.[tableState.heroSeat - 1],
+      currentBet: serverCurrentBet,
+      heroBet,
+      raiseIncrement,
+      bigBlind: bb,
+      isFixedLimit,
+      fixedBetSize: flBetSize,
+    });
+    const canRaise =
+      heroStack > callAmount && allInTo >= minRaiseTo && !wagersCapped && mayReopen;
     if (!canRaise || maxRaiseTo < minRaiseTo) return '';
     const r = (n: number) => Math.round(n * 100) / 100;
     return `${r(minRaiseTo)}:${r(maxRaiseTo)}:${r(bb)}`;
@@ -6673,6 +6685,7 @@ function LiveTablePage({
     tableState.killHand,
     tableState.boardStage,
     tableState.wagersCapped,
+    tableState.lastActions,
   ]);
 
   /** Dan 2026-08-21: the tab's game label. Primitive memo, same reason as
@@ -25375,6 +25388,13 @@ function LiveTablePage({
             {
               '--table-w': `${scalerSize.w}px`,
               '--sp-taper-board-width': `${portraitBoardWidthOfFeltPct()}%`,
+              /* A shown hand is drawn at the board's own card size (Dan
+                 2026-10-22). SeatSlot.css reads it on the revealed row. */
+              '--sp-board-card-w': `${boardCardWidthPx(
+                scalerSize.w,
+                seatViewportWidth,
+                seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
+              )}px`,
               '--sp-table-taper':
                 seatViewportWidth <= 480 && scalerSize.h > scalerSize.w
                   ? portraitTableTransform(scalerSize)
@@ -27828,6 +27848,18 @@ function LiveTablePage({
                   // Raise-TO floor. When currentBet===0 (first bet of a street)
                   // this is the min bet (= one increment = BB).
                   const minRaise = isFixedLimit ? flWagerTo : serverCurrentBet + raiseIncrement;
+                  /* Dan 2026-10-22: a short all-in does not reopen the betting.
+                     A player it does not reopen for may call or fold, never
+                     raise and never shove past the call. src/lib/raiseReopen.ts */
+                  const mayReopen = heroMayReopenBetting({
+                    heroLastAction: tableState.lastActions?.[tableState.heroSeat - 1],
+                    currentBet: serverCurrentBet,
+                    heroBet,
+                    raiseIncrement,
+                    bigBlind: bb,
+                    isFixedLimit,
+                    fixedBetSize: flBetSize,
+                  });
                   const maxRaise = isFixedLimit
                     ? flWagerTo
                     : isPotLimit
@@ -27854,7 +27886,9 @@ function LiveTablePage({
                            raises) takes no further wager — fold or call only.
                            The engine refuses a raise there; the button must not
                            offer one. */
-                        canRaise={heroStack > callAmount && allInTo >= minRaise && !wagersCapped}
+                        canRaise={
+                          heroStack > callAmount && allInTo >= minRaise && !wagersCapped && mayReopen
+                        }
                         /* Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO
                            ALL IN IF THE POT IS LESS THAN THE CHIPS YOU HAVE."
                            The engine refuses it; the button must not offer it.
@@ -27863,6 +27897,7 @@ function LiveTablePage({
                            and not at all once the round is capped. */
                         canAllIn={
                           heroStack > 0 &&
+                          (mayReopen || allInTo <= serverCurrentBet + 0.005) &&
                           (!isPotLimit || allInTo <= maxRaise + 0.005) &&
                           (!isFixedLimit || (!wagersCapped && allInTo <= maxRaise + 0.005))
                         }

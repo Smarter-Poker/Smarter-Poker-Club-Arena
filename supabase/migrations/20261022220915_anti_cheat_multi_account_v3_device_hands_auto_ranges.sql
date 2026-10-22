@@ -1,50 +1,26 @@
--- 20261022185836_anti_cheat_multi_account_v3_device_hands_auto_ranges.sql
---
--- Version reserved by scripts/new-migration.mjs against origin/main and every
--- remote branch, so it cannot collide with another agent's in-flight work.
---
--- WHAT THIS CHANGES, AND WHY:
---
 -- Multi-account detector v3 (Dan, 2026-10-22: "truly only flag multiple
 -- accounts"; never SmarterPokerOfficial or any admin account).
 --
--- 1. DEVICE. The client now keeps one permanent install id per browser/app
---    and reports it once per session through ca_record_device_sighting. The
+-- 1. DEVICE. The client keeps one permanent install id per browser/app and
+--    reports it once per session through ca_record_device_sighting. The
 --    request IP is read from the request headers, never from the client.
---    Two accounts on the same install is the strongest proof there is, and it
---    survives VPNs and iCloud Private Relay, which hide everything else.
 --    A device ever used by a never-flag account (owner, admins, staff, smoke
 --    accounts) is a staff device: admins sign into player accounts for
 --    support, and that must not flag the player.
---
--- 2. HANDS. "Same table" used to mean both accounts opened a socket to the
---    same table within 3 hours, which a rail-bird also does. It now means both
---    accounts were DEALT INTO the same hands (hand_history.players, through
---    its GIN index), per candidate pair only, so the 46 GB table is never
---    scanned.
---
+-- 2. HANDS. "Same table" now means both accounts were DEALT INTO the same
+--    hands (hand_history.players via its GIN index), per candidate pair only.
 -- 3. SHARED ADDRESSES. anti_cheat_shared_ip_ranges gains a source column and
---    a GiST index. The workers service replaces each published list (Apple
+--    a GiST index; the workers service replaces each published list (Apple
 --    iCloud Private Relay, AWS, Google Cloud, Cloudflare, GitHub Actions,
---    Azure) weekly through fn_anti_cheat_replace_shared_ip_ranges; the
---    hand-seeded rows stay as source 'manual'. A failed download never
---    deletes the previous list.
---
+--    Azure) weekly through fn_anti_cheat_replace_shared_ip_ranges.
 -- Verdicts (detect_multi_account_v3):
 --   critical  same device AND dealt into the same hands
---   high      same device, OR same household address AND dealt into the same
---             hands while both were on that address (within 3 hours)
+--   high      same device, OR same household address AND the same hands
+--             while both were on that address (within 3 hours)
 --   medium    2+ distinct household addresses shared
 --   nothing   one shared address on its own, staff, smoke accounts, exempt.
 -- Horses go through every rule exactly as humans do (CLAUDE.md 10.5).
---
--- Wrap ALL DDL for one change in ONE transaction: every DDL statement fires
--- Supabase's schema-cache reload, which takes ~28s on this database, and ten
--- loose statements mean ten reloads (club-arena CLAUDE.md, production DDL policy).
 
-BEGIN;
-
--- ── 1. Device sightings ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.anti_cheat_device_sightings (
   user_id    uuid        NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   device_id  text        NOT NULL,
@@ -113,13 +89,10 @@ $$;
 REVOKE ALL ON FUNCTION public.ca_record_device_sighting(text) FROM public, anon;
 GRANT EXECUTE ON FUNCTION public.ca_record_device_sighting(text) TO authenticated, service_role;
 
--- ── 2. Published shared-address lists ──────────────────────────────────────
 ALTER TABLE public.anti_cheat_shared_ip_ranges
   ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'manual';
 CREATE INDEX IF NOT EXISTS idx_anti_cheat_shared_ip_ranges_gist
   ON public.anti_cheat_shared_ip_ranges USING gist (cidr inet_ops);
--- Explicit boundary (Supabase stops implicit grants 2026-10-30): service_role
--- reads and refreshes the list; nobody else touches it.
 REVOKE ALL ON public.anti_cheat_shared_ip_ranges FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.anti_cheat_shared_ip_ranges TO service_role;
 
@@ -132,9 +105,6 @@ ALTER TABLE public.anti_cheat_shared_ip_sources ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.anti_cheat_shared_ip_sources FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.anti_cheat_shared_ip_sources TO service_role;
 
--- Replace one source's list. p_cidrs are the new list's IPv4 ranges; p_first
--- marks the first chunk of a refresh (it clears the old list in the same
--- transaction as the first insert, so a refresh is never left empty).
 CREATE OR REPLACE FUNCTION public.fn_anti_cheat_replace_shared_ip_ranges(
   p_source text, p_label text, p_cidrs text[], p_first boolean)
 RETURNS integer
@@ -166,7 +136,6 @@ $$;
 REVOKE ALL ON FUNCTION public.fn_anti_cheat_replace_shared_ip_ranges(text, text, text[], boolean) FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_anti_cheat_replace_shared_ip_ranges(text, text, text[], boolean) TO service_role;
 
--- ── 3. Detector v3 ─────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.detect_multi_account_v3(
   p_since timestamptz, p_until timestamptz DEFAULT now())
 RETURNS TABLE(
@@ -219,7 +188,6 @@ AS $$
     FROM ui a JOIN ui b ON a.ip = b.ip AND a.user_id < b.user_id
     GROUP BY 1, 2
   ), copresent AS (
-    -- 3-hour buckets in which both accounts of a pair were on a shared address
     SELECT DISTINCT a.user_id AS ua, b.user_id AS ub, a.bucket
     FROM ev a JOIN ev b
       ON a.ip = b.ip AND a.user_id < b.user_id
@@ -294,10 +262,3 @@ AS $$
 $$;
 REVOKE ALL ON FUNCTION public.detect_multi_account_v3(timestamptz, timestamptz) FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.detect_multi_account_v3(timestamptz, timestamptz) TO service_role;
-
--- ── 4. Retire v1 ───────────────────────────────────────────────────────────
--- The workers service has called detect_multi_account_v2 since 2026-10-22 and
--- calls v3 from this change on; nothing reads the v1 IP grouping any more.
-DROP FUNCTION IF EXISTS public.detect_multi_account_ips(timestamptz);
-
-COMMIT;

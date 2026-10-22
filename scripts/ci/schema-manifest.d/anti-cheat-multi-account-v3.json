@@ -1,5 +1,5 @@
 {
-  "_owner": "anti-cheat-multi-account-v3. Migrations 20261022163616, 20261022170343, 20261022173217 (multi-account detector v2, recorded from production) and 20261022185836 (v3: device sightings, shared hands, published shared-address lists).",
+  "_owner": "anti-cheat-multi-account-v3. Migrations 20261022163616, 20261022170343, 20261022173217 (multi-account detector v2, recorded from production) and 20261022220915 (v3: device sightings, shared hands, published shared-address lists).",
   "tables": [
     "anti_cheat_shared_ip_ranges",
     "anti_cheat_shared_ip_sources",
@@ -34,8 +34,5 @@
       "last_seen",
       "hits"
     ]
-  },
-  "removedFunctions": [
-    "detect_multi_account_ips"
-  ]
+  }
 }

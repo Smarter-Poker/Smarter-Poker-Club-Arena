@@ -53,7 +53,9 @@ import { humanBeat, humanBeatMs } from './horsePacing.js';
 import { personalPool, personalThrowChance } from './horseVoiceStyle.js';
 import type { SeatedPlayer, TableInfo } from '../types.js';
 import {
+  hasAudience,
   speakAsTheyShove,
+  speaksThisTime,
   tableRefusal,
   talkSeatsFrom,
   talkTableFrom,
@@ -237,7 +239,8 @@ export function detectAfterHand(input: TableTalkInput): GestureCandidate | null 
       .map((r) => seatOf(r.userId))
       .filter((s): s is number => s !== undefined && s !== horse.seat);
     if (beaten.length === 0) continue;
-    const targetSeat = beaten[personaHash(`${horse.userId}|${input.handNumber}|won|target`) % beaten.length];
+    const targetSeat =
+      beaten[personaHash(`${horse.userId}|${input.handNumber}|won|target`) % beaten.length];
     out.push({ moment: 'won', horse, targetSeat });
   }
   if (out.length === 0) return null;
@@ -315,6 +318,7 @@ export type GestureOutcome =
   | 'reacted'
   | 'spoken'
   | 'no_gesture'
+  | 'no_audience'
   | 'gate_closed'
   | 'limited'
   | 'refused'
@@ -339,7 +343,12 @@ export async function throwItem(
     return 'failed';
   }
   if ((data as { success?: unknown } | null)?.success !== true) return 'refused';
-  const sent = await broadcastChat(tableId, horseId, `[THROW:${throwableId}:${targetSeat}]`, requestId);
+  const sent = await broadcastChat(
+    tableId,
+    horseId,
+    `[THROW:${throwableId}:${targetSeat}]`,
+    requestId
+  );
   return sent ? 'thrown' : 'unsent';
 }
 
@@ -365,6 +374,9 @@ export const gestureAfterHand = bindToProcessRoot(
   async (input: TableTalkInput | null): Promise<GestureOutcome> => {
     if (!input) return 'no_gesture';
     try {
+      // A throw is an animation with no history: with nobody watching it is
+      // only writes. Measured 2026-10-22: 1,470 horse throws in one hour.
+      if (!hasAudience(input.table.tableId)) return 'no_audience';
       const pick = detectAfterHand(input);
       if (!pick) return 'no_gesture';
       const now = Date.now();
@@ -374,7 +386,9 @@ export const gestureAfterHand = bindToProcessRoot(
       noteGesture(input.table.tableId, pick.horse.userId, now);
       const voice = voiceFor(pick.horse.horseProfile, pick.horse.userId);
       const item = pickItem(pick.moment, voice, pick.horse.userId, input.handNumber);
-      await humanBeat(humanBeatMs(`${pick.horse.userId}|${input.handNumber}|${pick.moment}`, 'tap'));
+      await humanBeat(
+        humanBeatMs(`${pick.horse.userId}|${input.handNumber}|${pick.moment}`, 'tap')
+      );
       return await throwItem(input.table.tableId, pick.horse.userId, item, pick.targetSeat);
     } catch (err) {
       reportError(err, 'HorseTableGestures.afterHand', { tableId: input.table.tableId });
@@ -401,9 +415,16 @@ export const gestureBeforeAllIn = bindToProcessRoot(
     if (!input) return 'no_gesture';
     try {
       const { table, horse, handNumber } = input;
-      if (!rollsGesture('all_in', horse.userId, table.tableId, handNumber)) return 'no_gesture';
-      const now = Date.now();
+      if (!hasAudience(table.tableId)) return 'no_audience';
       const form = allInForm(horse.userId, handNumber, tableRefusal(table) === null);
+      // Choose the form before its participation roll: a chat-only horse can
+      // still speak, while a silent horse never gets chat via its throw habit.
+      const participates =
+        form === 'chat'
+          ? speaksThisTime('all_in', horse.userId, table.tableId, handNumber)
+          : rollsGesture('all_in', horse.userId, table.tableId, handNumber);
+      if (!participates) return 'no_gesture';
+      const now = Date.now();
       if (form === 'chat') {
         // Table talk owns the chat door, its gate and its limits.
         const said = await speakAsTheyShove({ table, handNumber, horse, seated: input.seated });
@@ -420,7 +441,9 @@ export const gestureBeforeAllIn = bindToProcessRoot(
         return await throwItem(table.tableId, horse.userId, item, input.targetSeat);
       }
       const glyph =
-        ALL_IN_REACTIONS[personaHash(`${horse.userId}|${handNumber}|reaction`) % ALL_IN_REACTIONS.length];
+        ALL_IN_REACTIONS[
+          personaHash(`${horse.userId}|${handNumber}|reaction`) % ALL_IN_REACTIONS.length
+        ];
       return await sendReaction(table.tableId, horse.userId, glyph, horse.seat);
     } catch (err) {
       reportError(err, 'HorseTableGestures.beforeAllIn', { tableId: input.table.tableId });
@@ -467,7 +490,8 @@ export function buildAllInGestureInput(
     targetSeat = lastAggressorSeat;
   } else if (live.length > 0) {
     const ordered = [...live].sort((a, b) => a.seat - b.seat);
-    targetSeat = ordered[personaHash(`${horseUserId}|${handNumber}|all_in|target`) % ordered.length].seat;
+    targetSeat =
+      ordered[personaHash(`${horseUserId}|${handNumber}|all_in|target`) % ordered.length].seat;
   }
   const table = talkTableFrom(tableInfo, isTournament || !!tableInfo.tournament_id);
   return { table, handNumber, horse, targetSeat, seated: seats };

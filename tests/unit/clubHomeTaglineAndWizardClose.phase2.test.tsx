@@ -217,8 +217,7 @@ async function mountLobby() {
   await settle();
 }
 
-const wizardRow = () =>
-  screen.getByText('Complete The Opening Setup Wizard').closest('article') as HTMLElement;
+const wizardRow = () => screen.getByText('Club Defaults').closest('article') as HTMLElement;
 
 describe('the club tag line', () => {
   it('prints Title Cased, as every string a player reads', async () => {
@@ -236,7 +235,7 @@ describe('closing the opening wizard', () => {
     h.setupReads = [NOT_DONE, DONE];
     await mountLobby();
     expect(h.setupCalls).toBe(1);
-    fireEvent.click(within(wizardRow()).getByRole('button', { name: 'Start Setup' }));
+    fireEvent.click(within(wizardRow()).getByRole('button', { name: 'Open Setup' }));
     expect(screen.getByRole('dialog', { name: 'Opening Setup Stub' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Close Opening Setup Stub' }));

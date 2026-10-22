@@ -3888,6 +3888,7 @@ function CashierTradeWorkspace() {
                   <input
                     type="checkbox"
                     checked={mineOnly}
+                    className="sc-check__box"
                     onChange={(e) => setMineOnly(e.target.checked)}
                     disabled={mineCount === 0}
                   />
@@ -3902,6 +3903,7 @@ function CashierTradeWorkspace() {
                   <input
                     type="checkbox"
                     checked={groupByRole}
+                    className="sc-check__box"
                     onChange={(e) => setGroupByRole(e.target.checked)}
                   />
                   Group By Role

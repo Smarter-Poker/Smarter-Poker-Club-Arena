@@ -147,7 +147,7 @@ export default function ClubArenaWelcomeModal({ isOpen, onAccept }: ClubArenaWel
               type="button"
               role="checkbox"
               aria-checked={hasAgreed}
-              className={`${styles.agree} sc-check ${hasAgreed ? 'sc-check--on sc-ink--green' : 'sc-ink--muted'}`}
+              className={`${styles.agree} sc-check ${hasAgreed ? 'sc-check--on sc-ink--green' : 'sc-ink--silver'}`}
               onClick={() => setHasAgreed((agreed) => !agreed)}
             >
               <span className="sc-check__box" aria-hidden="true" />

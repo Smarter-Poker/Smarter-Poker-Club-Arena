@@ -1666,7 +1666,7 @@ function HomePageInner() {
           onClose={() => setShowCreateClubModal(false)}
           onSuccess={(clubId) => {
             setShowCreateClubModal(false);
-            navigate(`/clubs/${clubId}`);
+            navigate(`/clubs/${clubId}?invite=1`);
           }}
         />
       </Suspense>

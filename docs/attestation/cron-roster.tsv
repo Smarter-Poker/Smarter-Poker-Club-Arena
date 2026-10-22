@@ -3,8 +3,8 @@
 # A change here is a change to what this platform runs on a timer. Never edit a
 # line to make a check pass: tests/the-scheduled-work-roster-is-pinned.law.test.ts
 # pins the count, and the count is supposed to be argued about.
-# observed_at: 2026-10-19T09:29:10Z
-# active: 137
+# observed_at: 2026-10-22T19:40:00Z
+# active: 139
 # retained-inactive: 2	the two bust sweeps restored disabled by 20260910073355
 # 2026-09-20: 135 -> 132. union-seat-provenance-heal, ca-bbj-repair-unbanked-15m
 # and reconcile-club-table-counts-nightly were retired by migration
@@ -194,12 +194,29 @@
 # :33 (migration 20261022062934, the hourly audits stop holding the hot tables),
 # clear of ca-diamond-health-watch-hourly and ca-escrow-shadow-hourly at :35.
 # Its command is unchanged; no job added or removed.
+# 2026-10-22: 137 -> 139 active, retained-inactive unchanged at 2. Read live
+# from fn_ca_cron_health('24 hours') at 2026-10-22T19:40Z. TWO ARE ADDED:
+#   ca-writer-lock-sentinel-5s  5 seconds  scheduled by migration 20261022030326
+#     a_migration_never_holds_the_live_tables_hostage (CLAUDE.md section 2 rule
+#     9): fn_ca_writer_lock_sentinel(15) cancels a direct session that queues or
+#     holds a writer-blocking lock on a live public table for over 15 s. Its
+#     schedule is the protection; it moves no money and no seat.
+#   ca-bust-backlog-page-2m  */2 * * * *  scheduled by applied migration
+#     20261022172522 a_bust_backlog_pages_within_four_minutes (PR #7718):
+#     fn_ca_bust_backlog_page(4) pages when a bust has waited four minutes. It
+#     only reads and pages; it repairs nothing.
+# Three schedules moved, none added or removed by them: ca-freeze-mark-pre
+# (55 * * * * -> 0 9,10 * * *) and ca-freeze-mark-post (0 * * * * -> 5 9,10 * * *)
+# follow the once-daily 04:00 Chicago engine maintenance (migration
+# 20261021174252, CLAUDE.md section 13; the 9 and 10 UTC hours cover both sides
+# of DST), and sp-daily-metrics-snapshot widens from 5,6 to 5-12 UTC hours.
 bbj-rollup-catchup	45 * * * *
 ca-alarm-drill-weekly	7 11 * * 1
 ca-bbj-threshold-notify-5m	*/5 * * * *
 ca-bound-outside-snapshots-1m	* * * * *
 ca-break-scorecard	12 * * * *
 ca-burnin-gate-hourly	58 * * * *
+ca-bust-backlog-page-2m	*/2 * * * *
 ca-cash-pot-conservation-hourly	34 */6 * * *
 ca-chip-wallet-day-seal	30 * * * *
 ca-collusion-daily	20 4 * * *
@@ -220,8 +237,8 @@ ca-duplicate-structure-payout-hourly	37 * * * *
 ca-escalate-reconcile-criticals-hourly	52 * * * *
 ca-escrow-shadow-hourly	35 * * * *
 ca-escrow-ttl-sweep-10m	*/10 * * * *
-ca-freeze-mark-post	0 * * * *
-ca-freeze-mark-pre	55 * * * *
+ca-freeze-mark-post	5 9,10 * * *
+ca-freeze-mark-pre	0 9,10 * * *
 ca-guard-defs-hourly	25 * * * *
 ca-guard-integrity-daily	15 * * * *
 ca-hand-facts-prune-daily	40 5 * * *
@@ -254,6 +271,7 @@ ca-tournament-dark-while-running-5m	3-59/5 * * * *
 ca-tournament-finished-not-completed-5m	*/5 * * * *
 ca-trial-balance-hourly	20 * * * *
 ca-uncollected-entry-check-hourly	47 * * * *
+ca-writer-lock-sentinel-5s	5 seconds
 cleanup-hole-cards	0 */6 * * *
 client-error-events-prune	16 * * * *
 club-rake-rollup-catchup	25 * * * *
@@ -309,7 +327,7 @@ refresh-player-stats-hourly	17 * * * *
 resolve-friend-challenges	*/15 * * * *
 snapshot-player-stats	5 0 * * *
 sp-daily-digest-watchdog	15 13,14 * * *
-sp-daily-metrics-snapshot	15,45 5,6 * * *
+sp-daily-metrics-snapshot	15,45 5-12 * * *
 sp-prune-hand-discards	7,37 * * * *
 sp-prune-rabbit-hunt-offers	9,39 * * * *
 sp_prune_ca_settlements_10m	7,17,27,37,47 * * * *

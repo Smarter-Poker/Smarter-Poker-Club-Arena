@@ -154,7 +154,13 @@ const ROSTER = join(ROOT, 'docs', 'attestation', 'cron-roster.tsv');
 // ledger row or payout; the report is exact without it. The argument is in that
 // migration's periodic-work header. Read live from fn_ca_cron_health('24 hours')
 // at 2026-10-19T09:29Z: exactly this one job added, none removed.
-const ACTIVE_JOBS = 137;
+// 2026-10-22: 137 -> 139 active: ca-writer-lock-sentinel-5s (20261022030326
+// a_migration_never_holds_the_live_tables_hostage, CLAUDE.md section 2 rule 9)
+// and ca-bust-backlog-page-2m (applied 20261022172522
+// a_bust_backlog_pages_within_four_minutes, PR #7718). The freeze marks moved to
+// the daily 04:00 Chicago maintenance (20261021174252). Read live from
+// fn_ca_cron_health('24 hours') at 2026-10-22T19:40Z; none removed.
+const ACTIVE_JOBS = 139;
 const RETAINED_INACTIVE = 2;
 const TOTAL_JOBS = ACTIVE_JOBS + RETAINED_INACTIVE;
 
@@ -198,8 +204,8 @@ describe('the scheduled-work roster is pinned', () => {
     expect(Number(headerValue('retained-inactive'))).toBe(RETAINED_INACTIVE);
   });
 
-  it('139 total is 137 active plus the two rows cron.job keeps inactive', () => {
-    expect(TOTAL_JOBS).toBe(139);
+  it('141 total is 139 active plus the two rows cron.job keeps inactive', () => {
+    expect(TOTAL_JOBS).toBe(141);
     // The two bust sweeps 20260910073355 restored disabled are both of them
     // again: union-weekly-rakeback-close was the third until 20261003101805
     // re-armed jobid 272, and it is now an ACTIVE row of the body instead.

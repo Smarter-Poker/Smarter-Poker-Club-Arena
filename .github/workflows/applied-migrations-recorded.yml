@@ -145,7 +145,10 @@ jobs:
           REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          COUNT=$(grep -cE '^[0-9]{14}' /tmp/recorded.log 2>/dev/null || echo "?")
+          # grep -c prints 0 AND exits 1 on no match, so `|| echo "?"` used to
+          # append a second line and file titles like "(~0\n?)" (issue #6782).
+          COUNT=$(grep -cE '^\s*[0-9]{14}' /tmp/recorded.log 2>/dev/null || true)
+          COUNT=${COUNT:-?}
           EXISTING=$(gh issue list --repo "$REPO" --state open --label migration-drift --limit 1 --json number --jq '.[0].number' || echo "")
           if [ -n "$EXISTING" ]; then
             gh issue comment "$EXISTING" --repo "$REPO" --body "Still drifting (~${COUNT} unrecorded). Latest run: $RUN" || true

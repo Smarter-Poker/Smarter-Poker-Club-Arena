@@ -134,6 +134,15 @@ try:
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(join_or_offer,[0,1]))
     check(q(f"SELECT count(*) FROM table_waitlist WHERE user_id='{U}' AND status='notified'")=='1','direct join and vacancy share one exclusive user claim')
+    # A LIGHTNING CLUSTER'S VACANCY SEATS ITS GAME LIST (2026-10-22). The tick
+    # stands down for a Lightning Cluster, so the horse a game-list person is
+    # owed stands up at one table and THIS offer is the only door that seats
+    # them. A horse further back keeps its place; the person heads the list.
+    seed(); q("UPDATE cash_games SET cluster_mode='lightning'")
+    r=offer()
+    check(r['user_id']==U,'Lightning cluster vacancy offers the game FIFO head')
+    check(q(f"SELECT status FROM table_waitlist WHERE user_id='{U}' AND table_id='{T}'")=='notified','Lightning offer holds the freed chair at that table')
+    check(q(f"SELECT status FROM cash_game_waitlist WHERE user_id='{U}'")=='notified','Lightning game row becomes notified with the hold')
     check(q("SELECT has_function_privilege('authenticated','fn_offer_open_seat(uuid,interval,interval)','EXECUTE')")=='f','offer remains service-only')
     replay=subprocess.run([str(x) for x in [PG/'psql','-X','-qAt','-v','ON_ERROR_STOP=1','-h',socket,'-p',port,'-U','postgres','-d','postgres']],input=MIGRATION.read_text(),text=True,capture_output=True)
     check(replay.returncode!=0 and 'unattended_offer_preimage_changed' in replay.stderr,'migration refuses replay over a changed definition')

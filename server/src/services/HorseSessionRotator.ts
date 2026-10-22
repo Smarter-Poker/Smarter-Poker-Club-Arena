@@ -45,6 +45,11 @@ import { reportError } from './errorReporter.js';
 import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import {
+  loadGameWaitersByTable,
+  servedKeys,
+  type GameWaitTable,
+} from './HorseGameWaitlistYield.js';
+import {
   cashTableFill,
   isActiveNow,
   isNightParkedTable,
@@ -698,6 +703,33 @@ export class HorseSessionRotator {
         const r = row as { table_id?: string; user_id?: string };
         if (!r.table_id || !r.user_id || horseIds.has(r.user_id)) continue;
         humansWaiting.set(r.table_id, (humansWaiting.get(r.table_id) ?? 0) + 1);
+      }
+      /* A PERSON ON A GAME'S LIST (2026-10-22). A game whose tick cannot open
+         a table for its list (a Lightning Cluster stands down) owes that
+         person a chair at ONE of its live tables, the one holding the most
+         horses, so releaseWanted below asks one horse there and nowhere else.
+         The freed chair is offered to them by fn_offer_open_seat on the
+         cash-out. An incomplete read fails closed like the table list: nobody
+         is released this cycle. See HorseGameWaitlistYield.ts. */
+      const gameTables: GameWaitTable[] = [];
+      for (const [tableId, tableSeats] of byTable) {
+        const t = (tableSeats[0] as any)?.tables;
+        gameTables.push({
+          id: tableId,
+          clusterId: t?.cluster_id ? String(t.cluster_id) : null,
+          lifecycle: t?.lifecycle ?? null,
+          horses: tableSeats.filter((x) => horseIds.has(x.user_id)).length,
+        });
+      }
+      const served = servedKeys([...page.rows, ...seats], gameTables);
+      const game = await loadGameWaitersByTable(gameTables, served, {
+        source: 'HorseSessionRotator.humansWaiting',
+        shouldContinue: () => this.lifecycleIsCurrent(generation),
+      });
+      if (!this.lifecycleIsCurrent(generation)) return;
+      if (!game.complete) throw new Error('game waitlist read incomplete');
+      for (const [tableId, w] of game.byTable) {
+        humansWaiting.set(tableId, (humansWaiting.get(tableId) ?? 0) + w.count);
       }
     } catch (err) {
       reportError(err, 'HorseSessionRotator.humansWaiting');

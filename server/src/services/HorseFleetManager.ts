@@ -91,6 +91,11 @@ import {
 } from './HorseRejoinConstraints.js';
 import { buildDisabledGameIds, isTableOfDisabledGame } from './HorseDisabledGames.js';
 import { reportError } from './errorReporter.js';
+import {
+  loadGameWaitersByTable,
+  servedKeys,
+  type GameWaitTable,
+} from './HorseGameWaitlistYield.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
 import { bankrollBuyIn, bankrollPolicyFor, canSit, referenceBuyIn } from './HorseBankroll.js';
 import {
@@ -783,7 +788,9 @@ export class HorseFleetManager {
    */
   private async humansWaitingByTable(
     horseIdSet: Set<string>,
-    shouldContinue?: () => boolean
+    shouldContinue?: () => boolean,
+    gameTables?: readonly GameWaitTable[],
+    seatedRows?: readonly { table_id?: string | null; user_id?: string | null }[]
   ): Promise<Map<string, number>> {
     const out = new Map<string, number>();
     try {
@@ -823,6 +830,29 @@ export class HorseFleetManager {
         if (!r.table_id || !r.user_id) continue;
         if (horseIdSet.has(r.user_id)) continue;
         out.set(r.table_id, (out.get(r.table_id) ?? 0) + 1);
+      }
+      /* A PERSON ON A GAME'S LIST (2026-10-22). A game whose tick cannot open
+         a table for its list (a Lightning Cluster stands down) owes that
+         person a chair at ONE of its tables, the one holding the most horses.
+         Added to the table counts above. An incomplete read of the game list
+         fails CLOSED exactly as the table list does: nobody is asked to leave
+         this cycle. See HorseGameWaitlistYield.ts. */
+      if (gameTables && gameTables.length > 0) {
+        const served = servedKeys([...page.rows, ...(seatedRows ?? [])], gameTables);
+        const game = await loadGameWaitersByTable(gameTables, served, {
+          source: 'HorseFleet.humansWaiting',
+          shouldContinue,
+        });
+        if (shouldContinue?.() === false) return out;
+        if (!game.complete) {
+          console.warn(
+            '[HorseFleet] game waitlist read incomplete - nobody is asked to leave this cycle.'
+          );
+          return new Map();
+        }
+        for (const [tableId, w] of game.byTable) {
+          out.set(tableId, (out.get(tableId) ?? 0) + w.count);
+        }
       }
     } catch (err) {
       reportError(err, 'HorseFleet.humansWaitingByTable');
@@ -2345,7 +2375,17 @@ export class HorseFleetManager {
          Claiming first is what makes the hold mean something. */
       /* Who is actually waiting for a seat, read once for the whole floor.
          This is the only input to the 2026-09-02 release rule. */
-      const humansWaitingByTable = await this.humansWaitingByTable(horseIdSet, readIsCurrent);
+      const humansWaitingByTable = await this.humansWaitingByTable(
+        horseIdSet,
+        readIsCurrent,
+        [...tables, ...diamondTables].map((t) => ({
+          id: String(t.id),
+          clusterId: t.cluster_id ? String(t.cluster_id) : null,
+          lifecycle: t.lifecycle ?? null,
+          horses: (seatsByTable.get(t.id) ?? []).filter((x) => horseIdSet.has(x.user_id)).length,
+        })),
+        allActiveSeats
+      );
       if (!readIsCurrent()) return;
 
       /* HORSES DO NOT QUEUE ANY MORE (Dan 2026-09-02): every horse row comes

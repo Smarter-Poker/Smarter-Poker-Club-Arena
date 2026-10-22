@@ -111,7 +111,7 @@ CREATE TABLE public.ca_club_data_fact_ct (
 -- A visible game's own rows, by key (the game page reads players per row).
 CREATE INDEX ca_club_data_fact_ct_game_idx ON public.ca_club_data_fact_ct (club_id, game_id, stat_date) INCLUDE (user_id, kind);
 ALTER TABLE public.ca_club_data_fact_ct ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.ca_club_data_fact_ct FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.ca_club_data_fact_ct FROM PUBLIC, anon, authenticated, service_role;
 COMMENT ON TABLE public.ca_club_data_fact_ct IS
   'Club Data facts keyed by America/Chicago calendar day (DST aware). Same rows, clubs and formulas as ca_club_data_fact (UTC day), written by the same writer fn_ca_club_data_fact_put from ca_club_data_ct_state.live_from, and before it by the one-time load fn_ca_club_data_ct_seed. Report-only: read by Club Data and Union Data.';
 
@@ -124,7 +124,7 @@ CREATE TABLE public.ca_club_data_hands_ct (
   PRIMARY KEY (club_id, stat_date, table_id, src)
 );
 ALTER TABLE public.ca_club_data_hands_ct ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.ca_club_data_hands_ct FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.ca_club_data_hands_ct FROM PUBLIC, anon, authenticated, service_role;
 COMMENT ON TABLE public.ca_club_data_hands_ct IS
   'Raked cash hands per club, America/Chicago day and table, for Club Data. Counted by trg_ca_club_data_fact_rake with the club resolution club_table_daily uses for the same hand; history loaded once by fn_ca_club_data_ct_seed.';
 
@@ -143,7 +143,7 @@ CREATE TABLE public.ca_club_data_game_ct (
 );
 CREATE INDEX ca_club_data_game_ct_game_idx ON public.ca_club_data_game_ct (club_id, game_id, stat_date) INCLUDE (kind, fee, winnings);
 ALTER TABLE public.ca_club_data_game_ct ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.ca_club_data_game_ct FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.ca_club_data_game_ct FROM PUBLIC, anon, authenticated, service_role;
 COMMENT ON TABLE public.ca_club_data_game_ct IS
   'ca_club_data_fact_ct summed over players: one row per club, America/Chicago day and game, written by the same statement. Lets the Club Data game page and export rank games without reading every player row.';
 
@@ -152,7 +152,7 @@ CREATE TABLE public.ca_club_data_ct_state (
   live_from timestamptz NOT NULL
 );
 ALTER TABLE public.ca_club_data_ct_state ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.ca_club_data_ct_state FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.ca_club_data_ct_state FROM PUBLIC, anon, authenticated, service_role;
 INSERT INTO public.ca_club_data_ct_state (id, live_from)
 VALUES (true, date_trunc('second', now()) + interval '3 minutes');
 
@@ -163,7 +163,7 @@ CREATE TABLE public.ca_club_data_ct_seed_log (
   seeded_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE public.ca_club_data_ct_seed_log ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.ca_club_data_ct_seed_log FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.ca_club_data_ct_seed_log FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.fn_ca_club_data_ct_live_from()
 RETURNS timestamptz

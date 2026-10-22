@@ -198,10 +198,21 @@ function refusalEvidence(answer) {
 }
 
 export const CONSENT_PLAYER = '0097309f-2864-4d09-b02b-56bca012a9c3';
+/** The only players whose normal Terms/Privacy acceptance the owner authorized
+ *  by name (009 on 2026-10-16, Samantha on 2026-10-16). Nothing else may accept. */
 export const CONSENT_PLAYERS = Object.freeze([
   CONSENT_PLAYER,
   'a23ca5c9-b748-482f-9b59-9db35f7aa996',
 ]);
+/** Third browser actor (owner approval 2026-10-22: one more private-pilot test
+ *  player): milehigh, an existing funded horse of the exact 72-player pilot
+ *  roster (assignment manifest 121f80d2...), active pilot member, no integrity
+ *  finding of any kind. It is NOT a consent player: every mode still requires
+ *  its own prior accepted Terms on its profile, and no witness may accept them. */
+export const THIRD_WITNESS_PLAYER = '09dd202d-115b-49ae-afa8-cb528c7b8f72';
+/** Every pinned browser actor the latency, financial and recovery witnesses
+ *  accept. Consent remains CONSENT_PLAYERS only. */
+export const WITNESS_PLAYERS = Object.freeze([...CONSENT_PLAYERS, THIRD_WITNESS_PLAYER]);
 export async function acceptPlayerTerms(
   page,
   session,

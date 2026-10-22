@@ -3,7 +3,7 @@ import { selectPoolTab, clickSelectedPoolControl } from './lightning-pilot-selec
  * Reports sample observations, never a latency pass or manufactured percentile. */
 import { resolvePilotTarget } from './lightning-pilot-targets.mjs';
 import {
-  CONSENT_PLAYERS,
+  WITNESS_PLAYERS,
   assertPlayerPin,
   openPlayerSession,
   validatePlayer,
@@ -223,7 +223,7 @@ export async function witnessLatencyWorkload({
       !Number.isInteger(timeoutMs) ||
       timeoutMs < 30000 ||
       timeoutMs > 240000 ||
-      !CONSENT_PLAYERS.includes(pin?.playerId)
+      !WITNESS_PLAYERS.includes(pin?.playerId)
     )
       throw new Error('Scope');
     assertPlayerPin(pin);

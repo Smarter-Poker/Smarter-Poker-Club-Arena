@@ -47,7 +47,8 @@
       "requirement": "6-max 18 threshold works",
       "qualificationFiles": [
         "scripts/dev/test-lightning-phase4-population.sh",
-        "scripts/dev/test-lightning-phase6-matcher.sh"
+        "scripts/dev/test-lightning-phase6-matcher.sh",
+        "scripts/dev/test-lightning-pilot-thresholds.sh"
       ]
     },
     {
@@ -85,7 +86,8 @@
       "requirement": "Threshold hysteresis works",
       "qualificationFiles": [
         "scripts/dev/test-lightning-phase7-reversion.sh",
-        "scripts/dev/test-lightning-phase13-operator-recovery.sh"
+        "scripts/dev/test-lightning-phase13-operator-recovery.sh",
+        "scripts/dev/test-lightning-pilot-thresholds.sh"
       ]
     },
     {

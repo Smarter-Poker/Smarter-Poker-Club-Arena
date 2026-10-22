@@ -29,7 +29,7 @@ on:
         type: string
         required: true
       player_id:
-        description: 'Browser modes: existing funded pilot horse UUID with prior accepted terms'
+        description: 'Browser modes: pinned funded pilot horse (009, Samantha or milehigh 09dd202d) with prior accepted terms'
         type: string
       pool_session_id:
         description: 'Existing-pool browser modes: exact active pool UUID; admission discovers it through normal UI'

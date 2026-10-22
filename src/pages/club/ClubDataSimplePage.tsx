@@ -20,7 +20,11 @@
  * tab comes back into view. A read that fails keeps the last good figures on
  * screen and says so; it never paints zeros.
  *
- * Days are UTC, like every ledger and union statement on the platform.
+ * Days are America/Chicago calendar days, daylight saving included (Dan,
+ * 2026-10-22), because the server buckets every figure by the Chicago day
+ * (20261022103651, 20261022120121). Times on the page are Chicago time too.
+ * MTT Winnings are finished MTTs only; a running MTT's entries are shown as
+ * Running MTT Entries, and both are inside Total Winnings.
  * The full operator report (union statement, per-player breakdown, export)
  * lives one tap away at ./advanced.
  */
@@ -35,6 +39,13 @@ import { reportError } from '../../utils/errorReporter';
 import styles from './ClubDataSimplePage.module.css';
 import { useClubGameHost } from '../../hooks/useClubGameHost';
 import { usePageTitle } from '../../hooks/usePageTitle';
+import {
+  CLUB_DATA_ZONE_LABEL,
+  addCalendarDays,
+  chicagoClock,
+  chicagoDay,
+  chicagoStamp,
+} from '../../lib/clubDataDay';
 
 type Preset = 1 | 7 | 14;
 type GameFilter = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MIXED' | 'MTT' | 'SNG';
@@ -44,6 +55,10 @@ export interface ClubDataSummary {
   games: number;
   total_winnings: number;
   mtt_winnings: number;
+  /** Entries and payouts so far of MTTs that have not finished (20261022120121). */
+  running_mtt_entries?: number;
+  running_mtt_fee?: number;
+  tournament_winnings?: number;
   cash_winnings?: number;
   fee: number;
   cash_fee?: number;
@@ -81,8 +96,8 @@ interface Snapshot {
   scope?: 'club' | 'downline';
   club_name?: string | null;
   reporting_scope?: 'club' | 'union';
-  accounting_basis?: 'utc_net_money_flow';
-  /** First UTC day the per-club facts cover. */
+  accounting_basis?: 'utc_net_money_flow' | 'chicago_net_money_flow';
+  /** First day the per-club facts cover. */
   facts_from?: string | null;
 }
 
@@ -108,14 +123,13 @@ export function refreshIntervalMs(preset: Preset): number {
   return preset === 1 ? 15_000 : 60_000;
 }
 
-export function utcToday(now: Date = new Date()): string {
-  return now.toISOString().slice(0, 10);
+/** Today on the Club Data clock: the America/Chicago calendar day. */
+export function clubDataToday(now: Date = new Date()): string {
+  return chicagoDay(now);
 }
 
 export function addDays(iso: string, days: number): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
+  return addCalendarDays(iso, days);
 }
 
 export function formatMoney(n: number | null | undefined): string {
@@ -160,13 +174,7 @@ function kindLabel(row: ClubDataRow): string {
 
 function startedLabel(iso: string | null | undefined): string {
   if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  const hh = String(d.getUTCHours()).padStart(2, '0');
-  const mi = String(d.getUTCMinutes()).padStart(2, '0');
-  return `${mm}/${dd} ${hh}:${mi}`;
+  return chicagoStamp(iso);
 }
 
 export function isSnapshot(value: unknown): value is Snapshot {
@@ -195,7 +203,7 @@ export default function ClubDataSimplePage() {
 
   const [clubUuid, setClubUuid] = useState<string | null>(isUUID(clubParam) ? clubParam : null);
   const [preset, setPreset] = useState<Preset>(1);
-  const [endDate, setEndDate] = useState<string>(() => utcToday());
+  const [endDate, setEndDate] = useState<string>(() => clubDataToday());
   const [game, setGame] = useState<GameFilter>('ALL');
   const [stakes, setStakes] = useState<StakesFilter>('ALL');
   const [searchInput, setSearchInput] = useState('');
@@ -210,7 +218,7 @@ export default function ClubDataSimplePage() {
   const [clubName, setClubName] = useState<string | null>(null);
 
   const gameHost = useClubGameHost(clubUuid, !!userId && !isHydrating);
-  const today = utcToday();
+  const today = clubDataToday();
   const isToday = endDate >= today;
   const startDate = addDays(endDate, -(preset - 1));
   const stakesApply = game === 'ALL' || game === 'HOLDEM' || game === 'OMAHA' || game === 'MIXED';
@@ -337,10 +345,10 @@ export default function ClubDataSimplePage() {
     };
   }, [load, preset, isToday]);
 
-  // When the UTC day turns over on an open "today" view, follow it.
+  // When the Chicago day turns over on an open "today" view, follow it.
   useEffect(() => {
     const id = window.setInterval(() => {
-      const now = utcToday();
+      const now = clubDataToday();
       setEndDate((prev) => (prev === addDays(now, -1) && isToday ? now : prev));
     }, 30_000);
     return () => window.clearInterval(id);
@@ -365,7 +373,7 @@ export default function ClubDataSimplePage() {
   // A route segment, never a `??` inside the template: the reachability law
   // reads everything after a `?` as a query string.
   const clubKey = clubUuid || clubParam;
-  const updatedLabel = updatedAt ? new Date(updatedAt).toISOString().slice(11, 19) : null;
+  const updatedLabel = updatedAt ? chicagoClock(updatedAt) : null;
 
   if (denied) {
     return (
@@ -410,7 +418,7 @@ export default function ClubDataSimplePage() {
           <span>{startDate}</span>
           <span className={styles.rangeDash}>-</span>
           <span>{endDate}</span>
-          <span className={styles.rangeTz}>UTC</span>
+          <span className={styles.rangeTz}>{CLUB_DATA_ZONE_LABEL}</span>
         </div>
         <button
           type="button"
@@ -477,6 +485,19 @@ export default function ClubDataSimplePage() {
           </dd>
         </div>
       </dl>
+      {summary &&
+        summary.running_mtt_entries !== undefined &&
+        summary.running_mtt_entries !== null && (
+          <dl className={styles.runningLine} aria-label="Running MTT Entries">
+            <dt>Running MTT Entries</dt>
+            <dd
+              className={inkFor(summary.running_mtt_entries)}
+              title={formatMoney(summary.running_mtt_entries)}
+            >
+              {formatMoney(summary.running_mtt_entries)}
+            </dd>
+          </dl>
+        )}
 
       <div className={styles.liveLine} role="status">
         {error ? (
@@ -487,19 +508,24 @@ export default function ClubDataSimplePage() {
           <>
             <span className={styles.liveDot} aria-hidden="true" />
             <span>
-              Live{updatedLabel ? ` - Updated ${updatedLabel} UTC` : ''}
+              Live{updatedLabel ? ` - Updated ${updatedLabel} ${CLUB_DATA_ZONE_LABEL}` : ''}
               {liveCount > 0 ? ` - ${liveCount} Game${liveCount === 1 ? '' : 's'} In Play` : ''}
             </span>
           </>
         )}
       </div>
+      {snapshot?.accounting_basis === 'chicago_net_money_flow' && (
+        <p className={styles.liveLine}>
+          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only.
+        </p>
+      )}
       {snapshot?.accounting_basis === 'utc_net_money_flow' && (
         <p className={styles.liveLine}>
           Net Entries And Payouts In UTC. Unfinished Event Entries Included.
         </p>
       )}
       {factsFrom && startDate < factsFrom && (
-        <p className={styles.liveLine}>Figures Begin {factsFrom} UTC</p>
+        <p className={styles.liveLine}>Figures Begin {factsFrom}</p>
       )}
 
       <label className={styles.search}>

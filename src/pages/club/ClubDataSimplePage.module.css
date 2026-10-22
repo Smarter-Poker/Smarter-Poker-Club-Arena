@@ -322,6 +322,27 @@
   text-transform: uppercase;
 }
 
+.runningLine {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 16px 0;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--cd-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.runningLine dt,
+.runningLine dd {
+  margin: 0;
+}
+
+.runningLine dd {
+  font-weight: 700;
+}
+
 .liveLine {
   display: flex;
   align-items: center;

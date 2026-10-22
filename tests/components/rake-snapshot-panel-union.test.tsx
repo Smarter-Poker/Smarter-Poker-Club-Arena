@@ -166,6 +166,36 @@ describe('the rake snapshot on a union', () => {
     expect(screen.getByRole('button', { name: /Empty Club/ })).toBeInTheDocument();
   });
 
+  it('counts Chicago days and shows Running MTT Entries beside finished MTT Winnings', async () => {
+    const report = {
+      ...payload('club', [clubRow(CLUB_A, 'SHARK CLUB')]),
+      accounting_basis: 'chicago_net_money_flow',
+      summary: {
+        games: 5,
+        total_winnings: 22,
+        mtt_winnings: 7,
+        running_mtt_entries: -59_073,
+        cash_fee: 4.01,
+        mtt_fee: 17,
+        tournament_fee: 20,
+        fee: 24.01,
+        hands: 9,
+        mtt_games: 2,
+      },
+    };
+    rpcMock.mockImplementation((fn: string) =>
+      Promise.resolve({ data: fn === 'ca_rake_snapshot_v2' ? report : null, error: null })
+    );
+    render(
+      <RakeSnapshotPanel clubId={null} unionId={UNION_ID} userId={USER_ID} scopes={['union']} />
+    );
+    expect(await screen.findByText(/Net Entries And Payouts In Chicago Time/)).toBeInTheDocument();
+    expect(screen.getByText(/MTT Winnings Count Finished MTTs Only/)).toBeInTheDocument();
+    expect(screen.getByTitle('-59,073.00')).toHaveTextContent('Running MTT Entries');
+    expect(screen.getByTitle('7.00')).toHaveTextContent('7.00');
+    expect(screen.getAllByText('Chicago Time').length).toBeGreaterThan(0);
+  });
+
   it('lets an in-flight snapshot finish through repeated ledger refreshes', async () => {
     let resolveRead!: (value: unknown) => void;
     const pending = new Promise((resolve) => {

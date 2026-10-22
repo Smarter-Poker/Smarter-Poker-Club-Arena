@@ -1,11 +1,20 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Club Data counts America/Chicago days (20261022120121): today is the Chicago date.
+const chicagoToday = (): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+
 const CLUB_ID = 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
 const USER_ID = '2b1b6a4e-3a5c-4f9f-9c07-9d1f2a7c5e11';
 const OTHER_USER_ID = 'f7737c40-ad09-41fa-aacf-b53f021720b6';
 const EXPORT_ID = '1d6c7fc3-9438-44d1-befe-aa4abc3992f5';
-const UTC_TODAY = new Date().toISOString().slice(0, 10);
+const UTC_TODAY = chicagoToday();
 const UTC_MONTH_START = `${UTC_TODAY.slice(0, 8)}01`;
 const UTC_MONTH_DAYS = (Date.parse(UTC_TODAY) - Date.parse(UTC_MONTH_START)) / 86_400_000 + 1;
 const UTC_PREVIOUS_END = new Date(Date.parse(UTC_MONTH_START) - 86_400_000)

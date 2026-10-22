@@ -12,8 +12,10 @@ stayed read as a maniac for 38 (NLH) and 43 (PLO4) hands, and horses kept
 calling a reformed player light for all of them. `HorseOpponentExploit` now
 also keeps an 8-hand window over the raise, bet and call statistics. When a
 player's recent play is credibly back inside the horse envelope the read turns
-off; an aggressive turn engages from the fast window alone at a stricter 97%
-credibility. Measured: off after 21 (NLH) / 17 (PLO4) hands; on after 11 hands
+off; an aggressive turn engages early when the long window already places the
+player past the envelope edge and the fast window confirms it at a stricter 97%
+credibility (eight fast opportunities at least), so a short hot streak from a
+horse-like history never engages. Measured: off after 21 (NLH) / 17 (PLO4) hands; on after 11 hands
 (was 15 in NLH). Horse-versus-horse play is unchanged
 (`HorseOpponentExploitNeutrality.law.test.ts` passes on the recorded corpus).
 

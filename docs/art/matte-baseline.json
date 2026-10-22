@@ -17,6 +17,10 @@
       "pct": 0.7,
       "reason": "Noise, not matte. 23 pixels, mean luminance 20 - nearly black. It is nibbling the dark glow halo around the green dot, not a white ramp. Before and after are indistinguishable."
     },
+    "public/assets/club-buttons/timebank-centered-black-v1.webp": {
+      "pct": 0.6,
+      "reason": "Artwork, inspected at 2x over magenta on 2026-10-22. A 256x256 recentred stopwatch tile whose square frame is a brushed SILVER bezel; not one opaque pixel lies within 4px of the image border (the tile sits on transparent padding), so there is no edge-hugging export matte to remove. The 0.6% (about 240 of 40010 opaque pixels) is the detector nibbling the bright antialiased outer rim of that silver bezel, the same silver-is-smooth-neutral-bright case as the club identity icons. Its blue sibling, identical geometry with a blue face, reads 0.0%."
+    },
     "public/assets/club-buttons/wallets/mobile/wallet-union-bank-v1.webp": {
       "pct": 0.6,
       "reason": "Artwork. 3780 pixels of mean luminance 171 - bright silver - and NOT ONE of them within 4px of the image border; they are spread across rows 12-368 and columns 97-1791 of an 1800x380 plate. A baked matte hugs the outside edge by definition. These are the chrome frame's own highlights."

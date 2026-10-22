@@ -84,6 +84,7 @@ import {
   tournamentRowUnitCents,
 } from './types';
 import { formatPrizeAtUnit, moneySuffixAtUnit } from '../../../utils/format';
+import { effectivePayoutDepth, projectedFieldLadder } from '../../../lib/payoutStructure';
 import {
   CHIP_UNIT_CENTS,
   normalizeUnitCents,
@@ -239,6 +240,9 @@ interface RewardColumns {
   satellite_target_id?: string | null;
   satellite_target?: string | null;
   satellite_seats?: number | null;
+  payout_depth_percent?: number | string | null;
+  payout_percent?: number | string | null;
+  is_premium_spin?: boolean | null;
 }
 
 /* Still holding chips, by the lobby's ONE definition of "in". This tab used to
@@ -385,7 +389,34 @@ export default function RewardsTab({
 
   /* ── THE LADDER OF PLACES ─────────────────────────────────────────────── */
 
-  const parsedPlaces = useMemo(() => resolvePayoutStructure(tournament), [tournament]);
+  const storedPlaces = useMemo(() => resolvePayoutStructure(tournament), [tournament]);
+  /* Before registration closes the stored row is a template or a provisional
+     placeholder; the field ladder (top 12.5% by default, Dan 2026-10-21) is
+     written at entry close. Until then show that same ladder projected from
+     the entries so far, so the lobby never advertises a depth the event will
+     not pay. Satellites pay seats and Spins draw their prize, so both keep
+     their own terms. */
+  const projectsFieldLadder =
+    !t.prize_pool_finalized &&
+    String(t.tournament_type ?? '').toUpperCase() === 'MTT' &&
+    !['satellite', 'spin', 'sng'].includes(String(t.variant ?? '').toLowerCase()) &&
+    !t.satellite_target_id &&
+    !t.is_premium_spin &&
+    !['COMPLETED', 'CANCELLED'].includes(String(t.status || '').toUpperCase());
+  const projectedEntries = entries.length || num(t.current_players);
+  const projectedEntryCount =
+    entries.length > 0
+      ? entries.reduce((sum, e) => sum + 1 + Math.max(0, Number(e.rebuys) || 0), 0)
+      : num(t.current_players);
+  const parsedPlaces = useMemo(() => {
+    if (!projectsFieldLadder || projectedEntries <= 0) return storedPlaces;
+    return projectedFieldLadder(
+      projectedEntries,
+      effectivePayoutDepth(t),
+      !!t.is_mystery_bounty && projectedEntryCount >= 1 && projectedEntryCount <= 10
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedPlaces, projectsFieldLadder, projectedEntries, projectedEntryCount, t.is_mystery_bounty, t.payout_depth_percent, t.payout_percent]);
   const bands = useMemo(() => (parsedPlaces ? toBands(parsedPlaces) : []), [parsedPlaces]);
   const paidPlaces = parsedPlaces ? parsedPlaces.length : 0;
 

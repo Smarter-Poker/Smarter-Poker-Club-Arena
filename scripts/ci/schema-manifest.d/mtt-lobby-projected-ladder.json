@@ -1,0 +1,4 @@
+{
+  "_owner": "mtt-lobby-shows-projected-twelve-point-five-ladder; column added by migration 20261022014607 (applied 2026-10-22 01:46 UTC)",
+  "columns": { "tournaments": ["payout_depth_percent"] }
+}

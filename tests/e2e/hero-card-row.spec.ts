@@ -279,8 +279,9 @@ for (const bp of BREAKPOINTS) {
         'small phone': { 4: 30, 5: 28, 6: 26 },
       };
       /* PLO5 and PLO6 step DOWN from PLO4 to hold the row width roughly
-         constant — 0.95 and 0.90 of the shared card, declared in SeatSlot.css. */
-      const HAND_FACTOR: Record<number, number> = { 4: 1, 5: 0.95, 6: 0.9 };
+         constant — 0.80 and 0.69 of the shared card since 2026-10-22, when
+         every card's corner index became readable (SeatSlot.css). */
+      const HAND_FACTOR: Record<number, number> = { 4: 1, 5: 0.8, 6: 0.69 };
 
       for (const n of [4, 5, 6]) {
         const m = await measure(page, n, 'wrapped', bp.feltW);

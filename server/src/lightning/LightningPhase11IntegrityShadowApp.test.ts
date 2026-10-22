@@ -264,9 +264,11 @@ describe('the shadow runner never alters the live decision', () => {
     expect(liveCalls(on.calls)).toEqual(liveCalls(off.calls));
     expect(on.started).toEqual(off.started);
     expect(on.started.length).toBeGreaterThan(20);
-    // The shadow side called no writer: only the two Phase 11 recorders.
+    // The shadow side called no writer: only the two Phase 11 recorders and
+    // (2026-10-22) the read-only matcher for form-mode A/A calibration.
     const allowed = [
       'fn_lightning_match_and_form',
+      'fn_lightning_match',
       'fn_lightning_shadow_record',
       'fn_lightning_integrity_report',
     ];

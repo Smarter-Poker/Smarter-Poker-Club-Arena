@@ -1,13 +1,23 @@
+/**
+ * The cross-table archive reads its page by the player's own index (2026-10-22).
+ *
+ * The ordered containment read timed out under RLS for any player with fewer
+ * retained hands than the page asked for: Postgres walked the global
+ * hand_number index and filtered the whole table. The archive now asks
+ * fn_player_hand_history_page_ids for the page's ids and resolves them through
+ * hand_history by id. These pins hold the client to that shape.
+ */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { handHistoryService } from '../../src/services/HandHistoryService';
+import {
+  HAND_HISTORY_PAGE_IDS_RPC,
+  handHistoryService,
+} from '../../src/services/HandHistoryService';
 
-type Row = { id: string; hand_number: number | null; owned?: boolean };
 const state = vi.hoisted(() => ({
   reads: [] as Array<{ table: string; calls: Array<[string, ...any[]]> }>,
-  seeds: [] as any[],
-  retained: [] as any[],
   history: [] as any[],
-  seedError: null as any,
   historyError: null as any,
   rpc: vi.fn(),
   report: vi.fn(),
@@ -28,33 +38,10 @@ vi.mock('../../src/lib/supabase', () => ({
           return query;
         };
       query.then = (done: (value: any) => void) => {
-        const selected = read.calls.find((call) => call[0] === 'select')?.[1];
-        if (table === 'ca_hand_player_idx') {
-          const range = read.calls.find((call) => call[0] === 'range')!;
-          return Promise.resolve({
-            data: state.seeds.slice(range[1], range[2] + 1),
-            error: state.seedError,
-          }).then(done);
-        }
-        if (selected === 'id, hand_number') {
-          const ids = read.calls.find((call) => call[0] === 'in')![2];
-          return Promise.resolve({
-            data: state.retained.filter((row) => ids.includes(row.id) && row.owned !== false),
-            error: state.seedError,
-          }).then(done);
-        }
-        let data = state.history.filter((row) => row.owned !== false);
-        const bound = read.calls.find((call) => call[0] === 'or')?.[1];
-        if (bound) {
-          const floor = Number(bound.match(/gte\.(-?\d+)/)[1]);
-          data = data.filter((row) => row.hand_number === null || row.hand_number >= floor);
-        }
-        data = [...data].sort((a, b) =>
-          a.hand_number === null ? -1 : b.hand_number === null ? 1 : b.hand_number - a.hand_number
-        );
-        const range = read.calls.find((call) => call[0] === 'range');
-        const limit = read.calls.find((call) => call[0] === 'limit')?.[1];
-        data = range ? data.slice(range[1], range[2] + 1) : data.slice(0, limit);
+        const inCall = read.calls.find((call) => call[0] === 'in');
+        const data = inCall
+          ? state.history.filter((row) => inCall[2].includes(row.id))
+          : state.history;
         return Promise.resolve({ data, error: state.historyError }).then(done);
       };
       return query;
@@ -62,123 +49,86 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 
-function setupSeeds(numbers: number[]) {
-  state.seeds = numbers.map((_, i) => ({ hand_id: `seed-${i}` }));
-  state.retained = numbers.map((hand_number, i) => ({ id: `seed-${i}`, hand_number }));
-}
-function finalRead() {
-  return state.reads.find((read) =>
-    read.calls.some(
-      (call) => call[0] === 'select' && call[1] !== 'hand_id' && call[1] !== 'id, hand_number'
-    )
-  )!;
-}
 beforeEach(() => {
   state.reads.length = 0;
-  state.seeds = [];
-  state.retained = [];
   state.history = [];
-  state.seedError = null;
   state.historyError = null;
   state.report.mockClear();
   state.rpc.mockReset().mockResolvedValue({ data: [], error: null });
   vi.spyOn(handHistoryService as any, 'mapPlayerHandRows').mockImplementation(
-    async (rows: Row[]) => rows
+    async (rows: any[]) => rows
   );
 });
 
-describe('Archive-only indexed bounds', () => {
-  it('uses distinct retained owned seeds but lets the authoritative query include unindexed newer hands and null legacy rows', async () => {
-    setupSeeds([10, 30]); // Created order differs from play order.
+describe('the archive page is read by the player index', () => {
+  it('asks the page RPC and returns the hands in the order it gave', async () => {
+    state.rpc.mockResolvedValue({
+      data: [
+        { id: 'c', hand_number: 30 },
+        { id: 'a', hand_number: 10 },
+      ],
+      error: null,
+    });
+    // Storage order differs from play order; the RPC's order wins.
     state.history = [
-      { id: 'unindexed', hand_number: 40 },
-      { id: 'older', hand_number: 1 },
-      { id: 'seed-0', hand_number: 10 },
-      { id: 'seed-1', hand_number: 30 },
-      { id: 'legacy', hand_number: null },
+      { id: 'a', hand_number: 10 },
+      { id: 'c', hand_number: 30 },
     ];
-    const result = await handHistoryService.getPlayerHands('viewer', 2, {
+    const result = await handHistoryService.getPlayerHands('viewer', 25, {
+      indexedArchive: true,
+      offset: 50,
+      throwOnError: true,
+    });
+    expect(state.rpc).toHaveBeenCalledWith(HAND_HISTORY_PAGE_IDS_RPC, {
+      p_user_id: 'viewer',
+      p_limit: 25,
+      p_offset: 50,
+    });
+    expect(state.reads).toHaveLength(1);
+    expect(state.reads[0].table).toBe('hand_history');
+    expect(state.reads[0].calls).toContainEqual(['in', 'id', ['c', 'a']]);
+    // No ordered containment scan is sent for the archive.
+    expect(state.reads[0].calls.some((call) => call[0] === 'contains')).toBe(false);
+    expect(state.reads[0].calls.some((call) => call[0] === 'order')).toBe(false);
+    expect(result.map((row: any) => row.id)).toEqual(['c', 'a']);
+  });
+
+  it('an empty history is an empty page, with no table read at all', async () => {
+    const result = await handHistoryService.getPlayerHands('viewer', 25, {
       indexedArchive: true,
       throwOnError: true,
     });
-    expect(state.reads[0].table).toBe('ca_hand_player_idx');
-    expect(state.reads[0].calls).toContainEqual(['eq', 'user_id', 'viewer']);
-    expect(state.reads[0].calls).toContainEqual(['range', 0, 1]);
-    expect(state.reads[1].calls).toContainEqual([
-      'contains',
-      'players',
-      JSON.stringify([{ userId: 'viewer' }]),
-    ]);
-    expect(finalRead().calls).toContainEqual(['or', 'hand_number.gte.10,hand_number.is.null']);
-    expect(finalRead().calls).toContainEqual(['order', 'hand_number', { ascending: false }]);
-    expect(result.map((row) => row.id)).toEqual(['legacy', 'unindexed']);
+    expect(result).toEqual([]);
+    expect(state.reads).toHaveLength(0);
   });
-  it('qualifies offset plus limit and keeps the original offset range', async () => {
-    setupSeeds([10, 20, 30, 40]);
-    state.history = state.retained.concat({ id: 'new', hand_number: 50 });
-    const result = await handHistoryService.getPlayerHands('viewer', 2, {
-      indexedArchive: true,
-      offset: 2,
-    });
-    expect(state.reads[0].calls).toContainEqual(['range', 0, 3]);
-    expect(finalRead().calls).toContainEqual(['or', 'hand_number.gte.10,hand_number.is.null']);
-    expect(finalRead().calls).toContainEqual(['range', 2, 3]);
-    expect(result.map((row) => row.id)).toEqual(['seed-2', 'seed-1']);
-  });
-  it('retains the original query for pruned, null, duplicate-number or unexpected seeds', async () => {
-    for (const reason of ['pruned', 'null', 'duplicate-number', 'unexpected-id']) {
-      state.reads.length = 0;
-      setupSeeds([10, 20]);
-      if (reason === 'pruned') state.retained.pop();
-      if (reason === 'null') state.retained[1].hand_number = null;
-      if (reason === 'duplicate-number') state.retained[1].hand_number = 10;
-      if (reason === 'unexpected-id') state.retained[1].id = 'not-requested';
-      await handHistoryService.getPlayerHands('viewer', 2, { indexedArchive: true });
-      expect(finalRead().calls.some((call) => call[0] === 'or')).toBe(false);
-    }
-  });
-  it('falls back on an unavailable seed read and exposes the original strict query failure', async () => {
-    state.seedError = { message: 'Index unavailable' };
-    state.historyError = { message: 'Archive unavailable' };
+
+  it('a failed page read is a failure, never an empty history, when the caller asks', async () => {
+    const failure = { message: 'page unavailable' };
+    state.rpc.mockResolvedValue({ data: null, error: failure });
     await expect(
-      handHistoryService.getPlayerHands('viewer', 2, { indexedArchive: true, throwOnError: true })
-    ).rejects.toEqual(state.historyError);
+      handHistoryService.getPlayerHands('viewer', 25, { indexedArchive: true, throwOnError: true })
+    ).rejects.toEqual(failure);
+    await expect(
+      handHistoryService.getPlayerHands('viewer', 25, { indexedArchive: true })
+    ).resolves.toEqual([]);
     expect(state.report).toHaveBeenCalledWith(
-      state.seedError,
-      'HandHistoryService.archive_seed_index'
+      failure,
+      'HandHistoryService.getPlayerHands_archive_page'
     );
   });
-  it('qualifies deep pages in bounded chunks without imposing a product paging cap', async () => {
-    setupSeeds(Array.from({ length: 1025 }, (_, index) => 10000 - index));
-    state.history = state.retained;
-    const result = await handHistoryService.getPlayerHands('viewer', 25, {
-      indexedArchive: true,
-      offset: 1000,
-    });
-    const indexedReads = state.reads.filter((read) => read.table === 'ca_hand_player_idx');
-    expect(indexedReads).toHaveLength(2);
-    expect(indexedReads[0].calls).toContainEqual(['range', 0, 999]);
-    expect(indexedReads[1].calls).toContainEqual(['range', 1000, 1024]);
-    const retainedReads = state.reads.filter((read) =>
-      read.calls.some((call) => call[0] === 'select' && call[1] === 'id, hand_number')
-    );
-    expect(
-      retainedReads.map((read) => read.calls.find((call) => call[0] === 'in')![2].length)
-    ).toEqual([1000, 25]);
-    expect(finalRead().calls).toContainEqual(['or', 'hand_number.gte.8976,hand_number.is.null']);
-    expect(finalRead().calls).toContainEqual(['range', 1000, 1024]);
-    expect(result).toHaveLength(25);
-  });
-  it('preserves default and live-table reads without indexing and the club RPC unchanged', async () => {
+
+  it('preserves default and live-table reads and the club RPC unchanged', async () => {
     await handHistoryService.getPlayerHands('viewer', 25);
     expect(state.reads).toHaveLength(1);
+    expect(state.rpc).not.toHaveBeenCalled();
     state.reads.length = 0;
     await handHistoryService.getPlayerHands('viewer', 25, {
       indexedArchive: true,
       tableId: 'table',
     });
     expect(state.reads).toHaveLength(1);
-    expect(finalRead().calls).toContainEqual(['eq', 'table_id', 'table']);
+    expect(state.reads[0].calls).toContainEqual(['eq', 'table_id', 'table']);
+    expect(state.rpc).not.toHaveBeenCalled();
     state.reads.length = 0;
     await handHistoryService.getPlayerHands('viewer', 25, {
       indexedArchive: true,
@@ -192,5 +142,18 @@ describe('Archive-only indexed bounds', () => {
       p_limit: 25,
       p_offset: 25,
     });
+  });
+
+  it('the installed page function stays security invoker and never walks the table for a small history', () => {
+    const dir = join(__dirname, '..', '..', 'supabase', 'migrations');
+    const sql = readFileSync(
+      join(dir, '20261022191846_a_players_own_hand_history_reads_by_its_own_index.sql'),
+      'utf8'
+    );
+    expect(sql).toMatch(/FUNCTION public\.fn_player_hand_history_page_ids\(/);
+    expect(sql).toMatch(/SECURITY INVOKER/);
+    expect(sql).not.toMatch(/SECURITY DEFINER/);
+    expect(sql).toMatch(/FROM public\.ca_hand_player_idx i/);
+    expect(sql).toMatch(/LIMIT v_cap \+ 1/);
   });
 });

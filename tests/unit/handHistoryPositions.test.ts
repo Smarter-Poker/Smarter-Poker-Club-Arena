@@ -44,18 +44,10 @@ describe('hand history reads the real button', () => {
       SRC.indexOf('].join(')
     );
     expect(list).toContain("'button_seat'");
-    // The Archive seed qualifier reads metadata only, never a rendered hand.
-    const seedStart = SRC.indexOf('private async archiveHandNumberFloor(');
-    const seedEnd = SRC.indexOf('private async mapPlayerHandRows(');
-    expect(seedStart).toBeGreaterThan(-1);
-    expect(seedEnd).toBeGreaterThan(seedStart);
-    const seedSource = SRC.slice(seedStart, seedEnd);
-    expect(
-      [...seedSource.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map((m) =>
-        m[1].trim()
-      )
-    ).toEqual(["'id, hand_number'"]);
-    const payloadSource = SRC.slice(0, seedStart) + SRC.slice(seedEnd);
+    // The archive's page is read by id through the RPC (2026-10-22); there is
+    // no client seed qualifier left to carry a second column list.
+    expect(SRC).not.toContain('private async archiveHandNumberFloor(');
+    const payloadSource = SRC;
     const reads = [...payloadSource.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map(
       (m) => m[1].trim()
     );

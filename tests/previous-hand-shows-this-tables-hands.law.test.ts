@@ -154,18 +154,10 @@ describe('the correct data', () => {
        the arena server-side - and the columns are still the shared list. The
        drift this pin was written about is a second column list, and a read
        that spelled one would name no constant and fail here. */
-    // The Archive seed qualifier reads metadata only, never a rendered hand.
-    const seedStart = svc.indexOf('private async archiveHandNumberFloor(');
-    const seedEnd = svc.indexOf('private async mapPlayerHandRows(');
-    expect(seedStart).toBeGreaterThan(-1);
-    expect(seedEnd).toBeGreaterThan(seedStart);
-    const seedSource = svc.slice(seedStart, seedEnd);
-    expect(
-      [...seedSource.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g)].map((m) =>
-        m[1].trim()
-      )
-    ).toEqual(["'id, hand_number'"]);
-    const payloadSource = svc.slice(0, seedStart) + svc.slice(seedEnd);
+    // The archive's page is read by id through the RPC (2026-10-22); there is
+    // no client seed qualifier left to carry a second column list.
+    expect(svc).not.toContain('private async archiveHandNumberFloor(');
+    const payloadSource = svc;
     const handReads = [
       ...payloadSource.matchAll(/from\('hand_history'\)\s*\.select\(([^)]*)\)/g),
     ].map((m) => m[1].trim());

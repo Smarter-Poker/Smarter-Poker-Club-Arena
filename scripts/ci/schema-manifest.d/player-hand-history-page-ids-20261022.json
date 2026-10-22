@@ -1,0 +1,7 @@
+{
+  "_owner": "claude/sunrise-midnight-small-bounty-spawns",
+  "_comment": "Migration 20261022191846 installed in production 2026-10-22 19:18 UTC: one page of a player's hand ids, read by the player's own index.",
+  "tables": [],
+  "functions": ["fn_player_hand_history_page_ids"],
+  "columns": {}
+}

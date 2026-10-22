@@ -13,7 +13,7 @@
  */
 
 import { supabase, getAuthUser } from '../lib/supabase';
-import { resolveClubUUID } from '../utils/clubIdResolver';
+import { isUUID, resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
 import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
@@ -776,10 +776,20 @@ export const WalletService = {
     // buy-in uses, so what we display can never disagree with what the
     // transaction will actually spend. Falls back to the global wallet when
     // club scoping is off or no club context resolves.
+    // If opts.clubId is explicitly passed (even as null), use it. Otherwise fall back to currentClubId.
+    const clubId =
+      opts && 'clubId' in opts ? opts.clubId : (useUserStore.getState().currentClubId ?? null);
+    /* NOT AN IDENTITY, NOT A QUESTION (2026-10-22). A page that has not
+       resolved its player yet holds the 'guest' placeholder, and a route can
+       carry a slug such as 'demo'. Sent as-is, the RPC refuses with 22P02
+       before it can answer (28 a day), and the five retries below multiply
+       it. Nothing can be spent without a real id, so this is "unknown", the
+       same answer the contract above gives for any read that did not happen. */
+    const ids = [userId, clubId, opts?.tableId, opts?.tournamentId];
+    if (!isUUID(userId) || ids.some((id) => id != null && !isUUID(String(id)))) {
+      return { balance: null, source: 'failed' };
+    }
     try {
-      // If opts.clubId is explicitly passed (even as null), use it. Otherwise fall back to currentClubId.
-      const clubId =
-        opts && 'clubId' in opts ? opts.clubId : (useUserStore.getState().currentClubId ?? null);
       const { data, error } = await retryFetch(
         () =>
           supabase

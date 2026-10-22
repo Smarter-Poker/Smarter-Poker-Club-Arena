@@ -27,6 +27,8 @@ import { installPlayerSessionRevocationEvents } from './lib/sessionRevoked';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
+// Lazy: the live message popup is not needed for first paint.
+const NewMessagePopup = lazyWithRetry(() => import('./components/common/NewMessagePopup'));
 import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
 import LastClubTracker from './components/common/LastClubTracker';
@@ -689,6 +691,9 @@ function FullApp() {
             </Suspense>
           )}
           <GlobalWaitlistListener />
+          <Suspense fallback={null}>
+            <NewMessagePopup />
+          </Suspense>
           <WaitlistBanner />
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false.
               2026-09-04 (disconnect audit item 7): NOT over a table. Dan: "all

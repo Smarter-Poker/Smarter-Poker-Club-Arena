@@ -52,7 +52,7 @@ describe('the worker banners exist in the app as local notifications', () => {
       await import('../../src/lib/native/localNotifications');
     expect(notificationTitle('TABLE_SEATED')).toBe('Seated At Table');
     expect(notificationTitle('SOMETHING_ELSE')).toBe('Something Else');
-    expect(notificationBody('BALANCE_UPDATED', { source: 'rakeback' })).toBe('Source: rakeback');
+    expect(notificationBody('BALANCE_UPDATED', { source: 'rakeback' })).toBe('');
     expect(notificationBody('CLUB_JOINED', { clubName: 'shark CLUB' })).toBe('Shark Club');
     expect(notificationBody('TABLE_LEFT', { tableId: 't1' })).toBe('Table: t1');
     expect(notificationBody('FINANCIAL_ALERT', null)).toBe('');

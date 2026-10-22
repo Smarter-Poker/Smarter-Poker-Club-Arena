@@ -83,7 +83,8 @@ the small-field note.
 `20261022162651` (functions and offers), `20261022162714` (triggers),
 `20261022162733` (events on the board and schedules), `20261022170421` (half of
 the whole entry, whole-chip chests, the offer table's grants) and
-`20261022170611` (the seed reports the whole-chip pool it sealed). Proved in
+`20261022170611` (the seed reports the whole-chip pool it sealed) and `20261022173156` (states the
+grants of the two re-created definer functions). Proved in
 rolled-back probes on production: a 27 + 3 entry is created with a 15 bounty,
 pool 100/0, at the money and the new description; a 1,000.37 pool cut at the
 cent by the serving engine is sealed as 500 + 500 and reported as 1,000.00; a

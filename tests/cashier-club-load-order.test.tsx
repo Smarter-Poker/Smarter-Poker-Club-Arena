@@ -1,7 +1,7 @@
 import { cashierRecoveryRpc } from './helpers/cashierRecoveryRpc';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { supabase } from '../src/lib/supabase';
 import CashierTradePage from '../src/pages/CashierTradePage';
 import {
@@ -13,6 +13,46 @@ const CLUB_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const PLAYER_ID = '33333333-3333-4333-8333-333333333333';
 const toastMocks = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+const recoveryHydrations = vi.hoisted(() => new Set<Promise<unknown>>());
+
+vi.mock('../src/services/CashierResilience', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/services/CashierResilience')>();
+  return {
+    ...actual,
+    restoreDurableCashierTransfers: (
+      ...args: Parameters<typeof actual.restoreDurableCashierTransfers>
+    ) => {
+      const task = actual.restoreDurableCashierTransfers(...args);
+      recoveryHydrations.add(task);
+      void task.then(
+        () => recoveryHydrations.delete(task),
+        () => recoveryHydrations.delete(task)
+      );
+      return task;
+    },
+  };
+});
+
+let releaseRecoveryDigest: (() => void) | undefined;
+let restoreRecoveryDigest: (() => void) | undefined;
+
+afterEach(async () => {
+  cleanup();
+  releaseRecoveryDigest?.();
+  releaseRecoveryDigest = undefined;
+  try {
+    // Unmount stops UI updates, but deliberately does not discard a durable
+    // financial journal. Finish its original promise before resetting the
+    // next test's server model and RPC call history.
+    await act(async () => {
+      await Promise.allSettled([...recoveryHydrations]);
+    });
+    expect(recoveryHydrations.size).toBe(0);
+  } finally {
+    restoreRecoveryDigest?.();
+    restoreRecoveryDigest = undefined;
+  }
+});
 
 function LocationProbe() {
   const location = useLocation();
@@ -55,6 +95,10 @@ function installRpc(implementation: (...args: any[]) => any) {
 
 describe('CashierTradePage club load ordering', () => {
   beforeEach(() => {
+    expect(
+      recoveryHydrations.size,
+      'The prior cashier recovery must finish before mocks reset'
+    ).toBe(0);
     vi.clearAllMocks();
     localStorage.clear();
     recoveryRpc.clear();
@@ -575,6 +619,15 @@ describe('CashierTradePage club load ordering', () => {
   });
 
   it('hydrates an unresolved batch after a reload and reopens the exact unchanged intent', async () => {
+    // The local journal can render before its server migration/hash finishes.
+    // Hold that real work through unmount to exercise test teardown ownership.
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    const held = deferred<void>();
+    releaseRecoveryDigest = () => held.resolve();
+    const digestSpy = vi
+      .spyOn(crypto.subtle, 'digest')
+      .mockImplementationOnce((...args) => held.promise.then(() => digest(...args)));
+    restoreRecoveryDigest = () => digestSpy.mockRestore();
     expect(
       writeCashierTransferRecovery({
         version: 1,

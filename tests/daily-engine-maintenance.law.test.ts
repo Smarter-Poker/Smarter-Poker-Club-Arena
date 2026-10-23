@@ -89,8 +89,8 @@ describe('daily routine admission uses the existing protected receiver only', ()
       admit('schedule', '04', 'routine', '{"liveness":"ok"}', '30 8 * * *', '2026-10-22T00:01:00Z')
     ).toBe(false);
   });
-  it('keeps explicit urgency and measured degradation as emergency causes', () => {
-    expect(admit('push', '14', 'fix\n\nEngine-Release: urgent', '{}')).toBe(true);
+  it('refuses commit urgency while retaining measured engine emergencies', () => {
+    expect(admit('push', '14', 'fix\n\nEngine-Release: urgent', '{}')).toBe(false);
     expect(admit('push', '14', 'routine', '{"liveness":"dead"}')).toBe(true);
     expect(admit('push', '14', 'routine', '{"wholeFleetStalled":true}')).toBe(true);
     expect(admit('push', '14', 'routine', '{"tournamentManagersQuarantined":100}')).toBe(true);
@@ -123,7 +123,13 @@ const transaction = readFileSync(
 );
 const guardAt = transaction.indexOf('# Protect mixed-version rollout too:');
 const policy = transaction.slice(guardAt, transaction.indexOf('remaining=int(', guardAt));
-function certificatePolicy(at: string, reason: string, transition = false, schedule?: object) {
+function certificatePolicy(
+  at: string,
+  reason: string,
+  transition = false,
+  schedule?: object,
+  legacyUrgent = false
+) {
   const code =
     `import json,sys\nm=json.load(sys.stdin)\n` +
     policy.replace(
@@ -136,7 +142,7 @@ function certificatePolicy(at: string, reason: string, transition = false, sched
     env: {
       ...process.env,
       FIXTURE_AT: at,
-      RECOVERY_URGENT: '0',
+      RECOVERY_URGENT: legacyUrgent ? '1' : '0',
       DAILY_TRANSITION: transition ? '1' : '0',
     },
   }).status;
@@ -157,6 +163,17 @@ describe('routine activation and the owner-approved initial transition stay boun
     ]) {
       expect(certificatePolicy(at, 'Scheduled Engine Maintenance')).not.toBe(0);
     }
+  });
+  it('refuses a legacy urgency flag as off-cycle certificate authority', () => {
+    expect(
+      certificatePolicy(
+        '2026-10-23T05:08:37+00:00',
+        'Scheduled Engine Maintenance',
+        false,
+        undefined,
+        true
+      )
+    ).not.toBe(0);
   });
   it('permits the initial old-engine :55 certificate and closes that exception on the daily engine', () => {
     expect(
@@ -229,4 +246,30 @@ describe('provenance distinguishes a legitimate daily queue from a missed releas
     expect(audit).toContain('QUEUED (not deployed)');
     expect(audit).toContain('ENGINE PROVENANCE MISMATCH');
   });
+});
+
+const receiver = parse(
+  readFileSync(join(root, '.github/workflows/auto-deploy-hetzner.yml'), 'utf8')
+);
+const liveProof = receiver.jobs.deploy.steps
+  .find((s: { id?: string }) => s.id === 'verify')
+  .run.split("<<'PYTHON'\n")[1]
+  .split('\nPYTHON')[0];
+
+it('proves installed routine refusal during the existing countdown without requiring an early thaw', () => {
+  const result = spawnSync(
+    'python3',
+    [
+      '-c',
+      `
+import io, urllib.request
+urllib.request.urlopen = lambda *args, **kwargs: io.BytesIO(b'{"running":true,"liveness":"ok","wholeFleetStalled":false,"tournamentManagersQuarantined":0,"maintenance":{"active":true}}')
+${liveProof}
+`,
+      join(root, 'server/scripts/engine-release-transaction.sh'),
+    ],
+    { encoding: 'utf8' }
+  );
+  expect(result.status, result.stdout + result.stderr).toBe(0);
+  expect(result.stdout).toContain('refuses legacy urgency against live healthy play');
 });

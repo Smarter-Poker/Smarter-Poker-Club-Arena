@@ -53,7 +53,8 @@ jobs:
       # Owner 2026-10-20 explicitly requests daily routine updates. Both UTC
       # candidates run; only 03:30 Chicago prepares the 04:00 window. No repair
       # timer, secondary publisher or automatic deadline-emergency exists.
-      - name: Admit daily preparation or an explicit urgent release
+      # Commit-message urgency is not authorization to interrupt live games.
+      - name: Admit daily preparation or a measured engine emergency
         id: admission
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -89,7 +90,7 @@ jobs:
             then
               allowed=true
             fi
-          elif git log -1 --format=%B | grep -Eq '^Engine-Release: (urgent|daily-maintenance-transition)$'; then
+          elif git log -1 --format=%B | grep -Eq '^Engine-Release: daily-maintenance-transition$'; then
             allowed=true
           fi
           if [ "$allowed" = false ]; then

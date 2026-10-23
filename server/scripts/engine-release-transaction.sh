@@ -718,7 +718,7 @@ maintenance_certificate() {
     *) return 1 ;;
   esac
   set +e
-  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" RECOVERY_URGENT="${RECOVERY_URGENT:-0}" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
+  verdict="$(printf '%s' "$body" | MIN_BREAK_MS="$minimum_ms" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
 import json, sys
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -729,7 +729,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 local=datetime.now(ZoneInfo("America/Chicago"))
 daily=(local.hour==4 and local.minute<5)
-emergency=(m.get("reason")=="Deployment Recovery" or os.environ.get("RECOVERY_URGENT")=="1")
+emergency=(m.get("reason")=="Deployment Recovery")
 transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
 if not daily and not emergency and not transition: raise SystemExit(1)
 remaining=int(m.get("remainingMs") or 0)
@@ -876,7 +876,7 @@ legacy_checkpoint_countdown() {
   http_code="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$http_code" in 200|503) ;; *) return 1 ;; esac
-  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) RECOVERY_URGENT="${RECOVERY_URGENT:-0}" DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
+  printf '%s' "$body" | MIN_BREAK_MS=$((MIN_BREAK_REMAINING_MS + headroom)) DAILY_TRANSITION="${DAILY_TRANSITION:-0}" python3 -c '
 import json, math, os, sys, time
 d=json.load(sys.stdin); m=d.get("maintenance")
 if not isinstance(m,dict): raise SystemExit(1)
@@ -887,7 +887,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 local=datetime.now(ZoneInfo("America/Chicago"))
 daily=(local.hour==4 and local.minute<5)
-emergency=(m.get("reason")=="Deployment Recovery" or os.environ.get("RECOVERY_URGENT")=="1")
+emergency=(m.get("reason")=="Deployment Recovery")
 transition=(os.environ.get("DAILY_TRANSITION")=="1" and m.get("schedule") is None and local.minute>=55 and m.get("reason")=="Scheduled Engine Maintenance")
 if not daily and not emergency and not transition: raise SystemExit(1)
 
@@ -926,22 +926,11 @@ print(math.floor(ends/1000))
 # cutover safe - maintenance_certificate, the ladder, the rollback reserve,
 # the database witness and the locked read are untouched:
 #
-#   1. A reason is required. An ordinary release waits for the scheduled :55
-#      break. It may ask for an off-cycle window only when
-#        urgent          a commit this release adds carries the trailer
-#                        RECOVERY_URGENT_TRAILER;
-#        engine-degraded /health says the serving engine is wedged
-#                        (liveness dead, wholeFleetStalled) or the scheduled
-#                        break is not certifying (breaksSinceRestartCertified
-#                        at or over RECOVERY_UNCERTIFIED_BREAKS), or it holds
-#                        RECOVERY_QUARANTINED_MANAGERS quarantined managers;
-#        deadline        no scheduled break can admit it before its own
-#                        certificate deadline.
-#      Nothing else is a reason (owner ruling 2026-10-04, one scheduled break
-#      an hour): a failed release that has not shipped and a scheduled break
-#      this release waited through are NOT causes, the seal answers both
-#      `unavailable`, and so a release without one of the three reasons above
-#      never takes the engine lock or asks the seal at all.
+#   1. A measured engine emergency is required. Ordinary releases wait for
+#      04:00 America/Chicago. Commit text (including an urgent trailer), a
+#      missed window and a request deadline never authorize a global pause.
+#      Only current liveness=dead, wholeFleetStalled or at least
+#      RECOVERY_QUARANTINED_MANAGERS quarantined managers may ask the seal.
 #   2. The newest release owns the window: a release never asks while a
 #      release of a newer protected-main engine SHA is queued or running on
 #      this host.
@@ -966,7 +955,6 @@ RECOVERY_REFUSED_STUCK=0
 # wedge that took hands/min to ~0 (#5298) quarantined 338. A quarantine count
 # is only a reason to pause every table when it is wedge-sized.
 RECOVERY_QUARANTINED_MANAGERS=100
-RECOVERY_URGENT_TRAILER='Engine-Release: urgent'
 
 # A certificate this release could not use counts as a missed scheduled
 # break only when the release was already waiting while that break could
@@ -989,10 +977,6 @@ note_missed_admission() {
 # Prints "<class> <detail>" for the first reason that applies, or nothing.
 recovery_window_reason() {
   local health="$1" degraded now past next_break last_admission
-  if [ "${RECOVERY_URGENT:-0}" = 1 ]; then
-    echo "urgent $RECOVERY_URGENT_TRAILER"
-    return 0
-  fi
   degraded="$(printf '%s' "$health" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
@@ -1131,7 +1115,7 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
   # releases for up to the whole lock wait and could end this one in `die`.
   # It waits for the scheduled break without touching the lock or the seal.
   case "${reason%% *}" in
-    urgent|engine-degraded) ;;
+    engine-degraded) ;;
     *) return 0 ;;
   esac
   cause_key="$RECOVERY_ADMISSION_MISSED:${reason%% *}"
@@ -1148,6 +1132,18 @@ print(v if isinstance(v, int) and not isinstance(v, bool) and v > 0 else 0)
       RECOVERY_DEFERRED_TO="$newer"
       echo "[engine-release-transaction] newer release ${newer#* } (run ${newer%% *}) is in flight and owns any off-cycle window; this release waits for the scheduled break"
     fi
+    return 0
+  fi
+  # Lock/source/newest-owner checks can outlive the degradation sample.
+  # Revalidate immediately before reserving a pause; recovered play must not
+  # be interrupted by the old observation. Unknown health authorizes nothing.
+  health="$(curl -sS --max-time 5 http://127.0.0.1:8080/health 2>/dev/null)" || {
+    release_engine_lock
+    return 0
+  }
+  reason="$(recovery_window_reason "$health")"
+  if [ "${reason%% *}" != engine-degraded ]; then
+    release_engine_lock
     return 0
   fi
   reserve_args=(--sha "$SHA" --run-id "$RUN_ID" --repo "$REPO_DIR")
@@ -1797,30 +1793,22 @@ if [ "$LEGACY_CHECKPOINT_REQUIRED" = 1 ] && [ "$LEGACY_CHECKPOINT_ATTEMPTED" = 1
   die 'this run key already opened the one-shot legacy checkpoint and its durable intent is still on disk; whether that entry acted is UNKNOWN, so it may not be entered again - dispatch a new run key'
 fi
 
-# What the proportionate off-cycle policy above needs to know about this wait:
-# when it began, and whether any commit this release adds over the sealed
-# high-water asks to be urgent.
-# Unreadable urgency is ordinary: it can only ever make a release wait for
-# the scheduled break, never admit a cutover.
+# Commit messages are descriptive source data, never authority to stop games.
+# In particular, an urgent trailer in this target or any ancestor cannot turn
+# routine deployment into off-cycle maintenance. Only current measured engine
+# degradation in recovery_window_reason may request that separate emergency.
 RECOVERY_WAIT_STARTED_EPOCH="$(date +%s)"
-RECOVERY_URGENT=0
 DAILY_TRANSITION=0
-if [ -z "${DRILL_MODE:-}" ] && URGENT_HIGH_WATER="$(timeout --signal=TERM --kill-after=1s 10s \
-  "$RELEASE_SEAL" get high-water-sha 2>/dev/null)" \
-  && [[ "$URGENT_HIGH_WATER" =~ ^[0-9a-f]{40}$ ]] \
-  && URGENT_MESSAGES="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
-    git -C "$REPO_DIR" log --format=%B "$URGENT_HIGH_WATER..$SHA" 2>/dev/null)" \
-  && grep -Fqx -- "$RECOVERY_URGENT_TRAILER" <<<"$URGENT_MESSAGES"; then
-  RECOVERY_URGENT=1
-  echo "[engine-release-transaction] a commit in $URGENT_HIGH_WATER..$SHA carries '$RECOVERY_URGENT_TRAILER'; this release may ask for an off-cycle window without waiting for evidence"
-fi
 
 # Owner-authorized initial installation, 2026-10-20: one final existing :55
 # window, only while the serving engine lacks the new daily schedule. This
 # marker cannot request recovery, and a daily engine closes it permanently.
-if [ -z "${DRILL_MODE:-}" ] && [ -n "${URGENT_HIGH_WATER:-}" ] \
+if [ -z "${DRILL_MODE:-}" ] \
+  && TRANSITION_HIGH_WATER="$(timeout --signal=TERM --kill-after=1s 10s \
+    "$RELEASE_SEAL" get high-water-sha 2>/dev/null)" \
+  && [[ "$TRANSITION_HIGH_WATER" =~ ^[0-9a-f]{40}$ ]] \
   && TRANSITION_MESSAGES="$(timeout --signal=TERM --kill-after=1s 10s env GIT_NO_REPLACE_OBJECTS=1 \
-    git -C "$REPO_DIR" log --format=%B "$URGENT_HIGH_WATER..$SHA" 2>/dev/null)" \
+    git -C "$REPO_DIR" log --format=%B "$TRANSITION_HIGH_WATER..$SHA" 2>/dev/null)" \
   && grep -Fqx 'Engine-Release: daily-maintenance-transition' <<<"$TRANSITION_MESSAGES"; then
   DAILY_TRANSITION=1
 fi

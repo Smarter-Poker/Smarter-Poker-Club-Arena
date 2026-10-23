@@ -748,7 +748,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
         worker.emitMessage({ type: 'STOPPED' });
         await stopping;
       } else {
-        expect(client.status().phase).toBe('failed');
+        expect(client.status().phase).toBe('ready');
         await expect(pending).rejects.toThrow('invalid decision effects');
       }
     }
@@ -808,7 +808,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
       if (fault === 'malformed') reply.effects.push(null as any);
       if (fault === 'brain_fallback') reply.decision.policyFallback = 'brain_exception';
       worker.emitMessage(reply);
-      expect(client.status().phase).toBe('failed');
+      expect(client.status().phase).toBe('ready');
       await expect(pending).rejects.toThrow('invalid decision effects');
       expect(client.status().completedJobs).toBe(0);
     }
@@ -1047,7 +1047,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
     };
     expect(() => worker.emitMessage(reply)).not.toThrow();
     await expect(pending).rejects.toThrow('invalid policy receipt');
-    expect(client.status().phase).toBe('failed');
+    expect(client.status().phase).toBe('ready');
   });
   it('refuses a Phase 7 receipt whose evidence is not bound to the request it answers', async () => {
     // A real, structurally valid utility receipt computed for another table.
@@ -1078,7 +1078,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
     reply.decision = foreign;
     expect(() => worker.emitMessage(reply)).not.toThrow();
     await expect(pending).rejects.toThrow('invalid policy receipt: phase7_foreign_opponent');
-    expect(client.status().phase).toBe('failed');
+    expect(client.status().phase).toBe('ready');
   });
   it.each(['fast', 'deep'] as const)(
     'rejects malformed %s policy graphs inside the failure boundary',
@@ -1098,8 +1098,8 @@ describe('LiveHorseDecisionWorkerClient', () => {
         worker.emitMessage(lane === 'fast' ? reply : { ...reply, type: 'DEEP_RESULT' })
       ).not.toThrow();
       await expect(pending).rejects.toThrow('invalid policy receipt');
-      expect(client.status().phase).toBe('failed');
-      expect(worker.terminateCalls).toBe(1);
+      expect(client.status().phase).toBe('ready');
+      expect(worker.terminateCalls).toBe(0);
     }
   );
   it.each([
@@ -1130,7 +1130,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
     if (fault === 'invalid_clock') reply.decision.thinkTime = NaN;
     expect(() => worker.emitMessage(reply)).not.toThrow();
     await expect(pending).rejects.toThrow('invalid policy receipt');
-    expect(client.status().phase).toBe('failed');
+    expect(client.status().phase).toBe('ready');
   });
   it('keeps the brain failure provenance in the exact private execution witness', async () => {
     const worker = new FakeWorker(),
@@ -1163,7 +1163,7 @@ describe('LiveHorseDecisionWorkerClient', () => {
         worker.emitMessage({ ...fastResult(1, 'bad-provenance'), decision } as any)
       ).not.toThrow();
       await rejected;
-      expect(client.status().phase).toBe('failed');
+      expect(client.status().phase).toBe('ready');
     }
   );
 
@@ -2837,7 +2837,7 @@ describe('Phase 8.3 qualified authority at the client boundary', () => {
         },
       });
       await expect(pending).rejects.toThrow('invalid policy receipt');
-      expect(client.status().phase).toBe('failed');
+      expect(client.status().phase).toBe('ready');
     }
   );
 });
@@ -2938,8 +2938,8 @@ describe('P11.1: a PLO5/PLO6/PLO8 receipt whose input binding fails validation',
     drainFires();
     const { worker, client, pending } = send(corruptBinding(applied), 'p11-1-applied');
     await expect(pending).rejects.toThrow('invalid policy receipt');
-    expect(client.status().phase).toBe('failed');
-    expect(worker.terminateCalls).toBe(1);
+    expect(client.status().phase).toBe('ready');
+    expect(worker.terminateCalls).toBe(0);
     expect(drainFires().map((row) => row.feature)).not.toContain(
       'phase11_shadow_receipt_binding_dropped'
     );
@@ -3110,7 +3110,7 @@ describe('P11.3 per-pack authority at the client boundary', () => {
         phase11Authority: receipts(),
       });
       await expect(pending).rejects.toThrow('invalid policy receipt');
-      expect(client.status().phase).toBe('failed');
+      expect(client.status().phase).toBe('ready');
     }
   );
 });
@@ -3237,8 +3237,8 @@ describe('P12.1: a Short Deck/Pineapple/FLH/FLO8 receipt whose input binding fai
     drainFires();
     const { worker, client, pending } = send(corruptBinding(applied), 'p12-1-applied');
     await expect(pending).rejects.toThrow('invalid policy receipt');
-    expect(client.status().phase).toBe('failed');
-    expect(worker.terminateCalls).toBe(1);
+    expect(client.status().phase).toBe('ready');
+    expect(worker.terminateCalls).toBe(0);
     expect(drainFires().map((row) => row.feature)).not.toContain(
       'phase12_shadow_receipt_binding_dropped'
     );
@@ -3336,8 +3336,8 @@ describe('P13.1: a joint multiway receipt whose input binding fails validation',
     drainFires();
     const { worker, client, pending } = send(corruptBinding(applied), 'p13-1-applied');
     await expect(pending).rejects.toThrow('invalid policy receipt');
-    expect(client.status().phase).toBe('failed');
-    expect(worker.terminateCalls).toBe(1);
+    expect(client.status().phase).toBe('ready');
+    expect(worker.terminateCalls).toBe(0);
     expect(drainFires().map((row) => row.feature)).not.toContain(
       'phase13_shadow_receipt_binding_dropped'
     );
@@ -3462,8 +3462,8 @@ describe('P10 audit F8: a PLO4 receipt whose input binding fails validation', ()
     drainFires();
     const { worker, client, pending } = send(corruptBinding(applied), 'p10-f8-applied');
     await expect(pending).rejects.toThrow('invalid policy receipt');
-    expect(client.status().phase).toBe('failed');
-    expect(worker.terminateCalls).toBe(1);
+    expect(client.status().phase).toBe('ready');
+    expect(worker.terminateCalls).toBe(0);
     expect(drainFires().map((row) => row.feature)).not.toContain(
       'phase10_shadow_receipt_binding_dropped'
     );
@@ -3627,7 +3627,7 @@ describe('P12.3 per-pack authority at the client boundary', () => {
         phase12Authority: receipts(),
       });
       await expect(pending).rejects.toThrow('invalid policy receipt');
-      expect(client.status().phase).toBe('failed');
+      expect(client.status().phase).toBe('ready');
     }
   );
 });
@@ -3808,7 +3808,7 @@ describe('P13.3 per-variant joint authority at the client boundary', () => {
         phase13Authority: receipts(),
       });
       await expect(pending).rejects.toThrow('invalid policy receipt');
-      expect(client.status().phase).toBe('failed');
+      expect(client.status().phase).toBe('ready');
     }
   );
 });

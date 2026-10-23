@@ -1,3 +1,4 @@
+import { readTournamentStandings } from '../../services/readTournamentStandings';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  TOURNAMENT HUD — the tournament info dock UNDER the action bar
@@ -69,8 +70,9 @@
  *     failed engine broadcast is not retried, so late registration, the
  *     add-on window and the prize pool have no deadline to notice a lost
  *     event by. Five minutes bounds how long one can go unseen.
- *   • LEFT / RANK / AVG are re-read at most once per ten seconds, trailing the
- *     busts that moved them, and bubble_burst's own count shows at once.
+ *   • LEFT / RANK / AVG read the committed field after every settled hand on
+ *     the tournament channel, including hands at other tables. Legacy bust
+ *     events retain their trailing read; bubble_burst counts show at once.
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -82,6 +84,8 @@ import { engineChannelClient } from '../../services/EngineStateClient';
 import type { Tournament } from '../../types/database.types';
 import { masterBus } from '../../core/MasterBus';
 import { supabase } from '../../lib/supabase';
+import { subscribeTournamentStandings } from '../../services/tournamentStandingsUpdates';
+import { tournamentChipRanks } from '../../utils/tournamentChipRanks';
 import { reportError } from '../../utils/errorReporter';
 import { serverNow } from '../../utils/serverClock';
 import './TournamentHUD.css';
@@ -410,7 +414,7 @@ class HudFeed {
     const stale = !this.row || this.failures > 0 || Date.now() - this.lastGoodAt >= SAFETY_READ_MS;
     if (this.dirty || stale) this.readRow('shown');
     else this.scheduleNextRead();
-    if (this.fieldDirty) this.requestFieldRead();
+    if (this.fieldDirty) this.readField();
   }
 
   /** The tab came back (or went away). Coming back is the likeliest moment to be stale. */
@@ -641,7 +645,7 @@ class HudFeed {
     }, FIELD_READ_DELAY_MS);
   }
 
-  private readField(): void {
+  readField(): void {
     if (!this.readsField || !this.active || !this.live) return;
     if (this.hidden || documentHidden()) {
       this.fieldDirty = true;
@@ -675,29 +679,28 @@ class HudFeed {
     const seqAtStart = this.leftSeq;
     let rows: unknown = null;
     try {
-      const { data, error } = await supabase
-        .from('tournament_players')
-        .select('user_id, chips, status')
-        .eq('tournament_id', this.tournamentId)
-        .in('status', ['playing', 'registered']);
+      const { data, error } = await readTournamentStandings(
+        this.tournamentId,
+        'user_id, chips, status',
+        true
+      );
       if (!error) rows = data;
     } catch {
       /* optional enrichment: the last figures stay on screen */
     }
     if (!this.active || !Array.isArray(rows)) return;
-    const field = rows as Array<{ user_id?: string; chips?: number | null }>;
+    const field = rows as Array<{ user_id: string; chips: number | null }>;
     const totalChips = field.reduce((sum, r) => sum + (r.chips || 0), 0);
     /* Rank = 1 + players with strictly more chips. Ties share the better
        rank, which is how every tournament lobby already counts it. */
     const hero = this.userId ? field.find((r) => r.user_id === this.userId) : undefined;
-    const heroChips = hero ? hero.chips || 0 : 0;
     // A bubble count that arrived after this read began is the newer fact.
     const bubble = this.leftPatch && this.leftPatch.seq > seqAtStart ? this.leftPatch : null;
     if (!bubble) this.leftPatch = null;
     this.paint.field(this.key, {
       remaining: bubble ? bubble.value : field.length,
       avgStack: field.length ? Math.trunc(totalChips / field.length) : 0,
-      rank: hero ? 1 + field.filter((r) => (r.chips || 0) > heroChips).length : null,
+      rank: hero ? (tournamentChipRanks(field).get(hero.user_id) ?? null) : null,
     });
   }
 
@@ -736,7 +739,8 @@ export function TournamentHUD({
 }: TournamentHUDProps) {
   const { user } = useAuthUser();
   const userId = user?.id;
-  const readsField = playersRemaining === undefined || averageStack === undefined;
+  // Rank always needs the full field, even when a caller supplies Left / Avg.
+  const readsField = true;
   const scopeKey = scopeKeyOf(tournamentId, userId);
   const [shown, setShown] = useState<{ key: string; row: Tournament } | null>(null);
   const [field, setField] = useState<(HudField & { key: string }) | null>(null);
@@ -770,6 +774,12 @@ export function TournamentHUD({
       if (feedRef.current === feed) feedRef.current = null;
     };
   }, [tournamentId, userId, readsField]);
+
+  useEffect(() => {
+    const feed = feedRef.current;
+    if (!feed || !live) return;
+    return subscribeTournamentStandings(tournamentId, () => feed.readField());
+  }, [scopeKey, readsField, live]);
 
   // ── On screen or not: starts the feed, parks it, and catches it up ──
   useEffect(() => {

@@ -69,6 +69,18 @@ describe('a mystery bounty is chests only, at the money, split 50/50', () => {
     expect(halfEntryBounty(13.5, 1.5)).toBe(7);
     expect(halfEntryBounty(225, 25)).toBe(125);
     expect(halfEntryBounty(4.5, 0.5)).toBe(2);
+    // The advertised range scales in whole chips too.
+    const row = withMysteryBountyTerms({
+      ...midweekMystery(),
+      buy_in_amount: 13.5,
+      buy_in_fee: 1.5,
+      bounty_amount: 6,
+      mystery_bounty_min: 3,
+      mystery_bounty_max: 61,
+    });
+    expect(row.bounty_amount).toBe(7);
+    expect(Number.isInteger(row.mystery_bounty_min)).toBe(true);
+    expect(Number.isInteger(row.mystery_bounty_max)).toBe(true);
   });
 
   it('leaves PKOs, satellites, freerolls, Sit & Gos and plain bounties alone', () => {

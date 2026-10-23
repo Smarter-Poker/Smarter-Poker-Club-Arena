@@ -65,6 +65,7 @@ import {
   SatelliteSettlementRefusedError,
 } from './satelliteSettlementRpc.js';
 import { horseRebuyAllowance } from '../services/FreeBuy.js';
+import { horseChoosesTournamentRebuy } from './horseTournamentRebuyChoice.js';
 import { bindLatestKnockoutCandidates, knockoutCandidateReadIsComplete } from './bustOrder.js';
 
 /** A verified close and exact engine retirement, never an attempted move. */
@@ -894,7 +895,10 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           }
 
           this.noteEliminationSweepStep('tryTournamentRebuys');
-          const { rebought } = await this.tryTournamentRebuys(busted.map((b) => b.user_id));
+          const { rebought } = await this.tryTournamentRebuys(
+            busted.map((b) => b.user_id),
+            bustHandNumbers
+          );
           if (sweepStopped()) return;
           if (rebought.size > 0) {
             busted = busted.filter((b) => !rebought.has(b.user_id));
@@ -2073,7 +2077,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   }
 
   private async tryTournamentRebuys(
-    bustedUserIds: string[]
+    bustedUserIds: string[],
+    bustHandNumbers: ReadonlyMap<string, number>
   ): Promise<{ rebought: Set<string>; answered: Set<string> }> {
     const rebought = new Set<string>();
     /** Players whose rebuy decision is FINAL this pass: horses that were asked
@@ -2167,6 +2172,17 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       }
       for (const h of horseRows) {
         if (!this.eliminationMutationAllowed()) return { rebought, answered };
+        const bustHandNumber = bustHandNumbers.get(h.id);
+        if (!Number.isSafeInteger(bustHandNumber) || Number(bustHandNumber) <= 0) {
+          // Unknown identity is not a decline or permission to charge. Keep
+          // the normal durable decision grace until the bust can be read.
+          this.requestUrgentEliminationSweepAfter(TournamentManagerBase.UNRESOLVED_BUST_RETRY_MS);
+          continue;
+        }
+        if (!horseChoosesTournamentRebuy(this.tournamentId, h.id, bustHandNumber)) {
+          answered.add(h.id);
+          continue;
+        }
         if (freeBuyReloads) {
           const used = freeBuyReloads.get(h.id);
           if (used === undefined) {
@@ -3757,6 +3773,13 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       reportError(err, 'Tournament.mystery_bounty_pending_broadcast_failed');
     }
 
+    // A HORSE PICKS LIKE A PERSON (Dan's law 10.5, 2026-10-22). A horse has no
+    // browser, so without this its chest always sat locked until the deadline
+    // while a person taps within seconds: the rhythm told the table which seat
+    // was a horse. The engine supplies the tap a browser would: a human-like
+    // wait, one of the offered chests, and the same open broadcast.
+    void this.horseMysteryChestTap(next.awardId, next.tableId, next.designatedRevealer);
+
     // The reveal, on the deadline. The designated revealer's own tap normally
     // gets there first (from the browser, which is the drama); this call is
     // idempotent and returns the identical payload, so section 54's "auto
@@ -3796,6 +3819,67 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       })();
     }, MYSTERY_BOUNTY_REVEAL_DELAY_MS);
     (timer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * The designated revealer is a horse: pick and open its chest the way a
+   * browser does (fn_mystery_bounty_pick, then `mystery_chest_opened` on the
+   * table's chest channel). The engine's own deadline reveal still settles and
+   * pays the award exactly as for a person, so nothing here touches money.
+   */
+  protected async horseMysteryChestTap(
+    awardId: string,
+    tableId: string | null,
+    revealerId: string | null | undefined
+  ): Promise<void> {
+    if (!awardId || !tableId || !revealerId) return;
+    try {
+      const { data: horse } = await supabase
+        .from('profiles')
+        .select('is_horse')
+        .eq('id', revealerId)
+        .maybeSingle();
+      if (!(horse as { is_horse?: boolean } | null)?.is_horse) return;
+      // Inside the window a person has: 1.8 s to 6 s after the chest lands.
+      const waitMs = 1800 + nodeCrypto.randomInt(0, 4200);
+      const timer = this.setLifecycleTimeout(() => {
+        // setLifecycleTimeout drops this if the tournament's lifecycle moved on.
+        return (async () => {
+          const { data: offer } = await supabase.rpc('fn_mystery_bounty_offer', {
+            p_award_id: awardId,
+          });
+          const slots = Math.max(
+            1,
+            Math.min(3, Math.floor(Number((offer as { slots?: unknown } | null)?.slots) || 1))
+          );
+          const slot = 1 + nodeCrypto.randomInt(0, slots);
+          if (slots > 1) {
+            await supabase.rpc('fn_mystery_bounty_pick', { p_award_id: awardId, p_slot: slot });
+          }
+          let channel: ReturnType<typeof supabase.channel> | undefined;
+          try {
+            channel = supabase.channel(`mystery-chest-${tableId}`);
+            await channel.httpSend('mystery_chest_opened', {
+              tableId,
+              at: Date.now(),
+              slot: slots > 1 ? slot : null,
+              awardId,
+            });
+          } finally {
+            if (channel) {
+              try {
+                await supabase.removeChannel(channel);
+              } catch {
+                /* never joined; nothing to release */
+              }
+            }
+          }
+        })().catch((err) => reportError(err, 'Tournament.mystery_horse_chest_tap_failed'));
+      }, waitMs);
+      (timer as unknown as { unref?: () => void }).unref?.();
+    } catch (err) {
+      reportError(err, 'Tournament.mystery_horse_chest_tap_failed');
+    }
   }
 
   /**

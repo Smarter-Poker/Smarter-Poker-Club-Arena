@@ -24,7 +24,7 @@
  * 2026-10-22), because the server buckets every figure by the Chicago day
  * (20261022103651, 20261022120121). Times on the page are Chicago time too.
  * MTT Winnings are finished MTTs only; a running MTT's entries are shown as
- * Running MTT Entries, and both are inside Total Winnings.
+ * Unfinished MTT Entries, and both are inside Total Winnings.
  * The full operator report (union statement, per-player breakdown, export)
  * lives one tap away at ./advanced.
  */
@@ -488,8 +488,8 @@ export default function ClubDataSimplePage() {
       {summary &&
         summary.running_mtt_entries !== undefined &&
         summary.running_mtt_entries !== null && (
-          <dl className={styles.runningLine} aria-label="Running MTT Entries">
-            <dt>Running MTT Entries</dt>
+          <dl className={styles.runningLine} aria-label="Unfinished MTT Entries">
+            <dt>Unfinished MTT Entries</dt>
             <dd
               className={inkFor(summary.running_mtt_entries)}
               title={formatMoney(summary.running_mtt_entries)}
@@ -516,7 +516,7 @@ export default function ClubDataSimplePage() {
       </div>
       {snapshot?.accounting_basis === 'chicago_net_money_flow' && (
         <p className={styles.liveLine}>
-          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only.
+          Net Entries And Payouts In Chicago Time. MTT Winnings Count Finished MTTs Only. Unfinished MTT Entries Are Buy-Ins For MTTs Still Running Or Not Yet Started.
         </p>
       )}
       {snapshot?.accounting_basis === 'utc_net_money_flow' && (

@@ -169,3 +169,160 @@ describe('review keeps the viewer in the hand even outside showdown', () => {
     expect(screen.getByRole('region', { name: 'Your Cards' }).textContent).not.toContain('Villain');
   });
 });
+
+const VARIANT_HOLDINGS = [
+  ['NLH', 2],
+  ['SHORT_DECK', 2],
+  ['PINEAPPLE', 2],
+  ['CRAZY_PINEAPPLE', 2],
+  ['PLO4', 4],
+  ['PLO5', 5],
+  ['PLO6', 6],
+  ['PLO8', 4],
+  ['FLH', 2],
+  ['FLO8', 4],
+] as const;
+
+describe('the same private hand survives every review game family', () => {
+  it.each(VARIANT_HOLDINGS)(
+    '%s preserves all %i retained cards in Summary, Detail and Replay',
+    (variant, count) => {
+      const row = stored('one', true);
+      row.game_type = variant;
+      const ranks = ['A', 'K', 'Q', 'J', 'T', '9'];
+      row.players[0].private_hole_cards = ranks
+        .slice(0, count)
+        .map((rank) => ({ rank, suit: 'spades' }));
+      row.main_pot = 12;
+      row.side_pots = [8];
+      row.players[0].result = -10;
+      row.players[1].result = 10;
+      row.winners = [
+        { user_id: 'villain', amount: 12, pot_index: 0 },
+        { user_id: 'villain', amount: 8, pot_index: 1 },
+      ];
+      row.actions = [
+        { player_id: 'hero', action: 'sb', amount: 1, street: 'preflop', timestamp: 1 },
+        { player_id: 'villain', action: 'bb', amount: 2, street: 'preflop', timestamp: 2 },
+        { player_id: 'villain', action: 'raise', amount: 10, street: 'preflop', timestamp: 3 },
+        { player_id: 'hero', action: 'call', amount: 9, street: 'preflop', timestamp: 4 },
+        { player_id: 'hero', action: 'fold', street: 'flop', timestamp: 5 },
+      ];
+      const hand = adaptServiceHandToPanel(row, 'hero');
+      expect(hand.replay.reconciles).toBe(true);
+      const replay = vi.fn();
+      render(
+        <HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId="hero" onReplay={replay} />
+      );
+      const own = screen.getByRole('region', { name: 'Your Cards' });
+      const names = within(own)
+        .getAllByRole('img')
+        .map((image) => image.getAttribute('alt'));
+      expect(names).toHaveLength(count);
+      expect(new Set(names).size).toBe(count);
+      expect(own.textContent).toContain('-10.00');
+      expect(hand.potTotal).toBe(20);
+      expect(hand.winners[0].amount).toBe(20);
+      fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+      expect(
+        within(screen.getByRole('region', { name: 'Your Cards' }))
+          .getAllByRole('img')
+          .map((image) => image.getAttribute('alt'))
+      ).toEqual(names);
+      fireEvent.click(screen.getByRole('button', { name: 'Video Replay' }));
+      const selected = replay.mock.calls[0][0];
+      expect(selected.id).toBe(row.id);
+      expect(
+        selected.replay.players.find((p: any) => p.userId === 'hero').privateHole
+      ).toHaveLength(count);
+      expect(selected.replay.players.find((p: any) => p.userId === 'hero').invested).toBe(10);
+      expect(mocks.getHand).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe('forced money and multiple boards keep the viewer and the exact pot', () => {
+  it.each(['tournament', 'bomb', 'rit'] as const)(
+    '%s retains cards and results through both tabs and selected replay',
+    (mode) => {
+      const row = stored('one', true);
+      row.game_type = mode === 'tournament' ? 'NLH' : 'PLO5';
+      row.table_name = mode === 'tournament' ? 'Tournament Table 1' : 'Omaha';
+      row.stakes = mode === 'tournament' ? '300/600' : '1/2';
+      row.players[0].private_hole_cards = ['A', 'K', 'Q', 'J', 'T']
+        .slice(0, mode === 'tournament' ? 2 : 5)
+        .map((rank) => ({ rank, suit: 'spades' }));
+      row.main_pot = 1100;
+      row.side_pots = [];
+      row.players[0].result = -400;
+      row.players[1].result = 400;
+      row.winners = [{ user_id: 'villain', amount: 1100, pot_index: 0 }];
+      row.actions = [
+        { player_id: 'hero', action: 'ante', amount: 100, street: 'preflop', timestamp: 1 },
+        { player_id: 'villain', action: 'ante', amount: 100, street: 'preflop', timestamp: 2 },
+        { player_id: 'hero', action: 'sb', amount: 300, street: 'preflop', timestamp: 3 },
+        { player_id: 'villain', action: 'bb', amount: 600, street: 'preflop', timestamp: 4 },
+        { player_id: 'hero', action: 'fold', street: 'preflop', timestamp: 5 },
+      ];
+      if (mode !== 'tournament') {
+        row.community_cards = ['2diamonds', '3diamonds', '4clubs', '5hearts', '6clubs'] as any;
+        const second = ['7diamonds', '8diamonds', '9clubs', 'Thearts', 'Jclubs'] as any;
+        if (mode === 'bomb') {
+          row.bomb_pot = { ante_amount: 550, board_count: 2, variant: 'PLO5' };
+          row.community_cards2 = second;
+          row.actions = [
+            { player_id: 'hero', action: 'bomb_ante', amount: 550, street: 'flop', timestamp: 1 },
+            {
+              player_id: 'villain',
+              action: 'bomb_ante',
+              amount: 550,
+              street: 'flop',
+              timestamp: 2,
+            },
+            { player_id: 'hero', action: 'fold', street: 'flop', timestamp: 3 },
+          ];
+          row.players[0].result = -550;
+          row.players[1].result = 550;
+        } else {
+          row.rit_boards = [second];
+          row.actions = [
+            { player_id: 'hero', action: 'sb', amount: 1, street: 'preflop', timestamp: 1 },
+            { player_id: 'villain', action: 'bb', amount: 2, street: 'preflop', timestamp: 2 },
+            { player_id: 'hero', action: 'all_in', amount: 550, street: 'preflop', timestamp: 3 },
+            { player_id: 'villain', action: 'call', amount: 548, street: 'preflop', timestamp: 4 },
+          ];
+          row.players[0].showdown_reveal = { mucked: true };
+          row.players[0].result = -550;
+          row.players[1].result = 550;
+        }
+        row.winners_by_board = [1, 2].map((board) => ({ board, user_id: 'villain', amount: 550 }));
+      }
+      const hand = adaptServiceHandToPanel(row, 'hero');
+      expect(hand.replay.reconciles).toBe(true);
+      const replay = vi.fn();
+      render(
+        <HandDetailModal isOpen onClose={() => {}} hands={[hand]} heroId="hero" onReplay={replay} />
+      );
+      expect(screen.getByRole('region', { name: 'Your Cards' }).textContent).toContain(
+        mode === 'tournament' ? '-400.00' : '-550.00'
+      );
+      expect(
+        within(screen.getByRole('region', { name: 'Your Cards' })).getAllByRole('img')
+      ).toHaveLength(mode === 'tournament' ? 2 : 5);
+      expect(document.querySelector('.hdm-potline')?.textContent).toContain('1,100.00');
+      if (mode !== 'tournament') expect(hand.replay.boards).toHaveLength(2);
+      fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+      expect(
+        within(screen.getByRole('region', { name: 'Your Cards' })).getAllByRole('img')
+      ).toHaveLength(mode === 'tournament' ? 2 : 5);
+      fireEvent.click(screen.getByRole('button', { name: 'Video Replay' }));
+      expect(
+        replay.mock.calls[0][0].replay.pots.reduce(
+          (total: number, pot: any) => total + pot.amount,
+          0
+        )
+      ).toBe(1100);
+      expect(replay.mock.calls[0][0].heroResult).toBe(mode === 'tournament' ? -400 : -550);
+    }
+  );
+});

@@ -323,18 +323,25 @@ describe('every widget in the bottom-left HUD corner is the same tile', () => {
     // the stadium's rounded corner, where the oval leaves that room empty.
     // So the pin inverts: the desktop reserve stays the measured half-seat
     // number, and nobody may quietly raise it to chase the tile.
-    const declared = [...TABLE_CSS.matchAll(/--sp-hero-clear:\s*(\d+)px/g)].map((m) =>
-      Number(m[1])
+    // Short six-seat phones reserve four more pixels for the hero plate,
+    // as measured with the ticker and safe area. It is permanent and scoped;
+    // it must never become a HUD-sized or hand-state reserve.
+    const shortPhone = strip(TABLE_CSS).match(
+      /@media\s*\(max-width:\s*375px\)\s*and\s*\(max-height:\s*700px\)\s*and\s*\(orientation:\s*portrait\)\s*\{\s*\.table-page\[data-seats='6'\]\s+\.table-container\s*\{\s*--sp-hero-clear:\s*64px;\s*\}/
     );
-    expect(declared.length, '--sp-hero-clear is never declared').toBeGreaterThan(0);
-    const LINE = 8;
+    expect(
+      shortPhone,
+      'the measured short-phone hero clearance must remain narrowly scoped'
+    ).toBeTruthy();
+    const declared = [
+      ...strip(TABLE_CSS)
+        .replace(shortPhone![0], '')
+        .matchAll(/--sp-hero-clear:\s*(\d+)px/g),
+    ].map((m) => Number(m[1]));
+    // All other reserves stay derived. Parse actual CSS, not historical
+    // comments that happened to quote a 60px declaration.
+    expect(declared, 'an unscoped flat hero reserve was introduced').toEqual([]);
     const HALF_SEAT_DESKTOP = 60;
-    for (const px of declared) {
-      if (px <= LINE) continue; // the data-hero='false' collapse
-      expect(px, `--sp-hero-clear of ${px}px was grown past the half-seat floor`).toBe(
-        HALF_SEAT_DESKTOP
-      );
-    }
     // Dan 2026-10-22, desktop: "the bottom user display gets cut off by the
     // action bar." A flat 60px only covered the smallest felt, so the desktop
     // strip is SOLVED from the hero plate's own overhang (a tenth of the felt's

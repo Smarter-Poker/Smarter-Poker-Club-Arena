@@ -114,6 +114,17 @@ beforeAll(async () => {
       ]
     );
   }
+  // Access-only/forced-post roster entries are not observations and must not
+  // crowd the 40 actual legacy observations out of the 1024-hand tail.
+  await client.query(
+    `insert into hand_history
+    select ('b0000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+    now(),'plo5',null,$1,$2 from generate_series(1,1024)n`,
+    [
+      JSON.stringify(hand(uid).players),
+      JSON.stringify([{ userId: uid, action: 'bb', stage: 'preflop' }]),
+    ]
+  );
   const capacityIds = Array.from(
     { length: 10 },
     (_, n) => `90000000-0000-4000-8000-${String(n).padStart(12, '0')}`

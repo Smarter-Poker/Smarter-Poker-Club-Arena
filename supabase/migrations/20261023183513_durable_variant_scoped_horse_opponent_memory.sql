@@ -167,6 +167,8 @@ BEGIN
        AND (tournament_id IS NOT NULL)=(p_mode='tournament')
        AND (CASE WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=2 THEN 'hu' WHEN coalesce(horse_exploit_dealt_count,jsonb_array_length(players))<=5 THEN 'short' ELSE 'full' END)=p_size
        AND players @> jsonb_build_array(jsonb_build_object('userId',uid))
+       AND EXISTS (SELECT 1 FROM jsonb_array_elements(actions) a
+        WHERE a->>'userId'=uid AND a->>'action' IN ('fold','check','call','bet','raise','all_in'))
       ORDER BY created_at DESC,id DESC LIMIT 1024
     ) recent ORDER BY created_at,id LOOP
      inc:=public.fn_horse_exploit_increments(h.actions,uid)->uid;

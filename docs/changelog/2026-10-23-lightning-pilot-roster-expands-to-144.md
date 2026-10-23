@@ -14,9 +14,11 @@ The funded 72 deliver roughly 5 pilot hours per horse per day (daily caps of 510
 
 ## Selection
 
-From the 938 active horses: cash lane, outside the pilot club (no current or departed row), no live seat, no open cash session, no registered or running tournament entry, no anti-cheat flag in 14 days, under the 10-club membership cap, not resting on Friday. Ranked by how many hours of 13:00 to 23:00 UTC their activity window covers (the HorseBehavior window: start `h mod 24`, length `10 + ((h >>> 5) mod 8)`), then by lowest 48 hour cash and tournament load; horses already at today's cap skipped. Tournament fields: 109 events in the next 24 hours, 866 distinct horses entered in the last 24 hours, largest horse field 542; 794 horses remain outside the assignment.
+Cash-lane horses only. The first pick (cash or both lanes) was refused by its own prepare at 17:01 UTC: 33 of those 72 were seated in running tournaments an hour after selection, because "both"-lane horses enter tournaments continuously. Cash-lane horses never sit in tournaments, so no tournament field loses a horse (109 events in the next 24 hours, 866 distinct horses entered in the last 24 hours, largest horse field 542; none of those are cash-lane horses).
 
-The exact 72 are pinned in `docs/lightning/PILOT-ROSTER-EXPANSION-2026-10-23.json` (SHA256 `0f53b788864bdaf27ce199a8a2fb39bbd9ac1491e59f42d7d52cb9a5fc303a2d`). The standing assignment manifest becomes `docs/lightning/PILOT-ASSIGNMENT-MANIFEST-2026-10-23.json` (144, SHA256 `65033b055ea62f49c1fc242ced3bd79ee72fa875682fe14f416efcca6f8a8698`).
+From the 244 active cash-lane horses outside the pilot club: never seated in a running tournament, no anti-cheat flag in 14 days, under the 10-club membership cap, not resting on Friday, not already at today's cap (146 qualify). Ranked by how many hours of 13:00 to 23:00 UTC their activity window covers (the HorseBehavior window: start `h mod 24`, length `10 + ((h >>> 5) mod 8)`), then by lowest 48 hour cash load. Every one of the 72 covers at least 6 of those 10 hours.
+
+The exact 72 are pinned in `docs/lightning/PILOT-ROSTER-EXPANSION-2026-10-23.json` (SHA256 `f1e1b8f58f60ed8e1ba1d4d6158c0849ef8467ce2522f75e906b47f5da2964bc`). The standing assignment manifest becomes `docs/lightning/PILOT-ASSIGNMENT-MANIFEST-2026-10-23.json` (144, SHA256 `3e61e6fc2157a833a83a5e7096b4ff2bbfef802f0ce8dfe2feb5944faa680820`).
 
 ## How It Is Done
 

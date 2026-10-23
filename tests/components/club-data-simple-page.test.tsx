@@ -150,13 +150,13 @@ describe('ClubDataSimplePage', () => {
     expect(await screen.findByText(/Unfinished Event Entries Included/)).toBeTruthy();
   });
 
-  it('shows Running MTT Entries beside finished MTT Winnings', async () => {
+  it('shows Unfinished MTT Entries beside finished MTT Winnings', async () => {
     rpcMock.mockResolvedValue({
       data: { ...live, summary: { ...live.summary, running_mtt_entries: -3_570 } },
       error: null,
     });
     render(<ClubDataSimplePage />);
-    expect(await screen.findByText('Running MTT Entries')).toBeTruthy();
+    expect(await screen.findByText('Unfinished MTT Entries')).toBeTruthy();
     expect(screen.getByText('-3,570.00')).toBeTruthy();
     expect(screen.getByText('210.00')).toBeTruthy();
   });

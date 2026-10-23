@@ -5,7 +5,7 @@
  *
  * Dan, 2026-10-22: Club Data and Union Data count days by the America/Chicago
  * calendar day (DST aware), not UTC; "MTT Winnings" covers finished MTTs only,
- * and a running MTT's entries are shown separately as "Running MTT Entries".
+ * and a running MTT's entries are shown separately as "Unfinished MTT Entries".
  * Totals still reconcile: total = cash + every tournament flow.
  *
  * The bucket is fixed at the source (20261022103651): the one live writer

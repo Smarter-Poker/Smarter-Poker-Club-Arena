@@ -55,9 +55,6 @@ test.describe('Club Operations', () => {
   test('should navigate to club detail when clicking a club', async ({ page }) => {
     await page.goto('clubs');
 
-    // Wait for clubs to load
-    await page.waitForTimeout(1000);
-
     /* `[class*="club"]` matched layout chrome, not a card - on a signed-in run
        its first match is a full-page container sitting under the header, so the
        click was intercepted and burned the whole 30s timeout. Signed out the
@@ -72,7 +69,10 @@ test.describe('Club Operations', () => {
     const clubCard = page
       .locator('.sp-carousel__item.is-active')
       .getByRole('button', { name: /Click to enter lobby/i });
-    if ((await clubCard.count()) > 0 && (await clubCard.isVisible())) {
+    await expect(clubCard, 'The active club must render before navigation proof').toBeVisible({
+      timeout: 10000,
+    });
+    {
       /* Visibility alone cannot detect occlusion. The approved top actions
          replaced the retired bottom Quick actions row; keep the overlap
          guard against the navigation that is actually rendered. */

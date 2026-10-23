@@ -19,8 +19,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import ArenaGameCard from './game-cards/ArenaGameCard';
 import { arenaGameCardDataFromEntry } from './game-cards/arenaGameCardAdapter';
 import type { ArenaGameCardActions } from './game-cards/arenaGameCardTypes';
@@ -729,7 +729,9 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
   // ── Detailed rules list (complete explanations under the plaque) ──
   const settings = isCash ? parseTableSettings(cashRaw?.settings) : null;
 
-  const panel = (
+  // The page can establish a stacking context below the global header.
+  // Keep the modal at the body layer so its close control stays reachable.
+  return createPortal(
     <div className="glp-backdrop" onClick={onClose} role="presentation">
       <aside
         ref={panelRef}
@@ -1301,9 +1303,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           </div>
         </div>
       </aside>
-    </div>
+    </div>,
+    document.body
   );
-  // A page or an embedded lobby may own a lower stacking context. The drawer
-  // must escape it so the app header cannot cover its real close control.
-  return typeof document === 'undefined' ? null : createPortal(panel, document.body);
 }

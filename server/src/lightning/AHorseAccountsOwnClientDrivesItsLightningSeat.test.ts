@@ -141,6 +141,14 @@ describe('a horse account driven by its own client plays on the human clock (Lig
     const controlled = new Set<string>();
     formedHand(3, 3300).players.forEach((p) => controlled.add(p));
     const t = await horseHand(3300, controlled);
+    // This test owns the handoff, not the policy's randomized thinking rhythm.
+    // Keep the real policy action while choosing a known in-clock delay for
+    // the decision requested after the client releases its seat.
+    const decide = t.horseLane.raw.decideFast.getMockImplementation()!;
+    t.horseLane.raw.decideFast.mockImplementationOnce(async (snapshot) => {
+      const result = await decide(snapshot);
+      return { ...result, decision: { ...result.decision, thinkTime: 1_000 } };
+    });
     await vi.advanceTimersByTimeAsync(5_000);
     await flush();
     expect(t.horseLane.calls.length).toBe(0);

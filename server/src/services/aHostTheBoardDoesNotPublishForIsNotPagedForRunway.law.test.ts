@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * StableHandExecutor.checkBanks measured every host's bank in days of the Free
- * Buy board's 3,000 a day (1,500 before 2026-10-16). Deep Stack Society has been held off that board
+ * Buy board's daily guarantee (2,000 under the owner October 22 schedule). Deep Stack Society has been held off that board
  * since 2026-10-04 (FREE_BUY_HELD_HOSTS, every schedule inactive, no open
  * event). On 2026-10-12 its bank moved to the Midway Union bank ahead of the
  * join Dan decided on 2026-10-11, the runway read 0.0 days, and a critical
@@ -33,9 +33,9 @@ import { DSS_CLUB_ID, MIDWAY_UNION_ID } from './StableHand.js';
 
 describe('LAW: a host the board does not publish for is not paged for runway', () => {
   it('only a published host owes the board guarantee', () => {
-    expect(dailyGuaranteePerHost()).toBe(3000);
-    expect(dailyGuaranteeForHost(MIDWAY_UNION_ID)).toBe(3000);
-    for (const h of FREE_BUY_HOSTS) expect(dailyGuaranteeForHost(h.hostId)).toBe(3000);
+    expect(dailyGuaranteePerHost()).toBe(2000);
+    expect(dailyGuaranteeForHost(MIDWAY_UNION_ID)).toBe(2000);
+    for (const h of FREE_BUY_HOSTS) expect(dailyGuaranteeForHost(h.hostId)).toBe(2000);
     expect(dailyGuaranteeForHost(DSS_CLUB_ID)).toBe(0);
     for (const h of FREE_BUY_HELD_HOSTS) expect(dailyGuaranteeForHost(h.hostId)).toBe(0);
     expect(dailyGuaranteeForHost('00000000-0000-0000-0000-00000000beef')).toBe(0);

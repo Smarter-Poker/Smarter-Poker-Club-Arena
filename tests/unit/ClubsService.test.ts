@@ -70,12 +70,16 @@ vi.mock('../../src/core/MasterBus', () => ({
 
 // ─── Import AFTER mocks ──────────────────────────────────────────────────
 
-import { supabase } from '../../src/lib/supabase';
+import { supabase, getAuthUser } from '../../src/lib/supabase';
 import { ClubsService, searchClubs, getClub, retireClub } from '../../src/services/ClubsService';
 
 describe('ClubsService', () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
+    vi.mocked(getAuthUser)
+      .mockReset()
+      .mockResolvedValue({ data: { user: { id: 'test-user-id' } }, error: null } as any);
   });
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -217,6 +221,75 @@ describe('ClubsService', () => {
       await expect(create()).rejects.toThrow(
         'Club Creation Is Temporarily Unavailable. Please Try Again Soon.'
       );
+    });
+  });
+
+  describe('creation request ownership', () => {
+    it('refuses another account before any creation write', async () => {
+      await expect(
+        ClubsService.create({ name: 'Alpha Room', expectedOwnerId: 'other-user' })
+      ).rejects.toThrow('Club Creation Account Changed');
+      expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('rechecks the captured owner after asynchronous logo preparation before dispatch', async () => {
+      vi.mocked(getAuthUser)
+        .mockResolvedValueOnce({ data: { user: { id: 'test-user-id' } }, error: null } as any)
+        .mockResolvedValueOnce({ data: { user: { id: 'other-user' } }, error: null } as any);
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        new Response(new Blob(['crest'], { type: 'image/webp' }))
+      );
+      await expect(
+        ClubsService.create({
+          name: 'Alpha Room',
+          expectedOwnerId: 'test-user-id',
+          logoPreview: 'data:image/webp;base64,AA==',
+        })
+      ).rejects.toThrow('Club Creation Account Changed');
+      expect(supabase.rpc).not.toHaveBeenCalled();
+    });
+
+    it('reads the exact own request and existing owner club with explicit column projections', async () => {
+      const club = {
+        id: '11111111-1111-4111-8111-111111111111',
+        owner_id: 'test-user-id',
+        name: 'Alpha Room',
+      };
+      const queries: any[] = [];
+      vi.spyOn(supabase, 'from').mockImplementation(((table: string) => {
+        const query: any = { select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn() };
+        query.select.mockReturnValue(query);
+        query.eq.mockReturnValue(query);
+        query.maybeSingle.mockResolvedValue({
+          data: table === 'club_creation_requests' ? { club_id: club.id } : club,
+          error: null,
+        });
+        queries.push(query);
+        return query;
+      }) as any);
+      await expect(
+        ClubsService.resolveCreationRequest('request-a', 'test-user-id')
+      ).resolves.toEqual(club);
+      expect(queries[0].select).toHaveBeenCalledWith('club_id');
+      expect(queries[0].eq).toHaveBeenCalledWith('user_id', 'test-user-id');
+      expect(queries[0].eq).toHaveBeenCalledWith('request_id', 'request-a');
+      expect(queries[1].eq).toHaveBeenCalledWith('id', club.id);
+      expect(queries[1].select.mock.calls[0][0]).not.toBe('*');
+    });
+
+    it('never treats an unreadable request receipt as permission to create again', async () => {
+      const query: any = {
+        select: vi.fn(),
+        eq: vi.fn(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: { message: 'offline' } }),
+      };
+      query.select.mockReturnValue(query);
+      query.eq.mockReturnValue(query);
+      vi.spyOn(supabase, 'from').mockReturnValue(query);
+      await expect(
+        ClubsService.resolveCreationRequest('request-a', 'test-user-id')
+      ).rejects.toThrow('Previous Club Creation Could Not Be Confirmed');
+      expect(supabase.rpc).not.toHaveBeenCalled();
     });
   });
 

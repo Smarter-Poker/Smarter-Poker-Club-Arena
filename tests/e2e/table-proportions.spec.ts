@@ -1043,6 +1043,11 @@ for (const width of [320, 375, 393, 430, 480])
               .filter((a) => a.effect?.getComputedTiming().iterations !== Infinity)
               .map((a) => a.finished.catch(() => {}))
           );
+          // Animation completion schedules protected-card placement on the next
+          // frame. Consume that frame and its layout before measuring geometry.
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          );
         });
         const result = await page.evaluate(() => {
           const box = (e: Element) => e.getBoundingClientRect();

@@ -23,7 +23,7 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { render, screen, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
 import TournamentRankingHost from '../../src/components/tournament/TournamentRankingHost';
 import {
@@ -97,6 +97,12 @@ const spinResult = (finishPlace: number, prize: number): TournamentResult => ({
 });
 
 describe('Tournament result card delivery', () => {
+  // Load the real lazy chunk before measuring card behavior. A cold import
+  // under the full contract suite must not consume the DOM assertion budget.
+  beforeAll(async () => {
+    await import('../../src/components/tournament/TournamentRankingCard');
+  });
+
   beforeEach(() => {
     clearSessionSummary();
   });
@@ -292,6 +298,36 @@ describe('Tournament result card delivery', () => {
     });
     const card = await screen.findByRole('dialog', { name: /tournament ranking/i });
     expect(card.textContent).toContain('TOURNAMENT');
+  });
+
+  it('a recovered result keeps real finish terms without inventing a fresh browser play session', async () => {
+    renderHost();
+    await publishAndSettle({
+      resultOnly: true,
+      duration: 3,
+      handsPlayed: 0,
+      handsWon: 0,
+      totalRebuys: 0,
+      profitLoss: 0,
+      biggestPot: 0,
+      peakStack: 0,
+      tableName: 'Nightly 10K',
+      tournament: {
+        ...spinResult(353, 0),
+        name: 'Nightly 10K',
+        buyInAmount: 35,
+        rebuys: 1,
+        addOns: 1,
+        entrants: 375,
+      },
+    });
+    const card = await screen.findByRole('dialog', { name: /tournament ranking/i });
+    expect(card.textContent).toContain('353rd');
+    expect(card.textContent).toContain('35');
+    expect(card.textContent).toContain('Rebuy');
+    expect(card.textContent).toContain('Add-On');
+    expect(card.textContent).not.toContain('Duration');
+    expect(card.textContent).not.toContain('Hands');
   });
 
   it('reports the session it is handed — duration and hands', async () => {

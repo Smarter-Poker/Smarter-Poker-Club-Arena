@@ -129,7 +129,9 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
 
   it('gives the deterministic 35% tranche at opening and every remaining live horse at break', () => {
     expect(freeBuy).toContain('export const HORSE_ADDON_IMMEDIATE_RATE = 0.35');
-    expect(manager).toContain("import { horseAddsOnImmediately } from '../services/FreeBuy.js'");
+    expect(manager).toContain(
+      "import { horseAddsOnImmediately, horseTakesAddOn } from '../services/FreeBuy.js'"
+    );
     expect(offer).toMatch(
       /if \(Date\.now\(\) < breakStartMs\)[\s\S]*?eligibleHorseRows = eligibleHorseRows\.filter[\s\S]*?horseAddsOnImmediately\(horse\.id, this\.tournamentId\)/
     );
@@ -217,7 +219,9 @@ describe('the Free Buy add-on is one durable lifecycle', () => {
     expect(pause).toContain('if (this.addOnBreakActive) this.addOnBreakOwnsPause = false');
     expect(pause).toContain('if (!addOnBreakAlreadyOwnsLevelClock) this.suspendLevelClock()');
 
-    expect(resumeBreak).toContain('const addOnBreakStillActive = this.addOnBreakActive');
+    expect(resumeBreak).toContain(
+      'const addOnBreakStillActive = this.addOnDrainPending || this.addOnBreakActive'
+    );
     expect(resumeBreak).toMatch(
       /if \(addOnBreakStillActive\) \{[\s\S]*?this\.addOnBreakOwnsPause = true;[\s\S]*?this\.addOnBreakOwnsLevelClock = true;/
     );

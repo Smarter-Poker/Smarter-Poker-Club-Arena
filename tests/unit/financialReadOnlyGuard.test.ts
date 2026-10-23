@@ -290,9 +290,10 @@ describe('financial read-only Playwright guard', () => {
     expect(() => guard.assertNoViolations()).not.toThrow();
   });
 
-  it.each(['/rest/v1/rpc/fn_achievement_record_login', '/rest/v1/rpc/ca_record_device_sighting'])(
-    'quarantines the exact global shell POST %s while preserving mutation refusals',
-    async (path) => {
+  it.each(['fn_achievement_record_login', 'ca_record_device_sighting'])(
+    'quarantines the global %s write while preserving mutation refusals',
+    async (rpc) => {
+      const path = `/rest/v1/rpc/${rpc}`;
       expect(FINANCIAL_ADMIN_CONSOLE_READ_ONLY_RPC_PATHS).not.toContain(path);
       const harness = pageHarness();
       const guard = await installFinancialReadOnlyGuard(harness.page, {

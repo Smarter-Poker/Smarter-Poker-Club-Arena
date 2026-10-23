@@ -25,6 +25,7 @@ function panel(kind: 'spin' | 'sng', status: string, registered = false) {
   const entry = tournamentEntry(raw, kind);
   const onSpinJoin = vi.fn();
   const onRegister = vi.fn();
+  const onClose = vi.fn();
   const view = render(
     <MemoryRouter>
       <GameLobbyPanel
@@ -35,7 +36,7 @@ function panel(kind: 'spin' | 'sng', status: string, registered = false) {
         seated={false}
         registered={registered}
         busy={false}
-        onClose={vi.fn()}
+        onClose={onClose}
         onJoinTable={vi.fn()}
         onWaitlistToggle={vi.fn()}
         onRegister={onRegister}
@@ -44,7 +45,7 @@ function panel(kind: 'spin' | 'sng', status: string, registered = false) {
       />
     </MemoryRouter>
   );
-  return { raw, onSpinJoin, onRegister, view };
+  return { raw, onSpinJoin, onRegister, onClose, view };
 }
 
 describe.each(['spin', 'sng'] as const)('%s full game observer entry', (kind) => {
@@ -86,4 +87,13 @@ it('portals the drawer out of page stacking contexts and removes it on unmount',
   view.unmount();
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(document.body.style.overflow).toBe(previous);
+});
+
+it('mounts the game drawer outside the page stacking context and preserves Close', () => {
+  const { view, onClose } = panel('spin', 'RUNNING');
+  const dialog = screen.getByRole('dialog');
+  expect(view.container).not.toContainElement(dialog);
+  expect(dialog.parentElement?.parentElement).toBe(document.body);
+  fireEvent.click(screen.getByRole('button', { name: 'Close Game Lobby', exact: true }));
+  expect(onClose).toHaveBeenCalledOnce();
 });

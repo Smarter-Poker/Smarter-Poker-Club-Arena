@@ -1015,9 +1015,7 @@
       "recoveredOn": "2026-10-22",
       "recoveredFrom": "array_to_string(supabase_migrations.schema_migrations.statements, chr(10)), byte for byte, no added newline; verified through public.fn_ca_migration_text",
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7652",
-      "refusedBy": [
-        "check-no-new-band-aids"
-      ],
+      "refusedBy": ["check-no-new-band-aids"],
       "liveVerdict": "Read-only production check 2026-10-22 02:20 UTC: this version created fn_ca_sweep_orphaned_certification_accounts() and pg_cron job ca-orphaned-certification-account-sweep, a periodic sweep that CLAUDE.md 10.12 refuses. It was withdrawn 24 minutes later by 20261022021302_remove_ca_orphaned_certification_account_sweep: cron.job has no row of that name and pg_proc has no function of that name. The root cause (a single-attempt teardown DELETE in scripts/ci/qualify-agent-boundary.mjs) is fixed in the same pull request."
     },
     {
@@ -1127,6 +1125,17 @@
       "issue": "https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/7723",
       "refusedBy": [],
       "liveVerdict": "Read-only production check 2026-10-22 22:10 UTC: schema_migrations holds this version with ONE statement whose md5 equals this file. anti_cheat_device_sightings, anti_cheat_shared_ip_ranges and anti_cheat_shared_ip_sources have RLS enabled and grant only to service_role; ca_record_device_sighting is executable by authenticated and service_role (not anon) and acts only for auth.uid(); fn_anti_cheat_replace_shared_ip_ranges and detect_multi_account_v3 are executable by service_role only. Applied directly while the CI queue was backed up; tested beforehand against a local PostgreSQL 16 with the same statements."
+    },
+    {
+      "version": "20261023014339",
+      "name": "entry_close_and_rebuy_use_the_earliest_configured_deadline",
+      "file": "supabase/migrations/20261023014339_entry_close_and_rebuy_use_the_earliest_configured_deadline.sql",
+      "md5": "8bd1349bd7e523ecaa533c84b842c40f",
+      "appliedToProductionAt": "2026-10-23T01:43:39Z",
+      "recoveredOn": "2026-10-23",
+      "recoveredFrom": "public.fn_ca_migration_text, byte for byte",
+      "refusedBy": ["check-definer-authorization: anon rule"],
+      "liveVerdict": "Both replaced functions preserve postgres/service_role-only ACL. Live read after installation: has_function_privilege false for anon and authenticated, true for service_role on both functions. Exact proacl {postgres=X/postgres,service_role=X/postgres}; migration asserts owner and ACL preimages. No browser execution introduced."
     }
   ]
 }

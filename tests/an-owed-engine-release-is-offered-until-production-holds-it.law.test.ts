@@ -346,8 +346,13 @@ describe('the offer is the existing release, not a second publisher', () => {
   it('exactly one workflow sends the engine release event, and exactly one receives it', () => {
     const senders = workflows.filter((f) => /event_type=deploy-club-arena-engine/.test(code(f)));
     expect(senders).toEqual(['stage-engine-release.yml']);
-    const receivers = workflows.filter((f) => /types: \[deploy-club-arena-engine\]/.test(code(f)));
+    const receivers = workflows.filter((f) =>
+      /types: \[deploy-club-arena-engine, withdraw-club-arena-engine\]/.test(code(f))
+    );
     expect(receivers).toEqual(['auto-deploy-hetzner.yml']);
+    expect(code('auto-deploy-hetzner.yml')).toContain(
+      "if: github.event.action == 'deploy-club-arena-engine'"
+    );
   });
 
   it('is driven by protected-main pushes only: no timer, no chain off a finished release', () => {

@@ -1,5 +1,5 @@
 name: Auto-Deploy Hetzner Engine (on server/ changes)
-run-name: Engine Release ${{ github.event.client_payload.ref_sha }}
+run-name: ${{ github.event.action == 'withdraw-club-arena-engine' && format('Engine Withdrawal {0}', github.event.client_payload.withdrawal.runKey) || format('Engine Release {0}', github.event.client_payload.ref_sha) }}
 
 # Club Arena owns this release lane. World Hub, database jobs, timers, and
 # operator laptops cannot publish or restart the game engine. Protected main

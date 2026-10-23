@@ -39,7 +39,9 @@ describe('Club Arena owns every Club Arena release path', () => {
 
   it('executes production-credential workflows only through default-branch events', () => {
     expect(publisher).toContain('types: [publish-club-arena]');
-    expect(engineDeploy).toContain('types: [deploy-club-arena-engine]');
+    expect(engineDeploy).toContain('types: [deploy-club-arena-engine, withdraw-club-arena-engine]');
+    expect(engineDeploy).toContain("if: github.event.action == 'deploy-club-arena-engine'");
+    expect(engineDeploy).toContain("if: github.event.action == 'withdraw-club-arena-engine'");
     expect(monitoringDeploy).toContain('types: [deploy-club-arena-monitoring]');
     for (const workflow of [publisher, engineDeploy, monitoringDeploy]) {
       expect(workflow).not.toMatch(/^\s*workflow_dispatch:/m);

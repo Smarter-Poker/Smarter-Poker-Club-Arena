@@ -456,8 +456,7 @@ type DealerPrerequisiteGate = {
   settled: boolean;
 };
 type ExternalShutdownOwnershipResult =
-  | { status: 'fulfilled' }
-  | { status: 'rejected'; reason: unknown };
+  { status: 'fulfilled' } | { status: 'rejected'; reason: unknown };
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -9182,7 +9181,11 @@ export class GameServer {
         new Error(
           `Tournament ${tournamentId} bust stage stalled (sweep in flight ` +
             `${Math.round(stalled.msInFlight / 1000)}s, oldest bust waiting ` +
-            `${Math.round(stalled.msBustWaiting / 1000)}s, stage ${stalled.stage}) - no bust ` +
+            `${Math.round(stalled.msBustWaiting / 1000)}s, stage ${stalled.stage}` +
+            (stalled.step
+              ? `, stuck in ${stalled.step} for ${Math.round(stalled.msInStep / 1000)}s`
+              : '') +
+            `) - no bust ` +
             `could be recorded; handed the event to a successor generation`
         ),
         'GameServer.stalled_elimination_sweep_handed_on',
@@ -9191,6 +9194,8 @@ export class GameServer {
           stage: stalled.stage,
           msInFlight: stalled.msInFlight,
           msBustWaiting: stalled.msBustWaiting,
+          step: stalled.step,
+          msInStep: stalled.msInStep,
         }
       );
     }
@@ -11889,9 +11894,7 @@ export class GameServer {
     for (const retiring of this.tournamentDiagnosticRetirements?.get(tournamentId) ?? [])
       if (retiring.getTournamentLeaseGeneration() === generation) return false;
     const quarantined = this.tournamentManagerQuarantine?.heldBy(tournamentId) as
-      | TournamentManager
-      | null
-      | undefined;
+      TournamentManager | null | undefined;
     if (quarantined && quarantined.getTournamentLeaseGeneration?.() === generation) return false;
     return true;
   }
@@ -12397,9 +12400,9 @@ export class GameServer {
             : null;
         if (retainedRefusal) {
           this.holdRetainedHandRefusal(tableId, retainedRefusal.code);
-        } else if (
-          !(startError instanceof DiamondCashPolicyClosedError && engine.getStartupPolicyRefusal())
-        ) {
+        } else if (!(
+          startError instanceof DiamondCashPolicyClosedError && engine.getStartupPolicyRefusal()
+        )) {
           this.engineStartFailures++;
           reportError(startError, 'GameServer.direct_table_start_failed');
         }

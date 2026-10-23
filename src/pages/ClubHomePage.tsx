@@ -5575,9 +5575,8 @@ function ClubHomePageContent({
             deliberately standing still. Renders nothing outside a break. */}
         <MaintenanceBreakBanner />
         <ClubLobbyCommandTop
-          /* The deck and the sort row leave while the reader travels down the
-             games and come back on the way up (Dan 2026-10-11), but never
-             while the Filters sheet is open over them. */
+          /* Controls stay in document flow and return only at their original
+             position. Opening the sheet never changes that scroll contract. */
           holdFilters={filtersOpen}
           resetKey={clubId ?? ''}
           welcome={
@@ -5652,7 +5651,125 @@ function ClubHomePageContent({
                     </button>
                   ))}
                 </div>
+              </div>
 
+              {/* ═══════════════════════════════════════════════════════════════════
+          QUICK PREFERENCES — the one-tap shortcuts under the action bar
+          ───────────────────────────────────────────────────────────────────
+          Dan 2026-08-21: "you never added the quick preference link under the
+          action bar."
+
+          Two rows, matching the reference: the stakes/buy-in TIERS, and the
+          seat-status chips. The tier chips are not a separate filter - they
+          write the same saved range the Advanced Filters sheet does, so the
+          two can never disagree, and the icon on the right opens that sheet
+          for everything the row has no space for.
+      ═══════════════════════════════════════════════════════════════════ */}
+              <div className="lobby-refinements">
+                {gameType === 'ALL' ? (
+                  <div className="quickprefs">
+                    <div
+                      className="quickprefs__row quickprefs__row--status"
+                      aria-label="Game Status"
+                    >
+                      {ALL_STATUS_FILTERS.map((status) => (
+                        <button
+                          key={status.key}
+                          type="button"
+                          className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
+                          aria-pressed={allStatusFilter === status.key}
+                          onClick={() => {
+                            haptic.selection();
+                            setAllStatusFilter(status.key);
+                          }}
+                        >
+                          {status.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  (() => {
+                    const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
+                    if (!qSpec) return null;
+                    const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
+
+                    return (
+                      <div className="quickprefs">
+                        <div
+                          className="quickprefs__row quickprefs__row--status"
+                          aria-label="Game Status"
+                        >
+                          <button
+                            type="button"
+                            className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
+                            aria-pressed={qVal.statuses.length === 0}
+                            onClick={() => {
+                              haptic.selection();
+                              const next: FilterStore = {
+                                ...advFilters,
+                                [gameType]: { ...qVal, statuses: [] },
+                              };
+                              setAdvFilters(next);
+                              if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                            }}
+                          >
+                            All
+                          </button>
+                          {/* AUDIT 2026-08-21: these chips used to be a hand-written list
+                    chosen by showsCash, which disagreed with the sheet on the
+                    same screen - Spin-It offered Full/Empty/Open Seats inside
+                    Advanced Filters and Running/Registering out here. Both now
+                    read spec.statuses, so there is one vocabulary per game type
+                    and one place to change it.
+
+                    They also write the SAVED filter now rather than the local
+                    sub-filter state, which is what makes them agree with the
+                    sheet after a reload instead of resetting. */}
+                          {qSpec.statuses.map((sf) => {
+                            const on = qVal.statuses.includes(sf.key);
+                            return (
+                              <button
+                                key={sf.key}
+                                className={`quickprefs__chip ${on ? 'is-on' : ''}`}
+                                aria-pressed={on}
+                                onClick={() => {
+                                  haptic.selection();
+                                  const next: FilterStore = {
+                                    ...advFilters,
+                                    [gameType]: {
+                                      ...qVal,
+                                      statuses: on
+                                        ? qVal.statuses.filter((k) => k !== sf.key)
+                                        : [...qVal.statuses, sf.key],
+                                    },
+                                  };
+                                  setAdvFilters(next);
+                                  if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
+                                }}
+                              >
+                                {sf.label}
+                              </button>
+                            );
+                          })}
+                          {currentUserId && showsCash && (
+                            <button
+                              type="button"
+                              className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
+                              aria-pressed={favoritesOnly}
+                              onClick={() => {
+                                haptic.selection();
+                                selectFavoritesOnly(!favoritesOnly);
+                              }}
+                            >
+                              Favorites
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
                 {/* ON ALL THIS IS A SORT BUTTON, AND IT SAYS SO (Dan 2026-08-25).
             The comment that used to sit here claimed the button was "Hidden
             on ALL". It was not, and what it opened there was worse than
@@ -5687,120 +5804,6 @@ function ClubHomePageContent({
                   <span>{gameType === 'ALL' ? 'Sort' : 'Filters'}</span>
                 </button>
               </div>
-
-              {/* ═══════════════════════════════════════════════════════════════════
-          QUICK PREFERENCES — the one-tap shortcuts under the action bar
-          ───────────────────────────────────────────────────────────────────
-          Dan 2026-08-21: "you never added the quick preference link under the
-          action bar."
-
-          Two rows, matching the reference: the stakes/buy-in TIERS, and the
-          seat-status chips. The tier chips are not a separate filter - they
-          write the same saved range the Advanced Filters sheet does, so the
-          two can never disagree, and the icon on the right opens that sheet
-          for everything the row has no space for.
-      ═══════════════════════════════════════════════════════════════════ */}
-              {gameType === 'ALL' ? (
-                <div className="quickprefs">
-                  <div className="quickprefs__row quickprefs__row--status" aria-label="Game Status">
-                    {ALL_STATUS_FILTERS.map((status) => (
-                      <button
-                        key={status.key}
-                        type="button"
-                        className={`quickprefs__chip ${allStatusFilter === status.key ? 'is-on' : ''}`}
-                        aria-pressed={allStatusFilter === status.key}
-                        onClick={() => {
-                          haptic.selection();
-                          setAllStatusFilter(status.key);
-                        }}
-                      >
-                        {status.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                (() => {
-                  const qSpec = FILTER_SPECS[gameType as Exclude<FilterGameType, 'ALL'>];
-                  if (!qSpec) return null;
-                  const qVal = advFilters[gameType as FilterGameType] ?? emptyFilterValue(qSpec);
-
-                  return (
-                    <div className="quickprefs">
-                      <div
-                        className="quickprefs__row quickprefs__row--status"
-                        aria-label="Game Status"
-                      >
-                        <button
-                          type="button"
-                          className={`quickprefs__chip ${qVal.statuses.length === 0 ? 'is-on' : ''}`}
-                          aria-pressed={qVal.statuses.length === 0}
-                          onClick={() => {
-                            haptic.selection();
-                            const next: FilterStore = {
-                              ...advFilters,
-                              [gameType]: { ...qVal, statuses: [] },
-                            };
-                            setAdvFilters(next);
-                            if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                          }}
-                        >
-                          All
-                        </button>
-                        {/* AUDIT 2026-08-21: these chips used to be a hand-written list
-                    chosen by showsCash, which disagreed with the sheet on the
-                    same screen - Spin-It offered Full/Empty/Open Seats inside
-                    Advanced Filters and Running/Registering out here. Both now
-                    read spec.statuses, so there is one vocabulary per game type
-                    and one place to change it.
-
-                    They also write the SAVED filter now rather than the local
-                    sub-filter state, which is what makes them agree with the
-                    sheet after a reload instead of resetting. */}
-                        {qSpec.statuses.map((sf) => {
-                          const on = qVal.statuses.includes(sf.key);
-                          return (
-                            <button
-                              key={sf.key}
-                              className={`quickprefs__chip ${on ? 'is-on' : ''}`}
-                              aria-pressed={on}
-                              onClick={() => {
-                                haptic.selection();
-                                const next: FilterStore = {
-                                  ...advFilters,
-                                  [gameType]: {
-                                    ...qVal,
-                                    statuses: on
-                                      ? qVal.statuses.filter((k) => k !== sf.key)
-                                      : [...qVal.statuses, sf.key],
-                                  },
-                                };
-                                setAdvFilters(next);
-                                if (resolvedClubId) persistAdvFilters(resolvedClubId, next);
-                              }}
-                            >
-                              {sf.label}
-                            </button>
-                          );
-                        })}
-                        {currentUserId && showsCash && (
-                          <button
-                            type="button"
-                            className={`quickprefs__chip ${favoritesOnly ? 'is-on' : ''}`}
-                            aria-pressed={favoritesOnly}
-                            onClick={() => {
-                              haptic.selection();
-                              selectFavoritesOnly(!favoritesOnly);
-                            }}
-                          >
-                            Favorites
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()
-              )}
             </section>
           }
           /* The chip-club campaign opens announcements, an operator surface

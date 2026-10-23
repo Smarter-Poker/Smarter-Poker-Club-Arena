@@ -65,18 +65,18 @@
     border-bottom: 1px solid rgb(255 255 255 / 12%);
   }
   .compact-lobby th:first-child {
-    width: 43%;
+    width: 42%;
     text-align: left;
     padding-left: 6px;
   }
   .compact-lobby th:nth-child(2) {
-    width: 22%;
+    width: 20%;
   }
   .compact-lobby th:nth-child(3) {
-    width: 13%;
+    width: 18%;
   }
   .compact-lobby th:nth-child(4) {
-    width: 22%;
+    width: 20%;
   }
   .compact-lobby td {
     padding: 4px 3px;
@@ -123,8 +123,11 @@
   .compact-lobby__meta {
     width: 100%;
     overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    white-space: normal;
+    overflow-wrap: anywhere;
     font-size: 11px;
     color: #9aa5b3;
     line-height: 1.25;
@@ -132,7 +135,18 @@
   .compact-lobby .lt-seats {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
     gap: 2px;
+  }
+  .compact-lobby .lt-seats__num {
+    min-width: 0;
+    max-width: 100%;
+    text-align: center;
+  }
+  .compact-lobby .lt-seats__bar {
+    max-width: 100%;
   }
   .compact-lobby .lt-seats__tables {
     font-size: 9px;

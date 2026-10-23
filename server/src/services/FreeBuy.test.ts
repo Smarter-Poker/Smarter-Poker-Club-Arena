@@ -4,6 +4,7 @@ import {
   FREE_BUY_HALF_HOUR_SLOTS_FROM_MS,
   freeBuySlotTime,
   FREE_BUY_TIERS,
+  freeBuyConfigForSlot,
   FREE_BUY_SLOTS,
   slotForChicagoHour,
   dailyGuaranteePerHost,
@@ -24,10 +25,10 @@ import {
 const std = FREE_BUY_TIERS.standard;
 const feat = FREE_BUY_TIERS.feature;
 
-describe('the two tiers carry Dan 2026-09-04 exactly', () => {
-  it('standard tier: free entry, 500 guaranteed (Dan 2026-10-16: doubled), 1 rebuy, 1 add-on', () => {
+describe('the Free Buy tiers carry the current owner guarantees', () => {
+  it('standard tier: free entry, 250 guaranteed (owner October 22), 1 rebuy, 1 add-on', () => {
     expect(std).toMatchObject({
-      guarantee: 500,
+      guarantee: 250,
       buyIn: 0,
       startingChips: 3000,
       rebuyCost: 1,
@@ -37,9 +38,9 @@ describe('the two tiers carry Dan 2026-09-04 exactly', () => {
       blindStructure: 'FREE_BUY',
     });
   });
-  it('feature tier: same shape, 1,000 guaranteed, 1 rebuy and 1 add-on (Dan 2026-10-16)', () => {
+  it('feature tier: same shape, 500 guaranteed, 1 rebuy and 1 add-on (owner October 22)', () => {
     expect(feat).toMatchObject({
-      guarantee: 1000,
+      guarantee: 500,
       buyIn: 0,
       startingChips: 3000,
       rebuyCost: 1,
@@ -76,11 +77,11 @@ describe('the daily schedule', () => {
     [8, 12, 16, 0].forEach((h) => expect(slotForChicagoHour(h)?.tier).toBe('standard'));
     expect(slotForChicagoHour(9)).toBeNull();
   });
-  it('guarantees 3,000 per host per day', () => {
-    expect(dailyGuaranteePerHost()).toBe(3000);
+  it('guarantees 2,000 per host per day', () => {
+    expect(dailyGuaranteePerHost()).toBe(2000);
   });
-  it('and 6,000 across both hosts - the number worth saying out loud', () => {
-    expect(dailyGuaranteePerHost() * 2).toBe(6000);
+  it('and 4,000 across both hosts - the number worth saying out loud', () => {
+    expect(dailyGuaranteePerHost() * 2).toBe(4000);
   });
   it('runs four-hourly from 08:30 to 00:30, then leaves the night dark', () => {
     const hours = FREE_BUY_SLOTS.map((s) => s.chicagoHour);
@@ -485,7 +486,7 @@ describe('the row a Free Buy is created as', () => {
 
   it('carries the standard tier price and the 10,000 chip add-on', () => {
     const row = rowFor(0, 8);
-    expect(row.guaranteed_prize).toBe(500);
+    expect(row.guaranteed_prize).toBe(250);
     expect(row.starting_chips).toBe(3000);
     expect(row.rebuy_cost).toBe(1);
     expect(row.addon_cost).toBe(1);
@@ -494,7 +495,7 @@ describe('the row a Free Buy is created as', () => {
 
   it('carries the feature tier guarantee at 20:00, at the same 1 chip rebuy and add-on (Dan 2026-10-16)', () => {
     const row = rowFor(0, 20);
-    expect(row.guaranteed_prize).toBe(1000);
+    expect(row.guaranteed_prize).toBe(500);
     expect(row.rebuy_cost).toBe(1);
     expect(row.addon_cost).toBe(1);
     expect(row.addon_chips).toBe(10000);
@@ -570,8 +571,11 @@ describe('the field is sized to cover its own guarantee', () => {
     expect(freeBuyBreakEvenEntrants(feat)).toBeLessThanOrEqual(feat.maxPlayers);
   });
 
-  it('add-ons alone do not cover it, which is why rebuys are priced at all', () => {
-    expect(freeBuyBreakEvenEntrants(std, 0)).toBeGreaterThan(std.maxPlayers);
+  it('the reduced guarantees can be covered by a full field taking one add-on', () => {
+    expect(freeBuyBreakEvenEntrants(std, 0)).toBe(250);
+    expect(freeBuyBreakEvenEntrants(feat, 0)).toBe(500);
+    expect(freeBuyBreakEvenEntrants(std, 0)).toBeLessThanOrEqual(std.maxPlayers);
+    expect(freeBuyBreakEvenEntrants(feat, 0)).toBeLessThanOrEqual(feat.maxPlayers);
   });
 });
 
@@ -633,7 +637,7 @@ describe('auditFreeBuyRow', () => {
     club_id: FREE_BUY_HOSTS[0].clubId,
     union_id: FREE_BUY_HOSTS[0].unionId,
     start_time: startOf(8),
-    guaranteed_prize: 500,
+    guaranteed_prize: 250,
     buy_in_amount: 0,
     buy_in_fee: 0,
     starting_chips: 3000,
@@ -658,7 +662,7 @@ describe('auditFreeBuyRow', () => {
     const feature = good({
       name: 'Prime Time Free Buy (NLH)',
       start_time: startOf(20),
-      guaranteed_prize: 1000,
+      guaranteed_prize: 500,
       rebuy_cost: 1,
       addon_cost: 1,
     });
@@ -671,7 +675,7 @@ describe('auditFreeBuyRow', () => {
     const feature = good({
       name: 'Prime Time Free Buy (NLH)',
       start_time: startOf(20),
-      guaranteed_prize: 1000,
+      guaranteed_prize: 500,
       rebuy_cost: 2,
       addon_cost: 2,
     });
@@ -740,10 +744,10 @@ describe('auditFreeBuyRow', () => {
         (x) => x.includes('guarantee 100')
       )
     ).toBe(true);
-    // From the first date published at the doubled tier, 250 is wrong again.
+    // The current morning guarantee is 250; an unregistered 500 is wrong.
     expect(
-      auditFreeBuyRow(good({ start_time: at(8, '2026-10-20', 30), guaranteed_prize: 250 })).some(
-        (x) => x.includes('guarantee 250')
+      auditFreeBuyRow(good({ start_time: at(8, '2026-10-26', 30), guaranteed_prize: 500 })).some(
+        (x) => x.includes('guarantee 500')
       )
     ).toBe(true);
   });
@@ -795,7 +799,7 @@ describe('auditFreeBuyBoard', () => {
     start_time: new Date(
       chicagoWallClockToUtcMs('2026-09-05', hour, FREE_BUY_SLOT_MINUTE)
     ).toISOString(),
-    guaranteed_prize: FREE_BUY_TIERS[slotForChicagoHour(hour)!.tier].guarantee,
+    guaranteed_prize: freeBuyConfigForSlot(slotForChicagoHour(hour)!).guarantee,
     buy_in_amount: 0,
     buy_in_fee: 0,
     starting_chips: 3000,

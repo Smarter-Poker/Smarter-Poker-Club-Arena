@@ -30,3 +30,14 @@ Separate restart investigation: retained engine logs identify an invalid horse
 policy `route_gate` receipt reaching the fatal exception handler. Existing
 active PR #7745 owns that exact producer/reference-gate fix and regression;
 this change does not duplicate or take over its active operation.
+
+Hosted blocker correction: Accounting shard 2 reached the existing statement
+availability fixture at 00:11 UTC and failed its old empty-day counterexample.
+The previous passing run exercised it at 23:22 UTC. The original assertion
+expected yesterday's rollup even while yesterday remained inside the existing
+15-minute midnight grace. Reproduced locally with UTC sessions. An older
+foreign-club fact now provides an always-eligible empty day for the old global
+catchup, and the counterexample checks that day. The corrected reader still
+must scan exactly the requested club's one actual source day; all report,
+authorization, archive preservation and concurrency assertions remain intact.
+No production reporting source or financial rule changes.

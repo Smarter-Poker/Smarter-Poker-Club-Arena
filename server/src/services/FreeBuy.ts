@@ -247,26 +247,34 @@ export function rebuysOpen(nowMs: number, startMs: number, cfg: FreeBuyConfig): 
 /* Horse behaviour                                                     */
 /* ------------------------------------------------------------------ */
 
-/** Dan: "HORSES ALWAYS ADD ON, 35% RIGHT AWAY, 100% OF THE HORSES STILL IN
- *  WHEN REBUYS ARE OVER." One add-on each; the split is only about WHEN. */
+/** Owner update 2026-10-22: 90% of surviving funded horses take an add-on.
+ * Keep the existing early timing split inside that stable participation cohort. */
 export const HORSE_ADDON_IMMEDIATE_RATE = 0.35;
+export const HORSE_ADDON_PARTICIPATION_RATE = 0.9;
+
+export function horseTakesAddOn(horseId: string, eventId: string): boolean {
+  return (
+    shHash(horseId, eventId, 'addon-participation') % 1000 < HORSE_ADDON_PARTICIPATION_RATE * 1000
+  );
+}
 
 export function horseAddsOnImmediately(horseId: string, eventId: string): boolean {
   return shHash(horseId, eventId, 'addon-immediate') % 1000 < HORSE_ADDON_IMMEDIATE_RATE * 1000;
 }
 
-export type AddOnTiming = 'immediate' | 'at_break' | 'busted_before_break';
+export type AddOnTiming = 'immediate' | 'at_break' | 'busted_before_break' | 'declined';
 
 /**
  * When this horse takes its add-on. Every horse still alive when the rebuy
- * period closes takes one, so the only horses that never add on are the ones
- * already out - and a horse that is out has nothing to add on to.
+ * period closes belongs to the 90% participation policy. Busted entries
+ * cannot buy chips, and the canonical purchase RPC still owns funding checks.
  */
 export function horseAddOnTiming(
   horseId: string,
   eventId: string,
   aliveAtBreak: boolean
 ): AddOnTiming {
+  if (!horseTakesAddOn(horseId, eventId)) return 'declined';
   if (horseAddsOnImmediately(horseId, eventId)) return 'immediate';
   return aliveAtBreak ? 'at_break' : 'busted_before_break';
 }

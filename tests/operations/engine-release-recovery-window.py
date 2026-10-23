@@ -22,7 +22,7 @@ NEWER = 'c' * 40
 def invoke(*, capability=True, active=False, eligible=True, unknown=False, live=False, minute=30, ready=True, becomes_ready=False,
            health_extra=None, maintenance_extra=None, missed=False, urgent=False, recovers_on_lock=False,
            certificate_deadline=0, superseded='', requests=(), seal_answers=None, calls=2, advance=0,
-           owner_windows='', owner_contains_ok=''):
+           owner_windows='', owner_contains_ok='', owner_served=False):
     """Run the real request_recovery_window `calls` times, `advance` seconds apart.
 
     `requests` are other durable requests on this host: (run, sha, unit state,
@@ -67,6 +67,7 @@ SUPERSEDED_BY={superseded}
 RECOVERY_URGENT={int(urgent)}
 OWNER_WINDOWS={shlex.quote(owner_windows)}
 OWNER_CONTAINS_OK={shlex.quote(owner_contains_ok)}
+OWNER_SERVED={int(owner_served)}
 LOCK_HELD=0
 NOW={1800000000 + minute * 60}
 HEALTH={shlex.quote(health)}
@@ -94,6 +95,10 @@ fixture_git() {{
   fi
   if [ "$1 $2" = 'merge-base --is-ancestor' ] && [ "$4" = "$SHA" ]; then
     [ -n "$OWNER_CONTAINS_OK" ] && [ "$3" = "$OWNER_CONTAINS_OK" ]
+    return
+  fi
+  if [ "$1 $2" = 'merge-base --is-ancestor' ] && [ "$4" = {SERVING} ]; then
+    [ "$OWNER_SERVED" = 1 ]
     return
   fi
   [ "$1 $2" = 'merge-base --is-ancestor' ] && [ "$3" = "$SHA" ] || exit 94
@@ -426,6 +431,7 @@ class ProportionateRecoveryWindowTests(unittest.TestCase):
 
 
 OWNER_FIX = 'a' * 40
+SERVING = 'e' * 40
 
 
 def owner_doc(*, not_before='2027-01-15T07:00:00Z', not_after='2027-01-15T12:00:00Z',
@@ -443,7 +449,8 @@ class OwnerOrderedWindow(unittest.TestCase):
 
     def healthy(self, **kw):
         kw.setdefault('owner_contains_ok', OWNER_FIX)
-        return invoke(health_extra={'liveness': 'ok'}, calls=1, **kw)
+        health = kw.pop('health', {'liveness': 'ok', 'releaseSha': SERVING})
+        return invoke(health_extra=health, calls=1, **kw)
 
     def test_a_valid_owner_window_reserves_once_as_the_owner_cause(self):
         result, events = self.healthy(minute=53, owner_windows=owner_doc())
@@ -490,6 +497,16 @@ class OwnerOrderedWindow(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(events, ['LOCK', 'SOURCE', 'RESERVE:--cause urgent', 'UNLOCK'])
         self.assertNotIn('REQUEST', events)
+
+    def test_once_the_named_commit_is_serving_the_window_grants_nothing(self):
+        result, events = self.healthy(minute=53, owner_windows=owner_doc(), owner_served=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events, [])
+
+    def test_an_unreadable_serving_identity_grants_nothing(self):
+        result, events = self.healthy(minute=53, owner_windows=owner_doc(), health={'liveness': 'ok'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(events, [])
 
     def test_an_older_release_still_defers_to_a_newer_one(self):
         result, events = self.healthy(minute=53, owner_windows=owner_doc(), superseded=NEWER,

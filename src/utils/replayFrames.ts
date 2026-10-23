@@ -166,7 +166,8 @@ export function buildReplayFrames(model: ReplayModel): ReplayFrame[] {
   // The stack after settlement is the one figure the row stores directly.
   for (const p of model.players)
     if (p.stack !== null && p.stack !== undefined) stacks[p.seat] = p.stack;
-  const winners = model.showdown.filter((r) => r.isWinner && r.boardIndex === 0 && !r.low);
+  // Every board and high/low half contributes winners to the hand result.
+  const winners = model.showdown.filter((r) => r.isWinner);
   const winnerNames = [...new Set(winners.map((r) => r.name))];
   const takenBy =
     winnerNames.length > 0

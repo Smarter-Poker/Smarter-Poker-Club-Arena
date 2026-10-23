@@ -170,6 +170,58 @@ describe('review keeps the viewer in the hand even outside showdown', () => {
   });
 });
 
+describe('opening a recorded hand preserves the requested subject', () => {
+  it('opens the older requested hand in Summary, Detail and selected Replay', () => {
+    const replay = vi.fn();
+    render(
+      <HandDetailModal
+        isOpen
+        onClose={() => {}}
+        hands={[panel('one', true), panel('two', true)]}
+        initialHandId="two"
+        heroId="hero"
+        onReplay={replay}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Copy Hand Number 2' })).toBeTruthy();
+    expect(
+      within(screen.getByRole('region', { name: 'Your Cards' })).getAllByRole('img')
+    ).toHaveLength(2);
+    fireEvent.click(screen.getByRole('tab', { name: 'Hand Detail' }));
+    expect(screen.getByRole('button', { name: 'Copy Hand Number 2' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Video Replay' }));
+    expect(replay.mock.calls[0][0].id).toBe('two');
+  });
+
+  it('reopens on the requested hand after the reader navigated elsewhere', () => {
+    const hands = [panel('one', true), panel('two', true)];
+    const props = { onClose: () => {}, hands, heroId: 'hero', initialHandId: 'two' };
+    const view = render(<HandDetailModal {...props} isOpen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Newer Hand' }));
+    expect(screen.getByRole('button', { name: 'Copy Hand Number 1' })).toBeTruthy();
+    view.rerender(<HandDetailModal {...props} isOpen={false} />);
+    view.rerender(<HandDetailModal {...props} isOpen />);
+    expect(screen.getByRole('button', { name: 'Copy Hand Number 2' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Hand Summary' }).getAttribute('aria-selected')).toBe(
+      'true'
+    );
+  });
+
+  it('keeps the requested hand pinned when a newer hand arrives', () => {
+    const hands = [panel('one', true), panel('two', true)];
+    const props = { onClose: () => {}, heroId: 'hero', initialHandId: 'two', isOpen: true };
+    const view = render(<HandDetailModal {...props} hands={hands} />);
+    view.rerender(<HandDetailModal {...props} hands={[panel('three', true), ...hands]} />);
+    expect(screen.getByRole('button', { name: 'Copy Hand Number 2' })).toBeTruthy();
+    const replay = vi.fn();
+    view.rerender(
+      <HandDetailModal {...props} hands={[panel('three', true), ...hands]} onReplay={replay} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Video Replay' }));
+    expect(replay.mock.calls[0][0].id).toBe('two');
+  });
+});
+
 const VARIANT_HOLDINGS = [
   ['NLH', 2],
   ['SHORT_DECK', 2],

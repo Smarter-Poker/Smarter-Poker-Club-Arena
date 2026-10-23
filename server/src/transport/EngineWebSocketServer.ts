@@ -20,7 +20,7 @@ import { playerSessionVerdict } from '../services/PlayerSessionAccess.js';
  * S→C:     ERROR    { type, code, message }
  * C→S:     RESYNC   { type }
  * C→S:     PONG     { type, ts }
- * C→S:     RENDER_ACK { type, hand_id, d? }  Lightning Phase 12: the client
+ * C→S:     RENDER_ACK { type, hand_id, d?, r? }  Lightning Phase 12: the client
  *          rendered this room's hand (a hand id only - never a card). The
  *          engine times it on its own clock; `d` is ignored.
  *
@@ -307,7 +307,7 @@ export interface EngineWebSocketServerOptions {
    * painted the hand `handId` in room `tableId`. Telemetry only: it changes
    * no state, and a malformed or unexpected ack is ignored.
    */
-  onRenderAck?: (tableId: string, userId: string, handId: string) => void;
+  onRenderAck?: (tableId: string, userId: string, handId: string, resumed: boolean) => void;
 }
 
 interface ConnectionState {
@@ -565,7 +565,12 @@ export class EngineWebSocketServer {
     platform?: ClientDevicePlatform | null
   ) => void;
   private readonly onAlive?: (tableId: string, userId: string) => void;
-  private readonly onRenderAck?: (tableId: string, userId: string, handId: string) => void;
+  private readonly onRenderAck?: (
+    tableId: string,
+    userId: string,
+    handId: string,
+    resumed: boolean
+  ) => void;
   private readonly onDisconnect?: (tableId: string, userId: string) => void;
   private accessStarts = new Map<symbol, number>();
   private accessCompleted = 0;
@@ -1153,10 +1158,10 @@ export class EngineWebSocketServer {
   }
 
   /** LIGHTNING PHASE 12: a render acknowledgement (telemetry only; never throws). */
-  private renderAck(tableId: string, userId: string, handId: unknown): void {
+  private renderAck(tableId: string, userId: string, handId: unknown, resumed: boolean): void {
     if (!tableId || !userId || typeof handId !== 'string' || handId.length > 64) return;
     try {
-      this.onRenderAck?.(tableId, userId, handId);
+      this.onRenderAck?.(tableId, userId, handId, resumed);
     } catch (error) {
       reportError(error, 'EngineWS.render_ack');
     }
@@ -1463,7 +1468,7 @@ export class EngineWebSocketServer {
 
   private handleMuxMessage(
     conn: ConnectionState,
-    msg: { type?: string; tableId?: unknown; platform?: unknown; hand_id?: unknown }
+    msg: { type?: string; tableId?: unknown; platform?: unknown; hand_id?: unknown; r?: unknown }
   ): void {
     const tableId = typeof msg.tableId === 'string' ? msg.tableId : '';
     switch (msg.type) {
@@ -1515,7 +1520,8 @@ export class EngineWebSocketServer {
         // Only for a table this socket is actually subscribed to.
         if (!tableId || !conn.subs) return;
         const sub = conn.subs.get(tableId);
-        if (sub && typeof sub !== 'symbol') this.renderAck(tableId, conn.userId, msg.hand_id);
+        if (sub && typeof sub !== 'symbol')
+          this.renderAck(tableId, conn.userId, msg.hand_id, msg.r === 1);
         return;
       }
       default:
@@ -1602,7 +1608,12 @@ export class EngineWebSocketServer {
         return;
       }
       case 'RENDER_ACK':
-        this.renderAck(conn.tableId, conn.userId, (msg as { hand_id?: unknown }).hand_id);
+        this.renderAck(
+          conn.tableId,
+          conn.userId,
+          (msg as { hand_id?: unknown }).hand_id,
+          (msg as { r?: unknown }).r === 1
+        );
         return;
       default:
         // Client→server messages other than PONG / RESYNC are ignored. We

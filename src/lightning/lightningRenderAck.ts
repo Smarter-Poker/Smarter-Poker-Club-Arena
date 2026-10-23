@@ -14,6 +14,12 @@
  * that is not on screen (a background tab with no paint) may never ack, and
  * that is simply no sample.
  *
+ * A HIDDEN TAB IS A RESUME (2026-10-23). A browser does not paint a hidden
+ * tab, so a hand that reached React while the page was hidden is painted only
+ * when the player comes back. That ack would time the player's absence, not
+ * the render, so it carries `r: 1` and the engine counts it as a resume (it
+ * still claims the seat). An engine that predates the flag ignores it.
+ *
  * Telemetry only: nothing here changes what the player sees or can do, and a
  * failure to send is silent.
  */
@@ -26,18 +32,23 @@ export interface LightningRenderAckFrame {
   tableId: string;
   hand_id: string;
   d: number;
+  /** 1: the hand reached React while the page was hidden (a resume, not a render). */
+  r?: 1;
 }
 
 /** The frame, exactly: a hand id and a bounded whole-millisecond delta, nothing else. */
 export function lightningRenderAckFrame(
   tableId: string,
   handId: string,
-  deltaMs: number
+  deltaMs: number,
+  resumed = false
 ): LightningRenderAckFrame {
   const d = Number.isFinite(deltaMs)
     ? Math.max(0, Math.min(LIGHTNING_RENDER_ACK_MAX_DELTA_MS, Math.round(deltaMs)))
     : 0;
-  return { type: 'RENDER_ACK', tableId, hand_id: handId, d };
+  const frame: LightningRenderAckFrame = { type: 'RENDER_ACK', tableId, hand_id: handId, d };
+  if (resumed) frame.r = 1;
+  return frame;
 }
 
 /**
@@ -47,19 +58,32 @@ export function lightningRenderAckFrame(
  */
 export function scheduleLightningRenderAck(
   handId: string,
-  send: (handId: string, deltaMs: number) => void,
+  send: (handId: string, deltaMs: number, resumed: boolean) => void,
   clock: () => number = () =>
     typeof performance !== 'undefined' && typeof performance.now === 'function'
       ? performance.now()
-      : Date.now()
+      : Date.now(),
+  hidden: () => boolean = () =>
+    typeof document !== 'undefined' && document.visibilityState === 'hidden'
 ): () => void {
   const committedAt = clock();
+  // Hidden when the hand reached React, or at any point before its paint.
+  let wasHidden = hidden();
   let cancelled = false;
+  const onVisibility = () => {
+    if (hidden()) wasHidden = true;
+  };
+  const watch = typeof document !== 'undefined' && typeof document.addEventListener === 'function';
+  if (watch) document.addEventListener('visibilitychange', onVisibility);
+  const unwatch = () => {
+    if (watch) document.removeEventListener('visibilitychange', onVisibility);
+  };
   const fire = () => {
     if (cancelled) return;
     cancelled = true;
+    unwatch();
     try {
-      send(handId, clock() - committedAt);
+      send(handId, clock() - committedAt, wasHidden || hidden());
     } catch {
       // Telemetry never reaches back into the table.
     }
@@ -68,12 +92,14 @@ export function scheduleLightningRenderAck(
     const id = requestAnimationFrame(() => fire());
     return () => {
       cancelled = true;
+      unwatch();
       if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id);
     };
   }
   const t = setTimeout(fire, 0);
   return () => {
     cancelled = true;
+    unwatch();
     clearTimeout(t);
   };
 }

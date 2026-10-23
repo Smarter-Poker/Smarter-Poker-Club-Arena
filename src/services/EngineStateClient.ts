@@ -1428,12 +1428,18 @@ export class EngineStateClient {
    * the leg on its own clock and ignores the delta. Sent only on an open
    * socket; a failure is silent (telemetry).
    */
-  sendRenderAck(handId: string, deltaMs: number): void {
+  sendRenderAck(handId: string, deltaMs: number, resumed = false): void {
     if (!handId || this.ws?.readyState !== 1) return;
     const d = Number.isFinite(deltaMs) ? Math.max(0, Math.min(60_000, Math.round(deltaMs))) : 0;
     try {
+      // `r: 1` (a hand painted only after a hidden tab came back) is a resume.
+      // Built inline: lightningRenderAck stays out of the entry chunk.
       this.ws.send(
-        JSON.stringify({ type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d })
+        JSON.stringify(
+          resumed
+            ? { type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d, r: 1 }
+            : { type: 'RENDER_ACK', tableId: this.opts.tableId, hand_id: handId, d }
+        )
       );
     } catch {
       /* onclose will reconnect; a lost ack is no sample */

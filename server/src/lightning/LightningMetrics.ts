@@ -70,6 +70,7 @@ export class LightningMetrics {
   readonly handsTotal: Counter;
   readonly foldsTotal: Counter;
   readonly formedTotal: Counter;
+  readonly renderResumesTotal: Counter;
   // One player can play in multiple Clusters. An idle/fold leg belongs to
   // that exact Cluster; another room must never overwrite or consume it.
   private readonly idle = new Map<
@@ -120,6 +121,10 @@ export class LightningMetrics {
       'poker_lightning_formed_hands_total',
       'Hands formed by the Lightning matcher on this process'
     );
+    this.renderResumesTotal = registry.counter(
+      'poker_lightning_render_resumes_total',
+      'Lightning first frames acknowledged as a resume, not a render (before_subscribe, resubscribed, hidden)'
+    );
     this.legalCount = registry.gauge(
       'poker_lightning_shadow_legal_count',
       'legal_count of the last shadow pass, summed over Clusters'
@@ -134,6 +139,11 @@ export class LightningMetrics {
 
   recordHand(outcome: 'settled' | 'abandoned' | 'settlement_unknown' | 'frozen'): void {
     this.handsTotal.inc(1, { outcome });
+  }
+
+  /** A RENDER_ACK that was a resume (LightningRegistry.renderAck): counted, never a latency sample. */
+  recordRenderResume(why: 'before_subscribe' | 'resubscribed' | 'hidden'): void {
+    this.renderResumesTotal.inc(1, { why });
   }
 
   recordFold(type: 'fast' | 'normal' | 'fold_watch'): void {

@@ -39,3 +39,11 @@ passed with a 30-second install, but integration qualification encountered the
 stall again. Apply the same tested mirror selection before the existing isolated
 Ubuntu/PGDG source copy. Keep package versions, signature verification, all native
 cases and job limits intact.
+
+The required client shard exposed a test-isolation race in Cashier recovery:
+the legacy-journal case displayed its dialog before its asynchronous server
+import finished, then that import polluted the next case's reset RPC history.
+Wait for the original import's reserve/read sequence before ending the test.
+The quota case's batch/reservation and operation identity assertions remain
+unchanged; the focused eleven-case suite passes. Product Cashier behavior is
+unchanged.

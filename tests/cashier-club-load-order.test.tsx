@@ -680,6 +680,22 @@ describe('CashierTradePage club load ordering', () => {
     expect(screen.getByRole('textbox', { name: 'Amount' })).toHaveValue('42.5');
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
     expect(localStorage.length).toBe(1);
+    // The local journal opens the dialog before its asynchronous server import
+    // finishes. Drain that import before the next test resets the RPC model.
+    await waitFor(() => {
+      const calls = vi.mocked(supabase.rpc).mock.calls;
+      const reserved = calls.findIndex(
+        ([name, args]) =>
+          name === 'fn_cashier_browser_recovery_reserve' &&
+          (args as any).p_envelope.submissionId === '44444444-4444-4444-8444-444444444444'
+      );
+      expect(reserved).toBeGreaterThanOrEqual(0);
+      expect(
+        calls.findIndex(
+          ([name], index) => index > reserved && name === 'fn_cashier_browser_recovery_read'
+        )
+      ).toBeGreaterThan(reserved);
+    });
   });
 
   it.each([false, true])(

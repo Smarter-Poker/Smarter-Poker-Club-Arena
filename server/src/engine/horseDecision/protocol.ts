@@ -164,6 +164,7 @@ export function validatedHorsePolicySamplingKey(
 }
 
 export interface FastHorseDecisionRequest extends LiveHorseDecisionSnapshot {
+  durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   type: 'DECIDE_FAST';
   requestId: number;
 }
@@ -178,6 +179,9 @@ export interface DeepHorseDecisionRequest extends LiveHorseDecisionSnapshot {
 }
 
 export interface CompletedHandObservation extends HorseDecisionFence {
+  /** Complete initialized public-action profiles from the accepted hand path.
+   * Empty means unavailable; presence suppresses non-durable family pooling. */
+  durableOpponentProfiles?: import('../HorseOpponentMemory.js').DurableOpponentProfile[];
   /** UUID returned by the accepted hand transaction; absent on legacy replay. */
   committedHandId?: string;
   handKey: string;

@@ -1,85 +1,61 @@
 {
   "scope": "Exact standalone selector V2/pure/native guarded atomic installation; no money RPC",
   "files": {
-    "supabase/migrations/20261013212336_weekly_standalone_selector_callbacks_run_once_per_earning_cl.sql": {
-      "bytes": 59752,
-      "sha256": "2f911062f337ed69efff30260ff14286674018667c1dc45e19dd1d1046b4e40b"
+    "scripts/qualification/weekly-first-week-aggregate/after-scope.sql": {
+      "bytes": 49985,
+      "sha256": "678d9411a37cc602e1eb1243e20b91c8047f0c866260bd6d1019bf3bf0093c8c"
     },
-    "scripts/qualification/weekly-standalone-selector/before-second-selector.sql": {
-      "bytes": 1700,
-      "sha256": "7d6c59bab25b18d538c68a06c61834306effc319595ee259e9b4fd02e0ea5151"
+    "supabase/migrations/20261013084856_original_flow_proofs_run_only_for_their_eligible_receipts.sql": {
+      "bytes": 23314,
+      "sha256": "2885aef92f485c3aafe1732d66f5134a927562c84d97e7a651b95102ce26065f"
     },
-    "scripts/qualification/weekly-standalone-selector/earning-ID-instrumentation-ctes.sql": {
-      "bytes": 2181,
-      "sha256": "3a5cbec42a67fc40eed9b8cf2eb3d07f88218768118da9c8f5fe72f67b8237f8"
-    },
-    "scripts/qualification/weekly-standalone-selector/before-scope.sql": {
-      "bytes": 49984,
-      "sha256": "5bcb55c1c1a710d71cbab51cfe59628c8dafe6893da4c503d8c91c8a7a5cb111"
-    },
-    "scripts/qualification/weekly-standalone-selector/installer-driver.py": {
-      "bytes": 13052,
-      "sha256": "1c0f5a3ffa67db93dbdbcd6563ba9fdbe64788b8c5b53b82b5c6e15e5a301a76"
-    },
-    "scripts/qualification/weekly-standalone-selector/earning-ctes.sql": {
-      "bytes": 2048,
-      "sha256": "05a8061ab9f6a04a020d45596633b4636efc4617a7d7f426e5781c7a3abba58b"
-    },
-    "scripts/qualification/weekly-standalone-selector/cross-impact.json": {
-      "bytes": 7765,
-      "sha256": "6a58871be85b333052666815d61b5579712c98c616bd0d87e393b1c902ff5099"
-    },
-    "scripts/qualification/weekly-standalone-selector/calendar-proof-reuse.json": {
-      "bytes": 552,
-      "sha256": "c83dc032bf7ee0a051a7e9c17738fe52446ded380629830d130858b20c96c36d"
-    },
-    "scripts/qualification/weekly-standalone-selector/after-scope-candidate.sql": {
-      "bytes": 52011,
-      "sha256": "4f400116e468091abdb30e01dd0f765f1eef29a821ed316ba95aa80eda91a22e"
-    },
-    "scripts/qualification/weekly-standalone-selector/README.md": {
-      "bytes": 2216,
-      "sha256": "855e89689615f616d154cd3b1c563ed8469f6970f9bd61fadbdcfcec2bb7fb10"
-    },
-    "scripts/qualification/weekly-standalone-selector/run-native.py": {
-      "bytes": 1252,
-      "sha256": "06fa3419701f0758328c30b4f01bf9e597d367184761e0340e976a1d2345d0b8"
-    },
-    "scripts/qualification/weekly-standalone-selector/semantic-driver.py": {
-      "bytes": 14497,
-      "sha256": "726278efb03e7e09d0ff112f94af709947d23a6ee21c86d5511ae00a0c2bc6ff"
+    "supabase/migrations/20261013195428_weekly_cohort_cutoff_runs_once_per_earning_club.sql": {
+      "bytes": 11065,
+      "sha256": "0d963d68abc79558029bd3a44069f851c03ccfa882b041dc785e280261027b54"
     },
     "scripts/qualification/weekly-standalone-selector/selector-fixture.sql": {
       "bytes": 5040,
       "sha256": "86db879763fe7c0b67548a94366c7954590fbb0921a7f2c5df80110c60f65b6b"
     },
-    "scripts/qualification/weekly-standalone-selector/after-second-selector.sql": {
-      "bytes": 3727,
-      "sha256": "3a81cd966767d9957fdeedc740209af88a99f0434d7af3c586023c3fd677c74a"
+    "scripts/qualification/weekly-standalone-selector/cross-impact.json": {
+      "bytes": 7765,
+      "sha256": "6a58871be85b333052666815d61b5579712c98c616bd0d87e393b1c902ff5099"
     },
-    "scripts/qualification/weekly-standalone-selector/caller-source.sql": {
-      "bytes": 790,
-      "sha256": "bc6a0c4ed758f74803f6863612b5c758e9447cfefeb4344c7e21ac61b529102a"
+    "scripts/qualification/weekly-cohort-cutoff/after-helper.sql": {
+      "bytes": 4116,
+      "sha256": "3b7a4a33d8b86c5d4e3fffc0a8d8c92539cabec68683b3c0da72b8d3862c209d"
     },
-    "scripts/qualification/weekly-standalone-selector/calendar-support.sql": {
-      "bytes": 676,
-      "sha256": "fc9969ebe36e81abb70e8e744076e45fe6ef5552deeee03f76dccf1ad696686e"
+    "supabase/migrations/20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql": {
+      "bytes": 6255,
+      "sha256": "89b1671cf9aa507248b7620f734855fa03cdf586d133a1caa9890530fbd04df3"
     },
-    "scripts/qualification/weekly-standalone-selector/authorities.json": {
-      "bytes": 4621,
-      "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
+    "supabase/migrations/20261013212336_weekly_standalone_selector_callbacks_run_once_per_earning_cl.sql": {
+      "bytes": 59752,
+      "sha256": "2f911062f337ed69efff30260ff14286674018667c1dc45e19dd1d1046b4e40b"
     },
-    ".github/workflows/ci.yml": {
-      "bytes": 231056,
-      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
+    "scripts/qualification/weekly-standalone-selector/after-scope-candidate.sql": {
+      "bytes": 52011,
+      "sha256": "4f400116e468091abdb30e01dd0f765f1eef29a821ed316ba95aa80eda91a22e"
+    },
+    "tests/weekly-standalone-selector-callbacks.law.test.ts": {
+      "bytes": 2821,
+      "sha256": "1f0cf02e67f0fc26fc8add22b28e076b39e9fc3e31b264ab69718d8f68e085f0"
+    },
+    "supabase/migrations/20261013163310_weekly_initial_cash_selection_reads_cutoff_once_per_club.sql": {
+      "bytes": 56447,
+      "sha256": "0e9661dc97f699f25859a37e182744ae980e0949b0fa6194f82180d9e5b3b7ff"
     },
     "scripts/qualification/original-flow-eligibility/current-source40.json": {
       "bytes": 238578,
       "sha256": "b380a519e6c17e5b4c1793974c56213c1a7932c6a0dfda2db7528dd43d6c4ea3"
     },
-    "scripts/qualification/original-flow-eligibility/after-flow.sql": {
-      "bytes": 13791,
-      "sha256": "828e1139c4b54abe5df31e7858884279c7e240cb842544730612e2e5a3925873"
+    "scripts/qualification/weekly-standalone-selector/installer-driver.py": {
+      "bytes": 13052,
+      "sha256": "1c0f5a3ffa67db93dbdbcd6563ba9fdbe64788b8c5b53b82b5c6e15e5a301a76"
+    },
+    "docs/changelog/2026-10-13-standalone-selector-callback-bound.md": {
+      "bytes": 2671,
+      "sha256": "aef92500e63a4e1cd6632b8616ec1c1d138f2ff09f464368baeef185ca93fb1b"
     },
     "scripts/qualification/original-flow-eligibility/after-matcher.sql": {
       "bytes": 4695,
@@ -89,49 +65,73 @@
       "bytes": 5127,
       "sha256": "23e1d645751cb09547654de876744af46fda802051033063fca59375ee759311"
     },
-    "scripts/qualification/weekly-first-week-aggregate/after-scope.sql": {
-      "bytes": 49985,
-      "sha256": "678d9411a37cc602e1eb1243e20b91c8047f0c866260bd6d1019bf3bf0093c8c"
+    "docs/laws.d/weekly-standalone-selector-callbacks.md": {
+      "bytes": 281,
+      "sha256": "daa086ecc059855d95155840d8cae948c418fbe6e5373a19e6cd50df5489c53e"
     },
-    "scripts/qualification/weekly-cohort-cutoff/after-helper.sql": {
-      "bytes": 4116,
-      "sha256": "3b7a4a33d8b86c5d4e3fffc0a8d8c92539cabec68683b3c0da72b8d3862c209d"
+    "scripts/qualification/weekly-standalone-selector/caller-source.sql": {
+      "bytes": 790,
+      "sha256": "bc6a0c4ed758f74803f6863612b5c758e9447cfefeb4344c7e21ac61b529102a"
+    },
+    "scripts/qualification/weekly-standalone-selector/earning-ctes.sql": {
+      "bytes": 2048,
+      "sha256": "05a8061ab9f6a04a020d45596633b4636efc4617a7d7f426e5781c7a3abba58b"
+    },
+    "scripts/qualification/weekly-standalone-selector/README.md": {
+      "bytes": 2216,
+      "sha256": "855e89689615f616d154cd3b1c563ed8469f6970f9bd61fadbdcfcec2bb7fb10"
+    },
+    "scripts/qualification/weekly-standalone-selector/authorities.json": {
+      "bytes": 4621,
+      "sha256": "30fd68f61b145e0a636df8c4574042e8f320bc05b1559b6e45fe9a6340aa8c7c"
     },
     "supabase/migrations/20261012181905_scoped_club_launch_reset_and_guarded_recovery.sql": {
       "bytes": 523621,
       "sha256": "900ab93898c39d4adc77b1377be5a0d5d7394190776c4c6d37b241c8c59fbf9d"
     },
-    "supabase/migrations/20261013084856_original_flow_proofs_run_only_for_their_eligible_receipts.sql": {
-      "bytes": 23314,
-      "sha256": "2885aef92f485c3aafe1732d66f5134a927562c84d97e7a651b95102ce26065f"
-    },
-    "supabase/migrations/20261013133012_scoped_launch_operator_accepts_authoritative_json_claims.sql": {
-      "bytes": 6255,
-      "sha256": "89b1671cf9aa507248b7620f734855fa03cdf586d133a1caa9890530fbd04df3"
-    },
-    "supabase/migrations/20261013163310_weekly_initial_cash_selection_reads_cutoff_once_per_club.sql": {
-      "bytes": 56447,
-      "sha256": "0e9661dc97f699f25859a37e182744ae980e0949b0fa6194f82180d9e5b3b7ff"
+    "scripts/qualification/weekly-standalone-selector/before-scope.sql": {
+      "bytes": 49984,
+      "sha256": "5bcb55c1c1a710d71cbab51cfe59628c8dafe6893da4c503d8c91c8a7a5cb111"
     },
     "supabase/migrations/20261013182759_weekly_first_week_calendar_runs_once_per_club.sql": {
       "bytes": 56531,
       "sha256": "58881c033678200f7aea5b156c6da855ef3db9372344c47a21e1a060cb829ad8"
     },
-    "supabase/migrations/20261013195428_weekly_cohort_cutoff_runs_once_per_earning_club.sql": {
-      "bytes": 11065,
-      "sha256": "0d963d68abc79558029bd3a44069f851c03ccfa882b041dc785e280261027b54"
+    "scripts/qualification/original-flow-eligibility/after-flow.sql": {
+      "bytes": 13791,
+      "sha256": "828e1139c4b54abe5df31e7858884279c7e240cb842544730612e2e5a3925873"
     },
-    "tests/weekly-standalone-selector-callbacks.law.test.ts": {
-      "bytes": 2821,
-      "sha256": "1f0cf02e67f0fc26fc8add22b28e076b39e9fc3e31b264ab69718d8f68e085f0"
+    "scripts/qualification/weekly-standalone-selector/before-second-selector.sql": {
+      "bytes": 1700,
+      "sha256": "7d6c59bab25b18d538c68a06c61834306effc319595ee259e9b4fd02e0ea5151"
     },
-    "docs/laws.d/weekly-standalone-selector-callbacks.md": {
-      "bytes": 281,
-      "sha256": "daa086ecc059855d95155840d8cae948c418fbe6e5373a19e6cd50df5489c53e"
+    "scripts/qualification/weekly-standalone-selector/earning-ID-instrumentation-ctes.sql": {
+      "bytes": 2181,
+      "sha256": "3a5cbec42a67fc40eed9b8cf2eb3d07f88218768118da9c8f5fe72f67b8237f8"
     },
-    "docs/changelog/2026-10-13-standalone-selector-callback-bound.md": {
-      "bytes": 2671,
-      "sha256": "aef92500e63a4e1cd6632b8616ec1c1d138f2ff09f464368baeef185ca93fb1b"
+    "scripts/qualification/weekly-standalone-selector/calendar-support.sql": {
+      "bytes": 676,
+      "sha256": "fc9969ebe36e81abb70e8e744076e45fe6ef5552deeee03f76dccf1ad696686e"
+    },
+    "scripts/qualification/weekly-standalone-selector/run-native.py": {
+      "bytes": 1252,
+      "sha256": "06fa3419701f0758328c30b4f01bf9e597d367184761e0340e976a1d2345d0b8"
+    },
+    "scripts/qualification/weekly-standalone-selector/after-second-selector.sql": {
+      "bytes": 3727,
+      "sha256": "3a81cd966767d9957fdeedc740209af88a99f0434d7af3c586023c3fd677c74a"
+    },
+    "scripts/qualification/weekly-standalone-selector/semantic-driver.py": {
+      "bytes": 14497,
+      "sha256": "726278efb03e7e09d0ff112f94af709947d23a6ee21c86d5511ae00a0c2bc6ff"
+    },
+    ".github/workflows/ci.yml": {
+      "bytes": 231451,
+      "sha256": "96469d566eb8f56d429c1dd48cc3886d9f70b01c69debb3c86d0eea80e0e20ad"
+    },
+    "scripts/qualification/weekly-standalone-selector/calendar-proof-reuse.json": {
+      "bytes": 552,
+      "sha256": "c83dc032bf7ee0a051a7e9c17738fe52446ded380629830d130858b20c96c36d"
     }
   },
   "diamondOwnHistoryCiInput20261015": {
@@ -290,6 +290,39 @@
     "current": {
       "bytes": 231056,
       "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
+    }
+  },
+  "opponentMemoryWorkflowInput20261023": {
+    "reason": "Current workflow source identity for the added required PostgreSQL opponent-memory suite and typecheck. Financial sources, fixtures, assertions, deadlines and historical evidence remain unchanged; fresh hosted qualification is still required.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 231107,
+      "sha256": "4c47591402eb488dc69327941cb63b65853cad6be12b2e4a7fef25534bbf197e"
+    }
+  },
+  "opponentMemoryAwardLayoutIntegration20261023": {
+    "reason": "Merge both independent additive verification steps: durable opponent-memory PostgreSQL suite/typecheck and the existing hand-review award geometry suite. Record only the actual combined CI workflow input identity. Financial source/fixtures/assertions and historical evidence are preserved; fresh hosted checks remain required.",
+    "current": {
+      "bytes": 231148,
+      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
+    }
+  },
+  "lightningIntegratedCiInput20261023": {
+    "reason": "Preserve both protected-main opponent-memory qualification and canonical Lightning native qualification. Refresh current integrated workflow identity only; historical fingerprints, financial assertions and qualification statuses are unchanged.",
+    "previousLightning": {
+      "bytes": 231056,
+      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
+    },
+    "previousMain": {
+      "bytes": 231148,
+      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
+    },
+    "current": {
+      "bytes": 231451,
+      "sha256": "96469d566eb8f56d429c1dd48cc3886d9f70b01c69debb3c86d0eea80e0e20ad"
     }
   }
 }

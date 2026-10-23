@@ -1,3 +1,4 @@
+import { ownerWindowPredicate } from './owner-window-migration.mjs';
 /**
  * ===========================================================================
  *  A MIGRATION THAT NEEDS THE LIVE TABLES WAITS FOR THE DAILY BREAK
@@ -213,15 +214,20 @@ export function overrideReason(file) {
  * Wrap the exact atomic transaction (the file plus its history row) with the
  * window prelude after BEGIN and the window close before the final COMMIT.
  */
-export function windowTransactionSQL(file, atomicSQL) {
+export function windowTransactionSQL(file, atomicSQL, ownerWindow = null) {
+  const predicate = (reserve) =>
+    ownerWindow ? ownerWindowPredicate(reserve, ownerWindow) : windowOpenPredicate(reserve);
+  const reason = ownerWindow
+    ? `owner-ordered ${ownerWindow.id}: ${ownerWindow.ownerOrder}; migration ${file}; same certified freeze and 8s budget`
+    : overrideReason(file);
   const prelude = `
-SET LOCAL ca.break_window_migration_override = '${overrideReason(file)}';
+SET LOCAL ca.break_window_migration_override = '${reason.replaceAll("'", "''")}';
 SET LOCAL lock_timeout = '${WINDOW_LOCK_TIMEOUT_MS}ms';
 SET LOCAL statement_timeout = '${WINDOW_STATEMENT_TIMEOUT_MS}ms';
 SET LOCAL idle_in_transaction_session_timeout = '${TRANSACTION_BUDGET_SECONDS}s';
 DO $ca_install_window_open$
 BEGIN
-  IF NOT ${windowOpenPredicate(START_RESERVE_SECONDS)} THEN
+  IF NOT ${predicate(START_RESERVE_SECONDS)} THEN
     RAISE EXCEPTION 'install_window_closed: the daily maintenance break is not in a confirmed freeze with ${START_RESERVE_SECONDS}s to spare; nothing was installed'
       USING ERRCODE = '55000';
   END IF;
@@ -234,7 +240,7 @@ BEGIN
     RAISE EXCEPTION 'install_window_budget_exceeded: the install took longer than ${TRANSACTION_BUDGET_SECONDS}s; rolled back'
       USING ERRCODE = '55000';
   END IF;
-  IF NOT ${windowOpenPredicate(COMMIT_RESERVE_SECONDS)} THEN
+  IF NOT ${predicate(COMMIT_RESERVE_SECONDS)} THEN
     RAISE EXCEPTION 'install_window_closed_before_commit: fewer than ${COMMIT_RESERVE_SECONDS}s remained before the thaw; rolled back'
       USING ERRCODE = '55000';
   END IF;

@@ -1,293 +1,293 @@
 {
   "scope": "Exact cash17 source/installer public-safe enforcement; private actual17 connected financial evidence external only, no production installation or ownership inferred.",
   "files": {
-    ".github/workflows/ci.yml": {
-      "bytes": 231056,
-      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
-    },
-    "scripts/ci/satellite_qualifier_fixture.py": {
-      "bytes": 18466,
-      "sha256": "89b593fd5afe44d6568e2751bcd209b7b5cc10ad1c48e98c13efe8ea15d26e87"
-    },
-    "scripts/ci/schema-manifest.d/cash-original17-source-correction.json": {
-      "bytes": 396,
-      "sha256": "e4e050861cd66b668833fff0948a8fcbf0fe0db861e325a6d5f30ec4feed6b15"
-    },
-    "scripts/ci/test-mtt-unlimited.py": {
-      "bytes": 44548,
-      "sha256": "008f685692694f7bec680bee4d317629fc23210badcce8156f6f04ef06180f98"
-    },
-    "scripts/dev/probe-cash-original17-pg17.sh": {
-      "bytes": 1215,
-      "sha256": "2f1c6438d1cca999241289e0110fddc8b9bbb39b1855c4a2cdbd5b8fb9e51cbb"
-    },
-    "scripts/qualification/cash-original17/README.md": {
-      "bytes": 3018,
-      "sha256": "cc138febffa6e6d61acc792e8ba29e5880567b095c153322c4d1f7272a6ff4d0"
-    },
-    "scripts/qualification/cash-original17/actual-cardfree-literal-pins.sql": {
-      "bytes": 6203,
-      "sha256": "f992c3d1b9fada58fa65e7bc033d1d5ecbac2dd860624f1dda27a4fabf56a15c"
-    },
-    "scripts/qualification/cash-original17/candidate-fixed-sources.sql": {
-      "bytes": 1937,
-      "sha256": "31769d4d116a4a6fa9d1d6fabafd9d26e67ccdcdbda9f3f7961f85638f8aead5"
-    },
-    "scripts/qualification/cash-original17/candidate-proof.sql": {
-      "bytes": 12336,
-      "sha256": "874079a66e33c959bdcf869f62e0f9940c61221ab41dbd5887104a50cfc1e357"
-    },
-    "scripts/qualification/cash-original17/final-expected-function-metadata.json": {
-      "bytes": 3960,
-      "sha256": "a0842a0f06203505e20d7e0acea61e7ab290a9db4ae1c8212a95fa6bec26146e"
-    },
-    "scripts/qualification/cash-original17/fixtures/actual-carry-connected-preimages.sql": {
-      "bytes": 8625,
-      "sha256": "d277082df006a9a6b4007fde70e9a0d23a99ed4fe7390cbbaef86cbf7d693b8d"
-    },
-    "scripts/qualification/cash-original17/fixtures/actual-cash-receipt-shape.sql": {
-      "bytes": 873,
-      "sha256": "bfe6e0269877e14a277ac7ade487b458a1b18db2d9da83b4fc6b9a64c8acbf1e"
-    },
-    "scripts/qualification/cash-original17/fixtures/actual-current-cash-setter-authority.sql": {
-      "bytes": 20906,
-      "sha256": "63a28317ef44c7eba752a5a5ff007708143100d02344d26cbb9568b27d73e071"
-    },
-    "scripts/qualification/cash-original17/fixtures/qualified-whole-carry-postimage.sql": {
-      "bytes": 6840,
-      "sha256": "97673dfad4ed6e1fe63c7f8c24e3e185e48546012a5f6d08b6a1639a2ee752da"
-    },
-    "scripts/qualification/cash-original17/native-body-machinery.sql": {
-      "bytes": 34754,
-      "sha256": "78d306e5844a10217ecd5d06d584c1ce26ed0a4a63333a204c7dacdda4b0962a"
-    },
-    "scripts/qualification/cash-original17/native-cash-concurrency.py": {
-      "bytes": 6226,
-      "sha256": "52de79b684871e774b4cf02fd4a8d3e9225da9ee55894b1e800f98a7e5a8ebe0"
-    },
-    "scripts/qualification/cash-original17/native-installer-owner.py": {
-      "bytes": 1662,
-      "sha256": "1c0dff2252193378993c676e5888beb3a909d9e2e11db38997b8c940758b0c94"
-    },
-    "scripts/qualification/cash-original17/native-installer-refusals.py": {
-      "bytes": 4586,
-      "sha256": "5889193f6febb2b3fcb6e38347fe97887b8470a8a4b22494c6abdaba899258a1"
-    },
-    "scripts/qualification/cash-original17/parent-qualified-function-metadata.json": {
-      "bytes": 2864,
-      "sha256": "aed3a74817c43d33a2cdfc2a1f0da2e58fcd6974ca1aa107527f7377dcfbcf47"
-    },
-    "scripts/qualification/cash-original17/prepare-private-input.py": {
-      "bytes": 2904,
-      "sha256": "ae36db1ae34291092e6058613127570466788e3f4b91ac23c8c8cecfdc4b0027"
-    },
-    "scripts/qualification/cash-original17/probe-native.py": {
-      "bytes": 3179,
-      "sha256": "8ee3feb07a91356068d85a46553c47aac58833a1bb55dc121b1e61cea12ce06c"
-    },
-    "scripts/qualification/cash-original17/probe-public-safe.py": {
-      "bytes": 22925,
-      "sha256": "ff7eda8dc73551b2a0d8eb29a9ca95117a8d69752e06c01259d7cc20a70a18f1"
-    },
-    "scripts/qualification/cash-original17/run-private-step.py": {
-      "bytes": 1934,
-      "sha256": "f77e62e375b8ba379e1d623af472882e2d89367faa3684fa17049c0da5b2604d"
-    },
-    "scripts/qualification/retained18-correction/README.md": {
-      "bytes": 3145,
-      "sha256": "d172c07cbfd517898a107d9bfd2a97d485f7404da20fe471da3950c71fb3c6d2"
-    },
-    "scripts/qualification/retained18-correction/actual-current-club-owner.sql": {
-      "bytes": 1937,
-      "sha256": "6b21f754a8da4219c2761d3c39475e262e219eac23ec338a9971e4595ff566ca"
-    },
-    "scripts/qualification/retained18-correction/actual-current-felt-authorities.sql": {
-      "bytes": 20072,
-      "sha256": "c8c49416b913240344e907dccb31f0e559f3ff5d52378ca4fbcf7d68841377e3"
-    },
     "scripts/qualification/retained18-correction/actual-current-movement-check.sql": {
       "bytes": 1553,
       "sha256": "f0f2c737470a5d795bb53fe4027f20c8103f41842306904333a590406f081ffc"
-    },
-    "scripts/qualification/retained18-correction/actual-current-recorded-format-authorities.sql": {
-      "bytes": 2748,
-      "sha256": "8c3c7ef43e64fc1474efa892d0a11a612760f531816c272a5df41c0f890f3533"
-    },
-    "scripts/qualification/retained18-correction/actual-current-seat-creation-authority.sql": {
-      "bytes": 5026,
-      "sha256": "771f54b4160b9be04ade294786080dd8c168ad59f1d4e82c889f1d7127dedd99"
-    },
-    "scripts/qualification/retained18-correction/actual-current-source-acls.sql": {
-      "bytes": 7058,
-      "sha256": "2beafb9fcc047b02be14cf15d403995c3676a2735e03b0e9a986cf06f2b0f904"
-    },
-    "scripts/qualification/retained18-correction/actual-diamond-variant.sql": {
-      "bytes": 748,
-      "sha256": "2403421418f26b1cf42b208c15e5e69e3697ab5179ca3f6c436a1e8bc7866c1a"
-    },
-    "scripts/qualification/retained18-correction/actual-f06-share-lane.sql": {
-      "bytes": 1519,
-      "sha256": "9709464b0fbd3989b25af38c0b3984b722180591fecd2a2b6d62b943442b59f5"
-    },
-    "scripts/qualification/retained18-correction/actual-installer-authority.sql": {
-      "bytes": 5400,
-      "sha256": "1ad0b1cd7dd12004e877f352c1fd0406ef0b1e5ecdc7016cb8e9f1060e1a64f5"
-    },
-    "scripts/qualification/retained18-correction/actual-jackpot-financial-shape.sql": {
-      "bytes": 4234,
-      "sha256": "a703f031b87e1fa4871191a1a72274230fb580f58293136936854a6cfd53cf3a"
-    },
-    "scripts/qualification/retained18-correction/actual-lightning-marker-shape.sql": {
-      "bytes": 196,
-      "sha256": "644d4123dc67955390bbd537e7fa01dde4c17499c043f02ea1d3908b00b2f5f2"
-    },
-    "scripts/qualification/retained18-correction/actual-lightning-seats.sql": {
-      "bytes": 487,
-      "sha256": "376ace0d76e9827ffbe6e42031a9085677ec13c1416a5d8c9e3ec0fda05891ca"
-    },
-    "scripts/qualification/retained18-correction/actual-native-money-creation-wiring.sql": {
-      "bytes": 1923,
-      "sha256": "415205367e4f9dc0e532e3beb44597d95c46276fa29199ef2a068dd1f1294a23"
-    },
-    "scripts/qualification/retained18-correction/actual-public-schema-additions.sql": {
-      "bytes": 72788,
-      "sha256": "732d816db882abf14d0089738dc7586ac5ae8b4eb88d1d8463b119605c159725"
-    },
-    "scripts/qualification/retained18-correction/actual-resume-mark-key.sql": {
-      "bytes": 205,
-      "sha256": "210c2382a2842249ee77e1f6b9bfcc46289baaebefb1053ed64e889adb6b7be7"
-    },
-    "scripts/qualification/retained18-correction/actual-retired-qualification-shape.sql": {
-      "bytes": 148,
-      "sha256": "d66849bd558277e0e106038652a82202846d05e640e6232e96c2ade751a6247e"
-    },
-    "scripts/qualification/retained18-correction/actual-seat-rebase-shape.sql": {
-      "bytes": 647,
-      "sha256": "53eb25493f07ab791e2d6c55652a5feb3928be1489b7f41be594c3cd452c06f2"
-    },
-    "scripts/qualification/retained18-correction/actual-unexecuted-inventory-shape.sql": {
-      "bytes": 199,
-      "sha256": "791f604d2947fcd0628c25409bb02f837993ed3b6f472d55ec735906c48a22cc"
-    },
-    "scripts/qualification/retained18-correction/after-original18.sql": {
-      "bytes": 2092,
-      "sha256": "4be00f9aea1148a0a3017ea27a687ba7b01443a1d1edd030e3c708b63ef7d39d"
-    },
-    "scripts/qualification/retained18-correction/before-spent-original18.sql": {
-      "bytes": 1337,
-      "sha256": "dbce4b4b701c535b514e3347449c6ff98ad8d17d04934f5c282e9ef2433e8f2f"
-    },
-    "scripts/qualification/retained18-correction/correction-authority-draft.sql": {
-      "bytes": 27056,
-      "sha256": "b5833875ee3887481215f87440e04a3fcd81569647075e0618f3b5e7468d46a4"
-    },
-    "scripts/qualification/retained18-correction/current-actual-overlay.sql": {
-      "bytes": 199121,
-      "sha256": "d48b6a5d9f45dbd0dfe0f1e4d0fa51a2ed49989c308314bdf94d72f3b365b40f"
-    },
-    "scripts/qualification/retained18-correction/current-source-pin-matcher.sql": {
-      "bytes": 8495,
-      "sha256": "b18212071aae51a3b1f769ba519ca7abf309341898032a2d0c06199722434d07"
-    },
-    "scripts/qualification/retained18-correction/fixtures/current-authorities.sql": {
-      "bytes": 289535,
-      "sha256": "49f1a4201eac57b3ac1bccf344942d705333969cda3dc582dc94837e385f6ec3"
-    },
-    "scripts/qualification/retained18-correction/fixtures/foundation.sql": {
-      "bytes": 6887414,
-      "sha256": "c3df56335f4a6a2a3b4b556cd777fd7c9c48634e88e9d7bcb0af5d61f7fe27c4"
-    },
-    "scripts/qualification/retained18-correction/installed-resume-preimage.sql": {
-      "bytes": 21923,
-      "sha256": "059cbfa989d87d3d22187628578d1d899495fd48dd7412150cf3aa79c4f17c5c"
-    },
-    "scripts/qualification/retained18-correction/native-concurrency.py": {
-      "bytes": 5140,
-      "sha256": "65a79c3e30cf20d08b01b73574417c43298fe8d567d1c108a49d2ef8c44b51ce"
     },
     "scripts/qualification/retained18-correction/native-current-guards.sql": {
       "bytes": 3871,
       "sha256": "a68fb4234bfaba4304afbdaf1bd89874210fd21007256f6200e1c5255a726023"
     },
-    "scripts/qualification/retained18-correction/native-durable-original18.sql": {
-      "bytes": 5591,
-      "sha256": "4ea1524811a21b4eb90de5cdae982e5f74d953af0d80c11fbc4e3cac4f5557bf"
+    "scripts/qualification/retained18-correction/correction-authority-draft.sql": {
+      "bytes": 27056,
+      "sha256": "b5833875ee3887481215f87440e04a3fcd81569647075e0618f3b5e7468d46a4"
     },
-    "scripts/qualification/retained18-correction/native-installed-parent-history.sql": {
-      "bytes": 741,
-      "sha256": "fda1f9678ab6dfcc781c5cb76bed10902a8e7e9568bf620c2c7e8e76f0d88208"
+    "scripts/qualification/cash-original17/native-cash-concurrency.py": {
+      "bytes": 6226,
+      "sha256": "52de79b684871e774b4cf02fd4a8d3e9225da9ee55894b1e800f98a7e5a8ebe0"
     },
-    "scripts/qualification/retained18-correction/native-late-failure.sql": {
-      "bytes": 3619,
-      "sha256": "144626a84049f4b47d92f5c3b5b39aed26694066e6e9fef3710065d43abf1344"
+    "scripts/qualification/cash-original17/parent-qualified-function-metadata.json": {
+      "bytes": 2864,
+      "sha256": "aed3a74817c43d33a2cdfc2a1f0da2e58fcd6974ca1aa107527f7377dcfbcf47"
+    },
+    "scripts/qualification/retained18-correction/actual-retired-qualification-shape.sql": {
+      "bytes": 148,
+      "sha256": "d66849bd558277e0e106038652a82202846d05e640e6232e96c2ade751a6247e"
+    },
+    "scripts/qualification/retained18-correction/actual-unexecuted-inventory-shape.sql": {
+      "bytes": 199,
+      "sha256": "791f604d2947fcd0628c25409bb02f837993ed3b6f472d55ec735906c48a22cc"
     },
     "scripts/qualification/retained18-correction/native-negative-authority.sql": {
       "bytes": 1502,
       "sha256": "3fc13dc6120e2fbdfbf85721aff2c0fc4f3a05952dd4fedd5cbca94af7a680c7"
     },
-    "scripts/qualification/retained18-correction/native-null-source-after.sql": {
-      "bytes": 1328,
-      "sha256": "8c9be550eedcd06b23c069bd7cab7e25f05aedc6219293b41aedb2afc2435fb4"
+    "scripts/qualification/retained18-correction/actual-lightning-seats.sql": {
+      "bytes": 487,
+      "sha256": "376ace0d76e9827ffbe6e42031a9085677ec13c1416a5d8c9e3ec0fda05891ca"
     },
-    "scripts/qualification/retained18-correction/native-null-source-before.sql": {
-      "bytes": 403,
-      "sha256": "4f07ef8db97edf18af7b17852699a172db76e121f6f6a877cc287acfae99f549"
+    "scripts/qualification/retained18-correction/native-concurrency.py": {
+      "bytes": 5140,
+      "sha256": "65a79c3e30cf20d08b01b73574417c43298fe8d567d1c108a49d2ef8c44b51ce"
     },
-    "scripts/qualification/retained18-correction/native-original-baseline.sql": {
-      "bytes": 2100,
-      "sha256": "b12d01e27c2626a37627ffe136cf082723c6bfcea748f259e88c757ece278aae"
+    "scripts/qualification/retained18-correction/actual-current-club-owner.sql": {
+      "bytes": 1937,
+      "sha256": "6b21f754a8da4219c2761d3c39475e262e219eac23ec338a9971e4595ff566ca"
     },
-    "scripts/qualification/retained18-correction/native-original18-replay.sql": {
-      "bytes": 2502,
-      "sha256": "5ce935c698d845908086f33e950f85b9739a241836ed7bcdbf091dc7c18b7a1d"
+    "scripts/qualification/retained18-correction/actual-current-recorded-format-authorities.sql": {
+      "bytes": 2748,
+      "sha256": "8c3c7ef43e64fc1474efa892d0a11a612760f531816c272a5df41c0f890f3533"
     },
-    "scripts/qualification/retained18-correction/native-postcommit-interruption.sql": {
-      "bytes": 4131,
-      "sha256": "6cdc23f143650dc1956b39c9d14c0a258a4ee5b021157991cb864dffaa19eeca"
+    "scripts/qualification/retained18-correction/after-original18.sql": {
+      "bytes": 2092,
+      "sha256": "4be00f9aea1148a0a3017ea27a687ba7b01443a1d1edd030e3c708b63ef7d39d"
     },
-    "scripts/qualification/retained18-correction/native-security-immutable.sql": {
-      "bytes": 2919,
-      "sha256": "75f8203ece8e258c5768bebc1b564d1ad91bb518e546b7665392cb2f81747d96"
+    "scripts/qualification/retained18-correction/fixtures/current-authorities.sql": {
+      "bytes": 289535,
+      "sha256": "49f1a4201eac57b3ac1bccf344942d705333969cda3dc582dc94837e385f6ec3"
     },
-    "scripts/qualification/retained18-correction/native-source-matcher-before-null-fix.sql": {
-      "bytes": 8496,
-      "sha256": "bd79a99eef00d58501c9b3e4a583e4e8eaaa6a99d9e7d4908e5af871e9b0fb3a"
+    "scripts/qualification/cash-original17/probe-public-safe.py": {
+      "bytes": 22925,
+      "sha256": "ff7eda8dc73551b2a0d8eb29a9ca95117a8d69752e06c01259d7cc20a70a18f1"
+    },
+    "scripts/dev/probe-cash-original17-pg17.sh": {
+      "bytes": 1215,
+      "sha256": "2f1c6438d1cca999241289e0110fddc8b9bbb39b1855c4a2cdbd5b8fb9e51cbb"
+    },
+    "scripts/qualification/retained18-correction/actual-diamond-variant.sql": {
+      "bytes": 748,
+      "sha256": "2403421418f26b1cf42b208c15e5e69e3697ab5179ca3f6c436a1e8bc7866c1a"
     },
     "scripts/qualification/retained18-correction/original-pins.json": {
       "bytes": 18195,
       "sha256": "955ba8063cbd972d2f9b04e1170cdf45b6cda976f56beddbca3d3c64c6c261f1"
     },
-    "scripts/qualification/retained18-correction/prepare-original-native.py": {
-      "bytes": 611,
-      "sha256": "6ada39a842fa0eb59a0fa382adab3e6d1a8d15865cef45e93d7a218fa410c423"
+    "scripts/qualification/retained18-correction/actual-native-money-creation-wiring.sql": {
+      "bytes": 1923,
+      "sha256": "415205367e4f9dc0e532e3beb44597d95c46276fa29199ef2a068dd1f1294a23"
     },
-    "scripts/qualification/retained18-correction/probe-native-bootstrap.py": {
-      "bytes": 18405,
-      "sha256": "f5523f48c52388c4a33b2c68023b8ee10857e6d25b808aed5f78ac6dc89c604a"
+    "scripts/qualification/retained18-correction/fixtures/foundation.sql": {
+      "bytes": 6887414,
+      "sha256": "c3df56335f4a6a2a3b4b556cd777fd7c9c48634e88e9d7bcb0af5d61f7fe27c4"
+    },
+    "supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_rolled_back_allocator.sql": {
+      "bytes": 45098,
+      "sha256": "0c3c357e106b6daf5461587e707e63d47260837870a7fb423d2f4fdd00b339bd"
+    },
+    "scripts/ci/schema-manifest.d/cash-original17-source-correction.json": {
+      "bytes": 396,
+      "sha256": "e4e050861cd66b668833fff0948a8fcbf0fe0db861e325a6d5f30ec4feed6b15"
+    },
+    "scripts/qualification/cash-original17/candidate-proof.sql": {
+      "bytes": 12336,
+      "sha256": "874079a66e33c959bdcf869f62e0f9940c61221ab41dbd5887104a50cfc1e357"
+    },
+    "scripts/qualification/retained18-correction/native-null-source-before.sql": {
+      "bytes": 403,
+      "sha256": "4f07ef8db97edf18af7b17852699a172db76e121f6f6a877cc287acfae99f549"
+    },
+    "scripts/qualification/cash-original17/prepare-private-input.py": {
+      "bytes": 2904,
+      "sha256": "ae36db1ae34291092e6058613127570466788e3f4b91ac23c8c8cecfdc4b0027"
+    },
+    "scripts/qualification/cash-original17/native-installer-owner.py": {
+      "bytes": 1662,
+      "sha256": "1c0dff2252193378993c676e5888beb3a909d9e2e11db38997b8c940758b0c94"
+    },
+    "scripts/qualification/cash-original17/candidate-fixed-sources.sql": {
+      "bytes": 1937,
+      "sha256": "31769d4d116a4a6fa9d1d6fabafd9d26e67ccdcdbda9f3f7961f85638f8aead5"
     },
     "scripts/qualification/retained18-correction/qualified-none-parent.sql": {
       "bytes": 10477,
       "sha256": "5992ac0b95cbf20a645930c5bb257da4b78b859b752b6d353941210a0ef94f90"
     },
+    "scripts/qualification/retained18-correction/prepare-original-native.py": {
+      "bytes": 611,
+      "sha256": "6ada39a842fa0eb59a0fa382adab3e6d1a8d15865cef45e93d7a218fa410c423"
+    },
     "scripts/qualification/retained18-correction/qualified-none-source-native.sql": {
       "bytes": 8299,
       "sha256": "e7a9d95b39160165d152f95872fd6369090709dfe55122f9d77f6602a3eb1732"
     },
-    "scripts/qualification/retained18-correction/resume-correction-draft.sql": {
-      "bytes": 23284,
-      "sha256": "4a379a3a6c90cbe51a8f8c32287d96c5509551e1a16e6528d6899265c0277447"
+    "scripts/qualification/retained18-correction/current-actual-overlay.sql": {
+      "bytes": 199121,
+      "sha256": "d48b6a5d9f45dbd0dfe0f1e4d0fa51a2ed49989c308314bdf94d72f3b365b40f"
     },
-    "supabase/migrations/20261013022132_a_retained_original_hand_corrects_its_exact_refused_source_o.sql": {
-      "bytes": 77549,
-      "sha256": "c8140963ca89b60c0f682acab843fd8144d30d0c459193b763524e74717a40d3"
+    "scripts/qualification/retained18-correction/native-null-source-after.sql": {
+      "bytes": 1328,
+      "sha256": "8c9be550eedcd06b23c069bd7cab7e25f05aedc6219293b41aedb2afc2435fb4"
+    },
+    ".github/workflows/ci.yml": {
+      "bytes": 231451,
+      "sha256": "96469d566eb8f56d429c1dd48cc3886d9f70b01c69debb3c86d0eea80e0e20ad"
+    },
+    "scripts/qualification/retained18-correction/current-source-pin-matcher.sql": {
+      "bytes": 8495,
+      "sha256": "b18212071aae51a3b1f769ba519ca7abf309341898032a2d0c06199722434d07"
+    },
+    "scripts/ci/satellite_qualifier_fixture.py": {
+      "bytes": 18466,
+      "sha256": "89b593fd5afe44d6568e2751bcd209b7b5cc10ad1c48e98c13efe8ea15d26e87"
+    },
+    "scripts/qualification/cash-original17/fixtures/actual-carry-connected-preimages.sql": {
+      "bytes": 8625,
+      "sha256": "d277082df006a9a6b4007fde70e9a0d23a99ed4fe7390cbbaef86cbf7d693b8d"
+    },
+    "scripts/qualification/retained18-correction/native-original-baseline.sql": {
+      "bytes": 2100,
+      "sha256": "b12d01e27c2626a37627ffe136cf082723c6bfcea748f259e88c757ece278aae"
+    },
+    "scripts/qualification/retained18-correction/actual-current-seat-creation-authority.sql": {
+      "bytes": 5026,
+      "sha256": "771f54b4160b9be04ade294786080dd8c168ad59f1d4e82c889f1d7127dedd99"
+    },
+    "scripts/qualification/retained18-correction/native-original18-replay.sql": {
+      "bytes": 2502,
+      "sha256": "5ce935c698d845908086f33e950f85b9739a241836ed7bcdbf091dc7c18b7a1d"
+    },
+    "scripts/qualification/cash-original17/native-installer-refusals.py": {
+      "bytes": 4586,
+      "sha256": "5889193f6febb2b3fcb6e38347fe97887b8470a8a4b22494c6abdaba899258a1"
+    },
+    "scripts/qualification/cash-original17/probe-native.py": {
+      "bytes": 3179,
+      "sha256": "8ee3feb07a91356068d85a46553c47aac58833a1bb55dc121b1e61cea12ce06c"
+    },
+    "scripts/qualification/cash-original17/final-expected-function-metadata.json": {
+      "bytes": 3960,
+      "sha256": "a0842a0f06203505e20d7e0acea61e7ab290a9db4ae1c8212a95fa6bec26146e"
+    },
+    "scripts/qualification/retained18-correction/actual-jackpot-financial-shape.sql": {
+      "bytes": 4234,
+      "sha256": "a703f031b87e1fa4871191a1a72274230fb580f58293136936854a6cfd53cf3a"
+    },
+    "scripts/qualification/retained18-correction/actual-seat-rebase-shape.sql": {
+      "bytes": 647,
+      "sha256": "53eb25493f07ab791e2d6c55652a5feb3928be1489b7f41be594c3cd452c06f2"
+    },
+    "scripts/qualification/cash-original17/fixtures/actual-cash-receipt-shape.sql": {
+      "bytes": 873,
+      "sha256": "bfe6e0269877e14a277ac7ade487b458a1b18db2d9da83b4fc6b9a64c8acbf1e"
+    },
+    "scripts/qualification/retained18-correction/actual-public-schema-additions.sql": {
+      "bytes": 72788,
+      "sha256": "732d816db882abf14d0089738dc7586ac5ae8b4eb88d1d8463b119605c159725"
+    },
+    "scripts/qualification/retained18-correction/actual-lightning-marker-shape.sql": {
+      "bytes": 196,
+      "sha256": "644d4123dc67955390bbd537e7fa01dde4c17499c043f02ea1d3908b00b2f5f2"
+    },
+    "scripts/qualification/cash-original17/run-private-step.py": {
+      "bytes": 1934,
+      "sha256": "f77e62e375b8ba379e1d623af472882e2d89367faa3684fa17049c0da5b2604d"
+    },
+    "scripts/qualification/retained18-correction/actual-current-felt-authorities.sql": {
+      "bytes": 20072,
+      "sha256": "c8c49416b913240344e907dccb31f0e559f3ff5d52378ca4fbcf7d68841377e3"
+    },
+    "scripts/qualification/retained18-correction/actual-current-source-acls.sql": {
+      "bytes": 7058,
+      "sha256": "2beafb9fcc047b02be14cf15d403995c3676a2735e03b0e9a986cf06f2b0f904"
+    },
+    "scripts/qualification/retained18-correction/before-spent-original18.sql": {
+      "bytes": 1337,
+      "sha256": "dbce4b4b701c535b514e3347449c6ff98ad8d17d04934f5c282e9ef2433e8f2f"
+    },
+    "scripts/qualification/cash-original17/native-body-machinery.sql": {
+      "bytes": 34754,
+      "sha256": "78d306e5844a10217ecd5d06d584c1ce26ed0a4a63333a204c7dacdda4b0962a"
+    },
+    "scripts/qualification/retained18-correction/native-durable-original18.sql": {
+      "bytes": 5591,
+      "sha256": "4ea1524811a21b4eb90de5cdae982e5f74d953af0d80c11fbc4e3cac4f5557bf"
+    },
+    "scripts/ci/test-mtt-unlimited.py": {
+      "bytes": 44548,
+      "sha256": "008f685692694f7bec680bee4d317629fc23210badcce8156f6f04ef06180f98"
+    },
+    "scripts/qualification/retained18-correction/native-source-matcher-before-null-fix.sql": {
+      "bytes": 8496,
+      "sha256": "bd79a99eef00d58501c9b3e4a583e4e8eaaa6a99d9e7d4908e5af871e9b0fb3a"
+    },
+    "scripts/qualification/retained18-correction/README.md": {
+      "bytes": 3145,
+      "sha256": "d172c07cbfd517898a107d9bfd2a97d485f7404da20fe471da3950c71fb3c6d2"
+    },
+    "scripts/qualification/retained18-correction/native-postcommit-interruption.sql": {
+      "bytes": 4131,
+      "sha256": "6cdc23f143650dc1956b39c9d14c0a258a4ee5b021157991cb864dffaa19eeca"
+    },
+    "scripts/qualification/retained18-correction/actual-installer-authority.sql": {
+      "bytes": 5400,
+      "sha256": "1ad0b1cd7dd12004e877f352c1fd0406ef0b1e5ecdc7016cb8e9f1060e1a64f5"
+    },
+    "scripts/qualification/retained18-correction/probe-native-bootstrap.py": {
+      "bytes": 18405,
+      "sha256": "f5523f48c52388c4a33b2c68023b8ee10857e6d25b808aed5f78ac6dc89c604a"
+    },
+    "scripts/qualification/cash-original17/actual-cardfree-literal-pins.sql": {
+      "bytes": 6203,
+      "sha256": "f992c3d1b9fada58fa65e7bc033d1d5ecbac2dd860624f1dda27a4fabf56a15c"
     },
     "supabase/migrations/20261013034406_a_diamond_jackpot_carries_its_whole_unpaid_allocation.sql": {
       "bytes": 12030,
       "sha256": "66c439f816ec578b62baf4d091c51cb486e84a317e269efc0d2f37c7b406ac3a"
     },
-    "supabase/migrations/20261013035113_a_cash_original_hand_corrects_its_rolled_back_allocator.sql": {
-      "bytes": 45098,
-      "sha256": "0c3c357e106b6daf5461587e707e63d47260837870a7fb423d2f4fdd00b339bd"
+    "scripts/qualification/cash-original17/fixtures/actual-current-cash-setter-authority.sql": {
+      "bytes": 20906,
+      "sha256": "63a28317ef44c7eba752a5a5ff007708143100d02344d26cbb9568b27d73e071"
+    },
+    "scripts/qualification/retained18-correction/installed-resume-preimage.sql": {
+      "bytes": 21923,
+      "sha256": "059cbfa989d87d3d22187628578d1d899495fd48dd7412150cf3aa79c4f17c5c"
+    },
+    "scripts/qualification/retained18-correction/native-installed-parent-history.sql": {
+      "bytes": 741,
+      "sha256": "fda1f9678ab6dfcc781c5cb76bed10902a8e7e9568bf620c2c7e8e76f0d88208"
+    },
+    "scripts/qualification/retained18-correction/resume-correction-draft.sql": {
+      "bytes": 23284,
+      "sha256": "4a379a3a6c90cbe51a8f8c32287d96c5509551e1a16e6528d6899265c0277447"
+    },
+    "scripts/qualification/retained18-correction/native-late-failure.sql": {
+      "bytes": 3619,
+      "sha256": "144626a84049f4b47d92f5c3b5b39aed26694066e6e9fef3710065d43abf1344"
+    },
+    "scripts/qualification/retained18-correction/actual-resume-mark-key.sql": {
+      "bytes": 205,
+      "sha256": "210c2382a2842249ee77e1f6b9bfcc46289baaebefb1053ed64e889adb6b7be7"
+    },
+    "supabase/migrations/20261013022132_a_retained_original_hand_corrects_its_exact_refused_source_o.sql": {
+      "bytes": 77549,
+      "sha256": "c8140963ca89b60c0f682acab843fd8144d30d0c459193b763524e74717a40d3"
+    },
+    "scripts/qualification/cash-original17/README.md": {
+      "bytes": 3018,
+      "sha256": "cc138febffa6e6d61acc792e8ba29e5880567b095c153322c4d1f7272a6ff4d0"
+    },
+    "scripts/qualification/retained18-correction/native-security-immutable.sql": {
+      "bytes": 2919,
+      "sha256": "75f8203ece8e258c5768bebc1b564d1ad91bb518e546b7665392cb2f81747d96"
+    },
+    "scripts/qualification/cash-original17/fixtures/qualified-whole-carry-postimage.sql": {
+      "bytes": 6840,
+      "sha256": "97673dfad4ed6e1fe63c7f8c24e3e185e48546012a5f6d08b6a1639a2ee752da"
+    },
+    "scripts/qualification/retained18-correction/actual-f06-share-lane.sql": {
+      "bytes": 1519,
+      "sha256": "9709464b0fbd3989b25af38c0b3984b722180591fecd2a2b6d62b943442b59f5"
     }
   },
   "spentDssRetirementEnforcement20261013": {
@@ -514,6 +514,39 @@
     "current": {
       "bytes": 231056,
       "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
+    }
+  },
+  "opponentMemoryWorkflowInput20261023": {
+    "reason": "Current workflow source identity for the added required PostgreSQL opponent-memory suite and typecheck. Financial sources, fixtures, assertions, deadlines and historical evidence remain unchanged; fresh hosted qualification is still required.",
+    "previous": {
+      "bytes": 230712,
+      "sha256": "c3e35cb44683748c8edc4dfe399e37ebc59b6fbd92c82028120ad5ea377dd77b"
+    },
+    "current": {
+      "bytes": 231107,
+      "sha256": "4c47591402eb488dc69327941cb63b65853cad6be12b2e4a7fef25534bbf197e"
+    }
+  },
+  "opponentMemoryAwardLayoutIntegration20261023": {
+    "reason": "Merge both independent additive verification steps: durable opponent-memory PostgreSQL suite/typecheck and the existing hand-review award geometry suite. Record only the actual combined CI workflow input identity. Financial source/fixtures/assertions and historical evidence are preserved; fresh hosted checks remain required.",
+    "current": {
+      "bytes": 231148,
+      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
+    }
+  },
+  "lightningIntegratedCiInput20261023": {
+    "reason": "Preserve both protected-main opponent-memory qualification and canonical Lightning native qualification. Refresh current integrated workflow identity only; historical fingerprints, financial assertions and qualification statuses are unchanged.",
+    "previousLightning": {
+      "bytes": 231056,
+      "sha256": "64bed8ee2604d076d9db4670bf6d6be6156f1bd535cbe39a88a8c7447ac7f140"
+    },
+    "previousMain": {
+      "bytes": 231148,
+      "sha256": "63ce042779259cfddc82ad62015fdbe4e76696d452d3b4760ee9498c6447d081"
+    },
+    "current": {
+      "bytes": 231451,
+      "sha256": "96469d566eb8f56d429c1dd48cc3886d9f70b01c69debb3c86d0eea80e0e20ad"
     }
   }
 }

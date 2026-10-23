@@ -1,1 +1,3 @@
-{}
+{
+  "fn_horse_exploit_profiles_read": "Optional durable opponent memory: called only after the once-per-process schema probe confirms horse_exploit_profiles and its columns are installed atomically with this RPC. Before the declared daily-maintenance migration, createDecisionOpponentProfileReader returns undefined and worker startup retains the existing legacy opponent path. HorseOpponentMemory.test.ts and workerPreparation.test.ts verify absent/unknown-schema compatibility; no installation or live memory proof is inferred."
+}

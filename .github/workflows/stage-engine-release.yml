@@ -32,6 +32,7 @@ jobs:
       target_sha: ${{ steps.change.outputs.target_sha }}
       offer_reason: ${{ steps.change.outputs.offer_reason }}
       admission_allowed: ${{ steps.admission.outputs.allowed }}
+      owner_window_id: ${{ steps.admission.outputs.owner_window_id }}
     steps:
       # Do not use push.paths here. GitHub only evaluates a bounded portion of
       # a very large diff for path filters, which can omit a real server change
@@ -65,6 +66,7 @@ jobs:
         run: |
           set -euo pipefail
           allowed=false
+          owner_window_id=''
           if [ "$EVENT_NAME" = schedule ]; then
             # Admission belongs to the nominal scheduled instant, not when a
             # queued runner finally executes. A delayed 03:30 preparation may
@@ -124,6 +126,7 @@ jobs:
               else
                 echo "Owner-ordered window admits this release (contains $OWNER_CONTAINS)."
                 allowed=true
+                owner_window_id=$(python3 -c 'import json,sys; d=json.load(open("server/release/owner-maintenance-windows.json")); print(next((w["id"] for w in d["windows"] if w["contains"] == sys.argv[1] and w.get("migrations")), ""))' "$OWNER_CONTAINS")
               fi
             fi
           fi
@@ -142,6 +145,7 @@ jobs:
             fi
           fi
           echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+          echo "owner_window_id=$owner_window_id" >> "$GITHUB_OUTPUT"
           if [ "$allowed" = false ]; then
             echo 'Routine engine updates are queued for 04:00 America/Chicago.'
           fi
@@ -266,7 +270,7 @@ jobs:
   window-migrations:
     name: Install Queued Daily-Maintenance Migrations
     needs: detect
-    if: github.event_name == 'schedule' && needs.detect.outputs.admission_allowed == 'true'
+    if: needs.detect.outputs.admission_allowed == 'true' && (github.event_name == 'schedule' || needs.detect.outputs.owner_window_id != '')
     runs-on: ubuntu-latest
     timeout-minutes: 75
     concurrency:
@@ -277,6 +281,9 @@ jobs:
     steps:
       - name: Checkout protected main
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Use the production Node major
         uses: actions/setup-node@v4
@@ -290,8 +297,11 @@ jobs:
       - name: Install every queued window migration inside the 04:00 break
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OWNER_WINDOW_ID: ${{ needs.detect.outputs.owner_window_id }}
         run: |
-          node scripts/ci/install-window-migrations.mjs \
+          owner_args=()
+          if [ -n "$OWNER_WINDOW_ID" ]; then owner_args=(--owner-window "$OWNER_WINDOW_ID"); fi
+          node scripts/ci/install-window-migrations.mjs "${owner_args[@]}" \
             --ssl-root-cert scripts/ci/certificates/supabase-prod-ca-2021.crt
 
   signal:

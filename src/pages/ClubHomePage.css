@@ -3258,3 +3258,113 @@
     padding: 0 8px 10px 11px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   GAME TYPES OUTRANK THE FILTERS (Dan 2026-10-23)
+   "FOR THE GAME TYPE. THESE SHOULD BE SLIGHTLY LARGER FIXED SIZED BOXES THEN
+   THE FILTERS BELOW IT. AND WE HAVE TO ADD SOME DEPTH OR SHADOWING TO THE
+   BOXES TO MAKE THEM FEEL PREMIUM AND NOT SO FLAT AND BORING."
+
+   Every game type is one fixed box, the same width whatever its word, and a
+   step taller and wider than the status filters under it. Both rows are lit
+   from above: a bright top bevel, a dark lower lip and a drop shadow onto the
+   deck, so each control reads as a raised key; the selected one is pressed in
+   and glows blue. Touch targets stay at least 44px tall.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.club-home .club-lobby-command-top .lobby-controls .game-bar__types {
+  gap: 7px;
+  padding: 2px 2px 8px;
+}
+
+.club-home .club-lobby-command-top .lobby-controls .game-bar__types .game-bar__type {
+  flex: 0 0 76px;
+  width: 76px;
+  min-width: 76px;
+  min-height: 50px;
+  height: 50px;
+  padding-inline: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.club-home .club-lobby-command-top .lobby-controls .lobby-refinements .quickprefs__row--status {
+  gap: 6px;
+}
+
+.club-home .club-lobby-command-top .lobby-controls .lobby-refinements .quickprefs__chip {
+  flex: 0 0 auto;
+  min-width: 56px;
+  font-size: 10px;
+}
+
+@media (max-width: 900px) {
+  .club-home .club-lobby-command-top .lobby-controls .game-bar__types .game-bar__type,
+  .club-home .club-lobby-command-top .lobby-controls .lobby-refinements .quickprefs__chip,
+  .club-home .club-lobby-command-top .lobby-controls .lobby-refinements .game-bar__filter-btn {
+    border: 1px solid #3a4652;
+    border-top-color: #5d6b78;
+    border-bottom-color: #080b0e;
+    border-radius: 4px;
+    background: linear-gradient(180deg, #1c242d 0%, #10161c 46%, #05080b 100%);
+    color: #dbe1e6;
+    text-shadow: 0 1px 2px #000;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 16%),
+      inset 0 -2px 0 rgb(0 0 0 / 55%),
+      inset 0 0 10px rgb(0 0 0 / 45%),
+      0 2px 0 #020304,
+      0 5px 10px rgb(0 0 0 / 75%);
+    transition:
+      transform 90ms ease,
+      box-shadow 140ms ease;
+  }
+
+  .club-home .club-lobby-command-top .lobby-controls .game-bar__types .game-bar__type {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 20%),
+      inset 0 -3px 0 rgb(0 0 0 / 60%),
+      inset 0 0 12px rgb(0 0 0 / 45%),
+      0 3px 0 #020304,
+      0 7px 14px rgb(0 0 0 / 80%);
+  }
+
+  .club-home .club-lobby-command-top .lobby-controls .game-bar__types .game-bar__type.is-active,
+  .club-home .club-lobby-command-top .lobby-controls .lobby-refinements .quickprefs__chip.is-on,
+  .club-home .club-lobby-command-top .lobby-controls .lobby-refinements .game-bar__filter-btn.is-set {
+    border-color: #1877f2;
+    border-top-color: #45adff;
+    border-bottom-color: #04223f;
+    background: linear-gradient(180deg, #0f4a80 0%, #0a2f55 48%, #041426 100%);
+    color: #f4f7fb;
+    text-shadow:
+      0 0 6px rgb(69 173 255 / 80%),
+      0 1px 2px #000;
+    box-shadow:
+      inset 0 1px 0 rgb(168 221 255 / 35%),
+      inset 0 -2px 0 rgb(0 0 0 / 45%),
+      inset 0 0 12px rgb(24 119 242 / 45%),
+      0 1px 0 #020304,
+      0 0 12px rgb(24 119 242 / 60%),
+      0 4px 10px rgb(0 0 0 / 70%);
+    transform: translateY(1px);
+  }
+
+  .club-home .club-lobby-command-top .lobby-controls .game-bar__types .game-bar__type:active,
+  .club-home .club-lobby-command-top .lobby-controls .lobby-refinements .quickprefs__chip:active,
+  .club-home .club-lobby-command-top .lobby-controls .lobby-refinements .game-bar__filter-btn:active {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 2px 6px rgb(0 0 0 / 70%),
+      0 1px 0 #020304;
+  }
+}
+
+@media (max-width: 430px) {
+  .club-home .club-lobby-command-top .lobby-controls .game-bar__types .game-bar__type {
+    flex-basis: 68px;
+    width: 68px;
+    min-width: 68px;
+    font-size: 11px;
+  }
+}

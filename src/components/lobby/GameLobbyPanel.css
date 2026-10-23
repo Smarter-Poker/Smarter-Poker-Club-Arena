@@ -516,3 +516,143 @@
 .glp__seat.is-you em {
   color: #ffd700;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ONE FRAME: THE GAME CARD (Dan 2026-10-23)
+   The sections under the card are ordinary page sections on every kind of
+   game: a lit heading with its status word beside it, then rows on hairline
+   rules. Sizes are fixed pixels so the page reads the same on a phone and in
+   the desktop drawer. The cash sheet's own rules live in
+   PremiumGameLobbyPanel.css and agree with these.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.glp__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+
+.glp__section-head .glp__h {
+  margin: 0;
+}
+
+.glp__pill {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid rgb(69 173 255 / 45%);
+  border-radius: 999px;
+  color: #45adff;
+  font:
+    700 11px/1.1 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.glp__pill--green {
+  border-color: rgb(53 217 90 / 55%);
+  color: #c8ffd2;
+}
+
+.glp:not(.glp--cash) .glp__section {
+  width: min(100%, 540px);
+  margin: 0 auto;
+  padding: 16px 2px 4px;
+  border-top: 1px solid rgb(255 255 255 / 9%);
+  background: none;
+}
+
+.glp:not(.glp--cash) .glp__h {
+  color: #45adff;
+  font:
+    800 13px/1.2 'Roboto Condensed',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-align: left;
+  text-transform: uppercase;
+  text-shadow: none;
+}
+
+.glp:not(.glp--cash) .glp__grid > div {
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 0;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+  box-shadow: none;
+}
+
+.glp:not(.glp--cash) .glp__grid > div:first-child {
+  border-top: 0;
+}
+
+.glp:not(.glp--cash) .glp__grid dt {
+  color: #9aa5b3;
+  font:
+    600 13px/1.2 Inter,
+    'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  text-shadow: none;
+}
+
+.glp:not(.glp--cash) .glp__grid dd {
+  font:
+    700 15px/1.2 'Roboto Condensed',
+    sans-serif;
+  text-shadow: none;
+}
+
+.glp:not(.glp--cash) .glp__rules li {
+  gap: 2px;
+  padding: 10px 0;
+  border-top: 0;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+  box-shadow: none;
+}
+
+.glp:not(.glp--cash) .glp__rules li:last-child {
+  border-bottom: 0;
+}
+
+.glp:not(.glp--cash) .glp__rules b {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.glp:not(.glp--cash) .glp__rules span {
+  font:
+    500 13px/1.4 Inter,
+    system-ui,
+    sans-serif;
+  color: #9aa5b3;
+  text-shadow: none;
+}
+
+.glp .glp__section .glp__table {
+  font-size: 13px;
+}
+
+.glp .glp__section .glp__table th {
+  padding: 6px 8px;
+  font-size: 11px;
+  text-shadow: none;
+}
+
+.glp .glp__section .glp__table td {
+  padding: 7px 8px;
+}
+
+.glp .glp__section .glp__break td {
+  font-size: 11px;
+}
+
+.glp .glp__section .glp__note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  text-shadow: none;
+}

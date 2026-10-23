@@ -17,8 +17,8 @@
   overflow: hidden;
   color: #eef3f8;
   font-family: 'Roboto Condensed', 'Rajdhani', var(--font-sans, system-ui, sans-serif);
-  background: #000 url('/assets/club-buttons/lobby/lobby-command-chassis-v2.png') center / 100% 100%
-    no-repeat;
+  /* Black page, no drawer chassis: the game card is the one frame. */
+  background: #000;
   border: 0;
   box-shadow: -28px 0 70px rgb(0 0 0 / 88%);
 }
@@ -122,27 +122,17 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   THE SECTIONS UNDER THE CARD ARE BUILT FROM THE CARD (Dan 2026-09-03)
+   ONE FRAME: THE GAME CARD (Dan 2026-10-23)
 
-   "change the dynamic cards under the game cards to match the look and feel
-   and balance of the game card above it ... the premium look and feel,
-   dynamic buttons and frames." Two earlier cuts were rejected: the old nav
-   shell stretched to one fixed height clipped its own content, and a CSS-
-   drawn rim "looks cheap, corners clipped". So every piece here is cut from
-   the approved four-bay shark console itself, at the card's own scale:
+   "ONLY THE 'GAME CARD' SHOULD HAVE A FRAME, ALL THE REST OF THE INFO SHOULD
+   BE DISPLAYED IN ITS REGULAR WEB PAGE LAYOUT, NOT THE BULKY FRAME BELOW IT."
 
-     top.png / mid.png / bottom.png   the console chassis - crest cap, a
-                                      seamless rail strip that repeats to any
-                                      height, and the bottom rail
-     bay.png                          one of the card's four plaques (label
-                                      slot over an octagon well)
-     button-primary.png               the JOIN TABLE face
-     button-secondary.png             the VIEW TABLE face
-
-   Facts, seats and rules are printed into those plaques exactly as the card
-   prints its own; the frame grows with the content because the rails repeat.
-   Sizes are in cqw against the panel's scroller so the panel and the card
-   above it share one scale.
+   The shark-console chassis that used to wrap every section (crest cap,
+   repeating rails, an octagon plaque per fact) is gone, and so is the drawer
+   chassis behind the whole panel. Under the card the page reads like a page:
+   a lit heading per section, facts as label and value rows on hairline rules,
+   the seat map as small seat tiles, the rules as a plain list and Back To All
+   Games as an ordinary button. The approved game card above keeps its frame.
    ═══════════════════════════════════════════════════════════════════════════ */
 .glp--cash .glp__scroll {
   container-type: inline-size;
@@ -150,124 +140,101 @@
 
 .glp--cash .glp__section {
   position: relative;
-  isolation: isolate;
-  padding: 15.5cqw 7.2cqw 15cqw;
+  width: min(100%, 540px);
+  margin: 0 auto;
+  padding: 16px 2px 4px;
   overflow: visible;
   border: 0;
+  border-top: 1px solid rgb(255 255 255 / 9%);
   border-radius: 0;
-  background:
-    url('/assets/club-buttons/lobby/shark-panel-v1/top.png') top center / 100% auto no-repeat,
-    url('/assets/club-buttons/lobby/shark-panel-v1/bottom.png') bottom center / 100% auto no-repeat;
+  background: none;
   box-shadow: none;
 }
 
-/* THE RAILS GET THEIR OWN BOX (#ClubArenaConsole trap 7.1, fixed 2026-09-14).
-   mid.png used to be a third background layer on the section, repeating over
-   its WHOLE height - and top.png is transparent for its first 33 rows, so the
-   rails painted above the crest cap and below the closing rail, lines running
-   out from under the frame. A pseudo-element inset to the caps carries the
-   strip and nothing else; `background-clip: content-box` does NOT do this, it
-   clips the side rails away too. */
-.glp--cash .glp__section::before {
-  content: '';
-  position: absolute;
-  inset: 15.5cqw 0 15cqw;
-  z-index: -1;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/mid.png') top center / 100% auto
-    repeat-y;
-  pointer-events: none;
-}
-
+.glp--cash .glp__section::before,
 .glp--cash .glp__section::after {
   content: none;
 }
 
 .glp--cash .glp__h {
-  margin: 0 0 3cqw;
-  color: #5bb8ff;
+  margin: 0 0 10px;
+  color: #45adff;
   font:
-    800 3cqw/1 Inter,
-    'Roboto Condensed',
+    800 13px/1.2 'Roboto Condensed',
+    Inter,
     sans-serif;
-  letter-spacing: 0.16em;
-  text-align: center;
+  letter-spacing: 0.14em;
+  text-align: left;
   text-transform: uppercase;
-  text-shadow:
-    0 0 8px rgb(49 168 255 / 55%),
-    0 1px 2px rgb(0 0 0 / 85%);
+  text-shadow: none;
 }
 
-/* ── Facts: the card's plaques, two to a row ──────────────────────────── */
+/* ── Facts: label and value rows, two columns where there is room ─────── */
 .glp--cash .glp__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2cqw 2.4cqw;
+  column-gap: 24px;
+  row-gap: 0;
+  margin: 0;
 }
 
 .glp--cash .glp__grid > div {
-  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
   min-height: 0;
-  aspect-ratio: 200 / 258;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 27% 1fr 12%;
-  align-items: center;
-  justify-items: stretch;
-  gap: 0;
-  padding: 0 9%;
+  aspect-ratio: auto;
+  padding: 10px 0;
   border: 0;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100% 100% no-repeat;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+  background: none;
   box-shadow: none;
   clip-path: none;
 }
 
 .glp--cash .glp__grid dt {
-  width: 100%;
-  align-self: end;
-  justify-self: stretch;
-  padding-bottom: 6%;
-  color: #5bb8ff;
+  flex: none;
+  width: auto;
+  padding: 0;
+  color: #9aa5b3;
   font:
-    700 2.6cqw/1 Inter,
+    600 13px/1.2 Inter,
     'Roboto Condensed',
     sans-serif;
-  letter-spacing: 0.14em;
-  text-align: center;
-  text-transform: uppercase;
-  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+  letter-spacing: 0.02em;
+  text-align: left;
+  text-transform: none;
+  text-shadow: none;
 }
 
 .glp--cash .glp__grid dd {
-  width: 100%;
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
   margin: 0;
-  justify-self: stretch;
   color: #e4e7ec;
   font:
-    800 5.2cqw/1 'Roboto Condensed',
+    700 15px/1.2 'Roboto Condensed',
     sans-serif;
-  letter-spacing: -0.02em;
-  text-align: center;
+  letter-spacing: 0.01em;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-shadow:
-    0 -0.18cqw 0 rgb(255 255 255 / 55%),
-    0 0.25cqw 0 #6d747c,
-    0 0.45cqw 0 #050607,
-    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+  text-shadow: none;
 }
 
-/* A long value (a full game name) steps down rather than clipping. */
 .glp--cash .glp__grid dd.glp__mono {
-  font-size: 5cqw;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ── Seat map: the same plaque, three to a row ────────────────────────── */
+/* ── Seat map: small seat tiles ───────────────────────────────────────── */
 .glp--cash .glp__seatmap {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 2cqw;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 8px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -275,67 +242,53 @@
 }
 
 .glp--cash .glp__seat {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  aspect-ratio: 200 / 258;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 27% 1fr 12%;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-items: center;
-  border: 0;
-  border-radius: 0;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100% 100% no-repeat;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 52px;
+  aspect-ratio: auto;
+  padding: 6px 4px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 4px;
+  background: #0b0f15;
   box-shadow: none;
   clip-path: none;
 }
 
-/* Seat number in the well, state in the label slot. */
 .glp--cash .glp__seat i {
-  grid-row: 2;
   color: #e4e7ec;
   font:
-    800 7cqw/1 'Roboto Condensed',
+    800 16px/1 'Roboto Condensed',
     sans-serif;
   font-style: normal;
-  text-shadow:
-    0 -0.18cqw 0 rgb(255 255 255 / 55%),
-    0 0.25cqw 0 #6d747c,
-    0 0.45cqw 0 #050607,
-    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+  text-shadow: none;
 }
 
 .glp--cash .glp__seat em {
-  grid-row: 1;
-  align-self: end;
-  padding-bottom: 6%;
-  color: #7f8a97;
+  padding: 0;
+  color: #9aa5b3;
   font:
-    700 2.5cqw/1 Inter,
+    700 10px/1 Inter,
     'Roboto Condensed',
     sans-serif;
   font-style: normal;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .glp--cash .glp__seat:not(.is-taken) {
-  border: 0;
-  box-shadow: none;
+  border-color: rgb(69 173 255 / 45%);
 }
 
 .glp--cash .glp__seat:not(.is-taken) em {
-  color: #5bb8ff;
-  text-shadow: 0 0 6px rgb(49 168 255 / 55%);
+  color: #45adff;
 }
 
 .glp--cash .glp__seat:not(.is-taken) i {
-  color: #cfeeff;
-  text-shadow:
-    0 0 1.2cqw rgb(49 168 255 / 85%),
-    0 0.45cqw 0 #050607,
-    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+  color: #f4f7fb;
 }
 
 .glp--cash .glp__seat.is-taken i {
@@ -343,47 +296,47 @@
 }
 
 .glp--cash .glp__seat.is-you {
-  border: 0;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/bay.png') center / 100% 100% no-repeat;
+  border-color: rgb(53 217 90 / 60%);
+  background: #0b0f15;
 }
 
 .glp--cash .glp__seat.is-you em {
-  color: #58e07c;
-  text-shadow: 0 0 6px rgb(50 210 122 / 60%);
+  color: #c8ffd2;
 }
 
 .glp--cash .glp__seat.is-you i {
-  color: #d6ffe1;
-  text-shadow:
-    0 0 1.2cqw rgb(50 210 122 / 85%),
-    0 0.45cqw 0 #050607,
-    0 0.7cqw 0.9cqw rgb(0 0 0 / 90%);
+  color: #c8ffd2;
 }
 
-/* ── Rules: printed on the well, each rule under its blue rail ────────── */
+/* ── Rules: a plain list ──────────────────────────────────────────────── */
 .glp--cash .glp__rules li {
-  padding: 2.4cqw 3cqw;
-  border-left: 0.6cqw solid #168bff;
-  background: linear-gradient(90deg, rgb(22 139 255 / 14%), transparent 70%);
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid rgb(255 255 255 / 7%);
+  background: none;
+}
+
+.glp--cash .glp__rules li:last-child {
+  border-bottom: 0;
 }
 
 .glp--cash .glp__rules b {
-  color: #5bb8ff;
-  font-family: Inter, 'Roboto Condensed', sans-serif;
-  font-size: 2.8cqw;
-  letter-spacing: 0.14em;
-  text-shadow: 0 0 6px rgb(49 168 255 / 45%);
+  color: #e4e7ec;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-shadow: none;
 }
 
 .glp--cash .glp__rules span {
-  color: #d5dbe2;
-  font-size: 3.2cqw;
-  line-height: 1.35;
+  color: #9aa5b3;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .glp--cash .glp__foot {
-  gap: 8px;
-  padding: 0 0 16px;
+  gap: 10px;
+  padding: 8px 0 16px;
 }
 
 .glp--cash .glp__backlink,
@@ -391,33 +344,29 @@
   position: relative;
   display: grid;
   place-items: center;
-  width: min(100%, 62cqw);
-  min-height: 0;
-  aspect-ratio: 348 / 114;
-  padding: 0 6%;
-  border: 0;
-  border-radius: 0;
-  color: #fff;
+  width: min(100%, 320px);
+  min-height: 46px;
+  aspect-ratio: auto;
+  padding: 0 18px;
+  border: 1px solid rgb(69 173 255 / 55%);
+  border-radius: 6px;
+  color: #f4f7fb;
   font:
-    800 4.6cqw/1 'Roboto Condensed',
+    700 14px/1 'Roboto Condensed',
     sans-serif;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  text-decoration: none;
   text-transform: uppercase;
   white-space: nowrap;
-  background: url('/assets/club-buttons/lobby/shark-panel-v1/button-primary.png') center / 100% 100%
-    no-repeat;
-  text-shadow:
-    0 0 1cqw rgb(140 210 255 / 90%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%),
-    0 0.5cqw 1cqw rgb(0 0 0 / 60%);
+  background: #0b1420;
+  text-shadow: none;
 }
 
 .glp--cash .glp__deletebtn {
-  color: #ffd0d2;
-  background-image: url('/assets/club-buttons/lobby/shark-panel-v1/button-secondary.png');
-  text-shadow:
-    0 0 1cqw rgb(255 75 82 / 80%),
-    0 0.25cqw 0 rgb(0 0 0 / 70%);
+  border-color: rgb(240 40 73 / 60%);
+  color: #ff5b6e;
+  background: #12070a;
+  text-shadow: none;
 }
 
 .glp--cash .glp__backlink:active,
@@ -428,7 +377,13 @@
 .glp--cash .glp__backlink:focus-visible,
 .glp--cash .glp__deletebtn:focus-visible {
   outline: 2px solid #8fd4ff;
-  outline-offset: -4px;
+  outline-offset: 2px;
+}
+
+@container (max-width: 420px) {
+  .glp--cash .glp__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 640px) {
@@ -472,7 +427,7 @@
   }
 
   .glp--cash .glp__section {
-    padding: 15.5cqw 7.2cqw 15cqw;
+    padding: 16px 2px 4px;
   }
 }
 
@@ -482,7 +437,7 @@
   }
 
   .glp--cash .glp__section {
-    padding-inline: 7.2cqw;
+    padding-inline: 0;
   }
 }
 
